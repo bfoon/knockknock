@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Join a session · Knock-Knock{% endblock %}
+
+{% block content %}
+<div class="kk-main-narrow mx-auto">
+  <h1 class="text-center mb-4">Got a code?</h1>
+  <p class="text-center text-secondary mb-4">Enter the 6-digit code your presenter shared — or scan the QR.</p>
+
+  {% if error %}<div class="kk-flash kk-flash-error">{{ error }}</div>{% endif %}
+
+  <form method="get" action="" id="join-form" class="kk-card">
+    <input type="text" id="code-input" class="form-control form-control-lg text-center"
+           maxlength="6" inputmode="numeric" placeholder="123456"
+           style="letter-spacing: .3em; font-family: var(--kk-font-mono); font-size: 2rem;">
+    <button class="kk-btn kk-btn-primary kk-btn-lg w-100 mt-3">Knock knock <i class="bi bi-arrow-right"></i></button>
+  </form>
+</div>
+
+<script>
+  document.getElementById("join-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const code = document.getElementById("code-input").value.trim();
+    if (/^\d{6}$/.test(code)) {
+      window.location.href = `/live/join/${code}/`;
+    } else {
+      alert("Please enter a valid 6-digit code.");
+    }
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Knock-Knock — Live polls & quiz games{% endblock %}
+
+{% block content %}
+<section class="kk-hero">
+  <h1>Knock, knock.<br>Who's<br>answering?</h1>
+  <p class="kk-hero-sub">
+    Build live polls, word-clouds and quiz games your audience won't shut up about.
+    Mentimeter-style presentations and Kahoot-style competitions in one app.
+  </p>
+  <div class="kk-hero-actions">
+    <a class="kk-btn kk-btn-primary kk-btn-lg" href="{% url 'accounts:signup' %}">
+      <i class="bi bi-sparkles"></i> Get started — it's free
+    </a>
+    <a class="kk-btn kk-btn-ghost kk-btn-lg" href="{% url 'core:join' %}">
+      <i class="bi bi-qr-code-scan"></i> Join a session
+    </a>
+  </div>
+</section>
+
+<section class="kk-feature-grid">
+  <div class="kk-card">
+    <div class="kk-feature-icon">🎤</div>
+    <h3>Knock-Knock Menti</h3>
+    <p class="kk-text-dim mb-0">Multiple choice, word clouds, scales, open text & ranking. Pick from 20 templates and 12+ chart styles.</p>
+  </div>
+  <div class="kk-card">
+    <div class="kk-feature-icon">🎮</div>
+    <h3>Knock-Knock Game</h3>
+    <p class="kk-text-dim mb-0">Kahoot-style speed quizzes with avatars, leaderboards, capped rooms and tournament-grade scoring.</p>
+  </div>
+  <div class="kk-card">
+    <div class="kk-feature-icon">🎼</div>
+    <h3>Orchestra mode</h3>
+    <p class="kk-text-dim mb-0">Presenter and participants advance in perfect lockstep — no one races ahead. Or pick Open mode for self-pacing.</p>
+  </div>
+  <div class="kk-card">
+    <div class="kk-feature-icon">✏️</div>
+    <h3>Live drawing tools</h3>
+    <p class="kk-text-dim mb-0">Freehand, highlighter, shapes and laser pointer — directly on top of live charts. Looks great. Feels alive.</p>
+  </div>
+  <div class="kk-card">
+    <div class="kk-feature-icon">📱</div>
+    <h3>QR / 6-digit join</h3>
+    <p class="kk-text-dim mb-0">Participants scan or type the code. No download. No account needed to play.</p>
+  </div>
+  <div class="kk-card">
+    <div class="kk-feature-icon">📊</div>
+    <h3>Group display</h3>
+    <p class="kk-text-dim mb-0">Project one chart per slide like Powerpoint, or flip to all-on-one-screen for retrospectives.</p>
+  </div>
+</section>
+{% endblock %}

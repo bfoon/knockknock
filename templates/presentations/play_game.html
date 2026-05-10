@@ -1,0 +1,79 @@
+{% load static %}<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{{ session.title }} · Knock-Knock Game</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://api.fontshare.com/v2/css?f[]=clash-display@600,700&f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'css/app.css' %}">
+<style>
+  .kk-play {
+    --p-bg: {{ template.bg }};
+    --p-fg: {{ template.fg }};
+    --p-accent: {{ template.accent }};
+  }
+</style>
+</head>
+<body>
+
+<div class="kk-play" id="play"
+     data-code="{{ session.code }}"
+     data-kind="game"
+     data-mode="{{ session.mode }}">
+
+  <header class="d-flex align-items-center gap-3 mb-3">
+    <span class="kk-stage-code">{{ session.code }}</span>
+    <span class="text-secondary small flex-grow-1">{{ session.title }}</span>
+    <span class="kk-q-pill" id="score-chip" style="display:none;">0 pts</span>
+  </header>
+
+  <!-- NICKNAME + AVATAR -->
+  <div id="step-nick" class="kk-play-card">
+    <h2 class="mb-2">Pick a name & avatar</h2>
+    <input type="text" id="nick-input" class="form-control form-control-lg mb-3" placeholder="Your nickname" maxlength="40">
+    <div class="text-secondary small mb-2">Choose your fighter:</div>
+    <div class="kk-avatar-grid mb-3" id="avatar-grid">
+      {% for a in avatars %}
+        <div class="kk-avatar-tile{% if forloop.first %} selected{% endif %}"
+             data-avatar-id="{{ a.id }}" title="{{ a.label }}">{{ a.emoji }}</div>
+      {% endfor %}
+    </div>
+    <button class="kk-btn kk-btn-primary kk-btn-lg w-100" id="nick-go">Enter the arena <i class="bi bi-fire"></i></button>
+  </div>
+
+  <!-- WAITING -->
+  <div id="step-wait" class="kk-play-card" style="display:none;">
+    <div class="text-center py-4">
+      <div id="wait-avatar" style="font-size:3.5rem;">🐉</div>
+      <h2 id="wait-nick">You're in!</h2>
+      <p class="text-secondary mb-0">Waiting for the host to start the game…</p>
+      <p class="text-secondary small mt-2" id="room-tag" style="display:none;"></p>
+    </div>
+  </div>
+
+  <!-- QUESTION (kahoot-style tiles) -->
+  <div id="step-question" class="kk-play-card" style="display:none;">
+    <div class="d-flex align-items-center mb-2">
+      <span class="text-secondary small flex-grow-1" id="q-progress">—</span>
+      <span class="kk-q-pill" id="timer-chip">—</span>
+    </div>
+    <h2 id="q-text" class="mb-3">—</h2>
+    <div class="kk-tile-grid" id="tiles"></div>
+    <div id="q-result" class="mt-3 text-center" style="display:none;"></div>
+  </div>
+
+  <!-- ENDED -->
+  <div id="step-ended" class="kk-play-card" style="display:none;">
+    <div class="text-center py-4">
+      <div style="font-size:3rem;">🏁</div>
+      <h2>Game over</h2>
+      <p class="text-secondary">Your final score: <b id="final-score">0</b></p>
+    </div>
+  </div>
+</div>
+
+<script src="{% static 'js/play.js' %}"></script>
+</body>
+</html>

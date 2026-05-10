@@ -1,0 +1,125 @@
+{% load static %}<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Live · {{ session.title }} · Knock-Knock</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://api.fontshare.com/v2/css?f[]=clash-display@600,700&f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'css/app.css' %}">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+  body { overflow: hidden; }
+  .kk-stage {
+    --stage-bg: {{ template.bg }};
+    --stage-fg: {{ template.fg }};
+    --stage-accent: {{ template.accent }};
+    --stage-accent-2: {{ template.accent2 }};
+  }
+</style>
+</head>
+<body>
+
+<div class="kk-stage" id="stage"
+     data-code="{{ session.code }}"
+     data-kind="{{ session.kind }}"
+     data-mode="{{ session.mode }}">
+  <header class="kk-stage-header">
+    <a href="{% if session.kind == 'poll' %}{% url 'polls:edit' session.questionnaire.pk %}{% else %}{% url 'games:edit' session.quiz.pk %}{% endif %}"
+       class="kk-btn kk-btn-ghost btn-sm" title="Back to editor"><i class="bi bi-arrow-left"></i></a>
+    <div class="kk-stage-code">{{ session.code }}</div>
+    <div class="text-secondary small d-none d-md-block">{{ session.title }}</div>
+
+    <div class="ms-auto d-flex align-items-center gap-2 flex-wrap">
+      <div class="kk-tools" id="draw-tools">
+        <button class="kk-tool active" data-tool="off" title="Cursor"><i class="bi bi-cursor"></i></button>
+        <button class="kk-tool" data-tool="pen" title="Free hand"><i class="bi bi-pencil"></i></button>
+        <button class="kk-tool" data-tool="highlight" title="Highlighter"><i class="bi bi-highlighter"></i></button>
+        <button class="kk-tool" data-tool="laser" title="Laser pointer"><i class="bi bi-bullseye"></i></button>
+        <button class="kk-tool" id="clear-draw" title="Clear drawings"><i class="bi bi-eraser"></i></button>
+      </div>
+      <div class="kk-tools" id="color-bar">
+        <span class="kk-color-swatch active" data-color="#fb7185" style="background:#fb7185"></span>
+        <span class="kk-color-swatch" data-color="#fbbf24" style="background:#fbbf24"></span>
+        <span class="kk-color-swatch" data-color="#22d3ee" style="background:#22d3ee"></span>
+        <span class="kk-color-swatch" data-color="#a3e635" style="background:#a3e635"></span>
+        <span class="kk-color-swatch" data-color="#ffffff" style="background:#ffffff"></span>
+      </div>
+      <button class="kk-btn kk-btn-ghost btn-sm" id="btn-group" title="Group display"><i class="bi bi-grid-3x3-gap"></i></button>
+      <button class="kk-btn kk-btn-ghost btn-sm" id="btn-fs" title="Fullscreen"><i class="bi bi-arrows-fullscreen"></i></button>
+      <button class="kk-btn kk-btn-danger btn-sm" id="btn-end" title="End session"><i class="bi bi-stop-fill"></i></button>
+    </div>
+  </header>
+
+  <div class="kk-stage-body">
+    <div class="kk-stage-main" id="stage-main">
+      <!-- LOBBY -->
+      <div id="view-lobby">
+        <div class="kk-lobby-big">
+          <div class="text-secondary">Join at this URL</div>
+          <div class="kk-lobby-code">{{ session.code }}</div>
+          <div class="text-secondary">…or scan the QR →</div>
+          <div class="kk-lobby-participants" id="participant-chips"></div>
+          <button class="kk-btn kk-btn-primary kk-btn-lg mt-4" id="btn-start"><i class="bi bi-play-fill"></i> Start presentation</button>
+        </div>
+      </div>
+
+      <!-- QUESTION -->
+      <div id="view-question" style="display:none;">
+        <div class="kk-stage-progress mb-1"><span id="q-progress">—</span></div>
+        <h2 class="kk-stage-q" id="q-text">—</h2>
+        <div class="kk-chart-wrap" id="chart-wrap">
+          <canvas id="live-chart"></canvas>
+          <div id="special-display" style="display:none;"></div>
+          <canvas class="kk-draw-canvas" id="draw-canvas"></canvas>
+          <canvas class="kk-draw-canvas" id="laser-canvas"></canvas>
+        </div>
+      </div>
+
+      <!-- GROUP DISPLAY -->
+      <div id="view-group" style="display:none;">
+        <h2 class="kk-section-title">All questions</h2>
+        <div class="kk-group-grid" id="group-grid"></div>
+      </div>
+
+      <!-- ENDED -->
+      <div id="view-ended" style="display:none;" class="text-center py-5">
+        <div style="font-size:4rem;">🏁</div>
+        <h2>Session ended</h2>
+        <p class="text-secondary">Thanks for presenting with Knock-Knock.</p>
+        <a href="/dashboard/" class="kk-btn kk-btn-primary mt-3">Back to dashboard</a>
+      </div>
+    </div>
+
+    <aside class="kk-stage-side" id="stage-side">
+      <div class="kk-qr-panel">
+        <img src="{% url 'presentations:qr' session.code %}" alt="QR">
+        <div class="code">{{ session.code }}</div>
+        <div class="small text-muted mt-1" style="word-break: break-all;">{{ join_url }}</div>
+      </div>
+
+      <div class="kk-card" style="background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.12);">
+        <h3 style="font-size:1rem; color: var(--kk-text-dim);">Participants <span id="participant-count">0</span></h3>
+        <p class="small mb-3" style="color: var(--kk-text-dim);">{{ session.get_mode_display }}</p>
+        <div class="d-flex gap-2">
+          <button class="kk-btn kk-btn-ghost btn-sm flex-grow-1" id="btn-prev"><i class="bi bi-chevron-left"></i> Back</button>
+          <button class="kk-btn kk-btn-primary btn-sm flex-grow-1" id="btn-next">Next <i class="bi bi-chevron-right"></i></button>
+        </div>
+      </div>
+
+      {% if session.kind == "game" %}
+      <div class="kk-card" style="background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.12); flex-grow:1; overflow-y:auto;">
+        <h3 style="font-size:1rem; color: var(--kk-text-dim);"><i class="bi bi-trophy-fill"></i> Leaderboard</h3>
+        <div id="leaderboard"></div>
+      </div>
+      {% endif %}
+    </aside>
+  </div>
+</div>
+
+<script src="{% static 'js/chart_preview.js' %}"></script>
+<script src="{% static 'js/draw_overlay.js' %}"></script>
+<script src="{% static 'js/present.js' %}"></script>
+</body>
+</html>

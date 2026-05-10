@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}New questionnaire · Knock-Knock{% endblock %}
+
+{% block content %}
+<div class="kk-main-narrow mx-auto">
+  <h1 class="mb-4">New questionnaire 🎤</h1>
+  <form method="post" enctype="multipart/form-data" class="kk-card">
+    {% csrf_token %}
+    <div class="mb-3">
+      <label class="form-label">Title</label>
+      {{ form.title }}
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Description (optional)</label>
+      {{ form.description }}
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Mode</label>
+      {{ form.mode }}
+      <div class="text-secondary small mt-1">
+        <b>Orchestra</b>: presenter controls the slides — participants follow. <b>Open</b>: participants self-pace.
+      </div>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Logo (optional)</label>
+      {{ form.logo }}
+    </div>
+    <div class="mb-4">
+      <label class="form-label mb-2">Pick a template</label>
+      {% include "partials/template_picker.html" with templates=templates selected_id="midnight" %}
+    </div>
+    <button class="kk-btn kk-btn-primary kk-btn-lg">Create</button>
+  </form>
+</div>
+{% endblock %}

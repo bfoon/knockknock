@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}New game · Knock-Knock{% endblock %}
+
+{% block content %}
+<div class="kk-main-narrow mx-auto">
+  <h1 class="mb-4">New game 🎮</h1>
+  <form method="post" enctype="multipart/form-data" class="kk-card">
+    {% csrf_token %}
+    <div class="mb-3"><label class="form-label">Title</label>{{ form.title }}</div>
+    <div class="mb-3"><label class="form-label">Description</label>{{ form.description }}</div>
+
+    <div class="row g-3 mb-3">
+      <div class="col-md-6"><label class="form-label">Scoring</label>{{ form.scoring }}</div>
+      <div class="col-md-6"><label class="form-label">Mode</label>{{ form.mode }}</div>
+    </div>
+
+    <div class="form-check mb-3">
+      {{ form.use_rooms }}
+      <label class="form-check-label">Use rooms (cap members & score by room average)</label>
+    </div>
+    <div class="mb-3"><label class="form-label">Room capacity</label>{{ form.room_capacity }}</div>
+
+    <div class="mb-3"><label class="form-label">Logo</label>{{ form.logo }}</div>
+    <div class="mb-4">
+      <label class="form-label mb-2">Pick a template</label>
+      {% include "partials/template_picker.html" with templates=templates selected_id="neon" %}
+    </div>
+    <button class="kk-btn kk-btn-primary kk-btn-lg">Create</button>
+  </form>
+</div>
+{% endblock %}

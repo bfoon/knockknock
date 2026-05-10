@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Log in · Knock-Knock{% endblock %}
+
+{% block content %}
+<div class="kk-main-narrow mx-auto">
+  <h1 class="text-center mb-4">Welcome back</h1>
+  <form method="post" class="kk-card">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="kk-flash kk-flash-error mb-3">{{ form.non_field_errors }}</div>
+    {% endif %}
+    <div class="mb-3">
+      <label class="form-label">Username</label>
+      <input type="text" name="username" class="form-control form-control-lg" required autofocus>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Password</label>
+      <input type="password" name="password" class="form-control form-control-lg" required>
+    </div>
+    <button class="kk-btn kk-btn-primary kk-btn-lg w-100">Log in</button>
+    <p class="text-center mt-3 mb-0 text-secondary">
+      No account? <a href="{% url 'accounts:signup' %}" class="text-light">Sign up</a>
+    </p>
+  </form>
+</div>
+{% endblock %}

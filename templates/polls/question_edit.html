@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Edit question · Knock-Knock{% endblock %}
+
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<a href="{% url 'polls:edit' questionnaire.pk %}" class="text-secondary text-decoration-none small">
+  <i class="bi bi-arrow-left"></i> Back to {{ questionnaire.title }}
+</a>
+
+<form method="post" enctype="multipart/form-data" class="mt-3">
+  {% csrf_token %}
+
+  <div class="row g-4">
+    <!-- LEFT: form -->
+    <div class="col-lg-7">
+      <div class="kk-card">
+        <label class="form-label">Question</label>
+        {{ form.text }}
+
+        <div class="row g-3 mt-2">
+          <div class="col-md-6">
+            <label class="form-label">Type</label>
+            {{ form.type }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Image (optional)</label>
+            {{ form.image }}
+          </div>
+        </div>
+        {{ form.chart_type }}
+      </div>
+
+      <div class="kk-card mt-3" id="choices-card">
+        <h2 class="kk-section-title" style="font-size:1.15rem;"><i class="bi bi-ui-checks"></i> Options</h2>
+        {{ formset.management_form }}
+        {% for cf in formset %}
+          <div class="d-flex gap-2 align-items-center mb-2">
+            <span class="kk-q-index">{{ forloop.counter }}</span>
+            {{ cf.id }}
+            {{ cf.text }}
+            <label class="text-secondary small d-flex gap-1 align-items-center">
+              {{ cf.DELETE }} del
+            </label>
+          </div>
+        {% endfor %}
+      </div>
+
+      <div class="kk-card mt-3">
+        <h2 class="kk-section-title" style="font-size:1.15rem;"><i class="bi bi-bar-chart"></i> Chart display</h2>
+        <div class="kk-chart-picker" id="chart-picker">
+          {% for c in all_charts %}
+            <div class="kk-chart-option{% if c.id == question.chart_type %} selected{% endif %}"
+                 data-chart-id="{{ c.id }}"
+                 data-supports="{{ c.supports|join:',' }}">
+              <i class="bi bi-{{ c.icon }}"></i>
+              <div class="lbl">{{ c.name }}</div>
+            </div>
+          {% endfor %}
+        </div>
+        <div class="text-secondary small mt-2"><i class="bi bi-info-circle"></i> Greyed-out charts aren't compatible with this question type.</div>
+      </div>
+
+      <button class="kk-btn kk-btn-primary kk-btn-lg mt-4">Save question</button>
+      <button formaction="{% url 'polls:question_delete' questionnaire.pk question.pk %}"
+              formnovalidate
+              onclick="return confirm('Delete this question?')"
+              class="kk-btn kk-btn-ghost ms-2">
+        <i class="bi bi-trash"></i> Delete
+      </button>
+    </div>
+
+    <!-- RIGHT: live preview -->
+    <div class="col-lg-5">
+      <div class="kk-card sticky-top" style="top: 90px;">
+        <h2 class="kk-section-title" style="font-size:1.15rem;"><i class="bi bi-eye"></i> Live preview</h2>
+        <div class="text-secondary small mb-2">Sample data — see how the chart will look during your presentation.</div>
+        <div style="height: 320px; position: relative;">
+          <canvas id="preview-canvas"></canvas>
+          <div id="preview-special" style="display:none; height:100%; align-items:center; justify-content:center; flex-wrap:wrap; gap:.4rem;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</form>
+
+<script src="{% static 'js/chart_preview.js' %}"></script>
+<script>
+  (function () {
+    const picker = document.getElementById("chart-picker");
+    const hidden = document.querySelector("[name='chart_type']");
+    const typeSel = document.querySelector("[data-question-type]") || document.querySelector("[name='type']");
+    const optionTexts = () => Array.from(document.querySelectorAll("#choices-card input[type='text']"))
+      .map(i => i.value).filter(Boolean);
+
+    function refreshCompat() {
+      const t = typeSel.value;
+      picker.querySelectorAll(".kk-chart-option").forEach(opt => {
+        const ok = opt.dataset.supports.split(",").includes(t);
+        opt.style.opacity = ok ? "1" : ".25";
+        opt.style.pointerEvents = ok ? "auto" : "none";
+      });
+      // if currently selected is incompatible, switch to first compatible
+      const sel = picker.querySelector(".kk-chart-option.selected");
+      if (sel && sel.style.opacity === ".25") {
+        const first = picker.querySelector(".kk-chart-option:not([style*='opacity: .25'])");
+        if (first) selectChart(first);
+      }
+      renderPreview();
+    }
+
+    function selectChart(opt) {
+      picker.querySelectorAll(".kk-chart-option").forEach(o => o.classList.remove("selected"));
+      opt.classList.add("selected");
+      hidden.value = opt.dataset.chartId;
+      renderPreview();
+    }
+
+    function renderPreview() {
+      const chartId = hidden.value;
+      const qType = typeSel.value;
+      const labels = optionTexts().length ? optionTexts() : ["Option A","Option B","Option C","Option D"];
+      window.kkRenderPreview(chartId, qType, labels);
+    }
+
+    picker.addEventListener("click", e => {
+      const opt = e.target.closest(".kk-chart-option");
+      if (opt) selectChart(opt);
+    });
+    typeSel.addEventListener("change", refreshCompat);
+    document.querySelectorAll("#choices-card input[type='text']").forEach(i => i.addEventListener("input", renderPreview));
+
+    refreshCompat();
+  })();
+</script>
+{% endblock %}

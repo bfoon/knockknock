@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}My games · Knock-Knock{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <h1 class="mb-0">My games 🎮</h1>
+  <a href="{% url 'games:create' %}" class="kk-btn kk-btn-primary"><i class="bi bi-plus-lg"></i> New</a>
+</div>
+
+{% for q in quizzes %}
+  <a class="kk-list-item" href="{% url 'games:edit' q.pk %}">
+    <span class="kk-q-index">{{ forloop.counter }}</span>
+    <div class="flex-grow-1">
+      <div class="kk-list-item-title">{{ q.title }}</div>
+      <div class="kk-list-item-meta">{{ q.questions.count }} questions · {{ q.get_scoring_display }}{% if q.use_rooms %} · rooms of {{ q.room_capacity }}{% endif %}</div>
+    </div>
+    <span class="kk-q-pill">{{ q.get_mode_display }}</span>
+    <i class="bi bi-chevron-right text-secondary"></i>
+  </a>
+{% empty %}
+  <div class="kk-empty">
+    <div class="em">🎮</div>
+    <p>No games yet.</p>
+    <a href="{% url 'games:create' %}" class="kk-btn kk-btn-primary mt-2">Create your first competition</a>
+  </div>
+{% endfor %}
+{% endblock %}

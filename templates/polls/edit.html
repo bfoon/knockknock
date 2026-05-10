@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{{ questionnaire.title }} · Knock-Knock{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-start justify-content-between gap-3 mb-4 flex-wrap">
+  <div>
+    <a href="{% url 'polls:list' %}" class="text-secondary text-decoration-none small"><i class="bi bi-arrow-left"></i> All questionnaires</a>
+    <h1 class="mb-0 mt-2">{{ questionnaire.title }}</h1>
+    <div class="text-secondary mt-1">{{ questionnaire.questions.count }} questions · {{ questionnaire.get_mode_display }}</div>
+  </div>
+  <form method="post" action="{% url 'polls:start' questionnaire.pk %}">{% csrf_token %}
+    <button class="kk-btn kk-btn-primary kk-btn-lg" {% if not questionnaire.questions.count %}disabled{% endif %}>
+      <i class="bi bi-play-fill"></i> Present live
+    </button>
+  </form>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-7">
+    <h2 class="kk-section-title"><i class="bi bi-list-ol"></i> Questions</h2>
+    {% for q in questionnaire.questions.all %}
+      <a class="kk-q-row" href="{% url 'polls:question_edit' questionnaire.pk q.pk %}">
+        <span class="kk-q-index">{{ forloop.counter }}</span>
+        <div class="kk-q-text">{{ q.text }}</div>
+        <span class="kk-q-pill">{{ q.get_type_display }}</span>
+        <span class="kk-q-pill">{{ q.chart_type }}</span>
+      </a>
+    {% empty %}
+      <div class="kk-empty">
+        <div class="em">❓</div>
+        <p>No questions yet.</p>
+      </div>
+    {% endfor %}
+    <a href="{% url 'polls:question_create' questionnaire.pk %}" class="kk-btn kk-btn-ghost w-100 mt-3">
+      <i class="bi bi-plus-lg"></i> Add a question
+    </a>
+  </div>
+
+  <div class="col-lg-5">
+    <form method="post" enctype="multipart/form-data" class="kk-card">
+      {% csrf_token %}
+      <h2 class="kk-section-title" style="font-size:1.2rem;"><i class="bi bi-gear"></i> Settings</h2>
+      <div class="mb-3"><label class="form-label">Title</label>{{ form.title }}</div>
+      <div class="mb-3"><label class="form-label">Description</label>{{ form.description }}</div>
+      <div class="mb-3"><label class="form-label">Mode</label>{{ form.mode }}</div>
+      <div class="mb-3"><label class="form-label">Logo</label>{{ form.logo }}</div>
+      <button class="kk-btn kk-btn-primary w-100">Save</button>
+    </form>
+
+    <div class="kk-card mt-4">
+      <h2 class="kk-section-title" style="font-size:1.2rem;"><i class="bi bi-palette"></i> Template</h2>
+      {% include "partials/template_picker.html" with templates=templates selected_id=questionnaire.template_id %}
+    </div>
+  </div>
+</div>
+
+<script>
+// Live-save template when picker changes (separate endpoint).
+window.addEventListener("kk:template-change", async (e) => {
+  const fd = new FormData();
+  fd.append("template_id", e.detail);
+  fd.append("csrfmiddlewaretoken", "{{ csrf_token }}");
+  await fetch("{% url 'polls:set_template' questionnaire.pk %}", { method: "POST", body: fd });
+});
+</script>
+{% endblock %}

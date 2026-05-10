@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Knock-Knock{% endblock %}
+
+{% block content %}
+<h1 class="mb-1">Hi {{ user.profile.display_name|default:user.username }} 👋</h1>
+<p class="text-secondary mb-4">What are you building today?</p>
+
+<div class="kk-dash-grid mb-5">
+  <a href="{% url 'polls:create' %}" class="kk-action-tile menti">
+    <span class="kk-tile-icon">🎤</span>
+    <h2>New Knock-Knock Menti</h2>
+    <p>Build a live questionnaire with charts, word clouds and maps.</p>
+    <span class="kk-btn kk-btn-primary btn-sm">Create questionnaire <i class="bi bi-arrow-right"></i></span>
+  </a>
+  <a href="{% url 'games:create' %}" class="kk-action-tile game">
+    <span class="kk-tile-icon">🎮</span>
+    <h2>New Knock-Knock Game</h2>
+    <p>Speed-quiz competitions — leaderboards, avatars, rooms.</p>
+    <span class="kk-btn kk-btn-primary btn-sm">Create game <i class="bi bi-arrow-right"></i></span>
+  </a>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <h2 class="kk-section-title"><i class="bi bi-collection"></i> Recent questionnaires</h2>
+    {% for q in questionnaires %}
+      <a class="kk-list-item" href="{% url 'polls:edit' q.pk %}">
+        <span class="kk-q-index">{{ forloop.counter }}</span>
+        <div class="flex-grow-1">
+          <div class="kk-list-item-title">{{ q.title }}</div>
+          <div class="kk-list-item-meta">{{ q.questions.count }} questions · {{ q.updated_at|timesince }} ago</div>
+        </div>
+        <i class="bi bi-arrow-right text-secondary"></i>
+      </a>
+    {% empty %}
+      <div class="kk-empty">
+        <div class="em">🎤</div>
+        <p>No questionnaires yet. Create your first one!</p>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="col-lg-6">
+    <h2 class="kk-section-title"><i class="bi bi-controller"></i> Recent games</h2>
+    {% for g in quizzes %}
+      <a class="kk-list-item" href="{% url 'games:edit' g.pk %}">
+        <span class="kk-q-index">{{ forloop.counter }}</span>
+        <div class="flex-grow-1">
+          <div class="kk-list-item-title">{{ g.title }}</div>
+          <div class="kk-list-item-meta">{{ g.questions.count }} questions · {{ g.get_scoring_display }}</div>
+        </div>
+        <i class="bi bi-arrow-right text-secondary"></i>
+      </a>
+    {% empty %}
+      <div class="kk-empty">
+        <div class="em">🎮</div>
+        <p>No games yet. Create your first competition!</p>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

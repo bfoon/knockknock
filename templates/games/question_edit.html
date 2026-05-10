@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Edit question · Knock-Knock{% endblock %}
+
+{% block content %}
+<a href="{% url 'games:edit' quiz.pk %}" class="text-secondary text-decoration-none small">
+  <i class="bi bi-arrow-left"></i> Back to {{ quiz.title }}
+</a>
+
+<form method="post" enctype="multipart/form-data" class="mt-3 kk-main-narrow mx-auto">
+  {% csrf_token %}
+
+  <div class="kk-card">
+    <label class="form-label">Question</label>
+    {{ form.text }}
+    <div class="row g-3 mt-2">
+      <div class="col-md-4">
+        <label class="form-label">Time limit (s)</label>
+        {{ form.time_limit }}
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Points</label>
+        {{ form.points }}
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Image</label>
+        {{ form.image }}
+      </div>
+    </div>
+  </div>
+
+  <div class="kk-card mt-3">
+    <h2 class="kk-section-title" style="font-size:1.15rem;"><i class="bi bi-check2-square"></i> Answers (tick the correct ones)</h2>
+    {{ formset.management_form }}
+    {% for cf in formset %}
+      <div class="d-flex gap-2 align-items-center mb-2">
+        <span class="kk-q-index">{{ forloop.counter }}</span>
+        {{ cf.id }}
+        {{ cf.text }}
+        <label class="d-flex align-items-center gap-1 text-secondary small ms-2">
+          {{ cf.is_correct }} correct
+        </label>
+        <label class="text-secondary small d-flex gap-1 align-items-center">
+          {{ cf.DELETE }} del
+        </label>
+      </div>
+    {% endfor %}
+  </div>
+
+  <button class="kk-btn kk-btn-primary kk-btn-lg mt-4">Save question</button>
+  <button formaction="{% url 'games:question_delete' quiz.pk question.pk %}"
+          formnovalidate
+          onclick="return confirm('Delete this question?')"
+          class="kk-btn kk-btn-ghost ms-2">
+    <i class="bi bi-trash"></i> Delete
+  </button>
+</form>
+{% endblock %}

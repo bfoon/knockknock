@@ -1,0 +1,35 @@
+{# Visual template picker — used in poll & game editors. #}
+{# Expects: templates (list), selected_id (str), input_name (hidden field name) #}
+<div class="kk-template-grid" id="kk-template-picker" data-input-name="{{ input_name|default:'template_id' }}">
+  {% for t in templates %}
+    <div class="kk-template-tile{% if t.id == selected_id %} selected{% endif %}" data-template-id="{{ t.id }}">
+      <div class="kk-template-preview" style="background: {{ t.bg }}; color: {{ t.fg }};">
+        <div style="font-size: .85rem; font-weight: 700;">{{ t.name }}</div>
+        <div class="kk-template-bars">
+          <span style="background: {{ t.accent }}; height: 40%;"></span>
+          <span style="background: {{ t.accent2 }}; height: 70%;"></span>
+          <span style="background: {{ t.accent }}; height: 90%;"></span>
+          <span style="background: {{ t.accent2 }}; height: 55%;"></span>
+        </div>
+      </div>
+      <div class="kk-template-name">{{ t.name }}</div>
+    </div>
+  {% endfor %}
+</div>
+<input type="hidden" name="{{ input_name|default:'template_id' }}" id="template-id-input" value="{{ selected_id|default:'midnight' }}">
+
+<script>
+(function () {
+  const picker = document.getElementById("kk-template-picker");
+  const input  = document.getElementById("template-id-input");
+  if (!picker || !input) return;
+  picker.querySelectorAll(".kk-template-tile").forEach(tile => {
+    tile.addEventListener("click", () => {
+      picker.querySelectorAll(".kk-template-tile").forEach(t => t.classList.remove("selected"));
+      tile.classList.add("selected");
+      input.value = tile.dataset.templateId;
+      window.dispatchEvent(new CustomEvent("kk:template-change", { detail: tile.dataset.templateId }));
+    });
+  });
+})();
+</script>

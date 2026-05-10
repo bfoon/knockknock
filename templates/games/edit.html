@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}{{ quiz.title }} · Knock-Knock{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-start justify-content-between gap-3 mb-4 flex-wrap">
+  <div>
+    <a href="{% url 'games:list' %}" class="text-secondary text-decoration-none small"><i class="bi bi-arrow-left"></i> All games</a>
+    <h1 class="mb-0 mt-2">{{ quiz.title }}</h1>
+    <div class="text-secondary mt-1">
+      {{ quiz.questions.count }} questions · {{ quiz.get_scoring_display }} · {{ quiz.get_mode_display }}
+      {% if quiz.use_rooms %} · Rooms (cap {{ quiz.room_capacity }}){% endif %}
+    </div>
+  </div>
+  <form method="post" action="{% url 'games:start' quiz.pk %}">{% csrf_token %}
+    <button class="kk-btn kk-btn-primary kk-btn-lg" {% if not quiz.questions.count %}disabled{% endif %}>
+      <i class="bi bi-controller"></i> Start game
+    </button>
+  </form>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-7">
+    <h2 class="kk-section-title"><i class="bi bi-list-ol"></i> Questions</h2>
+    {% for q in quiz.questions.all %}
+      <a class="kk-q-row" href="{% url 'games:question_edit' quiz.pk q.pk %}">
+        <span class="kk-q-index">{{ forloop.counter }}</span>
+        <div class="kk-q-text">{{ q.text }}</div>
+        <span class="kk-q-pill">{{ q.time_limit }}s</span>
+        <span class="kk-q-pill">{{ q.points }}pts</span>
+      </a>
+    {% empty %}
+      <div class="kk-empty">
+        <div class="em">❓</div>
+        <p>No questions yet.</p>
+      </div>
+    {% endfor %}
+    <a href="{% url 'games:question_create' quiz.pk %}" class="kk-btn kk-btn-ghost w-100 mt-3">
+      <i class="bi bi-plus-lg"></i> Add a question
+    </a>
+  </div>
+
+  <div class="col-lg-5">
+    <form method="post" enctype="multipart/form-data" class="kk-card">
+      {% csrf_token %}
+      <h2 class="kk-section-title" style="font-size:1.2rem;"><i class="bi bi-gear"></i> Settings</h2>
+      <div class="mb-3"><label class="form-label">Title</label>{{ form.title }}</div>
+      <div class="mb-3"><label class="form-label">Description</label>{{ form.description }}</div>
+      <div class="row g-2">
+        <div class="col-6 mb-3"><label class="form-label">Scoring</label>{{ form.scoring }}</div>
+        <div class="col-6 mb-3"><label class="form-label">Mode</label>{{ form.mode }}</div>
+      </div>
+      <div class="form-check mb-3">{{ form.use_rooms }}
+        <label class="form-check-label">Use rooms</label></div>
+      <div class="mb-3"><label class="form-label">Room capacity</label>{{ form.room_capacity }}</div>
+      <div class="mb-3"><label class="form-label">Logo</label>{{ form.logo }}</div>
+      <button class="kk-btn kk-btn-primary w-100">Save</button>
+    </form>
+
+    <div class="kk-card mt-4">
+      <h2 class="kk-section-title" style="font-size:1.2rem;"><i class="bi bi-palette"></i> Template</h2>
+      {% include "partials/template_picker.html" with templates=templates selected_id=quiz.template_id %}
+    </div>
+  </div>
+</div>
+{% endblock %}

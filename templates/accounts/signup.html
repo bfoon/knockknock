@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Sign up · Knock-Knock{% endblock %}
+
+{% block content %}
+<div class="kk-main-narrow mx-auto">
+  <h1 class="text-center mb-4">Create your account</h1>
+  <form method="post" class="kk-card">
+    {% csrf_token %}
+    {% for field in form %}
+      <div class="mb-3">
+        <label class="form-label">{{ field.label }}</label>
+        {{ field }}
+        {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors|join:", " }}</div>{% endif %}
+        {% if field.help_text %}<div class="text-secondary small mt-1">{{ field.help_text|safe }}</div>{% endif %}
+      </div>
+    {% endfor %}
+    <button class="kk-btn kk-btn-primary kk-btn-lg w-100">Sign me up</button>
+    <p class="text-center mt-3 mb-0 text-secondary">
+      Already have an account? <a href="{% url 'accounts:login' %}" class="text-light">Log in</a>
+    </p>
+  </form>
+</div>
+{% endblock %}

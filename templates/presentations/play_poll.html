@@ -23,6 +23,44 @@
   }
   {% endif %}
   .kk-play { position: relative; z-index: 1; }
+
+  .kk-player-end {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+  }
+  .kk-final-emoji-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: .65rem;
+  }
+  .kk-final-emoji-buttons button {
+    width: 58px;
+    height: 58px;
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,.18);
+    background: rgba(255,255,255,.10);
+    color: #fff;
+    font-size: 1.8rem;
+    box-shadow: 0 12px 28px rgba(0,0,0,.22);
+  }
+  .kk-final-emoji-buttons button:active { transform: scale(.92); }
+  .kk-player-end-emoji-layer {
+    position:absolute; inset:0; pointer-events:none; z-index:1; overflow:hidden;
+  }
+  .kk-player-pop-emoji {
+    position:absolute; left:var(--left,50%); bottom:16%;
+    font-size:var(--size,3rem); line-height:1;
+    transform:translateX(-50%) scale(.2);
+    animation: kkPlayerEmojiPop 1.2s ease-out forwards;
+  }
+  @keyframes kkPlayerEmojiPop {
+    0% { opacity:0; transform:translateX(-50%) translateY(30px) scale(.2); }
+    20% { opacity:1; transform:translateX(-50%) translateY(0) scale(1.2); }
+    100% { opacity:0; transform:translateX(-50%) translateY(-120px) scale(1.45); }
+  }
+
 </style>
 </head>
 <body>
@@ -68,15 +106,25 @@
     {% endif %}
   </div>
 
-  <div id="step-ended" class="kk-play-card" style="display:none;">
-    <div class="text-center py-4">
-      <div style="font-size:3rem;">🙏</div>
-      <h2>Thanks for participating!</h2>
-      <p class="text-secondary">The presenter ended the session.</p>
+  <div id="step-ended" class="kk-play-card kk-player-end" style="display:none;">
+    <div class="kk-player-end-emoji-layer" id="player-end-emoji-layer" aria-hidden="true"></div>
+    <div class="text-center py-4 position-relative" style="z-index:2;">
+      <div style="font-size:3.5rem;">🎉</div>
+      <h2>The End</h2>
+      <p class="text-secondary">Thanks for participating!</p>
+      <p class="small text-secondary mb-3">Send a final emoji to the presentation screen.</p>
+      <div class="kk-final-emoji-buttons" id="final-emoji-buttons">
+        <button type="button" data-emoji="🎉">🎉</button>
+        <button type="button" data-emoji="👏">👏</button>
+        <button type="button" data-emoji="🔥">🔥</button>
+        <button type="button" data-emoji="🚀">🚀</button>
+        <button type="button" data-emoji="❤️">❤️</button>
+        <button type="button" data-emoji="😂">😂</button>
+      </div>
     </div>
   </div>
 </div>
 
-<script src="{% static 'js/play.js' %}?v=10"></script>
+<script src="{% static 'js/play.js' %}?v=12"></script>
 </body>
 </html>

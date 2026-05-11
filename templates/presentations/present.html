@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Manrope:wght@400;500;700&family=Poppins:wght@400;500;700&family=Lora:ital,wght@0,400;0,700;1,400&family=Cormorant+Garamond:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;700&family=Orbitron:wght@400;700&family=VT323&family=Press+Start+2P&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 
-<link rel="stylesheet" href="{% static 'css/app.css' %}?v=9">
+<link rel="stylesheet" href="{% static 'css/app.css' %}?v=6">
 <link rel="stylesheet" href="{% static 'css/chart_backgrounds.css' %}?v=1">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 
@@ -102,10 +102,16 @@
   }
 
   #view-lobby,
-  #view-group,
-  #view-ended {
+  #view-group {
     min-height: 0;
     overflow: auto;
+  }
+
+  #view-ended {
+    min-height: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
   }
 
   #view-question {
@@ -260,6 +266,242 @@
 
   .kk-stage.fullscreen .kk-stage-main {
     padding: 0.65rem;
+  }
+
+  .kk-stage.fullscreen #view-ended {
+    min-height: calc(100dvh - 1.3rem);
+  }
+
+  .kk-stage.fullscreen .kk-end-screen {
+    min-height: calc(100dvh - 1.3rem);
+  }
+
+
+
+  /* ─────────────────────────────────────────────
+     FULLSCREEN SIDE ARROWS
+     Show only when the presenter enters fullscreen.
+  ───────────────────────────────────────────── */
+  .kk-fs-nav {
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 2500;
+
+    width: clamp(54px, 5.2vw, 84px);
+    height: clamp(72px, 9vh, 118px);
+
+    display: none;
+    align-items: center;
+    justify-content: center;
+
+    border: 1px solid rgba(255,255,255,.22);
+    border-radius: 999px;
+    color: #fff;
+    background:
+      radial-gradient(circle at 35% 25%, rgba(255,255,255,.24), transparent 34%),
+      linear-gradient(135deg, rgba(124,58,237,.72), rgba(34,211,238,.56));
+    box-shadow:
+      0 18px 55px rgba(0,0,0,.42),
+      0 0 28px rgba(34,211,238,.22),
+      inset 0 1px 0 rgba(255,255,255,.22);
+    backdrop-filter: blur(14px);
+
+    cursor: pointer;
+    opacity: .82;
+    transition: transform .18s ease, opacity .18s ease, filter .18s ease;
+  }
+
+  .kk-stage.fullscreen .kk-fs-nav {
+    display: flex;
+  }
+
+  .kk-fs-nav:hover {
+    opacity: 1;
+    filter: brightness(1.12);
+  }
+
+  .kk-fs-nav:active {
+    transform: translateY(-50%) scale(.94);
+  }
+
+  .kk-fs-nav i {
+    font-size: clamp(2rem, 4.5vw, 4.25rem);
+    line-height: 1;
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,.45));
+  }
+
+  .kk-fs-nav-prev { left: max(16px, env(safe-area-inset-left)); }
+  .kk-fs-nav-next { right: max(16px, env(safe-area-inset-right)); }
+
+  .kk-fs-nav[disabled] {
+    opacity: .22;
+    cursor: not-allowed;
+    filter: grayscale(.25);
+  }
+
+  .kk-stage.fullscreen.is-ended .kk-fs-nav-next {
+    display: none;
+  }
+
+  @media (max-width: 760px) {
+    .kk-fs-nav {
+      width: 48px;
+      height: 68px;
+    }
+    .kk-fs-nav-prev { left: 8px; }
+    .kk-fs-nav-next { right: 8px; }
+  }
+
+
+
+  /* ─────────────────────────────────────────────
+     CHART AXIS FONT CONTROLS
+  ───────────────────────────────────────────── */
+  .kk-axis-controls {
+    margin-top: .85rem;
+    padding-top: .75rem;
+    border-top: 1px solid rgba(255,255,255,.12);
+  }
+  .kk-axis-control-row {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) 42px;
+    align-items: center;
+    gap: .5rem;
+    margin-top: .45rem;
+    font-size: .78rem;
+    color: var(--kk-text-dim, #94a3b8);
+  }
+  .kk-axis-control-row input[type="range"] {
+    width: 100%;
+    accent-color: var(--stage-accent-2, #22d3ee);
+  }
+  .kk-axis-value {
+    text-align: right;
+    color: var(--stage-fg, #fff);
+    font-weight: 800;
+  }
+
+  /* ─────────────────────────────────────────────
+     FINAL CELEBRATION PAGE
+  ───────────────────────────────────────────── */
+  .kk-end-screen {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 100%;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    justify-content: center;
+    padding: clamp(1rem, 3vw, 2rem);
+    box-sizing: border-box;
+    overflow: hidden;
+    isolation: isolate;
+    border-radius: var(--kk-radius-lg, 22px);
+    background:
+      radial-gradient(circle at 50% 20%, rgba(255,255,255,.14), transparent 32%),
+      radial-gradient(circle at 15% 80%, rgba(251,113,133,.24), transparent 34%),
+      radial-gradient(circle at 88% 70%, rgba(34,211,238,.22), transparent 36%);
+  }
+  .kk-end-card {
+    position: relative;
+    z-index: 10;
+    margin: auto;
+    max-width: min(760px, 92vw);
+    padding: clamp(2rem, 4vw, 4rem);
+    border-radius: 32px;
+    border: 1px solid rgba(255,255,255,.18);
+    background: linear-gradient(135deg, rgba(255,255,255,.16), rgba(255,255,255,.055));
+    box-shadow: 0 24px 90px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.18);
+    backdrop-filter: blur(16px);
+    text-align: center;
+  }
+  .kk-end-title {
+    font-family: 'Clash Display', system-ui, sans-serif;
+    font-size: clamp(3.4rem, 10vw, 9rem);
+    line-height: .85;
+    font-weight: 800;
+    letter-spacing: -.06em;
+    margin: 0 0 1rem;
+    text-shadow: 0 10px 35px rgba(0,0,0,.35), 0 0 42px rgba(34,211,238,.28);
+  }
+  .kk-end-subtitle {
+    font-size: clamp(1rem, 2vw, 1.45rem);
+    color: rgba(255,255,255,.78);
+    margin-bottom: 1.5rem;
+  }
+  .kk-end-participants {
+    display: inline-flex;
+    align-items: center;
+    gap: .6rem;
+    padding: .65rem 1rem;
+    border-radius: 999px;
+    background: rgba(0,0,0,.20);
+    border: 1px solid rgba(255,255,255,.14);
+    color: #fff;
+    font-weight: 800;
+  }
+  .kk-end-sparks, .kk-end-emoji-layer {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .kk-end-sparks {
+    z-index: 1;
+  }
+
+  .kk-end-emoji-layer {
+    z-index: 30;
+    overflow: visible;
+  }
+  .kk-end-spark {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    background: var(--spark, #fbbf24);
+    box-shadow: 0 0 18px var(--spark, #fbbf24);
+    animation: kkEndSpark 1.9s ease-out infinite;
+    animation-delay: var(--delay, 0s);
+  }
+  @keyframes kkEndSpark {
+    0% { opacity: 0; transform: translate(-50%, -50%) translate(0,0) scale(.45); }
+    12% { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%, -50%) translate(var(--x), var(--y)) scale(.08); }
+  }
+  .kk-end-pop-emoji {
+    position: absolute;
+    left: var(--left, 50%);
+    top: var(--top, 62%);
+    z-index: 31;
+    font-size: var(--size, 4rem);
+    line-height: 1;
+    transform: translate(-50%, -50%) scale(.2);
+    filter: drop-shadow(0 18px 28px rgba(0,0,0,.38));
+    animation: kkEndEmojiPop 1.55s cubic-bezier(.18,.95,.2,1) forwards;
+  }
+  .kk-end-pop-emoji .name {
+    display: block;
+    margin-top: .25rem;
+    padding: .22rem .5rem;
+    border-radius: 999px;
+    background: rgba(0,0,0,.34);
+    color: white;
+    font-size: .82rem;
+    font-family: Inter, system-ui, sans-serif;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  @keyframes kkEndEmojiPop {
+    0% { opacity: 0; transform: translate(-50%, 30%) scale(.2) rotate(-8deg); }
+    18% { opacity: 1; transform: translate(-50%, -50%) scale(1.18) rotate(5deg); }
+    72% { opacity: 1; transform: translate(calc(-50% + var(--drift, 0px)), -120%) scale(1) rotate(-4deg); }
+    100% { opacity: 0; transform: translate(calc(-50% + var(--drift, 0px)), -220%) scale(1.45) rotate(10deg); }
   }
 
   /* ─────────────────────────────────────────────
@@ -457,11 +699,31 @@
         <div class="kk-group-grid" id="group-grid"></div>
       </div>
 
-      <div id="view-ended" style="display:none;" class="text-center py-5">
-        <div style="font-size:4rem;">🏁</div>
-        <h2>Session ended</h2>
-        <p class="text-secondary">Thanks for presenting with Knock-Knock.</p>
-        <a href="/dashboard/" class="kk-btn kk-btn-primary mt-3">Back to dashboard</a>
+      <div id="view-ended" style="display:none;" class="kk-end-screen">
+        <div class="kk-end-sparks" id="end-sparks" aria-hidden="true">
+          <span class="kk-end-spark" style="--x:-42vw;--y:-26vh;--delay:.05s;--spark:#fbbf24"></span>
+          <span class="kk-end-spark" style="--x:38vw;--y:-30vh;--delay:.18s;--spark:#22d3ee"></span>
+          <span class="kk-end-spark" style="--x:-28vw;--y:24vh;--delay:.30s;--spark:#fb7185"></span>
+          <span class="kk-end-spark" style="--x:30vw;--y:22vh;--delay:.42s;--spark:#a78bfa"></span>
+          <span class="kk-end-spark" style="--x:-12vw;--y:-34vh;--delay:.54s;--spark:#34d399"></span>
+          <span class="kk-end-spark" style="--x:12vw;--y:34vh;--delay:.66s;--spark:#f97316"></span>
+          <span class="kk-end-spark" style="--x:-48vw;--y:4vh;--delay:.78s;--spark:#e879f9"></span>
+          <span class="kk-end-spark" style="--x:48vw;--y:-3vh;--delay:.90s;--spark:#38bdf8"></span>
+        </div>
+        <div class="kk-end-emoji-layer" id="end-emoji-layer" aria-hidden="true"></div>
+        <div class="kk-end-card">
+          <div style="font-size:clamp(2.4rem,5vw,4.5rem);">🎉</div>
+          <h1 class="kk-end-title">The End</h1>
+          <p class="kk-end-subtitle">Thanks for participating in this Knock-Knock session.</p>
+          <div class="kk-end-participants">
+            <i class="bi bi-people-fill"></i>
+            <span id="end-participant-count">0</span>
+            <span>participants</span>
+          </div>
+          <div class="mt-4">
+            <a href="/dashboard/" class="kk-btn kk-btn-primary">Back to dashboard</a>
+          </div>
+        </div>
       </div>
 
     </div>
@@ -491,6 +753,22 @@
             Next <i class="bi bi-chevron-right"></i>
           </button>
         </div>
+
+        <div class="kk-axis-controls">
+          <div class="small text-secondary fw-bold mb-1">
+            <i class="bi bi-type"></i> Chart axis font
+          </div>
+          <label class="kk-axis-control-row" for="axis-font-x">
+            <span>X axis</span>
+            <input type="range" min="8" max="48" step="1" value="12" id="axis-font-x">
+            <span class="kk-axis-value" id="axis-font-x-value">12</span>
+          </label>
+          <label class="kk-axis-control-row" for="axis-font-y">
+            <span>Y axis</span>
+            <input type="range" min="8" max="48" step="1" value="12" id="axis-font-y">
+            <span class="kk-axis-value" id="axis-font-y-value">12</span>
+          </label>
+        </div>
       </div>
 
       {% if session.kind == "game" %}
@@ -503,10 +781,27 @@
       {% endif %}
     </aside>
   </div>
+
+
+  <button type="button"
+          class="kk-fs-nav kk-fs-nav-prev"
+          id="btn-fs-prev"
+          aria-label="Previous question"
+          title="Previous question">
+    <i class="bi bi-chevron-left"></i>
+  </button>
+
+  <button type="button"
+          class="kk-fs-nav kk-fs-nav-next"
+          id="btn-fs-next"
+          aria-label="Next question"
+          title="Next question">
+    <i class="bi bi-chevron-right"></i>
+  </button>
 </div>
 
-<script src="{% static 'js/chart_preview.js' %}?v=10"></script>
-<script src="{% static 'js/draw_overlay.js' %}?v=9"></script>
-<script src="{% static 'js/present.js' %}?v=10"></script>
+<script src="{% static 'js/chart_preview.js' %}?v=8"></script>
+<script src="{% static 'js/draw_overlay.js' %}?v=8"></script>
+<script src="{% static 'js/present.js' %}?v=8"></script>
 </body>
 </html>

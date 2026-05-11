@@ -57,13 +57,24 @@
   const btnPrev = document.getElementById("btn-prev");
   const btnEnd = document.getElementById("btn-end");
   const btnFs = document.getElementById("btn-fs");
+  const btnFsPrev = document.getElementById("btn-fs-prev");
+  const btnFsNext = document.getElementById("btn-fs-next");
   const btnGroup = document.getElementById("btn-group");
   const clearDrawBtn = document.getElementById("clear-draw");
+  const axisFontX = document.getElementById("axis-font-x");
+  const axisFontY = document.getElementById("axis-font-y");
+  const axisFontXValue = document.getElementById("axis-font-x-value");
+  const axisFontYValue = document.getElementById("axis-font-y-value");
+  const endParticipantCount = document.getElementById("end-participant-count");
+  const endEmojiLayer = document.getElementById("end-emoji-layer");
 
   const AVATARS_BY_ID = window.kkAvatarsById || {};
   const chartHolder = { chart: null };
 
-  injectReactionBurstStyles();
+  window.kkChartAxisFonts = {
+    x: Number(localStorage.getItem("kk-chart-axis-x") || 12),
+    y: Number(localStorage.getItem("kk-chart-axis-y") || 12),
+  };
 
   let currentState = null;
     let latestTally = null;
@@ -84,6 +95,15 @@
         el.style.display = "flex";
         el.style.flexDirection = "column";
         el.style.minHeight = "0";
+        el.style.height = "100%";
+      } else if (key === "ended") {
+        // The end view is a centered grid. Using block here pushes the card left.
+        el.style.display = "grid";
+        el.style.placeItems = "center";
+        el.style.alignContent = "center";
+        el.style.justifyContent = "center";
+        el.style.width = "100%";
+        el.style.minHeight = "100%";
         el.style.height = "100%";
       } else {
         el.style.display = "block";
@@ -167,12 +187,16 @@
           onReactionBurst(msg);
           break;
 
+        case "celebration_emoji":
+          onCelebrationEmoji(msg);
+          break;
+
         case "leaderboard":
           onLeaderboard(msg);
           break;
 
         case "ended":
-          show("ended");
+          showEnded();
           break;
 
         case "draw":
@@ -233,32 +257,12 @@
     return String(value);
   }
 
-  function getScaleChoices(q) {
-    const existing = Array.isArray(q && q.choices) ? q.choices : [];
-    if (existing.length) return existing;
-
-    if (!q || q.type !== "scale") return [];
-
-    const cfg = q.config || {};
-    let min = Number(q.scale_min ?? cfg.scale_min ?? cfg.min ?? 1);
-    let max = Number(q.scale_max ?? cfg.scale_max ?? cfg.max ?? 10);
-    if (!Number.isFinite(min)) min = 1;
-    if (!Number.isFinite(max)) max = 10;
-    min = Math.max(1, Math.min(10, Math.trunc(min)));
-    max = Math.max(2, Math.min(10, Math.trunc(max)));
-    if (min >= max) { min = 1; max = 10; }
-
-    const rows = [];
-    for (let i = min; i <= max; i++) rows.push({ id: i, text: String(i), value: i });
-    return rows;
-  }
-
   function normalizeTallyForQuestion(q, tally) {
     const source = tally || {};
     const sourceCounts = source.counts || {};
     const fixedCounts = {};
 
-    const choices = getScaleChoices(q);
+    const choices = Array.isArray(q && q.choices) ? q.choices : [];
 
     choices.forEach((choice) => {
       const id = normalizeChoiceId(choice.id);
@@ -295,10 +299,47 @@
     return normalizeTallyForQuestion(s.question, null);
   }
 
+
+
+  // ─────────────────────── Chart axis font controls ───────────────────────
+
+  function clampAxisFont(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 12;
+    return Math.max(8, Math.min(48, Math.round(n)));
+  }
+
+  function syncAxisFontControls() {
+    window.kkChartAxisFonts.x = clampAxisFont(window.kkChartAxisFonts.x);
+    window.kkChartAxisFonts.y = clampAxisFont(window.kkChartAxisFonts.y);
+
+    if (axisFontX) axisFontX.value = String(window.kkChartAxisFonts.x);
+    if (axisFontY) axisFontY.value = String(window.kkChartAxisFonts.y);
+    if (axisFontXValue) axisFontXValue.textContent = String(window.kkChartAxisFonts.x);
+    if (axisFontYValue) axisFontYValue.textContent = String(window.kkChartAxisFonts.y);
+  }
+
+  function updateAxisFont(axis, value) {
+    const safe = clampAxisFont(value);
+    window.kkChartAxisFonts[axis] = safe;
+    localStorage.setItem(`kk-chart-axis-${axis}`, String(safe));
+    syncAxisFontControls();
+
+    if (currentState && currentState.question) {
+      renderCurrentQuestion(currentState);
+    }
+  }
+
+  syncAxisFontControls();
+
+  if (axisFontX) axisFontX.addEventListener("input", () => updateAxisFont("x", axisFontX.value));
+  if (axisFontY) axisFontY.addEventListener("input", () => updateAxisFont("y", axisFontY.value));
+
   // ─────────────────────── State handling ───────────────────────
 
   function onState(s) {
     currentState = s;
+    syncFullscreenNavState();
 
     // Re-apply chart background if the server's value differs (handles a quiz
     // setting being changed while a session is live).
@@ -318,7 +359,7 @@
     }
 
     if (s.state === "ended") {
-      show("ended");
+      showEnded();
       return;
     }
 
@@ -361,7 +402,7 @@
 
     applyQuestionTypography(q);
 
-    const labels = getScaleChoices(q);
+    const labels = Array.isArray(q.choices) ? q.choices : [];
     const chartId = q.chart_type || "bar";
     const questionType = q.type || "mcq";
     const tallyData = getStateTallyForCurrentQuestion(s);
@@ -384,7 +425,7 @@
     latestTallyByQuestion[currentQuestionId] = tallyData;
     currentState.tally = tallyData;
 
-    renderLiveChart(q.chart_type || "bar", q.type || "mcq", getScaleChoices(q), tallyData);
+    renderLiveChart(q.chart_type || "bar", q.type || "mcq", q.choices || [], tallyData);
   }
 
   function renderLiveChart(chartId, questionType, labels, tallyData) {
@@ -408,13 +449,15 @@
     resizeChartSoon();
   }
 
-  // ─────────────────────── Emoji reaction burst ───────────────────────
 
-  function injectReactionBurstStyles() {
-    if (document.getElementById("kk-reaction-burst-styles")) return;
+
+  // ─────────────────────── Emoji reaction / final celebration ───────────────────────
+
+  function ensureFloatingEmojiStyles() {
+    if (document.getElementById("kk-floating-emoji-styles")) return;
 
     const style = document.createElement("style");
-    style.id = "kk-reaction-burst-styles";
+    style.id = "kk-floating-emoji-styles";
     style.textContent = `
       .kk-reaction-layer {
         position: absolute;
@@ -423,7 +466,6 @@
         pointer-events: none;
         overflow: hidden;
       }
-
       .kk-reaction-fly {
         position: absolute;
         left: var(--kk-reaction-left, 50%);
@@ -435,41 +477,11 @@
         animation: kkReactionFly var(--kk-reaction-duration, 2.4s) cubic-bezier(.16,.92,.26,1) forwards;
         will-change: transform, opacity;
       }
-
-      .kk-reaction-fly::after {
-        content: "";
-        position: absolute;
-        inset: 50% auto auto 50%;
-        width: 1.9em;
-        height: 1.9em;
-        transform: translate(-50%, -50%);
-        border-radius: 999px;
-        background: radial-gradient(circle, rgba(255,255,255,.28), rgba(255,255,255,0) 68%);
-        z-index: -1;
-      }
-
       @keyframes kkReactionFly {
-        0% {
-          opacity: 0;
-          transform: translate(-50%, 24px) scale(.55) rotate(var(--kk-reaction-rotate, 0deg));
-        }
-        10% {
-          opacity: 1;
-        }
-        55% {
-          opacity: 1;
-          transform: translate(calc(-50% + var(--kk-reaction-drift, 0px)), -42vh) scale(1.12) rotate(calc(var(--kk-reaction-rotate, 0deg) * -1));
-        }
-        100% {
-          opacity: 0;
-          transform: translate(calc(-50% + var(--kk-reaction-drift, 0px) * 1.65), -74vh) scale(1.55) rotate(calc(var(--kk-reaction-rotate, 0deg) * 1.4));
-        }
-      }
-
-      @media (prefers-reduced-motion: reduce) {
-        .kk-reaction-fly {
-          animation-duration: .9s;
-        }
+        0% { opacity: 0; transform: translate(-50%, 24px) scale(.55) rotate(var(--kk-reaction-rotate, 0deg)); }
+        10% { opacity: 1; }
+        55% { opacity: 1; transform: translate(calc(-50% + var(--kk-reaction-drift, 0px)), -42vh) scale(1.12) rotate(calc(var(--kk-reaction-rotate, 0deg) * -1)); }
+        100% { opacity: 0; transform: translate(calc(-50% + var(--kk-reaction-drift, 0px) * 1.65), -74vh) scale(1.55) rotate(calc(var(--kk-reaction-rotate, 0deg) * 1.4)); }
       }
     `;
     document.head.appendChild(style);
@@ -492,31 +504,20 @@
 
   function isCurrentReactionQuestion(questionId) {
     if (!currentState || !currentState.question) return false;
-
-    const currentQuestionId = normalizeChoiceId(currentState.question.id);
-    const incomingQuestionId = normalizeChoiceId(questionId);
-
     return (
-      currentQuestionId === incomingQuestionId &&
+      normalizeChoiceId(currentState.question.id) === normalizeChoiceId(questionId) &&
       String(currentState.question.type || "").toLowerCase() === "reaction"
     );
   }
 
   function onReactionBurst(msg) {
     if (!isCurrentReactionQuestion(msg.question_id)) return;
-
-    const emoji = String(msg.emoji || msg.text || "✨").trim() || "✨";
-
-    // One tap should feel lively but not heavy. Spawn one main emoji, then
-    // occasionally add a smaller side sparkle for the fun factor.
-    spawnReactionEmoji(emoji, { primary: true });
-
-    if (Math.random() > 0.55) {
-      setTimeout(() => spawnReactionEmoji(emoji, { primary: false }), 80);
-    }
+    spawnReactionEmoji(String(msg.emoji || msg.text || "✨").trim() || "✨", { primary: true });
+    if (Math.random() > 0.55) setTimeout(() => spawnReactionEmoji(msg.emoji || "✨", { primary: false }), 80);
   }
 
   function spawnReactionEmoji(emoji, options) {
+    ensureFloatingEmojiStyles();
     const layer = ensureReactionLayer();
     if (!layer) return;
 
@@ -538,12 +539,50 @@
     el.style.setProperty("--kk-reaction-duration", `${duration}s`);
 
     layer.appendChild(el);
+    window.setTimeout(() => el.remove(), Math.ceil(duration * 1000) + 200);
+  }
 
-    window.setTimeout(() => {
-      if (el && el.parentNode) {
-        el.parentNode.removeChild(el);
-      }
-    }, Math.ceil(duration * 1000) + 200);
+  function showEnded() {
+    if (endParticipantCount) {
+      const count = currentState ? Number(currentState.participants || 0) : Number(participantCount?.textContent || 0);
+      endParticipantCount.textContent = String(count);
+    }
+    show("ended");
+    pulseEndCelebration();
+  }
+
+  function pulseEndCelebration() {
+    const emojis = ["🎉", "✨", "🔥", "👏", "🚀", "💫", "🏆"];
+    for (let i = 0; i < 3; i++) {
+      setTimeout(() => spawnEndEmoji(emojis[Math.floor(Math.random() * emojis.length)], ""), i * 220);
+    }
+  }
+
+  function onCelebrationEmoji(msg) {
+    const emoji = String(msg.emoji || "🎉").trim() || "🎉";
+    const name = String(msg.participant_name || "").trim();
+    spawnEndEmoji(emoji, name);
+  }
+
+  function spawnEndEmoji(emoji, name) {
+    if (!endEmojiLayer) return;
+    const el = document.createElement("span");
+    el.className = "kk-end-pop-emoji";
+    el.innerHTML = `${escapeHtml(emoji)}${name ? `<span class="name">${escapeHtml(name)}</span>` : ""}`;
+
+    // Pop in front of the end card instead of hiding behind/under it.
+    const left = 22 + Math.random() * 56;
+    const top = 34 + Math.random() * 40;
+    const size = 2.7 + Math.random() * 2.6;
+    const drift = (Math.random() * 220) - 110;
+
+    el.style.setProperty("--left", `${left}%`);
+    el.style.setProperty("--top", `${top}%`);
+    el.style.setProperty("--size", `${size}rem`);
+    el.style.setProperty("--drift", `${drift}px`);
+
+    endEmojiLayer.appendChild(el);
+    window.setTimeout(() => el.remove(), 1800);
   }
 
   // ─────────────────────── Leaderboard ───────────────────────
@@ -628,6 +667,35 @@
     }[char]));
   }
 
+
+
+  function syncFullscreenNavState() {
+    if (!stage || !currentState) return;
+
+    const state = currentState.state || "lobby";
+    const index = Number(currentState.index ?? -1);
+    const total = Number(currentState.total ?? 0);
+
+    stage.classList.toggle("is-lobby", state === "lobby");
+    stage.classList.toggle("is-running", state === "running");
+    stage.classList.toggle("is-ended", state === "ended");
+
+    // Back is disabled in lobby and on the first question; on The End it returns to the last question.
+    if (btnFsPrev) {
+      btnFsPrev.disabled = state === "lobby" || (state === "running" && index <= 0);
+    }
+
+    // Next can start from lobby, move forward, and on the last question opens The End.
+    if (btnFsNext) {
+      btnFsNext.disabled = state === "ended";
+    }
+
+    if (btnNext) {
+      const isLast = state === "running" && total > 0 && index >= total - 1;
+      btnNext.innerHTML = isLast ? 'Finish <i class="bi bi-stars"></i>' : 'Next <i class="bi bi-chevron-right"></i>';
+    }
+  }
+
   // ─────────────────────── Controls ───────────────────────
 
   if (btnStart) {
@@ -640,6 +708,18 @@
 
   if (btnPrev) {
     btnPrev.addEventListener("click", () => send({ type: "back" }));
+  }
+
+  if (btnFsPrev) {
+    btnFsPrev.addEventListener("click", () => {
+      if (!btnFsPrev.disabled) send({ type: "back" });
+    });
+  }
+
+  if (btnFsNext) {
+    btnFsNext.addEventListener("click", () => {
+      if (!btnFsNext.disabled) send({ type: "advance" });
+    });
   }
 
   if (btnEnd) {
@@ -694,6 +774,7 @@
       stage.classList.add("fullscreen");
     }
 
+    syncFullscreenNavState();
     resizeChartSoon();
   });
 

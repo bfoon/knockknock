@@ -334,6 +334,17 @@
     }[char]));
   }
 
+
+  function getAxisFontSizes() {
+    const cfg = window.kkChartAxisFonts || {};
+    const x = Number(cfg.x ?? localStorage.getItem("kk-chart-axis-x") ?? 12);
+    const y = Number(cfg.y ?? localStorage.getItem("kk-chart-axis-y") ?? 12);
+    return {
+      x: Number.isFinite(x) ? Math.max(8, Math.min(48, Math.round(x))) : 12,
+      y: Number.isFinite(y) ? Math.max(8, Math.min(48, Math.round(y))) : 12,
+    };
+  }
+
   function baseOptions(values, chartKind, indexAxis) {
     const textColor = getTextColor();
     const dimColor = getDimTextColor();
@@ -341,6 +352,7 @@
 
     const isHorizontal = indexAxis === "y";
     const maxValue = safeYAxisMax(values);
+    const axisFontSizes = getAxisFontSizes();
 
     const options = {
       responsive: true,
@@ -416,7 +428,7 @@
           minRotation: 0,
           precision: 0,
           font: {
-            size: 12,
+            size: axisFontSizes.x,
             weight: "600",
           },
         },
@@ -440,7 +452,7 @@
           precision: 0,
           stepSize: Math.max(...values) <= 5 ? 1 : undefined,
           font: {
-            size: 12,
+            size: axisFontSizes.y,
             weight: "500",
           },
         },

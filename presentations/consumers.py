@@ -53,6 +53,7 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             "goto": self._on_goto,
             "end": self._on_end,
             "answer": self._on_answer,
+            "celebration_emoji": self._on_celebration_emoji,
             "self_advance": self._on_self_advance,
             "draw": self._on_draw,
             "clear_draw": self._on_clear_draw,
@@ -139,6 +140,8 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             return
 
         await self._end_session(self.session_pk)
+        session = await self._get_session(self.code)
+        await self._broadcast_state(session)
 
         await self.channel_layer.group_send(
             self.group,
@@ -219,6 +222,29 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                     "type": "tally",
                     "question_id": msg.get("question_id"),
                     "data": tally,
+                },
+            },
+        )
+
+
+    async def _on_celebration_emoji(self, msg):
+        """Let participants send a small emoji burst on the final screen."""
+        if self.role != "participant":
+            return
+
+        emoji = str(msg.get("emoji") or "🎉").strip()[:12] or "🎉"
+        participant = await self._get_participant(self.session_pk, self.uid)
+
+        await self.channel_layer.group_send(
+            self.group,
+            {
+                "type": "broadcast",
+                "payload": {
+                    "type": "celebration_emoji",
+                    "emoji": emoji,
+                    "participant_uid": self.uid,
+                    "participant_name": (participant or {}).get("nickname") or "Guest",
+                    "avatar_id": (participant or {}).get("avatar_id") or "dragon",
                 },
             },
         )
@@ -402,17 +428,37 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
         if total == 0:
             return session
 
+        # From lobby: Next starts the first question.
         if session.state == "lobby":
             if delta > 0:
                 session.state = "running"
                 session.current_question_index = 0
-                session.save(update_fields=["state", "current_question_index"])
+                session.ended_at = None
+                session.save(update_fields=["state", "current_question_index", "ended_at"])
+            return session
 
+        # From final/end screen: Back returns to the last question.
+        if session.state == "ended":
+            if delta < 0:
+                session.state = "running"
+                session.current_question_index = max(0, total - 1)
+                session.ended_at = None
+                session.save(update_fields=["state", "current_question_index", "ended_at"])
+            return session
+
+        current_idx = max(0, min(total - 1, session.current_question_index))
+
+        # Pressing Next on the last question now opens the celebratory The End page.
+        if delta > 0 and current_idx >= total - 1:
+            session.state = "ended"
+            session.current_question_index = current_idx
+            session.ended_at = timezone.now()
+            session.save(update_fields=["state", "current_question_index", "ended_at"])
             return session
 
         session.current_question_index = max(
             0,
-            min(total - 1, session.current_question_index + delta),
+            min(total - 1, current_idx + delta),
         )
         session.save(update_fields=["current_question_index"])
 
@@ -477,19 +523,23 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
         ]
 
     def _poll_choices_payload(self, question):
-        qtype = getattr(question, "type", None)
-        if qtype == "scale":
+        q_type = getattr(question, "type", None)
+
+        if q_type == "scale":
             return self._scale_choices_for(question)
 
-        # Do not leak stale choices to text-based questions. A question may have
-        # old A/B rows left from when it was previously MCQ, but open/word
-        # questions must render text inputs only on the participant side.
+        # Do not send stale A/B choices for free-text or non-choice question types.
+        # This protects questions that were created as MCQ and later changed to Open Text.
         try:
-            meta = question.meta() or {}
+            if hasattr(question, "has_choices") and not question.has_choices():
+                return []
         except Exception:
-            meta = {}
+            pass
 
-        if not meta.get("has_choices"):
+        if q_type in {
+            "open", "word", "numeric", "rating", "nps", "slider",
+            "date", "time", "datetime", "file", "pin_image", "pin_map", "two_by_two",
+        }:
             return []
 
         return [

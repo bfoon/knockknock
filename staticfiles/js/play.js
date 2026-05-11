@@ -42,6 +42,8 @@
   const roomTag   = document.getElementById("room-tag");
   const finalScore = document.getElementById("final-score");
   const myChartCanvas = document.getElementById("my-chart");
+  const finalEmojiButtons = document.getElementById("final-emoji-buttons");
+  const playerEndEmojiLayer = document.getElementById("player-end-emoji-layer");
 
   // Self-avatar header bits
   const selfAvatarEmoji = document.getElementById("self-avatar-emoji");
@@ -287,12 +289,38 @@
       return;
     }
 
-    // Only real choice-based question types should render A/B/option buttons.
-    // Open/word/numeric questions may still have old stale choices in the DB
-    // from a previous type, but they must NOT be rendered as choices.
-    if (isChoicePollType(q)) {
-      const choices = Array.isArray(q.choices) ? q.choices : [];
-      choices.forEach(c => {
+    // IMPORTANT: text-based question types must be handled before choices.
+    // Some questions may still have old/stale A/B choice rows from when they
+    // were previously MCQ. Open-ended questions must always render as free text.
+    if (q.type === "word" || q.type === "open") {
+      const input = document.createElement(q.type === "word" ? "input" : "textarea");
+      input.className = "form-control form-control-lg mb-2";
+      input.placeholder = q.type === "word" ? "Type one word…" : "Type your answer…";
+      if (q.type === "word") input.maxLength = 30;
+      if (q.type === "open") input.rows = 5;
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "kk-btn kk-btn-primary w-100";
+      btn.textContent = "Submit";
+      btn.addEventListener("click", () => {
+        const text = input.value.trim();
+        if (!text) return;
+        send({ type: "answer", question_id: q.id, text });
+        answeredQuestionId = q.id;
+        qBody.innerHTML = "";
+        showResult("Submitted ✓");
+        if (mode === "open" && selfNext) selfNext.style.display = "block";
+      });
+
+      qBody.appendChild(input);
+      qBody.appendChild(btn);
+      input.focus();
+      return;
+    }
+
+    if (isChoicePollType(q) || (Array.isArray(q.choices) && q.choices.length && q.type !== "scale")) {
+      q.choices.forEach(c => {
         const btn = document.createElement("button");
         btn.className = "kk-choice";
         btn.type = "button";
@@ -323,27 +351,6 @@
         wrap.appendChild(b);
       });
       qBody.appendChild(wrap);
-    } else if (q.type === "word" || q.type === "open") {
-      const input = document.createElement(q.type === "word" ? "input" : "textarea");
-      input.className = "form-control form-control-lg mb-2";
-      input.placeholder = q.type === "word" ? "Type one word…" : "Type your answer…";
-      if (q.type === "word") input.maxLength = 30;
-      if (q.type === "open") input.rows = 4;
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "kk-btn kk-btn-primary w-100";
-      btn.textContent = "Submit";
-      btn.addEventListener("click", () => {
-        const text = input.value.trim();
-        if (!text) return;
-        send({ type: "answer", question_id: q.id, text });
-        answeredQuestionId = q.id;
-        qBody.innerHTML = "";
-        showResult("Submitted ✓");
-        if (mode === "open" && selfNext) selfNext.style.display = "block";
-      });
-      qBody.appendChild(input);
-      qBody.appendChild(btn);
     } else {
       qBody.innerHTML = `<div class="text-secondary text-center py-3">This question type is not available on the participant screen yet.</div>`;
     }
@@ -565,6 +572,28 @@
     clearInterval(timerInterval);
     if (finalScore) finalScore.textContent = myScore;
     show(stepEnded);
+    spawnPlayerEndEmoji("🎉");
+  }
+
+  function spawnPlayerEndEmoji(emoji) {
+    if (!playerEndEmojiLayer) return;
+    const el = document.createElement("span");
+    el.className = "kk-player-pop-emoji";
+    el.textContent = emoji || "🎉";
+    el.style.setProperty("--left", `${18 + Math.random() * 64}%`);
+    el.style.setProperty("--size", `${2.4 + Math.random() * 1.4}rem`);
+    playerEndEmojiLayer.appendChild(el);
+    setTimeout(() => el.remove(), 1300);
+  }
+
+  if (finalEmojiButtons) {
+    finalEmojiButtons.addEventListener("click", (event) => {
+      const btn = event.target.closest("button[data-emoji]");
+      if (!btn) return;
+      const emoji = btn.dataset.emoji || "🎉";
+      spawnPlayerEndEmoji(emoji);
+      send({ type: "celebration_emoji", emoji });
+    });
   }
 
   function showResult(text) {

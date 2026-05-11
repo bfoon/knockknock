@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Pricing · Knock-Knock{% endblock %}
+
+{% block content %}
+<section class="kk-hero" style="padding-bottom: 1rem;">
+  <h1 style="font-size: clamp(2.5rem, 6vw, 4rem);">Pick your knock.</h1>
+  <p class="kk-hero-sub">
+    Four plans. Real-time polls and quiz games on every one.
+    Start free — upgrade when your audience grows louder.
+  </p>
+</section>
+
+<section class="kk-pricing-grid">
+  {% for plan in plans %}
+    <article class="kk-pricing-card {% if plan.tier == 'team' %}kk-pricing-card--featured{% endif %}">
+      {% if plan.tier == 'team' %}<span class="kk-pricing-badge">Most popular</span>{% endif %}
+
+      <header>
+        <h2 class="kk-pricing-tier">{{ plan.name }}</h2>
+        <div class="kk-pricing-price">
+          {% if plan.price_monthly > 0 %}
+            <span class="kk-pricing-currency">$</span>{{ plan.price_monthly|floatformat:0 }}<span class="kk-pricing-per">/mo</span>
+          {% else %}
+            <span class="kk-pricing-free">Free</span>
+          {% endif %}
+        </div>
+        <p class="kk-text-dim">{{ plan.description }}</p>
+      </header>
+
+      <ul class="kk-pricing-features">
+        {% if plan.tier == 'free' %}
+          <li><i class="bi bi-check2"></i> 5 mentis or games (combined)</li>
+          <li><i class="bi bi-check2"></i> Solo workspace</li>
+          <li><i class="bi bi-check2"></i> All chart types & word clouds</li>
+          <li class="kk-pricing-dim"><i class="bi bi-x"></i> No collaboration</li>
+          <li class="kk-pricing-dim"><i class="bi bi-x"></i> Community support only</li>
+        {% elif plan.tier == 'individual' %}
+          <li><i class="bi bi-check2"></i> Unlimited mentis & games<small class="text-secondary"> (fair-use 200/mo)</small></li>
+          <li><i class="bi bi-check2"></i> Invite collaborators by email</li>
+          <li><i class="bi bi-check2"></i> Profile branding & logo</li>
+          <li><i class="bi bi-check2"></i> Email support</li>
+          <li class="kk-pricing-dim"><i class="bi bi-x"></i> No team workspace</li>
+        {% elif plan.tier == 'team' %}
+          <li><i class="bi bi-check2"></i> Up to <strong>10 members</strong></li>
+          <li><i class="bi bi-check2"></i> Unlimited mentis & games</li>
+          <li><i class="bi bi-check2"></i> Pick teammates or invite outsiders</li>
+          <li><i class="bi bi-check2"></i> Shared library</li>
+          <li><i class="bi bi-check2"></i> General support</li>
+        {% else %}
+          <li><i class="bi bi-check2"></i> <strong>Unlimited members</strong></li>
+          <li><i class="bi bi-check2"></i> Unlimited mentis & games</li>
+          <li><i class="bi bi-check2"></i> Admin / Editor / Viewer / Billing roles</li>
+          <li><i class="bi bi-check2"></i> Organization name & branding</li>
+          <li><i class="bi bi-check2"></i> Dedicated support</li>
+        {% endif %}
+      </ul>
+
+      <footer>
+        {% if current_plan and current_plan.id == plan.id %}
+          <button class="kk-btn kk-btn-ghost kk-btn-lg w-100" disabled>Current plan</button>
+        {% else %}
+          <a class="kk-btn {% if plan.tier == 'team' %}kk-btn-primary{% else %}kk-btn-ghost{% endif %} kk-btn-lg w-100"
+             href="{% url 'subscriptions:choose' plan.tier %}">
+            {% if plan.tier == 'free' %}Start free{% else %}Choose {{ plan.name }}{% endif %}
+            <i class="bi bi-arrow-right"></i>
+          </a>
+        {% endif %}
+      </footer>
+    </article>
+  {% endfor %}
+</section>
+
+<section class="text-center mt-5 mb-5">
+  <p class="kk-text-dim">
+    All paid plans use a <strong>mock payment</strong> for now — no real card is charged.
+  </p>
+</section>
+
+<style>
+.kk-pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.5rem;
+  margin: 2rem 0 3rem;
+}
+.kk-pricing-card {
+  background: var(--kk-surface);
+  border: 1px solid var(--kk-border);
+  border-radius: var(--kk-radius-lg);
+  padding: 2rem 1.5rem;
+  display: flex; flex-direction: column; gap: 1.5rem;
+  position: relative;
+  transition: transform .15s ease, border-color .15s ease;
+}
+.kk-pricing-card:hover { transform: translateY(-4px); border-color: rgba(255,255,255,.18); }
+.kk-pricing-card--featured {
+  border-color: var(--kk-accent);
+  box-shadow: var(--kk-shadow-glow);
+  background: linear-gradient(180deg, rgba(124,58,237,.08), var(--kk-surface) 60%);
+}
+.kk-pricing-badge {
+  position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+  background: linear-gradient(135deg, var(--kk-accent), var(--kk-accent-2));
+  color: #fff; padding: .3rem .8rem; border-radius: 999px;
+  font-size: .75rem; font-weight: 600; letter-spacing: .02em;
+}
+.kk-pricing-tier {
+  font-family: var(--kk-font-display); font-size: 1.4rem; margin: 0 0 .5rem;
+}
+.kk-pricing-price {
+  font-family: var(--kk-font-display);
+  font-size: 3rem; font-weight: 700; line-height: 1;
+  letter-spacing: -.03em;
+}
+.kk-pricing-currency { font-size: 1.5rem; vertical-align: top; color: var(--kk-text-dim); }
+.kk-pricing-per { font-size: 1rem; color: var(--kk-text-dim); font-weight: 400; }
+.kk-pricing-free { font-size: 2.5rem; background: linear-gradient(135deg, var(--kk-success), var(--kk-accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.kk-pricing-features {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: .6rem;
+  flex: 1;
+}
+.kk-pricing-features li {
+  display: flex; align-items: flex-start; gap: .5rem;
+  font-size: .95rem;
+}
+.kk-pricing-features li i { color: var(--kk-success); margin-top: .15rem; }
+.kk-pricing-features li.kk-pricing-dim { color: var(--kk-text-dim); }
+.kk-pricing-features li.kk-pricing-dim i { color: var(--kk-text-dim); }
+</style>
+{% endblock %}

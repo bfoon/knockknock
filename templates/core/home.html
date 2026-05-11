@@ -9,13 +9,17 @@
     Mentimeter-style presentations and Kahoot-style competitions in one app.
   </p>
   <div class="kk-hero-actions">
-    <a class="kk-btn kk-btn-primary kk-btn-lg" href="{% url 'accounts:signup' %}">
-      <i class="bi bi-sparkles"></i> Get started — it's free
+    <a class="kk-btn kk-btn-primary kk-btn-lg" href="{% url 'subscriptions:pricing' %}">
+      <i class="bi bi-sparkles"></i> See plans
     </a>
     <a class="kk-btn kk-btn-ghost kk-btn-lg" href="{% url 'core:join' %}">
       <i class="bi bi-qr-code-scan"></i> Join a session
     </a>
   </div>
+  <p class="kk-text-dim mt-3 small">
+    Or <a href="{% url 'subscriptions:choose' 'free' %}" class="text-light">start free</a>
+    — 5 mentis or games, no card.
+  </p>
 </section>
 
 <section class="kk-feature-grid">
@@ -30,14 +34,14 @@
     <p class="kk-text-dim mb-0">Kahoot-style speed quizzes with avatars, leaderboards, capped rooms and tournament-grade scoring.</p>
   </div>
   <div class="kk-card">
-    <div class="kk-feature-icon">🎼</div>
-    <h3>Orchestra mode</h3>
-    <p class="kk-text-dim mb-0">Presenter and participants advance in perfect lockstep — no one races ahead. Or pick Open mode for self-pacing.</p>
+    <div class="kk-feature-icon">🤝</div>
+    <h3>Collaborate</h3>
+    <p class="kk-text-dim mb-0">Invite teammates from your workspace or send an email — they'll get a sign-up link if they're new.</p>
   </div>
   <div class="kk-card">
-    <div class="kk-feature-icon">✏️</div>
-    <h3>Live drawing tools</h3>
-    <p class="kk-text-dim mb-0">Freehand, highlighter, shapes and laser pointer — directly on top of live charts. Looks great. Feels alive.</p>
+    <div class="kk-feature-icon">🏢</div>
+    <h3>Teams &amp; Corporate</h3>
+    <p class="kk-text-dim mb-0">Up to 10 on Team, unlimited on Corporate. Admin / Editor / Viewer / Billing roles built in.</p>
   </div>
   <div class="kk-card">
     <div class="kk-feature-icon">📱</div>

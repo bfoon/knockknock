@@ -249,32 +249,79 @@
     else qText.style.lineHeight = "";
   }
 
-  // ── Poll rendering (unchanged behaviour) ─────────────────────────
+  function getScaleChoices(q) {
+    if (Array.isArray(q && q.choices) && q.choices.length) {
+      return q.choices.map(c => ({
+        id: c.id,
+        text: c.text ?? String(c.value ?? c.id),
+        value: Number(c.value ?? c.id),
+      })).filter(c => Number.isFinite(c.value));
+    }
+
+    const cfg = (q && q.config) || {};
+    let min = Number(q?.scale_min ?? cfg.scale_min ?? cfg.min ?? 1);
+    let max = Number(q?.scale_max ?? cfg.scale_max ?? cfg.max ?? 10);
+    if (!Number.isFinite(min)) min = 1;
+    if (!Number.isFinite(max)) max = 10;
+    min = Math.max(1, Math.min(10, Math.trunc(min)));
+    max = Math.max(2, Math.min(10, Math.trunc(max)));
+    if (min >= max) { min = 1; max = 10; }
+
+    const rows = [];
+    for (let i = min; i <= max; i++) rows.push({ id: i, text: String(i), value: i });
+    return rows;
+  }
+
+  function isChoicePollType(q) {
+    return [
+      "mcq", "ranking", "yes_no", "likert", "image_choice", "reaction"
+    ].includes(q && q.type);
+  }
+
+  // ── Poll rendering ───────────────────────────────────────────────
   function renderPollQuestion(q, s) {
     qBody.innerHTML = "";
-    if (q.type === "mcq" || q.type === "ranking") {
-      q.choices.forEach(c => {
+
+    if (q.type === "reaction") {
+      renderReactionQuestion(q);
+      return;
+    }
+
+    // Only real choice-based question types should render A/B/option buttons.
+    // Open/word/numeric questions may still have old stale choices in the DB
+    // from a previous type, but they must NOT be rendered as choices.
+    if (isChoicePollType(q)) {
+      const choices = Array.isArray(q.choices) ? q.choices : [];
+      choices.forEach(c => {
         const btn = document.createElement("button");
         btn.className = "kk-choice";
         btn.type = "button";
         btn.dataset.choiceId = c.id;
-        btn.textContent = c.text;
+
+        if (c.image_url || c.image) {
+          const imgUrl = c.image_url || c.image;
+          btn.innerHTML = `<img src="${escapeAttr(imgUrl)}" alt="" style="width:42px;height:42px;object-fit:cover;border-radius:10px;margin-right:.5rem;"><span>${escapeHtml(c.text)}</span>`;
+        } else {
+          btn.textContent = c.text;
+        }
+
         btn.addEventListener("click", () => answerPollChoice(q, c, btn));
         qBody.appendChild(btn);
       });
     } else if (q.type === "scale") {
       const wrap = document.createElement("div");
       wrap.className = "d-flex gap-2 flex-wrap";
-      for (let i = 1; i <= 10; i++) {
+      getScaleChoices(q).forEach(choice => {
         const b = document.createElement("button");
         b.type = "button";
         b.className = "kk-choice";
         b.style.flex = "1 1 18%";
-        b.textContent = String(i);
-        b.dataset.value = i;
-        b.addEventListener("click", () => answerPollScale(q, i, b));
+        b.textContent = String(choice.text);
+        b.dataset.value = choice.value;
+        b.dataset.choiceId = choice.id;
+        b.addEventListener("click", () => answerPollScale(q, choice.value, b));
         wrap.appendChild(b);
-      }
+      });
       qBody.appendChild(wrap);
     } else if (q.type === "word" || q.type === "open") {
       const input = document.createElement(q.type === "word" ? "input" : "textarea");
@@ -297,7 +344,42 @@
       });
       qBody.appendChild(input);
       qBody.appendChild(btn);
+    } else {
+      qBody.innerHTML = `<div class="text-secondary text-center py-3">This question type is not available on the participant screen yet.</div>`;
     }
+  }
+
+  function renderReactionQuestion(q) {
+    const wrap = document.createElement("div");
+    wrap.className = "d-flex gap-3 flex-wrap justify-content-center";
+
+    const choices = Array.isArray(q.choices) && q.choices.length
+      ? q.choices
+      : ["🔥", "❤️", "😂", "👏", "😮"].map((emoji, i) => ({ id: `fallback-${i}`, text: emoji }));
+
+    choices.forEach(c => {
+      const btn = document.createElement("button");
+      btn.className = "kk-choice kk-reaction-choice";
+      btn.type = "button";
+      btn.dataset.choiceId = c.id;
+      btn.textContent = c.text;
+      btn.style.flex = "0 0 84px";
+      btn.style.height = "84px";
+      btn.style.fontSize = "2.25rem";
+      btn.style.display = "inline-flex";
+      btn.style.alignItems = "center";
+      btn.style.justifyContent = "center";
+      btn.style.borderRadius = "24px";
+      btn.addEventListener("click", () => answerPollReaction(q, c, btn));
+      wrap.appendChild(btn);
+    });
+
+    const hint = document.createElement("p");
+    hint.className = "text-secondary text-center small mt-3 mb-0";
+    hint.textContent = "Tap an emoji to send your reaction.";
+
+    qBody.appendChild(wrap);
+    qBody.appendChild(hint);
   }
 
   function answerPollChoice(q, c, btn) {
@@ -311,9 +393,18 @@
     if (mode === "open" && selfNext) selfNext.style.display = "block";
   }
 
+  function answerPollReaction(q, c, btn) {
+    myChoiceId = c.id;
+    btn.classList.add("picked");
+    setTimeout(() => btn.classList.remove("picked"), 220);
+    send({ type: "answer", question_id: q.id, choice_id: c.id, text: c.text });
+    showResult(`${c.text} Reaction sent`);
+  }
+
   function answerPollScale(q, val, btn) {
     if (answeredQuestionId === q.id) return;
     answeredQuestionId = q.id;
+    myChoiceId = val;
     btn.classList.add("picked");
     qBody.querySelectorAll("button").forEach(b => { if (b !== btn) b.disabled = true; });
     send({ type: "answer", question_id: q.id, value: val });
@@ -366,7 +457,7 @@
   // ── Restore a previously made answer (after refresh) ─────────────
   function restoreMyAnswer(q, my) {
     answeredQuestionId = q.id;
-    myChoiceId = my.choice_id || null;
+    myChoiceId = my.choice_id || my.value || null;
 
     if (kind === "game") {
       tiles.querySelectorAll("button").forEach(b => {
@@ -420,7 +511,7 @@
   }
 
   function drawMyChart(q, tally) {
-    if (!myChartCanvas || !q || !q.choices || !window.Chart) return;
+    if (!myChartCanvas || !q || !window.Chart) return;
     // Hide until someone has answered to avoid an empty-looking widget.
     const counts = (tally && tally.counts) || {};
     const total = Object.values(counts).reduce((a, b) => a + Number(b || 0), 0);
@@ -428,9 +519,10 @@
     if (wrap) wrap.style.display = total > 0 ? "block" : "none";
     if (total === 0) { if (myChart) { myChart.destroy(); myChart = null; } return; }
 
-    const labels = q.choices.map(c => c.text);
-    const values = q.choices.map(c => Number(counts[String(c.id)] || 0));
-    const myIdx  = q.choices.findIndex(c => Number(c.id) === Number(myChoiceId));
+    const answerChoices = q.type === "scale" ? getScaleChoices(q) : (Array.isArray(q.choices) ? q.choices : []);
+    const labels = answerChoices.map(c => c.text);
+    const values = answerChoices.map(c => Number(counts[String(c.id)] ?? counts[String(c.value)] ?? 0));
+    const myIdx  = answerChoices.findIndex(c => Number(c.id) === Number(myChoiceId) || Number(c.value) === Number(myChoiceId));
     const palette = ["#7c3aed","#22d3ee","#fb7185","#fbbf24","#a3e635","#f97316"];
     const colors  = labels.map((_, i) => palette[i % palette.length]);
     const borders = labels.map((_, i) => i === myIdx ? "#fff" : "transparent");
@@ -492,6 +584,7 @@
     return map[id] || "👤";
   }
   function escapeHtml(s){ return (s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+  function escapeAttr(s){ return escapeHtml(String(s || "")).replace(/'/g, "&#39;"); }
 
   // ─────────────────────── Auto-reconnect on refresh ───────────────────────
   // If we already have a nickname & avatar for THIS session, skip the picker

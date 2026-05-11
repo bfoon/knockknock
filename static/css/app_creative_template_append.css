@@ -1,0 +1,120 @@
+
+
+/* ────────────────────────────────────────────────────────────────────
+   Creative template picker upgrade
+   Safe to append to static/css/app.css
+   ──────────────────────────────────────────────────────────────────── */
+.kk-template-grid-creative {
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 1rem;
+}
+
+.kk-template-tile-creative {
+  background: rgba(255,255,255,.035);
+  border: 1px solid rgba(255,255,255,.08);
+  box-shadow: 0 18px 45px rgba(0,0,0,.18);
+}
+
+.kk-template-tile-creative:hover {
+  transform: translateY(-4px) scale(1.01);
+  border-color: rgba(34,211,238,.45);
+}
+
+.kk-template-tile-creative.selected {
+  border-color: var(--kk-accent-2);
+  box-shadow: 0 0 0 2px rgba(34,211,238,.26), 0 22px 55px rgba(34,211,238,.18);
+}
+
+.kk-template-preview-creative {
+  height: 132px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px 14px 0 0;
+  isolation: isolate;
+}
+
+.kk-template-preview-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-position: center;
+  background-repeat: repeat;
+  background-size: cover;
+  opacity: .95;
+  pointer-events: none;
+}
+
+.kk-template-preview-glass {
+  position: absolute;
+  inset: 10px;
+  z-index: 1;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(255,255,255,.13), rgba(255,255,255,.03));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.16);
+  pointer-events: none;
+}
+
+.kk-template-preview-title,
+.kk-template-preview-question,
+.kk-template-preview-bars {
+  position: relative;
+  z-index: 2;
+}
+
+.kk-template-preview-title {
+  font-size: .84rem;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  text-shadow: 0 2px 8px rgba(0,0,0,.28);
+}
+
+.kk-template-preview-question {
+  margin-top: auto;
+  margin-bottom: .45rem;
+  max-width: 78%;
+  font-size: .73rem;
+  line-height: 1.05;
+  font-weight: 700;
+  opacity: .94;
+  text-shadow: 0 2px 8px rgba(0,0,0,.22);
+}
+
+.kk-template-preview-bars {
+  height: 28px;
+  display: flex;
+  align-items: end;
+  gap: 5px;
+  width: 58%;
+}
+
+.kk-template-preview-bars span {
+  flex: 1;
+  min-width: 10px;
+  border-radius: 999px 999px 4px 4px;
+  box-shadow: 0 6px 16px rgba(0,0,0,.28);
+}
+
+.kk-template-name-creative {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+}
+
+.kk-template-name-creative span {
+  font-weight: 700;
+}
+
+.kk-template-name-creative small {
+  color: var(--kk-text-dim);
+  font-size: .72rem;
+  white-space: nowrap;
+}
+
+/* Let animated/illustrated backgrounds remain visible on the live stage while keeping content readable. */
+.kk-stage-main,
+.kk-card,
+.kk-play-card {
+  backdrop-filter: blur(10px);
+}

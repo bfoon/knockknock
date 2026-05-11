@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Set up your {{ plan.name }} workspace · Knock-Knock{% endblock %}
+
+{% block content %}
+<div class="kk-main-narrow mx-auto">
+  <div class="text-center mb-4">
+    <span class="kk-pill kk-pill--accent">{{ plan.name|upper }}</span>
+    <h1 class="mt-3">Step 2 — workspace & payment</h1>
+    <p class="kk-text-dim">${{ plan.price_monthly|floatformat:0 }}/month · {{ plan.description }}</p>
+
+    <div class="kk-step-indicator">
+      <span class="kk-step kk-step--done">✓</span>
+      <span class="kk-step-line kk-step-line--done"></span>
+      <span class="kk-step kk-step--active">2</span>
+      <span class="kk-step-line"></span>
+      <span class="kk-step">3</span>
+    </div>
+  </div>
+
+  <div class="kk-flash" style="background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.3); color: var(--kk-warn); padding: .75rem 1rem; border-radius: var(--kk-radius); margin-bottom: 1.5rem;">
+    <i class="bi bi-info-circle"></i> <strong>Mock payment</strong> — no real card will be charged.
+  </div>
+
+  <form method="post" class="kk-card">
+    {% csrf_token %}
+
+    <h3 class="kk-section-title">
+      <i class="bi bi-{% if tier == 'corporate' %}building{% else %}people-fill{% endif %}"></i>
+      {% if tier == 'corporate' %}About your organization{% else %}About your team{% endif %}
+    </h3>
+    {% for field in form %}
+      <div class="mb-3">
+        <label class="form-label">{{ field.label }}</label>
+        {{ field }}
+        {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors|join:", " }}</div>{% endif %}
+        {% if field.help_text %}<div class="text-secondary small mt-1">{{ field.help_text|safe }}</div>{% endif %}
+      </div>
+    {% endfor %}
+
+    <hr style="border-color: var(--kk-border); margin: 2rem 0 1.5rem;">
+
+    <h3 class="kk-section-title"><i class="bi bi-credit-card"></i> Payment (mock)</h3>
+    {% for field in checkout_form %}
+      <div class="mb-3">
+        <label class="form-label">{{ field.label }}</label>
+        {{ field }}
+        {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors|join:", " }}</div>{% endif %}
+      </div>
+    {% endfor %}
+
+    <button class="kk-btn kk-btn-primary kk-btn-lg w-100 mt-3">
+      <i class="bi bi-lock-fill"></i> Pay ${{ plan.price_monthly|floatformat:0 }} & create workspace
+    </button>
+  </form>
+</div>
+
+<style>
+.kk-pill { display: inline-block; padding: .25rem .75rem; border-radius: 999px; font-size: .7rem; font-weight: 700; letter-spacing: .15em; }
+.kk-pill--accent { background: linear-gradient(135deg, var(--kk-accent), var(--kk-accent-2)); color: #fff; }
+.kk-step-indicator { display: flex; align-items: center; justify-content: center; gap: .5rem; margin: 1.5rem 0; }
+.kk-step {
+  width: 32px; height: 32px; border-radius: 50%; background: var(--kk-surface-2);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--kk-text-dim); font-weight: 600;
+}
+.kk-step--done { background: var(--kk-success); color: #fff; }
+.kk-step--active { background: linear-gradient(135deg, var(--kk-accent), var(--kk-accent-2)); color: #fff; }
+.kk-step-line { width: 50px; height: 2px; background: var(--kk-border); }
+.kk-step-line--done { background: var(--kk-success); }
+</style>
+{% endblock %}

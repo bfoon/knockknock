@@ -1,0 +1,11 @@
+Hi there,
+
+You've been invited to join {{ organization.name }} on Knock-Knock
+as {{ membership.get_role_display }}.
+
+Since you don't have an account yet, create one here and we'll
+add you to {{ organization.name }} automatically:
+
+{{ accept_url }}
+
+— The Knock-Knock crew

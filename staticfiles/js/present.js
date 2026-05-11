@@ -19,6 +19,21 @@
 
   window.kkChartBackground = (stage.dataset.chartBg || "normal").toLowerCase();
 
+  // ─────────────────────── Chart background scenery ───────────────────────
+  // The chart_backgrounds.css rules in app.css (kk-bg-space/forest/room/binary/normal)
+  // only fire when `.kk-chart-wrap` carries the matching `kk-bg-<name>` class.
+  // Apply it now from the dataset, and re-apply on `state` when the server
+  // ships a fresh value in case the quiz was edited mid-session.
+  function applyChartBackground(name) {
+    const wrap = document.getElementById("chart-wrap");
+    if (!wrap) return;
+    const next = (name || "normal").toLowerCase();
+    [...wrap.classList].forEach(c => { if (c.startsWith("kk-bg-")) wrap.classList.remove(c); });
+    wrap.classList.add("kk-bg-" + next);
+    window.kkChartBackground = next;
+  }
+  applyChartBackground(window.kkChartBackground);
+
   const views = {
     lobby: document.getElementById("view-lobby"),
     question: document.getElementById("view-question"),
@@ -47,6 +62,8 @@
 
   const AVATARS_BY_ID = window.kkAvatarsById || {};
   const chartHolder = { chart: null };
+
+  injectReactionBurstStyles();
 
   let currentState = null;
     let latestTally = null;
@@ -146,6 +163,10 @@
           onTally(msg);
           break;
 
+        case "reaction_burst":
+          onReactionBurst(msg);
+          break;
+
         case "leaderboard":
           onLeaderboard(msg);
           break;
@@ -212,12 +233,32 @@
     return String(value);
   }
 
+  function getScaleChoices(q) {
+    const existing = Array.isArray(q && q.choices) ? q.choices : [];
+    if (existing.length) return existing;
+
+    if (!q || q.type !== "scale") return [];
+
+    const cfg = q.config || {};
+    let min = Number(q.scale_min ?? cfg.scale_min ?? cfg.min ?? 1);
+    let max = Number(q.scale_max ?? cfg.scale_max ?? cfg.max ?? 10);
+    if (!Number.isFinite(min)) min = 1;
+    if (!Number.isFinite(max)) max = 10;
+    min = Math.max(1, Math.min(10, Math.trunc(min)));
+    max = Math.max(2, Math.min(10, Math.trunc(max)));
+    if (min >= max) { min = 1; max = 10; }
+
+    const rows = [];
+    for (let i = min; i <= max; i++) rows.push({ id: i, text: String(i), value: i });
+    return rows;
+  }
+
   function normalizeTallyForQuestion(q, tally) {
     const source = tally || {};
     const sourceCounts = source.counts || {};
     const fixedCounts = {};
 
-    const choices = Array.isArray(q && q.choices) ? q.choices : [];
+    const choices = getScaleChoices(q);
 
     choices.forEach((choice) => {
       const id = normalizeChoiceId(choice.id);
@@ -258,6 +299,12 @@
 
   function onState(s) {
     currentState = s;
+
+    // Re-apply chart background if the server's value differs (handles a quiz
+    // setting being changed while a session is live).
+    if (s.chart_background && s.chart_background.toLowerCase() !== window.kkChartBackground) {
+      applyChartBackground(s.chart_background);
+    }
 
     if (participantCount) {
       participantCount.textContent = Number(s.participants || 0);
@@ -314,7 +361,7 @@
 
     applyQuestionTypography(q);
 
-    const labels = Array.isArray(q.choices) ? q.choices : [];
+    const labels = getScaleChoices(q);
     const chartId = q.chart_type || "bar";
     const questionType = q.type || "mcq";
     const tallyData = getStateTallyForCurrentQuestion(s);
@@ -337,7 +384,7 @@
     latestTallyByQuestion[currentQuestionId] = tallyData;
     currentState.tally = tallyData;
 
-    renderLiveChart(q.chart_type || "bar", q.type || "mcq", q.choices || [], tallyData);
+    renderLiveChart(q.chart_type || "bar", q.type || "mcq", getScaleChoices(q), tallyData);
   }
 
   function renderLiveChart(chartId, questionType, labels, tallyData) {
@@ -359,6 +406,144 @@
     );
 
     resizeChartSoon();
+  }
+
+  // ─────────────────────── Emoji reaction burst ───────────────────────
+
+  function injectReactionBurstStyles() {
+    if (document.getElementById("kk-reaction-burst-styles")) return;
+
+    const style = document.createElement("style");
+    style.id = "kk-reaction-burst-styles";
+    style.textContent = `
+      .kk-reaction-layer {
+        position: absolute;
+        inset: 0;
+        z-index: 80;
+        pointer-events: none;
+        overflow: hidden;
+      }
+
+      .kk-reaction-fly {
+        position: absolute;
+        left: var(--kk-reaction-left, 50%);
+        bottom: -2rem;
+        transform: translate(-50%, 0) scale(.75) rotate(var(--kk-reaction-rotate, 0deg));
+        font-size: var(--kk-reaction-size, 4rem);
+        line-height: 1;
+        filter: drop-shadow(0 14px 22px rgba(0,0,0,.35));
+        animation: kkReactionFly var(--kk-reaction-duration, 2.4s) cubic-bezier(.16,.92,.26,1) forwards;
+        will-change: transform, opacity;
+      }
+
+      .kk-reaction-fly::after {
+        content: "";
+        position: absolute;
+        inset: 50% auto auto 50%;
+        width: 1.9em;
+        height: 1.9em;
+        transform: translate(-50%, -50%);
+        border-radius: 999px;
+        background: radial-gradient(circle, rgba(255,255,255,.28), rgba(255,255,255,0) 68%);
+        z-index: -1;
+      }
+
+      @keyframes kkReactionFly {
+        0% {
+          opacity: 0;
+          transform: translate(-50%, 24px) scale(.55) rotate(var(--kk-reaction-rotate, 0deg));
+        }
+        10% {
+          opacity: 1;
+        }
+        55% {
+          opacity: 1;
+          transform: translate(calc(-50% + var(--kk-reaction-drift, 0px)), -42vh) scale(1.12) rotate(calc(var(--kk-reaction-rotate, 0deg) * -1));
+        }
+        100% {
+          opacity: 0;
+          transform: translate(calc(-50% + var(--kk-reaction-drift, 0px) * 1.65), -74vh) scale(1.55) rotate(calc(var(--kk-reaction-rotate, 0deg) * 1.4));
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .kk-reaction-fly {
+          animation-duration: .9s;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function ensureReactionLayer() {
+    const wrap = document.getElementById("chart-wrap");
+    if (!wrap) return null;
+
+    let layer = wrap.querySelector(".kk-reaction-layer");
+    if (!layer) {
+      layer = document.createElement("div");
+      layer.className = "kk-reaction-layer";
+      layer.setAttribute("aria-hidden", "true");
+      wrap.appendChild(layer);
+    }
+
+    return layer;
+  }
+
+  function isCurrentReactionQuestion(questionId) {
+    if (!currentState || !currentState.question) return false;
+
+    const currentQuestionId = normalizeChoiceId(currentState.question.id);
+    const incomingQuestionId = normalizeChoiceId(questionId);
+
+    return (
+      currentQuestionId === incomingQuestionId &&
+      String(currentState.question.type || "").toLowerCase() === "reaction"
+    );
+  }
+
+  function onReactionBurst(msg) {
+    if (!isCurrentReactionQuestion(msg.question_id)) return;
+
+    const emoji = String(msg.emoji || msg.text || "✨").trim() || "✨";
+
+    // One tap should feel lively but not heavy. Spawn one main emoji, then
+    // occasionally add a smaller side sparkle for the fun factor.
+    spawnReactionEmoji(emoji, { primary: true });
+
+    if (Math.random() > 0.55) {
+      setTimeout(() => spawnReactionEmoji(emoji, { primary: false }), 80);
+    }
+  }
+
+  function spawnReactionEmoji(emoji, options) {
+    const layer = ensureReactionLayer();
+    if (!layer) return;
+
+    const el = document.createElement("span");
+    el.className = "kk-reaction-fly";
+    el.textContent = emoji;
+
+    const primary = options && options.primary;
+    const left = 12 + Math.random() * 76;
+    const drift = (Math.random() * 240) - 120;
+    const rotate = (Math.random() * 34) - 17;
+    const size = primary ? (3.4 + Math.random() * 2.2) : (2.1 + Math.random() * 1.5);
+    const duration = primary ? (2.15 + Math.random() * .55) : (1.55 + Math.random() * .5);
+
+    el.style.setProperty("--kk-reaction-left", `${left}%`);
+    el.style.setProperty("--kk-reaction-drift", `${drift}px`);
+    el.style.setProperty("--kk-reaction-rotate", `${rotate}deg`);
+    el.style.setProperty("--kk-reaction-size", `${size}rem`);
+    el.style.setProperty("--kk-reaction-duration", `${duration}s`);
+
+    layer.appendChild(el);
+
+    window.setTimeout(() => {
+      if (el && el.parentNode) {
+        el.parentNode.removeChild(el);
+      }
+    }, Math.ceil(duration * 1000) + 200);
   }
 
   // ─────────────────────── Leaderboard ───────────────────────

@@ -1,0 +1,187 @@
+{# Choices editor — shown whenever meta.has_choices is true. #}
+<div class="kk-card mb-4">
+  <h3 class="kk-section-title" style="font-size:1.05rem;">
+    <i class="bi bi-list-check"></i>
+    {% if question.type == "ranking" %}Items to rank
+    {% elif question.type == "image_choice" %}Image options
+    {% elif question.type == "points_allocation" %}Options to allocate points across
+    {% elif question.type == "likert" %}Likert scale (you can rename steps)
+    {% elif question.type == "yes_no" %}Yes/No labels
+    {% elif question.type == "reaction" %}Reaction emojis
+    {% else %}Choices{% endif %}
+  </h3>
+
+  {% if question.type == "image_choice" %}
+    <p class="text-secondary small mb-3">Add an image for each option. Text below the image is optional.</p>
+  {% elif question.type == "points_allocation" %}
+    <p class="text-secondary small mb-3">
+      Participants will split <strong>{{ config_form.initial.total|default:100 }}</strong> points
+      across these options.
+    </p>
+  {% endif %}
+
+  {{ formset.management_form }}
+
+  <div id="choices-list">
+    {% for cform in formset %}
+      <div class="kk-choice-row d-flex gap-2 align-items-center mb-2 p-2"
+           style="background: var(--kk-surface-2); border-radius: var(--kk-radius);"
+           data-choice-row>
+        <span class="kk-q-index">{{ forloop.counter }}</span>
+
+        {# Hidden id + any other hidden fields — always render so they post #}
+        {% for hidden in cform.hidden_fields %}{{ hidden }}{% endfor %}
+
+        <div class="flex-grow-1 d-flex gap-2 align-items-center">
+          {% if question.type == "image_choice" %}
+            <div style="flex-shrink:0;">
+              {% if cform.instance.image %}
+                <img src="{{ cform.instance.image.url }}" alt=""
+                     style="width:48px; height:48px; object-fit:cover; border-radius:6px;">
+              {% endif %}
+              {{ cform.image }}
+            </div>
+          {% endif %}
+
+          <div class="flex-grow-1">
+            {{ cform.text }}
+            {% if cform.text.errors %}
+              <div class="text-danger small">{{ cform.text.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+
+          {% if question.type == "ranking" %}
+            {# Visible weight input for ranking #}
+            <div style="width:90px;">
+              {{ cform.weight }}
+              <div class="form-text" style="font-size:.7rem;">weight</div>
+            </div>
+          {% else %}
+            {# Weight still in DOM (hidden) so it always posts a value #}
+            <div class="d-none">{{ cform.weight }}</div>
+          {% endif %}
+        </div>
+
+        {# DELETE checkbox kept in DOM but hidden; button controls it #}
+        {% if formset.can_delete %}
+          <span class="d-none">{{ cform.DELETE }}</span>
+        {% endif %}
+
+        <button type="button" class="kk-btn kk-btn-ghost btn-sm choice-remove"
+                title="Remove option">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+      {% if cform.non_field_errors %}
+        <div class="text-danger small mb-2">{{ cform.non_field_errors }}</div>
+      {% endif %}
+      {% if cform.weight.errors %}
+        <div class="text-danger small mb-2">weight: {{ cform.weight.errors|join:", " }}</div>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  <button type="button" class="kk-btn kk-btn-ghost btn-sm mt-2" id="add-choice-btn">
+    <i class="bi bi-plus-lg"></i> Add option
+  </button>
+</div>
+
+<style>
+  .kk-choice-row .form-control { background: transparent; }
+  .kk-q-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 26px; height: 26px;
+    border-radius: 999px;
+    background: rgba(255,255,255,.06);
+    border: 1px solid var(--kk-border);
+    font-size: .75rem;
+    color: var(--kk-text-dim);
+  }
+</style>
+
+<script>
+(function () {
+  const list = document.getElementById("choices-list");
+  const btn  = document.getElementById("add-choice-btn");
+  if (!list || !btn) return;
+
+  // Find the TOTAL_FORMS input that belongs to this formset (matches a row's prefix)
+  const firstHidden = list.querySelector("input[name$='-id']");
+  let prefix = "";
+  if (firstHidden) {
+    const m = firstHidden.name.match(/^(.+?)-\d+-id$/);
+    if (m) prefix = m[1];
+  }
+  const total = prefix
+    ? document.querySelector(`input[name="${prefix}-TOTAL_FORMS"]`)
+    : document.querySelector("input[name$='-TOTAL_FORMS']");
+  if (!total) return;
+
+  function renumber() {
+    let n = 1;
+    list.querySelectorAll("[data-choice-row]").forEach(row => {
+      if (row.style.display === "none") return;
+      const pill = row.querySelector(".kk-q-index");
+      if (pill) pill.textContent = n++;
+    });
+  }
+
+  function wireRemove(row) {
+    const btnX = row.querySelector(".choice-remove");
+    if (!btnX || btnX.dataset.wired) return;
+    btnX.dataset.wired = "1";
+    btnX.addEventListener("click", () => {
+      const del = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
+      const idInput = row.querySelector('input[name$="-id"]');
+      if (del && idInput && idInput.value) {
+        // Existing row in DB → tick DELETE and hide visually
+        del.checked = true;
+        row.style.display = "none";
+      } else {
+        // New, never-saved row → just remove from DOM
+        row.remove();
+      }
+      renumber();
+    });
+  }
+
+  list.querySelectorAll("[data-choice-row]").forEach(wireRemove);
+
+  btn.addEventListener("click", () => {
+    const rows = list.querySelectorAll("[data-choice-row]");
+    let template = null;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (rows[i].style.display !== "none") { template = rows[i]; break; }
+    }
+    if (!template) template = rows[rows.length - 1];
+    if (!template) return;
+
+    const idx = parseInt(total.value, 10);
+    const clone = template.cloneNode(true);
+
+    clone.querySelectorAll("input, select, textarea, label").forEach(el => {
+      ["name", "id", "for"].forEach(attr => {
+        const v = el.getAttribute(attr);
+        if (v) el.setAttribute(attr, v.replace(/-\d+-/, `-${idx}-`));
+      });
+      if (el.type === "text" || el.tagName === "TEXTAREA") el.value = "";
+      if (el.type === "number") el.value = (el.name || "").endsWith("-weight") ? "0" : "";
+      if (el.type === "checkbox") el.checked = false;
+      if (el.type === "file") el.value = "";
+      if (el.type === "hidden" && (el.name || "").endsWith("-id")) el.value = "";
+    });
+    clone.querySelectorAll("img").forEach(img => img.remove());
+    clone.style.display = "";
+
+    const xBtn = clone.querySelector(".choice-remove");
+    if (xBtn) delete xBtn.dataset.wired;
+    wireRemove(clone);
+
+    list.appendChild(clone);
+    total.value = idx + 1;
+    renumber();
+  });
+})();
+</script>

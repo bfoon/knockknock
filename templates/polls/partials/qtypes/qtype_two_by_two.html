@@ -1,0 +1,37 @@
+{# 2×2 grid preview — pulls axis labels from the config form values. #}
+<div class="kk-card mb-4" style="border-left: 3px solid var(--kk-accent-3);">
+  <h3 class="kk-section-title" style="font-size:1.05rem;">
+    <i class="bi bi-bullseye"></i> 2×2 matrix preview
+  </h3>
+  <div class="kk-2x2-preview">
+    <div class="kk-2x2-axis kk-2x2-axis-y kk-2x2-axis-top">{{ question.config.y_top|default:"High impact" }}</div>
+    <div class="kk-2x2-axis kk-2x2-axis-y kk-2x2-axis-bottom">{{ question.config.y_bottom|default:"Low impact" }}</div>
+    <div class="kk-2x2-axis kk-2x2-axis-x kk-2x2-axis-left">{{ question.config.x_left|default:"Hard" }}</div>
+    <div class="kk-2x2-axis kk-2x2-axis-x kk-2x2-axis-right">{{ question.config.x_right|default:"Easy" }}</div>
+    <div class="kk-2x2-grid"></div>
+  </div>
+  <p class="text-secondary small mt-2 mb-0">Set the axis labels in the settings panel below.</p>
+</div>
+
+<style>
+.kk-2x2-preview {
+  position: relative;
+  aspect-ratio: 1;
+  max-width: 320px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+.kk-2x2-grid {
+  position: relative;
+  width: 100%; height: 100%;
+  border: 1px solid var(--kk-border);
+  background:
+    linear-gradient(to right,  var(--kk-border) 0, var(--kk-border) 1px, transparent 1px) 50% 0 / 100% 100% no-repeat,
+    linear-gradient(to bottom, var(--kk-border) 0, var(--kk-border) 1px, transparent 1px) 0 50% / 100% 100% no-repeat;
+}
+.kk-2x2-axis { position: absolute; font-size: .75rem; color: var(--kk-text-dim); }
+.kk-2x2-axis-top    { top: 0;    left: 50%; transform: translateX(-50%); }
+.kk-2x2-axis-bottom { bottom: 0; left: 50%; transform: translateX(-50%); }
+.kk-2x2-axis-left   { left: 0;   top: 50%;  transform: translateY(-50%) rotate(-90deg); transform-origin: left center; }
+.kk-2x2-axis-right  { right: 0;  top: 50%;  transform: translateY(-50%) rotate(90deg);  transform-origin: right center; }
+</style>

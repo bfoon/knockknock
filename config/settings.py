@@ -31,6 +31,9 @@ INSTALLED_APPS = [
     "polls",
     "games",
     "presentations",
+    "subscriptions",
+    "organizations",
+    "collaborations",
 ]
 
 MIDDLEWARE = [

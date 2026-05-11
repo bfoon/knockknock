@@ -7,8 +7,42 @@ from django.urls import reverse
 from django.views.decorators.http import require_GET
 
 from core.templates_registry import get_template
-from games.avatars import AVATARS, avatar_by_id
+from games.avatars import AVATARS, avatars_grouped, avatar_by_id
 from .models import LiveSession, Participant
+
+
+# ─────────────────────────── helpers ───────────────────────────
+
+def _logo_url_for(session):
+    """Return the live URL of the session's logo, or None.
+
+    Uses session.quiz.logo for games and session.questionnaire.logo for polls.
+    Wrapped in try/except because ImageField.url raises ValueError when the
+    field has no file attached, AND raises (typically) if the underlying file
+    has been deleted from disk while the DB still holds a name.
+    """
+    logo = None
+    if session.kind == "game" and getattr(session, "quiz", None):
+        logo = getattr(session.quiz, "logo", None)
+    elif session.kind == "poll" and getattr(session, "questionnaire", None):
+        logo = getattr(session.questionnaire, "logo", None)
+    try:
+        if logo and getattr(logo, "name", "") and getattr(logo, "url", ""):
+            return logo.url
+    except (ValueError, AttributeError):
+        pass
+    return None
+
+
+def _chart_background_for(session):
+    """Return the chart background id for the live chart wrapper (default 'normal').
+
+    Only games carry a chart_background today; polls render against the stage
+    template's background and don't need an extra scenery layer.
+    """
+    if session.kind == "game" and getattr(session, "quiz", None):
+        return getattr(session.quiz, "chart_background", "normal") or "normal"
+    return "normal"
 
 
 @login_required
@@ -21,14 +55,6 @@ def present(request, code):
 
     template = get_template(session.template_id)
 
-    logo_url = None
-
-    if session.kind == "poll" and session.questionnaire and session.questionnaire.logo:
-        logo_url = session.questionnaire.logo.url
-
-    elif session.kind == "game" and session.quiz and getattr(session.quiz, "logo", None):
-        logo_url = session.quiz.logo.url
-
     join_url = request.build_absolute_uri(
         reverse("presentations:join_code", args=[session.code])
     )
@@ -36,8 +62,11 @@ def present(request, code):
     return render(request, "presentations/present.html", {
         "session": session,
         "template": template,
-        "logo_url": logo_url,
+        "logo_url": _logo_url_for(session),
+        "chart_background": _chart_background_for(session),
         "join_url": join_url,
+        "avatars": AVATARS,
+        "avatar_groups": avatars_grouped(),
     })
 
 def join_landing(request):
@@ -48,23 +77,25 @@ def join_landing(request):
 def join_code(request, code):
     """Participant joining via code or QR."""
     try:
-        session = LiveSession.objects.get(code=code)
+        session = LiveSession.objects.select_related("questionnaire", "quiz").get(code=code)
     except LiveSession.DoesNotExist:
         return render(request, "presentations/join.html", {"error": "Session not found."})
 
     if session.state == "ended":
         return render(request, "presentations/join.html", {"error": "This session has ended."})
 
-    if session.kind == "game":
-        return render(request, "presentations/play_game.html", {
-            "session": session,
-            "template": get_template(session.template_id),
-            "avatars": AVATARS,
-        })
-    return render(request, "presentations/play_poll.html", {
+    common = {
         "session": session,
         "template": get_template(session.template_id),
-    })
+        "logo_url": _logo_url_for(session),
+        "chart_background": _chart_background_for(session),
+        "avatars": AVATARS,
+        "avatar_groups": avatars_grouped(),
+    }
+
+    if session.kind == "game":
+        return render(request, "presentations/play_game.html", common)
+    return render(request, "presentations/play_poll.html", common)
 
 
 @require_GET

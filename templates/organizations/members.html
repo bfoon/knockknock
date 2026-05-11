@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}{{ organization.name }} — Members · Knock-Knock{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <div class="kk-text-dim small">{{ organization.get_kind_display }} workspace</div>
+  <h1>{{ organization.name }}</h1>
+  <p class="kk-text-dim">
+    {{ organization.member_count }}{% if organization.seat_limit < 10000 %}/{{ organization.seat_limit }}{% endif %} members
+    · You are <strong>{{ me.get_role_display }}</strong>
+  </p>
+</div>
+
+{% if me.can_invite %}
+<div class="kk-card mb-4">
+  <h3 class="kk-section-title"><i class="bi bi-person-plus"></i> Invite a member</h3>
+  {% if not organization.has_open_seat %}
+    <div class="text-warning small mb-2">
+      <i class="bi bi-exclamation-triangle"></i>
+      Your plan is full ({{ organization.seat_limit }} seats).
+      {% if organization.kind == 'team' %}
+        <a href="{% url 'subscriptions:pricing' %}" class="text-light">Upgrade to Corporate</a>
+        to add more.
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <form method="post" class="row g-2 align-items-end">
+    {% csrf_token %}
+    <div class="col-md-7">
+      <label class="form-label">Email</label>
+      {{ invite_form.email }}
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Role</label>
+      {{ invite_form.role }}
+    </div>
+    <div class="col-md-2">
+      <button class="kk-btn kk-btn-primary w-100"
+              {% if not organization.has_open_seat %}disabled{% endif %}>
+        Send invite
+      </button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+<div class="kk-card">
+  <h3 class="kk-section-title"><i class="bi bi-people-fill"></i> Members</h3>
+  <table class="w-100" style="border-collapse: collapse;">
+    <thead style="border-bottom: 1px solid var(--kk-border);">
+      <tr class="kk-text-dim small text-start">
+        <th style="padding: .75rem 0;">Person</th>
+        <th>Status</th>
+        <th>Role</th>
+        {% if me.can_change_roles %}<th></th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in memberships %}
+        <tr style="border-bottom: 1px solid var(--kk-border);">
+          <td style="padding: .75rem 0;">
+            {% if m.user %}
+              <strong>{{ m.user.username }}</strong>
+              <span class="kk-text-dim small d-block">{{ m.user.email }}</span>
+            {% else %}
+              <em class="kk-text-dim">{{ m.invited_email }}</em>
+            {% endif %}
+          </td>
+          <td>
+            <span class="kk-status kk-status--{{ m.status }}">{{ m.get_status_display }}</span>
+          </td>
+          <td>
+            {% if me.can_change_roles and m.user_id != organization.owner_id %}
+              <form method="post" action="{% url 'organizations:change_role' organization.id m.id %}" class="d-inline-flex gap-2">
+                {% csrf_token %}
+                <select name="role" class="form-select form-select-sm" onchange="this.form.submit()">
+                  {% for value, label in m.ROLE_CHOICES %}
+                    <option value="{{ value }}" {% if m.role == value %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </form>
+            {% else %}
+              {{ m.get_role_display }}
+              {% if m.user_id == organization.owner_id %}<span class="kk-text-dim small">(owner)</span>{% endif %}
+            {% endif %}
+          </td>
+          {% if me.can_change_roles %}
+            <td class="text-end">
+              {% if m.user_id != organization.owner_id %}
+                <form method="post" action="{% url 'organizations:remove_member' organization.id m.id %}"
+                      onsubmit="return confirm('Remove this member?');" class="d-inline">
+                  {% csrf_token %}
+                  <button class="kk-btn kk-btn-ghost btn-sm" style="color: var(--kk-danger);">
+                    <i class="bi bi-x-lg"></i>
+                  </button>
+                </form>
+              {% endif %}
+            </td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<style>
+.kk-status {
+  display: inline-block; padding: .15rem .55rem; border-radius: 999px;
+  font-size: .75rem; font-weight: 500;
+}
+.kk-status--active { background: rgba(52,211,153,.15); color: var(--kk-success); }
+.kk-status--invited { background: rgba(251,191,36,.15); color: var(--kk-warn); }
+.kk-status--removed { background: rgba(244,63,94,.15); color: var(--kk-danger); }
+</style>
+{% endblock %}

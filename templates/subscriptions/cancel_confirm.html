@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Cancel subscription · Knock-Knock{% endblock %}
+
+{% block content %}
+<div class="kk-main-narrow mx-auto">
+  <h1>Cancel your subscription?</h1>
+  <p class="kk-text-dim mb-4">
+    You'll drop back to the Free plan immediately. Any mentis or games over the 5-item
+    limit will stay on your account but you won't be able to create new ones until you upgrade again.
+  </p>
+  <form method="post" class="kk-card">
+    {% csrf_token %}
+    <button class="kk-btn kk-btn-primary" style="background: var(--kk-danger);">
+      Yes, cancel my subscription
+    </button>
+    <a href="{% url 'subscriptions:manage' %}" class="kk-btn kk-btn-ghost ms-2">Keep my plan</a>
+  </form>
+</div>
+{% endblock %}

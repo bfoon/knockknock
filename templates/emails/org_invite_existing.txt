@@ -1,0 +1,9 @@
+Hi,
+
+You've been invited to join {{ organization.name }} on Knock-Knock
+as {{ membership.get_role_display }}.
+
+Open your workspace:
+{{ accept_url }}
+
+— The Knock-Knock crew

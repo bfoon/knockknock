@@ -22,48 +22,34 @@
     </div>
   </div>
 
- <div class="d-flex gap-2 flex-wrap">
-  {% if is_owner %}
-  <button type="button" class="kk-btn kk-btn-ghost kk-btn-lg" data-bs-toggle="modal" data-bs-target="#collabModal">
-    <i class="bi bi-people"></i> Share
-    {% if collaborators %}<span class="kk-q-pill ms-1">{{ collaborators.count }}</span>{% endif %}
-  </button>
-  {% endif %}
+  <div class="d-flex gap-2 flex-wrap">
+    {% if is_owner %}
+      <button type="button" class="kk-btn kk-btn-ghost kk-btn-lg" data-bs-toggle="modal" data-bs-target="#collabModal">
+        <i class="bi bi-people"></i> Share
+        {% if collaborators %}<span class="kk-q-pill ms-1">{{ collaborators.count }}</span>{% endif %}
+      </button>
+    {% endif %}
 
-  <div class="dropdown">
-    <button class="kk-btn kk-btn-ghost kk-btn-lg dropdown-toggle"
-            type="button"
-            data-bs-toggle="dropdown"
-            aria-expanded="false">
-      <i class="bi bi-download"></i> Download Results
-    </button>
+    <div class="dropdown">
+      <button class="kk-btn kk-btn-ghost kk-btn-lg dropdown-toggle"
+              type="button" data-bs-toggle="dropdown" aria-expanded="false">
+        <i class="bi bi-download"></i> Download Results
+      </button>
+      <ul class="dropdown-menu dropdown-menu-dark">
+        <li><a class="dropdown-item" href="{% url 'polls:results' questionnaire.pk %}"><i class="bi bi-bar-chart"></i> View Results</a></li>
+        <li><hr class="dropdown-divider"></li>
+        <li><a class="dropdown-item" href="{% url 'polls:download_results_excel' questionnaire.pk %}"><i class="bi bi-file-earmark-excel"></i> Download Excel</a></li>
+        <li><a class="dropdown-item" href="{% url 'polls:download_results_word' questionnaire.pk %}"><i class="bi bi-file-earmark-word"></i> Download Word</a></li>
+      </ul>
+    </div>
 
-    <ul class="dropdown-menu dropdown-menu-dark">
-      <li>
-        <a class="dropdown-item" href="{% url 'polls:results' questionnaire.pk %}">
-          <i class="bi bi-bar-chart"></i> View Results
-        </a>
-      </li>
-      <li><hr class="dropdown-divider"></li>
-      <li>
-        <a class="dropdown-item" href="{% url 'polls:download_results_excel' questionnaire.pk %}">
-          <i class="bi bi-file-earmark-excel"></i> Download Excel
-        </a>
-      </li>
-      <li>
-        <a class="dropdown-item" href="{% url 'polls:download_results_word' questionnaire.pk %}">
-          <i class="bi bi-file-earmark-word"></i> Download Word
-        </a>
-      </li>
-    </ul>
+    <form method="post" action="{% url 'polls:start' questionnaire.pk %}">
+      {% csrf_token %}
+      <button class="kk-btn kk-btn-primary kk-btn-lg" {% if not questionnaire.questions.count %}disabled{% endif %}>
+        <i class="bi bi-play-fill"></i> Present live
+      </button>
+    </form>
   </div>
-
-  <form method="post" action="{% url 'polls:start' questionnaire.pk %}">
-    {% csrf_token %}
-    <button class="kk-btn kk-btn-primary kk-btn-lg" {% if not questionnaire.questions.count %}disabled{% endif %}>
-      <i class="bi bi-play-fill"></i> Present live
-    </button>
-  </form>
 </div>
 
 <div class="row g-4">
@@ -74,79 +60,126 @@
         <span class="text-secondary small ms-2" style="font-weight:400;">drag <i class="bi bi-grip-vertical"></i> to reorder</span>
       {% endif %}
     </h2>
+
+    {# ── QUICK-ADD BAR ─────────────────────────────────────── #}
+    <form method="post" action="{% url 'polls:quick_add_question' questionnaire.pk %}"
+          class="kk-quick-add-bar d-flex gap-2 align-items-stretch mb-3" id="quick-add-form">
+      {% csrf_token %}
+      <input type="text" name="text" class="form-control" placeholder="Quick-add a question…"
+             autocomplete="off" required maxlength="500">
+      <select name="type" class="form-select" style="max-width: 200px;">
+        <optgroup label="Choice">
+          <option value="mcq">✅ Multiple Choice</option>
+          <option value="image_choice">🖼️ Image Choice</option>
+          <option value="yes_no">🟢 Yes / No</option>
+        </optgroup>
+        <optgroup label="Scale & rating">
+          <option value="scale">🌡️ Scale (default 1–10)</option>
+          <option value="rating">⭐ Star Rating</option>
+          <option value="nps">📊 NPS (0–10)</option>
+          <option value="likert">📏 Likert</option>
+          <option value="slider">🎚️ Slider</option>
+        </optgroup>
+        <optgroup label="Open">
+          <option value="word">☁️ Word Cloud</option>
+          <option value="open">📝 Open Text</option>
+          <option value="numeric">🔢 Numeric</option>
+          <option value="file_upload">📎 Upload</option>
+        </optgroup>
+        <optgroup label="Ranking & distribution">
+          <option value="ranking">🥇 Ranking</option>
+          <option value="matrix">📐 Matrix</option>
+          <option value="points_allocation">🪙 100 points</option>
+        </optgroup>
+        <optgroup label="Date & time">
+          <option value="date">📅 Date</option>
+          <option value="datetime">🕒 Date & time</option>
+          <option value="time">⏰ Time</option>
+        </optgroup>
+        <optgroup label="Spatial">
+          <option value="pin_image">📌 Pin image</option>
+          <option value="pin_map">🌍 Pin map</option>
+          <option value="two_by_two">🎯 2×2</option>
+        </optgroup>
+        <optgroup label="Live">
+          <option value="reaction">🔥 Reaction</option>
+        </optgroup>
+      </select>
+      <button class="kk-btn kk-btn-primary" type="submit" title="Add question">
+        <i class="bi bi-plus-lg"></i> Add
+      </button>
+      <a href="{% url 'polls:question_create' questionnaire.pk %}"
+         class="kk-btn kk-btn-ghost" title="Open full editor for new question">
+        <i class="bi bi-pencil-square"></i>
+      </a>
+    </form>
+
+    {# ── QUESTION LIST WITH INLINE DELETE ──────────────────── #}
     <div id="q-list" data-reorder-url="{% url 'polls:reorder' questionnaire.pk %}">
       {% for q in questionnaire.questions.all %}
         <div class="kk-q-row" data-qpk="{{ q.pk }}">
           <span class="kk-drag-handle" title="Drag to reorder"><i class="bi bi-grip-vertical"></i></span>
           <span class="kk-q-index">{{ forloop.counter }}</span>
-          <a class="kk-q-text text-reset text-decoration-none flex-grow-1" href="{% url 'polls:question_edit' questionnaire.pk q.pk %}">{{ q.text }}</a>
+          <a class="kk-q-text text-reset text-decoration-none flex-grow-1"
+             href="{% url 'polls:question_edit' questionnaire.pk q.pk %}">{{ q.text }}</a>
           <span class="kk-q-pill">{{ q.get_type_display }}</span>
           <span class="kk-q-pill">{{ q.chart_type }}</span>
+
+          {# ── Inline delete (icon-only) ───────────────────── #}
+          <form method="post"
+                action="{% url 'polls:quick_delete_question' questionnaire.pk q.pk %}"
+                class="kk-q-delete-form m-0"
+                data-confirm="Delete “{{ q.text|escapejs }}”?">
+            {% csrf_token %}
+            <button class="kk-q-delete-btn" type="submit"
+                    title="Delete this question" aria-label="Delete question">
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </form>
         </div>
       {% empty %}
         <div class="kk-empty">
           <div class="em">❓</div>
-          <p>No questions yet.</p>
+          <p>No questions yet. Type one in the bar above to start.</p>
         </div>
       {% endfor %}
     </div>
+
     <a href="{% url 'polls:question_create' questionnaire.pk %}" class="kk-btn kk-btn-ghost w-100 mt-3">
-      <i class="bi bi-plus-lg"></i> Add a question
+      <i class="bi bi-plus-lg"></i> Add a question (full editor)
     </a>
   </div>
 
+  {# ── Right column (settings + template) — unchanged ─────── #}
   <div class="col-lg-5">
     <form method="post" enctype="multipart/form-data" class="kk-card">
-    {% csrf_token %}
-    {{ form.template_id }}
-
-    {% if form.non_field_errors %}
-      <div class="alert alert-danger">
-        {{ form.non_field_errors }}
-      </div>
-    {% endif %}
-
-    {% for hidden in form.hidden_fields %}
-      {% if hidden.errors %}
-        <div class="alert alert-danger">
-          {{ hidden.name }}: {{ hidden.errors }}
-        </div>
-      {% endif %}
-    {% endfor %}
-
+      {% csrf_token %}
+      {{ form.template_id }}
+      {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+      {% for hidden in form.hidden_fields %}
+        {% if hidden.errors %}<div class="alert alert-danger">{{ hidden.name }}: {{ hidden.errors }}</div>{% endif %}
+      {% endfor %}
       <h2 class="kk-section-title" style="font-size:1.2rem;"><i class="bi bi-gear"></i> Settings</h2>
       <div class="mb-3"><label class="form-label">Title</label>{{ form.title }}</div>
       <div class="mb-3"><label class="form-label">Description</label>{{ form.description }}</div>
       <div class="mb-3"><label class="form-label">Mode</label>{{ form.mode }}</div>
       <div class="mb-3">
         <label class="form-label">Logo</label>
-
         {% if questionnaire.logo %}
           <div class="d-flex align-items-center gap-3 mb-3 p-2 rounded"
                style="background:rgba(255,255,255,.04); border:1px solid var(--kk-border);">
-            <img src="{{ questionnaire.logo.url }}"
-                 alt="{{ questionnaire.title }} logo"
+            <img src="{{ questionnaire.logo.url }}" alt="{{ questionnaire.title }} logo"
                  style="height:56px; width:56px; object-fit:cover; border-radius:12px; border:1px solid var(--kk-border);">
             <div>
               <div class="small text-light">Current logo uploaded</div>
-              <div class="small text-secondary" style="word-break:break-all;">
-                {{ questionnaire.logo.url }}
-              </div>
+              <div class="small text-secondary" style="word-break:break-all;">{{ questionnaire.logo.url }}</div>
             </div>
           </div>
         {% else %}
-          <div class="small text-secondary mb-2">
-            No logo uploaded yet.
-          </div>
+          <div class="small text-secondary mb-2">No logo uploaded yet.</div>
         {% endif %}
-
         {{ form.logo }}
-
-        {% if form.logo.errors %}
-          <div class="text-danger small mt-2">
-            {{ form.logo.errors }}
-          </div>
-        {% endif %}
+        {% if form.logo.errors %}<div class="text-danger small mt-2">{{ form.logo.errors }}</div>{% endif %}
       </div>
       <button class="kk-btn kk-btn-primary w-100">Save</button>
     </form>
@@ -158,7 +191,7 @@
   </div>
 </div>
 
-{# ─────────── Collab modal ─────────── #}
+{# ─────────── Collab modal (unchanged) ─────────── #}
 {% if is_owner %}
 <div class="modal fade" id="collabModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
@@ -207,8 +240,76 @@
 </div>
 {% endif %}
 
+<style>
+  .kk-quick-add-bar {
+    background: var(--kk-surface-2);
+    border: 1px solid var(--kk-border);
+    border-radius: var(--kk-radius);
+    padding: .5rem;
+  }
+  .kk-q-delete-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--kk-text-dim, #94a3b8);
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: all .15s ease;
+    cursor: pointer;
+  }
+  .kk-q-delete-btn:hover {
+    color: #fff;
+    background: rgba(244,63,94,.18);
+    border-color: rgba(244,63,94,.4);
+  }
+  .kk-q-row { position: relative; }
+</style>
+
 <script>
-  // Live-save template when picker changes
+  // ── Inline delete: confirm before submitting ──
+  document.querySelectorAll(".kk-q-delete-form").forEach(form => {
+    form.addEventListener("submit", async (e) => {
+      const msg = form.dataset.confirm || "Delete this question?";
+      if (!confirm(msg)) {
+        e.preventDefault();
+        return;
+      }
+      // Try AJAX delete for smoother UX; fall back to normal submit on error
+      e.preventDefault();
+      try {
+        const res = await fetch(form.action, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "X-CSRFToken": form.querySelector("input[name=csrfmiddlewaretoken]").value,
+            "X-Requested-With": "fetch",
+          },
+        });
+        if (res.ok) {
+          const row = form.closest(".kk-q-row");
+          row.style.transition = "opacity .15s ease, transform .15s ease";
+          row.style.opacity = "0";
+          row.style.transform = "translateX(8px)";
+          setTimeout(() => row.remove(), 160);
+        } else {
+          form.submit();
+        }
+      } catch (err) {
+        form.submit();
+      }
+    });
+  });
+
+  // ── Quick-add: keep the input focused if the page reloads after submit ──
+  if (sessionStorage.getItem("kk_quick_add_focus")) {
+    sessionStorage.removeItem("kk_quick_add_focus");
+    document.querySelector("#quick-add-form input[name=text]")?.focus();
+  }
+  document.getElementById("quick-add-form")?.addEventListener("submit", () => {
+    sessionStorage.setItem("kk_quick_add_focus", "1");
+  });
+
+  // Live-save template when picker changes (unchanged)
   window.addEventListener("kk:template-change", async (e) => {
     const fd = new FormData();
     fd.append("template_id", e.detail);
@@ -216,7 +317,7 @@
     await fetch("{% url 'polls:set_template' questionnaire.pk %}", { method: "POST", body: fd });
   });
 
-  // Drag-to-reorder via SortableJS
+  // Drag-to-reorder via SortableJS (unchanged)
   (function () {
     const list = document.getElementById("q-list");
     if (!list || !window.Sortable) return;
@@ -227,7 +328,6 @@
       ghostClass: "kk-q-ghost",
       onEnd: async () => {
         const order = Array.from(list.querySelectorAll(".kk-q-row")).map(r => r.dataset.qpk);
-        // Update visible numbers immediately
         list.querySelectorAll(".kk-q-row").forEach((r, i) => {
           const idx = r.querySelector(".kk-q-index");
           if (idx) idx.textContent = i + 1;

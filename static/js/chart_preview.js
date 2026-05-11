@@ -109,6 +109,23 @@
     }));
   }
 
+  function scaleChoicesFromTally(tally) {
+    const counts = (tally && tally.counts) || {};
+    const numericKeys = Object.keys(counts)
+      .map((key) => Number(key))
+      .filter((value) => Number.isFinite(value));
+
+    if (!numericKeys.length) return [];
+
+    const min = Math.min(...numericKeys);
+    const max = Math.max(...numericKeys);
+    const rows = [];
+    for (let i = min; i <= max; i++) {
+      rows.push({ id: String(i), text: String(i), raw: { id: i, text: String(i) }, index: rows.length });
+    }
+    return rows;
+  }
+
   function normalizeTally(choices, tally) {
     const safeTally = tally || {};
     const counts = safeTally.counts || {};
@@ -176,7 +193,20 @@
     const wrap = getChartWrap(canvas);
     if (!wrap) return;
 
-    const bg = String(window.kkChartBackground || "normal").toLowerCase();
+    // Resolve the desired theme in priority order:
+    //   1. data-bg on the wrapper itself
+    //   2. data-chart-bg on the wrapper itself
+    //   3. window.kkChartBackground (set by present.js from stage[data-chart-bg])
+    //   4. fallback to "normal"
+    const fromAttr =
+      wrap.dataset.bg ||
+      wrap.dataset.chartBg ||
+      window.kkChartBackground ||
+      "normal";
+
+    const bg = String(fromAttr).toLowerCase().trim();
+    const allowed = new Set(["normal", "space", "forest", "room", "binary"]);
+    const safe = allowed.has(bg) ? bg : "normal";
 
     wrap.classList.remove(
       "kk-bg-normal",
@@ -186,7 +216,7 @@
       "kk-bg-binary"
     );
 
-    wrap.classList.add(`kk-bg-${bg}`);
+    wrap.classList.add(`kk-bg-${safe}`);
   }
 
   function getWinnerIndex(values) {
@@ -531,10 +561,13 @@
     });
   }
 
-  function renderChoiceChart(canvas, specialEl, chartId, choicesRaw, tally, holder) {
+  function renderChoiceChart(canvas, specialEl, chartId, questionType, choicesRaw, tally, holder) {
     if (!canvas || !window.Chart) return;
 
-    const choices = normalizeChoices(choicesRaw);
+    let choices = normalizeChoices(choicesRaw);
+    if (!choices.length && String(questionType || "").toLowerCase() === "scale") {
+      choices = scaleChoicesFromTally(tally);
+    }
     const chartInfo = normalizeChartType(chartId);
     const tallyData = normalizeTally(choices, tally);
 
@@ -629,6 +662,7 @@
       canvas,
       specialEl,
       chartId || "bar",
+      questionType,
       Array.isArray(choices) ? choices : [],
       tally || { counts: {}, texts: [] },
       safeHolder

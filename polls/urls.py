@@ -21,8 +21,17 @@ urlpatterns = [
     path("<int:pk>/q/new/", views.question_create, name="question_create"),
     path("<int:pk>/q/<int:qpk>/", views.question_edit, name="question_edit"),
     path("<int:pk>/q/<int:qpk>/delete/", views.question_delete, name="question_delete"),
+    path("<int:pk>/q/<int:qpk>/change-type/", views.change_type, name="change_type"),
 
     # collaboration
     path("<int:pk>/invite/", views.invite_collaborator, name="invite"),
     path("<int:pk>/collab/<int:cpk>/remove/", views.remove_collaborator, name="collab_remove"),
+    path("<int:pk>/q/quick-add/",
+         views.quick_add_question,
+         name="quick_add_question"),
+
+    path("<int:pk>/q/<int:qpk>/quick-delete/",
+         views.quick_delete_question,
+         name="quick_delete_question")
+
 ]

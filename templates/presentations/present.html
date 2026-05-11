@@ -10,7 +10,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Manrope:wght@400;500;700&family=Poppins:wght@400;500;700&family=Lora:ital,wght@0,400;0,700;1,400&family=Cormorant+Garamond:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;700&family=Orbitron:wght@400;700&family=VT323&family=Press+Start+2P&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 
-<link rel="stylesheet" href="{% static 'css/app.css' %}?v=6">
+<link rel="stylesheet" href="{% static 'css/app.css' %}?v=9">
+<link rel="stylesheet" href="{% static 'css/chart_backgrounds.css' %}?v=1">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 
 <style>
@@ -62,6 +63,9 @@
     z-index: 1;
   }
 
+  /* ─────────────────────────────────────────────
+     HEADER
+  ───────────────────────────────────────────── */
   .kk-stage-header {
     flex: 0 0 auto;
     min-height: 58px;
@@ -69,6 +73,9 @@
     padding-bottom: 0.55rem;
   }
 
+  /* ─────────────────────────────────────────────
+     BODY GRID (main + side)
+  ───────────────────────────────────────────── */
   .kk-stage-body {
     flex: 1 1 auto;
     min-height: 0;
@@ -124,6 +131,9 @@
     line-height: 1.05;
   }
 
+  /* ─────────────────────────────────────────────
+     CHART WRAPPER (kept as-is, drawing tools work)
+  ───────────────────────────────────────────── */
   .kk-chart-wrap {
     flex: 1 1 auto;
     min-height: 260px;
@@ -140,55 +150,132 @@
     border-radius: var(--kk-radius-lg, 22px);
   }
 
+  .kk-chart-wrap::before,
+  .kk-chart-wrap::after {
+    pointer-events: none !important;
+    z-index: 0 !important;
+  }
+
   .kk-chart-wrap > canvas#live-chart {
-    position: relative;
-    z-index: 1;
+    position: relative !important;
+    z-index: 10 !important;
+    pointer-events: none !important;
 
     width: 100% !important;
     height: 100% !important;
-
     display: block;
   }
 
   .kk-chart-wrap > #special-display {
-    position: absolute;
-    inset: 0;
-    z-index: 1;
+    position: absolute !important;
+    inset: 0 !important;
+    z-index: 20 !important;
+    pointer-events: none !important;
   }
 
   .kk-chart-wrap > canvas#draw-canvas {
-    position: absolute;
-    inset: 0;
-    z-index: 5;
-    pointer-events: none;
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 1000 !important;
+    pointer-events: none !important;
+    touch-action: none !important;
   }
 
   .kk-chart-wrap > canvas#laser-canvas {
-    position: absolute;
-    inset: 0;
-    z-index: 6;
-    pointer-events: none;
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 1001 !important;
+    pointer-events: none !important;
+    touch-action: none !important;
   }
 
+  .kk-chart-wrap.is-drawing > canvas#laser-canvas,
   .kk-chart-wrap > canvas#laser-canvas.active {
-    pointer-events: auto;
+    pointer-events: auto !important;
+    cursor: crosshair;
   }
 
+  .kk-chart-wrap.is-laser > canvas#laser-canvas.active {
+    cursor: none;
+  }
+
+  .kk-winner-float,
+  .kk-winner-float *,
+  .kk-spark,
+  .kk-spark-layer {
+    pointer-events: none !important;
+  }
+
+  /* ─────────────────────────────────────────────
+     SIDE COLUMN (QR + Participants + Leaderboard)
+     Flex column so the leaderboard can grow & scroll.
+  ───────────────────────────────────────────── */
   .kk-stage-side {
     min-height: 0;
-    overflow-y: auto;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    overflow: hidden;
   }
 
+  /* QR panel and Participants card keep their natural size. */
+  .kk-stage-side > .kk-qr-panel,
+  .kk-stage-side > .kk-card:not(:last-child) {
+    flex: 0 0 auto;
+  }
+
+  /* Leaderboard card (last card, only present for games)
+     fills remaining height and scrolls inside. */
+  .kk-stage-side > .kk-card:last-child {
+    flex: 1 1 0;
+    min-height: 140px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* The leaderboard list itself is the scroll container. */
+  #leaderboard {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+
+  /* ─────────────────────────────────────────────
+     FULLSCREEN MODE — hide side column
+  ───────────────────────────────────────────── */
   .kk-stage.fullscreen .kk-stage-body {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .kk-stage.fullscreen .kk-stage-side {
-    display: none;
+    display: none !important;
   }
 
   .kk-stage.fullscreen .kk-stage-main {
     padding: 0.65rem;
+  }
+
+  /* ─────────────────────────────────────────────
+     SHORT LAPTOPS — shrink QR so leaderboard has room
+  ───────────────────────────────────────────── */
+  @media (max-height: 820px) {
+    .kk-qr-panel img {
+      max-width: 130px;
+      height: auto;
+    }
+    .kk-qr-panel {
+      padding: 0.6rem !important;
+    }
+    .kk-qr-panel .code {
+      font-size: 1.1rem;
+    }
   }
 
   @media (max-height: 760px) {
@@ -212,6 +299,20 @@
     }
   }
 
+  @media (max-height: 700px) {
+    .kk-qr-panel img {
+      max-width: 100px;
+    }
+    .kk-stage-side {
+      gap: 0.5rem;
+    }
+  }
+
+  /* ─────────────────────────────────────────────
+     SMALL SCREENS (≤980px)
+     Single column. Hide QR + nav controls on the side,
+     but KEEP the leaderboard visible below the chart.
+  ───────────────────────────────────────────── */
   @media (max-width: 980px) {
     body {
       overflow: auto;
@@ -232,80 +333,32 @@
       min-height: 75vh;
     }
 
-    .kk-stage-side {
-      display: none;
-    }
-
     .kk-chart-wrap {
       min-height: 58vh;
     }
+
+    /* Keep the side column rendered (for the leaderboard),
+       but lay it out below and hide the QR + Participants cards. */
+    .kk-stage-side {
+      display: flex;
+      flex-direction: column;
+      height: auto;
+      max-height: none;
+      overflow: visible;
+      padding: 0;
+      gap: 0.5rem;
+    }
+
+    .kk-stage-side > .kk-qr-panel,
+    .kk-stage-side > .kk-card:not(:last-child) {
+      display: none;
+    }
+
+    .kk-stage-side > .kk-card:last-child {
+      flex: 0 0 auto;
+      max-height: 40vh;
+    }
   }
- /* ─────────────────────────────────────────────
-   FIX: drawing tools / highlighter / laser pointer
-   Laser canvas is the INPUT layer for all tools.
-   Draw canvas is only the OUTPUT layer for ink.
-───────────────────────────────────────────── */
-
-.kk-chart-wrap {
-  position: relative !important;
-  isolation: isolate;
-}
-
-.kk-chart-wrap::before,
-.kk-chart-wrap::after {
-  pointer-events: none !important;
-  z-index: 0 !important;
-}
-
-.kk-chart-wrap > canvas#live-chart {
-  position: relative !important;
-  z-index: 10 !important;
-  pointer-events: none !important;
-}
-
-.kk-chart-wrap > #special-display {
-  position: absolute !important;
-  inset: 0 !important;
-  z-index: 20 !important;
-  pointer-events: none !important;
-}
-
-.kk-chart-wrap > canvas#draw-canvas {
-  position: absolute !important;
-  inset: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
-  z-index: 1000 !important;
-  pointer-events: none !important;
-  touch-action: none !important;
-}
-
-.kk-chart-wrap > canvas#laser-canvas {
-  position: absolute !important;
-  inset: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
-  z-index: 1001 !important;
-  pointer-events: none !important;
-  touch-action: none !important;
-}
-
-.kk-chart-wrap.is-drawing > canvas#laser-canvas,
-.kk-chart-wrap > canvas#laser-canvas.active {
-  pointer-events: auto !important;
-  cursor: crosshair;
-}
-
-.kk-chart-wrap.is-laser > canvas#laser-canvas.active {
-  cursor: none;
-}
-
-.kk-winner-float,
-.kk-winner-float *,
-.kk-spark,
-.kk-spark-layer {
-  pointer-events: none !important;
-}
 </style>
 </head>
 
@@ -315,7 +368,7 @@
      data-code="{{ session.code }}"
      data-kind="{{ session.kind }}"
      data-mode="{{ session.mode }}"
-     data-chart-bg="{{ session.chart_background|default:'normal' }}">
+     data-chart-bg="{{ chart_background|default:'normal' }}">
 
   <header class="kk-stage-header">
     <a href="{% if session.kind == 'poll' %}{% url 'polls:edit' session.questionnaire.pk %}{% else %}{% url 'games:edit' session.quiz.pk %}{% endif %}"
@@ -389,7 +442,9 @@
 
         <h2 class="kk-stage-q" id="q-text">—</h2>
 
-        <div class="kk-chart-wrap" id="chart-wrap">
+        <div class="kk-chart-wrap kk-bg-{{ chart_background|default:'normal' }}"
+             id="chart-wrap"
+             data-bg="{{ chart_background|default:'normal' }}">
           <canvas id="live-chart"></canvas>
           <div id="special-display" style="display:none;"></div>
           <canvas id="draw-canvas"></canvas>
@@ -450,8 +505,8 @@
   </div>
 </div>
 
-<script src="{% static 'js/chart_preview.js' %}?v=6"></script>
-<script src="{% static 'js/draw_overlay.js' %}?v=6"></script>
-<script src="{% static 'js/present.js' %}?v=6"></script>
+<script src="{% static 'js/chart_preview.js' %}?v=10"></script>
+<script src="{% static 'js/draw_overlay.js' %}?v=9"></script>
+<script src="{% static 'js/present.js' %}?v=10"></script>
 </body>
 </html>

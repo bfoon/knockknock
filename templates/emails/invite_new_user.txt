@@ -1,0 +1,18 @@
+Hi there,
+
+{{ inviter.username }} wants to collaborate with you on Knock-Knock —
+the live polls and quiz games app.
+
+They're inviting you to: "{{ target.title }}"
+{% if invite.message %}
+Message from {{ inviter.username }}:
+"{{ invite.message }}"
+{% endif %}
+Since you don't have a Knock-Knock account yet, create one here
+and we'll add you to the collaboration automatically:
+
+{{ accept_url }}
+
+It's free. No card needed.
+
+— The Knock-Knock crew

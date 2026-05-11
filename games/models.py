@@ -24,7 +24,7 @@ class Quiz(models.Model):
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="quizzes")
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True)
-    template_id = models.CharField(max_length=40, default="neon")
+    template_id = models.CharField(max_length=40, default="neon_gaming")
     logo = models.ImageField(upload_to="quiz_logos/", blank=True, null=True)
     scoring = models.CharField(max_length=20, choices=SCORING_CHOICES, default="speed")
     mode = models.CharField(max_length=20, choices=MODE_CHOICES, default="orchestra")

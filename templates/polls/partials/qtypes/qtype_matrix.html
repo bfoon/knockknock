@@ -1,0 +1,122 @@
+{# Matrix rows editor — one row per sub-question. #}
+<div class="kk-card mb-4">
+  <h3 class="kk-section-title" style="font-size:1.05rem;">
+    <i class="bi bi-grid-3x3"></i> Matrix rows
+  </h3>
+  <p class="text-secondary small mb-3">
+    Each row is a sub-question that participants will rate on the same scale
+    (set the scale in "Matrix settings" below).
+  </p>
+
+  {{ matrix_rows.management_form }}
+
+  <div id="matrix-rows-list">
+    {% for rform in matrix_rows %}
+      <div class="kk-choice-row d-flex gap-2 align-items-center mb-2 p-2"
+           style="background: var(--kk-surface-2); border-radius: var(--kk-radius);"
+           data-matrix-row>
+        <span class="kk-q-index">{{ forloop.counter }}</span>
+
+        {% for hidden in rform.hidden_fields %}{{ hidden }}{% endfor %}
+
+        <div class="flex-grow-1">
+          {{ rform.text }}
+          {% if rform.text.errors %}
+            <div class="text-danger small">{{ rform.text.errors|join:", " }}</div>
+          {% endif %}
+        </div>
+
+        {% if matrix_rows.can_delete %}
+          <span class="d-none">{{ rform.DELETE }}</span>
+        {% endif %}
+
+        <button type="button" class="kk-btn kk-btn-ghost btn-sm matrix-remove"
+                title="Remove row">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+    {% endfor %}
+  </div>
+
+  <button type="button" class="kk-btn kk-btn-ghost btn-sm mt-2" id="add-matrix-row-btn">
+    <i class="bi bi-plus-lg"></i> Add row
+  </button>
+</div>
+
+<script>
+(function () {
+  const list = document.getElementById("matrix-rows-list");
+  const btn  = document.getElementById("add-matrix-row-btn");
+  if (!list || !btn) return;
+
+  // Find the matching TOTAL_FORMS input
+  const firstHidden = list.querySelector("input[name$='-id']");
+  let prefix = "matrix_rows";
+  if (firstHidden) {
+    const m = firstHidden.name.match(/^(.+?)-\d+-id$/);
+    if (m) prefix = m[1];
+  }
+  const total = document.querySelector(`input[name="${prefix}-TOTAL_FORMS"]`);
+  if (!total) return;
+
+  function renumber() {
+    let n = 1;
+    list.querySelectorAll("[data-matrix-row]").forEach(row => {
+      if (row.style.display === "none") return;
+      const pill = row.querySelector(".kk-q-index");
+      if (pill) pill.textContent = n++;
+    });
+  }
+
+  function wireRemove(row) {
+    const btnX = row.querySelector(".matrix-remove");
+    if (!btnX || btnX.dataset.wired) return;
+    btnX.dataset.wired = "1";
+    btnX.addEventListener("click", () => {
+      const del = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
+      const idInput = row.querySelector('input[name$="-id"]');
+      if (del && idInput && idInput.value) {
+        del.checked = true;
+        row.style.display = "none";
+      } else {
+        row.remove();
+      }
+      renumber();
+    });
+  }
+
+  list.querySelectorAll("[data-matrix-row]").forEach(wireRemove);
+
+  btn.addEventListener("click", () => {
+    const rows = list.querySelectorAll("[data-matrix-row]");
+    let template = null;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (rows[i].style.display !== "none") { template = rows[i]; break; }
+    }
+    if (!template) template = rows[rows.length - 1];
+    if (!template) return;
+
+    const idx = parseInt(total.value, 10);
+    const clone = template.cloneNode(true);
+
+    clone.querySelectorAll("input, label").forEach(el => {
+      ["name", "id", "for"].forEach(attr => {
+        const v = el.getAttribute(attr);
+        if (v) el.setAttribute(attr, v.replace(/-\d+-/, `-${idx}-`));
+      });
+      if (el.type === "text") el.value = "";
+      if (el.type === "checkbox") el.checked = false;
+      if (el.type === "hidden" && (el.name || "").endsWith("-id")) el.value = "";
+    });
+    clone.style.display = "";
+
+    const xBtn = clone.querySelector(".matrix-remove");
+    if (xBtn) delete xBtn.dataset.wired;
+    wireRemove(clone);
+
+    list.appendChild(clone);
+    total.value = idx + 1;
+    renumber();
+  });
+})();
+</script>

@@ -1,27 +1,36 @@
-{# Visual template picker — used in poll & game editors. #}
-<div class="kk-template-grid" id="kk-template-picker" data-input-name="{{ input_name|default:'template_id' }}">
+{# Creative visual template picker — used in poll & game editors. #}
+<div class="kk-template-grid kk-template-grid-creative" id="kk-template-picker" data-input-name="{{ input_name|default:'template_id' }}">
   {% for t in templates %}
-    <div class="kk-template-tile{% if t.id == selected_id %} selected{% endif %}" data-template-id="{{ t.id }}">
-      <div class="kk-template-preview" style="background: {{ t.bg_css|default:t.bg|safe }}; color: {{ t.fg }};">
-        <div style="font-size: .85rem; font-weight: 700; font-family: 'Clash Display', sans-serif;">{{ t.name }}</div>
-        <div class="kk-template-bars">
-          <span style="background: {{ t.accent }}; height: 40%;"></span>
-          <span style="background: {{ t.accent2 }}; height: 70%;"></span>
-          <span style="background: {{ t.accent }}; height: 90%;"></span>
-          <span style="background: {{ t.accent2 }}; height: 55%;"></span>
+    <div class="kk-template-tile kk-template-tile-creative{% if t.id == selected_id %} selected{% endif %}" data-template-id="{{ t.id }}">
+      <div class="kk-template-preview kk-template-preview-creative" style="background: {{ t.bg_css|default:t.bg|safe }}; color: {{ t.fg }};">
+        {% if t.overlay %}
+          <span class="kk-template-preview-overlay" style="background-image: {{ t.overlay|safe }};"></span>
+        {% endif %}
+        <span class="kk-template-preview-glass"></span>
+        <div class="kk-template-preview-title">{{ t.name }}</div>
+        <div class="kk-template-preview-question">How do you feel today?</div>
+        <div class="kk-template-preview-bars">
+          <span style="background: {{ t.accent }}; height: 46%;"></span>
+          <span style="background: {{ t.accent2 }}; height: 82%;"></span>
+          <span style="background: {{ t.accent }}; height: 62%;"></span>
+          <span style="background: {{ t.accent2 }}; height: 34%;"></span>
         </div>
       </div>
-      <div class="kk-template-name">{{ t.name }}</div>
+      <div class="kk-template-name kk-template-name-creative">
+        <span>{{ t.name }}</span>
+        <small>{{ t.font }}</small>
+      </div>
     </div>
   {% endfor %}
 </div>
-<input type="hidden" name="{{ input_name|default:'template_id' }}" id="template-id-input" value="{{ selected_id|default:'midnight' }}">
+<input type="hidden" name="{{ input_name|default:'template_id' }}" id="template-id-input" value="{{ selected_id|default:'space_hud' }}">
 
 <script>
 (function () {
   const picker = document.getElementById("kk-template-picker");
   const input  = document.getElementById("template-id-input");
   if (!picker || !input) return;
+
   picker.querySelectorAll(".kk-template-tile").forEach(tile => {
     tile.addEventListener("click", () => {
       picker.querySelectorAll(".kk-template-tile").forEach(t => t.classList.remove("selected"));

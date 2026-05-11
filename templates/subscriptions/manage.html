@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Manage subscription · Knock-Knock{% endblock %}
+
+{% block content %}
+<div class="kk-main-narrow mx-auto">
+  <h1 class="mb-4">Your subscription</h1>
+
+  {% if subscription %}
+    <div class="kk-card mb-4">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <div class="kk-text-dim small">Current plan</div>
+          <h2 class="mb-1">{{ subscription.plan.name }}</h2>
+          <div class="kk-text-dim">
+            ${{ subscription.plan.price_monthly|floatformat:0 }}/mo ·
+            Status: <strong>{{ subscription.get_status_display }}</strong>
+            {% if subscription.renews_at %} · Renews {{ subscription.renews_at|date:"M j, Y" }}{% endif %}
+          </div>
+        </div>
+        <a href="{% url 'subscriptions:pricing' %}" class="kk-btn kk-btn-primary">
+          <i class="bi bi-arrow-up-circle"></i> Change plan
+        </a>
+      </div>
+    </div>
+
+    {% if payments %}
+      <h2 class="kk-section-title"><i class="bi bi-receipt"></i> Recent payments</h2>
+      <div class="kk-card">
+        <table class="w-100" style="border-collapse: collapse;">
+          <thead style="border-bottom: 1px solid var(--kk-border);">
+            <tr class="kk-text-dim small text-start">
+              <th style="padding: .5rem 0;">Date</th>
+              <th>Cardholder</th>
+              <th>Card</th>
+              <th class="text-end">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in payments %}
+              <tr style="border-bottom: 1px solid var(--kk-border);">
+                <td style="padding: .75rem 0;">{{ p.created_at|date:"M j, Y" }}</td>
+                <td>{{ p.cardholder_name }}</td>
+                <td><code>•••• {{ p.card_last4 }}</code></td>
+                <td class="text-end">${{ p.amount|floatformat:2 }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+
+    {% if subscription.user %}
+      <div class="mt-4 text-center">
+        <a href="{% url 'subscriptions:cancel' %}" class="kk-text-dim small">Cancel subscription</a>
+      </div>
+    {% endif %}
+
+  {% else %}
+    <div class="kk-empty">
+      <div class="em">📭</div>
+      <p>You're on the Free plan.</p>
+      <a href="{% url 'subscriptions:pricing' %}" class="kk-btn kk-btn-primary">See paid plans</a>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

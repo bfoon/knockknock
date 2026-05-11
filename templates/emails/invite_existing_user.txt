@@ -1,0 +1,15 @@
+Hi there,
+
+{{ inviter.username }} invited you to collaborate on "{{ target.title }}" on Knock-Knock.
+
+Permission: {{ invite.get_permission_display }}
+{% if invite.message %}
+Message from {{ inviter.username }}:
+"{{ invite.message }}"
+{% endif %}
+Accept the invite:
+{{ accept_url }}
+
+If you didn't expect this email, you can ignore it.
+
+— The Knock-Knock crew

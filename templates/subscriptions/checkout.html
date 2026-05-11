@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Checkout · {{ plan.name }} · Knock-Knock{% endblock %}
+
+{% block content %}
+<div class="kk-main-narrow mx-auto">
+  <div class="kk-checkout-header">
+    <h1>You're upgrading to <span class="kk-accent-text">{{ plan.name }}</span></h1>
+    <p class="kk-text-dim">${{ plan.price_monthly|floatformat:0 }}/month · cancel anytime</p>
+  </div>
+
+  <div class="kk-flash" style="background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.3); color: var(--kk-warn); padding: .75rem 1rem; border-radius: var(--kk-radius); margin-bottom: 1.5rem;">
+    <i class="bi bi-info-circle"></i> This is a <strong>mock payment form</strong>. No real card will be charged.
+  </div>
+
+  <form method="post" class="kk-card">
+    {% csrf_token %}
+    {% for field in form %}
+      <div class="mb-3">
+        <label class="form-label">{{ field.label }}</label>
+        {{ field }}
+        {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors|join:", " }}</div>{% endif %}
+      </div>
+    {% endfor %}
+    <button class="kk-btn kk-btn-primary kk-btn-lg w-100">
+      <i class="bi bi-lock-fill"></i> Pay ${{ plan.price_monthly|floatformat:0 }} (mock)
+    </button>
+    <p class="text-center mt-3 mb-0">
+      <a href="{% url 'subscriptions:pricing' %}" class="kk-text-dim">← Back to plans</a>
+    </p>
+  </form>
+</div>
+
+<style>
+.kk-checkout-header { text-align: center; margin-bottom: 2rem; }
+.kk-accent-text {
+  background: linear-gradient(135deg, var(--kk-accent), var(--kk-accent-2));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+</style>
+{% endblock %}

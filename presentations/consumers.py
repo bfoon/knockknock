@@ -185,6 +185,30 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 },
             )
 
+        # Reaction questions should feel alive on the presenter screen.
+        # We still broadcast the normal tally below so the chart remains visible,
+        # but we also send a lightweight animation event for the exact emoji tapped.
+        if result.get("kind") == "poll" and result.get("question_type") == "reaction":
+            emoji = (
+                result.get("choice_text")
+                or result.get("text")
+                or msg.get("text")
+                or "✨"
+            )
+            await self.channel_layer.group_send(
+                self.group,
+                {
+                    "type": "broadcast",
+                    "payload": {
+                        "type": "reaction_burst",
+                        "question_id": msg.get("question_id"),
+                        "choice_id": result.get("choice_id") or msg.get("choice_id"),
+                        "emoji": str(emoji)[:12],
+                        "participant_uid": self.uid,
+                    },
+                },
+            )
+
         tally = await self._tally(self.session_pk, msg.get("question_id"))
 
         await self.channel_layer.group_send(
@@ -417,6 +441,71 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             ended_at=timezone.now(),
         )
 
+
+    def _scale_bounds_for(self, question):
+        """Return safe integer scale bounds for scale-style poll questions."""
+        config = getattr(question, "config", None) or {}
+        meta = {}
+        try:
+            meta = question.meta() or {}
+        except Exception:
+            meta = {}
+
+        raw_min = config.get("scale_min", config.get("min", meta.get("scale_min", 1)))
+        raw_max = config.get("scale_max", config.get("max", meta.get("scale_max", 10)))
+
+        try:
+            min_v = int(raw_min)
+        except Exception:
+            min_v = 1
+        try:
+            max_v = int(raw_max)
+        except Exception:
+            max_v = 10
+
+        min_v = max(1, min(10, min_v))
+        max_v = max(2, min(10, max_v))
+        if min_v >= max_v:
+            min_v, max_v = 1, 10
+        return min_v, max_v
+
+    def _scale_choices_for(self, question):
+        min_v, max_v = self._scale_bounds_for(question)
+        return [
+            {"id": i, "text": str(i), "value": i}
+            for i in range(min_v, max_v + 1)
+        ]
+
+    def _poll_choices_payload(self, question):
+        qtype = getattr(question, "type", None)
+        if qtype == "scale":
+            return self._scale_choices_for(question)
+
+        # Do not leak stale choices to text-based questions. A question may have
+        # old A/B rows left from when it was previously MCQ, but open/word
+        # questions must render text inputs only on the participant side.
+        try:
+            meta = question.meta() or {}
+        except Exception:
+            meta = {}
+
+        if not meta.get("has_choices"):
+            return []
+
+        return [
+            {"id": c.id, "text": c.text}
+            for c in question.choices.all()
+        ]
+
+    def _numeric_bucket_key(self, value):
+        try:
+            number = float(value)
+        except Exception:
+            return None
+        if number.is_integer():
+            return str(int(number))
+        return str(number)
+
     @database_sync_to_async
     def _state_payload(self, session, uid=None, role=None):
         questions = session.questions()
@@ -432,10 +521,10 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                     "text": current.text,
                     "type": current.type,
                     "chart_type": current.chart_type,
-                    "choices": [
-                        {"id": c.id, "text": c.text}
-                        for c in current.choices.all()
-                    ],
+                    "choices": self._poll_choices_payload(current),
+                    "config": getattr(current, "config", {}) or {},
+                    "scale_min": self._scale_bounds_for(current)[0],
+                    "scale_max": self._scale_bounds_for(current)[1],
                     "font_family": getattr(current, "font_family", "clash"),
                     "font_size": getattr(current, "font_size", 44),
                     "font_bold": getattr(current, "font_bold", True),
@@ -547,6 +636,10 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 if r.choice_id:
                     key = str(r.choice_id)
                     counts[key] = counts.get(key, 0) + 1
+                elif r.numeric_value is not None:
+                    key = self._numeric_bucket_key(r.numeric_value)
+                    if key is not None:
+                        counts[key] = counts.get(key, 0) + 1
 
                 if r.text_value:
                     texts.append(r.text_value)
@@ -614,7 +707,7 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 except Exception:
                     clean_value = None
 
-            if q.type == "scale" and clean_value is None and clean_text:
+            if q.type in ("scale", "rating", "nps", "slider", "numeric") and clean_value is None and clean_text:
                 try:
                     clean_value = float(clean_text)
                 except Exception:
@@ -651,6 +744,10 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             return {
                 "kind": "poll",
                 "ok": True,
+                "question_type": q.type,
+                "choice_id": choice.id if choice else None,
+                "choice_text": choice.text if choice else clean_text,
+                "text": clean_text,
             }
 
         try:
@@ -767,6 +864,10 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 if r.choice_id:
                     key = str(r.choice_id)
                     counts[key] = counts.get(key, 0) + 1
+                elif r.numeric_value is not None:
+                    key = self._numeric_bucket_key(r.numeric_value)
+                    if key is not None:
+                        counts[key] = counts.get(key, 0) + 1
 
                 if r.text_value:
                     texts.append(r.text_value)

@@ -45,7 +45,7 @@ class LiveSession(models.Model):
 
     @property
     def template_id(self):
-        return self.questionnaire.template_id if self.questionnaire else (self.quiz.template_id if self.quiz else "midnight")
+        return self.questionnaire.template_id if self.questionnaire else (self.quiz.template_id if self.quiz else "space_hud")
 
     def questions(self):
         if self.kind == "poll" and self.questionnaire:

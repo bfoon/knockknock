@@ -10,6 +10,9 @@ urlpatterns = [
     path("games/", include("games.urls")),
     path("live/", include("presentations.urls")),
     path("", include("core.urls")),
+    path("billing/", include("subscriptions.urls")),
+    path("orgs/", include("organizations.urls")),
+    path("collab/", include("collaborations.urls")),
 ]
 
 if settings.DEBUG:

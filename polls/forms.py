@@ -6,15 +6,23 @@ from .models import Questionnaire, Question, Choice, QuestionnaireCollaborator
 class QuestionnaireForm(forms.ModelForm):
     class Meta:
         model = Questionnaire
-        fields = ("title", "description", "template_id", "logo", "mode")
+        fields = ("title", "description", "logo", "mode")
         widgets = {
-            "title": forms.TextInput(attrs={"class": "form-control form-control-lg", "placeholder": "Untitled questionnaire"}),
-            "description": forms.Textarea(attrs={"class": "form-control", "rows": 2, "placeholder": "Optional description"}),
-            "template_id": forms.HiddenInput(),
-            "logo": forms.FileInput(attrs={"class": "form-control"}),
+            "title": forms.TextInput(attrs={
+                "class": "form-control form-control-lg",
+                "placeholder": "Untitled questionnaire",
+            }),
+            "description": forms.Textarea(attrs={
+                "class": "form-control",
+                "rows": 2,
+                "placeholder": "Optional description",
+            }),
+            "logo": forms.FileInput(attrs={
+                "class": "form-control",
+                "accept": "image/*",
+            }),
             "mode": forms.Select(attrs={"class": "form-select"}),
         }
-
 
 class QuestionForm(forms.ModelForm):
     class Meta:

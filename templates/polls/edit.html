@@ -21,19 +21,49 @@
       </div>
     </div>
   </div>
-  <div class="d-flex gap-2">
-    {% if is_owner %}
-    <button type="button" class="kk-btn kk-btn-ghost kk-btn-lg" data-bs-toggle="modal" data-bs-target="#collabModal">
-      <i class="bi bi-people"></i> Share
-      {% if collaborators %}<span class="kk-q-pill ms-1">{{ collaborators.count }}</span>{% endif %}
+
+ <div class="d-flex gap-2 flex-wrap">
+  {% if is_owner %}
+  <button type="button" class="kk-btn kk-btn-ghost kk-btn-lg" data-bs-toggle="modal" data-bs-target="#collabModal">
+    <i class="bi bi-people"></i> Share
+    {% if collaborators %}<span class="kk-q-pill ms-1">{{ collaborators.count }}</span>{% endif %}
+  </button>
+  {% endif %}
+
+  <div class="dropdown">
+    <button class="kk-btn kk-btn-ghost kk-btn-lg dropdown-toggle"
+            type="button"
+            data-bs-toggle="dropdown"
+            aria-expanded="false">
+      <i class="bi bi-download"></i> Download Results
     </button>
-    {% endif %}
-    <form method="post" action="{% url 'polls:start' questionnaire.pk %}">{% csrf_token %}
-      <button class="kk-btn kk-btn-primary kk-btn-lg" {% if not questionnaire.questions.count %}disabled{% endif %}>
-        <i class="bi bi-play-fill"></i> Present live
-      </button>
-    </form>
+
+    <ul class="dropdown-menu dropdown-menu-dark">
+      <li>
+        <a class="dropdown-item" href="{% url 'polls:results' questionnaire.pk %}">
+          <i class="bi bi-bar-chart"></i> View Results
+        </a>
+      </li>
+      <li><hr class="dropdown-divider"></li>
+      <li>
+        <a class="dropdown-item" href="{% url 'polls:download_results_excel' questionnaire.pk %}">
+          <i class="bi bi-file-earmark-excel"></i> Download Excel
+        </a>
+      </li>
+      <li>
+        <a class="dropdown-item" href="{% url 'polls:download_results_word' questionnaire.pk %}">
+          <i class="bi bi-file-earmark-word"></i> Download Word
+        </a>
+      </li>
+    </ul>
   </div>
+
+  <form method="post" action="{% url 'polls:start' questionnaire.pk %}">
+    {% csrf_token %}
+    <button class="kk-btn kk-btn-primary kk-btn-lg" {% if not questionnaire.questions.count %}disabled{% endif %}>
+      <i class="bi bi-play-fill"></i> Present live
+    </button>
+  </form>
 </div>
 
 <div class="row g-4">
@@ -67,20 +97,56 @@
 
   <div class="col-lg-5">
     <form method="post" enctype="multipart/form-data" class="kk-card">
-      {% csrf_token %}
+    {% csrf_token %}
+    {{ form.template_id }}
+
+    {% if form.non_field_errors %}
+      <div class="alert alert-danger">
+        {{ form.non_field_errors }}
+      </div>
+    {% endif %}
+
+    {% for hidden in form.hidden_fields %}
+      {% if hidden.errors %}
+        <div class="alert alert-danger">
+          {{ hidden.name }}: {{ hidden.errors }}
+        </div>
+      {% endif %}
+    {% endfor %}
+
       <h2 class="kk-section-title" style="font-size:1.2rem;"><i class="bi bi-gear"></i> Settings</h2>
       <div class="mb-3"><label class="form-label">Title</label>{{ form.title }}</div>
       <div class="mb-3"><label class="form-label">Description</label>{{ form.description }}</div>
       <div class="mb-3"><label class="form-label">Mode</label>{{ form.mode }}</div>
       <div class="mb-3">
         <label class="form-label">Logo</label>
+
         {% if questionnaire.logo %}
-          <div class="d-flex align-items-center gap-2 mb-2">
-            <img src="{{ questionnaire.logo.url }}" alt="" style="height:36px; border-radius:6px;">
-            <span class="text-secondary small">Current logo — upload a new one to replace</span>
+          <div class="d-flex align-items-center gap-3 mb-3 p-2 rounded"
+               style="background:rgba(255,255,255,.04); border:1px solid var(--kk-border);">
+            <img src="{{ questionnaire.logo.url }}"
+                 alt="{{ questionnaire.title }} logo"
+                 style="height:56px; width:56px; object-fit:cover; border-radius:12px; border:1px solid var(--kk-border);">
+            <div>
+              <div class="small text-light">Current logo uploaded</div>
+              <div class="small text-secondary" style="word-break:break-all;">
+                {{ questionnaire.logo.url }}
+              </div>
+            </div>
+          </div>
+        {% else %}
+          <div class="small text-secondary mb-2">
+            No logo uploaded yet.
           </div>
         {% endif %}
+
         {{ form.logo }}
+
+        {% if form.logo.errors %}
+          <div class="text-danger small mt-2">
+            {{ form.logo.errors }}
+          </div>
+        {% endif %}
       </div>
       <button class="kk-btn kk-btn-primary w-100">Save</button>
     </form>

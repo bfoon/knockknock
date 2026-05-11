@@ -24,7 +24,11 @@ class Questionnaire(models.Model):
         ("open", "Open (self-paced)"),
     ]
 
-    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="questionnaires")
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="questionnaires",
+    )
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     template_id = models.CharField(max_length=40, default="midnight")
@@ -42,9 +46,14 @@ class Questionnaire(models.Model):
     def can_edit(self, user) -> bool:
         if not user.is_authenticated:
             return False
+
         if self.owner_id == user.id:
             return True
-        return self.collaborators.filter(user=user, role__in=["edit", "owner"]).exists()
+
+        return self.collaborators.filter(
+            user=user,
+            role__in=["edit", "owner"],
+        ).exists()
 
 
 class QuestionnaireCollaborator(models.Model):
@@ -52,11 +61,24 @@ class QuestionnaireCollaborator(models.Model):
         ("view", "Can view"),
         ("edit", "Can edit"),
     ]
-    questionnaire = models.ForeignKey(Questionnaire, on_delete=models.CASCADE, related_name="collaborators")
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="collaborations")
+
+    questionnaire = models.ForeignKey(
+        Questionnaire,
+        on_delete=models.CASCADE,
+        related_name="collaborators",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="collaborations",
+    )
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default="edit")
-    invited_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
-                                   related_name="sent_invites")
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="sent_invites",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -76,16 +98,22 @@ class Question(models.Model):
         ("ranking", "Ranking"),
     ]
 
-    questionnaire = models.ForeignKey(Questionnaire, on_delete=models.CASCADE, related_name="questions")
+    questionnaire = models.ForeignKey(
+        Questionnaire,
+        on_delete=models.CASCADE,
+        related_name="questions",
+    )
     text = models.CharField(max_length=500)
     type = models.CharField(max_length=20, choices=TYPE_CHOICES, default="mcq")
     chart_type = models.CharField(max_length=30, default="bar")
     order = models.PositiveIntegerField(default=0)
     image = models.ImageField(upload_to="question_images/", blank=True, null=True)
 
-    # NEW: per-question typography controls
     font_family = models.CharField(max_length=20, choices=FONT_CHOICES, default="clash")
-    font_size = models.PositiveIntegerField(default=44, help_text="Question heading size in px (24-96)")
+    font_size = models.PositiveIntegerField(
+        default=44,
+        help_text="Question heading size in px (24-96)",
+    )
     font_bold = models.BooleanField(default=True)
 
     class Meta:
@@ -96,7 +124,11 @@ class Question(models.Model):
 
 
 class Choice(models.Model):
-    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="choices")
+    question = models.ForeignKey(
+        Question,
+        on_delete=models.CASCADE,
+        related_name="choices",
+    )
     text = models.CharField(max_length=200)
     order = models.PositiveIntegerField(default=0)
 
@@ -108,14 +140,46 @@ class Choice(models.Model):
 
 
 class Response(models.Model):
-    """A single participant response, kept for analytics. Live tally is in Redis."""
-    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="responses")
-    session = models.ForeignKey("presentations.LiveSession", on_delete=models.CASCADE, related_name="poll_responses")
-    participant_id = models.CharField(max_length=64)  # anonymous UUID
-    choice = models.ForeignKey(Choice, on_delete=models.SET_NULL, null=True, blank=True)
+    """
+    A single participant response, permanently saved for analytics/export.
+
+    Important:
+    The live chart can still use WebSocket/Redis style updates,
+    but exports must read from this table.
+    """
+
+    question = models.ForeignKey(
+        Question,
+        on_delete=models.CASCADE,
+        related_name="responses",
+    )
+    session = models.ForeignKey(
+        "presentations.LiveSession",
+        on_delete=models.CASCADE,
+        related_name="poll_responses",
+    )
+    participant_id = models.CharField(max_length=64)
+    choice = models.ForeignKey(
+        Choice,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
     text_value = models.TextField(blank=True)
     numeric_value = models.FloatField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        indexes = [models.Index(fields=["question", "session"])]
+        indexes = [
+            models.Index(fields=["question", "session"]),
+            models.Index(fields=["session", "participant_id"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["question", "session", "participant_id"],
+                name="unique_poll_response_per_participant_question",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.session} · {self.question_id} · {self.participant_id}"

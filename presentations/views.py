@@ -13,15 +13,32 @@ from .models import LiveSession, Participant
 
 @login_required
 def present(request, code):
-    """Presenter view — owner only."""
-    session = get_object_or_404(LiveSession, code=code, owner=request.user)
-    join_url = request.build_absolute_uri(reverse("presentations:join_code", args=[code]))
+    session = get_object_or_404(
+        LiveSession.objects.select_related("questionnaire", "quiz"),
+        code=code,
+        owner=request.user,
+    )
+
+    template = get_template(session.template_id)
+
+    logo_url = None
+
+    if session.kind == "poll" and session.questionnaire and session.questionnaire.logo:
+        logo_url = session.questionnaire.logo.url
+
+    elif session.kind == "game" and session.quiz and getattr(session.quiz, "logo", None):
+        logo_url = session.quiz.logo.url
+
+    join_url = request.build_absolute_uri(
+        reverse("presentations:join_code", args=[session.code])
+    )
+
     return render(request, "presentations/present.html", {
         "session": session,
-        "template": get_template(session.template_id),
+        "template": template,
+        "logo_url": logo_url,
         "join_url": join_url,
     })
-
 
 def join_landing(request):
     """User typed `/live/join/` — show code-entry form."""

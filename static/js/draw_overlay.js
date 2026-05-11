@@ -254,7 +254,27 @@ console.log("[knock-knock] kkDrawOverlay v4 loaded");
         laserCtx.clearRect(0, 0, r2.width, r2.height);
         laserPos = null; laserAlpha = 0;
       },
-      resize() { fit(); },
+      resize() {
+          const rect = inkCanvas.getBoundingClientRect();
+
+          if (!rect.width || !rect.height) {
+            return;
+          }
+
+          const tmp = document.createElement("canvas");
+          tmp.width = inkCanvas.width;
+          tmp.height = inkCanvas.height;
+
+          try {
+            tmp.getContext("2d").drawImage(inkCanvas, 0, 0);
+          } catch (e) {}
+
+          fit();
+
+          try {
+            inkCtx.drawImage(tmp, 0, 0, rect.width, rect.height);
+          } catch (e) {}
+        },
       drawRemote(evt) {
         if (evt.ev === "laser") {
           const saved = color;

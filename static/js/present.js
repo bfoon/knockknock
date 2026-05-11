@@ -49,9 +49,10 @@
   const chartHolder = { chart: null };
 
   let currentState = null;
-  let latestTally = null;
-  let latestTallyByQuestion = {};
-  let ws = null;
+    let latestTally = null;
+    let latestTallyByQuestion = {};
+    let ws = null;
+    let draw = null;
 
   function show(name) {
     Object.entries(views).forEach(([key, el]) => {
@@ -76,27 +77,32 @@
   }
 
   function resizeChartSoon() {
+  requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (chartHolder.chart) {
-          try {
-            chartHolder.chart.resize();
-            chartHolder.chart.update("none");
-          } catch (e) {
-            // ignore resize errors
-          }
+      if (chartHolder.chart) {
+        try {
+          chartHolder.chart.resize();
+          chartHolder.chart.update("none");
+        } catch (e) {
+          // ignore resize errors
         }
+      }
 
-        if (drawCanvas && window.kkResizeDrawOverlay) {
-          try {
-            window.kkResizeDrawOverlay();
-          } catch (e) {
-            // ignore optional overlay resize errors
-          }
+      /*
+       * Important:
+       * The draw/laser canvases are created while #view-question is hidden.
+       * When the question becomes visible, we must resize them.
+       */
+      if (draw && typeof draw.resize === "function") {
+        try {
+          draw.resize();
+        } catch (e) {
+          // ignore overlay resize errors
         }
-      });
+      }
     });
-  }
+  });
+}
 
   function safeJsonParse(raw) {
     try {
@@ -593,31 +599,87 @@
 
   // ─────────────────────── Drawing tools ───────────────────────
 
-  let draw = null;
+  draw = typeof window.kkDrawOverlay === "function"
+    ? window.kkDrawOverlay(drawCanvas, laserCanvas, {
+        onEvent: (evt) => send({ type: "draw", ...evt }),
+      })
+    : null;
 
-  if (typeof window.kkDrawOverlay === "function" && drawCanvas && laserCanvas) {
-    draw = window.kkDrawOverlay(drawCanvas, laserCanvas, {
-      onEvent: (event) => send({ type: "draw", ...event }),
-    });
+  function activateDrawTool(tool) {
+    const chartWrap = document.getElementById("chart-wrap");
+
+    if (!drawCanvas || !laserCanvas) return;
+
+    tool = tool || "off";
+
+    if (chartWrap) {
+      chartWrap.classList.remove("is-drawing", "is-laser");
+    }
+
+    drawCanvas.classList.remove("active");
+    laserCanvas.classList.remove("active");
+
+    /*
+     * Important:
+     * draw_overlay.js listens on laserCanvas for ALL pointer events.
+     * So laserCanvas must receive pointer events for pen, highlight,
+     * and laser. drawCanvas is only the visible ink output layer.
+     */
+    drawCanvas.style.pointerEvents = "none";
+    laserCanvas.style.pointerEvents = "none";
+
+    if (tool === "pen" || tool === "highlight") {
+      if (chartWrap) chartWrap.classList.add("is-drawing");
+
+      drawCanvas.classList.add("active");
+      laserCanvas.classList.add("active");
+
+      laserCanvas.style.pointerEvents = "auto";
+      laserCanvas.style.cursor = "crosshair";
+    }
+
+    if (tool === "laser") {
+      if (chartWrap) chartWrap.classList.add("is-laser");
+
+      laserCanvas.classList.add("active");
+
+      laserCanvas.style.pointerEvents = "auto";
+      laserCanvas.style.cursor = "none";
+    }
+
+    if (tool === "off") {
+      laserCanvas.style.cursor = "default";
+    }
+
+    if (draw && typeof draw.setTool === "function") {
+      draw.setTool(tool);
+    }
+
+    if (draw && typeof draw.resize === "function") {
+      requestAnimationFrame(() => draw.resize());
+    }
   }
 
   document.querySelectorAll("#draw-tools .kk-tool[data-tool]").forEach((btn) => {
     btn.addEventListener("click", () => {
+      const tool = btn.dataset.tool || "off";
+
       document.querySelectorAll("#draw-tools .kk-tool[data-tool]").forEach((item) => {
         item.classList.remove("active");
       });
 
       btn.classList.add("active");
 
-      if (draw) {
-        draw.setTool(btn.dataset.tool);
-      }
+      activateDrawTool(tool);
     });
   });
 
+  const activeToolBtn = document.querySelector("#draw-tools .kk-tool.active[data-tool]");
+  activateDrawTool(activeToolBtn ? activeToolBtn.dataset.tool : "off");
+
   if (clearDrawBtn) {
     clearDrawBtn.addEventListener("click", () => {
-      if (draw) {
+      if (draw && typeof draw.clear === "function") {
         draw.clear();
       }
 
@@ -633,11 +695,21 @@
 
       swatch.classList.add("active");
 
-      if (draw) {
+      if (draw && typeof draw.setColor === "function") {
         draw.setColor(swatch.dataset.color);
       }
     });
   });
 
-  window.addEventListener("resize", resizeChartSoon);
+  window.addEventListener("resize", () => {
+    if (draw && typeof draw.resize === "function") {
+      draw.resize();
+    }
+
+    if (chartHolder.chart) {
+      try {
+        chartHolder.chart.resize();
+      } catch (e) {}
+    }
+  });
 })();

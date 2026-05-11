@@ -240,6 +240,72 @@
       min-height: 58vh;
     }
   }
+ /* ─────────────────────────────────────────────
+   FIX: drawing tools / highlighter / laser pointer
+   Laser canvas is the INPUT layer for all tools.
+   Draw canvas is only the OUTPUT layer for ink.
+───────────────────────────────────────────── */
+
+.kk-chart-wrap {
+  position: relative !important;
+  isolation: isolate;
+}
+
+.kk-chart-wrap::before,
+.kk-chart-wrap::after {
+  pointer-events: none !important;
+  z-index: 0 !important;
+}
+
+.kk-chart-wrap > canvas#live-chart {
+  position: relative !important;
+  z-index: 10 !important;
+  pointer-events: none !important;
+}
+
+.kk-chart-wrap > #special-display {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 20 !important;
+  pointer-events: none !important;
+}
+
+.kk-chart-wrap > canvas#draw-canvas {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  z-index: 1000 !important;
+  pointer-events: none !important;
+  touch-action: none !important;
+}
+
+.kk-chart-wrap > canvas#laser-canvas {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  z-index: 1001 !important;
+  pointer-events: none !important;
+  touch-action: none !important;
+}
+
+.kk-chart-wrap.is-drawing > canvas#laser-canvas,
+.kk-chart-wrap > canvas#laser-canvas.active {
+  pointer-events: auto !important;
+  cursor: crosshair;
+}
+
+.kk-chart-wrap.is-laser > canvas#laser-canvas.active {
+  cursor: none;
+}
+
+.kk-winner-float,
+.kk-winner-float *,
+.kk-spark,
+.kk-spark-layer {
+  pointer-events: none !important;
+}
 </style>
 </head>
 

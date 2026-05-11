@@ -1,9 +1,22 @@
-/* Participant client. Handles BOTH poll & game participant flows.
- * - First screen: nickname (+ avatar for games).
- * - Connects WS with role=participant, sends `hello` with nickname + avatar.
- * - Receives `state` and renders accordingly.
- * - In Orchestra mode, you can only see the question the presenter selected.
- * - In Open mode (polls), participants can self-advance.
+/* Participant client (Knock-Knock).
+ *
+ * Handles BOTH poll & game participant flows.
+ *
+ * REFRESH RESILIENCE
+ * ──────────────────
+ * Per-session, we persist {uid, nickname, avatar_id} in localStorage. On page
+ * load, if both nickname + avatar are present, we auto-connect immediately and
+ * skip the nickname picker. The server then sends a personalised `state` with
+ * `my_answer`, `my_score`, `my_avatar`, `my_nickname`, and `tally` — which we
+ * use to restore the locked-in tile, score chip, and live chart.
+ *
+ * ANIMATED AVATARS
+ * ────────────────
+ * Every avatar carries a CSS keyframe name in `window.kkAvatarsById[id].anim`.
+ * We apply `.kk-anim-<name>` to:
+ *   - the self-avatar bubble in the header (#self-avatar-emoji)
+ *   - the big waiting-room avatar (#wait-avatar)
+ *   - the avatar shown inside each avatar-picker tile
  */
 (function () {
   const root = document.getElementById("play");
@@ -18,8 +31,8 @@
 
   const qText     = document.getElementById("q-text");
   const qProgress = document.getElementById("q-progress");
-  const qBody     = document.getElementById("q-body");       // polls
-  const tiles     = document.getElementById("tiles");        // games
+  const qBody     = document.getElementById("q-body");           // polls
+  const tiles     = document.getElementById("tiles");            // games
   const qResult   = document.getElementById("q-result");
   const scoreChip = document.getElementById("score-chip");
   const timerChip = document.getElementById("timer-chip");
@@ -28,26 +41,81 @@
   const waitAvatar = document.getElementById("wait-avatar");
   const roomTag   = document.getElementById("room-tag");
   const finalScore = document.getElementById("final-score");
+  const myChartCanvas = document.getElementById("my-chart");
+
+  // Self-avatar header bits
+  const selfAvatarEmoji = document.getElementById("self-avatar-emoji");
+  const selfAvatarName  = document.getElementById("self-avatar-name");
+  const selfAvatarScore = document.getElementById("self-avatar-score");
+
+  // ── Persisted identity (per-session in localStorage) ─────────────
+  const KEY_UID    = "kk-uid";
+  const KEY_NICK   = `kk-nick:${code}`;
+  const KEY_AVATAR = `kk-avatar:${code}`;
 
   let ws = null;
-  let uid = localStorage.getItem("kk-uid") || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
-  localStorage.setItem("kk-uid", uid);
-  let nickname = "";
-  let avatarId = "dragon";
+  let uid = localStorage.getItem(KEY_UID)
+        || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
+  localStorage.setItem(KEY_UID, uid);
+
+  let nickname = localStorage.getItem(KEY_NICK) || "";
+  let avatarId = localStorage.getItem(KEY_AVATAR) || "dragon";
+
   let myScore = 0;
-  let myIndex = -1;   // for open mode poll
+  let myIndex = -1;
   let answeredQuestionId = null;
+  let myChoiceId = null;          // chosen choice for current question (for re-highlight)
   let questionReceivedAt = 0;
   let timerInterval = null;
+  let myChart = null;
+  let lastTally = null;           // {counts: {...}} for current question
+  let currentQuestion = null;
 
   function show(el) {
     [stepNick, stepWait, stepQuestion, stepEnded].forEach(s => s && (s.style.display = "none"));
     el.style.display = "block";
   }
 
+  // ─────────────────────── Avatar lookup ───────────────────────
+  function avatarObj(id) {
+    if (window.kkAvatarsById && window.kkAvatarsById[id]) return window.kkAvatarsById[id];
+    return { id, emoji: avatarEmojiFallback(id), label: id, anim: "kk-float" };
+  }
+  function avatarEmoji(id) { return avatarObj(id).emoji || "👤"; }
+  function avatarAnim(id)  { return avatarObj(id).anim  || "kk-float"; }
+
+  /** Apply the animation class for the given avatar to an element.
+   *  Strips any previous `kk-anim-*` first. */
+  function applyAnimClass(el, animName) {
+    if (!el) return;
+    [...el.classList].forEach(c => { if (c.startsWith("kk-anim-")) el.classList.remove(c); });
+    if (animName) el.classList.add("kk-anim-" + animName);
+  }
+
+  // Set the header capsule for the current participant.
+  function updateHeaderAvatar() {
+    if (selfAvatarEmoji) {
+      selfAvatarEmoji.textContent = avatarEmoji(avatarId);
+      applyAnimClass(selfAvatarEmoji, avatarAnim(avatarId));
+    }
+    if (selfAvatarName) selfAvatarName.textContent = nickname || "—";
+    if (selfAvatarScore) {
+      selfAvatarScore.textContent = `${myScore} pts`;
+      selfAvatarScore.style.display = kind === "game" ? "" : "none";
+    }
+    const header = document.getElementById("self-avatar");
+    if (header) header.style.display = (nickname ? "" : "none");
+  }
+
   // ─────────────────────── Avatar picker (games) ───────────────────────
   const avatarGrid = document.getElementById("avatar-grid");
   if (avatarGrid) {
+    // Decorate every tile with the right idle animation
+    avatarGrid.querySelectorAll(".kk-avatar-tile").forEach(tile => {
+      const id = tile.dataset.avatarId;
+      applyAnimClass(tile, avatarAnim(id));
+      if (id === avatarId) tile.classList.add("selected");
+    });
     avatarGrid.addEventListener("click", (e) => {
       const tile = e.target.closest(".kk-avatar-tile");
       if (!tile) return;
@@ -58,81 +126,138 @@
   }
 
   // ─────────────────────── Join flow ───────────────────────
-  document.getElementById("nick-go").addEventListener("click", () => {
-    const v = document.getElementById("nick-input").value.trim();
-    if (!v) { document.getElementById("nick-input").focus(); return; }
-    nickname = v.slice(0, 40);
-    connect();
-  });
-  document.getElementById("nick-input").addEventListener("keydown", e => {
-    if (e.key === "Enter") document.getElementById("nick-go").click();
-  });
+  const nickGo = document.getElementById("nick-go");
+  const nickInput = document.getElementById("nick-input");
+  if (nickInput) nickInput.value = nickname;
+
+  if (nickGo) {
+    nickGo.addEventListener("click", () => {
+      const v = nickInput.value.trim();
+      if (!v) { nickInput.focus(); return; }
+      nickname = v.slice(0, 40);
+      localStorage.setItem(KEY_NICK, nickname);
+      localStorage.setItem(KEY_AVATAR, avatarId);
+      connect();
+    });
+  }
+  if (nickInput) {
+    nickInput.addEventListener("keydown", e => {
+      if (e.key === "Enter") nickGo && nickGo.click();
+    });
+  }
 
   function connect() {
     const proto = location.protocol === "https:" ? "wss" : "ws";
     ws = new WebSocket(`${proto}://${location.host}/ws/session/${code}/`);
     ws.addEventListener("open", () => {
-      ws.send(JSON.stringify({ type: "hello", role: "participant", uid, nickname, avatar_id: avatarId }));
-      waitNick.textContent = nickname;
-      if (waitAvatar && kind === "game") waitAvatar.textContent = avatarEmoji(avatarId);
+      ws.send(JSON.stringify({
+        type: "hello", role: "participant",
+        uid, nickname, avatar_id: avatarId,
+      }));
+      if (waitNick) waitNick.textContent = nickname;
+      if (waitAvatar && kind === "game") {
+        waitAvatar.textContent = avatarEmoji(avatarId);
+        applyAnimClass(waitAvatar, avatarAnim(avatarId));
+      }
+      updateHeaderAvatar();
       show(stepWait);
     });
     ws.addEventListener("message", (e) => handle(JSON.parse(e.data)));
-    ws.addEventListener("close", () => { /* reconnect attempt could go here */ });
+    ws.addEventListener("close", () => {
+      // Try a single reconnect after a moment.
+      setTimeout(() => { if (!ws || ws.readyState === 3) connect(); }, 2500);
+    });
   }
 
   function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
   function handle(msg) {
     switch (msg.type) {
-      case "state":      onState(msg); break;
-      case "answer_ack": onAnswerAck(msg); break;
-      case "ended":      onEnded(); break;
+      case "state":       onState(msg); break;
+      case "tally":       onTally(msg); break;
+      case "answer_ack":  onAnswerAck(msg); break;
+      case "ended":       onEnded(); break;
     }
   }
 
   // ─────────────────────── State / question rendering ───────────────────────
   function onState(s) {
+    // Adopt server-side identity if richer than ours (refresh case)
+    if (s.my_nickname) { nickname = s.my_nickname; localStorage.setItem(KEY_NICK, nickname); }
+    if (s.my_avatar)   { avatarId = s.my_avatar;   localStorage.setItem(KEY_AVATAR, avatarId); }
+    if (typeof s.my_score === "number") myScore = s.my_score;
+    updateHeaderAvatar();
+
+    if (scoreChip && kind === "game") {
+      scoreChip.style.display = "inline-block";
+      scoreChip.textContent = `${myScore} pts`;
+    }
+
     if (s.state === "lobby") { show(stepWait); return; }
     if (s.state === "ended") { onEnded(); return; }
 
-    // Orchestra: always follow the presenter. Open polls: locally tracked.
     let q = s.question;
-    if (kind === "poll" && mode === "open") {
-      // first-time sync to presenter index
-      if (myIndex < 0) myIndex = s.index;
-      // we render based on local index, but use server's question payload for current index only
-      if (myIndex !== s.index) {
-        // we don't have other questions on the client; in this minimal cut we just sync to server
-        myIndex = s.index;
-      }
-    }
-
     if (!q) { show(stepWait); return; }
 
-    if (answeredQuestionId !== q.id) {
-      // new question — reset
+    // New question? Reset transient UI bits.
+    if (currentQuestion?.id !== q.id) {
       qResult.style.display = "none";
       if (selfNext) selfNext.style.display = "none";
       questionReceivedAt = Date.now();
+      myChoiceId = null;
+      answeredQuestionId = null;
     }
+    currentQuestion = q;
 
     qText.textContent = q.text;
+    applyQuestionTypography(q);
     qProgress.textContent = `Question ${s.index + 1} / ${s.total}`;
     show(stepQuestion);
 
-    if (kind === "poll") renderPollQuestion(q);
-    else                 renderGameQuestion(q);
+    if (kind === "poll") renderPollQuestion(q, s);
+    else                 renderGameQuestion(q, s);
+
+    // Restore previous answer if the server tells us we already answered.
+    if (s.my_answer) {
+      restoreMyAnswer(q, s.my_answer);
+    }
+
+    // Cache + draw tally chart (if applicable).
+    lastTally = s.tally || null;
+    drawMyChart(q, lastTally);
   }
 
-  // ── Poll: render input based on question type
-  function renderPollQuestion(q) {
+  // Apply per-question typography (font family/size/bold).
+  const FONT_STACK = {
+    default: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    clash:   '"Clash Display", system-ui, sans-serif',
+    space:   '"Space Grotesk", system-ui, sans-serif',
+    serif:   '"Playfair Display", Georgia, serif',
+    mono:    '"JetBrains Mono", ui-monospace, monospace',
+    comic:   '"Comic Neue", "Comic Sans MS", cursive',
+    press:   '"Press Start 2P", system-ui, monospace',
+  };
+  function applyQuestionTypography(q) {
+    if (!qText) return;
+    const fam  = FONT_STACK[q.font_family] || FONT_STACK.default;
+    const size = Math.max(14, Math.min(72, Number(q.font_size) || 28));
+    const bold = q.font_bold === false ? "500" : "800";
+    qText.style.fontFamily = fam;
+    qText.style.fontSize   = size + "px";
+    qText.style.fontWeight = bold;
+    if (q.font_family === "press") qText.style.lineHeight = "1.4";
+    else qText.style.lineHeight = "";
+  }
+
+  // ── Poll rendering (unchanged behaviour) ─────────────────────────
+  function renderPollQuestion(q, s) {
     qBody.innerHTML = "";
     if (q.type === "mcq" || q.type === "ranking") {
       q.choices.forEach(c => {
         const btn = document.createElement("button");
         btn.className = "kk-choice";
         btn.type = "button";
+        btn.dataset.choiceId = c.id;
         btn.textContent = c.text;
         btn.addEventListener("click", () => answerPollChoice(q, c, btn));
         qBody.appendChild(btn);
@@ -146,6 +271,7 @@
         b.className = "kk-choice";
         b.style.flex = "1 1 18%";
         b.textContent = String(i);
+        b.dataset.value = i;
         b.addEventListener("click", () => answerPollScale(q, i, b));
         wrap.appendChild(b);
       }
@@ -177,6 +303,7 @@
   function answerPollChoice(q, c, btn) {
     if (answeredQuestionId === q.id) return;
     answeredQuestionId = q.id;
+    myChoiceId = c.id;
     btn.classList.add("picked");
     qBody.querySelectorAll("button").forEach(b => { if (b !== btn) b.disabled = true; });
     send({ type: "answer", question_id: q.id, choice_id: c.id });
@@ -194,14 +321,15 @@
     if (mode === "open" && selfNext) selfNext.style.display = "block";
   }
 
-  // ── Game: kahoot-style tiles + timer
-  function renderGameQuestion(q) {
+  // ── Game rendering: kahoot-style tiles + timer ───────────────────
+  function renderGameQuestion(q, s) {
     tiles.innerHTML = "";
     const shapes = ["▲","◆","●","■","★","♥"];
     q.choices.forEach((c, i) => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = `kk-tile-answer t${i % 4}`;
+      btn.dataset.choiceId = c.id;
       btn.innerHTML = `<span class="shape">${shapes[i % shapes.length]}</span><span>${escapeHtml(c.text)}</span>`;
       btn.addEventListener("click", () => answerGame(q, c, btn));
       tiles.appendChild(btn);
@@ -209,16 +337,17 @@
 
     // Timer
     clearInterval(timerInterval);
-    let remaining = q.time_limit || 20;
+    const limit = q.time_limit || 20;
+    let remaining = limit;
     timerChip.textContent = `${remaining}s`;
     const startedAt = Date.now();
     timerInterval = setInterval(() => {
-      remaining = Math.max(0, (q.time_limit || 20) - Math.floor((Date.now() - startedAt) / 1000));
+      remaining = Math.max(0, limit - Math.floor((Date.now() - startedAt) / 1000));
       timerChip.textContent = `${remaining}s`;
       if (remaining <= 0) {
         clearInterval(timerInterval);
         tiles.querySelectorAll("button").forEach(b => b.disabled = true);
-        showResult("⏱ Time's up");
+        if (!answeredQuestionId) showResult("⏱ Time's up");
       }
     }, 200);
   }
@@ -226,24 +355,118 @@
   function answerGame(q, c, btn) {
     if (answeredQuestionId === q.id) return;
     answeredQuestionId = q.id;
+    myChoiceId = c.id;
+    btn.classList.add("picked");
     btn.style.outline = "3px solid #fff";
     tiles.querySelectorAll("button").forEach(b => b.disabled = true);
     send({ type: "answer", question_id: q.id, choice_id: c.id, question_received_at: questionReceivedAt });
     showResult("⏳ Locked in — waiting…");
   }
 
+  // ── Restore a previously made answer (after refresh) ─────────────
+  function restoreMyAnswer(q, my) {
+    answeredQuestionId = q.id;
+    myChoiceId = my.choice_id || null;
+
+    if (kind === "game") {
+      tiles.querySelectorAll("button").forEach(b => {
+        b.disabled = true;
+        if (Number(b.dataset.choiceId) === Number(my.choice_id)) {
+          b.classList.add("picked");
+          b.classList.add(my.is_correct ? "correct" : "incorrect");
+          b.style.outline = "3px solid #fff";
+        }
+      });
+      // Result chip — same look as fresh ack.
+      const text = my.is_correct
+        ? `✅ Correct! +${my.points || 0} pts`
+        : `❌ Not quite — score: ${myScore}`;
+      qResult.innerHTML = `<div class="kk-q-pill" style="background:${my.is_correct ? "#16a34a" : "#dc2626"}; color:#fff; font-size:1rem; padding:.4rem .9rem;">${text}</div>`;
+      qResult.style.display = "block";
+    } else {
+      // poll: highlight chosen choice button
+      qBody.querySelectorAll("button").forEach(b => {
+        b.disabled = true;
+        if (Number(b.dataset.choiceId) === Number(my.choice_id)) b.classList.add("picked");
+        if (Number(b.dataset.value)     === Number(my.value))     b.classList.add("picked");
+      });
+      showResult("Submitted ✓");
+      if (mode === "open" && selfNext) selfNext.style.display = "block";
+    }
+  }
+
   function onAnswerAck(msg) {
     myScore = msg.score || myScore;
-    scoreChip.style.display = "inline-block";
-    scoreChip.textContent = `${myScore} pts`;
+    if (scoreChip) {
+      scoreChip.style.display = "inline-block";
+      scoreChip.textContent = `${myScore} pts`;
+    }
+    updateHeaderAvatar();
     const text = msg.is_correct
       ? `✅ Correct! +${msg.points} pts`
       : `❌ Not quite — score: ${myScore}`;
-    qResult.innerHTML = `<div class="kk-q-pill" style="background:${msg.is_correct ? '#16a34a' : '#dc2626'}; color:#fff; font-size:1rem; padding:.4rem .9rem;">${text}</div>`;
+    qResult.innerHTML = `<div class="kk-q-pill" style="background:${msg.is_correct ? "#16a34a" : "#dc2626"}; color:#fff; font-size:1rem; padding:.4rem .9rem;">${text}</div>`;
     qResult.style.display = "block";
-    // visual feedback on chosen tile
-    const chosen = Array.from(tiles.querySelectorAll("button")).find(b => b.style.outline);
+    const chosen = tiles && Array.from(tiles.querySelectorAll("button")).find(b =>
+      Number(b.dataset.choiceId) === Number(msg.choice_id) || b.classList.contains("picked"));
     if (chosen) chosen.classList.add(msg.is_correct ? "correct" : "incorrect");
+  }
+
+  // ─────────────────────── Live tally chart on player ───────────────────────
+  function onTally(msg) {
+    if (!currentQuestion || msg.question_id !== currentQuestion.id) return;
+    lastTally = msg.data || { counts: {} };
+    drawMyChart(currentQuestion, lastTally);
+  }
+
+  function drawMyChart(q, tally) {
+    if (!myChartCanvas || !q || !q.choices || !window.Chart) return;
+    // Hide until someone has answered to avoid an empty-looking widget.
+    const counts = (tally && tally.counts) || {};
+    const total = Object.values(counts).reduce((a, b) => a + Number(b || 0), 0);
+    const wrap = myChartCanvas.parentElement;
+    if (wrap) wrap.style.display = total > 0 ? "block" : "none";
+    if (total === 0) { if (myChart) { myChart.destroy(); myChart = null; } return; }
+
+    const labels = q.choices.map(c => c.text);
+    const values = q.choices.map(c => Number(counts[String(c.id)] || 0));
+    const myIdx  = q.choices.findIndex(c => Number(c.id) === Number(myChoiceId));
+    const palette = ["#7c3aed","#22d3ee","#fb7185","#fbbf24","#a3e635","#f97316"];
+    const colors  = labels.map((_, i) => palette[i % palette.length]);
+    const borders = labels.map((_, i) => i === myIdx ? "#fff" : "transparent");
+    const widths  = labels.map((_, i) => i === myIdx ? 3 : 0);
+
+    if (myChart) {
+      myChart.data.labels = labels;
+      myChart.data.datasets[0].data = values;
+      myChart.data.datasets[0].backgroundColor = colors;
+      myChart.data.datasets[0].borderColor = borders;
+      myChart.data.datasets[0].borderWidth = widths;
+      myChart.update("none");
+      return;
+    }
+    myChart = new Chart(myChartCanvas, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          backgroundColor: colors,
+          borderColor: borders,
+          borderWidth: widths,
+          borderRadius: 8,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: "#cbd5e1", font: { size: 11 } }, grid: { display: false } },
+          y: { ticks: { color: "#cbd5e1", precision: 0 }, grid: { color: "rgba(255,255,255,.05)" } },
+        },
+        animation: { duration: 350 },
+      },
+    });
   }
 
   function onEnded() {
@@ -262,11 +485,29 @@
   }
 
   // ─────────────────────── helpers ───────────────────────
-  function avatarEmoji(id) {
+  function avatarEmojiFallback(id) {
     const map = {dragon:"🐉",sword:"⚔️",car:"🏎️",butterfly:"🦋",spacecraft:"🚀",
       trex:"🦖",stego:"🦕",joker:"🃏",unicorn:"🦄",wizard:"🧙",ninja:"🥷",alien:"👽",
       ghost:"👻",robot:"🤖",fox:"🦊",octopus:"🐙",shark:"🦈",tiger:"🐯",panda:"🐼",wolf:"🐺"};
     return map[id] || "👤";
   }
   function escapeHtml(s){ return (s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+  // ─────────────────────── Auto-reconnect on refresh ───────────────────────
+  // If we already have a nickname & avatar for THIS session, skip the picker
+  // and connect straight away. The server will reconcile state via my_answer.
+  if (nickname && kind === "game") {
+    // Reflect saved choice visually in the picker (in case auto-connect fails)
+    if (avatarGrid) {
+      avatarGrid.querySelectorAll(".kk-avatar-tile").forEach(t => {
+        t.classList.toggle("selected", t.dataset.avatarId === avatarId);
+      });
+    }
+    connect();
+  } else if (nickname && kind === "poll") {
+    connect();
+  } else {
+    // First-time: keep the picker visible
+    updateHeaderAvatar(); // hides header bubble (no nickname yet)
+  }
 })();

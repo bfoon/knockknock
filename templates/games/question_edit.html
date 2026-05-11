@@ -1,5 +1,52 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Edit question · Knock-Knock{% endblock %}
+
+{% block extra_head %}
+{# Load fonts referenced in FONT_STACK. Google Fonts here; swap if you self-host. #}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&family=JetBrains+Mono:wght@500;700&family=Playfair+Display:wght@500;800&family=Press+Start+2P&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  /* Live preview of the question with the chosen font. */
+  .kk-font-preview {
+    padding: 1.5rem 1.25rem;
+    border-radius: 14px;
+    background: linear-gradient(135deg, rgba(124,58,237,.12), rgba(34,211,238,.08));
+    border: 1px solid rgba(255,255,255,.08);
+    min-height: 110px;
+    display: flex; align-items: center; justify-content: center;
+    text-align: center;
+    color: #f8fafc;
+    margin-bottom: 1rem;
+    transition: font-family .15s ease, font-size .15s ease, font-weight .15s ease;
+  }
+  .kk-font-toolbar {
+    display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+    padding: .6rem .75rem;
+    background: rgba(255,255,255,.03);
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,.06);
+  }
+  .kk-font-toolbar label { margin: 0; color: #cbd5e1; font-size: .85rem; }
+  .kk-font-toolbar select, .kk-font-toolbar input[type=number] { max-width: 200px; }
+  .kk-font-toolbar .kk-bold-toggle {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 38px; height: 38px;
+    border-radius: 8px;
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.10);
+    color: #cbd5e1;
+    font-weight: 700;
+    cursor: pointer;
+    user-select: none;
+  }
+  .kk-font-toolbar .kk-bold-toggle.active {
+    background: #fbbf24; color: #422006; border-color: #fbbf24;
+  }
+  .kk-font-toolbar input[type=range] { flex: 1; min-width: 120px; max-width: 260px; }
+</style>
+{% endblock %}
 
 {% block content %}
 <a href="{% url 'games:edit' quiz.pk %}" class="text-secondary text-decoration-none small">
@@ -11,7 +58,27 @@
 
   <div class="kk-card">
     <label class="form-label">Question</label>
+
+    {# Live preview of the question text with chosen typography. #}
+    <div id="font-preview" class="kk-font-preview">{{ question.text|default:"Your question will look like this" }}</div>
+
+    {# Font toolbar — wraps the actual model fields (font_family, font_size, font_bold).
+       The fields stay in the form so Django saves them on submit; the controls here
+       drive a live preview via the inputs themselves. #}
+    <div class="kk-font-toolbar mb-3">
+      <label for="id_font_family"><i class="bi bi-fonts"></i> Font</label>
+      {{ form.font_family }}
+
+      <label for="id_font_size">Size</label>
+      <input type="range" min="16" max="96" step="2" id="font-size-range" value="{{ question.font_size|default:32 }}">
+      {{ form.font_size }}
+
+      <button type="button" id="bold-toggle" class="kk-bold-toggle{% if question.font_bold %} active{% endif %}" title="Bold (toggles font weight)">B</button>
+      <div style="display:none;">{{ form.font_bold }}</div>
+    </div>
+
     {{ form.text }}
+
     <div class="row g-3 mt-2">
       <div class="col-md-4">
         <label class="form-label">Time limit (s)</label>
@@ -54,4 +121,63 @@
     <i class="bi bi-trash"></i> Delete
   </button>
 </form>
+
+<script>
+(function () {
+  // Map server-side font_family choices to actual CSS font stacks.
+  const FONT_STACK = {
+    default: "Inter, system-ui, sans-serif",
+    clash:   "'Clash Display', system-ui, sans-serif",
+    space:   "'Space Grotesk', system-ui, sans-serif",
+    serif:   "'Playfair Display', Georgia, serif",
+    mono:    "'JetBrains Mono', ui-monospace, monospace",
+    comic:   "'Comic Neue', 'Comic Sans MS', cursive",
+    press:   "'Press Start 2P', system-ui, monospace",
+  };
+
+  const preview      = document.getElementById("font-preview");
+  const familySelect = document.getElementById("id_font_family");
+  const sizeInput    = document.getElementById("id_font_size");
+  const sizeRange    = document.getElementById("font-size-range");
+  const boldToggle   = document.getElementById("bold-toggle");
+  const boldCheck    = document.getElementById("id_font_bold");
+  const textInput    = document.getElementById("id_question_text");
+
+  function render() {
+    const fam = FONT_STACK[familySelect.value] || FONT_STACK.default;
+    const size = Math.min(96, Math.max(16, parseInt(sizeInput.value || "32", 10)));
+    const bold = boldCheck.checked;
+    preview.style.fontFamily = fam;
+    preview.style.fontSize = size + "px";
+    preview.style.fontWeight = bold ? "800" : "500";
+    // Press Start 2P caps line-height awkwardly; nudge it.
+    preview.style.lineHeight = (familySelect.value === "press") ? "1.6" : "1.15";
+  }
+
+  // Sync range ↔ number, both drive preview.
+  if (sizeRange && sizeInput) {
+    sizeRange.addEventListener("input", () => { sizeInput.value = sizeRange.value; render(); });
+    sizeInput.addEventListener("input", () => { sizeRange.value = sizeInput.value; render(); });
+  }
+  familySelect.addEventListener("change", render);
+
+  // Bold toggle drives the (hidden) checkbox.
+  if (boldToggle && boldCheck) {
+    boldToggle.addEventListener("click", () => {
+      boldCheck.checked = !boldCheck.checked;
+      boldToggle.classList.toggle("active", boldCheck.checked);
+      render();
+    });
+  }
+
+  // Live text echo into preview as user types.
+  if (textInput) {
+    textInput.addEventListener("input", () => {
+      preview.textContent = textInput.value || "Your question will look like this";
+    });
+  }
+
+  render();
+})();
+</script>
 {% endblock %}

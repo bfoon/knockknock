@@ -34,6 +34,29 @@
         {{ form.chart_type }}
       </div>
 
+      {# Font controls #}
+      <div class="kk-card mt-3">
+        <h2 class="kk-section-title" style="font-size:1.15rem;"><i class="bi bi-fonts"></i> Typography</h2>
+        <div class="row g-3 align-items-end">
+          <div class="col-md-5">
+            <label class="form-label">Font</label>
+            {{ form.font_family }}
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Size (px)</label>
+            {{ form.font_size }}
+          </div>
+          <div class="col-md-4">
+            <label class="form-label d-block">Weight</label>
+            <div class="form-check form-switch">
+              {{ form.font_bold }}
+              <label class="form-check-label">Bold</label>
+            </div>
+          </div>
+        </div>
+        <div class="text-secondary small mt-2"><i class="bi bi-info-circle"></i> Affects how the question heading appears on the presenter stage.</div>
+      </div>
+
       <div class="kk-card mt-3" id="choices-card">
         <h2 class="kk-section-title" style="font-size:1.15rem;"><i class="bi bi-ui-checks"></i> Options</h2>
         {{ formset.management_form }}
@@ -55,7 +78,8 @@
           {% for c in all_charts %}
             <div class="kk-chart-option{% if c.id == question.chart_type %} selected{% endif %}"
                  data-chart-id="{{ c.id }}"
-                 data-supports="{{ c.supports|join:',' }}">
+                 data-supports="{{ c.supports|join:',' }}"
+                 title="{{ c.name }}">
               <i class="bi bi-{{ c.icon }}"></i>
               <div class="lbl">{{ c.name }}</div>
             </div>
@@ -87,7 +111,7 @@
   </div>
 </form>
 
-<script src="{% static 'js/chart_preview.js' %}"></script>
+<script src="{% static 'js/chart_preview.js' %}?v=3"></script>
 <script>
   (function () {
     const picker = document.getElementById("chart-picker");
@@ -103,7 +127,6 @@
         opt.style.opacity = ok ? "1" : ".25";
         opt.style.pointerEvents = ok ? "auto" : "none";
       });
-      // if currently selected is incompatible, switch to first compatible
       const sel = picker.querySelector(".kk-chart-option.selected");
       if (sel && sel.style.opacity === ".25") {
         const first = picker.querySelector(".kk-chart-option:not([style*='opacity: .25'])");

@@ -1,10 +1,14 @@
+import json
+
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
+from django.http import JsonResponse, HttpResponseBadRequest
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_POST
 
 from core.templates_registry import TEMPLATES, get_template
 from presentations.models import LiveSession
+from .avatars import AVATARS, avatars_grouped
 from .forms import QuizForm, GameQuestionForm, GameChoiceFormSet
 from .models import Quiz, GameQuestion, GameChoice
 
@@ -86,6 +90,35 @@ def question_delete(request, pk, qpk):
     quiz = get_object_or_404(Quiz, pk=pk, owner=request.user)
     GameQuestion.objects.filter(pk=qpk, quiz=quiz).delete()
     return redirect("games:edit", pk=pk)
+
+
+@login_required
+@require_POST
+def question_reorder(request, pk):
+    """Persist a new order for questions in a quiz.
+
+    Body: JSON `{"order": [qpk1, qpk2, ...]}` with ALL of the quiz's question
+    primary keys in the desired sequence. Returns 200 on success.
+    """
+    quiz = get_object_or_404(Quiz, pk=pk, owner=request.user)
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+        ids = [int(x) for x in payload.get("order", [])]
+    except (ValueError, json.JSONDecodeError):
+        return HttpResponseBadRequest("Invalid payload.")
+
+    existing = {q.pk for q in quiz.questions.all()}
+    if set(ids) != existing:
+        return HttpResponseBadRequest("ID set mismatch.")
+
+    # Bulk-update orders.
+    by_id = {q.pk: q for q in quiz.questions.all()}
+    for new_order, qpk in enumerate(ids):
+        q = by_id[qpk]
+        if q.order != new_order:
+            q.order = new_order
+            q.save(update_fields=["order"])
+    return JsonResponse({"ok": True})
 
 
 @login_required

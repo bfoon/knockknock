@@ -1,0 +1,22 @@
+{# Avatar picker — grouped by category.
+   Required context: `avatar_groups` (list of (label, [avatar_dict, ...]))
+   and optionally `selected_id`. Each tile previews the avatar's
+   idle animation so participants can preview the vibe before picking. #}
+{% load static %}
+
+<div class="kk-avatar-picker" id="avatar-grid">
+  {% for label, avs in avatar_groups %}
+    <div class="kk-avatar-picker-section">
+      <h4>{{ label }}</h4>
+      <div class="kk-avatar-grid">
+        {% for a in avs %}
+          <div class="kk-avatar-tile{% if selected_id == a.id %} selected{% endif %}"
+               data-avatar-id="{{ a.id }}"
+               title="{{ a.label }}">
+            <span class="kk-anim-{{ a.anim }}" style="display:inline-block;">{{ a.emoji }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endfor %}
+</div>

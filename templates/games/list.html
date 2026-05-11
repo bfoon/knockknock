@@ -1,5 +1,10 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}My games · Knock-Knock{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'css/avatar_anim.css' %}">
+{% endblock %}
 
 {% block content %}
 <div class="d-flex align-items-center justify-content-between mb-4">

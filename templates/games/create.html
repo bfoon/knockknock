@@ -1,5 +1,10 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}New game · Knock-Knock{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'css/avatar_anim.css' %}">
+{% endblock %}
 
 {% block content %}
 <div class="kk-main-narrow mx-auto">
@@ -19,6 +24,12 @@
       <label class="form-check-label">Use rooms (cap members & score by room average)</label>
     </div>
     <div class="mb-3"><label class="form-label">Room capacity</label>{{ form.room_capacity }}</div>
+
+    <div class="mb-3">
+      <label class="form-label"><i class="bi bi-stars"></i> Chart background</label>
+      {{ form.chart_background }}
+      <div class="form-text">Scenery shown behind the live chart during play.</div>
+    </div>
 
     <div class="mb-3"><label class="form-label">Logo</label>{{ form.logo }}</div>
     <div class="mb-4">

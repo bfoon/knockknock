@@ -1,5 +1,39 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}{{ quiz.title }} · Knock-Knock{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'css/avatar_anim.css' %}">
+<link rel="stylesheet" href="{% static 'css/chart_backgrounds.css' %}">
+<style>
+  /* Drag-and-drop visual states for question rows. */
+  .kk-q-row { cursor: grab; position: relative; transition: transform .15s ease, box-shadow .15s ease; }
+  .kk-q-row:active { cursor: grabbing; }
+  .kk-q-row .kk-q-drag {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; color: #94a3b8; cursor: grab;
+    border-radius: 6px;
+  }
+  .kk-q-row .kk-q-drag:hover { background: rgba(255,255,255,.06); color: #f1f5f9; }
+  .kk-q-row.kk-dragging {
+    opacity: .55;
+    transform: scale(.99);
+    box-shadow: 0 12px 30px rgba(0,0,0,.4);
+  }
+  .kk-q-row.kk-ghost {
+    background: rgba(124,58,237,.12) !important;
+    border: 2px dashed rgba(124,58,237,.6) !important;
+  }
+  /* Save indicator for reorder. */
+  .kk-reorder-status {
+    display: inline-flex; align-items: center; gap: .4rem;
+    font-size: .8rem; color: #94a3b8; margin-left: .6rem;
+    opacity: 0; transition: opacity .25s ease;
+  }
+  .kk-reorder-status.visible { opacity: 1; }
+  .kk-reorder-status.saved   { color: #34d399; }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="d-flex align-items-start justify-content-between gap-3 mb-4 flex-wrap">
@@ -20,20 +54,29 @@
 
 <div class="row g-4">
   <div class="col-lg-7">
-    <h2 class="kk-section-title"><i class="bi bi-list-ol"></i> Questions</h2>
-    {% for q in quiz.questions.all %}
-      <a class="kk-q-row" href="{% url 'games:question_edit' quiz.pk q.pk %}">
-        <span class="kk-q-index">{{ forloop.counter }}</span>
-        <div class="kk-q-text">{{ q.text }}</div>
-        <span class="kk-q-pill">{{ q.time_limit }}s</span>
-        <span class="kk-q-pill">{{ q.points }}pts</span>
-      </a>
-    {% empty %}
-      <div class="kk-empty">
-        <div class="em">❓</div>
-        <p>No questions yet.</p>
-      </div>
-    {% endfor %}
+    <h2 class="kk-section-title">
+      <i class="bi bi-list-ol"></i> Questions
+      <span id="reorder-status" class="kk-reorder-status">Saving…</span>
+    </h2>
+
+    {# Drag-and-drop list. Each row has data-qpk; reorder POSTs the new sequence. #}
+    <div id="question-list" data-reorder-url="{% url 'games:question_reorder' quiz.pk %}">
+      {% for q in quiz.questions.all %}
+        <div class="kk-q-row" data-qpk="{{ q.pk }}">
+          <span class="kk-q-drag" title="Drag to reorder" aria-hidden="true"><i class="bi bi-grip-vertical"></i></span>
+          <span class="kk-q-index">{{ forloop.counter }}</span>
+          <a class="kk-q-text text-decoration-none flex-grow-1" href="{% url 'games:question_edit' quiz.pk q.pk %}" style="color:inherit;">{{ q.text }}</a>
+          <span class="kk-q-pill">{{ q.time_limit }}s</span>
+          <span class="kk-q-pill">{{ q.points }}pts</span>
+        </div>
+      {% empty %}
+        <div class="kk-empty">
+          <div class="em">❓</div>
+          <p>No questions yet.</p>
+        </div>
+      {% endfor %}
+    </div>
+
     <a href="{% url 'games:question_create' quiz.pk %}" class="kk-btn kk-btn-ghost w-100 mt-3">
       <i class="bi bi-plus-lg"></i> Add a question
     </a>
@@ -52,6 +95,15 @@
       <div class="form-check mb-3">{{ form.use_rooms }}
         <label class="form-check-label">Use rooms</label></div>
       <div class="mb-3"><label class="form-label">Room capacity</label>{{ form.room_capacity }}</div>
+
+      <div class="mb-3">
+        <label class="form-label">
+          <i class="bi bi-stars"></i> Chart background
+        </label>
+        {{ form.chart_background }}
+        <div class="form-text">The scenery rendered behind the live chart during play.</div>
+      </div>
+
       <div class="mb-3"><label class="form-label">Logo</label>{{ form.logo }}</div>
       <button class="kk-btn kk-btn-primary w-100">Save</button>
     </form>
@@ -62,4 +114,57 @@
     </div>
   </div>
 </div>
+
+{# SortableJS — drag-and-drop reordering. #}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script>
+(function () {
+  const list = document.getElementById("question-list");
+  if (!list || !window.Sortable) return;
+  const url  = list.dataset.reorderUrl;
+  const status = document.getElementById("reorder-status");
+  const csrf = document.querySelector("input[name=csrfmiddlewaretoken]").value;
+
+  function setStatus(text, ok) {
+    if (!status) return;
+    status.textContent = text;
+    status.classList.add("visible");
+    status.classList.toggle("saved", !!ok);
+    if (ok) setTimeout(() => status.classList.remove("visible"), 1800);
+  }
+
+  function reindex() {
+    list.querySelectorAll(".kk-q-row").forEach((row, i) => {
+      const idx = row.querySelector(".kk-q-index");
+      if (idx) idx.textContent = i + 1;
+    });
+  }
+
+  Sortable.create(list, {
+    animation: 180,
+    handle: ".kk-q-drag",
+    ghostClass: "kk-ghost",
+    dragClass: "kk-dragging",
+    onEnd: function () {
+      reindex();
+      const order = Array.from(list.querySelectorAll(".kk-q-row"))
+        .map(r => parseInt(r.dataset.qpk, 10));
+      setStatus("Saving…", false);
+      fetch(url, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrf,
+        },
+        body: JSON.stringify({ order }),
+      }).then(r => {
+        if (!r.ok) throw new Error("save failed");
+        return r.json();
+      }).then(() => setStatus("Order saved ✓", true))
+        .catch(() => setStatus("Couldn't save — refresh to retry", false));
+    },
+  });
+})();
+</script>
 {% endblock %}

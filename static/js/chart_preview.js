@@ -1,210 +1,637 @@
-/* Chart rendering — shared by the editor preview and the live presenter.
- * Exposes:
- *   window.kkRenderPreview(chartId, questionType, labels)  — sample data
- *   window.kkRenderLive(canvas, chartId, questionType, labels, tally)
+/* static/js/chart_preview.js
  *
- * tally for poll: { counts: { choiceIdStr: n }, texts: [str, ...] }
- * tally for game: { counts: { choiceIdStr: n } }
+ * Knock-Knock live chart renderer.
+ *
+ * Fixes:
+ * - Bottom labels not showing.
+ * - Top of chart / winner label being cut off.
+ * - Chart disappearing after refresh with empty tally.
+ * - Selected chart type always falling back to bar.
+ * - Light templates hiding text.
+ *
+ * Required global:
+ *   Chart.js 4.x
+ *
+ * Public function:
+ *   window.kkRenderLive(canvas, specialEl, chartId, questionType, choices, tally, holder)
  */
+
 (function () {
-  let _previewChart = null;
-  const PALETTE = [
-    "#7c3aed", "#22d3ee", "#fb7185", "#fbbf24", "#34d399",
-    "#f97316", "#ec4899", "#a3e635", "#60a5fa", "#facc15"
+  "use strict";
+
+  const DEFAULT_COLORS = [
+    "#22d3ee",
+    "#7c3aed",
+    "#fbbf24",
+    "#34d399",
+    "#fb7185",
+    "#a3e635",
+    "#f97316",
+    "#38bdf8",
   ];
 
-  function destroy(canvasOrNull, chartHandleKey) {
-    // For preview only — one global chart
-    if (_previewChart) { _previewChart.destroy(); _previewChart = null; }
+  function cssVar(name, fallback) {
+    const root = document.documentElement;
+    const stage = document.getElementById("stage");
+
+    let value = "";
+
+    if (stage) {
+      value = getComputedStyle(stage).getPropertyValue(name).trim();
+    }
+
+    if (!value) {
+      value = getComputedStyle(root).getPropertyValue(name).trim();
+    }
+
+    return value || fallback;
   }
 
-  function sampleCounts(labels) {
-    // generate stable-ish sample numbers
-    return labels.map((_, i) => Math.round(15 + Math.sin(i * 1.7) * 9 + (i % 3) * 4));
+  function getTextColor() {
+    return cssVar("--stage-fg", cssVar("--kk-text", "#f5f6ff"));
   }
 
-  function buildDataset(values, kind) {
+  function getDimTextColor() {
+    return cssVar("--kk-text-dim", "rgba(245,246,255,.72)");
+  }
+
+  function getGridColor() {
+    return "rgba(255,255,255,.08)";
+  }
+
+  function getChartWrap(canvas) {
+    return canvas ? canvas.closest(".kk-chart-wrap") : null;
+  }
+
+  function normalizeChartType(chartId) {
+    const raw = String(chartId || "bar").toLowerCase().trim();
+
+    if (["pie"].includes(raw)) return { type: "pie", indexAxis: "x" };
+    if (["donut", "doughnut"].includes(raw)) return { type: "doughnut", indexAxis: "x" };
+    if (["line", "area"].includes(raw)) return { type: "line", indexAxis: "x" };
+    if (["horizontal", "horizontal_bar", "hbar", "bar_horizontal"].includes(raw)) {
+      return { type: "bar", indexAxis: "y" };
+    }
+
+    return { type: "bar", indexAxis: "x" };
+  }
+
+  function choiceText(choice, index) {
+    if (!choice) return `Option ${index + 1}`;
+
+    return (
+      choice.text ||
+      choice.label ||
+      choice.name ||
+      choice.title ||
+      choice.value ||
+      `Option ${index + 1}`
+    );
+  }
+
+  function choiceId(choice, index) {
+    if (!choice) return String(index);
+
+    if (choice.id !== undefined && choice.id !== null) return String(choice.id);
+    if (choice.pk !== undefined && choice.pk !== null) return String(choice.pk);
+
+    return String(index);
+  }
+
+  function normalizeChoices(choices) {
+    if (!Array.isArray(choices)) return [];
+
+    return choices.map((choice, index) => ({
+      id: choiceId(choice, index),
+      text: choiceText(choice, index),
+      raw: choice,
+      index,
+    }));
+  }
+
+  function normalizeTally(choices, tally) {
+    const safeTally = tally || {};
+    const counts = safeTally.counts || {};
+    const texts = Array.isArray(safeTally.texts) ? safeTally.texts : [];
+
+    const values = choices.map((choice) => {
+      const byString = counts[String(choice.id)];
+      const byRawId = choice.raw && choice.raw.id !== undefined ? counts[choice.raw.id] : undefined;
+      const byIndex = counts[String(choice.index)];
+
+      return Number(byString ?? byRawId ?? byIndex ?? 0);
+    });
+
     return {
-      label: "Responses",
-      data: values,
-      backgroundColor: kind === "line" ? "rgba(124,58,237,.3)" :
-                       kind === "area" ? "rgba(124,58,237,.3)" :
-                       PALETTE.slice(0, values.length),
-      borderColor: kind === "line" || kind === "area" ? "#7c3aed" :
-                   PALETTE.slice(0, values.length),
-      borderWidth: 2,
-      fill: kind === "area",
-      tension: kind === "line" || kind === "area" ? 0.4 : 0,
-      borderRadius: 8,
+      counts,
+      texts,
+      values,
+      total: values.reduce((sum, value) => sum + Number(value || 0), 0),
     };
   }
 
-  const COMMON_OPTS = (mods = {}) => ({
-    responsive: true, maintainAspectRatio: false,
-    animation: { duration: 600, easing: "easeOutCubic" },
-    plugins: {
-      legend: { display: false, labels: { color: "#cbd5e1" } },
-      tooltip: { enabled: true },
-    },
-    scales: mods.scales !== undefined ? mods.scales : {
-      x: { ticks: { color: "rgba(255,255,255,.7)" }, grid: { color: "rgba(255,255,255,.05)" } },
-      y: { ticks: { color: "rgba(255,255,255,.7)" }, grid: { color: "rgba(255,255,255,.05)" } },
-    },
-    ...mods.extra,
-  });
+  function safeYAxisMax(values) {
+    const maxValue = Math.max(0, ...values.map((value) => Number(value || 0)));
 
-  function chartConfig(chartId, labels, values) {
-    switch (chartId) {
-      case "bar":
-        return { type: "bar", data: { labels, datasets: [buildDataset(values, "bar")] }, options: COMMON_OPTS() };
-      case "horizontal_bar":
-        return { type: "bar", data: { labels, datasets: [buildDataset(values, "bar")] },
-                 options: COMMON_OPTS({ extra: { indexAxis: "y" } }) };
-      case "stacked_bar":
-        return { type: "bar", data: { labels, datasets: [buildDataset(values, "bar")] },
-                 options: COMMON_OPTS({ scales: { x: { stacked: true, ticks: {color:"#cbd5e1"}, grid:{color:"rgba(255,255,255,.05)"} },
-                                                  y: { stacked: true, ticks: {color:"#cbd5e1"}, grid:{color:"rgba(255,255,255,.05)"} } } }) };
-      case "donut":
-        return { type: "doughnut", data: { labels, datasets: [buildDataset(values, "donut")] },
-                 options: COMMON_OPTS({ scales: {}, extra: { plugins: { legend: { display: true, position: "bottom", labels: { color: "#cbd5e1" } } }, cutout: "60%" } }) };
-      case "pie":
-        return { type: "pie", data: { labels, datasets: [buildDataset(values, "pie")] },
-                 options: COMMON_OPTS({ scales: {}, extra: { plugins: { legend: { display: true, position: "bottom", labels: { color: "#cbd5e1" } } } } }) };
-      case "line":
-        return { type: "line", data: { labels, datasets: [buildDataset(values, "line")] }, options: COMMON_OPTS() };
-      case "area":
-        return { type: "line", data: { labels, datasets: [buildDataset(values, "area")] }, options: COMMON_OPTS() };
-      case "radar":
-        return { type: "radar", data: { labels, datasets: [{ label: "Responses", data: values, backgroundColor: "rgba(124,58,237,.25)", borderColor: "#7c3aed", borderWidth: 2 }] },
-                 options: COMMON_OPTS({ scales: { r: { ticks: { color: "#cbd5e1", backdropColor: "transparent" }, grid: { color: "rgba(255,255,255,.1)" }, pointLabels: { color: "#cbd5e1" } } } }) };
-      case "gauge":
-        // Faked with a half-donut; show the average value.
-        const avg = Math.round(values.reduce((a, b) => a + b, 0) / Math.max(1, values.length));
-        return { type: "doughnut",
-                 data: { labels: ["Avg", "Rest"], datasets: [{ data: [avg, Math.max(0, 100 - avg)],
-                          backgroundColor: ["#7c3aed", "rgba(255,255,255,.07)"], borderWidth: 0 }] },
-                 options: COMMON_OPTS({ scales: {}, extra: { rotation: -90, circumference: 180, cutout: "75%", plugins: { legend: { display: false } } } }) };
-      case "leaderboard":
-        return { type: "bar", data: { labels, datasets: [buildDataset(values, "bar")] },
-                 options: COMMON_OPTS({ extra: { indexAxis: "y" } }) };
-      default:
-        return { type: "bar", data: { labels, datasets: [buildDataset(values, "bar")] }, options: COMMON_OPTS() };
-    }
+    /*
+     * Important:
+     * If max vote is 1, y-axis max becomes 2.
+     * This prevents the tallest bar from touching/cutting the top.
+     */
+    if (maxValue <= 1) return 2;
+    if (maxValue <= 5) return Math.ceil(maxValue + 1);
+
+    return Math.ceil(maxValue * 1.25);
   }
 
-  // Special displays (non-Chart.js): wordcloud, open list, map
-  function renderSpecial(chartId, labels, texts, container) {
-    container.innerHTML = "";
-    container.style.display = "flex";
-    container.style.flexDirection = chartId === "open_list" ? "column" : "row";
-    container.style.justifyContent = "center";
-    container.style.alignItems = "center";
-    container.style.flexWrap = "wrap";
-    container.style.gap = ".5rem";
-    container.style.padding = "1rem";
-    container.style.overflow = "auto";
+  function destroyOldChart(holder) {
+    if (!holder) return;
 
-    if (chartId === "wordcloud") {
-      const items = (texts && texts.length) ? texts : labels;
-      const counts = {};
-      items.forEach(t => { const k = (t || "").toString().trim().toLowerCase(); if (k) counts[k] = (counts[k] || 0) + 1; });
-      const max = Math.max(1, ...Object.values(counts));
-      Object.entries(counts).sort((a, b) => b[1] - a[1]).forEach(([word, n], i) => {
-        const size = 14 + Math.round((n / max) * 56);
-        const span = document.createElement("span");
-        span.textContent = word;
-        span.style.fontSize = size + "px";
-        span.style.fontWeight = "700";
-        span.style.color = PALETTE[i % PALETTE.length];
-        span.style.padding = "0 .3rem";
-        span.style.fontFamily = '"Clash Display", sans-serif';
-        container.appendChild(span);
-      });
-      if (!Object.keys(counts).length) {
-        container.innerHTML = '<div style="color:#94a3b8">Waiting for responses…</div>';
+    if (holder.chart) {
+      try {
+        holder.chart.destroy();
+      } catch (e) {
+        // Ignore Chart.js destroy errors.
       }
-      return;
-    }
-
-    if (chartId === "open_list") {
-      const items = (texts && texts.length) ? texts : labels;
-      if (!items.length) {
-        container.innerHTML = '<div style="color:#94a3b8">Waiting for responses…</div>';
-        return;
-      }
-      items.forEach((t, i) => {
-        const card = document.createElement("div");
-        card.textContent = t;
-        card.style.padding = ".6rem 1rem";
-        card.style.background = "rgba(255,255,255,.05)";
-        card.style.borderRadius = "12px";
-        card.style.maxWidth = "85%";
-        card.style.borderLeft = `4px solid ${PALETTE[i % PALETTE.length]}`;
-        card.style.animation = "kk-pop .35s ease-out";
-        container.appendChild(card);
-      });
-      return;
-    }
-
-    if (chartId === "map") {
-      // Lightweight stub: show pins as floating chips. Real geo map = future work.
-      container.innerHTML = `
-        <div style="text-align:center; color:#cbd5e1;">
-          <div style="font-size:3.5rem;">🌍</div>
-          <div style="font-weight:600; margin-top:.4rem;">Geo distribution</div>
-          <div style="display:flex; gap:.4rem; flex-wrap:wrap; justify-content:center; margin-top:1rem;">
-            ${labels.map((l, i) => `<span class="kk-q-pill" style="background:${PALETTE[i%PALETTE.length]}; color:#fff;">${l}</span>`).join("")}
-          </div>
-          <div class="small mt-3" style="color:#94a3b8;">(Geo map renderer — placeholder)</div>
-        </div>`;
+      holder.chart = null;
     }
   }
 
-  function isSpecial(chartId) {
-    return chartId === "wordcloud" || chartId === "open_list" || chartId === "map";
-  }
+  function clearSpecial(specialEl) {
+    if (!specialEl) return;
 
-  window.kkRenderPreview = function (chartId, questionType, labels) {
-    const canvas = document.getElementById("preview-canvas");
-    const special = document.getElementById("preview-special");
-    if (isSpecial(chartId)) {
-      canvas.style.display = "none";
-      special.style.display = "flex";
-      const fake = chartId === "wordcloud"
-        ? ["amazing","fun","loud","colorful","fast","wow","sparkly","yes","hello","again","again","fun"]
-        : labels;
-      renderSpecial(chartId, labels, fake, special);
-      destroy();
-      return;
-    }
-    canvas.style.display = "block";
-    special.style.display = "none";
-    destroy();
-    const values = sampleCounts(labels);
-    const cfg = chartConfig(chartId, labels, values);
-    _previewChart = new Chart(canvas, cfg);
-  };
-
-  window.kkRenderLive = function (canvas, specialEl, chartId, questionType, labels, tally, _chartHolder) {
-    if (isSpecial(chartId)) {
-      canvas.style.display = "none";
-      renderSpecial(chartId, labels, tally && tally.texts || [], specialEl);
-      if (_chartHolder.chart) { _chartHolder.chart.destroy(); _chartHolder.chart = null; }
-      return;
-    }
-    canvas.style.display = "block";
     specialEl.style.display = "none";
-    const counts = (tally && tally.counts) || {};
-    // labels is array of {id, text}
-    const values = labels.map(l => counts[String(l.id)] || 0);
-    const textLabels = labels.map(l => l.text);
-    const cfg = chartConfig(chartId, textLabels, values);
-    if (_chartHolder.chart) {
-      _chartHolder.chart.data.labels = textLabels;
-      _chartHolder.chart.data.datasets = cfg.data.datasets;
-      _chartHolder.chart.update();
-    } else {
-      _chartHolder.chart = new Chart(canvas, cfg);
+    specialEl.innerHTML = "";
+  }
+
+  function removeWinnerOverlay(canvas) {
+    const wrap = getChartWrap(canvas);
+    if (!wrap) return;
+
+    const old = wrap.querySelector(".kk-winner-float");
+    if (old) old.remove();
+  }
+
+  function ensureBackgroundClass(canvas) {
+    const wrap = getChartWrap(canvas);
+    if (!wrap) return;
+
+    const bg = String(window.kkChartBackground || "normal").toLowerCase();
+
+    wrap.classList.remove(
+      "kk-bg-normal",
+      "kk-bg-space",
+      "kk-bg-forest",
+      "kk-bg-room",
+      "kk-bg-binary"
+    );
+
+    wrap.classList.add(`kk-bg-${bg}`);
+  }
+
+  function getWinnerIndex(values) {
+    if (!values || !values.length) return -1;
+
+    const maxValue = Math.max(...values.map((value) => Number(value || 0)));
+
+    if (maxValue <= 0) return -1;
+
+    return values.findIndex((value) => Number(value || 0) === maxValue);
+  }
+
+  function getLeaderAvatarMeta() {
+    const rows = Array.isArray(window.kkLeaderboardRows) ? window.kkLeaderboardRows : [];
+
+    if (!rows.length) {
+      return null;
     }
+
+    const leader = rows[0] || {};
+    const avatars = window.kkAvatarsById || {};
+    const avatar = avatars[leader.avatar_id] || {};
+
+    return {
+      name: leader.name || "Winner",
+      emoji: avatar.emoji || avatarEmojiFallback(leader.avatar_id),
+      anim: avatar.anim || "kk-float",
+    };
+  }
+
+  function avatarEmojiFallback(id) {
+    const map = {
+      dragon: "🐉",
+      sword: "⚔️",
+      car: "🏎️",
+      butterfly: "🦋",
+      spacecraft: "🚀",
+      trex: "🦖",
+      stego: "🦕",
+      joker: "🃏",
+      unicorn: "🦄",
+      wizard: "🧙",
+      ninja: "🥷",
+      alien: "👽",
+      ghost: "👻",
+      robot: "🤖",
+      fox: "🦊",
+      octopus: "🐙",
+      shark: "🦈",
+      tiger: "🐯",
+      panda: "🐼",
+      wolf: "🐺",
+    };
+
+    return map[id] || "👑";
+  }
+
+  function renderWinnerOverlay(canvas, chart, values) {
+    const wrap = getChartWrap(canvas);
+    if (!wrap || !chart) return;
+
+    removeWinnerOverlay(canvas);
+
+    const winnerIndex = getWinnerIndex(values);
+    if (winnerIndex < 0) return;
+
+    const meta = getLeaderAvatarMeta();
+
+    /*
+     * Only show animated player avatar when leaderboard data exists.
+     * For normal poll charts, no floating crown is needed.
+     */
+    if (!meta) return;
+
+    const datasetMeta = chart.getDatasetMeta(0);
+    const element = datasetMeta && datasetMeta.data ? datasetMeta.data[winnerIndex] : null;
+
+    if (!element) return;
+
+    const props = element.getProps(["x", "y"], true);
+
+    /*
+     * These two values are the important fix:
+     * - safeTop keeps the crown/name from going outside the chart.
+     * - safeLeft keeps the bubble inside the chart edges.
+     */
+    const safeTop = Math.max(86, props.y + 8);
+    const safeLeft = Math.min(
+      Math.max(70, props.x),
+      Math.max(70, wrap.clientWidth - 70)
+    );
+
+    const overlay = document.createElement("div");
+    overlay.className = "kk-winner-float";
+    overlay.style.left = `${safeLeft}px`;
+    overlay.style.top = `${safeTop}px`;
+
+    const animClass = `kk-anim-${meta.anim || "kk-float"}`;
+
+    overlay.innerHTML = `
+      <div class="kk-winner-crown">👑</div>
+      <span class="kk-avatar-bubble ${animClass}" aria-hidden="true">${meta.emoji}</span>
+      <span class="kk-winner-label">${escapeHtml(meta.name)}</span>
+    `;
+
+    wrap.appendChild(overlay);
+  }
+
+  function escapeHtml(value) {
+    return String(value || "").replace(/[&<>"]/g, (char) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+    }[char]));
+  }
+
+  function baseOptions(values, chartKind, indexAxis) {
+    const textColor = getTextColor();
+    const dimColor = getDimTextColor();
+    const gridColor = getGridColor();
+
+    const isHorizontal = indexAxis === "y";
+    const maxValue = safeYAxisMax(values);
+
+    const options = {
+      responsive: true,
+      maintainAspectRatio: false,
+      resizeDelay: 0,
+
+      /*
+       * This padding fixes both problems:
+       * - top label/crown has space
+       * - bottom x-axis labels have space
+       */
+      layout: {
+        padding: {
+          top: 62,
+          right: 28,
+          bottom: 58,
+          left: 16,
+        },
+      },
+
+      animation: {
+        duration: 350,
+      },
+
+      plugins: {
+        legend: {
+          display: chartKind === "pie" || chartKind === "doughnut",
+          position: "bottom",
+          labels: {
+            color: textColor,
+            padding: 18,
+            boxWidth: 14,
+            boxHeight: 14,
+            font: {
+              size: 13,
+              weight: "600",
+            },
+          },
+        },
+        tooltip: {
+          enabled: true,
+          backgroundColor: "rgba(10,10,20,.94)",
+          titleColor: "#ffffff",
+          bodyColor: "#ffffff",
+          borderColor: "rgba(255,255,255,.15)",
+          borderWidth: 1,
+          padding: 12,
+          displayColors: true,
+        },
+      },
+    };
+
+    if (chartKind === "pie" || chartKind === "doughnut") {
+      options.cutout = chartKind === "doughnut" ? "56%" : 0;
+      return options;
+    }
+
+    options.indexAxis = indexAxis;
+
+    options.scales = {
+      x: {
+        display: true,
+        offset: true,
+        beginAtZero: true,
+        suggestedMax: isHorizontal ? maxValue : undefined,
+        max: isHorizontal ? maxValue : undefined,
+        ticks: {
+          display: true,
+          color: textColor,
+          padding: 12,
+          autoSkip: false,
+          maxRotation: 0,
+          minRotation: 0,
+          precision: 0,
+          font: {
+            size: 12,
+            weight: "600",
+          },
+        },
+        grid: {
+          color: isHorizontal ? gridColor : "rgba(255,255,255,.055)",
+          drawBorder: false,
+        },
+        border: {
+          display: false,
+        },
+      },
+      y: {
+        display: true,
+        beginAtZero: true,
+        suggestedMax: !isHorizontal ? maxValue : undefined,
+        max: !isHorizontal ? maxValue : undefined,
+        ticks: {
+          display: true,
+          color: dimColor,
+          padding: 8,
+          precision: 0,
+          stepSize: Math.max(...values) <= 5 ? 1 : undefined,
+          font: {
+            size: 12,
+            weight: "500",
+          },
+        },
+        grid: {
+          color: !isHorizontal ? gridColor : "rgba(255,255,255,.055)",
+          drawBorder: false,
+        },
+        border: {
+          display: false,
+        },
+      },
+    };
+
+    if (chartKind === "line") {
+      options.elements = {
+        line: {
+          tension: 0.35,
+          borderWidth: 4,
+        },
+        point: {
+          radius: 5,
+          hoverRadius: 7,
+        },
+      };
+    }
+
+    return options;
+  }
+
+  function buildDataset(chartKind, values, colors) {
+    if (chartKind === "line") {
+      return {
+        label: "Votes",
+        data: values,
+        borderColor: cssVar("--stage-accent-2", "#22d3ee"),
+        backgroundColor: "rgba(34,211,238,.16)",
+        fill: true,
+        pointBackgroundColor: colors,
+        pointBorderColor: "#ffffff",
+        pointBorderWidth: 2,
+      };
+    }
+
+    return {
+      label: "Votes",
+      data: values,
+      backgroundColor: colors,
+      borderColor: "rgba(255,255,255,.15)",
+      borderWidth: 1,
+      borderRadius: chartKind === "bar" ? 8 : 0,
+      borderSkipped: false,
+      hoverOffset: chartKind === "pie" || chartKind === "doughnut" ? 12 : 0,
+    };
+  }
+
+  function renderTextAnswers(specialEl, tally) {
+    if (!specialEl) return;
+
+    const texts = Array.isArray(tally && tally.texts) ? tally.texts : [];
+
+    specialEl.style.display = "grid";
+    specialEl.style.placeItems = "center";
+    specialEl.style.padding = "2rem";
+    specialEl.style.overflow = "auto";
+
+    if (!texts.length) {
+      specialEl.innerHTML = `
+        <div class="kk-empty">
+          <div class="em">💬</div>
+          <h3>No responses yet</h3>
+          <p>Responses will appear here live.</p>
+        </div>
+      `;
+      return;
+    }
+
+    specialEl.innerHTML = `
+      <div style="
+        width:100%;
+        display:grid;
+        grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+        gap:1rem;
+        align-content:start;
+      ">
+        ${texts.map((text) => `
+          <div style="
+            padding:1rem 1.15rem;
+            border-radius:16px;
+            background:rgba(255,255,255,.08);
+            border:1px solid rgba(255,255,255,.12);
+            color:${getTextColor()};
+            font-size:clamp(1rem,1.8vw,1.35rem);
+            line-height:1.25;
+          ">
+            ${escapeHtml(text)}
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function renderEmptyChoiceChart(canvas, specialEl, holder, choices, chartInfo) {
+    clearSpecial(specialEl);
+    removeWinnerOverlay(canvas);
+    destroyOldChart(holder);
+
+    const labels = choices.length ? choices.map((choice) => choice.text) : ["No choices"];
+    const values = choices.length ? choices.map(() => 0) : [0];
+    const colors = labels.map((_, index) => DEFAULT_COLORS[index % DEFAULT_COLORS.length]);
+
+    holder.chart = new Chart(canvas, {
+      type: chartInfo.type,
+      data: {
+        labels,
+        datasets: [buildDataset(chartInfo.type, values, colors)],
+      },
+      options: baseOptions(values, chartInfo.type, chartInfo.indexAxis),
+    });
+  }
+
+  function renderChoiceChart(canvas, specialEl, chartId, choicesRaw, tally, holder) {
+    if (!canvas || !window.Chart) return;
+
+    const choices = normalizeChoices(choicesRaw);
+    const chartInfo = normalizeChartType(chartId);
+    const tallyData = normalizeTally(choices, tally);
+
+    ensureBackgroundClass(canvas);
+    clearSpecial(specialEl);
+    removeWinnerOverlay(canvas);
+    destroyOldChart(holder);
+
+    if (!choices.length) {
+      renderEmptyChoiceChart(canvas, specialEl, holder, choices, chartInfo);
+      return;
+    }
+
+    const labels = choices.map((choice) => choice.text);
+    const values = tallyData.values;
+    const colors = labels.map((_, index) => DEFAULT_COLORS[index % DEFAULT_COLORS.length]);
+
+    const options = baseOptions(values, chartInfo.type, chartInfo.indexAxis);
+
+    /*
+     * Keep winner overlay safely inside the chart.
+     * This avoids top clipping when a bar touches the max value.
+     */
+    options.animation = {
+      duration: 350,
+      onComplete: function () {
+        if (chartInfo.type === "bar") {
+          renderWinnerOverlay(canvas, holder.chart, values);
+        }
+      },
+    };
+
+    holder.chart = new Chart(canvas, {
+      type: chartInfo.type,
+      data: {
+        labels,
+        datasets: [buildDataset(chartInfo.type, values, colors)],
+      },
+      options,
+    });
+
+    requestAnimationFrame(() => {
+      try {
+        holder.chart.resize();
+        holder.chart.update("none");
+      } catch (e) {
+        // Ignore.
+      }
+
+      if (chartInfo.type === "bar") {
+        renderWinnerOverlay(canvas, holder.chart, values);
+      }
+    });
+  }
+
+  function shouldShowTextAnswers(questionType, chartId) {
+    const qType = String(questionType || "").toLowerCase();
+    const cType = String(chartId || "").toLowerCase();
+
+    return (
+      qType === "text" ||
+      qType === "open" ||
+      qType === "open_text" ||
+      qType === "word" ||
+      qType === "wordcloud" ||
+      cType === "text" ||
+      cType === "wordcloud"
+    );
+  }
+
+  window.kkRenderLive = function kkRenderLive(
+    canvas,
+    specialEl,
+    chartId,
+    questionType,
+    choices,
+    tally,
+    holder
+  ) {
+    const safeHolder = holder || { chart: null };
+
+    if (!canvas) return;
+
+    if (shouldShowTextAnswers(questionType, chartId)) {
+      destroyOldChart(safeHolder);
+      removeWinnerOverlay(canvas);
+      renderTextAnswers(specialEl, tally || {});
+      return;
+    }
+
+    renderChoiceChart(
+      canvas,
+      specialEl,
+      chartId || "bar",
+      Array.isArray(choices) ? choices : [],
+      tally || { counts: {}, texts: [] },
+      safeHolder
+    );
   };
 })();

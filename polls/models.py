@@ -2,6 +2,20 @@ from django.conf import settings
 from django.db import models
 
 
+FONT_CHOICES = [
+    ("inter",      "Inter (sans, modern)"),
+    ("manrope",    "Manrope (sans, clean)"),
+    ("poppins",    "Poppins (sans, friendly)"),
+    ("clash",      "Clash Display (display, bold)"),
+    ("lora",       "Lora (serif, editorial)"),
+    ("cormorant",  "Cormorant Garamond (serif, elegant)"),
+    ("jetbrains",  "JetBrains Mono (mono, code)"),
+    ("orbitron",   "Orbitron (sci-fi)"),
+    ("vt323",      "VT323 (retro pixel)"),
+    ("press",      "Press Start 2P (arcade)"),
+]
+
+
 class Questionnaire(models.Model):
     """A deck of questions — Mentimeter-style."""
 
@@ -25,6 +39,33 @@ class Questionnaire(models.Model):
     def __str__(self):
         return self.title
 
+    def can_edit(self, user) -> bool:
+        if not user.is_authenticated:
+            return False
+        if self.owner_id == user.id:
+            return True
+        return self.collaborators.filter(user=user, role__in=["edit", "owner"]).exists()
+
+
+class QuestionnaireCollaborator(models.Model):
+    ROLE_CHOICES = [
+        ("view", "Can view"),
+        ("edit", "Can edit"),
+    ]
+    questionnaire = models.ForeignKey(Questionnaire, on_delete=models.CASCADE, related_name="collaborators")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="collaborations")
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default="edit")
+    invited_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+                                   related_name="sent_invites")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("questionnaire", "user")
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.user} on {self.questionnaire} ({self.role})"
+
 
 class Question(models.Model):
     TYPE_CHOICES = [
@@ -41,6 +82,11 @@ class Question(models.Model):
     chart_type = models.CharField(max_length=30, default="bar")
     order = models.PositiveIntegerField(default=0)
     image = models.ImageField(upload_to="question_images/", blank=True, null=True)
+
+    # NEW: per-question typography controls
+    font_family = models.CharField(max_length=20, choices=FONT_CHOICES, default="clash")
+    font_size = models.PositiveIntegerField(default=44, help_text="Question heading size in px (24-96)")
+    font_bold = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["order", "id"]

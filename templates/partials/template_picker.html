@@ -1,10 +1,9 @@
 {# Visual template picker — used in poll & game editors. #}
-{# Expects: templates (list), selected_id (str), input_name (hidden field name) #}
 <div class="kk-template-grid" id="kk-template-picker" data-input-name="{{ input_name|default:'template_id' }}">
   {% for t in templates %}
     <div class="kk-template-tile{% if t.id == selected_id %} selected{% endif %}" data-template-id="{{ t.id }}">
-      <div class="kk-template-preview" style="background: {{ t.bg }}; color: {{ t.fg }};">
-        <div style="font-size: .85rem; font-weight: 700;">{{ t.name }}</div>
+      <div class="kk-template-preview" style="background: {{ t.bg_css|default:t.bg|safe }}; color: {{ t.fg }};">
+        <div style="font-size: .85rem; font-weight: 700; font-family: 'Clash Display', sans-serif;">{{ t.name }}</div>
         <div class="kk-template-bars">
           <span style="background: {{ t.accent }}; height: 40%;"></span>
           <span style="background: {{ t.accent2 }}; height: 70%;"></span>

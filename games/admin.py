@@ -9,12 +9,12 @@ class GameChoiceInline(admin.TabularInline):
 
 @admin.register(Quiz)
 class QuizAdmin(admin.ModelAdmin):
-    list_display = ("title", "owner", "scoring", "mode", "use_rooms", "updated_at")
+    list_display = ("title", "owner", "scoring", "mode", "use_rooms", "chart_background", "updated_at")
 
 
 @admin.register(GameQuestion)
 class GameQuestionAdmin(admin.ModelAdmin):
-    list_display = ("text", "quiz", "time_limit", "points", "order")
+    list_display = ("text", "quiz", "time_limit", "points", "order", "font_family")
     inlines = [GameChoiceInline]
 
 

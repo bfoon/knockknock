@@ -1,13 +1,18 @@
 import json
+from collections import Counter
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.http import HttpResponseBadRequest, JsonResponse
+from django.db import transaction
+from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.utils import timezone
+from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
 from core.templates_registry import TEMPLATES, get_template
-from presentations.models import LiveSession
+from presentations.models import LiveSession, Participant
 
 from .charts import ALL_CHARTS, curated_charts_for
 from .forms import (
@@ -18,12 +23,16 @@ from .forms import (
     QuestionForm,
     QuestionnaireForm,
 )
+from .exports import ReportData, QuestionResult, build_excel_report, build_word_report
 from .models import (
     Choice,
+    MatrixAnswer,
     MatrixRow,
+    PointsAllocation,
     Question,
     Questionnaire,
     QuestionnaireCollaborator,
+    Response,
 )
 from .question_types import QUESTION_TYPE_REGISTRY
 
@@ -373,27 +382,379 @@ def remove_collaborator(request, pk, cpk):
     return redirect("polls:edit", pk=pk)
 
 
-# ── Stubs for results/export — kept for URL compatibility ─────────────
-# (Your existing implementation should keep working with the new fields;
-# I haven't rewritten these because they're outside the scope of this drop.)
+
+# ── Results / export / reset ─────────────────────────────────────────
+def _result_sessions_for(questionnaire):
+    """All live poll sessions for this questionnaire, newest first."""
+    return (
+        LiveSession.objects
+        .filter(kind="poll", questionnaire=questionnaire)
+        .order_by("-created_at")
+    )
+
+
+def _selected_result_session(request, questionnaire):
+    """Pick the session requested by ?session=CODE, or latest by default.
+
+    Returns (selected_session, selected_code, sessions_qs).
+    selected_session is None only when selected_code == "all".
+    """
+    sessions = _result_sessions_for(questionnaire)
+    selected_code = (
+        request.GET.get("session")
+        or request.POST.get("session")
+        or ""
+    ).strip()
+
+    if selected_code == "all":
+        return None, "all", sessions
+
+    if selected_code:
+        selected = sessions.filter(code=selected_code).first()
+        if selected:
+            return selected, selected.code, sessions
+
+    selected = sessions.first()
+    return selected, selected.code if selected else "", sessions
+
+
+def _sessions_for_report(questionnaire, selected_session):
+    if selected_session is None:
+        return list(_result_sessions_for(questionnaire))
+    return [selected_session]
+
+
+def _storage_for(question):
+    try:
+        return question.storage() or ""
+    except Exception:
+        return ""
+
+
+def _report_qtype_for(question):
+    """Map Knock-Knock question/storage types into the export module types."""
+    qtype = (question.type or "mcq").lower()
+    storage = _storage_for(question)
+
+    if qtype in {"mcq", "word", "scale", "open", "ranking"}:
+        return qtype
+
+    if qtype in {"reaction", "yes_no", "likert", "image_choice"}:
+        return "mcq"
+
+    if qtype in {"points_allocation"} or storage == "points":
+        return "ranking"
+
+    if qtype in {"rating", "nps", "slider", "numeric"} or storage == "numeric":
+        return "scale"
+
+    if qtype in {"wordcloud"}:
+        return "word"
+
+    if storage in {"choice", "multi_choice"} or question.has_choices():
+        return "mcq"
+
+    return "open"
+
+
+def _chart_for_report(question, report_qtype):
+    chart = (question.chart_type or "bar").lower()
+
+    if report_qtype == "word":
+        return "wordcloud"
+    if report_qtype == "open":
+        return "responses_list"
+    if report_qtype == "scale":
+        return "histogram"
+    if report_qtype == "ranking":
+        return "ranked_bar"
+    if chart in {"bar", "pie", "donut", "doughnut", "line"}:
+        return chart
+    return "bar"
+
+
+def _question_result(question, sessions):
+    report_qtype = _report_qtype_for(question)
+    chart_type = _chart_for_report(question, report_qtype)
+    storage = _storage_for(question)
+
+    choices = list(question.choices.all().order_by("order", "id"))
+    options = [choice.text for choice in choices]
+    choice_index = {choice.id: index for index, choice in enumerate(choices)}
+    counts = [0 for _choice in choices]
+
+    responses = list(
+        Response.objects
+        .filter(question=question, session__in=sessions)
+        .select_related("choice")
+        .order_by("created_at")
+    )
+
+    for response in responses:
+        if response.choice_id in choice_index:
+            counts[choice_index[response.choice_id]] += 1
+
+    if report_qtype in {"mcq", "ranking"}:
+        # Points allocation stores points in a separate table.
+        if storage == "points" or (question.type or "").lower() == "points_allocation":
+            counts = [0 for _choice in choices]
+            allocations = (
+                PointsAllocation.objects
+                .filter(question=question, session__in=sessions)
+                .select_related("choice")
+            )
+            for allocation in allocations:
+                if allocation.choice_id in choice_index:
+                    counts[choice_index[allocation.choice_id]] += int(allocation.points or 0)
+            report_qtype = "ranking"
+            chart_type = "ranked_bar"
+
+        # Avoid export crashes if an old/broken choice question has no choices.
+        if not options:
+            options = ["No options"]
+            counts = [0]
+
+        return QuestionResult(
+            text=question.text,
+            qtype=report_qtype,
+            chart_type=chart_type,
+            options=options,
+            counts=counts,
+        )
+
+    if report_qtype == "scale":
+        scale_values = [
+            float(response.numeric_value)
+            for response in responses
+            if response.numeric_value is not None
+        ]
+        return QuestionResult(
+            text=question.text,
+            qtype="scale",
+            chart_type=chart_type,
+            scale_values=scale_values,
+        )
+
+    if report_qtype == "word":
+        words = [
+            (response.text_value or "").strip()
+            for response in responses
+            if (response.text_value or "").strip()
+        ]
+        return QuestionResult(
+            text=question.text,
+            qtype="word",
+            chart_type="wordcloud",
+            words=words,
+        )
+
+    open_answers = [
+        (response.text_value or "").strip()
+        for response in responses
+        if (response.text_value or "").strip()
+    ]
+
+    if storage == "matrix" or (question.type or "").lower() == "matrix":
+        open_answers = [
+            f"{answer.matrix_row.text}: {answer.numeric_value:g}"
+            for answer in (
+                MatrixAnswer.objects
+                .filter(question=question, session__in=sessions)
+                .select_related("matrix_row")
+                .order_by("matrix_row__order", "created_at")
+            )
+        ]
+
+    return QuestionResult(
+        text=question.text,
+        qtype="open",
+        chart_type="responses_list",
+        open_answers=open_answers,
+    )
+
+
+def _build_report_data(questionnaire, selected_session):
+    sessions = _sessions_for_report(questionnaire, selected_session)
+    session_code = selected_session.code if selected_session else "ALL"
+
+    questions = [
+        _question_result(question, sessions)
+        for question in questionnaire.questions.all().order_by("order", "id")
+    ]
+
+    if sessions:
+        started_at = min(session.created_at for session in sessions)
+        ended_dates = [session.ended_at for session in sessions if session.ended_at]
+        ended_at = max(ended_dates) if ended_dates else None
+        mode = selected_session.mode if selected_session else "all"
+        participant_count = (
+            Participant.objects
+            .filter(session__in=sessions)
+            .values("participant_uid")
+            .distinct()
+            .count()
+        )
+    else:
+        started_at = getattr(questionnaire, "created_at", timezone.now())
+        ended_at = None
+        mode = questionnaire.mode
+        participant_count = 0
+
+    owner = questionnaire.owner
+    owner_name = owner.get_full_name() or getattr(owner, "username", "") or str(owner)
+
+    return ReportData(
+        title=questionnaire.title,
+        description=questionnaire.description or "",
+        owner_name=owner_name,
+        session_code=session_code,
+        mode=mode,
+        started_at=started_at,
+        ended_at=ended_at,
+        participant_count=participant_count,
+        questions=questions,
+    )
+
+
+def _cards_from_report(report_data):
+    cards = []
+
+    for number, result in enumerate(report_data.questions, start=1):
+        total = max(int(result.total_responses or 0), 0)
+        rows = []
+
+        for label, count in zip(result.options, result.counts):
+            rows.append({
+                "label": label,
+                "count": int(count or 0),
+                "percent": (int(count or 0) / total * 100) if total else 0,
+            })
+
+        words = []
+        if result.words:
+            words = [
+                {"label": word, "count": count}
+                for word, count in Counter(
+                    word.lower().strip()
+                    for word in result.words
+                    if word.strip()
+                ).most_common(30)
+            ]
+
+        scale_counts = []
+        if result.scale_values:
+            counter = Counter(int(round(value)) for value in result.scale_values)
+            for value in range(min(counter), max(counter) + 1):
+                scale_counts.append({"value": value, "count": counter.get(value, 0)})
+
+        cards.append({
+            "number": number,
+            "result": result,
+            "rows": rows,
+            "words": words,
+            "texts": result.open_answers[:300],
+            "scale_counts": scale_counts,
+        })
+
+    return cards
+
+
+def _download_filename(questionnaire, selected_code, extension):
+    base = slugify(questionnaire.title or "knock-knock-results") or "knock-knock-results"
+    suffix = selected_code or "latest"
+    return f"{base}-{suffix}.{extension}"
+
+
 @login_required
 def questionnaire_results(request, pk):
     questionnaire = get_object_or_404(Questionnaire, pk=pk)
-    return render(request, "polls/results.html", {"questionnaire": questionnaire})
+    if not questionnaire.can_edit(request.user):
+        return HttpResponseBadRequest("No access.")
+
+    selected_session, selected_code, sessions = _selected_result_session(request, questionnaire)
+    report = _build_report_data(questionnaire, selected_session)
+
+    return render(request, "polls/results.html", {
+        "questionnaire": questionnaire,
+        "sessions": sessions,
+        "selected_session": selected_session,
+        "selected_code": selected_code,
+        "report": report,
+        "cards": _cards_from_report(report),
+        "total_responses": sum(q.total_responses for q in report.questions),
+    })
 
 
 @login_required
 def download_results_excel(request, pk):
-    from django.http import HttpResponse
-    return HttpResponse("TODO: re-wire Excel export against new Response fields.",
-                        content_type="text/plain")
+    questionnaire = get_object_or_404(Questionnaire, pk=pk)
+    if not questionnaire.can_edit(request.user):
+        return HttpResponseBadRequest("No access.")
+
+    selected_session, selected_code, _sessions = _selected_result_session(request, questionnaire)
+    report = _build_report_data(questionnaire, selected_session)
+    payload = build_excel_report(report)
+
+    response = HttpResponse(
+        payload,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = (
+        f'attachment; filename="{_download_filename(questionnaire, selected_code, "xlsx")}"'
+    )
+    return response
 
 
 @login_required
 def download_results_word(request, pk):
-    from django.http import HttpResponse
-    return HttpResponse("TODO: re-wire Word export against new Response fields.",
-                        content_type="text/plain")
+    questionnaire = get_object_or_404(Questionnaire, pk=pk)
+    if not questionnaire.can_edit(request.user):
+        return HttpResponseBadRequest("No access.")
+
+    selected_session, selected_code, _sessions = _selected_result_session(request, questionnaire)
+    report = _build_report_data(questionnaire, selected_session)
+    payload = build_word_report(report)
+
+    response = HttpResponse(
+        payload,
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    response["Content-Disposition"] = (
+        f'attachment; filename="{_download_filename(questionnaire, selected_code, "docx")}"'
+    )
+    return response
+
+
+@login_required
+@require_POST
+def reset_results(request, pk):
+    questionnaire = get_object_or_404(Questionnaire, pk=pk)
+    if not questionnaire.can_edit(request.user):
+        return HttpResponseBadRequest("No access.")
+
+    selected_session, selected_code, sessions_qs = _selected_result_session(request, questionnaire)
+    scope = (request.POST.get("scope") or "session").strip().lower()
+
+    if scope == "all" or selected_code == "all":
+        sessions = list(sessions_qs)
+        redirect_code = "all"
+    else:
+        sessions = [selected_session] if selected_session else []
+        redirect_code = selected_code
+
+    with transaction.atomic():
+        Response.objects.filter(question__questionnaire=questionnaire, session__in=sessions).delete()
+        MatrixAnswer.objects.filter(question__questionnaire=questionnaire, session__in=sessions).delete()
+        PointsAllocation.objects.filter(question__questionnaire=questionnaire, session__in=sessions).delete()
+        Participant.objects.filter(session__in=sessions).delete()
+
+    if redirect_code == "all":
+        messages.success(request, "All saved results for this questionnaire have been reset.")
+    else:
+        messages.success(request, f"Saved results for session {redirect_code or 'latest'} have been reset.")
+
+    url = reverse("polls:results", args=[questionnaire.pk])
+    return redirect(f"{url}?session={redirect_code}" if redirect_code else url)
 
 
 @login_required

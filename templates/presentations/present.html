@@ -74,7 +74,7 @@
   }
 
   /* ─────────────────────────────────────────────
-     BODY GRID (main + side)
+     BODY GRID
   ───────────────────────────────────────────── */
   .kk-stage-body {
     flex: 1 1 auto;
@@ -135,10 +135,11 @@
     margin: 0 0 0.7rem 0 !important;
     font-size: clamp(1.25rem, 2.2vw, 2.45rem);
     line-height: 1.05;
+    color: var(--kk-question-color, var(--stage-fg));
   }
 
   /* ─────────────────────────────────────────────
-     CHART WRAPPER (kept as-is, drawing tools work)
+     CHART WRAPPER
   ───────────────────────────────────────────── */
   .kk-chart-wrap {
     flex: 1 1 auto;
@@ -217,8 +218,109 @@
   }
 
   /* ─────────────────────────────────────────────
-     SIDE COLUMN (QR + Participants + Leaderboard)
-     Flex column so the leaderboard can grow & scroll.
+     FONT COLOR + MAGNIFYING LENS
+     Poll-only controls. Hidden/not rendered for games.
+  ───────────────────────────────────────────── */
+  .kk-present-controls {
+    margin-top: .85rem;
+    padding-top: .75rem;
+    border-top: 1px solid rgba(255,255,255,.12);
+  }
+
+  .kk-color-control-row,
+  .kk-lens-control-row {
+    display: grid;
+    grid-template-columns: 90px minmax(0, 1fr) 52px;
+    align-items: center;
+    gap: .5rem;
+    margin-top: .5rem;
+    font-size: .78rem;
+    color: var(--kk-text-dim, #94a3b8);
+  }
+
+  .kk-color-control-row input[type="color"] {
+    width: 100%;
+    height: 32px;
+    padding: 2px;
+    border: 1px solid rgba(255,255,255,.18);
+    border-radius: 10px;
+    background: rgba(255,255,255,.08);
+    cursor: pointer;
+  }
+
+  .kk-lens-control-row input[type="range"] {
+    width: 100%;
+    accent-color: var(--stage-accent-2, #22d3ee);
+  }
+
+  .kk-mini-reset {
+    height: 30px;
+    border: 1px solid rgba(255,255,255,.16);
+    border-radius: 999px;
+    background: rgba(255,255,255,.08);
+    color: var(--stage-fg, #fff);
+    font-size: .72rem;
+    font-weight: 800;
+  }
+
+  .kk-mini-reset:hover {
+    background: rgba(255,255,255,.16);
+  }
+
+  .kk-chart-wrap.is-lens {
+    cursor: none;
+  }
+
+  .kk-lens {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 1400;
+    display: none;
+    width: 220px;
+    height: 220px;
+    transform: translate(-50%, -50%);
+    border-radius: 999px;
+    overflow: hidden;
+    pointer-events: none;
+    border: 3px solid rgba(255,255,255,.85);
+    background: rgba(0,0,0,.18);
+    box-shadow:
+      0 22px 60px rgba(0,0,0,.45),
+      0 0 0 8px rgba(255,255,255,.08),
+      0 0 34px rgba(34,211,238,.38);
+  }
+
+  .kk-lens canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  .kk-lens-badge {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    padding: .25rem .5rem;
+    border-radius: 999px;
+    background: rgba(0,0,0,.55);
+    color: #fff;
+    font-size: .72rem;
+    font-weight: 900;
+    backdrop-filter: blur(8px);
+  }
+
+  .kk-btn.is-active-lens {
+    color: #fff !important;
+    border-color: rgba(34,211,238,.65) !important;
+    background:
+      radial-gradient(circle at 35% 20%, rgba(255,255,255,.24), transparent 36%),
+      linear-gradient(135deg, rgba(34,211,238,.72), rgba(124,58,237,.72)) !important;
+    box-shadow: 0 0 24px rgba(34,211,238,.28);
+  }
+
+  /* ─────────────────────────────────────────────
+     SIDE COLUMN
   ───────────────────────────────────────────── */
   .kk-stage-side {
     min-height: 0;
@@ -229,14 +331,11 @@
     overflow: hidden;
   }
 
-  /* QR panel and Participants card keep their natural size. */
   .kk-stage-side > .kk-qr-panel,
   .kk-stage-side > .kk-card:not(:last-child) {
     flex: 0 0 auto;
   }
 
-  /* Leaderboard card (last card, only present for games)
-     fills remaining height and scrolls inside. */
   .kk-stage-side > .kk-card:last-child {
     flex: 1 1 0;
     min-height: 140px;
@@ -245,7 +344,6 @@
     overflow: hidden;
   }
 
-  /* The leaderboard list itself is the scroll container. */
   #leaderboard {
     flex: 1 1 auto;
     min-height: 0;
@@ -254,7 +352,49 @@
   }
 
   /* ─────────────────────────────────────────────
-     FULLSCREEN MODE — hide side column
+     OPAQUE GAME LEADERBOARD
+  ───────────────────────────────────────────── */
+  .kk-game-leaderboard-card {
+    flex-grow: 1;
+    overflow-y: auto;
+    background: #101827 !important;
+    border: 1px solid #263449 !important;
+    box-shadow:
+      0 18px 55px rgba(0,0,0,.45),
+      inset 0 1px 0 rgba(255,255,255,.04);
+  }
+
+  .kk-game-leaderboard-card h3 {
+    color: #e5e7eb !important;
+  }
+
+  .kk-game-leaderboard-card #leaderboard {
+    background: transparent;
+  }
+
+  .kk-game-leaderboard-card .kk-lb-row {
+    background: #172235 !important;
+    border: 1px solid #2d3b52 !important;
+    color: #f8fafc !important;
+  }
+
+  .kk-game-leaderboard-card .kk-lb-row.is-leader {
+    background: #1f2f49 !important;
+    border-color: #fbbf24 !important;
+    box-shadow: 0 0 0 1px rgba(251,191,36,.24), 0 10px 30px rgba(0,0,0,.28);
+  }
+
+  .kk-game-leaderboard-card .kk-lb-name {
+    color: #f8fafc !important;
+  }
+
+  .kk-game-leaderboard-card .kk-lb-score {
+    color: #fbbf24 !important;
+    font-weight: 900;
+  }
+
+  /* ─────────────────────────────────────────────
+     FULLSCREEN MODE
   ───────────────────────────────────────────── */
   .kk-stage.fullscreen .kk-stage-body {
     grid-template-columns: minmax(0, 1fr);
@@ -276,11 +416,38 @@
     min-height: calc(100dvh - 1.3rem);
   }
 
+  /*
+   * GAME FULLSCREEN:
+   * Keep the leaderboard visible.
+   * Hide QR and participant/settings card, leave only leaderboard.
+   */
+  .kk-stage.fullscreen[data-kind="game"] .kk-stage-body {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
 
+  .kk-stage.fullscreen[data-kind="game"] .kk-stage-side {
+    display: flex !important;
+  }
+
+  .kk-stage.fullscreen[data-kind="game"] .kk-stage-side > .kk-qr-panel,
+  .kk-stage.fullscreen[data-kind="game"] .kk-stage-side > .kk-card:not(:last-child) {
+    display: none !important;
+  }
+
+  .kk-stage.fullscreen[data-kind="game"] .kk-stage-side > .kk-card:last-child {
+    display: flex !important;
+    flex: 1 1 auto;
+    min-height: 100%;
+    max-height: none;
+  }
+
+  .kk-stage.fullscreen[data-kind="game"] .kk-game-leaderboard-card {
+    background: #101827 !important;
+    border-color: #263449 !important;
+  }
 
   /* ─────────────────────────────────────────────
      FULLSCREEN SIDE ARROWS
-     Show only when the presenter enters fullscreen.
   ───────────────────────────────────────────── */
   .kk-fs-nav {
     position: fixed;
@@ -331,8 +498,13 @@
     filter: drop-shadow(0 4px 12px rgba(0,0,0,.45));
   }
 
-  .kk-fs-nav-prev { left: max(16px, env(safe-area-inset-left)); }
-  .kk-fs-nav-next { right: max(16px, env(safe-area-inset-right)); }
+  .kk-fs-nav-prev {
+    left: max(16px, env(safe-area-inset-left));
+  }
+
+  .kk-fs-nav-next {
+    right: max(16px, env(safe-area-inset-right));
+  }
 
   .kk-fs-nav[disabled] {
     opacity: .22;
@@ -349,11 +521,15 @@
       width: 48px;
       height: 68px;
     }
-    .kk-fs-nav-prev { left: 8px; }
-    .kk-fs-nav-next { right: 8px; }
+
+    .kk-fs-nav-prev {
+      left: 8px;
+    }
+
+    .kk-fs-nav-next {
+      right: 8px;
+    }
   }
-
-
 
   /* ─────────────────────────────────────────────
      CHART AXIS FONT CONTROLS
@@ -363,6 +539,7 @@
     padding-top: .75rem;
     border-top: 1px solid rgba(255,255,255,.12);
   }
+
   .kk-axis-control-row {
     display: grid;
     grid-template-columns: 42px minmax(0, 1fr) 42px;
@@ -372,10 +549,12 @@
     font-size: .78rem;
     color: var(--kk-text-dim, #94a3b8);
   }
+
   .kk-axis-control-row input[type="range"] {
     width: 100%;
     accent-color: var(--stage-accent-2, #22d3ee);
   }
+
   .kk-axis-value {
     text-align: right;
     color: var(--stage-fg, #fff);
@@ -404,6 +583,7 @@
       radial-gradient(circle at 15% 80%, rgba(251,113,133,.24), transparent 34%),
       radial-gradient(circle at 88% 70%, rgba(34,211,238,.22), transparent 36%);
   }
+
   .kk-end-card {
     position: relative;
     z-index: 10;
@@ -417,6 +597,7 @@
     backdrop-filter: blur(16px);
     text-align: center;
   }
+
   .kk-end-title {
     font-family: 'Clash Display', system-ui, sans-serif;
     font-size: clamp(3.4rem, 10vw, 9rem);
@@ -426,11 +607,13 @@
     margin: 0 0 1rem;
     text-shadow: 0 10px 35px rgba(0,0,0,.35), 0 0 42px rgba(34,211,238,.28);
   }
+
   .kk-end-subtitle {
     font-size: clamp(1rem, 2vw, 1.45rem);
     color: rgba(255,255,255,.78);
     margin-bottom: 1.5rem;
   }
+
   .kk-end-participants {
     display: inline-flex;
     align-items: center;
@@ -442,7 +625,9 @@
     color: #fff;
     font-weight: 800;
   }
-  .kk-end-sparks, .kk-end-emoji-layer {
+
+  .kk-end-sparks,
+  .kk-end-emoji-layer {
     position: absolute;
     inset: 0;
     overflow: hidden;
@@ -457,6 +642,7 @@
     z-index: 30;
     overflow: visible;
   }
+
   .kk-end-spark {
     position: absolute;
     left: 50%;
@@ -469,11 +655,23 @@
     animation: kkEndSpark 1.9s ease-out infinite;
     animation-delay: var(--delay, 0s);
   }
+
   @keyframes kkEndSpark {
-    0% { opacity: 0; transform: translate(-50%, -50%) translate(0,0) scale(.45); }
-    12% { opacity: 1; }
-    100% { opacity: 0; transform: translate(-50%, -50%) translate(var(--x), var(--y)) scale(.08); }
+    0% {
+      opacity: 0;
+      transform: translate(-50%, -50%) translate(0,0) scale(.45);
+    }
+
+    12% {
+      opacity: 1;
+    }
+
+    100% {
+      opacity: 0;
+      transform: translate(-50%, -50%) translate(var(--x), var(--y)) scale(.08);
+    }
   }
+
   .kk-end-pop-emoji {
     position: absolute;
     left: var(--left, 50%);
@@ -485,6 +683,7 @@
     filter: drop-shadow(0 18px 28px rgba(0,0,0,.38));
     animation: kkEndEmojiPop 1.55s cubic-bezier(.18,.95,.2,1) forwards;
   }
+
   .kk-end-pop-emoji .name {
     display: block;
     margin-top: .25rem;
@@ -497,24 +696,42 @@
     font-weight: 800;
     white-space: nowrap;
   }
+
   @keyframes kkEndEmojiPop {
-    0% { opacity: 0; transform: translate(-50%, 30%) scale(.2) rotate(-8deg); }
-    18% { opacity: 1; transform: translate(-50%, -50%) scale(1.18) rotate(5deg); }
-    72% { opacity: 1; transform: translate(calc(-50% + var(--drift, 0px)), -120%) scale(1) rotate(-4deg); }
-    100% { opacity: 0; transform: translate(calc(-50% + var(--drift, 0px)), -220%) scale(1.45) rotate(10deg); }
+    0% {
+      opacity: 0;
+      transform: translate(-50%, 30%) scale(.2) rotate(-8deg);
+    }
+
+    18% {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1.18) rotate(5deg);
+    }
+
+    72% {
+      opacity: 1;
+      transform: translate(calc(-50% + var(--drift, 0px)), -120%) scale(1) rotate(-4deg);
+    }
+
+    100% {
+      opacity: 0;
+      transform: translate(calc(-50% + var(--drift, 0px)), -220%) scale(1.45) rotate(10deg);
+    }
   }
 
   /* ─────────────────────────────────────────────
-     SHORT LAPTOPS — shrink QR so leaderboard has room
+     SHORT LAPTOPS
   ───────────────────────────────────────────── */
   @media (max-height: 820px) {
     .kk-qr-panel img {
       max-width: 130px;
       height: auto;
     }
+
     .kk-qr-panel {
       padding: 0.6rem !important;
     }
+
     .kk-qr-panel .code {
       font-size: 1.1rem;
     }
@@ -545,15 +762,14 @@
     .kk-qr-panel img {
       max-width: 100px;
     }
+
     .kk-stage-side {
       gap: 0.5rem;
     }
   }
 
   /* ─────────────────────────────────────────────
-     SMALL SCREENS (≤980px)
-     Single column. Hide QR + nav controls on the side,
-     but KEEP the leaderboard visible below the chart.
+     SMALL SCREENS
   ───────────────────────────────────────────── */
   @media (max-width: 980px) {
     body {
@@ -579,8 +795,6 @@
       min-height: 58vh;
     }
 
-    /* Keep the side column rendered (for the leaderboard),
-       but lay it out below and hide the QR + Participants cards. */
     .kk-stage-side {
       display: flex;
       flex-direction: column;
@@ -599,6 +813,11 @@
     .kk-stage-side > .kk-card:last-child {
       flex: 0 0 auto;
       max-height: 40vh;
+    }
+
+    .kk-game-leaderboard-card {
+      background: #101827 !important;
+      border-color: #263449 !important;
     }
   }
 </style>
@@ -627,25 +846,42 @@
     <div class="text-secondary small d-none d-md-block">{{ session.title }}</div>
 
     <div class="ms-auto d-flex align-items-center gap-2 flex-wrap">
-      <div class="kk-tools" id="draw-tools">
-        <button class="kk-tool active" data-tool="off" title="Cursor"><i class="bi bi-cursor"></i></button>
-        <button class="kk-tool" data-tool="pen" title="Free hand"><i class="bi bi-pencil"></i></button>
-        <button class="kk-tool" data-tool="highlight" title="Highlighter"><i class="bi bi-highlighter"></i></button>
-        <button class="kk-tool" data-tool="laser" title="Laser pointer"><i class="bi bi-bullseye"></i></button>
-        <button class="kk-tool" id="clear-draw" title="Clear drawings"><i class="bi bi-eraser"></i></button>
-      </div>
 
-      <div class="kk-tools" id="color-bar">
-        <span class="kk-color-swatch active" data-color="#fb7185" style="background:#fb7185"></span>
-        <span class="kk-color-swatch" data-color="#fbbf24" style="background:#fbbf24"></span>
-        <span class="kk-color-swatch" data-color="#22d3ee" style="background:#22d3ee"></span>
-        <span class="kk-color-swatch" data-color="#a3e635" style="background:#a3e635"></span>
-        <span class="kk-color-swatch" data-color="#ffffff" style="background:#ffffff"></span>
-      </div>
+      {% if session.kind != "game" %}
+        <div class="kk-tools" id="draw-tools">
+          <button class="kk-tool active" data-tool="off" title="Cursor">
+            <i class="bi bi-cursor"></i>
+          </button>
+          <button class="kk-tool" data-tool="pen" title="Free hand">
+            <i class="bi bi-pencil"></i>
+          </button>
+          <button class="kk-tool" data-tool="highlight" title="Highlighter">
+            <i class="bi bi-highlighter"></i>
+          </button>
+          <button class="kk-tool" data-tool="laser" title="Laser pointer">
+            <i class="bi bi-bullseye"></i>
+          </button>
+          <button class="kk-tool" id="clear-draw" title="Clear drawings">
+            <i class="bi bi-eraser"></i>
+          </button>
+        </div>
 
-      <button class="kk-btn kk-btn-ghost btn-sm" id="btn-group" title="Group display">
-        <i class="bi bi-grid-3x3-gap"></i>
-      </button>
+        <div class="kk-tools" id="color-bar">
+          <span class="kk-color-swatch active" data-color="#fb7185" style="background:#fb7185"></span>
+          <span class="kk-color-swatch" data-color="#fbbf24" style="background:#fbbf24"></span>
+          <span class="kk-color-swatch" data-color="#22d3ee" style="background:#22d3ee"></span>
+          <span class="kk-color-swatch" data-color="#a3e635" style="background:#a3e635"></span>
+          <span class="kk-color-swatch" data-color="#ffffff" style="background:#ffffff"></span>
+        </div>
+
+        <button class="kk-btn kk-btn-ghost btn-sm" id="btn-group" title="Group display">
+          <i class="bi bi-grid-3x3-gap"></i>
+        </button>
+
+        <button class="kk-btn kk-btn-ghost btn-sm" id="btn-lens" title="Magnifying lens">
+          <i class="bi bi-search"></i>
+        </button>
+      {% endif %}
 
       <button class="kk-btn kk-btn-ghost btn-sm" id="btn-fs" title="Fullscreen">
         <i class="bi bi-arrows-fullscreen"></i>
@@ -691,6 +927,13 @@
           <div id="special-display" style="display:none;"></div>
           <canvas id="draw-canvas"></canvas>
           <canvas id="laser-canvas"></canvas>
+
+          {% if session.kind != "game" %}
+            <div class="kk-lens" id="kk-lens" aria-hidden="true">
+              <canvas id="kk-lens-canvas"></canvas>
+              <span class="kk-lens-badge" id="kk-lens-badge">2x</span>
+            </div>
+          {% endif %}
         </div>
       </div>
 
@@ -710,16 +953,20 @@
           <span class="kk-end-spark" style="--x:-48vw;--y:4vh;--delay:.78s;--spark:#e879f9"></span>
           <span class="kk-end-spark" style="--x:48vw;--y:-3vh;--delay:.90s;--spark:#38bdf8"></span>
         </div>
+
         <div class="kk-end-emoji-layer" id="end-emoji-layer" aria-hidden="true"></div>
+
         <div class="kk-end-card">
           <div style="font-size:clamp(2.4rem,5vw,4.5rem);">🎉</div>
           <h1 class="kk-end-title">The End</h1>
           <p class="kk-end-subtitle">Thanks for participating in this Knock-Knock session.</p>
+
           <div class="kk-end-participants">
             <i class="bi bi-people-fill"></i>
             <span id="end-participant-count">0</span>
             <span>participants</span>
           </div>
+
           <div class="mt-4">
             <a href="/dashboard/" class="kk-btn kk-btn-primary">Back to dashboard</a>
           </div>
@@ -754,34 +1001,71 @@
           </button>
         </div>
 
-        <div class="kk-axis-controls">
-          <div class="small text-secondary fw-bold mb-1">
-            <i class="bi bi-type"></i> Chart axis font
+        {% if session.kind != "game" %}
+          <div class="kk-axis-controls">
+            <div class="small text-secondary fw-bold mb-1">
+              <i class="bi bi-type"></i> Chart axis font
+            </div>
+
+            <label class="kk-axis-control-row" for="axis-font-x">
+              <span>X axis</span>
+              <input type="range" min="8" max="48" step="1" value="12" id="axis-font-x">
+              <span class="kk-axis-value" id="axis-font-x-value">12</span>
+            </label>
+
+            <label class="kk-axis-control-row" for="axis-font-y">
+              <span>Y axis</span>
+              <input type="range" min="8" max="48" step="1" value="12" id="axis-font-y">
+              <span class="kk-axis-value" id="axis-font-y-value">12</span>
+            </label>
           </div>
-          <label class="kk-axis-control-row" for="axis-font-x">
-            <span>X axis</span>
-            <input type="range" min="8" max="48" step="1" value="12" id="axis-font-x">
-            <span class="kk-axis-value" id="axis-font-x-value">12</span>
-          </label>
-          <label class="kk-axis-control-row" for="axis-font-y">
-            <span>Y axis</span>
-            <input type="range" min="8" max="48" step="1" value="12" id="axis-font-y">
-            <span class="kk-axis-value" id="axis-font-y-value">12</span>
-          </label>
-        </div>
+
+          <div class="kk-present-controls">
+            <div class="small text-secondary fw-bold mb-2">
+              <i class="bi bi-palette"></i> Presentation font color
+            </div>
+
+            <label class="kk-color-control-row" for="question-font-color">
+              <span>Question</span>
+              <input type="color" id="question-font-color" value="#ffffff">
+              <button type="button" class="kk-mini-reset" id="reset-question-font-color">Auto</button>
+            </label>
+
+            <label class="kk-color-control-row" for="chart-font-color">
+              <span>Chart</span>
+              <input type="color" id="chart-font-color" value="#ffffff">
+              <button type="button" class="kk-mini-reset" id="reset-chart-font-color">Auto</button>
+            </label>
+
+            <div class="small text-secondary fw-bold mt-3 mb-2">
+              <i class="bi bi-search"></i> Lens zoom
+            </div>
+
+            <label class="kk-lens-control-row" for="lens-zoom">
+              <span>Zoom</span>
+              <input type="range" min="1.5" max="4" step="0.25" value="2" id="lens-zoom">
+              <span class="kk-axis-value" id="lens-zoom-value">2x</span>
+            </label>
+
+            <label class="kk-lens-control-row" for="lens-size">
+              <span>Size</span>
+              <input type="range" min="140" max="360" step="10" value="220" id="lens-size">
+              <span class="kk-axis-value" id="lens-size-value">220</span>
+            </label>
+          </div>
+        {% endif %}
       </div>
 
       {% if session.kind == "game" %}
-      <div class="kk-card" style="background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.12); flex-grow:1; overflow-y:auto;">
-        <h3 style="font-size:1rem; color: var(--kk-text-dim);">
-          <i class="bi bi-trophy-fill"></i> Leaderboard
-        </h3>
-        <div id="leaderboard"></div>
-      </div>
+        <div class="kk-card kk-game-leaderboard-card">
+          <h3 style="font-size:1rem;">
+            <i class="bi bi-trophy-fill"></i> Leaderboard
+          </h3>
+          <div id="leaderboard"></div>
+        </div>
       {% endif %}
     </aside>
   </div>
-
 
   <button type="button"
           class="kk-fs-nav kk-fs-nav-prev"
@@ -800,8 +1084,8 @@
   </button>
 </div>
 
-<script src="{% static 'js/chart_preview.js' %}?v=8"></script>
-<script src="{% static 'js/draw_overlay.js' %}?v=8"></script>
-<script src="{% static 'js/present.js' %}?v=8"></script>
+<script src="{% static 'js/chart_preview.js' %}?v=14"></script>
+<script src="{% static 'js/draw_overlay.js' %}?v=9"></script>
+<script src="{% static 'js/present.js' %}?v=14"></script>
 </body>
 </html>

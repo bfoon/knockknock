@@ -12,10 +12,11 @@ urlpatterns = [
     path("<int:pk>/start/", views.start_session, name="start"),
     path("<int:pk>/reorder/", views.reorder_questions, name="reorder"),
 
-    # results / export
+    # results / export / reset
     path("<int:pk>/results/", views.questionnaire_results, name="results"),
     path("<int:pk>/results/download/excel/", views.download_results_excel, name="download_results_excel"),
     path("<int:pk>/results/download/word/", views.download_results_word, name="download_results_word"),
+    path("<int:pk>/results/reset/", views.reset_results, name="reset_results"),
 
     # questions
     path("<int:pk>/q/new/", views.question_create, name="question_create"),
@@ -26,12 +27,8 @@ urlpatterns = [
     # collaboration
     path("<int:pk>/invite/", views.invite_collaborator, name="invite"),
     path("<int:pk>/collab/<int:cpk>/remove/", views.remove_collaborator, name="collab_remove"),
-    path("<int:pk>/q/quick-add/",
-         views.quick_add_question,
-         name="quick_add_question"),
 
-    path("<int:pk>/q/<int:qpk>/quick-delete/",
-         views.quick_delete_question,
-         name="quick_delete_question")
-
+    # quick question actions
+    path("<int:pk>/q/quick-add/", views.quick_add_question, name="quick_add_question"),
+    path("<int:pk>/q/<int:qpk>/quick-delete/", views.quick_delete_question, name="quick_delete_question"),
 ]

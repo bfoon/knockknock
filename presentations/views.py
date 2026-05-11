@@ -1,49 +1,91 @@
 import io
+
 import qrcode
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.http import HttpResponse, JsonResponse, Http404
-from django.shortcuts import render, redirect, get_object_or_404
+from django.http import Http404, HttpResponse
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.views.decorators.http import require_GET
+from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.http import require_GET, require_POST
 
 from core.templates_registry import get_template
-from games.avatars import AVATARS, avatars_grouped, avatar_by_id
+from games.avatars import AVATARS, avatars_grouped
 from .models import LiveSession, Participant
 
 
 # ─────────────────────────── helpers ───────────────────────────
 
 def _logo_url_for(session):
-    """Return the live URL of the session's logo, or None.
-
-    Uses session.quiz.logo for games and session.questionnaire.logo for polls.
-    Wrapped in try/except because ImageField.url raises ValueError when the
-    field has no file attached, AND raises (typically) if the underlying file
-    has been deleted from disk while the DB still holds a name.
-    """
+    """Return the live URL of the session's logo, or None."""
     logo = None
+
     if session.kind == "game" and getattr(session, "quiz", None):
         logo = getattr(session.quiz, "logo", None)
     elif session.kind == "poll" and getattr(session, "questionnaire", None):
         logo = getattr(session.questionnaire, "logo", None)
+
     try:
         if logo and getattr(logo, "name", "") and getattr(logo, "url", ""):
             return logo.url
     except (ValueError, AttributeError):
         pass
+
     return None
 
 
 def _chart_background_for(session):
-    """Return the chart background id for the live chart wrapper (default 'normal').
-
-    Only games carry a chart_background today; polls render against the stage
-    template's background and don't need an extra scenery layer.
-    """
+    """Return chart background id for the live chart wrapper."""
     if session.kind == "game" and getattr(session, "quiz", None):
         return getattr(session.quiz, "chart_background", "normal") or "normal"
+
     return "normal"
 
+
+def _safe_redirect_target(request):
+    """
+    Redirect back to the previous page after POST.
+    Falls back to dashboard/home safely.
+    """
+    next_url = request.POST.get("next") or request.META.get("HTTP_REFERER") or "/"
+
+    is_safe = url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    )
+
+    return next_url if is_safe else "/"
+
+
+def _broadcast_ended_to_sessions(sessions):
+    """
+    Notify any open presenter/participant browsers that these sessions ended.
+    This mirrors the WebSocket 'ended' message already used by the current
+    single-session end button.
+    """
+    channel_layer = get_channel_layer()
+
+    if not channel_layer:
+        return
+
+    for session in sessions:
+        async_to_sync(channel_layer.group_send)(
+            f"session_{session.code}",
+            {
+                "type": "broadcast",
+                "payload": {
+                    "type": "ended",
+                    "reason": "ended_all_sessions",
+                },
+            },
+        )
+
+
+# ─────────────────────────── presenter / join ───────────────────────────
 
 @login_required
 def present(request, code):
@@ -69,20 +111,29 @@ def present(request, code):
         "avatar_groups": avatars_grouped(),
     })
 
+
 def join_landing(request):
-    """User typed `/live/join/` — show code-entry form."""
+    """User typed /live/join/ — show code-entry form."""
     return render(request, "presentations/join.html")
 
 
 def join_code(request, code):
     """Participant joining via code or QR."""
     try:
-        session = LiveSession.objects.select_related("questionnaire", "quiz").get(code=code)
+        session = (
+            LiveSession.objects
+            .select_related("questionnaire", "quiz")
+            .get(code=code)
+        )
     except LiveSession.DoesNotExist:
-        return render(request, "presentations/join.html", {"error": "Session not found."})
+        return render(request, "presentations/join.html", {
+            "error": "Session not found.",
+        })
 
     if session.state == "ended":
-        return render(request, "presentations/join.html", {"error": "This session has ended."})
+        return render(request, "presentations/join.html", {
+            "error": "This session has ended.",
+        })
 
     common = {
         "session": session,
@@ -95,6 +146,7 @@ def join_code(request, code):
 
     if session.kind == "game":
         return render(request, "presentations/play_game.html", common)
+
     return render(request, "presentations/play_poll.html", common)
 
 
@@ -103,8 +155,69 @@ def qr_png(request, code):
     """Serve a PNG QR code linking to the join URL."""
     if not LiveSession.objects.filter(code=code).exists():
         raise Http404
-    url = request.build_absolute_uri(reverse("presentations:join_code", args=[code]))
+
+    url = request.build_absolute_uri(
+        reverse("presentations:join_code", args=[code])
+    )
+
     img = qrcode.make(url, box_size=10, border=2)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
+
     return HttpResponse(buf.getvalue(), content_type="image/png")
+
+
+# ─────────────────────────── end all sessions ───────────────────────────
+
+@login_required
+@require_POST
+def end_all_sessions(request):
+    """
+    End active sessions owned by the current user.
+
+    POST kind values:
+      - all  = end active poll + game sessions
+      - poll = end active poll sessions only
+      - game = end active game sessions only
+
+    This does NOT delete results, answers, participants, or scores.
+    It only marks sessions as ended.
+    """
+    kind = (request.POST.get("kind") or "all").strip().lower()
+
+    if kind not in {"all", "poll", "game"}:
+        return HttpResponse("Invalid session type.", status=400)
+
+    sessions_qs = LiveSession.objects.filter(
+        owner=request.user,
+        state__in=["lobby", "running"],
+    )
+
+    if kind != "all":
+        sessions_qs = sessions_qs.filter(kind=kind)
+
+    sessions = list(sessions_qs.only("id", "code", "kind", "state"))
+    session_ids = [session.id for session in sessions]
+
+    if session_ids:
+        LiveSession.objects.filter(pk__in=session_ids).update(
+            state="ended",
+            ended_at=timezone.now(),
+        )
+
+        _broadcast_ended_to_sessions(sessions)
+
+    if kind == "all":
+        label = "poll and game"
+    elif kind == "poll":
+        label = "poll"
+    else:
+        label = "game"
+
+    messages.success(
+        request,
+        f"Ended {len(session_ids)} active {label} session"
+        f"{'' if len(session_ids) == 1 else 's'}.",
+    )
+
+    return redirect(_safe_redirect_target(request))

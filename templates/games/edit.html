@@ -1,55 +1,295 @@
 {% extends "base.html" %}
 {% load static %}
+
 {% block title %}{{ quiz.title }} · Knock-Knock{% endblock %}
 
-{% block extra_head %}
+{% block head_extra %}
 <link rel="stylesheet" href="{% static 'css/avatar_anim.css' %}">
 <link rel="stylesheet" href="{% static 'css/chart_backgrounds.css' %}">
+
 <style>
-  /* Drag-and-drop visual states for question rows. */
-  .kk-q-row { cursor: grab; position: relative; transition: transform .15s ease, box-shadow .15s ease; }
-  .kk-q-row:active { cursor: grabbing; }
+  /* ─────────────────────────────────────────────
+     PAGE HEADER
+  ───────────────────────────────────────────── */
+  .kk-game-page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+  }
+
+  .kk-game-title-area {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    min-width: 0;
+  }
+
+  .kk-game-logo-box {
+    width: 112px;
+    height: 72px;
+    border-radius: 16px;
+    border: 1px solid var(--kk-border);
+    background: #ffffff;
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    box-shadow: 0 14px 34px rgba(0,0,0,.22);
+    overflow: hidden;
+  }
+
+  .kk-game-logo-box img {
+    max-width: 100% !important;
+    max-height: 100% !important;
+    width: auto !important;
+    height: auto !important;
+    object-fit: contain !important;
+    display: block;
+  }
+
+  .kk-game-actions {
+    display: flex;
+    gap: .5rem;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  .kk-dropdown-form-button {
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    padding: .45rem 1rem;
+  }
+
+  .kk-dropdown-form-button:hover {
+    background: rgba(255,255,255,.08);
+  }
+
+  /* ─────────────────────────────────────────────
+     QUESTION ROW DRAG / REORDER
+  ───────────────────────────────────────────── */
+  .kk-q-row {
+    cursor: grab;
+    position: relative;
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+
+  .kk-q-row:active {
+    cursor: grabbing;
+  }
+
   .kk-q-row .kk-q-drag {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 28px; height: 28px; color: #94a3b8; cursor: grab;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    color: #94a3b8;
+    cursor: grab;
     border-radius: 6px;
   }
-  .kk-q-row .kk-q-drag:hover { background: rgba(255,255,255,.06); color: #f1f5f9; }
+
+  .kk-q-row .kk-q-drag:hover {
+    background: rgba(255,255,255,.06);
+    color: #f1f5f9;
+  }
+
   .kk-q-row.kk-dragging {
     opacity: .55;
     transform: scale(.99);
     box-shadow: 0 12px 30px rgba(0,0,0,.4);
   }
+
   .kk-q-row.kk-ghost {
     background: rgba(124,58,237,.12) !important;
     border: 2px dashed rgba(124,58,237,.6) !important;
   }
-  /* Save indicator for reorder. */
+
   .kk-reorder-status {
-    display: inline-flex; align-items: center; gap: .4rem;
-    font-size: .8rem; color: #94a3b8; margin-left: .6rem;
-    opacity: 0; transition: opacity .25s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .8rem;
+    color: #94a3b8;
+    margin-left: .6rem;
+    opacity: 0;
+    transition: opacity .25s ease;
   }
-  .kk-reorder-status.visible { opacity: 1; }
-  .kk-reorder-status.saved   { color: #34d399; }
+
+  .kk-reorder-status.visible {
+    opacity: 1;
+  }
+
+  .kk-reorder-status.saved {
+    color: #34d399;
+  }
+
+  /* ─────────────────────────────────────────────
+     LOGO PREVIEW FIX
+  ───────────────────────────────────────────── */
+  .kk-current-logo {
+    display: flex;
+    align-items: center;
+    gap: .85rem;
+    padding: .75rem;
+    border-radius: 16px;
+    background: rgba(255,255,255,.04);
+    border: 1px solid var(--kk-border);
+    margin-bottom: .75rem;
+    overflow: hidden;
+  }
+
+  .kk-current-logo-preview-box {
+    width: 170px;
+    height: 96px;
+    border-radius: 14px;
+    border: 1px solid var(--kk-border);
+    background: #ffffff;
+    padding: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    overflow: hidden;
+  }
+
+  .kk-current-logo-preview {
+    max-width: 100% !important;
+    max-height: 100% !important;
+    width: auto !important;
+    height: auto !important;
+    object-fit: contain !important;
+    display: block;
+  }
+
+  .kk-logo-url {
+    word-break: break-all;
+    max-width: 100%;
+  }
+
+  /* ─────────────────────────────────────────────
+     SETTINGS CARD
+  ───────────────────────────────────────────── */
+  .kk-sub-card {
+    background: rgba(255,255,255,.035);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: var(--kk-radius, 18px);
+    padding: 1rem;
+  }
+
+  @media (max-width: 768px) {
+    .kk-game-page-header {
+      align-items: stretch;
+    }
+
+    .kk-game-title-area {
+      align-items: flex-start;
+    }
+
+    .kk-game-logo-box {
+      width: 86px;
+      height: 60px;
+    }
+
+    .kk-current-logo {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .kk-current-logo-preview-box {
+      width: 100%;
+      max-width: 240px;
+      height: 110px;
+    }
+  }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-start justify-content-between gap-3 mb-4 flex-wrap">
-  <div>
-    <a href="{% url 'games:list' %}" class="text-secondary text-decoration-none small"><i class="bi bi-arrow-left"></i> All games</a>
-    <h1 class="mb-0 mt-2">{{ quiz.title }}</h1>
-    <div class="text-secondary mt-1">
-      {{ quiz.questions.count }} questions · {{ quiz.get_scoring_display }} · {{ quiz.get_mode_display }}
-      {% if quiz.use_rooms %} · Rooms (cap {{ quiz.room_capacity }}){% endif %}
+<div class="kk-game-page-header">
+  <div class="kk-game-title-area">
+    {% if quiz.logo %}
+      <div class="kk-game-logo-box">
+        <img src="{{ quiz.logo.url }}"
+             alt="{{ quiz.title }} logo"
+             style="max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block;">
+      </div>
+    {% endif %}
+
+    <div>
+      <a href="{% url 'games:list' %}" class="text-secondary text-decoration-none small">
+        <i class="bi bi-arrow-left"></i> All games
+      </a>
+
+      <h1 class="mb-0 mt-2">{{ quiz.title }}</h1>
+
+      <div class="text-secondary mt-1">
+        {{ quiz.questions.count }} questions · {{ quiz.get_scoring_display }} · {{ quiz.get_mode_display }}
+        {% if quiz.use_rooms %}
+          · Rooms (cap {{ quiz.room_capacity }})
+        {% endif %}
+      </div>
     </div>
   </div>
-  <form method="post" action="{% url 'games:start' quiz.pk %}">{% csrf_token %}
-    <button class="kk-btn kk-btn-primary kk-btn-lg" {% if not quiz.questions.count %}disabled{% endif %}>
-      <i class="bi bi-controller"></i> Start game
-    </button>
-  </form>
+
+  <div class="kk-game-actions">
+    <div class="dropdown">
+      <button class="kk-btn kk-btn-ghost kk-btn-lg dropdown-toggle"
+              type="button"
+              data-bs-toggle="dropdown"
+              aria-expanded="false">
+        <i class="bi bi-stop-circle"></i> End Sessions
+      </button>
+
+      <ul class="dropdown-menu dropdown-menu-dark">
+        <li>
+          <form method="post"
+                action="{% url 'presentations:end_all_sessions' %}"
+                class="m-0"
+                onsubmit="return confirm('End all active GAME sessions? Saved scores and answers will remain.');">
+            {% csrf_token %}
+            <input type="hidden" name="kind" value="game">
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <button type="submit" class="kk-dropdown-form-button text-warning">
+              <i class="bi bi-stop-circle"></i> End all game sessions
+            </button>
+          </form>
+        </li>
+
+        <li>
+          <hr class="dropdown-divider">
+        </li>
+
+        <li>
+          <form method="post"
+                action="{% url 'presentations:end_all_sessions' %}"
+                class="m-0"
+                onsubmit="return confirm('End all active POLL and GAME sessions? Saved results and scores will remain.');">
+            {% csrf_token %}
+            <input type="hidden" name="kind" value="all">
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <button type="submit" class="kk-dropdown-form-button text-danger">
+              <i class="bi bi-exclamation-triangle"></i> End all poll & game sessions
+            </button>
+          </form>
+        </li>
+      </ul>
+    </div>
+
+    <form method="post" action="{% url 'games:start' quiz.pk %}">
+      {% csrf_token %}
+      <button class="kk-btn kk-btn-primary kk-btn-lg" {% if not quiz.questions.count %}disabled{% endif %}>
+        <i class="bi bi-controller"></i> Start game
+      </button>
+    </form>
+  </div>
 </div>
 
 <div class="row g-4">
@@ -59,13 +299,21 @@
       <span id="reorder-status" class="kk-reorder-status">Saving…</span>
     </h2>
 
-    {# Drag-and-drop list. Each row has data-qpk; reorder POSTs the new sequence. #}
     <div id="question-list" data-reorder-url="{% url 'games:question_reorder' quiz.pk %}">
       {% for q in quiz.questions.all %}
         <div class="kk-q-row" data-qpk="{{ q.pk }}">
-          <span class="kk-q-drag" title="Drag to reorder" aria-hidden="true"><i class="bi bi-grip-vertical"></i></span>
+          <span class="kk-q-drag" title="Drag to reorder" aria-hidden="true">
+            <i class="bi bi-grip-vertical"></i>
+          </span>
+
           <span class="kk-q-index">{{ forloop.counter }}</span>
-          <a class="kk-q-text text-decoration-none flex-grow-1" href="{% url 'games:question_edit' quiz.pk q.pk %}" style="color:inherit;">{{ q.text }}</a>
+
+          <a class="kk-q-text text-decoration-none flex-grow-1"
+             href="{% url 'games:question_edit' quiz.pk q.pk %}"
+             style="color:inherit;">
+            {{ q.text }}
+          </a>
+
           <span class="kk-q-pill">{{ q.time_limit }}s</span>
           <span class="kk-q-pill">{{ q.points }}pts</span>
         </div>
@@ -85,58 +333,156 @@
   <div class="col-lg-5">
     <form method="post" enctype="multipart/form-data" class="kk-card">
       {% csrf_token %}
-      <h2 class="kk-section-title" style="font-size:1.2rem;"><i class="bi bi-gear"></i> Settings</h2>
-      <div class="mb-3"><label class="form-label">Title</label>{{ form.title }}</div>
-      <div class="mb-3"><label class="form-label">Description</label>{{ form.description }}</div>
-      <div class="row g-2">
-        <div class="col-6 mb-3"><label class="form-label">Scoring</label>{{ form.scoring }}</div>
-        <div class="col-6 mb-3"><label class="form-label">Mode</label>{{ form.mode }}</div>
+
+      {% if form.non_field_errors %}
+        <div class="alert alert-danger">
+          {{ form.non_field_errors }}
+        </div>
+      {% endif %}
+
+      <h2 class="kk-section-title" style="font-size:1.2rem;">
+        <i class="bi bi-gear"></i> Settings
+      </h2>
+
+      <div class="mb-3">
+        <label class="form-label">Title</label>
+        {{ form.title }}
+        {% if form.title.errors %}
+          <div class="text-danger small mt-1">{{ form.title.errors }}</div>
+        {% endif %}
       </div>
-      <div class="form-check mb-3">{{ form.use_rooms }}
-        <label class="form-check-label">Use rooms</label></div>
-      <div class="mb-3"><label class="form-label">Room capacity</label>{{ form.room_capacity }}</div>
+
+      <div class="mb-3">
+        <label class="form-label">Description</label>
+        {{ form.description }}
+        {% if form.description.errors %}
+          <div class="text-danger small mt-1">{{ form.description.errors }}</div>
+        {% endif %}
+      </div>
+
+      <div class="row g-2">
+        <div class="col-6 mb-3">
+          <label class="form-label">Scoring</label>
+          {{ form.scoring }}
+          {% if form.scoring.errors %}
+            <div class="text-danger small mt-1">{{ form.scoring.errors }}</div>
+          {% endif %}
+        </div>
+
+        <div class="col-6 mb-3">
+          <label class="form-label">Mode</label>
+          {{ form.mode }}
+          {% if form.mode.errors %}
+            <div class="text-danger small mt-1">{{ form.mode.errors }}</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="form-check mb-3">
+        {{ form.use_rooms }}
+        <label class="form-check-label" for="{{ form.use_rooms.id_for_label }}">
+          Use rooms
+        </label>
+        {% if form.use_rooms.errors %}
+          <div class="text-danger small mt-1">{{ form.use_rooms.errors }}</div>
+        {% endif %}
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Room capacity</label>
+        {{ form.room_capacity }}
+        {% if form.room_capacity.errors %}
+          <div class="text-danger small mt-1">{{ form.room_capacity.errors }}</div>
+        {% endif %}
+      </div>
 
       <div class="mb-3">
         <label class="form-label">
           <i class="bi bi-stars"></i> Chart background
         </label>
         {{ form.chart_background }}
-        <div class="form-text">The scenery rendered behind the live chart during play.</div>
+        <div class="form-text">
+          The scenery rendered behind the live chart during play.
+        </div>
+        {% if form.chart_background.errors %}
+          <div class="text-danger small mt-1">{{ form.chart_background.errors }}</div>
+        {% endif %}
       </div>
 
-      <div class="mb-3"><label class="form-label">Logo</label>{{ form.logo }}</div>
-      <button class="kk-btn kk-btn-primary w-100">Save</button>
-    </form>
+      <div class="mb-3">
+        <label class="form-label">Logo</label>
 
-    <div class="kk-card mt-4">
-      <h2 class="kk-section-title" style="font-size:1.2rem;"><i class="bi bi-palette"></i> Template</h2>
-      {% include "partials/template_picker.html" with templates=templates selected_id=quiz.template_id %}
-    </div>
+        {% if quiz.logo %}
+          <div class="kk-current-logo">
+            <div class="kk-current-logo-preview-box">
+              <img src="{{ quiz.logo.url }}"
+                   alt="{{ quiz.title }} logo"
+                   class="kk-current-logo-preview"
+                   style="max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block;">
+            </div>
+
+            <div>
+              <div class="small text-light">Current logo uploaded</div>
+              <div class="small text-secondary kk-logo-url">
+                {{ quiz.logo.url }}
+              </div>
+            </div>
+          </div>
+        {% else %}
+          <div class="small text-secondary mb-2">No logo uploaded yet.</div>
+        {% endif %}
+
+        {{ form.logo }}
+        {% if form.logo.errors %}
+          <div class="text-danger small mt-1">{{ form.logo.errors }}</div>
+        {% endif %}
+      </div>
+
+      <div class="kk-sub-card mt-4 mb-3">
+        <h2 class="kk-section-title" style="font-size:1.2rem;">
+          <i class="bi bi-palette"></i> Template / Game background
+        </h2>
+
+        {% include "partials/template_picker.html" with templates=templates selected_id=quiz.template_id input_name="template_id" %}
+      </div>
+
+      <button class="kk-btn kk-btn-primary w-100">
+        <i class="bi bi-save"></i> Save game settings
+      </button>
+    </form>
   </div>
 </div>
 
-{# SortableJS — drag-and-drop reordering. #}
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+
 <script>
 (function () {
   const list = document.getElementById("question-list");
   if (!list || !window.Sortable) return;
-  const url  = list.dataset.reorderUrl;
+
+  const url = list.dataset.reorderUrl;
   const status = document.getElementById("reorder-status");
-  const csrf = document.querySelector("input[name=csrfmiddlewaretoken]").value;
+  const csrfInput = document.querySelector("input[name=csrfmiddlewaretoken]");
+  const csrf = csrfInput ? csrfInput.value : "";
 
   function setStatus(text, ok) {
     if (!status) return;
+
     status.textContent = text;
     status.classList.add("visible");
     status.classList.toggle("saved", !!ok);
-    if (ok) setTimeout(() => status.classList.remove("visible"), 1800);
+
+    if (ok) {
+      setTimeout(() => status.classList.remove("visible"), 1800);
+    }
   }
 
   function reindex() {
     list.querySelectorAll(".kk-q-row").forEach((row, i) => {
       const idx = row.querySelector(".kk-q-index");
-      if (idx) idx.textContent = i + 1;
+      if (idx) {
+        idx.textContent = i + 1;
+      }
     });
   }
 
@@ -145,11 +491,16 @@
     handle: ".kk-q-drag",
     ghostClass: "kk-ghost",
     dragClass: "kk-dragging",
+
     onEnd: function () {
       reindex();
+
       const order = Array.from(list.querySelectorAll(".kk-q-row"))
-        .map(r => parseInt(r.dataset.qpk, 10));
+        .map(row => parseInt(row.dataset.qpk, 10))
+        .filter(Number.isFinite);
+
       setStatus("Saving…", false);
+
       fetch(url, {
         method: "POST",
         credentials: "same-origin",
@@ -158,11 +509,15 @@
           "X-CSRFToken": csrf,
         },
         body: JSON.stringify({ order }),
-      }).then(r => {
-        if (!r.ok) throw new Error("save failed");
-        return r.json();
-      }).then(() => setStatus("Order saved ✓", true))
-        .catch(() => setStatus("Couldn't save — refresh to retry", false));
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error("save failed");
+        }
+        return response.json();
+      })
+      .then(() => setStatus("Order saved ✓", true))
+      .catch(() => setStatus("Couldn't save — refresh to retry", false));
     },
   });
 })();

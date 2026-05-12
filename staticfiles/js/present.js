@@ -242,7 +242,7 @@
     qText.style.fontFamily = fam;
 
     if (size) {
-      qText.style.fontSize = `${size * 1.4}px`;
+      qText.style.fontSize = `clamp(1.6rem, ${Math.max(3.5, size / 10)}vw, ${Math.min(112, size * 1.25)}px)`;
     } else {
       qText.style.fontSize = "";
     }
@@ -404,10 +404,10 @@
 
     const labels = Array.isArray(q.choices) ? q.choices : [];
     const chartId = q.chart_type || "bar";
-    const questionType = q.type || "mcq";
+    const questionType = q.type || q.question_type || "mcq";
     const tallyData = getStateTallyForCurrentQuestion(s);
 
-    renderLiveChart(chartId, questionType, labels, tallyData);
+    renderQuestionResults(q, chartId, questionType, labels, tallyData);
   }
 
   function onTally(msg) {
@@ -425,11 +425,71 @@
     latestTallyByQuestion[currentQuestionId] = tallyData;
     currentState.tally = tallyData;
 
-    renderLiveChart(q.chart_type || "bar", q.type || "mcq", q.choices || [], tallyData);
+    renderQuestionResults(q, q.chart_type || "bar", q.type || q.question_type || "mcq", q.choices || [], tallyData);
+  }
+
+
+  function renderQuestionResults(q, chartId, questionType, labels, tallyData) {
+    if (questionType === "picture_choice") {
+      renderPictureChoicePresenter(q, tallyData);
+      return;
+    }
+    if (questionType === "puzzle") {
+      renderPuzzleWinnerPresenter(q, tallyData);
+      return;
+    }
+    renderLiveChart(chartId, questionType, labels, tallyData);
+  }
+
+  function destroyChartForSpecialDisplay() {
+    if (chartHolder.chart) {
+      try { chartHolder.chart.destroy(); } catch (e) {}
+      chartHolder.chart = null;
+    }
+    if (liveCanvas) liveCanvas.style.display = "none";
+    if (specialEl) {
+      specialEl.style.display = "block";
+      specialEl.innerHTML = "";
+    }
+  }
+
+  function renderPictureChoicePresenter(q, tallyData) {
+    destroyChartForSpecialDisplay();
+    if (!specialEl) return;
+    const counts = (tallyData && tallyData.counts) || {};
+    const choices = Array.isArray(q.choices) ? q.choices : [];
+    specialEl.innerHTML = `
+      <div class="kk-picture-presenter-grid">
+        ${choices.map(choice => {
+          const count = Number(counts[String(choice.id)] ?? counts[choice.id] ?? 0);
+          return `<div class="kk-picture-presenter-card">
+            ${choice.image_url ? `<img src="${choice.image_url}" alt="">` : `<div class="kk-picture-presenter-empty">🖼️</div>`}
+            <div class="kk-picture-presenter-title">${escapeHtml(choice.text || "Picture")}</div>
+            <div class="kk-picture-presenter-count">${count} vote${count === 1 ? "" : "s"}</div>
+          </div>`;
+        }).join("")}
+      </div>`;
+  }
+
+  function renderPuzzleWinnerPresenter(q, tallyData) {
+    destroyChartForSpecialDisplay();
+    if (!specialEl) return;
+    const winner = tallyData && tallyData.winner;
+    if (!winner) {
+      specialEl.innerHTML = `<div class="kk-puzzle-presenter-wait"><div class="kk-puzzle-big">🧩</div><h2>Puzzle challenge</h2><p>Waiting for the first correct puzzle...</p></div>`;
+      return;
+    }
+    const meta = AVATARS_BY_ID[winner.avatar_id] || {};
+    const avatar = meta.emoji || avatarEmoji(winner.avatar_id) || "🏆";
+    specialEl.innerHTML = `<div class="kk-puzzle-winner-card"><div class="kk-puzzle-winner-crown">🏆</div><div class="kk-puzzle-winner-avatar">${avatar}</div><h2>${escapeHtml(winner.nickname || winner.name || "Winner")}</h2><p>solved the puzzle first!</p></div>`;
   }
 
   function renderLiveChart(chartId, questionType, labels, tallyData) {
     if (!liveCanvas || !specialEl) return;
+
+    liveCanvas.style.display = "block";
+    specialEl.style.display = "block";
+    specialEl.innerHTML = "";
 
     if (typeof window.kkRenderLive !== "function") {
       console.error("[present] window.kkRenderLive is missing. Check chart_preview.js is loaded before present.js.");
@@ -553,8 +613,13 @@
 
   function pulseEndCelebration() {
     const emojis = ["🎉", "✨", "🔥", "👏", "🚀", "💫", "🏆"];
-    for (let i = 0; i < 3; i++) {
-      setTimeout(() => spawnEndEmoji(emojis[Math.floor(Math.random() * emojis.length)], ""), i * 220);
+    // Stagger more bubbles so the rise feels like a continuous flow,
+    // not a one-shot pop.
+    for (let i = 0; i < 8; i++) {
+      setTimeout(
+        () => spawnEndEmoji(emojis[Math.floor(Math.random() * emojis.length)], ""),
+        i * 260
+      );
     }
   }
 
@@ -570,19 +635,26 @@
     el.className = "kk-end-pop-emoji";
     el.innerHTML = `${escapeHtml(emoji)}${name ? `<span class="name">${escapeHtml(name)}</span>` : ""}`;
 
-    // Pop in front of the end card instead of hiding behind/under it.
-    const left = 22 + Math.random() * 56;
-    const top = 34 + Math.random() * 40;
-    const size = 2.7 + Math.random() * 2.6;
-    const drift = (Math.random() * 220) - 110;
+    // Bubbles rise straight up from the bottom, growing as they go.
+    // Some stop around mid-page, others travel higher, then pop.
+    const left = 12 + Math.random() * 76;          // spread across width
+    const top = 82 + Math.random() * 12;           // start near the bottom
+    const size = 1.4 + Math.random() * 1.0;        // 1.4rem – 2.4rem
+    // Final vertical travel distance, in vh (viewport height).
+    // Bubbles start near the bottom (~88vh from top) and rise this much.
+    // -55vh ≈ reaches mid-page, -80vh ≈ reaches near top of page.
+    const riseEnd = -(55 + Math.random() * 25);    // -55vh to -80vh
+    const dur = 3.4 + Math.random() * 1.4;         // 3.4s – 4.8s rise (slow)
 
     el.style.setProperty("--left", `${left}%`);
     el.style.setProperty("--top", `${top}%`);
     el.style.setProperty("--size", `${size}rem`);
-    el.style.setProperty("--drift", `${drift}px`);
+    el.style.setProperty("--rise-end", `${riseEnd}vh`);
+    el.style.setProperty("--dur", `${dur}s`);
 
     endEmojiLayer.appendChild(el);
-    window.setTimeout(() => el.remove(), 1800);
+    // Remove once the pop animation has fully finished.
+    window.setTimeout(() => el.remove(), dur * 1000 + 150);
   }
 
   // ─────────────────────── Leaderboard ───────────────────────

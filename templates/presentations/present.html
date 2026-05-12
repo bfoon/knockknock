@@ -393,6 +393,28 @@
     font-weight: 900;
   }
 
+  /* Room-mode leaderboard: door avatar + room name + member count.
+     The avatar uses a subtle bob so the list feels alive. */
+  .kk-game-leaderboard-card .kk-lb-room-avatar {
+    display: inline-block;
+    transform-origin: center bottom;
+    animation: kk-lb-bob 2.6s ease-in-out infinite;
+  }
+  @keyframes kk-lb-bob {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-3px); }
+  }
+  .kk-game-leaderboard-card .kk-lb-row.is-leader .kk-lb-room-avatar {
+    filter: drop-shadow(0 0 6px rgba(251,191,36,.6));
+  }
+  .kk-game-leaderboard-card .kk-lb-rank {
+    color: #94a3b8;
+    font-weight: 700;
+  }
+  .kk-game-leaderboard-card .kk-lb-row.is-leader .kk-lb-rank {
+    color: #fbbf24;
+  }
+
   /* ─────────────────────────────────────────────
      FULLSCREEN MODE
   ───────────────────────────────────────────── */
@@ -675,13 +697,31 @@
   .kk-end-pop-emoji {
     position: absolute;
     left: var(--left, 50%);
-    top: var(--top, 62%);
+    top: var(--top, 90%);
     z-index: 31;
     font-size: var(--size, 4rem);
     line-height: 1;
+    transform: translate(-50%, 0) scale(.15);
+    filter: drop-shadow(0 12px 22px rgba(0,0,0,.35));
+    animation: kkEndEmojiBubble var(--dur, 3.8s) linear forwards;
+    will-change: transform, opacity;
+  }
+
+  /* Pop ring — flashes outward at the end of the rise to sell the bubble pop */
+  .kk-end-pop-emoji::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 1em;
+    height: 1em;
+    border-radius: 999px;
+    border: 0.12em solid rgba(255,255,255,.85);
+    box-shadow: 0 0 24px rgba(255,255,255,.55);
     transform: translate(-50%, -50%) scale(.2);
-    filter: drop-shadow(0 18px 28px rgba(0,0,0,.38));
-    animation: kkEndEmojiPop 1.55s cubic-bezier(.18,.95,.2,1) forwards;
+    opacity: 0;
+    animation: kkEndBubblePopRing var(--dur, 2.6s) ease-out forwards;
+    pointer-events: none;
   }
 
   .kk-end-pop-emoji .name {
@@ -697,25 +737,45 @@
     white-space: nowrap;
   }
 
-  @keyframes kkEndEmojiPop {
+  /* Bubble rise: one smooth continuous rise from bottom to target height,
+     growing as it goes, then a quick pop at the top. */
+  @keyframes kkEndEmojiBubble {
     0% {
       opacity: 0;
-      transform: translate(-50%, 30%) scale(.2) rotate(-8deg);
+      transform: translate(-50%, 0) scale(.15);
     }
-
-    18% {
+    6% {
       opacity: 1;
-      transform: translate(-50%, -50%) scale(1.18) rotate(5deg);
     }
-
-    72% {
+    /* One smooth keyframe from 0% to 82% — the bubble drifts up the whole
+       way without intermediate waypoints to stutter against. */
+    82% {
       opacity: 1;
-      transform: translate(calc(-50% + var(--drift, 0px)), -120%) scale(1) rotate(-4deg);
+      transform: translate(-50%, var(--rise-end, -55vh)) scale(.95);
     }
-
+    /* The pop: quick scale-up burst then fade out, at the top of the rise */
+    92% {
+      opacity: .9;
+      transform: translate(-50%, var(--rise-end, -55vh)) scale(1.35);
+    }
     100% {
       opacity: 0;
-      transform: translate(calc(-50% + var(--drift, 0px)), -220%) scale(1.45) rotate(10deg);
+      transform: translate(-50%, var(--rise-end, -55vh)) scale(1.65);
+    }
+  }
+
+  @keyframes kkEndBubblePopRing {
+    0%, 82% {
+      opacity: 0;
+      transform: translate(-50%, -50%) scale(.2);
+    }
+    88% {
+      opacity: .9;
+      transform: translate(-50%, -50%) scale(.9);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(-50%, -50%) scale(2.2);
     }
   }
 
@@ -820,6 +880,27 @@
       border-color: #263449 !important;
     }
   }
+
+
+  /* ─────────────────────────────────────────────
+     SPECIAL GAME RESULT DISPLAYS
+  ───────────────────────────────────────────── */
+  .kk-picture-presenter-grid { width:100%; height:100%; padding:clamp(1rem,2vw,2rem); display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:clamp(1rem,2vw,1.5rem); align-items:stretch; overflow:auto; }
+  .kk-picture-presenter-card { border-radius:26px; border:1px solid rgba(255,255,255,.16); background:rgba(255,255,255,.10); box-shadow:0 24px 60px rgba(0,0,0,.28); padding:1rem; display:flex; flex-direction:column; justify-content:center; text-align:center; min-width:0; }
+  .kk-picture-presenter-card img { width:100%; height:min(34vh,260px); object-fit:cover; border-radius:22px; margin-bottom:1rem; }
+  .kk-picture-presenter-empty { font-size:clamp(4rem,8vw,7rem); margin-bottom:1rem; }
+  .kk-picture-presenter-title { font-size:clamp(1.1rem,2.2vw,1.8rem); font-weight:900; color:#fff; overflow-wrap:anywhere; }
+  .kk-picture-presenter-count { margin-top:.5rem; font-size:clamp(1rem,1.7vw,1.4rem); color:#fbbf24; font-weight:900; }
+  .kk-puzzle-presenter-wait, .kk-puzzle-winner-card { width:100%; height:100%; display:grid; place-items:center; align-content:center; text-align:center; padding:clamp(1.5rem,4vw,4rem); }
+  .kk-puzzle-big { font-size:clamp(5rem,13vw,12rem); filter:drop-shadow(0 18px 35px rgba(0,0,0,.35)); animation:kkPuzzleFloat 2.5s ease-in-out infinite; }
+  .kk-puzzle-winner-card { border-radius:32px; background:radial-gradient(circle at top, rgba(251,191,36,.22), transparent 35%), linear-gradient(135deg, rgba(124,58,237,.22), rgba(34,211,238,.14)); }
+  .kk-puzzle-winner-crown { font-size:clamp(3rem,7vw,6rem); }
+  .kk-puzzle-winner-avatar { font-size:clamp(5rem,12vw,11rem); filter:drop-shadow(0 18px 40px rgba(0,0,0,.4)); animation:kkPuzzleWinnerPop 1.2s ease both; }
+  .kk-puzzle-winner-card h2 { font-family:'Clash Display', system-ui, sans-serif; font-size:clamp(2.2rem,6vw,5.8rem); font-weight:900; margin:.5rem 0; overflow-wrap:anywhere; }
+  .kk-puzzle-winner-card p { font-size:clamp(1.1rem,2.2vw,1.8rem); color:rgba(255,255,255,.78); }
+  @keyframes kkPuzzleFloat { 0%,100% { transform:translateY(0) rotate(-2deg); } 50% { transform:translateY(-12px) rotate(2deg); } }
+  @keyframes kkPuzzleWinnerPop { 0% { transform:scale(.5); opacity:0; } 65% { transform:scale(1.12); opacity:1; } 100% { transform:scale(1); opacity:1; } }
+  @media (max-width:760px) { .kk-picture-presenter-grid { grid-template-columns:1fr; } }
 </style>
 </head>
 
@@ -1086,6 +1167,93 @@
 
 <script src="{% static 'js/chart_preview.js' %}?v=14"></script>
 <script src="{% static 'js/draw_overlay.js' %}?v=9"></script>
-<script src="{% static 'js/present.js' %}?v=14"></script>
+
+{# Avatar catalog — must load BEFORE the room leaderboard shim and present.js. #}
+{% include "games/partials/avatar_data.html" with avatars=avatars %}
+
+{% if session.kind == "game" %}
+<script>
+/* ────────────────────────────────────────────────────────────────
+   ROOM-MODE LEADERBOARD OVERRIDE
+   ────────────────────────────────────────────────────────────────
+   When the quiz uses named rooms, the server sends leaderboard rows
+   like:
+     { slug, name, avatar_id, score, members }
+   with mode:"rooms". We hijack the WebSocket so we can re-render
+   #leaderboard ourselves with door-avatar + room name + average
+   score + member count. We let present.js do its thing for the
+   individual mode (mode:"individuals").
+─────────────────────────────────────────────────────────────── */
+(function () {
+  // Reuse the shared catalog set up just above.
+  const AVATARS = window.kkAvatarsById || {};
+  function emojiFor(id, fallbackEmoji) {
+    const key = String(id || "");
+    return (AVATARS[key] && AVATARS[key].emoji) || fallbackEmoji || "🐉";
+  }
+  function escapeHtml(s) {
+    return String(s || "").replace(/[&<>"']/g, c => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    })[c]);
+  }
+
+  function renderRoomsLeaderboard(rows) {
+    const lb = document.getElementById("leaderboard");
+    if (!lb) return;
+
+    if (!rows.length) {
+      lb.innerHTML = `<div class="text-secondary small">Waiting for rooms…</div>`;
+      return;
+    }
+
+    lb.innerHTML = rows.map((r, i) => {
+      const isLeader = i === 0;
+      const members = (typeof r.members === "number") ? r.members : null;
+      const score = (typeof r.score === "number") ? r.score : 0;
+      return `
+        <div class="kk-lb-row ${isLeader ? "is-leader" : ""}" style="display:flex;align-items:center;gap:.6rem;">
+          <span class="kk-lb-rank" style="opacity:.7;width:1.4em;text-align:right;">${i + 1}</span>
+          <span class="kk-lb-room-avatar" style="font-size:1.4rem;line-height:1;">${emojiFor(r.avatar_id, r.emoji)}</span>
+          <span class="kk-lb-name" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            ${escapeHtml(r.name)}
+            ${members !== null ? `<span class="text-secondary small" style="margin-left:.4rem;">(${members})</span>` : ""}
+          </span>
+          <span class="kk-lb-score">${score}</span>
+        </div>
+      `;
+    }).join("");
+  }
+
+  // Wrap WebSocket so we intercept leaderboard messages.
+  const RealWS = window.WebSocket;
+  window.WebSocket = function (url, protocols) {
+    const ws = protocols ? new RealWS(url, protocols) : new RealWS(url);
+
+    ws.addEventListener("message", ev => {
+      let msg = null;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (!msg || !msg.type) return;
+
+      if (msg.type === "leaderboard" && msg.data && msg.data.mode === "rooms") {
+        // Defer to next tick so present.js's own handler (if any) runs
+        // first; we then override the DOM.
+        setTimeout(() => renderRoomsLeaderboard(msg.data.rows || []), 0);
+      }
+    });
+
+    return ws;
+  };
+  // Preserve prototype + statics so library code that checks `instanceof
+  // WebSocket` or reads READY-state constants keeps working.
+  window.WebSocket.prototype = RealWS.prototype;
+  window.WebSocket.CONNECTING = RealWS.CONNECTING;
+  window.WebSocket.OPEN = RealWS.OPEN;
+  window.WebSocket.CLOSING = RealWS.CLOSING;
+  window.WebSocket.CLOSED = RealWS.CLOSED;
+})();
+</script>
+{% endif %}
+
+<script src="{% static 'js/present.js' %}?v=16"></script>
 </body>
 </html>

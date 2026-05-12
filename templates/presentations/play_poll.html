@@ -61,6 +61,176 @@
     100% { opacity:0; transform:translateX(-50%) translateY(-120px) scale(1.45); }
   }
 
+
+
+  /* ─────────────────────────────────────────────
+     RESPONSIVE QUESTION + ANSWER OVERFLOW FIX
+     Keeps poll question text, options, scales, emoji answers and text inputs
+     inside the card on small screens.
+  ───────────────────────────────────────────── */
+  html,
+  body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  body {
+    min-height: 100dvh;
+  }
+
+  .kk-play {
+    width: min(100%, 980px);
+    max-width: 100%;
+    margin-inline: auto;
+    padding: clamp(.75rem, 3vw, 1.25rem);
+    box-sizing: border-box;
+  }
+
+  .kk-play-card {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  #step-question {
+    max-height: calc(100dvh - 1.5rem);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  #q-progress,
+  #q-result,
+  #self-next {
+    flex: 0 0 auto;
+  }
+
+  #q-text {
+    flex: 0 0 auto;
+    max-width: 100%;
+    font-size: clamp(1.35rem, 5.8vw, 2.4rem);
+    line-height: 1.14;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    hyphens: auto;
+    margin-bottom: clamp(.65rem, 2vw, 1rem) !important;
+  }
+
+  #q-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-width: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    box-sizing: border-box;
+    padding: .15rem;
+  }
+
+  #q-body * {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  #q-body button,
+  #q-body .kk-btn,
+  #q-body .btn,
+  #q-body label,
+  #q-body .form-check,
+  #q-body .kk-answer,
+  #q-body .kk-tile,
+  #q-body .kk-option,
+  #q-body .kk-choice {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal !important;
+    line-height: 1.18;
+  }
+
+  #q-body input,
+  #q-body textarea,
+  #q-body select {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  #q-body textarea,
+  #q-body input[type="text"] {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  /* Poll answers often render as grids; force mobile-safe columns. */
+  #q-body .kk-tile-grid,
+  #q-body .kk-answer-grid,
+  #q-body .kk-options-grid,
+  #q-body .kk-emoji-grid,
+  #q-body [class*="grid"] {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+    gap: clamp(.5rem, 2vw, .85rem);
+  }
+
+  @media (max-width: 640px) {
+    .kk-play {
+      padding: .6rem;
+    }
+
+    .kk-play header {
+      gap: .45rem !important;
+      margin-bottom: .55rem !important;
+      flex-wrap: wrap;
+    }
+
+    .kk-stage-code {
+      font-size: .82rem;
+    }
+
+    #step-question {
+      max-height: calc(100dvh - 1.2rem);
+      padding: .85rem !important;
+    }
+
+    #q-text {
+      font-size: clamp(1.2rem, 7vw, 2rem);
+      line-height: 1.16;
+    }
+
+    #q-body .kk-tile-grid,
+    #q-body .kk-answer-grid,
+    #q-body .kk-options-grid,
+    #q-body .kk-emoji-grid,
+    #q-body [class*="grid"] {
+      grid-template-columns: 1fr;
+    }
+
+    #q-body button,
+    #q-body .kk-btn,
+    #q-body .btn,
+    #q-body label,
+    #q-body .kk-answer,
+    #q-body .kk-tile,
+    #q-body .kk-option,
+    #q-body .kk-choice {
+      font-size: clamp(.95rem, 4.5vw, 1.12rem);
+      padding: .75rem .85rem;
+    }
+  }
+
+  @media (max-width: 380px) {
+    #step-question {
+      padding: .7rem !important;
+    }
+
+    #q-text {
+      font-size: clamp(1.05rem, 7.5vw, 1.65rem);
+    }
+  }
+
 </style>
 </head>
 <body>

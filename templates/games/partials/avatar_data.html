@@ -1,15 +1,28 @@
-{# Exposes the avatar catalog to JS as `window.kkAvatarsById`.
-   Include this partial in play.html and present.html (or any page that
-   shows avatar bubbles) BEFORE play.js / present.js. Requires:
-     `avatars` — the AVATARS list from games.avatars.AVATARS
-#}
+<!--{# Exposes the avatar catalog to JavaScript as `window.kkAvatarsById`.-->
+<!--   Include this partial BEFORE play.js / present.js / any room-rendering shim.-->
+<!--   Required context: `avatars` from games.avatars.AVATARS.-->
+<!--#}-->
 {{ avatars|json_script:"kk-avatars-json" }}
 <script>
 (function () {
+  const el = document.getElementById("kk-avatars-json");
+
+  if (!el) {
+    console.warn("[knock-knock] avatar catalog element missing");
+    window.kkAvatarsById = {};
+    return;
+  }
+
   try {
-    const arr = JSON.parse(document.getElementById("kk-avatars-json").textContent);
+    const arr = JSON.parse(el.textContent || "[]");
     const byId = {};
-    arr.forEach(a => { byId[a.id] = a; });
+
+    arr.forEach(a => {
+      if (a && a.id) {
+        byId[String(a.id)] = a;
+      }
+    });
+
     window.kkAvatarsById = byId;
   } catch (e) {
     console.warn("[knock-knock] avatar catalog parse failed", e);

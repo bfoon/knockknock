@@ -209,6 +209,119 @@
       height: 110px;
     }
   }
+
+  /* ─────────────────────────────────────────────
+     ROOMS EDITOR
+  ───────────────────────────────────────────── */
+  .kk-rooms-list {
+    display: flex;
+    flex-direction: column;
+    gap: .55rem;
+    margin-bottom: .75rem;
+  }
+  .kk-room-row {
+    display: grid;
+    grid-template-columns: 56px 1fr auto;
+    gap: .65rem;
+    align-items: center;
+    padding: .55rem .7rem;
+    background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 14px;
+  }
+  .kk-room-row.kk-room-deleted {
+    opacity: .35;
+    text-decoration: line-through;
+  }
+  .kk-room-avatar-btn {
+    width: 56px; height: 56px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 1.9rem;
+    background: rgba(124,58,237,.18);
+    border: 1px solid rgba(124,58,237,.45);
+    border-radius: 14px;
+    cursor: pointer;
+    transition: transform .12s ease, background .12s ease;
+  }
+  .kk-room-avatar-btn:hover {
+    background: rgba(124,58,237,.32);
+    transform: translateY(-1px);
+  }
+  .kk-room-remove {
+    background: transparent;
+    color: #f87171;
+    border: 1px solid rgba(248,113,113,.35);
+    border-radius: 10px;
+    padding: .35rem .6rem;
+    font-size: .85rem;
+    cursor: pointer;
+  }
+  .kk-room-remove:hover { background: rgba(248,113,113,.12); }
+  .kk-add-room {
+    width: 100%;
+    background: transparent;
+    border: 1px dashed rgba(255,255,255,.18);
+    color: #cbd5e1;
+    padding: .65rem;
+    border-radius: 14px;
+    cursor: pointer;
+  }
+  .kk-add-room:hover { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.35); }
+  .kk-rooms-hint {
+    color: #94a3b8; font-size: .82rem; margin-bottom: .6rem;
+  }
+
+  /* Avatar picker modal */
+  .kk-modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(8,8,16,.72);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 2000;
+    padding: 1rem;
+  }
+  .kk-modal-backdrop.open { display: flex; }
+  .kk-modal-panel {
+    background: #0f172a;
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 18px;
+    max-width: 640px;
+    width: 100%;
+    max-height: 80vh;
+    overflow: auto;
+    padding: 1rem 1.1rem;
+  }
+  .kk-modal-panel h3 { margin-top: 0; }
+  .kk-modal-avatars {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+    gap: .45rem;
+    margin-top: .75rem;
+  }
+  .kk-modal-avatar-tile {
+    aspect-ratio: 1 / 1;
+    font-size: 1.65rem;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 12px;
+    background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.06);
+    cursor: pointer;
+    transition: transform .1s ease, background .1s ease;
+  }
+  .kk-modal-avatar-tile:hover { transform: scale(1.07); background: rgba(255,255,255,.09); }
+  .kk-modal-avatar-tile.selected {
+    background: rgba(124,58,237,.28);
+    border-color: rgba(124,58,237,.7);
+  }
+  .kk-modal-category {
+    margin-top: .9rem;
+    font-size: .8rem; color: #94a3b8; text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+  .kk-modal-close {
+    float: right; background: transparent; border: 0; color: #cbd5e1; font-size: 1.4rem;
+    cursor: pointer; line-height: 1;
+  }
 </style>
 {% endblock %}
 
@@ -314,6 +427,7 @@
             {{ q.text }}
           </a>
 
+          <span class="kk-q-pill">{{ q.get_question_type_display }}</span>
           <span class="kk-q-pill">{{ q.time_limit }}s</span>
           <span class="kk-q-pill">{{ q.points }}pts</span>
         </div>
@@ -325,9 +439,17 @@
       {% endfor %}
     </div>
 
-    <a href="{% url 'games:question_create' quiz.pk %}" class="kk-btn kk-btn-ghost w-100 mt-3">
-      <i class="bi bi-plus-lg"></i> Add a question
-    </a>
+    <div class="d-grid gap-2 mt-3">
+      <a href="{% url 'games:question_create' quiz.pk %}?type=mcq" class="kk-btn kk-btn-ghost w-100">
+        <i class="bi bi-plus-lg"></i> Add classic question
+      </a>
+      <a href="{% url 'games:question_create' quiz.pk %}?type=picture_choice" class="kk-btn kk-btn-ghost w-100">
+        <i class="bi bi-image"></i> Add picture-choice question
+      </a>
+      <a href="{% url 'games:question_create' quiz.pk %}?type=puzzle" class="kk-btn kk-btn-ghost w-100">
+        <i class="bi bi-puzzle"></i> Add puzzle question
+      </a>
+    </div>
   </div>
 
   <div class="col-lg-5">
@@ -438,6 +560,103 @@
         {% endif %}
       </div>
 
+      <div class="kk-sub-card mt-4 mb-3" id="rooms-card">
+        <h2 class="kk-section-title" style="font-size:1.2rem;">
+          <i class="bi bi-door-closed"></i> Rooms
+        </h2>
+        <div class="kk-rooms-hint">
+          Visible only when <b>Use rooms</b> is on. Each room is a door
+          participants tap to enter. Capacity per room is set above.
+        </div>
+
+        {{ room_formset.management_form }}
+
+        <div class="kk-rooms-list" id="rooms-list">
+          {% for rf in room_formset %}
+            <div class="kk-room-row" data-room-index="{{ forloop.counter0 }}">
+              {{ rf.id }}
+
+              <button type="button"
+                      class="kk-room-avatar-btn kk-pick-avatar"
+                      data-target="#{{ rf.avatar_id.id_for_label }}"
+                      title="Choose avatar">
+                <span class="kk-room-avatar-emoji">🐉</span>
+              </button>
+
+              <div>
+                {{ rf.name }}
+                {% if rf.name.errors %}
+                  <div class="text-danger small mt-1">{{ rf.name.errors }}</div>
+                {% endif %}
+                {{ rf.avatar_id }}
+                {{ rf.slug }}
+                {{ rf.order }}
+              </div>
+
+              <div class="d-flex align-items-center gap-2">
+                {# DELETE checkbox is hidden — the remove button toggles it. #}
+                <label style="display:none;">{{ rf.DELETE }}</label>
+                <button type="button" class="kk-room-remove" title="Remove room">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+
+        <button type="button" id="add-room-btn" class="kk-add-room">
+          <i class="bi bi-plus-lg"></i> Add room
+        </button>
+
+        {# Empty template row, cloned on add. Hidden visually. #}
+        <template id="room-row-template">
+          <div class="kk-room-row" data-room-index="__INDEX__">
+            <input type="hidden" name="rooms-__INDEX__-id" id="id_rooms-__INDEX__-id">
+
+            <button type="button"
+                    class="kk-room-avatar-btn kk-pick-avatar"
+                    data-target="#id_rooms-__INDEX__-avatar_id"
+                    title="Choose avatar">
+              <span class="kk-room-avatar-emoji">🐉</span>
+            </button>
+
+            <div>
+              <input type="text"
+                     name="rooms-__INDEX__-name"
+                     id="id_rooms-__INDEX__-name"
+                     class="form-control"
+                     placeholder="Room name (e.g. Dragons)"
+                     maxlength="60">
+              <input type="hidden"
+                     name="rooms-__INDEX__-avatar_id"
+                     id="id_rooms-__INDEX__-avatar_id"
+                     class="kk-room-avatar-input"
+                     value="dragon">
+              <input type="hidden"
+                     name="rooms-__INDEX__-slug"
+                     id="id_rooms-__INDEX__-slug"
+                     value="">
+              <input type="hidden"
+                     name="rooms-__INDEX__-order"
+                     id="id_rooms-__INDEX__-order"
+                     class="kk-room-order-input"
+                     value="__INDEX__">
+            </div>
+
+            <div class="d-flex align-items-center gap-2">
+              <label style="display:none;">
+                <input type="checkbox"
+                       name="rooms-__INDEX__-DELETE"
+                       id="id_rooms-__INDEX__-DELETE">
+              </label>
+              <button type="button" class="kk-room-remove" title="Remove room">
+                <i class="bi bi-trash"></i>
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+
       <div class="kk-sub-card mt-4 mb-3">
         <h2 class="kk-section-title" style="font-size:1.2rem;">
           <i class="bi bi-palette"></i> Template / Game background
@@ -519,6 +738,171 @@
       .then(() => setStatus("Order saved ✓", true))
       .catch(() => setStatus("Couldn't save — refresh to retry", false));
     },
+  });
+})();
+</script>
+
+<!--{# ─────────────────────────────────────────────────────────-->
+<!--   Avatar picker modal (shared by all room rows)-->
+<!--───────────────────────────────────────────────────────── #}-->
+<div class="kk-modal-backdrop" id="avatar-modal">
+  <div class="kk-modal-panel">
+    <button type="button" class="kk-modal-close" aria-label="Close" id="avatar-modal-close">×</button>
+    <h3>Pick a door avatar</h3>
+    <p class="text-secondary small mb-0">Tap an emoji — it'll appear on the room's door.</p>
+
+    {% for label, avs in avatar_groups %}
+      <div class="kk-modal-category">{{ label }}</div>
+      <div class="kk-modal-avatars">
+        {% for a in avs %}
+          <div class="kk-modal-avatar-tile" data-avatar-id="{{ a.id }}" data-emoji="{{ a.emoji }}" title="{{ a.label }}">
+            {{ a.emoji }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+{# Avatar catalog for emoji lookup. #}
+{{ avatars|json_script:"kk-avatars-json" }}
+
+<script>
+(function () {
+  // ───── Avatar catalog ─────
+  let AVATARS_BY_ID = {};
+  try {
+    const arr = JSON.parse(document.getElementById("kk-avatars-json").textContent);
+    arr.forEach(a => { AVATARS_BY_ID[a.id] = a; });
+  } catch (e) { /* noop */ }
+
+  function emojiFor(id) {
+    return (AVATARS_BY_ID[id] && AVATARS_BY_ID[id].emoji) || "🐉";
+  }
+
+  // ───── Show/hide rooms card based on use_rooms checkbox ─────
+  const roomsCard = document.getElementById("rooms-card");
+  const useRoomsCheckbox = document.getElementById("{{ form.use_rooms.id_for_label }}");
+
+  function syncRoomsVisibility() {
+    if (!roomsCard || !useRoomsCheckbox) return;
+    roomsCard.style.display = useRoomsCheckbox.checked ? "" : "none";
+  }
+  if (useRoomsCheckbox) {
+    useRoomsCheckbox.addEventListener("change", syncRoomsVisibility);
+    syncRoomsVisibility();
+  }
+
+  // ───── Initialise existing rows' avatar previews ─────
+  document.querySelectorAll("#rooms-list .kk-room-row").forEach(row => {
+    const input = row.querySelector(".kk-room-avatar-input");
+    const emojiSpan = row.querySelector(".kk-room-avatar-emoji");
+    if (input && emojiSpan) {
+      emojiSpan.textContent = emojiFor(input.value || "dragon");
+    }
+  });
+
+  // ───── Remove (toggle DELETE) ─────
+  function wireRemoveButtons(scope) {
+    scope.querySelectorAll(".kk-room-remove").forEach(btn => {
+      if (btn.dataset.wired) return;
+      btn.dataset.wired = "1";
+      btn.addEventListener("click", () => {
+        const row = btn.closest(".kk-room-row");
+        const delCheck = row.querySelector("input[name$='-DELETE']");
+        if (!delCheck) {
+          // New unsaved row — just yank it.
+          row.remove();
+          recomputeManagementForm();
+          return;
+        }
+        // Toggle: clicking again un-deletes.
+        delCheck.checked = !delCheck.checked;
+        row.classList.toggle("kk-room-deleted", delCheck.checked);
+      });
+    });
+  }
+  wireRemoveButtons(document);
+
+  // ───── Avatar picker modal ─────
+  const modal = document.getElementById("avatar-modal");
+  let activeAvatarInput = null;
+  let activeAvatarEmojiSpan = null;
+
+  function openAvatarModal(input, emojiSpan) {
+    activeAvatarInput = input;
+    activeAvatarEmojiSpan = emojiSpan;
+    const currentId = input.value || "dragon";
+    modal.querySelectorAll(".kk-modal-avatar-tile").forEach(t => {
+      t.classList.toggle("selected", t.dataset.avatarId === currentId);
+    });
+    modal.classList.add("open");
+  }
+  function closeAvatarModal() {
+    modal.classList.remove("open");
+    activeAvatarInput = null;
+    activeAvatarEmojiSpan = null;
+  }
+
+  document.getElementById("avatar-modal-close").addEventListener("click", closeAvatarModal);
+  modal.addEventListener("click", e => { if (e.target === modal) closeAvatarModal(); });
+
+  modal.querySelectorAll(".kk-modal-avatar-tile").forEach(tile => {
+    tile.addEventListener("click", () => {
+      if (!activeAvatarInput) return;
+      activeAvatarInput.value = tile.dataset.avatarId;
+      if (activeAvatarEmojiSpan) activeAvatarEmojiSpan.textContent = tile.dataset.emoji;
+      closeAvatarModal();
+    });
+  });
+
+  function wireAvatarPickButtons(scope) {
+    scope.querySelectorAll(".kk-pick-avatar").forEach(btn => {
+      if (btn.dataset.wired) return;
+      btn.dataset.wired = "1";
+      btn.addEventListener("click", () => {
+        const sel = btn.dataset.target;
+        const input = document.querySelector(sel);
+        const emojiSpan = btn.querySelector(".kk-room-avatar-emoji");
+        if (input) openAvatarModal(input, emojiSpan);
+      });
+    });
+  }
+  wireAvatarPickButtons(document);
+
+  // ───── Add room ─────
+  const totalForms = document.getElementById("id_rooms-TOTAL_FORMS");
+  const list = document.getElementById("rooms-list");
+  const tpl = document.getElementById("room-row-template");
+
+  function recomputeManagementForm() {
+    if (!totalForms) return;
+    const rows = list.querySelectorAll(".kk-room-row").length;
+    totalForms.value = String(rows);
+  }
+
+  document.getElementById("add-room-btn").addEventListener("click", () => {
+    if (!totalForms || !tpl) return;
+    const idx = parseInt(totalForms.value, 10);
+    const html = tpl.innerHTML.replace(/__INDEX__/g, idx);
+
+    const wrapper = document.createElement("div");
+    wrapper.innerHTML = html.trim();
+    const row = wrapper.firstElementChild;
+    list.appendChild(row);
+
+    totalForms.value = String(idx + 1);
+
+    // Default placeholder name.
+    const nameInput = row.querySelector("input[name$='-name']");
+    if (nameInput) nameInput.value = `Room ${idx + 1}`;
+
+    // Default avatar emoji preview.
+    const emojiSpan = row.querySelector(".kk-room-avatar-emoji");
+    if (emojiSpan) emojiSpan.textContent = emojiFor("dragon");
+
+    wireRemoveButtons(row);
+    wireAvatarPickButtons(row);
   });
 })();
 </script>

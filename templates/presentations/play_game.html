@@ -23,6 +23,410 @@
   }
   {% endif %}
   .kk-play { position: relative; z-index: 1; }
+
+  /* ─── Room picker ─── */
+  .kk-rooms-wrap {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+  }
+  .kk-room-door {
+    position: relative;
+    aspect-ratio: 3 / 4;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #6b3a1f 0%, #4a2613 100%);
+    border: 3px solid #2a1408;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform .15s ease, box-shadow .15s ease;
+    box-shadow: 0 8px 22px rgba(0,0,0,.5), inset 0 0 0 2px rgba(255,255,255,.05);
+    user-select: none;
+    perspective: 800px;
+  }
+  .kk-room-door:hover:not(.is-full):not(.is-opening) {
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 0 14px 30px rgba(0,0,0,.55), 0 0 0 2px rgba(251,191,36,.55) inset;
+  }
+  .kk-room-door.is-full {
+    cursor: not-allowed;
+    opacity: .55;
+    filter: grayscale(.6);
+  }
+  /* Wood-grain panels */
+  .kk-door-panel {
+    position: absolute;
+    inset: 8% 10% 16% 10%;
+    background:
+      repeating-linear-gradient(180deg,
+        rgba(0,0,0,.18) 0 2px,
+        transparent 2px 24px),
+      linear-gradient(180deg, #8b4a23 0%, #5e3015 100%);
+    border-radius: 6px;
+    border: 2px solid #2b1409;
+    transform-origin: left center;
+    transition: transform .8s cubic-bezier(.4, .1, .2, 1);
+    backface-visibility: hidden;
+  }
+  .kk-room-door.is-opening .kk-door-panel {
+    transform: rotateY(-110deg);
+  }
+  /* Door knob */
+  .kk-door-panel::after {
+    content: "";
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 10px; height: 10px;
+    background: radial-gradient(circle at 30% 30%, #fde047, #b45309);
+    border-radius: 50%;
+    box-shadow: 0 0 6px rgba(253,224,71,.7);
+  }
+  .kk-door-avatar {
+    position: absolute;
+    top: 18%;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 2.6rem;
+    line-height: 1;
+    z-index: 2;
+    filter: drop-shadow(0 4px 6px rgba(0,0,0,.55));
+  }
+  .kk-door-avatar.kk-anim-bob {
+    animation: kk-door-bob 2.4s ease-in-out infinite;
+  }
+  @keyframes kk-door-bob {
+    0%, 100% { transform: translateX(-50%) translateY(0); }
+    50%      { transform: translateX(-50%) translateY(-6px); }
+  }
+  .kk-door-name {
+    position: absolute;
+    bottom: 6%;
+    left: 6%;
+    right: 6%;
+    text-align: center;
+    font-weight: 800;
+    font-size: .9rem;
+    color: #fef3c7;
+    text-shadow: 0 2px 4px rgba(0,0,0,.7);
+    z-index: 2;
+    word-break: break-word;
+  }
+  .kk-door-cap {
+    position: absolute;
+    top: 6px; right: 8px;
+    background: rgba(0,0,0,.55);
+    color: #fef3c7;
+    padding: 2px 7px;
+    border-radius: 10px;
+    font-size: .72rem;
+    font-weight: 700;
+    z-index: 3;
+  }
+  .kk-door-cap.is-full { background: rgba(220,38,38,.85); color: #fff; }
+
+  /* Player avatar that walks INTO the open door */
+  .kk-door-player {
+    position: absolute;
+    left: 50%;
+    bottom: 14%;
+    transform: translate(-50%, 30px);
+    font-size: 1.9rem;
+    opacity: 0;
+    z-index: 1; /* behind the closing/opening panel? No: we want it to appear THROUGH the doorway */
+    pointer-events: none;
+  }
+  .kk-room-door.is-opening .kk-door-player {
+    animation: kk-step-in 1.0s ease-out .35s forwards;
+  }
+  @keyframes kk-step-in {
+    0%   { transform: translate(-50%, 30px) scale(.4); opacity: 0; }
+    35%  { opacity: 1; }
+    100% { transform: translate(-50%, -10px) scale(1.1); opacity: 0; }
+  }
+
+  /* Full-room shake */
+  .kk-room-door.shake { animation: kk-shake .45s ease; }
+  @keyframes kk-shake {
+    0%,100% { transform: translateX(0); }
+    20%     { transform: translateX(-6px); }
+    40%     { transform: translateX(6px); }
+    60%     { transform: translateX(-4px); }
+    80%     { transform: translateX(4px); }
+  }
+
+  .kk-rooms-toast {
+    text-align: center;
+    color: #fca5a5;
+    margin-top: .75rem;
+    min-height: 1.4em;
+    font-size: .9rem;
+    transition: opacity .2s ease;
+  }
+
+  /* ─────────────────────────────────────────────
+     QUESTION STYLING (driven by GameQuestion fields
+     captured from the socket — see styling shim below)
+     ───────────────────────────────────────────── */
+  /* The wrapping card whose background we paint with the author's color. */
+  #step-question.kk-styled {
+    background: var(--kk-q-bg, transparent);
+    transition: background .25s ease;
+  }
+  /* Question text — color/align/italic/underline come from inline styles
+     applied by the shim; we only style structural bits here. */
+  #q-text {
+    transition: color .15s ease, font-family .15s ease, font-size .15s ease;
+  }
+
+  /* Answer tile shapes. The shim adds `kk-shaped` + a `data-shape` attr
+     to every child of #tiles whenever a question is rendered. */
+  #tiles.kk-shaped > * {
+    --shape-bg: #7c3aed;
+    background: var(--shape-bg);
+    color: white;
+    font-weight: 700;
+    text-align: center;
+    box-shadow: 0 8px 18px rgba(0,0,0,.28);
+    transition: transform .12s ease;
+  }
+  #tiles.kk-shaped > *:hover  { transform: translateY(-2px); }
+  #tiles.kk-shaped > *:active { transform: translateY(0); }
+
+  /* Per-tile Kahoot-style tints (keep play.js's existing colors if it
+     already sets them — these just provide defaults when it doesn't). */
+  #tiles.kk-shaped > *:nth-child(1) { --shape-bg: #ef4444; }
+  #tiles.kk-shaped > *:nth-child(2) { --shape-bg: #3b82f6; }
+  #tiles.kk-shaped > *:nth-child(3) { --shape-bg: #f59e0b; }
+  #tiles.kk-shaped > *:nth-child(4) { --shape-bg: #22c55e; }
+
+  #tiles.kk-shaped > *[data-shape="rounded"]  { border-radius: 16px; }
+  #tiles.kk-shaped > *[data-shape="square"]   { border-radius: 0; }
+  #tiles.kk-shaped > *[data-shape="circle"]   {
+    border-radius: 999px;
+    aspect-ratio: 1/1;
+  }
+  #tiles.kk-shaped > *[data-shape="diamond"] {
+    transform: rotate(45deg);
+    border-radius: 8px;
+    aspect-ratio: 1/1;
+    width: 75%;
+    justify-self: center;
+  }
+  /* Counter-rotate the label inside a diamond so it stays upright.
+     play.js usually wraps the label in something — if not, we wrap it
+     ourselves in JS (see shim). */
+  #tiles.kk-shaped > *[data-shape="diamond"] > * {
+    display: inline-block;
+    transform: rotate(-45deg);
+  }
+  #tiles.kk-shaped > *[data-shape="triangle"] {
+    clip-path: polygon(50% 8%, 96% 96%, 4% 96%);
+    border-radius: 0;
+    aspect-ratio: 1/.85;
+    padding-top: 30%;
+    align-items: flex-start;
+  }
+
+
+  /* ─────────────────────────────────────────────
+     RESPONSIVE QUESTION + ANSWER OVERFLOW FIX
+     Keeps long questions/answers inside the main card on small screens.
+  ───────────────────────────────────────────── */
+  html,
+  body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  body {
+    min-height: 100dvh;
+  }
+
+  .kk-play {
+    width: min(100%, 980px);
+    max-width: 100%;
+    margin-inline: auto;
+    padding: clamp(.75rem, 3vw, 1.25rem);
+    box-sizing: border-box;
+  }
+
+  .kk-play-card {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  #step-question {
+    max-height: calc(100dvh - 1.5rem);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  #step-question > .d-flex,
+  #q-result {
+    flex: 0 0 auto;
+  }
+
+  #q-text {
+    flex: 0 0 auto;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    hyphens: auto;
+    line-height: 1.14 !important;
+    margin-bottom: clamp(.65rem, 2vw, 1rem) !important;
+  }
+
+  #tiles {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-width: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding: .15rem;
+    box-sizing: border-box;
+  }
+
+  #tiles.kk-tile-grid,
+  .kk-tile-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(.55rem, 2vw, .85rem);
+    align-items: stretch;
+  }
+
+  #tiles > * {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    hyphens: auto;
+    white-space: normal !important;
+    line-height: 1.18;
+    min-height: clamp(58px, 13vw, 96px);
+    padding: clamp(.7rem, 2.5vw, 1.1rem) !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #tiles > * > * {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal !important;
+  }
+
+  /* Stop decorative shapes from escaping the card. The old diamond used
+     rotation, which visually pushes the answer outside the card on phones. */
+  #tiles.kk-shaped > *[data-shape="diamond"] {
+    transform: none !important;
+    width: 100% !important;
+    aspect-ratio: auto !important;
+    clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+    border-radius: 14px !important;
+    padding-inline: clamp(1.25rem, 5vw, 2rem) !important;
+  }
+
+  #tiles.kk-shaped > *[data-shape="diamond"] > *,
+  #tiles.kk-shaped > *[data-shape="diamond"] .kk-tile-label {
+    transform: none !important;
+  }
+
+  #tiles.kk-shaped > *[data-shape="circle"] {
+    aspect-ratio: auto !important;
+    border-radius: 999px;
+  }
+
+  #tiles.kk-shaped > *[data-shape="triangle"] {
+    aspect-ratio: auto !important;
+    min-height: clamp(72px, 18vw, 110px);
+    padding-top: clamp(.9rem, 4vw, 1.4rem) !important;
+    clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+  }
+
+  @media (max-width: 640px) {
+    .kk-play {
+      padding: .6rem;
+    }
+
+    .kk-play header {
+      gap: .45rem !important;
+      margin-bottom: .55rem !important;
+      flex-wrap: wrap;
+    }
+
+    .kk-stage-code {
+      font-size: .82rem;
+    }
+
+    #step-question {
+      max-height: calc(100dvh - 1.2rem);
+      padding: .85rem !important;
+    }
+
+    #q-text {
+      font-size: clamp(1.25rem, 7vw, 2.15rem) !important;
+      line-height: 1.16 !important;
+    }
+
+    #tiles.kk-tile-grid,
+    .kk-tile-grid {
+      grid-template-columns: 1fr;
+      gap: .55rem;
+    }
+
+    #tiles > * {
+      min-height: 58px;
+      font-size: clamp(.95rem, 4.6vw, 1.2rem) !important;
+      padding: .78rem .85rem !important;
+    }
+  }
+
+  @media (max-width: 380px) {
+    #step-question {
+      padding: .7rem !important;
+    }
+
+    #q-text {
+      font-size: clamp(1.1rem, 7.5vw, 1.75rem) !important;
+    }
+
+    #tiles > * {
+      font-size: .95rem !important;
+      min-height: 52px;
+      padding: .65rem .7rem !important;
+    }
+  }
+
+
+
+  /* ─────────────────────────────────────────────
+     PICTURE-CHOICE + PUZZLE GAME UI
+  ───────────────────────────────────────────── */
+  .kk-picture-choice-grid { display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:.8rem !important; overflow-y:auto; overflow-x:hidden; }
+  .kk-picture-choice-card { border:1px solid rgba(255,255,255,.15); background:rgba(255,255,255,.08); border-radius:18px; padding:.65rem; color:#fff; text-align:center; overflow:hidden; cursor:pointer; box-shadow:0 12px 28px rgba(0,0,0,.22); }
+  .kk-picture-choice-card:active { transform:scale(.98); }
+  .kk-picture-choice-card img { width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:14px; display:block; margin-bottom:.55rem; }
+  .kk-puzzle-board { display:grid !important; gap:1rem !important; overflow-y:auto; overflow-x:hidden; }
+  .kk-puzzle-slots, .kk-puzzle-pieces { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem; }
+  .kk-puzzle-slot, .kk-puzzle-piece { min-height:86px; border-radius:18px; border:2px dashed rgba(255,255,255,.24); display:flex; align-items:center; justify-content:center; padding:.6rem; text-align:center; overflow:hidden; word-break:break-word; }
+  .kk-puzzle-slot.is-target { border-color:#fbbf24; background:rgba(251,191,36,.12); }
+  .kk-puzzle-piece { cursor:grab; border-style:solid; background:linear-gradient(135deg,#fb7185,#22d3ee); color:white; font-weight:900; box-shadow:0 14px 28px rgba(0,0,0,.25); }
+  .kk-puzzle-piece.is-selected { outline:3px solid #fbbf24; transform:scale(.98); }
+  .kk-puzzle-piece img { max-width:100%; max-height:72px; object-fit:contain; border-radius:12px; margin-right:.45rem; }
+  .kk-puzzle-slot.is-filled { border-style:solid; background:rgba(255,255,255,.10); }
+  @media (max-width:640px) { .kk-picture-choice-grid, .kk-puzzle-slots, .kk-puzzle-pieces { grid-template-columns:1fr !important; } }
 </style>
 </head>
 <body>
@@ -50,6 +454,13 @@
       {% endfor %}
     </div>
     <button class="kk-btn kk-btn-primary kk-btn-lg w-100" id="nick-go">Enter the arena <i class="bi bi-fire"></i></button>
+  </div>
+
+  <div id="step-rooms" class="kk-play-card" style="display:none;">
+    <h2 class="mb-1">Pick your room</h2>
+    <p class="text-secondary small mb-1">Tap a door to step in. Doors lock when full.</p>
+    <div class="kk-rooms-wrap" id="rooms-wrap"></div>
+    <div class="kk-rooms-toast" id="rooms-toast" aria-live="polite"></div>
   </div>
 
   <div id="step-wait" class="kk-play-card" style="display:none;">
@@ -81,6 +492,536 @@
   </div>
 </div>
 
-<script src="{% static 'js/play.js' %}?v=3"></script>
+{# Avatar catalog — must load BEFORE the rooms shim and play.js. #}
+{% include "games/partials/avatar_data.html" with avatars=avatars %}
+
+<script>
+/* ─────────────────────────────────────────────────────────────────────
+   ROOMS SHIM — WebSocket-wrapping approach
+   ─────────────────────────────────────────────────────────────────────
+   We wrap window.WebSocket BEFORE play.js loads. When play.js opens
+   its socket, we get a reference to it. Then:
+
+     - When `state` arrives with non-empty `rooms` AND `my_room` is
+       empty, we show the door picker (and hide whatever step play.js
+       was showing).
+     - When the user taps a door, we send `room_join_request` over
+       PLAY.JS's OWN socket — no second connection needed.
+     - When `room_join_result` arrives with ok=true, we animate the
+       door open and then dismiss the door picker. play.js receives
+       the subsequent `state` (which contains `my_room`) on the same
+       socket and updates the wait/question UI naturally.
+
+   This sidesteps any conflict with play.js's click handler, button
+   binding, or its own socket lifecycle — we never touch any of them.
+──────────────────────────────────────────────────────────────────── */
+(function () {
+  const play = document.getElementById("play");
+  if (!play) return;
+
+  // ───── Avatar lookup ─────
+  // Reuse the shared catalog populated above (same source of truth
+  // play.js uses, so anime avatars resolve correctly).
+  const AVATARS = window.kkAvatarsById || {};
+  function emojiFor(id, fallbackEmoji) {
+    const key = String(id || "");
+    return (AVATARS[key] && AVATARS[key].emoji) || fallbackEmoji || "🐉";
+  }
+
+  function escapeHtml(s) {
+    return String(s || "").replace(/[&<>"']/g, c => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    })[c]);
+  }
+
+  // ───── Wrap WebSocket so we hook into play.js's socket ─────
+  const RealWS = window.WebSocket;
+  let socket = null; // play.js's socket, captured on construction
+
+  function WrappedWS(url, protocols) {
+    const ws = protocols ? new RealWS(url, protocols) : new RealWS(url);
+
+    // Only the first session-WS the page opens is the one play.js uses
+    // for the live game; if for some reason more are opened we still
+    // listen to all of them (last one wins).
+    if (typeof url === "string" && url.indexOf("/ws/session/") !== -1) {
+      socket = ws;
+      ws.addEventListener("message", onSocketMessage);
+    }
+
+    return ws;
+  }
+  WrappedWS.prototype = RealWS.prototype;
+  WrappedWS.CONNECTING = RealWS.CONNECTING;
+  WrappedWS.OPEN = RealWS.OPEN;
+  WrappedWS.CLOSING = RealWS.CLOSING;
+  WrappedWS.CLOSED = RealWS.CLOSED;
+  window.WebSocket = WrappedWS;
+
+  // ───── State ─────
+  let pickerShown = false;
+  let acceptedRoom = false; // true once server granted us a room
+  let lastRoomsSnapshot = null;
+  let myCurrentAvatar = "dragon";
+
+  // ───── DOM helpers ─────
+  function $(id) { return document.getElementById(id); }
+
+  function selectedAvatar() {
+    const grid = $("avatar-grid");
+    if (!grid) return "dragon";
+    const tile = grid.querySelector(".kk-avatar-tile.selected");
+    return (tile && tile.dataset.avatarId) || "dragon";
+  }
+
+  function toast(msg, ok) {
+    const el = $("rooms-toast");
+    if (!el) return;
+    el.textContent = msg || "";
+    el.style.color = ok ? "#86efac" : "#fca5a5";
+    if (msg) {
+      setTimeout(() => {
+        if (el.textContent === msg) el.textContent = "";
+      }, 2400);
+    }
+  }
+
+  function renderRooms(rooms) {
+    const wrap = $("rooms-wrap");
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    rooms.forEach(r => {
+      const door = document.createElement("div");
+      door.className = "kk-room-door";
+      if (r.is_full) door.classList.add("is-full");
+      door.dataset.slug = r.slug;
+      door.innerHTML = `
+        <span class="kk-door-cap ${r.is_full ? "is-full" : ""}">${r.occupancy}/${r.capacity}</span>
+        <div class="kk-door-avatar kk-anim-bob">${emojiFor(r.avatar_id, r.emoji)}</div>
+        <div class="kk-door-panel"></div>
+        <span class="kk-door-player">${emojiFor(myCurrentAvatar || selectedAvatar(), "🐉")}</span>
+        <div class="kk-door-name">${escapeHtml(r.name)}</div>
+      `;
+      door.addEventListener("click", () => onDoorClick(door, r));
+      wrap.appendChild(door);
+    });
+  }
+
+  function updateOccupancy(rooms) {
+    const wrap = $("rooms-wrap");
+    if (!wrap) return;
+    rooms.forEach(r => {
+      const door = wrap.querySelector(`.kk-room-door[data-slug="${CSS.escape(r.slug)}"]`);
+      if (!door) return;
+      door.classList.toggle("is-full", !!r.is_full);
+      const cap = door.querySelector(".kk-door-cap");
+      if (cap) {
+        cap.textContent = `${r.occupancy}/${r.capacity}`;
+        cap.classList.toggle("is-full", !!r.is_full);
+      }
+    });
+  }
+
+  function showPicker(rooms) {
+    if (pickerShown) {
+      renderRooms(rooms);
+      return;
+    }
+    pickerShown = true;
+
+    // Hide every other step. play.js may have shown #step-wait already;
+    // we cover it with #step-rooms.
+    ["step-nick", "step-wait", "step-question", "step-ended"].forEach(id => {
+      const el = $(id);
+      if (el) el.style.display = "none";
+    });
+    const roomsStep = $("step-rooms");
+    if (roomsStep) roomsStep.style.display = "";
+    renderRooms(rooms);
+  }
+
+  function hidePicker() {
+    const roomsStep = $("step-rooms");
+    if (roomsStep) roomsStep.style.display = "none";
+    // Re-show the wait step so the user isn't on a blank page; play.js
+    // will swap to #step-question when the host starts the game.
+    const wait = $("step-wait");
+    if (wait) wait.style.display = "";
+  }
+
+  // ───── Socket message handler ─────
+  function onSocketMessage(ev) {
+    let msg = null;
+    try { msg = JSON.parse(ev.data); } catch (e) { return; }
+    if (!msg || !msg.type) return;
+
+    if (msg.type === "state") {
+      // Track our own avatar so the door animation matches.
+      if (msg.my_avatar) myCurrentAvatar = msg.my_avatar;
+
+      const rooms = Array.isArray(msg.rooms) ? msg.rooms : [];
+      lastRoomsSnapshot = rooms;
+
+      // Don't show the picker until play.js has actually sent its
+      // hello and the server has registered us. The signal: my_nickname
+      // appears in the state. Before that, the picker would overlap
+      // the nickname-entry screen.
+      const helloProcessed = !!msg.my_nickname;
+      const inRoom = !!msg.my_room;
+
+      if (rooms.length && helloProcessed && !inRoom && !acceptedRoom) {
+        // Server thinks we still need a room — show the picker.
+        showPicker(rooms);
+      } else if (rooms.length && pickerShown) {
+        updateOccupancy(rooms);
+      }
+      // If no rooms at all (rooms.length === 0) we do nothing — play.js
+      // is in full control.
+    } else if (msg.type === "rooms") {
+      lastRoomsSnapshot = msg.rooms;
+      if (pickerShown) updateOccupancy(msg.rooms);
+    } else if (msg.type === "room_join_result") {
+      handleJoinResult(msg);
+    }
+  }
+
+  // ───── Door click → send via play.js's socket ─────
+  function onDoorClick(doorEl, room) {
+    if (doorEl.classList.contains("is-opening")) return;
+    if (doorEl.classList.contains("is-full")) {
+      doorEl.classList.add("shake");
+      setTimeout(() => doorEl.classList.remove("shake"), 500);
+      toast("That room is full — try another door.", false);
+      return;
+    }
+    if (!socket || socket.readyState !== RealWS.OPEN) {
+      toast("Reconnecting…", false);
+      return;
+    }
+    // Refresh player avatar inside door.
+    const playerEl = doorEl.querySelector(".kk-door-player");
+    if (playerEl) playerEl.textContent = emojiFor(myCurrentAvatar || selectedAvatar());
+
+    socket.send(JSON.stringify({ type: "room_join_request", room_id: room.slug }));
+  }
+
+  function handleJoinResult(msg) {
+    const wrap = $("rooms-wrap");
+    const door = wrap && msg.room_id
+      ? wrap.querySelector(`.kk-room-door[data-slug="${CSS.escape(msg.room_id)}"]`)
+      : null;
+
+    if (!msg.ok) {
+      if (msg.reason === "full") {
+        toast("Too late — that room just filled up!", false);
+        if (door) {
+          door.classList.add("shake", "is-full");
+          setTimeout(() => door.classList.remove("shake"), 500);
+        }
+      } else if (msg.reason === "no_such_room") {
+        toast("That room no longer exists.", false);
+      } else if (msg.reason === "not_joined") {
+        toast("Joining session — try again in a moment.", false);
+      } else {
+        toast("Couldn't enter the room.", false);
+      }
+      return;
+    }
+
+    // Accepted!
+    acceptedRoom = true;
+
+    if (msg.room && msg.room.name) {
+      const tag = $("room-tag");
+      if (tag) {
+        tag.textContent = `Room: ${msg.room.name}`;
+        tag.style.display = "";
+      }
+    }
+
+    if (door) {
+      door.classList.add("is-opening");
+      setTimeout(hidePicker, 1250);
+    } else {
+      hidePicker();
+    }
+  }
+})();
+</script>
+
+<script>
+/* ─────────────────────────────────────────────────────────────────────
+   QUESTION-STYLING SHIM
+   ─────────────────────────────────────────────────────────────────────
+   Applies the author's chosen typography, colors, alignment, and answer
+   tile shape (saved on the GameQuestion model) to the live question
+   screen. Reads them from whatever WebSocket messages carry the
+   `question` object — same payload play.js already consumes.
+
+   Expected fields on the question payload (matching the model):
+     font_family, font_size, font_bold,
+     text_italic, text_underline, text_align,
+     text_color, background_color, background_gradient_to,
+     answer_shape
+
+   This shim never asks the server for anything; it only observes. If
+   your consumer doesn't already serialize the new model fields onto
+   the socket, add them there and they'll flow through automatically.
+   ───────────────────────────────────────────────────────────────── */
+(function () {
+  const FONT_STACK = {
+    default: "Inter, system-ui, sans-serif",
+    clash:   "'Clash Display', system-ui, sans-serif",
+    space:   "'Space Grotesk', system-ui, sans-serif",
+    serif:   "'Playfair Display', Georgia, serif",
+    mono:    "'JetBrains Mono', ui-monospace, monospace",
+    comic:   "'Comic Neue', 'Comic Sans MS', cursive",
+    press:   "'Press Start 2P', system-ui, monospace",
+  };
+
+  const stepQ  = document.getElementById("step-question");
+  const qText  = document.getElementById("q-text");
+  const tiles  = document.getElementById("tiles");
+  if (!stepQ || !qText || !tiles) return;
+
+  // Latest styling info — captured from socket, applied whenever the
+  // question screen becomes visible or the tile list changes.
+  let currentStyling = null;
+
+  function applyToText(s) {
+    if (!s) return;
+    qText.style.fontFamily = FONT_STACK[s.font_family] || FONT_STACK.default;
+    if (s.font_size) {
+      const rawSize = Math.min(96, Math.max(16, Number(s.font_size)));
+      // Do not multiply by 1.4 on phones; that is what makes long text
+      // escape the card. Respect the author's size but cap it responsively.
+      qText.style.fontSize = `clamp(1.15rem, ${Math.max(4.8, rawSize / 8)}vw, ${rawSize}px)`;
+    }
+    qText.style.fontWeight    = (s.font_bold !== false) ? "800" : "500";
+    qText.style.fontStyle     = s.text_italic    ? "italic"    : "normal";
+    qText.style.textDecoration = s.text_underline ? "underline" : "none";
+    qText.style.textAlign     = s.text_align || "center";
+    if (s.text_color)         qText.style.color = s.text_color;
+    qText.style.lineHeight    = s.font_family === "press" ? "1.35" : "1.05";
+  }
+
+  function applyToCard(s) {
+    if (!s) return;
+    stepQ.classList.add("kk-styled");
+    if (s.background_gradient_to) {
+      stepQ.style.setProperty("--kk-q-bg",
+        `linear-gradient(135deg, ${s.background_color || "#1e293b"}, ${s.background_gradient_to})`);
+    } else if (s.background_color) {
+      stepQ.style.setProperty("--kk-q-bg", s.background_color);
+    }
+  }
+
+  function applyShapeToTiles(s) {
+    if (!s) return;
+    const shape = s.answer_shape || "rounded";
+    tiles.classList.add("kk-shaped");
+    // Every immediate child of #tiles is one answer tile (play.js
+    // renders them however it likes — we just decorate them).
+    Array.from(tiles.children).forEach((tile) => {
+      tile.setAttribute("data-shape", shape);
+
+      // For diamond shape we need the label inside a wrapper so we can
+      // counter-rotate it. If play.js didn't wrap it, do it once.
+      if (shape === "diamond" && !tile.querySelector(".kk-tile-label")) {
+        const label = document.createElement("span");
+        label.className = "kk-tile-label";
+        // Move all current children into the wrapper.
+        while (tile.firstChild) label.appendChild(tile.firstChild);
+        tile.appendChild(label);
+      }
+    });
+  }
+
+  function applyAll() {
+    applyToText(currentStyling);
+    applyToCard(currentStyling);
+    applyShapeToTiles(currentStyling);
+  }
+
+  // ── Watch #tiles so we re-apply shape whenever play.js (re)renders ──
+  const tileObserver = new MutationObserver(() => applyShapeToTiles(currentStyling));
+  tileObserver.observe(tiles, { childList: true });
+
+  // Also re-apply when #step-question becomes visible (style.display
+  // change). Catches the transition from wait → question screen.
+  const stepObserver = new MutationObserver(() => {
+    if (stepQ.style.display !== "none") applyAll();
+  });
+  stepObserver.observe(stepQ, { attributes: true, attributeFilter: ["style"] });
+
+  // ── Wrap WebSocket (same pattern as the rooms shim above) ──────────
+  const RealWS = window.WebSocket;
+  function WrappedWS(url, protocols) {
+    const ws = protocols ? new RealWS(url, protocols) : new RealWS(url);
+    if (typeof url === "string" && url.indexOf("/ws/session/") !== -1) {
+      ws.addEventListener("message", onSocketMessage);
+    }
+    return ws;
+  }
+  WrappedWS.prototype = RealWS.prototype;
+  WrappedWS.CONNECTING = RealWS.CONNECTING;
+  WrappedWS.OPEN = RealWS.OPEN;
+  WrappedWS.CLOSING = RealWS.CLOSING;
+  WrappedWS.CLOSED = RealWS.CLOSED;
+  // If the rooms shim already wrapped WebSocket, we wrap *its* wrapper
+  // — that's fine because both forward to the underlying socket.
+  window.WebSocket = WrappedWS;
+
+  function onSocketMessage(ev) {
+    let msg = null;
+    try { msg = JSON.parse(ev.data); } catch (e) { return; }
+    if (!msg) return;
+
+    // The question may arrive on a top-level `question` field (in a
+    // `state` message), or as the message itself when type === "question".
+    // We accept either shape; we only care about the styling fields.
+    const q =
+      (msg.question && typeof msg.question === "object") ? msg.question :
+      (msg.type === "question") ? msg :
+      null;
+    if (!q) return;
+
+    currentStyling = {
+      font_family:            q.font_family,
+      font_size:              q.font_size,
+      font_bold:              q.font_bold,
+      text_italic:            q.text_italic,
+      text_underline:         q.text_underline,
+      text_align:             q.text_align,
+      text_color:             q.text_color,
+      background_color:       q.background_color,
+      background_gradient_to: q.background_gradient_to,
+      answer_shape:           q.answer_shape,
+    };
+    applyAll();
+  }
+})();
+</script>
+
+
+
+<script>
+/* Special game-question renderer: picture choice + puzzle. Must load BEFORE play.js. */
+(function () {
+  const tiles = document.getElementById("tiles");
+  const qText = document.getElementById("q-text");
+  if (!tiles || !qText) return;
+
+  let wsRef = null;
+  let currentQuestion = null;
+  let selectedPuzzlePiece = null;
+  const RealWS = window.WebSocket;
+
+  function send(obj) {
+    if (wsRef && wsRef.readyState === RealWS.OPEN) wsRef.send(JSON.stringify(obj));
+  }
+
+  function escapeHtml(s) {
+    return String(s || "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+  }
+
+  function renderPictureChoice(q) {
+    tiles.className = "kk-picture-choice-grid";
+    tiles.innerHTML = "";
+    (q.choices || []).forEach(choice => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "kk-picture-choice-card";
+      btn.innerHTML = `${choice.image_url ? `<img src="${choice.image_url}" alt="">` : `<div style="font-size:3rem;">🖼️</div>`}<strong>${escapeHtml(choice.text || "Picture")}</strong>`;
+      btn.addEventListener("click", () => {
+        send({type:"answer", question_id:q.id, choice_id:choice.id});
+        btn.style.outline = "3px solid #fbbf24";
+        Array.from(tiles.children).forEach(x => { if (x !== btn) x.disabled = true; });
+      });
+      tiles.appendChild(btn);
+    });
+  }
+
+  function renderPuzzle(q) {
+    tiles.className = "kk-puzzle-board";
+    selectedPuzzlePiece = null;
+    const pieces = [...(q.choices || [])].sort(() => Math.random() - 0.5);
+    tiles.innerHTML = `
+      <div class="text-secondary small text-center mb-1">Drag the pieces into the correct order. On phones, tap a piece then tap a slot.</div>
+      <div class="kk-puzzle-slots" id="kk-puzzle-slots">${pieces.map((_, i) => `<div class="kk-puzzle-slot" data-slot="${i}">Drop piece ${i + 1}</div>`).join("")}</div>
+      <div class="kk-puzzle-pieces" id="kk-puzzle-pieces">${pieces.map(piece => `<div class="kk-puzzle-piece" draggable="true" data-choice-id="${piece.id}">${piece.image_url ? `<img src="${piece.image_url}" alt="">` : ""}<span>${escapeHtml(piece.text || "Piece")}</span></div>`).join("")}</div>
+      <button type="button" class="kk-btn kk-btn-primary kk-btn-lg w-100 mt-3" id="kk-submit-puzzle">Submit puzzle <i class="bi bi-puzzle"></i></button>`;
+
+    let dragged = null;
+    function clearSelection() {
+      tiles.querySelectorAll(".kk-puzzle-piece").forEach(p => p.classList.remove("is-selected"));
+      tiles.querySelectorAll(".kk-puzzle-slot").forEach(s => s.classList.remove("is-target"));
+      selectedPuzzlePiece = null;
+    }
+    function placePiece(slot, piece) {
+      if (!slot || !piece) return;
+      slot.innerHTML = "";
+      slot.appendChild(piece);
+      slot.classList.add("is-filled");
+      clearSelection();
+    }
+    tiles.querySelectorAll(".kk-puzzle-piece").forEach(piece => {
+      piece.addEventListener("dragstart", () => { dragged = piece; });
+      piece.addEventListener("click", () => {
+        clearSelection();
+        selectedPuzzlePiece = piece;
+        piece.classList.add("is-selected");
+        tiles.querySelectorAll(".kk-puzzle-slot").forEach(s => s.classList.add("is-target"));
+      });
+    });
+    tiles.querySelectorAll(".kk-puzzle-slot").forEach(slot => {
+      slot.addEventListener("dragover", e => e.preventDefault());
+      slot.addEventListener("drop", e => { e.preventDefault(); placePiece(slot, dragged); dragged = null; });
+      slot.addEventListener("click", () => { if (selectedPuzzlePiece) placePiece(slot, selectedPuzzlePiece); });
+    });
+    const submit = document.getElementById("kk-submit-puzzle");
+    if (submit) submit.addEventListener("click", () => {
+      const order = Array.from(tiles.querySelectorAll(".kk-puzzle-slot .kk-puzzle-piece")).map(el => Number(el.dataset.choiceId)).filter(Boolean);
+      if (order.length !== (q.choices || []).length) { alert("Please place all puzzle pieces first."); return; }
+      send({type:"answer", question_id:q.id, puzzle_order:order});
+      submit.disabled = true;
+      submit.innerHTML = `Submitted <i class="bi bi-check2-circle"></i>`;
+    });
+  }
+
+  function maybeRenderSpecialQuestion(q) {
+    const qtype = String((q && (q.type || q.question_type)) || "mcq");
+    if (qtype === "picture_choice") setTimeout(() => renderPictureChoice(q), 0);
+    if (qtype === "puzzle") setTimeout(() => renderPuzzle(q), 0);
+  }
+
+  function WrappedWS(url, protocols) {
+    const ws = protocols ? new RealWS(url, protocols) : new RealWS(url);
+    if (typeof url === "string" && url.indexOf("/ws/session/") !== -1) {
+      wsRef = ws;
+      ws.addEventListener("message", ev => {
+        let msg = null;
+        try { msg = JSON.parse(ev.data); } catch (e) { return; }
+        const q = msg.question || (msg.type === "question" ? msg : null);
+        if (!q) return;
+        const incomingId = String(q.id || "");
+        const currentId = currentQuestion ? String(currentQuestion.id || "") : "";
+        if (incomingId && incomingId === currentId) return;
+        currentQuestion = q;
+        maybeRenderSpecialQuestion(q);
+      });
+    }
+    return ws;
+  }
+  WrappedWS.prototype = RealWS.prototype;
+  WrappedWS.CONNECTING = RealWS.CONNECTING;
+  WrappedWS.OPEN = RealWS.OPEN;
+  WrappedWS.CLOSING = RealWS.CLOSING;
+  WrappedWS.CLOSED = RealWS.CLOSED;
+  window.WebSocket = WrappedWS;
+})();
+</script>
+
+<script src="{% static 'js/play.js' %}?v=4"></script>
 </body>
 </html>

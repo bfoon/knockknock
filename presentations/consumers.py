@@ -60,6 +60,7 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             "group_display": self._on_group_display,
             "fullscreen": self._on_fullscreen,
             "ping": self._on_ping,
+            "room_join_request": self._on_room_join_request,
         }.get(t)
 
         if not handler:
@@ -85,14 +86,19 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 nickname = (msg.get("nickname") or "Guest").strip()[:40]
                 avatar_id = msg.get("avatar_id") or "dragon"
 
+            requested_room = msg.get("room_id") or ""
+
             await self._register_participant(
                 self.session_pk,
                 self.uid,
                 nickname,
                 avatar_id,
+                requested_room,
             )
 
             await self._broadcast_state()
+            # Rooms occupancy may have changed; refresh everyone's room view.
+            await self._broadcast_rooms_update()
 
             session = await self._get_session(self.code)
             if session and session.kind == "game":
@@ -317,6 +323,38 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             "t": time.time(),
         })
 
+    async def _on_room_join_request(self, msg):
+        """Participant tapped a specific room's door.
+
+        We attempt to seat them. Three outcomes are signalled back:
+          - granted: they're now in this room (door swings open client-side)
+          - denied_full: room is at capacity
+          - denied_no_such_room: room slug doesn't exist for this quiz
+        Either way, an updated rooms snapshot is broadcast so other
+        participants see the new occupancy in real time.
+        """
+        if self.role != "participant":
+            return
+
+        room_slug = (msg.get("room_id") or "").strip()
+        if not room_slug:
+            await self.send_json({"type": "room_join_result", "ok": False, "reason": "missing"})
+            return
+
+        result = await self._try_seat_in_room(self.session_pk, self.uid, room_slug)
+
+        await self.send_json({
+            "type": "room_join_result",
+            "ok": result["ok"],
+            "reason": result.get("reason", ""),
+            "room_id": room_slug,
+            "room": result.get("room"),
+        })
+
+        if result["ok"]:
+            # Tell everyone the door count moved.
+            await self._broadcast_rooms_update()
+
     async def broadcast(self, event):
         payload = event["payload"]
 
@@ -337,6 +375,23 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             {
                 "type": "broadcast",
                 "payload": payload,
+            },
+        )
+
+    async def _broadcast_rooms_update(self):
+        """Push the current rooms-with-occupancy snapshot to everyone."""
+        rooms = await self._rooms_snapshot(self.session_pk)
+        if rooms is None:
+            return  # Quiz isn't using rooms.
+
+        await self.channel_layer.group_send(
+            self.group,
+            {
+                "type": "broadcast",
+                "payload": {
+                    "type": "rooms",
+                    "rooms": rooms,
+                },
             },
         )
 
@@ -368,7 +423,22 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             return None
 
     @database_sync_to_async
-    def _register_participant(self, session_pk, uid, nickname, avatar_id):
+    def _register_participant(self, session_pk, uid, nickname, avatar_id, requested_room=""):
+        """Persist (or refresh) a participant.
+
+        Room policy:
+          - If the quiz uses rooms AND has named rooms defined, the
+            participant DOES NOT get auto-routed. They have to pick a
+            door via room_join_request. Their room_id stays blank until
+            they do — the UI uses that as the "show room picker" signal.
+          - If the quiz uses rooms but has no named rooms defined, we
+            keep the legacy auto-fill behaviour for back-compat.
+          - If the participant already has a room, preserve it.
+          - If they ARE rejoining with a requested room slug and it's
+            valid + not full, seat them in it.
+        """
+        from games.models import GameRoom
+
         session = LiveSession.objects.get(pk=session_pk)
 
         existing = Participant.objects.filter(
@@ -376,34 +446,60 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             participant_uid=uid,
         ).first()
 
+        # Decide the room slug.
+        room_id = ""
+
+        uses_rooms = (
+            session.kind == "game"
+            and session.quiz
+            and session.quiz.use_rooms
+        )
+
+        named_rooms = []
+        if uses_rooms:
+            named_rooms = list(session.quiz.rooms.all())
+
         if existing and existing.room_id:
-            room_id = existing.room_id
-        else:
-            room_id = ""
+            # Keep them where they were (they came back into the same browser).
+            # If their room was deleted by the presenter, clear it.
+            if not named_rooms or any(r.slug == existing.room_id for r in named_rooms):
+                room_id = existing.room_id
 
-            if session.kind == "game" and session.quiz and session.quiz.use_rooms:
+        elif uses_rooms and named_rooms and requested_room:
+            # New-style: participant explicitly requested a door.
+            target = next((r for r in named_rooms if r.slug == requested_room), None)
+            if target:
                 cap = session.quiz.room_capacity
-
-                from collections import Counter
-
-                occupancy = Counter(
+                occupied = (
                     Participant.objects
-                    .filter(session=session)
-                    .exclude(room_id="")
-                    .values_list("room_id", flat=True)
+                    .filter(session=session, room_id=target.slug)
+                    .count()
                 )
+                if occupied < cap:
+                    room_id = target.slug
 
-                chosen = None
+        elif uses_rooms and not named_rooms:
+            # Legacy auto-fill: fill earliest non-full bucket.
+            cap = session.quiz.room_capacity
 
-                for rid, count in occupancy.items():
-                    if count < cap:
-                        chosen = rid
-                        break
+            from collections import Counter
+            occupancy = Counter(
+                Participant.objects
+                .filter(session=session)
+                .exclude(room_id="")
+                .values_list("room_id", flat=True)
+            )
 
-                if not chosen:
-                    chosen = f"room-{len(occupancy) + 1}"
+            chosen = None
+            for rid, count in occupancy.items():
+                if count < cap:
+                    chosen = rid
+                    break
 
-                room_id = chosen
+            if not chosen:
+                chosen = f"room-{len(occupancy) + 1}"
+
+            room_id = chosen
 
         Participant.objects.update_or_create(
             session=session,
@@ -414,6 +510,104 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 "room_id": room_id,
             },
         )
+
+    @database_sync_to_async
+    def _try_seat_in_room(self, session_pk, uid, room_slug):
+        """Atomically try to put this participant in the named room.
+
+        Returns {"ok": bool, "reason": str, "room": {...}|None}.
+        """
+        from django.db import transaction
+        from games.models import GameRoom
+
+        with transaction.atomic():
+            session = LiveSession.objects.select_for_update().get(pk=session_pk)
+
+            if not (session.quiz and session.quiz.use_rooms):
+                return {"ok": False, "reason": "rooms_disabled", "room": None}
+
+            try:
+                room = GameRoom.objects.get(quiz=session.quiz, slug=room_slug)
+            except GameRoom.DoesNotExist:
+                return {"ok": False, "reason": "no_such_room", "room": None}
+
+            participant = (
+                Participant.objects
+                .select_for_update()
+                .filter(session=session, participant_uid=uid)
+                .first()
+            )
+            if not participant:
+                return {"ok": False, "reason": "not_joined", "room": None}
+
+            # Already in this room? Just confirm.
+            if participant.room_id == room.slug:
+                return {
+                    "ok": True,
+                    "reason": "already_in",
+                    "room": {"slug": room.slug, "name": room.name, "avatar_id": room.avatar_id},
+                }
+
+            cap = session.quiz.room_capacity
+            occupied = (
+                Participant.objects
+                .filter(session=session, room_id=room.slug)
+                .exclude(pk=participant.pk)
+                .count()
+            )
+            if occupied >= cap:
+                return {"ok": False, "reason": "full", "room": None}
+
+            participant.room_id = room.slug
+            participant.save(update_fields=["room_id"])
+
+            return {
+                "ok": True,
+                "reason": "granted",
+                "room": {"slug": room.slug, "name": room.name, "avatar_id": room.avatar_id},
+            }
+
+    @database_sync_to_async
+    def _rooms_snapshot(self, session_pk):
+        """Return [{slug, name, avatar_id, capacity, occupancy, is_full}, ...]
+        for the session's quiz. Returns None when the quiz isn't using rooms
+        OR has no named rooms defined."""
+        from collections import Counter
+        from games.models import GameRoom
+
+        session = (
+            LiveSession.objects
+            .select_related("quiz")
+            .get(pk=session_pk)
+        )
+
+        if not (session.kind == "game" and session.quiz and session.quiz.use_rooms):
+            return None
+
+        rooms = list(GameRoom.objects.filter(quiz=session.quiz).order_by("order", "id"))
+        if not rooms:
+            return None
+
+        cap = session.quiz.room_capacity
+
+        occupancy = Counter(
+            Participant.objects
+            .filter(session=session)
+            .exclude(room_id="")
+            .values_list("room_id", flat=True)
+        )
+
+        return [
+            {
+                "slug": r.slug,
+                "name": r.name,
+                "avatar_id": r.avatar_id,
+                "capacity": cap,
+                "occupancy": occupancy.get(r.slug, 0),
+                "is_full": occupancy.get(r.slug, 0) >= cap,
+            }
+            for r in rooms
+        ]
 
     @database_sync_to_async
     def _advance(self, session_pk, delta):
@@ -612,6 +806,38 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 "normal",
             ),
         }
+
+        # Rooms snapshot — included whenever a game uses rooms and has
+        # named rooms defined. The client uses this to render the door
+        # picker and to update occupancy in real time.
+        if (
+            session.kind == "game"
+            and session.quiz
+            and session.quiz.use_rooms
+        ):
+            from collections import Counter
+            from games.models import GameRoom
+
+            rooms_qs = list(GameRoom.objects.filter(quiz=session.quiz).order_by("order", "id"))
+            if rooms_qs:
+                cap = session.quiz.room_capacity
+                occupancy = Counter(
+                    Participant.objects
+                    .filter(session=session)
+                    .exclude(room_id="")
+                    .values_list("room_id", flat=True)
+                )
+                payload["rooms"] = [
+                    {
+                        "slug": r.slug,
+                        "name": r.name,
+                        "avatar_id": r.avatar_id,
+                        "capacity": cap,
+                        "occupancy": occupancy.get(r.slug, 0),
+                        "is_full": occupancy.get(r.slug, 0) >= cap,
+                    }
+                    for r in rooms_qs
+                ]
 
         if uid and role == "participant":
             try:
@@ -942,19 +1168,31 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
 
         if session.kind == "game" and session.quiz and session.quiz.use_rooms:
             from collections import defaultdict
+            from games.models import GameRoom
+
+            # Map slug → (name, avatar_id) for named rooms; legacy auto-
+            # filled slugs ("room-1" etc.) won't be in this map and fall
+            # back to displaying the slug as-is.
+            room_meta = {
+                r.slug: {"name": r.name, "avatar_id": r.avatar_id}
+                for r in GameRoom.objects.filter(quiz=session.quiz)
+            }
 
             buckets = defaultdict(list)
 
             for p in session.participants.all():
                 buckets[p.room_id or "—"].append(p.score)
 
-            rows = [
-                {
-                    "name": rid,
+            rows = []
+            for rid, scores in buckets.items():
+                meta = room_meta.get(rid, {})
+                rows.append({
+                    "slug": rid,
+                    "name": meta.get("name") or rid or "—",
+                    "avatar_id": meta.get("avatar_id") or "dragon",
                     "score": round(sum(scores) / len(scores), 1),
-                }
-                for rid, scores in buckets.items()
-            ]
+                    "members": len(scores),
+                })
 
             rows.sort(key=lambda r: r["score"], reverse=True)
 

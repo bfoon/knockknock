@@ -4,13 +4,14 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse, HttpResponseBadRequest
 from django.shortcuts import render, redirect, get_object_or_404
+from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
 from core.templates_registry import TEMPLATES, get_template
 from presentations.models import LiveSession
 from .avatars import AVATARS, avatars_grouped
-from .forms import QuizForm, GameQuestionForm, GameChoiceFormSet
-from .models import Quiz, GameQuestion, GameChoice
+from .forms import QuizForm, GameQuestionForm, GameChoiceFormSet, GameRoomFormSet
+from .models import Quiz, GameQuestion, GameChoice, GameRoom
 
 
 @login_required
@@ -37,30 +38,114 @@ def create(request):
 @login_required
 def edit(request, pk):
     quiz = get_object_or_404(Quiz, pk=pk, owner=request.user)
+
     if request.method == "POST":
         form = QuizForm(request.POST, request.FILES, instance=quiz)
-        if form.is_valid():
+        room_formset = GameRoomFormSet(request.POST, instance=quiz, prefix="rooms")
+
+        quiz_ok = form.is_valid()
+        rooms_ok = room_formset.is_valid()
+
+        if quiz_ok and rooms_ok:
             form.save()
+
+            # Save rooms one by one so we can fill in derived slugs and
+            # avoid colliding ones. We rely on each form's cleaned_data
+            # because the slug may have been computed in clean().
+            for f in room_formset.forms:
+                if not f.cleaned_data:
+                    # Empty extra row → skip.
+                    continue
+                if f.cleaned_data.get("DELETE"):
+                    if f.instance.pk:
+                        f.instance.delete()
+                    continue
+
+                obj = f.save(commit=False)
+                obj.quiz = quiz
+
+                # Pull the derived slug (clean() may have computed it).
+                slug = (f.cleaned_data.get("slug") or "").strip()
+                if not slug:
+                    slug = slugify(f.cleaned_data.get("name") or "") or "room"
+
+                # If the slug collides with a sibling, suffix it.
+                base, i = slug, 2
+                while GameRoom.objects.filter(quiz=quiz, slug=slug).exclude(pk=obj.pk).exists():
+                    slug = f"{base}-{i}"
+                    i += 1
+                obj.slug = slug
+
+                # Fill remaining defaults from cleaned_data.
+                obj.avatar_id = (f.cleaned_data.get("avatar_id") or "dragon").strip() or "dragon"
+                obj.order = f.cleaned_data.get("order") or 0
+                obj.name = (f.cleaned_data.get("name") or "").strip()
+
+                obj.save()
+
             messages.success(request, "Saved.")
             return redirect("games:edit", pk=pk)
+        else:
+            # Surface formset errors so the user can see why it failed
+            # instead of silently re-rendering an empty rooms list.
+            if not rooms_ok:
+                err_summary = []
+                for i, f in enumerate(room_formset.forms):
+                    if f.errors:
+                        err_summary.append(f"Room #{i + 1}: " + "; ".join(
+                            f"{k}: {', '.join(v)}" for k, v in f.errors.items()
+                        ))
+                if room_formset.non_form_errors():
+                    err_summary.append("; ".join(room_formset.non_form_errors()))
+                if err_summary:
+                    messages.error(request, "Couldn't save rooms — " + " | ".join(err_summary))
     else:
         form = QuizForm(instance=quiz)
+        room_formset = GameRoomFormSet(instance=quiz, prefix="rooms")
+
     return render(request, "games/edit.html", {
         "form": form,
         "quiz": quiz,
         "templates": TEMPLATES,
         "selected_template": get_template(quiz.template_id),
+        "room_formset": room_formset,
+        "avatars": AVATARS,
+        "avatar_groups": avatars_grouped(),
     })
 
 
 @login_required
 def question_create(request, pk):
     quiz = get_object_or_404(Quiz, pk=pk, owner=request.user)
+
+    qtype = request.GET.get("type", "mcq")
+    allowed = {value for value, _label in GameQuestion.QUESTION_TYPE_CHOICES}
+    if qtype not in allowed:
+        qtype = "mcq"
+
+    default_text = {
+        "mcq": "New question",
+        "picture_choice": "Select the correct picture",
+        "puzzle": "Arrange the puzzle pieces in the correct order",
+    }.get(qtype, "New question")
+
     q = GameQuestion.objects.create(
-        quiz=quiz, text="New question", order=quiz.questions.count(),
+        quiz=quiz,
+        question_type=qtype,
+        text=default_text,
+        order=quiz.questions.count(),
     )
-    for i, t in enumerate(["Red", "Blue", "Yellow", "Green"]):
-        GameChoice.objects.create(question=q, text=t, order=i, is_correct=(i == 0))
+
+    if qtype == "puzzle":
+        for i, text in enumerate(["Piece 1", "Piece 2", "Piece 3", "Piece 4"], start=1):
+            GameChoice.objects.create(question=q, text=text, order=i - 1, correct_position=i, is_correct=True)
+    elif qtype == "picture_choice":
+        for i, text in enumerate(["Picture A", "Picture B", "Picture C", "Picture D"]):
+            GameChoice.objects.create(question=q, text=text, order=i, correct_position=0, is_correct=(i == 0))
+    else:
+        for i, text in enumerate(["Red", "Blue", "Yellow", "Green"]):
+            GameChoice.objects.create(question=q, text=text, order=i, correct_position=0, is_correct=(i == 0))
+
     return redirect("games:question_edit", pk=quiz.pk, qpk=q.pk)
 
 
@@ -68,19 +153,33 @@ def question_create(request, pk):
 def question_edit(request, pk, qpk):
     quiz = get_object_or_404(Quiz, pk=pk, owner=request.user)
     question = get_object_or_404(GameQuestion, pk=qpk, quiz=quiz)
+
     if request.method == "POST":
         form = GameQuestionForm(request.POST, request.FILES, instance=question)
-        formset = GameChoiceFormSet(request.POST, instance=question)
+        formset = GameChoiceFormSet(request.POST, request.FILES, instance=question)
+
         if form.is_valid() and formset.is_valid():
-            form.save()
-            formset.save()
+            question = form.save()
+            choices = formset.save(commit=False)
+
+            for obj in choices:
+                obj.question = question
+                obj.save()
+
+            for obj in formset.deleted_objects:
+                obj.delete()
+
             messages.success(request, "Question saved.")
             return redirect("games:edit", pk=quiz.pk)
     else:
         form = GameQuestionForm(instance=question)
         formset = GameChoiceFormSet(instance=question)
+
     return render(request, "games/question_edit.html", {
-        "quiz": quiz, "question": question, "form": form, "formset": formset,
+        "quiz": quiz,
+        "question": question,
+        "form": form,
+        "formset": formset,
     })
 
 

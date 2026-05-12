@@ -3,13 +3,12 @@
 {% block title %}Edit question · Knock-Knock{% endblock %}
 
 {% block extra_head %}
-{# Load fonts referenced in FONT_STACK. Google Fonts here; swap if you self-host. #}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&family=JetBrains+Mono:wght@500;700&family=Playfair+Display:wght@500;800&family=Press+Start+2P&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
 <style>
-  /* Live preview of the question with the chosen font. */
-  .kk-font-preview {
+  /* ─── Live preview card ─── */
+  .qe-preview {
     padding: 1.5rem 1.25rem;
     border-radius: 14px;
     background: linear-gradient(135deg, rgba(124,58,237,.12), rgba(34,211,238,.08));
@@ -19,32 +18,261 @@
     text-align: center;
     color: #f8fafc;
     margin-bottom: 1rem;
-    transition: font-family .15s ease, font-size .15s ease, font-weight .15s ease;
   }
-  .kk-font-toolbar {
-    display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
-    padding: .6rem .75rem;
-    background: rgba(255,255,255,.03);
+
+  /* ─── Toolbar groups: stacked labeled cards ─── */
+  .qe-toolbar { display: block; margin-bottom: 1rem; }
+  .qe-group {
+    padding: .65rem .8rem;
+    background: rgba(255,255,255,.04);
     border-radius: 10px;
     border: 1px solid rgba(255,255,255,.06);
+    margin-bottom: .55rem;
   }
-  .kk-font-toolbar label { margin: 0; color: #cbd5e1; font-size: .85rem; }
-  .kk-font-toolbar select, .kk-font-toolbar input[type=number] { max-width: 200px; }
-  .kk-font-toolbar .kk-bold-toggle {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 38px; height: 38px;
-    border-radius: 8px;
-    background: rgba(255,255,255,.06);
-    border: 1px solid rgba(255,255,255,.10);
-    color: #cbd5e1;
-    font-weight: 700;
-    cursor: pointer;
+  .qe-group-label {
+    display: block;
+    color: #94a3b8;
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    margin-bottom: .5rem;
+  }
+  .qe-row {
+    display: flex; align-items: center; flex-wrap: wrap;
+    gap: .5rem;
+  }
+  .qe-row > select.form-select {
+    flex: 1 1 200px;
+    min-width: 0;
+    height: 36px;
+  }
+  .qe-size-row {
+    display: flex; align-items: center; gap: .5rem;
+    width: 100%;
+    margin-top: .35rem;
+  }
+  .qe-size-row input[type=range] { flex: 1; min-width: 0; }
+  .qe-size-row input[type=number] {
+    width: 70px !important;
+    max-width: 70px !important;
+    height: 32px !important;
+    padding: .25rem .4rem !important;
+    background: rgba(255,255,255,.06) !important;
+    border: 1px solid rgba(255,255,255,.10) !important;
+    border-radius: 6px !important;
+    color: #f8fafc !important;
+    text-align: center !important;
+  }
+  .qe-px { color: #94a3b8; font-size: .78rem; }
+
+  /* ─── Square toggle buttons (B/I/U + alignment) ─── */
+  .qe-btn {
+    display: inline-flex !important;
+    align-items: center !important; justify-content: center !important;
+    width: 34px !important; height: 34px !important;
+    min-width: 34px !important; max-width: 34px !important;
+    border-radius: 7px !important;
+    background: rgba(255,255,255,.06) !important;
+    border: 1px solid rgba(255,255,255,.10) !important;
+    color: #cbd5e1 !important;
+    font-weight: 700 !important;
+    cursor: pointer !important;
     user-select: none;
+    padding: 0 !important;
+    flex: 0 0 34px !important;
+    line-height: 1 !important;
   }
-  .kk-font-toolbar .kk-bold-toggle.active {
-    background: #fbbf24; color: #422006; border-color: #fbbf24;
+  .qe-btn:hover { background: rgba(255,255,255,.10) !important; }
+  .qe-btn.is-active {
+    background: #fbbf24 !important; color: #422006 !important; border-color: #fbbf24 !important;
   }
-  .kk-font-toolbar input[type=range] { flex: 1; min-width: 120px; max-width: 260px; }
+  .qe-btn.is-italic    { font-style: italic !important; }
+  .qe-btn.is-underline { text-decoration: underline !important; }
+  .qe-divider {
+    width: 1px !important; height: 22px !important;
+    background: rgba(255,255,255,.10);
+    margin: 0 .25rem;
+    flex: 0 0 1px !important;
+  }
+
+  /* ─── Native color inputs — sized DIRECTLY on the input, no wrapper. ─── */
+  .qe-color-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    flex: 0 0 auto;
+  }
+  /* Reset every browser quirk on color inputs and force explicit size. */
+  input[type="color"].qe-color-input {
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    appearance: none !important;
+    width: 32px !important;
+    min-width: 32px !important;
+    max-width: 32px !important;
+    height: 32px !important;
+    min-height: 32px !important;
+    max-height: 32px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 1px solid rgba(255,255,255,.20) !important;
+    border-radius: 6px !important;
+    background: transparent !important;
+    cursor: pointer !important;
+    flex: 0 0 32px !important;
+    box-shadow: none !important;
+    display: inline-block !important;
+  }
+  /* WebKit: the actual color swatch is the inner ::-webkit-color-swatch */
+  input[type="color"].qe-color-input::-webkit-color-swatch-wrapper {
+    padding: 0 !important;
+    border-radius: 5px !important;
+  }
+  input[type="color"].qe-color-input::-webkit-color-swatch {
+    border: 0 !important;
+    border-radius: 5px !important;
+  }
+  /* Firefox */
+  input[type="color"].qe-color-input::-moz-color-swatch {
+    border: 0 !important;
+    border-radius: 5px !important;
+  }
+
+  .qe-color-label {
+    color: #cbd5e1;
+    font-size: .8rem;
+    white-space: nowrap;
+  }
+  .qe-color-wrap.is-disabled { opacity: .4; }
+  .qe-color-wrap.is-disabled input[type="color"] { pointer-events: none; }
+
+  .qe-grad-toggle {
+    display: inline-flex; align-items: center; gap: .35rem;
+    padding: .35rem .55rem;
+    background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 7px;
+    color: #cbd5e1;
+    font-size: .8rem;
+    cursor: pointer;
+    margin: 0;
+    flex: 0 0 auto;
+  }
+  .qe-grad-toggle input { margin: 0; }
+
+  /* ─── Shape picker (explicit pixel sizing on every layer) ─── */
+  .qe-shape-row {
+    display: flex !important;
+    gap: .5rem !important;
+    flex-wrap: wrap !important;
+    margin: .35rem 0 1rem !important;
+  }
+  .qe-shape-btn {
+    display: inline-flex !important;
+    align-items: center !important; justify-content: center !important;
+    width: 56px !important;
+    height: 56px !important;
+    min-width: 56px !important;
+    min-height: 56px !important;
+    max-width: 56px !important;
+    max-height: 56px !important;
+    background: rgba(255,255,255,.04) !important;
+    border: 1px solid rgba(255,255,255,.10) !important;
+    border-radius: 10px !important;
+    cursor: pointer !important;
+    padding: 0 !important;
+    flex: 0 0 56px !important;
+  }
+  .qe-shape-btn:hover { background: rgba(255,255,255,.08) !important; }
+  .qe-shape-btn.is-active {
+    border-color: #fbbf24 !important;
+    box-shadow: 0 0 0 2px rgba(251,191,36,.3) !important;
+  }
+  .qe-shape-icon {
+    display: block !important;
+    width: 28px;
+    height: 28px;
+    background: #7c3aed;
+  }
+  .qe-shape-btn[data-shape="rounded"]  .qe-shape-icon { border-radius: 7px; }
+  .qe-shape-btn[data-shape="square"]   .qe-shape-icon { border-radius: 0; }
+  .qe-shape-btn[data-shape="circle"]   .qe-shape-icon { border-radius: 50%; }
+  .qe-shape-btn[data-shape="diamond"]  .qe-shape-icon {
+    transform: rotate(45deg);
+    width: 22px; height: 22px;
+    border-radius: 3px;
+  }
+  .qe-shape-btn[data-shape="triangle"] .qe-shape-icon {
+    background: transparent;
+    width: 0; height: 0;
+    border-left: 14px solid transparent;
+    border-right: 14px solid transparent;
+    border-bottom: 24px solid #7c3aed;
+  }
+
+  /* ─── Answer-tile preview (force the grid + tile sizes) ─── */
+  .qe-answer-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: .65rem !important;
+    margin: .35rem 0 1rem !important;
+    max-width: 460px !important;
+  }
+  .qe-tile {
+    display: flex !important;
+    align-items: center !important; justify-content: center !important;
+    min-height: 78px !important;
+    padding: .65rem .9rem !important;
+    background: #7c3aed !important;
+    color: #fff !important;
+    font-weight: 700 !important;
+    text-align: center !important;
+    box-shadow: 0 6px 14px rgba(0,0,0,.25) !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
+  }
+  .qe-tile.shape-square   { border-radius: 0 !important; }
+  .qe-tile.shape-circle   {
+    border-radius: 999px !important;
+    aspect-ratio: 1/1 !important;
+    min-height: 0 !important;
+  }
+  .qe-tile.shape-diamond  {
+    transform: rotate(45deg);
+    border-radius: 6px !important;
+    aspect-ratio: 1/1 !important;
+    min-height: 0 !important;
+    width: 72% !important;
+    justify-self: center !important;
+  }
+  .qe-tile.shape-diamond > span { transform: rotate(-45deg); display: inline-block; }
+  .qe-tile.shape-triangle {
+    clip-path: polygon(50% 8%, 96% 96%, 4% 96%);
+    border-radius: 0 !important;
+    aspect-ratio: 1/.85 !important;
+    min-height: 0 !important;
+    padding-top: 30% !important;
+    align-items: flex-start !important;
+  }
+  .qe-answer-grid .qe-tile:nth-child(1) { background: #ef4444 !important; }
+  .qe-answer-grid .qe-tile:nth-child(2) { background: #3b82f6 !important; }
+  .qe-answer-grid .qe-tile:nth-child(3) { background: #f59e0b !important; }
+  .qe-answer-grid .qe-tile:nth-child(4) { background: #22c55e !important; }
+
+  .qe-section-title {
+    font-size: .72rem;
+    color: #94a3b8;
+    margin: 1rem 0 .35rem;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+
+
+  /* ─── Question type + picture/puzzle choice editor ─── */
+  .kk-question-type-help { color:#94a3b8; font-size:.82rem; margin-top:.35rem; }
+  .kk-choice-editor-row { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:16px; padding:1rem; }
+  .kk-choice-editor-row img { max-width:110px; max-height:84px; object-fit:cover; border-radius:12px; border:1px solid rgba(255,255,255,.12); }
+  .kk-choice-help-box { border-radius:16px; padding:.85rem 1rem; background:rgba(34,211,238,.08); border:1px solid rgba(34,211,238,.18); color:#cbd5e1; font-size:.9rem; margin-bottom:1rem; }
 </style>
 {% endblock %}
 
@@ -57,24 +285,97 @@
   {% csrf_token %}
 
   <div class="kk-card">
-    <label class="form-label">Question</label>
+    <label class="form-label">Question type</label>
+    {{ form.question_type }}
+    <div class="kk-question-type-help">
+      Classic = text answers. Picture choice = select the correct image. Puzzle = arrange pieces in order.
+    </div>
 
-    {# Live preview of the question text with chosen typography. #}
-    <div id="font-preview" class="kk-font-preview">{{ question.text|default:"Your question will look like this" }}</div>
+    <label class="form-label mt-3">Question</label>
 
-    {# Font toolbar — wraps the actual model fields (font_family, font_size, font_bold).
-       The fields stay in the form so Django saves them on submit; the controls here
-       drive a live preview via the inputs themselves. #}
-    <div class="kk-font-toolbar mb-3">
-      <label for="id_font_family"><i class="bi bi-fonts"></i> Font</label>
-      {{ form.font_family }}
+    {# Live preview of the question text. #}
+    <div id="qe-preview" class="qe-preview">{{ question.text|default:"Your question will look like this" }}</div>
 
-      <label for="id_font_size">Size</label>
-      <input type="range" min="16" max="96" step="2" id="font-size-range" value="{{ question.font_size|default:32 }}">
-      {{ form.font_size }}
+    <div class="qe-toolbar">
 
-      <button type="button" id="bold-toggle" class="kk-bold-toggle{% if question.font_bold %} active{% endif %}" title="Bold (toggles font weight)">B</button>
-      <div style="display:none;">{{ form.font_bold }}</div>
+      {# Font + Size #}
+      <div class="qe-group">
+        <span class="qe-group-label"><i class="bi bi-fonts"></i> Font</span>
+        <div class="qe-row">{{ form.font_family }}</div>
+        <div class="qe-size-row">
+          <input type="range" min="16" max="96" step="2" id="qe-size-range" value="{{ question.font_size|default:32 }}">
+          {{ form.font_size }}
+          <span class="qe-px">px</span>
+        </div>
+      </div>
+
+      {# Style + Alignment #}
+      <div class="qe-group">
+        <span class="qe-group-label">Style &amp; alignment</span>
+        <div class="qe-row">
+          <button type="button" id="qe-bold"
+                  class="qe-btn{% if question.font_bold %} is-active{% endif %}"
+                  title="Bold">B</button>
+          <button type="button" id="qe-italic"
+                  class="qe-btn is-italic{% if question.text_italic %} is-active{% endif %}"
+                  title="Italic">I</button>
+          <button type="button" id="qe-underline"
+                  class="qe-btn is-underline{% if question.text_underline %} is-active{% endif %}"
+                  title="Underline">U</button>
+
+          <span class="qe-divider"></span>
+
+          <button type="button" class="qe-btn qe-align-btn{% if question.text_align == 'left' %} is-active{% endif %}"
+                  data-align="left" title="Align left"><i class="bi bi-text-left"></i></button>
+          <button type="button" class="qe-btn qe-align-btn{% if not question.text_align or question.text_align == 'center' %} is-active{% endif %}"
+                  data-align="center" title="Align center"><i class="bi bi-text-center"></i></button>
+          <button type="button" class="qe-btn qe-align-btn{% if question.text_align == 'right' %} is-active{% endif %}"
+                  data-align="right" title="Align right"><i class="bi bi-text-right"></i></button>
+        </div>
+      </div>
+
+      {# Colors — native <input type="color"> sized directly. #}
+      <div class="qe-group">
+        <span class="qe-group-label"><i class="bi bi-droplet-half"></i> Colors</span>
+        <div class="qe-row">
+
+          <span class="qe-color-wrap">
+            <input type="color" id="qe-text-color-input" class="qe-color-input"
+                   value="{{ question.text_color|default:'#f8fafc' }}">
+            <span class="qe-color-label">Text</span>
+          </span>
+
+          <span class="qe-color-wrap">
+            <input type="color" id="qe-bg-color-input" class="qe-color-input"
+                   value="{{ question.background_color|default:'#1e293b' }}">
+            <span class="qe-color-label">Background</span>
+          </span>
+
+          <label class="qe-grad-toggle">
+            <input type="checkbox" id="qe-gradient-toggle"
+                   {% if question.background_gradient_to %}checked{% endif %}>
+            <span>Gradient</span>
+          </label>
+
+          <span class="qe-color-wrap{% if not question.background_gradient_to %} is-disabled{% endif %}" id="qe-grad-wrap">
+            <input type="color" id="qe-bg-grad-input" class="qe-color-input"
+                   value="{{ question.background_gradient_to|default:'#7c3aed' }}">
+            <span class="qe-color-label">→ End</span>
+          </span>
+
+        </div>
+      </div>
+
+      {# Hidden form fields holding the actual values. #}
+      <div style="display:none;">
+        {{ form.font_bold }}
+        {{ form.text_italic }}
+        {{ form.text_underline }}
+        {{ form.text_align }}
+        {{ form.text_color }}
+        {{ form.background_color }}
+        {{ form.background_gradient_to }}
+      </div>
     </div>
 
     {{ form.text }}
@@ -96,21 +397,53 @@
   </div>
 
   <div class="kk-card mt-3">
-    <h2 class="kk-section-title" style="font-size:1.15rem;"><i class="bi bi-check2-square"></i> Answers (tick the correct ones)</h2>
+    <h2 class="kk-section-title" style="font-size:1.15rem;"><i class="bi bi-check2-square"></i> Answers / Pictures / Puzzle pieces</h2>
+    <div class="kk-choice-help-box" id="kk-choice-help">
+      Classic: type answers and tick the correct one. Picture choice: upload a picture for each answer and tick the correct picture. Puzzle: upload or label pieces and set their correct positions.
+    </div>
+
+    <div class="qe-section-title kk-classic-field">Answer tile shape</div>
+    <div class="qe-shape-row kk-classic-field" id="qe-shape-picker" style="display:flex; gap:.5rem; flex-wrap:wrap; margin:.5rem 0 1rem;">
+      {% for value, label in form.fields.answer_shape.choices %}
+        <button type="button" class="qe-shape-btn{% if question.answer_shape == value or not question.answer_shape and value == 'rounded' %} is-active{% endif %}" data-shape="{{ value }}" title="{{ label }}" style="width:56px; height:56px; min-width:56px; min-height:56px; flex:0 0 56px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.10); border-radius:10px; cursor:pointer; padding:0; display:inline-flex; align-items:center; justify-content:center;">
+          <span class="qe-shape-icon qe-shape-icon-{{ value }}" style="display:block; {% if value == 'rounded' %}width:28px; height:28px; background:#7c3aed; border-radius:7px; {% elif value == 'square' %}width:28px; height:28px; background:#7c3aed; border-radius:0; {% elif value == 'circle' %}width:28px; height:28px; background:#7c3aed; border-radius:50%; {% elif value == 'diamond' %}width:22px; height:22px; background:#7c3aed; transform:rotate(45deg); border-radius:3px; {% elif value == 'triangle' %}width:0; height:0; background:transparent; border-left:14px solid transparent; border-right:14px solid transparent; border-bottom:24px solid #7c3aed; {% endif %}"></span>
+        </button>
+      {% endfor %}
+    </div>
+
+    <div class="qe-section-title kk-classic-field">Preview</div>
+    <div class="qe-answer-grid kk-classic-field" id="qe-answer-preview" style="display:grid; grid-template-columns:repeat(2,1fr); gap:.65rem; margin:.5rem 0 1rem; max-width:460px;">
+      <div class="qe-tile" style="display:flex; align-items:center; justify-content:center; min-height:78px; padding:.65rem .9rem; background:#ef4444; color:#fff; font-weight:700; text-align:center; box-shadow:0 6px 14px rgba(0,0,0,.25); border-radius:12px; overflow:hidden;"><span>Answer 1</span></div>
+      <div class="qe-tile" style="display:flex; align-items:center; justify-content:center; min-height:78px; padding:.65rem .9rem; background:#3b82f6; color:#fff; font-weight:700; text-align:center; box-shadow:0 6px 14px rgba(0,0,0,.25); border-radius:12px; overflow:hidden;"><span>Answer 2</span></div>
+      <div class="qe-tile" style="display:flex; align-items:center; justify-content:center; min-height:78px; padding:.65rem .9rem; background:#f59e0b; color:#fff; font-weight:700; text-align:center; box-shadow:0 6px 14px rgba(0,0,0,.25); border-radius:12px; overflow:hidden;"><span>Answer 3</span></div>
+      <div class="qe-tile" style="display:flex; align-items:center; justify-content:center; min-height:78px; padding:.65rem .9rem; background:#22c55e; color:#fff; font-weight:700; text-align:center; box-shadow:0 6px 14px rgba(0,0,0,.25); border-radius:12px; overflow:hidden;"><span>Answer 4</span></div>
+    </div>
+    <div style="display:none;">{{ form.answer_shape }}</div>
+
     {{ formset.management_form }}
-    {% for cf in formset %}
-      <div class="d-flex gap-2 align-items-center mb-2">
-        <span class="kk-q-index">{{ forloop.counter }}</span>
-        {{ cf.id }}
-        {{ cf.text }}
-        <label class="d-flex align-items-center gap-1 text-secondary small ms-2">
-          {{ cf.is_correct }} correct
-        </label>
-        <label class="text-secondary small d-flex gap-1 align-items-center">
-          {{ cf.DELETE }} del
-        </label>
-      </div>
-    {% endfor %}
+    <div class="mt-3" id="choice-editor" data-question-type="{{ question.question_type }}">
+      {% for cf in formset %}
+        <div class="kk-choice-editor-row mb-3">
+          {{ cf.id }}
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <span class="kk-q-index">{{ forloop.counter }}</span>
+            <strong class="small text-secondary">Answer / Piece {{ forloop.counter }}</strong>
+          </div>
+          <div class="row g-2 align-items-end">
+            <div class="col-md-5"><label class="form-label small text-secondary">Text / Caption</label>{{ cf.text }}</div>
+            <div class="col-md-3 kk-picture-field kk-puzzle-field">
+              <label class="form-label small text-secondary">Image / Piece</label>{{ cf.image }}
+              {% if cf.instance.image %}<div class="mt-2"><img src="{{ cf.instance.image.url }}" alt=""></div>{% endif %}
+            </div>
+            <div class="col-md-2 kk-correct-field"><label class="form-label small text-secondary">Correct</label><div>{{ cf.is_correct }}</div></div>
+            <div class="col-md-2 kk-puzzle-field"><label class="form-label small text-secondary">Correct position</label>{{ cf.correct_position }}</div>
+            <div class="col-md-2"><label class="form-label small text-secondary">Display order</label>{{ cf.order }}</div>
+            <div class="col-md-2"><label class="form-label small text-secondary">Delete</label><div>{{ cf.DELETE }}</div></div>
+          </div>
+          {% if cf.errors %}<div class="alert alert-danger mt-2 mb-0 small">{{ cf.errors }}</div>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
   </div>
 
   <button class="kk-btn kk-btn-primary kk-btn-lg mt-4">Save question</button>
@@ -124,7 +457,6 @@
 
 <script>
 (function () {
-  // Map server-side font_family choices to actual CSS font stacks.
   const FONT_STACK = {
     default: "Inter, system-ui, sans-serif",
     clash:   "'Clash Display', system-ui, sans-serif",
@@ -134,49 +466,205 @@
     comic:   "'Comic Neue', 'Comic Sans MS', cursive",
     press:   "'Press Start 2P', system-ui, monospace",
   };
+  const $ = (id) => document.getElementById(id);
 
-  const preview      = document.getElementById("font-preview");
-  const familySelect = document.getElementById("id_font_family");
-  const sizeInput    = document.getElementById("id_font_size");
-  const sizeRange    = document.getElementById("font-size-range");
-  const boldToggle   = document.getElementById("bold-toggle");
-  const boldCheck    = document.getElementById("id_font_bold");
-  const textInput    = document.getElementById("id_question_text");
+  const preview      = $("qe-preview");
+  const familySelect = $("id_font_family");
+  const sizeInput    = $("id_font_size");
+  const sizeRange    = $("qe-size-range");
+  const textInput    = $("id_question_text");
+
+  const boldCheck      = $("id_font_bold");
+  const italicCheck    = $("id_text_italic");
+  const underlineCheck = $("id_text_underline");
+  const alignInput     = $("id_text_align");
+  const textColorInput = $("id_text_color");
+  const bgColorInput   = $("id_background_color");
+  const bgGradInput    = $("id_background_gradient_to");
+  const shapeInput     = $("id_answer_shape");
+
+  const boldBtn      = $("qe-bold");
+  const italicBtn    = $("qe-italic");
+  const underlineBtn = $("qe-underline");
+  const alignButtons = Array.from(document.querySelectorAll(".qe-align-btn"));
+  const shapeButtons = Array.from(document.querySelectorAll(".qe-shape-btn"));
+
+  const textColorPicker = $("qe-text-color-input");
+  const bgColorPicker   = $("qe-bg-color-input");
+  const bgGradPicker    = $("qe-bg-grad-input");
+  const bgGradWrap      = $("qe-grad-wrap");
+  const gradientToggle  = $("qe-gradient-toggle");
+
+  const answerPreview = $("qe-answer-preview");
 
   function render() {
-    const fam = FONT_STACK[familySelect.value] || FONT_STACK.default;
+    const fam  = FONT_STACK[familySelect.value] || FONT_STACK.default;
     const size = Math.min(96, Math.max(16, parseInt(sizeInput.value || "32", 10)));
-    const bold = boldCheck.checked;
-    preview.style.fontFamily = fam;
-    preview.style.fontSize = size + "px";
-    preview.style.fontWeight = bold ? "800" : "500";
-    // Press Start 2P caps line-height awkwardly; nudge it.
-    preview.style.lineHeight = (familySelect.value === "press") ? "1.6" : "1.15";
+
+    preview.style.fontFamily      = fam;
+    preview.style.fontSize        = size + "px";
+    preview.style.fontWeight      = boldCheck.checked ? "800" : "500";
+    preview.style.fontStyle       = italicCheck.checked ? "italic" : "normal";
+    preview.style.textDecoration  = underlineCheck.checked ? "underline" : "none";
+    preview.style.textAlign       = alignInput.value || "center";
+    preview.style.justifyContent  =
+      alignInput.value === "left"  ? "flex-start" :
+      alignInput.value === "right" ? "flex-end"   : "center";
+    preview.style.color           = textColorInput.value;
+    preview.style.lineHeight      = (familySelect.value === "press") ? "1.6" : "1.15";
+
+    preview.style.background = (gradientToggle.checked && bgGradInput.value)
+      ? `linear-gradient(135deg, ${bgColorInput.value}, ${bgGradInput.value})`
+      : bgColorInput.value;
+
+    // Apply shape via inline styles (more reliable than CSS classes when
+    // the base tile styling is also inline).
+    const shape = shapeInput.value || "rounded";
+    answerPreview.querySelectorAll(".qe-tile").forEach((tile) => {
+      // Reset shape-specific styles first.
+      tile.style.transform = "";
+      tile.style.aspectRatio = "";
+      tile.style.width = "";
+      tile.style.justifySelf = "";
+      tile.style.clipPath = "";
+      tile.style.paddingTop = "";
+      tile.style.alignItems = "center";
+      tile.style.minHeight = "78px";
+
+      if (shape === "rounded") {
+        tile.style.borderRadius = "12px";
+      } else if (shape === "square") {
+        tile.style.borderRadius = "0";
+      } else if (shape === "circle") {
+        tile.style.borderRadius = "999px";
+        tile.style.aspectRatio = "1/1";
+        tile.style.minHeight = "0";
+      } else if (shape === "diamond") {
+        tile.style.borderRadius = "6px";
+        tile.style.transform = "rotate(45deg)";
+        tile.style.aspectRatio = "1/1";
+        tile.style.minHeight = "0";
+        tile.style.width = "72%";
+        tile.style.justifySelf = "center";
+      } else if (shape === "triangle") {
+        tile.style.borderRadius = "0";
+        tile.style.clipPath = "polygon(50% 8%, 96% 96%, 4% 96%)";
+        tile.style.aspectRatio = "1/.85";
+        tile.style.minHeight = "0";
+        tile.style.paddingTop = "30%";
+        tile.style.alignItems = "flex-start";
+      }
+
+      // Counter-rotate text inside diamonds so it stays upright.
+      const span = tile.querySelector("span");
+      if (span) {
+        span.style.transform = (shape === "diamond") ? "rotate(-45deg)" : "";
+        span.style.display = (shape === "diamond") ? "inline-block" : "";
+      }
+    });
+
+    bgGradWrap.classList.toggle("is-disabled", !gradientToggle.checked);
   }
 
-  // Sync range ↔ number, both drive preview.
+  function wireToggle(btn, checkbox) {
+    if (!btn || !checkbox) return;
+    btn.addEventListener("click", () => {
+      checkbox.checked = !checkbox.checked;
+      btn.classList.toggle("is-active", checkbox.checked);
+      render();
+    });
+  }
+  wireToggle(boldBtn,      boldCheck);
+  wireToggle(italicBtn,    italicCheck);
+  wireToggle(underlineBtn, underlineCheck);
+
+  alignButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      alignButtons.forEach((b) => b.classList.remove("is-active"));
+      btn.classList.add("is-active");
+      alignInput.value = btn.dataset.align;
+      render();
+    });
+  });
+
+  shapeButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      shapeButtons.forEach((b) => {
+        b.classList.remove("is-active");
+        b.style.borderColor = "rgba(255,255,255,.10)";
+        b.style.boxShadow = "none";
+      });
+      btn.classList.add("is-active");
+      btn.style.borderColor = "#fbbf24";
+      btn.style.boxShadow = "0 0 0 2px rgba(251,191,36,.3)";
+      shapeInput.value = btn.dataset.shape;
+      render();
+    });
+  });
+
+  // On page load, apply active border to whichever shape is pre-selected.
+  shapeButtons.forEach((b) => {
+    if (b.classList.contains("is-active")) {
+      b.style.borderColor = "#fbbf24";
+      b.style.boxShadow = "0 0 0 2px rgba(251,191,36,.3)";
+    }
+  });
+
+  function wireColor(picker, hidden) {
+    if (!picker || !hidden) return;
+    picker.addEventListener("input", () => {
+      hidden.value = picker.value;
+      render();
+    });
+  }
+  wireColor(textColorPicker, textColorInput);
+  wireColor(bgColorPicker,   bgColorInput);
+  wireColor(bgGradPicker,    bgGradInput);
+
+  gradientToggle.addEventListener("change", () => {
+    if (!gradientToggle.checked) {
+      bgGradInput.value = "";
+    } else if (!bgGradInput.value) {
+      bgGradInput.value = bgGradPicker.value || "#7c3aed";
+    }
+    render();
+  });
+
   if (sizeRange && sizeInput) {
     sizeRange.addEventListener("input", () => { sizeInput.value = sizeRange.value; render(); });
     sizeInput.addEventListener("input", () => { sizeRange.value = sizeInput.value; render(); });
   }
   familySelect.addEventListener("change", render);
 
-  // Bold toggle drives the (hidden) checkbox.
-  if (boldToggle && boldCheck) {
-    boldToggle.addEventListener("click", () => {
-      boldCheck.checked = !boldCheck.checked;
-      boldToggle.classList.toggle("active", boldCheck.checked);
-      render();
-    });
-  }
-
-  // Live text echo into preview as user types.
   if (textInput) {
     textInput.addEventListener("input", () => {
       preview.textContent = textInput.value || "Your question will look like this";
     });
   }
 
+  if (alignInput && !alignInput.value) alignInput.value = "center";
+  if (shapeInput && !shapeInput.value) shapeInput.value = "rounded";
+
+
+  const questionTypeSelect = $("id_question_type");
+  const choiceHelp = $("kk-choice-help");
+
+  function syncChoiceFields() {
+    const qtype = questionTypeSelect ? questionTypeSelect.value : "mcq";
+    document.querySelectorAll(".kk-picture-field").forEach(el => { el.style.display = (qtype === "picture_choice" || qtype === "puzzle") ? "" : "none"; });
+    document.querySelectorAll(".kk-puzzle-field").forEach(el => { el.style.display = (qtype === "puzzle") ? "" : "none"; });
+    document.querySelectorAll(".kk-correct-field").forEach(el => { el.style.display = (qtype === "puzzle") ? "none" : ""; });
+    document.querySelectorAll(".kk-classic-field").forEach(el => { el.style.display = (qtype === "mcq") ? "" : "none"; });
+    if (choiceHelp) {
+      if (qtype === "picture_choice") choiceHelp.innerHTML = "<strong>Picture choice:</strong> upload one image per answer, add a caption if needed, and tick the correct picture. The presenter will show the pictures in the chart area instead of a bar chart.";
+      else if (qtype === "puzzle") choiceHelp.innerHTML = "<strong>Puzzle:</strong> each row is one puzzle piece. Set Correct position as 1, 2, 3, 4... The presenter will show the first winner and avatar instead of a bar chart.";
+      else choiceHelp.innerHTML = "<strong>Classic:</strong> type answers and tick the correct option. The presenter will show the normal live chart.";
+    }
+  }
+
+  if (questionTypeSelect) questionTypeSelect.addEventListener("change", syncChoiceFields);
+
+  syncChoiceFields();
   render();
 })();
 </script>

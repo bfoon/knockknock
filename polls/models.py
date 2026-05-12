@@ -158,6 +158,29 @@ class Question(models.Model):
     #   file:      {"max_size_mb": 10, "accept": "image/*"}
     config = models.JSONField(default=dict, blank=True)
 
+    # ── Title-slide fields (NEW; only used when type == "title") ──
+    TITLE_LAYOUT_CHOICES = [
+        ("clean",   "Clean (title + subtitle + optional logo)"),
+        ("quote",   "Quote (oversize quotation with author)"),
+        ("divider", "Section divider (numbered)"),
+    ]
+    subtitle = models.CharField(
+        max_length=500, blank=True,
+        help_text="Subtitle / kicker / quote body — used by title slides.",
+    )
+    title_layout = models.CharField(
+        max_length=20, choices=TITLE_LAYOUT_CHOICES, default="clean", blank=True,
+        help_text="Visual layout for title slides.",
+    )
+    title_image = models.ImageField(
+        upload_to="title_slide_images/", blank=True, null=True,
+        help_text="Optional logo / hero image for the title slide.",
+    )
+    title_author = models.CharField(
+        max_length=200, blank=True,
+        help_text="Attribution shown on the 'quote' layout.",
+    )
+
     class Meta:
         ordering = ["order", "id"]
 
@@ -171,6 +194,9 @@ class Question(models.Model):
 
     def has_choices(self):
         return self.meta().get("has_choices", False)
+
+    def is_static(self):
+        return bool(self.meta().get("is_static"))
 
     def storage(self):
         return self.meta().get("storage")

@@ -50,6 +50,8 @@ class QuestionForm(forms.ModelForm):
             # Flexibility
             "time_limit_seconds", "is_required", "is_anonymous",
             "min_selections", "max_selections", "template_id_override",
+            # Title-slide fields (ignored unless type == "title")
+            "subtitle", "title_layout", "title_image", "title_author",
         )
         widgets = {
             "text": forms.TextInput(attrs={
@@ -85,6 +87,17 @@ class QuestionForm(forms.ModelForm):
             }),
             "template_id_override": forms.TextInput(attrs={
                 "class": "form-control", "placeholder": "Inherit from questionnaire",
+            }),
+            # Title-slide widgets
+            "subtitle": forms.TextInput(attrs={
+                "class": "form-control",
+                "placeholder": "Subtitle, kicker, or quote body…",
+            }),
+            "title_layout": forms.Select(attrs={"class": "form-select"}),
+            "title_image": forms.FileInput(attrs={"class": "form-control", "accept": "image/*"}),
+            "title_author": forms.TextInput(attrs={
+                "class": "form-control",
+                "placeholder": "— Author (for quote layout)",
             }),
         }
 

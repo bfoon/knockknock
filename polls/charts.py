@@ -89,6 +89,9 @@ CHART_CHOICES_BY_TYPE = {
     "points_allocation": ["stacked_bar", "bar", "pie"],
 
     "reaction":          ["live_burst"],
+
+    # Title slides don't render a chart.
+    "title":             [],
 }
 
 

@@ -4,11 +4,58 @@ from .models import Quiz, GameQuestion, GameChoice, GameRoom
 
 
 class QuizForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # The visual template picker is rendered by a shared partial. In some
+        # layouts that picker does not submit `template_id` directly, so keep
+        # the field non-required and fall back to the current/default template.
+        self.fields["template_id"].required = False
+        self.fields["chart_background"].required = False
+
+        # Do NOT require this field. When late answers are off, the browser
+        # disables the number input, so it is not included in POST at all.
+        # Without this, the whole quiz edit form fails validation and it looks
+        # like main/chart backgrounds are not saving.
+        self.fields["late_answer_points_pct"].required = False
+
+    def clean_template_id(self):
+        value = (self.cleaned_data.get("template_id") or "").strip()
+        if value:
+            return value
+        current = getattr(self.instance, "template_id", "") or ""
+        return current.strip() or "neon_gaming"
+
+    def clean_chart_background(self):
+        value = (self.cleaned_data.get("chart_background") or "").strip()
+        if value:
+            return value
+        current = getattr(self.instance, "chart_background", "") or ""
+        return current.strip() or "normal"
+
+    def clean_late_answer_points_pct(self):
+        # This is optional. If late answers are disabled, always store 0.
+        # If late answers are enabled but left blank, also default to 0,
+        # meaning late answers can be accepted but receive no points.
+        allow_late = bool(self.cleaned_data.get("allow_late_answers"))
+        value = self.cleaned_data.get("late_answer_points_pct")
+
+        if not allow_late:
+            return 0
+
+        if value in (None, ""):
+            return 0
+
+        value = int(value)
+        if value < 0 or value > 100:
+            raise forms.ValidationError("Enter a value from 0 to 100.")
+        return value
+
     class Meta:
         model = Quiz
         fields = (
             "title", "description", "template_id", "logo",
             "scoring", "mode", "use_rooms", "room_capacity", "chart_background",
+            "allow_late_answers", "late_answer_points_pct",
         )
         widgets = {
             "title": forms.TextInput(attrs={"class": "form-control form-control-lg"}),
@@ -20,6 +67,11 @@ class QuizForm(forms.ModelForm):
             "use_rooms": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "room_capacity": forms.NumberInput(attrs={"class": "form-control", "min": 2, "max": 100}),
             "chart_background": forms.Select(attrs={"class": "form-select"}),
+            "allow_late_answers": forms.CheckboxInput(attrs={"class": "form-check-input", "id": "id_allow_late_answers"}),
+            "late_answer_points_pct": forms.NumberInput(attrs={
+                "class": "form-control", "min": 0, "max": 100, "step": 5,
+                "id": "id_late_answer_points_pct",
+            }),
         }
 
 

@@ -1,0 +1,164 @@
+{# polls/templates/polls/partials/qtypes/qtype_title.html #}
+{# Editor UI for title-slide questions. Included when question.type == "title". #}
+
+<div class="kk-card mb-4">
+  <h3 class="kk-section-title" style="font-size:1.05rem;">
+    <i class="bi bi-card-heading"></i> Title slide
+  </h3>
+  <p class="text-secondary small mb-3">
+    A static slide for intros, section breaks, or quotes.
+    Participants will see the slide but can't respond.
+  </p>
+
+  <div class="mb-3">
+    <label class="form-label">Subtitle / kicker / quote body</label>
+    {{ form.subtitle }}
+    <div class="form-text">
+      Used as the secondary line in <em>Clean</em>, the quoted text in <em>Quote</em>,
+      and the description in <em>Divider</em>.
+    </div>
+    {% if form.subtitle.errors %}
+      <div class="text-danger small mt-1">{{ form.subtitle.errors }}</div>
+    {% endif %}
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Author / attribution</label>
+    {{ form.title_author }}
+    <div class="form-text">
+      Shown on the <em>Quote</em> layout (e.g. "— Albert Einstein").
+    </div>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Logo / hero image (optional)</label>
+    {% if question.title_image %}
+      <div class="mb-2">
+        <img src="{{ question.title_image.url }}" alt=""
+             style="max-height:120px; border-radius:8px; background:rgba(255,255,255,.05); padding:6px;">
+      </div>
+    {% endif %}
+    {{ form.title_image }}
+    <div class="form-text">PNG / JPG / SVG. Shown above the title on the <em>Clean</em> layout.</div>
+  </div>
+
+  <div class="mb-2">
+    <label class="form-label">Layout</label>
+    <div class="kk-title-layout-picker" id="kk-title-layout-picker">
+      {% with current=question.title_layout|default:"clean" %}
+        <label class="kk-title-layout-tile {% if current == 'clean' %}selected{% endif %}">
+          <input type="radio" name="title_layout" value="clean"
+                 {% if current == 'clean' %}checked{% endif %}>
+          <div class="kk-title-layout-preview kk-title-preview-clean">
+            <div class="kk-tlp-logo"></div>
+            <div class="kk-tlp-title"></div>
+            <div class="kk-tlp-sub"></div>
+          </div>
+          <div class="kk-title-layout-name">Clean</div>
+        </label>
+
+        <label class="kk-title-layout-tile {% if current == 'quote' %}selected{% endif %}">
+          <input type="radio" name="title_layout" value="quote"
+                 {% if current == 'quote' %}checked{% endif %}>
+          <div class="kk-title-layout-preview kk-title-preview-quote">
+            <div class="kk-tlp-quote-marks">“</div>
+            <div class="kk-tlp-body"></div>
+            <div class="kk-tlp-author"></div>
+          </div>
+          <div class="kk-title-layout-name">Quote</div>
+        </label>
+
+        <label class="kk-title-layout-tile {% if current == 'divider' %}selected{% endif %}">
+          <input type="radio" name="title_layout" value="divider"
+                 {% if current == 'divider' %}checked{% endif %}>
+          <div class="kk-title-layout-preview kk-title-preview-divider">
+            <div class="kk-tlp-num">01</div>
+            <div class="kk-tlp-rule"></div>
+            <div class="kk-tlp-title-sm"></div>
+            <div class="kk-tlp-sub-sm"></div>
+          </div>
+          <div class="kk-title-layout-name">Divider</div>
+        </label>
+      {% endwith %}
+    </div>
+    {# Hidden select is no longer needed — the radios above carry the value. #}
+  </div>
+</div>
+
+<style>
+  .kk-title-layout-picker {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: .6rem;
+  }
+  .kk-title-layout-tile {
+    cursor: pointer;
+    border: 1px solid var(--kk-border, rgba(255,255,255,.12));
+    border-radius: 12px;
+    padding: .5rem;
+    background: var(--kk-surface-2, rgba(255,255,255,.04));
+    display: flex; flex-direction: column; gap: .35rem;
+    transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+  }
+  .kk-title-layout-tile:hover {
+    transform: translateY(-2px);
+    border-color: rgba(34,211,238,.5);
+  }
+  .kk-title-layout-tile.selected {
+    border-color: var(--kk-accent-2, #22d3ee);
+    box-shadow: 0 0 0 2px rgba(34,211,238,.25);
+  }
+  .kk-title-layout-tile input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .kk-title-layout-preview {
+    aspect-ratio: 16 / 10;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #1a1a2e, #232342);
+    padding: .55rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .kk-title-layout-name {
+    font-size: .8rem;
+    color: var(--kk-text-dim, #94a3b8);
+    text-align: center;
+    font-weight: 600;
+  }
+
+  /* Clean preview shapes */
+  .kk-title-preview-clean { display: flex; flex-direction: column; gap: .25rem; justify-content: center; align-items: center; }
+  .kk-tlp-logo  { width: 26px; height: 26px; border-radius: 6px; background: linear-gradient(135deg,#22d3ee,#7c3aed); }
+  .kk-tlp-title { width: 70%; height: 8px; border-radius: 3px; background: rgba(255,255,255,.85); }
+  .kk-tlp-sub   { width: 50%; height: 5px; border-radius: 3px; background: rgba(255,255,255,.45); }
+
+  /* Quote preview */
+  .kk-title-preview-quote { display: flex; flex-direction: column; }
+  .kk-tlp-quote-marks { color: rgba(255,255,255,.55); font-size: 1.4rem; line-height: 1; font-family: Georgia, serif; }
+  .kk-tlp-body   { width: 85%; height: 6px; border-radius: 3px; background: rgba(255,255,255,.85); margin-top: 4px; }
+  .kk-tlp-author { width: 35%; height: 4px; border-radius: 3px; background: rgba(255,255,255,.5); margin-top: 6px; align-self: flex-end; }
+
+  /* Divider preview */
+  .kk-title-preview-divider { display: flex; flex-direction: column; }
+  .kk-tlp-num   { font-size: 1.1rem; font-weight: 900; color: rgba(34,211,238,.85); line-height: 1; font-family: ui-monospace, monospace; }
+  .kk-tlp-rule  { height: 1.5px; width: 30%; background: rgba(34,211,238,.65); margin-top: 4px; }
+  .kk-tlp-title-sm { width: 60%; height: 7px; border-radius: 3px; background: rgba(255,255,255,.85); margin-top: 6px; }
+  .kk-tlp-sub-sm   { width: 40%; height: 4px; border-radius: 3px; background: rgba(255,255,255,.45); margin-top: 4px; }
+</style>
+
+<script>
+  (function () {
+    const picker = document.getElementById("kk-title-layout-picker");
+    if (!picker) return;
+    picker.addEventListener("change", function (e) {
+      if (e.target && e.target.matches('input[name="title_layout"]')) {
+        picker.querySelectorAll(".kk-title-layout-tile").forEach((t) => {
+          const radio = t.querySelector('input[name="title_layout"]');
+          t.classList.toggle("selected", !!(radio && radio.checked));
+        });
+      }
+    });
+  })();
+</script>

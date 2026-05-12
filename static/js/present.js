@@ -37,6 +37,7 @@
   const views = {
     lobby: document.getElementById("view-lobby"),
     question: document.getElementById("view-question"),
+    title: document.getElementById("view-title"),
     group: document.getElementById("view-group"),
     ended: document.getElementById("view-ended"),
   };
@@ -51,6 +52,10 @@
   const lobbyChips = document.getElementById("participant-chips");
   const participantCount = document.getElementById("participant-count");
   const leaderboardEl = document.getElementById("leaderboard");
+  const presenterTimerChip = document.getElementById("presenter-timer-chip");
+  const presenterTimerDetail = document.getElementById("presenter-timer-detail");
+  const btnExtend5 = document.getElementById("btn-extend-5");
+  const btnExtend10 = document.getElementById("btn-extend-10");
 
   const btnStart = document.getElementById("btn-start");
   const btnNext = document.getElementById("btn-next");
@@ -81,6 +86,8 @@
     let latestTallyByQuestion = {};
     let ws = null;
     let draw = null;
+    let presenterClockSkewMs = 0;
+    let presenterTimerInterval = null;
 
   function show(name) {
     Object.entries(views).forEach(([key, el]) => {
@@ -92,6 +99,11 @@
       }
 
       if (key === "question") {
+        el.style.display = "flex";
+        el.style.flexDirection = "column";
+        el.style.minHeight = "0";
+        el.style.height = "100%";
+      } else if (key === "title") {
         el.style.display = "flex";
         el.style.flexDirection = "column";
         el.style.minHeight = "0";
@@ -155,6 +167,13 @@
       ws.send(JSON.stringify(obj));
     }
   }
+
+  function extendTime(seconds) {
+    send({ type: "extend_time", seconds: Number(seconds) || 0 });
+  }
+
+  if (btnExtend5) btnExtend5.addEventListener("click", () => extendTime(5));
+  if (btnExtend10) btnExtend10.addEventListener("click", () => extendTime(10));
 
   // ─────────────────────── WebSocket ───────────────────────
 
@@ -335,10 +354,70 @@
   if (axisFontX) axisFontX.addEventListener("input", () => updateAxisFont("x", axisFontX.value));
   if (axisFontY) axisFontY.addEventListener("input", () => updateAxisFont("y", axisFontY.value));
 
+  // ─────────────────────── Presenter synchronized timer ───────────────────────
+
+  function presenterQuestionSeconds(s) {
+    const limit = Number(s && s.question && s.question.time_limit ? s.question.time_limit : 0);
+    const ext = Number(s && s.time_extension_seconds ? s.time_extension_seconds : 0);
+    return Math.max(0, limit + Math.max(0, ext));
+  }
+
+  function presenterSecondsLeft(s) {
+    if (!s || !s.question) return null;
+    const started = (typeof s.question_started_at_ms === "number") ? s.question_started_at_ms : null;
+    const total = presenterQuestionSeconds(s);
+    if (!started) return total;
+    const serverNow = Date.now() + presenterClockSkewMs;
+    return Math.max(0, Math.ceil(((started + total * 1000) - serverNow) / 1000));
+  }
+
+  function setPresenterTimerEnabled(enabled) {
+    [btnExtend5, btnExtend10].forEach(btn => {
+      if (btn) btn.disabled = !enabled;
+    });
+  }
+
+  function renderPresenterTimer(s) {
+    clearInterval(presenterTimerInterval);
+
+    const active = !!(s && s.state === "running" && s.question && s.question_started_at_ms);
+    setPresenterTimerEnabled(active);
+
+    if (!active) {
+      if (presenterTimerChip) presenterTimerChip.textContent = "—";
+      if (presenterTimerDetail) presenterTimerDetail.textContent = "Timer starts when the question opens.";
+      return;
+    }
+
+    const limit = Number(s.question.time_limit || 0);
+    const ext = Number(s.time_extension_seconds || 0);
+    const allowLate = !!s.allow_late_answers;
+
+    function tick() {
+      const left = presenterSecondsLeft(s);
+      if (presenterTimerChip) {
+        presenterTimerChip.textContent = `${left}s`;
+        presenterTimerChip.classList.toggle("is-ended", Number(left) <= 0);
+      }
+      if (presenterTimerDetail) {
+        const extText = ext > 0 ? ` + ${ext}s extension` : "";
+        const lateText = allowLate ? "Late answers allowed by creator." : "Late answers blocked unless you extend.";
+        presenterTimerDetail.textContent = `${limit}s${extText}. ${lateText}`;
+      }
+    }
+
+    tick();
+    presenterTimerInterval = setInterval(tick, 250);
+  }
+
   // ─────────────────────── State handling ───────────────────────
 
   function onState(s) {
     currentState = s;
+    if (typeof s.server_time_ms === "number") {
+      presenterClockSkewMs = s.server_time_ms - Date.now();
+    }
+    renderPresenterTimer(s);
     syncFullscreenNavState();
 
     // Re-apply chart background if the server's value differs (handles a quiz
@@ -365,6 +444,13 @@
 
     if (!s.question) {
       show("lobby");
+      return;
+    }
+
+    // Title slides have their own view (no chart, no answer flow).
+    if ((s.question.type || "") === "title") {
+      show("title");
+      renderTitleSlide(s);
       return;
     }
 
@@ -441,6 +527,97 @@
     renderLiveChart(chartId, questionType, labels, tallyData);
   }
 
+  // ─────────────────────── Title-slide presenter ───────────────────────
+
+  function escapeHtml(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function renderTitleSlide(s) {
+    const canvas = document.getElementById("title-canvas");
+    const progressEl = document.getElementById("title-progress");
+    if (!canvas) return;
+
+    // Destroy any leftover chart from a previous (non-title) question, since
+    // Chart.js can keep running animations on a hidden canvas.
+    if (chartHolder.chart) {
+      try { chartHolder.chart.destroy(); } catch (e) {}
+      chartHolder.chart = null;
+    }
+
+    const q = s.question || {};
+    const layout = (q.title_layout || "clean").toLowerCase();
+    const headline = q.text || "";
+    const subtitle = q.subtitle || "";
+    const author = q.title_author || "";
+    const imageUrl = q.title_image_url || "";
+
+    if (progressEl) {
+      progressEl.textContent = `Slide ${(Number(s.index) || 0) + 1} / ${Number(s.total) || 1}`;
+    }
+
+    // Reset class list so re-renders pick up the active layout.
+    canvas.className = "kk-title-canvas layout-" + (
+      layout === "quote" ? "quote" :
+      layout === "divider" ? "divider" : "clean"
+    );
+
+    // Apply per-question typography to the headline (same font_family options
+    // as a normal question — the editor reuses these controls).
+    const fam = (q.font_family && FONT_STACK[q.font_family]) || FONT_STACK.default;
+    const headlineStyle = fam ? ` style="font-family: ${fam}"` : "";
+
+    let html = "";
+
+    if (layout === "quote") {
+      // Headline (if any) acts as a kicker above the quote body; subtitle is
+      // the actual quoted text. If subtitle is empty, fall back to headline.
+      const body = subtitle || headline;
+      html = "";
+      if (headline && subtitle) {
+        html += `<p class="kk-title-headline"${headlineStyle}>${escapeHtml(headline)}</p>`;
+      }
+      html += `<blockquote class="kk-title-quote-body">${escapeHtml(body)}</blockquote>`;
+      if (author) {
+        html += `<div class="kk-title-quote-author">${escapeHtml(author)}</div>`;
+      }
+    } else if (layout === "divider") {
+      const num = String((Number(s.index) || 0) + 1).padStart(2, "0");
+      html = "";
+      html += `<div class="kk-title-divider-num">${num}</div>`;
+      html += `<div class="kk-title-divider-rule"></div>`;
+      html += `<h1 class="kk-title-headline"${headlineStyle}>${escapeHtml(headline)}</h1>`;
+      if (subtitle) {
+        html += `<p class="kk-title-sub">${escapeHtml(subtitle)}</p>`;
+      }
+    } else {
+      // Clean
+      html = "";
+      if (imageUrl) {
+        html += `<img class="kk-title-logo" src="${escapeHtml(imageUrl)}" alt="">`;
+      }
+      html += `<h1 class="kk-title-headline"${headlineStyle}>${escapeHtml(headline)}</h1>`;
+      if (subtitle) {
+        html += `<p class="kk-title-sub">${escapeHtml(subtitle)}</p>`;
+      }
+      html += `<div class="kk-title-accent"></div>`;
+    }
+
+    canvas.innerHTML = html;
+
+    // Re-trigger the entrance animation on each render by forcing a reflow.
+    // (Removing then re-adding the class restarts the CSS animation.)
+    void canvas.offsetWidth;
+    canvas.style.animation = "none";
+    void canvas.offsetWidth;
+    canvas.style.animation = "";
+  }
+
   function destroyChartForSpecialDisplay() {
     if (chartHolder.chart) {
       try { chartHolder.chart.destroy(); } catch (e) {}
@@ -454,21 +631,146 @@
   }
 
   function renderPictureChoicePresenter(q, tallyData) {
-    destroyChartForSpecialDisplay();
-    if (!specialEl) return;
+    if (!liveCanvas || !specialEl || !window.Chart) return;
+
+    // The user requested picture questions to behave like a chart, with the
+    // answer photos shown as small labels on the X axis. We draw a normal bar
+    // chart and use a small custom plugin to paint thumbnails under each bar.
+    liveCanvas.style.display = "block";
+    specialEl.style.display = "block";
+    specialEl.innerHTML = "";
+
     const counts = (tallyData && tallyData.counts) || {};
     const choices = Array.isArray(q.choices) ? q.choices : [];
-    specialEl.innerHTML = `
-      <div class="kk-picture-presenter-grid">
-        ${choices.map(choice => {
-          const count = Number(counts[String(choice.id)] ?? counts[choice.id] ?? 0);
-          return `<div class="kk-picture-presenter-card">
-            ${choice.image_url ? `<img src="${choice.image_url}" alt="">` : `<div class="kk-picture-presenter-empty">🖼️</div>`}
-            <div class="kk-picture-presenter-title">${escapeHtml(choice.text || "Picture")}</div>
-            <div class="kk-picture-presenter-count">${count} vote${count === 1 ? "" : "s"}</div>
-          </div>`;
-        }).join("")}
-      </div>`;
+    const labels = choices.map((choice, i) => choice.text || `Picture ${i + 1}`);
+    const values = choices.map(choice => Number(counts[String(choice.id)] ?? counts[choice.id] ?? 0));
+
+    const imageCache = choices.map(choice => {
+      if (!choice.image_url) return null;
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        if (chartHolder.chart) chartHolder.chart.update("none");
+      };
+      img.src = choice.image_url;
+      return img;
+    });
+
+    const pictureAxisPlugin = {
+      id: "kkPictureAxisLabels",
+      afterDraw(chart) {
+        const x = chart.scales && chart.scales.x;
+        if (!x) return;
+        const ctx = chart.ctx;
+        const area = chart.chartArea;
+        const size = Math.max(34, Math.min(54, Math.floor((area.right - area.left) / Math.max(choices.length * 2.4, 1))));
+        const y = area.bottom + 12;
+
+        ctx.save();
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        ctx.font = "700 11px Inter, system-ui, sans-serif";
+        choices.forEach((choice, index) => {
+          const cx = x.getPixelForValue(index);
+          const left = cx - size / 2;
+          const img = imageCache[index];
+
+          ctx.save();
+          ctx.beginPath();
+          const r = 10;
+          ctx.moveTo(left + r, y);
+          ctx.lineTo(left + size - r, y);
+          ctx.quadraticCurveTo(left + size, y, left + size, y + r);
+          ctx.lineTo(left + size, y + size - r);
+          ctx.quadraticCurveTo(left + size, y + size, left + size - r, y + size);
+          ctx.lineTo(left + r, y + size);
+          ctx.quadraticCurveTo(left, y + size, left, y + size - r);
+          ctx.lineTo(left, y + r);
+          ctx.quadraticCurveTo(left, y, left + r, y);
+          ctx.closePath();
+          ctx.clip();
+
+          if (img && img.complete && img.naturalWidth) {
+            const ratio = Math.max(size / img.naturalWidth, size / img.naturalHeight);
+            const w = img.naturalWidth * ratio;
+            const h = img.naturalHeight * ratio;
+            ctx.drawImage(img, cx - w / 2, y + size / 2 - h / 2, w, h);
+          } else {
+            ctx.fillStyle = "rgba(255,255,255,.14)";
+            ctx.fillRect(left, y, size, size);
+            ctx.fillStyle = "rgba(255,255,255,.86)";
+            ctx.font = `${Math.round(size * 0.48)}px system-ui`;
+            ctx.fillText("🖼️", cx, y + size * 0.24);
+          }
+          ctx.restore();
+
+          ctx.strokeStyle = "rgba(255,255,255,.78)";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(left + 1, y + 1, size - 2, size - 2);
+
+          const txt = String(choice.text || `Picture ${index + 1}`).slice(0, 18);
+          ctx.fillStyle = "rgba(255,255,255,.92)";
+          ctx.font = "700 11px Inter, system-ui, sans-serif";
+          ctx.fillText(txt, cx, y + size + 6);
+        });
+        ctx.restore();
+      },
+    };
+
+    if (chartHolder.chart) {
+      try { chartHolder.chart.destroy(); } catch (e) {}
+      chartHolder.chart = null;
+    }
+
+    chartHolder.chart = new Chart(liveCanvas, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          borderRadius: 18,
+          borderWidth: 1,
+          borderColor: "rgba(255,255,255,.35)",
+          backgroundColor: labels.map((_, i) => [
+            "rgba(124,58,237,.82)",
+            "rgba(34,211,238,.82)",
+            "rgba(251,113,133,.82)",
+            "rgba(251,191,36,.82)",
+            "rgba(52,211,153,.82)",
+          ][i % 5]),
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: { padding: { bottom: 92, left: 10, right: 10, top: 12 } },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { title: items => labels[items[0].dataIndex] || "" } },
+        },
+        scales: {
+          x: {
+            ticks: { display: false },
+            grid: { display: false },
+            border: { display: false },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: {
+              precision: 0,
+              color: "rgba(255,255,255,.78)",
+              font: { size: window.kkChartAxisFonts?.y || 14, weight: "700" },
+            },
+            grid: { color: "rgba(255,255,255,.10)" },
+            border: { display: false },
+          },
+        },
+        animation: { duration: 350 },
+      },
+      plugins: [pictureAxisPlugin],
+    });
+
+    resizeChartSoon();
   }
 
   function renderPuzzleWinnerPresenter(q, tallyData) {
@@ -1050,4 +1352,513 @@
       } catch (e) {}
     }
   });
+  // ─────────────────────────────────────────────────────────────
+  // Presentation font colors (question text + chart axes/legend)
+  // Wires #question-font-color and #chart-font-color color inputs +
+  // their "Auto" reset buttons. Values persist in localStorage.
+  //
+  // Implementation note: chart_preview.js builds the Chart instance with
+  // its own colors (and may use scriptable color functions). Mutating
+  // options + update() isn't reliable because (a) fresh charts overwrite
+  // the options, and (b) scriptable color callbacks ignore static values.
+  // So we register a global Chart.js plugin that runs `beforeUpdate` on
+  // EVERY chart and forces all text-color options to the saved value.
+  // Chart.defaults.color is also bumped so scriptable functions that
+  // read it pick up the new color too.
+  // ─────────────────────────────────────────────────────────────
+  (function setupFontColors() {
+    const qInput     = document.getElementById("question-font-color");
+    const cInput     = document.getElementById("chart-font-color");
+    const qReset     = document.getElementById("reset-question-font-color");
+    const cReset     = document.getElementById("reset-chart-font-color");
+    const qTextEl    = document.getElementById("q-text");
+    const wrap       = document.getElementById("chart-wrap");
+    const stageEl    = document.querySelector(".kk-stage");
+
+    const Q_KEY = "kk-question-font-color";
+    const C_KEY = "kk-chart-font-color";
+
+    // Convert any CSS color string (rgb/rgba/hex/named) → "#rrggbb".
+    // Falls back to the supplied fallback when parsing fails.
+    function toHex(input, fallback) {
+      if (!input) return fallback;
+      const s = String(input).trim();
+      // Already hex?
+      const m = s.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+      if (m) {
+        const h = m[1];
+        return "#" + (h.length === 3 ? h.split("").map((x) => x + x).join("") : h).toLowerCase();
+      }
+      // rgb()/rgba()
+      const rgb = s.match(/^rgba?\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)/i);
+      if (rgb) {
+        const r = Math.max(0, Math.min(255, Math.round(parseFloat(rgb[1]))));
+        const g = Math.max(0, Math.min(255, Math.round(parseFloat(rgb[2]))));
+        const b = Math.max(0, Math.min(255, Math.round(parseFloat(rgb[3]))));
+        return "#" + [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("");
+      }
+      // Last resort: let the browser resolve it via a temp element.
+      try {
+        const tmp = document.createElement("span");
+        tmp.style.color = s;
+        document.body.appendChild(tmp);
+        const computed = getComputedStyle(tmp).color;
+        document.body.removeChild(tmp);
+        return toHex(computed, fallback);
+      } catch (e) {
+        return fallback;
+      }
+    }
+
+    // Template-driven defaults: read --stage-fg from the live .kk-stage.
+    function getTemplateFg() {
+      if (!stageEl) return "#ffffff";
+      const cs = getComputedStyle(stageEl);
+      // Prefer the explicit --stage-fg var; fall back to the resolved
+      // `color` property of the stage.
+      const raw = (cs.getPropertyValue("--stage-fg") || "").trim() || cs.color;
+      return toHex(raw, "#ffffff");
+    }
+
+    // Re-evaluated each time Auto is hit, so it tracks the active template.
+    function autoColors() {
+      const fg = getTemplateFg();
+      return { question: fg, chart: fg };
+    }
+
+    // Single source of truth for the chart label color.
+    window.__kkChartFontColor = localStorage.getItem(C_KEY) || autoColors().chart;
+
+    // Bump Chart.defaults so anything reading defaults picks up the color.
+    if (window.Chart && Chart.defaults) {
+      Chart.defaults.color = window.__kkChartFontColor;
+    }
+
+    function applyQuestionColor(color) {
+      if (qTextEl) qTextEl.style.color = color || "";
+    }
+
+    function forceChartColors(chart) {
+      if (!chart || !chart.options) return;
+      const c = window.__kkChartFontColor || autoColors().chart;
+
+      // Scales: only touch existing scale objects, never create new ones.
+      const scales = chart.options.scales;
+      if (scales && typeof scales === "object") {
+        Object.keys(scales).forEach((key) => {
+          const s = scales[key];
+          if (!s || typeof s !== "object") return;
+          if (s.ticks && typeof s.ticks === "object") s.ticks.color = c;
+          if (s.title && typeof s.title === "object") s.title.color = c;
+          if (s.pointLabels && typeof s.pointLabels === "object") s.pointLabels.color = c;
+        });
+      }
+
+      // Plugins: only touch existing plugin config; don't create legend/title/subtitle
+      // objects, since their mere presence can change Chart.js rendering.
+      const p = chart.options.plugins;
+      if (p && typeof p === "object") {
+        if (p.legend && p.legend.labels && typeof p.legend.labels === "object") {
+          p.legend.labels.color = c;
+        }
+        if (p.title && typeof p.title === "object") p.title.color = c;
+        if (p.subtitle && typeof p.subtitle === "object") p.subtitle.color = c;
+      }
+
+      chart.$kkChartFontColor = c;
+    }
+
+    function applyChartColor(color) {
+      const c = color || autoColors().chart;
+      window.__kkChartFontColor = c;
+      if (wrap) wrap.style.setProperty("--kk-chart-font-color", c);
+      if (window.Chart && Chart.defaults) Chart.defaults.color = c;
+
+      // Force the live chart to pick up the change immediately.
+      try {
+        const ch = chartHolder && chartHolder.chart;
+        if (ch) {
+          forceChartColors(ch);
+          ch.update("none");
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    // Register the global plugin that re-applies colors on every chart.
+    if (window.Chart && Chart.register) {
+      const already =
+        Chart.registry &&
+        Chart.registry.plugins &&
+        typeof Chart.registry.plugins.get === "function" &&
+        Chart.registry.plugins.get("kkFontColors");
+      if (!already) {
+        Chart.register({
+          id: "kkFontColors",
+          beforeUpdate(chart) {
+            try { forceChartColors(chart); } catch (e) {}
+          },
+        });
+      }
+    }
+
+    // Restore from storage.
+    const qSaved = localStorage.getItem(Q_KEY);
+    const cSaved = localStorage.getItem(C_KEY);
+
+    if (qSaved) {
+      if (qInput) qInput.value = qSaved;
+      applyQuestionColor(qSaved);
+    } else {
+      // Sync the picker to the live template default for nicer UX.
+      if (qInput) qInput.value = autoColors().question;
+      applyQuestionColor("");
+    }
+    if (cSaved) {
+      if (cInput) cInput.value = cSaved;
+      applyChartColor(cSaved);
+    } else {
+      const auto = autoColors().chart;
+      if (cInput) cInput.value = auto;
+      applyChartColor(auto);
+    }
+
+    if (qInput) {
+      qInput.addEventListener("input", () => {
+        localStorage.setItem(Q_KEY, qInput.value);
+        applyQuestionColor(qInput.value);
+      });
+    }
+    if (cInput) {
+      cInput.addEventListener("input", () => {
+        localStorage.setItem(C_KEY, cInput.value);
+        applyChartColor(cInput.value);
+      });
+    }
+    if (qReset) {
+      qReset.addEventListener("click", () => {
+        localStorage.removeItem(Q_KEY);
+        const auto = autoColors().question;
+        if (qInput) qInput.value = auto;
+        // Clear inline color so the template's CSS cascade wins.
+        applyQuestionColor("");
+      });
+    }
+    if (cReset) {
+      cReset.addEventListener("click", () => {
+        localStorage.removeItem(C_KEY);
+        const auto = autoColors().chart;
+        if (cInput) cInput.value = auto;
+        applyChartColor(auto);
+      });
+    }
+  })();
+
+  // ─────────────────────────────────────────────────────────────
+  // Chart.js plugin: draw participant counts on top of each value.
+  // Works for bar (vertical + horizontal), pie, and doughnut charts.
+  // Color follows the chart-font-color setting.
+  // ─────────────────────────────────────────────────────────────
+  (function registerCountPlugin() {
+    if (typeof window.Chart === "undefined" || !Chart.register) return;
+    if (Chart.registry && Chart.registry.plugins && Chart.registry.plugins.get && Chart.registry.plugins.get("kkCountLabels")) return;
+
+    const plugin = {
+      id: "kkCountLabels",
+      afterDatasetsDraw(chart) {
+        const { ctx, data } = chart;
+        if (!ctx || !data || !Array.isArray(data.datasets)) return;
+
+        const fontColor = chart.$kkChartFontColor
+          || (document.getElementById("chart-wrap") && document.getElementById("chart-wrap").style.getPropertyValue("--kk-chart-font-color"))
+          || "#ffffff";
+
+        ctx.save();
+        ctx.font = "700 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        data.datasets.forEach((ds, di) => {
+          const meta = chart.getDatasetMeta(di);
+          if (!meta || meta.hidden) return;
+
+          const type = (meta.type || chart.config.type || "").toLowerCase();
+          // Only annotate types where counts make sense.
+          if (type !== "bar" && type !== "pie" && type !== "doughnut" && type !== "polarArea" && type !== "polararea") return;
+
+          const arr = Array.isArray(ds.data) ? ds.data : [];
+
+          arr.forEach((rawVal, i) => {
+            const val = Number(rawVal) || 0;
+            if (val <= 0) return;                  // skip zero counts
+            const el = meta.data[i];
+            if (!el) return;
+            const pos = el.tooltipPosition ? el.tooltipPosition() : { x: el.x, y: el.y };
+            if (!pos || typeof pos.x !== "number") return;
+
+            const text = String(Math.round(val));
+
+            let x = pos.x;
+            let y = pos.y;
+
+            if (type === "bar") {
+              // Detect orientation: horizontal bar has indexAxis=y.
+              const idxAxis = (chart.options && chart.options.indexAxis) || "x";
+              if (idxAxis === "y") {
+                // Horizontal: put count to the right of the bar end.
+                x = (el.x || pos.x) + 10;
+                y = pos.y;
+                ctx.textAlign = "left";
+              } else {
+                // Vertical: put count above the top of the bar.
+                x = pos.x;
+                y = (el.y || pos.y) - 10;
+                ctx.textAlign = "center";
+              }
+            } else if (type === "pie" || type === "doughnut") {
+              // tooltipPosition gives the slice center — perfect.
+              ctx.textAlign = "center";
+            } else {
+              ctx.textAlign = "center";
+            }
+
+            // Pill background for legibility on busy scenery.
+            const padX = 6, padY = 3;
+            const w = ctx.measureText(text).width;
+            const h = 14;
+            const rx = ctx.textAlign === "left" ? x - padX : x - w / 2 - padX;
+            const ry = y - h / 2 - padY;
+            const rw = w + padX * 2;
+            const rh = h + padY * 2;
+
+            ctx.fillStyle = "rgba(0,0,0,.55)";
+            const r = 8;
+            ctx.beginPath();
+            ctx.moveTo(rx + r, ry);
+            ctx.lineTo(rx + rw - r, ry);
+            ctx.quadraticCurveTo(rx + rw, ry, rx + rw, ry + r);
+            ctx.lineTo(rx + rw, ry + rh - r);
+            ctx.quadraticCurveTo(rx + rw, ry + rh, rx + rw - r, ry + rh);
+            ctx.lineTo(rx + r, ry + rh);
+            ctx.quadraticCurveTo(rx, ry + rh, rx, ry + rh - r);
+            ctx.lineTo(rx, ry + r);
+            ctx.quadraticCurveTo(rx, ry, rx + r, ry);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = fontColor || "#fff";
+            ctx.fillText(text, x, y);
+          });
+        });
+
+        ctx.restore();
+      },
+    };
+
+    Chart.register(plugin);
+  })();
+
+  // ─────────────────────────────────────────────────────────────
+  // Chart background opacity slider
+  // The veil element matches the page background color. Its opacity
+  // is (1 - bgOpacity), so the slider effectively fades the scenery.
+  // ─────────────────────────────────────────────────────────────
+  (function setupChartBgOpacity() {
+    const slider = document.getElementById("chart-bg-opacity");
+    const label  = document.getElementById("chart-bg-opacity-value");
+    const wrap   = document.getElementById("chart-wrap");
+    if (!slider || !wrap) return;
+
+    const KEY = "kk-chart-bg-opacity";
+    const stored = Number(localStorage.getItem(KEY));
+    const initial = Number.isFinite(stored) && stored >= 0 && stored <= 100 ? stored : 100;
+
+    function apply(percent) {
+      const p = Math.max(0, Math.min(100, Number(percent) || 0));
+      const veilOpacity = (100 - p) / 100;   // 100% → veil 0 (full scene); 0% → veil 1 (hidden scene)
+      wrap.style.setProperty("--kk-chart-bg-veil-opacity", String(veilOpacity));
+      if (label) label.textContent = p + "%";
+      slider.value = String(p);
+      localStorage.setItem(KEY, String(p));
+    }
+
+    apply(initial);
+    slider.addEventListener("input", () => apply(slider.value));
+  })();
+
+  // ─────────────────────────────────────────────────────────────
+  // Magnifying lens
+  // Toggle with #btn-lens. When active, follow the cursor over the
+  // chart wrapper and draw a magnified copy of the live chart canvas
+  // into the lens canvas.
+  // ─────────────────────────────────────────────────────────────
+  (function setupLens() {
+    const wrap       = document.getElementById("chart-wrap");
+    const lensEl     = document.getElementById("kk-lens");
+    const lensCanvas = document.getElementById("kk-lens-canvas");
+    const lensBadge  = document.getElementById("kk-lens-badge");
+    const btn        = document.getElementById("btn-lens");
+    const zoomInput  = document.getElementById("lens-zoom");
+    const zoomLabel  = document.getElementById("lens-zoom-value");
+    const sizeInput  = document.getElementById("lens-size");
+    const sizeLabel  = document.getElementById("lens-size-value");
+    const liveChart  = document.getElementById("live-chart");
+
+    if (!wrap || !lensEl || !lensCanvas || !btn || !liveChart) return;
+
+    const ZOOM_KEY = "kk-lens-zoom";
+    const SIZE_KEY = "kk-lens-size";
+
+    const state = {
+      active: false,
+      zoom: Number(localStorage.getItem(ZOOM_KEY)) || 2,
+      size: Number(localStorage.getItem(SIZE_KEY)) || 220,
+      // Position in wrapper-local coordinates
+      x: 0,
+      y: 0,
+      raf: 0,
+    };
+
+    const ctx = lensCanvas.getContext("2d");
+
+    function applySize() {
+      lensEl.style.width  = state.size + "px";
+      lensEl.style.height = state.size + "px";
+      // Backing-store size matches CSS size × DPR for crispness.
+      const dpr = window.devicePixelRatio || 1;
+      lensCanvas.width  = Math.round(state.size * dpr);
+      lensCanvas.height = Math.round(state.size * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (sizeLabel) sizeLabel.textContent = String(state.size);
+      if (sizeInput) sizeInput.value = String(state.size);
+    }
+
+    function applyZoom() {
+      if (lensBadge) lensBadge.textContent = state.zoom + "x";
+      if (zoomLabel) zoomLabel.textContent = state.zoom + "x";
+      if (zoomInput) zoomInput.value = String(state.zoom);
+    }
+
+    function render() {
+      state.raf = 0;
+      if (!state.active) return;
+
+      // Source: the live-chart canvas. Map wrapper coords → chart coords.
+      const wrapRect  = wrap.getBoundingClientRect();
+      const chartRect = liveChart.getBoundingClientRect();
+
+      // Cursor position in chart-canvas CSS pixels.
+      const cssX = (state.x + wrapRect.left) - chartRect.left;
+      const cssY = (state.y + wrapRect.top)  - chartRect.top;
+
+      // Convert CSS → backing-store pixels of the source canvas.
+      const sxScale = liveChart.width  / chartRect.width;
+      const syScale = liveChart.height / chartRect.height;
+
+      const srcW = state.size / state.zoom;
+      const srcH = state.size / state.zoom;
+      const sx = (cssX - srcW / 2) * sxScale;
+      const sy = (cssY - srcH / 2) * syScale;
+      const sw = srcW * sxScale;
+      const sh = srcH * syScale;
+
+      // Clear and draw.
+      ctx.clearRect(0, 0, state.size, state.size);
+
+      // Soft backdrop so empty/transparent regions are visible.
+      ctx.fillStyle = "rgba(0,0,0,.35)";
+      ctx.fillRect(0, 0, state.size, state.size);
+
+      try {
+        ctx.drawImage(liveChart, sx, sy, sw, sh, 0, 0, state.size, state.size);
+      } catch (err) {
+        // drawImage can throw if the canvas is 0-sized; ignore.
+      }
+
+      // Position the lens (centered on cursor, clamped to wrapper).
+      const half = state.size / 2;
+      const maxX = wrapRect.width  - half;
+      const maxY = wrapRect.height - half;
+      const px = Math.max(half, Math.min(maxX, state.x));
+      const py = Math.max(half, Math.min(maxY, state.y));
+      lensEl.style.left = px + "px";
+      lensEl.style.top  = py + "px";
+    }
+
+    function schedule() {
+      if (state.raf) return;
+      state.raf = requestAnimationFrame(render);
+    }
+
+    function onMove(e) {
+      const r = wrap.getBoundingClientRect();
+      state.x = e.clientX - r.left;
+      state.y = e.clientY - r.top;
+      schedule();
+    }
+
+    function onLeave() {
+      if (!state.active) return;
+      // Park it in the center but keep it visible while active.
+      const r = wrap.getBoundingClientRect();
+      state.x = r.width / 2;
+      state.y = r.height / 2;
+      schedule();
+    }
+
+    function activate() {
+      state.active = true;
+      lensEl.style.display = "block";
+      wrap.classList.add("is-lens");
+      btn.classList.add("is-active-lens");
+      wrap.addEventListener("mousemove", onMove);
+      wrap.addEventListener("mouseleave", onLeave);
+      // Initial render in the middle of the wrapper.
+      const r = wrap.getBoundingClientRect();
+      state.x = r.width / 2;
+      state.y = r.height / 2;
+      schedule();
+    }
+
+    function deactivate() {
+      state.active = false;
+      lensEl.style.display = "none";
+      wrap.classList.remove("is-lens");
+      btn.classList.remove("is-active-lens");
+      wrap.removeEventListener("mousemove", onMove);
+      wrap.removeEventListener("mouseleave", onLeave);
+      if (state.raf) {
+        cancelAnimationFrame(state.raf);
+        state.raf = 0;
+      }
+    }
+
+    btn.addEventListener("click", () => {
+      if (state.active) deactivate(); else activate();
+    });
+
+    if (zoomInput) {
+      zoomInput.addEventListener("input", () => {
+        state.zoom = Number(zoomInput.value) || 2;
+        localStorage.setItem(ZOOM_KEY, String(state.zoom));
+        applyZoom();
+        if (state.active) schedule();
+      });
+    }
+
+    if (sizeInput) {
+      sizeInput.addEventListener("input", () => {
+        state.size = Number(sizeInput.value) || 220;
+        localStorage.setItem(SIZE_KEY, String(state.size));
+        applySize();
+        if (state.active) schedule();
+      });
+    }
+
+    // Keep lens fresh when the chart redraws or window resizes.
+    window.addEventListener("resize", () => { if (state.active) schedule(); });
+
+    applySize();
+    applyZoom();
+  })();
+
 })();

@@ -518,6 +518,31 @@
         {% endif %}
       </div>
 
+      <div class="kk-sub-card mb-3">
+        <h2 class="kk-section-title" style="font-size:1rem;">
+          <i class="bi bi-stopwatch"></i> Timer policy
+        </h2>
+        <div class="form-check mb-2">
+          {{ form.allow_late_answers }}
+          <label class="form-check-label" for="{{ form.allow_late_answers.id_for_label }}">
+            Allow late answers after the timer ends
+          </label>
+        </div>
+        {% if form.allow_late_answers.errors %}
+          <div class="text-danger small mt-1">{{ form.allow_late_answers.errors }}</div>
+        {% endif %}
+        <label class="form-label small text-secondary" for="{{ form.late_answer_points_pct.id_for_label }}">
+          Late answer points percentage
+        </label>
+        {{ form.late_answer_points_pct }}
+        {% if form.late_answer_points_pct.errors %}
+          <div class="text-danger small mt-1">{{ form.late_answer_points_pct.errors }}</div>
+        {% endif %}
+        <div class="form-text">
+          If late answers are off, no answer is accepted after time reaches 0 unless the presenter uses +5s / +10s.
+        </div>
+      </div>
+
       <div class="mb-3">
         <label class="form-label">
           <i class="bi bi-stars"></i> Chart background
@@ -904,6 +929,18 @@
     wireRemoveButtons(row);
     wireAvatarPickButtons(row);
   });
+})();
+</script>
+<script>
+(function () {
+  const allow = document.getElementById("id_allow_late_answers");
+  const pct = document.getElementById("id_late_answer_points_pct");
+  function syncLatePct() {
+    if (!allow || !pct) return;
+    pct.disabled = !allow.checked;
+  }
+  if (allow) allow.addEventListener("change", syncLatePct);
+  syncLatePct();
 })();
 </script>
 {% endblock %}

@@ -412,21 +412,588 @@
 
 
   /* ─────────────────────────────────────────────
-     PICTURE-CHOICE + PUZZLE GAME UI
+     PICTURE-CHOICE GAME UI
+     Renders answers as photo cards (2x2 grid). The picture is the answer;
+     the text becomes a small caption underneath. The presenter's chart
+     uses the same image as its X-axis label (see present.html shim).
   ───────────────────────────────────────────── */
-  .kk-picture-choice-grid { display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:.8rem !important; overflow-y:auto; overflow-x:hidden; }
-  .kk-picture-choice-card { border:1px solid rgba(255,255,255,.15); background:rgba(255,255,255,.08); border-radius:18px; padding:.65rem; color:#fff; text-align:center; overflow:hidden; cursor:pointer; box-shadow:0 12px 28px rgba(0,0,0,.22); }
-  .kk-picture-choice-card:active { transform:scale(.98); }
-  .kk-picture-choice-card img { width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:14px; display:block; margin-bottom:.55rem; }
-  .kk-puzzle-board { display:grid !important; gap:1rem !important; overflow-y:auto; overflow-x:hidden; }
-  .kk-puzzle-slots, .kk-puzzle-pieces { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem; }
-  .kk-puzzle-slot, .kk-puzzle-piece { min-height:86px; border-radius:18px; border:2px dashed rgba(255,255,255,.24); display:flex; align-items:center; justify-content:center; padding:.6rem; text-align:center; overflow:hidden; word-break:break-word; }
-  .kk-puzzle-slot.is-target { border-color:#fbbf24; background:rgba(251,191,36,.12); }
-  .kk-puzzle-piece { cursor:grab; border-style:solid; background:linear-gradient(135deg,#fb7185,#22d3ee); color:white; font-weight:900; box-shadow:0 14px 28px rgba(0,0,0,.25); }
-  .kk-puzzle-piece.is-selected { outline:3px solid #fbbf24; transform:scale(.98); }
-  .kk-puzzle-piece img { max-width:100%; max-height:72px; object-fit:contain; border-radius:12px; margin-right:.45rem; }
-  .kk-puzzle-slot.is-filled { border-style:solid; background:rgba(255,255,255,.10); }
-  @media (max-width:640px) { .kk-picture-choice-grid, .kk-puzzle-slots, .kk-puzzle-pieces { grid-template-columns:1fr !important; } }
+  .kk-picture-choice-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: .8rem !important;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .kk-picture-choice-card {
+    position: relative;
+    border: 2px solid rgba(255, 255, 255, .12);
+    background: rgba(255, 255, 255, .06);
+    border-radius: 18px;
+    padding: .5rem;
+    color: #fff;
+    text-align: center;
+    overflow: hidden;
+    cursor: pointer;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, .22);
+    transition: transform .12s ease, box-shadow .15s ease, border-color .15s ease;
+  }
+  .kk-picture-choice-card:hover:not(:disabled) {
+    transform: translateY(-2px);
+    border-color: rgba(251, 191, 36, .55);
+    box-shadow: 0 16px 32px rgba(0, 0, 0, .35);
+  }
+  .kk-picture-choice-card:active { transform: scale(.97); }
+  .kk-picture-choice-card[disabled] { opacity: .65; cursor: default; }
+  .kk-picture-choice-card.is-picked {
+    border-color: #fbbf24;
+    box-shadow: 0 0 0 3px #fbbf24, 0 16px 32px rgba(0, 0, 0, .35);
+  }
+  .kk-picture-choice-card.is-correct {
+    border-color: #22c55e;
+    box-shadow: 0 0 0 3px #22c55e;
+  }
+  .kk-picture-choice-card.is-incorrect {
+    border-color: #ef4444;
+    box-shadow: 0 0 0 3px #ef4444;
+  }
+  .kk-picture-choice-card img {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    border-radius: 12px;
+    display: block;
+    margin-bottom: .5rem;
+    background: rgba(0, 0, 0, .25);
+  }
+  .kk-picture-choice-card .kk-picture-fallback {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(124, 58, 237, .35), rgba(34, 211, 238, .25));
+    display: grid;
+    place-items: center;
+    font-size: 3rem;
+    margin-bottom: .5rem;
+  }
+  .kk-picture-choice-card strong {
+    display: block;
+    font-size: .95rem;
+    font-weight: 700;
+    line-height: 1.18;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  /* ─────────────────────────────────────────────
+     PUZZLE — LARGE SNAP-DRAG PIECES
+     Bigger 2x2 board + real pointer dragging for phones/tablets.
+     Short answers use the interlocking jigsaw board; long answers use
+     stacked rows. Both layouts support drag-to-swap and tap-to-swap.
+  ───────────────────────────────────────────── */
+  #tiles.kk-puzzle-board {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: clamp(.55rem, 1.4vw, .9rem) !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    align-items: stretch;
+  }
+
+  /* Override the generic #tiles > * answer-tile rules. Without this,
+     the puzzle wrapper/grid is treated like a normal answer tile and
+     the board becomes cramped. */
+  #tiles.kk-puzzle-board > * {
+    min-height: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    box-sizing: border-box;
+    max-width: 100%;
+  }
+
+  .kk-puzzle-hint {
+    display: block !important;
+    color: rgba(255, 255, 255, .82);
+    font-size: clamp(.88rem, 2.3vw, 1rem);
+    text-align: center;
+    margin: 0 auto .15rem;
+    line-height: 1.25;
+  }
+
+  /* Large interlocking board. It grows with the available card width but
+     stays below the question/timer area so it does not overflow phones. */
+  #tiles.kk-puzzle-board > .kk-puzzle-grid,
+  .kk-puzzle-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 !important;
+    width: min(92vw, 720px, 100%);
+    max-width: min(92vw, 720px);
+    margin: 0 auto;
+    padding: clamp(.2rem, 1vw, .45rem) !important;
+    aspect-ratio: 1 / 1;
+    overflow: visible !important;
+    touch-action: none;
+    position: relative;
+    isolation: isolate;
+  }
+  .kk-puzzle-grid.cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: min(94vw, 780px, 100%);
+    max-width: min(94vw, 780px);
+    aspect-ratio: 3 / 1;
+  }
+  .kk-puzzle-grid.cols-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .kk-puzzle-cell {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    min-height: 0 !important;
+    width: 100%;
+    border-radius: 16px;
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+    color: #fff;
+    font-weight: 900;
+    text-align: center;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    padding: 20% 16% !important;
+    line-height: 1.13;
+    overflow: visible !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    background: var(--kk-piece-bg, #7c3aed);
+    box-shadow:
+      0 14px 30px rgba(0, 0, 0, .34),
+      inset 0 0 0 2px rgba(255, 255, 255, .18),
+      inset 0 18px 28px rgba(255, 255, 255, .12);
+    transition: transform .18s cubic-bezier(.2,.8,.2,1), filter .15s ease, box-shadow .15s ease;
+    will-change: transform;
+    z-index: 1;
+  }
+  .kk-puzzle-cell:nth-child(1) { --kk-piece-bg: linear-gradient(135deg, #ff3b91, #c51652); }
+  .kk-puzzle-cell:nth-child(2) { --kk-piece-bg: linear-gradient(135deg, #00b7ff, #006bb8); }
+  .kk-puzzle-cell:nth-child(3) { --kk-piece-bg: linear-gradient(135deg, #ffe600, #ff9d00); color:#1f2937; }
+  .kk-puzzle-cell:nth-child(4) { --kk-piece-bg: linear-gradient(135deg, #92e900, #39a900); }
+  .kk-puzzle-cell:nth-child(5) { --kk-piece-bg: linear-gradient(135deg, #f59e0b, #ea580c); color:#1f2937; }
+  .kk-puzzle-cell:nth-child(6) { --kk-piece-bg: linear-gradient(135deg, #22c55e, #15803d); }
+  .kk-puzzle-cell:nth-child(7) { --kk-piece-bg: linear-gradient(135deg, #a855f7, #6d28d9); }
+  .kk-puzzle-cell:nth-child(8) { --kk-piece-bg: linear-gradient(135deg, #06b6d4, #0369a1); }
+
+  .kk-puzzle-cell {
+    -webkit-mask: var(--kk-piece-mask, none) center / 100% 100% no-repeat;
+            mask: var(--kk-piece-mask, none) center / 100% 100% no-repeat;
+  }
+
+  .kk-puzzle-cell.is-dragging {
+    cursor: grabbing;
+    z-index: 50;
+    filter: brightness(1.08) saturate(1.08);
+    box-shadow:
+      0 28px 60px rgba(0, 0, 0, .48),
+      0 0 0 4px rgba(251, 191, 36, .55),
+      inset 0 0 0 2px rgba(255, 255, 255, .28);
+  }
+  .kk-puzzle-cell.is-over {
+    transform: scale(1.04);
+    filter: brightness(1.13) saturate(1.08);
+    outline: 4px dashed rgba(251, 191, 36, .9);
+    outline-offset: -10px;
+  }
+  .kk-puzzle-cell.is-selected {
+    outline: 4px solid #fbbf24;
+    outline-offset: -6px;
+  }
+  .kk-puzzle-cell.is-correct  {
+    box-shadow: 0 0 0 4px #fbbf24, 0 22px 38px rgba(0, 0, 0, .38), inset 0 0 0 2px rgba(255, 255, 255, .28);
+  }
+  .kk-puzzle-cell.kk-snap-pop,
+  .kk-puzzle-stack-row.kk-snap-pop {
+    animation: kkPuzzleSnapPop .32s ease-out;
+  }
+  @keyframes kkPuzzleSnapPop {
+    0%   { transform: scale(.96); }
+    55%  { transform: scale(1.04); }
+    100% { transform: scale(1); }
+  }
+
+  .kk-puzzle-cell .kk-puzzle-img {
+    position: absolute;
+    inset: 18% 14%;
+    background-size: cover;
+    background-position: center;
+    border-radius: 10px;
+    opacity: .82;
+    pointer-events: none;
+  }
+  .kk-puzzle-cell .kk-puzzle-text {
+    position: relative;
+    z-index: 1;
+    text-shadow: 0 3px 6px rgba(0, 0, 0, .5);
+    font-size: clamp(1.05rem, 3.1vw, 1.75rem);
+    pointer-events: none;
+  }
+
+  /* Long-answer fallback: big draggable stacked rows. */
+  #tiles.kk-puzzle-board > .kk-puzzle-stack,
+  .kk-puzzle-stack {
+    display: flex !important;
+    flex-direction: column;
+    gap: clamp(.55rem, 1.6vw, .8rem);
+    width: min(92vw, 760px, 100%);
+    max-width: min(92vw, 760px);
+    margin: 0 auto;
+    overflow: visible !important;
+    touch-action: none;
+  }
+  .kk-puzzle-stack-row {
+    display: flex !important;
+    align-items: stretch;
+    gap: .65rem;
+    min-height: clamp(68px, 12vw, 98px) !important;
+    background: var(--kk-piece-bg, #7c3aed);
+    color: #fff;
+    border-radius: 18px;
+    padding: clamp(.75rem, 2.2vw, 1rem) !important;
+    box-shadow: 0 12px 26px rgba(0, 0, 0, .32), inset 0 0 0 2px rgba(255, 255, 255, .14);
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+    transition: transform .18s cubic-bezier(.2,.8,.2,1), filter .15s ease, box-shadow .15s ease;
+    position: relative;
+    z-index: 1;
+  }
+  .kk-puzzle-stack-row:nth-child(1) { --kk-piece-bg: linear-gradient(135deg, #ff3b91, #c51652); }
+  .kk-puzzle-stack-row:nth-child(2) { --kk-piece-bg: linear-gradient(135deg, #00b7ff, #006bb8); }
+  .kk-puzzle-stack-row:nth-child(3) { --kk-piece-bg: linear-gradient(135deg, #ffe600, #ff9d00); color:#1f2937; }
+  .kk-puzzle-stack-row:nth-child(4) { --kk-piece-bg: linear-gradient(135deg, #92e900, #39a900); }
+  .kk-puzzle-stack-row:nth-child(5) { --kk-piece-bg: linear-gradient(135deg, #f59e0b, #ea580c); color:#1f2937; }
+  .kk-puzzle-stack-row:nth-child(6) { --kk-piece-bg: linear-gradient(135deg, #22c55e, #15803d); }
+  .kk-puzzle-stack-row:nth-child(7) { --kk-piece-bg: linear-gradient(135deg, #a855f7, #6d28d9); }
+  .kk-puzzle-stack-row:nth-child(8) { --kk-piece-bg: linear-gradient(135deg, #06b6d4, #0369a1); }
+  .kk-puzzle-stack-row.is-dragging {
+    cursor: grabbing;
+    z-index: 50;
+    filter: brightness(1.08) saturate(1.08);
+    box-shadow: 0 24px 50px rgba(0, 0, 0, .48), 0 0 0 4px rgba(251, 191, 36, .55);
+  }
+  .kk-puzzle-stack-row.is-over {
+    transform: scale(1.015);
+    filter: brightness(1.1);
+    outline: 3px dashed rgba(251,191,36,.95);
+    outline-offset: -6px;
+  }
+  .kk-puzzle-stack-row.is-selected { outline: 4px solid #fbbf24; outline-offset: -5px; }
+  .kk-puzzle-stack-row.is-correct  { box-shadow: 0 0 0 4px #fbbf24, 0 14px 26px rgba(0, 0, 0, .38); }
+  .kk-puzzle-stack-handle {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    font-size: 1.45rem;
+    color: rgba(255, 255, 255, .9);
+    padding-right: .25rem;
+    pointer-events: none;
+  }
+  .kk-puzzle-stack-num {
+    flex: 0 0 auto;
+    width: 2.15rem;
+    height: 2.15rem;
+    display: grid;
+    place-items: center;
+    background: rgba(0, 0, 0, .28);
+    border-radius: 50%;
+    font-weight: 900;
+    pointer-events: none;
+  }
+  .kk-puzzle-stack-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-weight: 800;
+    line-height: 1.22;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    display: flex;
+    align-items: center;
+    font-size: clamp(1rem, 2.8vw, 1.25rem);
+    pointer-events: none;
+  }
+  .kk-puzzle-stack-img {
+    flex: 0 0 auto;
+    width: clamp(54px, 10vw, 78px);
+    height: clamp(54px, 10vw, 78px);
+    background-size: cover;
+    background-position: center;
+    border-radius: 12px;
+    border: 2px solid rgba(255, 255, 255, .35);
+    pointer-events: none;
+  }
+
+  #tiles.kk-puzzle-board > .kk-puzzle-submit-bar,
+  .kk-puzzle-submit-bar {
+    margin-top: .35rem;
+    display: flex !important;
+    gap: .5rem;
+    width: min(92vw, 760px, 100%);
+    max-width: min(92vw, 760px);
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  @media (max-width: 640px) {
+    #tiles.kk-puzzle-board {
+      gap: .5rem !important;
+    }
+    .kk-puzzle-grid {
+      width: min(94vw, 520px, 100%);
+      max-width: min(94vw, 520px);
+      padding: .15rem !important;
+    }
+    .kk-puzzle-cell {
+      padding: 18% 12% !important;
+    }
+    .kk-puzzle-cell .kk-puzzle-text {
+      font-size: clamp(.95rem, 4.2vw, 1.35rem);
+    }
+    .kk-puzzle-stack-img { width: 48px; height: 48px; }
+  }
+
+  /* ─────────────────────────────────────────────
+     SPARKLES on a correct answer tile
+  ───────────────────────────────────────────── */
+  .kk-spark-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: visible;
+  }
+  .kk-spark {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    font-size: 1.4rem;
+    pointer-events: none;
+    animation: kk-spark-burst 1.1s ease-out forwards;
+    animation-delay: var(--delay, 0ms);
+    transform: translate(-50%, -50%);
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .35));
+  }
+  @keyframes kk-spark-burst {
+    0%   { opacity: 0; transform: translate(-50%, -50%) scale(.4); }
+    20%  { opacity: 1; }
+    100% { opacity: 0; transform: translate(calc(-50% + var(--dx, 0px)), calc(-50% + var(--dy, -60px))) scale(1.2); }
+  }
+
+  @media (max-width: 640px) {
+    .kk-picture-choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    .kk-puzzle-grid { max-width: 360px; }
+    .kk-puzzle-cell { padding: 16% 12%; }
+    .kk-puzzle-stack-img { width: 44px; height: 44px; }
+  }
+  @media (max-width: 420px) {
+    .kk-picture-choice-card strong { font-size: .82rem; }
+  }
+
+
+  /* ─────────────────────────────────────────────
+     PUZZLE — 4 NUMBERED SLOTS WITH SQUARE TILES
+     Fixed positions 1–4. Answer tiles start randomly inside those
+     slots and participants drag/release over another slot to snap/swap.
+  ───────────────────────────────────────────── */
+  #tiles.kk-puzzle-board-slots {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: clamp(.6rem, 1.8vw, 1rem) !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding: .15rem !important;
+  }
+
+  .kk-puzzle-slots {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(.65rem, 2vw, 1rem);
+    width: min(94vw, 760px, 100%);
+    max-width: min(94vw, 760px);
+    margin: 0 auto;
+    touch-action: none;
+  }
+
+  .kk-puzzle-slot {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    min-height: clamp(132px, 27vw, 245px);
+    border-radius: 24px;
+    border: 2px dashed rgba(255,255,255,.28);
+    background:
+      linear-gradient(135deg, rgba(255,255,255,.08), rgba(255,255,255,.025)),
+      rgba(0,0,0,.18);
+    box-shadow:
+      inset 0 0 0 1px rgba(255,255,255,.08),
+      0 16px 38px rgba(0,0,0,.22);
+    padding: clamp(2.15rem, 5vw, 3rem) clamp(.55rem, 1.6vw, .85rem) clamp(.55rem, 1.6vw, .85rem);
+    overflow: visible;
+    transition: transform .16s ease, border-color .16s ease, background .16s ease;
+  }
+
+  .kk-puzzle-slot.is-over {
+    transform: scale(1.025);
+    border-color: #fbbf24;
+    background:
+      radial-gradient(circle at 50% 20%, rgba(251,191,36,.22), transparent 38%),
+      linear-gradient(135deg, rgba(255,255,255,.10), rgba(255,255,255,.035)),
+      rgba(0,0,0,.22);
+  }
+
+  .kk-puzzle-slot-label {
+    position: absolute;
+    top: .55rem;
+    left: .55rem;
+    z-index: 5;
+    min-width: 2.15rem;
+    height: 2.15rem;
+    padding: 0 .45rem;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: #fbbf24;
+    color: #111827;
+    font-weight: 950;
+    font-size: 1.05rem;
+    box-shadow: 0 8px 20px rgba(0,0,0,.28), 0 0 18px rgba(251,191,36,.28);
+  }
+
+  .kk-puzzle-slot-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    display: grid;
+    place-items: stretch;
+  }
+
+  .kk-puzzle-empty {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    border-radius: 18px;
+    color: rgba(255,255,255,.42);
+    border: 1px dashed rgba(255,255,255,.18);
+    font-weight: 800;
+  }
+
+  .kk-puzzle-tile {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    border-radius: 20px;
+    padding: clamp(.7rem, 2.2vw, 1.2rem) !important;
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+    overflow: hidden;
+    color: #fff;
+    font-weight: 950;
+    line-height: 1.12;
+    box-shadow:
+      0 16px 34px rgba(0,0,0,.34),
+      inset 0 0 0 2px rgba(255,255,255,.18),
+      inset 0 18px 30px rgba(255,255,255,.13);
+    transition: transform .18s cubic-bezier(.2,.8,.2,1), filter .15s ease, box-shadow .15s ease;
+    will-change: transform;
+  }
+  .kk-puzzle-tile[data-color="0"] { background: linear-gradient(135deg, #ff3b91, #c51652); }
+  .kk-puzzle-tile[data-color="1"] { background: linear-gradient(135deg, #00b7ff, #006bb8); }
+  .kk-puzzle-tile[data-color="2"] { background: linear-gradient(135deg, #ffe600, #ff9d00); color: #1f2937; }
+  .kk-puzzle-tile[data-color="3"] { background: linear-gradient(135deg, #92e900, #39a900); color: #102a0c; }
+
+  .kk-puzzle-tile.is-dragging {
+    cursor: grabbing;
+    filter: brightness(1.08) saturate(1.08);
+    box-shadow:
+      0 30px 70px rgba(0,0,0,.52),
+      0 0 0 4px rgba(251,191,36,.65),
+      inset 0 0 0 2px rgba(255,255,255,.28);
+  }
+
+  .kk-puzzle-tile.is-selected {
+    outline: 4px solid #fbbf24;
+    outline-offset: -7px;
+  }
+
+  .kk-puzzle-tile.is-correct {
+    box-shadow:
+      0 0 0 4px #fbbf24,
+      0 22px 42px rgba(0,0,0,.42),
+      inset 0 0 0 2px rgba(255,255,255,.28);
+  }
+
+  .kk-puzzle-tile-img {
+    position: absolute;
+    inset: .55rem;
+    background-size: cover;
+    background-position: center;
+    border-radius: 16px;
+    opacity: .82;
+    pointer-events: none;
+  }
+
+  .kk-puzzle-tile-text {
+    position: relative;
+    z-index: 2;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    font-size: clamp(1.05rem, 3vw, 1.65rem);
+    text-shadow: 0 3px 8px rgba(0,0,0,.48);
+    pointer-events: none;
+  }
+
+  .kk-puzzle-tile[data-color="2"] .kk-puzzle-tile-text,
+  .kk-puzzle-tile[data-color="3"] .kk-puzzle-tile-text {
+    text-shadow: 0 1px 0 rgba(255,255,255,.35);
+  }
+
+  .kk-puzzle-slot.kk-snap-pop,
+  .kk-puzzle-tile.kk-snap-pop {
+    animation: kkPuzzleSnapPop .32s ease-out;
+  }
+
+  @media (max-width: 640px) {
+    .kk-puzzle-slots {
+      gap: .55rem;
+      width: min(96vw, 520px, 100%);
+    }
+    .kk-puzzle-slot {
+      min-height: clamp(116px, 40vw, 178px);
+      border-radius: 18px;
+      padding-top: 2.35rem;
+    }
+    .kk-puzzle-slot-label {
+      top: .42rem;
+      left: .42rem;
+      min-width: 1.85rem;
+      height: 1.85rem;
+      font-size: .92rem;
+    }
+    .kk-puzzle-tile {
+      border-radius: 16px;
+      padding: .55rem !important;
+    }
+    .kk-puzzle-tile-text {
+      font-size: clamp(.92rem, 4.1vw, 1.18rem);
+    }
+  }
 </style>
 </head>
 <body>
@@ -905,95 +1472,523 @@
 
 
 
+<!-- Inline SVG mask for the jigsaw piece silhouette. We reference it from
+     CSS via -webkit-mask. Each piece picks one of 4 variants based on its
+     visual position (top-left tab/notch combo) so neighbouring pieces
+     interlock the way the screenshot does. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- tab/notch shapes: T=outside knob, N=inside notch
+         Order of sides:  top right bottom left
+         e.g. NTTT = notch on top, knobs on the other three.
+         Coordinates are in a 100x100 box; the knob radius is ~14.    -->
+    <!--  Top-Left piece in a 2x2: flat on top/left, knob on right+bottom (TT on right+bottom) -->
+    <symbol id="kk-puzzle-tl" viewBox="0 0 100 100">
+      <path d="M6 6 H66 Q66 22 80 22 Q94 22 94 36 V66 Q78 66 78 80 Q78 94 64 94 H6 Z" fill="white"/>
+    </symbol>
+    <!--  Top-Right: flat on top/right, notch on left, knob on bottom -->
+    <symbol id="kk-puzzle-tr" viewBox="0 0 100 100">
+      <path d="M22 6 Q22 22 8 22 Q22 22 22 36 V6 H94 V66 Q78 66 78 80 Q78 94 64 94 H22 V36 Q8 36 8 22 Z" fill="white"/>
+    </symbol>
+    <!--  Bottom-Left: knob on right, notch on top, flat on bottom/left -->
+    <symbol id="kk-puzzle-bl" viewBox="0 0 100 100">
+      <path d="M6 22 Q22 22 22 8 Q22 22 36 22 H66 Q66 38 80 38 Q94 38 94 52 V94 H6 Z" fill="white"/>
+    </symbol>
+    <!--  Bottom-Right: notch on top+left, flat on bottom/right -->
+    <symbol id="kk-puzzle-br" viewBox="0 0 100 100">
+      <path d="M22 38 Q22 22 8 22 Q22 22 22 8 V38 H38 Q38 22 52 22 Q66 22 66 38 V94 H94 V38 Z" fill="white"/>
+    </symbol>
+  </defs>
+</svg>
+
+<style>
+  /* Apply each variant's mask. Variant choice is set by position class. */
+  .kk-puzzle-cell[data-shape="tl"] {
+    --kk-piece-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M6 6 H66 Q66 22 80 22 Q94 22 94 36 V66 Q78 66 78 80 Q78 94 64 94 H6 Z' fill='black'/></svg>");
+  }
+  .kk-puzzle-cell[data-shape="tr"] {
+    --kk-piece-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M22 6 V36 Q8 36 8 22 Q22 22 22 8 Q22 6 22 6 H94 V66 Q78 66 78 80 Q78 94 64 94 H22 Z' fill='black'/></svg>");
+  }
+  .kk-puzzle-cell[data-shape="bl"] {
+    --kk-piece-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M6 22 Q22 22 22 8 Q22 22 36 22 H66 Q66 38 80 38 Q94 38 94 52 V94 H6 Z' fill='black'/></svg>");
+  }
+  .kk-puzzle-cell[data-shape="br"] {
+    --kk-piece-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M22 38 H38 Q38 22 52 22 Q66 22 66 38 V94 H94 V38 H22 Q22 22 8 22 Q22 22 22 8 Z' fill='black'/></svg>");
+  }
+  /* Generic shape for pieces 5–8 (still rounded, but rectangular). */
+  .kk-puzzle-cell[data-shape="generic"] {
+    border-radius: 16px;
+    -webkit-mask: none;
+            mask: none;
+  }
+</style>
+
 <script>
-/* Special game-question renderer: picture choice + puzzle. Must load BEFORE play.js. */
+/* ─────────────────────────────────────────────────────────────────────
+   SPECIAL GAME-QUESTION RENDERER (picture choice + puzzle)
+
+   This runs BEFORE play.js loads, so it can intercept the question and
+   paint its own #tiles content before play.js's default renderer ever
+   runs. play.js's renderGameQuestion() is now aware of "picture_choice"
+   and "puzzle" and skips its own paint for those types — but we still
+   guard against double-rendering by tracking the current question ID.
+
+   PUZZLE LAYOUT POLICY
+   ────────────────────
+   • If every piece's text fits comfortably (≤ ~18 chars), render the
+     interlocking 2x2 jigsaw grid (matches the screenshot).
+   • If any piece's text is longer, fall back to the vertical "stacked
+     tiles" layout — full-width rows reordered via drag handles.
+
+   ORDERING + SUBMIT
+   ─────────────────
+   Pieces are shuffled on display and assigned a visible "position"
+   0..n-1. The participant drag-and-drop OR taps to swap pieces. On
+   submit we send `puzzle_order: [choice_id, choice_id, …]` in the
+   current display order. The server compares against each choice's
+   `correct_position` (1-based) to decide correctness, then awards
+   points the same way as MCQ (with the active scoring + late policy).
+
+   CORRECT SPARKLE
+   ───────────────
+   `answer_ack` triggers play.js's window.kkSparkleOn(tile). For
+   picture_choice we sparkle the chosen card; for puzzle we sparkle the
+   submit button + every piece briefly.
+   ────────────────────────────────────────────────────────────────── */
 (function () {
   const tiles = document.getElementById("tiles");
   const qText = document.getElementById("q-text");
   if (!tiles || !qText) return;
 
   let wsRef = null;
-  let currentQuestion = null;
-  let selectedPuzzlePiece = null;
+  let currentQuestionId = null;
+  // Latest payload of choices, indexed by id — useful for the answer_ack
+  // handler to find the right element to sparkle.
+  let currentChoices = [];
+
   const RealWS = window.WebSocket;
+  // Threshold above which a single piece's text is considered "long"
+  // and we switch to stacked layout. Tuned for ~14pt font on phones.
+  const PIECE_TEXT_FIT_LIMIT = 18;
 
   function send(obj) {
     if (wsRef && wsRef.readyState === RealWS.OPEN) wsRef.send(JSON.stringify(obj));
   }
 
   function escapeHtml(s) {
-    return String(s || "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+    return String(s || "").replace(/[&<>"']/g, c => (
+      {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}
+    )[c]);
   }
+
+  function shuffled(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function sparkleEl(el) {
+    if (window.kkSparkleOn) window.kkSparkleOn(el);
+  }
+
+  /* ──────────────────────── PICTURE CHOICE ───────────────────────── */
 
   function renderPictureChoice(q) {
     tiles.className = "kk-picture-choice-grid";
     tiles.innerHTML = "";
+
     (q.choices || []).forEach(choice => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "kk-picture-choice-card";
-      btn.innerHTML = `${choice.image_url ? `<img src="${choice.image_url}" alt="">` : `<div style="font-size:3rem;">🖼️</div>`}<strong>${escapeHtml(choice.text || "Picture")}</strong>`;
+      btn.dataset.choiceId = choice.id;
+
+      const pic = choice.image_url
+        ? `<img src="${escapeHtml(choice.image_url)}" alt="">`
+        : `<div class="kk-picture-fallback">🖼️</div>`;
+      const cap = choice.text
+        ? `<strong>${escapeHtml(choice.text)}</strong>`
+        : "";
+      btn.innerHTML = pic + cap;
+
       btn.addEventListener("click", () => {
-        send({type:"answer", question_id:q.id, choice_id:choice.id});
-        btn.style.outline = "3px solid #fbbf24";
-        Array.from(tiles.children).forEach(x => { if (x !== btn) x.disabled = true; });
+        if (btn.disabled) return;
+        Array.from(tiles.children).forEach(x => { x.disabled = true; });
+        btn.classList.add("is-picked");
+        if (window.kkMarkSpecialGameAnswered) window.kkMarkSpecialGameAnswered(q.id, choice.id);
+        send({
+          type: "answer",
+          question_id: q.id,
+          choice_id: choice.id,
+          question_received_at: Date.now(),
+        });
       });
+
       tiles.appendChild(btn);
     });
+    if (window.kkSyncSpecialGameInputs) setTimeout(window.kkSyncSpecialGameInputs, 0);
+  }
+
+  /* ──────────────────────── PUZZLE ───────────────────────────────── */
+
+  function puzzleChoiceSet(q) {
+    const all = Array.isArray(q.choices) ? q.choices.filter(c => c && c.id) : [];
+
+    // Puzzle mode is a four-slot activity. Use the choices that have a
+    // correct_position first because those are the pieces the server grades.
+    // This keeps old questions safe while making new puzzle questions feel
+    // consistent: positions 1, 2, 3, 4.
+    const positioned = all
+      .filter(c => Number(c.correct_position || 0) > 0)
+      .sort((a, b) => Number(a.correct_position || 0) - Number(b.correct_position || 0));
+
+    const base = positioned.length ? positioned : all;
+    return base.slice(0, 4);
   }
 
   function renderPuzzle(q) {
-    tiles.className = "kk-puzzle-board";
-    selectedPuzzlePiece = null;
-    const pieces = [...(q.choices || [])].sort(() => Math.random() - 0.5);
-    tiles.innerHTML = `
-      <div class="text-secondary small text-center mb-1">Drag the pieces into the correct order. On phones, tap a piece then tap a slot.</div>
-      <div class="kk-puzzle-slots" id="kk-puzzle-slots">${pieces.map((_, i) => `<div class="kk-puzzle-slot" data-slot="${i}">Drop piece ${i + 1}</div>`).join("")}</div>
-      <div class="kk-puzzle-pieces" id="kk-puzzle-pieces">${pieces.map(piece => `<div class="kk-puzzle-piece" draggable="true" data-choice-id="${piece.id}">${piece.image_url ? `<img src="${piece.image_url}" alt="">` : ""}<span>${escapeHtml(piece.text || "Piece")}</span></div>`).join("")}</div>
-      <button type="button" class="kk-btn kk-btn-primary kk-btn-lg w-100 mt-3" id="kk-submit-puzzle">Submit puzzle <i class="bi bi-puzzle"></i></button>`;
+    tiles.className = "kk-puzzle-board kk-puzzle-board-slots";
 
-    let dragged = null;
-    function clearSelection() {
-      tiles.querySelectorAll(".kk-puzzle-piece").forEach(p => p.classList.remove("is-selected"));
-      tiles.querySelectorAll(".kk-puzzle-slot").forEach(s => s.classList.remove("is-target"));
-      selectedPuzzlePiece = null;
-    }
-    function placePiece(slot, piece) {
-      if (!slot || !piece) return;
-      slot.innerHTML = "";
-      slot.appendChild(piece);
-      slot.classList.add("is-filled");
-      clearSelection();
-    }
-    tiles.querySelectorAll(".kk-puzzle-piece").forEach(piece => {
-      piece.addEventListener("dragstart", () => { dragged = piece; });
-      piece.addEventListener("click", () => {
-        clearSelection();
-        selectedPuzzlePiece = piece;
-        piece.classList.add("is-selected");
-        tiles.querySelectorAll(".kk-puzzle-slot").forEach(s => s.classList.add("is-target"));
-      });
+    const pieces = shuffled(puzzleChoiceSet(q));
+
+    tiles.innerHTML = `
+      <div class="kk-puzzle-hint">
+        Drag each answer tile into the correct numbered position. Release over a box to snap it in place.
+      </div>
+      ${renderSlotPuzzleHtml(pieces)}
+      <div class="kk-puzzle-submit-bar">
+        <button type="button" class="kk-btn kk-btn-primary kk-btn-lg w-100" id="kk-submit-puzzle">
+          Submit puzzle <i class="bi bi-puzzle"></i>
+        </button>
+      </div>
+    `;
+
+    wirePuzzleSlots(q);
+    document.getElementById("kk-submit-puzzle").addEventListener("click", () => submitPuzzle(q));
+
+    if (window.kkSyncSpecialGameInputs) setTimeout(window.kkSyncSpecialGameInputs, 0);
+  }
+
+  function renderSlotPuzzleHtml(pieces) {
+    const slots = [0, 1, 2, 3];
+    return `
+      <div class="kk-puzzle-slots" id="kk-puzzle-slots" role="list" aria-label="Puzzle answer positions">
+        ${slots.map((slotIndex) => {
+          const p = pieces[slotIndex];
+          return `
+            <div class="kk-puzzle-slot" data-slot-index="${slotIndex}" data-slot-position="${slotIndex + 1}" role="listitem">
+              <div class="kk-puzzle-slot-label">${slotIndex + 1}</div>
+              <div class="kk-puzzle-slot-inner">
+                ${p ? renderPuzzleTileHtml(p, slotIndex) : `<div class="kk-puzzle-empty">Drop here</div>`}
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  function renderPuzzleTileHtml(piece, displayIndex) {
+    const label = piece.text || `Answer ${displayIndex + 1}`;
+    return `
+      <div class="kk-puzzle-tile"
+           data-choice-id="${piece.id}"
+           data-color="${displayIndex % 4}"
+           role="button"
+           tabindex="0"
+           aria-label="Move ${escapeHtml(label)}">
+        ${piece.image_url ? `<span class="kk-puzzle-tile-img" style="background-image:url('${escapeHtml(piece.image_url)}')"></span>` : ""}
+        <span class="kk-puzzle-tile-text">${escapeHtml(label)}</span>
+      </div>
+    `;
+  }
+
+  function slotInner(slot) {
+    return slot ? slot.querySelector(".kk-puzzle-slot-inner") : null;
+  }
+
+  function tileInSlot(slot) {
+    const inner = slotInner(slot);
+    return inner ? inner.querySelector(".kk-puzzle-tile") : null;
+  }
+
+  function addSnapAnimation(container) {
+    container.querySelectorAll(".kk-puzzle-slot, .kk-puzzle-tile").forEach((el) => {
+      el.classList.remove("kk-snap-pop");
+      void el.offsetWidth;
+      el.classList.add("kk-snap-pop");
+      setTimeout(() => el.classList.remove("kk-snap-pop"), 360);
     });
-    tiles.querySelectorAll(".kk-puzzle-slot").forEach(slot => {
-      slot.addEventListener("dragover", e => e.preventDefault());
-      slot.addEventListener("drop", e => { e.preventDefault(); placePiece(slot, dragged); dragged = null; });
-      slot.addEventListener("click", () => { if (selectedPuzzlePiece) placePiece(slot, selectedPuzzlePiece); });
+  }
+
+  function clearSlotOver(container) {
+    container.querySelectorAll(".kk-puzzle-slot").forEach(s => s.classList.remove("is-over"));
+  }
+
+  function nearestSlot(container, x, y, ignoreTile) {
+    if (ignoreTile) ignoreTile.style.pointerEvents = "none";
+    const direct = document.elementFromPoint(x, y);
+    if (ignoreTile) ignoreTile.style.pointerEvents = "";
+
+    const directSlot = direct ? direct.closest(".kk-puzzle-slot") : null;
+    if (directSlot && container.contains(directSlot)) return directSlot;
+
+    let best = null;
+    let bestScore = Infinity;
+    container.querySelectorAll(".kk-puzzle-slot").forEach((slot) => {
+      const r = slot.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const dx = x - cx;
+      const dy = y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const threshold = Math.max(r.width, r.height) * 0.78;
+      if (dist < threshold && dist < bestScore) {
+        best = slot;
+        bestScore = dist;
+      }
     });
+    return best;
+  }
+
+  function resetDragTile(tile) {
+    if (!tile) return;
+    tile.classList.remove("is-dragging");
+    tile.style.transform = "";
+    tile.style.transition = "";
+    tile.style.zIndex = "";
+    tile.style.pointerEvents = "";
+  }
+
+  function moveOrSwapTile(tile, targetSlot) {
+    if (!tile || !targetSlot) return false;
+
+    const sourceSlot = tile.closest(".kk-puzzle-slot");
+    if (!sourceSlot || sourceSlot === targetSlot) return false;
+
+    const sourceInner = slotInner(sourceSlot);
+    const targetInner = slotInner(targetSlot);
+    if (!sourceInner || !targetInner) return false;
+
+    const targetTile = tileInSlot(targetSlot);
+
+    targetInner.innerHTML = "";
+    targetInner.appendChild(tile);
+
+    if (targetTile && targetTile !== tile) {
+      sourceInner.innerHTML = "";
+      sourceInner.appendChild(targetTile);
+    } else {
+      sourceInner.innerHTML = `<div class="kk-puzzle-empty">Drop here</div>`;
+    }
+
+    addSnapAnimation(document.getElementById("kk-puzzle-slots"));
+    return true;
+  }
+
+  function wirePuzzleSlots(q) {
+    const board = document.getElementById("kk-puzzle-slots");
+    if (!board) return;
+
+    let dragTile = null;
+    let tapTile = null;
+    let pointerId = null;
+    let startX = 0;
+    let startY = 0;
+    let moved = false;
+    let dragWasMove = false;
+
+    function tilesList() {
+      return Array.from(board.querySelectorAll(".kk-puzzle-tile"));
+    }
+
+    function onPointerDown(e) {
+      if (e.button != null && e.button !== 0) return;
+      const tile = e.currentTarget;
+      if (tile.getAttribute("aria-disabled") === "true") return;
+
+      dragTile = tile;
+      pointerId = e.pointerId;
+      startX = e.clientX;
+      startY = e.clientY;
+      moved = false;
+      dragWasMove = false;
+
+      try { tile.setPointerCapture(pointerId); } catch (_) {}
+    }
+
+    function onPointerMove(e) {
+      if (!dragTile || e.pointerId !== pointerId) return;
+
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance < 7 && !moved) return;
+
+      moved = true;
+      dragWasMove = true;
+      e.preventDefault();
+
+      dragTile.classList.add("is-dragging");
+      dragTile.style.transition = "none";
+      dragTile.style.zIndex = "80";
+      dragTile.style.transform = `translate(${dx}px, ${dy}px) scale(1.07)`;
+
+      clearSlotOver(board);
+      const targetSlot = nearestSlot(board, e.clientX, e.clientY, dragTile);
+      if (targetSlot) targetSlot.classList.add("is-over");
+    }
+
+    function onPointerUp(e) {
+      if (!dragTile || e.pointerId !== pointerId) return;
+      try { dragTile.releasePointerCapture(pointerId); } catch (_) {}
+
+      const source = dragTile;
+      const wasMoved = moved;
+      const targetSlot = wasMoved ? nearestSlot(board, e.clientX, e.clientY, source) : null;
+
+      resetDragTile(source);
+      clearSlotOver(board);
+      dragTile = null;
+      pointerId = null;
+      moved = false;
+
+      if (wasMoved) {
+        e.preventDefault();
+        if (targetSlot) moveOrSwapTile(source, targetSlot);
+        return;
+      }
+
+      // Tap-to-swap support: tap a tile, then tap the tile in the desired slot.
+      if (!tapTile) {
+        tapTile = source;
+        source.classList.add("is-selected");
+      } else if (tapTile === source) {
+        tapTile.classList.remove("is-selected");
+        tapTile = null;
+      } else {
+        const first = tapTile;
+        tapTile.classList.remove("is-selected");
+        tapTile = null;
+        moveOrSwapTile(first, source.closest(".kk-puzzle-slot"));
+      }
+    }
+
+    function onPointerCancel(e) {
+      if (dragTile && e.pointerId === pointerId) {
+        resetDragTile(dragTile);
+        clearSlotOver(board);
+        dragTile = null;
+        pointerId = null;
+        moved = false;
+      }
+    }
+
+    function onClick(e) {
+      if (dragWasMove) {
+        e.preventDefault();
+        e.stopPropagation();
+        dragWasMove = false;
+      }
+    }
+
+    function onKeyDown(e) {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      e.currentTarget.click();
+    }
+
+    tilesList().forEach(tile => {
+      tile.draggable = false;
+      tile.addEventListener("pointerdown", onPointerDown);
+      tile.addEventListener("pointermove", onPointerMove);
+      tile.addEventListener("pointerup", onPointerUp);
+      tile.addEventListener("pointercancel", onPointerCancel);
+      tile.addEventListener("click", onClick, true);
+      tile.addEventListener("keydown", onKeyDown);
+    });
+  }
+
+  function submitPuzzle(q) {
+    const board = document.getElementById("kk-puzzle-slots");
+    if (!board) return;
+
+    const order = Array.from(board.querySelectorAll(".kk-puzzle-slot"))
+      .sort((a, b) => Number(a.dataset.slotPosition || 0) - Number(b.dataset.slotPosition || 0))
+      .map(slot => tileInSlot(slot))
+      .filter(Boolean)
+      .map(tile => Number(tile.dataset.choiceId))
+      .filter(Boolean);
+
+    const expected = puzzleChoiceSet(q).length;
+    if (order.length !== expected) return;
+
+    if (window.kkMarkSpecialGameAnswered) window.kkMarkSpecialGameAnswered(q.id, null);
+    send({
+      type: "answer",
+      question_id: q.id,
+      puzzle_order: order,
+      question_received_at: Date.now(),
+    });
+
+    board.querySelectorAll(".kk-puzzle-tile").forEach(tile => {
+      tile.setAttribute("aria-disabled", "true");
+      tile.style.pointerEvents = "none";
+    });
+
     const submit = document.getElementById("kk-submit-puzzle");
-    if (submit) submit.addEventListener("click", () => {
-      const order = Array.from(tiles.querySelectorAll(".kk-puzzle-slot .kk-puzzle-piece")).map(el => Number(el.dataset.choiceId)).filter(Boolean);
-      if (order.length !== (q.choices || []).length) { alert("Please place all puzzle pieces first."); return; }
-      send({type:"answer", question_id:q.id, puzzle_order:order});
+    if (submit) {
       submit.disabled = true;
       submit.innerHTML = `Submitted <i class="bi bi-check2-circle"></i>`;
-    });
+    }
   }
 
+  /* ──────────────────────── DISPATCH + SPARKLE ───────────────────── */
+
   function maybeRenderSpecialQuestion(q) {
-    const qtype = String((q && (q.type || q.question_type)) || "mcq");
+    const qtype = String((q && (q.question_type || q.type)) || "mcq");
+    currentChoices = Array.isArray(q.choices) ? q.choices : [];
     if (qtype === "picture_choice") setTimeout(() => renderPictureChoice(q), 0);
-    if (qtype === "puzzle") setTimeout(() => renderPuzzle(q), 0);
+    if (qtype === "puzzle")         setTimeout(() => renderPuzzle(q), 0);
   }
+
+  function onAnswerAck(msg) {
+    if (!msg || !msg.is_correct) return;
+
+    // Picture choice — sparkle the picked card.
+    const picCard = tiles.querySelector(".kk-picture-choice-card.is-picked");
+    if (picCard) {
+      picCard.classList.add("is-correct");
+      sparkleEl(picCard);
+      return;
+    }
+
+    // Puzzle — sparkle every piece + the submit button.
+    const cells = tiles.querySelectorAll(".kk-puzzle-tile, .kk-puzzle-cell, .kk-puzzle-stack-row");
+    if (cells.length) {
+      cells.forEach((c, i) => {
+        c.classList.add("is-correct");
+        setTimeout(() => sparkleEl(c), i * 80);
+      });
+    }
+  }
+
+  function onAnswerRejected(msg) {
+    // The MCQ path is handled by play.js. For picture_choice, clear our
+    // pseudo-locked state too so the user can retry if extension happens.
+    if (msg && msg.reason === "deadline") {
+      Array.from(tiles.children).forEach(x => {
+        x.disabled = false;
+        x.classList.remove("is-picked");
+      });
+      if (window.kkSyncSpecialGameInputs) window.kkSyncSpecialGameInputs();
+    }
+  }
+
+  /* ──────────────────────── WEBSOCKET WRAP ───────────────────────── */
 
   function WrappedWS(url, protocols) {
     const ws = protocols ? new RealWS(url, protocols) : new RealWS(url);
@@ -1002,12 +1997,15 @@
       ws.addEventListener("message", ev => {
         let msg = null;
         try { msg = JSON.parse(ev.data); } catch (e) { return; }
+
+        if (msg && msg.type === "answer_ack")      { onAnswerAck(msg);      return; }
+        if (msg && msg.type === "answer_rejected") { onAnswerRejected(msg); return; }
+
         const q = msg.question || (msg.type === "question" ? msg : null);
         if (!q) return;
         const incomingId = String(q.id || "");
-        const currentId = currentQuestion ? String(currentQuestion.id || "") : "";
-        if (incomingId && incomingId === currentId) return;
-        currentQuestion = q;
+        if (incomingId && incomingId === currentQuestionId) return;
+        currentQuestionId = incomingId;
         maybeRenderSpecialQuestion(q);
       });
     }
@@ -1022,6 +2020,6 @@
 })();
 </script>
 
-<script src="{% static 'js/play.js' %}?v=4"></script>
+<script src="{% static 'js/play.js' %}?v=6"></script>
 </body>
 </html>

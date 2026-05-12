@@ -4,6 +4,32 @@ participant roles in BOTH polls and games.
 
 Poll answers are permanently auto-saved into polls.Response.
 The live chart still updates immediately through WebSocket tally broadcasts.
+
+──────────────────────────────────────────────────────────────────────────
+NEW (synchronized question timer)
+──────────────────────────────────────────────────────────────────────────
+Every advance/back/goto stamps `LiveSession.question_started_at = now()` and
+resets `time_extension_seconds = 0`. State payloads include the absolute
+start time and the server clock so every client computes the SAME remaining
+seconds — and even after a refresh the timer resumes from wherever it is
+right now (not from the full `time_limit` again).
+
+The presenter can extend the current question by sending {type:"extend_time",
+seconds:5|10}. This bumps `time_extension_seconds` and rebroadcasts state.
+
+Late answers are policed server-side using `quiz.allow_late_answers` and
+`quiz.late_answer_points_pct`. With the default policy, an answer arriving
+after the deadline is rejected; with late answers allowed, it is accepted
+but scored at the configured reduced rate (0% by default).
+
+──────────────────────────────────────────────────────────────────────────
+NEW (picture choice + puzzle answers)
+──────────────────────────────────────────────────────────────────────────
+Game choices now ship `image_url`, `order`, and `correct_position` on the
+wire so the participant can render picture cards and puzzle pieces, and so
+the presenter chart can use image thumbnails as X-axis labels. The answer
+recorder handles `puzzle_order` payloads (an array of choice IDs in the
+order the participant arranged them).
 """
 
 import json
@@ -61,6 +87,7 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             "fullscreen": self._on_fullscreen,
             "ping": self._on_ping,
             "room_join_request": self._on_room_join_request,
+            "extend_time": self._on_extend_time,
         }.get(t)
 
         if not handler:
@@ -157,6 +184,25 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             },
         )
 
+    async def _on_extend_time(self, msg):
+        """Presenter clicked +5 / +10 in the toolbar."""
+        if self.role != "presenter":
+            return
+
+        try:
+            seconds = int(msg.get("seconds") or 0)
+        except (TypeError, ValueError):
+            seconds = 0
+
+        seconds = max(1, min(120, seconds))
+
+        session = await self._extend_time(self.session_pk, seconds)
+
+        if session is None:
+            return
+
+        await self._broadcast_state(session)
+
     async def _on_answer(self, msg):
         if self.role != "participant":
             return
@@ -168,17 +214,32 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             choice_id=msg.get("choice_id"),
             text=msg.get("text"),
             value=msg.get("value"),
+            puzzle_order=msg.get("puzzle_order"),
             client_received_at=msg.get("question_received_at"),
         )
 
         if result.get("kind") == "game":
+            # If the server rejected the answer because the timer ran out and
+            # late answers are not allowed, tell the client so it can show a
+            # clean "Time's up — no points" state.
+            if result.get("rejected_reason") == "deadline":
+                await self.send_json({
+                    "type": "answer_rejected",
+                    "question_id": msg.get("question_id"),
+                    "reason": "deadline",
+                })
+                return
+
             await self.send_json({
                 "type": "answer_ack",
                 "question_id": msg.get("question_id"),
                 "choice_id": msg.get("choice_id"),
+                "question_type": result.get("question_type"),
+                "puzzle_order": result.get("puzzle_order") or [],
                 "is_correct": result.get("is_correct"),
                 "points": result.get("points"),
                 "score": result.get("score"),
+                "was_late": result.get("was_late", False),
             })
 
             lb = await self._leaderboard(self.session_pk)
@@ -324,15 +385,7 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
         })
 
     async def _on_room_join_request(self, msg):
-        """Participant tapped a specific room's door.
-
-        We attempt to seat them. Three outcomes are signalled back:
-          - granted: they're now in this room (door swings open client-side)
-          - denied_full: room is at capacity
-          - denied_no_such_room: room slug doesn't exist for this quiz
-        Either way, an updated rooms snapshot is broadcast so other
-        participants see the new occupancy in real time.
-        """
+        """Participant tapped a specific room's door."""
         if self.role != "participant":
             return
 
@@ -352,7 +405,6 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
         })
 
         if result["ok"]:
-            # Tell everyone the door count moved.
             await self._broadcast_rooms_update()
 
     async def broadcast(self, event):
@@ -379,10 +431,9 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
         )
 
     async def _broadcast_rooms_update(self):
-        """Push the current rooms-with-occupancy snapshot to everyone."""
         rooms = await self._rooms_snapshot(self.session_pk)
         if rooms is None:
-            return  # Quiz isn't using rooms.
+            return
 
         await self.channel_layer.group_send(
             self.group,
@@ -424,19 +475,7 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
 
     @database_sync_to_async
     def _register_participant(self, session_pk, uid, nickname, avatar_id, requested_room=""):
-        """Persist (or refresh) a participant.
-
-        Room policy:
-          - If the quiz uses rooms AND has named rooms defined, the
-            participant DOES NOT get auto-routed. They have to pick a
-            door via room_join_request. Their room_id stays blank until
-            they do — the UI uses that as the "show room picker" signal.
-          - If the quiz uses rooms but has no named rooms defined, we
-            keep the legacy auto-fill behaviour for back-compat.
-          - If the participant already has a room, preserve it.
-          - If they ARE rejoining with a requested room slug and it's
-            valid + not full, seat them in it.
-        """
+        """Persist (or refresh) a participant. (Unchanged.)"""
         from games.models import GameRoom
 
         session = LiveSession.objects.get(pk=session_pk)
@@ -446,7 +485,6 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             participant_uid=uid,
         ).first()
 
-        # Decide the room slug.
         room_id = ""
 
         uses_rooms = (
@@ -460,13 +498,10 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             named_rooms = list(session.quiz.rooms.all())
 
         if existing and existing.room_id:
-            # Keep them where they were (they came back into the same browser).
-            # If their room was deleted by the presenter, clear it.
             if not named_rooms or any(r.slug == existing.room_id for r in named_rooms):
                 room_id = existing.room_id
 
         elif uses_rooms and named_rooms and requested_room:
-            # New-style: participant explicitly requested a door.
             target = next((r for r in named_rooms if r.slug == requested_room), None)
             if target:
                 cap = session.quiz.room_capacity
@@ -479,7 +514,6 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                     room_id = target.slug
 
         elif uses_rooms and not named_rooms:
-            # Legacy auto-fill: fill earliest non-full bucket.
             cap = session.quiz.room_capacity
 
             from collections import Counter
@@ -513,10 +547,7 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
 
     @database_sync_to_async
     def _try_seat_in_room(self, session_pk, uid, room_slug):
-        """Atomically try to put this participant in the named room.
-
-        Returns {"ok": bool, "reason": str, "room": {...}|None}.
-        """
+        """Atomically try to put this participant in the named room. (Unchanged.)"""
         from django.db import transaction
         from games.models import GameRoom
 
@@ -540,7 +571,6 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             if not participant:
                 return {"ok": False, "reason": "not_joined", "room": None}
 
-            # Already in this room? Just confirm.
             if participant.room_id == room.slug:
                 return {
                     "ok": True,
@@ -569,9 +599,6 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
 
     @database_sync_to_async
     def _rooms_snapshot(self, session_pk):
-        """Return [{slug, name, avatar_id, capacity, occupancy, is_full}, ...]
-        for the session's quiz. Returns None when the quiz isn't using rooms
-        OR has no named rooms defined."""
         from collections import Counter
         from games.models import GameRoom
 
@@ -609,6 +636,18 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             for r in rooms
         ]
 
+    # ───────── advance / goto / extend — timer-aware ─────────
+
+    def _stamp_question_start(self, session, idx, total):
+        """Set question_started_at and clear the time extension whenever the
+        active question index changes. Caller must `save()`."""
+        if session.state == "running" and 0 <= idx < total:
+            session.question_started_at = timezone.now()
+            session.time_extension_seconds = 0
+        else:
+            session.question_started_at = None
+            session.time_extension_seconds = 0
+
     @database_sync_to_async
     def _advance(self, session_pk, delta):
         session = (
@@ -622,39 +661,51 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
         if total == 0:
             return session
 
-        # From lobby: Next starts the first question.
         if session.state == "lobby":
             if delta > 0:
                 session.state = "running"
                 session.current_question_index = 0
                 session.ended_at = None
-                session.save(update_fields=["state", "current_question_index", "ended_at"])
+                self._stamp_question_start(session, 0, total)
+                session.save(update_fields=[
+                    "state", "current_question_index", "ended_at",
+                    "question_started_at", "time_extension_seconds",
+                ])
             return session
 
-        # From final/end screen: Back returns to the last question.
         if session.state == "ended":
             if delta < 0:
                 session.state = "running"
                 session.current_question_index = max(0, total - 1)
                 session.ended_at = None
-                session.save(update_fields=["state", "current_question_index", "ended_at"])
+                self._stamp_question_start(session, session.current_question_index, total)
+                session.save(update_fields=[
+                    "state", "current_question_index", "ended_at",
+                    "question_started_at", "time_extension_seconds",
+                ])
             return session
 
         current_idx = max(0, min(total - 1, session.current_question_index))
 
-        # Pressing Next on the last question now opens the celebratory The End page.
         if delta > 0 and current_idx >= total - 1:
             session.state = "ended"
             session.current_question_index = current_idx
             session.ended_at = timezone.now()
-            session.save(update_fields=["state", "current_question_index", "ended_at"])
+            session.question_started_at = None
+            session.time_extension_seconds = 0
+            session.save(update_fields=[
+                "state", "current_question_index", "ended_at",
+                "question_started_at", "time_extension_seconds",
+            ])
             return session
 
-        session.current_question_index = max(
-            0,
-            min(total - 1, current_idx + delta),
-        )
-        session.save(update_fields=["current_question_index"])
+        new_idx = max(0, min(total - 1, current_idx + delta))
+        session.current_question_index = new_idx
+        self._stamp_question_start(session, new_idx, total)
+        session.save(update_fields=[
+            "current_question_index",
+            "question_started_at", "time_extension_seconds",
+        ])
 
         return session
 
@@ -670,8 +721,31 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
 
         session.state = "running" if total else "lobby"
         session.current_question_index = max(0, min(max(0, total - 1), idx))
-        session.save(update_fields=["state", "current_question_index"])
+        self._stamp_question_start(session, session.current_question_index, total)
+        session.save(update_fields=[
+            "state", "current_question_index",
+            "question_started_at", "time_extension_seconds",
+        ])
 
+        return session
+
+    @database_sync_to_async
+    def _extend_time(self, session_pk, seconds):
+        """Add `seconds` to the current question's extension."""
+        try:
+            session = LiveSession.objects.get(pk=session_pk)
+        except LiveSession.DoesNotExist:
+            return None
+
+        if session.state != "running" or session.question_started_at is None:
+            return None
+
+        # Cap total extension at 5 minutes so a fat-finger doesn't run wild.
+        session.time_extension_seconds = min(
+            300,
+            (session.time_extension_seconds or 0) + max(1, int(seconds)),
+        )
+        session.save(update_fields=["time_extension_seconds"])
         return session
 
     @database_sync_to_async
@@ -679,11 +753,14 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
         LiveSession.objects.filter(pk=session_pk).update(
             state="ended",
             ended_at=timezone.now(),
+            question_started_at=None,
+            time_extension_seconds=0,
         )
 
 
+    # ───────── poll helpers (unchanged) ─────────
+
     def _scale_bounds_for(self, question):
-        """Return safe integer scale bounds for scale-style poll questions."""
         config = getattr(question, "config", None) or {}
         meta = {}
         try:
@@ -722,8 +799,6 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
         if q_type == "scale":
             return self._scale_choices_for(question)
 
-        # Do not send stale A/B choices for free-text or non-choice question types.
-        # This protects questions that were created as MCQ and later changed to Open Text.
         try:
             if hasattr(question, "has_choices") and not question.has_choices():
                 return []
@@ -750,6 +825,39 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             return str(int(number))
         return str(number)
 
+    # ───────── game choice payload (now with image_url + ordering) ─────────
+
+    def _game_choices_payload(self, question, role):
+        """Serialize choices for a game question.
+
+        We send `image_url`, `correct_position`, and `order` so the
+        participant can render picture cards / puzzle pieces, and so the
+        presenter chart can use image thumbnails as X-axis labels.
+
+        We DO NOT leak `is_correct` to participants — only the presenter
+        gets that. (Anything sent over the socket is visible in the
+        browser's devtools, so a participant who looks at the JSON would
+        otherwise see the answer key.)
+        """
+        rows = []
+        for c in question.choices.all().order_by("order", "id"):
+            try:
+                image_url = c.image.url if c.image and c.image.name else ""
+            except (ValueError, AttributeError):
+                image_url = ""
+
+            row = {
+                "id": c.id,
+                "text": c.text or "",
+                "image_url": image_url,
+                "order": c.order or 0,
+                "correct_position": c.correct_position or 0,
+            }
+            if role == "presenter":
+                row["is_correct"] = bool(c.is_correct)
+            rows.append(row)
+        return rows
+
     @database_sync_to_async
     def _state_payload(self, session, uid=None, role=None):
         questions = session.questions()
@@ -760,6 +868,13 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
 
         if current:
             if session.kind == "poll":
+                title_image_url = ""
+                try:
+                    if getattr(current, "title_image", None) and current.title_image.name:
+                        title_image_url = current.title_image.url
+                except (ValueError, AttributeError):
+                    title_image_url = ""
+
                 question_data = {
                     "id": current.id,
                     "text": current.text,
@@ -772,21 +887,54 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                     "font_family": getattr(current, "font_family", "clash"),
                     "font_size": getattr(current, "font_size", 44),
                     "font_bold": getattr(current, "font_bold", True),
+                    "subtitle": getattr(current, "subtitle", "") or "",
+                    "title_layout": getattr(current, "title_layout", "clean") or "clean",
+                    "title_image_url": title_image_url,
+                    "title_author": getattr(current, "title_author", "") or "",
                 }
             else:
+                # Game question — now includes the styling fields, the
+                # question_type, and image-aware choice rows.
+                try:
+                    qimage_url = current.image.url if current.image and current.image.name else ""
+                except (ValueError, AttributeError):
+                    qimage_url = ""
+
                 question_data = {
                     "id": current.id,
                     "text": current.text,
+                    "question_type": getattr(current, "question_type", "mcq"),
+                    "type": getattr(current, "question_type", "mcq"),
+                    "image_url": qimage_url,
                     "time_limit": current.time_limit,
                     "points": current.points,
-                    "choices": [
-                        {"id": c.id, "text": c.text}
-                        for c in current.choices.all()
-                    ],
-                    "font_family": getattr(current, "font_family", "clash"),
+                    "choices": self._game_choices_payload(current, role),
+                    "font_family": getattr(current, "font_family", "default"),
                     "font_size": getattr(current, "font_size", 32),
                     "font_bold": getattr(current, "font_bold", True),
+                    "text_italic": getattr(current, "text_italic", False),
+                    "text_underline": getattr(current, "text_underline", False),
+                    "text_align": getattr(current, "text_align", "center"),
+                    "text_color": getattr(current, "text_color", "#f8fafc"),
+                    "background_color": getattr(current, "background_color", "#1e293b"),
+                    "background_gradient_to": getattr(current, "background_gradient_to", "") or "",
+                    "answer_shape": getattr(current, "answer_shape", "rounded"),
                 }
+
+        # ── Synchronized timer fields ──
+        # We send `question_started_at_ms` (absolute, milliseconds since epoch)
+        # AND `server_time_ms` so the client can compute its own clock skew
+        # and figure out exactly how many seconds are left right NOW.
+        started_at_ms = None
+        if session.question_started_at:
+            started_at_ms = int(session.question_started_at.timestamp() * 1000)
+
+        # Late-answer policy — only meaningful for games.
+        allow_late = False
+        late_pct = 0
+        if session.kind == "game" and session.quiz:
+            allow_late = bool(getattr(session.quiz, "allow_late_answers", False))
+            late_pct = int(getattr(session.quiz, "late_answer_points_pct", 0) or 0)
 
         payload = {
             "type": "state",
@@ -805,11 +953,15 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 "chart_background",
                 "normal",
             ),
+            # Timer
+            "question_started_at_ms": started_at_ms,
+            "time_extension_seconds": int(session.time_extension_seconds or 0),
+            "server_time_ms": int(time.time() * 1000),
+            # Late-answer policy
+            "allow_late_answers": allow_late,
+            "late_answer_points_pct": late_pct,
         }
 
-        # Rooms snapshot — included whenever a game uses rooms and has
-        # named rooms defined. The client uses this to render the door
-        # picker and to update occupancy in real time.
         if (
             session.kind == "game"
             and session.quiz
@@ -898,6 +1050,8 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             "choice_id": a.choice_id,
             "is_correct": a.is_correct,
             "points": a.points_awarded,
+            "was_late": getattr(a, "was_late", False),
+            "puzzle_order": a.puzzle_order or [],
         }
 
     def _sync_tally(self, session, question_id):
@@ -925,14 +1079,44 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 "texts": texts,
             }
 
-        counts = {}
+        return self._game_tally_payload(session, question_id)
 
+    def _game_tally_payload(self, session, question_id):
+        """Build live game tally data.
+
+        Classic and picture-choice questions return normal choice counts.
+        Puzzle questions return the first correct participant as `winner`,
+        because the presenter view should show the winner/avatar instead of
+        a bar chart.
+        """
+        from games.models import GameAnswer, GameQuestion
+
+        q = GameQuestion.objects.filter(pk=question_id).first()
+
+        if q and getattr(q, "question_type", "mcq") == "puzzle":
+            winner = (
+                GameAnswer.objects
+                .filter(session=session, question_id=question_id, is_correct=True)
+                .order_by("created_at", "id")
+                .first()
+            )
+            return {
+                "counts": {},
+                "texts": [],
+                "winner": {
+                    "nickname": winner.nickname,
+                    "avatar_id": winner.avatar_id,
+                    "points": winner.points_awarded,
+                } if winner else None,
+            }
+
+        counts = {}
         for a in GameAnswer.objects.filter(session=session, question_id=question_id):
             if a.choice_id:
                 key = str(a.choice_id)
                 counts[key] = counts.get(key, 0) + 1
 
-        return {"counts": counts}
+        return {"counts": counts, "texts": []}
 
     @database_sync_to_async
     def _record_answer(
@@ -943,6 +1127,7 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
         choice_id,
         text,
         value,
+        puzzle_order,
         client_received_at,
     ):
         from django.db import transaction
@@ -953,6 +1138,7 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
 
         session = LiveSession.objects.get(pk=session_pk)
 
+        # ───────── POLL path (unchanged behaviour) ─────────
         if session.kind == "poll":
             try:
                 q = PollQ.objects.get(
@@ -960,23 +1146,14 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                     questionnaire=session.questionnaire,
                 )
             except PollQ.DoesNotExist:
-                return {
-                    "kind": "poll",
-                    "ok": False,
-                }
+                return {"kind": "poll", "ok": False}
 
             choice = None
-
             if choice_id not in (None, "", "null", "undefined"):
-                choice = PollC.objects.filter(
-                    pk=choice_id,
-                    question=q,
-                ).first()
+                choice = PollC.objects.filter(pk=choice_id, question=q).first()
 
             clean_text = str(text or "").strip()
-
             clean_value = None
-
             if value not in (None, "", "null", "undefined"):
                 try:
                     clean_value = float(value)
@@ -1026,16 +1203,11 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 "text": clean_text,
             }
 
+        # ───────── GAME path ─────────
         try:
-            q = GameQuestion.objects.get(
-                pk=question_id,
-                quiz=session.quiz,
-            )
+            q = GameQuestion.objects.get(pk=question_id, quiz=session.quiz)
         except GameQuestion.DoesNotExist:
-            return {
-                "kind": "game",
-                "ok": False,
-            }
+            return {"kind": "game", "ok": False}
 
         prior = (
             GameAnswer.objects
@@ -1049,27 +1221,75 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 session=session,
                 participant_uid=uid,
             ).first()
-
             return {
                 "kind": "game",
                 "ok": True,
+                "question_type": getattr(q, "question_type", "mcq"),
+                "puzzle_order": prior.puzzle_order or [],
                 "is_correct": prior.is_correct,
                 "points": prior.points_awarded,
                 "score": participant.score if participant else 0,
+                "was_late": getattr(prior, "was_late", False),
             }
 
+        # ── Synchronized deadline check ──
+        # Compute "seconds since the server started this question".
+        deadline_passed = False
+        seconds_since_start = 0
+
+        if session.question_started_at:
+            now = timezone.now()
+            seconds_since_start = (now - session.question_started_at).total_seconds()
+            total_allowed = (q.time_limit or 0) + int(session.time_extension_seconds or 0)
+            # Small fudge so a packet that left the phone a hair after the
+            # deadline isn't rejected by clock skew.
+            deadline_passed = seconds_since_start > (total_allowed + 0.75)
+
+        allow_late = bool(getattr(session.quiz, "allow_late_answers", False))
+        late_pct = int(getattr(session.quiz, "late_answer_points_pct", 0) or 0)
+        late_pct = max(0, min(100, late_pct))
+
+        if deadline_passed and not allow_late:
+            return {
+                "kind": "game",
+                "ok": False,
+                "rejected_reason": "deadline",
+            }
+
+        # ── Decide correctness ──
+        question_type = getattr(q, "question_type", "mcq") or "mcq"
+
+        is_correct = False
         choice = None
+        submitted_puzzle_order = []
 
-        if choice_id not in (None, "", "null", "undefined"):
-            choice = GameChoice.objects.filter(
-                pk=choice_id,
-                question=q,
-            ).first()
+        if question_type == "puzzle":
+            # The participant sent puzzle_order = [choice_id, choice_id, ...]
+            # in the order they arranged the pieces. Compare against the
+            # correct ordering defined by correct_position on each piece.
+            try:
+                submitted_puzzle_order = [
+                    int(x) for x in (puzzle_order or [])
+                    if str(x).strip().lstrip("-").isdigit()
+                ]
+            except Exception:
+                submitted_puzzle_order = []
 
-        is_correct = bool(choice and choice.is_correct)
+            correct_order = list(
+                q.choices.filter(correct_position__gt=0)
+                .order_by("correct_position", "id")
+                .values_list("id", flat=True)
+            )
+            is_correct = bool(correct_order) and submitted_puzzle_order == correct_order
 
+        else:
+            # mcq + picture_choice both use choice_id selection.
+            if choice_id not in (None, "", "null", "undefined"):
+                choice = GameChoice.objects.filter(pk=choice_id, question=q).first()
+            is_correct = bool(choice and choice.is_correct)
+
+        # ── Compute time taken (capped to the legitimate window) ──
         time_taken_ms = 0
-
         if client_received_at:
             try:
                 time_taken_ms = max(
@@ -1079,16 +1299,28 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             except Exception:
                 time_taken_ms = 0
 
+        if session.question_started_at:
+            # Use server-measured elapsed instead of client clock when we
+            # have a real start — protects against rigged client timestamps.
+            time_taken_ms = max(0, int(seconds_since_start * 1000))
+
+        # ── Compute points ──
         points = 0
+        was_late = bool(deadline_passed)
 
         if is_correct:
+            limit_ms = max(1, (q.time_limit or 1) * 1000)
             if session.quiz.scoring == "speed":
-                limit_ms = q.time_limit * 1000
-                speed_factor = max(0.25, 1.0 - (time_taken_ms / max(1, limit_ms)))
+                effective_ms = min(time_taken_ms, limit_ms) if not was_late else limit_ms
+                speed_factor = max(0.25, 1.0 - (effective_ms / limit_ms))
                 points = int(q.points * speed_factor)
             else:
                 points = q.points
 
+            if was_late:
+                points = int(points * (late_pct / 100.0))
+
+        # ── Persist participant score + answer row ──
         participant, _ = Participant.objects.get_or_create(
             session=session,
             participant_uid=uid,
@@ -1108,18 +1340,23 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             nickname=participant.nickname,
             avatar_id=participant.avatar_id,
             choice=choice,
+            puzzle_order=submitted_puzzle_order,
             is_correct=is_correct,
             time_taken_ms=time_taken_ms,
             points_awarded=points,
+            was_late=was_late,
             room_id=participant.room_id,
         )
 
         return {
             "kind": "game",
             "ok": True,
+            "question_type": question_type,
+            "puzzle_order": submitted_puzzle_order,
             "is_correct": is_correct,
             "points": points,
             "score": participant.score,
+            "was_late": was_late,
         }
 
     @database_sync_to_async
@@ -1153,14 +1390,7 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 "texts": texts,
             }
 
-        counts = {}
-
-        for a in GameAnswer.objects.filter(session=session, question_id=question_id):
-            if a.choice_id:
-                key = str(a.choice_id)
-                counts[key] = counts.get(key, 0) + 1
-
-        return {"counts": counts}
+        return self._game_tally_payload(session, question_id)
 
     @database_sync_to_async
     def _leaderboard(self, session_pk):
@@ -1170,9 +1400,6 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             from collections import defaultdict
             from games.models import GameRoom
 
-            # Map slug → (name, avatar_id) for named rooms; legacy auto-
-            # filled slugs ("room-1" etc.) won't be in this map and fall
-            # back to displaying the slug as-is.
             room_meta = {
                 r.slug: {"name": r.name, "avatar_id": r.avatar_id}
                 for r in GameRoom.objects.filter(quiz=session.quiz)

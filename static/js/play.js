@@ -17,6 +17,19 @@
  *   - the self-avatar bubble in the header (#self-avatar-emoji)
  *   - the big waiting-room avatar (#wait-avatar)
  *   - the avatar shown inside each avatar-picker tile
+ *
+ * SYNCHRONIZED TIMER (NEW)
+ * ────────────────────────
+ * The server stamps every question's `question_started_at` and broadcasts it in
+ * `state`. Each client computes its clock skew once (server_time_ms − local_now)
+ * and uses it to figure out the EXACT seconds left on every tick. This means:
+ *   - Every participant + presenter see the same number ticking down.
+ *   - A refresh resumes the timer where it is right now (not from full).
+ *   - Presenter "+5s / +10s" updates `time_extension_seconds`; clients pick it
+ *     up via the next `state` and the timer extends in real time.
+ *   - On expiry, an extra answer attempt is gracefully rejected by the server
+ *     via {type: "answer_rejected", reason: "deadline"} unless the quiz allows
+ *     late answers.
  */
 (function () {
   const root = document.getElementById("play");
@@ -70,8 +83,54 @@
   let questionReceivedAt = 0;
   let timerInterval = null;
   let myChart = null;
-  let lastTally = null;           // {counts: {...}} for current question
+  let lastTally = null;
   let currentQuestion = null;
+
+  // ── Server-synchronized timer state ──────────────────────────────
+  // Filled from every `state` payload. clockSkewMs is positive when the
+  // server clock is ahead of ours; we add it to Date.now() to convert
+  // local time to "server time".
+  let clockSkewMs           = 0;
+  let qStartedAtMs          = null; // server epoch ms when current question started
+  let qTimeLimit            = 0;    // seconds
+  let qExtension            = 0;    // seconds (presenter additions)
+  let allowLateAnswers      = false;
+  let lateAnswerPointsPct   = 0;
+  let deadlinePassedLocally = false;
+
+  function totalQuestionSeconds() {
+    return Math.max(0, Number(qTimeLimit || 0) + Math.max(0, Number(qExtension || 0)));
+  }
+
+  function currentSecondsLeft() {
+    if (!qStartedAtMs) return totalQuestionSeconds();
+    const serverNow = Date.now() + clockSkewMs;
+    const deadline = qStartedAtMs + totalQuestionSeconds() * 1000;
+    return Math.max(0, Math.ceil((deadline - serverNow) / 1000));
+  }
+
+  function canAnswerCurrentGameQuestion() {
+    return allowLateAnswers || currentSecondsLeft() > 0;
+  }
+
+  function markSpecialGameAnswered(questionId, choiceId) {
+    answeredQuestionId = questionId;
+    if (choiceId != null) myChoiceId = choiceId;
+  }
+
+  function syncSpecialGameInputs() {
+    if (kind !== "game" || !tiles || !currentQuestion) return;
+    if (answeredQuestionId === currentQuestion.id) return;
+    const canAnswer = canAnswerCurrentGameQuestion();
+    tiles.querySelectorAll("button").forEach(b => { b.disabled = !canAnswer; });
+    if (canAnswer && qResult && /Time|late|Too late/i.test(qResult.textContent || "")) {
+      qResult.style.display = "none";
+    }
+  }
+
+  window.kkGameQuestionCanAnswer = canAnswerCurrentGameQuestion;
+  window.kkMarkSpecialGameAnswered = markSpecialGameAnswered;
+  window.kkSyncSpecialGameInputs = syncSpecialGameInputs;
 
   function show(el) {
     [stepNick, stepWait, stepQuestion, stepEnded].forEach(s => s && (s.style.display = "none"));
@@ -86,15 +145,12 @@
   function avatarEmoji(id) { return avatarObj(id).emoji || "👤"; }
   function avatarAnim(id)  { return avatarObj(id).anim  || "kk-float"; }
 
-  /** Apply the animation class for the given avatar to an element.
-   *  Strips any previous `kk-anim-*` first. */
   function applyAnimClass(el, animName) {
     if (!el) return;
     [...el.classList].forEach(c => { if (c.startsWith("kk-anim-")) el.classList.remove(c); });
     if (animName) el.classList.add("kk-anim-" + animName);
   }
 
-  // Set the header capsule for the current participant.
   function updateHeaderAvatar() {
     if (selfAvatarEmoji) {
       selfAvatarEmoji.textContent = avatarEmoji(avatarId);
@@ -112,7 +168,6 @@
   // ─────────────────────── Avatar picker (games) ───────────────────────
   const avatarGrid = document.getElementById("avatar-grid");
   if (avatarGrid) {
-    // Decorate every tile with the right idle animation
     avatarGrid.querySelectorAll(".kk-avatar-tile").forEach(tile => {
       const id = tile.dataset.avatarId;
       applyAnimClass(tile, avatarAnim(id));
@@ -166,7 +221,6 @@
     });
     ws.addEventListener("message", (e) => handle(JSON.parse(e.data)));
     ws.addEventListener("close", () => {
-      // Try a single reconnect after a moment.
       setTimeout(() => { if (!ws || ws.readyState === 3) connect(); }, 2500);
     });
   }
@@ -175,15 +229,26 @@
 
   function handle(msg) {
     switch (msg.type) {
-      case "state":       onState(msg); break;
-      case "tally":       onTally(msg); break;
-      case "answer_ack":  onAnswerAck(msg); break;
-      case "ended":       onEnded(); break;
+      case "state":            onState(msg); break;
+      case "tally":            onTally(msg); break;
+      case "answer_ack":       onAnswerAck(msg); break;
+      case "answer_rejected":  onAnswerRejected(msg); break;
+      case "ended":            onEnded(); break;
     }
   }
 
   // ─────────────────────── State / question rendering ───────────────────────
   function onState(s) {
+    // ── Sync clock skew from server (do this BEFORE anything that uses it) ──
+    if (typeof s.server_time_ms === "number") {
+      clockSkewMs = s.server_time_ms - Date.now();
+    }
+    // ── Stash timer + policy fields from server ──
+    qStartedAtMs        = (typeof s.question_started_at_ms === "number") ? s.question_started_at_ms : null;
+    qExtension          = Number(s.time_extension_seconds || 0);
+    allowLateAnswers    = !!s.allow_late_answers;
+    lateAnswerPointsPct = Number(s.late_answer_points_pct || 0);
+
     // Adopt server-side identity if richer than ours (refresh case)
     if (s.my_nickname) { nickname = s.my_nickname; localStorage.setItem(KEY_NICK, nickname); }
     if (s.my_avatar)   { avatarId = s.my_avatar;   localStorage.setItem(KEY_AVATAR, avatarId); }
@@ -201,6 +266,15 @@
     let q = s.question;
     if (!q) { show(stepWait); return; }
 
+    qTimeLimit = Number(q.time_limit || 0);
+
+    const sameQuestion = currentQuestion?.id === q.id;
+    if (sameQuestion && deadlinePassedLocally && currentSecondsLeft() > 0) {
+      // Presenter extended the time after the local clock had reached 0.
+      deadlinePassedLocally = false;
+      if (!s.my_answer && answeredQuestionId === q.id) answeredQuestionId = null;
+    }
+
     // New question? Reset transient UI bits.
     if (currentQuestion?.id !== q.id) {
       qResult.style.display = "none";
@@ -208,6 +282,7 @@
       questionReceivedAt = Date.now();
       myChoiceId = null;
       answeredQuestionId = null;
+      deadlinePassedLocally = false;
     }
     currentQuestion = q;
 
@@ -222,6 +297,8 @@
     // Restore previous answer if the server tells us we already answered.
     if (s.my_answer) {
       restoreMyAnswer(q, s.my_answer);
+    } else if (kind === "game") {
+      syncSpecialGameInputs();
     }
 
     // Cache + draw tally chart (if applicable).
@@ -289,9 +366,6 @@
       return;
     }
 
-    // IMPORTANT: text-based question types must be handled before choices.
-    // Some questions may still have old/stale A/B choice rows from when they
-    // were previously MCQ. Open-ended questions must always render as free text.
     if (q.type === "word" || q.type === "open") {
       const input = document.createElement(q.type === "word" ? "input" : "textarea");
       input.className = "form-control form-control-lg mb-2";
@@ -420,34 +494,69 @@
   }
 
   // ── Game rendering: kahoot-style tiles + timer ───────────────────
+  // Note: picture_choice and puzzle questions are rendered by the special
+  // renderer in play_game.html (it runs BEFORE play.js, intercepts the
+  // question, and paints tiles itself). For those types, this function
+  // just sets up the timer and skips drawing the basic MCQ tiles.
   function renderGameQuestion(q, s) {
-    tiles.innerHTML = "";
-    const shapes = ["▲","◆","●","■","★","♥"];
-    q.choices.forEach((c, i) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = `kk-tile-answer t${i % 4}`;
-      btn.dataset.choiceId = c.id;
-      btn.innerHTML = `<span class="shape">${shapes[i % shapes.length]}</span><span>${escapeHtml(c.text)}</span>`;
-      btn.addEventListener("click", () => answerGame(q, c, btn));
-      tiles.appendChild(btn);
-    });
+    const qtype = q.question_type || q.type || "mcq";
+    const isSpecial = (qtype === "picture_choice" || qtype === "puzzle");
 
-    // Timer
+    if (!isSpecial) {
+      tiles.innerHTML = "";
+      const shapes = ["▲","◆","●","■","★","♥"];
+      q.choices.forEach((c, i) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = `kk-tile-answer t${i % 4}`;
+        btn.dataset.choiceId = c.id;
+        btn.innerHTML = `<span class="shape">${shapes[i % shapes.length]}</span><span>${escapeHtml(c.text)}</span>`;
+        btn.addEventListener("click", () => answerGame(q, c, btn));
+        tiles.appendChild(btn);
+      });
+    }
+
+    // ── Server-synced timer ──
+    // We compute remaining = (start + (limit + extension)) - serverNow,
+    // where serverNow = Date.now() + clockSkewMs.
     clearInterval(timerInterval);
-    const limit = q.time_limit || 20;
-    let remaining = limit;
-    timerChip.textContent = `${remaining}s`;
-    const startedAt = Date.now();
-    timerInterval = setInterval(() => {
-      remaining = Math.max(0, limit - Math.floor((Date.now() - startedAt) / 1000));
-      timerChip.textContent = `${remaining}s`;
+
+    function tick() {
+      const remaining = currentSecondsLeft();
+      if (timerChip) timerChip.textContent = `${remaining}s`;
+
       if (remaining <= 0) {
-        clearInterval(timerInterval);
-        tiles.querySelectorAll("button").forEach(b => b.disabled = true);
-        if (!answeredQuestionId) showResult("⏱ Time's up");
+        // Don't run the deadline branch twice — once is enough.
+        if (!deadlinePassedLocally) {
+          deadlinePassedLocally = true;
+          handleDeadlineExpired();
+        }
+        // If late answers are allowed, keep the chip alive so the player
+        // can still see "0s" and still tap. Otherwise stop the timer.
+        if (!allowLateAnswers) {
+          clearInterval(timerInterval);
+        }
+      } else if (deadlinePassedLocally) {
+        // Time was extended while this browser had already reached 0s.
+        deadlinePassedLocally = false;
+        syncSpecialGameInputs();
       }
-    }, 200);
+    }
+
+    tick();
+    timerInterval = setInterval(tick, 200);
+  }
+
+  function handleDeadlineExpired() {
+    if (!tiles) return;
+    if (!allowLateAnswers) {
+      tiles.querySelectorAll("button").forEach(b => b.disabled = true);
+      if (!answeredQuestionId) showResult("⏱ Time's up");
+    } else if (!answeredQuestionId) {
+      const pct = Number(lateAnswerPointsPct || 0);
+      const tail = pct > 0 ? ` (late answers worth ${pct}% of points)` : ` (no points awarded)`;
+      showResult("⏱ Time's up — you can still answer" + tail);
+    }
   }
 
   function answerGame(q, c, btn) {
@@ -461,13 +570,30 @@
     showResult("⏳ Locked in — waiting…");
   }
 
+  function onAnswerRejected(msg) {
+    // Server is the source of truth: it said our answer arrived late and
+    // late answers aren't allowed. Roll the local "answered" flag back so
+    // a presenter time-extension can still let us answer.
+    if (msg.reason === "deadline") {
+      answeredQuestionId = null;
+      myChoiceId = null;
+      if (tiles) tiles.querySelectorAll("button").forEach(b => {
+        b.disabled = true;
+        b.classList.remove("picked");
+        b.style.outline = "";
+      });
+      qResult.innerHTML = `<div class="kk-q-pill" style="background:#dc2626;color:#fff;font-size:1rem;padding:.4rem .9rem;">⏱ Too late — answer not counted</div>`;
+      qResult.style.display = "block";
+    }
+  }
+
   // ── Restore a previously made answer (after refresh) ─────────────
   function restoreMyAnswer(q, my) {
     answeredQuestionId = q.id;
     myChoiceId = my.choice_id || my.value || null;
 
     if (kind === "game") {
-      tiles.querySelectorAll("button").forEach(b => {
+      if (tiles) tiles.querySelectorAll("button").forEach(b => {
         b.disabled = true;
         if (Number(b.dataset.choiceId) === Number(my.choice_id)) {
           b.classList.add("picked");
@@ -475,14 +601,13 @@
           b.style.outline = "3px solid #fff";
         }
       });
-      // Result chip — same look as fresh ack.
+      const late = my.was_late ? " (late)" : "";
       const text = my.is_correct
-        ? `✅ Correct! +${my.points || 0} pts`
-        : `❌ Not quite — score: ${myScore}`;
+        ? `✅ Correct! +${my.points || 0} pts${late}`
+        : `❌ Not quite — score: ${myScore}${late}`;
       qResult.innerHTML = `<div class="kk-q-pill" style="background:${my.is_correct ? "#16a34a" : "#dc2626"}; color:#fff; font-size:1rem; padding:.4rem .9rem;">${text}</div>`;
       qResult.style.display = "block";
     } else {
-      // poll: highlight chosen choice button
       qBody.querySelectorAll("button").forEach(b => {
         b.disabled = true;
         if (Number(b.dataset.choiceId) === Number(my.choice_id)) b.classList.add("picked");
@@ -494,20 +619,46 @@
   }
 
   function onAnswerAck(msg) {
+    if (currentQuestion && Number(msg.question_id) === Number(currentQuestion.id)) {
+      answeredQuestionId = currentQuestion.id;
+    }
     myScore = msg.score || myScore;
     if (scoreChip) {
       scoreChip.style.display = "inline-block";
       scoreChip.textContent = `${myScore} pts`;
     }
     updateHeaderAvatar();
+    const late = msg.was_late ? " (late)" : "";
     const text = msg.is_correct
-      ? `✅ Correct! +${msg.points} pts`
-      : `❌ Not quite — score: ${myScore}`;
+      ? `✅ Correct! +${msg.points} pts${late}`
+      : `❌ Not quite — score: ${myScore}${late}`;
     qResult.innerHTML = `<div class="kk-q-pill" style="background:${msg.is_correct ? "#16a34a" : "#dc2626"}; color:#fff; font-size:1rem; padding:.4rem .9rem;">${text}</div>`;
     qResult.style.display = "block";
     const chosen = tiles && Array.from(tiles.querySelectorAll("button")).find(b =>
       Number(b.dataset.choiceId) === Number(msg.choice_id) || b.classList.contains("picked"));
     if (chosen) chosen.classList.add(msg.is_correct ? "correct" : "incorrect");
+
+    // Sparkle when correct (works for any answer tile type the page renders).
+    if (msg.is_correct) sparkleOn(chosen);
+  }
+
+  // Lightweight sparkle burst on a correct tile.
+  function sparkleOn(el) {
+    if (!el) return;
+    const host = document.createElement("span");
+    host.className = "kk-spark-layer";
+    host.setAttribute("aria-hidden", "true");
+    el.appendChild(host);
+    for (let i = 0; i < 10; i++) {
+      const s = document.createElement("span");
+      s.className = "kk-spark";
+      s.style.setProperty("--dx", (Math.random() * 120 - 60).toFixed(0) + "px");
+      s.style.setProperty("--dy", (-40 - Math.random() * 80).toFixed(0) + "px");
+      s.style.setProperty("--delay", (Math.random() * 120).toFixed(0) + "ms");
+      s.textContent = ["✨", "⭐", "💫"][i % 3];
+      host.appendChild(s);
+    }
+    setTimeout(() => { host.remove(); }, 1400);
   }
 
   // ─────────────────────── Live tally chart on player ───────────────────────
@@ -519,7 +670,6 @@
 
   function drawMyChart(q, tally) {
     if (!myChartCanvas || !q || !window.Chart) return;
-    // Hide until someone has answered to avoid an empty-looking widget.
     const counts = (tally && tally.counts) || {};
     const total = Object.values(counts).reduce((a, b) => a + Number(b || 0), 0);
     const wrap = myChartCanvas.parentElement;
@@ -615,11 +765,11 @@
   function escapeHtml(s){ return (s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
   function escapeAttr(s){ return escapeHtml(String(s || "")).replace(/'/g, "&#39;"); }
 
+  // Expose sparkleOn for the special renderer (puzzle / picture choice) too.
+  window.kkSparkleOn = sparkleOn;
+
   // ─────────────────────── Auto-reconnect on refresh ───────────────────────
-  // If we already have a nickname & avatar for THIS session, skip the picker
-  // and connect straight away. The server will reconcile state via my_answer.
   if (nickname && kind === "game") {
-    // Reflect saved choice visually in the picker (in case auto-connect fails)
     if (avatarGrid) {
       avatarGrid.querySelectorAll(".kk-avatar-tile").forEach(t => {
         t.classList.toggle("selected", t.dataset.avatarId === avatarId);
@@ -629,7 +779,6 @@
   } else if (nickname && kind === "poll") {
     connect();
   } else {
-    // First-time: keep the picker visible
-    updateHeaderAvatar(); // hides header bubble (no nickname yet)
+    updateHeaderAvatar();
   }
 })();

@@ -45,6 +45,23 @@ class Quiz(models.Model):
         default="normal",
         help_text="Gamified scenery rendered behind the live chart.",
     )
+
+    # ── Late-answer policy (synchronized server timer) ──
+    # When `allow_late_answers` is False (default), the server REJECTS any
+    # answer arriving after the question's deadline (time_limit + presenter
+    # extensions). The participant sees "Time's up" and gets 0 points.
+    #
+    # When True, late answers are accepted but scored at a reduced rate
+    # controlled by `late_answer_points_pct` (0 = no points, 100 = full).
+    allow_late_answers = models.BooleanField(
+        default=False,
+        help_text="If on, answers can still be submitted after the timer ends.",
+    )
+    late_answer_points_pct = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Percent of normal points awarded for a correct LATE answer (0–100). Only used when 'allow late answers' is on.",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -154,6 +171,7 @@ class GameAnswer(models.Model):
     is_correct = models.BooleanField(default=False)
     time_taken_ms = models.PositiveIntegerField(default=0)
     points_awarded = models.IntegerField(default=0)
+    was_late = models.BooleanField(default=False, help_text="True if submitted after the deadline (only stored when allow_late_answers is on).")
     room_id = models.CharField(max_length=40, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

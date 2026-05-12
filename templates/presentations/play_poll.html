@@ -79,6 +79,128 @@
     min-height: 100dvh;
   }
 
+  /* ─────────────────────────────────────────────
+     Participant title-slide view
+     Compact phone-friendly version of the three presenter layouts.
+  ───────────────────────────────────────────── */
+  .kk-play-title-canvas {
+    position: relative;
+    overflow: hidden;
+    border-radius: 18px;
+    padding: 1.5rem 1.2rem;
+    background:
+      radial-gradient(ellipse at 20% 15%, rgba(124,58,237,.30), transparent 55%),
+      radial-gradient(ellipse at 90% 85%, rgba(34,211,238,.22), transparent 60%),
+      linear-gradient(160deg, rgba(255,255,255,.04), rgba(255,255,255,0));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.07);
+    min-height: 220px;
+    display: flex;
+    flex-direction: column;
+    animation: kk-play-title-in .45s ease-out;
+  }
+  @keyframes kk-play-title-in {
+    0% { opacity: 0; transform: translateY(10px); }
+    100% { opacity: 1; transform: none; }
+  }
+
+  /* Clean */
+  .kk-play-title-canvas.layout-clean {
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: .55rem;
+  }
+  .kk-play-title-canvas.layout-clean .kk-pt-logo {
+    max-height: 64px;
+    max-width: 60%;
+    border-radius: 10px;
+    margin-bottom: .35rem;
+  }
+  .kk-play-title-canvas.layout-clean .kk-pt-headline {
+    font-size: clamp(1.4rem, 6.5vw, 2rem);
+    font-weight: 800;
+    line-height: 1.1;
+    margin: 0;
+    letter-spacing: -.02em;
+  }
+  .kk-play-title-canvas.layout-clean .kk-pt-sub {
+    font-size: .95rem;
+    opacity: .8;
+    margin: 0;
+  }
+  .kk-play-title-canvas.layout-clean .kk-pt-accent {
+    height: 3px; width: 64px; border-radius: 999px;
+    background: linear-gradient(90deg, #22d3ee, #7c3aed);
+    margin-top: .25rem;
+  }
+
+  /* Quote */
+  .kk-play-title-canvas.layout-quote {
+    justify-content: center;
+    padding-left: 1.6rem;
+    padding-right: 1.2rem;
+  }
+  .kk-play-title-canvas.layout-quote::before {
+    content: "\201C";
+    position: absolute;
+    top: -.4rem; left: .2rem;
+    font-family: Georgia, serif;
+    font-size: 5rem; line-height: 1;
+    color: #22d3ee;
+    opacity: .25;
+    pointer-events: none;
+  }
+  .kk-play-title-canvas.layout-quote .kk-pt-quote-body {
+    font-family: "Cormorant Garamond", "Lora", Georgia, serif;
+    font-style: italic;
+    font-size: clamp(1.15rem, 5vw, 1.55rem);
+    line-height: 1.25;
+    margin: 0;
+  }
+  .kk-play-title-canvas.layout-quote .kk-pt-quote-author {
+    margin-top: .85rem;
+    font-size: .8rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    opacity: .8;
+  }
+  .kk-play-title-canvas.layout-quote .kk-pt-quote-author::before {
+    content: "— ";
+    color: #22d3ee;
+  }
+
+  /* Divider */
+  .kk-play-title-canvas.layout-divider {
+    justify-content: center;
+    align-items: flex-start;
+  }
+  .kk-play-title-canvas.layout-divider .kk-pt-num {
+    font-family: ui-monospace, "JetBrains Mono", monospace;
+    font-size: 2.6rem;
+    font-weight: 900;
+    line-height: 1;
+    color: #22d3ee;
+    text-shadow: 0 0 18px #22d3ee;
+  }
+  .kk-play-title-canvas.layout-divider .kk-pt-rule {
+    height: 2px; width: 90px;
+    background: linear-gradient(90deg, #22d3ee, transparent);
+    margin: .5rem 0;
+  }
+  .kk-play-title-canvas.layout-divider .kk-pt-headline {
+    font-size: clamp(1.3rem, 5.5vw, 1.85rem);
+    font-weight: 800;
+    margin: 0;
+    line-height: 1.1;
+    letter-spacing: -.02em;
+  }
+  .kk-play-title-canvas.layout-divider .kk-pt-sub {
+    font-size: .92rem;
+    opacity: .8;
+    margin: .35rem 0 0 0;
+  }
+
   .kk-play {
     width: min(100%, 980px);
     max-width: 100%;
@@ -276,6 +398,17 @@
     {% endif %}
   </div>
 
+  {# ── Title-slide view (shown when current question type == "title") ── #}
+  <div id="step-title" class="kk-play-card kk-play-title" style="display:none;">
+    <div class="text-secondary small mb-2" id="title-progress">—</div>
+    <div class="kk-play-title-canvas" id="title-canvas">
+      <!-- Populated by the title-slide shim below. -->
+    </div>
+    <p class="text-secondary small mt-3 mb-0 text-center">
+      <i class="bi bi-info-circle"></i> Intro slide — sit tight for the next question.
+    </p>
+  </div>
+
   <div id="step-ended" class="kk-play-card kk-player-end" style="display:none;">
     <div class="kk-player-end-emoji-layer" id="player-end-emoji-layer" aria-hidden="true"></div>
     <div class="text-center py-4 position-relative" style="z-index:2;">
@@ -296,5 +429,110 @@
 </div>
 
 <script src="{% static 'js/play.js' %}?v=12"></script>
+
+<script>
+/* ────────────────────────────────────────────────────────────────────
+   Title-slide shim for the participant view.
+
+   play.js owns the WebSocket and the existing steps (nick / wait /
+   question / ended). It doesn't know about title slides. Rather than
+   editing play.js, we wrap the WebSocket constructor to peek at "state"
+   messages: when the current question's type is "title", we hide
+   #step-question, render the title into #step-title, and show that.
+   When the next non-title question arrives, we restore the normal flow.
+   ──────────────────────────────────────────────────────────────────── */
+(function () {
+  const STEP_QUESTION = document.getElementById("step-question");
+  const STEP_TITLE    = document.getElementById("step-title");
+  const TITLE_CANVAS  = document.getElementById("title-canvas");
+  const TITLE_PROG    = document.getElementById("title-progress");
+  if (!STEP_TITLE || !TITLE_CANVAS) return;
+
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  function renderTitle(state) {
+    const q = (state && state.question) || {};
+    const layout = (q.title_layout || "clean").toLowerCase();
+    const headline = q.text || "";
+    const subtitle = q.subtitle || "";
+    const author = q.title_author || "";
+    const imageUrl = q.title_image_url || "";
+
+    if (TITLE_PROG) {
+      TITLE_PROG.textContent = `Slide ${(Number(state.index) || 0) + 1} / ${Number(state.total) || 1}`;
+    }
+
+    TITLE_CANVAS.className = "kk-play-title-canvas layout-" + (
+      layout === "quote" ? "quote" :
+      layout === "divider" ? "divider" : "clean"
+    );
+
+    let html = "";
+    if (layout === "quote") {
+      const body = subtitle || headline;
+      html += `<blockquote class="kk-pt-quote-body">${esc(body)}</blockquote>`;
+      if (author) html += `<div class="kk-pt-quote-author">${esc(author)}</div>`;
+    } else if (layout === "divider") {
+      const num = String((Number(state.index) || 0) + 1).padStart(2, "0");
+      html += `<div class="kk-pt-num">${num}</div>`;
+      html += `<div class="kk-pt-rule"></div>`;
+      html += `<h2 class="kk-pt-headline">${esc(headline)}</h2>`;
+      if (subtitle) html += `<p class="kk-pt-sub">${esc(subtitle)}</p>`;
+    } else {
+      if (imageUrl) html += `<img class="kk-pt-logo" src="${esc(imageUrl)}" alt="">`;
+      html += `<h2 class="kk-pt-headline">${esc(headline)}</h2>`;
+      if (subtitle) html += `<p class="kk-pt-sub">${esc(subtitle)}</p>`;
+      html += `<div class="kk-pt-accent"></div>`;
+    }
+    TITLE_CANVAS.innerHTML = html;
+  }
+
+  function showTitle()    { if (STEP_TITLE)    STEP_TITLE.style.display    = "block"; }
+  function hideTitle()    { if (STEP_TITLE)    STEP_TITLE.style.display    = "none";  }
+  function isTitleShown() { return STEP_TITLE && STEP_TITLE.style.display !== "none"; }
+
+  function handleState(state) {
+    if (!state) return;
+    if (state.state !== "running" || !state.question) {
+      hideTitle();
+      return;
+    }
+    const isTitle = String(state.question.type || "").toLowerCase() === "title";
+    if (isTitle) {
+      // Hide normal question card and surface the title slide.
+      if (STEP_QUESTION) STEP_QUESTION.style.display = "none";
+      renderTitle(state);
+      showTitle();
+    } else {
+      hideTitle();
+    }
+  }
+
+  // Wrap WebSocket so we can peek at incoming messages without touching play.js.
+  const NativeWS = window.WebSocket;
+  if (!NativeWS) return;
+
+  function WrappedWS(url, protocols) {
+    const ws = protocols == null ? new NativeWS(url) : new NativeWS(url, protocols);
+    ws.addEventListener("message", function (ev) {
+      let msg = null;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (!msg || msg.type !== "state") return;
+      try { handleState(msg); } catch (e) {}
+    });
+    return ws;
+  }
+  WrappedWS.prototype = NativeWS.prototype;
+  WrappedWS.CONNECTING = NativeWS.CONNECTING;
+  WrappedWS.OPEN       = NativeWS.OPEN;
+  WrappedWS.CLOSING    = NativeWS.CLOSING;
+  WrappedWS.CLOSED     = NativeWS.CLOSED;
+  window.WebSocket = WrappedWS;
+})();
+</script>
 </body>
 </html>

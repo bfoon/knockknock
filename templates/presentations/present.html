@@ -210,6 +210,23 @@
     cursor: none;
   }
 
+  /* ─────────────────────────────────────────────
+     CHART BACKGROUND OPACITY VEIL
+     A solid-colored layer matching the page background.
+     Its opacity = (1 - chartBgOpacity), so dragging the
+     slider down "fades" the scenery toward the page bg.
+  ───────────────────────────────────────────── */
+  .kk-chart-bg-veil {
+    position: absolute !important;
+    inset: 0 !important;
+    z-index: 1 !important;            /* above ::before/::after scenery (z=0), below chart canvas (z=5/10) */
+    pointer-events: none !important;
+    background: var(--kk-bg, #0a0a14) !important;
+    opacity: var(--kk-chart-bg-veil-opacity, 0);
+    transition: opacity .15s ease;
+    border-radius: inherit;
+  }
+
   .kk-winner-float,
   .kk-winner-float *,
   .kk-spark,
@@ -317,6 +334,209 @@
       radial-gradient(circle at 35% 20%, rgba(255,255,255,.24), transparent 36%),
       linear-gradient(135deg, rgba(34,211,238,.72), rgba(124,58,237,.72)) !important;
     box-shadow: 0 0 24px rgba(34,211,238,.28);
+  }
+
+  /* ─────────────────────────────────────────────
+     TITLE-SLIDE STAGE
+     Three layouts: clean / quote / divider.
+     Inherits the active template's --stage-fg / --stage-accent vars
+     so it harmonizes with whatever scenery is loaded.
+  ───────────────────────────────────────────── */
+  .kk-title-stage {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .kk-title-canvas {
+    flex: 1 1 auto;
+    min-height: 320px;
+    border-radius: var(--kk-radius-lg, 22px);
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    padding: clamp(2rem, 5vw, 4.5rem);
+    display: flex;
+    flex-direction: column;
+    background:
+      radial-gradient(ellipse at 25% 15%, rgba(124,58,237,.32), transparent 55%),
+      radial-gradient(ellipse at 85% 85%, rgba(34,211,238,.22), transparent 60%),
+      linear-gradient(160deg, rgba(255,255,255,.03), rgba(255,255,255,.0));
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.06),
+      0 18px 50px rgba(0,0,0,.28);
+    color: var(--stage-fg, #fff);
+    animation: kk-title-in .55s ease-out;
+  }
+  .kk-title-canvas::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      radial-gradient(2px 2px at 12% 22%, rgba(255,255,255,.42), transparent 50%),
+      radial-gradient(1.5px 1.5px at 78% 14%, rgba(255,255,255,.32), transparent 50%),
+      radial-gradient(2px 2px at 88% 78%, rgba(255,255,255,.30), transparent 50%),
+      radial-gradient(1.5px 1.5px at 22% 88%, rgba(255,255,255,.28), transparent 50%);
+  }
+  .kk-title-canvas > * { position: relative; z-index: 1; }
+
+  @keyframes kk-title-in {
+    0% { opacity: 0; transform: translateY(14px) scale(.985); }
+    100% { opacity: 1; transform: none; }
+  }
+  @keyframes kk-title-rise {
+    0% { opacity: 0; transform: translateY(20px); }
+    100% { opacity: 1; transform: none; }
+  }
+
+  /* Layout: CLEAN */
+  .kk-title-canvas.layout-clean {
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+  .kk-title-canvas.layout-clean .kk-title-logo {
+    max-height: clamp(80px, 14vh, 200px);
+    max-width: 60%;
+    margin-bottom: clamp(1rem, 3vh, 2.4rem);
+    border-radius: 18px;
+    filter: drop-shadow(0 18px 38px rgba(0,0,0,.32));
+    animation: kk-title-rise .65s ease-out .05s both;
+  }
+  .kk-title-canvas.layout-clean .kk-title-headline {
+    font-family: var(--kk-font-display, "Clash Display", system-ui, sans-serif);
+    font-size: clamp(2.8rem, 8vw, 7rem);
+    font-weight: 800;
+    line-height: 1.02;
+    letter-spacing: -0.025em;
+    margin: 0;
+    text-shadow: 0 8px 30px rgba(0,0,0,.28);
+    animation: kk-title-rise .7s ease-out .15s both;
+  }
+  .kk-title-canvas.layout-clean .kk-title-sub {
+    margin-top: clamp(.7rem, 2vh, 1.4rem);
+    font-size: clamp(1.05rem, 2.4vw, 1.8rem);
+    font-weight: 500;
+    line-height: 1.35;
+    opacity: .82;
+    max-width: 85%;
+    animation: kk-title-rise .8s ease-out .25s both;
+  }
+  .kk-title-canvas.layout-clean .kk-title-accent {
+    margin-top: clamp(1rem, 2.5vh, 1.8rem);
+    height: 4px;
+    width: clamp(60px, 12vw, 140px);
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--stage-accent, #22d3ee), var(--stage-accent-2, #7c3aed));
+    box-shadow: 0 0 30px var(--stage-accent, #22d3ee);
+    animation: kk-title-rise .9s ease-out .35s both;
+  }
+
+  /* Layout: QUOTE */
+  .kk-title-canvas.layout-quote {
+    justify-content: center;
+    padding-left: clamp(3rem, 8vw, 8rem);
+    padding-right: clamp(3rem, 8vw, 8rem);
+  }
+  .kk-title-canvas.layout-quote::after {
+    content: "\201C"; /* left double quote */
+    position: absolute;
+    top: clamp(.5rem, 2vh, 2rem);
+    left: clamp(1rem, 3vw, 3rem);
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: clamp(8rem, 22vw, 22rem);
+    line-height: 1;
+    color: var(--stage-accent, #22d3ee);
+    opacity: .25;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .kk-title-canvas.layout-quote .kk-title-quote-body {
+    font-family: var(--kk-font-serif, "Cormorant Garamond", "Lora", Georgia, serif);
+    font-style: italic;
+    font-size: clamp(1.8rem, 5vw, 4.5rem);
+    line-height: 1.18;
+    font-weight: 500;
+    margin: 0;
+    text-shadow: 0 8px 30px rgba(0,0,0,.22);
+    animation: kk-title-rise .7s ease-out .12s both;
+  }
+  .kk-title-canvas.layout-quote .kk-title-quote-author {
+    margin-top: clamp(1.2rem, 3vh, 2.2rem);
+    font-size: clamp(1rem, 1.8vw, 1.5rem);
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    opacity: .8;
+    animation: kk-title-rise .85s ease-out .28s both;
+  }
+  .kk-title-canvas.layout-quote .kk-title-quote-author::before {
+    content: "— ";
+    color: var(--stage-accent, #22d3ee);
+  }
+  .kk-title-canvas.layout-quote .kk-title-headline {
+    /* Headline isn't shown by default in quote layout; if present it acts as
+       a small kicker above the quote body. */
+    font-size: clamp(.85rem, 1.4vw, 1.05rem);
+    font-weight: 800;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    opacity: .65;
+    margin: 0 0 clamp(.8rem, 2vh, 1.5rem) 0;
+    color: var(--stage-accent, #22d3ee);
+    animation: kk-title-rise .6s ease-out 0s both;
+  }
+
+  /* Layout: DIVIDER */
+  .kk-title-canvas.layout-divider {
+    justify-content: center;
+    align-items: flex-start;
+    text-align: left;
+    padding-left: clamp(3rem, 9vw, 9rem);
+  }
+  .kk-title-canvas.layout-divider .kk-title-divider-num {
+    font-family: var(--kk-font-mono, ui-monospace, "JetBrains Mono", monospace);
+    font-size: clamp(3rem, 9vw, 8rem);
+    font-weight: 900;
+    line-height: 1;
+    color: var(--stage-accent, #22d3ee);
+    opacity: .88;
+    text-shadow: 0 0 40px var(--stage-accent, #22d3ee);
+    animation: kk-title-rise .6s ease-out 0s both;
+  }
+  .kk-title-canvas.layout-divider .kk-title-divider-rule {
+    height: 2px;
+    width: clamp(120px, 20vw, 280px);
+    background: linear-gradient(90deg, var(--stage-accent, #22d3ee), transparent);
+    margin: clamp(.6rem, 1.4vh, 1.2rem) 0;
+    animation: kk-title-rise .7s ease-out .12s both;
+  }
+  .kk-title-canvas.layout-divider .kk-title-headline {
+    font-family: var(--kk-font-display, "Clash Display", system-ui, sans-serif);
+    font-size: clamp(2.4rem, 7vw, 6rem);
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: -0.022em;
+    margin: 0;
+    text-shadow: 0 8px 30px rgba(0,0,0,.28);
+    animation: kk-title-rise .8s ease-out .22s both;
+  }
+  .kk-title-canvas.layout-divider .kk-title-sub {
+    margin-top: clamp(.8rem, 2vh, 1.4rem);
+    font-size: clamp(1rem, 2.2vw, 1.6rem);
+    font-weight: 500;
+    line-height: 1.4;
+    opacity: .8;
+    max-width: 70%;
+    animation: kk-title-rise .9s ease-out .32s both;
+  }
+
+  /* When in fullscreen, give the title canvas the full stage. */
+  .kk-stage.fullscreen .kk-title-canvas {
+    min-height: 100%;
+    height: 100%;
   }
 
   /* ─────────────────────────────────────────────
@@ -883,6 +1103,586 @@
 
 
   /* ─────────────────────────────────────────────
+     SYNCHRONIZED GAME TIMER CONTROLS
+  ───────────────────────────────────────────── */
+  .kk-timer-panel {
+    margin-top: .85rem;
+    padding: .75rem;
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(251,191,36,.12), rgba(34,211,238,.08));
+    border: 1px solid rgba(255,255,255,.12);
+  }
+  .kk-presenter-timer-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    margin-bottom: .55rem;
+  }
+  .kk-presenter-timer-chip {
+    min-width: 72px;
+    text-align: center;
+    border-radius: 999px;
+    padding: .38rem .72rem;
+    font-size: 1.05rem;
+    font-weight: 900;
+    color: #111827;
+    background: #fbbf24;
+    box-shadow: 0 0 22px rgba(251,191,36,.28);
+  }
+  .kk-presenter-timer-chip.is-ended {
+    color: #fff;
+    background: #dc2626;
+    box-shadow: 0 0 22px rgba(220,38,38,.35);
+  }
+  .kk-timer-extend-buttons {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .5rem;
+  }
+  .kk-timer-extend-buttons .kk-btn[disabled] {
+    opacity: .45;
+    cursor: not-allowed;
+  }
+  .kk-timer-detail {
+    color: var(--kk-text-dim, #94a3b8);
+    font-size: .78rem;
+    line-height: 1.3;
+  }
+
+
+
+  /* ─────────────────────────────────────────────
+     GAME SIDEBAR COMPACT FIX
+     Reduce QR / participant / timer cards so the leaderboard is visible
+     on normal laptop screens without needing fullscreen.
+  ───────────────────────────────────────────── */
+  .kk-stage[data-kind="game"] .kk-stage-body {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+
+  .kk-stage[data-kind="game"] .kk-stage-side {
+    gap: 0.45rem;
+  }
+
+  .kk-stage[data-kind="game"] .kk-qr-panel {
+    flex: 0 0 auto !important;
+    display: grid !important;
+    grid-template-columns: 82px minmax(0, 1fr);
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.45rem !important;
+    text-align: left !important;
+    min-height: 0 !important;
+  }
+
+  .kk-stage[data-kind="game"] .kk-qr-panel img {
+    width: 82px !important;
+    max-width: 82px !important;
+    height: 82px !important;
+    object-fit: contain;
+    grid-row: 1 / span 2;
+  }
+
+  .kk-stage[data-kind="game"] .kk-qr-panel .code {
+    font-size: 1.15rem !important;
+    line-height: 1 !important;
+    margin: 0 !important;
+  }
+
+  .kk-stage[data-kind="game"] .kk-qr-panel .small {
+    display: none !important;
+  }
+
+  .kk-stage[data-kind="game"] .kk-presenter-control-card {
+    flex: 0 0 auto !important;
+    padding: 0.55rem !important;
+    min-height: 0 !important;
+  }
+
+  .kk-stage[data-kind="game"] .kk-presenter-control-card h3 {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin: 0 !important;
+    font-size: 0.82rem !important;
+    line-height: 1.1;
+  }
+
+  .kk-stage[data-kind="game"] .kk-presenter-control-card > p {
+    display: none !important;
+  }
+
+  .kk-stage[data-kind="game"] .kk-timer-panel {
+    margin-top: 0.42rem !important;
+    padding: 0.45rem !important;
+    border-radius: 12px !important;
+  }
+
+  .kk-stage[data-kind="game"] .kk-presenter-timer-row {
+    gap: 0.4rem;
+    margin-bottom: 0.35rem !important;
+  }
+
+  .kk-stage[data-kind="game"] .kk-presenter-timer-row .small {
+    font-size: 0.72rem !important;
+    line-height: 1.1;
+  }
+
+  .kk-stage[data-kind="game"] .kk-presenter-timer-chip {
+    min-width: 50px !important;
+    padding: 0.2rem 0.45rem !important;
+    font-size: 0.88rem !important;
+    line-height: 1.1;
+  }
+
+  .kk-stage[data-kind="game"] .kk-timer-extend-buttons {
+    gap: 0.32rem !important;
+  }
+
+  .kk-stage[data-kind="game"] .kk-timer-extend-buttons .kk-btn {
+    min-height: 28px;
+    padding: 0.2rem 0.38rem !important;
+    border-radius: 10px !important;
+    font-size: 0.72rem !important;
+    line-height: 1.1;
+  }
+
+  .kk-stage[data-kind="game"] .kk-timer-detail {
+    display: none !important;
+  }
+
+  .kk-stage[data-kind="game"] .kk-presenter-control-card .d-flex.gap-2.mt-3 {
+    margin-top: 0.45rem !important;
+    gap: 0.35rem !important;
+  }
+
+  .kk-stage[data-kind="game"] .kk-presenter-control-card .d-flex.gap-2.mt-3 .kk-btn {
+    min-height: 30px;
+    padding: 0.24rem 0.45rem !important;
+    font-size: 0.74rem !important;
+    border-radius: 10px !important;
+  }
+
+  .kk-stage[data-kind="game"] .kk-game-leaderboard-card {
+    flex: 1 1 360px !important;
+    min-height: 260px !important;
+    padding: 0.7rem !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+  }
+
+  .kk-stage[data-kind="game"] .kk-game-leaderboard-card h3 {
+    flex: 0 0 auto;
+    margin-bottom: 0.5rem !important;
+    font-size: 0.95rem !important;
+    line-height: 1.15;
+  }
+
+  .kk-stage[data-kind="game"] .kk-game-leaderboard-card #leaderboard {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+  }
+
+  .kk-stage[data-kind="game"] .kk-game-leaderboard-card .kk-lb-row {
+    padding: 0.48rem 0.55rem !important;
+    margin-bottom: 0.38rem !important;
+    border-radius: 12px !important;
+  }
+
+  @media (max-height: 760px) {
+    .kk-stage[data-kind="game"] .kk-qr-panel {
+      grid-template-columns: 70px minmax(0, 1fr);
+      padding: 0.35rem !important;
+    }
+
+    .kk-stage[data-kind="game"] .kk-qr-panel img {
+      width: 70px !important;
+      max-width: 70px !important;
+      height: 70px !important;
+    }
+
+    .kk-stage[data-kind="game"] .kk-qr-panel .code {
+      font-size: 1rem !important;
+    }
+
+    .kk-stage[data-kind="game"] .kk-presenter-control-card {
+      padding: 0.45rem !important;
+    }
+
+    .kk-stage[data-kind="game"] .kk-timer-panel {
+      padding: 0.38rem !important;
+      margin-top: 0.34rem !important;
+    }
+
+    .kk-stage[data-kind="game"] .kk-game-leaderboard-card {
+      min-height: 240px !important;
+      padding: 0.58rem !important;
+    }
+  }
+
+  @media (max-height: 680px) {
+    .kk-stage[data-kind="game"] .kk-qr-panel {
+      grid-template-columns: 58px minmax(0, 1fr);
+    }
+
+    .kk-stage[data-kind="game"] .kk-qr-panel img {
+      width: 58px !important;
+      max-width: 58px !important;
+      height: 58px !important;
+    }
+
+    .kk-stage[data-kind="game"] .kk-presenter-timer-row .small {
+      display: none !important;
+    }
+  }
+
+
+
+  /* ─────────────────────────────────────────────
+     CREATIVE LOBBY / BIG QR HERO
+     First presenter page now shows a large QR code in the main stage,
+     not only in the side panel. Keeps #btn-start and #participant-chips
+     so present.js continues to work without changes.
+  ───────────────────────────────────────────── */
+  #view-lobby {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .kk-lobby-hero {
+    height: 100%;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr);
+    gap: clamp(1rem, 2vw, 1.6rem);
+    align-items: stretch;
+  }
+
+  .kk-lobby-big {
+    position: relative;
+    overflow: hidden;
+    min-height: 0;
+    border-radius: 32px;
+    padding: clamp(1.4rem, 3vw, 3.2rem);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    background:
+      radial-gradient(circle at 18% 18%, rgba(251,191,36,.20), transparent 30%),
+      radial-gradient(circle at 85% 18%, rgba(34,211,238,.18), transparent 34%),
+      radial-gradient(circle at 55% 95%, rgba(124,58,237,.22), transparent 38%),
+      linear-gradient(145deg, rgba(255,255,255,.105), rgba(255,255,255,.035));
+    border: 1px solid rgba(255,255,255,.14);
+    box-shadow: 0 28px 90px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.14);
+    isolation: isolate;
+  }
+
+  .kk-lobby-big::before {
+    content: "";
+    position: absolute;
+    inset: -40%;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      conic-gradient(from 90deg, transparent 0 20%, rgba(34,211,238,.16) 23%, transparent 28% 54%, rgba(251,191,36,.14) 58%, transparent 64% 100%);
+    animation: kkLobbySpin 18s linear infinite;
+  }
+
+  .kk-lobby-big::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+      radial-gradient(2px 2px at 12% 22%, rgba(255,255,255,.50), transparent 55%),
+      radial-gradient(1.5px 1.5px at 72% 18%, rgba(255,255,255,.35), transparent 55%),
+      radial-gradient(2px 2px at 82% 76%, rgba(255,255,255,.32), transparent 55%),
+      radial-gradient(1.5px 1.5px at 28% 84%, rgba(255,255,255,.28), transparent 55%);
+  }
+
+  .kk-lobby-big > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  @keyframes kkLobbySpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .kk-lobby-kicker {
+    width: fit-content;
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    padding: .45rem .75rem;
+    border-radius: 999px;
+    background: rgba(0,0,0,.24);
+    border: 1px solid rgba(255,255,255,.14);
+    color: rgba(255,255,255,.88);
+    font-size: .82rem;
+    font-weight: 900;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    margin-bottom: clamp(.85rem, 1.8vh, 1.25rem);
+  }
+
+  .kk-lobby-title {
+    font-family: var(--kk-font-display, "Clash Display", system-ui, sans-serif);
+    font-size: clamp(2.2rem, 5.5vw, 5.4rem);
+    line-height: .95;
+    font-weight: 900;
+    letter-spacing: -.045em;
+    margin: 0;
+    max-width: 950px;
+    text-shadow: 0 14px 40px rgba(0,0,0,.32);
+  }
+
+  .kk-lobby-sub {
+    max-width: 720px;
+    margin: clamp(.8rem, 1.9vh, 1.25rem) 0 0;
+    color: rgba(255,255,255,.76);
+    font-size: clamp(1rem, 1.7vw, 1.35rem);
+    line-height: 1.42;
+  }
+
+  .kk-lobby-meta {
+    display: grid;
+    /* Give the session-code box enough room for all 6 digits. */
+    grid-template-columns: minmax(260px, .9fr) minmax(0, 1.1fr);
+    gap: .7rem;
+    margin-top: clamp(1.1rem, 2.4vh, 1.7rem);
+  }
+
+  .kk-lobby-meta-card {
+    min-width: 0;
+    padding: .9rem 1rem;
+    border-radius: 20px;
+    background: rgba(0,0,0,.24);
+    border: 1px solid rgba(255,255,255,.12);
+    backdrop-filter: blur(12px);
+  }
+
+  .kk-lobby-meta-label {
+    font-size: .72rem;
+    font-weight: 900;
+    color: rgba(255,255,255,.54);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    margin-bottom: .25rem;
+  }
+
+  .kk-lobby-code {
+    font-family: var(--kk-font-mono, ui-monospace, "JetBrains Mono", monospace);
+    /* Keep all six digits visible inside the card on normal screens. */
+    font-size: clamp(2.25rem, 4vw, 3.85rem);
+    line-height: 1;
+    font-weight: 1000;
+    letter-spacing: -0.04em;
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: visible;
+    color: #fbbf24;
+    text-shadow: 0 0 34px rgba(251,191,36,.32);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .kk-lobby-url {
+    font-family: var(--kk-font-mono, ui-monospace, "JetBrains Mono", monospace);
+    font-size: clamp(.78rem, 1.2vw, .98rem);
+    color: rgba(255,255,255,.86);
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .kk-lobby-participants {
+    min-height: 42px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+    align-items: center;
+  }
+
+  .kk-lobby-actions {
+    display: flex;
+    align-items: center;
+    gap: .9rem;
+    flex-wrap: wrap;
+    margin-top: clamp(1.25rem, 2.8vh, 2rem);
+  }
+
+  .kk-lobby-actions .kk-btn {
+    min-height: 58px;
+    padding-inline: clamp(1.2rem, 2vw, 1.8rem);
+    font-weight: 900;
+    box-shadow: 0 18px 42px rgba(124,58,237,.32);
+  }
+
+  .kk-lobby-tip {
+    color: rgba(255,255,255,.66);
+    font-size: .92rem;
+    line-height: 1.3;
+    max-width: 260px;
+  }
+
+  .kk-lobby-qr-card {
+    position: relative;
+    min-height: 0;
+    overflow: hidden;
+    border-radius: 32px;
+    padding: clamp(1rem, 2.3vw, 2rem);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    background:
+      radial-gradient(circle at 50% 0%, rgba(255,255,255,.18), transparent 36%),
+      linear-gradient(145deg, rgba(255,255,255,.14), rgba(255,255,255,.045));
+    border: 1px solid rgba(255,255,255,.16);
+    box-shadow: 0 28px 90px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.15);
+    isolation: isolate;
+  }
+
+  .kk-lobby-qr-card::before {
+    content: "";
+    position: absolute;
+    inset: 1rem;
+    border-radius: 28px;
+    border: 1px dashed rgba(255,255,255,.25);
+    pointer-events: none;
+  }
+
+  .kk-lobby-qr-card::after {
+    content: "";
+    position: absolute;
+    width: 70%;
+    height: 34%;
+    left: 15%;
+    top: -18%;
+    background: radial-gradient(ellipse, rgba(34,211,238,.28), transparent 70%);
+    filter: blur(16px);
+    pointer-events: none;
+  }
+
+  .kk-lobby-qr-card > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .kk-lobby-qr-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    padding: .42rem .78rem;
+    border-radius: 999px;
+    background: rgba(251,191,36,.16);
+    border: 1px solid rgba(251,191,36,.34);
+    color: #fde68a;
+    font-weight: 900;
+    font-size: .82rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-bottom: clamp(.8rem, 1.6vh, 1.2rem);
+  }
+
+  .kk-lobby-qr-shell {
+    width: min(48vh, 34vw, 440px);
+    aspect-ratio: 1 / 1;
+    display: grid;
+    place-items: center;
+    padding: clamp(.7rem, 1.5vw, 1.2rem);
+    border-radius: 30px;
+    background: #fff;
+    box-shadow:
+      0 26px 70px rgba(0,0,0,.42),
+      0 0 0 10px rgba(255,255,255,.08),
+      0 0 44px rgba(34,211,238,.24);
+  }
+
+  .kk-lobby-qr-shell img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border-radius: 18px;
+    display: block;
+  }
+
+  .kk-lobby-qr-title {
+    margin: clamp(1rem, 2vh, 1.5rem) 0 .35rem;
+    font-family: var(--kk-font-display, "Clash Display", system-ui, sans-serif);
+    font-size: clamp(1.4rem, 3vw, 2.6rem);
+    font-weight: 900;
+    line-height: 1;
+  }
+
+  .kk-lobby-qr-text {
+    max-width: 420px;
+    margin: 0;
+    color: rgba(255,255,255,.68);
+    line-height: 1.35;
+    font-size: clamp(.9rem, 1.3vw, 1.08rem);
+  }
+
+  .kk-lobby-qr-code {
+    margin-top: .8rem;
+    padding: .35rem .75rem;
+    border-radius: 999px;
+    background: rgba(0,0,0,.25);
+    border: 1px solid rgba(255,255,255,.12);
+    color: #fbbf24;
+    font-family: var(--kk-font-mono, ui-monospace, "JetBrains Mono", monospace);
+    font-size: clamp(1.25rem, 2.5vw, 2rem);
+    font-weight: 1000;
+    letter-spacing: .08em;
+  }
+
+  @media (max-width: 1180px) {
+    .kk-lobby-hero {
+      grid-template-columns: minmax(0, 1fr);
+      overflow: auto;
+    }
+    .kk-lobby-qr-card {
+      min-height: 520px;
+    }
+  }
+
+  @media (max-width: 760px), (max-height: 720px) {
+    .kk-lobby-big,
+    .kk-lobby-qr-card {
+      border-radius: 22px;
+      padding: 1rem;
+    }
+    .kk-lobby-title {
+      font-size: clamp(2rem, 9vw, 3.2rem);
+    }
+    .kk-lobby-meta {
+      grid-template-columns: 1fr;
+    }
+    .kk-lobby-code {
+      font-size: clamp(2rem, 13vw, 3.6rem);
+      letter-spacing: -0.05em;
+    }
+    .kk-lobby-actions .kk-btn {
+      width: 100%;
+      justify-content: center;
+      min-height: 50px;
+    }
+    .kk-lobby-qr-card {
+      min-height: 420px;
+    }
+    .kk-lobby-qr-shell {
+      width: min(74vw, 360px);
+    }
+  }
+
+  /* ─────────────────────────────────────────────
      SPECIAL GAME RESULT DISPLAYS
   ───────────────────────────────────────────── */
   .kk-picture-presenter-grid { width:100%; height:100%; padding:clamp(1rem,2vw,2rem); display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:clamp(1rem,2vw,1.5rem); align-items:stretch; overflow:auto; }
@@ -978,19 +1778,61 @@
     <div class="kk-stage-main" id="stage-main">
 
       <div id="view-lobby">
-        <div class="kk-lobby-big">
-          {% if logo_url %}
-            <img src="{{ logo_url }}" alt="" style="max-height:80px; border-radius:12px; margin-bottom:1.5rem;">
-          {% endif %}
+        <div class="kk-lobby-hero">
+          <div class="kk-lobby-big">
+            {% if logo_url %}
+              <img src="{{ logo_url }}" alt="" style="max-height:78px; max-width:220px; object-fit:contain; border-radius:16px; margin-bottom:1.2rem; background:rgba(255,255,255,.9); padding:.45rem;">
+            {% endif %}
 
-          <div class="text-secondary">Join at this URL</div>
-          <div class="kk-lobby-code">{{ session.code }}</div>
-          <div class="text-secondary">…or scan the QR →</div>
-          <div class="kk-lobby-participants" id="participant-chips"></div>
+            <div class="kk-lobby-kicker">
+              <i class="bi bi-broadcast-pin"></i>
+              Live session lobby
+            </div>
 
-          <button class="kk-btn kk-btn-primary kk-btn-lg mt-4" id="btn-start">
-            <i class="bi bi-play-fill"></i> Start presentation
-          </button>
+            <h1 class="kk-lobby-title">Scan, join, and get ready to play.</h1>
+            <p class="kk-lobby-sub">
+              Participants can scan the QR code or enter the session code. Keep this screen open until everyone is in, then start the presentation.
+            </p>
+
+            <div class="kk-lobby-meta">
+              <div class="kk-lobby-meta-card">
+                <div class="kk-lobby-meta-label">Session code</div>
+                <div class="kk-lobby-code">{{ session.code }}</div>
+              </div>
+              <div class="kk-lobby-meta-card">
+                <div class="kk-lobby-meta-label">Join link</div>
+                <div class="kk-lobby-url">{{ join_url }}</div>
+              </div>
+            </div>
+
+            <div class="kk-lobby-meta-card" style="margin-top:.7rem;">
+              <div class="kk-lobby-meta-label">Participants joined</div>
+              <div class="kk-lobby-participants" id="participant-chips"></div>
+            </div>
+
+            <div class="kk-lobby-actions">
+              <button class="kk-btn kk-btn-primary kk-btn-lg" id="btn-start">
+                <i class="bi bi-play-fill"></i> Start presentation
+              </button>
+              <div class="kk-lobby-tip">
+                Tip: ask participants to keep the join page open before you press start.
+              </div>
+            </div>
+          </div>
+
+          <div class="kk-lobby-qr-card">
+            <div class="kk-lobby-qr-badge">
+              <i class="bi bi-qr-code-scan"></i> Scan to join
+            </div>
+            <div class="kk-lobby-qr-shell">
+              <img src="{% url 'presentations:qr' session.code %}" alt="QR code for session {{ session.code }}">
+            </div>
+            <h2 class="kk-lobby-qr-title">Join this session instantly</h2>
+            <p class="kk-lobby-qr-text">
+              Open your camera, scan this code, enter your name, and wait for the game to begin.
+            </p>
+            <div class="kk-lobby-qr-code">{{ session.code }}</div>
+          </div>
         </div>
       </div>
 
@@ -1004,6 +1846,7 @@
         <div class="kk-chart-wrap kk-bg-{{ chart_background|default:'normal' }}"
              id="chart-wrap"
              data-bg="{{ chart_background|default:'normal' }}">
+          <div class="kk-chart-bg-veil" id="chart-bg-veil" aria-hidden="true"></div>
           <canvas id="live-chart"></canvas>
           <div id="special-display" style="display:none;"></div>
           <canvas id="draw-canvas"></canvas>
@@ -1015,6 +1858,15 @@
               <span class="kk-lens-badge" id="kk-lens-badge">2x</span>
             </div>
           {% endif %}
+        </div>
+      </div>
+
+      <div id="view-title" style="display:none;" class="kk-title-stage">
+        <div class="kk-stage-progress mb-1">
+          <span id="title-progress">—</span>
+        </div>
+        <div class="kk-title-canvas" id="title-canvas">
+          <!-- Populated by renderTitleSlide() in present.js -->
         </div>
       </div>
 
@@ -1063,7 +1915,7 @@
         <div class="small text-muted mt-1" style="word-break: break-all;">{{ join_url }}</div>
       </div>
 
-      <div class="kk-card" style="background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.12);">
+      <div class="kk-card kk-presenter-control-card" style="background: var(--kk-surface); border-color: var(--kk-border);">
         <h3 style="font-size:1rem; color: var(--kk-text-dim);">
           Participants <span id="participant-count">0</span>
         </h3>
@@ -1072,7 +1924,29 @@
           {{ session.get_mode_display }}
         </p>
 
-        <div class="d-flex gap-2">
+        {% if session.kind == "game" %}
+          <div class="kk-timer-panel">
+            <div class="kk-presenter-timer-row">
+              <div class="small text-secondary fw-bold">
+                <i class="bi bi-stopwatch"></i> Question timer
+              </div>
+              <div class="kk-presenter-timer-chip" id="presenter-timer-chip">—</div>
+            </div>
+            <div class="kk-timer-extend-buttons">
+              <button type="button" class="kk-btn kk-btn-ghost btn-sm" id="btn-extend-5" disabled>
+                <i class="bi bi-plus-circle"></i> +5s
+              </button>
+              <button type="button" class="kk-btn kk-btn-ghost btn-sm" id="btn-extend-10" disabled>
+                <i class="bi bi-plus-circle-fill"></i> +10s
+              </button>
+            </div>
+            <div class="kk-timer-detail mt-2" id="presenter-timer-detail">
+              Timer starts when the question opens.
+            </div>
+          </div>
+        {% endif %}
+
+        <div class="d-flex gap-2 mt-3">
           <button class="kk-btn kk-btn-ghost btn-sm flex-grow-1" id="btn-prev">
             <i class="bi bi-chevron-left"></i> Back
           </button>
@@ -1116,6 +1990,16 @@
               <span>Chart</span>
               <input type="color" id="chart-font-color" value="#ffffff">
               <button type="button" class="kk-mini-reset" id="reset-chart-font-color">Auto</button>
+            </label>
+
+            <div class="small text-secondary fw-bold mt-3 mb-2">
+              <i class="bi bi-image"></i> Chart background
+            </div>
+
+            <label class="kk-lens-control-row" for="chart-bg-opacity">
+              <span>Opacity</span>
+              <input type="range" min="0" max="100" step="5" value="100" id="chart-bg-opacity">
+              <span class="kk-axis-value" id="chart-bg-opacity-value">100%</span>
             </label>
 
             <div class="small text-secondary fw-bold mt-3 mb-2">
@@ -1254,6 +2138,6 @@
 </script>
 {% endif %}
 
-<script src="{% static 'js/present.js' %}?v=16"></script>
+<script src="{% static 'js/present.js' %}?v=17"></script>
 </body>
 </html>

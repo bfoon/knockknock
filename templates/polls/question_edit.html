@@ -23,10 +23,14 @@
     <div class="col-lg-8">
 
       <div class="kk-card mb-4">
-        <label class="form-label">Question text</label>
+        <label class="form-label">
+          {% if question.type == "title" %}Title{% else %}Question text{% endif %}
+        </label>
         {{ form.text }}
         {% if form.text.errors %}<div class="text-danger small mt-1">{{ form.text.errors }}</div>{% endif %}
 
+        {# The generic question image isn't used for title slides — they have title_image instead. #}
+        {% if question.type != "title" %}
         <div class="mt-3">
           <label class="form-label">Image (optional)</label>
           {% if question.image %}
@@ -34,6 +38,7 @@
           {% endif %}
           {{ form.image }}
         </div>
+        {% endif %}
       </div>
 
       {# ─── Type-specific content sections ──────────────────── #}
@@ -55,6 +60,10 @@
 
       {% if question.type == "two_by_two" %}
         {% include "polls/partials/qtypes/qtype_two_by_two.html" %}
+      {% endif %}
+
+      {% if question.type == "title" %}
+        {% include "polls/partials/qtypes/qtype_title.html" %}
       {% endif %}
 
       {% if config_form %}
@@ -143,8 +152,9 @@
         </p>
       </div>
 
-      {# Chart picker #}
-      <div class="kk-card mb-4">
+      {# Chart picker (hidden for static slides like title — but we keep the
+         hidden chart_type select in the DOM so the existing value round-trips). #}
+      <div class="kk-card mb-4 {% if question.type == 'title' %}d-none{% endif %}">
         <div class="d-flex align-items-center justify-content-between mb-2">
           <h3 class="kk-section-title mb-0" style="font-size:1rem;">
             <i class="bi bi-bar-chart"></i> Chart

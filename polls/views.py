@@ -806,4 +806,3 @@ def quick_delete_question(request, pk, qpk):
         return JsonResponse({"ok": True})
     messages.info(request, "Question deleted.")
     return redirect("polls:edit", pk=questionnaire.pk)
-

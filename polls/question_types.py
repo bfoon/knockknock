@@ -23,6 +23,7 @@ STORAGE_MATRIX       = "matrix"        # uses MatrixAnswer rows
 STORAGE_POINTS       = "points"        # uses PointsAllocation rows
 STORAGE_EPHEMERAL    = "ephemeral"     # not persisted to DB (Redis-only)
 STORAGE_MULTI_CHOICE = "multi_choice"  # uses Response.choice but allows multiple rows
+STORAGE_NONE         = "none"          # static slide — no participant input expected
 
 
 # Logical groupings for the picker UI
@@ -33,6 +34,7 @@ GROUP_RANKING     = "Ranking & distribution"
 GROUP_TIME        = "Date & time"
 GROUP_SPATIAL     = "Spatial & visual"
 GROUP_LIVE        = "Live & reaction"
+GROUP_STATIC      = "Slides"
 
 
 QUESTION_TYPE_REGISTRY = {
@@ -205,6 +207,15 @@ QUESTION_TYPE_REGISTRY = {
         description="Live emoji bursts during a session. Not saved.",
         auto_choices=["🔥", "❤️", "😂", "👏", "😮"],
     ),
+
+    # ── New: Slides ─────────────────────────────────
+    "title": dict(
+        label="Title slide", icon="🎬", group=GROUP_STATIC,
+        storage=STORAGE_NONE, has_choices=False, choices_need_image=False,
+        default_chart="bar",  # unused; we never render a chart for title slides
+        description="A static intro / divider / quote slide. No audience input.",
+        is_static=True,
+    ),
 }
 
 
@@ -230,6 +241,6 @@ def grouped_for_picker():
     for tid, meta in QUESTION_TYPE_REGISTRY.items():
         groups.setdefault(meta["group"], []).append(dict(id=tid, **meta))
     # Stable order matching the GROUP_* constants order above
-    order = [GROUP_CHOICE, GROUP_SCALE, GROUP_OPEN, GROUP_RANKING,
+    order = [GROUP_STATIC, GROUP_CHOICE, GROUP_SCALE, GROUP_OPEN, GROUP_RANKING,
              GROUP_TIME, GROUP_SPATIAL, GROUP_LIVE]
     return [(g, groups[g]) for g in order if g in groups]

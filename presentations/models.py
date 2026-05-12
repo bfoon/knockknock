@@ -33,6 +33,16 @@ class LiveSession(models.Model):
     questionnaire = models.ForeignKey("polls.Questionnaire", null=True, blank=True, on_delete=models.SET_NULL)
     quiz = models.ForeignKey("games.Quiz", null=True, blank=True, on_delete=models.SET_NULL)
 
+    # ── Synchronized server-driven question timer ──
+    # Every client (presenter and every participant) computes "seconds left"
+    # from `question_started_at + base time_limit + time_extension_seconds`.
+    # Set on every advance/goto/back. Cleared (None) in lobby/ended.
+    question_started_at = models.DateTimeField(null=True, blank=True)
+    time_extension_seconds = models.PositiveIntegerField(
+        default=0,
+        help_text="Extra seconds added to the CURRENT question by the presenter (+5 / +10 buttons).",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     ended_at = models.DateTimeField(null=True, blank=True)
 

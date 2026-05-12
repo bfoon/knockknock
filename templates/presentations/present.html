@@ -1682,6 +1682,180 @@
     }
   }
 
+
+
+  /* ─────────────────────────────────────────────
+     POLL SIDEBAR STATS FIX
+     Polls do not use the game leaderboard, so make the QR card compact
+     and give the participant/control card more useful space. Shows:
+       • registered participants
+       • participants who answered the active question
+  ───────────────────────────────────────────── */
+  .kk-stage[data-kind="poll"] .kk-stage-side {
+    gap: 0.55rem;
+  }
+
+  .kk-stage[data-kind="poll"] .kk-qr-panel {
+    flex: 0 0 auto !important;
+    display: grid !important;
+    grid-template-columns: 82px minmax(0, 1fr);
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.55rem !important;
+    text-align: left !important;
+    min-height: 0 !important;
+  }
+
+  .kk-stage[data-kind="poll"] .kk-qr-panel img {
+    width: 82px !important;
+    max-width: 82px !important;
+    height: 82px !important;
+    object-fit: contain;
+    grid-row: 1 / span 2;
+  }
+
+  .kk-stage[data-kind="poll"] .kk-qr-panel .code {
+    font-size: 1.15rem !important;
+    line-height: 1 !important;
+    margin: 0 !important;
+    letter-spacing: .12em !important;
+  }
+
+  .kk-stage[data-kind="poll"] .kk-qr-panel .small {
+    font-size: .68rem !important;
+    line-height: 1.15;
+    max-height: 2.3em;
+    overflow: hidden;
+    opacity: .75;
+  }
+
+  .kk-stage[data-kind="poll"] .kk-presenter-control-card {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: auto !important;
+    padding: 0.85rem !important;
+  }
+
+  .kk-stage[data-kind="poll"] .kk-presenter-control-card h3 {
+    margin-bottom: .45rem !important;
+    font-size: 1.05rem !important;
+  }
+
+  .kk-stage[data-kind="poll"] .kk-presenter-control-card > p {
+    margin-bottom: .65rem !important;
+  }
+
+  .kk-poll-live-stats {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: .55rem;
+    margin: .65rem 0 .85rem;
+    padding: .7rem;
+    border-radius: 18px;
+    background:
+      radial-gradient(circle at 15% 10%, rgba(34,211,238,.18), transparent 36%),
+      linear-gradient(135deg, rgba(255,255,255,.075), rgba(255,255,255,.035));
+    border: 1px solid rgba(255,255,255,.12);
+  }
+
+  .kk-poll-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .5rem;
+  }
+
+  .kk-poll-stat-card {
+    min-width: 0;
+    padding: .65rem .6rem;
+    border-radius: 14px;
+    background: rgba(0,0,0,.22);
+    border: 1px solid rgba(255,255,255,.10);
+  }
+
+  .kk-poll-stat-label {
+    display: block;
+    color: rgba(255,255,255,.62);
+    font-size: .68rem;
+    line-height: 1.15;
+    font-weight: 900;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  .kk-poll-stat-value {
+    display: block;
+    margin-top: .22rem;
+    color: #f8fafc;
+    font-family: var(--kk-font-mono, ui-monospace, "JetBrains Mono", monospace);
+    font-size: clamp(1.75rem, 3.5vw, 2.55rem);
+    font-weight: 1000;
+    line-height: 1;
+  }
+
+  .kk-poll-stat-card.is-answered .kk-poll-stat-value {
+    color: #fbbf24;
+    text-shadow: 0 0 24px rgba(251,191,36,.22);
+  }
+
+  .kk-poll-answer-progress-wrap {
+    height: 10px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(255,255,255,.10);
+    box-shadow: inset 0 1px 3px rgba(0,0,0,.32);
+  }
+
+  .kk-poll-answer-progress-fill {
+    width: 0%;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #22d3ee, #fbbf24);
+    transition: width .35s ease;
+  }
+
+  .kk-poll-stat-note {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    color: rgba(255,255,255,.62);
+    font-size: .72rem;
+    line-height: 1.2;
+  }
+
+  .kk-poll-stat-note strong {
+    color: #f8fafc;
+    white-space: nowrap;
+  }
+
+  @media (max-height: 760px) {
+    .kk-stage[data-kind="poll"] .kk-qr-panel {
+      grid-template-columns: 66px minmax(0, 1fr);
+      padding: .42rem !important;
+    }
+
+    .kk-stage[data-kind="poll"] .kk-qr-panel img {
+      width: 66px !important;
+      max-width: 66px !important;
+      height: 66px !important;
+    }
+
+    .kk-stage[data-kind="poll"] .kk-presenter-control-card {
+      padding: .65rem !important;
+    }
+
+    .kk-poll-live-stats {
+      padding: .55rem;
+      gap: .45rem;
+    }
+
+    .kk-poll-stat-value {
+      font-size: 1.75rem;
+    }
+  }
+
   /* ─────────────────────────────────────────────
      SPECIAL GAME RESULT DISPLAYS
   ───────────────────────────────────────────── */
@@ -1924,6 +2098,28 @@
           {{ session.get_mode_display }}
         </p>
 
+        {% if session.kind != "game" %}
+          <div class="kk-poll-live-stats" aria-live="polite">
+            <div class="kk-poll-stat-grid">
+              <div class="kk-poll-stat-card">
+                <span class="kk-poll-stat-label">Registered</span>
+                <span class="kk-poll-stat-value" id="poll-registered-count">0</span>
+              </div>
+              <div class="kk-poll-stat-card is-answered">
+                <span class="kk-poll-stat-label">Answered</span>
+                <span class="kk-poll-stat-value" id="poll-answered-count">0</span>
+              </div>
+            </div>
+            <div class="kk-poll-answer-progress-wrap" title="Answered participants progress">
+              <div class="kk-poll-answer-progress-fill" id="poll-answer-progress-fill"></div>
+            </div>
+            <div class="kk-poll-stat-note">
+              <span>Current question response rate</span>
+              <strong id="poll-answer-rate">0%</strong>
+            </div>
+          </div>
+        {% endif %}
+
         {% if session.kind == "game" %}
           <div class="kk-timer-panel">
             <div class="kk-presenter-timer-row">
@@ -2054,6 +2250,101 @@
 
 {# Avatar catalog — must load BEFORE the room leaderboard shim and present.js. #}
 {% include "games/partials/avatar_data.html" with avatars=avatars %}
+
+
+{% if session.kind != "game" %}
+<script>
+/* ────────────────────────────────────────────────────────────────
+   POLL PARTICIPANT / ANSWER STATS
+   Uses the existing WebSocket state + tally messages. The backend now
+   includes tally.answered_count; if an older backend is still running,
+   this shim falls back to summing tally counts/text values.
+──────────────────────────────────────────────────────────────── */
+(function () {
+  const stage = document.getElementById("stage");
+  if (!stage || stage.dataset.kind === "game") return;
+
+  const registeredEl = document.getElementById("poll-registered-count");
+  const answeredEl = document.getElementById("poll-answered-count");
+  const rateEl = document.getElementById("poll-answer-rate");
+  const fillEl = document.getElementById("poll-answer-progress-fill");
+
+  let registered = 0;
+  let answered = 0;
+
+  function asNumber(v) {
+    const n = Number(v || 0);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function answeredFromTally(tally) {
+    if (!tally || typeof tally !== "object") return 0;
+
+    if (tally.answered_count !== undefined && tally.answered_count !== null) {
+      return asNumber(tally.answered_count);
+    }
+
+    const counts = tally.counts || {};
+    let total = 0;
+    Object.keys(counts).forEach(k => { total += asNumber(counts[k]); });
+
+    if (Array.isArray(tally.texts)) total += tally.texts.length;
+    if (Array.isArray(tally.pins)) total += tally.pins.length;
+    if (Array.isArray(tally.points)) total += tally.points.length;
+
+    return total;
+  }
+
+  function paint() {
+    const safeRegistered = Math.max(0, Math.floor(registered));
+    const safeAnswered = Math.max(0, Math.floor(answered));
+    const pct = safeRegistered > 0 ? Math.round((safeAnswered / safeRegistered) * 100) : 0;
+    const clampedPct = Math.max(0, Math.min(100, pct));
+
+    if (registeredEl) registeredEl.textContent = String(safeRegistered);
+    if (answeredEl) answeredEl.textContent = String(safeAnswered);
+    if (rateEl) rateEl.textContent = `${clampedPct}%`;
+    if (fillEl) fillEl.style.width = `${clampedPct}%`;
+  }
+
+  function handleMessage(msg) {
+    if (!msg || typeof msg !== "object") return;
+
+    if (msg.type === "state") {
+      registered = asNumber(msg.participants);
+      answered = msg.tally ? answeredFromTally(msg.tally) : 0;
+      paint();
+      return;
+    }
+
+    if (msg.type === "tally") {
+      answered = answeredFromTally(msg.data || msg.tally || {});
+      paint();
+    }
+  }
+
+  // Wrap before present.js opens the socket.
+  const RealWS = window.WebSocket;
+  function WrappedWS(url, protocols) {
+    const ws = protocols ? new RealWS(url, protocols) : new RealWS(url);
+    if (typeof url === "string" && url.indexOf("/ws/session/") !== -1) {
+      ws.addEventListener("message", ev => {
+        try { handleMessage(JSON.parse(ev.data)); } catch (_) {}
+      });
+    }
+    return ws;
+  }
+  WrappedWS.prototype = RealWS.prototype;
+  WrappedWS.CONNECTING = RealWS.CONNECTING;
+  WrappedWS.OPEN = RealWS.OPEN;
+  WrappedWS.CLOSING = RealWS.CLOSING;
+  WrappedWS.CLOSED = RealWS.CLOSED;
+  window.WebSocket = WrappedWS;
+
+  paint();
+})();
+</script>
+{% endif %}
 
 {% if session.kind == "game" %}
 <script>

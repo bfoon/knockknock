@@ -2,7 +2,8 @@ import json
 
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.http import JsonResponse, HttpResponseBadRequest
+from django.db.models import Count
+from django.http import JsonResponse, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import render, redirect, get_object_or_404
 from django.utils.text import slugify
 from django.views.decorators.http import require_POST
@@ -10,7 +11,9 @@ from django.views.decorators.http import require_POST
 from core.templates_registry import TEMPLATES, get_template
 from presentations.models import LiveSession
 from .avatars import AVATARS, avatars_grouped
+from .exports import build_excel, build_word
 from .forms import QuizForm, GameQuestionForm, GameChoiceFormSet, GameRoomFormSet
+from .leaderboards import top_three_for_quiz
 from .models import Quiz, GameQuestion, GameChoice, GameRoom
 
 
@@ -231,3 +234,63 @@ def start_session(request, pk):
         mode=quiz.mode,
     )
     return redirect("presentations:present", code=session.code)
+
+# ─────────────────────────────────────────────────────────────────
+# Results hub + Excel/Word exports for past game sessions.
+# ─────────────────────────────────────────────────────────────────
+
+@login_required
+def results(request, pk):
+    """Session picker for a quiz.
+
+    Lists every LiveSession that ever ran this quiz with participant
+    count, state, and Excel/Word export buttons per session.
+    """
+    quiz = get_object_or_404(Quiz, pk=pk, owner=request.user)
+    sessions = (
+        LiveSession.objects
+        .filter(quiz=quiz, kind="game")
+        .annotate(num_participants=Count("participants"))
+        .order_by("-created_at")
+    )
+    return render(request, "games/results.html", {
+        "quiz": quiz,
+        "sessions": sessions,
+        "top_three": top_three_for_quiz(quiz),
+    })
+
+
+def _export_filename(session, ext):
+    """Filesystem-safe filename like 'gameresults_5-brain-rewire_842913.xlsx'."""
+    title = slugify(session.quiz.title) if session.quiz else "results"
+    return f"gameresults_{title}_{session.code}.{ext}"
+
+
+@login_required
+def export_session_excel(request, pk, session_id):
+    """Download .xlsx for a specific session of this quiz."""
+    quiz = get_object_or_404(Quiz, pk=pk, owner=request.user)
+    session = get_object_or_404(LiveSession, pk=session_id, quiz=quiz, kind="game")
+
+    buf = build_excel(session)
+    response = HttpResponse(
+        buf.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f'attachment; filename="{_export_filename(session, "xlsx")}"'
+    return response
+
+
+@login_required
+def export_session_word(request, pk, session_id):
+    """Download .docx for a specific session of this quiz."""
+    quiz = get_object_or_404(Quiz, pk=pk, owner=request.user)
+    session = get_object_or_404(LiveSession, pk=session_id, quiz=quiz, kind="game")
+
+    buf = build_word(session)
+    response = HttpResponse(
+        buf.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    response["Content-Disposition"] = f'attachment; filename="{_export_filename(session, "docx")}"'
+    return response

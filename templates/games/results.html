@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Results · {{ quiz.title }} · Knock-Knock{% endblock %}
+
+{% block content %}
+<a href="{% url 'games:edit' quiz.pk %}" class="text-secondary text-decoration-none small">
+  <i class="bi bi-arrow-left"></i> Back to {{ quiz.title }}
+</a>
+
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mt-3 mb-4">
+  <div>
+    <h1 class="mb-1">📊 {{ quiz.title }} — Results</h1>
+    <p class="text-secondary mb-0">Pick a session below to download a full report.</p>
+  </div>
+  <div>{% include "games/partials/_top_three.html" with top_three=top_three %}</div>
+</div>
+
+{% if sessions %}
+  <div class="kk-card">
+    <table class="table table-dark table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Started</th>
+          <th>Ended</th>
+          <th>State</th>
+          <th class="text-end">Players</th>
+          <th class="text-end">Export</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in sessions %}
+          <tr>
+            <td><code class="text-light">{{ s.code }}</code></td>
+            <td>{{ s.created_at|date:"Y-m-d H:i" }}</td>
+            <td>
+              {% if s.ended_at %}{{ s.ended_at|date:"Y-m-d H:i" }}
+              {% else %}<span class="text-secondary">—</span>{% endif %}
+            </td>
+            <td>
+              {% if s.state == "ended" %}<span class="badge bg-secondary">Ended</span>
+              {% elif s.state == "running" %}<span class="badge bg-success">Running</span>
+              {% else %}<span class="badge bg-info text-dark">Lobby</span>{% endif %}
+            </td>
+            <td class="text-end">{{ s.num_participants }}</td>
+            <td class="text-end">
+              <a href="{% url 'games:export_excel' quiz.pk s.pk %}"
+                 class="kk-btn kk-btn-ghost btn-sm" title="Download Excel">
+                <i class="bi bi-file-earmark-spreadsheet"></i> Excel
+              </a>
+              <a href="{% url 'games:export_word' quiz.pk s.pk %}"
+                 class="kk-btn kk-btn-ghost btn-sm" title="Download Word">
+                <i class="bi bi-file-earmark-word"></i> Word
+              </a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="kk-empty">
+    <div class="em">🎮</div>
+    <p>No sessions for this game yet. Start one from the editor and come back when it's done.</p>
+  </div>
+{% endif %}
+{% endblock %}

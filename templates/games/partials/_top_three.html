@@ -1,0 +1,63 @@
+{# games/templates/games/partials/_top_three.html #}
+{# Compact top-3 leaderboard preview. Renders nothing if no one has scored yet. #}
+{% if top_three %}
+<div class="kk-top3" aria-label="Top scorers">
+  {% for p in top_three %}
+    <div class="kk-top3-item kk-top3-rank-{{ forloop.counter }}" title="{{ p.nickname }} — {{ p.score }} pts">
+      <span class="kk-top3-medal">
+        {% if forloop.counter == 1 %}👑
+        {% elif forloop.counter == 2 %}🥈
+        {% else %}🥉{% endif %}
+      </span>
+      <span class="kk-top3-avatar" style="background:{{ p.color }}1f; border-color:{{ p.color }};">{{ p.emoji }}</span>
+      <span class="kk-top3-meta">
+        <span class="kk-top3-name">{{ p.nickname|truncatechars:14 }}</span>
+        <span class="kk-top3-score">{{ p.score }} pts</span>
+      </span>
+    </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="kk-top3 kk-top3-empty">
+  <span class="text-secondary small">No scores yet</span>
+</div>
+{% endif %}
+
+<style>
+.kk-top3 {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+.kk-top3-empty { opacity: .6; }
+.kk-top3-item {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .3rem .55rem;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 999px;
+  font-size: .82rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+.kk-top3-rank-1 {
+  border-color: rgba(251, 191, 36, .55);
+  background: linear-gradient(135deg, rgba(251,191,36,.18), rgba(255,255,255,.04));
+}
+.kk-top3-medal { font-size: 1rem; line-height: 1; }
+.kk-top3-avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.12);
+  font-size: .95rem; line-height: 1;
+}
+.kk-top3-meta {
+  display: inline-flex; flex-direction: column; gap: 2px;
+  align-items: flex-start;
+}
+.kk-top3-name  { color: #f1f5f9; font-weight: 600; }
+.kk-top3-score { color: #94a3b8; font-size: .7rem; }
+</style>

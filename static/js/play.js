@@ -45,6 +45,7 @@
   const qText     = document.getElementById("q-text");
   const qProgress = document.getElementById("q-progress");
   const qBody     = document.getElementById("q-body");           // polls
+  const qActions  = document.getElementById("q-actions");        // pinned submit slot
   const tiles     = document.getElementById("tiles");            // games
   const qResult   = document.getElementById("q-result");
   const scoreChip = document.getElementById("score-chip");
@@ -329,10 +330,16 @@
     else                 renderGameQuestion(q, s);
 
     // Restore previous answer if the server tells us we already answered.
-    if (s.my_answer) {
+    // For polls the per-type renderer above has already handled restoration
+    // from `s.my_answer`, so we only need the legacy restore for games.
+    if (s.my_answer && kind === "game") {
       restoreMyAnswer(q, s.my_answer);
     } else if (kind === "game") {
       syncSpecialGameInputs();
+    } else if (kind === "poll" && s.my_answer) {
+      // Renderers also lock+toast, but make absolutely sure the chip shows.
+      answeredQuestionId = q.id;
+      if (mode === "open" && selfNext) selfNext.style.display = "block";
     }
 
     // Cache + draw tally chart (if applicable).
@@ -391,82 +398,1155 @@
     ].includes(q && q.type);
   }
 
-  // ── Poll rendering ───────────────────────────────────────────────
-  function renderPollQuestion(q, s) {
-    qBody.innerHTML = "";
+  // ─────────────────────────────────────────────────────────────────────
+  // Poll rendering — per-type renderer registry
+  // ─────────────────────────────────────────────────────────────────────
+  //
+  // Every poll question type has its own renderer that knows how to:
+  //   • paint the input UI into #q-body
+  //   • collect + send an answer over the WebSocket
+  //   • restore the prior answer when the server says we already answered
+  //
+  // The registry is consulted by renderPollQuestion(q, s). Each renderer
+  // function receives (q, restore) where `restore` is either null or the
+  // server-supplied my_answer object.
+  //
+  // After a successful submit we set `answeredQuestionId = q.id` and lock
+  // the UI so the participant can't double-submit. The "Submitted ✓"
+  // toast (from showResult) is used everywhere so the experience is
+  // consistent across types.
 
-    if (q.type === "reaction") {
-      renderReactionQuestion(q);
-      return;
-    }
-
-    if (q.type === "word" || q.type === "open") {
-      const input = document.createElement(q.type === "word" ? "input" : "textarea");
-      input.className = "form-control form-control-lg mb-2";
-      input.placeholder = q.type === "word" ? "Type one word…" : "Type your answer…";
-      if (q.type === "word") input.maxLength = 30;
-      if (q.type === "open") input.rows = 5;
-
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "kk-btn kk-btn-primary w-100";
-      btn.textContent = "Submit";
-      btn.addEventListener("click", () => {
-        const text = input.value.trim();
-        if (!text) return;
-        send({ type: "answer", question_id: q.id, text });
-        answeredQuestionId = q.id;
-        qBody.innerHTML = "";
-        showResult("Submitted ✓");
-        if (mode === "open" && selfNext) selfNext.style.display = "block";
+  function lockSubmitted() {
+    qBody.querySelectorAll("button, input, textarea, select").forEach(el => {
+      el.disabled = true;
+    });
+    qBody.querySelectorAll("[data-kk-input]").forEach(el => {
+      el.setAttribute("aria-disabled", "true");
+      el.style.pointerEvents = "none";
+      el.style.opacity = "0.85";
+    });
+    // Hide the pinned submit button(s); the "Submitted ✓" toast in #q-result
+    // is enough confirmation and we free up the screen.
+    if (qActions) {
+      qActions.querySelectorAll("button, input, textarea, select").forEach(el => {
+        el.disabled = true;
       });
-
-      qBody.appendChild(input);
-      qBody.appendChild(btn);
-      input.focus();
-      return;
-    }
-
-    if (isChoicePollType(q) || (Array.isArray(q.choices) && q.choices.length && q.type !== "scale")) {
-      q.choices.forEach(c => {
-        const btn = document.createElement("button");
-        btn.className = "kk-choice";
-        btn.type = "button";
-        btn.dataset.choiceId = c.id;
-
-        if (c.image_url || c.image) {
-          const imgUrl = c.image_url || c.image;
-          btn.innerHTML = `<img src="${escapeAttr(imgUrl)}" alt="" style="width:42px;height:42px;object-fit:cover;border-radius:10px;margin-right:.5rem;"><span>${escapeHtml(c.text)}</span>`;
-        } else {
-          btn.textContent = c.text;
-        }
-
-        btn.addEventListener("click", () => answerPollChoice(q, c, btn));
-        qBody.appendChild(btn);
-      });
-    } else if (q.type === "scale") {
-      const wrap = document.createElement("div");
-      wrap.className = "d-flex gap-2 flex-wrap";
-      getScaleChoices(q).forEach(choice => {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = "kk-choice";
-        b.style.flex = "1 1 18%";
-        b.textContent = String(choice.text);
-        b.dataset.value = choice.value;
-        b.dataset.choiceId = choice.id;
-        b.addEventListener("click", () => answerPollScale(q, choice.value, b));
-        wrap.appendChild(b);
-      });
-      qBody.appendChild(wrap);
-    } else {
-      qBody.innerHTML = `<div class="text-secondary text-center py-3">This question type is not available on the participant screen yet.</div>`;
+      qActions.style.display = "none";
     }
   }
 
-  function renderReactionQuestion(q) {
+  function markAnswered(q) {
+    answeredQuestionId = q.id;
+    showResult("Submitted ✓");
+    if (mode === "open" && selfNext) selfNext.style.display = "block";
+  }
+
+  function renderPollQuestion(q, s) {
+    qBody.innerHTML = "";
+    if (qActions) {
+      qActions.innerHTML = "";
+      qActions.style.display = "";
+    }
+    const restore = (s && s.my_answer) || null;
+    const renderer = POLL_RENDERERS[q.type] || POLL_RENDERERS.__fallback__;
+    try {
+      renderer(q, restore);
+    } catch (err) {
+      console.error("Renderer failed for type", q.type, err);
+      POLL_RENDERERS.__fallback__(q, restore);
+    }
+  }
+
+  // ── Shared helpers ──────────────────────────────────────────────────
+  function makePrimaryButton(label) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "kk-btn kk-btn-primary kk-btn-lg w-100 mt-3";
+    btn.textContent = label || "Submit";
+    return btn;
+  }
+
+  function makeHint(text) {
+    const p = document.createElement("p");
+    p.className = "text-secondary small text-center mt-3 mb-0";
+    p.textContent = text;
+    return p;
+  }
+
+  function makeError(text) {
+    const p = document.createElement("p");
+    p.className = "small text-center mt-2 mb-0";
+    p.style.color = "#fb7185";
+    p.textContent = text;
+    return p;
+  }
+
+  // ── Renderer registry ───────────────────────────────────────────────
+  const POLL_RENDERERS = {};
+
+  // ── Fallback ────────────────────────────────────────────────────────
+  POLL_RENDERERS.__fallback__ = function (q) {
+    qBody.innerHTML = `<div class="text-secondary text-center py-3">
+      This question type (<code>${escapeHtml(q.type || "?")}</code>) isn't supported on the participant screen yet.
+    </div>`;
+  };
+
+  // ── MCQ + Yes/No + Likert + Image-choice ────────────────────────────
+  // Single or multi-select depending on max_selections.
+  function renderChoiceQuestion(q, restore, opts) {
+    opts = opts || {};
+    const cfg = q.config || {};
+    const maxSel = Number(q.max_selections || cfg.max_selections || 1) || 1;
+    const minSel = Number(q.min_selections || cfg.min_selections || 1) || 1;
+    const isMulti = maxSel > 1 || (q.type === "mcq" && minSel > 1);
+    const useImageTiles = q.type === "image_choice" || opts.imageTiles;
+
     const wrap = document.createElement("div");
-    wrap.className = "d-flex gap-3 flex-wrap justify-content-center";
+    wrap.className = useImageTiles ? "kk-image-grid" : "kk-choice-list";
+    qBody.appendChild(wrap);
+
+    const picked = new Set();
+    const restoreIds = new Set();
+    if (restore) {
+      if (Array.isArray(restore.choice_ids)) {
+        restore.choice_ids.forEach(id => restoreIds.add(String(id)));
+      } else if (restore.choice_id != null) {
+        restoreIds.add(String(restore.choice_id));
+      }
+    }
+
+    (q.choices || []).forEach(c => {
+      const btn = document.createElement("button");
+      btn.className = useImageTiles ? "kk-image-tile" : "kk-choice";
+      btn.type = "button";
+      btn.dataset.choiceId = c.id;
+
+      const imgUrl = c.image_url || c.image;
+      if (useImageTiles) {
+        btn.innerHTML = `
+          <div class="kk-image-tile-img">
+            ${imgUrl
+              ? `<img src="${escapeAttr(imgUrl)}" alt="">`
+              : `<div class="kk-image-tile-placeholder">🖼️</div>`}
+          </div>
+          <div class="kk-image-tile-text">${escapeHtml(c.text)}</div>`;
+      } else if (imgUrl) {
+        btn.innerHTML = `<img src="${escapeAttr(imgUrl)}" alt="" style="width:42px;height:42px;object-fit:cover;border-radius:10px;margin-right:.5rem;"><span>${escapeHtml(c.text)}</span>`;
+      } else {
+        btn.textContent = c.text;
+      }
+
+      if (restoreIds.has(String(c.id))) {
+        btn.classList.add("picked");
+        picked.add(String(c.id));
+      }
+
+      btn.addEventListener("click", () => {
+        if (answeredQuestionId === q.id) return;
+        const id = String(c.id);
+        if (!isMulti) {
+          // Single-select — submit immediately.
+          myChoiceId = c.id;
+          wrap.querySelectorAll(".picked").forEach(el => el.classList.remove("picked"));
+          btn.classList.add("picked");
+          send({ type: "answer", question_id: q.id, choice_id: c.id });
+          lockSubmitted();
+          markAnswered(q);
+          return;
+        }
+        // Multi-select — toggle and require submit click.
+        if (picked.has(id)) {
+          picked.delete(id);
+          btn.classList.remove("picked");
+        } else {
+          if (picked.size >= maxSel) {
+            errLine.textContent = `You can pick at most ${maxSel}.`;
+            return;
+          }
+          picked.add(id);
+          btn.classList.add("picked");
+        }
+        errLine.textContent = "";
+      });
+
+      wrap.appendChild(btn);
+    });
+
+    const errLine = makeError("");
+    qBody.appendChild(errLine);
+
+    if (isMulti) {
+      const submit = makePrimaryButton(`Submit ${maxSel > 1 ? "selections" : "answer"}`);
+      submit.addEventListener("click", () => {
+        if (answeredQuestionId === q.id) return;
+        if (picked.size < minSel) {
+          errLine.textContent = `Please pick at least ${minSel}.`;
+          return;
+        }
+        const ids = Array.from(picked).map(s => Number(s) || s);
+        send({ type: "answer", question_id: q.id, choice_ids: ids });
+        myChoiceId = ids[0];
+        lockSubmitted();
+        submit.style.display = "none";
+        markAnswered(q);
+      });
+      qActions.appendChild(submit);
+      qBody.appendChild(makeHint(
+        minSel === maxSel
+          ? `Pick exactly ${minSel}.`
+          : `Pick ${minSel}–${maxSel}.`
+      ));
+    }
+
+    if (restore) {
+      lockSubmitted();
+      answeredQuestionId = q.id;
+    }
+  }
+
+  POLL_RENDERERS.mcq          = (q, r) => renderChoiceQuestion(q, r);
+  POLL_RENDERERS.yes_no       = (q, r) => renderChoiceQuestion(q, r);
+  POLL_RENDERERS.likert       = (q, r) => renderChoiceQuestion(q, r);
+  POLL_RENDERERS.image_choice = (q, r) => renderChoiceQuestion(q, r, { imageTiles: true });
+
+  // ── Word cloud + Open text ──────────────────────────────────────────
+  function renderTextQuestion(q, restore, opts) {
+    opts = opts || {};
+    const isWord = opts.word === true;
+    const input = document.createElement(isWord ? "input" : "textarea");
+    input.className = "form-control form-control-lg";
+    input.placeholder = isWord ? "Type one or two words…" : "Type your answer…";
+    input.setAttribute("data-kk-input", "1");
+    if (isWord) input.maxLength = 30;
+    else        input.rows = 5;
+
+    if (restore && restore.text) input.value = restore.text;
+
+    qBody.appendChild(input);
+
+    const btn = makePrimaryButton("Submit");
+    btn.addEventListener("click", () => {
+      if (answeredQuestionId === q.id) return;
+      const text = (input.value || "").trim();
+      if (!text) { input.focus(); return; }
+      send({ type: "answer", question_id: q.id, text });
+      lockSubmitted();
+      markAnswered(q);
+    });
+    qActions.appendChild(btn);
+    if (!restore) input.focus();
+    else { lockSubmitted(); answeredQuestionId = q.id; }
+  }
+  POLL_RENDERERS.word = (q, r) => renderTextQuestion(q, r, { word: true });
+  POLL_RENDERERS.open = (q, r) => renderTextQuestion(q, r, { word: false });
+
+  // ── Scale (1–10 buttons) ────────────────────────────────────────────
+  POLL_RENDERERS.scale = function (q, restore) {
+    const wrap = document.createElement("div");
+    wrap.className = "kk-scale-row";
+    qBody.appendChild(wrap);
+
+    const restoreVal = restore && restore.value != null ? Number(restore.value) : null;
+
+    getScaleChoices(q).forEach(choice => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "kk-choice kk-scale-btn";
+      b.textContent = String(choice.text);
+      b.dataset.value = choice.value;
+      b.dataset.choiceId = choice.id;
+
+      if (restoreVal != null && Number(choice.value) === restoreVal) {
+        b.classList.add("picked");
+      }
+
+      b.addEventListener("click", () => {
+        if (answeredQuestionId === q.id) return;
+        myChoiceId = choice.value;
+        wrap.querySelectorAll(".picked").forEach(el => el.classList.remove("picked"));
+        b.classList.add("picked");
+        send({ type: "answer", question_id: q.id, value: choice.value });
+        lockSubmitted();
+        markAnswered(q);
+      });
+      wrap.appendChild(b);
+    });
+
+    if (restore) { lockSubmitted(); answeredQuestionId = q.id; }
+  };
+
+  // ── Star rating ─────────────────────────────────────────────────────
+  POLL_RENDERERS.rating = function (q, restore) {
+    const cfg = q.config || {};
+    const max = Math.max(1, Math.min(10, Number(cfg.max_stars || q.scale_max || 5)));
+    const wrap = document.createElement("div");
+    wrap.className = "kk-stars";
+    wrap.setAttribute("data-kk-input", "1");
+    qBody.appendChild(wrap);
+
+    const label = document.createElement("div");
+    label.className = "kk-stars-label";
+    label.textContent = "Tap a star to rate";
+    qBody.appendChild(label);
+
+    let currentVal = restore && restore.value != null ? Number(restore.value) : 0;
+
+    function paint(val) {
+      wrap.querySelectorAll(".kk-star").forEach((s, i) => {
+        s.classList.toggle("filled", i < val);
+      });
+      label.textContent = val > 0 ? `Your rating: ${val} / ${max}` : "Tap a star to rate";
+    }
+
+    for (let i = 1; i <= max; i++) {
+      const s = document.createElement("button");
+      s.type = "button";
+      s.className = "kk-star";
+      s.dataset.value = i;
+      s.innerHTML = "★";
+      s.addEventListener("click", () => {
+        if (answeredQuestionId === q.id) return;
+        currentVal = i;
+        paint(i);
+      });
+      wrap.appendChild(s);
+    }
+    paint(currentVal);
+
+    const btn = makePrimaryButton("Submit rating");
+    btn.addEventListener("click", () => {
+      if (answeredQuestionId === q.id) return;
+      if (!currentVal) { label.textContent = "Please pick a rating first."; return; }
+      send({ type: "answer", question_id: q.id, value: currentVal });
+      lockSubmitted();
+      markAnswered(q);
+    });
+    qActions.appendChild(btn);
+    if (restore) { lockSubmitted(); answeredQuestionId = q.id; }
+  };
+
+  // ── NPS (0–10) ──────────────────────────────────────────────────────
+  POLL_RENDERERS.nps = function (q, restore) {
+    const wrap = document.createElement("div");
+    wrap.className = "kk-nps-row";
+    qBody.appendChild(wrap);
+
+    const restoreVal = restore && restore.value != null ? Number(restore.value) : null;
+    let selected = restoreVal;
+
+    for (let i = 0; i <= 10; i++) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "kk-nps-btn";
+      if (i <= 6)      b.classList.add("detractor");
+      else if (i <= 8) b.classList.add("passive");
+      else             b.classList.add("promoter");
+      b.textContent = String(i);
+      b.dataset.value = i;
+      if (restoreVal === i) b.classList.add("picked");
+      b.addEventListener("click", () => {
+        if (answeredQuestionId === q.id) return;
+        selected = i;
+        wrap.querySelectorAll(".picked").forEach(el => el.classList.remove("picked"));
+        b.classList.add("picked");
+      });
+      wrap.appendChild(b);
+    }
+
+    const legend = document.createElement("div");
+    legend.className = "kk-nps-legend";
+    legend.innerHTML = `<span>Not at all likely</span><span>Extremely likely</span>`;
+    qBody.appendChild(legend);
+
+    const btn = makePrimaryButton("Submit");
+    btn.addEventListener("click", () => {
+      if (answeredQuestionId === q.id) return;
+      if (selected == null) return;
+      send({ type: "answer", question_id: q.id, value: selected });
+      lockSubmitted();
+      markAnswered(q);
+    });
+    qActions.appendChild(btn);
+    if (restore) { lockSubmitted(); answeredQuestionId = q.id; }
+  };
+
+  // ── Slider ──────────────────────────────────────────────────────────
+  POLL_RENDERERS.slider = function (q, restore) {
+    const cfg = q.config || {};
+    const min  = Number(cfg.min  ?? q.scale_min ?? 0);
+    const max  = Number(cfg.max  ?? q.scale_max ?? 100);
+    const step = Number(cfg.step ?? 1);
+    const unit = String(cfg.unit ?? "");
+
+    const start = restore && restore.value != null
+      ? Number(restore.value)
+      : Math.round((min + max) / 2);
+
+    const display = document.createElement("div");
+    display.className = "kk-slider-display";
+    display.textContent = `${start}${unit}`;
+    qBody.appendChild(display);
+
+    const input = document.createElement("input");
+    input.type = "range";
+    input.min = min;
+    input.max = max;
+    input.step = step;
+    input.value = start;
+    input.className = "kk-slider";
+    qBody.appendChild(input);
+
+    const limits = document.createElement("div");
+    limits.className = "kk-slider-limits";
+    limits.innerHTML = `<span>${min}${unit}</span><span>${max}${unit}</span>`;
+    qBody.appendChild(limits);
+
+    input.addEventListener("input", () => {
+      display.textContent = `${input.value}${unit}`;
+    });
+
+    const btn = makePrimaryButton("Submit");
+    btn.addEventListener("click", () => {
+      if (answeredQuestionId === q.id) return;
+      send({ type: "answer", question_id: q.id, value: Number(input.value) });
+      lockSubmitted();
+      markAnswered(q);
+    });
+    qActions.appendChild(btn);
+    if (restore) { lockSubmitted(); answeredQuestionId = q.id; }
+  };
+
+  // ── Numeric input ───────────────────────────────────────────────────
+  POLL_RENDERERS.numeric = function (q, restore) {
+    const cfg = q.config || {};
+    const decimals = Math.max(0, Math.min(6, Number(cfg.decimals || 0)));
+
+    const input = document.createElement("input");
+    input.type = "number";
+    input.className = "form-control form-control-lg";
+    input.setAttribute("data-kk-input", "1");
+    if (cfg.min != null) input.min = cfg.min;
+    if (cfg.max != null) input.max = cfg.max;
+    input.step = decimals > 0 ? Math.pow(10, -decimals) : 1;
+    input.placeholder = "Enter a number…";
+    if (restore && restore.value != null) input.value = restore.value;
+    qBody.appendChild(input);
+
+    const err = makeError("");
+    qBody.appendChild(err);
+
+    const btn = makePrimaryButton("Submit");
+    btn.addEventListener("click", () => {
+      if (answeredQuestionId === q.id) return;
+      const v = input.value;
+      if (v === "" || isNaN(Number(v))) {
+        err.textContent = "Please enter a number.";
+        return;
+      }
+      const num = Number(v);
+      if (cfg.min != null && num < Number(cfg.min)) { err.textContent = `Min ${cfg.min}.`; return; }
+      if (cfg.max != null && num > Number(cfg.max)) { err.textContent = `Max ${cfg.max}.`; return; }
+      send({ type: "answer", question_id: q.id, value: num });
+      lockSubmitted();
+      markAnswered(q);
+    });
+    qActions.appendChild(btn);
+    if (!restore) input.focus();
+    else { lockSubmitted(); answeredQuestionId = q.id; }
+  };
+
+  // ── Date / Time / Datetime ──────────────────────────────────────────
+  function renderDateLikeQuestion(q, restore, htmlType) {
+    const input = document.createElement("input");
+    input.type = htmlType;
+    input.className = "form-control form-control-lg";
+    input.setAttribute("data-kk-input", "1");
+    const cfg = q.config || {};
+    if (cfg.min) input.min = cfg.min;
+    if (cfg.max) input.max = cfg.max;
+
+    if (restore && restore.text) input.value = restore.text;
+    qBody.appendChild(input);
+
+    const err = makeError("");
+    qBody.appendChild(err);
+
+    const btn = makePrimaryButton("Submit");
+    btn.addEventListener("click", () => {
+      if (answeredQuestionId === q.id) return;
+      const v = input.value;
+      if (!v) { err.textContent = "Please pick a value."; return; }
+      send({ type: "answer", question_id: q.id, text: v, datetime_kind: htmlType });
+      lockSubmitted();
+      markAnswered(q);
+    });
+    qActions.appendChild(btn);
+    if (restore) { lockSubmitted(); answeredQuestionId = q.id; }
+  }
+  POLL_RENDERERS.date     = (q, r) => renderDateLikeQuestion(q, r, "date");
+  POLL_RENDERERS.datetime = (q, r) => renderDateLikeQuestion(q, r, "datetime-local");
+  POLL_RENDERERS.time     = (q, r) => renderDateLikeQuestion(q, r, "time");
+
+  // ── File upload (image/file) ────────────────────────────────────────
+  // We upload as a base64 data URL through the websocket. Server-side
+  // saves it to Response.file_value. We cap size by config.max_size_mb.
+  POLL_RENDERERS.file_upload = function (q, restore) {
+    const cfg = q.config || {};
+    const maxMb = Number(cfg.max_size_mb || 10);
+    const accept = String(cfg.accept || "image/*");
+
+    const input = document.createElement("input");
+    input.type = "file";
+    input.className = "form-control form-control-lg";
+    input.accept = accept;
+    qBody.appendChild(input);
+
+    const preview = document.createElement("div");
+    preview.className = "kk-file-preview";
+    qBody.appendChild(preview);
+
+    const err = makeError("");
+    qBody.appendChild(err);
+
+    let dataUrl = null;
+    let filename = "";
+    let mime = "";
+
+    input.addEventListener("change", () => {
+      err.textContent = "";
+      preview.innerHTML = "";
+      const file = input.files && input.files[0];
+      if (!file) return;
+      if (file.size > maxMb * 1024 * 1024) {
+        err.textContent = `File is too large (max ${maxMb} MB).`;
+        input.value = "";
+        return;
+      }
+      filename = file.name;
+      mime = file.type || "application/octet-stream";
+      const reader = new FileReader();
+      reader.onload = () => {
+        dataUrl = reader.result;
+        if (mime.startsWith("image/")) {
+          preview.innerHTML = `<img src="${escapeAttr(dataUrl)}" alt="">`;
+        } else {
+          preview.innerHTML = `<div class="kk-file-chip">📎 ${escapeHtml(filename)}</div>`;
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+
+    const btn = makePrimaryButton("Submit");
+    btn.addEventListener("click", () => {
+      if (answeredQuestionId === q.id) return;
+      if (!dataUrl) { err.textContent = "Please pick a file first."; return; }
+      send({
+        type: "answer",
+        question_id: q.id,
+        file: { data_url: dataUrl, filename, mime },
+      });
+      lockSubmitted();
+      markAnswered(q);
+    });
+    qActions.appendChild(btn);
+    if (restore && restore.file_url) {
+      preview.innerHTML = `<img src="${escapeAttr(restore.file_url)}" alt="">`;
+      lockSubmitted();
+      answeredQuestionId = q.id;
+    }
+  };
+
+  // ── Pin on image ────────────────────────────────────────────────────
+  // Stored as (x, y) percentages of image dimensions.
+  POLL_RENDERERS.pin_image = function (q, restore) {
+    const imageUrl = q.image_url || (q.config && q.config.image_url) || "";
+    if (!imageUrl) {
+      qBody.innerHTML = `<div class="text-secondary text-center py-3">
+        This pin-on-image question has no background image set.</div>`;
+      return;
+    }
+
+    const stage = document.createElement("div");
+    stage.className = "kk-pin-stage";
+    stage.setAttribute("data-kk-input", "1");
+    stage.innerHTML = `<img src="${escapeAttr(imageUrl)}" alt="" draggable="false">`;
+    qBody.appendChild(stage);
+
+    let pin = null;
+    let xPct = restore && restore.x != null ? Number(restore.x) : null;
+    let yPct = restore && restore.y != null ? Number(restore.y) : null;
+
+    function placePin(x, y) {
+      if (!pin) {
+        pin = document.createElement("div");
+        pin.className = "kk-pin";
+        stage.appendChild(pin);
+      }
+      pin.style.left = x + "%";
+      pin.style.top  = y + "%";
+    }
+
+    if (xPct != null && yPct != null) placePin(xPct, yPct);
+
+    stage.addEventListener("click", (e) => {
+      if (answeredQuestionId === q.id) return;
+      const rect = stage.getBoundingClientRect();
+      xPct = ((e.clientX - rect.left) / rect.width) * 100;
+      yPct = ((e.clientY - rect.top)  / rect.height) * 100;
+      xPct = Math.max(0, Math.min(100, xPct));
+      yPct = Math.max(0, Math.min(100, yPct));
+      placePin(xPct, yPct);
+    });
+
+    qBody.appendChild(makeHint("Tap the image to drop a pin, then submit."));
+
+    const btn = makePrimaryButton("Submit pin");
+    btn.addEventListener("click", () => {
+      if (answeredQuestionId === q.id) return;
+      if (xPct == null || yPct == null) return;
+      send({ type: "answer", question_id: q.id, x: xPct, y: yPct });
+      lockSubmitted();
+      markAnswered(q);
+    });
+    qActions.appendChild(btn);
+    if (restore) { lockSubmitted(); answeredQuestionId = q.id; }
+  };
+
+  // ── Pin on map (lat/lng input fallback) ─────────────────────────────
+  // We avoid a heavy maps library on participants; instead, an interactive
+  // grid lets users drop a pin onto a placeholder world. lat/lng are linearly
+  // mapped from a 360×180 rectangle. If you wire in Leaflet later, swap this
+  // renderer out and keep the `x`/`y` payload shape.
+  POLL_RENDERERS.pin_map = function (q, restore) {
+    const stage = document.createElement("div");
+    stage.className = "kk-pin-stage kk-pin-map";
+    stage.setAttribute("data-kk-input", "1");
+    stage.innerHTML = `
+      <div class="kk-pin-map-grid"></div>
+      <div class="kk-pin-map-labels">
+        <span class="kk-pin-map-eq">Equator</span>
+        <span class="kk-pin-map-pm">Prime meridian</span>
+      </div>`;
+    qBody.appendChild(stage);
+
+    let pin = null;
+    let lat = restore && restore.y != null ? Number(restore.y) : null;
+    let lng = restore && restore.x != null ? Number(restore.x) : null;
+
+    const readout = document.createElement("div");
+    readout.className = "kk-pin-map-readout";
+    readout.textContent = (lat != null && lng != null)
+      ? `Lat ${lat.toFixed(2)}, Lng ${lng.toFixed(2)}`
+      : "Tap the map to drop a pin";
+    qBody.appendChild(readout);
+
+    function placePin(xPct, yPct) {
+      if (!pin) {
+        pin = document.createElement("div");
+        pin.className = "kk-pin";
+        stage.appendChild(pin);
+      }
+      pin.style.left = xPct + "%";
+      pin.style.top  = yPct + "%";
+    }
+
+    if (lat != null && lng != null) {
+      const xPct = ((lng + 180) / 360) * 100;
+      const yPct = ((90 - lat)  / 180) * 100;
+      placePin(xPct, yPct);
+    }
+
+    stage.addEventListener("click", (e) => {
+      if (answeredQuestionId === q.id) return;
+      const rect = stage.getBoundingClientRect();
+      const xPct = ((e.clientX - rect.left) / rect.width)  * 100;
+      const yPct = ((e.clientY - rect.top)  / rect.height) * 100;
+      lng = (xPct / 100) * 360 - 180;
+      lat = 90 - (yPct / 100) * 180;
+      placePin(xPct, yPct);
+      readout.textContent = `Lat ${lat.toFixed(2)}, Lng ${lng.toFixed(2)}`;
+    });
+
+    const btn = makePrimaryButton("Submit pin");
+    btn.addEventListener("click", () => {
+      if (answeredQuestionId === q.id) return;
+      if (lat == null || lng == null) return;
+      send({ type: "answer", question_id: q.id, x: lng, y: lat });
+      lockSubmitted();
+      markAnswered(q);
+    });
+    qActions.appendChild(btn);
+    if (restore) { lockSubmitted(); answeredQuestionId = q.id; }
+  };
+
+  // ── Two-by-two matrix (place on X/Y grid) ───────────────────────────
+  // Coordinates normalized to -1..1 on both axes.
+  POLL_RENDERERS.two_by_two = function (q, restore) {
+    const cfg = q.config || {};
+    const xL = cfg.x_left   || "Low";
+    const xR = cfg.x_right  || "High";
+    const yT = cfg.y_top    || "High";
+    const yB = cfg.y_bottom || "Low";
+
+    const stage = document.createElement("div");
+    stage.className = "kk-2x2-stage";
+    stage.setAttribute("data-kk-input", "1");
+    stage.innerHTML = `
+      <div class="kk-2x2-axis-x"></div>
+      <div class="kk-2x2-axis-y"></div>
+      <div class="kk-2x2-label kk-2x2-label-top">${escapeHtml(yT)}</div>
+      <div class="kk-2x2-label kk-2x2-label-bottom">${escapeHtml(yB)}</div>
+      <div class="kk-2x2-label kk-2x2-label-left">${escapeHtml(xL)}</div>
+      <div class="kk-2x2-label kk-2x2-label-right">${escapeHtml(xR)}</div>`;
+    qBody.appendChild(stage);
+
+    let dot = null;
+    let xVal = restore && restore.x != null ? Number(restore.x) : null;
+    let yVal = restore && restore.y != null ? Number(restore.y) : null;
+
+    function placeDot(xPct, yPct) {
+      if (!dot) {
+        dot = document.createElement("div");
+        dot.className = "kk-2x2-dot";
+        stage.appendChild(dot);
+      }
+      dot.style.left = xPct + "%";
+      dot.style.top  = yPct + "%";
+    }
+
+    if (xVal != null && yVal != null) {
+      const xPct = ((xVal + 1) / 2) * 100;
+      const yPct = ((1 - yVal) / 2) * 100;
+      placeDot(xPct, yPct);
+    }
+
+    stage.addEventListener("click", (e) => {
+      if (answeredQuestionId === q.id) return;
+      const rect = stage.getBoundingClientRect();
+      const xPct = ((e.clientX - rect.left) / rect.width)  * 100;
+      const yPct = ((e.clientY - rect.top)  / rect.height) * 100;
+      xVal = (xPct / 100) * 2 - 1;
+      yVal = 1 - (yPct / 100) * 2;
+      placeDot(xPct, yPct);
+    });
+
+    qBody.appendChild(makeHint("Tap to place your point on the grid, then submit."));
+
+    const btn = makePrimaryButton("Submit");
+    btn.addEventListener("click", () => {
+      if (answeredQuestionId === q.id) return;
+      if (xVal == null || yVal == null) return;
+      send({ type: "answer", question_id: q.id, x: xVal, y: yVal });
+      lockSubmitted();
+      markAnswered(q);
+    });
+    qActions.appendChild(btn);
+    if (restore) { lockSubmitted(); answeredQuestionId = q.id; }
+  };
+
+  // ── Ranking ─────────────────────────────────────────────────────────
+  // Tap-to-rank: each tap moves the next item into the next rank slot.
+  // Up/down arrows let participants fine-tune the order before submit.
+  POLL_RENDERERS.ranking = function (q, restore) {
+    if (!Array.isArray(q.choices) || !q.choices.length) {
+      qBody.innerHTML = `<div class="text-secondary text-center py-3">No items to rank.</div>`;
+      return;
+    }
+
+    // Build the working order. If we have a restore, honour it.
+    let items = q.choices.slice();
+    if (restore && Array.isArray(restore.choice_ids) && restore.choice_ids.length) {
+      const byId = new Map(items.map(c => [String(c.id), c]));
+      const rest = restore.choice_ids
+        .map(id => byId.get(String(id)))
+        .filter(Boolean);
+      const left = items.filter(c => !restore.choice_ids.some(id => String(id) === String(c.id)));
+      items = rest.concat(left);
+    }
+
+    const intro = document.createElement("p");
+    intro.className = "text-secondary small mb-2";
+    intro.textContent = "Drag the ☰ handle, or tap ▲ / ▼ to rearrange. #1 is your favourite.";
+    qBody.appendChild(intro);
+
+    const list = document.createElement("ol");
+    list.className = "kk-rank-list";
+    qBody.appendChild(list);
+
+    function buildItem(c, idx) {
+      const li = document.createElement("li");
+      li.className = "kk-rank-item";
+      li.dataset.choiceId = c.id;
+      li.innerHTML = `
+        <span class="kk-rank-handle" aria-label="Drag to reorder">☰</span>
+        <span class="kk-rank-num">${idx + 1}</span>
+        <span class="kk-rank-text">${escapeHtml(c.text)}</span>
+        <span class="kk-rank-ctrls">
+          <button type="button" class="kk-rank-up"   aria-label="Move up"   ${idx === 0 ? "disabled" : ""}>▲</button>
+          <button type="button" class="kk-rank-down" aria-label="Move down" ${idx === items.length - 1 ? "disabled" : ""}>▼</button>
+        </span>`;
+      return li;
+    }
+
+    // Render the list from `items` and animate any item that changed
+    // position. We compute each li's previous bounding box, mutate the DOM,
+    // then translate each li from its old position to its new one with
+    // CSS transitions — this gives the satisfying "snap" feel on every
+    // arrow tap and reorder.
+    function render(animate) {
+      const before = new Map();
+      Array.from(list.children).forEach(li => {
+        before.set(li.dataset.choiceId, li.getBoundingClientRect());
+      });
+
+      list.innerHTML = "";
+      items.forEach((c, idx) => list.appendChild(buildItem(c, idx)));
+
+      if (animate !== false) {
+        // FLIP animation: position newly-rendered items from their old spot.
+        Array.from(list.children).forEach(li => {
+          const oldRect = before.get(li.dataset.choiceId);
+          if (!oldRect) return;
+          const newRect = li.getBoundingClientRect();
+          const dy = oldRect.top - newRect.top;
+          if (dy === 0) return;
+          li.style.transition = "none";
+          li.style.transform = `translateY(${dy}px)`;
+          // Force reflow, then animate back.
+          // eslint-disable-next-line no-unused-expressions
+          li.offsetHeight;
+          li.style.transition = "transform .22s cubic-bezier(.4,.0,.2,1)";
+          li.style.transform = "";
+        });
+      }
+    }
+
+    function move(from, to) {
+      if (to < 0 || to >= items.length || from === to) return;
+      const [m] = items.splice(from, 1);
+      items.splice(to, 0, m);
+      render(true);
+    }
+
+    // ── Arrow-button taps (event delegation; render() recreates DOM each
+    //    reorder so a captured `li` reference would be stale). ─────────
+    list.addEventListener("click", (e) => {
+      if (answeredQuestionId === q.id) return;
+      const li = e.target.closest("li.kk-rank-item");
+      if (!li) return;
+      const idx = Array.from(list.children).indexOf(li);
+      if (e.target.closest(".kk-rank-up"))   move(idx, idx - 1);
+      if (e.target.closest(".kk-rank-down")) move(idx, idx + 1);
+    });
+
+    // ── Pointer-event drag (works on touch, mouse, and stylus). ───────
+    // Only drags started on the .kk-rank-handle element are accepted, so
+    // taps elsewhere on the row (text, arrows) don't start a drag.
+    let drag = null;
+
+    function clearDragStyles() {
+      if (!drag) return;
+      const { ghost } = drag;
+      if (ghost) ghost.remove();
+      Array.from(list.children).forEach(li => {
+        li.classList.remove("is-shifted", "is-source");
+        li.style.transform = "";
+        li.style.transition = "";
+      });
+      document.body.style.userSelect = "";
+      document.body.style.overflow = "";
+      list.style.touchAction = "";
+      drag = null;
+    }
+
+    list.addEventListener("pointerdown", (e) => {
+      if (answeredQuestionId === q.id) return;
+      const handle = e.target.closest(".kk-rank-handle");
+      if (!handle) return;
+      const li = handle.closest("li.kk-rank-item");
+      if (!li) return;
+
+      e.preventDefault();
+      const rect = li.getBoundingClientRect();
+      const listRect = list.getBoundingClientRect();
+
+      // Build a floating ghost that follows the pointer.
+      const ghost = li.cloneNode(true);
+      ghost.classList.add("kk-rank-ghost");
+      ghost.style.width = rect.width + "px";
+      ghost.style.height = rect.height + "px";
+      ghost.style.left = (rect.left - listRect.left) + "px";
+      ghost.style.top  = (rect.top  - listRect.top)  + "px";
+      list.appendChild(ghost);
+
+      li.classList.add("is-source");
+
+      // Prevent the page from scrolling while dragging on touch devices.
+      document.body.style.userSelect = "none";
+      document.body.style.overflow = "hidden";
+      list.style.touchAction = "none";
+
+      drag = {
+        pointerId: e.pointerId,
+        ghost,
+        sourceLi: li,
+        startY: e.clientY,
+        offsetY: e.clientY - rect.top,
+        listOriginY: listRect.top,
+        rowHeight: rect.height,
+        fromIdx: Array.from(list.children).indexOf(li),
+      };
+      try { list.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+
+    list.addEventListener("pointermove", (e) => {
+      if (!drag || e.pointerId !== drag.pointerId) return;
+      e.preventDefault();
+      const listRect = list.getBoundingClientRect();
+      // Position the ghost.
+      const gy = e.clientY - listRect.top - drag.offsetY;
+      drag.ghost.style.top = gy + "px";
+
+      // Decide which slot the ghost is currently hovering over.
+      const lis = Array.from(list.children).filter(el => !el.classList.contains("kk-rank-ghost"));
+      let hoverIdx = lis.length - 1;
+      for (let i = 0; i < lis.length; i++) {
+        const r = lis[i].getBoundingClientRect();
+        if (e.clientY < r.top + r.height / 2) { hoverIdx = i; break; }
+      }
+      // Reorder live so the user sees snapping during the drag.
+      const fromIdx = items.findIndex(c => String(c.id) === drag.sourceLi.dataset.choiceId);
+      if (fromIdx !== -1 && hoverIdx !== fromIdx) {
+        const [m] = items.splice(fromIdx, 1);
+        items.splice(hoverIdx, 0, m);
+        // Re-render but DON'T animate the source row (it's hidden under the ghost).
+        const ghostHtmlSnapshot = drag.ghost.outerHTML;
+        render(true);
+        // Re-mark the new source row + re-insert the ghost element (since
+        // innerHTML was wiped).
+        const newSource = list.querySelector(`li[data-choice-id="${drag.sourceLi.dataset.choiceId}"]`);
+        if (newSource) {
+          newSource.classList.add("is-source");
+          drag.sourceLi = newSource;
+        }
+        // Restore the floating ghost.
+        const tmp = document.createElement("div");
+        tmp.innerHTML = ghostHtmlSnapshot;
+        const newGhost = tmp.firstElementChild;
+        list.appendChild(newGhost);
+        drag.ghost = newGhost;
+        // Keep the ghost positioned where the pointer is.
+        const lr2 = list.getBoundingClientRect();
+        drag.ghost.style.top = (e.clientY - lr2.top - drag.offsetY) + "px";
+      }
+    });
+
+    function endDrag(e) {
+      if (!drag) return;
+      if (e && e.pointerId !== drag.pointerId) return;
+      try { list.releasePointerCapture(drag.pointerId); } catch (_) {}
+      clearDragStyles();
+    }
+    list.addEventListener("pointerup",     endDrag);
+    list.addEventListener("pointercancel", endDrag);
+    // Note: we deliberately don't end on pointerleave — with setPointerCapture
+    // events keep flowing even when the finger moves outside the list bounds.
+
+    render(false);
+
+    const btn = makePrimaryButton("Submit ranking");
+    btn.addEventListener("click", () => {
+      if (answeredQuestionId === q.id) return;
+      const ordered_ids = items.map(c => c.id);
+      send({ type: "answer", question_id: q.id, ordered_ids });
+      lockSubmitted();
+      markAnswered(q);
+    });
+    qActions.appendChild(btn);
+    if (restore) { lockSubmitted(); answeredQuestionId = q.id; }
+  };
+
+  // ── Matrix (rate each row on the same scale) ────────────────────────
+  POLL_RENDERERS.matrix = function (q, restore) {
+    const cfg = q.config || {};
+    const sMin = Number(cfg.scale_min || 1);
+    const sMax = Number(cfg.scale_max || 5);
+    const labels = Array.isArray(cfg.scale_labels) ? cfg.scale_labels : null;
+    const rows = Array.isArray(q.matrix_rows) ? q.matrix_rows : [];
+
+    if (!rows.length) {
+      qBody.innerHTML = `<div class="text-secondary text-center py-3">This matrix question has no rows.</div>`;
+      return;
+    }
+
+    // restore: { matrix: { row_id: numeric_value, ... } }
+    const selections = {};
+    if (restore && restore.matrix && typeof restore.matrix === "object") {
+      Object.entries(restore.matrix).forEach(([k, v]) => {
+        selections[String(k)] = Number(v);
+      });
+    }
+
+    const table = document.createElement("div");
+    table.className = "kk-matrix";
+    table.style.setProperty("--matrix-cols", String(sMax - sMin + 1));
+
+    // Header row of numeric labels.
+    const head = document.createElement("div");
+    head.className = "kk-matrix-head";
+    head.innerHTML = `<div class="kk-matrix-rowlabel"></div>`;
+    for (let v = sMin; v <= sMax; v++) {
+      const cell = document.createElement("div");
+      cell.className = "kk-matrix-headcell";
+      cell.textContent = (labels && labels[v - sMin]) ? labels[v - sMin] : String(v);
+      head.appendChild(cell);
+    }
+    table.appendChild(head);
+
+    rows.forEach(row => {
+      const rowEl = document.createElement("div");
+      rowEl.className = "kk-matrix-row";
+      rowEl.dataset.rowId = row.id;
+
+      const lab = document.createElement("div");
+      lab.className = "kk-matrix-rowlabel";
+      lab.textContent = row.text;
+      rowEl.appendChild(lab);
+
+      for (let v = sMin; v <= sMax; v++) {
+        const cell = document.createElement("button");
+        cell.type = "button";
+        cell.className = "kk-matrix-cell";
+        cell.dataset.value = v;
+        cell.textContent = String(v);
+        if (selections[String(row.id)] === v) cell.classList.add("picked");
+        cell.addEventListener("click", () => {
+          if (answeredQuestionId === q.id) return;
+          selections[String(row.id)] = v;
+          rowEl.querySelectorAll(".kk-matrix-cell").forEach(c => c.classList.remove("picked"));
+          cell.classList.add("picked");
+        });
+        rowEl.appendChild(cell);
+      }
+
+      table.appendChild(rowEl);
+    });
+
+    qBody.appendChild(table);
+
+    const err = makeError("");
+    qBody.appendChild(err);
+
+    const btn = makePrimaryButton("Submit");
+    btn.addEventListener("click", () => {
+      if (answeredQuestionId === q.id) return;
+      const missing = rows.find(r => !(String(r.id) in selections));
+      if (missing) { err.textContent = `Please rate every row.`; return; }
+      send({ type: "answer", question_id: q.id, matrix: selections });
+      lockSubmitted();
+      markAnswered(q);
+    });
+    qActions.appendChild(btn);
+    if (restore && Object.keys(selections).length === rows.length) {
+      lockSubmitted(); answeredQuestionId = q.id;
+    }
+  };
+
+  // ── Points allocation (distribute N points across choices) ──────────
+  POLL_RENDERERS.points_allocation = function (q, restore) {
+    const cfg = q.config || {};
+    const total = Number(cfg.total || cfg.points_total || 100);
+    if (!Array.isArray(q.choices) || !q.choices.length) {
+      qBody.innerHTML = `<div class="text-secondary text-center py-3">No choices to allocate.</div>`;
+      return;
+    }
+
+    const values = {};
+    if (restore && restore.points && typeof restore.points === "object") {
+      Object.entries(restore.points).forEach(([k, v]) => { values[String(k)] = Number(v) || 0; });
+    } else {
+      q.choices.forEach(c => { values[String(c.id)] = 0; });
+    }
+
+    const summary = document.createElement("div");
+    summary.className = "kk-points-summary";
+    qBody.appendChild(summary);
+
+    function paintSummary() {
+      const spent = Object.values(values).reduce((a, b) => a + Number(b || 0), 0);
+      const left = total - spent;
+      summary.innerHTML = `
+        <span>Used: <strong>${spent}</strong></span>
+        <span>Remaining: <strong>${left}</strong> / ${total}</span>`;
+      summary.classList.toggle("over", spent > total);
+    }
+
+    const list = document.createElement("div");
+    list.className = "kk-points-list";
+    qBody.appendChild(list);
+
+    q.choices.forEach(c => {
+      const row = document.createElement("div");
+      row.className = "kk-points-row";
+      row.innerHTML = `
+        <div class="kk-points-label">${escapeHtml(c.text)}</div>
+        <div class="kk-points-ctrls">
+          <button type="button" class="kk-points-dec" aria-label="Decrease">−</button>
+          <input type="number" inputmode="numeric" min="0" max="${total}" value="${values[String(c.id)]}" class="kk-points-input">
+          <button type="button" class="kk-points-inc" aria-label="Increase">+</button>
+        </div>`;
+      const input = row.querySelector("input");
+
+      function clampInto(v) {
+        let n = parseInt(v, 10);
+        if (isNaN(n) || n < 0) n = 0;
+        if (n > total) n = total;
+        values[String(c.id)] = n;
+        input.value = n;
+        paintSummary();
+      }
+
+      row.querySelector(".kk-points-dec").addEventListener("click", () => {
+        if (answeredQuestionId === q.id) return;
+        clampInto(Number(input.value || 0) - 1);
+      });
+      row.querySelector(".kk-points-inc").addEventListener("click", () => {
+        if (answeredQuestionId === q.id) return;
+        clampInto(Number(input.value || 0) + 1);
+      });
+      input.addEventListener("input", () => {
+        if (answeredQuestionId === q.id) return;
+        clampInto(input.value);
+      });
+
+      list.appendChild(row);
+    });
+
+    paintSummary();
+
+    const err = makeError("");
+    qBody.appendChild(err);
+
+    const btn = makePrimaryButton(`Submit (${total} pts)`);
+    btn.addEventListener("click", () => {
+      if (answeredQuestionId === q.id) return;
+      const spent = Object.values(values).reduce((a, b) => a + Number(b || 0), 0);
+      if (spent !== total) {
+        err.textContent = `You must use exactly ${total} points (currently ${spent}).`;
+        return;
+      }
+      send({ type: "answer", question_id: q.id, points: values });
+      lockSubmitted();
+      markAnswered(q);
+    });
+    qActions.appendChild(btn);
+    if (restore) { lockSubmitted(); answeredQuestionId = q.id; }
+  };
+
+  // ── Live reactions (ephemeral, multi-send allowed) ──────────────────
+  POLL_RENDERERS.reaction = function (q) {
+    const wrap = document.createElement("div");
+    wrap.className = "kk-reaction-wrap";
 
     const choices = Array.isArray(q.choices) && q.choices.length
       ? q.choices
@@ -478,54 +1558,26 @@
       btn.type = "button";
       btn.dataset.choiceId = c.id;
       btn.textContent = c.text;
-      btn.style.flex = "0 0 84px";
-      btn.style.height = "84px";
-      btn.style.fontSize = "2.25rem";
-      btn.style.display = "inline-flex";
-      btn.style.alignItems = "center";
-      btn.style.justifyContent = "center";
-      btn.style.borderRadius = "24px";
-      btn.addEventListener("click", () => answerPollReaction(q, c, btn));
+      btn.addEventListener("click", () => {
+        myChoiceId = c.id;
+        btn.classList.add("picked");
+        setTimeout(() => btn.classList.remove("picked"), 220);
+        send({ type: "answer", question_id: q.id, choice_id: c.id, text: c.text });
+        showResult(`${c.text} Reaction sent`);
+      });
       wrap.appendChild(btn);
     });
 
-    const hint = document.createElement("p");
-    hint.className = "text-secondary text-center small mt-3 mb-0";
-    hint.textContent = "Tap an emoji to send your reaction.";
-
     qBody.appendChild(wrap);
-    qBody.appendChild(hint);
-  }
+    qBody.appendChild(makeHint("Tap an emoji as often as you like."));
+  };
 
-  function answerPollChoice(q, c, btn) {
-    if (answeredQuestionId === q.id) return;
-    answeredQuestionId = q.id;
-    myChoiceId = c.id;
-    btn.classList.add("picked");
-    qBody.querySelectorAll("button").forEach(b => { if (b !== btn) b.disabled = true; });
-    send({ type: "answer", question_id: q.id, choice_id: c.id });
-    showResult("Submitted ✓");
-    if (mode === "open" && selfNext) selfNext.style.display = "block";
-  }
-
-  function answerPollReaction(q, c, btn) {
-    myChoiceId = c.id;
-    btn.classList.add("picked");
-    setTimeout(() => btn.classList.remove("picked"), 220);
-    send({ type: "answer", question_id: q.id, choice_id: c.id, text: c.text });
-    showResult(`${c.text} Reaction sent`);
-  }
-
-  function answerPollScale(q, val, btn) {
-    if (answeredQuestionId === q.id) return;
-    answeredQuestionId = q.id;
-    myChoiceId = val;
-    btn.classList.add("picked");
-    qBody.querySelectorAll("button").forEach(b => { if (b !== btn) b.disabled = true; });
-    send({ type: "answer", question_id: q.id, value: val });
-    showResult("Submitted ✓");
-    if (mode === "open" && selfNext) selfNext.style.display = "block";
-  }
+  // ── Title slide (handled by template shim, but provide stub) ────────
+  POLL_RENDERERS.title = function () {
+    qBody.innerHTML = `<div class="text-secondary text-center py-3">
+      <i class="bi bi-info-circle"></i> Intro slide — sit tight for the next question.
+    </div>`;
+  };
 
   // ── Game rendering: kahoot-style tiles + timer ───────────────────
   // Note: picture_choice and puzzle questions are rendered by the special

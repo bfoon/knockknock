@@ -304,7 +304,10 @@
   function normalizeTallyForQuestion(q, tally) {
     const source = tally || {};
     const sourceCounts = source.counts || {};
-    const fixedCounts = {};
+    // Keep ALL incoming counts (not just choice-keyed ones) so non-choice
+    // question types — word clouds, NPS, scale, numeric, dates — still have
+    // their data available to custom chart renderers.
+    const fixedCounts = { ...sourceCounts };
 
     const choices = Array.isArray(q && q.choices) ? q.choices : [];
 
@@ -898,6 +901,28 @@
 
   function renderLiveChart(chartId, questionType, labels, tallyData) {
     if (!liveCanvas || !specialEl) return;
+
+    // Try the rich/custom chart renderers first (word cloud, ranked bar,
+    // heatmap, gauge, NPS segments, etc.). If one handles the requested
+    // chart, we're done. Otherwise fall through to the original Chart.js
+    // pipeline in kkRenderLive (bar/column/pie/donut/horizontal_bar/etc.).
+    if (typeof window.kkRenderExtraChart === "function") {
+      const handled = window.kkRenderExtraChart({
+        chartId,
+        questionType,
+        question: (currentState && currentState.question) || { choices: labels },
+        labels,
+        tallyData: tallyData || { counts: {}, texts: [] },
+        liveCanvas,
+        specialEl,
+        chartHolder,
+        destroyChartForSpecialDisplay,
+      });
+      if (handled) {
+        resizeChartSoon();
+        return;
+      }
+    }
 
     liveCanvas.style.display = "block";
     specialEl.style.display = "block";

@@ -241,6 +241,14 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             value=msg.get("value"),
             puzzle_order=msg.get("puzzle_order"),
             client_received_at=msg.get("question_received_at"),
+            choice_ids=msg.get("choice_ids"),
+            ordered_ids=msg.get("ordered_ids"),
+            matrix=msg.get("matrix"),
+            points=msg.get("points"),
+            x=msg.get("x"),
+            y=msg.get("y"),
+            datetime_kind=msg.get("datetime_kind"),
+            file_payload=msg.get("file"),
         )
 
         if result.get("kind") == "game":
@@ -832,14 +840,23 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
 
         if q_type in {
             "open", "word", "numeric", "rating", "nps", "slider",
-            "date", "time", "datetime", "file", "pin_image", "pin_map", "two_by_two",
+            "date", "time", "datetime", "file_upload",
+            "pin_image", "pin_map", "two_by_two",
         }:
             return []
 
-        return [
-            {"id": c.id, "text": c.text}
-            for c in question.choices.all()
-        ]
+        rows = []
+        for c in question.choices.all():
+            try:
+                img_url = c.image.url if c.image and c.image.name else ""
+            except (ValueError, AttributeError):
+                img_url = ""
+            rows.append({
+                "id": c.id,
+                "text": c.text,
+                "image_url": img_url,
+            })
+        return rows
 
     def _numeric_bucket_key(self, value):
         try:
@@ -970,15 +987,39 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 except (ValueError, AttributeError):
                     title_image_url = ""
 
+                # Question background image (used by pin_image questions).
+                q_image_url = ""
+                try:
+                    if getattr(current, "image", None) and current.image.name:
+                        q_image_url = current.image.url
+                except (ValueError, AttributeError):
+                    q_image_url = ""
+
+                # Matrix rows (only meaningful for type == "matrix").
+                matrix_rows_payload = []
+                try:
+                    for row in current.matrix_rows.all():
+                        matrix_rows_payload.append({
+                            "id": row.id,
+                            "text": row.text,
+                            "order": row.order,
+                        })
+                except Exception:
+                    matrix_rows_payload = []
+
                 question_data = {
                     "id": current.id,
                     "text": current.text,
                     "type": current.type,
                     "chart_type": current.chart_type,
                     "choices": self._poll_choices_payload(current),
+                    "matrix_rows": matrix_rows_payload,
                     "config": getattr(current, "config", {}) or {},
                     "scale_min": self._scale_bounds_for(current)[0],
                     "scale_max": self._scale_bounds_for(current)[1],
+                    "min_selections": getattr(current, "min_selections", None),
+                    "max_selections": getattr(current, "max_selections", None),
+                    "image_url": q_image_url,
                     "font_family": getattr(current, "font_family", "clash"),
                     "font_size": getattr(current, "font_size", 44),
                     "font_bold": getattr(current, "font_bold", True),
@@ -1113,6 +1154,78 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
         if session.kind == "poll":
             from polls.models import Response as PollResp
 
+            qtype = getattr(current_q, "type", None)
+
+            # ── Ranking: return ordered list of choice_ids (highest first).
+            if qtype == "ranking":
+                rows = list(
+                    PollResp.objects
+                    .filter(session=session, question=current_q, participant_id=uid)
+                    .exclude(choice__isnull=True)
+                    .order_by("-numeric_value", "id")
+                )
+                if not rows:
+                    return None
+                return {
+                    "choice_ids": [r.choice_id for r in rows],
+                }
+
+            # ── Multi-choice: list of choice_ids.
+            if qtype in ("mcq", "image_choice"):
+                rows = list(
+                    PollResp.objects
+                    .filter(session=session, question=current_q, participant_id=uid)
+                    .exclude(choice__isnull=True)
+                )
+                if not rows:
+                    return None
+                if len(rows) == 1:
+                    return {
+                        "choice_id": rows[0].choice_id,
+                        "choice_ids": [rows[0].choice_id],
+                        "text": rows[0].text_value or "",
+                    }
+                return {
+                    "choice_ids": [r.choice_id for r in rows],
+                }
+
+            # ── Matrix: dict of {row_id: numeric_value}.
+            if qtype == "matrix":
+                try:
+                    from polls.models import MatrixAnswer
+                except Exception:
+                    MatrixAnswer = None
+                if MatrixAnswer is None:
+                    return None
+                rows = list(
+                    MatrixAnswer.objects
+                    .filter(session=session, question=current_q, participant_id=uid)
+                )
+                if not rows:
+                    return None
+                return {
+                    "matrix": {str(r.matrix_row_id): r.numeric_value for r in rows},
+                }
+
+            # ── Points allocation: dict of {choice_id: points}.
+            if qtype == "points_allocation":
+                try:
+                    from polls.models import PointsAllocation
+                except Exception:
+                    PointsAllocation = None
+                if PointsAllocation is None:
+                    return None
+                rows = list(
+                    PointsAllocation.objects
+                    .filter(session=session, question=current_q, participant_id=uid)
+                )
+                if not rows:
+                    return None
+                return {
+                    "points": {str(r.choice_id): r.points for r in rows},
+                }
+
+            # ── Default single-row case (everything else).
             r = (
                 PollResp.objects
                 .filter(session=session, question=current_q, participant_id=uid)
@@ -1123,11 +1236,32 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             if not r:
                 return None
 
-            return {
+            out = {
                 "choice_id": r.choice_id,
                 "text": r.text_value or "",
                 "value": r.numeric_value,
             }
+
+            # Coordinates + datetime + file (if the model fields exist).
+            if hasattr(r, "x_value") and r.x_value is not None:
+                out["x"] = r.x_value
+            if hasattr(r, "y_value") and r.y_value is not None:
+                out["y"] = r.y_value
+            if hasattr(r, "datetime_value") and r.datetime_value is not None:
+                if qtype == "date":
+                    out["text"] = r.datetime_value.date().isoformat()
+                elif qtype == "time":
+                    out["text"] = r.datetime_value.time().isoformat(timespec="minutes")
+                else:
+                    out["text"] = r.datetime_value.isoformat(timespec="minutes")
+            if hasattr(r, "file_value"):
+                try:
+                    if r.file_value and r.file_value.name:
+                        out["file_url"] = r.file_value.url
+                except (ValueError, AttributeError):
+                    pass
+
+            return out
 
         from games.models import GameAnswer
 
@@ -1224,6 +1358,14 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
         value,
         puzzle_order,
         client_received_at,
+        choice_ids=None,
+        ordered_ids=None,
+        matrix=None,
+        points=None,
+        x=None,
+        y=None,
+        datetime_kind=None,
+        file_payload=None,
     ):
         from django.db import transaction
         from polls.models import Question as PollQ
@@ -1233,7 +1375,7 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
 
         session = LiveSession.objects.get(pk=session_pk)
 
-        # ───────── POLL path (unchanged behaviour) ─────────
+        # ───────── POLL path ─────────
         if session.kind == "poll":
             try:
                 q = PollQ.objects.get(
@@ -1243,6 +1385,9 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             except PollQ.DoesNotExist:
                 return {"kind": "poll", "ok": False}
 
+            qtype = q.type
+
+            # Single choice (and reaction).
             choice = None
             if choice_id not in (None, "", "null", "undefined"):
                 choice = PollC.objects.filter(pk=choice_id, question=q).first()
@@ -1255,12 +1400,169 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 except Exception:
                     clean_value = None
 
-            if q.type in ("scale", "rating", "nps", "slider", "numeric") and clean_value is None and clean_text:
+            # Scale-family fallback: numeric typed as text.
+            if qtype in ("scale", "rating", "nps", "slider", "numeric") and clean_value is None and clean_text:
                 try:
                     clean_value = float(clean_text)
                 except Exception:
                     clean_value = None
 
+            # Coordinates (pin_image / pin_map / two_by_two).
+            clean_x = None
+            clean_y = None
+            if x not in (None, "", "null", "undefined"):
+                try: clean_x = float(x)
+                except Exception: clean_x = None
+            if y not in (None, "", "null", "undefined"):
+                try: clean_y = float(y)
+                except Exception: clean_y = None
+
+            # Date / time / datetime → DateTimeField.
+            clean_dt = None
+            if qtype in ("date", "datetime", "time") and clean_text:
+                from django.utils.dateparse import (
+                    parse_date, parse_time, parse_datetime,
+                )
+                import datetime as _dt
+                try:
+                    if qtype == "date":
+                        d = parse_date(clean_text)
+                        if d:
+                            clean_dt = _dt.datetime.combine(d, _dt.time(0, 0))
+                    elif qtype == "time":
+                        t = parse_time(clean_text)
+                        if t:
+                            clean_dt = _dt.datetime.combine(_dt.date(1970, 1, 1), t)
+                    else:  # "datetime"
+                        # Browser <input type="datetime-local"> produces "2025-01-15T14:30"
+                        dt = parse_datetime(clean_text) or parse_datetime(clean_text + ":00")
+                        if dt:
+                            clean_dt = dt
+                except Exception:
+                    clean_dt = None
+
+            # ── Ranking: multi-row, one per ranked choice, weight encodes rank.
+            if qtype == "ranking" and isinstance(ordered_ids, list) and ordered_ids:
+                valid_choices = list(PollC.objects.filter(question=q, pk__in=ordered_ids))
+                by_id = {c.id: c for c in valid_choices}
+                ordered = [by_id[int(cid)] for cid in ordered_ids if int(cid) in by_id]
+                with transaction.atomic():
+                    PollResp.objects.filter(
+                        question=q, session=session, participant_id=uid,
+                    ).delete()
+                    n = len(ordered)
+                    for rank_idx, c in enumerate(ordered):
+                        PollResp.objects.create(
+                            question=q, session=session, participant_id=uid,
+                            choice=c,
+                            numeric_value=float(n - rank_idx),  # higher = better rank
+                        )
+                return {
+                    "kind": "poll", "ok": True, "question_type": qtype,
+                }
+
+            # ── Multi-choice MCQ / image_choice / likert (with max>1).
+            if qtype in ("mcq", "image_choice") and isinstance(choice_ids, list) and choice_ids:
+                valid_choices = list(PollC.objects.filter(question=q, pk__in=choice_ids))
+                with transaction.atomic():
+                    PollResp.objects.filter(
+                        question=q, session=session, participant_id=uid,
+                    ).delete()
+                    for c in valid_choices:
+                        PollResp.objects.create(
+                            question=q, session=session, participant_id=uid,
+                            choice=c,
+                        )
+                return {
+                    "kind": "poll", "ok": True, "question_type": qtype,
+                    "choice_id": valid_choices[0].id if valid_choices else None,
+                }
+
+            # ── Matrix: one MatrixAnswer per row.
+            if qtype == "matrix" and isinstance(matrix, dict) and matrix:
+                try:
+                    from polls.models import MatrixAnswer, MatrixRow
+                except Exception:
+                    MatrixAnswer = None
+                if MatrixAnswer is not None:
+                    valid_rows = {r.id: r for r in MatrixRow.objects.filter(question=q)}
+                    with transaction.atomic():
+                        MatrixAnswer.objects.filter(
+                            question=q, session=session, participant_id=uid,
+                        ).delete()
+                        for row_id_str, raw in matrix.items():
+                            try:
+                                row_id = int(row_id_str)
+                                num = float(raw)
+                            except Exception:
+                                continue
+                            row = valid_rows.get(row_id)
+                            if not row:
+                                continue
+                            MatrixAnswer.objects.create(
+                                question=q, matrix_row=row, session=session,
+                                participant_id=uid, numeric_value=num,
+                            )
+                    return {"kind": "poll", "ok": True, "question_type": qtype}
+
+            # ── Points allocation: one row per (choice, value).
+            if qtype == "points_allocation" and isinstance(points, dict) and points:
+                try:
+                    from polls.models import PointsAllocation
+                except Exception:
+                    PointsAllocation = None
+                if PointsAllocation is not None:
+                    cfg = q.config or {}
+                    total = int(cfg.get("total", cfg.get("points_total", 100)))
+                    valid_choices = {c.id: c for c in PollC.objects.filter(question=q)}
+                    clean_points = {}
+                    spent = 0
+                    for cid_str, raw in points.items():
+                        try:
+                            cid = int(cid_str)
+                            pts = int(raw)
+                        except Exception:
+                            continue
+                        if pts < 0:
+                            pts = 0
+                        if cid in valid_choices:
+                            clean_points[cid] = pts
+                            spent += pts
+                    if spent != total:
+                        return {
+                            "kind": "poll", "ok": False,
+                            "error": f"Points must sum to {total} (got {spent}).",
+                        }
+                    with transaction.atomic():
+                        PointsAllocation.objects.filter(
+                            question=q, session=session, participant_id=uid,
+                        ).delete()
+                        for cid, pts in clean_points.items():
+                            PointsAllocation.objects.create(
+                                question=q, choice=valid_choices[cid],
+                                session=session, participant_id=uid,
+                                points=pts,
+                            )
+                    return {"kind": "poll", "ok": True, "question_type": qtype}
+
+            # ── File upload: decode data-URL and save to FileField.
+            saved_file = None
+            if qtype == "file_upload" and isinstance(file_payload, dict):
+                data_url = file_payload.get("data_url") or ""
+                filename = (file_payload.get("filename") or "upload.bin")[:120]
+                if data_url.startswith("data:"):
+                    import base64
+                    from django.core.files.base import ContentFile
+                    try:
+                        header, b64 = data_url.split(",", 1)
+                        raw = base64.b64decode(b64)
+                        saved_file = ContentFile(raw, name=filename)
+                    except Exception:
+                        saved_file = None
+
+            # ── Default single-row path (mcq single, yes_no, likert single,
+            #     scale, rating, nps, slider, numeric, open, word, reaction,
+            #     pin_image, pin_map, two_by_two, date/time/datetime, file).
             with transaction.atomic():
                 existing_qs = (
                     PollResp.objects
@@ -1287,12 +1589,18 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 response.choice = choice
                 response.text_value = clean_text
                 response.numeric_value = clean_value
+                # Optional fields (only assign if the model has them).
+                if hasattr(response, "x_value"):        response.x_value = clean_x
+                if hasattr(response, "y_value"):        response.y_value = clean_y
+                if hasattr(response, "datetime_value"): response.datetime_value = clean_dt
+                if saved_file is not None and hasattr(response, "file_value"):
+                    response.file_value = saved_file
                 response.save()
 
             return {
                 "kind": "poll",
                 "ok": True,
-                "question_type": q.type,
+                "question_type": qtype,
                 "choice_id": choice.id if choice else None,
                 "choice_text": choice.text if choice else clean_text,
                 "text": clean_text,

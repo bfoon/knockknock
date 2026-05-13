@@ -88,6 +88,7 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             "ping": self._on_ping,
             "room_join_request": self._on_room_join_request,
             "extend_time": self._on_extend_time,
+            "reveal_answer": self._on_reveal_answer,
         }.get(t)
 
         if not handler:
@@ -202,6 +203,30 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             return
 
         await self._broadcast_state(session)
+
+    async def _on_reveal_answer(self, msg):
+        """Reveal the correct answer after the server-side timer expires.
+
+        The browser may ask for the reveal when its local countdown reaches
+        zero, but the server still validates the real deadline using
+        LiveSession.question_started_at + time_limit + extensions. This keeps
+        participants from revealing the answer early by sending a manual socket
+        message.
+        """
+        if self.role not in {"presenter", "participant"}:
+            return
+
+        payload = await self._correct_answer_payload(self.session_pk)
+        if not payload:
+            return
+
+        await self.channel_layer.group_send(
+            self.group,
+            {
+                "type": "broadcast",
+                "payload": payload,
+            },
+        )
 
     async def _on_answer(self, msg):
         if self.role != "participant":
@@ -857,6 +882,76 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 row["is_correct"] = bool(c.is_correct)
             rows.append(row)
         return rows
+
+    @database_sync_to_async
+    def _correct_answer_payload(self, session_pk):
+        """Return a safe reveal payload only after the timer has expired."""
+        from games.models import GameChoice
+
+        session = (
+            LiveSession.objects
+            .select_related("quiz")
+            .get(pk=session_pk)
+        )
+
+        if session.kind != "game" or not session.quiz:
+            return None
+
+        questions = session.questions()
+        idx = session.current_question_index
+        question = questions[idx] if 0 <= idx < len(questions) else None
+        if not question:
+            return None
+
+        if not session.question_started_at:
+            return None
+
+        total_allowed = int(question.time_limit or 0) + int(session.time_extension_seconds or 0)
+        seconds_since_start = (timezone.now() - session.question_started_at).total_seconds()
+
+        # Allow a small grace so every browser reaches zero before reveal.
+        if seconds_since_start < max(0, total_allowed) - 0.25:
+            return None
+
+        question_type = getattr(question, "question_type", "mcq") or "mcq"
+
+        def choice_row(choice):
+            try:
+                image_url = choice.image.url if choice.image and choice.image.name else ""
+            except (ValueError, AttributeError):
+                image_url = ""
+            return {
+                "id": choice.id,
+                "text": choice.text or "",
+                "image_url": image_url,
+                "correct_position": choice.correct_position or 0,
+                "order": choice.order or 0,
+            }
+
+        if question_type == "puzzle":
+            correct_choices = [
+                choice_row(c)
+                for c in question.choices.filter(correct_position__gt=0).order_by("correct_position", "id")
+            ]
+            correct_order = [c["id"] for c in correct_choices]
+            correct_choice_ids = correct_order
+        else:
+            correct_choices = [
+                choice_row(c)
+                for c in question.choices.filter(is_correct=True).order_by("order", "id")
+            ]
+            correct_choice_ids = [c["id"] for c in correct_choices]
+            correct_order = []
+
+        return {
+            "type": "correct_answer",
+            "reason": "timer_ended",
+            "question_id": question.id,
+            "question_type": question_type,
+            "correct_choice_ids": correct_choice_ids,
+            "correct_order": correct_order,
+            "correct_choices": correct_choices,
+        }
 
     @database_sync_to_async
     def _state_payload(self, session, uid=None, role=None):

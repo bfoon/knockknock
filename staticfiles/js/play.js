@@ -98,6 +98,14 @@
   let lateAnswerPointsPct   = 0;
   let deadlinePassedLocally = false;
 
+  // Correct-answer reveal state. The answer key is requested only after the
+  // server-synchronised countdown reaches 0. The server still validates the
+  // real deadline before broadcasting the answer key.
+  let revealRequestQuestionId = null;
+  let revealRetryTimer = null;
+  let revealedQuestionId = null;
+  let latestCorrectAnswer = null;
+
   function totalQuestionSeconds() {
     return Math.max(0, Number(qTimeLimit || 0) + Math.max(0, Number(qExtension || 0)));
   }
@@ -227,12 +235,34 @@
 
   function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
+  function requestCorrectAnswerReveal(delayMs) {
+    if (kind !== "game" || !currentQuestion || !currentQuestion.id) return;
+
+    const questionId = currentQuestion.id;
+    const doSend = () => {
+      // Do not spam the socket, but allow one immediate request and one retry
+      // in case the local clock hits 0 a fraction before the server deadline.
+      revealRequestQuestionId = questionId;
+      send({ type: "reveal_answer", question_id: questionId });
+    };
+
+    if (delayMs && delayMs > 0) {
+      clearTimeout(revealRetryTimer);
+      revealRetryTimer = setTimeout(doSend, delayMs);
+    } else if (revealRequestQuestionId !== questionId) {
+      doSend();
+      clearTimeout(revealRetryTimer);
+      revealRetryTimer = setTimeout(doSend, 850);
+    }
+  }
+
   function handle(msg) {
     switch (msg.type) {
       case "state":            onState(msg); break;
       case "tally":            onTally(msg); break;
       case "answer_ack":       onAnswerAck(msg); break;
       case "answer_rejected":  onAnswerRejected(msg); break;
+      case "correct_answer":   onCorrectAnswerReveal(msg); break;
       case "ended":            onEnded(); break;
     }
   }
@@ -283,6 +313,10 @@
       myChoiceId = null;
       answeredQuestionId = null;
       deadlinePassedLocally = false;
+      revealRequestQuestionId = null;
+      revealedQuestionId = null;
+      latestCorrectAnswer = null;
+      clearTimeout(revealRetryTimer);
     }
     currentQuestion = q;
 
@@ -549,13 +583,25 @@
 
   function handleDeadlineExpired() {
     if (!tiles) return;
+
+    // Ask the server to reveal the correct answer. The server validates the
+    // real deadline before broadcasting, so this is safe even if a browser
+    // reaches 0 slightly early.
+    requestCorrectAnswerReveal(0);
+
     if (!allowLateAnswers) {
       tiles.querySelectorAll("button").forEach(b => b.disabled = true);
-      if (!answeredQuestionId) showResult("⏱ Time's up");
+      tiles.querySelectorAll(".kk-puzzle-tile").forEach(t => {
+        t.setAttribute("aria-disabled", "true");
+        t.style.pointerEvents = "none";
+      });
+      const submit = document.getElementById("kk-submit-puzzle");
+      if (submit) submit.disabled = true;
+      if (!answeredQuestionId) showResult("⏱ Time's up — revealing answer…");
     } else if (!answeredQuestionId) {
       const pct = Number(lateAnswerPointsPct || 0);
       const tail = pct > 0 ? ` (late answers worth ${pct}% of points)` : ` (no points awarded)`;
-      showResult("⏱ Time's up — you can still answer" + tail);
+      showResult("⏱ Time's up — revealing answer" + tail);
     }
   }
 
@@ -716,6 +762,75 @@
         animation: { duration: 350 },
       },
     });
+  }
+
+  function onCorrectAnswerReveal(msg) {
+    if (!msg || !currentQuestion) return;
+    if (String(msg.question_id) !== String(currentQuestion.id)) return;
+
+    latestCorrectAnswer = msg;
+    revealedQuestionId = msg.question_id;
+
+    const correctIds = new Set((msg.correct_choice_ids || []).map(v => String(v)));
+    const correctOrder = Array.isArray(msg.correct_order) ? msg.correct_order.map(v => String(v)) : [];
+    const correctChoices = Array.isArray(msg.correct_choices) ? msg.correct_choices : [];
+
+    if (tiles) {
+      // Disable further input after reveal.
+      tiles.querySelectorAll("button").forEach(b => { b.disabled = true; });
+      tiles.querySelectorAll(".kk-puzzle-tile").forEach(t => {
+        t.setAttribute("aria-disabled", "true");
+        t.style.pointerEvents = "none";
+      });
+
+      // Classic MCQ and picture-choice cards.
+      tiles.querySelectorAll("[data-choice-id]").forEach(el => {
+        const id = String(el.dataset.choiceId || "");
+        if (!id) return;
+        const picked = el.classList.contains("picked") || el.classList.contains("is-picked");
+        if (correctIds.has(id)) {
+          el.classList.add("correct", "is-correct");
+          el.style.outline = "4px solid #22c55e";
+          el.style.boxShadow = "0 0 0 4px rgba(34,197,94,.85), 0 18px 38px rgba(0,0,0,.32)";
+          if (window.kkSparkleOn) window.kkSparkleOn(el);
+        } else if (picked) {
+          el.classList.add("incorrect", "is-incorrect");
+          el.style.outline = "4px solid #ef4444";
+        }
+      });
+
+      // Four-slot puzzle: highlight each slot depending on whether the tile
+      // in that slot matches the server's correct order.
+      const board = document.getElementById("kk-puzzle-slots");
+      if (board && correctOrder.length) {
+        const slots = Array.from(board.querySelectorAll(".kk-puzzle-slot"))
+          .sort((a, b) => Number(a.dataset.slotPosition || 0) - Number(b.dataset.slotPosition || 0));
+        slots.forEach((slot, index) => {
+          const expectedId = correctOrder[index];
+          const tile = slot.querySelector(".kk-puzzle-tile");
+          const actualId = tile ? String(tile.dataset.choiceId || "") : "";
+          if (tile && actualId === expectedId) {
+            tile.classList.add("is-correct");
+            slot.style.borderColor = "#22c55e";
+            slot.style.boxShadow = "0 0 0 3px rgba(34,197,94,.65), inset 0 0 0 1px rgba(255,255,255,.12)";
+          } else {
+            slot.style.borderColor = "#ef4444";
+            slot.style.boxShadow = "0 0 0 3px rgba(239,68,68,.55), inset 0 0 0 1px rgba(255,255,255,.12)";
+          }
+        });
+      }
+    }
+
+    const qType = String(msg.question_type || currentQuestion.question_type || currentQuestion.type || "mcq");
+    const correctText = correctChoices.map((c, i) => {
+      const label = c.text || `Answer ${i + 1}`;
+      return qType === "puzzle" ? `${i + 1}. ${escapeHtml(label)}` : escapeHtml(label);
+    }).join(qType === "puzzle" ? " &nbsp; • &nbsp; " : ", ");
+
+    const title = qType === "puzzle" ? "Correct order" : "Correct answer";
+    const fallback = qType === "puzzle" ? "Check the highlighted slots." : "See the green highlight.";
+    qResult.innerHTML = `<div class="kk-q-pill" style="background:#16a34a;color:#fff;font-size:1rem;padding:.55rem 1rem;line-height:1.35;white-space:normal;">✅ ${title}: ${correctText || fallback}</div>`;
+    qResult.style.display = "block";
   }
 
   function onEnded() {

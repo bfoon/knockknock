@@ -88,6 +88,9 @@
     let draw = null;
     let presenterClockSkewMs = 0;
     let presenterTimerInterval = null;
+    let revealRequestQuestionId = null;
+    let revealRetryTimer = null;
+    const correctRevealByQuestion = {};
 
   function show(name) {
     Object.entries(views).forEach(([key, el]) => {
@@ -172,6 +175,24 @@
     send({ type: "extend_time", seconds: Number(seconds) || 0 });
   }
 
+  function requestCorrectAnswerReveal(questionId, delayMs) {
+    if (kind !== "game" || !questionId) return;
+
+    const doSend = () => {
+      revealRequestQuestionId = String(questionId);
+      send({ type: "reveal_answer", question_id: questionId });
+    };
+
+    if (delayMs && delayMs > 0) {
+      clearTimeout(revealRetryTimer);
+      revealRetryTimer = setTimeout(doSend, delayMs);
+    } else if (revealRequestQuestionId !== String(questionId)) {
+      doSend();
+      clearTimeout(revealRetryTimer);
+      revealRetryTimer = setTimeout(doSend, 850);
+    }
+  }
+
   if (btnExtend5) btnExtend5.addEventListener("click", () => extendTime(5));
   if (btnExtend10) btnExtend10.addEventListener("click", () => extendTime(10));
 
@@ -212,6 +233,10 @@
 
         case "leaderboard":
           onLeaderboard(msg);
+          break;
+
+        case "correct_answer":
+          onCorrectAnswerReveal(msg);
           break;
 
         case "ended":
@@ -404,6 +429,10 @@
         const lateText = allowLate ? "Late answers allowed by creator." : "Late answers blocked unless you extend.";
         presenterTimerDetail.textContent = `${limit}s${extText}. ${lateText}`;
       }
+
+      if (Number(left) <= 0 && s.question && s.question.id) {
+        requestCorrectAnswerReveal(s.question.id, 0);
+      }
     }
 
     tick();
@@ -413,7 +442,13 @@
   // ─────────────────────── State handling ───────────────────────
 
   function onState(s) {
+    const previousQuestionId = currentState && currentState.question ? String(currentState.question.id) : null;
     currentState = s;
+    const nextQuestionId = s && s.question ? String(s.question.id) : null;
+    if (nextQuestionId && previousQuestionId !== nextQuestionId) {
+      revealRequestQuestionId = null;
+      clearTimeout(revealRetryTimer);
+    }
     if (typeof s.server_time_ms === "number") {
       presenterClockSkewMs = s.server_time_ms - Date.now();
     }
@@ -518,13 +553,88 @@
   function renderQuestionResults(q, chartId, questionType, labels, tallyData) {
     if (questionType === "picture_choice") {
       renderPictureChoicePresenter(q, tallyData);
-      return;
-    }
-    if (questionType === "puzzle") {
+    } else if (questionType === "puzzle") {
       renderPuzzleWinnerPresenter(q, tallyData);
+    } else {
+      renderLiveChart(chartId, questionType, labels, tallyData);
+    }
+
+    const reveal = q && q.id ? correctRevealByQuestion[normalizeChoiceId(q.id)] : null;
+    if (reveal) renderCorrectAnswerPresenter(q, questionType, reveal);
+  }
+
+  function onCorrectAnswerReveal(msg) {
+    if (!msg || !msg.question_id) return;
+    correctRevealByQuestion[normalizeChoiceId(msg.question_id)] = msg;
+
+    if (currentState && currentState.question && normalizeChoiceId(currentState.question.id) === normalizeChoiceId(msg.question_id)) {
+      renderCurrentQuestion(currentState);
+    }
+  }
+
+  function ensureCorrectAnswerRevealStyles() {
+    if (document.getElementById("kk-correct-answer-reveal-styles")) return;
+    const style = document.createElement("style");
+    style.id = "kk-correct-answer-reveal-styles";
+    style.textContent = `
+      .kk-correct-answer-reveal {
+        position: absolute;
+        left: clamp(12px, 2vw, 24px);
+        top: clamp(12px, 2vw, 24px);
+        z-index: 60;
+        max-width: min(520px, calc(100% - 32px));
+        padding: .8rem 1rem;
+        border-radius: 18px;
+        background: linear-gradient(135deg, rgba(22,163,74,.94), rgba(20,83,45,.92));
+        color: #fff;
+        border: 1px solid rgba(255,255,255,.24);
+        box-shadow: 0 20px 55px rgba(0,0,0,.38), 0 0 28px rgba(34,197,94,.25);
+        backdrop-filter: blur(12px);
+        font-weight: 900;
+        line-height: 1.25;
+        pointer-events: none;
+      }
+      .kk-correct-answer-reveal .label { display:block; font-size:.78rem; letter-spacing:.08em; text-transform:uppercase; opacity:.82; margin-bottom:.25rem; }
+      .kk-correct-answer-reveal .answer { display:flex; align-items:center; gap:.65rem; font-size:clamp(1rem,1.7vw,1.35rem); }
+      .kk-correct-answer-reveal img { width:54px; height:54px; object-fit:cover; border-radius:12px; background:#fff; border:2px solid rgba(255,255,255,.85); }
+      .kk-correct-answer-card {
+        width:100%; height:100%; display:grid; place-items:center; align-content:center; text-align:center;
+        padding:clamp(1.5rem,4vw,4rem); border-radius:32px;
+        background:radial-gradient(circle at top, rgba(34,197,94,.28), transparent 38%), linear-gradient(135deg, rgba(22,163,74,.24), rgba(34,211,238,.13));
+      }
+      .kk-correct-answer-card h2 { font-family:'Clash Display',system-ui,sans-serif; font-size:clamp(2rem,5vw,5rem); margin:.5rem 0; font-weight:950; }
+      .kk-correct-answer-card p { font-size:clamp(1.05rem,2vw,1.7rem); color:rgba(255,255,255,.82); max-width:900px; }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function renderCorrectAnswerPresenter(q, questionType, reveal) {
+    if (!specialEl || !q || !reveal) return;
+    ensureCorrectAnswerRevealStyles();
+
+    const correctChoices = Array.isArray(reveal.correct_choices) ? reveal.correct_choices : [];
+    const answerText = correctChoices.map((c, i) => {
+      const label = c.text || `Answer ${i + 1}`;
+      return questionType === "puzzle" ? `${i + 1}. ${label}` : label;
+    }).join(questionType === "puzzle" ? " • " : ", ");
+
+    if (questionType === "puzzle") {
+      destroyChartForSpecialDisplay();
+      specialEl.innerHTML = `<div class="kk-correct-answer-card"><div style="font-size:clamp(4rem,11vw,10rem);">🧩✅</div><h2>Correct order</h2><p>${escapeHtml(answerText || "The correct puzzle order is highlighted for participants.")}</p></div>`;
       return;
     }
-    renderLiveChart(chartId, questionType, labels, tallyData);
+
+    // Append a non-destructive overlay so the existing picture-choice chart,
+    // photo X-axis labels, and winner/avatar logic remain untouched.
+    specialEl.querySelectorAll(".kk-correct-answer-reveal").forEach(el => el.remove());
+    const first = correctChoices[0] || {};
+    const img = first.image_url ? `<img src="${escapeHtml(first.image_url)}" alt="">` : "";
+    const label = questionType === "picture_choice" ? "Correct picture" : "Correct answer";
+    const text = answerText || "See the highlighted correct answer.";
+    const badge = document.createElement("div");
+    badge.className = "kk-correct-answer-reveal";
+    badge.innerHTML = `<span class="label">Time ended — ${escapeHtml(label)}</span><span class="answer">${img}<span>${escapeHtml(text)}</span></span>`;
+    specialEl.appendChild(badge);
   }
 
   // ─────────────────────── Title-slide presenter ───────────────────────

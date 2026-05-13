@@ -1,9 +1,18 @@
 import secrets
+from datetime import timedelta
 
 from django.conf import settings
 from django.db import models
 from django.urls import reverse
 from django.utils import timezone
+
+
+# How long a pending invite stays valid.
+INVITE_TTL = timedelta(days=7)
+
+
+def _default_expires_at():
+    return timezone.now() + INVITE_TTL
 
 
 class CollaborationInvite(models.Model):
@@ -51,9 +60,34 @@ class CollaborationInvite(models.Model):
     message = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     accepted_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True, default=_default_expires_at)
+
+    class Meta:
+        constraints = [
+            # Only one *pending* invite per (target, email) pair. Accepted/declined/
+            # expired invites don't block re-invitation.
+            models.UniqueConstraint(
+                fields=["kind", "target_id", "invitee_email"],
+                condition=models.Q(status="pending"),
+                name="uniq_pending_invite_per_target_email",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["status", "expires_at"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        # Normalize so the unique constraint above is reliable.
+        if self.invitee_email:
+            self.invitee_email = self.invitee_email.strip().lower()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.inviter} → {self.invitee_email} ({self.kind} #{self.target_id})"
+
+    def is_expired(self):
+        """True if a pending invite has aged out. NULL expires_at = legacy, never expires."""
+        return bool(self.expires_at and timezone.now() >= self.expires_at)
 
     def get_target(self):
         if self.kind == self.KIND_MENTI:
@@ -70,6 +104,14 @@ class CollaborationInvite(models.Model):
         self.status = self.STATUS_ACCEPTED
         self.accepted_at = timezone.now()
         self.save()
+
+    def mark_expired(self):
+        self.status = self.STATUS_EXPIRED
+        self.save(update_fields=["status"])
+
+    def mark_declined(self):
+        self.status = self.STATUS_DECLINED
+        self.save(update_fields=["status"])
 
 
 class Collaborator(models.Model):

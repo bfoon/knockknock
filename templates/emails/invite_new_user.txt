@@ -1,18 +1,17 @@
-Hi there,
+Hi,
 
-{{ inviter.username }} wants to collaborate with you on Knock-Knock —
-the live polls and quiz games app.
+{{ inviter.username }} has invited you to collaborate on "{{ target.title }}" on Knock-Knock.
 
-They're inviting you to: "{{ target.title }}"
+You don't have a Knock-Knock account yet — but the link below will let you create one in a few seconds, and then you'll be taken straight to the collaboration.
+
+Permission: {{ invite.get_permission_display }}
 {% if invite.message %}
 Message from {{ inviter.username }}:
-"{{ invite.message }}"
+{{ invite.message }}
 {% endif %}
-Since you don't have a Knock-Knock account yet, create one here
-and we'll add you to the collaboration automatically:
-
+Create your account and accept:
 {{ accept_url }}
 
-It's free. No card needed.
+This invite expires in 7 days.
 
-— The Knock-Knock crew
+— The Knock-Knock team

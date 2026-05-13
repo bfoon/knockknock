@@ -1,15 +1,15 @@
-Hi there,
+Hi,
 
-{{ inviter.username }} invited you to collaborate on "{{ target.title }}" on Knock-Knock.
+{{ inviter.username }} has invited you to collaborate on "{{ target.title }}" on Knock-Knock.
 
 Permission: {{ invite.get_permission_display }}
 {% if invite.message %}
 Message from {{ inviter.username }}:
-"{{ invite.message }}"
+{{ invite.message }}
 {% endif %}
-Accept the invite:
+Accept the invite here:
 {{ accept_url }}
 
-If you didn't expect this email, you can ignore it.
+This invite expires in 7 days.
 
-— The Knock-Knock crew
+— The Knock-Knock team

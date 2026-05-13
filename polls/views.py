@@ -16,7 +16,6 @@ from presentations.models import LiveSession, Participant
 
 from .charts import ALL_CHARTS, curated_charts_for
 from .forms import (
-    CollaboratorInviteForm,
     ChoiceFormSet,
     CONFIG_FORM_BY_TYPE,
     MatrixRowFormSet,
@@ -100,7 +99,6 @@ def edit(request, pk):
         "selected_template": get_template(questionnaire.template_id),
         "is_owner": is_owner,
         "collaborators": questionnaire.collaborators.select_related("user"),
-        "invite_form": CollaboratorInviteForm(),
     })
 
 
@@ -353,32 +351,32 @@ def start_session(request, pk):
     return redirect("presentations:present", code=session.code)
 
 
-# ── Collaboration (unchanged from before) ─────────────────────────────
+# ── Collaboration ─────────────────────────────────────────────────────
+# Invitation is handled by the generic `collaborations` app (kind="menti").
+# This view just redirects so the polls:invite URL name and any in-page
+# "Invite collaborators" links keep working.
 @login_required
-@require_POST
 def invite_collaborator(request, pk):
-    questionnaire = get_object_or_404(Questionnaire, pk=pk, owner=request.user)
-    form = CollaboratorInviteForm(request.POST)
-    if form.is_valid():
-        user = form.find_user()
-        if not user:
-            messages.error(request, "No user found by that username or email.")
-        elif user == request.user:
-            messages.error(request, "You can't invite yourself.")
-        else:
-            QuestionnaireCollaborator.objects.get_or_create(
-                questionnaire=questionnaire, user=user,
-                defaults={"role": form.cleaned_data["role"], "invited_by": request.user},
-            )
-            messages.success(request, f"{user.username} can now {form.cleaned_data['role']}.")
-    return redirect("polls:edit", pk=pk)
+    # Ownership is re-checked inside the collaborations.invite view.
+    return redirect("collaborations:invite", kind="menti", target_id=pk)
 
 
 @login_required
 @require_POST
 def remove_collaborator(request, pk, cpk):
     questionnaire = get_object_or_404(Questionnaire, pk=pk, owner=request.user)
-    QuestionnaireCollaborator.objects.filter(pk=cpk, questionnaire=questionnaire).delete()
+    # Remove from BOTH tables so the generic collaborations app stays in sync.
+    qc = QuestionnaireCollaborator.objects.filter(
+        pk=cpk, questionnaire=questionnaire,
+    ).first()
+    if qc is not None:
+        removed_user_id = qc.user_id
+        qc.delete()
+        # Mirror the removal in the generic table.
+        from collaborations.models import Collaborator as GenericCollaborator
+        GenericCollaborator.objects.filter(
+            user_id=removed_user_id, kind="menti", target_id=pk,
+        ).delete()
     return redirect("polls:edit", pk=pk)
 
 

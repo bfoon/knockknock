@@ -4,7 +4,8 @@ from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 
 from .forms import InviteCollaboratorForm
-from .models import Collaborator, CollaborationInvite
+from .invite_signup import _grant_access
+from .models import CollaborationInvite
 from .services import send_collaboration_invite_email
 
 
@@ -23,13 +24,15 @@ def invite(request, kind, target_id):
     membership = request.user.active_membership()
     org = membership.organization if membership else None
 
+    form_kwargs = {"org": org, "user": request.user, "kind": kind, "target_id": target_id}
+
     if request.method == "POST":
-        form = InviteCollaboratorForm(request.POST, org=org)
+        form = InviteCollaboratorForm(request.POST, **form_kwargs)
         if form.is_valid():
             email = form.cleaned_data["resolved_email"]
             inv = CollaborationInvite.objects.create(
                 inviter=request.user,
-                invitee_email=email.lower(),
+                invitee_email=email,  # already lowercased by form / model.save
                 kind=kind,
                 target_id=target_id,
                 permission=form.cleaned_data["permission"],
@@ -39,7 +42,7 @@ def invite(request, kind, target_id):
             messages.success(request, f"Invite sent to {email}.")
             return redirect(request.path)
     else:
-        form = InviteCollaboratorForm(org=org)
+        form = InviteCollaboratorForm(**form_kwargs)
 
     existing_invites = CollaborationInvite.objects.filter(
         inviter=request.user, kind=kind, target_id=target_id,
@@ -61,7 +64,18 @@ def _load_owned_target(user, kind, target_id):
 
 def accept(request, token):
     """Accept an invite. If not logged in, route to login/signup carrying the token."""
-    inv = get_object_or_404(CollaborationInvite, token=token, status=CollaborationInvite.STATUS_PENDING)
+    inv = get_object_or_404(
+        CollaborationInvite, token=token, status=CollaborationInvite.STATUS_PENDING,
+    )
+
+    # Expiry check — flip the row to EXPIRED so it doesn't keep showing as pending.
+    if inv.is_expired():
+        inv.mark_expired()
+        messages.error(
+            request,
+            "This invite has expired. Ask the sender to re-send it.",
+        )
+        return redirect("core:dashboard")
 
     if not request.user.is_authenticated:
         request.session["pending_invite_token"] = token
@@ -69,21 +83,17 @@ def accept(request, token):
         return redirect("accounts:login")
 
     if request.user.email.lower() != inv.invitee_email.lower():
-        # Soft check: the invite was for a specific email
-        messages.warning(
+        # Hard reject: invalidate the invite and require a fresh send. This
+        # prevents a recipient from forwarding the link to someone else.
+        inv.mark_declined()
+        messages.error(
             request,
-            "This invite was sent to a different email. Ask the inviter to re-send "
-            "it to the address on your Knock-Knock account.",
+            "This invite was sent to a different email and is no longer valid. "
+            "Ask the sender to re-send it to the address on your Knock-Knock account.",
         )
         return redirect("core:dashboard")
 
-    inv.accept(request.user)
-    Collaborator.objects.get_or_create(
-        user=request.user,
-        kind=inv.kind,
-        target_id=inv.target_id,
-        defaults={"permission": inv.permission},
-    )
+    _grant_access(inv, request.user)
     messages.success(request, "You're in! Welcome to the collaboration. 🎉")
     target = inv.get_target()
     if target is None:

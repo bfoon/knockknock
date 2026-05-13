@@ -271,7 +271,51 @@
   /* ─── Question type + picture/puzzle choice editor ─── */
   .kk-question-type-help { color:#94a3b8; font-size:.82rem; margin-top:.35rem; }
   .kk-choice-editor-row { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:16px; padding:1rem; }
-  .kk-choice-editor-row img { max-width:110px; max-height:84px; object-fit:cover; border-radius:12px; border:1px solid rgba(255,255,255,.12); }
+  /* Thumbnail of an already-uploaded choice image.
+     The <img> is wrapped in .kk-choice-thumb so we can guarantee a fixed
+     box regardless of the source image's aspect ratio. !important keeps
+     it bulletproof against any future styles, Bootstrap utilities, or
+     stray inline width/height attributes on the <img>. */
+  .kk-choice-thumb {
+    display: block !important;
+    width: 110px !important;
+    height: 84px !important;
+    max-width: 100% !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(255,255,255,.12) !important;
+    overflow: hidden !important;
+    background: rgba(255,255,255,.04) !important;
+    flex: 0 0 110px !important;
+  }
+  .kk-choice-thumb img {
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    object-fit: cover !important;
+    object-position: center !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  /* Belt-and-braces: cap ANY image inside the editor row at the
+     thumbnail size, even if it somehow renders without the wrapper. */
+  .kk-choice-editor-row .kk-choice-image-col img,
+  .kk-choice-editor-row img {
+    max-width: 110px !important;
+    max-height: 84px !important;
+    width: auto;
+    height: auto;
+    object-fit: cover;
+    border-radius: 12px;
+  }
+  /* And cap any image elsewhere on the page at the column width too,
+     so a question-level upload preview (if added later) can't break the
+     form layout. */
+  .kk-card img {
+    max-width: 100%;
+    height: auto;
+  }
   .kk-choice-help-box { border-radius:16px; padding:.85rem 1rem; background:rgba(34,211,238,.08); border:1px solid rgba(34,211,238,.18); color:#cbd5e1; font-size:.9rem; margin-bottom:1rem; }
 </style>
 {% endblock %}
@@ -430,10 +474,14 @@
             <strong class="small text-secondary">Answer / Piece {{ forloop.counter }}</strong>
           </div>
           <div class="row g-2 align-items-end">
-            <div class="col-md-5"><label class="form-label small text-secondary">Text / Caption</label>{{ cf.text }}</div>
-            <div class="col-md-3 kk-picture-field kk-puzzle-field">
-              <label class="form-label small text-secondary">Image / Piece</label>{{ cf.image }}
-              {% if cf.instance.image %}<div class="mt-2"><img src="{{ cf.instance.image.url }}" alt=""></div>{% endif %}
+            <div class="col-md-5 kk-choice-text-col">
+              <label class="form-label small text-secondary kk-choice-text-label">Answer text</label>
+              {{ cf.text }}
+            </div>
+            <div class="col-md-4 kk-picture-field kk-puzzle-field kk-choice-image-col">
+              <label class="form-label small text-secondary kk-choice-image-label">Image</label>
+              {{ cf.image }}
+              {% if cf.instance.image %}<div class="kk-choice-thumb mt-2" style="display:block; width:140px; height:100px; max-width:140px; max-height:100px; overflow:hidden; border-radius:12px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.04); flex:0 0 140px;"><img src="{{ cf.instance.image.url }}" alt="" style="display:block; width:140px; height:100px; max-width:140px; max-height:100px; object-fit:cover; object-position:center; margin:0; padding:0; border:0;"></div>{% endif %}
             </div>
             <div class="col-md-2 kk-correct-field"><label class="form-label small text-secondary">Correct</label><div>{{ cf.is_correct }}</div></div>
             <div class="col-md-2 kk-puzzle-field"><label class="form-label small text-secondary">Correct position</label>{{ cf.correct_position }}</div>
@@ -651,10 +699,44 @@
 
   function syncChoiceFields() {
     const qtype = questionTypeSelect ? questionTypeSelect.value : "mcq";
-    document.querySelectorAll(".kk-picture-field").forEach(el => { el.style.display = (qtype === "picture_choice" || qtype === "puzzle") ? "" : "none"; });
-    document.querySelectorAll(".kk-puzzle-field").forEach(el => { el.style.display = (qtype === "puzzle") ? "" : "none"; });
-    document.querySelectorAll(".kk-correct-field").forEach(el => { el.style.display = (qtype === "puzzle") ? "none" : ""; });
-    document.querySelectorAll(".kk-classic-field").forEach(el => { el.style.display = (qtype === "mcq") ? "" : "none"; });
+
+    // Decide visibility per-element. Some elements (notably the image
+    // column) carry BOTH .kk-picture-field and .kk-puzzle-field — running
+    // two independent passes would let the second pass clobber the first
+    // (the old bug: picture_choice was hiding the upload field). Compute
+    // the final answer once per element.
+    document.querySelectorAll(
+      ".kk-picture-field, .kk-puzzle-field, .kk-correct-field, .kk-classic-field"
+    ).forEach(el => {
+      const isPic     = el.classList.contains("kk-picture-field");
+      const isPuzzle  = el.classList.contains("kk-puzzle-field");
+      const isCorrect = el.classList.contains("kk-correct-field");
+      const isClassic = el.classList.contains("kk-classic-field");
+
+      let show = false;
+      // An element shows if ANY of its role-classes are active for this qtype.
+      if (isPic     && (qtype === "picture_choice" || qtype === "puzzle")) show = true;
+      if (isPuzzle  && qtype === "puzzle") show = true;
+      if (isCorrect && qtype !== "puzzle") show = true;
+      if (isClassic && qtype === "mcq") show = true;
+
+      el.style.display = show ? "" : "none";
+    });
+
+    // Re-label the first column so its purpose is obvious per question type.
+    document.querySelectorAll(".kk-choice-text-label").forEach(el => {
+      el.textContent =
+        qtype === "picture_choice" ? "Caption (optional)" :
+        qtype === "puzzle"         ? "Piece label"        :
+                                     "Answer text";
+    });
+    document.querySelectorAll(".kk-choice-image-label").forEach(el => {
+      el.textContent =
+        qtype === "picture_choice" ? "Picture" :
+        qtype === "puzzle"         ? "Piece image" :
+                                     "Image";
+    });
+
     if (choiceHelp) {
       if (qtype === "picture_choice") choiceHelp.innerHTML = "<strong>Picture choice:</strong> upload one image per answer, add a caption if needed, and tick the correct picture. The presenter will show the pictures in the chart area instead of a bar chart.";
       else if (qtype === "puzzle") choiceHelp.innerHTML = "<strong>Puzzle:</strong> each row is one puzzle piece. Set Correct position as 1, 2, 3, 4... The presenter will show the first winner and avatar instead of a bar chart.";

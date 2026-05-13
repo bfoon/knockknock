@@ -141,45 +141,92 @@
     specialEl.innerHTML = html;
   };
 
-  // ───────── flow (simplified Sankey) ─────────
-  // We render a left-to-right stacked column of choices weighted by votes.
-  // True multi-stage Sankey isn't worth the complexity for this use case;
-  // a "vote river" already communicates relative volume effectively.
+  // ───────── flow (vote ribbons) ─────────
+  // Left-side "all votes" pill feeds proportional ribbons into right-side
+  // outputs. The previous implementation tried a single SVG path per choice
+  // with stroke-width = segment height, but that produced overlapping
+  // straight lines on most container shapes. The version below draws true
+  // cubic-bezier ribbons whose vertical positions are computed in viewBox
+  // coordinates, so it scales properly.
   RENDERERS.flow = function (ctx) {
     const { question, tallyData, specialEl } = ctx;
     const { rows, total } = aggregateChoices(question, tallyData);
     if (!total) return emptyState(specialEl, "Waiting for votes…");
     rows.sort((a, b) => b.n - a.n);
 
-    const palette = ["#22d3ee", "#7c3aed", "#fb7185", "#fbbf24", "#a3e635", "#f97316", "#8b5cf6", "#06b6d4"];
-    const segs = rows.map((r, i) => ({
-      ...r,
-      color: palette[i % palette.length],
-      h: Math.max(2, (r.n / total) * 100),
-    }));
+    const palette = ["#22d3ee", "#7c3aed", "#fb7185", "#fbbf24", "#a3e635", "#f97316", "#06b6d4", "#8b5cf6"];
+
+    // viewBox: 1000 wide × 600 tall. Source occupies y ∈ [80, 520] on the
+    // left; each ribbon's right end is positioned by its cumulative share.
+    const VBW = 1000, VBH = 600;
+    const srcX = 60, sinkX = 720, sinkLabelX = 760;
+    const srcTop = 80, srcBot = 520;
+    const srcMid = (srcTop + srcBot) / 2;
+    const srcSpan = srcBot - srcTop;
+
+    // Each ribbon spans the same height as its share of the source on both
+    // sides — visually communicates "weight".
+    let cumul = 0;
+    const ribbons = rows.map((r, i) => {
+      const share = r.n / total;
+      const segH = share * srcSpan;
+      const sourceY = srcTop + cumul + segH / 2;
+      const sinkY = srcTop + cumul + segH / 2; // same vertical for clean lanes
+      cumul += segH;
+      const color = palette[i % palette.length];
+
+      // Cubic bezier between source point and sink point.
+      const c1x = srcX + (sinkX - srcX) * 0.45;
+      const c2x = srcX + (sinkX - srcX) * 0.55;
+
+      return {
+        path: `M ${srcX} ${sourceY.toFixed(2)} C ${c1x.toFixed(2)} ${sourceY.toFixed(2)}, ${c2x.toFixed(2)} ${sinkY.toFixed(2)}, ${sinkX} ${sinkY.toFixed(2)}`,
+        strokeW: Math.max(2, segH),
+        color, r, sinkY, share,
+      };
+    });
+
+    const ribbonSvg = ribbons.map((rb, i) => `
+      <path d="${rb.path}" stroke="${rb.color}" stroke-width="${rb.strokeW.toFixed(1)}"
+            fill="none" stroke-linecap="round" opacity="0.78"
+            style="animation: kkFlowIn .8s cubic-bezier(.4,0,.2,1) both; animation-delay:${i * 90}ms;
+                   stroke-dasharray:${(rb.strokeW * 30).toFixed(0)};
+                   stroke-dashoffset:${(rb.strokeW * 30).toFixed(0)};"/>`).join("");
+
+    const sinkLabels = ribbons.map((rb, i) => `
+      <g transform="translate(${sinkLabelX}, ${rb.sinkY.toFixed(2)})">
+        <rect x="0" y="-18" rx="9" ry="9" width="220" height="36"
+              fill="rgba(255,255,255,.06)" stroke="${rb.color}" stroke-width="1"/>
+        <circle cx="14" cy="0" r="6" fill="${rb.color}"/>
+        <text x="28" y="0" dominant-baseline="middle"
+              font-family="'Clash Display',system-ui,sans-serif" font-weight="700"
+              font-size="14" fill="#f8fafc">${escapeHtml(rb.r.text.slice(0, 18))}</text>
+        <text x="210" y="0" dominant-baseline="middle" text-anchor="end"
+              font-family="'Clash Display',system-ui,sans-serif" font-weight="900"
+              font-size="14" fill="#f8fafc">${rb.r.n}</text>
+      </g>`).join("");
 
     specialEl.innerHTML = `
       <div class="kk-extra kk-flow">
-        <div class="kk-flow-stage" aria-label="Vote distribution flow">
-          <div class="kk-flow-source">All votes <span>${total}</span></div>
-          <svg class="kk-flow-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-            ${(() => {
-              let y = 0;
-              return segs.map(s => {
-                const path = `M0,50 C30,50 30,${y + s.h / 2} 70,${y + s.h / 2} L100,${y + s.h / 2}`;
-                y += s.h;
-                return `<path d="${path}" stroke="${s.color}" stroke-width="${Math.max(1, s.h)}" fill="none" opacity=".85"/>`;
-              }).join("");
-            })()}
-          </svg>
-          <ol class="kk-flow-sink">
-            ${segs.map(s => `
-              <li style="--h:${s.h}%; --c:${s.color}" title="${escapeHtml(s.text)}">
-                <span class="kk-flow-bar"></span>
-                <span class="kk-flow-lbl">${escapeHtml(s.text)} <strong>${s.n}</strong></span>
-              </li>`).join("")}
-          </ol>
-        </div>
+        <svg viewBox="0 0 ${VBW} ${VBH}" preserveAspectRatio="xMidYMid meet" class="kk-flow-svg">
+          <defs>
+            <linearGradient id="kkFlowSrc" x1="0" x2="1" y1="0" y2="0">
+              <stop offset="0" stop-color="#7c3aed"/>
+              <stop offset="1" stop-color="#22d3ee"/>
+            </linearGradient>
+          </defs>
+          <rect x="${srcX - 36}" y="${srcTop}" width="36" height="${srcSpan}"
+                rx="14" fill="url(#kkFlowSrc)" opacity="0.85"/>
+          <text x="${srcX - 18}" y="${(srcTop - 22)}" text-anchor="middle"
+                font-family="'Clash Display',system-ui,sans-serif" font-weight="900"
+                font-size="22" fill="#f8fafc">${total}</text>
+          <text x="${srcX - 18}" y="${(srcBot + 30)}" text-anchor="middle"
+                font-family="'Clash Display',system-ui,sans-serif"
+                font-size="12" fill="rgba(248,250,252,.65)"
+                letter-spacing="2">VOTES</text>
+          ${ribbonSvg}
+          ${sinkLabels}
+        </svg>
       </div>`;
   };
 
@@ -213,45 +260,139 @@
   };
 
   // ───────── bubble ─────────
-  // Same data as word cloud, but rendered as floating circles. Layout is a
-  // pseudo-physics packing: place largest first, then smaller ones around.
+  // Same data as word cloud, but rendered as floating circles.
+  //
+  // Why this is SVG, not CSS: the old version absolutely-positioned <div>s
+  // with `width: r%` + `aspect-ratio: 1/1`. That produces circles whose
+  // diameter is `r% of container width`, but the *vertical* layout was being
+  // packed in a 60-unit space. On a tall presenter screen the bubbles
+  // overlapped; on a short one they overflowed; on every screen the "circles"
+  // were actually ellipses because the aspect ratio of the field ≠ 1:1.
+  //
+  // The SVG below uses a single viewBox so the packing math holds at any
+  // container size, and we run the packer against the *actual* aspect ratio
+  // of specialEl so bubbles fill the area properly.
   RENDERERS.bubble = function (ctx) {
     const { tallyData, specialEl } = ctx;
     const words = collectWords(tallyData);
     if (!words.length) return emptyState(specialEl, "Waiting for responses…");
 
-    // Layout: greedy circle packing on a 100×60 canvas (vw/vh fractions).
-    const W = 100, H = 60;
-    const top = words[0].n;
-    const palette = ["#22d3ee", "#7c3aed", "#fb7185", "#fbbf24", "#a3e635", "#f97316"];
-    const placed = [];
+    // Measure the host so we can pack into the real aspect ratio.
+    // Fall back to a reasonable default if the element isn't laid out yet.
+    const hostW = specialEl.clientWidth || 1200;
+    const hostH = specialEl.clientHeight || 600;
+    const aspect = hostW / hostH;
 
-    words.slice(0, 40).forEach((w, i) => {
-      const r = Math.max(2.2, Math.min(11, 2.5 + (w.n / top) * 8.5));
-      // Try ~80 random positions; keep the first that doesn't overlap.
-      for (let attempt = 0; attempt < 80; attempt++) {
-        const cx = r + Math.random() * (W - 2 * r);
-        const cy = r + Math.random() * (H - 2 * r);
-        const ok = placed.every(p => {
-          const dx = p.cx - cx, dy = p.cy - cy;
-          return Math.sqrt(dx * dx + dy * dy) > p.r + r + 0.6;
-        });
-        if (ok) {
-          placed.push({ cx, cy, r, w, color: palette[i % palette.length] });
-          break;
+    // viewBox: 1000 units wide, height derived from aspect so 1 unit ≈
+    // 1 unit on screen (so we can reason about pixel spacing).
+    const VBW = 1000;
+    const VBH = Math.round(VBW / aspect);
+
+    const top = words[0].n;
+    const palette = ["#22d3ee", "#7c3aed", "#fb7185", "#fbbf24", "#a3e635", "#f97316", "#06b6d4", "#8b5cf6"];
+
+    // Radius scale: largest bubble takes ~22% of the shortest side; smallest
+    // ~4%. Square-root scaling keeps small values readable.
+    const shortSide = Math.min(VBW, VBH);
+    const rMax = shortSide * 0.22;
+    const rMin = shortSide * 0.04;
+    const radiusFor = (n) => rMin + (rMax - rMin) * Math.sqrt(n / top);
+
+    // Greedy packing — try the centre first (largest bubble pinned there),
+    // then for each subsequent word try ~300 random positions and pick the
+    // first one that doesn't overlap an already-placed bubble.
+    const placed = [];
+    const items = words.slice(0, 50);
+
+    items.forEach((w, i) => {
+      const r = radiusFor(w.n);
+      let cx, cy, ok = false;
+
+      // First bubble goes near centre.
+      if (i === 0) {
+        cx = VBW / 2;
+        cy = VBH / 2;
+        ok = true;
+      } else {
+        // Try expanding rings around the centre — gives a tighter, more
+        // "bubbly" cluster than pure-random placement, which scatters.
+        for (let attempt = 0; attempt < 400 && !ok; attempt++) {
+          // Spiral outward: each attempt nudges the search radius up.
+          const searchR = (attempt / 400) * Math.min(VBW, VBH) * 0.55;
+          const angle = Math.random() * Math.PI * 2;
+          cx = VBW / 2 + Math.cos(angle) * searchR;
+          cy = VBH / 2 + Math.sin(angle) * searchR;
+
+          // Keep inside the box (with a small padding).
+          if (cx - r < 4 || cx + r > VBW - 4) continue;
+          if (cy - r < 4 || cy + r > VBH - 4) continue;
+
+          ok = placed.every(p => {
+            const dx = p.cx - cx, dy = p.cy - cy;
+            return Math.sqrt(dx * dx + dy * dy) > p.r + r + 3;
+          });
         }
       }
+
+      if (ok) placed.push({ cx, cy, r, w, color: palette[i % palette.length] });
     });
 
-    const bubbles = placed.map((p, i) => `
-      <div class="kk-bubble"
-           style="left:${p.cx}%; top:${(p.cy / H) * 100}%; width:${p.r * 2}%;
-                  aspect-ratio:1/1; background:${p.color}; animation-delay:${i * 40}ms;">
-        <span class="kk-bubble-text">${escapeHtml(p.w.word)}</span>
-        <span class="kk-bubble-n">${p.w.n}</span>
-      </div>`).join("");
+    // Build the SVG. Each bubble = circle + word label + count.
+    // Font size scales with the bubble radius so big bubbles get readable
+    // labels and tiny ones don't overflow.
+    const circles = placed.map((p, i) => {
+      const labelSize = Math.max(11, Math.min(p.r * 0.42, p.r * 0.5));
+      const countSize = Math.max(9, labelSize * 0.55);
+      // Truncate very long words to fit inside the circle. Roughly:
+      // a glyph at fontSize Y is ~0.55Y wide, so chars-that-fit = 1.6r / (0.55*Y).
+      const maxChars = Math.max(3, Math.floor((p.r * 1.6) / (labelSize * 0.55)));
+      const label = p.w.word.length > maxChars
+        ? p.w.word.slice(0, maxChars - 1) + "…"
+        : p.w.word;
 
-    specialEl.innerHTML = `<div class="kk-extra kk-bubble-field">${bubbles}</div>`;
+      return `
+        <g class="kk-bubble-g" style="animation-delay:${i * 50}ms; transform-origin:${p.cx}px ${p.cy}px;">
+          <circle cx="${p.cx}" cy="${p.cy}" r="${p.r}"
+                  fill="${p.color}"
+                  filter="url(#kkBubbleShadow)"
+                  opacity="0.92"/>
+          <circle cx="${p.cx}" cy="${p.cy - p.r * 0.35}" r="${p.r * 0.78}"
+                  fill="url(#kkBubbleSheen)" opacity="0.55"
+                  pointer-events="none"/>
+          <text x="${p.cx}" y="${p.cy}" text-anchor="middle"
+                dominant-baseline="middle"
+                font-family="'Clash Display', system-ui, sans-serif"
+                font-weight="800"
+                font-size="${labelSize}"
+                fill="rgba(15,23,42,.92)">${escapeHtml(label)}</text>
+          <text x="${p.cx}" y="${p.cy + labelSize * 0.85}" text-anchor="middle"
+                dominant-baseline="middle"
+                font-family="'Clash Display', system-ui, sans-serif"
+                font-weight="700"
+                font-size="${countSize}"
+                fill="rgba(15,23,42,.65)">${p.w.n}</text>
+        </g>`;
+    }).join("");
+
+    specialEl.innerHTML = `
+      <div class="kk-extra kk-bubble-field">
+        <svg viewBox="0 0 ${VBW} ${VBH}" preserveAspectRatio="xMidYMid meet" class="kk-bubble-svg">
+          <defs>
+            <radialGradient id="kkBubbleSheen" cx="50%" cy="35%" r="55%">
+              <stop offset="0%"  stop-color="#ffffff" stop-opacity="0.85"/>
+              <stop offset="60%" stop-color="#ffffff" stop-opacity="0.10"/>
+              <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+            </radialGradient>
+            <filter id="kkBubbleShadow" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+              <feOffset dx="0" dy="6" result="off"/>
+              <feComponentTransfer><feFuncA type="linear" slope="0.35"/></feComponentTransfer>
+              <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+          ${circles}
+        </svg>
+      </div>`;
   };
 
   // ───────── frequency_list ─────────
@@ -572,9 +713,10 @@
 
   // ───────── heatmap ─────────
   // For pin_image, pin_map, two_by_two — we don't have x/y in the regular
-  // tally counts, so we draw a 12×8 density grid driven by tallyData.points
-  // if the server sends it; otherwise show a "needs coordinates" notice.
-  // Also covers matrix questions when chart=heatmap by using matrix tally.
+  // tally counts, so we draw a density grid driven by tallyData.points
+  // if the server sends it. With no image background and no points yet,
+  // we render a faded grid + "Waiting for pins…" message rather than an
+  // empty box.
   RENDERERS.heatmap = function (ctx) {
     const { question, tallyData, specialEl } = ctx;
     const qtype = (question && question.type) || "";
@@ -584,8 +726,31 @@
     }
 
     const points = (tallyData && Array.isArray(tallyData.points)) ? tallyData.points : [];
+    const imgUrl = (question && question.image_url) || "";
+
     if (!points.length) {
-      return emptyState(specialEl, "Waiting for pins…");
+      // Show a faded grid so the chart area isn't just a blank rectangle.
+      // This communicates "this *is* a heatmap, just no data yet".
+      const placeholderCells = Array.from({ length: 14 * 9 }, (_, i) => {
+        const r = Math.floor(i / 14);
+        const c = i % 14;
+        return `<div class="kk-heat-empty-cell" style="
+          left:${(c / 14) * 100}%; top:${(r / 9) * 100}%;
+          width:${100 / 14}%; height:${100 / 9}%;
+        "></div>`;
+      }).join("");
+      const bg = imgUrl
+        ? `background:#000 center/contain no-repeat url('${imgUrl.replace(/'/g, "%27")}');`
+        : `background: linear-gradient(135deg, #0f172a, #1e293b);`;
+      specialEl.innerHTML = `
+        <div class="kk-extra kk-heat kk-heat-waiting" style="${bg}">
+          ${placeholderCells}
+          <div class="kk-heat-waiting-msg">
+            <div class="kk-heat-waiting-emoji">📍</div>
+            <div>Waiting for pins…</div>
+          </div>
+        </div>`;
+      return;
     }
 
     const cols = 14, rows = 9;
@@ -598,7 +763,6 @@
     });
     const top = Math.max(1, ...grid.flat());
 
-    const imgUrl = (question && question.image_url) || "";
     const bg = imgUrl
       ? `background:#000 center/contain no-repeat url('${imgUrl.replace(/'/g, "%27")}');`
       : `background: linear-gradient(135deg, #0f172a, #1e293b);`;
@@ -870,6 +1034,536 @@
     specialEl.innerHTML = `<div class="kk-extra kk-gbar"><div class="kk-gbar-grid">${cols}</div></div>`;
   };
 
+  // ───────── rounded_bar / gradient_bar ─────────
+  // These are stylistic variants of `column` — same vertical bars but with
+  // different fills. Falling back to Chart.js loses the visual identity the
+  // picker promised, so we render them here with the column scaffold and
+  // a slightly different look.
+  RENDERERS.rounded_bar = function (ctx) {
+    return renderColumnVariant(ctx, "rounded");
+  };
+  RENDERERS.gradient_bar = function (ctx) {
+    return renderColumnVariant(ctx, "gradient");
+  };
+
+  function renderColumnVariant(ctx, variant) {
+    const { question, tallyData, specialEl } = ctx;
+    const { rows, total } = aggregateChoices(question, tallyData);
+    if (!total) return emptyState(specialEl, "Waiting for responses…");
+
+    const top = Math.max(1, ...rows.map(r => r.n));
+    const palette = ["#22d3ee", "#7c3aed", "#fb7185", "#fbbf24", "#a3e635", "#f97316", "#06b6d4"];
+
+    const cols = rows.map((r, i) => {
+      const c = palette[i % palette.length];
+      return `
+      <div class="kk-col-col kk-col-${variant}" style="--c:${c}; --d:${i * 50}ms; --h:${(r.n / top) * 100}%">
+        <div class="kk-col-fill">
+          <span class="kk-col-n">${r.n}</span>
+        </div>
+        <div class="kk-col-lbl" title="${escapeHtml(r.text)}">${escapeHtml(r.text)}</div>
+        <div class="kk-col-pct">${Math.round((r.n / total) * 100)}%</div>
+      </div>`;
+    }).join("");
+
+    specialEl.innerHTML = `<div class="kk-extra kk-col-chart"><div class="kk-col-grid">${cols}</div></div>`;
+  }
+
+  // ───────── column ─────────
+  // Like grouped_bar but with the count inside the bar instead of above,
+  // and a flat baseline. Closer in feel to a classic "column chart".
+  RENDERERS.column = function (ctx) {
+    const { question, tallyData, specialEl } = ctx;
+    const { rows, total } = aggregateChoices(question, tallyData);
+    if (!total) return emptyState(specialEl, "Waiting for responses…");
+
+    const top = Math.max(1, ...rows.map(r => r.n));
+    const palette = ["#22d3ee", "#7c3aed", "#fb7185", "#fbbf24", "#a3e635", "#f97316", "#06b6d4"];
+
+    const cols = rows.map((r, i) => `
+      <div class="kk-col-col" style="--c:${palette[i % palette.length]}; --d:${i * 50}ms; --h:${(r.n / top) * 100}%">
+        <div class="kk-col-fill">
+          <span class="kk-col-n">${r.n}</span>
+        </div>
+        <div class="kk-col-lbl" title="${escapeHtml(r.text)}">${escapeHtml(r.text)}</div>
+        <div class="kk-col-pct">${Math.round((r.n / total) * 100)}%</div>
+      </div>`).join("");
+
+    specialEl.innerHTML = `<div class="kk-extra kk-col-chart"><div class="kk-col-grid">${cols}</div></div>`;
+  };
+
+  // ───────── lollipop ─────────
+  // Skinny vertical stick with a fat dot on top. Reads cleanly even with
+  // many categories because the dot anchors the eye to the value.
+  RENDERERS.lollipop = function (ctx) {
+    const { question, tallyData, specialEl } = ctx;
+    const { rows, total } = aggregateChoices(question, tallyData);
+    if (!total) return emptyState(specialEl, "Waiting for responses…");
+
+    const top = Math.max(1, ...rows.map(r => r.n));
+    const palette = ["#22d3ee", "#7c3aed", "#fb7185", "#fbbf24", "#a3e635", "#f97316", "#06b6d4"];
+
+    const pops = rows.map((r, i) => `
+      <div class="kk-pop-col" style="--c:${palette[i % palette.length]}; --d:${i * 60}ms; --h:${(r.n / top) * 100}%">
+        <span class="kk-pop-n">${r.n}</span>
+        <span class="kk-pop-dot"></span>
+        <span class="kk-pop-stick"></span>
+        <span class="kk-pop-lbl">${escapeHtml(r.text)}</span>
+      </div>`).join("");
+
+    specialEl.innerHTML = `<div class="kk-extra kk-pop"><div class="kk-pop-grid">${pops}</div></div>`;
+  };
+
+  // ───────── bubble_count ─────────
+  // One bubble per choice, sized by count. Different from `bubble` (word
+  // cloud) — uses the question's actual choices, not free-text responses.
+  RENDERERS.bubble_count = function (ctx) {
+    const { question, tallyData, specialEl } = ctx;
+    const { rows, total } = aggregateChoices(question, tallyData);
+    if (!total) return emptyState(specialEl, "Waiting for responses…");
+
+    const hostW = specialEl.clientWidth || 1200;
+    const hostH = specialEl.clientHeight || 600;
+    const aspect = hostW / hostH;
+    const VBW = 1000;
+    const VBH = Math.round(VBW / aspect);
+
+    const top = Math.max(1, ...rows.map(r => r.n));
+    const palette = ["#22d3ee", "#7c3aed", "#fb7185", "#fbbf24", "#a3e635", "#f97316", "#06b6d4", "#8b5cf6"];
+
+    const shortSide = Math.min(VBW, VBH);
+    const rMax = shortSide * 0.24;
+    const rMin = shortSide * 0.08;
+
+    // Arrange bubbles in a single horizontal row if there are few, else
+    // wrap into a centred cluster. Force-directed would be nicer but is
+    // overkill for ≤10 choices.
+    const placed = [];
+    const radii = rows.map(r => rMin + (rMax - rMin) * Math.sqrt(r.n / top));
+    const totalW = radii.reduce((a, r) => a + 2 * r + 16, 0);
+
+    if (totalW < VBW * 0.95) {
+      // Single row, centred.
+      let x = (VBW - totalW) / 2;
+      radii.forEach((r, i) => {
+        placed.push({ cx: x + r, cy: VBH / 2, r, row: rows[i], color: palette[i % palette.length] });
+        x += 2 * r + 16;
+      });
+    } else {
+      // Spiral packing for many choices.
+      radii.forEach((r, i) => {
+        let cx, cy, ok = false;
+        if (i === 0) { cx = VBW / 2; cy = VBH / 2; ok = true; }
+        else {
+          for (let attempt = 0; attempt < 400 && !ok; attempt++) {
+            const searchR = (attempt / 400) * Math.min(VBW, VBH) * 0.55;
+            const angle = Math.random() * Math.PI * 2;
+            cx = VBW / 2 + Math.cos(angle) * searchR;
+            cy = VBH / 2 + Math.sin(angle) * searchR;
+            if (cx - r < 4 || cx + r > VBW - 4 || cy - r < 4 || cy + r > VBH - 4) continue;
+            ok = placed.every(p => Math.hypot(p.cx - cx, p.cy - cy) > p.r + r + 4);
+          }
+        }
+        if (ok) placed.push({ cx, cy, r, row: rows[i], color: palette[i % palette.length] });
+      });
+    }
+
+    const circles = placed.map((p, i) => {
+      const labelSize = Math.max(11, Math.min(p.r * 0.32, p.r * 0.4));
+      const countSize = Math.max(14, p.r * 0.55);
+      const maxChars = Math.max(3, Math.floor((p.r * 1.7) / (labelSize * 0.55)));
+      const label = p.row.text.length > maxChars
+        ? p.row.text.slice(0, maxChars - 1) + "…"
+        : p.row.text;
+      return `
+        <g class="kk-bubble-g" style="animation-delay:${i * 70}ms; transform-origin:${p.cx}px ${p.cy}px;">
+          <circle cx="${p.cx}" cy="${p.cy}" r="${p.r}" fill="${p.color}" filter="url(#kkBubbleShadow)" opacity="0.92"/>
+          <circle cx="${p.cx}" cy="${p.cy - p.r * 0.35}" r="${p.r * 0.78}" fill="url(#kkBubbleSheen)" opacity="0.55"/>
+          <text x="${p.cx}" y="${p.cy - countSize * 0.3}" text-anchor="middle" dominant-baseline="middle"
+                font-family="'Clash Display', system-ui, sans-serif" font-weight="900"
+                font-size="${countSize}" fill="rgba(15,23,42,.95)">${p.row.n}</text>
+          <text x="${p.cx}" y="${p.cy + countSize * 0.55}" text-anchor="middle" dominant-baseline="middle"
+                font-family="'Clash Display', system-ui, sans-serif" font-weight="700"
+                font-size="${labelSize}" fill="rgba(15,23,42,.75)">${escapeHtml(label)}</text>
+        </g>`;
+    }).join("");
+
+    specialEl.innerHTML = `
+      <div class="kk-extra kk-bubble-field">
+        <svg viewBox="0 0 ${VBW} ${VBH}" preserveAspectRatio="xMidYMid meet" class="kk-bubble-svg">
+          <defs>
+            <radialGradient id="kkBubbleSheen" cx="50%" cy="35%" r="55%">
+              <stop offset="0%"  stop-color="#ffffff" stop-opacity="0.85"/>
+              <stop offset="60%" stop-color="#ffffff" stop-opacity="0.10"/>
+              <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+            </radialGradient>
+            <filter id="kkBubbleShadow" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+              <feOffset dx="0" dy="6" result="off"/>
+              <feComponentTransfer><feFuncA type="linear" slope="0.35"/></feComponentTransfer>
+              <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+          ${circles}
+        </svg>
+      </div>`;
+  };
+
+  // ───────── treemap ─────────
+  // Squarified treemap. Bigger choices get bigger rectangles. We use a
+  // simple recursive split that alternates horizontal/vertical based on
+  // which dimension is currently longer (a decent approximation of the
+  // proper squarified algorithm without the complexity).
+  RENDERERS.treemap = function (ctx) {
+    const { question, tallyData, specialEl } = ctx;
+    const { rows, total } = aggregateChoices(question, tallyData);
+    if (!total) return emptyState(specialEl, "Waiting for responses…");
+
+    rows.sort((a, b) => b.n - a.n);
+    const palette = ["#22d3ee", "#7c3aed", "#fb7185", "#fbbf24", "#a3e635", "#f97316", "#06b6d4", "#8b5cf6"];
+
+    // Recursive split. `box` = {x, y, w, h}, `items` = sorted desc.
+    function layout(items, box, acc) {
+      if (!items.length) return;
+      if (items.length === 1) {
+        acc.push({ ...box, item: items[0] });
+        return;
+      }
+      const sumN = items.reduce((a, r) => a + r.n, 0);
+      // Place items into the first group until they cover ~half the total,
+      // recurse on each half with the matching slice of the box.
+      let cumul = 0, splitAt = 0;
+      for (let i = 0; i < items.length - 1; i++) {
+        cumul += items[i].n;
+        if (cumul >= sumN / 2) { splitAt = i + 1; break; }
+      }
+      if (splitAt === 0) splitAt = 1;
+
+      const firstSum = items.slice(0, splitAt).reduce((a, r) => a + r.n, 0);
+      const ratio = firstSum / sumN;
+
+      if (box.w >= box.h) {
+        const w1 = box.w * ratio;
+        layout(items.slice(0, splitAt), { x: box.x, y: box.y, w: w1, h: box.h }, acc);
+        layout(items.slice(splitAt),    { x: box.x + w1, y: box.y, w: box.w - w1, h: box.h }, acc);
+      } else {
+        const h1 = box.h * ratio;
+        layout(items.slice(0, splitAt), { x: box.x, y: box.y, w: box.w, h: h1 }, acc);
+        layout(items.slice(splitAt),    { x: box.x, y: box.y + h1, w: box.w, h: box.h - h1 }, acc);
+      }
+    }
+
+    const tiles = [];
+    layout(rows, { x: 0, y: 0, w: 100, h: 100 }, tiles);
+
+    const cells = tiles.map((t, i) => {
+      const color = palette[rows.indexOf(t.item) % palette.length];
+      const pct = Math.round((t.item.n / total) * 100);
+      // Hide label text when the tile is too small to read it.
+      const small = t.w < 12 || t.h < 9;
+      return `
+        <div class="kk-tree-tile" style="
+          left:${t.x}%; top:${t.y}%; width:${t.w}%; height:${t.h}%;
+          --c:${color}; --d:${i * 50}ms;
+        " title="${escapeHtml(t.item.text)} — ${t.item.n} (${pct}%)">
+          ${small ? "" : `
+            <div class="kk-tree-label">${escapeHtml(t.item.text)}</div>
+            <div class="kk-tree-n">${t.item.n}<small>${pct}%</small></div>`}
+        </div>`;
+    }).join("");
+
+    specialEl.innerHTML = `<div class="kk-extra kk-tree">${cells}</div>`;
+  };
+
+  // ───────── progress_bars ─────────
+  // Vertical stack of full-width horizontal bars, sorted descending.
+  // Reads great on a tall screen with many choices.
+  RENDERERS.progress_bars = function (ctx) {
+    const { question, tallyData, specialEl } = ctx;
+    const { rows, total } = aggregateChoices(question, tallyData);
+    if (!total) return emptyState(specialEl, "Waiting for responses…");
+
+    rows.sort((a, b) => b.n - a.n);
+    const top = rows[0].n || 1;
+    const palette = ["#22d3ee", "#7c3aed", "#fb7185", "#fbbf24", "#a3e635", "#f97316", "#06b6d4"];
+
+    const bars = rows.map((r, i) => `
+      <div class="kk-prog-row" style="--c:${palette[i % palette.length]}; --d:${i * 70}ms">
+        <div class="kk-prog-head">
+          <span class="kk-prog-lbl">${escapeHtml(r.text)}</span>
+          <span class="kk-prog-n">${r.n}<small>${Math.round((r.n / total) * 100)}%</small></span>
+        </div>
+        <div class="kk-prog-track">
+          <div class="kk-prog-fill" style="--w:${(r.n / top) * 100}%"></div>
+        </div>
+      </div>`).join("");
+
+    specialEl.innerHTML = `<div class="kk-extra kk-prog">${bars}</div>`;
+  };
+
+  // ───────── leaderboard ─────────
+  // Like ranked_bar but with podium emphasis on the top three and an arrow
+  // for movement. We don't track previous positions client-side, so the
+  // "trend" badge just shows position.
+  RENDERERS.leaderboard = function (ctx) {
+    const { question, tallyData, specialEl } = ctx;
+    const { rows, total } = aggregateChoices(question, tallyData);
+    if (!total) return emptyState(specialEl, "Waiting for the first vote…");
+
+    rows.sort((a, b) => b.n - a.n);
+    const top = rows[0].n || 1;
+    const trophies = ["🥇", "🥈", "🥉"];
+
+    const items = rows.map((r, i) => `
+      <li class="kk-lbd-row ${i < 3 ? "is-top" : ""}" style="--w:${(r.n / top) * 100}%; --d:${i * 80}ms">
+        <span class="kk-lbd-pos">
+          ${i < 3 ? `<span class="kk-lbd-trophy">${trophies[i]}</span>` : `<span class="kk-lbd-num">${i + 1}</span>`}
+        </span>
+        <div class="kk-lbd-body">
+          <div class="kk-lbd-name">${escapeHtml(r.text)}</div>
+          <div class="kk-lbd-bar"><span></span></div>
+        </div>
+        <div class="kk-lbd-score">${r.n}</div>
+      </li>`).join("");
+
+    specialEl.innerHTML = `<div class="kk-extra kk-lbd"><ol class="kk-lbd-list">${items}</ol></div>`;
+  };
+
+  // ───────── tags ─────────
+  // Like a word cloud but rendered as flat pill-shaped tags. Best for
+  // many small text answers where rotated giant words would overflow.
+  RENDERERS.tags = function (ctx) {
+    const { tallyData, specialEl } = ctx;
+    const words = collectWords(tallyData);
+    if (!words.length) return emptyState(specialEl, "Waiting for responses…");
+
+    const top = words[0].n;
+    const palette = ["#22d3ee", "#7c3aed", "#fb7185", "#fbbf24", "#a3e635", "#f97316", "#06b6d4"];
+    const pills = words.slice(0, 80).map((w, i) => {
+      const scale = 0.85 + (w.n / top) * 0.9; // 0.85 → 1.75
+      const color = palette[i % palette.length];
+      return `<span class="kk-tag" style="--c:${color}; font-size:${scale}rem; animation-delay:${i * 25}ms">
+        ${escapeHtml(w.word)}<span class="kk-tag-n">${w.n}</span>
+      </span>`;
+    }).join("");
+
+    specialEl.innerHTML = `<div class="kk-extra kk-tags">${pills}</div>`;
+  };
+
+  // ───────── open_list ─────────
+  // Alias for responses_list — sometimes used for `open` questions in the
+  // picker. Renders identically but exposed under both IDs.
+  RENDERERS.open_list = RENDERERS.responses_list;
+
+  // ───────── area / smooth_area ─────────
+  // Filled area chart for numeric distributions. Same data shape as
+  // `distribution` but rendered as a filled band rather than a bell curve.
+  RENDERERS.area = function (ctx) {
+    return renderAreaChart(ctx, false);
+  };
+  RENDERERS.smooth_area = function (ctx) {
+    return renderAreaChart(ctx, true);
+  };
+
+  function renderAreaChart(ctx, smooth) {
+    const { question, tallyData, specialEl } = ctx;
+    const { vals, min, max } = collectNumeric(question, tallyData);
+    if (!vals.length) return emptyState(specialEl, "Waiting for responses…");
+
+    const bins = 16;
+    const buckets = new Array(bins).fill(0);
+    const range = Math.max(1e-9, max - min);
+    vals.forEach(v => {
+      let i = Math.floor(((v - min) / range) * bins);
+      if (i >= bins) i = bins - 1;
+      if (i < 0) i = 0;
+      buckets[i]++;
+    });
+
+    let data = buckets.slice();
+    if (smooth) {
+      // 3-point moving average.
+      data = buckets.map((_, i) => {
+        const a = buckets[i - 1] || 0;
+        const b = buckets[i];
+        const c = buckets[i + 1] || 0;
+        return (a + 2 * b + c) / 4;
+      });
+    }
+    const top = Math.max(1, ...data);
+    const W = 100, H = 60;
+    const pts = data.map((b, i) => {
+      const x = (i / (bins - 1)) * W;
+      const y = H - (b / top) * (H * 0.85);
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    });
+    const path = smooth
+      ? `M 0,${H} L ${pts.join(" L ")} L ${W},${H} Z`
+      : `M 0,${H} L ${pts.join(" L ")} L ${W},${H} Z`;
+    // Note: native SVG quadratic smoothing would need explicit control
+    // points; the moving-average approximation above is visually fine.
+
+    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+
+    specialEl.innerHTML = `
+      <div class="kk-extra kk-dist">
+        <svg viewBox="0 0 100 60" preserveAspectRatio="none" class="kk-dist-svg">
+          <defs>
+            <linearGradient id="kkAreaGrad" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0" stop-color="#22d3ee" stop-opacity=".75"/>
+              <stop offset="1" stop-color="#7c3aed" stop-opacity=".15"/>
+            </linearGradient>
+          </defs>
+          <path d="${path}" fill="url(#kkAreaGrad)" stroke="#22d3ee" stroke-width=".7"/>
+        </svg>
+        <div class="kk-dist-stats">
+          <div><span>avg</span><strong>${avg.toFixed(avg % 1 === 0 ? 0 : 1)}</strong></div>
+          <div><span>min</span><strong>${Math.min(...vals)}</strong></div>
+          <div><span>max</span><strong>${Math.max(...vals)}</strong></div>
+          <div><span>n</span><strong>${vals.length}</strong></div>
+        </div>
+      </div>`;
+  }
+
+  // ───────── polar ─────────
+  // Pie-like but each slice has a different radius based on count. Best for
+  // small numbers of choices (≤8).
+  RENDERERS.polar = function (ctx) {
+    const { question, tallyData, specialEl } = ctx;
+    const { rows, total } = aggregateChoices(question, tallyData);
+    if (!total) return emptyState(specialEl, "Waiting for responses…");
+
+    const top = Math.max(1, ...rows.map(r => r.n));
+    const palette = ["#22d3ee", "#7c3aed", "#fb7185", "#fbbf24", "#a3e635", "#f97316", "#06b6d4", "#8b5cf6"];
+
+    const cx = 100, cy = 100, rMax = 88;
+    const n = rows.length || 1;
+    const sweep = (Math.PI * 2) / n;
+
+    const slices = rows.map((r, i) => {
+      const radius = rMax * Math.sqrt(r.n / top);
+      const a0 = -Math.PI / 2 + i * sweep;
+      const a1 = a0 + sweep;
+      const x0 = cx + Math.cos(a0) * radius;
+      const y0 = cy + Math.sin(a0) * radius;
+      const x1 = cx + Math.cos(a1) * radius;
+      const y1 = cy + Math.sin(a1) * radius;
+      const large = sweep > Math.PI ? 1 : 0;
+      const path = `M ${cx} ${cy} L ${x0.toFixed(2)} ${y0.toFixed(2)} A ${radius.toFixed(2)} ${radius.toFixed(2)} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)} Z`;
+      // Label position halfway along arc, slightly outside radius.
+      const aMid = a0 + sweep / 2;
+      const lx = cx + Math.cos(aMid) * (radius + 18);
+      const ly = cy + Math.sin(aMid) * (radius + 18);
+      const color = palette[i % palette.length];
+      return {
+        path, color, label: r.text, count: r.n, lx, ly, delay: i * 80,
+      };
+    });
+
+    const paths = slices.map(s => `
+      <path d="${s.path}" fill="${s.color}" fill-opacity="0.78"
+            stroke="rgba(255,255,255,.18)" stroke-width="0.8"
+            style="animation: kkPolarIn .5s cubic-bezier(.4,0,.2,1) both; animation-delay:${s.delay}ms;
+                   transform-origin:${cx}px ${cy}px;"/>`).join("");
+
+    const labels = slices.map(s => `
+      <text x="${s.lx.toFixed(1)}" y="${s.ly.toFixed(1)}" text-anchor="middle" dominant-baseline="middle"
+            font-family="'Clash Display', system-ui, sans-serif" font-weight="700"
+            font-size="9" fill="#f8fafc">${escapeHtml(s.label.slice(0, 16))}
+        <tspan x="${s.lx.toFixed(1)}" dy="11" font-size="8" fill="rgba(248,250,252,.65)">${s.count}</tspan>
+      </text>`).join("");
+
+    // Background guide rings.
+    const rings = [0.25, 0.5, 0.75, 1].map(r =>
+      `<circle cx="${cx}" cy="${cy}" r="${rMax * r}" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="0.5"/>`
+    ).join("");
+
+    specialEl.innerHTML = `
+      <div class="kk-extra kk-polar">
+        <svg viewBox="-10 -10 220 220" class="kk-polar-svg" preserveAspectRatio="xMidYMid meet">
+          ${rings}
+          ${paths}
+          ${labels}
+        </svg>
+      </div>`;
+  };
+
+  // ───────── radar ─────────
+  // Polygon connecting one vertex per choice. Best for ≤8 choices on a
+  // shared scale.
+  RENDERERS.radar = function (ctx) {
+    const { question, tallyData, specialEl } = ctx;
+    const { rows, total } = aggregateChoices(question, tallyData);
+    if (!total) return emptyState(specialEl, "Waiting for responses…");
+
+    const top = Math.max(1, ...rows.map(r => r.n));
+    const n = rows.length;
+    const cx = 100, cy = 100, rMax = 80;
+
+    const points = rows.map((r, i) => {
+      const a = -Math.PI / 2 + (i / n) * Math.PI * 2;
+      const radius = rMax * (r.n / top);
+      return { x: cx + Math.cos(a) * radius, y: cy + Math.sin(a) * radius, label: r.text, n: r.n, a };
+    });
+
+    const guides = [0.25, 0.5, 0.75, 1].map(r => {
+      const pts = Array.from({ length: n }, (_, i) => {
+        const a = -Math.PI / 2 + (i / n) * Math.PI * 2;
+        return `${(cx + Math.cos(a) * rMax * r).toFixed(2)},${(cy + Math.sin(a) * rMax * r).toFixed(2)}`;
+      }).join(" ");
+      return `<polygon points="${pts}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="0.5"/>`;
+    }).join("");
+
+    const spokes = Array.from({ length: n }, (_, i) => {
+      const a = -Math.PI / 2 + (i / n) * Math.PI * 2;
+      return `<line x1="${cx}" y1="${cy}" x2="${cx + Math.cos(a) * rMax}" y2="${cy + Math.sin(a) * rMax}"
+                    stroke="rgba(255,255,255,.05)" stroke-width="0.4"/>`;
+    }).join("");
+
+    const polygon = points.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
+    const labels = points.map(p => {
+      const lx = cx + Math.cos(p.a) * (rMax + 14);
+      const ly = cy + Math.sin(p.a) * (rMax + 14);
+      return `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" dominant-baseline="middle"
+                font-family="'Clash Display', system-ui, sans-serif" font-weight="700"
+                font-size="9" fill="#f8fafc">${escapeHtml(p.label.slice(0, 14))}
+                <tspan x="${lx.toFixed(1)}" dy="10" font-size="8" fill="rgba(248,250,252,.6)">${p.n}</tspan>
+              </text>`;
+    }).join("");
+
+    const dots = points.map(p =>
+      `<circle cx="${p.x.toFixed(2)}" cy="${p.y.toFixed(2)}" r="2.6" fill="#22d3ee"/>`
+    ).join("");
+
+    specialEl.innerHTML = `
+      <div class="kk-extra kk-polar">
+        <svg viewBox="-20 -20 240 240" class="kk-polar-svg" preserveAspectRatio="xMidYMid meet">
+          ${guides}${spokes}
+          <polygon points="${polygon}"
+                   fill="rgba(124,58,237,.32)"
+                   stroke="#22d3ee"
+                   stroke-width="1.2"
+                   style="animation: kkPolarIn .5s cubic-bezier(.4,0,.2,1) both; transform-origin:${cx}px ${cy}px;"/>
+          ${dots}
+          ${labels}
+        </svg>
+      </div>`;
+  };
+
+  // ───────── map ─────────
+  // We don't have a vector world atlas embedded, so the "map" chart falls
+  // back to a heatmap-style display when there are points (lat/lng pins).
+  // For pure choice-based "map" questions there's nothing to draw — show
+  // the choices as a leaderboard with a hint.
+  RENDERERS.map = function (ctx) {
+    const { question, tallyData, specialEl } = ctx;
+    const qtype = (question && question.type) || "";
+    if (qtype === "pin_map" || qtype === "pin_image") {
+      return RENDERERS.heatmap(ctx);
+    }
+    return RENDERERS.leaderboard(ctx);
+  };
+
   // ───────── Word/text data extractor ─────────
   // Pulls phrases from tallyData.texts; if empty, falls back to counts keyed
   // by phrase (covers some servers that aggregate text into counts).
@@ -1001,21 +1695,23 @@
     @keyframes kkRankFill { from { width: 0; } }
     .kk-ranked-n { font-weight: 800; font-size: 1.05rem; min-width: 2.5ch; text-align: right; }
 
-    /* ── flow ── */
-    .kk-flow { display: flex; flex-direction: column; height: 100%; }
-    .kk-flow-stage { position: relative; flex: 1; display: grid; grid-template-columns: auto 1fr auto; gap: 1rem; align-items: center; min-height: 0; }
-    .kk-flow-source {
-      align-self: center;
-      padding: 1rem 1.25rem; border-radius: 16px;
-      background: rgba(255,255,255,.08); font-weight: 800;
+    /* ── flow (vote ribbons) ── */
+    .kk-flow {
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
     }
-    .kk-flow-source span { display: block; font-size: 1.6rem; color: #22d3ee; }
-    .kk-flow-svg { width: 100%; height: 100%; }
-    .kk-flow-sink { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
-    .kk-flow-sink li { display: flex; align-items: center; gap: .55rem; min-width: 0; }
-    .kk-flow-bar { display: inline-block; width: 8px; height: var(--h, 5%); background: var(--c, #22d3ee); border-radius: 4px; }
-    .kk-flow-lbl { font-size: .95rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .kk-flow-lbl strong { margin-left: .35rem; }
+    .kk-flow-svg {
+      width: 100%;
+      height: 100%;
+      max-height: 100%;
+      display: block;
+    }
+    @keyframes kkFlowIn {
+      to { stroke-dashoffset: 0; }
+    }
 
     /* ── wordcloud ── */
     .kk-wordcloud {
@@ -1039,32 +1735,35 @@
     .kk-wc-word.tier-5 { font-size: clamp(3rem, 6vw, 5.5rem); text-shadow: 0 0 35px currentColor; }
     @keyframes kkWcIn { from { opacity: 0; transform: scale(.3) rotate(0); } }
 
-    /* ── bubble ── */
-    .kk-bubble-field { position: relative; width: 100%; height: 100%; min-height: 380px; }
-    .kk-bubble {
-      position: absolute;
-      transform: translate(-50%, -50%);
-      border-radius: 50%;
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      color: rgba(0,0,0,.85); font-weight: 800;
-      text-align: center; padding: .25rem;
-      box-shadow: 0 14px 30px rgba(0,0,0,.35), inset 0 -8px 18px rgba(0,0,0,.18), inset 0 8px 18px rgba(255,255,255,.45);
-      animation: kkBubbleIn .55s cubic-bezier(.4,0,.2,1) both, kkBubbleFloat 6s ease-in-out infinite alternate;
-      will-change: transform;
+    /* ── bubble (SVG-based packing) ── */
+    .kk-bubble-field {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      min-height: 380px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-    @keyframes kkBubbleIn { from { opacity: 0; transform: translate(-50%, -50%) scale(.2); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
-    @keyframes kkBubbleFloat { to { transform: translate(-50%, calc(-50% - 8px)) scale(1.02); } }
-    .kk-bubble-text {
-      font-size: clamp(.7rem, 1.4vw, 1.25rem);
-      line-height: 1.05;
-      padding: 0 .4rem;
-      max-width: 92%;
-      overflow: hidden;
-      text-overflow: ellipsis;
+    .kk-bubble-svg {
+      width: 100%;
+      height: 100%;
+      max-height: 100%;
+      display: block;
+      overflow: visible;
     }
-    .kk-bubble-n {
-      font-size: clamp(.55rem, 1vw, .85rem);
-      opacity: .55;
+    .kk-bubble-g {
+      animation: kkBubblePop .55s cubic-bezier(.34, 1.56, .64, 1) both,
+                 kkBubbleDrift 6s ease-in-out infinite alternate;
+      transform-box: fill-box;
+    }
+    @keyframes kkBubblePop {
+      from { opacity: 0; transform: scale(.2); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+    @keyframes kkBubbleDrift {
+      0%   { transform: scale(1) translateY(0); }
+      100% { transform: scale(1.02) translateY(-6px); }
     }
 
     /* ── frequency_list ── */
@@ -1226,8 +1925,8 @@
     .kk-dist-stats strong { font-family: 'Clash Display', system-ui, sans-serif; font-size: 1.5rem; font-weight: 900; }
 
     .kk-hist { height: 100%; }
-    .kk-hist-grid { display: flex; align-items: flex-end; gap: 6px; height: 100%; padding-bottom: 2rem; padding-top: 1rem; }
-    .kk-hist-bar { flex: 1; position: relative; display: flex; flex-direction: column; justify-content: flex-end; min-width: 0; }
+    .kk-hist-grid { display: flex; align-items: flex-end; gap: 6px; height: 100%; padding-bottom: 2.6rem; padding-top: 1.5rem; }
+    .kk-hist-bar { flex: 1; position: relative; display: flex; flex-direction: column; justify-content: flex-end; min-width: 0; min-height: 6px; }
     .kk-hist-bar-fill {
       width: 100%; height: var(--h, 0%);
       background: linear-gradient(180deg, #22d3ee, #7c3aed);
@@ -1380,5 +2079,236 @@
       min-height: 6px;
     }
     .kk-gbar-lbl { position: absolute; bottom: -2rem; left: 50%; transform: translateX(-50%); font-size: .85rem; opacity: .8; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+
+    /* ── column (vertical column chart) ── */
+    .kk-col-chart { height: 100%; }
+    .kk-col-grid { display: flex; align-items: flex-end; justify-content: space-around; gap: .75rem; height: 100%; padding: 1.5rem 1rem 3rem; }
+    .kk-col-col { flex: 1; max-width: 140px; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: .35rem; height: 100%; }
+    .kk-col-fill {
+      flex: 1 1 auto;
+      width: 100%;
+      display: flex; align-items: flex-start; justify-content: center;
+      padding-top: .4rem;
+      background: linear-gradient(180deg, var(--c, #22d3ee), color-mix(in srgb, var(--c, #22d3ee) 35%, #0f172a));
+      border-radius: 12px 12px 0 0;
+      box-shadow: 0 -6px 22px color-mix(in srgb, var(--c, #22d3ee) 35%, transparent);
+      max-height: var(--h, 50%);
+      min-height: 18px;
+      transition: max-height .5s cubic-bezier(.4,0,.2,1);
+      animation: kkColRise .55s cubic-bezier(.4,0,.2,1) both;
+      animation-delay: var(--d, 0ms);
+    }
+    @keyframes kkColRise { from { max-height: 0; } to { max-height: var(--h, 50%); } }
+    .kk-col-n {
+      font-family: 'Clash Display', system-ui, sans-serif;
+      font-weight: 900; font-size: 1.4rem; color: #fff;
+      text-shadow: 0 2px 8px rgba(0,0,0,.5);
+    }
+    .kk-col-lbl {
+      font-size: .85rem;
+      max-width: 100%;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      opacity: .85;
+    }
+    .kk-col-pct {
+      font-size: .75rem; opacity: .55;
+      font-family: 'Clash Display', system-ui, sans-serif; font-weight: 800;
+    }
+    /* Rounded variant: pill-style bars */
+    .kk-col-rounded .kk-col-fill { border-radius: 999px 999px 18px 18px; }
+    /* Gradient variant: layered multi-stop gradient */
+    .kk-col-gradient .kk-col-fill {
+      background: linear-gradient(180deg,
+        color-mix(in srgb, var(--c, #22d3ee) 95%, #fff 5%) 0%,
+        var(--c, #22d3ee) 35%,
+        color-mix(in srgb, var(--c, #22d3ee) 55%, #7c3aed 45%) 75%,
+        color-mix(in srgb, var(--c, #22d3ee) 25%, #0f172a 75%) 100%);
+    }
+
+    /* ── lollipop ── */
+    .kk-pop { height: 100%; }
+    .kk-pop-grid { display: flex; align-items: flex-end; justify-content: space-around; gap: 1rem; height: 100%; padding: 2rem 1rem 3rem; }
+    .kk-pop-col {
+      flex: 1; max-width: 100px; min-width: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+      position: relative;
+      animation: kkColRise .55s cubic-bezier(.4,0,.2,1) both;
+      animation-delay: var(--d, 0ms);
+    }
+    .kk-pop-n {
+      font-family: 'Clash Display', system-ui, sans-serif;
+      font-weight: 900; font-size: 1.1rem; color: #f8fafc;
+      margin-bottom: .25rem;
+    }
+    .kk-pop-dot {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--c, #22d3ee) 80%, #fff), var(--c, #22d3ee));
+      box-shadow: 0 0 18px color-mix(in srgb, var(--c, #22d3ee) 55%, transparent);
+      z-index: 2;
+    }
+    .kk-pop-stick {
+      width: 3px;
+      height: var(--h, 50%);
+      background: linear-gradient(180deg, var(--c, #22d3ee), color-mix(in srgb, var(--c, #22d3ee) 30%, #0f172a));
+      border-radius: 999px;
+      margin-top: -2px;
+      transition: height .5s cubic-bezier(.4,0,.2,1);
+      min-height: 6px;
+    }
+    .kk-pop-lbl {
+      position: absolute; bottom: -2rem; left: 50%; transform: translateX(-50%);
+      font-size: .85rem; opacity: .8;
+      white-space: nowrap; max-width: 110%;
+      overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* ── treemap ── */
+    .kk-tree { position: relative; width: 100%; height: 100%; min-height: 380px; border-radius: 16px; overflow: hidden; }
+    .kk-tree-tile {
+      position: absolute;
+      background: linear-gradient(135deg, var(--c, #22d3ee), color-mix(in srgb, var(--c, #22d3ee) 60%, #0f172a));
+      box-shadow: inset 0 0 0 2px rgba(255,255,255,.06), inset 0 -16px 30px rgba(0,0,0,.18);
+      display: flex; flex-direction: column; justify-content: flex-end;
+      padding: .5rem .65rem;
+      animation: kkTreeIn .55s cubic-bezier(.4,0,.2,1) both;
+      animation-delay: var(--d, 0ms);
+      overflow: hidden;
+      transition: opacity .25s;
+    }
+    .kk-tree-tile:hover { filter: brightness(1.08); }
+    @keyframes kkTreeIn { from { opacity: 0; transform: scale(.94); } }
+    .kk-tree-label {
+      font-weight: 800; font-size: .9rem;
+      color: rgba(15, 23, 42, .9);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      margin-bottom: .15rem;
+    }
+    .kk-tree-n {
+      font-family: 'Clash Display', system-ui, sans-serif;
+      font-weight: 900; font-size: 1.4rem;
+      color: rgba(15, 23, 42, .95);
+      line-height: 1;
+    }
+    .kk-tree-n small { display: inline-block; margin-left: .35rem; font-size: .65rem; opacity: .65; font-weight: 700; }
+
+    /* ── progress_bars ── */
+    .kk-prog { display: flex; flex-direction: column; gap: .85rem; padding: .5rem 0; height: 100%; overflow-y: auto; }
+    .kk-prog-row {
+      animation: kkRankIn .45s cubic-bezier(.4,0,.2,1) both;
+      animation-delay: var(--d, 0ms);
+    }
+    .kk-prog-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: .35rem; }
+    .kk-prog-lbl { font-weight: 700; font-size: 1rem; }
+    .kk-prog-n {
+      font-family: 'Clash Display', system-ui, sans-serif; font-weight: 900; font-size: 1.05rem;
+    }
+    .kk-prog-n small { display: inline-block; margin-left: .4rem; font-size: .75rem; opacity: .65; font-weight: 700; }
+    .kk-prog-track {
+      height: 18px;
+      background: rgba(255,255,255,.06);
+      border-radius: 999px;
+      overflow: hidden;
+      position: relative;
+    }
+    .kk-prog-fill {
+      height: 100%;
+      width: var(--w, 0%);
+      background: linear-gradient(90deg, var(--c, #22d3ee), color-mix(in srgb, var(--c, #22d3ee) 55%, #7c3aed));
+      border-radius: inherit;
+      transition: width .6s cubic-bezier(.4,0,.2,1);
+      box-shadow: 0 0 18px color-mix(in srgb, var(--c, #22d3ee) 35%, transparent);
+      animation: kkRankFill .8s cubic-bezier(.4,0,.2,1) both;
+      animation-delay: calc(var(--d, 0ms) + 120ms);
+    }
+
+    /* ── leaderboard ── */
+    .kk-lbd { height: 100%; overflow-y: auto; }
+    .kk-lbd-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: .5rem; }
+    .kk-lbd-row {
+      display: grid;
+      grid-template-columns: 64px 1fr auto;
+      gap: 1rem; align-items: center;
+      padding: .75rem .9rem;
+      border-radius: 14px;
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(255,255,255,.06);
+      animation: kkRankIn .45s cubic-bezier(.4,0,.2,1) both;
+      animation-delay: var(--d, 0ms);
+    }
+    .kk-lbd-row.is-top {
+      background: linear-gradient(135deg, rgba(251, 191, 36, .15), rgba(124, 58, 237, .08));
+      border-color: rgba(251, 191, 36, .35);
+    }
+    .kk-lbd-pos { display: grid; place-items: center; }
+    .kk-lbd-trophy { font-size: 2rem; line-height: 1; }
+    .kk-lbd-num {
+      width: 40px; height: 40px; border-radius: 50%;
+      display: grid; place-items: center;
+      background: rgba(255,255,255,.08);
+      font-family: 'Clash Display', system-ui, sans-serif;
+      font-weight: 900; font-size: 1.1rem;
+    }
+    .kk-lbd-body { min-width: 0; }
+    .kk-lbd-name {
+      font-weight: 700; font-size: 1.05rem; margin-bottom: .25rem;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .kk-lbd-bar {
+      height: 6px; background: rgba(255,255,255,.06); border-radius: 999px; overflow: hidden;
+    }
+    .kk-lbd-bar span {
+      display: block; height: 100%;
+      width: var(--w, 0%);
+      background: linear-gradient(90deg, #22d3ee, #7c3aed);
+      border-radius: inherit;
+      transition: width .6s cubic-bezier(.4,0,.2,1);
+    }
+    .kk-lbd-score {
+      font-family: 'Clash Display', system-ui, sans-serif;
+      font-weight: 900; font-size: 1.6rem;
+      background: linear-gradient(135deg, #22d3ee, #7c3aed);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+      min-width: 60px; text-align: right;
+    }
+
+    /* ── tags ── */
+    .kk-tags {
+      display: flex; flex-wrap: wrap; gap: .5rem;
+      align-content: flex-start; justify-content: center;
+      padding: clamp(1rem, 3vw, 2rem);
+      max-height: 100%; overflow-y: auto;
+    }
+    .kk-tag {
+      display: inline-flex; align-items: baseline; gap: .35rem;
+      padding: .3em .8em;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--c, #22d3ee) 18%, transparent);
+      border: 1px solid color-mix(in srgb, var(--c, #22d3ee) 50%, transparent);
+      color: #f8fafc;
+      font-weight: 700;
+      animation: kkRankIn .4s cubic-bezier(.4,0,.2,1) both;
+    }
+    .kk-tag-n { opacity: .55; font-size: .75em; font-weight: 600; }
+
+    /* ── polar / radar ── */
+    .kk-polar { display: grid; place-items: center; height: 100%; }
+    .kk-polar-svg { width: min(96%, 720px); height: auto; max-height: 100%; }
+    @keyframes kkPolarIn { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+    /* ── heatmap empty/waiting state ── */
+    .kk-heat-empty-cell {
+      position: absolute;
+      border: 1px dashed rgba(255,255,255,.08);
+      pointer-events: none;
+    }
+    .kk-heat-waiting-msg {
+      position: absolute; inset: 0;
+      display: grid; place-items: center; align-content: center;
+      gap: .65rem;
+      text-align: center;
+      pointer-events: none;
+      color: rgba(248,250,252,.7);
+    }
+    .kk-heat-waiting-emoji { font-size: 3rem; opacity: .55; }
   `;
 })();

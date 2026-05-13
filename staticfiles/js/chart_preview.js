@@ -68,10 +68,16 @@
 
     if (["pie"].includes(raw)) return { type: "pie", indexAxis: "x" };
     if (["donut", "doughnut"].includes(raw)) return { type: "doughnut", indexAxis: "x" };
-    if (["line", "area"].includes(raw)) return { type: "line", indexAxis: "x" };
+    if (["line", "area", "smooth_area", "distribution"].includes(raw)) return { type: "line", indexAxis: "x" };
     if (["horizontal", "horizontal_bar", "hbar", "bar_horizontal"].includes(raw)) {
       return { type: "bar", indexAxis: "y" };
     }
+    // Vertical-bar aliases: column, rounded_bar, gradient_bar, lollipop,
+    // bubble_count, progress_bars all render reasonably as vertical bars
+    // when chart_extra.js doesn't handle them (e.g. on initial load before
+    // the script has fully executed). We don't need a special case here —
+    // they fall through to bar, indexAxis: "x" — but listing them as a
+    // comment makes the intent obvious.
 
     return { type: "bar", indexAxis: "x" };
   }

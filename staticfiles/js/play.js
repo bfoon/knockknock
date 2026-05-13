@@ -1147,6 +1147,13 @@
   // ── Ranking ─────────────────────────────────────────────────────────
   // Tap-to-rank: each tap moves the next item into the next rank slot.
   // Up/down arrows let participants fine-tune the order before submit.
+  //
+  // Live auto-save: every reorder (arrow tap or drag) broadcasts the
+  // current order to the server, debounced ~280ms. The server's ranking
+  // handler deletes prior rows and rewrites them, so re-submitting is safe.
+  // This means the presenter chart updates as participants sort, without
+  // them having to tap "Submit". The explicit "Submit ranking" button
+  // remains as a final confirmation (locks the UI).
   POLL_RENDERERS.ranking = function (q, restore) {
     if (!Array.isArray(q.choices) || !q.choices.length) {
       qBody.innerHTML = `<div class="text-secondary text-center py-3">No items to rank.</div>`;
@@ -1166,12 +1173,61 @@
 
     const intro = document.createElement("p");
     intro.className = "text-secondary small mb-2";
-    intro.textContent = "Drag the ☰ handle, or tap ▲ / ▼ to rearrange. #1 is your favourite.";
+    intro.textContent = "Drag the ☰ handle, or tap ▲ / ▼ to rearrange. #1 is your favourite — your order saves automatically.";
     qBody.appendChild(intro);
+
+    // Live-save indicator. Sits just above the list and fades between
+    // "Saving…" and "Saved ✓" so participants know their drag is being
+    // recorded without them needing to press Submit.
+    const liveStatus = document.createElement("div");
+    liveStatus.className = "kk-rank-status";
+    liveStatus.setAttribute("aria-live", "polite");
+    liveStatus.innerHTML = `<span class="kk-rank-status-dot"></span><span class="kk-rank-status-text">Saved ✓</span>`;
+    liveStatus.dataset.state = "idle";
+    qBody.appendChild(liveStatus);
 
     const list = document.createElement("ol");
     list.className = "kk-rank-list";
     qBody.appendChild(list);
+
+    // ── Auto-save plumbing ─────────────────────────────────────────────
+    // Debounce: collapse a flurry of drag reorders into a single send.
+    // 280ms feels instant on a fast network and saves bandwidth on slow ones.
+    let autoSaveTimer = null;
+    let autoSaveGen = 0; // increments per call so we can ignore stale "Saved" states
+
+    function setStatus(state) {
+      // States: idle | dirty | saving | saved
+      liveStatus.dataset.state = state;
+      const textEl = liveStatus.querySelector(".kk-rank-status-text");
+      if (!textEl) return;
+      if (state === "saving") textEl.textContent = "Saving…";
+      else if (state === "saved") textEl.textContent = "Saved ✓";
+      else if (state === "dirty") textEl.textContent = "Saving…";
+      else textEl.textContent = "Saved ✓";
+    }
+
+    function scheduleAutoSave() {
+      // Already locked (user hit Submit)? Don't auto-save anymore.
+      if (answeredQuestionId === q.id) return;
+      setStatus("dirty");
+      const myGen = ++autoSaveGen;
+      clearTimeout(autoSaveTimer);
+      autoSaveTimer = setTimeout(() => {
+        // If another reorder happened during the wait, an earlier scheduled
+        // save will already have been superseded by a fresh one; guard so we
+        // don't flash "Saved" then "Saving" out of order.
+        if (myGen !== autoSaveGen) return;
+        setStatus("saving");
+        const ordered_ids = items.map(c => c.id);
+        send({ type: "answer", question_id: q.id, ordered_ids });
+        // We don't get a per-message ack today, so optimistic-assume
+        // success after a short delay — matches the rest of the app's UX.
+        setTimeout(() => {
+          if (myGen === autoSaveGen) setStatus("saved");
+        }, 220);
+      }, 280);
+    }
 
     function buildItem(c, idx) {
       const li = document.createElement("li");
@@ -1226,6 +1282,7 @@
       const [m] = items.splice(from, 1);
       items.splice(to, 0, m);
       render(true);
+      scheduleAutoSave();
     }
 
     // ── Arrow-button taps (event delegation; render() recreates DOM each
@@ -1246,7 +1303,7 @@
 
     function clearDragStyles() {
       if (!drag) return;
-      const { ghost } = drag;
+      const { ghost, didReorder } = drag;
       if (ghost) ghost.remove();
       Array.from(list.children).forEach(li => {
         li.classList.remove("is-shifted", "is-source");
@@ -1257,6 +1314,11 @@
       document.body.style.overflow = "";
       list.style.touchAction = "";
       drag = null;
+      // Only auto-save once at end of drag if order actually changed during
+      // the drag. We already auto-save live inside pointermove, but we add
+      // a final flush here so even a fast drag with a single repositioning
+      // gets a guaranteed save when the finger lifts.
+      if (didReorder) scheduleAutoSave();
     }
 
     list.addEventListener("pointerdown", (e) => {
@@ -1295,6 +1357,7 @@
         listOriginY: listRect.top,
         rowHeight: rect.height,
         fromIdx: Array.from(list.children).indexOf(li),
+        didReorder: false,
       };
       try { list.setPointerCapture(e.pointerId); } catch (_) {}
     });
@@ -1319,6 +1382,7 @@
       if (fromIdx !== -1 && hoverIdx !== fromIdx) {
         const [m] = items.splice(fromIdx, 1);
         items.splice(hoverIdx, 0, m);
+        drag.didReorder = true;
         // Re-render but DON'T animate the source row (it's hidden under the ghost).
         const ghostHtmlSnapshot = drag.ghost.outerHTML;
         render(true);
@@ -1338,6 +1402,10 @@
         // Keep the ghost positioned where the pointer is.
         const lr2 = list.getBoundingClientRect();
         drag.ghost.style.top = (e.clientY - lr2.top - drag.offsetY) + "px";
+        // Schedule a debounced save right now so the presenter chart starts
+        // updating mid-drag (not just when the finger lifts). Debounce
+        // coalesces fast cross-row drags into one network call.
+        scheduleAutoSave();
       }
     });
 
@@ -1354,9 +1422,27 @@
 
     render(false);
 
+    // Auto-save the initial order *immediately* (no debounce) — this gives
+    // the presenter a baseline tally as soon as the participant lands on
+    // the question, even if they don't reorder anything. If we don't, the
+    // tally for this question stays at 0 until someone touches the list.
+    if (!restore) {
+      // Tiny defer so the WebSocket has settled and we don't race the
+      // question-start ack.
+      setTimeout(() => {
+        if (answeredQuestionId === q.id) return; // already locked? skip
+        send({ type: "answer", question_id: q.id, ordered_ids: items.map(c => c.id) });
+        setStatus("saved");
+      }, 120);
+    }
+
     const btn = makePrimaryButton("Submit ranking");
     btn.addEventListener("click", () => {
       if (answeredQuestionId === q.id) return;
+      // Cancel any pending debounced save and send the final order now.
+      clearTimeout(autoSaveTimer);
+      autoSaveGen++;
+      setStatus("saving");
       const ordered_ids = items.map(c => c.id);
       send({ type: "answer", question_id: q.id, ordered_ids });
       lockSubmitted();

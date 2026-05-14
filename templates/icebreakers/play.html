@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}{{ game.name }} · Icebreaker{% endblock %}
+
+{# Empty body class to hide the regular navbar via CSS — runners are full-screen. #}
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'icebreakers/css/runner.css' %}?v=2">
+{% endblock %}
+
+{% block content %}
+<div class="kk-runner-shell"
+     id="kkRunner"
+     data-game="{{ game.id }}"
+     data-supports-phones="{{ game.supports_phones|yesno:'1,0' }}"
+     data-duration="{{ game.duration_seconds|default:'' }}"
+     style="--a: {{ game.color_a }}; --b: {{ game.color_b }};">
+
+  <header class="kk-runner-top">
+    <div class="kk-runner-top-left">
+      <a href="{% url 'icebreakers:catalog' %}" class="kk-runner-back" aria-label="Back to icebreakers">
+        <i class="bi bi-arrow-left"></i>
+      </a>
+      <div>
+        <div class="kk-runner-eyebrow">Icebreaker</div>
+        <h1 class="kk-runner-title">
+          <span class="kk-runner-emoji">{{ game.emoji }}</span>
+          {{ game.name }}
+        </h1>
+      </div>
+    </div>
+    <div class="kk-runner-top-right">
+      {% if game.supports_phones %}
+        <button class="kk-runner-btn" id="kkPhonesToggle" type="button">
+          <i class="bi bi-phone"></i> Enable phones
+        </button>
+      {% endif %}
+      <button class="kk-runner-btn" id="kkFullscreen" type="button" aria-label="Toggle full screen">
+        <i class="bi bi-arrows-fullscreen"></i> Full screen
+      </button>
+    </div>
+  </header>
+
+  {# Optional phone panel — slides in when participants are enabled. #}
+  {% if game.supports_phones %}
+    <aside class="kk-runner-phone-panel" id="kkPhonePanel" hidden>
+      <div class="kk-runner-phone-code">
+        <div class="kk-runner-phone-label">Join at <strong>knockknock.app/join</strong></div>
+        <div class="kk-runner-phone-digits" id="kkSessionCode">— — — — — —</div>
+      </div>
+      <div class="kk-runner-phone-count">
+        <span id="kkPhoneCount">0</span>
+        <small>connected</small>
+      </div>
+    </aside>
+  {% endif %}
+
+  <main class="kk-runner-stage" id="kkStage" aria-live="polite">
+    {# Each game module mounts here. The element starts empty; games own the entire stage. #}
+  </main>
+
+  <footer class="kk-runner-bottom" id="kkBottom">
+    {# Game-specific controls are injected here by each module. #}
+  </footer>
+</div>
+
+{# Three.js for the 3D games. Loaded once globally. #}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+{# The runner shell — handles full-screen, the phone panel, and module dispatch. #}
+<script type="module" src="{% static 'icebreakers/js/runner.js' %}?v=2"></script>
+{% endblock %}

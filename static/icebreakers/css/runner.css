@@ -1,0 +1,327 @@
+/* ───────────────────────────────────────────────────────────────
+   Icebreaker runner — full-screen shell.
+   The shell hosts a header bar, an optional phone-join panel, the
+   game stage (where each module mounts), and a footer for game-
+   specific controls. The stage is the visual hero.
+   ─────────────────────────────────────────────────────────────── */
+
+/* Hide the global navbar on runner pages — game owns the screen. */
+body:has(.kk-runner-shell) .kk-nav,
+body:has(.kk-runner-shell) header.navbar { display: none !important; }
+body:has(.kk-runner-shell) main,
+body:has(.kk-runner-shell) .container,
+body:has(.kk-runner-shell) .container-fluid {
+  max-width: 100% !important;
+  width: 100% !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.kk-runner-shell {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background:
+    radial-gradient(120% 80% at 0% 0%, color-mix(in srgb, var(--a, #22d3ee) 20%, transparent) 0%, transparent 60%),
+    radial-gradient(120% 80% at 100% 100%, color-mix(in srgb, var(--b, #7c3aed) 20%, transparent) 0%, transparent 60%),
+    #0a0e1a;
+  color: #f8fafc;
+  overflow: hidden;
+  z-index: 1000;
+}
+
+/* ── Top bar ── */
+.kk-runner-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  gap: 1rem;
+  background: linear-gradient(180deg, rgba(10, 14, 26, 0.9), rgba(10, 14, 26, 0.3));
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  z-index: 10;
+}
+.kk-runner-top-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+}
+.kk-runner-top-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.kk-runner-back {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #f8fafc;
+  text-decoration: none;
+  font-size: 1.1rem;
+  transition: background 0.2s ease;
+}
+.kk-runner-back:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #f8fafc;
+}
+
+.kk-runner-eyebrow {
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--a, #22d3ee) 70%, #f8fafc);
+  font-weight: 700;
+}
+.kk-runner-title {
+  font-family: 'Clash Display', system-ui, sans-serif;
+  font-weight: 800;
+  font-size: 1.5rem;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.kk-runner-emoji { font-size: 1.6rem; }
+
+.kk-runner-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #f8fafc;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.kk-runner-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.kk-runner-btn.is-active {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--a, #22d3ee) 30%, transparent), color-mix(in srgb, var(--b, #7c3aed) 30%, transparent));
+  border-color: color-mix(in srgb, var(--a, #22d3ee) 60%, transparent);
+}
+
+/* ── Phone-join panel (slides in over top-right) ── */
+.kk-runner-phone-panel {
+  position: absolute;
+  top: 76px;
+  right: 1.5rem;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1.5rem;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid color-mix(in srgb, var(--a, #22d3ee) 30%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 9;
+  animation: kk-runner-slide-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes kk-runner-slide-in {
+  from { transform: translateY(-10px); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+.kk-runner-phone-label {
+  font-size: 0.75rem;
+  color: rgba(248, 250, 252, 0.6);
+  margin-bottom: 0.25rem;
+}
+.kk-runner-phone-label strong { color: #f8fafc; }
+.kk-runner-phone-digits {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  color: var(--a, #22d3ee);
+  text-shadow: 0 0 24px color-mix(in srgb, var(--a, #22d3ee) 60%, transparent);
+}
+.kk-runner-phone-count {
+  text-align: center;
+  padding-left: 1.5rem;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+}
+.kk-runner-phone-count span {
+  display: block;
+  font-family: 'Clash Display', system-ui, sans-serif;
+  font-size: 2rem;
+  font-weight: 800;
+  color: #f8fafc;
+  line-height: 1;
+}
+.kk-runner-phone-count small {
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(248, 250, 252, 0.55);
+}
+
+/* ── Stage ── */
+.kk-runner-stage {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Bottom bar ── */
+.kk-runner-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  min-height: 72px;
+  background: linear-gradient(0deg, rgba(10, 14, 26, 0.9), rgba(10, 14, 26, 0.3));
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+.kk-runner-bottom:empty {
+  display: none;
+}
+
+/* ── Big buttons that games use ── */
+.kk-stage-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 1.75rem;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--a, #22d3ee), var(--b, #7c3aed));
+  border: none;
+  color: #0a0e1a;
+  font-family: 'Clash Display', system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 1.05rem;
+  cursor: pointer;
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--a, #22d3ee) 40%, transparent);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.kk-stage-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 40px color-mix(in srgb, var(--a, #22d3ee) 55%, transparent);
+}
+.kk-stage-btn:active { transform: translateY(0); }
+.kk-stage-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.kk-stage-btn-ghost {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+  box-shadow: none;
+}
+.kk-stage-btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: none;
+}
+
+/* Game canvas / wrapper takes the full stage. */
+.kk-game-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.kk-game-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  pointer-events: none;
+  padding: 2rem;
+  text-align: center;
+}
+.kk-game-overlay > * { pointer-events: auto; }
+
+.kk-game-headline {
+  font-family: 'Clash Display', system-ui, sans-serif;
+  font-weight: 800;
+  font-size: clamp(2.5rem, 6vw, 5rem);
+  line-height: 1;
+  text-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+  margin: 0;
+}
+.kk-game-sub {
+  font-size: clamp(1rem, 1.8vw, 1.4rem);
+  color: rgba(248, 250, 252, 0.75);
+  max-width: 50ch;
+  margin: 0;
+}
+
+/* Big circular timer pill that several games use. */
+.kk-game-timer {
+  position: absolute;
+  top: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.7);
+  border: 2px solid color-mix(in srgb, var(--a, #22d3ee) 60%, transparent);
+  font-family: 'Clash Display', system-ui, sans-serif;
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: var(--a, #22d3ee);
+  text-shadow: 0 0 20px color-mix(in srgb, var(--a, #22d3ee) 50%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+  z-index: 5;
+}
+
+/* Pulse cue used during count-ins, beats, etc. */
+@keyframes kk-game-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.12); opacity: 0.7; }
+}
+.kk-game-pulsing { animation: kk-game-pulse 0.8s ease-in-out infinite; }
+
+/* Mobile tweaks */
+@media (max-width: 720px) {
+  .kk-runner-top { padding: 0.75rem 1rem; }
+  .kk-runner-title { font-size: 1.15rem; }
+  .kk-runner-btn { padding: 0.5rem 0.75rem; font-size: 0.8rem; }
+  .kk-runner-phone-panel {
+    position: static;
+    margin: 0.75rem 1rem 0;
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    text-align: center;
+  }
+  .kk-runner-phone-count { padding-left: 0; border-left: none; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 0.75rem; }
+}
+
+
+/* v2 critical click-layer fixes */
+.kk-runner-shell { z-index: 99999 !important; }
+.kk-runner-top, .kk-runner-bottom, .kk-runner-phone-panel { position: relative; z-index: 50 !important; pointer-events: auto !important; }
+.kk-runner-stage { z-index: 1; min-height: 0; }
+.kk-runner-back, .kk-runner-btn, .kk-stage-btn, .kk-runner-bottom button, .kk-runner-bottom a { position: relative; z-index: 60 !important; pointer-events: auto !important; }
+.kk-game-canvas { position: absolute; inset: 0; z-index: 0; pointer-events: none !important; }
+.kk-game-canvas canvas { pointer-events: none !important; touch-action: none; }
+.kk-game-overlay { z-index: 5; pointer-events: none !important; }
+.kk-game-overlay button, .kk-game-overlay a, .kk-game-overlay input, .kk-game-overlay select, .kk-game-overlay textarea, .kk-game-overlay [role="button"] { pointer-events: auto !important; }
+.kk-game-timer { z-index: 6; pointer-events: none; }

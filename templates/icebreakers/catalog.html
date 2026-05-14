@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Icebreakers · Knock-Knock{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'icebreakers/css/catalog.css' %}?v=2">
+{% endblock %}
+
+{% block content %}
+<section class="kk-ice-page">
+  <div class="kk-ice-hero">
+    <div class="kk-ice-hero-copy">
+      <div class="kk-ice-eyebrow"><span></span> Icebreaker Arena</div>
+      <h1 class="kk-ice-h1">Wake the room up.<br><em>Without the awkward.</em></h1>
+      <p class="kk-ice-sub">
+        Projection-first mini games for meetings, trainings and team sessions.
+        Launch a calm wellness break, a reaction battle, rhythm game, word chain or room challenge in seconds.
+      </p>
+      <div class="kk-ice-hero-actions">
+        <a href="#kkIceGames" class="kk-ice-primary">Browse games <i class="bi bi-arrow-down"></i></a>
+        <span class="kk-ice-pill">3D · Phones · Screen-only</span>
+      </div>
+    </div>
+
+    <div class="kk-ice-hero-art" aria-hidden="true">
+      <div class="kk-ice-arena-card kk-ice-arena-card-a">
+        <span class="kk-ice-mini-avatar warrior"></span>
+        <strong>Reaction</strong>
+      </div>
+      <div class="kk-ice-arena-card kk-ice-arena-card-b">
+        <span class="kk-ice-mini-avatar mage"></span>
+        <strong>Rhythm</strong>
+      </div>
+      <div class="kk-ice-arena-card kk-ice-arena-card-c">
+        <span class="kk-ice-mini-avatar bot"></span>
+        <strong>Focus</strong>
+      </div>
+      <div class="kk-ice-orb kk-ice-orb-a"></div>
+      <div class="kk-ice-orb kk-ice-orb-b"></div>
+    </div>
+  </div>
+
+  <div class="kk-ice-filters" role="tablist" aria-label="Filter games">
+    <button class="kk-ice-chip is-active" data-filter="all" type="button" role="tab" aria-selected="true">All games</button>
+    <button class="kk-ice-chip" data-filter="seated" type="button" role="tab">🪑 Seated</button>
+    <button class="kk-ice-chip" data-filter="standing" type="button" role="tab">🧍 Standing</button>
+    <button class="kk-ice-chip" data-filter="phones" type="button" role="tab">📱 With phones</button>
+    <button class="kk-ice-chip" data-filter="screen" type="button" role="tab">🖥️ Screen only</button>
+  </div>
+
+  <div id="kkIceGames" class="kk-ice-grid">
+    {% for g in games %}
+      <a href="{% url 'icebreakers:play' g.id %}"
+         class="kk-ice-card"
+         data-intensity="{{ g.intensity }}"
+         data-phones="{{ g.supports_phones|yesno:'yes,no' }}"
+         style="--a:{{ g.color_a }}; --b:{{ g.color_b }};">
+        <div class="kk-ice-card-art">
+          <div class="kk-ice-card-scene">
+            <span class="kk-ice-character kk-ice-character-{{ forloop.counter }}"><span>{{ g.emoji }}</span></span>
+            <span class="kk-ice-platform"></span>
+          </div>
+          <div class="kk-ice-card-shine"></div>
+        </div>
+        <div class="kk-ice-card-body">
+          <div class="kk-ice-card-meta">
+            <span class="kk-ice-tag kk-ice-tag-{{ g.intensity }}">
+              {% if g.intensity == "seated" %}🪑 Seated{% else %}🧍 Standing{% endif %}
+            </span>
+            {% if g.supports_phones %}
+              <span class="kk-ice-tag kk-ice-tag-phones">📱 Phones</span>
+            {% else %}
+              <span class="kk-ice-tag kk-ice-tag-screen">🖥️ Screen only</span>
+            {% endif %}
+            {% if g.duration_seconds %}
+              <span class="kk-ice-tag kk-ice-tag-time">⏱ {{ g.duration_seconds }}s</span>
+            {% endif %}
+          </div>
+          <h2 class="kk-ice-card-title">{{ g.name }}</h2>
+          <p class="kk-ice-card-tag">{{ g.tagline }}</p>
+          <p class="kk-ice-card-desc">{{ g.description }}</p>
+          <div class="kk-ice-card-cta">Launch game <i class="bi bi-arrow-right"></i></div>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+</section>
+
+<script src="{% static 'icebreakers/js/catalog.js' %}?v=2" defer></script>
+{% endblock %}

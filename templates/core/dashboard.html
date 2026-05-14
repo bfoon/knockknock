@@ -44,6 +44,86 @@
   </div>
 {% endif %}
 
+<!--{# ─────────────────────────────────────────────────────────────-->
+<!--   ICEBREAKER RAIL-->
+<!--   Sits above the two main creation tiles. Positions icebreakers-->
+<!--   as "what you do before the meeting starts" rather than a third-->
+<!--   creation peer. Quick-launch bubbles let a host who knows the-->
+<!--   game they want skip the catalog entirely.-->
+<!--   ───────────────────────────────────────────────────────────── #}-->
+<section class="kk-ice-rail" aria-label="Icebreaker games">
+  <div class="kk-ice-rail-snow" aria-hidden="true">
+    <svg viewBox="0 0 240 80" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
+      <defs>
+        <radialGradient id="kkRailOrbA" cx="0.3" cy="0.4">
+          <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.55"/>
+          <stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
+        </radialGradient>
+        <radialGradient id="kkRailOrbB" cx="0.7" cy="0.6">
+          <stop offset="0%" stop-color="#7c3aed" stop-opacity="0.45"/>
+          <stop offset="100%" stop-color="#7c3aed" stop-opacity="0"/>
+        </radialGradient>
+        <radialGradient id="kkRailOrbC" cx="0.5" cy="0.5">
+          <stop offset="0%" stop-color="#fb7185" stop-opacity="0.4"/>
+          <stop offset="100%" stop-color="#fb7185" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <circle cx="40"  cy="40" r="55" fill="url(#kkRailOrbA)"/>
+      <circle cx="180" cy="40" r="50" fill="url(#kkRailOrbB)"/>
+      <circle cx="120" cy="60" r="40" fill="url(#kkRailOrbC)"/>
+    </svg>
+  </div>
+
+  <div class="kk-ice-rail-content">
+    <div class="kk-ice-rail-lede">
+      <div class="kk-ice-rail-badge">
+        <span class="kk-ice-rail-pulse"></span>
+        ICEBREAKERS
+      </div>
+      <h2 class="kk-ice-rail-title">Warm up the room first</h2>
+      <p class="kk-ice-rail-sub">
+        8 projection-first games — 60 seconds to 5 minutes. Mix of seated &amp; standing, gentle throughout.
+      </p>
+    </div>
+
+    <div class="kk-ice-rail-quick" role="group" aria-label="Quick launch a game">
+<!--      {# Quick-launch bubbles. Stop propagation so they don't trigger the-->
+<!--         parent <a>'s navigation — each bubble goes to its own URL. #}-->
+      <span class="kk-ice-rail-quick-label">Quick launch</span>
+      <a href="{% url 'icebreakers:play' 'posture_reset' %}"
+         class="kk-ice-bubble" title="Posture Reset · 60s"
+>🧘</a>
+      <a href="{% url 'icebreakers:play' 'reaction_race' %}"
+         class="kk-ice-bubble" title="Reaction Race"
+>⚡</a>
+      <a href="{% url 'icebreakers:play' 'two_truths' %}"
+         class="kk-ice-bubble" title="Two Truths & A Bluff"
+>🎭</a>
+      <a href="{% url 'icebreakers:play' 'common_ground' %}"
+         class="kk-ice-bubble" title="Common Ground Bingo"
+>🎲</a>
+      <a href="{% url 'icebreakers:play' 'mood_constellation' %}"
+         class="kk-ice-bubble" title="Mood Constellation"
+>✨</a>
+      <a href="{% url 'icebreakers:play' 'conductor' %}"
+         class="kk-ice-bubble" title="The Conductor"
+>🎼</a>
+      <a href="{% url 'icebreakers:play' 'desk_yoga' %}"
+         class="kk-ice-bubble" title="Desk Yoga Flow"
+>🌿</a>
+      <a href="{% url 'icebreakers:play' 'word_chain' %}"
+         class="kk-ice-bubble" title="Association Chain"
+>🔗</a>
+    </div>
+
+    <a href="{% url 'icebreakers:catalog' %}" class="kk-ice-rail-cta" aria-label="Browse all icebreaker games">
+      <span>Browse all</span>
+      <i class="bi bi-arrow-right"></i>
+    </a>
+  </div>
+</section>
+<!--{# ──────────────────────────── END RAIL ──────────────────────── #}-->
+
 <div class="kk-dash-grid mb-5">
   <a href="{% if can_create %}{% url 'polls:create' %}{% else %}{% url 'subscriptions:pricing' %}{% endif %}"
      class="kk-action-tile menti {% if not can_create %}kk-action-tile--locked{% endif %}">
@@ -104,6 +184,7 @@
   </div>
 </div>
 
+
 <style>
 .kk-quota-banner {
   background: var(--kk-surface);
@@ -130,5 +211,196 @@
   gap: .65rem;
 }
 .kk-list-item-game .kk-list-item-title { font-weight: 600; }
+
+/* ──────────────────────────────────────────────────────────────
+   ICEBREAKER RAIL
+   A premium horizontal banner with soft animated orbs in the
+   background, a label-block on the left, quick-launch bubbles
+   in the middle, and an "all" CTA on the right.
+   ────────────────────────────────────────────────────────────── */
+.kk-ice-rail {
+  position: relative;
+  display: block;
+  margin-bottom: 1.5rem;
+  border-radius: var(--kk-radius, 16px);
+  background:
+    linear-gradient(135deg, rgba(34, 211, 238, 0.08), rgba(124, 58, 237, 0.08)),
+    var(--kk-surface, #0f172a);
+  border: 1px solid rgba(34, 211, 238, 0.18);
+  text-decoration: none;
+  color: inherit;
+  overflow: hidden;
+  transition: transform .25s ease, border-color .25s ease, box-shadow .25s ease;
+  cursor: default;
+}
+.kk-ice-rail:hover {
+  transform: translateY(-2px);
+  border-color: rgba(34, 211, 238, 0.45);
+  box-shadow: 0 16px 40px rgba(34, 211, 238, 0.18);
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Soft animated background — purely decorative SVG orbs. */
+.kk-ice-rail-snow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.8;
+  animation: kk-ice-rail-drift 18s ease-in-out infinite;
+}
+.kk-ice-rail-snow svg { width: 100%; height: 100%; display: block; }
+@keyframes kk-ice-rail-drift {
+  0%, 100% { transform: translateX(0) scale(1); }
+  50%      { transform: translateX(-4%) scale(1.05); }
+}
+
+/* Main row layout. Use grid so the three regions stay aligned across breakpoints. */
+.kk-ice-rail-content {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) auto auto;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1.1rem 1.4rem;
+}
+@media (max-width: 920px) {
+  .kk-ice-rail-content {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    padding: 1.1rem;
+  }
+}
+
+/* Left block — title + sub. */
+.kk-ice-rail-lede { min-width: 0; }
+.kk-ice-rail-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .15rem .55rem;
+  border-radius: 999px;
+  background: rgba(34, 211, 238, 0.12);
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: .14em;
+  color: #22d3ee;
+  margin-bottom: .4rem;
+}
+.kk-ice-rail-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22d3ee;
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.8);
+  animation: kk-ice-rail-pulse 1.6s ease-in-out infinite;
+}
+@keyframes kk-ice-rail-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: .4; transform: scale(1.3); }
+}
+.kk-ice-rail-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0 0 .15rem 0;
+  color: var(--kk-text, #f8fafc);
+  line-height: 1.2;
+}
+.kk-ice-rail-sub {
+  font-size: .9rem;
+  color: var(--kk-text-dim, rgba(248, 250, 252, 0.6));
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Quick-launch bubbles. */
+.kk-ice-rail-quick {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  flex-wrap: wrap;
+}
+.kk-ice-rail-quick-label {
+  font-size: .7rem;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--kk-text-dim, rgba(248, 250, 252, 0.45));
+  font-weight: 700;
+  margin-right: .35rem;
+}
+.kk-ice-bubble {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 1.05rem;
+  line-height: 1;
+  text-decoration: none;
+  transition: transform .2s cubic-bezier(.34, 1.56, .64, 1),
+              background .2s ease, border-color .2s ease;
+}
+.kk-ice-bubble:hover, .kk-ice-bubble:focus-visible {
+  transform: translateY(-3px) scale(1.1);
+  background: rgba(34, 211, 238, 0.15);
+  border-color: rgba(34, 211, 238, 0.55);
+  text-decoration: none;
+}
+/* Stagger the entry animation across the bubbles for a touch of life. */
+.kk-ice-bubble {
+  animation: kk-ice-bubble-in .5s cubic-bezier(.34, 1.56, .64, 1) backwards;
+}
+.kk-ice-bubble:nth-child(2)  { animation-delay: .05s; }
+.kk-ice-bubble:nth-child(3)  { animation-delay: .10s; }
+.kk-ice-bubble:nth-child(4)  { animation-delay: .15s; }
+.kk-ice-bubble:nth-child(5)  { animation-delay: .20s; }
+.kk-ice-bubble:nth-child(6)  { animation-delay: .25s; }
+.kk-ice-bubble:nth-child(7)  { animation-delay: .30s; }
+.kk-ice-bubble:nth-child(8)  { animation-delay: .35s; }
+.kk-ice-bubble:nth-child(9)  { animation-delay: .40s; }
+@keyframes kk-ice-bubble-in {
+  from { opacity: 0; transform: translateY(8px) scale(.7); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+/* Right CTA. */
+.kk-ice-rail-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .55rem 1rem;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #22d3ee, #7c3aed);
+  color: #0a0e1a;
+  font-weight: 700;
+  font-size: .9rem;
+  white-space: nowrap;
+  box-shadow: 0 8px 20px rgba(34, 211, 238, 0.25);
+  transition: box-shadow .2s ease, transform .2s ease;
+  text-decoration: none;
+}
+.kk-ice-rail-cta:hover, .kk-ice-rail-cta:focus-visible {
+  color: #0a0e1a;
+  text-decoration: none;
+}
+
+.kk-ice-rail:hover .kk-ice-rail-cta {
+  box-shadow: 0 12px 28px rgba(34, 211, 238, 0.4);
+  transform: translateX(2px);
+}
+.kk-ice-rail-cta i { transition: transform .25s ease; }
+.kk-ice-rail:hover .kk-ice-rail-cta i { transform: translateX(3px); }
+
+/* Mobile: shrink the bubble row tightly so it doesn't wrap awkwardly. */
+@media (max-width: 540px) {
+  .kk-ice-rail-quick-label { display: none; }
+  .kk-ice-bubble { width: 32px; height: 32px; font-size: .95rem; }
+  .kk-ice-rail-title { font-size: 1.1rem; }
+  .kk-ice-rail-sub { font-size: .85rem; }
+}
 </style>
 {% endblock %}

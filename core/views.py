@@ -13,6 +13,11 @@ from subscriptions.services import (
 )
 
 
+# How many items per app section we show on the dashboard.
+# Anything past this is reachable via the "See all" link beneath each list.
+DASHBOARD_RECENT_LIMIT = 5
+
+
 def home(request):
     if request.user.is_authenticated:
         return redirect("core:dashboard")
@@ -28,10 +33,27 @@ def dashboard(request):
         defaults={"display_name": request.user.username},
     )
 
-    questionnaires = Questionnaire.objects.filter(owner=request.user).order_by("-updated_at")[:10]
-    quizzes = Quiz.objects.filter(owner=request.user).order_by("-updated_at")[:10]
+    # We show the 5 most-recent items per app on the dashboard. The full lists
+    # live in each app's own "list" view (polls:list, games:list,
+    # attendance:event_list) which we link to via "See all".
+    questionnaires = (
+        Questionnaire.objects.filter(owner=request.user)
+        .order_by("-updated_at")[:DASHBOARD_RECENT_LIMIT]
+    )
+    quizzes = (
+        Quiz.objects.filter(owner=request.user)
+        .order_by("-updated_at")[:DASHBOARD_RECENT_LIMIT]
+    )
     recent_sessions = LiveSession.objects.filter(owner=request.user).order_by("-created_at")[:5]
-    attendance_events = AttendanceEvent.objects.filter(owner=request.user).order_by("-starts_at")[:10]
+    attendance_events = (
+        AttendanceEvent.objects.filter(owner=request.user)
+        .order_by("-starts_at")[:DASHBOARD_RECENT_LIMIT]
+    )
+
+    # Totals so the section headers / footers can read "See all (12)".
+    questionnaires_total = Questionnaire.objects.filter(owner=request.user).count()
+    quizzes_total = Quiz.objects.filter(owner=request.user).count()
+    attendance_events_total = AttendanceEvent.objects.filter(owner=request.user).count()
 
     plan = get_effective_plan(request.user)
     subscription = get_effective_subscription(request.user)
@@ -52,6 +74,14 @@ def dashboard(request):
         "quizzes": quizzes,
         "recent_sessions": recent_sessions,
         "attendance_events": attendance_events,
+
+        # Totals + cap, so the template can show "See all (N)" only when it
+        # makes sense (i.e. when there are more items than fit on the dashboard).
+        "questionnaires_total": questionnaires_total,
+        "quizzes_total": quizzes_total,
+        "attendance_events_total": attendance_events_total,
+        "recent_limit": DASHBOARD_RECENT_LIMIT,
+
         "plan": plan,
         "subscription": subscription,
         "membership": membership,

@@ -4,7 +4,7 @@ from collections import Counter
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
+from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -804,3 +804,29 @@ def quick_delete_question(request, pk, qpk):
         return JsonResponse({"ok": True})
     messages.info(request, "Question deleted.")
     return redirect("polls:edit", pk=questionnaire.pk)
+
+
+@login_required
+@require_POST
+def delete(request, pk):
+    """Permanently delete a questionnaire.
+
+    Only the owner may delete — collaborators (even with edit role) cannot,
+    matching the existing ownership-only semantics used by start_session.
+    Always POST; we wire the dashboard's trash button as a tiny form.
+    """
+    q = get_object_or_404(Questionnaire, pk=pk)
+    if q.owner_id != request.user.id:
+        return HttpResponseForbidden("You can't delete this questionnaire.")
+
+    title = q.title
+    q.delete()
+    messages.success(request, f"Deleted “{title}”.")
+
+    # Where the user goes back to depends on where they came from.
+    # The dashboard sends a `next` param; fall back to the questionnaire list.
+    nxt = request.POST.get("next") or ""
+    if nxt.startswith("/"):  # accept relative paths only — never open redirects
+        return redirect(nxt)
+    return redirect("polls:list")
+

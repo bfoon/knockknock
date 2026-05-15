@@ -11,6 +11,9 @@ urlpatterns = [
     path("<int:pk>/template/", views.set_template, name="set_template"),
     path("<int:pk>/start/", views.start_session, name="start"),
     path("<int:pk>/reorder/", views.reorder_questions, name="reorder"),
+    # NEW: delete a whole questionnaire (POST-only). Wired from the dashboard's
+    # red trash bin and from the questionnaire list page.
+    path("<int:pk>/delete/", views.delete, name="delete"),
 
     # results / export / reset
     path("<int:pk>/results/", views.questionnaire_results, name="results"),

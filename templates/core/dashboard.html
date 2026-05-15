@@ -153,27 +153,67 @@
   </a>
 </div>
 
+<!--{# ─────────────────────────────────────────────────────────────-->
+<!--   RECENT ITEMS — three columns, capped at `recent_limit` per app.-->
+<!--   Each row carries a red trash bin (POSTs to that app's delete view-->
+<!--   with `next` set to the dashboard so we land back here).-->
+<!--   Each column ends with a "See all (N)" link when there's more than-->
+<!--   what fits — pointing to that app's full list view.-->
+<!--   ───────────────────────────────────────────────────────────── #}-->
 <div class="row g-4">
+
+  <!-- ── Questionnaires ──────────────────────────────────────── -->
   <div class="col-lg-4">
     <h2 class="kk-section-title"><i class="bi bi-collection"></i> Recent questionnaires</h2>
     {% for q in questionnaires %}
-      <a class="kk-list-item" href="{% url 'polls:edit' q.pk %}">
-        <span class="kk-q-index">{{ forloop.counter }}</span>
-        <div class="flex-grow-1">
-          <div class="kk-list-item-title">{{ q.title }}</div>
-          <div class="kk-list-item-meta">{{ q.questions.count }} questions · {{ q.updated_at|timesince }} ago</div>
-        </div>
-        <i class="bi bi-arrow-right text-secondary"></i>
-      </a>
+      <div class="kk-list-item kk-list-item-row">
+        <a href="{% url 'polls:edit' q.pk %}" class="kk-list-item-main">
+          <span class="kk-q-index">{{ forloop.counter }}</span>
+          <div class="flex-grow-1">
+            <div class="kk-list-item-title">{{ q.title }}</div>
+            <div class="kk-list-item-meta">{{ q.questions.count }} questions · {{ q.updated_at|timesince }} ago</div>
+          </div>
+          <i class="bi bi-arrow-right text-secondary"></i>
+        </a>
+<!--        {# Inline POST form for delete. Confirm() guards against accidental clicks.-->
+<!--           `next` ensures we return to the dashboard, not the polls list. #}-->
+        <form method="post"
+              action="{% url 'polls:delete' q.pk %}"
+              class="kk-row-delete-form"
+              onsubmit="return confirm('Delete “{{ q.title|escapejs }}”? This cannot be undone.');">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{% url 'core:dashboard' %}">
+          <button type="submit"
+                  class="kk-row-delete"
+                  title="Delete questionnaire"
+                  aria-label="Delete {{ q.title }}">
+            <i class="bi bi-trash3-fill"></i>
+          </button>
+        </form>
+      </div>
     {% empty %}
       <div class="kk-empty"><div class="em">🎤</div><p>No questionnaires yet. Create your first one!</p></div>
     {% endfor %}
+
+    {% if questionnaires_total > recent_limit %}
+      <a href="{% url 'polls:list' %}" class="kk-see-all">
+        See all questionnaires
+        <span class="kk-see-all-count">{{ questionnaires_total }}</span>
+        <i class="bi bi-arrow-right"></i>
+      </a>
+    {% elif questionnaires_total > 0 %}
+      <a href="{% url 'polls:list' %}" class="kk-see-all kk-see-all-muted">
+        See all
+        <i class="bi bi-arrow-right"></i>
+      </a>
+    {% endif %}
   </div>
 
+  <!-- ── Games ───────────────────────────────────────────────── -->
   <div class="col-lg-4">
     <h2 class="kk-section-title"><i class="bi bi-controller"></i> Recent games</h2>
     {% for g in quizzes %}
-      <div class="kk-list-item kk-list-item-game">
+      <div class="kk-list-item kk-list-item-game kk-list-item-row">
         <span class="kk-q-index">{{ forloop.counter }}</span>
         <a href="{% url 'games:edit' g.pk %}" class="flex-grow-1 text-decoration-none text-reset">
           <div class="kk-list-item-title">{{ g.title }}</div>
@@ -185,29 +225,85 @@
            title="View results & export">
           <i class="bi bi-bar-chart-line"></i> Results
         </a>
+<!--        {# Same delete pattern as questionnaires — POST form with confirm + `next`. #}-->
+        <form method="post"
+              action="{% url 'games:delete' g.pk %}"
+              class="kk-row-delete-form ms-1"
+              onsubmit="return confirm('Delete “{{ g.title|escapejs }}”? This cannot be undone.');">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{% url 'core:dashboard' %}">
+          <button type="submit"
+                  class="kk-row-delete"
+                  title="Delete game"
+                  aria-label="Delete {{ g.title }}">
+            <i class="bi bi-trash3-fill"></i>
+          </button>
+        </form>
       </div>
     {% empty %}
       <div class="kk-empty"><div class="em">🎮</div><p>No games yet. Create your first competition!</p></div>
     {% endfor %}
+
+    {% if quizzes_total > recent_limit %}
+      <a href="{% url 'games:list' %}" class="kk-see-all">
+        See all games
+        <span class="kk-see-all-count">{{ quizzes_total }}</span>
+        <i class="bi bi-arrow-right"></i>
+      </a>
+    {% elif quizzes_total > 0 %}
+      <a href="{% url 'games:list' %}" class="kk-see-all kk-see-all-muted">
+        See all
+        <i class="bi bi-arrow-right"></i>
+      </a>
+    {% endif %}
   </div>
 
+  <!-- ── Events ──────────────────────────────────────────────── -->
   <div class="col-lg-4">
     <h2 class="kk-section-title"><i class="bi bi-calendar-event"></i> Recent events</h2>
     {% for e in attendance_events %}
-      <a class="kk-list-item" href="{% url 'attendance:event_detail' e.pk %}">
-        <span class="kk-q-index">{{ forloop.counter }}</span>
-        <div class="flex-grow-1">
-          <div class="kk-list-item-title">{{ e.title }}</div>
-          <div class="kk-list-item-meta">
-            {{ e.starts_at|date:"j M · H:i" }} ·
-            <span class="kk-status-mini kk-status-mini-{{ e.status }}">{{ e.get_status_display }}</span>
+      <div class="kk-list-item kk-list-item-row">
+        <a href="{% url 'attendance:event_detail' e.pk %}" class="kk-list-item-main">
+          <span class="kk-q-index">{{ forloop.counter }}</span>
+          <div class="flex-grow-1">
+            <div class="kk-list-item-title">{{ e.title }}</div>
+            <div class="kk-list-item-meta">
+              {{ e.starts_at|date:"j M · H:i" }} ·
+              <span class="kk-status-mini kk-status-mini-{{ e.status }}">{{ e.get_status_display }}</span>
+            </div>
           </div>
-        </div>
-        <i class="bi bi-arrow-right text-secondary"></i>
-      </a>
+          <i class="bi bi-arrow-right text-secondary"></i>
+        </a>
+        <form method="post"
+              action="{% url 'attendance:event_delete' e.pk %}"
+              class="kk-row-delete-form"
+              onsubmit="return confirm('Delete “{{ e.title|escapejs }}”? This cannot be undone.');">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{% url 'core:dashboard' %}">
+          <button type="submit"
+                  class="kk-row-delete"
+                  title="Delete event"
+                  aria-label="Delete {{ e.title }}">
+            <i class="bi bi-trash3-fill"></i>
+          </button>
+        </form>
+      </div>
     {% empty %}
       <div class="kk-empty"><div class="em">🎟️</div><p>No events yet. Plan your first one!</p></div>
     {% endfor %}
+
+    {% if attendance_events_total > recent_limit %}
+      <a href="{% url 'attendance:event_list' %}" class="kk-see-all">
+        See all events
+        <span class="kk-see-all-count">{{ attendance_events_total }}</span>
+        <i class="bi bi-arrow-right"></i>
+      </a>
+    {% elif attendance_events_total > 0 %}
+      <a href="{% url 'attendance:event_list' %}" class="kk-see-all kk-see-all-muted">
+        See all
+        <i class="bi bi-arrow-right"></i>
+      </a>
+    {% endif %}
   </div>
 </div>
 
@@ -217,34 +313,21 @@
   background: var(--kk-surface);
   border: 1px solid var(--kk-border);
   border-radius: var(--kk-radius);
-  padding: 1rem 1.25rem;
+  padding: .9rem 1.1rem;
 }
 .kk-quota-track {
-  height: 6px; background: var(--kk-surface-2);
-  border-radius: 999px; overflow: hidden;
+  height: 6px;
+  background: var(--kk-surface-2);
+  border-radius: 999px;
+  overflow: hidden;
 }
 .kk-quota-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--kk-accent), var(--kk-accent-2));
-  transition: width .4s ease;
-}
-.kk-action-tile--locked { opacity: .65; }
-.kk-action-tile--locked .kk-tile-icon { filter: grayscale(1); }
-
-/* Attendance tile — amber accent so it reads differently from Menti (purple) and Game (cyan). */
-.kk-action-tile.attendance {
-  border-color: rgba(251, 191, 36, 0.25);
-  background:
-    linear-gradient(135deg, rgba(251, 191, 36, 0.08), rgba(251, 113, 133, 0.06)),
-    var(--kk-surface);
-}
-.kk-action-tile.attendance:hover {
-  border-color: rgba(251, 191, 36, 0.55);
-  box-shadow: 0 16px 40px rgba(251, 191, 36, 0.15);
+  background: linear-gradient(90deg, #22d3ee, #7c3aed);
+  border-radius: 999px;
+  transition: width .35s ease;
 }
 
-/* Mini status pills for the "Recent events" list. Same colour language as the
-   detail-page kk-status-pill, just compact for the meta line. */
 .kk-status-mini {
   display: inline-block;
   padding: 1px 7px;
@@ -268,6 +351,122 @@
   gap: .65rem;
 }
 .kk-list-item-game .kk-list-item-title { font-weight: 600; }
+
+/* ──────────────────────────────────────────────────────────────
+   ROW + DELETE BUTTON
+   Previously each .kk-list-item was a plain <a>. With a delete
+   button inline we now wrap the row content in a flex container
+   where the main link grows and the trash sits at the right.
+   ────────────────────────────────────────────────────────────── */
+.kk-list-item-row {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  /* Inherit the same hover/border treatment .kk-list-item already has;
+     the row just adds the trash on the right. */
+}
+.kk-list-item-row .kk-list-item-main {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  flex: 1 1 auto;
+  min-width: 0;          /* allow long titles to truncate naturally */
+  text-decoration: none;
+  color: inherit;
+  /* Soak up the same padding the original .kk-list-item used so the row
+     keeps its original click-target size. */
+}
+.kk-list-item-row .kk-list-item-main:hover {
+  text-decoration: none;
+  color: inherit;
+}
+
+.kk-row-delete-form {
+  margin: 0;
+  padding: 0;
+  flex: 0 0 auto;
+}
+.kk-row-delete {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(248, 113, 113, 0.22);
+  background: rgba(248, 113, 113, 0.08);
+  color: #f87171;
+  font-size: .95rem;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease,
+              color .15s ease, transform .15s ease;
+}
+.kk-row-delete:hover,
+.kk-row-delete:focus-visible {
+  background: rgba(248, 113, 113, 0.18);
+  border-color: rgba(248, 113, 113, 0.55);
+  color: #fecaca;
+  transform: translateY(-1px);
+  outline: none;
+}
+.kk-row-delete:active { transform: translateY(0); }
+
+/* ──────────────────────────────────────────────────────────────
+   SEE ALL LINK
+   Footer for each list column. Bright variant when there are more
+   items than fit; muted variant when the user has ≤ recent_limit
+   so they can still jump to the full list view if they want.
+   ────────────────────────────────────────────────────────────── */
+.kk-see-all {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  margin-top: .65rem;
+  padding: .5rem .85rem;
+  border-radius: 10px;
+  font-size: .85rem;
+  font-weight: 600;
+  color: #22d3ee;
+  background: rgba(34, 211, 238, 0.08);
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  text-decoration: none;
+  transition: background .15s ease, border-color .15s ease, transform .15s ease;
+}
+.kk-see-all:hover,
+.kk-see-all:focus-visible {
+  background: rgba(34, 211, 238, 0.16);
+  border-color: rgba(34, 211, 238, 0.5);
+  color: #67e8f9;
+  text-decoration: none;
+  transform: translateX(2px);
+}
+.kk-see-all i { transition: transform .2s ease; }
+.kk-see-all:hover i { transform: translateX(3px); }
+
+.kk-see-all-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 .4rem;
+  border-radius: 999px;
+  background: rgba(34, 211, 238, 0.22);
+  color: #e0f2fe;
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
+.kk-see-all-muted {
+  color: var(--kk-text-dim, rgba(248, 250, 252, 0.55));
+  background: transparent;
+  border-color: var(--kk-border, rgba(255, 255, 255, 0.08));
+}
+.kk-see-all-muted:hover,
+.kk-see-all-muted:focus-visible {
+  color: var(--kk-text, #f8fafc);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.18);
+}
 
 /* ──────────────────────────────────────────────────────────────
    ICEBREAKER RAIL

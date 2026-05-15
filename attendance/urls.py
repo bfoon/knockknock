@@ -11,6 +11,8 @@ urlpatterns = [
     path("<int:pk>/edit/",                  views.event_edit,           name="event_edit"),
     path("<int:pk>/form/",                  views.form_builder,         name="form_builder"),
     path("<int:pk>/status/",                views.event_set_status,     name="event_set_status"),
+    # NEW: delete an event (POST-only). Wired from the dashboard's red bin.
+    path("<int:pk>/delete/",                views.event_delete,         name="event_delete"),
     path("<int:pk>/export.csv",             views.registrations_export, name="export_csv"),
     path("<int:pk>/certificates/bulk/",     views.certificates_bulk,    name="certificates_bulk"),
     path("<int:pk>/certificates/<int:reg_id>/", views.certificate_download, name="certificate_download"),

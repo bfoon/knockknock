@@ -593,3 +593,23 @@ def _find_registration(event, identifier):
     for reg in qs.filter(phone__icontains=digits[-7:]):  # last 7 digits is usually enough
         return reg
     return None
+
+
+@login_required
+@require_POST
+def event_delete(request, pk):
+    """Permanently delete an attendance event.
+
+    Cascades through Registrations, Fields, Certificates etc. via FK rules
+    on the models. POST-only; the dashboard's trash button posts a tiny form
+    with a `next` param so the user lands back where they started.
+    """
+    event = get_object_or_404(AttendanceEvent, pk=pk, owner=request.user)
+    title = event.title
+    event.delete()
+    messages.success(request, f"Deleted “{title}”.")
+
+    nxt = request.POST.get("next") or ""
+    if nxt.startswith("/"):  # accept relative paths only — guard open redirects
+        return redirect(nxt)
+    return redirect("attendance:event_list")

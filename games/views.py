@@ -118,6 +118,26 @@ def edit(request, pk):
 
 
 @login_required
+@require_POST
+def delete(request, pk):
+    """Permanently delete a whole quiz (and its questions / sessions via cascade).
+
+    POST-only — never reachable as a GET so accidental link-prefetch can't
+    nuke a quiz. The dashboard's red trash bin posts here with a `next` param
+    so the user lands back where they started.
+    """
+    quiz = get_object_or_404(Quiz, pk=pk, owner=request.user)
+    title = quiz.title
+    quiz.delete()
+    messages.success(request, f"Deleted “{title}”.")
+
+    nxt = request.POST.get("next") or ""
+    if nxt.startswith("/"):  # relative paths only — guard against open redirects
+        return redirect(nxt)
+    return redirect("games:list")
+
+
+@login_required
 def question_create(request, pk):
     quiz = get_object_or_404(Quiz, pk=pk, owner=request.user)
 

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Event ended · {{ event.title }}{% endblock %}
+{% block content %}
+<div class="kk-public-wrap">
+  <div class="kk-public-card text-center">
+    <div class="kk-empty">
+      <div class="em">🔒</div>
+      <h2 class="mb-2">This event has ended</h2>
+      <p class="kk-text-dim mb-0">
+        Registrations and check-ins are no longer accepted for {{ event.title }}.
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,7 @@
+Hi {{ registration.full_name|default:"there" }},
+
+Thanks for your interest in {{ event.title }}. Unfortunately the organizer wasn't able to confirm your registration this time.
+
+If you think this was a mistake, please contact the organizer directly.
+
+— Knock-Knock

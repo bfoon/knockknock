@@ -3,6 +3,7 @@ from django.shortcuts import render, redirect
 from polls.models import Questionnaire
 from games.models import Quiz
 from presentations.models import LiveSession
+from attendance.models import AttendanceEvent
 
 from subscriptions.services import (
     count_items_for_user,
@@ -30,6 +31,7 @@ def dashboard(request):
     questionnaires = Questionnaire.objects.filter(owner=request.user).order_by("-updated_at")[:10]
     quizzes = Quiz.objects.filter(owner=request.user).order_by("-updated_at")[:10]
     recent_sessions = LiveSession.objects.filter(owner=request.user).order_by("-created_at")[:5]
+    attendance_events = AttendanceEvent.objects.filter(owner=request.user).order_by("-starts_at")[:10]
 
     plan = get_effective_plan(request.user)
     subscription = get_effective_subscription(request.user)
@@ -49,6 +51,7 @@ def dashboard(request):
         "questionnaires": questionnaires,
         "quizzes": quizzes,
         "recent_sessions": recent_sessions,
+        "attendance_events": attendance_events,
         "plan": plan,
         "subscription": subscription,
         "membership": membership,

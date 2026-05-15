@@ -1,0 +1,420 @@
+{% extends "base.html" %}
+{% block title %}Form builder · {{ event.title }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-end justify-content-between flex-wrap gap-3 mb-4">
+  <div>
+    <a href="{% url 'attendance:event_detail' event.pk %}" class="kk-text-dim small text-decoration-none">
+      <i class="bi bi-arrow-left"></i> {{ event.title }}
+    </a>
+    <h1 class="mb-0 mt-1">Registration form</h1>
+    <p class="text-secondary mb-0">Drag presets in, drag rows to reorder, click any field to edit.</p>
+  </div>
+  <div class="d-flex gap-2">
+    <button id="kk-fb-add-custom" class="kk-btn kk-btn-ghost">
+      <i class="bi bi-plus-lg"></i> Custom field
+    </button>
+    <a href="{% url 'attendance:event_detail' event.pk %}" class="kk-btn kk-btn-primary">
+      <i class="bi bi-check2"></i> Done
+    </a>
+  </div>
+</div>
+
+<div class="kk-fb-grid">
+  {# ─── LEFT: live form ──────────────────────────────────────── #}
+  <div class="kk-fb-canvas">
+    <div class="kk-fb-canvas-head">
+      <h3 class="mb-1">{{ event.title }}</h3>
+      <p class="kk-text-dim small mb-0">This is what attendees will see.</p>
+    </div>
+
+    <div id="kk-fb-fields" class="kk-fb-fields"
+         data-reorder-url="{% url 'attendance:field_reorder' event.pk %}">
+      {% for f in fields %}
+        {% include "attendance/_fb_field_row.html" with field=f event=event %}
+      {% empty %}
+        <div class="kk-fb-empty">
+          <i class="bi bi-arrow-right-circle"></i>
+          <p>Pick a preset from the right to start, or add a custom field above.</p>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  {# ─── RIGHT: preset library ─────────────────────────────────── #}
+  <aside class="kk-fb-presets">
+    <div class="kk-fb-presets-head">
+      <h4 class="mb-1">Presets</h4>
+      <p class="kk-text-dim small mb-0">Click to add. Removing later doesn't affect the preset.</p>
+    </div>
+    <div id="kk-fb-preset-list" class="kk-fb-preset-list">
+      {% for p in presets %}
+        <button class="kk-fb-preset" data-key="{{ p.key }}">
+          <i class="bi {{ p.icon }}"></i>
+          <div>
+            <div class="kk-fb-preset-label">{{ p.label }}</div>
+            <div class="kk-fb-preset-type">{{ p.field_type }}{% if p.required %} · required{% endif %}</div>
+          </div>
+          <i class="bi bi-plus-lg ms-auto"></i>
+        </button>
+      {% empty %}
+        <p class="kk-text-dim small mb-0 px-2 py-3">
+          All presets are already on your form. Use the "Custom field" button to add bespoke questions.
+        </p>
+      {% endfor %}
+    </div>
+  </aside>
+</div>
+
+{# ─── Edit-field modal (Bootstrap-styled, populated by JS) ──── #}
+<div class="modal fade" id="kk-fb-edit-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit field</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form id="kk-fb-edit-form">
+        <div class="modal-body" id="kk-fb-edit-body">
+          <div class="mb-3">
+            <label class="form-label">Question label</label>
+            <input name="label" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Field type</label>
+            <select name="field_type" class="form-select">
+              {% for value, label in field_types %}
+                <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Help text <span class="kk-text-dim small">(optional)</span></label>
+            <input name="help_text" class="form-control">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Placeholder <span class="kk-text-dim small">(optional)</span></label>
+            <input name="placeholder" class="form-control">
+          </div>
+          <div class="mb-3" id="kk-fb-options-wrap">
+            <label class="form-label">Options <span class="kk-text-dim small">(one per line, for choice fields)</span></label>
+            <textarea name="options" rows="4" class="form-control"></textarea>
+          </div>
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" name="required" id="kk-fb-required">
+            <label class="form-check-label" for="kk-fb-required">Required</label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-link text-danger me-auto" id="kk-fb-delete">Delete field</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<style>
+.kk-fb-grid {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 1.25rem;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .kk-fb-grid { grid-template-columns: 1fr; }
+}
+
+.kk-fb-canvas {
+  background: var(--kk-surface);
+  border: 1px solid var(--kk-border);
+  border-radius: var(--kk-radius);
+  padding: 1.5rem;
+  min-height: 420px;
+}
+.kk-fb-canvas-head { margin-bottom: 1.25rem; }
+.kk-fb-fields { display: flex; flex-direction: column; gap: .75rem; }
+
+.kk-fb-row {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .85rem 1rem;
+  background: var(--kk-surface-2);
+  border: 1px solid var(--kk-border);
+  border-radius: 10px;
+  cursor: grab;
+  transition: border-color .15s ease, transform .15s ease;
+}
+.kk-fb-row:hover {
+  border-color: rgba(124, 58, 237, 0.45);
+}
+.kk-fb-row.dragging {
+  opacity: .55;
+  border-style: dashed;
+}
+.kk-fb-row .kk-fb-handle {
+  color: var(--kk-text-dim, rgba(248, 250, 252, 0.5));
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+.kk-fb-row .kk-fb-label { font-weight: 600; }
+.kk-fb-row .kk-fb-type {
+  font-size: .8rem;
+  color: var(--kk-text-dim);
+  margin-top: 2px;
+}
+.kk-fb-row .kk-fb-req {
+  font-size: .7rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(251, 113, 133, 0.15);
+  color: #fb7185;
+  font-weight: 700;
+  letter-spacing: .05em;
+}
+.kk-fb-row .kk-fb-edit {
+  color: var(--kk-text-dim);
+  background: transparent;
+  border: 0;
+  padding: 4px 8px;
+}
+.kk-fb-row .kk-fb-edit:hover { color: var(--kk-text); }
+
+.kk-fb-empty {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--kk-text-dim);
+}
+.kk-fb-empty i { font-size: 2rem; display: block; margin-bottom: .5rem; }
+
+.kk-fb-presets {
+  background: var(--kk-surface);
+  border: 1px solid var(--kk-border);
+  border-radius: var(--kk-radius);
+  padding: 1rem;
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+.kk-fb-presets-head { margin-bottom: .75rem; padding: 0 .25rem; }
+.kk-fb-preset-list { display: flex; flex-direction: column; gap: .35rem; }
+.kk-fb-preset {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .65rem .85rem;
+  background: var(--kk-surface-2);
+  border: 1px solid var(--kk-border);
+  border-radius: 8px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.kk-fb-preset:hover {
+  border-color: rgba(124, 58, 237, 0.5);
+  background: rgba(124, 58, 237, 0.08);
+}
+.kk-fb-preset i:first-child { font-size: 1.05rem; color: #22d3ee; }
+.kk-fb-preset-label { font-weight: 500; font-size: .9rem; }
+.kk-fb-preset-type {
+  font-size: .72rem;
+  color: var(--kk-text-dim);
+  text-transform: capitalize;
+}
+</style>
+
+<script>
+(function(){
+  const csrf = document.querySelector('[name=csrfmiddlewaretoken]')?.value
+            || document.cookie.split('; ').find(r => r.startsWith('csrftoken='))?.split('=')[1];
+  const eventPk = {{ event.pk }};
+  const fieldsBox = document.getElementById('kk-fb-fields');
+  const presetList = document.getElementById('kk-fb-preset-list');
+
+  function post(url, body) {
+    const headers = {'X-CSRFToken': csrf};
+    let payload;
+    if (body instanceof FormData) {
+      payload = body;
+    } else if (typeof body === 'object') {
+      headers['Content-Type'] = 'application/json';
+      payload = JSON.stringify(body);
+    }
+    return fetch(url, {method: 'POST', headers, body: payload, credentials: 'same-origin'})
+      .then(r => r.json().catch(() => ({ok: false})));
+  }
+
+  // ── Drag-and-drop reorder ──
+  let dragged = null;
+  function attachDrag(row) {
+    row.setAttribute('draggable', 'true');
+    row.addEventListener('dragstart', e => {
+      dragged = row;
+      row.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('dragging');
+      dragged = null;
+      saveOrder();
+    });
+  }
+  fieldsBox.addEventListener('dragover', e => {
+    e.preventDefault();
+    if (!dragged) return;
+    const after = [...fieldsBox.querySelectorAll('.kk-fb-row:not(.dragging)')]
+      .find(el => e.clientY <= el.getBoundingClientRect().top + el.offsetHeight / 2);
+    if (after) fieldsBox.insertBefore(dragged, after);
+    else fieldsBox.appendChild(dragged);
+  });
+  function saveOrder() {
+    const ids = [...fieldsBox.querySelectorAll('.kk-fb-row')].map(r => +r.dataset.id);
+    post(fieldsBox.dataset.reorderUrl, {order: ids});
+  }
+  fieldsBox.querySelectorAll('.kk-fb-row').forEach(attachDrag);
+
+  // ── Add preset ──
+  presetList.addEventListener('click', async e => {
+    const btn = e.target.closest('.kk-fb-preset');
+    if (!btn) return;
+    const fd = new FormData();
+    fd.append('preset_key', btn.dataset.key);
+    const res = await post('{% url "attendance:field_add_preset" event.pk %}', fd);
+    if (res.ok) {
+      appendFieldRow(res.field);
+      btn.remove();
+    }
+  });
+
+  // ── Add custom ──
+  document.getElementById('kk-fb-add-custom').addEventListener('click', async () => {
+    const fd = new FormData();
+    fd.append('label', 'Untitled question');
+    fd.append('field_type', 'text');
+    const res = await post('{% url "attendance:field_add_custom" event.pk %}', fd);
+    if (res.ok) {
+      const row = appendFieldRow(res.field);
+      // Open the edit modal immediately so they can name it.
+      openEditModal(res.field, row);
+    }
+  });
+
+  // ── Build a row from a field JSON dict ──
+  function appendFieldRow(field) {
+    // Remove the empty-state if present.
+    fieldsBox.querySelector('.kk-fb-empty')?.remove();
+
+    const row = document.createElement('div');
+    row.className = 'kk-fb-row';
+    row.dataset.id = field.id;
+    row.innerHTML = `
+      <i class="bi bi-grip-vertical kk-fb-handle"></i>
+      <div class="flex-grow-1">
+        <div class="kk-fb-label"></div>
+        <div class="kk-fb-type"></div>
+      </div>
+      ${field.required ? '<span class="kk-fb-req">REQUIRED</span>' : ''}
+      <button class="kk-fb-edit" type="button" title="Edit"><i class="bi bi-pencil"></i></button>
+    `;
+    row.querySelector('.kk-fb-label').textContent = field.label;
+    row.querySelector('.kk-fb-type').textContent = field.type_display;
+    row.querySelector('.kk-fb-edit').addEventListener('click', () => openEditModal(field, row));
+    fieldsBox.appendChild(row);
+    attachDrag(row);
+    return row;
+  }
+
+  // Wire existing edit buttons too.
+  fieldsBox.querySelectorAll('.kk-fb-row').forEach(row => {
+    row.querySelector('.kk-fb-edit')?.addEventListener('click', () => {
+      const f = {
+        id: +row.dataset.id,
+        label: row.querySelector('.kk-fb-label').textContent,
+        field_type: row.dataset.fieldType,
+        type_display: row.querySelector('.kk-fb-type').textContent,
+        required: row.dataset.required === '1',
+        help_text: row.dataset.helpText || '',
+        placeholder: row.dataset.placeholder || '',
+        options: row.dataset.options || '',
+      };
+      openEditModal(f, row);
+    });
+  });
+
+  // ── Edit modal ──
+  const modalEl = document.getElementById('kk-fb-edit-modal');
+  const modalForm = document.getElementById('kk-fb-edit-form');
+  let modal = null;
+  let currentRow = null;
+  let currentFieldId = null;
+
+  function openEditModal(field, row) {
+    if (!modal) modal = new bootstrap.Modal(modalEl);
+    currentRow = row;
+    currentFieldId = field.id;
+    modalForm.label.value = field.label || '';
+    modalForm.field_type.value = field.field_type || 'text';
+    modalForm.help_text.value = field.help_text || '';
+    modalForm.placeholder.value = field.placeholder || '';
+    modalForm.options.value = field.options || '';
+    modalForm.required.checked = !!field.required;
+    toggleOptionsVisibility();
+    modal.show();
+  }
+  modalForm.field_type.addEventListener('change', toggleOptionsVisibility);
+  function toggleOptionsVisibility() {
+    const t = modalForm.field_type.value;
+    document.getElementById('kk-fb-options-wrap').style.display =
+      (t === 'select' || t === 'multi') ? '' : 'none';
+  }
+
+  modalForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    const fd = new FormData(modalForm);
+    if (!modalForm.required.checked) fd.delete('required');
+    const url = `/attendance/${eventPk}/fields/${currentFieldId}/`;
+    const res = await post(url, fd);
+    if (res.ok) {
+      currentRow.querySelector('.kk-fb-label').textContent = res.field.label;
+      currentRow.querySelector('.kk-fb-type').textContent = res.field.type_display;
+      const reqBadge = currentRow.querySelector('.kk-fb-req');
+      if (res.field.required && !reqBadge) {
+        const span = document.createElement('span');
+        span.className = 'kk-fb-req';
+        span.textContent = 'REQUIRED';
+        currentRow.querySelector('.kk-fb-edit').before(span);
+      } else if (!res.field.required && reqBadge) {
+        reqBadge.remove();
+      }
+      modal.hide();
+    }
+  });
+
+  document.getElementById('kk-fb-delete').addEventListener('click', async () => {
+    if (!confirm('Remove this field? Answers already collected for it will be deleted too.')) return;
+    const fd = new FormData();
+    const res = await post(`/attendance/${eventPk}/fields/${currentFieldId}/delete/`, fd);
+    if (res.ok) {
+      currentRow.remove();
+      modal.hide();
+      if (!fieldsBox.querySelectorAll('.kk-fb-row').length) {
+        location.reload();  // bring the empty-state back
+      }
+    }
+  });
+
+  // Need a CSRF token in the DOM for our `csrf` lookup above.
+  if (!document.querySelector('[name=csrfmiddlewaretoken]')) {
+    const t = document.createElement('input');
+    t.type = 'hidden';
+    t.name = 'csrfmiddlewaretoken';
+    t.value = csrf || '';
+    document.body.appendChild(t);
+  }
+})();
+</script>
+{% endblock %}

@@ -13,6 +13,7 @@ urlpatterns = [
     path("billing/", include("subscriptions.urls")),
     path("orgs/", include("organizations.urls")),
     path("collab/", include("collaborations.urls")),
+    path("attendance/", include("attendance.urls")),
     path("icebreakers/", include("icebreakers.urls", namespace="icebreakers"))
 ]
 

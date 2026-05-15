@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+{% block title %}{{ event.title }} · Attendance{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-end justify-content-between flex-wrap gap-3 mb-4">
+  <div>
+    <a href="{% url 'attendance:event_list' %}" class="kk-text-dim small text-decoration-none">
+      <i class="bi bi-arrow-left"></i> All events
+    </a>
+    <h1 class="mb-1 mt-1">{{ event.title }}</h1>
+    <p class="text-secondary mb-0">
+      <i class="bi bi-calendar-event"></i> {{ event.starts_at|date:"D, j M Y · H:i" }}
+      <span class="mx-2">·</span>
+      {% if event.is_online %}
+        <i class="bi bi-camera-video"></i> Online
+      {% else %}
+        <i class="bi bi-geo-alt"></i> {{ event.location|default:"Location TBA" }}
+      {% endif %}
+    </p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{% url 'attendance:form_builder' event.pk %}" class="kk-btn kk-btn-ghost">
+      <i class="bi bi-card-checklist"></i> Form
+    </a>
+    <a href="{% url 'attendance:event_edit' event.pk %}" class="kk-btn kk-btn-ghost">
+      <i class="bi bi-pencil"></i> Edit
+    </a>
+    <a href="{% url 'attendance:export_csv' event.pk %}" class="kk-btn kk-btn-ghost">
+      <i class="bi bi-download"></i> Export CSV
+    </a>
+  </div>
+</div>
+
+{# ── Status strip with quick actions ── #}
+<div class="kk-status-strip mb-4">
+  <div class="kk-status-pill kk-status-{{ event.status }}">
+    <span class="kk-status-dot"></span>
+    {{ event.get_status_display }}
+  </div>
+  <form method="post" action="{% url 'attendance:event_set_status' event.pk %}" class="d-inline">
+    {% csrf_token %}
+    {% if event.status == "draft" %}
+      <button name="status" value="open" class="kk-btn kk-btn-primary btn-sm">
+        <i class="bi bi-play-fill"></i> Open registration
+      </button>
+    {% elif event.status == "open" %}
+      <button name="status" value="closed" class="kk-btn kk-btn-ghost btn-sm">
+        <i class="bi bi-pause-fill"></i> Stop registration
+      </button>
+      <button name="status" value="live" class="kk-btn kk-btn-primary btn-sm">
+        <i class="bi bi-broadcast"></i> Mark live
+      </button>
+    {% elif event.status == "closed" %}
+      <button name="status" value="open" class="kk-btn kk-btn-primary btn-sm">
+        <i class="bi bi-play-fill"></i> Re-open
+      </button>
+      <button name="status" value="live" class="kk-btn kk-btn-primary btn-sm">
+        <i class="bi bi-broadcast"></i> Mark live
+      </button>
+    {% elif event.status == "live" %}
+      <button name="status" value="ended" class="kk-btn kk-btn-ghost btn-sm"
+              onclick="return confirm('End the event? The QR and link will stop accepting check-ins.')">
+        <i class="bi bi-stop-fill"></i> End event
+      </button>
+    {% endif %}
+  </form>
+</div>
+
+{# ── Counters row ── #}
+<div class="kk-counter-row mb-4">
+  <div class="kk-counter">
+    <div class="kk-counter-num" data-counter="accepted">{{ accepted_count }}</div>
+    <div class="kk-counter-label">Accepted</div>
+  </div>
+  <div class="kk-counter">
+    <div class="kk-counter-num" data-counter="checked_in">{{ checked_in_count }}</div>
+    <div class="kk-counter-label">Checked in</div>
+  </div>
+  <div class="kk-counter">
+    <div class="kk-counter-num" data-counter="pending">{{ pending_count }}</div>
+    <div class="kk-counter-label">Pending</div>
+  </div>
+  {% if event.capacity %}
+    <div class="kk-counter">
+      <div class="kk-counter-num">{{ seats_remaining }}</div>
+      <div class="kk-counter-label">Seats left of {{ event.capacity }}</div>
+    </div>
+  {% endif %}
+</div>
+
+{% if event.capacity %}
+  {# Capacity gauge — same visual language as the quota banner on the main dashboard. #}
+  <div class="kk-quota-banner mb-4">
+    <div class="d-flex align-items-center justify-content-between mb-2">
+      <div>
+        <strong data-gauge-used>{{ accepted_count }}</strong> / {{ event.capacity }} seats taken
+      </div>
+      <span class="kk-text-dim small">{{ event.get_registration_mode_display }}</span>
+    </div>
+    <div class="kk-quota-track">
+      <div class="kk-quota-fill" data-gauge-fill
+           style="width: {% widthratio accepted_count event.capacity 100 %}%"></div>
+    </div>
+  </div>
+{% endif %}
+
+<div class="row g-4">
+  {# ─── LEFT COLUMN ─────────────────────────────────────── #}
+  <div class="col-lg-7">
+
+    {% if registrations_pending %}
+      <h2 class="kk-section-title">
+        <i class="bi bi-hourglass-split"></i> Pending approval
+        <span class="kk-text-dim small">({{ registrations_pending|length }})</span>
+      </h2>
+      {% for r in registrations_pending %}
+        <div class="kk-list-item">
+          <div class="flex-grow-1">
+            <div class="kk-list-item-title">{{ r.display_name }}</div>
+            <div class="kk-list-item-meta">
+              {{ r.email|default:r.phone }} · {{ r.registered_at|timesince }} ago
+            </div>
+          </div>
+          <form method="post" action="{% url 'attendance:registration_action' event.pk r.pk %}" class="d-flex gap-1">
+            {% csrf_token %}
+            <button name="action" value="accept" class="kk-btn kk-btn-primary btn-sm">
+              <i class="bi bi-check-lg"></i> Accept
+            </button>
+            <button name="action" value="decline" class="kk-btn kk-btn-ghost btn-sm">
+              <i class="bi bi-x-lg"></i> Decline
+            </button>
+          </form>
+        </div>
+      {% endfor %}
+    {% endif %}
+
+    <h2 class="kk-section-title mt-4">
+      <i class="bi bi-people"></i> Attendees
+      <span class="kk-text-dim small">({{ registrations_accepted|length }})</span>
+    </h2>
+    <div id="kk-attendee-list">
+      {% for r in registrations_accepted %}
+        <div class="kk-list-item kk-attendee" data-reg-id="{{ r.pk }}">
+          {% if r.status == "checked_in" %}
+            <span class="kk-presence-dot kk-presence-here" title="Checked in"></span>
+          {% else %}
+            <span class="kk-presence-dot" title="Not yet here"></span>
+          {% endif %}
+          <div class="flex-grow-1">
+            <div class="kk-list-item-title">
+              {{ r.display_name }}
+              {% if r.is_walk_in %}<span class="kk-badge-walkin">walk-in</span>{% endif %}
+            </div>
+            <div class="kk-list-item-meta">
+              {{ r.email|default:r.phone }}
+              {% if r.checked_in_at %} · arrived {{ r.checked_in_at|time:"H:i" }}{% endif %}
+            </div>
+          </div>
+          <form method="post" action="{% url 'attendance:registration_action' event.pk r.pk %}" class="d-flex gap-1">
+            {% csrf_token %}
+            {% if r.status == "accepted" %}
+              <button name="action" value="check_in" class="kk-btn kk-btn-primary btn-sm">
+                <i class="bi bi-check2-circle"></i> Mark present
+              </button>
+            {% else %}
+              {% if event.generate_certificates %}
+                <a href="{% url 'attendance:certificate_download' event.pk r.pk %}"
+                   class="kk-btn kk-btn-ghost btn-sm" title="Certificate">
+                  <i class="bi bi-award"></i>
+                </a>
+              {% endif %}
+              <button name="action" value="uncheck_in" class="kk-btn kk-btn-ghost btn-sm" title="Undo check-in">
+                <i class="bi bi-arrow-counterclockwise"></i>
+              </button>
+            {% endif %}
+          </form>
+        </div>
+      {% empty %}
+        <div class="kk-empty">
+          <div class="em">👥</div>
+          <p>No registrations yet. Share the link below to get the word out.</p>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  {# ─── RIGHT COLUMN ────────────────────────────────────── #}
+  <div class="col-lg-5">
+
+    {# Share panel #}
+    <div class="kk-side-card mb-4">
+      <h3 class="kk-side-card-title"><i class="bi bi-share"></i> Share</h3>
+
+      <label class="kk-text-dim small mb-1">Registration link</label>
+      <div class="input-group mb-3">
+        <input type="text" class="form-control" id="kk-register-url"
+               value="{{ public_register_url }}" readonly>
+        <button class="btn btn-outline-secondary" type="button"
+                onclick="navigator.clipboard.writeText(document.getElementById('kk-register-url').value); this.innerHTML='<i class=&quot;bi bi-check2&quot;></i>'">
+          <i class="bi bi-clipboard"></i>
+        </button>
+      </div>
+
+      <label class="kk-text-dim small mb-1">Check-in QR (project / print at the venue)</label>
+      <div class="kk-qr-frame">
+        <img src="{% url 'attendance:public_qr' event.public_token %}"
+             alt="QR for {{ event.title }}" class="kk-qr-img">
+        <div class="kk-qr-meta">
+          <div class="kk-text-dim small">Or join with code</div>
+          <div class="kk-qr-code">{{ event.code }}</div>
+        </div>
+      </div>
+      <p class="kk-text-dim small mt-2 mb-0">
+        Already registered? Tap "I'm here" after scanning. Walk-in?
+        {% if event.allow_walk_ins %}They'll fill the form on the spot.{% else %}Walk-ins disabled.{% endif %}
+      </p>
+    </div>
+
+    {# Announcement composer #}
+    <div class="kk-side-card mb-4">
+      <h3 class="kk-side-card-title"><i class="bi bi-megaphone"></i> Send announcement</h3>
+      <form method="post" action="{% url 'attendance:announcement_send' event.pk %}">
+        {% csrf_token %}
+        <div class="mb-2">{{ announcement_form.subject }}</div>
+        <div class="mb-2">{{ announcement_form.body }}</div>
+        <div class="row g-2 mb-2">
+          <div class="col">{{ announcement_form.channel }}</div>
+          <div class="col">{{ announcement_form.audience }}</div>
+        </div>
+        <button class="kk-btn kk-btn-primary w-100">
+          <i class="bi bi-send"></i> Send
+        </button>
+      </form>
+    </div>
+
+    {% if event.generate_certificates %}
+      <div class="kk-side-card">
+        <h3 class="kk-side-card-title"><i class="bi bi-award"></i> Certificates</h3>
+        <p class="kk-text-dim small">Issue certificates to everyone currently checked in.</p>
+        <form method="post" action="{% url 'attendance:certificates_bulk' event.pk %}">
+          {% csrf_token %}
+          <button class="kk-btn kk-btn-ghost w-100">
+            <i class="bi bi-stars"></i> Generate for all checked-in
+          </button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+
+{# ── Live updates via WebSocket ── #}
+<script>
+(function(){
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws/attendance/{{ event.pk }}/`);
+  ws.onmessage = (ev) => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch { return; }
+    if (msg.type === 'check_in') {
+      const num = document.querySelector('[data-counter="checked_in"]');
+      if (num) num.textContent = msg.checked_in_count;
+      // Flip the row's presence dot, if it's in the DOM.
+      const row = document.querySelector(`.kk-attendee[data-reg-id="${msg.registration_id}"]`);
+      if (row) {
+        row.querySelector('.kk-presence-dot')?.classList.add('kk-presence-here');
+        row.classList.add('kk-attendee-flash');
+        setTimeout(() => row.classList.remove('kk-attendee-flash'), 1500);
+      }
+    } else if (msg.type === 'new_registration') {
+      document.querySelector('[data-counter="accepted"]').textContent = msg.accepted_count;
+      document.querySelector('[data-counter="pending"]').textContent = msg.pending_count;
+      // The simplest correct thing is to reload to pull in the new row server-rendered.
+      // We debounce a little so a burst of registrations only triggers one reload.
+      clearTimeout(window.__kkReload);
+      window.__kkReload = setTimeout(() => location.reload(), 1200);
+    }
+  };
+})();
+</script>
+
+<style>
+.kk-status-strip { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.kk-status-pill {
+  display: inline-flex; align-items: center; gap: .5rem;
+  padding: .35rem .85rem; border-radius: 999px;
+  background: var(--kk-surface-2); border: 1px solid var(--kk-border);
+  font-size: .8rem; font-weight: 600;
+}
+.kk-status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--kk-text-dim); }
+.kk-status-open  .kk-status-dot { background: #22d3ee; box-shadow: 0 0 8px rgba(34, 211, 238, 0.6); }
+.kk-status-live  .kk-status-dot { background: #fb7185; animation: kkLivePulse 1.4s ease-in-out infinite; }
+.kk-status-ended .kk-status-dot { background: var(--kk-text-dim); }
+.kk-status-closed .kk-status-dot { background: #f59e0b; }
+@keyframes kkLivePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: .4; transform: scale(1.4); }
+}
+
+.kk-counter-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .75rem; }
+.kk-counter {
+  background: var(--kk-surface); border: 1px solid var(--kk-border);
+  border-radius: var(--kk-radius); padding: 1rem 1.1rem;
+}
+.kk-counter-num { font-size: 2rem; font-weight: 700; line-height: 1; }
+.kk-counter-label { color: var(--kk-text-dim); font-size: .85rem; margin-top: .25rem; }
+
+.kk-side-card {
+  background: var(--kk-surface); border: 1px solid var(--kk-border);
+  border-radius: var(--kk-radius); padding: 1.25rem;
+}
+.kk-side-card-title { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; }
+
+.kk-qr-frame {
+  display: flex; align-items: center; gap: 1rem;
+  background: white; padding: .75rem; border-radius: 12px;
+}
+.kk-qr-img { width: 120px; height: 120px; }
+.kk-qr-meta { color: #0f172a; }
+.kk-qr-code {
+  font-size: 1.6rem; font-weight: 800; letter-spacing: .15em;
+  font-variant-numeric: tabular-nums;
+}
+.kk-qr-meta .kk-text-dim { color: #475569 !important; }
+
+.kk-presence-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--kk-border); flex-shrink: 0;
+}
+.kk-presence-here {
+  background: #22d3ee;
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.8);
+}
+.kk-attendee-flash {
+  animation: kkAttendeeFlash 1.5s ease;
+}
+@keyframes kkAttendeeFlash {
+  0%   { background: rgba(34, 211, 238, 0.18); }
+  100% { background: transparent; }
+}
+.kk-badge-walkin {
+  font-size: .65rem; padding: 2px 7px; border-radius: 999px;
+  background: rgba(251, 191, 36, 0.15); color: #fbbf24;
+  font-weight: 700; letter-spacing: .05em; margin-left: .35rem;
+}
+</style>
+{% endblock %}

@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Your ticket · {{ event.title }}{% endblock %}
+
+{% block content %}
+<div class="kk-public-wrap">
+  <div class="kk-ticket">
+    <div class="kk-ticket-head">
+      <div class="kk-ticket-status kk-ticket-status-{{ registration.status }}">
+        {% if registration.status == "pending" %}
+          <i class="bi bi-hourglass-split"></i> Pending review
+        {% elif registration.status == "accepted" %}
+          <i class="bi bi-check2-circle"></i> Confirmed
+        {% elif registration.status == "checked_in" %}
+          <i class="bi bi-door-open"></i> Checked in
+        {% elif registration.status == "declined" %}
+          <i class="bi bi-x-circle"></i> Declined
+        {% elif registration.status == "cancelled" %}
+          <i class="bi bi-x-circle"></i> Cancelled
+        {% endif %}
+      </div>
+      <h1 class="mb-1">{{ event.title }}</h1>
+      <p class="text-secondary mb-0">{{ event.starts_at|date:"l, j F · H:i" }}</p>
+    </div>
+
+    {% if registration.status == "checked_in" %}
+      <div class="kk-ticket-banner kk-ticket-banner-success">
+        <i class="bi bi-check-circle-fill"></i>
+        You're checked in. Have a great session!
+      </div>
+    {% elif registration.status == "pending" %}
+      <div class="kk-ticket-banner kk-ticket-banner-pending">
+        <i class="bi bi-clock-history"></i>
+        The organizer is reviewing your registration. We'll email you once it's confirmed.
+      </div>
+    {% elif registration.status == "accepted" %}
+      <div class="kk-ticket-qr-block">
+        <p class="kk-text-dim small mb-2">Scan this at the door, or tap below if you're there now.</p>
+        <img src="{% url 'attendance:ticket_qr' registration.token %}"
+             alt="Your personal QR" class="kk-ticket-qr">
+        {% if event.is_check_in_open %}
+          <a href="{% url 'attendance:attendee_check_in' registration.token %}"
+             class="kk-btn kk-btn-primary kk-btn-lg w-100 mt-3">
+            <i class="bi bi-door-open"></i> I'm here — check me in
+          </a>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    {% if event.agenda %}
+      <div class="kk-ticket-section">
+        <h3><i class="bi bi-list-check"></i> Agenda</h3>
+        <div class="kk-ticket-agenda">{{ event.agenda|linebreaks }}</div>
+      </div>
+    {% endif %}
+
+    {% if event.is_online and event.online_url and registration.status in "accepted,checked_in" %}
+      <div class="kk-ticket-section">
+        <h3><i class="bi bi-camera-video"></i> Join online</h3>
+        <a href="{{ event.online_url }}" class="kk-btn kk-btn-ghost w-100" target="_blank" rel="noopener">
+          {{ event.online_url }}
+        </a>
+      </div>
+    {% elif event.location %}
+      <div class="kk-ticket-section">
+        <h3><i class="bi bi-geo-alt"></i> Where</h3>
+        <p class="mb-0">{{ event.location }}</p>
+      </div>
+    {% endif %}
+
+    {# Live announcement feed from the organizer #}
+    <div class="kk-ticket-section">
+      <h3><i class="bi bi-megaphone"></i> From the organizer</h3>
+      <div id="kk-ticket-feed">
+        <p class="kk-text-dim small mb-0" id="kk-ticket-feed-empty">No announcements yet.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws/attendance/{{ event.pk }}/`);
+  const feed = document.getElementById('kk-ticket-feed');
+  const empty = document.getElementById('kk-ticket-feed-empty');
+
+  ws.onmessage = (ev) => {
+    let msg; try { msg = JSON.parse(ev.data); } catch { return; }
+    if (msg.type === 'announcement') {
+      empty?.remove();
+      const block = document.createElement('div');
+      block.className = 'kk-announcement';
+      block.innerHTML = `
+        ${msg.subject ? `<div class="kk-announcement-subject"></div>` : ''}
+        <div class="kk-announcement-body"></div>
+        <div class="kk-announcement-time"></div>
+      `;
+      if (msg.subject) block.querySelector('.kk-announcement-subject').textContent = msg.subject;
+      block.querySelector('.kk-announcement-body').textContent = msg.body;
+      block.querySelector('.kk-announcement-time').textContent = new Date(msg.sent_at).toLocaleTimeString();
+      feed.prepend(block);
+      // Optional: native browser notification.
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('{{ event.title|escapejs }}', {body: msg.body});
+      }
+    } else if (msg.type === 'event_ended') {
+      const block = document.createElement('div');
+      block.className = 'kk-ticket-banner kk-ticket-banner-pending';
+      block.textContent = msg.message || 'This event has ended.';
+      document.querySelector('.kk-ticket').prepend(block);
+    }
+  };
+
+  // Ask once, in a friendly way, but don't be pushy.
+  if ('Notification' in window && Notification.permission === 'default') {
+    setTimeout(() => Notification.requestPermission(), 5000);
+  }
+})();
+</script>
+
+<style>
+.kk-ticket {
+  background: var(--kk-surface); border: 1px solid var(--kk-border);
+  border-radius: var(--kk-radius); padding: 2rem;
+}
+.kk-ticket-head { margin-bottom: 1.5rem; }
+.kk-ticket-status {
+  display: inline-flex; align-items: center; gap: .4rem;
+  padding: .3rem .8rem; border-radius: 999px;
+  font-size: .8rem; font-weight: 600;
+  margin-bottom: 1rem;
+}
+.kk-ticket-status-pending     { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+.kk-ticket-status-accepted    { background: rgba(34, 211, 238, 0.15); color: #22d3ee; }
+.kk-ticket-status-checked_in  { background: rgba(34, 197, 94, 0.15);  color: #4ade80; }
+.kk-ticket-status-declined,
+.kk-ticket-status-cancelled   { background: rgba(251, 113, 133, 0.15);color: #fb7185; }
+
+.kk-ticket-banner {
+  padding: 1rem 1.2rem; border-radius: 12px; margin-bottom: 1.5rem;
+  display: flex; align-items: center; gap: .6rem;
+}
+.kk-ticket-banner-success { background: rgba(34, 197, 94, 0.1); color: #4ade80; }
+.kk-ticket-banner-pending { background: rgba(245, 158, 11, 0.1); color: #fbbf24; }
+
+.kk-ticket-qr-block { text-align: center; padding: 1.5rem 0; }
+.kk-ticket-qr {
+  width: 220px; height: 220px;
+  background: white; padding: 12px; border-radius: 12px;
+}
+
+.kk-ticket-section {
+  border-top: 1px solid var(--kk-border);
+  padding-top: 1.25rem; margin-top: 1.25rem;
+}
+.kk-ticket-section h3 { font-size: 1rem; font-weight: 600; margin-bottom: .75rem; }
+.kk-ticket-agenda { color: var(--kk-text-dim); }
+
+.kk-announcement {
+  padding: .8rem 1rem; background: var(--kk-surface-2);
+  border-left: 3px solid #22d3ee; border-radius: 8px;
+  margin-bottom: .5rem;
+}
+.kk-announcement-subject { font-weight: 600; margin-bottom: .25rem; }
+.kk-announcement-time { font-size: .7rem; color: var(--kk-text-dim); margin-top: .35rem; }
+</style>
+{% endblock %}

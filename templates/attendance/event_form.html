@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}{% if is_new %}New event{% else %}Edit · {{ event.title }}{% endif %}{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  {% if not is_new %}
+    <a href="{% url 'attendance:event_detail' event.pk %}" class="kk-text-dim small text-decoration-none">
+      <i class="bi bi-arrow-left"></i> {{ event.title }}
+    </a>
+  {% endif %}
+  <h1 class="mb-0 mt-1">{% if is_new %}New event{% else %}Edit event{% endif %}</h1>
+  <p class="text-secondary mb-0">
+    {% if is_new %}You'll build the registration form next.{% else %}Tweak the basics.{% endif %}
+  </p>
+</div>
+
+<form method="post" enctype="multipart/form-data" class="kk-form-card">
+  {% csrf_token %}
+
+  {# Top-of-form error summary. Catches anything the per-field error blocks
+     below might miss, so a failed save never looks like 'nothing happened.' #}
+  {% if form.errors %}
+    <div class="alert alert-danger mb-3">
+      <strong><i class="bi bi-exclamation-triangle"></i> Couldn't save — please fix the errors below.</strong>
+      <ul class="mb-0 mt-2">
+        {% for field in form %}
+          {% for err in field.errors %}
+            <li><strong>{{ field.label }}:</strong> {{ err }}</li>
+          {% endfor %}
+        {% endfor %}
+        {% for err in form.non_field_errors %}
+          <li>{{ err }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <div class="mb-3">
+    <label class="form-label">Title</label>
+    {{ form.title }}
+    {% if form.title.errors %}<div class="text-danger small">{{ form.title.errors|join:", " }}</div>{% endif %}
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Description <span class="kk-text-dim small">(public)</span></label>
+    {{ form.description }}
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Agenda</label>
+    {{ form.agenda }}
+    <div class="form-text">Shown on tickets and included in confirmation emails.</div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label">Starts at</label>
+      {{ form.starts_at }}
+      {% if form.starts_at.errors %}<div class="text-danger small">{{ form.starts_at.errors|join:", " }}</div>{% endif %}
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Ends at</label>
+      {{ form.ends_at }}
+      {% if form.ends_at.errors %}<div class="text-danger small">{{ form.ends_at.errors|join:", " }}</div>{% endif %}
+    </div>
+  </div>
+
+  <div class="row g-3 mt-1">
+    <div class="col-md-6">
+      <label class="form-label">Timezone</label>
+      {{ form.timezone_name }}
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Cover image</label>
+      {{ form.cover_image }}
+    </div>
+  </div>
+
+  <hr class="my-4">
+
+  <div class="form-check mb-3">
+    {{ form.is_online }}
+    <label class="form-check-label">This is an online event</label>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Location <span class="kk-text-dim small">(for in-person events)</span></label>
+    {{ form.location }}
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Meeting URL <span class="kk-text-dim small">(for online events)</span></label>
+    {{ form.online_url }}
+    {% if form.online_url.errors %}<div class="text-danger small">{{ form.online_url.errors|join:", " }}</div>{% endif %}
+  </div>
+
+  <hr class="my-4">
+
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label">Capacity <span class="kk-text-dim small">(blank = unlimited)</span></label>
+      {{ form.capacity }}
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Registration closes</label>
+      {{ form.registration_closes_at }}
+      <div class="form-text">Defaults to event start.</div>
+    </div>
+  </div>
+
+  <div class="mb-3 mt-3">
+    <label class="form-label">Acceptance mode</label>
+    {{ form.registration_mode }}
+  </div>
+
+  <div class="form-check mb-3">
+    {{ form.allow_walk_ins }}
+    <label class="form-check-label">Allow walk-ins at the venue</label>
+  </div>
+
+  <hr class="my-4">
+
+  <div class="form-check mb-3">
+    {{ form.generate_certificates }}
+    <label class="form-check-label">Generate participation certificates</label>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Certificate text template <span class="kk-text-dim small">(optional)</span></label>
+    {{ form.certificate_template }}
+    <div class="form-text">Use <code>{% verbatim %}{{ name }}{% endverbatim %}</code> and <code>{% verbatim %}{{ event }}{% endverbatim %}</code> as placeholders.</div>
+  </div>
+
+  {% if form.non_field_errors %}
+    <div class="alert alert-danger">{{ form.non_field_errors|join:", " }}</div>
+  {% endif %}
+
+  <div class="d-flex gap-2 mt-4">
+    <button type="submit" class="kk-btn kk-btn-primary">
+      <i class="bi bi-check2"></i> {% if is_new %}Create event{% else %}Save changes{% endif %}
+    </button>
+    {% if not is_new %}
+      <a href="{% url 'attendance:event_detail' event.pk %}" class="kk-btn kk-btn-ghost">Cancel</a>
+    {% endif %}
+  </div>
+</form>
+
+<style>
+.kk-form-card {
+  background: var(--kk-surface);
+  border: 1px solid var(--kk-border);
+  border-radius: var(--kk-radius);
+  padding: 1.75rem;
+  max-width: 760px;
+}
+</style>
+{% endblock %}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Check in · {{ event.title }}{% endblock %}
+
+{% block content %}
+<div class="kk-public-wrap">
+  <div class="kk-public-card text-center">
+    <h1 class="mb-1">{{ event.title }}</h1>
+    <p class="text-secondary mb-4">{{ event.starts_at|date:"l, j F · H:i" }}</p>
+
+    {% if error %}
+      <div class="alert alert-danger text-start">{{ error }}</div>
+    {% endif %}
+
+    <p class="kk-text-dim mb-3">Already registered? Enter the email or phone you used.</p>
+
+    <form method="post" class="text-start">
+      {% csrf_token %}
+      <div class="mb-3">{{ form.identifier }}</div>
+      <button class="kk-btn kk-btn-primary kk-btn-lg w-100">
+        <i class="bi bi-door-open"></i> I'm here — check me in
+      </button>
+    </form>
+
+    {% if can_walk_in %}
+      <div class="kk-or-divider"><span>or</span></div>
+      <a href="{% url 'attendance:public_register' event.public_token %}?walk_in=1"
+         class="kk-btn kk-btn-ghost kk-btn-lg w-100">
+        <i class="bi bi-pencil-square"></i> I haven't registered yet
+      </a>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+.kk-or-divider {
+  display: flex; align-items: center; gap: .75rem;
+  margin: 1.25rem 0; color: var(--kk-text-dim); font-size: .85rem;
+}
+.kk-or-divider::before, .kk-or-divider::after {
+  content: ""; flex: 1; height: 1px; background: var(--kk-border);
+}
+</style>
+{% endblock %}

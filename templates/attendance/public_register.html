@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Register · {{ event.title }}{% endblock %}
+
+{% block content %}
+<div class="kk-public-wrap">
+  {% if event.cover_image %}
+    <div class="kk-public-cover" style="background-image: url('{{ event.cover_image.url }}')"></div>
+  {% endif %}
+
+  <div class="kk-public-card">
+    <div class="mb-4">
+      {% if walk_in %}<span class="kk-badge-walkin">walk-in</span>{% endif %}
+      <h1 class="mt-2 mb-1">{{ event.title }}</h1>
+      <p class="text-secondary mb-0">
+        <i class="bi bi-calendar-event"></i>
+        {{ event.starts_at|date:"l, j F Y · H:i" }}
+        {% if event.is_online %}
+          · <i class="bi bi-camera-video"></i> Online
+        {% elif event.location %}
+          · <i class="bi bi-geo-alt"></i> {{ event.location }}
+        {% endif %}
+      </p>
+    </div>
+
+    {% if event.description %}
+      <div class="kk-public-blurb mb-4">{{ event.description|linebreaks }}</div>
+    {% endif %}
+
+    {% if event.capacity %}
+      <div class="kk-public-capacity mb-3">
+        <i class="bi bi-people"></i>
+        {{ event.seats_remaining }} of {{ event.capacity }} seats left
+      </div>
+    {% endif %}
+
+    <form method="post" class="kk-public-form">
+      {% csrf_token %}
+
+      {% for field in form %}
+        <div class="mb-3">
+          <label class="form-label">
+            {{ field.label }}{% if field.field.required %} <span class="text-danger">*</span>{% endif %}
+          </label>
+          {{ field }}
+          {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+          {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors|join:", " }}</div>{% endif %}
+        </div>
+      {% endfor %}
+
+      <button type="submit" class="kk-btn kk-btn-primary kk-btn-lg w-100">
+        {% if walk_in %}
+          <i class="bi bi-door-open"></i> Register & check in
+        {% else %}
+          <i class="bi bi-ticket-perforated"></i> Register
+        {% endif %}
+      </button>
+
+      {% if event.registration_mode == "manual" and not walk_in %}
+        <p class="kk-text-dim small mt-3 mb-0 text-center">
+          Your registration will be reviewed by the organizer before being confirmed.
+        </p>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+<style>
+.kk-public-wrap { max-width: 640px; margin: 0 auto; }
+.kk-public-cover {
+  height: 180px; background-size: cover; background-position: center;
+  border-radius: var(--kk-radius); margin-bottom: -2rem; position: relative; z-index: 0;
+}
+.kk-public-card {
+  background: var(--kk-surface); border: 1px solid var(--kk-border);
+  border-radius: var(--kk-radius); padding: 2rem; position: relative; z-index: 1;
+}
+.kk-public-blurb { color: var(--kk-text-dim); line-height: 1.6; }
+.kk-public-capacity {
+  display: inline-flex; align-items: center; gap: .4rem;
+  padding: .35rem .8rem; border-radius: 999px;
+  background: rgba(34, 211, 238, 0.1); color: #22d3ee;
+  font-size: .85rem; font-weight: 500;
+}
+.kk-badge-walkin {
+  display: inline-block; font-size: .7rem; padding: 3px 9px; border-radius: 999px;
+  background: rgba(251, 191, 36, 0.18); color: #fbbf24;
+  font-weight: 700; letter-spacing: .05em;
+}
+</style>
+{% endblock %}

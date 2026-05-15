@@ -1,0 +1,12 @@
+Hi {{ registration.full_name|default:"there" }},
+
+Great news — your registration for {{ event.title }} is confirmed.
+
+When: {{ event.starts_at|date:"l, j F Y · H:i" }}
+{% if event.location %}Where: {{ event.location }}{% endif %}
+
+Your ticket and QR code:
+{{ ticket_url }}
+
+See you there!
+— {{ event.title }} via Knock-Knock

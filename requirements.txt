@@ -12,3 +12,4 @@ gunicorn==22.0.0
 matplotlib
 python-docx
 openpyxl
+reportlab

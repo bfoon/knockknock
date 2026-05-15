@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     "subscriptions",
     "organizations",
     "collaborations",
+    "attendance",
     "icebreakers.apps.IcebreakersConfig",
 ]
 

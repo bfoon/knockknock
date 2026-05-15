@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Registration closed · {{ event.title }}{% endblock %}
+{% block content %}
+<div class="kk-public-wrap">
+  <div class="kk-public-card text-center">
+    <div class="kk-empty">
+      <div class="em">⏸️</div>
+      <h2 class="mb-2">Registration is closed</h2>
+      <p class="kk-text-dim mb-0">
+        {{ event.title }} isn't accepting new registrations right now.
+        {% if event.capacity and event.seats_remaining == 0 %}It's at capacity.{% endif %}
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}

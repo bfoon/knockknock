@@ -143,10 +143,18 @@
       {% if can_create %}Create game{% else %}See plans{% endif %} <i class="bi bi-arrow-right"></i>
     </span>
   </a>
+  <a href="{% url 'attendance:event_create' %}" class="kk-action-tile attendance">
+    <span class="kk-tile-icon">🎟️</span>
+    <h2>New Attendance Event</h2>
+    <p>Registration forms, QR check-in, live attendee list — for meetings, trainings &amp; workshops.</p>
+    <span class="kk-btn kk-btn-primary btn-sm">
+      Create event <i class="bi bi-arrow-right"></i>
+    </span>
+  </a>
 </div>
 
 <div class="row g-4">
-  <div class="col-lg-6">
+  <div class="col-lg-4">
     <h2 class="kk-section-title"><i class="bi bi-collection"></i> Recent questionnaires</h2>
     {% for q in questionnaires %}
       <a class="kk-list-item" href="{% url 'polls:edit' q.pk %}">
@@ -162,7 +170,7 @@
     {% endfor %}
   </div>
 
-  <div class="col-lg-6">
+  <div class="col-lg-4">
     <h2 class="kk-section-title"><i class="bi bi-controller"></i> Recent games</h2>
     {% for g in quizzes %}
       <div class="kk-list-item kk-list-item-game">
@@ -180,6 +188,25 @@
       </div>
     {% empty %}
       <div class="kk-empty"><div class="em">🎮</div><p>No games yet. Create your first competition!</p></div>
+    {% endfor %}
+  </div>
+
+  <div class="col-lg-4">
+    <h2 class="kk-section-title"><i class="bi bi-calendar-event"></i> Recent events</h2>
+    {% for e in attendance_events %}
+      <a class="kk-list-item" href="{% url 'attendance:event_detail' e.pk %}">
+        <span class="kk-q-index">{{ forloop.counter }}</span>
+        <div class="flex-grow-1">
+          <div class="kk-list-item-title">{{ e.title }}</div>
+          <div class="kk-list-item-meta">
+            {{ e.starts_at|date:"j M · H:i" }} ·
+            <span class="kk-status-mini kk-status-mini-{{ e.status }}">{{ e.get_status_display }}</span>
+          </div>
+        </div>
+        <i class="bi bi-arrow-right text-secondary"></i>
+      </a>
+    {% empty %}
+      <div class="kk-empty"><div class="em">🎟️</div><p>No events yet. Plan your first one!</p></div>
     {% endfor %}
   </div>
 </div>
@@ -203,6 +230,36 @@
 }
 .kk-action-tile--locked { opacity: .65; }
 .kk-action-tile--locked .kk-tile-icon { filter: grayscale(1); }
+
+/* Attendance tile — amber accent so it reads differently from Menti (purple) and Game (cyan). */
+.kk-action-tile.attendance {
+  border-color: rgba(251, 191, 36, 0.25);
+  background:
+    linear-gradient(135deg, rgba(251, 191, 36, 0.08), rgba(251, 113, 133, 0.06)),
+    var(--kk-surface);
+}
+.kk-action-tile.attendance:hover {
+  border-color: rgba(251, 191, 36, 0.55);
+  box-shadow: 0 16px 40px rgba(251, 191, 36, 0.15);
+}
+
+/* Mini status pills for the "Recent events" list. Same colour language as the
+   detail-page kk-status-pill, just compact for the meta line. */
+.kk-status-mini {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  background: var(--kk-surface-2);
+  color: var(--kk-text-dim);
+}
+.kk-status-mini-open   { background: rgba(34, 211, 238, 0.15); color: #22d3ee; }
+.kk-status-mini-live   { background: rgba(251, 113, 133, 0.15); color: #fb7185; }
+.kk-status-mini-closed { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+.kk-status-mini-ended  { background: var(--kk-surface-2); color: var(--kk-text-dim); }
 
 /* Recent games row that contains both the edit link and a Results button. */
 .kk-list-item-game {

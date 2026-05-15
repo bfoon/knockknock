@@ -1,0 +1,21 @@
+Hi {{ registration.full_name|default:"there" }},
+
+{% if is_pending %}Thanks for registering for {{ event.title }}.
+
+Your registration is waiting for the organizer to review. We'll email you again as soon as it's confirmed.
+{% else %}You're all set for {{ event.title }}!
+
+When: {{ event.starts_at|date:"l, j F Y · H:i" }}
+{% if event.is_online %}Where: Online ({{ event.online_url }})
+{% elif event.location %}Where: {{ event.location }}
+{% endif %}
+{% endif %}
+Your ticket page — with QR for check-in:
+{{ ticket_url }}
+
+{% if event.agenda %}—— Agenda ——
+
+{{ event.agenda }}
+{% endif %}
+See you there.
+— {{ event.title }} via Knock-Knock

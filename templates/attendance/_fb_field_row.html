@@ -1,0 +1,16 @@
+{# Args: field, event #}
+<div class="kk-fb-row"
+     data-id="{{ field.pk }}"
+     data-field-type="{{ field.field_type }}"
+     data-required="{% if field.required %}1{% else %}0{% endif %}"
+     data-help-text="{{ field.help_text|escape }}"
+     data-placeholder="{{ field.placeholder|escape }}"
+     data-options="{{ field.options|escape }}">
+  <i class="bi bi-grip-vertical kk-fb-handle"></i>
+  <div class="flex-grow-1">
+    <div class="kk-fb-label">{{ field.label }}</div>
+    <div class="kk-fb-type">{{ field.get_field_type_display }}</div>
+  </div>
+  {% if field.required %}<span class="kk-fb-req">REQUIRED</span>{% endif %}
+  <button class="kk-fb-edit" type="button" title="Edit"><i class="bi bi-pencil"></i></button>
+</div>

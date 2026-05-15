@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Attendance · Knock-Knock{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-end justify-content-between flex-wrap gap-3 mb-4">
+  <div>
+    <h1 class="mb-1">Attendance</h1>
+    <p class="text-secondary mb-0">Meetings, trainings, workshops — anything with a guest list.</p>
+  </div>
+  <a href="{% url 'attendance:event_create' %}" class="kk-btn kk-btn-primary">
+    <i class="bi bi-plus-lg"></i> New event
+  </a>
+</div>
+
+<div class="row g-3">
+  {% for event in events %}
+    <div class="col-md-6 col-lg-4">
+      <a href="{% url 'attendance:event_detail' event.pk %}" class="kk-event-card">
+        {% if event.cover_image %}
+          <div class="kk-event-cover" style="background-image: url('{{ event.cover_image.url }}')"></div>
+        {% else %}
+          <div class="kk-event-cover kk-event-cover--placeholder">
+            <i class="bi bi-calendar-event"></i>
+          </div>
+        {% endif %}
+        <div class="kk-event-card-body">
+          <span class="kk-status-pill kk-status-{{ event.status }} mb-2">
+            <span class="kk-status-dot"></span>
+            {{ event.get_status_display }}
+          </span>
+          <h3 class="mb-1">{{ event.title }}</h3>
+          <p class="kk-text-dim small mb-2">
+            <i class="bi bi-calendar3"></i> {{ event.starts_at|date:"D, j M · H:i" }}
+          </p>
+          <div class="kk-text-dim small">
+            {{ event.accepted_count }} accepted
+            {% if event.capacity %} / {{ event.capacity }}{% endif %}
+            · {{ event.checked_in_count }} present
+          </div>
+        </div>
+      </a>
+    </div>
+  {% empty %}
+    <div class="col-12">
+      <div class="kk-empty">
+        <div class="em">📋</div>
+        <p>No events yet. Click "New event" to set up your first one.</p>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+<style>
+.kk-event-card {
+  display: block; text-decoration: none; color: inherit;
+  background: var(--kk-surface); border: 1px solid var(--kk-border);
+  border-radius: var(--kk-radius); overflow: hidden;
+  transition: transform .2s ease, border-color .2s ease;
+}
+.kk-event-card:hover {
+  transform: translateY(-3px); border-color: rgba(124, 58, 237, 0.5);
+  color: inherit; text-decoration: none;
+}
+.kk-event-cover {
+  height: 130px; background-size: cover; background-position: center;
+  background-color: var(--kk-surface-2);
+}
+.kk-event-cover--placeholder {
+  display: grid; place-items: center;
+  font-size: 2.5rem; color: var(--kk-text-dim);
+  background: linear-gradient(135deg, rgba(124, 58, 237, .08), rgba(34, 211, 238, .08));
+}
+.kk-event-card-body { padding: 1rem 1.1rem; }
+.kk-status-pill {
+  display: inline-flex; align-items: center; gap: .4rem;
+  padding: .2rem .6rem; border-radius: 999px;
+  background: var(--kk-surface-2); font-size: .7rem; font-weight: 600;
+  letter-spacing: .05em;
+}
+.kk-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--kk-text-dim); }
+.kk-status-open .kk-status-dot { background: #22d3ee; }
+.kk-status-live .kk-status-dot { background: #fb7185; }
+.kk-status-closed .kk-status-dot { background: #f59e0b; }
+</style>
+{% endblock %}

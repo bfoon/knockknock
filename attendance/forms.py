@@ -20,7 +20,7 @@ Three forms here:
 from django import forms
 from django.core.exceptions import ValidationError
 
-from .models import AttendanceEvent, EventField
+from .models import AttendanceEvent, EventField, AgendaItem
 
 
 # ───────────────────────── Organizer-side ─────────────────────────
@@ -45,7 +45,16 @@ class EventForm(forms.ModelForm):
             "location", "is_online", "online_url",
             "starts_at", "ends_at", "timezone_name",
             "capacity", "registration_mode", "registration_closes_at",
-            "allow_walk_ins", "generate_certificates", "certificate_template",
+            "allow_walk_ins",
+            # Geofence
+            "require_geofence", "geofence_lat", "geofence_lng", "geofence_radius_m",
+            # Agenda visual style
+            "agenda_template_key",
+            # Certificate
+            "generate_certificates", "certificate_template_key",
+            "certificate_logo",
+            "certificate_logo_x_pct", "certificate_logo_y_pct",
+            "certificate_logo_width_pct",
         )
         widgets = {
             "starts_at": forms.DateTimeInput(
@@ -62,7 +71,27 @@ class EventForm(forms.ModelForm):
             ),
             "description": forms.Textarea(attrs={"rows": 3, "class": "form-control"}),
             "agenda": forms.Textarea(attrs={"rows": 6, "class": "form-control"}),
-            "certificate_template": forms.Textarea(attrs={"rows": 4, "class": "form-control"}),
+            # Geofence — these are technically optional; the wider UI in
+            # event_form.html gates them behind the `require_geofence` toggle
+            # and adds a "use my current location" button.
+            "geofence_lat": forms.NumberInput(attrs={
+                "class": "form-control", "step": "any",
+                "placeholder": "e.g. 13.4549",
+            }),
+            "geofence_lng": forms.NumberInput(attrs={
+                "class": "form-control", "step": "any",
+                "placeholder": "e.g. -16.5790",
+            }),
+            "geofence_radius_m": forms.NumberInput(attrs={
+                "class": "form-control", "min": 25, "max": 5000,
+            }),
+            # Certificate logo positioning — hidden inputs the JS preview
+            # writes into. We don't show raw number boxes here because the
+            # drag UI does it visually.
+            "certificate_logo_x_pct": forms.HiddenInput(),
+            "certificate_logo_y_pct": forms.HiddenInput(),
+            "certificate_logo_width_pct": forms.HiddenInput(),
+            "certificate_template_key": forms.HiddenInput(),
         }
 
     def __init__(self, *args, **kwargs):
@@ -75,10 +104,16 @@ class EventForm(forms.ModelForm):
         # what _BaseSignupForm does in accounts/forms.py.
         for name, field in self.fields.items():
             widget = field.widget
+            # Hidden inputs and file inputs get left alone — bootstrap's
+            # form-control class breaks file pickers visually.
+            if isinstance(widget, forms.HiddenInput):
+                continue
             existing = widget.attrs.get("class", "")
             if "form-control" not in existing and "form-check-input" not in existing:
                 if isinstance(widget, (forms.CheckboxInput,)):
                     widget.attrs["class"] = f"{existing} form-check-input".strip()
+                elif isinstance(widget, forms.ClearableFileInput):
+                    widget.attrs["class"] = f"{existing} form-control".strip()
                 else:
                     widget.attrs["class"] = f"{existing} form-control".strip()
 
@@ -96,6 +131,21 @@ class EventForm(forms.ModelForm):
                            "Registration must close no later than the event start.")
         if cleaned.get("is_online") and not cleaned.get("online_url"):
             self.add_error("online_url", "Required for online events.")
+
+        # Geofence sanity — if they ticked the box, demand coords.
+        if cleaned.get("require_geofence"):
+            if cleaned.get("geofence_lat") is None or cleaned.get("geofence_lng") is None:
+                self.add_error(
+                    "require_geofence",
+                    "Drop a pin on the venue map (or paste lat/lng) to enable geofencing.",
+                )
+            radius = cleaned.get("geofence_radius_m")
+            if radius and radius < 25:
+                self.add_error(
+                    "geofence_radius_m",
+                    "Radius must be at least 25 m — phone GPS routinely drifts that much.",
+                )
+
         return cleaned
 
 
@@ -116,6 +166,28 @@ class EventFieldForm(forms.ModelForm):
                 "placeholder": "One option per line",
             }),
             "required":    forms.CheckboxInput(attrs={"class": "form-check-input"}),
+        }
+
+
+class AgendaItemForm(forms.ModelForm):
+    """One agenda row. Used inline by the agenda editor JS."""
+
+    class Meta:
+        model = AgendaItem
+        fields = (
+            "start_time", "end_time", "title", "description",
+            "speaker", "track", "accent_colour", "status",
+        )
+        widgets = {
+            "start_time":   forms.TimeInput(attrs={"type": "time", "class": "form-control"}),
+            "end_time":     forms.TimeInput(attrs={"type": "time", "class": "form-control"}),
+            "title":        forms.TextInput(attrs={"class": "form-control"}),
+            "description":  forms.Textarea(attrs={"class": "form-control", "rows": 2}),
+            "speaker":      forms.TextInput(attrs={"class": "form-control"}),
+            "track":        forms.TextInput(attrs={"class": "form-control"}),
+            "accent_colour": forms.TextInput(attrs={"class": "form-control",
+                                                    "placeholder": "#7c3aed"}),
+            "status":       forms.Select(attrs={"class": "form-select"}),
         }
 
 

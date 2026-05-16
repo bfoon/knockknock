@@ -3,41 +3,101 @@
 
 {% block content %}
 <div class="kk-public-wrap">
-  <div class="kk-public-card text-center">
-    <h1 class="mb-1">{{ event.title }}</h1>
-    <p class="text-secondary mb-4">{{ event.starts_at|date:"l, j F · H:i" }}</p>
+  <div class="kk-public-card">
+    <div class="kk-public-head">
+      <h1 class="mb-1">{{ event.title }}</h1>
+      <p class="text-secondary mb-0">
+        <i class="bi bi-calendar-event"></i> {{ event.starts_at|date:"l, j F · H:i" }}
+        {% if event.location %} · <i class="bi bi-geo-alt"></i> {{ event.location }}{% endif %}
+      </p>
+    </div>
 
     {% if error %}
-      <div class="alert alert-danger text-start">{{ error }}</div>
+      <div class="alert alert-danger">{{ error }}</div>
     {% endif %}
 
-    <p class="kk-text-dim mb-3">Already registered? Enter the email or phone you used.</p>
+    {% if event.has_geofence %}
+      <div class="kk-geofence-notice mb-3">
+        <i class="bi bi-shield-check"></i>
+        <div>
+          <div class="fw-semibold">On-site check-in required</div>
+          <div class="kk-text-dim small">
+            Your browser will ask to share your location at the next step so we can confirm
+            you're at the venue. Walk-ins fill the short form below regardless.
+          </div>
+        </div>
+      </div>
+    {% endif %}
 
-    <form method="post" class="text-start">
-      {% csrf_token %}
-      <div class="mb-3">{{ form.identifier }}</div>
-      <button class="kk-btn kk-btn-primary kk-btn-lg w-100">
-        <i class="bi bi-door-open"></i> I'm here — check me in
-      </button>
-    </form>
+    {# ── Already registered? ── #}
+    <div class="kk-public-section">
+      <h3 class="kk-public-section-title">
+        <i class="bi bi-person-check"></i> Already registered
+      </h3>
+      <p class="kk-text-dim small mb-3">
+        Enter the email or phone you signed up with, plus this event's code.
+      </p>
+      <form method="post" class="row g-2 mb-1">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="find_me">
+        <div class="col-md-7">
+          <input type="text" name="contact" class="form-control"
+                 placeholder="Email or phone" required>
+        </div>
+        <div class="col-md-3">
+          <input type="text" name="code" class="form-control text-uppercase"
+                 placeholder="Code" maxlength="8"
+                 value="{{ event.code }}" required>
+        </div>
+        <div class="col-md-2">
+          <button class="kk-btn kk-btn-primary w-100">
+            <i class="bi bi-arrow-right"></i>
+          </button>
+        </div>
+      </form>
+    </div>
 
-    {% if can_walk_in %}
-      <div class="kk-or-divider"><span>or</span></div>
-      <a href="{% url 'attendance:public_register' event.public_token %}?walk_in=1"
-         class="kk-btn kk-btn-ghost kk-btn-lg w-100">
-        <i class="bi bi-pencil-square"></i> I haven't registered yet
-      </a>
+    {# ── Walk-in path ── #}
+    {% if event.allow_walk_ins and event.is_registration_open %}
+      <div class="kk-public-section">
+        <h3 class="kk-public-section-title">
+          <i class="bi bi-door-open"></i> Walking in
+        </h3>
+        <p class="kk-text-dim small mb-3">
+          New here? Register on the spot — it's quick.
+        </p>
+        <a href="{% url 'attendance:public_register' event.public_token %}?walkin=1"
+           class="kk-btn kk-btn-primary w-100">
+          <i class="bi bi-pencil-square"></i> Quick walk-in registration
+        </a>
+      </div>
     {% endif %}
   </div>
 </div>
 
 <style>
-.kk-or-divider {
-  display: flex; align-items: center; gap: .75rem;
-  margin: 1.25rem 0; color: var(--kk-text-dim); font-size: .85rem;
+.kk-public-wrap { max-width: 540px; margin: 2rem auto; }
+.kk-public-card {
+  background: var(--kk-surface); border: 1px solid var(--kk-border);
+  border-radius: var(--kk-radius); padding: 1.75rem;
 }
-.kk-or-divider::before, .kk-or-divider::after {
-  content: ""; flex: 1; height: 1px; background: var(--kk-border);
+.kk-public-head { margin-bottom: 1.5rem; }
+.kk-public-section {
+  padding: 1.25rem 0;
+  border-top: 1px solid var(--kk-border);
 }
+.kk-public-section:first-of-type { border-top: 0; padding-top: 0; }
+.kk-public-section-title {
+  font-size: 1rem; font-weight: 600; margin-bottom: .5rem;
+  display: flex; align-items: center; gap: .5rem;
+}
+.kk-geofence-notice {
+  display: flex; align-items: flex-start; gap: .75rem;
+  padding: .85rem 1rem;
+  background: rgba(124, 58, 237, 0.12);
+  border: 1px solid rgba(124, 58, 237, 0.3);
+  border-radius: 10px;
+}
+.kk-geofence-notice > i { color: #c4b5fd; font-size: 1.25rem; line-height: 1; margin-top: 2px; }
 </style>
 {% endblock %}

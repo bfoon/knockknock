@@ -1,0 +1,29 @@
+<!--{# Renders the structured agenda for `event`. Falls back to event.agenda-->
+<!--   plain text if no AgendaItem rows exist. Arg: event #}-->
+{% with items=event.agenda_items.all %}
+  {% if items %}
+    {% if event.agenda_template_key == "boardroom" %}
+      {% include "attendance/_agenda_styles/boardroom.html" with event=event items=items %}
+    {% elif event.agenda_template_key == "swimlanes" %}
+      {% include "attendance/_agenda_styles/swimlanes.html" with event=event items=items %}
+    {% elif event.agenda_template_key == "blocks" %}
+      {% include "attendance/_agenda_styles/blocks.html" with event=event items=items %}
+    {% elif event.agenda_template_key == "minimal_grid" %}
+      {% include "attendance/_agenda_styles/minimal_grid.html" with event=event items=items %}
+    {% elif event.agenda_template_key == "duotone" %}
+      {% include "attendance/_agenda_styles/duotone.html" with event=event items=items %}
+    {% elif event.agenda_template_key == "conference" %}
+      {% include "attendance/_agenda_styles/conference.html" with event=event items=items %}
+    {% elif event.agenda_template_key == "ticket_strip" %}
+      {% include "attendance/_agenda_styles/ticket_strip.html" with event=event items=items %}
+    {% elif event.agenda_template_key == "checklist" %}
+      {% include "attendance/_agenda_styles/checklist.html" with event=event items=items %}
+    {% elif event.agenda_template_key == "neon_card" %}
+      {% include "attendance/_agenda_styles/neon_card.html" with event=event items=items %}
+    {% else %}
+      {% include "attendance/_agenda_styles/timeline.html" with event=event items=items %}
+    {% endif %}
+  {% elif event.agenda %}
+    <div class="kk-agenda-fallback">{{ event.agenda|linebreaks }}</div>
+  {% endif %}
+{% endwith %}

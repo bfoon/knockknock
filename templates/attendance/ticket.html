@@ -42,14 +42,20 @@
              class="kk-btn kk-btn-primary kk-btn-lg w-100 mt-3">
             <i class="bi bi-door-open"></i> I'm here — check me in
           </a>
+          {% if event.has_geofence %}
+            <p class="kk-text-dim small mt-2 mb-0">
+              <i class="bi bi-shield-check"></i>
+              This event requires on-site check-in — your browser will ask to share your location.
+            </p>
+          {% endif %}
         {% endif %}
       </div>
     {% endif %}
 
-    {% if event.agenda %}
+    {% if event.agenda or event.agenda_items.exists %}
       <div class="kk-ticket-section">
         <h3><i class="bi bi-list-check"></i> Agenda</h3>
-        <div class="kk-ticket-agenda">{{ event.agenda|linebreaks }}</div>
+        {% include "attendance/_agenda.html" with event=event %}
       </div>
     {% endif %}
 

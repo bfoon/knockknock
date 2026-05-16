@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}QR Poster · {{ event.title }}{% endblock %}
+
+{% block content %}
+<div class="kk-poster-toolbar d-print-none mb-3">
+  <a href="{% url 'attendance:event_detail' event.pk %}" class="kk-btn kk-btn-ghost">
+    <i class="bi bi-arrow-left"></i> Back to event
+  </a>
+  <div class="d-flex gap-2">
+    <a href="{% url 'attendance:public_qr' event.public_token %}?size=large&download=1"
+       class="kk-btn kk-btn-ghost">
+      <i class="bi bi-download"></i> Download PNG
+    </a>
+    <button onclick="window.print()" class="kk-btn kk-btn-primary">
+      <i class="bi bi-printer"></i> Print / Save as PDF
+    </button>
+  </div>
+</div>
+
+<div class="kk-poster-frame">
+  <div class="kk-poster-sheet">
+    <div class="kk-poster-top">
+      <p class="kk-poster-eyebrow">YOU'RE INVITED</p>
+      <h1 class="kk-poster-title">{{ event.title }}</h1>
+      <div class="kk-poster-meta">
+        <div><i class="bi bi-calendar-event"></i> {{ event.starts_at|date:"l, j F Y" }}</div>
+        <div><i class="bi bi-clock"></i> {{ event.starts_at|date:"H:i" }} – {{ event.ends_at|date:"H:i" }}</div>
+        {% if event.location %}
+          <div><i class="bi bi-geo-alt"></i> {{ event.location }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="kk-poster-qr-wrap">
+      <img src="{% url 'attendance:public_qr' event.public_token %}?size=large"
+           alt="Scan to register or check in"
+           class="kk-poster-qr-img">
+      <p class="kk-poster-qr-cap">Scan to register · then again to check in</p>
+    </div>
+
+    <div class="kk-poster-bottom">
+      <div class="kk-poster-code-block">
+        <div class="kk-poster-code-label">Or visit and enter code</div>
+        <div class="kk-poster-code">{{ event.code }}</div>
+        <div class="kk-poster-url">{{ register_url }}</div>
+      </div>
+      <p class="kk-poster-footnote">Issued via Knock-Knock</p>
+    </div>
+  </div>
+</div>
+
+<style>
+.kk-poster-toolbar {
+  display: flex; justify-content: space-between; align-items: center;
+  max-width: 800px; margin: 0 auto 1.5rem;
+}
+
+.kk-poster-frame {
+  display: flex; justify-content: center;
+  padding: 1.5rem;
+}
+
+/* A4 portrait — 210x297mm. We use mm units so print fidelity is exact.   */
+.kk-poster-sheet {
+  width: 210mm;
+  min-height: 297mm;
+  padding: 25mm 20mm;
+  background: white;
+  color: #0f172a;
+  box-shadow: 0 25px 50px -12px rgba(0,0,0,0.4);
+  display: flex; flex-direction: column;
+  position: relative;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* Decorative purple corner stripes */
+.kk-poster-sheet::before,
+.kk-poster-sheet::after {
+  content: ""; position: absolute;
+  width: 70mm; height: 8mm;
+  background: linear-gradient(90deg, #7c3aed, #22d3ee);
+}
+.kk-poster-sheet::before { top: 0; left: 0; }
+.kk-poster-sheet::after  { bottom: 0; right: 0; }
+
+.kk-poster-top { text-align: center; margin-bottom: 8mm; }
+.kk-poster-eyebrow {
+  font-size: 11pt; letter-spacing: .3em; color: #7c3aed;
+  font-weight: 700; margin-bottom: 4mm;
+}
+.kk-poster-title {
+  font-size: 28pt; font-weight: 800; line-height: 1.15;
+  color: #0f172a; margin-bottom: 6mm;
+  word-wrap: break-word;
+}
+.kk-poster-meta {
+  display: flex; flex-direction: column; gap: 2mm;
+  font-size: 12pt; color: #475569;
+}
+.kk-poster-meta i { color: #7c3aed; margin-right: 4mm; }
+
+.kk-poster-qr-wrap {
+  flex-grow: 1;
+  display: flex; flex-direction: column;
+  justify-content: center; align-items: center;
+  padding: 8mm 0;
+}
+.kk-poster-qr-img {
+  width: 110mm; height: 110mm;
+  border: 2mm solid #0f172a;
+  border-radius: 4mm;
+  padding: 3mm;
+  background: white;
+}
+.kk-poster-qr-cap {
+  margin-top: 6mm;
+  font-size: 12pt; font-weight: 600;
+  color: #0f172a;
+  text-align: center;
+}
+
+.kk-poster-bottom {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 6mm;
+}
+.kk-poster-code-block { text-align: center; }
+.kk-poster-code-label {
+  font-size: 9pt; color: #64748b;
+  letter-spacing: .15em; margin-bottom: 2mm;
+  text-transform: uppercase;
+}
+.kk-poster-code {
+  font-size: 22pt; font-weight: 800;
+  letter-spacing: .25em;
+  font-variant-numeric: tabular-nums;
+  color: #0f172a;
+  margin-bottom: 2mm;
+}
+.kk-poster-url {
+  font-size: 9pt; color: #64748b;
+  word-break: break-all;
+}
+.kk-poster-footnote {
+  text-align: center; font-size: 8pt; color: #94a3b8;
+  margin-top: 6mm; margin-bottom: 0;
+}
+
+/* Print rules */
+@media print {
+  @page { size: A4 portrait; margin: 0; }
+  body, html { background: white !important; margin: 0; padding: 0; }
+  .kk-poster-frame { padding: 0; }
+  .kk-poster-sheet {
+    box-shadow: none;
+    width: 210mm; height: 297mm;
+    margin: 0;
+  }
+  /* Hide everything outside the poster. */
+  body > *:not(main),
+  nav, header, footer, aside,
+  .kk-poster-toolbar, .d-print-none { display: none !important; }
+  main { padding: 0 !important; margin: 0 !important; max-width: none !important; }
+}
+</style>
+{% endblock %}

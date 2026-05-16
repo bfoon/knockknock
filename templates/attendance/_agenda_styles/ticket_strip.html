@@ -1,0 +1,102 @@
+{# Args: event, items #}
+<div class="kk-ag-tix">
+  {% for item in items %}
+    <div class="kk-ag-tix-row kk-ag-status-{{ item.status }}"
+         style="--ag-accent: {{ item.accent_colour|default:'#dc2626' }};">
+      <div class="kk-ag-tix-stub">
+        <div class="kk-ag-tix-stub-num">{{ forloop.counter|stringformat:"02d" }}</div>
+        <div class="kk-ag-tix-stub-label">SESSION</div>
+      </div>
+      <div class="kk-ag-tix-body">
+        <div class="kk-ag-tix-top">
+          <div>
+            <div class="kk-ag-tix-time">
+              {{ item.start_time|time:"H:i" }}
+              {% if item.end_time %}<span class="kk-ag-tix-arr">→</span> {{ item.end_time|time:"H:i" }}{% endif %}
+            </div>
+            <div class="kk-ag-tix-title">{{ item.title }}</div>
+          </div>
+          {% if item.status == "live" %}
+            <span class="kk-ag-tix-status kk-ag-tix-live">▶ LIVE</span>
+          {% elif item.status == "done" %}
+            <span class="kk-ag-tix-status kk-ag-tix-done">✓ DONE</span>
+          {% endif %}
+        </div>
+        <div class="kk-ag-tix-bottom">
+          {% if item.speaker %}<div><span class="kk-ag-tix-key">SPEAKER</span> {{ item.speaker }}</div>{% endif %}
+          {% if item.track %}<div><span class="kk-ag-tix-key">VENUE</span> {{ item.track }}</div>{% endif %}
+          {% if item.description %}<div class="kk-ag-tix-desc">{{ item.description }}</div>{% endif %}
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+<style>
+.kk-ag-tix { display: flex; flex-direction: column; gap: 12px; }
+.kk-ag-tix-row {
+  display: grid; grid-template-columns: 70px 1fr;
+  background: var(--kk-surface-2);
+  border: 1px dashed var(--ag-accent);
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+}
+.kk-ag-tix-row.kk-ag-status-done { opacity: .6; }
+/* The perforated dividing line between stub and body */
+.kk-ag-tix-row::before,
+.kk-ag-tix-row::after {
+  content: ""; position: absolute;
+  left: calc(70px - 7px);
+  width: 14px; height: 14px;
+  background: var(--kk-bg, #0f172a);
+  border: 1px solid var(--ag-accent);
+  border-radius: 50%;
+}
+.kk-ag-tix-row::before { top: -8px; }
+.kk-ag-tix-row::after  { bottom: -8px; }
+
+.kk-ag-tix-stub {
+  background: linear-gradient(135deg, var(--ag-accent),
+              color-mix(in srgb, var(--ag-accent) 65%, #7c3aed));
+  color: white;
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  padding: 8px;
+  border-right: 2px dashed rgba(255, 255, 255, .25);
+}
+.kk-ag-tix-stub-num {
+  font-size: 1.6rem; font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.kk-ag-tix-stub-label {
+  font-size: .55rem; letter-spacing: .25em; margin-top: 6px;
+  opacity: .85; font-weight: 600;
+}
+.kk-ag-tix-body { padding: 12px 16px; }
+.kk-ag-tix-top { display: flex; justify-content: space-between; gap: 12px; }
+.kk-ag-tix-time {
+  font-size: .8rem; letter-spacing: .08em; font-weight: 700;
+  color: var(--ag-accent); font-variant-numeric: tabular-nums;
+}
+.kk-ag-tix-arr { margin: 0 4px; opacity: .55; }
+.kk-ag-tix-title { font-weight: 700; font-size: 1.05rem; margin-top: 2px; }
+.kk-ag-tix-status {
+  font-size: .65rem; padding: 4px 10px; border-radius: 4px;
+  font-weight: 800; letter-spacing: .12em; height: fit-content;
+  white-space: nowrap;
+}
+.kk-ag-tix-live { background: #fb7185; color: white; }
+.kk-ag-tix-done { background: rgba(148,163,184,.2); color: var(--kk-text-dim); }
+.kk-ag-tix-bottom {
+  margin-top: 10px; padding-top: 10px;
+  border-top: 1px dashed var(--kk-border);
+  font-size: .85rem; color: var(--kk-text-dim);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.kk-ag-tix-key {
+  font-size: .65rem; letter-spacing: .15em; font-weight: 700;
+  color: var(--ag-accent);
+  display: inline-block; width: 60px;
+}
+.kk-ag-tix-desc { margin-top: 6px; line-height: 1.5; }
+</style>

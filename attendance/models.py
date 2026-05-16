@@ -18,12 +18,17 @@ A note on the "preset" question system you described:
   after that they can rename, reorder, mark required, etc. without
   affecting any other event. That's the cleanest way to get
   "preconfigured options + customize" in one model.
+
+Certificates work the same way — CERTIFICATE_TEMPLATES is a Python
+registry of design recipes; each AttendanceEvent picks one by key and
+optionally overlays its own logo at a chosen position.
 """
 
 import secrets
 import string
 import uuid
 from datetime import timedelta
+from math import radians, cos, sin, asin, sqrt
 
 from django.conf import settings
 from django.db import models
@@ -68,6 +73,187 @@ PRESET_FIELDS = [
 ]
 
 
+# ───────────────────── Certificate template registry ─────────────────────
+# Ten built-in design recipes. Each one is a function name in
+# services.draw_certificate_* — we keep the renderer as the source of
+# truth for what the design *looks* like, and use this registry only to
+# expose the picker UI (preview thumbnail, palette, mood).
+#
+# Adding an 11th template is: add a row here, add a draw_certificate_<key>
+# function in services.py. No migration needed.
+
+CERTIFICATE_TEMPLATES = [
+    {
+        "key": "classic",
+        "name": "Classic Laurel",
+        "subtitle": "Timeless, formal, gold border",
+        "palette": ["#1e293b", "#c5a572", "#f8f5ee"],
+        "mood": "formal",
+    },
+    {
+        "key": "modern",
+        "name": "Modern Minimalist",
+        "subtitle": "Clean, lots of white space",
+        "palette": ["#0f172a", "#7c3aed", "#ffffff"],
+        "mood": "minimal",
+    },
+    {
+        "key": "elegant",
+        "name": "Elegant Script",
+        "subtitle": "Soft cream with calligraphy accents",
+        "palette": ["#3b2a1f", "#a07c3a", "#fdf8ef"],
+        "mood": "formal",
+    },
+    {
+        "key": "corporate",
+        "name": "Corporate Slate",
+        "subtitle": "Navy and silver, executive feel",
+        "palette": ["#0b1f3a", "#94a3b8", "#f1f5f9"],
+        "mood": "corporate",
+    },
+    {
+        "key": "vibrant",
+        "name": "Vibrant Geometric",
+        "subtitle": "Bold shapes, energetic colour blocks",
+        "palette": ["#7c3aed", "#22d3ee", "#fb7185"],
+        "mood": "playful",
+    },
+    {
+        "key": "academic",
+        "name": "Academic Ribbon",
+        "subtitle": "Burgundy seal, scholarly serif",
+        "palette": ["#7f1d1d", "#fbbf24", "#fdfaf3"],
+        "mood": "formal",
+    },
+    {
+        "key": "tech",
+        "name": "Tech Gradient",
+        "subtitle": "Dark mode with neon accents",
+        "palette": ["#0f172a", "#22d3ee", "#7c3aed"],
+        "mood": "modern",
+    },
+    {
+        "key": "botanical",
+        "name": "Botanical Frame",
+        "subtitle": "Hand-drawn leaves, natural tone",
+        "palette": ["#14532d", "#a3b18a", "#f7f4ed"],
+        "mood": "organic",
+    },
+    {
+        "key": "minimal_lines",
+        "name": "Minimal Lines",
+        "subtitle": "Just two crisp lines, no fuss",
+        "palette": ["#000000", "#737373", "#ffffff"],
+        "mood": "minimal",
+    },
+    {
+        "key": "celebration",
+        "name": "Celebration Confetti",
+        "subtitle": "Festive confetti corners",
+        "palette": ["#db2777", "#facc15", "#0ea5e9"],
+        "mood": "playful",
+    },
+]
+
+CERTIFICATE_TEMPLATE_KEYS = {t["key"] for t in CERTIFICATE_TEMPLATES}
+DEFAULT_CERTIFICATE_TEMPLATE = "classic"
+
+
+# ───────────────────── Agenda templates ─────────────────────
+# Visual styles for the agenda-table render. Each entry maps a key to
+# a name + a short subtitle + a swatch palette for the design picker.
+# The actual HTML/CSS for each style lives in templates/attendance/
+# _agenda_styles/<key>.html — keep this registry in sync with that
+# folder. Adding a new style means: (a) append here, (b) drop an HTML
+# partial named the same key.
+
+AGENDA_TEMPLATES = [
+    {
+        "key": "timeline",
+        "name": "Timeline rail",
+        "subtitle": "Vertical timeline with dot markers",
+        "palette": ["#7c3aed", "#a78bfa", "#ede9fe"],
+    },
+    {
+        "key": "boardroom",
+        "name": "Boardroom table",
+        "subtitle": "Classic three-column table, zebra rows",
+        "palette": ["#0f172a", "#475569", "#e2e8f0"],
+    },
+    {
+        "key": "swimlanes",
+        "name": "Swim lanes",
+        "subtitle": "Time on the left, sessions on the right",
+        "palette": ["#0891b2", "#22d3ee", "#cffafe"],
+    },
+    {
+        "key": "blocks",
+        "name": "Time blocks",
+        "subtitle": "Coloured cards stacked block-style",
+        "palette": ["#f59e0b", "#fbbf24", "#fde68a"],
+    },
+    {
+        "key": "minimal_grid",
+        "name": "Minimal grid",
+        "subtitle": "Spacious, thin dividers, all caps headers",
+        "palette": ["#1f2937", "#9ca3af", "#f3f4f6"],
+    },
+    {
+        "key": "duotone",
+        "name": "Duotone bar",
+        "subtitle": "Bold left bar with accent gradient",
+        "palette": ["#db2777", "#7c3aed", "#fce7f3"],
+    },
+    {
+        "key": "conference",
+        "name": "Conference programme",
+        "subtitle": "Tracks with session pills",
+        "palette": ["#059669", "#10b981", "#d1fae5"],
+    },
+    {
+        "key": "ticket_strip",
+        "name": "Ticket strip",
+        "subtitle": "Perforated tickets, one per session",
+        "palette": ["#dc2626", "#f87171", "#fee2e2"],
+    },
+    {
+        "key": "checklist",
+        "name": "Live checklist",
+        "subtitle": "Tick items off as they happen",
+        "palette": ["#16a34a", "#4ade80", "#dcfce7"],
+    },
+    {
+        "key": "neon_card",
+        "name": "Neon card",
+        "subtitle": "Dark cards with neon edge glow",
+        "palette": ["#06b6d4", "#a855f7", "#0f172a"],
+    },
+]
+AGENDA_TEMPLATE_KEYS = {t["key"] for t in AGENDA_TEMPLATES}
+DEFAULT_AGENDA_TEMPLATE = "timeline"
+
+
+# ───────────────────── Geofence helpers ─────────────────────
+
+def haversine_metres(lat1, lng1, lat2, lng2):
+    """
+    Great-circle distance between two lat/lng points, in metres.
+
+    Used to enforce on-site check-in. We tolerate a small radius
+    (default 150 m, organiser-tunable) which is enough to cover a
+    typical conference venue and tolerate phone GPS noise. Anything
+    much tighter than ~50 m will start rejecting people standing right
+    next to the door because urban GPS routinely drifts 30 m+.
+    """
+    # Mean Earth radius. Spherical model is plenty for venue-scale work.
+    R = 6_371_000.0
+    lat1, lng1, lat2, lng2 = map(radians, (lat1, lng1, lat2, lng2))
+    dlat = lat2 - lat1
+    dlng = lng2 - lng1
+    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlng / 2) ** 2
+    return 2 * R * asin(sqrt(a))
+
+
 # ───────────────────── AttendanceEvent ─────────────────────
 
 class AttendanceEvent(models.Model):
@@ -104,7 +290,15 @@ class AttendanceEvent(models.Model):
     description = models.TextField(blank=True)
     agenda = models.TextField(
         blank=True,
-        help_text="Markdown or plain text. Shown to attendees and used in emails.",
+        help_text="Markdown or plain text. Shown to attendees and used in emails. "
+                  "If you also add structured AgendaItem rows, those render in the "
+                  "fancy table; this free-text stays as a fallback for emails.",
+    )
+    # Which visual style to use when rendering the structured agenda
+    # (the AgendaItem rows below). Falls back to the registry default.
+    agenda_template_key = models.CharField(
+        max_length=32, default=DEFAULT_AGENDA_TEMPLATE,
+        help_text="Visual style for the agenda table. See AGENDA_TEMPLATES.",
     )
     cover_image = models.ImageField(upload_to="events/covers/", blank=True, null=True)
     location = models.CharField(max_length=240, blank=True)
@@ -133,6 +327,24 @@ class AttendanceEvent(models.Model):
         help_text="If true, an unregistered attendee scanning the QR can fill the form on the spot.",
     )
 
+    # ── Geofenced on-site check-in ─────────────────────────────
+    # When enabled, anyone who pre-registered must be physically at the
+    # venue to check in. The browser asks for location, we Haversine
+    # against (geofence_lat, geofence_lng) and reject anyone outside the
+    # radius. Walk-ins and organiser-driven manual check-ins are *not*
+    # subject to this — they're either at the door already, or the
+    # organiser is taking responsibility.
+    require_geofence = models.BooleanField(
+        default=False,
+        help_text="Force attendees to be physically at the venue to self-check-in.",
+    )
+    geofence_lat = models.FloatField(null=True, blank=True)
+    geofence_lng = models.FloatField(null=True, blank=True)
+    geofence_radius_m = models.PositiveIntegerField(
+        default=150,
+        help_text="Allowed distance in metres. 150 m is a sensible default — phone GPS drifts.",
+    )
+
     # Status + access
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_DRAFT)
     code = models.CharField(
@@ -149,6 +361,34 @@ class AttendanceEvent(models.Model):
     certificate_template = models.TextField(
         blank=True,
         help_text="Optional HTML/text template. {{ name }} and {{ event }} get substituted.",
+    )
+    # NEW: which built-in design to render. The legacy free-text field
+    # above is kept so older events don't break; new events use the
+    # design-key system.
+    certificate_template_key = models.CharField(
+        max_length=32, default=DEFAULT_CERTIFICATE_TEMPLATE,
+        help_text="Which built-in design to render. See CERTIFICATE_TEMPLATES.",
+    )
+    # Logo overlay. The user can drag the logo around the preview and we
+    # store the final position as percentages so it scales with the
+    # canvas. 0%/0% = top-left of the cert; 50%/8% places it centered
+    # near the top, etc. Width is also a percentage of canvas width so
+    # it stays proportional when we render at PDF resolution.
+    certificate_logo = models.ImageField(
+        upload_to="events/certificates/logos/", blank=True, null=True,
+        help_text="Optional logo. PNG with transparency works best.",
+    )
+    certificate_logo_x_pct = models.FloatField(
+        default=50.0,
+        help_text="Horizontal position of the logo's centre, as a % of canvas width.",
+    )
+    certificate_logo_y_pct = models.FloatField(
+        default=8.0,
+        help_text="Vertical position of the logo's centre, as a % of canvas height.",
+    )
+    certificate_logo_width_pct = models.FloatField(
+        default=15.0,
+        help_text="Logo width as a % of canvas width. Height is auto-scaled.",
     )
 
     # Bookkeeping
@@ -193,6 +433,27 @@ class AttendanceEvent(models.Model):
         """The combined 'is the link/QR still useful' check called from public views."""
         return self.status != self.STATUS_ENDED and timezone.now() <= self.ends_at
 
+    def has_geofence(self):
+        """Geofencing is on AND we have valid coordinates to enforce against."""
+        return bool(
+            self.require_geofence
+            and self.geofence_lat is not None
+            and self.geofence_lng is not None
+        )
+
+    def distance_from_venue_m(self, lat, lng):
+        """Helper for views — returns None if no geofence configured."""
+        if self.geofence_lat is None or self.geofence_lng is None:
+            return None
+        return haversine_metres(self.geofence_lat, self.geofence_lng, lat, lng)
+
+    def is_within_geofence(self, lat, lng):
+        """True if the given coords are inside the configured radius."""
+        if not self.has_geofence():
+            return True  # geofence not enforced
+        d = self.distance_from_venue_m(lat, lng)
+        return d is not None and d <= self.geofence_radius_m
+
     def accepted_count(self):
         """Counts ACCEPTED + CHECKED_IN. PENDING and DECLINED don't take a seat."""
         return self.registrations.filter(
@@ -207,6 +468,15 @@ class AttendanceEvent(models.Model):
 
     def pending_count(self):
         return self.registrations.filter(status=Registration.STATUS_PENDING).count()
+
+    def declined_count(self):
+        return self.registrations.filter(status=Registration.STATUS_DECLINED).count()
+
+    def walk_in_count(self):
+        return self.registrations.filter(
+            is_walk_in=True,
+            status=Registration.STATUS_CHECKED_IN,
+        ).count()
 
     def seats_remaining(self):
         if not self.capacity:
@@ -468,3 +738,80 @@ class Certificate(models.Model):
         return self.serial
 
 
+# ───────────────────── Agenda items ─────────────────────
+
+class AgendaItem(models.Model):
+    """
+    One row in the structured agenda table.
+
+    The free-text `AttendanceEvent.agenda` field still exists and still
+    powers email rendering (where rich layout is unreliable). When the
+    organiser fills in AgendaItem rows, the ticket and event pages will
+    render those instead, styled by the event's chosen agenda template.
+
+    Times are stored as local naive `TimeField` values plus a date
+    derived from the event start. Storing the date implicitly via the
+    event keeps day-of-event recurring blocks easy.
+    """
+
+    STATUS_UPCOMING = "upcoming"
+    STATUS_LIVE = "live"
+    STATUS_DONE = "done"
+    STATUS_CHOICES = [
+        (STATUS_UPCOMING, "Upcoming"),
+        (STATUS_LIVE, "Happening now"),
+        (STATUS_DONE, "Done"),
+    ]
+
+    event = models.ForeignKey(
+        AttendanceEvent, on_delete=models.CASCADE, related_name="agenda_items",
+    )
+    order = models.PositiveIntegerField(default=0)
+
+    start_time = models.TimeField(
+        help_text="Local start time on the event day.",
+    )
+    end_time = models.TimeField(
+        null=True, blank=True,
+        help_text="Optional. Used to compute a duration label.",
+    )
+
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    speaker = models.CharField(
+        max_length=160, blank=True,
+        help_text="Speaker, facilitator, or owner — optional.",
+    )
+    track = models.CharField(
+        max_length=80, blank=True,
+        help_text="Optional track / room name (e.g. 'Main Hall', 'Workshop B').",
+    )
+    accent_colour = models.CharField(
+        max_length=20, blank=True,
+        help_text="Optional hex colour to override the template's default for this row.",
+    )
+    status = models.CharField(
+        max_length=10, choices=STATUS_CHOICES, default=STATUS_UPCOMING,
+    )
+
+    class Meta:
+        ordering = ("order", "start_time")
+
+    def __str__(self):
+        return f"{self.start_time}  {self.title}"
+
+    @property
+    def duration_label(self):
+        """Human-readable duration like '45 min' or '1 h 30 min'."""
+        if not (self.start_time and self.end_time):
+            return ""
+        # Naive minutes-based calc — adequate for same-day agendas.
+        s = self.start_time.hour * 60 + self.start_time.minute
+        e = self.end_time.hour * 60 + self.end_time.minute
+        mins = e - s
+        if mins <= 0:
+            return ""
+        if mins < 60:
+            return f"{mins} min"
+        h, m = divmod(mins, 60)
+        return f"{h} h" + (f" {m} min" if m else "")

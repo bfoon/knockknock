@@ -1,0 +1,431 @@
+{% extends "base.html" %}
+{% block title %}Agenda · {{ event.title }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-end justify-content-between flex-wrap gap-3 mb-4">
+  <div>
+    <a href="{% url 'attendance:event_detail' event.pk %}" class="kk-text-dim small text-decoration-none">
+      <i class="bi bi-arrow-left"></i> {{ event.title }}
+    </a>
+    <h1 class="mb-0 mt-1">Agenda</h1>
+    <p class="text-secondary mb-0">
+      Add the sessions, drag to reorder, pick a visual style — your attendees see it
+      on their ticket and the live event page.
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'attendance:event_detail' event.pk %}" class="kk-btn kk-btn-primary">
+      <i class="bi bi-check2"></i> Done
+    </a>
+  </div>
+</div>
+
+<div id="kk-agenda-toast"></div>
+
+<div class="kk-agenda-grid">
+  <!-- ── LEFT: editor ─────────────────────────────────────────── -->
+  <section class="kk-agenda-editor">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h3 class="mb-0">Sessions</h3>
+      <button id="kk-agenda-add" class="kk-btn kk-btn-primary btn-sm">
+        <i class="bi bi-plus-lg"></i> Add session
+      </button>
+    </div>
+
+    <div id="kk-agenda-rows" class="kk-agenda-rows">
+      {% for item in items %}
+        <div class="kk-agenda-row" data-id="{{ item.pk }}">
+          <i class="bi bi-grip-vertical kk-agenda-handle"></i>
+          <div class="kk-agenda-time-block">
+            <input type="time" class="form-control form-control-sm kk-ag-start"
+                   value="{{ item.start_time|time:'H:i' }}">
+            <input type="time" class="form-control form-control-sm kk-ag-end"
+                   value="{{ item.end_time|time:'H:i' }}" placeholder="end">
+          </div>
+          <div class="flex-grow-1 kk-agenda-body">
+            <input type="text" class="form-control form-control-sm kk-ag-title"
+                   value="{{ item.title }}" placeholder="Session title" required>
+            <div class="d-flex gap-2 mt-1">
+              <input type="text" class="form-control form-control-sm kk-ag-speaker"
+                     value="{{ item.speaker }}" placeholder="Speaker (optional)">
+              <input type="text" class="form-control form-control-sm kk-ag-track"
+                     value="{{ item.track }}" placeholder="Track / room (optional)">
+            </div>
+            <textarea class="form-control form-control-sm kk-ag-desc mt-1" rows="2"
+                      placeholder="Description (optional)">{{ item.description }}</textarea>
+          </div>
+          <div class="kk-agenda-meta">
+            <select class="form-select form-select-sm kk-ag-status">
+              <option value="upcoming" {% if item.status == "upcoming" %}selected{% endif %}>Upcoming</option>
+              <option value="live"     {% if item.status == "live" %}selected{% endif %}>Live now</option>
+              <option value="done"     {% if item.status == "done" %}selected{% endif %}>Done</option>
+            </select>
+            <input type="color" class="form-control form-control-color form-control-sm kk-ag-colour"
+                   value="{{ item.accent_colour|default:'#7c3aed' }}"
+                   title="Optional accent colour for this row">
+            <button class="kk-agenda-delete" title="Delete" type="button">
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    {% if not items %}
+      <div class="kk-agenda-empty" id="kk-agenda-empty">
+        <i class="bi bi-calendar3"></i>
+        <p class="mb-0">No sessions yet — click "Add session" to start.</p>
+      </div>
+    {% endif %}
+  </section>
+
+  <!-- ── RIGHT: style picker + live preview ────────────────────── -->
+  <aside class="kk-agenda-side">
+    <div class="kk-agenda-side-section mb-3">
+      <h4 class="mb-2">Visual style</h4>
+      <p class="kk-text-dim small mb-2">
+        How the agenda looks on your attendees' ticket. Pick one — change anytime.
+      </p>
+      <div class="kk-agenda-template-list">
+        {% for t in templates %}
+          <button type="button"
+                  class="kk-agenda-template
+                         {% if event.agenda_template_key == t.key %}is-active{% endif %}"
+                  data-key="{{ t.key }}">
+            <span class="kk-agenda-swatch">
+              {% for hex in t.palette %}
+                <span style="background: {{ hex }}"></span>
+              {% endfor %}
+            </span>
+            <div class="kk-agenda-template-meta">
+              <div class="kk-agenda-template-name">{{ t.name }}</div>
+              <div class="kk-agenda-template-sub">{{ t.subtitle }}</div>
+            </div>
+            <i class="bi bi-check2-circle kk-agenda-template-check"></i>
+          </button>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="kk-agenda-side-section">
+      <h4 class="mb-2">Preview</h4>
+      <p class="kk-text-dim small mb-2">Updates after you save changes above.</p>
+      <div class="kk-agenda-preview-wrap">
+        <iframe id="kk-agenda-preview" title="Agenda preview"
+                src="about:blank"></iframe>
+      </div>
+      <button type="button" class="kk-btn kk-btn-ghost btn-sm w-100 mt-2"
+              id="kk-agenda-refresh">
+        <i class="bi bi-arrow-clockwise"></i> Refresh preview
+      </button>
+    </div>
+  </aside>
+</div>
+
+<style>
+.kk-agenda-grid {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 1.25rem;
+  align-items: start;
+}
+@media (max-width: 1000px) {
+  .kk-agenda-grid { grid-template-columns: 1fr; }
+}
+
+.kk-agenda-editor, .kk-agenda-side {
+  background: var(--kk-surface);
+  border: 1px solid var(--kk-border);
+  border-radius: var(--kk-radius);
+  padding: 1.25rem;
+}
+.kk-agenda-side { position: sticky; top: 1rem; max-height: calc(100vh - 2rem); overflow-y: auto; }
+
+.kk-agenda-rows { display: flex; flex-direction: column; gap: .65rem; }
+.kk-agenda-row {
+  display: grid;
+  grid-template-columns: 20px 110px 1fr auto;
+  gap: .75rem;
+  align-items: start;
+  padding: .75rem;
+  background: var(--kk-surface-2);
+  border: 1px solid var(--kk-border);
+  border-radius: 10px;
+  transition: border-color .15s, opacity .25s;
+}
+.kk-agenda-row.dragging { opacity: .5; border-style: dashed; }
+.kk-agenda-row.removing { opacity: 0; transform: scale(.97); }
+.kk-agenda-row:hover { border-color: rgba(124, 58, 237, 0.4); }
+
+.kk-agenda-handle { cursor: grab; color: var(--kk-text-dim); padding-top: .35rem; }
+.kk-agenda-time-block { display: flex; flex-direction: column; gap: .25rem; }
+.kk-agenda-body { min-width: 0; }
+.kk-agenda-body input, .kk-agenda-body textarea { width: 100%; }
+.kk-agenda-meta { display: flex; flex-direction: column; gap: .25rem; align-items: stretch; }
+.kk-agenda-meta select { min-width: 110px; }
+
+.kk-agenda-delete {
+  background: transparent; border: 0; color: var(--kk-text-dim);
+  padding: 4px 8px; border-radius: 6px; cursor: pointer;
+}
+.kk-agenda-delete:hover { color: #fb7185; background: rgba(251, 113, 133, 0.12); }
+
+.kk-agenda-empty {
+  text-align: center; padding: 2.5rem 1rem; color: var(--kk-text-dim);
+}
+.kk-agenda-empty i { font-size: 2rem; display: block; margin-bottom: .5rem; }
+
+/* Style picker */
+.kk-agenda-template-list {
+  display: flex; flex-direction: column; gap: .4rem;
+}
+.kk-agenda-template {
+  display: flex; align-items: center; gap: .65rem;
+  padding: .55rem .75rem;
+  background: var(--kk-surface-2);
+  border: 2px solid var(--kk-border);
+  border-radius: 10px;
+  color: inherit; text-align: left;
+  cursor: pointer;
+}
+.kk-agenda-template:hover {
+  border-color: rgba(124, 58, 237, 0.4);
+  background: rgba(124, 58, 237, 0.06);
+}
+.kk-agenda-template.is-active {
+  border-color: #7c3aed;
+  background: rgba(124, 58, 237, 0.12);
+}
+.kk-agenda-template.is-active .kk-agenda-template-check { opacity: 1; }
+.kk-agenda-template-check { color: #7c3aed; opacity: 0; transition: opacity .15s; }
+.kk-agenda-swatch {
+  display: inline-flex; flex-shrink: 0;
+  width: 32px; height: 32px; border-radius: 7px; overflow: hidden;
+  border: 1px solid var(--kk-border);
+}
+.kk-agenda-swatch span { flex: 1; }
+.kk-agenda-template-meta { flex-grow: 1; min-width: 0; }
+.kk-agenda-template-name { font-weight: 600; font-size: .87rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kk-agenda-template-sub { font-size: .72rem; color: var(--kk-text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Live preview */
+.kk-agenda-preview-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--kk-surface-2);
+  border: 1px solid var(--kk-border);
+}
+.kk-agenda-preview-wrap iframe {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%; border: 0;
+}
+
+#kk-agenda-toast {
+  position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+  z-index: 1080; display: flex; flex-direction: column; gap: .5rem;
+}
+.kk-agenda-toast {
+  background: var(--kk-surface);
+  border: 1px solid var(--kk-border);
+  padding: .55rem 1rem;
+  border-radius: 10px;
+  font-size: .85rem;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+}
+.kk-agenda-toast.is-error { border-color: rgba(251, 113, 133, .5); color: #fb7185; }
+.kk-agenda-toast.is-ok    { border-color: rgba(34, 197, 94, .4);   color: #4ade80; }
+</style>
+
+<script>
+(function(){
+  const eventPk = {{ event.pk }};
+  const csrf = document.cookie.split('; ').find(r => r.startsWith('csrftoken='))?.split('=')[1];
+  const rows = document.getElementById('kk-agenda-rows');
+  const empty = document.getElementById('kk-agenda-empty');
+  const preview = document.getElementById('kk-agenda-preview');
+  const toastWrap = document.getElementById('kk-agenda-toast');
+
+  function toast(msg, kind) {
+    const t = document.createElement('div');
+    t.className = `kk-agenda-toast is-${kind || 'ok'}`;
+    t.textContent = msg;
+    toastWrap.appendChild(t);
+    setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .25s'; }, 2200);
+    setTimeout(() => t.remove(), 2500);
+  }
+
+  async function post(url, data) {
+    const headers = {'X-CSRFToken': csrf};
+    let body;
+    if (data instanceof FormData) {
+      body = data;
+    } else if (typeof data === 'object') {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify(data);
+    }
+    try {
+      const res = await fetch(url, {method: 'POST', headers, body, credentials: 'same-origin'});
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok && !j.error) j.error = `HTTP ${res.status}`;
+      return j;
+    } catch (e) {
+      return {ok: false, error: 'Network error'};
+    }
+  }
+
+  // ── Refresh the preview iframe ──
+  function refreshPreview() {
+    // Dedicated lightweight preview endpoint, decorated with
+    // @xframe_options_sameorigin server-side so the iframe is allowed
+    // to render it. Adding a cache-buster querystring forces Firefox
+    // to actually re-fetch rather than reusing a stale render.
+    preview.src = `/attendance/${eventPk}/agenda/preview/?t=${Date.now()}`;
+  }
+  document.getElementById('kk-agenda-refresh').addEventListener('click', refreshPreview);
+  refreshPreview();
+
+  // ── Save a row (debounced) ──
+  function rowToFormData(row) {
+    const fd = new FormData();
+    fd.append('start_time', row.querySelector('.kk-ag-start').value);
+    fd.append('end_time',   row.querySelector('.kk-ag-end').value);
+    fd.append('title',      row.querySelector('.kk-ag-title').value);
+    fd.append('description',row.querySelector('.kk-ag-desc').value);
+    fd.append('speaker',    row.querySelector('.kk-ag-speaker').value);
+    fd.append('track',      row.querySelector('.kk-ag-track').value);
+    fd.append('accent_colour', row.querySelector('.kk-ag-colour').value);
+    fd.append('status',     row.querySelector('.kk-ag-status').value);
+    return fd;
+  }
+
+  const saveTimers = new WeakMap();
+  function scheduleSave(row) {
+    clearTimeout(saveTimers.get(row));
+    saveTimers.set(row, setTimeout(async () => {
+      const id = row.dataset.id;
+      if (!id) return;
+      const res = await post(`/attendance/${eventPk}/agenda/${id}/`, rowToFormData(row));
+      if (!res.ok) toast(res.error || 'Could not save', 'error');
+      else refreshPreview();
+    }, 700));
+  }
+
+  function wireRow(row) {
+    row.querySelectorAll('input, textarea, select').forEach(el => {
+      el.addEventListener('change', () => scheduleSave(row));
+      if (el.tagName === 'TEXTAREA' || el.type === 'text' || el.type === 'time') {
+        el.addEventListener('input', () => scheduleSave(row));
+      }
+    });
+    row.querySelector('.kk-agenda-delete').addEventListener('click', async () => {
+      if (!confirm('Delete this session?')) return;
+      const id = row.dataset.id;
+      if (id) {
+        const res = await post(`/attendance/${eventPk}/agenda/${id}/delete/`);
+        if (!res.ok) { toast(res.error || 'Could not delete', 'error'); return; }
+      }
+      row.classList.add('removing');
+      setTimeout(() => {
+        row.remove();
+        if (!rows.querySelectorAll('.kk-agenda-row').length && empty) empty.style.display = '';
+        refreshPreview();
+      }, 250);
+    });
+    attachDrag(row);
+  }
+  rows.querySelectorAll('.kk-agenda-row').forEach(wireRow);
+
+  // ── Add new row ──
+  document.getElementById('kk-agenda-add').addEventListener('click', async () => {
+    const fd = new FormData();
+    fd.append('start_time', '09:00');
+    fd.append('title', 'New session');
+    fd.append('status', 'upcoming');
+    const res = await post(`/attendance/${eventPk}/agenda/add/`, fd);
+    if (!res.ok) { toast(res.error || 'Could not add', 'error'); return; }
+    if (empty) empty.style.display = 'none';
+    const item = res.item;
+    const div = document.createElement('div');
+    div.className = 'kk-agenda-row';
+    div.dataset.id = item.id;
+    div.innerHTML = `
+      <i class="bi bi-grip-vertical kk-agenda-handle"></i>
+      <div class="kk-agenda-time-block">
+        <input type="time" class="form-control form-control-sm kk-ag-start" value="${item.start_time}">
+        <input type="time" class="form-control form-control-sm kk-ag-end" value="${item.end_time}" placeholder="end">
+      </div>
+      <div class="flex-grow-1 kk-agenda-body">
+        <input type="text" class="form-control form-control-sm kk-ag-title" value="${item.title}" placeholder="Session title">
+        <div class="d-flex gap-2 mt-1">
+          <input type="text" class="form-control form-control-sm kk-ag-speaker" value="${item.speaker}" placeholder="Speaker (optional)">
+          <input type="text" class="form-control form-control-sm kk-ag-track" value="${item.track}" placeholder="Track / room (optional)">
+        </div>
+        <textarea class="form-control form-control-sm kk-ag-desc mt-1" rows="2" placeholder="Description (optional)">${item.description}</textarea>
+      </div>
+      <div class="kk-agenda-meta">
+        <select class="form-select form-select-sm kk-ag-status">
+          <option value="upcoming" selected>Upcoming</option>
+          <option value="live">Live now</option>
+          <option value="done">Done</option>
+        </select>
+        <input type="color" class="form-control form-control-color form-control-sm kk-ag-colour" value="${item.accent_colour || '#7c3aed'}">
+        <button class="kk-agenda-delete" type="button"><i class="bi bi-x-lg"></i></button>
+      </div>
+    `;
+    rows.appendChild(div);
+    wireRow(div);
+    div.querySelector('.kk-ag-title').select();
+    refreshPreview();
+  });
+
+  // ── Drag-and-drop reorder ──
+  let dragged = null;
+  function attachDrag(row) {
+    // Only the handle initiates drag; otherwise text inputs become unusable.
+    const handle = row.querySelector('.kk-agenda-handle');
+    handle.addEventListener('mousedown', () => row.draggable = true);
+    handle.addEventListener('mouseup',   () => row.draggable = false);
+    row.addEventListener('dragstart', e => {
+      dragged = row; row.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('dragging'); row.draggable = false;
+      dragged = null;
+      saveOrder();
+    });
+  }
+  rows.addEventListener('dragover', e => {
+    if (!dragged) return;
+    e.preventDefault();
+    const after = [...rows.querySelectorAll('.kk-agenda-row:not(.dragging)')]
+      .find(el => e.clientY <= el.getBoundingClientRect().top + el.offsetHeight / 2);
+    if (after) rows.insertBefore(dragged, after);
+    else rows.appendChild(dragged);
+  });
+  function saveOrder() {
+    const ids = [...rows.querySelectorAll('.kk-agenda-row')].map(r => +r.dataset.id);
+    post(`/attendance/${eventPk}/agenda/reorder/`, {order: ids});
+    refreshPreview();
+  }
+
+  // ── Style picker ──
+  document.querySelectorAll('.kk-agenda-template').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const key = btn.dataset.key;
+      const fd = new FormData(); fd.append('template_key', key);
+      const res = await post(`/attendance/${eventPk}/agenda/template/`, fd);
+      if (!res.ok) { toast(res.error || 'Could not save style', 'error'); return; }
+      document.querySelectorAll('.kk-agenda-template').forEach(b => b.classList.remove('is-active'));
+      btn.classList.add('is-active');
+      refreshPreview();
+    });
+  });
+})();
+</script>
+{% endblock %}

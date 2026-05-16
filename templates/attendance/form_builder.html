@@ -8,7 +8,7 @@
       <i class="bi bi-arrow-left"></i> {{ event.title }}
     </a>
     <h1 class="mb-0 mt-1">Registration form</h1>
-    <p class="text-secondary mb-0">Drag presets in, drag rows to reorder, click any field to edit.</p>
+    <p class="text-secondary mb-0">Drag presets in, drag rows to reorder, click a field to edit, click × to delete.</p>
   </div>
   <div class="d-flex gap-2">
     <button id="kk-fb-add-custom" class="kk-btn kk-btn-ghost">
@@ -19,6 +19,9 @@
     </a>
   </div>
 </div>
+
+{# Toast region for save/delete confirmations and errors. #}
+<div id="kk-fb-toast"></div>
 
 <div class="kk-fb-grid">
   {# ─── LEFT: live form ──────────────────────────────────────── #}
@@ -66,7 +69,7 @@
   </aside>
 </div>
 
-{# ─── Edit-field modal (Bootstrap-styled, populated by JS) ──── #}
+{# ─── Edit-field modal ─────────────────────────────────────── #}
 <div class="modal fade" id="kk-fb-edit-modal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
@@ -106,7 +109,9 @@
           </div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-link text-danger me-auto" id="kk-fb-delete">Delete field</button>
+          <button type="button" class="btn btn-link text-danger me-auto" id="kk-fb-delete">
+            <i class="bi bi-trash"></i> Delete field
+          </button>
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
           <button type="submit" class="btn btn-primary">Save</button>
         </div>
@@ -145,15 +150,13 @@
   border: 1px solid var(--kk-border);
   border-radius: 10px;
   cursor: grab;
-  transition: border-color .15s ease, transform .15s ease;
+  transition: border-color .15s ease, transform .15s ease, opacity .3s ease;
 }
-.kk-fb-row:hover {
-  border-color: rgba(124, 58, 237, 0.45);
-}
-.kk-fb-row.dragging {
-  opacity: .55;
-  border-style: dashed;
-}
+.kk-fb-row:hover { border-color: rgba(124, 58, 237, 0.45); }
+.kk-fb-row:hover .kk-fb-row-actions { opacity: 1; }
+.kk-fb-row.dragging { opacity: .55; border-style: dashed; }
+.kk-fb-row.removing { opacity: 0; transform: scale(.96); }
+
 .kk-fb-row .kk-fb-handle {
   color: var(--kk-text-dim, rgba(248, 250, 252, 0.5));
   font-size: 1.1rem;
@@ -174,13 +177,21 @@
   font-weight: 700;
   letter-spacing: .05em;
 }
-.kk-fb-row .kk-fb-edit {
+.kk-fb-row-actions {
+  display: flex; gap: 2px;
+  opacity: .55; transition: opacity .15s ease;
+}
+.kk-fb-row .kk-fb-edit,
+.kk-fb-row .kk-fb-remove {
   color: var(--kk-text-dim);
   background: transparent;
   border: 0;
   padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
 }
-.kk-fb-row .kk-fb-edit:hover { color: var(--kk-text); }
+.kk-fb-row .kk-fb-edit:hover { color: var(--kk-text); background: rgba(255,255,255,0.05); }
+.kk-fb-row .kk-fb-remove:hover { color: #fb7185; background: rgba(251, 113, 133, 0.12); }
 
 .kk-fb-empty {
   text-align: center;
@@ -225,6 +236,37 @@
   color: var(--kk-text-dim);
   text-transform: capitalize;
 }
+
+/* Toast */
+#kk-fb-toast {
+  position: fixed; bottom: 1.5rem; left: 50%;
+  transform: translateX(-50%);
+  z-index: 1080;
+  display: flex; flex-direction: column; gap: .5rem; align-items: center;
+  pointer-events: none;
+}
+.kk-fb-toast {
+  background: var(--kk-surface);
+  border: 1px solid var(--kk-border);
+  padding: .65rem 1rem;
+  border-radius: 10px;
+  font-size: .9rem;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  animation: kkToastIn .2s ease;
+  pointer-events: auto;
+}
+.kk-fb-toast.kk-fb-toast-error {
+  border-color: rgba(251, 113, 133, 0.5);
+  color: #fb7185;
+}
+.kk-fb-toast.kk-fb-toast-ok {
+  border-color: rgba(34, 197, 94, 0.4);
+  color: #4ade80;
+}
+@keyframes kkToastIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 </style>
 
 <script>
@@ -234,8 +276,19 @@
   const eventPk = {{ event.pk }};
   const fieldsBox = document.getElementById('kk-fb-fields');
   const presetList = document.getElementById('kk-fb-preset-list');
+  const toastWrap = document.getElementById('kk-fb-toast');
 
-  function post(url, body) {
+  // ── tiny toast helper ──
+  function toast(msg, kind) {
+    const el = document.createElement('div');
+    el.className = `kk-fb-toast kk-fb-toast-${kind || 'ok'}`;
+    el.textContent = msg;
+    toastWrap.appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .2s'; }, 2400);
+    setTimeout(() => el.remove(), 2700);
+  }
+
+  async function post(url, body) {
     const headers = {'X-CSRFToken': csrf};
     let payload;
     if (body instanceof FormData) {
@@ -244,8 +297,20 @@
       headers['Content-Type'] = 'application/json';
       payload = JSON.stringify(body);
     }
-    return fetch(url, {method: 'POST', headers, body: payload, credentials: 'same-origin'})
-      .then(r => r.json().catch(() => ({ok: false})));
+    let res;
+    try {
+      res = await fetch(url, {method: 'POST', headers, body: payload, credentials: 'same-origin'});
+    } catch (e) {
+      return {ok: false, error: 'Network error: ' + e.message};
+    }
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      return {ok: false, error: `Unexpected response (HTTP ${res.status})`};
+    }
+    if (!res.ok && data && !data.error) data.error = `Server returned ${res.status}`;
+    return data;
   }
 
   // ── Drag-and-drop reorder ──
@@ -275,61 +340,42 @@
     const ids = [...fieldsBox.querySelectorAll('.kk-fb-row')].map(r => +r.dataset.id);
     post(fieldsBox.dataset.reorderUrl, {order: ids});
   }
-  fieldsBox.querySelectorAll('.kk-fb-row').forEach(attachDrag);
 
-  // ── Add preset ──
-  presetList.addEventListener('click', async e => {
-    const btn = e.target.closest('.kk-fb-preset');
-    if (!btn) return;
-    const fd = new FormData();
-    fd.append('preset_key', btn.dataset.key);
-    const res = await post('{% url "attendance:field_add_preset" event.pk %}', fd);
-    if (res.ok) {
-      appendFieldRow(res.field);
-      btn.remove();
+  // ── Delete a field — extracted so both inline × and modal use it ──
+  async function deleteField(fieldId, row) {
+    if (!fieldId) {
+      toast('Nothing selected to delete.', 'error');
+      return false;
     }
-  });
-
-  // ── Add custom ──
-  document.getElementById('kk-fb-add-custom').addEventListener('click', async () => {
-    const fd = new FormData();
-    fd.append('label', 'Untitled question');
-    fd.append('field_type', 'text');
-    const res = await post('{% url "attendance:field_add_custom" event.pk %}', fd);
-    if (res.ok) {
-      const row = appendFieldRow(res.field);
-      // Open the edit modal immediately so they can name it.
-      openEditModal(res.field, row);
+    if (!confirm('Remove this field? Answers already collected for it will be deleted too.')) {
+      return false;
     }
-  });
-
-  // ── Build a row from a field JSON dict ──
-  function appendFieldRow(field) {
-    // Remove the empty-state if present.
-    fieldsBox.querySelector('.kk-fb-empty')?.remove();
-
-    const row = document.createElement('div');
-    row.className = 'kk-fb-row';
-    row.dataset.id = field.id;
-    row.innerHTML = `
-      <i class="bi bi-grip-vertical kk-fb-handle"></i>
-      <div class="flex-grow-1">
-        <div class="kk-fb-label"></div>
-        <div class="kk-fb-type"></div>
-      </div>
-      ${field.required ? '<span class="kk-fb-req">REQUIRED</span>' : ''}
-      <button class="kk-fb-edit" type="button" title="Edit"><i class="bi bi-pencil"></i></button>
-    `;
-    row.querySelector('.kk-fb-label').textContent = field.label;
-    row.querySelector('.kk-fb-type').textContent = field.type_display;
-    row.querySelector('.kk-fb-edit').addEventListener('click', () => openEditModal(field, row));
-    fieldsBox.appendChild(row);
-    attachDrag(row);
-    return row;
+    const fd = new FormData();
+    const res = await post(`/attendance/${eventPk}/fields/${fieldId}/delete/`, fd);
+    if (res && res.ok) {
+      if (row) {
+        row.classList.add('removing');
+        setTimeout(() => {
+          row.remove();
+          if (!fieldsBox.querySelectorAll('.kk-fb-row').length) {
+            // Bring the empty-state back without losing the preset list.
+            const empty = document.createElement('div');
+            empty.className = 'kk-fb-empty';
+            empty.innerHTML = `<i class="bi bi-arrow-right-circle"></i>
+              <p>Pick a preset from the right to start, or add a custom field above.</p>`;
+            fieldsBox.appendChild(empty);
+          }
+        }, 250);
+      }
+      toast('Field deleted.', 'ok');
+      return true;
+    }
+    toast(res?.error || 'Could not delete that field. Please retry.', 'error');
+    return false;
   }
 
-  // Wire existing edit buttons too.
-  fieldsBox.querySelectorAll('.kk-fb-row').forEach(row => {
+  // ── Wire each existing row's edit + inline-delete buttons ──
+  function wireRowButtons(row) {
     row.querySelector('.kk-fb-edit')?.addEventListener('click', () => {
       const f = {
         id: +row.dataset.id,
@@ -343,7 +389,78 @@
       };
       openEditModal(f, row);
     });
+    row.querySelector('.kk-fb-remove')?.addEventListener('click', e => {
+      e.stopPropagation();
+      deleteField(+row.dataset.id, row);
+    });
+  }
+
+  fieldsBox.querySelectorAll('.kk-fb-row').forEach(row => {
+    attachDrag(row);
+    wireRowButtons(row);
   });
+
+  // ── Add preset ──
+  presetList.addEventListener('click', async e => {
+    const btn = e.target.closest('.kk-fb-preset');
+    if (!btn) return;
+    const fd = new FormData();
+    fd.append('preset_key', btn.dataset.key);
+    const res = await post('{% url "attendance:field_add_preset" event.pk %}', fd);
+    if (res && res.ok) {
+      appendFieldRow(res.field);
+      btn.remove();
+    } else {
+      toast(res?.error || 'Could not add that preset.', 'error');
+    }
+  });
+
+  // ── Add custom ──
+  document.getElementById('kk-fb-add-custom').addEventListener('click', async () => {
+    const fd = new FormData();
+    fd.append('label', 'Untitled question');
+    fd.append('field_type', 'text');
+    const res = await post('{% url "attendance:field_add_custom" event.pk %}', fd);
+    if (res && res.ok) {
+      const row = appendFieldRow(res.field);
+      openEditModal(res.field, row);
+    } else {
+      toast(res?.error || 'Could not add a custom field.', 'error');
+    }
+  });
+
+  // ── Build a row from a field JSON dict ──
+  function appendFieldRow(field) {
+    fieldsBox.querySelector('.kk-fb-empty')?.remove();
+
+    const row = document.createElement('div');
+    row.className = 'kk-fb-row';
+    row.dataset.id = field.id;
+    row.dataset.fieldType = field.field_type || 'text';
+    row.dataset.required = field.required ? '1' : '0';
+    row.dataset.helpText = field.help_text || '';
+    row.dataset.placeholder = field.placeholder || '';
+    row.dataset.options = field.options || '';
+
+    row.innerHTML = `
+      <i class="bi bi-grip-vertical kk-fb-handle"></i>
+      <div class="flex-grow-1">
+        <div class="kk-fb-label"></div>
+        <div class="kk-fb-type"></div>
+      </div>
+      ${field.required ? '<span class="kk-fb-req">REQUIRED</span>' : ''}
+      <div class="kk-fb-row-actions">
+        <button class="kk-fb-edit" type="button" title="Edit"><i class="bi bi-pencil"></i></button>
+        <button class="kk-fb-remove" type="button" title="Delete"><i class="bi bi-x-lg"></i></button>
+      </div>
+    `;
+    row.querySelector('.kk-fb-label').textContent = field.label;
+    row.querySelector('.kk-fb-type').textContent = field.type_display;
+    fieldsBox.appendChild(row);
+    attachDrag(row);
+    wireRowButtons(row);
+    return row;
+  }
 
   // ── Edit modal ──
   const modalEl = document.getElementById('kk-fb-edit-modal');
@@ -376,38 +493,43 @@
     e.preventDefault();
     const fd = new FormData(modalForm);
     if (!modalForm.required.checked) fd.delete('required');
+    if (!currentFieldId) {
+      toast('Lost track of which field this was — refresh the page.', 'error');
+      return;
+    }
     const url = `/attendance/${eventPk}/fields/${currentFieldId}/`;
     const res = await post(url, fd);
-    if (res.ok) {
+    if (res && res.ok) {
+      currentRow.dataset.fieldType = res.field.field_type;
+      currentRow.dataset.required = res.field.required ? '1' : '0';
+      currentRow.dataset.helpText = res.field.help_text || '';
+      currentRow.dataset.placeholder = res.field.placeholder || '';
+      currentRow.dataset.options = res.field.options || '';
       currentRow.querySelector('.kk-fb-label').textContent = res.field.label;
       currentRow.querySelector('.kk-fb-type').textContent = res.field.type_display;
       const reqBadge = currentRow.querySelector('.kk-fb-req');
+      const actions = currentRow.querySelector('.kk-fb-row-actions');
       if (res.field.required && !reqBadge) {
         const span = document.createElement('span');
         span.className = 'kk-fb-req';
         span.textContent = 'REQUIRED';
-        currentRow.querySelector('.kk-fb-edit').before(span);
+        actions?.before(span);
       } else if (!res.field.required && reqBadge) {
         reqBadge.remove();
       }
       modal.hide();
+      toast('Saved.', 'ok');
+    } else {
+      toast(res?.error || 'Could not save changes.', 'error');
     }
   });
 
   document.getElementById('kk-fb-delete').addEventListener('click', async () => {
-    if (!confirm('Remove this field? Answers already collected for it will be deleted too.')) return;
-    const fd = new FormData();
-    const res = await post(`/attendance/${eventPk}/fields/${currentFieldId}/delete/`, fd);
-    if (res.ok) {
-      currentRow.remove();
-      modal.hide();
-      if (!fieldsBox.querySelectorAll('.kk-fb-row').length) {
-        location.reload();  // bring the empty-state back
-      }
-    }
+    const ok = await deleteField(currentFieldId, currentRow);
+    if (ok) modal.hide();
   });
 
-  // Need a CSRF token in the DOM for our `csrf` lookup above.
+  // CSRF safety net.
   if (!document.querySelector('[name=csrfmiddlewaretoken]')) {
     const t = document.createElement('input');
     t.type = 'hidden';

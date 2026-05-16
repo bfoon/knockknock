@@ -1,0 +1,79 @@
+{# Args: event, items #}
+<div class="kk-ag-board">
+  <table class="kk-ag-board-table">
+    <thead>
+      <tr>
+        <th class="kk-ag-board-th-time">Time</th>
+        <th>Session</th>
+        <th class="kk-ag-board-th-spk">Speaker / Track</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+        <tr class="kk-ag-board-row kk-ag-status-{{ item.status }}"
+            style="--ag-accent: {{ item.accent_colour|default:'#475569' }};">
+          <td class="kk-ag-board-time">
+            <div class="kk-ag-board-start">{{ item.start_time|time:"H:i" }}</div>
+            {% if item.end_time %}
+              <div class="kk-ag-board-end">– {{ item.end_time|time:"H:i" }}</div>
+            {% endif %}
+          </td>
+          <td class="kk-ag-board-title-cell">
+            <div class="kk-ag-board-title">
+              {{ item.title }}
+              {% if item.status == "live" %}<span class="kk-ag-pill kk-ag-pill-live">live</span>{% endif %}
+              {% if item.status == "done" %}<span class="kk-ag-pill kk-ag-pill-done">done</span>{% endif %}
+            </div>
+            {% if item.description %}
+              <div class="kk-ag-board-desc">{{ item.description }}</div>
+            {% endif %}
+          </td>
+          <td class="kk-ag-board-spk">
+            {% if item.speaker %}<div>{{ item.speaker }}</div>{% endif %}
+            {% if item.track %}<div class="kk-ag-board-track">{{ item.track }}</div>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<style>
+.kk-ag-board { overflow-x: auto; }
+.kk-ag-board-table {
+  width: 100%; border-collapse: collapse;
+  font-size: .92rem;
+}
+.kk-ag-board-table thead th {
+  text-align: left;
+  font-size: .7rem; letter-spacing: .15em; text-transform: uppercase;
+  color: var(--kk-text-dim);
+  padding: 10px 12px;
+  border-bottom: 2px solid var(--kk-border);
+}
+.kk-ag-board-th-time { width: 110px; }
+.kk-ag-board-th-spk  { width: 28%; }
+.kk-ag-board-row td {
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--kk-border, rgba(148,163,184,.18));
+  vertical-align: top;
+}
+.kk-ag-board-row:nth-child(odd) td { background: rgba(148, 163, 184, .04); }
+.kk-ag-board-row.kk-ag-status-done td { opacity: .55; }
+.kk-ag-board-time {
+  font-variant-numeric: tabular-nums;
+  border-left: 3px solid var(--ag-accent);
+  padding-left: 14px !important;
+}
+.kk-ag-board-start { font-weight: 700; }
+.kk-ag-board-end   { font-size: .8rem; color: var(--kk-text-dim); }
+.kk-ag-board-title { font-weight: 600; }
+.kk-ag-board-desc  { color: var(--kk-text-dim); margin-top: 3px; font-size: .85rem; }
+.kk-ag-board-track { color: var(--kk-text-dim); font-size: .8rem; }
+.kk-ag-pill {
+  display: inline-block; margin-left: .5rem; padding: 2px 8px;
+  border-radius: 999px; font-size: .65rem; font-weight: 700; letter-spacing: .07em;
+  text-transform: uppercase; vertical-align: middle;
+}
+.kk-ag-pill-live { background: #fb7185; color: white; }
+.kk-ag-pill-done { background: rgba(148,163,184,.2); color: var(--kk-text-dim); }
+</style>

@@ -12,5 +12,8 @@
     <div class="kk-fb-type">{{ field.get_field_type_display }}</div>
   </div>
   {% if field.required %}<span class="kk-fb-req">REQUIRED</span>{% endif %}
-  <button class="kk-fb-edit" type="button" title="Edit"><i class="bi bi-pencil"></i></button>
+  <div class="kk-fb-row-actions">
+    <button class="kk-fb-edit" type="button" title="Edit"><i class="bi bi-pencil"></i></button>
+    <button class="kk-fb-remove" type="button" title="Delete"><i class="bi bi-x-lg"></i></button>
+  </div>
 </div>

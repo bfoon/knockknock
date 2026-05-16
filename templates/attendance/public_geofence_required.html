@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Verify your location · {{ event.title }}{% endblock %}
+
+{% block content %}
+<div class="kk-public-wrap">
+  <div class="kk-public-card text-center">
+    {% if out_of_range %}
+      {# ── Outside the radius — friendly explanation, no retry on this page ── #}
+      <div class="kk-empty">
+        <div class="em">📍</div>
+        <h2 class="mb-2">You don't seem to be at the venue</h2>
+        <p class="kk-text-dim mb-3">
+          Check-in for <strong>{{ event.title }}</strong> requires you to be physically present.
+          {% if distance_m %}
+            We measured your distance from the venue as roughly
+            <strong>{{ distance_m }} m</strong> — outside the allowed
+            {{ event.geofence_radius_m }} m radius.
+          {% endif %}
+        </p>
+        <p class="kk-text-dim small mb-4">
+          If you believe this is a mistake (GPS can drift, especially indoors),
+          ask the organiser to check you in manually.
+        </p>
+        <a href="{% url 'attendance:public_check_in' event.public_token %}"
+           class="kk-btn kk-btn-ghost">
+          <i class="bi bi-arrow-clockwise"></i> Try again
+        </a>
+      </div>
+
+    {% else %}
+      {# ── First contact — ask the browser for permission ── #}
+      <div class="kk-geofence-icon">📍</div>
+      <h2 class="mb-1">Verify you're at the venue</h2>
+      <p class="kk-text-dim mb-4">
+        {{ event.title }} requires on-site check-in. Tap below and accept your
+        browser's location prompt — we use it only to confirm you're here,
+        and we don't store it.
+      </p>
+
+      <div id="kk-geo-status" class="kk-geo-status d-none"></div>
+
+      <button id="kk-share-location" class="kk-btn kk-btn-primary kk-btn-lg w-100">
+        <i class="bi bi-geo-alt-fill"></i> Share my location & check in
+      </button>
+
+      <p class="kk-text-dim small mt-3 mb-0">
+        Can't share location? Find the organiser — they can mark you present manually.
+      </p>
+
+      {# We POST back to the same URL the user originally hit, attaching lat/lng. #}
+      <form id="kk-geo-form" method="post" class="d-none">
+        {% csrf_token %}
+        <input type="hidden" name="lat" id="kk-geo-lat">
+        <input type="hidden" name="lng" id="kk-geo-lng">
+        {% if intent == "self_checkin" and identifier %}
+          <input type="hidden" name="identifier" value="{{ identifier }}">
+        {% endif %}
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+{% if not out_of_range %}
+<script>
+(function(){
+  const btn = document.getElementById('kk-share-location');
+  const status = document.getElementById('kk-geo-status');
+  const form = document.getElementById('kk-geo-form');
+  const latInput = document.getElementById('kk-geo-lat');
+  const lngInput = document.getElementById('kk-geo-lng');
+
+  function setStatus(msg, kind) {
+    status.classList.remove('d-none', 'kk-geo-status-error', 'kk-geo-status-ok');
+    if (kind === 'error') status.classList.add('kk-geo-status-error');
+    if (kind === 'ok')    status.classList.add('kk-geo-status-ok');
+    status.textContent = msg;
+  }
+
+  btn.addEventListener('click', () => {
+    if (!('geolocation' in navigator)) {
+      setStatus('Your browser doesn\'t support location sharing. Please ask the organiser to check you in.', 'error');
+      return;
+    }
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Getting your location…';
+    setStatus('Waiting for your location… If you blocked the prompt, allow it from your address bar and try again.', null);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        latInput.value = pos.coords.latitude.toFixed(6);
+        lngInput.value = pos.coords.longitude.toFixed(6);
+        setStatus('Location verified — checking you in…', 'ok');
+        // POST back to whatever URL we're sitting on (which is the
+        // original check-in URL, now with coords attached).
+        form.action = window.location.pathname + window.location.search;
+        form.submit();
+      },
+      (err) => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-geo-alt-fill"></i> Try again';
+        if (err.code === err.PERMISSION_DENIED) {
+          setStatus('Location permission was denied. Open your browser settings to allow it for this site, then try again.', 'error');
+        } else if (err.code === err.POSITION_UNAVAILABLE) {
+          setStatus('We couldn\'t get your location — try moving away from walls or stepping outside briefly.', 'error');
+        } else if (err.code === err.TIMEOUT) {
+          setStatus('That took too long. Tap "Try again" once you have a signal.', 'error');
+        } else {
+          setStatus('Something went wrong getting your location. Tap "Try again".', 'error');
+        }
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  });
+})();
+</script>
+{% endif %}
+
+<style>
+.kk-geofence-icon { font-size: 4rem; margin-bottom: 1rem; }
+.kk-geo-status {
+  padding: .75rem 1rem; border-radius: 10px; margin-bottom: 1rem;
+  text-align: left; font-size: .9rem;
+  background: rgba(34, 211, 238, 0.1); color: #22d3ee;
+}
+.kk-geo-status-error { background: rgba(251, 113, 133, 0.12); color: #fb7185; }
+.kk-geo-status-ok    { background: rgba(34, 197, 94, 0.12);  color: #4ade80; }
+</style>
+{% endblock %}

@@ -11,11 +11,31 @@ urlpatterns = [
     path("<int:pk>/edit/",                  views.event_edit,           name="event_edit"),
     path("<int:pk>/form/",                  views.form_builder,         name="form_builder"),
     path("<int:pk>/status/",                views.event_set_status,     name="event_set_status"),
-    # NEW: delete an event (POST-only). Wired from the dashboard's red bin.
+    # POST-only delete wired from the dashboard's red bin.
     path("<int:pk>/delete/",                views.event_delete,         name="event_delete"),
     path("<int:pk>/export.csv",             views.registrations_export, name="export_csv"),
+
+    # Stats feed (JSON) consumed by the dashboard charts
+    path("<int:pk>/stats.json",             views.event_stats_json,     name="event_stats_json"),
+
+    # Printable poster wrapping the event QR
+    path("<int:pk>/poster/",                views.public_qr_poster,     name="public_qr_poster"),
+
+    # Certificates
+    path("<int:pk>/certificates/picker/",   views.certificate_picker,   name="certificate_picker"),
+    path("<int:pk>/certificates/preview/",  views.certificate_preview,  name="certificate_preview"),
     path("<int:pk>/certificates/bulk/",     views.certificates_bulk,    name="certificates_bulk"),
     path("<int:pk>/certificates/<int:reg_id>/", views.certificate_download, name="certificate_download"),
+
+    # Agenda
+    path("<int:pk>/agenda/",                       views.agenda_editor,       name="agenda_editor"),
+    path("<int:pk>/agenda/add/",                   views.agenda_item_add,     name="agenda_item_add"),
+    path("<int:pk>/agenda/<int:item_id>/",         views.agenda_item_edit,    name="agenda_item_edit"),
+    path("<int:pk>/agenda/<int:item_id>/delete/",  views.agenda_item_delete,  name="agenda_item_delete"),
+    path("<int:pk>/agenda/reorder/",               views.agenda_reorder,      name="agenda_reorder"),
+    path("<int:pk>/agenda/template/",              views.agenda_set_template, name="agenda_set_template"),
+    path("<int:pk>/agenda/preview/",               views.agenda_preview,      name="agenda_preview"),
+
     path("<int:pk>/announce/",              views.announcement_send,    name="announcement_send"),
     path("<int:pk>/r/<int:reg_id>/action/", views.registration_action,  name="registration_action"),
 

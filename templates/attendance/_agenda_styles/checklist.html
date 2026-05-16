@@ -1,0 +1,86 @@
+{# Args: event, items #}
+<div class="kk-ag-chk">
+  {% for item in items %}
+    <div class="kk-ag-chk-row kk-ag-status-{{ item.status }}"
+         style="--ag-accent: {{ item.accent_colour|default:'#16a34a' }};">
+      <div class="kk-ag-chk-box">
+        {% if item.status == "done" %}<i class="bi bi-check2"></i>{% endif %}
+        {% if item.status == "live" %}<span class="kk-ag-chk-pulse"></span>{% endif %}
+      </div>
+      <div class="kk-ag-chk-time">{{ item.start_time|time:"H:i" }}</div>
+      <div class="kk-ag-chk-body">
+        <div class="kk-ag-chk-title">
+          {{ item.title }}
+          {% if item.status == "live" %}<span class="kk-ag-chk-live">happening now</span>{% endif %}
+        </div>
+        {% if item.speaker or item.track or item.description %}
+          <div class="kk-ag-chk-meta">
+            {% if item.speaker %}<span><i class="bi bi-person"></i> {{ item.speaker }}</span>{% endif %}
+            {% if item.track %}<span><i class="bi bi-geo-alt"></i> {{ item.track }}</span>{% endif %}
+            {% if item.duration_label %}<span><i class="bi bi-clock"></i> {{ item.duration_label }}</span>{% endif %}
+          </div>
+        {% endif %}
+        {% if item.description %}<div class="kk-ag-chk-desc">{{ item.description }}</div>{% endif %}
+      </div>
+    </div>
+  {% endfor %}
+</div>
+<style>
+.kk-ag-chk { display: flex; flex-direction: column; gap: 4px; }
+.kk-ag-chk-row {
+  display: grid; grid-template-columns: 28px 60px 1fr; gap: 12px;
+  padding: 12px 10px;
+  border-radius: 8px;
+  align-items: start;
+  transition: background .15s;
+}
+.kk-ag-chk-row:hover { background: rgba(148, 163, 184, .06); }
+.kk-ag-chk-row.kk-ag-status-done .kk-ag-chk-title {
+  text-decoration: line-through; color: var(--kk-text-dim);
+}
+.kk-ag-chk-row.kk-ag-status-done { opacity: .8; }
+.kk-ag-chk-box {
+  width: 24px; height: 24px; border-radius: 6px;
+  border: 2px solid var(--kk-border, rgba(148,163,184,.4));
+  display: grid; place-items: center;
+  font-size: .9rem;
+  margin-top: 1px;
+  position: relative;
+}
+.kk-ag-chk-row.kk-ag-status-done .kk-ag-chk-box {
+  background: var(--ag-accent); border-color: var(--ag-accent);
+  color: white;
+}
+.kk-ag-chk-row.kk-ag-status-live .kk-ag-chk-box {
+  border-color: #fb7185;
+}
+.kk-ag-chk-pulse {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: #fb7185;
+  animation: kkAgChkPulse 1.4s ease-in-out infinite;
+}
+@keyframes kkAgChkPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.5); opacity: .4; }
+}
+.kk-ag-chk-time {
+  font-weight: 700; font-variant-numeric: tabular-nums;
+  color: var(--ag-accent); padding-top: 2px;
+  font-size: .95rem;
+}
+.kk-ag-chk-title { font-weight: 600; font-size: .98rem; }
+.kk-ag-chk-live {
+  margin-left: .5rem; font-size: .7rem; padding: 2px 8px; border-radius: 999px;
+  background: rgba(251, 113, 133, .15); color: #fb7185; font-weight: 600;
+}
+.kk-ag-chk-meta {
+  margin-top: 4px;
+  display: flex; flex-wrap: wrap; gap: 12px;
+  color: var(--kk-text-dim); font-size: .82rem;
+}
+.kk-ag-chk-meta i { margin-right: 3px; }
+.kk-ag-chk-desc {
+  margin-top: 6px; color: var(--kk-text-dim);
+  font-size: .87rem; line-height: 1.5;
+}
+</style>

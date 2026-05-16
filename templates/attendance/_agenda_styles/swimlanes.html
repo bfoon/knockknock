@@ -1,0 +1,77 @@
+{# Args: event, items #}
+<div class="kk-ag-swim">
+  {% for item in items %}
+    <div class="kk-ag-swim-row kk-ag-status-{{ item.status }}"
+         style="--ag-accent: {{ item.accent_colour|default:'#22d3ee' }};">
+      <div class="kk-ag-swim-time">
+        <div class="kk-ag-swim-hour">{{ item.start_time|time:"H:i" }}</div>
+        {% if item.end_time %}
+          <div class="kk-ag-swim-to">{{ item.end_time|time:"H:i" }}</div>
+        {% endif %}
+        {% if item.duration_label %}
+          <div class="kk-ag-swim-dur">{{ item.duration_label }}</div>
+        {% endif %}
+      </div>
+      <div class="kk-ag-swim-card">
+        <div class="kk-ag-swim-title">
+          {{ item.title }}
+          {% if item.status == "live" %}<span class="kk-ag-swim-live">● LIVE</span>{% endif %}
+        </div>
+        {% if item.speaker %}<div class="kk-ag-swim-spk"><i class="bi bi-person"></i> {{ item.speaker }}</div>{% endif %}
+        {% if item.track %}<div class="kk-ag-swim-track"><i class="bi bi-geo-alt"></i> {{ item.track }}</div>{% endif %}
+        {% if item.description %}<div class="kk-ag-swim-desc">{{ item.description }}</div>{% endif %}
+      </div>
+    </div>
+  {% endfor %}
+</div>
+<style>
+.kk-ag-swim { display: flex; flex-direction: column; gap: 10px; position: relative; }
+.kk-ag-swim::before {
+  content: ""; position: absolute;
+  left: 80px; top: 8px; bottom: 8px;
+  width: 2px; background: linear-gradient(180deg, transparent, var(--kk-border), transparent);
+}
+.kk-ag-swim-row {
+  display: grid; grid-template-columns: 80px 1fr; gap: 18px;
+  align-items: start;
+}
+.kk-ag-swim-row.kk-ag-status-done { opacity: .55; }
+.kk-ag-swim-time {
+  text-align: right; padding-top: 12px; padding-right: 12px;
+  position: relative; z-index: 1;
+}
+.kk-ag-swim-hour {
+  font-weight: 700; font-size: 1.05rem; font-variant-numeric: tabular-nums;
+}
+.kk-ag-swim-to { font-size: .75rem; color: var(--kk-text-dim); font-variant-numeric: tabular-nums; }
+.kk-ag-swim-dur {
+  display: inline-block; margin-top: 4px;
+  font-size: .65rem; padding: 1px 7px; border-radius: 999px;
+  background: var(--kk-surface-2); color: var(--kk-text-dim);
+}
+.kk-ag-swim-card {
+  background: var(--kk-surface-2);
+  border: 1px solid var(--kk-border);
+  border-left: 4px solid var(--ag-accent);
+  border-radius: 8px;
+  padding: 12px 14px;
+  position: relative;
+}
+.kk-ag-swim-card::before {
+  content: ""; position: absolute;
+  left: -22px; top: 18px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--ag-accent);
+  box-shadow: 0 0 0 3px var(--kk-surface);
+}
+.kk-ag-swim-title { font-weight: 600; font-size: 1rem; }
+.kk-ag-swim-live {
+  margin-left: .5rem; font-size: .7rem; color: #fb7185;
+  font-weight: 700; letter-spacing: .07em;
+}
+.kk-ag-swim-spk, .kk-ag-swim-track {
+  color: var(--kk-text-dim); font-size: .85rem; margin-top: 4px;
+}
+.kk-ag-swim-spk i, .kk-ag-swim-track i { margin-right: 4px; }
+.kk-ag-swim-desc { margin-top: 6px; color: var(--kk-text-dim); font-size: .88rem; line-height: 1.45; }
+</style>

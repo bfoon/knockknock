@@ -1,0 +1,79 @@
+{# Args: event, items #}
+<div class="kk-ag-timeline">
+  {% for item in items %}
+    <div class="kk-ag-tl-row kk-ag-status-{{ item.status }}"
+         style="--ag-accent: {{ item.accent_colour|default:'#7c3aed' }};">
+      <div class="kk-ag-tl-time">
+        <div class="kk-ag-tl-start">{{ item.start_time|time:"H:i" }}</div>
+        {% if item.duration_label %}
+          <div class="kk-ag-tl-dur">{{ item.duration_label }}</div>
+        {% endif %}
+      </div>
+      <div class="kk-ag-tl-rail">
+        <span class="kk-ag-tl-dot"></span>
+        {% if not forloop.last %}<span class="kk-ag-tl-line"></span>{% endif %}
+      </div>
+      <div class="kk-ag-tl-body">
+        <div class="kk-ag-tl-title">
+          {{ item.title }}
+          {% if item.status == "live" %}<span class="kk-ag-live">LIVE</span>{% endif %}
+        </div>
+        {% if item.speaker or item.track %}
+          <div class="kk-ag-tl-meta">
+            {% if item.speaker %}<i class="bi bi-mic"></i> {{ item.speaker }}{% endif %}
+            {% if item.speaker and item.track %} · {% endif %}
+            {% if item.track %}<i class="bi bi-geo"></i> {{ item.track }}{% endif %}
+          </div>
+        {% endif %}
+        {% if item.description %}
+          <div class="kk-ag-tl-desc">{{ item.description }}</div>
+        {% endif %}
+      </div>
+    </div>
+  {% endfor %}
+</div>
+<style>
+.kk-ag-timeline { display: flex; flex-direction: column; gap: 0; }
+.kk-ag-tl-row {
+  display: grid; grid-template-columns: 70px 28px 1fr; gap: 12px;
+  padding: 6px 0;
+}
+.kk-ag-tl-row.kk-ag-status-done { opacity: .55; }
+.kk-ag-tl-time { text-align: right; padding-top: 2px; }
+.kk-ag-tl-start { font-weight: 700; font-size: 1rem; font-variant-numeric: tabular-nums; }
+.kk-ag-tl-dur { font-size: .7rem; color: var(--kk-text-dim); }
+.kk-ag-tl-rail {
+  position: relative; display: flex; flex-direction: column; align-items: center;
+}
+.kk-ag-tl-dot {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--ag-accent);
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.15);
+  margin-top: 5px; z-index: 1;
+}
+.kk-ag-tl-row.kk-ag-status-live .kk-ag-tl-dot {
+  animation: kkAgLivePulse 1.4s ease-in-out infinite;
+}
+@keyframes kkAgLivePulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(251, 113, 133, 0.25); }
+  50%      { box-shadow: 0 0 0 10px rgba(251, 113, 133, 0.05); }
+}
+.kk-ag-tl-row.kk-ag-status-done .kk-ag-tl-dot {
+  background: transparent; border: 2px solid var(--ag-accent);
+  box-shadow: none;
+}
+.kk-ag-tl-line {
+  flex: 1; width: 2px; background: var(--kk-border, rgba(148,163,184,.25));
+  margin-top: 2px;
+}
+.kk-ag-tl-body { padding-bottom: 18px; }
+.kk-ag-tl-title { font-weight: 600; font-size: 1rem; margin-bottom: 2px; }
+.kk-ag-live {
+  display: inline-block; vertical-align: middle;
+  margin-left: .5rem;
+  font-size: .65rem; padding: 2px 7px; border-radius: 999px;
+  background: #fb7185; color: white; font-weight: 700; letter-spacing: .08em;
+}
+.kk-ag-tl-meta { color: var(--kk-text-dim); font-size: .85rem; }
+.kk-ag-tl-desc { margin-top: 4px; color: var(--kk-text-dim); font-size: .9rem; line-height: 1.5; }
+</style>

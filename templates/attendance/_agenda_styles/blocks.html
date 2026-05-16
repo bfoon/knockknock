@@ -1,0 +1,74 @@
+{# Args: event, items #}
+<div class="kk-ag-blocks">
+  {% for item in items %}
+    <div class="kk-ag-blk kk-ag-status-{{ item.status }}"
+         style="--ag-accent: {{ item.accent_colour|default:'#f59e0b' }};">
+      <div class="kk-ag-blk-time">
+        <span class="kk-ag-blk-start">{{ item.start_time|time:"H:i" }}</span>
+        {% if item.end_time %}<span class="kk-ag-blk-sep">→</span>
+          <span class="kk-ag-blk-end">{{ item.end_time|time:"H:i" }}</span>
+        {% endif %}
+      </div>
+      <div class="kk-ag-blk-title">{{ item.title }}</div>
+      <div class="kk-ag-blk-row">
+        {% if item.speaker %}<span class="kk-ag-blk-chip"><i class="bi bi-mic"></i> {{ item.speaker }}</span>{% endif %}
+        {% if item.track %}<span class="kk-ag-blk-chip"><i class="bi bi-geo-alt"></i> {{ item.track }}</span>{% endif %}
+        {% if item.duration_label %}<span class="kk-ag-blk-chip"><i class="bi bi-stopwatch"></i> {{ item.duration_label }}</span>{% endif %}
+        {% if item.status == "live" %}<span class="kk-ag-blk-chip kk-ag-blk-live">LIVE</span>{% endif %}
+      </div>
+      {% if item.description %}
+        <div class="kk-ag-blk-desc">{{ item.description }}</div>
+      {% endif %}
+    </div>
+  {% endfor %}
+</div>
+<style>
+.kk-ag-blocks { display: flex; flex-direction: column; gap: 10px; }
+.kk-ag-blk {
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--ag-accent) 14%, var(--kk-surface-2, #1e293b)),
+    var(--kk-surface-2, #1e293b));
+  border: 1px solid color-mix(in srgb, var(--ag-accent) 30%, transparent);
+  border-radius: 14px;
+  padding: 14px 16px;
+  position: relative;
+  overflow: hidden;
+}
+.kk-ag-blk::before {
+  content: ""; position: absolute;
+  top: 0; left: 0; bottom: 0; width: 6px;
+  background: var(--ag-accent);
+}
+.kk-ag-blk.kk-ag-status-done { opacity: .55; }
+.kk-ag-blk-time {
+  font-size: .75rem; letter-spacing: .15em; text-transform: uppercase;
+  color: var(--ag-accent); font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 6px;
+}
+.kk-ag-blk-sep { margin: 0 4px; opacity: .55; }
+.kk-ag-blk-title { font-weight: 700; font-size: 1.05rem; margin-bottom: 8px; }
+.kk-ag-blk-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.kk-ag-blk-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: .72rem;
+  padding: 3px 9px; border-radius: 999px;
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--kk-text, white);
+}
+.kk-ag-blk-chip i { font-size: .85em; }
+.kk-ag-blk-live {
+  background: #fb7185 !important;
+  color: white !important;
+  font-weight: 700; letter-spacing: .08em;
+  animation: kkAgBlkLive 1.4s ease-in-out infinite;
+}
+@keyframes kkAgBlkLive {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(251, 113, 133, .5); }
+  50%      { box-shadow: 0 0 0 6px rgba(251, 113, 133, 0); }
+}
+.kk-ag-blk-desc {
+  margin-top: 10px; color: var(--kk-text-dim);
+  font-size: .88rem; line-height: 1.45;
+}
+</style>

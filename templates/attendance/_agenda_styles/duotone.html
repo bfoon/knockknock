@@ -1,0 +1,68 @@
+{# Args: event, items #}
+<div class="kk-ag-duo">
+  {% for item in items %}
+    <div class="kk-ag-duo-row kk-ag-status-{{ item.status }}"
+         style="--ag-accent: {{ item.accent_colour|default:'#db2777' }};">
+      <div class="kk-ag-duo-bar">
+        <div class="kk-ag-duo-time">{{ item.start_time|time:"H:i" }}</div>
+        {% if item.end_time %}<div class="kk-ag-duo-end">{{ item.end_time|time:"H:i" }}</div>{% endif %}
+      </div>
+      <div class="kk-ag-duo-body">
+        <div class="kk-ag-duo-title">
+          {{ item.title }}
+          {% if item.status == "live" %}<span class="kk-ag-duo-live">▸ Live</span>{% endif %}
+        </div>
+        {% if item.speaker or item.track %}
+          <div class="kk-ag-duo-meta">
+            {% if item.speaker %}<strong>{{ item.speaker }}</strong>{% endif %}
+            {% if item.speaker and item.track %} <span class="kk-ag-duo-sep">·</span> {% endif %}
+            {% if item.track %}{{ item.track }}{% endif %}
+          </div>
+        {% endif %}
+        {% if item.description %}
+          <div class="kk-ag-duo-desc">{{ item.description }}</div>
+        {% endif %}
+      </div>
+    </div>
+  {% endfor %}
+</div>
+<style>
+.kk-ag-duo { display: flex; flex-direction: column; gap: 12px; }
+.kk-ag-duo-row {
+  display: grid; grid-template-columns: 88px 1fr;
+  background: var(--kk-surface-2);
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--kk-border);
+}
+.kk-ag-duo-row.kk-ag-status-done { opacity: .55; }
+.kk-ag-duo-bar {
+  background: linear-gradient(180deg, var(--ag-accent),
+              color-mix(in srgb, var(--ag-accent) 60%, #7c3aed));
+  color: white;
+  padding: 16px 14px;
+  display: flex; flex-direction: column; justify-content: center;
+}
+.kk-ag-duo-time {
+  font-weight: 800; font-size: 1.3rem; letter-spacing: .02em;
+  font-variant-numeric: tabular-nums; line-height: 1;
+}
+.kk-ag-duo-end {
+  margin-top: 4px;
+  font-size: .75rem; opacity: .85;
+  font-variant-numeric: tabular-nums;
+}
+.kk-ag-duo-body { padding: 14px 18px; }
+.kk-ag-duo-title { font-weight: 700; font-size: 1.05rem; }
+.kk-ag-duo-live {
+  margin-left: .5rem; font-size: .75rem; color: var(--ag-accent);
+  font-weight: 700; letter-spacing: .05em;
+}
+.kk-ag-duo-meta { margin-top: 4px; color: var(--kk-text-dim); font-size: .88rem; }
+.kk-ag-duo-meta strong { color: var(--kk-text, inherit); font-weight: 600; }
+.kk-ag-duo-sep { opacity: .5; margin: 0 4px; }
+.kk-ag-duo-desc {
+  margin-top: 8px; color: var(--kk-text-dim);
+  font-size: .87rem; line-height: 1.5;
+}
+</style>

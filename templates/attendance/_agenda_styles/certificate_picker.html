@@ -1,0 +1,349 @@
+{% extends "base.html" %}
+{% block title %}Certificate design · {{ event.title }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-end justify-content-between flex-wrap gap-3 mb-4">
+  <div>
+    <a href="{% url 'attendance:event_detail' event.pk %}" class="kk-text-dim small text-decoration-none">
+      <i class="bi bi-arrow-left"></i> {{ event.title }}
+    </a>
+    <h1 class="mb-0 mt-1">Certificate design</h1>
+    <p class="text-secondary mb-0">Pick a template, upload your logo, drag it where you want it.</p>
+  </div>
+  <a href="{% url 'attendance:event_edit' event.pk %}" class="kk-btn kk-btn-primary">
+    <i class="bi bi-check2"></i> Done — back to event settings
+  </a>
+</div>
+
+<form method="post" action="{% url 'attendance:event_edit' event.pk %}"
+      enctype="multipart/form-data" id="kk-cert-form">
+  {% csrf_token %}
+<!--  {# Hidden inputs — JS writes into these; form posts to event_edit which-->
+<!--     accepts them just like the regular event form. We're reusing the-->
+<!--     event-edit endpoint so users don't have a second 'save' to remember. #}-->
+  <input type="hidden" name="certificate_template_key" id="kk-cert-template-key"
+         value="{{ event.certificate_template_key|default:'classic' }}">
+  <input type="hidden" name="certificate_logo_x_pct" id="kk-cert-logo-x"
+         value="{{ event.certificate_logo_x_pct }}">
+  <input type="hidden" name="certificate_logo_y_pct" id="kk-cert-logo-y"
+         value="{{ event.certificate_logo_y_pct }}">
+  <input type="hidden" name="certificate_logo_width_pct" id="kk-cert-logo-w"
+         value="{{ event.certificate_logo_width_pct }}">
+  {# Re-post the other event fields untouched so save doesn't blank them. #}
+  <input type="hidden" name="title" value="{{ event.title }}">
+  <input type="hidden" name="description" value="{{ event.description }}">
+  <input type="hidden" name="agenda" value="{{ event.agenda }}">
+  <input type="hidden" name="location" value="{{ event.location }}">
+  <input type="hidden" name="online_url" value="{{ event.online_url }}">
+  {% if event.is_online %}<input type="hidden" name="is_online" value="on">{% endif %}
+  <input type="hidden" name="starts_at" value="{{ event.starts_at|date:'Y-m-d\TH:i' }}">
+  <input type="hidden" name="ends_at" value="{{ event.ends_at|date:'Y-m-d\TH:i' }}">
+  <input type="hidden" name="timezone_name" value="{{ event.timezone_name }}">
+  {% if event.capacity %}<input type="hidden" name="capacity" value="{{ event.capacity }}">{% endif %}
+  <input type="hidden" name="registration_mode" value="{{ event.registration_mode }}">
+  {% if event.registration_closes_at %}
+    <input type="hidden" name="registration_closes_at"
+           value="{{ event.registration_closes_at|date:'Y-m-d\TH:i' }}">
+  {% endif %}
+  {% if event.allow_walk_ins %}<input type="hidden" name="allow_walk_ins" value="on">{% endif %}
+  {% if event.require_geofence %}<input type="hidden" name="require_geofence" value="on">{% endif %}
+  {% if event.geofence_lat is not None %}
+    <input type="hidden" name="geofence_lat" value="{{ event.geofence_lat }}">
+    <input type="hidden" name="geofence_lng" value="{{ event.geofence_lng }}">
+  {% endif %}
+  <input type="hidden" name="geofence_radius_m" value="{{ event.geofence_radius_m }}">
+  <input type="hidden" name="generate_certificates" value="on">
+
+  <div class="kk-cert-grid">
+
+<!--    {# ── LEFT: live preview canvas + logo controls ─────────── #}-->
+    <div class="kk-cert-preview">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h4 class="mb-0">Preview</h4>
+        <span class="kk-text-dim small" id="kk-cert-preview-status">Drag the logo to position it.</span>
+      </div>
+
+<!--      {# The visual stage: a canvas-sized box with an iframe behind (the-->
+<!--         rendered PDF preview) and a draggable logo div on top. Aspect-->
+<!--         ratio matches A4 landscape: 297×210 → 1.414 #}-->
+      <div class="kk-cert-stage" id="kk-cert-stage">
+        <iframe id="kk-cert-preview-frame"
+                title="Certificate preview"
+                src="{% url 'attendance:certificate_preview' event.pk %}?template={{ event.certificate_template_key|default:'classic' }}"></iframe>
+        {% if event.certificate_logo %}
+          <div class="kk-cert-logo-overlay" id="kk-cert-logo"
+               style="left: {{ event.certificate_logo_x_pct }}%;
+                      top: {{ event.certificate_logo_y_pct }}%;
+                      width: {{ event.certificate_logo_width_pct }}%;">
+            <img src="{{ event.certificate_logo.url }}" alt="">
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="kk-cert-controls mt-3">
+        <div class="row g-3 align-items-end">
+          <div class="col-md-6">
+            <label class="form-label small">
+              Logo image <span class="kk-text-dim">(PNG with transparency is ideal)</span>
+            </label>
+            <input type="file" name="certificate_logo" accept="image/*"
+                   id="kk-cert-logo-input" class="form-control">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small">Logo size</label>
+            <input type="range" min="5" max="40" step="0.5"
+                   value="{{ event.certificate_logo_width_pct }}"
+                   id="kk-cert-size-slider" class="form-range">
+            <div class="d-flex justify-content-between kk-text-dim small">
+              <span>Tiny</span><span id="kk-cert-size-readout">{{ event.certificate_logo_width_pct }}%</span><span>Big</span>
+            </div>
+          </div>
+          <div class="col-md-2 text-end">
+            <button type="submit" class="kk-btn kk-btn-primary w-100">
+              <i class="bi bi-floppy"></i> Save
+            </button>
+          </div>
+        </div>
+        <p class="kk-text-dim small mt-2 mb-0">
+          The preview above is exactly what will print. Save when it looks right —
+          then go back and click "Generate for all checked-in" to issue them.
+        </p>
+      </div>
+    </div>
+
+<!--    {# ── RIGHT: the 10 templates ─────────────────────────── #}-->
+    <aside class="kk-cert-templates">
+      <h4 class="mb-3">Designs</h4>
+      <div class="kk-cert-template-list">
+        {% for t in templates %}
+          <button type="button"
+                  class="kk-cert-template
+                         {% if event.certificate_template_key == t.key %}is-active{% endif %}"
+                  data-key="{{ t.key }}">
+<!--            {# Tiny SVG swatch made from the palette so the picker is-->
+<!--               instantly scannable. Real PDF previews land in the iframe-->
+<!--               on the left when you click. #}-->
+            <span class="kk-cert-swatch">
+              {% for hex in t.palette %}
+                <span style="background: {{ hex }}"></span>
+              {% endfor %}
+            </span>
+            <div class="kk-cert-template-meta">
+              <div class="kk-cert-template-name">{{ t.name }}</div>
+              <div class="kk-cert-template-sub">{{ t.subtitle }}</div>
+            </div>
+            <i class="bi bi-check2-circle kk-cert-template-check"></i>
+          </button>
+        {% endfor %}
+      </div>
+    </aside>
+  </div>
+</form>
+
+<style>
+.kk-cert-grid {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 1.25rem;
+  align-items: start;
+}
+@media (max-width: 980px) {
+  .kk-cert-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Preview side ── */
+.kk-cert-preview {
+  background: var(--kk-surface);
+  border: 1px solid var(--kk-border);
+  border-radius: var(--kk-radius);
+  padding: 1.25rem;
+}
+
+.kk-cert-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1.414 / 1;   /* A4 landscape */
+  background: white;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--kk-border);
+}
+.kk-cert-stage iframe {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  border: 0;
+  pointer-events: none;       /* clicks should go to logo overlay, not PDF */
+}
+
+.kk-cert-logo-overlay {
+  position: absolute;
+  /* left/top/width set inline by JS — these are placeholder defaults */
+  transform: translate(-50%, -50%);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.kk-cert-logo-overlay.dragging { cursor: grabbing; opacity: 0.7; }
+.kk-cert-logo-overlay img {
+  width: 100%; height: auto;
+  pointer-events: none;
+  display: block;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.15));
+}
+
+.kk-cert-controls {
+  padding-top: 1rem;
+  border-top: 1px solid var(--kk-border);
+}
+
+/* ── Template list ── */
+.kk-cert-templates {
+  background: var(--kk-surface);
+  border: 1px solid var(--kk-border);
+  border-radius: var(--kk-radius);
+  padding: 1.25rem;
+  position: sticky; top: 1rem;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+.kk-cert-template-list {
+  display: flex; flex-direction: column; gap: .5rem;
+}
+.kk-cert-template {
+  display: flex; align-items: center; gap: .85rem;
+  padding: .75rem .85rem;
+  background: var(--kk-surface-2);
+  border: 2px solid var(--kk-border);
+  border-radius: 10px;
+  color: inherit; text-align: left;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.kk-cert-template:hover {
+  border-color: rgba(124, 58, 237, 0.4);
+  background: rgba(124, 58, 237, 0.06);
+}
+.kk-cert-template.is-active {
+  border-color: #7c3aed;
+  background: rgba(124, 58, 237, 0.12);
+}
+.kk-cert-template.is-active .kk-cert-template-check { opacity: 1; }
+.kk-cert-template-check {
+  color: #7c3aed; font-size: 1.2rem; opacity: 0;
+  transition: opacity .15s;
+}
+.kk-cert-swatch {
+  display: inline-flex; flex-shrink: 0;
+  width: 36px; height: 36px;
+  border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--kk-border);
+}
+.kk-cert-swatch span { flex: 1; }
+.kk-cert-template-meta { flex-grow: 1; min-width: 0; }
+.kk-cert-template-name {
+  font-weight: 600; font-size: .92rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.kk-cert-template-sub {
+  font-size: .75rem; color: var(--kk-text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+</style>
+
+<script>
+(function(){
+  const eventPk = {{ event.pk }};
+  const previewBase = "{% url 'attendance:certificate_preview' event.pk %}";
+  const iframe = document.getElementById('kk-cert-preview-frame');
+  const stage = document.getElementById('kk-cert-stage');
+  const logo = document.getElementById('kk-cert-logo');
+  const sizeSlider = document.getElementById('kk-cert-size-slider');
+  const sizeReadout = document.getElementById('kk-cert-size-readout');
+  const fileInput = document.getElementById('kk-cert-logo-input');
+
+  const xInput = document.getElementById('kk-cert-logo-x');
+  const yInput = document.getElementById('kk-cert-logo-y');
+  const wInput = document.getElementById('kk-cert-logo-w');
+  const keyInput = document.getElementById('kk-cert-template-key');
+
+  function currentParams() {
+    const p = new URLSearchParams();
+    p.set('template', keyInput.value);
+    p.set('logo_x', xInput.value);
+    p.set('logo_y', yInput.value);
+    p.set('logo_width', wInput.value);
+    return p;
+  }
+
+  // Debounce iframe refreshes — dragging fires many events per second.
+  let refreshTimer = null;
+  function refreshPreview() {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => {
+      iframe.src = previewBase + '?' + currentParams().toString();
+    }, 350);
+  }
+
+  // ── Template clicks ──
+  document.querySelectorAll('.kk-cert-template').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.kk-cert-template').forEach(b => b.classList.remove('is-active'));
+      btn.classList.add('is-active');
+      keyInput.value = btn.dataset.key;
+      refreshPreview();
+    });
+  });
+
+  // ── Size slider ──
+  sizeSlider.addEventListener('input', () => {
+    const pct = parseFloat(sizeSlider.value);
+    wInput.value = pct;
+    sizeReadout.textContent = pct.toFixed(1) + '%';
+    if (logo) logo.style.width = pct + '%';
+  });
+  sizeSlider.addEventListener('change', refreshPreview);
+
+  // ── Drag the logo ──
+  if (logo) {
+    let dragging = false;
+    function onPointerDown(e) {
+      dragging = true;
+      logo.classList.add('dragging');
+      logo.setPointerCapture(e.pointerId);
+    }
+    function onPointerMove(e) {
+      if (!dragging) return;
+      const rect = stage.getBoundingClientRect();
+      // Clamp into [2, 98] so the logo never escapes the canvas.
+      const xPct = Math.max(2, Math.min(98, ((e.clientX - rect.left) / rect.width) * 100));
+      const yPct = Math.max(2, Math.min(98, ((e.clientY - rect.top) / rect.height) * 100));
+      logo.style.left = xPct + '%';
+      logo.style.top = yPct + '%';
+      xInput.value = xPct.toFixed(2);
+      yInput.value = yPct.toFixed(2);
+    }
+    function onPointerUp(e) {
+      if (!dragging) return;
+      dragging = false;
+      logo.classList.remove('dragging');
+      logo.releasePointerCapture(e.pointerId);
+      refreshPreview();
+    }
+    logo.addEventListener('pointerdown', onPointerDown);
+    logo.addEventListener('pointermove', onPointerMove);
+    logo.addEventListener('pointerup', onPointerUp);
+    logo.addEventListener('pointercancel', onPointerUp);
+  }
+
+  // ── File input: if they pick a new logo we let the form upload it on
+  //    submit, but we don't preview client-side. That's intentional —
+  //    we'd need to upload first to render through the same overlay
+  //    code that produces the PDF, otherwise client/server would drift
+  //    and the printed cert wouldn't match the preview.
+  fileInput.addEventListener('change', () => {
+    document.getElementById('kk-cert-preview-status').textContent =
+      'New logo selected — click Save to upload, then come back to position it.';
+  });
+})();
+</script>
+{% endblock %}

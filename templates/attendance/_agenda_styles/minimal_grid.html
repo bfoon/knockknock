@@ -1,0 +1,65 @@
+{# Args: event, items #}
+<div class="kk-ag-min">
+  {% for item in items %}
+    <div class="kk-ag-min-row kk-ag-status-{{ item.status }}">
+      <div class="kk-ag-min-time">{{ item.start_time|time:"H:i" }}</div>
+      <div class="kk-ag-min-body">
+        <div class="kk-ag-min-head">
+          <span class="kk-ag-min-title">{{ item.title }}</span>
+          {% if item.track %}<span class="kk-ag-min-track">— {{ item.track }}</span>{% endif %}
+          {% if item.status == "live" %}<span class="kk-ag-min-live">NOW</span>{% endif %}
+        </div>
+        {% if item.speaker or item.description %}
+          <div class="kk-ag-min-meta">
+            {% if item.speaker %}{{ item.speaker }}{% endif %}
+            {% if item.speaker and item.description %}<span class="kk-ag-min-dot">·</span>{% endif %}
+            {% if item.description %}{{ item.description }}{% endif %}
+          </div>
+        {% endif %}
+      </div>
+      {% if item.duration_label %}
+        <div class="kk-ag-min-dur">{{ item.duration_label }}</div>
+      {% endif %}
+    </div>
+  {% endfor %}
+</div>
+<style>
+.kk-ag-min { font-family: ui-serif, Georgia, "Times New Roman", serif; }
+.kk-ag-min-row {
+  display: grid; grid-template-columns: 90px 1fr auto;
+  gap: 24px; padding: 18px 0;
+  border-top: 1px solid var(--kk-border, rgba(148,163,184,.18));
+}
+.kk-ag-min-row:last-child { border-bottom: 1px solid var(--kk-border, rgba(148,163,184,.18)); }
+.kk-ag-min-row.kk-ag-status-done { opacity: .5; }
+.kk-ag-min-time {
+  font-size: 1.5rem; font-weight: 300;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .03em;
+}
+.kk-ag-min-head {
+  font-size: .7rem; letter-spacing: .25em; text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.kk-ag-min-title { font-weight: 700; }
+.kk-ag-min-track { color: var(--kk-text-dim); font-weight: 400; }
+.kk-ag-min-live {
+  display: inline-block; vertical-align: middle;
+  margin-left: 8px; padding: 2px 8px; border-radius: 2px;
+  background: #0f172a; color: #fb7185;
+  font-size: .65rem; font-weight: 700; letter-spacing: .2em;
+  border: 1px solid #fb7185;
+}
+.kk-ag-min-meta {
+  font-family: system-ui, sans-serif;
+  font-size: .92rem; color: var(--kk-text-dim);
+  line-height: 1.5;
+}
+.kk-ag-min-dot { margin: 0 6px; opacity: .5; }
+.kk-ag-min-dur {
+  font-size: .75rem; color: var(--kk-text-dim);
+  font-family: system-ui, sans-serif;
+  text-transform: uppercase; letter-spacing: .1em;
+  padding-top: 8px;
+}
+</style>

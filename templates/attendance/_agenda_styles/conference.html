@@ -1,0 +1,111 @@
+{# Args: event, items #}
+<div class="kk-ag-conf">
+  {% for item in items %}
+    <div class="kk-ag-conf-row kk-ag-status-{{ item.status }}"
+         style="--ag-accent: {{ item.accent_colour|default:'#059669' }};">
+      <div class="kk-ag-conf-side">
+        <div class="kk-ag-conf-time-wrap">
+          <div class="kk-ag-conf-time">{{ item.start_time|time:"H:i" }}</div>
+          {% if item.duration_label %}
+            <div class="kk-ag-conf-dur">{{ item.duration_label }}</div>
+          {% endif %}
+        </div>
+        {% if item.track %}
+          <span class="kk-ag-conf-track">{{ item.track }}</span>
+        {% endif %}
+      </div>
+      <div class="kk-ag-conf-card">
+        <div class="kk-ag-conf-title-row">
+          <div class="kk-ag-conf-title">{{ item.title }}</div>
+          {% if item.status == "live" %}
+            <span class="kk-ag-conf-pill kk-ag-conf-pill-live">
+              <span class="kk-ag-conf-dot"></span> Live
+            </span>
+          {% elif item.status == "done" %}
+            <span class="kk-ag-conf-pill kk-ag-conf-pill-done">Done</span>
+          {% elif item.end_time %}
+            <span class="kk-ag-conf-pill">until {{ item.end_time|time:"H:i" }}</span>
+          {% endif %}
+        </div>
+        {% if item.speaker %}
+          <div class="kk-ag-conf-speaker">
+            <span class="kk-ag-conf-avatar">{{ item.speaker|first|upper }}</span>
+            <span>{{ item.speaker }}</span>
+          </div>
+        {% endif %}
+        {% if item.description %}
+          <div class="kk-ag-conf-desc">{{ item.description }}</div>
+        {% endif %}
+      </div>
+    </div>
+  {% endfor %}
+</div>
+<style>
+.kk-ag-conf { display: flex; flex-direction: column; gap: 14px; }
+.kk-ag-conf-row {
+  display: grid; grid-template-columns: 130px 1fr; gap: 16px;
+  align-items: start;
+}
+.kk-ag-conf-row.kk-ag-status-done { opacity: .55; }
+.kk-ag-conf-side { padding-top: 6px; }
+.kk-ag-conf-time-wrap { margin-bottom: 8px; }
+.kk-ag-conf-time {
+  font-weight: 800; font-size: 1.4rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ag-accent);
+  line-height: 1;
+}
+.kk-ag-conf-dur {
+  margin-top: 4px;
+  font-size: .72rem; color: var(--kk-text-dim);
+}
+.kk-ag-conf-track {
+  display: inline-block;
+  font-size: .65rem; letter-spacing: .15em; text-transform: uppercase;
+  padding: 3px 9px; border-radius: 4px;
+  background: rgba(5, 150, 105, 0.12);
+  color: var(--ag-accent);
+  font-weight: 700;
+}
+.kk-ag-conf-card {
+  background: var(--kk-surface-2);
+  border: 1px solid var(--kk-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.kk-ag-conf-title-row {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 12px; margin-bottom: 8px;
+}
+.kk-ag-conf-title { font-weight: 600; font-size: 1.02rem; }
+.kk-ag-conf-pill {
+  font-size: .7rem; padding: 3px 9px; border-radius: 999px;
+  background: rgba(148, 163, 184, .15); color: var(--kk-text-dim);
+  white-space: nowrap;
+}
+.kk-ag-conf-pill-live {
+  background: rgba(251, 113, 133, .15); color: #fb7185;
+  font-weight: 600;
+}
+.kk-ag-conf-pill-done { opacity: .6; }
+.kk-ag-conf-dot {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: #fb7185; margin-right: 4px; vertical-align: middle;
+  animation: kkAgConfPulse 1.4s ease-in-out infinite;
+}
+@keyframes kkAgConfPulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+.kk-ag-conf-speaker {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 6px; font-size: .9rem;
+}
+.kk-ag-conf-avatar {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--ag-accent); color: white;
+  display: inline-grid; place-items: center;
+  font-size: .7rem; font-weight: 700;
+}
+.kk-ag-conf-desc {
+  color: var(--kk-text-dim); font-size: .87rem;
+  line-height: 1.5;
+}
+</style>

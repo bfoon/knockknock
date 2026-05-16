@@ -16,12 +16,26 @@
       {% else %}
         <i class="bi bi-geo-alt"></i> {{ event.location|default:"Location TBA" }}
       {% endif %}
+      {% if event.has_geofence %}
+        <span class="mx-2">·</span>
+        <span class="kk-geofence-pill" title="On-site check-in enforced within {{ event.geofence_radius_m }} m">
+          <i class="bi bi-shield-check"></i> Geofenced
+        </span>
+      {% endif %}
     </p>
   </div>
   <div class="d-flex gap-2 flex-wrap">
     <a href="{% url 'attendance:form_builder' event.pk %}" class="kk-btn kk-btn-ghost">
       <i class="bi bi-card-checklist"></i> Form
     </a>
+    <a href="{% url 'attendance:agenda_editor' event.pk %}" class="kk-btn kk-btn-ghost">
+      <i class="bi bi-list-ol"></i> Agenda
+    </a>
+    {% if event.generate_certificates %}
+      <a href="{% url 'attendance:certificate_picker' event.pk %}" class="kk-btn kk-btn-ghost">
+        <i class="bi bi-award"></i> Certificate design
+      </a>
+    {% endif %}
     <a href="{% url 'attendance:event_edit' event.pk %}" class="kk-btn kk-btn-ghost">
       <i class="bi bi-pencil"></i> Edit
     </a>
@@ -104,6 +118,95 @@
   </div>
 {% endif %}
 
+{# ── AGENDA ──────────────────────────────────────────────────── #}
+{% if event.agenda_items.exists or event.agenda %}
+  <section class="kk-event-agenda mb-4">
+    <div class="d-flex justify-content-between align-items-baseline mb-3">
+      <h2 class="kk-section-title mb-0"><i class="bi bi-list-ol"></i> Agenda</h2>
+      <a href="{% url 'attendance:agenda_editor' event.pk %}" class="kk-text-dim small text-decoration-none">
+        <i class="bi bi-pencil"></i> Edit
+      </a>
+    </div>
+    {% include "attendance/_agenda.html" with event=event %}
+  </section>
+{% endif %}
+
+{# ── ANALYTICS PANEL ─────────────────────────────────────────── #}
+<section class="kk-stats-wrap mb-4"
+         data-stats-url="{% url 'attendance:event_stats_json' event.pk %}">
+  <div class="kk-stats-head">
+    <div>
+      <h2 class="kk-section-title mb-1"><i class="bi bi-graph-up"></i> Analytics</h2>
+      <p class="kk-text-dim small mb-0">Live — auto-refreshes every 30 s and on every check-in.</p>
+    </div>
+    <div class="kk-stats-controls">
+      <div class="btn-group btn-group-sm" role="group" aria-label="Date range">
+        <button type="button" class="btn btn-outline-secondary kk-range-btn" data-range="7">7 d</button>
+        <button type="button" class="btn btn-outline-secondary kk-range-btn active" data-range="30">30 d</button>
+        <button type="button" class="btn btn-outline-secondary kk-range-btn" data-range="all">All</button>
+      </div>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="kk-stats-refresh"
+              title="Refresh now">
+        <i class="bi bi-arrow-clockwise"></i>
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="kk-stats-csv"
+              title="Download analytics CSV">
+        <i class="bi bi-filetype-csv"></i>
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="kk-stats-png"
+              title="Save dashboard as image">
+        <i class="bi bi-image"></i>
+      </button>
+    </div>
+  </div>
+
+  <div id="kk-stats-loading" class="kk-stats-loading">
+    <div class="spinner-border spinner-border-sm me-2"></div> Loading analytics…
+  </div>
+
+  <div id="kk-stats-content" class="kk-stats-grid d-none">
+    {# Row 1: Timeline (wide) + Status donut #}
+    <div class="kk-chart-card kk-chart-wide">
+      <div class="kk-chart-head">
+        <h4>Registrations over time</h4>
+        <span class="kk-text-dim small" id="kk-timeline-range-label">Last 30 days</span>
+      </div>
+      <div class="kk-chart-canvas-wrap"><canvas id="kk-chart-timeline"></canvas></div>
+    </div>
+
+    <div class="kk-chart-card">
+      <div class="kk-chart-head"><h4>Status mix</h4></div>
+      <div class="kk-chart-canvas-wrap"><canvas id="kk-chart-status"></canvas></div>
+    </div>
+
+    {# Row 2: Funnel (wide) + Walk-in split #}
+    <div class="kk-chart-card kk-chart-wide">
+      <div class="kk-chart-head"><h4>Attendance funnel</h4></div>
+      <div class="kk-funnel" id="kk-funnel"></div>
+    </div>
+
+    <div class="kk-chart-card">
+      <div class="kk-chart-head"><h4>Walk-ins vs pre-registered</h4></div>
+      <div class="kk-chart-canvas-wrap"><canvas id="kk-chart-walkin"></canvas></div>
+    </div>
+
+    {# Row 3: Hourly arrivals #}
+    <div class="kk-chart-card kk-chart-fullrow">
+      <div class="kk-chart-head">
+        <h4>Hourly arrivals on event day</h4>
+        <span class="kk-text-dim small" id="kk-hourly-empty-hint"></span>
+      </div>
+      <div class="kk-chart-canvas-wrap"><canvas id="kk-chart-hourly"></canvas></div>
+    </div>
+
+    {# Row 4: Per-field breakdowns get appended here dynamically #}
+    <div class="kk-chart-fullrow" id="kk-field-breakdowns-wrap" hidden>
+      <h3 class="kk-section-title mt-2"><i class="bi bi-pie-chart"></i> Form answers</h3>
+      <div class="kk-stats-subgrid" id="kk-field-breakdowns"></div>
+    </div>
+  </div>
+</section>
+
 <div class="row g-4">
   {# ─── LEFT COLUMN ─────────────────────────────────────── #}
   <div class="col-lg-7">
@@ -159,7 +262,8 @@
           <form method="post" action="{% url 'attendance:registration_action' event.pk r.pk %}" class="d-flex gap-1">
             {% csrf_token %}
             {% if r.status == "accepted" %}
-              <button name="action" value="check_in" class="kk-btn kk-btn-primary btn-sm">
+              <button name="action" value="check_in" class="kk-btn kk-btn-primary btn-sm"
+                      title="Organizer-driven check-in bypasses geofence">
                 <i class="bi bi-check2-circle"></i> Mark present
               </button>
             {% else %}
@@ -210,9 +314,29 @@
           <div class="kk-qr-code">{{ event.code }}</div>
         </div>
       </div>
+
+      <div class="kk-qr-actions mt-3">
+        <a href="{% url 'attendance:public_qr' event.public_token %}?download=1&size=large"
+           class="kk-btn kk-btn-ghost btn-sm flex-grow-1"
+           download="qr-{{ event.code }}.png">
+          <i class="bi bi-download"></i> Download PNG
+        </a>
+        <a href="{% url 'attendance:public_qr_poster' event.pk %}"
+           class="kk-btn kk-btn-primary btn-sm flex-grow-1"
+           target="_blank" rel="noopener">
+          <i class="bi bi-printer"></i> Print poster
+        </a>
+      </div>
+
       <p class="kk-text-dim small mt-2 mb-0">
-        Already registered? Tap "I'm here" after scanning. Walk-in?
-        {% if event.allow_walk_ins %}They'll fill the form on the spot.{% else %}Walk-ins disabled.{% endif %}
+        {% if event.has_geofence %}
+          <i class="bi bi-shield-check"></i> Pre-registered attendees must be within
+          <strong>{{ event.geofence_radius_m }} m</strong> of the venue to check in.
+          Organizer-driven check-ins always succeed.
+        {% else %}
+          Already registered? Tap "I'm here" after scanning. Walk-in?
+          {% if event.allow_walk_ins %}They'll fill the form on the spot.{% else %}Walk-ins disabled.{% endif %}
+        {% endif %}
       </p>
     </div>
 
@@ -239,15 +363,401 @@
         <p class="kk-text-dim small">Issue certificates to everyone currently checked in.</p>
         <form method="post" action="{% url 'attendance:certificates_bulk' event.pk %}">
           {% csrf_token %}
-          <button class="kk-btn kk-btn-ghost w-100">
+          <button class="kk-btn kk-btn-ghost w-100 mb-2">
             <i class="bi bi-stars"></i> Generate for all checked-in
           </button>
         </form>
+        <a href="{% url 'attendance:certificate_picker' event.pk %}"
+           class="kk-btn kk-btn-ghost w-100">
+          <i class="bi bi-palette"></i> Change design & logo
+        </a>
       </div>
     {% endif %}
   </div>
 </div>
 
+
+<!--{# ── Chart.js (CDN) — no SRI hash. See event_form.html for the reasoning;-->
+<!--     in short, mismatched hashes silently disable the script and leave the-->
+<!--     panel stuck on "Loading analytics…" with no visible error. #}-->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+{# ── Stats fetcher + chart wiring ── #}
+<script>
+(function(){
+  const wrap = document.querySelector('.kk-stats-wrap');
+  if (!wrap) return;
+  const statsUrl = wrap.dataset.statsUrl;
+
+  // If Chart.js never made it through (CSP, ad-blocker, offline), surface
+  // a clear failure instead of leaving the loader spinning forever.
+  if (typeof Chart === 'undefined') {
+    const loading = document.getElementById('kk-stats-loading');
+    if (loading) {
+      loading.innerHTML =
+        '<i class="bi bi-exclamation-triangle text-warning me-2"></i>' +
+        'Chart library failed to load. Check your network or any ad-blocker ' +
+        'blocking cdnjs.cloudflare.com, then refresh.';
+    }
+    return;
+  }
+
+  // Common Chart.js theming, taken from the kk-* palette.
+  const palette = {
+    purple: '#7c3aed',
+    cyan:   '#22d3ee',
+    coral:  '#fb7185',
+    amber:  '#fbbf24',
+    green:  '#4ade80',
+    slate:  '#64748b',
+    grid:   'rgba(148, 163, 184, 0.15)',
+    text:   'rgba(248, 250, 252, 0.75)',
+    textDim:'rgba(148, 163, 184, 0.65)',
+  };
+  Chart.defaults.color = palette.text;
+  Chart.defaults.borderColor = palette.grid;
+  Chart.defaults.font.family = "system-ui, -apple-system, 'Segoe UI', sans-serif";
+
+  // ── State ──
+  let currentRange = '30';
+  const charts = {};   // id → Chart instance, so we can destroy & rebuild on reload
+
+  function destroy(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
+
+  // ── Range buttons ──
+  document.querySelectorAll('.kk-range-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.kk-range-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentRange = btn.dataset.range;
+      const label = {7:'Last 7 days', 30:'Last 30 days', all:'All time'}[currentRange] || '';
+      document.getElementById('kk-timeline-range-label').textContent = label;
+      loadStats();
+    });
+  });
+  document.getElementById('kk-stats-refresh').addEventListener('click', loadStats);
+
+  // ── Fetch + render ──
+  async function loadStats() {
+    try {
+      const res = await fetch(`${statsUrl}?range=${encodeURIComponent(currentRange)}`,
+                              {credentials: 'same-origin'});
+      if (!res.ok) throw new Error('http ' + res.status);
+      const data = await res.json();
+      document.getElementById('kk-stats-loading').classList.add('d-none');
+      document.getElementById('kk-stats-content').classList.remove('d-none');
+      // Isolate each renderer so one broken chart doesn't kill the rest.
+      // Before this guard, a renderer error would propagate up to the
+      // outer try, mark loading as failed, and leave the panel blank
+      // forever — which is exactly the "Loading analytics…" stall we hit
+      // when the API and JS disagreed on shape.
+      const safe = (name, fn, arg) => {
+        try { fn(arg); }
+        catch (e) { console.error(`[stats] ${name} failed:`, e); }
+      };
+      safe('timeline',  renderTimeline,  data.timeline || []);
+      safe('status',    renderStatus,    data.status_counts || {});
+      safe('funnel',    renderFunnel,    data.funnel || {});
+      safe('walkin',    renderWalkIn,    data.walk_in_split || {});
+      safe('hourly',    renderHourly,    data.hourly_arrivals || []);
+      safe('breakdowns',renderFieldBreakdowns, data.field_breakdowns || []);
+    } catch (err) {
+      console.error('Stats load failed', err);
+      const loading = document.getElementById('kk-stats-loading');
+      loading.classList.remove('d-none');
+      loading.innerHTML = '<i class="bi bi-exclamation-triangle text-warning"></i> ' +
+        'Couldn\'t load analytics. <a href="#" id="kk-stats-retry" class="text-decoration-underline">Try again</a>. ' +
+        '<span class="kk-text-dim small d-block mt-1">Check the browser console for details.</span>';
+      document.getElementById('kk-stats-retry')?.addEventListener('click', e => {
+        e.preventDefault();
+        loading.innerHTML = '<div class="spinner-border spinner-border-sm me-2"></div> Loading…';
+        loadStats();
+      });
+    }
+  }
+
+  // ── Renderers ──
+  function renderTimeline(timeline) {
+    destroy('timeline');
+    const ctx = document.getElementById('kk-chart-timeline').getContext('2d');
+    const labels = timeline.map(p => p.date);
+    const regs = timeline.map(p => p.registrations);
+    const checks = timeline.map(p => p.check_ins);
+    charts.timeline = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Registrations', data: regs,
+            borderColor: palette.purple,
+            backgroundColor: 'rgba(124, 58, 237, 0.18)',
+            tension: .35, fill: true, pointRadius: 2,
+          },
+          { label: 'Check-ins', data: checks,
+            borderColor: palette.cyan,
+            backgroundColor: 'rgba(34, 211, 238, 0.10)',
+            tension: .35, fill: true, pointRadius: 2,
+          },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } },
+          y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: palette.grid } },
+        },
+        plugins: {
+          legend: { position: 'bottom', labels: { boxWidth: 12 } },
+          tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.95)', padding: 10, cornerRadius: 8 },
+        },
+      },
+    });
+  }
+
+  function renderStatus(counts) {
+    destroy('status');
+    const ctx = document.getElementById('kk-chart-status').getContext('2d');
+    const labelMap = {pending:'Pending', accepted:'Accepted', checked_in:'Checked in',
+                      declined:'Declined', cancelled:'Cancelled'};
+    const colorMap = {pending:palette.amber, accepted:palette.cyan, checked_in:palette.green,
+                      declined:palette.coral, cancelled:palette.slate};
+    const keys = Object.keys(counts).filter(k => counts[k] > 0);
+    charts.status = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: keys.map(k => labelMap[k] || k),
+        datasets: [{
+          data: keys.map(k => counts[k]),
+          backgroundColor: keys.map(k => colorMap[k] || palette.slate),
+          borderWidth: 0,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        cutout: '62%',
+        plugins: {
+          legend: { position: 'bottom', labels: { boxWidth: 10, font: {size: 11} } },
+          tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.95)', padding: 10, cornerRadius: 8 },
+        },
+      },
+    });
+  }
+
+  function renderFunnel(funnel) {
+    const wrap = document.getElementById('kk-funnel');
+    wrap.innerHTML = '';
+    const stages = [
+      { key: 'registered', label: 'Registered', color: palette.purple },
+      { key: 'accepted',   label: 'Accepted',   color: palette.cyan },
+      { key: 'checked_in', label: 'Checked in', color: palette.green },
+    ];
+    const top = Math.max(1, ...stages.map(s => funnel[s.key] || 0));
+    stages.forEach((s, i) => {
+      const v = funnel[s.key] || 0;
+      const pct = Math.round((v / top) * 100);
+      const conv = i === 0 ? 100 : Math.round((v / (funnel[stages[0].key] || 1)) * 100);
+      const row = document.createElement('div');
+      row.className = 'kk-funnel-row';
+      row.innerHTML = `
+        <div class="kk-funnel-label">
+          <span>${s.label}</span>
+          <span class="kk-text-dim small">${v} <span class="kk-funnel-conv">(${conv}%)</span></span>
+        </div>
+        <div class="kk-funnel-track">
+          <div class="kk-funnel-fill" style="width:${pct}%; background:${s.color};"></div>
+        </div>`;
+      wrap.appendChild(row);
+    });
+  }
+
+  function renderWalkIn(split) {
+    destroy('walkin');
+    const ctx = document.getElementById('kk-chart-walkin').getContext('2d');
+    const pre = split.pre_registered || 0;
+    const walk = split.walk_in || 0;
+    if (pre === 0 && walk === 0) {
+      ctx.canvas.parentElement.innerHTML =
+        '<p class="kk-text-dim small text-center my-4">No check-ins yet.</p>';
+      return;
+    }
+    charts.walkin = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Pre-registered', 'Walk-ins'],
+        datasets: [{
+          data: [pre, walk],
+          backgroundColor: [palette.cyan, palette.amber],
+          borderWidth: 0,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        cutout: '62%',
+        plugins: {
+          legend: { position: 'bottom', labels: { boxWidth: 10 } },
+          tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.95)', padding: 10, cornerRadius: 8 },
+        },
+      },
+    });
+  }
+
+  function renderHourly(hourly) {
+    destroy('hourly');
+    const hint = document.getElementById('kk-hourly-empty-hint');
+    if (!hourly.length || hourly.every(h => h.count === 0)) {
+      hint.textContent = 'No arrivals recorded for the event day yet.';
+    } else {
+      hint.textContent = '';
+    }
+    const ctx = document.getElementById('kk-chart-hourly').getContext('2d');
+    charts.hourly = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: hourly.map(h => h.hour),
+        datasets: [{
+          label: 'Check-ins',
+          data: hourly.map(h => h.count),
+          backgroundColor: 'rgba(34, 211, 238, 0.7)',
+          borderRadius: 6,
+          borderSkipped: false,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: {
+          x: { grid: { display: false } },
+          y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: palette.grid } },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.95)', padding: 10, cornerRadius: 8 },
+        },
+      },
+    });
+  }
+
+  function renderFieldBreakdowns(breakdowns) {
+    const wrap = document.getElementById('kk-field-breakdowns-wrap');
+    const grid = document.getElementById('kk-field-breakdowns');
+    // Destroy old breakdown charts before clearing the DOM.
+    Object.keys(charts).filter(k => k.startsWith('fb_')).forEach(destroy);
+    grid.innerHTML = '';
+    if (!breakdowns.length) { wrap.hidden = true; return; }
+    wrap.hidden = false;
+    const colors = [palette.purple, palette.cyan, palette.amber, palette.coral, palette.green, palette.slate];
+    breakdowns.forEach((fb, idx) => {
+      const card = document.createElement('div');
+      card.className = 'kk-chart-card';
+      const canvasId = `kk-fb-canvas-${idx}`;
+      card.innerHTML = `
+        <div class="kk-chart-head"><h4></h4></div>
+        <div class="kk-chart-canvas-wrap"><canvas id="${canvasId}"></canvas></div>`;
+      card.querySelector('h4').textContent = fb.label || 'Field';
+      grid.appendChild(card);
+      const ctx = document.getElementById(canvasId).getContext('2d');
+      charts['fb_' + idx] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: fb.buckets.map(b => b.value),
+          datasets: [{
+            data: fb.buckets.map(b => b.count),
+            backgroundColor: fb.buckets.map((_, i) => colors[i % colors.length]),
+            borderRadius: 6, borderSkipped: false,
+          }],
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true, maintainAspectRatio: false,
+          scales: {
+            x: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: palette.grid } },
+            y: { grid: { display: false } },
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.95)', padding: 10, cornerRadius: 8 },
+          },
+        },
+      });
+    });
+  }
+
+  // ── CSV export (client-side from current data) ──
+  document.getElementById('kk-stats-csv').addEventListener('click', async () => {
+    try {
+      const res = await fetch(`${statsUrl}?range=${encodeURIComponent(currentRange)}`,
+                              {credentials: 'same-origin'});
+      const data = await res.json();
+      let lines = ['section,label,value'];
+      Object.entries(data.status_counts || {}).forEach(([k, v]) => lines.push(`status,${k},${v}`));
+      Object.entries(data.funnel || {}).forEach(([k, v]) => lines.push(`funnel,${k},${v}`));
+      (data.timeline || []).forEach(p =>
+        lines.push(`timeline_registrations,${p.date},${p.registrations}`));
+      (data.timeline || []).forEach(p =>
+        lines.push(`timeline_checkins,${p.date},${p.check_ins}`));
+      (data.hourly_arrivals || []).forEach(p => lines.push(`hourly,${p.hour},${p.count}`));
+      const blob = new Blob([lines.join('\n')], {type: 'text/csv'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `analytics-{{ event.code }}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) { alert('Failed to build CSV.'); }
+  });
+
+  // ── PNG snapshot of the analytics grid ──
+  document.getElementById('kk-stats-png').addEventListener('click', () => {
+    // Composite the canvases onto one image. We skip the funnel (DOM-based)
+    // intentionally to keep this dependency-free.
+    const canvases = [
+      ['Registrations over time', 'kk-chart-timeline'],
+      ['Status mix', 'kk-chart-status'],
+      ['Walk-ins vs pre-registered', 'kk-chart-walkin'],
+      ['Hourly arrivals', 'kk-chart-hourly'],
+    ].map(([t, id]) => ({title: t, el: document.getElementById(id)})).filter(x => x.el);
+    if (!canvases.length) return;
+    const w = 1200, padX = 24, padY = 64, cardH = 360;
+    const out = document.createElement('canvas');
+    out.width = w;
+    out.height = padY * 2 + canvases.length * (cardH + 40);
+    const ctx = out.getContext('2d');
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, out.width, out.height);
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = 'bold 22px system-ui';
+    ctx.fillText('{{ event.title|escapejs }} — analytics', padX, 36);
+    let y = padY;
+    canvases.forEach(({title, el}) => {
+      ctx.fillStyle = '#cbd5e1';
+      ctx.font = '14px system-ui';
+      ctx.fillText(title, padX, y - 10);
+      const ratio = el.width / el.height;
+      const drawW = w - padX * 2;
+      const drawH = Math.min(cardH, drawW / Math.max(ratio, 0.5));
+      ctx.drawImage(el, padX, y, drawW, drawH);
+      y += cardH + 40;
+    });
+    out.toBlob(blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `analytics-{{ event.code }}.png`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+  });
+
+  // ── Boot + auto-refresh ──
+  loadStats();
+  let autoTimer = setInterval(loadStats, 30000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { clearInterval(autoTimer); }
+    else { loadStats(); autoTimer = setInterval(loadStats, 30000); }
+  });
+
+  // Expose so the WebSocket handler below can poke us on check-ins.
+  window.__kkReloadStats = loadStats;
+})();
+</script>
 
 {# ── Live updates via WebSocket ── #}
 <script>
@@ -267,11 +777,14 @@
         row.classList.add('kk-attendee-flash');
         setTimeout(() => row.classList.remove('kk-attendee-flash'), 1500);
       }
+      // Nudge the analytics panel to refresh.
+      window.__kkReloadStats?.();
     } else if (msg.type === 'new_registration') {
       document.querySelector('[data-counter="accepted"]').textContent = msg.accepted_count;
       document.querySelector('[data-counter="pending"]').textContent = msg.pending_count;
-      // The simplest correct thing is to reload to pull in the new row server-rendered.
-      // We debounce a little so a burst of registrations only triggers one reload.
+      window.__kkReloadStats?.();
+      // The simplest correct thing for the list itself is to reload to pull the
+      // new row in server-rendered. Debounced so a burst doesn't thrash.
       clearTimeout(window.__kkReload);
       window.__kkReload = setTimeout(() => location.reload(), 1200);
     }
@@ -297,6 +810,13 @@
   50%      { opacity: .4; transform: scale(1.4); }
 }
 
+.kk-geofence-pill {
+  display: inline-flex; align-items: center; gap: .25rem;
+  font-size: .75rem; padding: 2px 8px; border-radius: 999px;
+  background: rgba(124, 58, 237, 0.15); color: #c4b5fd;
+  font-weight: 600;
+}
+
 .kk-counter-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .75rem; }
 .kk-counter {
   background: var(--kk-surface); border: 1px solid var(--kk-border);
@@ -305,6 +825,71 @@
 .kk-counter-num { font-size: 2rem; font-weight: 700; line-height: 1; }
 .kk-counter-label { color: var(--kk-text-dim); font-size: .85rem; margin-top: .25rem; }
 
+/* ── Analytics block ── */
+.kk-stats-wrap {
+  background: var(--kk-surface);
+  border: 1px solid var(--kk-border);
+  border-radius: var(--kk-radius);
+  padding: 1.25rem 1.25rem 1.5rem;
+}
+.kk-stats-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem;
+}
+.kk-stats-controls { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+.kk-stats-loading {
+  display: flex; align-items: center; justify-content: center;
+  padding: 3rem 1rem; color: var(--kk-text-dim);
+}
+.kk-stats-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1rem;
+}
+@media (max-width: 900px) {
+  .kk-stats-grid { grid-template-columns: 1fr; }
+}
+.kk-stats-subgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+.kk-chart-card {
+  background: var(--kk-surface-2);
+  border: 1px solid var(--kk-border);
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+}
+.kk-chart-wide { /* default: occupies first column in 2/1 grid */ }
+.kk-chart-fullrow { grid-column: 1 / -1; }
+.kk-chart-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: .65rem;
+}
+.kk-chart-head h4 {
+  font-size: .92rem; font-weight: 600; margin: 0; letter-spacing: .01em;
+}
+.kk-chart-canvas-wrap { position: relative; height: 240px; }
+.kk-chart-fullrow .kk-chart-canvas-wrap { height: 200px; }
+
+/* Funnel */
+.kk-funnel { display: flex; flex-direction: column; gap: .8rem; padding: .25rem 0; }
+.kk-funnel-row { display: flex; flex-direction: column; gap: .25rem; }
+.kk-funnel-label {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: .85rem;
+}
+.kk-funnel-conv { color: var(--kk-text-dim); }
+.kk-funnel-track {
+  height: 14px; background: rgba(148, 163, 184, 0.12);
+  border-radius: 999px; overflow: hidden;
+}
+.kk-funnel-fill {
+  height: 100%; border-radius: 999px;
+  transition: width .6s cubic-bezier(.16, 1, .3, 1);
+}
+
+/* QR & cards */
 .kk-side-card {
   background: var(--kk-surface); border: 1px solid var(--kk-border);
   border-radius: var(--kk-radius); padding: 1.25rem;
@@ -322,6 +907,7 @@
   font-variant-numeric: tabular-nums;
 }
 .kk-qr-meta .kk-text-dim { color: #475569 !important; }
+.kk-qr-actions { display: flex; gap: .5rem; }
 
 .kk-presence-dot {
   width: 10px; height: 10px; border-radius: 50%;
@@ -342,6 +928,12 @@
   font-size: .65rem; padding: 2px 7px; border-radius: 999px;
   background: rgba(251, 191, 36, 0.15); color: #fbbf24;
   font-weight: 700; letter-spacing: .05em; margin-left: .35rem;
+}
+.kk-event-agenda {
+  background: var(--kk-surface);
+  border: 1px solid var(--kk-border);
+  border-radius: var(--kk-radius);
+  padding: 1.25rem 1.5rem;
 }
 </style>
 {% endblock %}

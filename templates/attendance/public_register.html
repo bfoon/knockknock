@@ -2,6 +2,8 @@
 {% block title %}Register · {{ event.title }}{% endblock %}
 
 {% block content %}
+{% include "attendance/_announcement_banner.html" %}
+
 <div class="kk-public-wrap">
   {% if event.cover_image %}
     <div class="kk-public-cover" style="background-image: url('{{ event.cover_image.url }}')"></div>
@@ -20,6 +22,24 @@
           · <i class="bi bi-geo-alt"></i> {{ event.location }}
         {% endif %}
       </p>
+
+      {# Directions for in-person events. Prefer the geofence pin (most #}
+      {# precise) and fall back to the location string. #}
+      {% if not event.is_online %}
+        {% if event.geofence_lat and event.geofence_lng %}
+          <a class="kk-directions-btn mt-3"
+             href="https://www.google.com/maps/dir/?api=1&destination={{ event.geofence_lat }},{{ event.geofence_lng }}"
+             target="_blank" rel="noopener">
+            <i class="bi bi-signpost-2-fill"></i> Get directions
+          </a>
+        {% elif event.location %}
+          <a class="kk-directions-btn mt-3"
+             href="https://www.google.com/maps/dir/?api=1&destination={{ event.location|urlencode }}"
+             target="_blank" rel="noopener">
+            <i class="bi bi-signpost-2-fill"></i> Get directions
+          </a>
+        {% endif %}
+      {% endif %}
     </div>
 
     {% if event.description %}
@@ -85,6 +105,21 @@
   display: inline-block; font-size: .7rem; padding: 3px 9px; border-radius: 999px;
   background: rgba(251, 191, 36, 0.18); color: #fbbf24;
   font-weight: 700; letter-spacing: .05em;
+}
+.kk-directions-btn {
+  display: inline-flex; align-items: center; gap: .45rem;
+  padding: .45rem .85rem;
+  background: rgba(34, 211, 238, 0.12);
+  color: #67e8f9;
+  border: 1px solid rgba(34, 211, 238, 0.3);
+  border-radius: 999px;
+  font-size: .85rem; font-weight: 500;
+  text-decoration: none;
+  transition: background .15s, color .15s;
+}
+.kk-directions-btn:hover {
+  background: rgba(34, 211, 238, 0.22);
+  color: #a5f3fc;
 }
 </style>
 {% endblock %}

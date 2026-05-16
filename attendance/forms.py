@@ -92,6 +92,10 @@ class EventForm(forms.ModelForm):
             "certificate_logo_y_pct": forms.HiddenInput(),
             "certificate_logo_width_pct": forms.HiddenInput(),
             "certificate_template_key": forms.HiddenInput(),
+            # Picked on the dedicated agenda designer page, not this form.
+            # Hidden here so the model's value round-trips through save()
+            # without the user having to fill anything in.
+            "agenda_template_key": forms.HiddenInput(),
         }
 
     def __init__(self, *args, **kwargs):
@@ -100,6 +104,18 @@ class EventForm(forms.ModelForm):
         for fname in ("starts_at", "ends_at", "registration_closes_at"):
             if fname in self.fields:
                 self.fields[fname].input_formats = self.DATETIME_LOCAL_FORMATS
+
+        # These four are picked on dedicated designer pages (agenda /
+        # certificate). On the main event form they're rendered as
+        # hidden inputs and may legitimately be empty for a new event —
+        # the model has sensible defaults. Make them form-optional so a
+        # blank submission doesn't fail with "This field is required."
+        for fname in ("agenda_template_key", "certificate_template_key",
+                      "certificate_logo_x_pct", "certificate_logo_y_pct",
+                      "certificate_logo_width_pct"):
+            if fname in self.fields:
+                self.fields[fname].required = False
+
         # Apply the kk-form-control class to all unstyled fields. Mirrors
         # what _BaseSignupForm does in accounts/forms.py.
         for name, field in self.fields.items():

@@ -234,55 +234,125 @@
   </div>
 </form>
 
-{# Leaflet for the small venue map preview — CDN, only loaded on this page. #}
+{# Leaflet for the small venue map preview. We try multiple CDNs in
+   sequence because cdnjs.cloudflare.com is blocked on some networks and
+   sites with strict subresource-integrity used to silently fail when the
+   pinned hash drifted. The probe at the bottom of this template promotes
+   the next CDN if window.L hasn't appeared after a short timeout. #}
 <link rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
-      integrity="sha512-h9FcoyWjHcOcmEVkxOfTLnmZFWIH0iZhZT1H2TbOq55xssQGEJHEaIm+PgoUaZbRvQTNTluNOEfb1ZRy6D3BOw=="
-      crossorigin="anonymous">
+      crossorigin="anonymous"
+      id="kk-leaflet-css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"
-        integrity="sha512-BB3hKbKWOc9Ez/TAwyWxNXeoV9c1v6FIeYiBieIWkpLjauysF18NzgR1MBNBXf8/KABdlkX68nAhlwcDFLGPCQ=="
-        crossorigin="anonymous"></script>
+        crossorigin="anonymous"
+        id="kk-leaflet-js"></script>
+
+<script>
+// CDN fallback loader. If cdnjs didn't deliver Leaflet within 1.5 s,
+// inject the same file from unpkg; if that fails too, try jsdelivr.
+// Each attempt is added once. The map init code separately polls
+// window.L and gives up gracefully on its own.
+(function(){
+  const FALLBACKS = [
+    'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+    'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js',
+  ];
+  let idx = 0;
+  function tryNext() {
+    if (window.L) return;
+    if (idx >= FALLBACKS.length) return;
+    const s = document.createElement('script');
+    s.src = FALLBACKS[idx++];
+    s.async = false;
+    s.onload = () => { /* L should be defined now */ };
+    s.onerror = () => setTimeout(tryNext, 200);
+    document.head.appendChild(s);
+    setTimeout(tryNext, 1500); // chain to the next one if this one stalls
+  }
+  setTimeout(tryNext, 1500);
+
+  // Same idea for the CSS — if cdnjs's stylesheet didn't load, the map
+  // controls and tile attribution look unstyled. Probe by checking the
+  // stylesheet's rules. Cross-origin stylesheets can throw on .cssRules,
+  // which is fine — that means it DID load.
+  setTimeout(() => {
+    const link = document.getElementById('kk-leaflet-css');
+    let ok = false;
+    try { ok = !!(link && link.sheet && link.sheet.cssRules); }
+    catch (e) { ok = true; } // cross-origin → loaded
+    if (!ok) {
+      const l = document.createElement('link');
+      l.rel = 'stylesheet';
+      l.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      document.head.appendChild(l);
+    }
+  }, 1500);
+})();
+</script>
 
 <script>
 (function(){
   const checkbox = document.getElementById('{{ form.require_geofence.id_for_label }}');
   const panel = document.getElementById('kk-geofence-panel');
+  const mapEl = document.getElementById('kk-geofence-map');
   const latInput = document.getElementById('{{ form.geofence_lat.id_for_label }}');
   const lngInput = document.getElementById('{{ form.geofence_lng.id_for_label }}');
   const radiusInput = document.getElementById('{{ form.geofence_radius_m.id_for_label }}');
   const locStatus = document.getElementById('kk-loc-status');
 
-  function toggle() {
-    panel.style.display = checkbox?.checked ? '' : 'none';
-    if (checkbox?.checked) setTimeout(initMap, 50);
-  }
-  checkbox?.addEventListener('change', toggle);
-  toggle();
-
-  // ── Leaflet map preview ──
   let map, marker, circle;
+
+  // Poll until Leaflet shows up. With the multi-CDN loader above, this
+  // can take a couple of seconds in the worst case (cdnjs blocked →
+  // unpkg loads). 80 tries × 150 ms = 12 s ceiling before we give up.
+  function whenLeafletReady(cb, tries = 80) {
+    if (window.L && typeof window.L.map === 'function') return cb();
+    if (tries <= 0) {
+      mapEl.innerHTML = '<div class="kk-map-fallback">'
+        + 'Map library blocked by your network. The geofence still works — '
+        + 'paste latitude/longitude above, or click "Use my current location".'
+        + '</div>';
+      return;
+    }
+    setTimeout(() => whenLeafletReady(cb, tries - 1), 150);
+  }
+
+  function showPanel(open) {
+    panel.style.display = open ? '' : 'none';
+    if (!open) return;
+    requestAnimationFrame(() => {
+      whenLeafletReady(() => {
+        if (!map) initMap();
+        else map.invalidateSize();
+      });
+    });
+  }
+  checkbox?.addEventListener('change', () => showPanel(checkbox.checked));
+  showPanel(!!checkbox?.checked);
+
   function initMap() {
-    if (map) { map.invalidateSize(); return; }
     const lat = parseFloat(latInput.value) || 13.4549;   // Banjul fallback
     const lng = parseFloat(lngInput.value) || -16.5790;
     const radius = parseFloat(radiusInput.value) || 150;
 
-    map = L.map('kk-geofence-map').setView([lat, lng], 16);
-    // CARTO's "Voyager" basemap — same OSM data, but served via CARTO's
-    // CDN which (a) does not enforce the Referer header policy that
-    // openstreetmap.org's own tile server uses (it was returning 403s
-    // labelled "Access blocked: Referer is required") and (b) reads
-    // better against a dark UI than the raw OSM rendering.
-    // Subdomain rotation {s} → a/b/c/d for parallelism.
+    map = L.map(mapEl, { scrollWheelZoom: false }).setView([lat, lng], 16);
+
+    // Tile source: CARTO Voyager. Two reasons to prefer it over
+    // tile.openstreetmap.org here —
+    //   1. OSM's own tile server enforces a strict usage policy and
+    //      returns 403 "Referer is required" when the Referer header
+    //      is missing or stripped (which happens under several
+    //      referrer-policy values). CARTO has no such requirement.
+    //   2. CARTO Voyager reads well against this app's dark UI.
+    // We still set referrerPolicy explicitly so the browser always
+    // sends a Referer header on tile requests regardless of any
+    // page-level <meta name="referrer"> override.
     L.tileLayer(
       'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
       {
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · © <a href="https://carto.com/attributions">CARTO</a>',
         maxZoom: 19,
         subdomains: 'abcd',
-        // Tells the browser to send a Referer header on tile requests.
-        // Most providers fall back gracefully if it's missing, but a
-        // few (including the one we just left) hard-require it.
         referrerPolicy: 'strict-origin-when-cross-origin',
       }
     ).addTo(map);
@@ -321,6 +391,8 @@
       const r = parseFloat(radiusInput.value);
       if (isFinite(r) && r > 0) circle.setRadius(r);
     });
+
+    requestAnimationFrame(() => map.invalidateSize());
   }
 
   // ── "Use my location" button ──
@@ -372,6 +444,15 @@
   border-radius: 10px;
   overflow: hidden;
   border: 1px solid var(--kk-border);
+}
+.kk-map-fallback {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  text-align: center;
+  color: var(--kk-text-dim, #94a3b8);
+  font-size: .9rem;
 }
 .leaflet-container { background: #0f172a; }
 

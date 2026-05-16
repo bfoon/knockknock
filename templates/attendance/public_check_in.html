@@ -2,6 +2,8 @@
 {% block title %}Check in · {{ event.title }}{% endblock %}
 
 {% block content %}
+{% include "attendance/_announcement_banner.html" %}
+
 <div class="kk-public-wrap">
   <div class="kk-public-card">
     <div class="kk-public-head">
@@ -10,6 +12,24 @@
         <i class="bi bi-calendar-event"></i> {{ event.starts_at|date:"l, j F · H:i" }}
         {% if event.location %} · <i class="bi bi-geo-alt"></i> {{ event.location }}{% endif %}
       </p>
+
+      {# Directions — only useful for in-person events with either a #}
+      {# geofence pin or a location string we can hand to Google Maps. #}
+      {% if not event.is_online %}
+        {% if event.geofence_lat and event.geofence_lng %}
+          <a class="kk-directions-btn mt-3"
+             href="https://www.google.com/maps/dir/?api=1&destination={{ event.geofence_lat }},{{ event.geofence_lng }}"
+             target="_blank" rel="noopener">
+            <i class="bi bi-signpost-2-fill"></i> Get directions
+          </a>
+        {% elif event.location %}
+          <a class="kk-directions-btn mt-3"
+             href="https://www.google.com/maps/dir/?api=1&destination={{ event.location|urlencode }}"
+             target="_blank" rel="noopener">
+            <i class="bi bi-signpost-2-fill"></i> Get directions
+          </a>
+        {% endif %}
+      {% endif %}
     </div>
 
     {% if error %}
@@ -32,29 +52,13 @@
     {# ── Already registered? ── #}
     <div class="kk-public-section">
       <h3 class="kk-public-section-title">
-        <i class="bi bi-person-check"></i> Already registered
+        <i class="bi bi-qr-code-scan"></i> Already registered
       </h3>
-      <p class="kk-text-dim small mb-3">
-        Enter the email or phone you signed up with, plus this event's code.
+      <p class="kk-text-dim small mb-0">
+        Open the email or SMS we sent you when you signed up and scan
+        <strong>your personal ticket QR</strong> at the door — that's how check-in works.
+        If you didn't get it, ask the organizer to resend your ticket.
       </p>
-      <form method="post" class="row g-2 mb-1">
-        {% csrf_token %}
-        <input type="hidden" name="action" value="find_me">
-        <div class="col-md-7">
-          <input type="text" name="contact" class="form-control"
-                 placeholder="Email or phone" required>
-        </div>
-        <div class="col-md-3">
-          <input type="text" name="code" class="form-control text-uppercase"
-                 placeholder="Code" maxlength="8"
-                 value="{{ event.code }}" required>
-        </div>
-        <div class="col-md-2">
-          <button class="kk-btn kk-btn-primary w-100">
-            <i class="bi bi-arrow-right"></i>
-          </button>
-        </div>
-      </form>
     </div>
 
     {# ── Walk-in path ── #}
@@ -99,5 +103,21 @@
   border-radius: 10px;
 }
 .kk-geofence-notice > i { color: #c4b5fd; font-size: 1.25rem; line-height: 1; margin-top: 2px; }
+
+.kk-directions-btn {
+  display: inline-flex; align-items: center; gap: .45rem;
+  padding: .45rem .85rem;
+  background: rgba(34, 211, 238, 0.12);
+  color: #67e8f9;
+  border: 1px solid rgba(34, 211, 238, 0.3);
+  border-radius: 999px;
+  font-size: .85rem; font-weight: 500;
+  text-decoration: none;
+  transition: background .15s, color .15s;
+}
+.kk-directions-btn:hover {
+  background: rgba(34, 211, 238, 0.22);
+  color: #a5f3fc;
+}
 </style>
 {% endblock %}

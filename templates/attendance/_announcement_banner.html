@@ -1,0 +1,171 @@
+{# ───────────────────────────────────────────────────────────────
+   Sticky announcement banner for public attendee pages.
+
+   Renders any pre-existing announcements (passed in as
+   `recent_announcements`, an iterable of EventAnnouncement) on
+   load, then opens a WebSocket to the event's group so new
+   announcements appear live without a refresh.
+
+   Required context:
+     event                    — AttendanceEvent
+     recent_announcements     — queryset / list, can be empty
+   ─────────────────────────────────────────────────────────────── #}
+
+<div class="kk-announce-bar" id="kk-announce-bar"
+     data-event-id="{{ event.pk }}"
+     {% if not recent_announcements %}hidden{% endif %}>
+  <div class="kk-announce-inner">
+    <div class="kk-announce-icon"><i class="bi bi-megaphone-fill"></i></div>
+    <div class="kk-announce-list" id="kk-announce-list">
+      {% for a in recent_announcements %}
+        <div class="kk-announce-item">
+          {% if a.subject %}<div class="kk-announce-subj">{{ a.subject }}</div>{% endif %}
+          <div class="kk-announce-body">{{ a.body|linebreaksbr }}</div>
+          <div class="kk-announce-time">{{ a.sent_at|date:"j M · H:i" }}</div>
+        </div>
+      {% endfor %}
+    </div>
+    <button type="button" class="kk-announce-close" id="kk-announce-close"
+            aria-label="Dismiss announcements">
+      <i class="bi bi-x-lg"></i>
+    </button>
+  </div>
+</div>
+
+<style>
+.kk-announce-bar {
+  position: sticky; top: 0; z-index: 1000;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.95), rgba(34, 211, 238, 0.95));
+  color: #fff;
+  border-bottom: 1px solid rgba(255,255,255,0.15);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+  /* Smooth slide-in when toggled from hidden → visible. */
+  animation: kk-announce-slide .35s ease-out;
+}
+@keyframes kk-announce-slide {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+.kk-announce-inner {
+  max-width: 720px; margin: 0 auto;
+  display: flex; align-items: flex-start; gap: .75rem;
+  padding: .85rem 1rem;
+}
+.kk-announce-icon {
+  font-size: 1.25rem; line-height: 1.4;
+  flex-shrink: 0;
+}
+.kk-announce-list {
+  flex-grow: 1;
+  max-height: 220px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: .5rem;
+}
+/* Newest items get a brief highlight pulse. */
+.kk-announce-item {
+  background: rgba(255,255,255,0.12);
+  border-radius: 8px;
+  padding: .5rem .75rem;
+}
+.kk-announce-item.is-new {
+  animation: kk-announce-flash 1.6s ease-out;
+}
+@keyframes kk-announce-flash {
+  0%   { background: rgba(255,255,255,0.38); }
+  100% { background: rgba(255,255,255,0.12); }
+}
+.kk-announce-subj { font-weight: 700; font-size: .95rem; margin-bottom: 2px; }
+.kk-announce-body { font-size: .9rem; line-height: 1.4; }
+.kk-announce-time {
+  font-size: .72rem; opacity: 0.75; margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.kk-announce-close {
+  background: transparent; border: 0; color: #fff;
+  font-size: 1rem; padding: 2px 6px; cursor: pointer;
+  opacity: 0.8; transition: opacity .15s;
+  flex-shrink: 0;
+}
+.kk-announce-close:hover { opacity: 1; }
+</style>
+
+<script>
+(function(){
+  const bar = document.getElementById('kk-announce-bar');
+  const list = document.getElementById('kk-announce-list');
+  const closeBtn = document.getElementById('kk-announce-close');
+  if (!bar) return;
+
+  const eventId = bar.dataset.eventId;
+
+  // ── Manual dismiss ───────────────────────────────────────────
+  // Hides the bar for this page-view only. New incoming announcements
+  // re-show it — that's intentional, we want them seen.
+  closeBtn?.addEventListener('click', () => { bar.hidden = true; });
+
+  // ── HTML-escape helper ───────────────────────────────────────
+  // We render server-side content with Django's auto-escape, but
+  // anything coming over the WS goes through this before innerHTML.
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = (s == null ? '' : String(s));
+    return d.innerHTML;
+  }
+
+  function formatTime(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d)) return '';
+    // Match the Django filter "j M · H:i" loosely — e.g. "16 May · 14:32"
+    const months = ['Jan','Feb','Mar','Apr','May','Jun',
+                    'Jul','Aug','Sep','Oct','Nov','Dec'];
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${d.getDate()} ${months[d.getMonth()]} · ${hh}:${mm}`;
+  }
+
+  function prependAnnouncement({subject, body, sent_at}) {
+    const item = document.createElement('div');
+    item.className = 'kk-announce-item is-new';
+    item.innerHTML =
+      (subject ? `<div class="kk-announce-subj">${esc(subject)}</div>` : '') +
+      `<div class="kk-announce-body">${esc(body).replace(/\n/g, '<br>')}</div>` +
+      `<div class="kk-announce-time">${esc(formatTime(sent_at))}</div>`;
+    list.insertBefore(item, list.firstChild);
+    bar.hidden = false;
+    // Keep at most 10 visible so the bar doesn't grow forever.
+    while (list.children.length > 10) list.removeChild(list.lastChild);
+  }
+
+  // ── WebSocket subscription ───────────────────────────────────
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const wsUrl = `${proto}://${location.host}/ws/attendance/${eventId}/`;
+
+  let ws = null;
+  let reconnectDelay = 1000;  // backs off up to 30s
+
+  function connect() {
+    try { ws = new WebSocket(wsUrl); }
+    catch (e) { return scheduleReconnect(); }
+
+    ws.onopen = () => { reconnectDelay = 1000; };
+    ws.onmessage = (ev) => {
+      let payload;
+      try { payload = JSON.parse(ev.data); } catch (e) { return; }
+      if (payload && payload.type === 'announcement') {
+        prependAnnouncement(payload);
+      }
+      // Other broadcast types (new_registration, check_in) are organizer-
+      // facing — public pages ignore them.
+    };
+    ws.onclose = scheduleReconnect;
+    ws.onerror = () => { try { ws.close(); } catch(e) {} };
+  }
+
+  function scheduleReconnect() {
+    setTimeout(connect, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+  }
+
+  connect();
+})();
+</script>

@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Venues{% endblock %}
+
+{% block content %}
+<div class="kk-venue-wrap">
+  <div class="d-flex flex-wrap align-items-end mb-4 gap-2">
+    <div>
+      <h1 class="mb-1">Venues</h1>
+      <p class="text-secondary mb-0">
+        Reusable locations that auto-fill the geofence on new events.
+      </p>
+    </div>
+    <div class="ms-auto d-flex flex-wrap gap-2">
+      {% if can_create_global %}
+        <a href="{% url 'attendance:venue_create' %}?scope=global"
+           class="kk-btn kk-btn-primary">
+          <i class="bi bi-globe2"></i> Add global venue
+        </a>
+        <a href="{% url 'attendance:site_settings' %}" class="kk-btn kk-btn-ghost">
+          <i class="bi bi-gear"></i> Site settings
+        </a>
+      {% endif %}
+      {% for org in creatable_orgs %}
+        <a href="{% url 'attendance:venue_create' %}?scope=org&org={{ org.pk }}"
+           class="kk-btn kk-btn-ghost">
+          <i class="bi bi-building-add"></i> Add for {{ org.name }}
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if site_setting %}
+    <div class="kk-site-note mb-4">
+      <i class="bi bi-info-circle"></i>
+      Site-wide default geofence radius is currently
+      <strong>{{ site_setting.default_geofence_radius_m }} m</strong>.
+      New venues use this when no explicit radius is given.
+    </div>
+  {% endif %}
+
+  {# ── Global venues ── #}
+  <h3 class="kk-venue-section-title">
+    <i class="bi bi-globe2"></i> Global venues
+  </h3>
+  {% if global_venues %}
+    <div class="kk-venue-grid">
+      {% for v in global_venues %}{% include "attendance/_venue_card.html" with v=v %}{% endfor %}
+    </div>
+  {% else %}
+    <p class="kk-text-dim small">No global venues yet.</p>
+  {% endif %}
+
+  {# ── Org venues ── #}
+  <h3 class="kk-venue-section-title mt-4">
+    <i class="bi bi-building"></i> Organization venues
+  </h3>
+  {% if org_venues %}
+    <div class="kk-venue-grid">
+      {% for v in org_venues %}{% include "attendance/_venue_card.html" with v=v %}{% endfor %}
+    </div>
+  {% else %}
+    <p class="kk-text-dim small">
+      {% if creatable_orgs %}
+        No venues yet for your organization{{ creatable_orgs|length|pluralize }}.
+        Tap "Add for …" above to create one.
+      {% else %}
+        Your account isn't an admin of a Corporate organization, so there
+        are no org venues to show.
+      {% endif %}
+    </p>
+  {% endif %}
+</div>
+
+<style>
+.kk-venue-wrap { max-width: 1080px; margin: 0 auto; padding: 1.5rem; }
+.kk-venue-section-title {
+  font-size: 1.05rem; font-weight: 600; margin-bottom: .75rem;
+  display: flex; align-items: center; gap: .5rem;
+}
+.kk-venue-grid {
+  display: grid; gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+.kk-site-note {
+  background: rgba(34, 211, 238, 0.08);
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  border-radius: 10px; padding: .75rem 1rem;
+  font-size: .9rem;
+}
+.kk-site-note > i { color: #67e8f9; margin-right: .35rem; }
+</style>
+{% endblock %}

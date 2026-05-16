@@ -21,6 +21,40 @@ from django import forms
 from django.core.exceptions import ValidationError
 
 from .models import AttendanceEvent, EventField, AgendaItem
+from .venue_models import Venue
+
+
+# ───────────────────────── Widgets ─────────────────────────
+
+class VenueSelect(forms.Select):
+    """
+    <select> for the venue picker that emits data-lat / data-lng /
+    data-radius on each <option>. The event_form.html JS listens for
+    a change on this select and autofills the geofence fields.
+
+    Why a custom widget instead of computing this in the template:
+    Django's ModelChoiceField doesn't expose the underlying model
+    instance to {{ field }} rendering, so the template can't reach in
+    and pull lat/lng. Overriding create_option here is the smallest
+    hook that still keeps the form a normal ModelChoiceField.
+    """
+
+    def create_option(self, name, value, label, selected, index,
+                      subgroup=None, attrs=None):
+        opt = super().create_option(
+            name, value, label, selected, index, subgroup=subgroup, attrs=attrs,
+        )
+        # The empty "no venue" option has no value — skip it.
+        if value:
+            # ModelChoiceIteratorValue exposes the instance via .instance
+            # in modern Django. Falling back to a queryset lookup would
+            # be wasteful; we only do it if .instance is missing.
+            v = getattr(value, "instance", None)
+            if v is not None:
+                opt["attrs"]["data-lat"] = str(v.latitude)
+                opt["attrs"]["data-lng"] = str(v.longitude)
+                opt["attrs"]["data-radius"] = str(v.default_radius_m)
+        return opt
 
 
 # ───────────────────────── Organizer-side ─────────────────────────
@@ -46,7 +80,10 @@ class EventForm(forms.ModelForm):
             "starts_at", "ends_at", "timezone_name",
             "capacity", "registration_mode", "registration_closes_at",
             "allow_walk_ins",
-            # Geofence
+            # Geofence — `venue` is the optional saved-venue picker that
+            # autofills the three coord/radius fields. See EventForm.__init__
+            # for the per-user queryset scoping.
+            "venue",
             "require_geofence", "geofence_lat", "geofence_lng", "geofence_radius_m",
             # Agenda visual style
             "agenda_template_key",
@@ -85,6 +122,12 @@ class EventForm(forms.ModelForm):
             "geofence_radius_m": forms.NumberInput(attrs={
                 "class": "form-control", "min": 25, "max": 5000,
             }),
+            # Custom widget — emits data-lat/data-lng/data-radius on each
+            # option so the form's JS can autofill the geofence fields.
+            "venue": VenueSelect(attrs={
+                "class": "form-select",
+                "data-kk-venue-picker": "1",
+            }),
             # Certificate logo positioning — hidden inputs the JS preview
             # writes into. We don't show raw number boxes here because the
             # drag UI does it visually.
@@ -99,11 +142,31 @@ class EventForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
+        # Optional kwarg — views.py passes request.user. We need it to
+        # decide which venues this organizer can see in the picker.
+        self._user = kwargs.pop("user", None)
         super().__init__(*args, **kwargs)
         # Teach the three datetime fields to accept the HTML5 format.
         for fname in ("starts_at", "ends_at", "registration_closes_at"):
             if fname in self.fields:
                 self.fields[fname].input_formats = self.DATETIME_LOCAL_FORMATS
+
+        # Scope the venue picker to what this user is allowed to use:
+        # all globals + any corporate-org venues they're an active
+        # member of. Users with no visible venues (free/individual,
+        # plus team-tier users on this iteration) get the picker
+        # hidden, falling back to the original free-text experience.
+        if "venue" in self.fields:
+            if self._user is None:
+                self.fields["venue"].queryset = Venue.objects.none()
+                self.fields["venue"].widget = forms.HiddenInput()
+            else:
+                qs = Venue.visible_to(self._user).select_related("organization")
+                self.fields["venue"].queryset = qs
+                self.fields["venue"].required = False
+                self.fields["venue"].empty_label = "— No venue (custom location) —"
+                if not qs.exists():
+                    self.fields["venue"].widget = forms.HiddenInput()
 
         # These four are picked on dedicated designer pages (agenda /
         # certificate). On the main event form they're rendered as

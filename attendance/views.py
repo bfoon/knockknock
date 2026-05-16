@@ -106,15 +106,16 @@ def event_list(request):
 @login_required
 def event_create(request):
     if request.method == "POST":
-        form = EventForm(request.POST, request.FILES)
+        form = EventForm(request.POST, request.FILES, user=request.user)
         if form.is_valid():
             event = form.save(commit=False)
             event.owner = request.user
+            _apply_venue_defaults(event, form.cleaned_data.get("venue"))
             event.save()
             messages.success(request, f"Event '{event.title}' created. Now build the registration form.")
             return redirect("attendance:form_builder", pk=event.pk)
     else:
-        form = EventForm()
+        form = EventForm(user=request.user)
     return render(request, "attendance/event_form.html", {
         "form": form, "is_new": True,
         "certificate_templates": CERTIFICATE_TEMPLATES,
@@ -125,17 +126,44 @@ def event_create(request):
 def event_edit(request, pk):
     event = _own_event_or_404(request.user, pk)
     if request.method == "POST":
-        form = EventForm(request.POST, request.FILES, instance=event)
+        form = EventForm(request.POST, request.FILES, instance=event, user=request.user)
         if form.is_valid():
-            form.save()
+            event = form.save(commit=False)
+            _apply_venue_defaults(event, form.cleaned_data.get("venue"))
+            event.save()
+            form.save_m2m()
             messages.success(request, "Event updated.")
             return redirect("attendance:event_detail", pk=event.pk)
     else:
-        form = EventForm(instance=event)
+        form = EventForm(instance=event, user=request.user)
     return render(request, "attendance/event_form.html", {
         "form": form, "event": event, "is_new": False,
         "certificate_templates": CERTIFICATE_TEMPLATES,
     })
+
+
+def _apply_venue_defaults(event, venue):
+    """
+    Inherit the venue's lat/lng/radius (and address) onto the event when
+    the organizer didn't override them on the form. The organizer's
+    explicit values always win — this only fills *blanks*.
+
+    We copy the values onto the event's own columns rather than relying
+    on the FK because:
+      - if the venue is later deactivated, the event keeps working
+      - the existing geofence code reads event.geofence_lat/lng/radius
+        directly, so we don't have to touch is_within_geofence().
+    """
+    if not venue:
+        return
+    if event.geofence_lat is None:
+        event.geofence_lat = venue.latitude
+    if event.geofence_lng is None:
+        event.geofence_lng = venue.longitude
+    if not event.geofence_radius_m:
+        event.geofence_radius_m = venue.default_radius_m
+    if not event.location and venue.address:
+        event.location = venue.address
 
 
 @login_required

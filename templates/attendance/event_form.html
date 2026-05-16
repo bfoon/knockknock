@@ -103,6 +103,28 @@
     dashboard always succeed regardless of location.
   </p>
 
+  {# Venue picker — only rendered for users who can see saved venues. #}
+  {# EventForm.__init__ swaps the widget to HiddenInput when the user's #}
+  {# visible-venues queryset is empty, so this block harmlessly renders #}
+  {# a hidden field for those users and the rest of the form is unchanged. #}
+  {% if form.venue.field.queryset.exists %}
+    <div class="mb-3">
+      <label class="form-label">
+        <i class="bi bi-pin-map"></i> Venue
+        <span class="kk-text-dim small">(optional — autofills the geofence)</span>
+      </label>
+      {{ form.venue }}
+      <div class="form-text">
+        Pick a saved venue to auto-fill the coordinates and radius below.
+        You can still tweak the radius afterwards. Leave blank to enter
+        coordinates manually.
+        <a href="{% url 'attendance:venue_list' %}" class="kk-text-dim">Manage venues →</a>
+      </div>
+    </div>
+  {% else %}
+    {{ form.venue }}
+  {% endif %}
+
   <div class="form-check mb-3">
     {{ form.require_geofence }}
     <label class="form-check-label" for="{{ form.require_geofence.id_for_label }}">
@@ -234,11 +256,11 @@
   </div>
 </form>
 
-{# Leaflet for the small venue map preview. We try multiple CDNs in
-   sequence because cdnjs.cloudflare.com is blocked on some networks and
-   sites with strict subresource-integrity used to silently fail when the
-   pinned hash drifted. The probe at the bottom of this template promotes
-   the next CDN if window.L hasn't appeared after a short timeout. #}
+<!--{# Leaflet for the small venue map preview. We try multiple CDNs in-->
+<!--   sequence because cdnjs.cloudflare.com is blocked on some networks and-->
+<!--   sites with strict subresource-integrity used to silently fail when the-->
+<!--   pinned hash drifted. The probe at the bottom of this template promotes-->
+<!--   the next CDN if window.L hasn't appeared after a short timeout. #}-->
 <link rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
       crossorigin="anonymous"
@@ -414,6 +436,42 @@
     }, err => {
       locStatus.textContent = 'Could not read location: ' + err.message;
     }, {enableHighAccuracy: true, timeout: 8000});
+  });
+
+  // ── Venue picker → auto-fill geofence on change ──
+  // The VenueSelect widget (forms.py) emits data-lat / data-lng /
+  // data-radius on each <option>. We listen for changes, pull those
+  // attributes, and reflect them into the lat/lng/radius inputs +
+  // map. We also tick the geofence checkbox when a venue is picked
+  // because that's the whole point of having venues.
+  const venueSelect = document.querySelector('[data-kk-venue-picker]');
+  venueSelect?.addEventListener('change', e => {
+    const opt = e.target.selectedOptions[0];
+    if (!opt) return;
+    const la = opt.dataset.lat;
+    const ln = opt.dataset.lng;
+    const r  = opt.dataset.radius;
+    if (!la || !ln) return;  // "no venue" option chosen — leave fields alone
+
+    latInput.value = la;
+    lngInput.value = ln;
+    if (r) radiusInput.value = r;
+
+    // Reflect on the map preview if it exists.
+    if (map && marker && circle) {
+      marker.setLatLng([parseFloat(la), parseFloat(ln)]);
+      circle.setLatLng([parseFloat(la), parseFloat(ln)]);
+      if (r) circle.setRadius(parseFloat(r));
+      map.setView([parseFloat(la), parseFloat(ln)], 17);
+    }
+
+    // Auto-enable the geofence toggle — picking a venue makes no
+    // sense otherwise. The organizer can still untick if they want
+    // the coords without enforcement.
+    if (checkbox && !checkbox.checked) {
+      checkbox.checked = true;
+      showPanel(true);
+    }
   });
 })();
 </script>

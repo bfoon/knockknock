@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from . import venue_views
 
 app_name = "attendance"
 
@@ -45,6 +46,16 @@ urlpatterns = [
     path("<int:pk>/fields/reorder/",          views.field_reorder,    name="field_reorder"),
     path("<int:pk>/fields/<int:field_id>/",   views.field_edit,       name="field_edit"),
     path("<int:pk>/fields/<int:field_id>/delete/", views.field_delete, name="field_delete"),
+
+    # ── Venue registry ─────────────────────────────────────────
+    # Lives under /attendance/venues/. Free users can hit the list and
+    # just see an empty state; create/edit routes 403 if you don't have
+    # the right scope. See venue_views.py for the permission gates.
+    path("venues/",                     venue_views.venue_list,    name="venue_list"),
+    path("venues/new/",                 venue_views.venue_create,  name="venue_create"),
+    path("venues/<int:pk>/edit/",       venue_views.venue_edit,    name="venue_edit"),
+    path("venues/<int:pk>/delete/",     venue_views.venue_delete,  name="venue_delete"),
+    path("venues/site-settings/",       venue_views.site_settings, name="site_settings"),
 
     # ── Public attendee paths (short for SMS / printing) ─────
     path("e/<str:public_token>/",        views.public_register,  name="public_register"),

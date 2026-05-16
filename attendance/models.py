@@ -35,6 +35,11 @@ from django.db import models
 from django.urls import reverse
 from django.utils import timezone
 
+# Re-export the venue + site-setting models so the rest of the app can
+# import them from attendance.models like every other model. The actual
+# definitions live in venue_models.py to keep this file's diff small.
+from .venue_models import Venue, SiteSetting  # noqa: F401
+
 
 def _gen_join_code():
     """6-digit numeric — matches the LiveSession pattern, easy to type."""
@@ -334,6 +339,19 @@ class AttendanceEvent(models.Model):
     # radius. Walk-ins and organiser-driven manual check-ins are *not*
     # subject to this — they're either at the door already, or the
     # organiser is taking responsibility.
+    #
+    # The `venue` FK below is the optional shortcut: pick a saved venue
+    # and the geofence_lat/lng/radius columns auto-fill from its
+    # defaults at save time. We still keep the lat/lng/radius columns
+    # on the event itself so deactivating the venue later doesn't break
+    # an already-running event — the event has its own copy.
+    venue = models.ForeignKey(
+        "attendance.Venue",
+        on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="events",
+        help_text="Pre-defined venue. If set, geofence lat/lng/radius "
+                  "default to the venue's values but can be overridden.",
+    )
     require_geofence = models.BooleanField(
         default=False,
         help_text="Force attendees to be physically at the venue to self-check-in.",

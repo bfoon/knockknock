@@ -59,6 +59,7 @@
       </div>
     {% endif %}
 
+    {# ────────────── Where / Locate venue ──────────────────────── #}
     {% if event.is_online and event.online_url and registration.status in "accepted,checked_in" %}
       <div class="kk-ticket-section">
         <h3><i class="bi bi-camera-video"></i> Join online</h3>
@@ -66,61 +67,239 @@
           {{ event.online_url }}
         </a>
       </div>
-    {% elif event.location %}
+    {% elif event.location or event.geofence_lat %}
       <div class="kk-ticket-section">
         <h3><i class="bi bi-geo-alt"></i> Where</h3>
-        <p class="mb-0">{{ event.location }}</p>
+        {% if event.location %}<p class="mb-2">{{ event.location }}</p>{% endif %}
+
+        <div class="d-flex gap-2 flex-wrap mb-2">
+          {% if event.geofence_lat and event.geofence_lng %}
+            <button type="button" class="kk-btn kk-btn-ghost btn-sm" id="kk-locate-toggle">
+              <i class="bi bi-map"></i> Locate venue
+            </button>
+            <a class="kk-btn kk-btn-ghost btn-sm"
+               href="https://www.google.com/maps/dir/?api=1&destination={{ event.geofence_lat }},{{ event.geofence_lng }}"
+               target="_blank" rel="noopener">
+              <i class="bi bi-signpost-2-fill"></i> Get directions
+            </a>
+          {% elif event.location %}
+            {# No coords, but a location string — fall back to Google's #}
+            {# place-search-by-name. Not as precise but always useful. #}
+            <a class="kk-btn kk-btn-ghost btn-sm"
+               href="https://www.google.com/maps/dir/?api=1&destination={{ event.location|urlencode }}"
+               target="_blank" rel="noopener">
+              <i class="bi bi-signpost-2-fill"></i> Get directions
+            </a>
+          {% endif %}
+        </div>
+
+        {% if event.geofence_lat and event.geofence_lng %}
+          <div id="kk-locate-map" class="kk-locate-map" hidden
+               data-lat="{{ event.geofence_lat }}"
+               data-lng="{{ event.geofence_lng }}"
+               data-radius="{{ event.geofence_radius_m|default:150 }}">
+          </div>
+          <p class="kk-text-dim small mb-0 mt-2" id="kk-locate-status" hidden></p>
+        {% endif %}
       </div>
     {% endif %}
 
-    {# Live announcement feed from the organizer #}
+    {# ────────────── Announcement feed from the organizer ─────── #}
     <div class="kk-ticket-section">
       <h3><i class="bi bi-megaphone"></i> From the organizer</h3>
       <div id="kk-ticket-feed">
-        <p class="kk-text-dim small mb-0" id="kk-ticket-feed-empty">No announcements yet.</p>
+        {% for a in recent_announcements %}
+          <div class="kk-announcement">
+            {% if a.subject %}<div class="kk-announcement-subject">{{ a.subject }}</div>{% endif %}
+            <div class="kk-announcement-body">{{ a.body|linebreaksbr }}</div>
+            <div class="kk-announcement-time">{{ a.sent_at|date:"j M · H:i" }}</div>
+          </div>
+        {% empty %}
+          <p class="kk-text-dim small mb-0" id="kk-ticket-feed-empty">No announcements yet.</p>
+        {% endfor %}
       </div>
     </div>
   </div>
 </div>
 
+{# Leaflet — only loaded on this page, and only if the venue has coords. #}
+{% if event.geofence_lat and event.geofence_lng %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" crossorigin="anonymous">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" crossorigin="anonymous"></script>
+{% endif %}
+
 <script>
 (function(){
+  // ────────── WebSocket: live announcements + event-ended ──────────
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const ws = new WebSocket(`${proto}://${location.host}/ws/attendance/{{ event.pk }}/`);
+  const wsUrl = `${proto}://${location.host}/ws/attendance/{{ event.pk }}/`;
   const feed = document.getElementById('kk-ticket-feed');
-  const empty = document.getElementById('kk-ticket-feed-empty');
+  let empty = document.getElementById('kk-ticket-feed-empty');
 
-  ws.onmessage = (ev) => {
-    let msg; try { msg = JSON.parse(ev.data); } catch { return; }
-    if (msg.type === 'announcement') {
-      empty?.remove();
-      const block = document.createElement('div');
-      block.className = 'kk-announcement';
-      block.innerHTML = `
-        ${msg.subject ? `<div class="kk-announcement-subject"></div>` : ''}
-        <div class="kk-announcement-body"></div>
-        <div class="kk-announcement-time"></div>
-      `;
-      if (msg.subject) block.querySelector('.kk-announcement-subject').textContent = msg.subject;
-      block.querySelector('.kk-announcement-body').textContent = msg.body;
-      block.querySelector('.kk-announcement-time').textContent = new Date(msg.sent_at).toLocaleTimeString();
-      feed.prepend(block);
-      // Optional: native browser notification.
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('{{ event.title|escapejs }}', {body: msg.body});
+  function formatTime(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d)) return '';
+    const months = ['Jan','Feb','Mar','Apr','May','Jun',
+                    'Jul','Aug','Sep','Oct','Nov','Dec'];
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${d.getDate()} ${months[d.getMonth()]} · ${hh}:${mm}`;
+  }
+
+  let ws = null, reconnectDelay = 1000;
+  function connect() {
+    try { ws = new WebSocket(wsUrl); }
+    catch (e) { return scheduleReconnect(); }
+
+    ws.onopen = () => { reconnectDelay = 1000; };
+    ws.onmessage = (ev) => {
+      let msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (msg.type === 'announcement') {
+        if (empty) { empty.remove(); empty = null; }
+        const block = document.createElement('div');
+        block.className = 'kk-announcement is-new';
+        // Build with createElement + textContent — never innerHTML on
+        // server-supplied data, even if it came from our own organizer.
+        if (msg.subject) {
+          const s = document.createElement('div');
+          s.className = 'kk-announcement-subject';
+          s.textContent = msg.subject;
+          block.appendChild(s);
+        }
+        const b = document.createElement('div');
+        b.className = 'kk-announcement-body';
+        b.textContent = msg.body || '';
+        block.appendChild(b);
+        const t = document.createElement('div');
+        t.className = 'kk-announcement-time';
+        t.textContent = formatTime(msg.sent_at);
+        block.appendChild(t);
+        feed.prepend(block);
+
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('{{ event.title|escapejs }}', {body: msg.body || ''});
+        }
+      } else if (msg.type === 'event_ended') {
+        const block = document.createElement('div');
+        block.className = 'kk-ticket-banner kk-ticket-banner-pending';
+        block.textContent = msg.message || 'This event has ended.';
+        document.querySelector('.kk-ticket').prepend(block);
       }
-    } else if (msg.type === 'event_ended') {
-      const block = document.createElement('div');
-      block.className = 'kk-ticket-banner kk-ticket-banner-pending';
-      block.textContent = msg.message || 'This event has ended.';
-      document.querySelector('.kk-ticket').prepend(block);
-    }
-  };
+    };
+    ws.onclose = scheduleReconnect;
+    ws.onerror = () => { try { ws.close(); } catch(e) {} };
+  }
+  function scheduleReconnect() {
+    setTimeout(connect, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+  }
+  connect();
 
-  // Ask once, in a friendly way, but don't be pushy.
   if ('Notification' in window && Notification.permission === 'default') {
     setTimeout(() => Notification.requestPermission(), 5000);
   }
+
+  // ────────── Locate venue map ──────────
+  const mapEl = document.getElementById('kk-locate-map');
+  const toggleBtn = document.getElementById('kk-locate-toggle');
+  const statusEl = document.getElementById('kk-locate-status');
+  let map = null;
+
+  function whenLeafletReady(cb, tries = 40) {
+    if (window.L && typeof window.L.map === 'function') return cb();
+    if (tries <= 0) {
+      if (mapEl) {
+        mapEl.innerHTML = '<div class="kk-map-fallback">'
+          + 'Map library blocked. Use "Get directions" above to open in Google Maps.'
+          + '</div>';
+      }
+      return;
+    }
+    setTimeout(() => whenLeafletReady(cb, tries - 1), 150);
+  }
+
+  function initMap() {
+    const lat = parseFloat(mapEl.dataset.lat);
+    const lng = parseFloat(mapEl.dataset.lng);
+    const radius = parseFloat(mapEl.dataset.radius) || 150;
+
+    map = L.map(mapEl, { scrollWheelZoom: false }).setView([lat, lng], 16);
+
+    // CARTO Voyager — same tile choice as the event-form map. OSM's own
+    // tile server enforces a strict Referer policy that some networks
+    // strip, leaving you with "Access blocked" error tiles. CARTO has
+    // no such requirement and reads well on our dark UI.
+    L.tileLayer(
+      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+      {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · © <a href="https://carto.com/attributions">CARTO</a>',
+        maxZoom: 19,
+        subdomains: 'abcd',
+        referrerPolicy: 'strict-origin-when-cross-origin',
+      }
+    ).addTo(map);
+
+    L.marker([lat, lng]).addTo(map).bindPopup('Venue').openPopup();
+    L.circle([lat, lng], {
+      radius: radius,
+      color: '#7c3aed', fillColor: '#7c3aed',
+      fillOpacity: 0.10, weight: 2,
+    }).addTo(map);
+
+    // After the panel becomes visible, the map sometimes measures its
+    // container before the reflow lands — invalidate on the next
+    // frame to be safe.
+    requestAnimationFrame(() => map.invalidateSize());
+
+    // Offer to plot the attendee's own position too. Helpful for
+    // working out which direction to walk and how far.
+    if ('geolocation' in navigator) {
+      statusEl.hidden = false;
+      statusEl.textContent = 'Locating you…';
+      navigator.geolocation.getCurrentPosition(pos => {
+        const you = [pos.coords.latitude, pos.coords.longitude];
+        const youIcon = L.divIcon({
+          className: 'kk-you-pin',
+          html: '<div class="kk-you-pin-dot"></div>',
+          iconSize: [18, 18], iconAnchor: [9, 9],
+        });
+        L.marker(you, {icon: youIcon}).addTo(map).bindPopup('You');
+        map.fitBounds([[lat, lng], you], {padding: [30, 30], maxZoom: 17});
+
+        const dKm = haversineKm(lat, lng, pos.coords.latitude, pos.coords.longitude);
+        const dStr = dKm < 1 ? `${Math.round(dKm * 1000)} m` : `${dKm.toFixed(1)} km`;
+        statusEl.textContent = `You're ~${dStr} from the venue (straight line).`;
+      }, err => {
+        statusEl.textContent = 'Location not shared — map still shows the venue.';
+      }, {enableHighAccuracy: true, timeout: 8000});
+    }
+  }
+
+  function haversineKm(lat1, lng1, lat2, lng2) {
+    const R = 6371;
+    const toRad = x => x * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+    const a = Math.sin(dLat/2)**2 +
+              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+              Math.sin(dLng/2)**2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+
+  toggleBtn?.addEventListener('click', () => {
+    const showing = !mapEl.hidden;
+    mapEl.hidden = showing;
+    if (!showing) {
+      requestAnimationFrame(() => whenLeafletReady(() => {
+        if (!map) initMap();
+        else map.invalidateSize();
+      }));
+      toggleBtn.innerHTML = '<i class="bi bi-x-lg"></i> Hide map';
+    } else {
+      toggleBtn.innerHTML = '<i class="bi bi-map"></i> Locate venue';
+      if (statusEl) statusEl.hidden = true;
+    }
+  });
 })();
 </script>
 
@@ -162,10 +341,42 @@
 .kk-ticket-section h3 { font-size: 1rem; font-weight: 600; margin-bottom: .75rem; }
 .kk-ticket-agenda { color: var(--kk-text-dim); }
 
+/* ── Locate venue map ──────────────────────────────────────────── */
+.kk-locate-map {
+  height: 260px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--kk-border);
+  margin-top: .25rem;
+}
+.kk-map-fallback {
+  height: 100%;
+  display: grid; place-items: center;
+  padding: 1rem; text-align: center;
+  color: var(--kk-text-dim, #94a3b8);
+  font-size: .9rem;
+}
+.kk-you-pin-dot {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: #22d3ee;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.35);
+}
+.leaflet-container { background: #0f172a; }
+
+/* ── Announcement feed ─────────────────────────────────────────── */
 .kk-announcement {
   padding: .8rem 1rem; background: var(--kk-surface-2);
   border-left: 3px solid #22d3ee; border-radius: 8px;
   margin-bottom: .5rem;
+}
+.kk-announcement.is-new {
+  animation: kk-announce-flash 1.6s ease-out;
+}
+@keyframes kk-announce-flash {
+  0%   { background: rgba(34, 211, 238, 0.25); }
+  100% { background: var(--kk-surface-2); }
 }
 .kk-announcement-subject { font-weight: 600; margin-bottom: .25rem; }
 .kk-announcement-time { font-size: .7rem; color: var(--kk-text-dim); margin-top: .35rem; }

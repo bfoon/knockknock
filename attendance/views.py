@@ -826,11 +826,6 @@ def public_register(request, public_token):
 
     return render(request, "attendance/public_register.html", {
         "event": event, "form": form, "walk_in": walk_in,
-        # 5 newest announcements — the banner partial renders these
-        # server-side on load, then subscribes to the event WS group
-        # for live updates. EventAnnouncement.Meta orders by -sent_at,
-        # so the slice gives us the right ones in the right order.
-        "recent_announcements": event.announcements.all()[:5],
     })
 
 
@@ -892,6 +887,10 @@ def ticket(request, token):
     reg = get_object_or_404(Registration, token=token)
     return render(request, "attendance/ticket.html", {
         "registration": reg, "event": reg.event,
+        # 5 newest announcements rendered server-side so a reload still
+        # shows recent organizer messages. The WS subscription in the
+        # page script handles anything that lands after the page opens.
+        "recent_announcements": reg.event.announcements.all()[:5],
     })
 
 
@@ -1023,9 +1022,6 @@ def public_check_in(request, public_token):
     return render(request, "attendance/public_check_in.html", {
         "event": event, "form": form, "error": error,
         "can_walk_in": event.allow_walk_ins and event.is_registration_open(),
-        # Same 5-newest slice as public_register — keeps the banner
-        # consistent across both public pages.
-        "recent_announcements": event.announcements.all()[:5],
     })
 
 

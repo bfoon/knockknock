@@ -1,15 +1,15 @@
-{# ───────────────────────────────────────────────────────────────
-   Sticky announcement banner for public attendee pages.
+<!--{# ───────────────────────────────────────────────────────────────-->
+<!--   Sticky announcement banner for public attendee pages.-->
 
-   Renders any pre-existing announcements (passed in as
-   `recent_announcements`, an iterable of EventAnnouncement) on
-   load, then opens a WebSocket to the event's group so new
-   announcements appear live without a refresh.
+<!--   Renders any pre-existing announcements (passed in as-->
+<!--   `recent_announcements`, an iterable of EventAnnouncement) on-->
+<!--   load, then opens a WebSocket to the event's group so new-->
+<!--   announcements appear live without a refresh.-->
 
-   Required context:
-     event                    — AttendanceEvent
-     recent_announcements     — queryset / list, can be empty
-   ─────────────────────────────────────────────────────────────── #}
+<!--   Required context:-->
+<!--     event                    — AttendanceEvent-->
+<!--     recent_announcements     — queryset / list, can be empty-->
+<!--   ─────────────────────────────────────────────────────────────── #}-->
 
 <div class="kk-announce-bar" id="kk-announce-bar"
      data-event-id="{{ event.pk }}"

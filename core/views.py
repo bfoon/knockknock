@@ -4,6 +4,7 @@ from polls.models import Questionnaire
 from games.models import Quiz
 from presentations.models import LiveSession
 from attendance.models import AttendanceEvent
+from attendance.venue_models import Venue
 
 from subscriptions.services import (
     count_items_for_user,
@@ -17,11 +18,28 @@ from subscriptions.services import (
 # Anything past this is reachable via the "See all" link beneath each list.
 DASHBOARD_RECENT_LIMIT = 5
 
+# Cap on advertised venues rendered on the public homepage. Keeps the page
+# from bloating if the super-admin flags too many; sort order is controlled
+# per-venue via Venue.advertise_order.
+HOME_VENUE_ADS_LIMIT = 8
+
 
 def home(request):
+    # Logged-in users skip straight to their dashboard — they have the
+    # venue picker on the event-create form, so the marketing homepage
+    # would just be noise for them.
     if request.user.is_authenticated:
         return redirect("core:dashboard")
-    return render(request, "core/home.html")
+
+    # Anonymous visitor: render the marketing homepage and pass through
+    # the curated venue advertisements. Venue.advertised() already
+    # filters to active + global + advertise=True and orders by the
+    # super-admin's chosen `advertise_order`, so we just slice it.
+    advertised_venues = list(Venue.advertised()[:HOME_VENUE_ADS_LIMIT])
+
+    return render(request, "core/home.html", {
+        "advertised_venues": advertised_venues,
+    })
 
 
 @login_required

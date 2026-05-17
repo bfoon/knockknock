@@ -123,6 +123,21 @@
     </div>
   {% else %}
     {{ form.venue }}
+    {# Empty-state hint. Superusers get a direct "create one" nudge; #}
+    {# everyone else just learns the feature exists and where to find #}
+    {# it once an admin has added something. #}
+    <div class="kk-venue-empty-hint mb-3">
+      <i class="bi bi-pin-map"></i>
+      {% if request.user.is_superuser %}
+        No saved venues yet.
+        <a href="{% url 'attendance:venue_create' %}?scope=global">Add a global venue</a>
+        to make it pickable here and on every other organizer's form.
+      {% else %}
+        Tip: site administrators can publish reusable venues that
+        auto-fill these coordinates.
+        <a href="{% url 'attendance:venue_list' %}">See available venues →</a>
+      {% endif %}
+    </div>
   {% endif %}
 
   <div class="form-check mb-3">
@@ -489,6 +504,17 @@
   display: flex; align-items: center; gap: .5rem;
 }
 .kk-form-section-title i { color: #7c3aed; }
+
+.kk-venue-empty-hint {
+  background: rgba(124, 58, 237, 0.08);
+  border: 1px dashed rgba(124, 58, 237, 0.35);
+  border-radius: 10px;
+  padding: .65rem .9rem;
+  font-size: .85rem;
+  color: var(--kk-text-dim);
+}
+.kk-venue-empty-hint > i { color: #c4b5fd; margin-right: .35rem; }
+.kk-venue-empty-hint a { color: #c4b5fd; text-decoration: underline; }
 
 .kk-geofence-panel {
   background: var(--kk-surface-2);

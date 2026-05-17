@@ -1133,3 +1133,106 @@ def event_delete(request, pk):
     if nxt.startswith("/"):  # accept relative paths only — guard open redirects
         return redirect(nxt)
     return redirect("attendance:event_list")
+
+# ─────────────────────────────────────────────────────────────────
+# Duplicate an attendance event — deep copy of the event row, every
+# registration form field, and every agenda item. Public identifiers
+# (token, code) are regenerated and status is forced to draft.
+# Registrations and announcements belong to the original event only
+# and are NOT copied.
+# ─────────────────────────────────────────────────────────────────
+
+def _next_event_copy_title(owner, base_title):
+    """
+    Return a title that doesn't collide with this organizer's existing
+    events. "X" → "Copy of X", then "Copy of X (2)", "(3)", … up to
+    99 before falling back to a plain "Copy of X" — the user can
+    rename freely from the edit page.
+    """
+    candidate = f"Copy of {base_title}"
+    if not AttendanceEvent.objects.filter(owner=owner, title=candidate).exists():
+        return candidate
+    for n in range(2, 100):
+        attempt = f"Copy of {base_title} ({n})"
+        if not AttendanceEvent.objects.filter(owner=owner, title=attempt).exists():
+            return attempt
+    return candidate
+
+
+@login_required
+@require_POST
+def event_duplicate(request, pk):
+    """
+    Deep-copy an attendance event so the organizer can reuse the format.
+
+    Copied:
+      - The AttendanceEvent row: title, description, agenda text, cover
+        image (by reference), location, online URL, all time fields,
+        timezone, capacity, registration mode + close time, walk-in
+        toggle, full geofence config, venue FK, every certificate
+        config field (template key, logo, logo positioning).
+      - Every EventField (the registration form's questions).
+      - Every AgendaItem (each agenda row).
+
+    NOT copied (intentional — those are per-instance, not template):
+      - public_token / code: regenerated on save() so the new event has
+        its own unique public URL and QR. If they weren't reset, a
+        single public URL would point at two events and the QR scans
+        would collide.
+      - status: forced to "draft" so a duplicate of a live event
+        doesn't silently open a second registration page on the same
+        template.
+      - Registration rows and EventAnnouncement rows: session history
+        attached to the original event only. The duplicate starts
+        clean.
+
+    POST-only — never reachable as GET so accidental link prefetch
+    can't create copies.
+    """
+    original = _own_event_or_404(request.user, pk)
+
+    with transaction.atomic():
+        # 1) Clone the AttendanceEvent row itself. We refetch by pk so
+        #    the Python instance we mutate isn't the same object the
+        #    rest of the request might hold a reference to.
+        copy = AttendanceEvent.objects.get(pk=original.pk)
+        copy.pk = None
+        copy.title = _next_event_copy_title(request.user, original.title)
+
+        # Server-generated identifiers must be cleared so the model's
+        # default callables run again on save(). Keeping the old values
+        # would violate the unique constraints on public_token / code.
+        copy.public_token = ""
+        copy.code = ""
+
+        # Force draft status. AttendanceEvent has STATUS_DRAFT defined
+        # but using the raw string keeps this resilient if the constant
+        # ever moves; both compile to "draft".
+        copy.status = "draft"
+
+        # auto_now_add / auto_now fields are handled by save().
+        copy.save()
+
+        # 2) Clone every EventField (the registration form's questions).
+        #    EventField rows carry preset_key, label, options, required,
+        #    order — all pure template data, safe to copy verbatim.
+        for f in original.fields.all():
+            f.pk = None
+            f.event = copy
+            f.save()
+
+        # 3) Clone every AgendaItem. Same deal — pure template content.
+        for item in original.agenda_items.all():
+            item.pk = None
+            item.event = copy
+            item.save()
+
+    messages.success(
+        request,
+        f"Duplicated “{original.title}” → “{copy.title}”. "
+        f"It's saved as a draft — open it to set new dates and publish.",
+    )
+    nxt = request.POST.get("next") or ""
+    if nxt.startswith("/"):
+        return redirect(nxt)
+    return redirect("attendance:event_list")

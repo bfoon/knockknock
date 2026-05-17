@@ -1,15 +1,22 @@
 """
-Venue management views — list, create, edit, (soft-)delete.
+Venue management views — list, create, edit, (soft-)delete, plus the
+public-facing advertisement detail page.
 
-The picker URLs are mounted under /attendance/venues/. Free users
-should never reach these pages through the UI (the dashboard entry
-points are gated), but the views also enforce permissions server-side
-in case someone hits a URL directly.
+The picker URLs are mounted under /attendance/venues/. All authenticated
+users (any plan) can hit `venue_list` and see the global registry the
+superuser publishes. Free / individual users won't see any "create"
+buttons — those are gated by Venue.can_create_global /
+Venue.can_create_for_org. The views also enforce these permissions
+server-side in case someone hits a URL directly.
+
+Public advertisement pages live under /attendance/venues/ad/<pk>/ and
+are reachable by anyone (no auth). They're the destination for the
+homepage venue cards.
 """
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.http import HttpResponseForbidden, HttpResponseBadRequest
+from django.http import HttpResponseForbidden, HttpResponseBadRequest, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 
 from organizations.models import Membership, Organization
@@ -25,9 +32,10 @@ def venue_list(request):
     """
     Shows the venues this user can see, grouped by scope.
 
-    Free / individual users get a friendly empty state explaining the
-    feature is a Corporate add-on (we don't 403 — that would feel
-    punitive — we just have nothing to show them).
+    All authenticated users see the global registry now (this was
+    previously corporate-only). Free / individual / team users simply
+    don't get any "create venue" buttons — they're just consumers of
+    the superuser's curated list.
     """
     venues = Venue.visible_to(request.user).select_related("organization")
     globals_qs = [v for v in venues if v.is_global]
@@ -76,7 +84,8 @@ def venue_create(request):
     default_radius = SiteSetting.current().default_geofence_radius_m
 
     if request.method == "POST":
-        form = VenueForm(request.POST)
+        form = VenueForm(request.POST, request.FILES,
+                         user=request.user, scope=scope)
         if form.is_valid():
             venue = form.save(commit=False)
             venue.organization = organization  # None for global
@@ -88,7 +97,8 @@ def venue_create(request):
             messages.success(request, f"Saved venue '{venue.name}'.")
             return redirect("attendance:venue_list")
     else:
-        form = VenueForm(initial={"default_radius_m": default_radius})
+        form = VenueForm(initial={"default_radius_m": default_radius},
+                         user=request.user, scope=scope)
 
     return render(request, "attendance/venue_form.html", {
         "form": form,
@@ -107,19 +117,22 @@ def venue_edit(request, pk):
     if not venue.can_edit(request.user):
         return HttpResponseForbidden("You can't edit this venue.")
 
+    scope = "global" if venue.is_global else "org"
+
     if request.method == "POST":
-        form = VenueForm(request.POST, instance=venue)
+        form = VenueForm(request.POST, request.FILES, instance=venue,
+                         user=request.user, scope=scope)
         if form.is_valid():
             form.save()
             messages.success(request, f"Updated '{venue.name}'.")
             return redirect("attendance:venue_list")
     else:
-        form = VenueForm(instance=venue)
+        form = VenueForm(instance=venue, user=request.user, scope=scope)
 
     return render(request, "attendance/venue_form.html", {
         "form": form,
         "venue": venue,
-        "scope": "global" if venue.is_global else "org",
+        "scope": scope,
         "organization": venue.organization,
         "is_new": False,
         "default_radius": SiteSetting.current().default_geofence_radius_m,
@@ -164,10 +177,32 @@ def site_settings(request):
     return render(request, "attendance/site_settings.html", {"form": form})
 
 
+# ─────────────────────────── Public advertisement page ───────────────────────────
+
+def venue_ad(request, pk):
+    """
+    Public detail page for an advertised global venue.
+
+    Anyone (logged-in or not) can reach this page — it's the landing
+    page linked from the homepage venue cards. We only serve it for
+    venues that are global + active + advertise=True; everything else
+    404s so the page can't be used to surface non-advertised inventory.
+    """
+    venue = get_object_or_404(
+        Venue,
+        pk=pk, is_active=True, is_global=True, advertise=True,
+    )
+    return render(request, "attendance/venue_ad.html", {
+        "venue": venue,
+    })
+
+
 # ─────────────────────────── helpers ───────────────────────────
 
 def _corporate_admin_orgs(user):
     """The orgs this user can add venues to (i.e. admin of a corporate org)."""
+    if not getattr(user, "is_authenticated", False):
+        return []
     if user.is_superuser:
         return list(Organization.objects.filter(kind=Organization.KIND_CORPORATE))
     return list(

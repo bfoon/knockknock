@@ -14,6 +14,10 @@ urlpatterns = [
     # NEW: delete a whole questionnaire (POST-only). Wired from the dashboard's
     # red trash bin and from the questionnaire list page.
     path("<int:pk>/delete/", views.delete, name="delete"),
+    # Duplicate a questionnaire (POST-only) — deep copy of questions,
+    # choices, and matrix rows. See polls.views.duplicate() for the
+    # full list of what's copied vs reset.
+    path("<int:pk>/duplicate/", views.duplicate, name="duplicate"),
 
     # results / export / reset
     path("<int:pk>/results/", views.questionnaire_results, name="results"),

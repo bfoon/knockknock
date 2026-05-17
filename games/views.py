@@ -2,6 +2,7 @@ import json
 
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
+from django.db import transaction
 from django.db.models import Count
 from django.http import JsonResponse, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import render, redirect, get_object_or_404
@@ -314,3 +315,89 @@ def export_session_word(request, pk, session_id):
     )
     response["Content-Disposition"] = f'attachment; filename="{_export_filename(session, "docx")}"'
     return response
+
+# ─────────────────────────────────────────────────────────────────
+# Duplicate a quiz — deep copy of the quiz, its questions, each
+# question's choices, and the rooms. Game answers / sessions are
+# session-time data and are NOT copied.
+# ─────────────────────────────────────────────────────────────────
+
+def _next_copy_title(owner, base_title):
+    """
+    Return a title that doesn't collide with the owner's existing quizzes.
+    "X" → "Copy of X", and on subsequent duplicates "Copy of X (2)",
+    "(3)", etc. Stops at 99 to avoid silly numbers and falls back to a
+    plain "Copy of X" — the user can always rename later.
+    """
+    candidate = f"Copy of {base_title}"
+    if not Quiz.objects.filter(owner=owner, title=candidate).exists():
+        return candidate
+    for n in range(2, 100):
+        attempt = f"Copy of {base_title} ({n})"
+        if not Quiz.objects.filter(owner=owner, title=attempt).exists():
+            return attempt
+    return candidate
+
+
+@login_required
+@require_POST
+def duplicate(request, pk):
+    """
+    Deep-copy a quiz the user owns so they can reuse the format.
+
+    What's copied: the Quiz row itself (all settings), every GameQuestion
+    with its GameChoice rows, and every GameRoom. What's NOT copied:
+    GameAnswer rows or LiveSessions — those are session results, not
+    template content, so a fresh duplicate starts clean.
+
+    POST-only so an accidental link prefetch can't create copies.
+    """
+    original = get_object_or_404(Quiz, pk=pk, owner=request.user)
+
+    with transaction.atomic():
+        # 1) Clone the Quiz row. Setting pk=None and calling save() is the
+        #    standard Django pattern for "copy this row with a new id".
+        copy = Quiz.objects.get(pk=original.pk)
+        copy.pk = None
+        copy.title = _next_copy_title(request.user, original.title)
+        # created_at / updated_at have auto_now_add / auto_now and will
+        # be reset by save(). FileField (logo) is shared by reference —
+        # both quizzes point at the same image file, which is fine
+        # since neither edits the upload directly.
+        copy.save()
+
+        # 2) Clone every question, building a map from old → new so we
+        #    can attach choices to the correct new question below.
+        question_map = {}
+        for q in original.questions.all():
+            old_pk = q.pk
+            q.pk = None
+            q.quiz = copy
+            q.save()
+            question_map[old_pk] = q
+
+        # 3) Clone choices, attaching each to its new question.
+        for old_q_pk, new_q in question_map.items():
+            old_choices = GameChoice.objects.filter(question_id=old_q_pk)
+            for c in old_choices:
+                c.pk = None
+                c.question = new_q
+                c.save()
+
+        # 4) Clone rooms. Slugs are unique per quiz so they're free to
+        #    keep the same slug under the new quiz.
+        for room in original.rooms.all():
+            room.pk = None
+            room.quiz = copy
+            room.save()
+
+    messages.success(
+        request,
+        f"Duplicated “{original.title}” → “{copy.title}”. "
+        f"Edit it from your games list.",
+    )
+    # Stay on the list per the user's preference — no auto-redirect to edit.
+    nxt = request.POST.get("next") or ""
+    if nxt.startswith("/"):
+        return redirect(nxt)
+    return redirect("games:list")

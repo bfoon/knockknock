@@ -175,8 +175,25 @@
           </div>
           <i class="bi bi-arrow-right text-secondary"></i>
         </a>
-<!--        {# Inline POST form for delete. Confirm() guards against accidental clicks.-->
-<!--           `next` ensures we return to the dashboard, not the polls list. #}-->
+<!--        {# Duplicate button — POSTs to polls:duplicate. Deep-copies #}
+        {# every question, choice, and matrix row; lands the user back #}
+        {# on the dashboard with a flash message. Same form pattern as #}
+        {# delete for consistency. #}-->
+        <form method="post"
+              action="{% url 'polls:duplicate' q.pk %}"
+              class="kk-row-action-form"
+              onsubmit="return confirm('Duplicate “{{ q.title|escapejs }}”? The copy will include all questions.');">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{% url 'core:dashboard' %}">
+          <button type="submit"
+                  class="kk-row-duplicate"
+                  title="Duplicate questionnaire"
+                  aria-label="Duplicate {{ q.title }}">
+            <i class="bi bi-files"></i>
+          </button>
+        </form>
+<!--        {# Inline POST form for delete. Confirm() guards against accidental clicks.
+           `next` ensures we return to the dashboard, not the polls list. #}-->
         <form method="post"
               action="{% url 'polls:delete' q.pk %}"
               class="kk-row-delete-form"
@@ -225,6 +242,20 @@
            title="View results & export">
           <i class="bi bi-bar-chart-line"></i> Results
         </a>
+<!--        {# Duplicate — deep-copies questions, choices, and rooms. #}-->
+        <form method="post"
+              action="{% url 'games:duplicate' g.pk %}"
+              class="kk-row-action-form ms-1"
+              onsubmit="return confirm('Duplicate “{{ g.title|escapejs }}”? The copy will include all questions and rooms.');">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{% url 'core:dashboard' %}">
+          <button type="submit"
+                  class="kk-row-duplicate"
+                  title="Duplicate game"
+                  aria-label="Duplicate {{ g.title }}">
+            <i class="bi bi-files"></i>
+          </button>
+        </form>
 <!--        {# Same delete pattern as questionnaires — POST form with confirm + `next`. #}-->
         <form method="post"
               action="{% url 'games:delete' g.pk %}"
@@ -274,6 +305,21 @@
           </div>
           <i class="bi bi-arrow-right text-secondary"></i>
         </a>
+<!--        {# Duplicate event — deep-copies fields + agenda items. The #}
+        {# copy is saved as a draft so it doesn't auto-publish. #}-->
+        <form method="post"
+              action="{% url 'attendance:event_duplicate' e.pk %}"
+              class="kk-row-action-form"
+              onsubmit="return confirm('Duplicate “{{ e.title|escapejs }}”? The copy will include form fields and agenda, saved as a draft.');">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{% url 'core:dashboard' %}">
+          <button type="submit"
+                  class="kk-row-duplicate"
+                  title="Duplicate event"
+                  aria-label="Duplicate {{ e.title }}">
+            <i class="bi bi-files"></i>
+          </button>
+        </form>
         <form method="post"
               action="{% url 'attendance:event_delete' e.pk %}"
               class="kk-row-delete-form"
@@ -409,6 +455,40 @@
   outline: none;
 }
 .kk-row-delete:active { transform: translateY(0); }
+
+/* Duplicate button — same square shape and hover behaviour as
+   delete, but tinted cyan to read as a constructive action rather
+   than a destructive one. Pairs with .kk-row-action-form which is
+   identical to .kk-row-delete-form so the spacing between the two
+   icons stays consistent. */
+.kk-row-action-form {
+  margin: 0;
+  padding: 0;
+  flex: 0 0 auto;
+}
+.kk-row-duplicate {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  background: rgba(34, 211, 238, 0.08);
+  color: #67e8f9;
+  font-size: .95rem;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease,
+              color .15s ease, transform .15s ease;
+}
+.kk-row-duplicate:hover,
+.kk-row-duplicate:focus-visible {
+  background: rgba(34, 211, 238, 0.18);
+  border-color: rgba(34, 211, 238, 0.55);
+  color: #a5f3fc;
+  transform: translateY(-1px);
+  outline: none;
+}
+.kk-row-duplicate:active { transform: translateY(0); }
 
 /* ──────────────────────────────────────────────────────────────
    SEE ALL LINK

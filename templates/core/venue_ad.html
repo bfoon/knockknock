@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}{{ venue.name }} — Venue{% endblock %}
+
+{% block content %}
+<section class="kk-venue-ad-page">
+
+  <a href="{% url 'core:home' %}" class="kk-venue-ad-back kk-text-dim">
+    <i class="bi bi-arrow-left"></i> Back to home
+  </a>
+
+  <div class="kk-venue-ad-hero">
+    {% if venue.image %}
+      <img src="{{ venue.image.url }}" alt="{{ venue.name }}">
+    {% else %}
+      <div class="kk-venue-ad-hero-fallback">
+        <i class="bi bi-building"></i>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="kk-venue-ad-body">
+    <h1>{{ venue.name }}</h1>
+    {% if venue.tagline %}
+      <p class="kk-venue-ad-tag">{{ venue.tagline }}</p>
+    {% endif %}
+
+    {% if venue.address %}
+      <p class="kk-venue-ad-meta">
+        <i class="bi bi-geo-alt"></i> {{ venue.address }}
+      </p>
+    {% endif %}
+
+    {% if venue.description %}
+      <div class="kk-venue-ad-desc">
+        {{ venue.description|linebreaks }}
+      </div>
+    {% endif %}
+
+    <div class="kk-venue-ad-contact">
+      <h3 class="kk-venue-ad-h3">Get in touch</h3>
+      <ul class="kk-venue-ad-contact-list">
+        {% if venue.contact_email %}
+        <li>
+          <i class="bi bi-envelope"></i>
+          <a href="mailto:{{ venue.contact_email }}">{{ venue.contact_email }}</a>
+        </li>
+        {% endif %}
+        {% if venue.contact_phone %}
+        <li>
+          <i class="bi bi-telephone"></i>
+          <a href="tel:{{ venue.contact_phone }}">{{ venue.contact_phone }}</a>
+        </li>
+        {% endif %}
+        {% if venue.website_url %}
+        <li>
+          <i class="bi bi-globe"></i>
+          <a href="{{ venue.website_url }}" target="_blank" rel="noopener">{{ venue.website_url }}</a>
+        </li>
+        {% endif %}
+        {% if not venue.contact_email and not venue.contact_phone and not venue.website_url %}
+        <li class="kk-text-dim">No public contact details have been added for this venue.</li>
+        {% endif %}
+      </ul>
+    </div>
+
+    <div class="kk-venue-ad-map-wrap">
+      <h3 class="kk-venue-ad-h3">Location</h3>
+      <div id="kk-venue-ad-map" class="kk-venue-ad-map"></div>
+      <p class="kk-text-dim small mt-2">
+        Coordinates: {{ venue.latitude }}, {{ venue.longitude }}
+      </p>
+    </div>
+  </div>
+</section>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  if (typeof L === 'undefined') return;
+  const lat = {{ venue.latitude }};
+  const lng = {{ venue.longitude }};
+  const map = L.map('kk-venue-ad-map').setView([lat, lng], 16);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap',
+    maxZoom: 19,
+  }).addTo(map);
+  L.marker([lat, lng]).addTo(map).bindPopup({{ venue.name|escapejs|stringformat:"'%s'" }}).openPopup();
+});
+</script>
+
+<style>
+.kk-venue-ad-page { max-width: 960px; margin: 0 auto; padding: 1rem; }
+.kk-venue-ad-back { display: inline-block; margin: .5rem 0 1.25rem; text-decoration: none; }
+.kk-venue-ad-back:hover { color: #fff; }
+.kk-venue-ad-hero {
+  width: 100%; aspect-ratio: 21 / 9;
+  border-radius: 18px; overflow: hidden;
+  background: #0f172a; margin-bottom: 1.5rem;
+}
+.kk-venue-ad-hero img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.kk-venue-ad-hero-fallback {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 5rem; color: rgba(255,255,255,0.2);
+}
+.kk-venue-ad-body h1 { margin-bottom: .25rem; }
+.kk-venue-ad-tag { font-size: 1.1rem; color: rgba(255,255,255,0.75); margin-bottom: .75rem; }
+.kk-venue-ad-meta { color: rgba(255,255,255,0.6); margin-bottom: 1.5rem; }
+.kk-venue-ad-desc { font-size: 1.02rem; line-height: 1.6; margin-bottom: 2rem; }
+.kk-venue-ad-h3 { font-size: 1.1rem; margin-bottom: .75rem; }
+.kk-venue-ad-contact { margin: 2rem 0; }
+.kk-venue-ad-contact-list { list-style: none; padding: 0; margin: 0; }
+.kk-venue-ad-contact-list li { padding: .35rem 0; }
+.kk-venue-ad-contact-list li i { width: 1.4em; color: #a78bfa; }
+.kk-venue-ad-contact-list a { color: #c4b5fd; text-decoration: none; }
+.kk-venue-ad-contact-list a:hover { text-decoration: underline; }
+.kk-venue-ad-map-wrap { margin-top: 2rem; }
+.kk-venue-ad-map {
+  height: 360px; width: 100%;
+  border-radius: 12px; overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+</style>
+{% endblock %}

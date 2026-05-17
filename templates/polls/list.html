@@ -8,15 +8,49 @@
 </div>
 
 {% for q in questionnaires %}
-  <a class="kk-list-item" href="{% url 'polls:edit' q.pk %}">
-    <span class="kk-q-index">{{ forloop.counter }}</span>
-    <div class="flex-grow-1">
-      <div class="kk-list-item-title">{{ q.title }}</div>
-      <div class="kk-list-item-meta">{{ q.questions.count }} questions · template: {{ q.template_id }} · {{ q.updated_at|timesince }} ago</div>
-    </div>
-    <span class="kk-q-pill">{{ q.get_mode_display }}</span>
-    <i class="bi bi-chevron-right text-secondary"></i>
-  </a>
+  {# Row layout: clickable title area on the left, action buttons on the right. #}
+  {# Replacing the previous single wrapping <a> with a flex container so the #}
+  {# duplicate / delete buttons can sit alongside the row without nested forms. #}
+  <div class="kk-list-item kk-list-item-row">
+    <a class="kk-list-item-main" href="{% url 'polls:edit' q.pk %}">
+      <span class="kk-q-index">{{ forloop.counter }}</span>
+      <div class="flex-grow-1">
+        <div class="kk-list-item-title">{{ q.title }}</div>
+        <div class="kk-list-item-meta">{{ q.questions.count }} questions · template: {{ q.template_id }} · {{ q.updated_at|timesince }} ago</div>
+      </div>
+      <span class="kk-q-pill">{{ q.get_mode_display }}</span>
+      <i class="bi bi-chevron-right text-secondary"></i>
+    </a>
+
+    {# Duplicate — deep-copies questions, choices, matrix rows. #}
+    <form method="post"
+          action="{% url 'polls:duplicate' q.pk %}"
+          class="kk-row-action-form"
+          onsubmit="return confirm('Duplicate “{{ q.title|escapejs }}”? The copy will include all questions.');">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <button type="submit"
+              class="kk-row-duplicate"
+              title="Duplicate questionnaire"
+              aria-label="Duplicate {{ q.title }}">
+        <i class="bi bi-files"></i>
+      </button>
+    </form>
+
+    <form method="post"
+          action="{% url 'polls:delete' q.pk %}"
+          class="kk-row-delete-form"
+          onsubmit="return confirm('Delete “{{ q.title|escapejs }}”? This cannot be undone.');">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <button type="submit"
+              class="kk-row-delete"
+              title="Delete questionnaire"
+              aria-label="Delete {{ q.title }}">
+        <i class="bi bi-trash3-fill"></i>
+      </button>
+    </form>
+  </div>
 {% empty %}
   <div class="kk-empty">
     <div class="em">🎤</div>
@@ -24,4 +58,53 @@
     <a href="{% url 'polls:create' %}" class="kk-btn kk-btn-primary mt-2">Create your first one</a>
   </div>
 {% endfor %}
+
+<style>
+/* Action buttons next to each list row. Mirror the dashboard pattern so
+   both pages feel identical — same 34×34 square, same hover lift, cyan
+   for "duplicate" (constructive) and red for "delete" (destructive). */
+.kk-list-item-row { display: flex; align-items: center; gap: .5rem; }
+.kk-list-item-main {
+  display: flex; align-items: center; gap: .75rem;
+  flex: 1 1 auto; min-width: 0;
+  text-decoration: none; color: inherit;
+}
+.kk-list-item-main:hover { color: inherit; text-decoration: none; }
+
+.kk-row-action-form, .kk-row-delete-form {
+  margin: 0; padding: 0; flex: 0 0 auto;
+}
+.kk-row-duplicate, .kk-row-delete {
+  display: inline-grid; place-items: center;
+  width: 34px; height: 34px;
+  border-radius: 10px;
+  font-size: .95rem;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease,
+              color .15s ease, transform .15s ease;
+}
+.kk-row-duplicate {
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  background: rgba(34, 211, 238, 0.08);
+  color: #67e8f9;
+}
+.kk-row-duplicate:hover, .kk-row-duplicate:focus-visible {
+  background: rgba(34, 211, 238, 0.18);
+  border-color: rgba(34, 211, 238, 0.55);
+  color: #a5f3fc;
+  transform: translateY(-1px); outline: none;
+}
+.kk-row-delete {
+  border: 1px solid rgba(248, 113, 113, 0.22);
+  background: rgba(248, 113, 113, 0.08);
+  color: #f87171;
+}
+.kk-row-delete:hover, .kk-row-delete:focus-visible {
+  background: rgba(248, 113, 113, 0.18);
+  border-color: rgba(248, 113, 113, 0.55);
+  color: #fecaca;
+  transform: translateY(-1px); outline: none;
+}
+.kk-row-duplicate:active, .kk-row-delete:active { transform: translateY(0); }
+</style>
 {% endblock %}

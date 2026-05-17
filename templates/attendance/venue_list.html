@@ -5,19 +5,27 @@
 <div class="kk-venue-wrap">
   <div class="d-flex flex-wrap align-items-end mb-4 gap-2">
     <div>
-      <h1 class="mb-1">Venues</h1>
+      <a href="{% url 'attendance:event_list' %}" class="kk-text-dim small text-decoration-none">
+        <i class="bi bi-arrow-left"></i> Back to events
+      </a>
+      <h1 class="mb-1 mt-1">Venues</h1>
       <p class="text-secondary mb-0">
         Reusable locations that auto-fill the geofence on new events.
       </p>
     </div>
     <div class="ms-auto d-flex flex-wrap gap-2">
+      {# Site settings — its own button, always visible to the superuser, #}
+      {# not hidden alongside the "Add global venue" cluster. Site admins #}
+      {# need to reach it even when they don't intend to add a venue. #}
+      {% if request.user.is_superuser %}
+        <a href="{% url 'attendance:site_settings' %}" class="kk-btn kk-btn-ghost">
+          <i class="bi bi-gear"></i> Site settings
+        </a>
+      {% endif %}
       {% if can_create_global %}
         <a href="{% url 'attendance:venue_create' %}?scope=global"
            class="kk-btn kk-btn-primary">
           <i class="bi bi-globe2"></i> Add global venue
-        </a>
-        <a href="{% url 'attendance:site_settings' %}" class="kk-btn kk-btn-ghost">
-          <i class="bi bi-gear"></i> Site settings
         </a>
       {% endif %}
       {% for org in creatable_orgs %}
@@ -35,24 +43,52 @@
       Site-wide default geofence radius is currently
       <strong>{{ site_setting.default_geofence_radius_m }} m</strong>.
       New venues use this when no explicit radius is given.
+      <a href="{% url 'attendance:site_settings' %}" class="ms-1">Change →</a>
+    </div>
+  {% endif %}
+
+  {# Help line for users who can see venues but can't create any. #}
+  {% if not can_create_global and not creatable_orgs %}
+    <div class="kk-help-note mb-4">
+      <i class="bi bi-lightbulb"></i>
+      Pick any venue below when creating an event and the geofence
+      coordinates fill in automatically. The list is curated by the
+      site administrator.
     </div>
   {% endif %}
 
   {# ── Global venues ── #}
   <h3 class="kk-venue-section-title">
     <i class="bi bi-globe2"></i> Global venues
+    <span class="kk-text-dim small fw-normal ms-2">
+      Curated by the site administrator — available to every organizer.
+    </span>
   </h3>
   {% if global_venues %}
     <div class="kk-venue-grid">
       {% for v in global_venues %}{% include "attendance/_venue_card.html" with v=v %}{% endfor %}
     </div>
   {% else %}
-    <p class="kk-text-dim small">No global venues yet.</p>
+    {% if can_create_global %}
+      <p class="kk-text-dim small">
+        No global venues yet. Tap <strong>"Add global venue"</strong> above
+        to publish one — it'll appear on every organizer's event form.
+      </p>
+    {% else %}
+      <p class="kk-text-dim small">
+        No global venues have been published yet. Once the site
+        administrator adds some, they'll show up here and in the venue
+        picker on the event-create form.
+      </p>
+    {% endif %}
   {% endif %}
 
   {# ── Org venues ── #}
   <h3 class="kk-venue-section-title mt-4">
     <i class="bi bi-building"></i> Organization venues
+    <span class="kk-text-dim small fw-normal ms-2">
+      Only visible to members of the owning organization.
+    </span>
   </h3>
   {% if org_venues %}
     <div class="kk-venue-grid">
@@ -75,18 +111,23 @@
 .kk-venue-wrap { max-width: 1080px; margin: 0 auto; padding: 1.5rem; }
 .kk-venue-section-title {
   font-size: 1.05rem; font-weight: 600; margin-bottom: .75rem;
-  display: flex; align-items: center; gap: .5rem;
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
 }
 .kk-venue-grid {
   display: grid; gap: 1rem;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
 }
-.kk-site-note {
+.kk-site-note, .kk-help-note {
   background: rgba(34, 211, 238, 0.08);
   border: 1px solid rgba(34, 211, 238, 0.25);
   border-radius: 10px; padding: .75rem 1rem;
   font-size: .9rem;
 }
-.kk-site-note > i { color: #67e8f9; margin-right: .35rem; }
+.kk-site-note > i, .kk-help-note > i { color: #67e8f9; margin-right: .35rem; }
+.kk-help-note {
+  background: rgba(124, 58, 237, 0.08);
+  border-color: rgba(124, 58, 237, 0.25);
+}
+.kk-help-note > i { color: #c4b5fd; }
 </style>
 {% endblock %}

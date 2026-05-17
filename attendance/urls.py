@@ -14,6 +14,9 @@ urlpatterns = [
     path("<int:pk>/status/",                views.event_set_status,     name="event_set_status"),
     # POST-only delete wired from the dashboard's red bin.
     path("<int:pk>/delete/",                views.event_delete,         name="event_delete"),
+    # Duplicate an event (POST-only) — deep copy of fields and agenda
+    # items. See views.event_duplicate for what's copied vs reset.
+    path("<int:pk>/duplicate/",             views.event_duplicate,      name="event_duplicate"),
     path("<int:pk>/export.csv",             views.registrations_export, name="export_csv"),
 
     # Stats feed (JSON) consumed by the dashboard charts

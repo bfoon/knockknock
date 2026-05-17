@@ -54,4 +54,105 @@
     <p class="kk-text-dim mb-0">Project one chart per slide like Powerpoint, or flip to all-on-one-screen for retrospectives.</p>
   </div>
 </section>
+
+{# ─────────────── Featured venues (advertisement) ────────────── #}
+{# Only shown to logged-out visitors. Logged-in users have their own #}
+{# venue picker on the event-create form; the homepage stays clean #}
+{# for them. The `advertised_venues` context var is populated by the #}
+{# core home view (see views update note below). #}
+{% if user.is_anonymous and advertised_venues %}
+<section class="kk-venue-ads">
+  <div class="kk-venue-ads-head">
+    <h2>Featured meeting &amp; conference venues</h2>
+    <p class="kk-text-dim">
+      Hand-picked locations where you can host your next event. Tap a card to learn more.
+    </p>
+  </div>
+  <div class="kk-venue-ads-grid">
+    {% for v in advertised_venues %}
+    <a class="kk-venue-card" href="{{ v.get_ad_url }}">
+      <div class="kk-venue-card-img">
+        {% if v.image %}
+          <img src="{{ v.image.url }}" alt="{{ v.name }}" loading="lazy">
+        {% else %}
+          <div class="kk-venue-card-img-fallback">
+            <i class="bi bi-building"></i>
+          </div>
+        {% endif %}
+      </div>
+      <div class="kk-venue-card-body">
+        <h3 class="kk-venue-card-title">{{ v.name }}</h3>
+        {% if v.tagline %}
+          <p class="kk-venue-card-tag">{{ v.tagline }}</p>
+        {% elif v.address %}
+          <p class="kk-venue-card-tag"><i class="bi bi-geo-alt"></i> {{ v.address }}</p>
+        {% endif %}
+        <span class="kk-venue-card-cta">
+          Learn more <i class="bi bi-arrow-right"></i>
+        </span>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<style>
+.kk-venue-ads {
+  margin-top: 4rem;
+  padding-top: 3rem;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.kk-venue-ads-head { text-align: center; margin-bottom: 2rem; }
+.kk-venue-ads-head h2 { margin-bottom: .5rem; }
+.kk-venue-ads-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.25rem;
+}
+.kk-venue-card {
+  display: flex;
+  flex-direction: column;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  transition: transform .15s ease, border-color .15s ease, background .15s ease;
+}
+.kk-venue-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(124, 58, 237, 0.5);
+  background: rgba(255,255,255,0.06);
+}
+.kk-venue-card-img {
+  aspect-ratio: 16 / 10;
+  background: #0f172a;
+  overflow: hidden;
+}
+.kk-venue-card-img img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+}
+.kk-venue-card-img-fallback {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 3rem; color: rgba(255,255,255,0.25);
+}
+.kk-venue-card-body { padding: 1rem 1.1rem 1.1rem; }
+.kk-venue-card-title { margin: 0 0 .35rem; font-size: 1.15rem; }
+.kk-venue-card-tag {
+  margin: 0 0 .75rem;
+  font-size: .9rem;
+  color: rgba(255,255,255,0.6);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.kk-venue-card-cta {
+  font-size: .85rem; font-weight: 600;
+  color: #a78bfa;
+}
+</style>
 {% endblock %}

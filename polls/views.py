@@ -830,3 +830,102 @@ def delete(request, pk):
         return redirect(nxt)
     return redirect("polls:list")
 
+
+# ─────────────────────────────────────────────────────────────────
+# Duplicate a questionnaire — deep copy of the deck, every question,
+# each question's choices, and matrix rows. Session-time data
+# (responses, matrix answers, points allocations, collaborator
+# records) is intentionally NOT copied.
+# ─────────────────────────────────────────────────────────────────
+
+def _next_questionnaire_copy_title(owner, base_title):
+    """
+    Return a title that doesn't collide with the owner's existing
+    questionnaires. "X" → "Copy of X", and on subsequent duplicates
+    "Copy of X (2)", "(3)", etc. Stops at 99 and falls back to a
+    plain "Copy of X" — the user can always rename later.
+    """
+    candidate = f"Copy of {base_title}"
+    if not Questionnaire.objects.filter(owner=owner, title=candidate).exists():
+        return candidate
+    for n in range(2, 100):
+        attempt = f"Copy of {base_title} ({n})"
+        if not Questionnaire.objects.filter(owner=owner, title=attempt).exists():
+            return attempt
+    return candidate
+
+
+@login_required
+@require_POST
+def duplicate(request, pk):
+    """
+    Deep-copy a questionnaire so the user can reuse its format.
+
+    Copied:
+      - Questionnaire row (all settings, template, mode, logo by reference)
+      - Every Question (text, type, chart, typography, config JSON,
+        skip_rules, title-slide fields, etc.)
+      - Each question's Choice rows
+      - Each question's MatrixRow rows
+
+    NOT copied (intentional — those are session-time or trust-time data):
+      - Response, MatrixAnswer, PointsAllocation
+      - QuestionnaireCollaborator (the duplicate starts as a solo doc)
+      - Any LiveSession history
+
+    Permission: anyone who can edit the questionnaire (owner OR an
+    edit-role collaborator) can duplicate it. The copy's owner becomes
+    the duplicator — so a collaborator can fork the deck into their
+    own private workspace.
+
+    POST-only — never reachable as GET so a link prefetch can't make
+    accidental copies.
+    """
+    original = get_object_or_404(Questionnaire, pk=pk)
+    if not original.can_edit(request.user):
+        messages.error(request, "You don't have permission to duplicate this.")
+        return redirect("polls:list")
+
+    with transaction.atomic():
+        # 1) Clone the Questionnaire itself. Setting pk=None and calling
+        #    save() is Django's idiomatic "copy this row with a new id".
+        copy = Questionnaire.objects.get(pk=original.pk)
+        copy.pk = None
+        copy.owner = request.user
+        copy.title = _next_questionnaire_copy_title(request.user, original.title)
+        # created_at / updated_at get reset by save() (auto_now_*).
+        copy.save()
+
+        # 2) Clone each Question. Build old→new map so child rows
+        #    (choices, matrix rows) can be attached to the right new Q.
+        question_map = {}
+        for q in original.questions.all():
+            old_pk = q.pk
+            q.pk = None
+            q.questionnaire = copy
+            q.save()
+            question_map[old_pk] = q
+
+        # 3) Clone choices under their new questions.
+        for old_q_pk, new_q in question_map.items():
+            for c in Choice.objects.filter(question_id=old_q_pk):
+                c.pk = None
+                c.question = new_q
+                c.save()
+
+        # 4) Clone matrix rows (used by matrix-type questions).
+        for old_q_pk, new_q in question_map.items():
+            for row in MatrixRow.objects.filter(question_id=old_q_pk):
+                row.pk = None
+                row.question = new_q
+                row.save()
+
+    messages.success(
+        request,
+        f"Duplicated “{original.title}” → “{copy.title}”. "
+        f"Edit it from your menti list.",
+    )
+    nxt = request.POST.get("next") or ""
+    if nxt.startswith("/"):
+        return redirect(nxt)
+    return redirect("polls:list")

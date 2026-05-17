@@ -25,6 +25,7 @@
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'core:dashboard' %}">Dashboard</a>
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'polls:list' %}">Menti</a>
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'games:list' %}">Game</a>
+    <a class="kk-nav-link d-none d-md-inline" href="{% url 'attendance:event_list' %}">Attendance</a>
     <a class="kk-nav-link" href="{% url 'accounts:profile' %}"><i class="bi bi-person-circle"></i></a>
     <form action="{% url 'accounts:logout' %}" method="post" class="d-inline">{% csrf_token %}
       <button class="kk-btn kk-btn-ghost btn-sm">Log out</button>

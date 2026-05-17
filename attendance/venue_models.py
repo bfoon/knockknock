@@ -11,14 +11,26 @@ Two kinds of venues live in this table:
 
   - Global venues (organization=None, is_global=True).
     Only a Django superuser can create these. They appear in every
-    organizer's picker.
+    organizer's picker — on ALL plans (free, individual, team,
+    corporate). Think of them as a pre-curated public registry of
+    well-known meeting locations the superuser has vetted.
 
   - Org venues (organization=<some org>, is_global=False).
     Only an Admin of a Corporate-tier organization can create these.
     They appear only to members of that org.
 
-Free / individual users see no venue picker at all — they still type
-lat/lng manually on the event form, which keeps their flow unchanged.
+Free / individual / team users now see the picker — populated with
+global venues. They can still type custom lat/lng manually, and any
+saved venue's default radius can be overridden per-event.
+
+Advertised venues
+─────────────────
+Global venues can additionally be flagged `advertise=True` by the
+superuser. Advertised venues are rendered on the public homepage
+(only to logged-out visitors) as a marketing showcase. Each ad gets
+an image, tagline and longer description so the venue can present
+itself properly. Non-advertised global venues still work in the
+picker — they're just not promoted on the homepage.
 """
 
 from django.conf import settings
@@ -75,7 +87,7 @@ class Venue(models.Model):
         on_delete=models.CASCADE,
         related_name="venues",
         null=True, blank=True,
-        help_text="Null = global venue, visible to every organizer.",
+        help_text="Null = global venue, visible to every organizer on every plan.",
     )
     is_global = models.BooleanField(
         default=False,
@@ -91,11 +103,54 @@ class Venue(models.Model):
     default_radius_m = models.PositiveIntegerField(
         default=DEFAULT_GEOFENCE_RADIUS_M,
         help_text="Suggested geofence radius for events at this venue. "
-                  "Organizers can override per event.",
+                  "Organizers on any plan can override per event.",
     )
 
     is_active = models.BooleanField(default=True)
     notes = models.TextField(blank=True)
+
+    # ── Advertisement fields (super-admin only, global venues only) ──
+    # When `advertise=True` on a global venue, the public homepage
+    # renders a card with image + tagline + short description so
+    # visitors can discover the venue. These fields are ignored on
+    # org-scoped venues — even if set, the homepage never reads them
+    # for non-global rows.
+    advertise = models.BooleanField(
+        default=False,
+        help_text="Show this venue on the public homepage as an advertisement. "
+                  "Only honoured for global venues — super-admin only.",
+    )
+    image = models.ImageField(
+        upload_to="venues/ads/", blank=True, null=True,
+        help_text="Hero image for the homepage ad and the venue detail page. "
+                  "Landscape, ~1200×800 works best.",
+    )
+    tagline = models.CharField(
+        max_length=160, blank=True,
+        help_text="One-line pitch shown under the venue name on the homepage card.",
+    )
+    description = models.TextField(
+        blank=True,
+        help_text="Longer description shown on the public venue detail page. "
+                  "Plain text or simple HTML.",
+    )
+    contact_email = models.EmailField(
+        blank=True,
+        help_text="Optional public contact for venue enquiries on the ad page.",
+    )
+    contact_phone = models.CharField(
+        max_length=40, blank=True,
+        help_text="Optional public contact phone for venue enquiries.",
+    )
+    website_url = models.URLField(
+        blank=True,
+        help_text="Optional external website link for the venue ad page.",
+    )
+    advertise_order = models.PositiveIntegerField(
+        default=0,
+        help_text="Sort order on the homepage. Lower numbers appear first. "
+                  "Ties broken by name.",
+    )
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -130,6 +185,8 @@ class Venue(models.Model):
         indexes = [
             models.Index(fields=["is_global", "is_active"]),
             models.Index(fields=["organization", "is_active"]),
+            # Powers the homepage advertisement listing.
+            models.Index(fields=["advertise", "is_active", "advertise_order"]),
         ]
 
     def __str__(self):
@@ -143,6 +200,11 @@ class Venue(models.Model):
         # query can stay a single index lookup. If somebody flips this
         # via the admin, the flag reflects reality after save.
         self.is_global = self.organization_id is None
+        # Belt and braces: never let `advertise` stay true on a
+        # non-global venue. Only the super-admin's global registry
+        # should appear on the marketing homepage.
+        if not self.is_global:
+            self.advertise = False
         super().save(*args, **kwargs)
 
     # ── Visibility helpers ──────────────────────────────────────────
@@ -153,8 +215,12 @@ class Venue(models.Model):
         on their event-create form.
 
           - Anonymous / unauthenticated: nothing.
-          - Authenticated: every global venue, plus venues belonging to
-            corporate orgs they're an active member of.
+          - Authenticated (ANY PLAN — free, individual, team, corporate):
+            every active global venue. This is the change from the
+            earlier corporate-only behaviour: superuser-curated venues
+            are now a public registry across all plans.
+          - Authenticated corporate members: additionally see venues
+            scoped to corporate orgs they're an active member of.
         """
         if not getattr(user, "is_authenticated", False):
             return cls.objects.none()
@@ -172,8 +238,24 @@ class Venue(models.Model):
             .values_list("organization_id", flat=True)
         )
 
+        # Globals are unconditional for any authenticated user. Org
+        # venues come in only if the user is a member of that corp org.
         return cls.objects.filter(is_active=True).filter(
             models.Q(is_global=True) | models.Q(organization_id__in=org_ids)
+        )
+
+    @classmethod
+    def advertised(cls):
+        """
+        Queryset of venues to show on the public homepage as
+        advertisements. Restricted to active, global, advertise=True
+        rows so we never accidentally promote an org-scoped venue.
+        Ordered by `advertise_order` then `name` for a stable layout.
+        """
+        return (
+            cls.objects
+            .filter(is_active=True, is_global=True, advertise=True)
+            .order_by("advertise_order", "name")
         )
 
     # ── Permission helpers ──────────────────────────────────────────
@@ -209,3 +291,25 @@ class Venue(models.Model):
         if self.organization_id is None:
             return False  # global, but user isn't superuser
         return Venue.can_create_for_org(user, self.organization)
+
+    def can_advertise(self, user):
+        """
+        Only superusers can flip the `advertise` flag, and only on
+        global venues. The form layer uses this to decide whether to
+        render the advertisement fieldset at all.
+        """
+        return (
+            getattr(user, "is_authenticated", False)
+            and user.is_superuser
+            and self.is_global
+        )
+
+    # ── Display helpers used by the public ad page / homepage ──
+    def display_tagline(self):
+        """The tagline if set, otherwise the address (or empty)."""
+        return self.tagline or self.address or ""
+
+    def get_ad_url(self):
+        """Public URL for the venue advertisement detail page."""
+        from django.urls import reverse
+        return reverse("attendance:venue_ad", kwargs={"pk": self.pk})

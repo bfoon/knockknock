@@ -7,38 +7,88 @@
     <h1 class="mb-1">Attendance</h1>
     <p class="text-secondary mb-0">Meetings, trainings, workshops — anything with a guest list.</p>
   </div>
-  <a href="{% url 'attendance:event_create' %}" class="kk-btn kk-btn-primary">
-    <i class="bi bi-plus-lg"></i> New event
-  </a>
+  <div class="d-flex gap-2 flex-wrap">
+    {# Venues are a public registry on every plan — link is always shown #}
+    {# so organizers can discover and use superuser-curated locations. #}
+    <a href="{% url 'attendance:venue_list' %}" class="kk-btn kk-btn-ghost">
+      <i class="bi bi-pin-map"></i> Venues
+    </a>
+    {% if request.user.is_superuser %}
+      <a href="{% url 'attendance:site_settings' %}" class="kk-btn kk-btn-ghost">
+        <i class="bi bi-gear"></i> Site settings
+      </a>
+    {% endif %}
+    <a href="{% url 'attendance:event_create' %}" class="kk-btn kk-btn-primary">
+      <i class="bi bi-plus-lg"></i> New event
+    </a>
+  </div>
 </div>
 
 <div class="row g-3">
   {% for event in events %}
     <div class="col-md-6 col-lg-4">
-      <a href="{% url 'attendance:event_detail' event.pk %}" class="kk-event-card">
-        {% if event.cover_image %}
-          <div class="kk-event-cover" style="background-image: url('{{ event.cover_image.url }}')"></div>
-        {% else %}
-          <div class="kk-event-cover kk-event-cover--placeholder">
-            <i class="bi bi-calendar-event"></i>
+      {# Wrapper div holds both the clickable card and the action overlay. #}
+      {# The previous version wrapped the whole card in <a>, which made it #}
+      {# impossible to nest the POST forms for duplicate / delete. #}
+      <div class="kk-event-card-wrap">
+        <a href="{% url 'attendance:event_detail' event.pk %}" class="kk-event-card">
+          {% if event.cover_image %}
+            <div class="kk-event-cover" style="background-image: url('{{ event.cover_image.url }}')"></div>
+          {% else %}
+            <div class="kk-event-cover kk-event-cover--placeholder">
+              <i class="bi bi-calendar-event"></i>
+            </div>
+          {% endif %}
+          <div class="kk-event-card-body">
+            <span class="kk-status-pill kk-status-{{ event.status }} mb-2">
+              <span class="kk-status-dot"></span>
+              {{ event.get_status_display }}
+            </span>
+            <h3 class="mb-1">{{ event.title }}</h3>
+            <p class="kk-text-dim small mb-2">
+              <i class="bi bi-calendar3"></i> {{ event.starts_at|date:"D, j M · H:i" }}
+            </p>
+            <div class="kk-text-dim small">
+              {{ event.accepted_count }} accepted
+              {% if event.capacity %} / {{ event.capacity }}{% endif %}
+              · {{ event.checked_in_count }} present
+            </div>
           </div>
-        {% endif %}
-        <div class="kk-event-card-body">
-          <span class="kk-status-pill kk-status-{{ event.status }} mb-2">
-            <span class="kk-status-dot"></span>
-            {{ event.get_status_display }}
-          </span>
-          <h3 class="mb-1">{{ event.title }}</h3>
-          <p class="kk-text-dim small mb-2">
-            <i class="bi bi-calendar3"></i> {{ event.starts_at|date:"D, j M · H:i" }}
-          </p>
-          <div class="kk-text-dim small">
-            {{ event.accepted_count }} accepted
-            {% if event.capacity %} / {{ event.capacity }}{% endif %}
-            · {{ event.checked_in_count }} present
-          </div>
+        </a>
+
+        {# Action overlay — sits on top of the cover image at top-right. #}
+        {# A faint dark scrim behind the icons keeps them legible whether the #}
+        {# cover is a photo or the gradient placeholder. The whole overlay is #}
+        {# outside the <a> so clicks on the buttons don't trigger navigation. #}
+        <div class="kk-event-actions">
+          <form method="post"
+                action="{% url 'attendance:event_duplicate' event.pk %}"
+                class="kk-row-action-form"
+                onsubmit="return confirm('Duplicate “{{ event.title|escapejs }}”? The copy will include form fields and agenda, saved as a draft.');">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.path }}">
+            <button type="submit"
+                    class="kk-row-duplicate"
+                    title="Duplicate event"
+                    aria-label="Duplicate {{ event.title }}">
+              <i class="bi bi-files"></i>
+            </button>
+          </form>
+          <form method="post"
+                action="{% url 'attendance:event_delete' event.pk %}"
+                class="kk-row-delete-form"
+                onsubmit="return confirm('Delete “{{ event.title|escapejs }}”? This cannot be undone.');">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.path }}">
+            <button type="submit"
+                    class="kk-row-delete"
+                    title="Delete event"
+                    aria-label="Delete {{ event.title }}">
+              <i class="bi bi-trash3-fill"></i>
+            </button>
+          </form>
         </div>
-      </a>
+      </div>
     </div>
   {% empty %}
     <div class="col-12">
@@ -51,6 +101,9 @@
 </div>
 
 <style>
+/* Wrapper is the positioning context for the action overlay. */
+.kk-event-card-wrap { position: relative; }
+
 .kk-event-card {
   display: block; text-decoration: none; color: inherit;
   background: var(--kk-surface); border: 1px solid var(--kk-border);
@@ -81,5 +134,55 @@
 .kk-status-open .kk-status-dot { background: #22d3ee; }
 .kk-status-live .kk-status-dot { background: #fb7185; }
 .kk-status-closed .kk-status-dot { background: #f59e0b; }
+
+/* Action overlay sits in the top-right of the cover image. It's a
+   sibling of the <a> (not nested), so clicks fall through to the
+   buttons rather than triggering navigation. z-index keeps it above
+   the link's stacking context. */
+.kk-event-actions {
+  position: absolute; top: .55rem; right: .55rem;
+  display: flex; gap: .4rem;
+  z-index: 2;
+  /* Subtle dark scrim so the buttons stay legible whether the cover
+     is a bright photo or the soft gradient placeholder. */
+  background: rgba(15, 23, 42, 0.55);
+  padding: .3rem;
+  border-radius: 12px;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.kk-row-action-form, .kk-row-delete-form { margin: 0; padding: 0; }
+.kk-row-duplicate, .kk-row-delete {
+  display: inline-grid; place-items: center;
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  font-size: .9rem;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease,
+              color .15s ease, transform .15s ease;
+}
+.kk-row-duplicate {
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  background: rgba(34, 211, 238, 0.15);
+  color: #a5f3fc;
+}
+.kk-row-duplicate:hover, .kk-row-duplicate:focus-visible {
+  background: rgba(34, 211, 238, 0.3);
+  border-color: rgba(34, 211, 238, 0.7);
+  color: #ecfeff;
+  transform: translateY(-1px); outline: none;
+}
+.kk-row-delete {
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  background: rgba(248, 113, 113, 0.15);
+  color: #fecaca;
+}
+.kk-row-delete:hover, .kk-row-delete:focus-visible {
+  background: rgba(248, 113, 113, 0.3);
+  border-color: rgba(248, 113, 113, 0.7);
+  color: #fee2e2;
+  transform: translateY(-1px); outline: none;
+}
+.kk-row-duplicate:active, .kk-row-delete:active { transform: translateY(0); }
 </style>
 {% endblock %}

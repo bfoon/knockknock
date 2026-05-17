@@ -40,9 +40,17 @@ class VenueSelect(forms.Select):
     """
 
     def create_option(self, name, value, label, selected, index,
-                      subgroup=None, attrs=None):
+                      subgroup=None, attrs=None, **kwargs):
+        # Django's Select.create_option signature has shifted around
+        # between releases — some versions accept `subgroup`, some add
+        # `subindex`, some don't accept either as a kwarg. Rather than
+        # forward what we receive (which fails differently per version),
+        # call super with just the positional args + attrs, which is
+        # stable across every Django version we care about. We accept
+        # **kwargs so Django can still pass us whatever it likes
+        # without crashing here.
         opt = super().create_option(
-            name, value, label, selected, index, subgroup=subgroup, attrs=attrs,
+            name, value, label, selected, index, attrs=attrs,
         )
         # The empty "no venue" option has no value — skip it.
         if value:

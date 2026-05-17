@@ -10,6 +10,8 @@ urlpatterns = [
     path("<int:pk>/start/", views.start_session, name="start"),
     # NEW: delete a whole quiz (POST-only). Wired from the dashboard's red bin.
     path("<int:pk>/delete/", views.delete, name="delete"),
+    # Duplicate a quiz (POST-only) — deep copy of questions, choices, rooms.
+    path("<int:pk>/duplicate/", views.duplicate, name="duplicate"),
     path("<int:pk>/q/new/", views.question_create, name="question_create"),
     path("<int:pk>/q/<int:qpk>/", views.question_edit, name="question_edit"),
     path("<int:pk>/q/<int:qpk>/delete/", views.question_delete, name="question_delete"),

@@ -96,6 +96,12 @@ class GameQuestion(models.Model):
     QUESTION_TYPE_CHOICES = [
         ("mcq", "Classic multiple choice"),
         ("picture_choice", "Select the correct picture"),
+        # picture_prompt: one big prompt image + text-only answer choices.
+        # Storage is identical to MCQ (single correct choice, no per-choice
+        # image), so consumers/scoring/exports treat it like MCQ. The
+        # difference is purely visual on the play/present screens — the
+        # question's `image` field becomes a hero image above the buttons.
+        ("picture_prompt", "Image prompt with text answers"),
         ("puzzle", "Puzzle pieces"),
     ]
 

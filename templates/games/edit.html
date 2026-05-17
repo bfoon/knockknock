@@ -493,6 +493,12 @@
       <a href="{% url 'games:question_create' quiz.pk %}?type=picture_choice" class="kk-btn kk-btn-ghost w-100">
         <i class="bi bi-image"></i> Add picture-choice question
       </a>
+      {# picture_prompt: one prompt image + text answers (single correct).  #}
+      {# Distinct from picture_choice (where each answer carries its own    #}
+      {# image). Renders as a hero image with lettered text pills.          #}
+      <a href="{% url 'games:question_create' quiz.pk %}?type=picture_prompt" class="kk-btn kk-btn-ghost w-100">
+        <i class="bi bi-card-image"></i> Add image-prompt question
+      </a>
       <a href="{% url 'games:question_create' quiz.pk %}?type=puzzle" class="kk-btn kk-btn-ghost w-100">
         <i class="bi bi-puzzle"></i> Add puzzle question
       </a>

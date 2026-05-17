@@ -1875,6 +1875,93 @@
   @keyframes kkPuzzleFloat { 0%,100% { transform:translateY(0) rotate(-2deg); } 50% { transform:translateY(-12px) rotate(2deg); } }
   @keyframes kkPuzzleWinnerPop { 0% { transform:scale(.5); opacity:0; } 65% { transform:scale(1.12); opacity:1; } 100% { transform:scale(1); opacity:1; } }
   @media (max-width:760px) { .kk-picture-presenter-grid { grid-template-columns:1fr; } }
+
+  /* ──────── Live countdown progress bar ────────────────────────
+     Pinned to the bottom of the stage, full-width. Only shows on
+     game sessions (gated via data-kind) and only while the timer is
+     actually running (data-state on the wrapper). The fill width is
+     driven by JS in 60fps-ish increments so the bar glides instead
+     of stepping. Colour shifts from purple → orange → red as time
+     runs out, matching the typical quiz-game feel. */
+  .kk-stage-time-bar {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    padding: 0.75rem clamp(1rem, 3vw, 2.5rem);
+    pointer-events: none;
+    z-index: 30;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity .25s ease, transform .25s ease;
+  }
+  .kk-stage[data-kind="poll"] .kk-stage-time-bar { display: none; }
+  .kk-stage-time-bar[data-state="running"],
+  .kk-stage-time-bar[data-state="ended"] {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .kk-stage-time-bar-track {
+    position: relative;
+    width: 100%;
+    height: 22px;
+    background: rgba(15, 23, 42, 0.55);
+    border: 2px solid rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    overflow: hidden;
+    box-shadow:
+      0 8px 24px rgba(0, 0, 0, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+  .kk-stage-time-bar-fill {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    border-radius: 999px;
+    background:
+      repeating-linear-gradient(
+        -45deg,
+        rgba(255, 255, 255, 0.15) 0 12px,
+        transparent 12px 24px
+      ),
+      linear-gradient(90deg, #a855f7, #7c3aed);
+    transition: width 0.1s linear, background 0.4s ease;
+    transform-origin: left center;
+    box-shadow:
+      inset 0 2px 0 rgba(255, 255, 255, 0.18),
+      inset 0 -3px 0 rgba(0, 0, 0, 0.18);
+    background-size: 34px 34px, auto;
+    animation: kk-time-bar-stripes 1.2s linear infinite;
+  }
+  .kk-stage-time-bar[data-state="ended"] .kk-stage-time-bar-fill {
+    animation: none;
+  }
+  .kk-stage-time-bar[data-urgency="warn"] .kk-stage-time-bar-fill {
+    background:
+      repeating-linear-gradient(-45deg, rgba(255,255,255,0.18) 0 12px, transparent 12px 24px),
+      linear-gradient(90deg, #fb923c, #f59e0b);
+  }
+  .kk-stage-time-bar[data-urgency="urgent"] .kk-stage-time-bar-fill {
+    background:
+      repeating-linear-gradient(-45deg, rgba(255,255,255,0.22) 0 12px, transparent 12px 24px),
+      linear-gradient(90deg, #ef4444, #dc2626);
+    animation: kk-time-bar-stripes 0.6s linear infinite, kk-time-bar-pulse 0.9s ease-in-out infinite;
+  }
+  @keyframes kk-time-bar-stripes {
+    from { background-position: 0 0, 0 0; }
+    to   { background-position: 34px 0, 0 0; }
+  }
+  @keyframes kk-time-bar-pulse {
+    0%, 100% { filter: brightness(1); }
+    50%      { filter: brightness(1.25); }
+  }
+  .kk-stage.fullscreen .kk-stage-time-bar {
+    padding: 0.65rem clamp(1rem, 4vw, 4rem) calc(0.65rem + env(safe-area-inset-bottom, 0px));
+  }
+  @media (max-width: 760px) {
+    .kk-stage-time-bar { padding: 0.5rem 0.75rem; }
+    .kk-stage-time-bar-track { height: 16px; border-width: 1px; }
+  }
 </style>
 </head>
 
@@ -2243,13 +2330,32 @@
           title="Next question">
     <i class="bi bi-chevron-right"></i>
   </button>
+
+<!--  {# ──────── Live countdown progress bar ──────────────────────────-->
+<!--     Pinned across the bottom of the stage. CSS hides it for non-game-->
+<!--     sessions and when the timer isn't running. The JS in present.js-->
+<!--     drives the width/colour with sub-second smoothness — see the-->
+<!--     renderPresenterTimer function. The aria attrs let assistive tech-->
+<!--     read the remaining seconds without us repeating the chip text. #}-->
+  <div class="kk-stage-time-bar"
+       id="kk-stage-time-bar"
+       role="progressbar"
+       aria-label="Time remaining"
+       aria-valuemin="0"
+       aria-valuemax="100"
+       aria-valuenow="0"
+       data-state="idle">
+    <div class="kk-stage-time-bar-track">
+      <div class="kk-stage-time-bar-fill" id="kk-stage-time-bar-fill"></div>
+    </div>
+  </div>
 </div>
 
 <script src="{% static 'js/chart_preview.js' %}?v=14"></script>
 <script src="{% static 'js/chart_extra.js' %}?v=1"></script>
 <script src="{% static 'js/draw_overlay.js' %}?v=9"></script>
 
-{# Avatar catalog — must load BEFORE the room leaderboard shim and present.js. #}
+<!--{# Avatar catalog — must load BEFORE the room leaderboard shim and present.js. #}-->
 {% include "games/partials/avatar_data.html" with avatars=avatars %}
 
 

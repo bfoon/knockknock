@@ -434,7 +434,7 @@
         {{ form.points }}
       </div>
       <div class="col-md-4">
-        <label class="form-label">Image</label>
+        <label class="form-label kk-question-image-label">Image</label>
         {{ form.image }}
       </div>
     </div>
@@ -737,9 +737,17 @@
                                      "Image";
     });
 
+    // For picture_prompt the question's OWN image field becomes the
+    // hero image shown to players, so relabel it to make that clear.
+    // Other types keep the generic "Image" label.
+    document.querySelectorAll(".kk-question-image-label").forEach(el => {
+      el.textContent = (qtype === "picture_prompt") ? "Prompt image" : "Image";
+    });
+
     if (choiceHelp) {
       if (qtype === "picture_choice") choiceHelp.innerHTML = "<strong>Picture choice:</strong> upload one image per answer, add a caption if needed, and tick the correct picture. The presenter will show the pictures in the chart area instead of a bar chart.";
       else if (qtype === "puzzle") choiceHelp.innerHTML = "<strong>Puzzle:</strong> each row is one puzzle piece. Set Correct position as 1, 2, 3, 4... The presenter will show the first winner and avatar instead of a bar chart.";
+      else if (qtype === "picture_prompt") choiceHelp.innerHTML = "<strong>Image prompt:</strong> upload one image up top (under the question heading), then type plain-text answers below and tick the correct one. Players see a hero image with lettered (A/B/C…) text buttons.";
       else choiceHelp.innerHTML = "<strong>Classic:</strong> type answers and tick the correct option. The presenter will show the normal live chart.";
     }
   }

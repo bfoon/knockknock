@@ -54,6 +54,8 @@
   const leaderboardEl = document.getElementById("leaderboard");
   const presenterTimerChip = document.getElementById("presenter-timer-chip");
   const presenterTimerDetail = document.getElementById("presenter-timer-detail");
+  const stageTimeBar = document.getElementById("kk-stage-time-bar");
+  const stageTimeBarFill = document.getElementById("kk-stage-time-bar-fill");
   const btnExtend5 = document.getElementById("btn-extend-5");
   const btnExtend10 = document.getElementById("btn-extend-10");
 
@@ -407,6 +409,7 @@
 
   function renderPresenterTimer(s) {
     clearInterval(presenterTimerInterval);
+    stopStageTimeBar();
 
     const active = !!(s && s.state === "running" && s.question && s.question_started_at_ms);
     setPresenterTimerEnabled(active);
@@ -440,6 +443,69 @@
 
     tick();
     presenterTimerInterval = setInterval(tick, 250);
+    startStageTimeBar(s);
+  }
+
+  // ─────────────────────── Stage-spanning progress bar ───────────────────────
+  // Pinned across the bottom of the stage (markup in present.html). We
+  // animate it on requestAnimationFrame instead of the 250ms chip tick so
+  // the bar glides instead of stepping. data-state on the wrapper handles
+  // visibility, data-urgency drives the colour ramp via CSS.
+  let stageTimeBarRaf = null;
+
+  function startStageTimeBar(s) {
+    if (!stageTimeBar || !stageTimeBarFill) return;
+    const total = presenterQuestionSeconds(s);
+    const started = (typeof s.question_started_at_ms === "number") ? s.question_started_at_ms : null;
+    if (!total || !started) {
+      stopStageTimeBar();
+      return;
+    }
+    const totalMs = total * 1000;
+    stageTimeBar.dataset.state = "running";
+
+    function frame() {
+      const serverNow = Date.now() + presenterClockSkewMs;
+      const remainingMs = Math.max(0, totalMs - (serverNow - started));
+      const pct = totalMs > 0 ? (remainingMs / totalMs) * 100 : 0;
+
+      stageTimeBarFill.style.width = `${pct.toFixed(2)}%`;
+      stageTimeBar.setAttribute("aria-valuenow", String(Math.round(pct)));
+
+      // Urgency steps — warn at 50%, urgent at 25%.
+      let urgency = "calm";
+      if (pct <= 25) urgency = "urgent";
+      else if (pct <= 50) urgency = "warn";
+      if (stageTimeBar.dataset.urgency !== urgency) {
+        stageTimeBar.dataset.urgency = urgency;
+      }
+
+      if (remainingMs <= 0) {
+        // Hold the bar visible empty for a moment so the reveal feels
+        // like "timer just ran out". Next state push from the server
+        // will switch this back to idle naturally.
+        stageTimeBar.dataset.state = "ended";
+        stageTimeBarRaf = null;
+        return;
+      }
+      stageTimeBarRaf = requestAnimationFrame(frame);
+    }
+    frame();
+  }
+
+  function stopStageTimeBar() {
+    if (stageTimeBarRaf) {
+      cancelAnimationFrame(stageTimeBarRaf);
+      stageTimeBarRaf = null;
+    }
+    if (stageTimeBar) {
+      stageTimeBar.dataset.state = "idle";
+      stageTimeBar.dataset.urgency = "calm";
+      stageTimeBar.setAttribute("aria-valuenow", "0");
+    }
+    if (stageTimeBarFill) {
+      stageTimeBarFill.style.width = "100%";
+    }
   }
 
   // ─────────────────────── State handling ───────────────────────
@@ -571,7 +637,14 @@
       && (!tallyData.points || tallyData.points.length === 0)
     );
     if (kind === "game" && tallyEmpty && !revealForThis) {
-      renderGameChartLocked(q);
+      // picture_prompt swaps the generic 🔒 panel for the prompt
+      // image — players are answering "look at this and pick" so the
+      // audience needs to see what "this" is for the round to make sense.
+      if (questionType === "picture_prompt") {
+        renderPicturePromptPresenter(q);
+      } else {
+        renderGameChartLocked(q);
+      }
       return;
     }
 
@@ -585,6 +658,128 @@
 
     const reveal = q && q.id ? correctRevealByQuestion[normalizeChoiceId(q.id)] : null;
     if (reveal) renderCorrectAnswerPresenter(q, questionType, reveal);
+  }
+
+  function renderPicturePromptPresenter(q) {
+    // Layout: large prompt image on the left, lettered answer chips
+    // on the right. Mirrors the screenshot reference the user shared.
+    // Tally is hidden during the round; the chart replaces this on
+    // reveal via the normal flow.
+    if (!specialEl) return;
+    destroyChartForSpecialDisplay();
+    if (liveCanvas) liveCanvas.style.display = "none";
+    specialEl.style.display = "block";
+    ensurePicturePromptStyles();
+
+    const imageUrl = q && (q.image_url || q.image) ? (q.image_url || q.image) : "";
+    const choices = Array.isArray(q && q.choices) ? q.choices : [];
+    const letters = ["A", "B", "C", "D", "E", "F"];
+
+    const imageHtml = imageUrl
+      ? `<div class="kk-pp-image-wrap">
+           <img src="${escapeHtml(imageUrl)}" alt="" class="kk-pp-image">
+         </div>`
+      : `<div class="kk-pp-image-wrap kk-pp-image-missing">
+           <i class="bi bi-image"></i>
+           <p>No prompt image set for this question.</p>
+         </div>`;
+
+    const choicesHtml = choices.map((c, i) => `
+      <div class="kk-pp-answer">
+        <span class="kk-pp-letter">${letters[i] || (i + 1)}</span>
+        <span class="kk-pp-text">${escapeHtml(c.text || "")}</span>
+      </div>
+    `).join("");
+
+    specialEl.innerHTML = `
+      <div class="kk-pp-stage">
+        ${imageHtml}
+        <div class="kk-pp-answers">${choicesHtml}</div>
+      </div>
+    `;
+  }
+
+  function ensurePicturePromptStyles() {
+    if (document.getElementById("kk-picture-prompt-styles")) return;
+    const style = document.createElement("style");
+    style.id = "kk-picture-prompt-styles";
+    style.textContent = `
+      .kk-pp-stage {
+        width: 100%; height: 100%;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+        gap: clamp(1rem, 2.5vw, 3rem);
+        align-items: center;
+        padding: clamp(1rem, 3vw, 3rem);
+      }
+      .kk-pp-image-wrap {
+        width: 100%;
+        aspect-ratio: 4 / 3;
+        border-radius: 24px;
+        overflow: hidden;
+        background: rgba(15, 23, 42, 0.55);
+        border: 4px solid #fff;
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+        display: grid; place-items: center;
+      }
+      .kk-pp-image {
+        width: 100%; height: 100%;
+        object-fit: cover; display: block;
+      }
+      .kk-pp-image-missing {
+        color: rgba(226, 232, 240, 0.7);
+        text-align: center; padding: 1rem;
+        flex-direction: column;
+      }
+      .kk-pp-image-missing > i {
+        font-size: clamp(3rem, 6vw, 5rem);
+        opacity: 0.5;
+      }
+      .kk-pp-image-missing > p { margin: 0.5rem 0 0; }
+
+      .kk-pp-answers {
+        display: flex; flex-direction: column;
+        gap: clamp(0.5rem, 1.2vw, 1.1rem);
+      }
+      .kk-pp-answer {
+        display: flex; align-items: center;
+        gap: clamp(0.75rem, 1.5vw, 1.5rem);
+        background: #fff;
+        color: #0f172a;
+        border-radius: 999px;
+        padding: clamp(0.65rem, 1.4vw, 1.1rem) clamp(1rem, 2vw, 1.6rem);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+        font-family: 'Clash Display', system-ui, sans-serif;
+        font-weight: 700;
+      }
+      .kk-pp-letter {
+        flex: 0 0 auto;
+        width: clamp(2.4rem, 4vw, 3.2rem);
+        height: clamp(2.4rem, 4vw, 3.2rem);
+        border-radius: 999px;
+        display: grid; place-items: center;
+        background: linear-gradient(135deg, #a855f7, #7c3aed);
+        color: #fff;
+        font-size: clamp(1.1rem, 2vw, 1.6rem);
+        font-weight: 800;
+        box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.25);
+      }
+      .kk-pp-text {
+        font-size: clamp(1.05rem, 1.8vw, 1.7rem);
+        line-height: 1.2;
+        overflow-wrap: anywhere;
+      }
+
+      @media (max-width: 900px) {
+        .kk-pp-stage {
+          grid-template-columns: 1fr;
+          padding: 0.75rem;
+          gap: 0.85rem;
+        }
+        .kk-pp-image-wrap { aspect-ratio: 16 / 9; }
+      }
+    `;
+    document.head.appendChild(style);
   }
 
   function renderGameChartLocked(q) {

@@ -150,6 +150,7 @@ def question_create(request, pk):
     default_text = {
         "mcq": "New question",
         "picture_choice": "Select the correct picture",
+        "picture_prompt": "What is shown in this image?",
         "puzzle": "Arrange the puzzle pieces in the correct order",
     }.get(qtype, "New question")
 
@@ -166,6 +167,16 @@ def question_create(request, pk):
     elif qtype == "picture_choice":
         for i, text in enumerate(["Picture A", "Picture B", "Picture C", "Picture D"]):
             GameChoice.objects.create(question=q, text=text, order=i, correct_position=0, is_correct=(i == 0))
+    elif qtype == "picture_prompt":
+        # MCQ-shaped: text answers, one correct. Friendly defaults nod at
+        # the canonical "what ocean is this?" example so the new question
+        # type is self-explanatory the first time someone opens it.
+        # The author replaces these in the editor; the prompt image is
+        # uploaded via the existing GameQuestion.image field.
+        for i, text in enumerate(["Pacific Ocean", "Atlantic Ocean",
+                                  "Indian Ocean", "Arctic Ocean"]):
+            GameChoice.objects.create(question=q, text=text, order=i,
+                                      correct_position=0, is_correct=(i == 0))
     else:
         for i, text in enumerate(["Red", "Blue", "Yellow", "Green"]):
             GameChoice.objects.create(question=q, text=text, order=i, correct_position=0, is_correct=(i == 0))

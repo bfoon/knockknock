@@ -1676,16 +1676,57 @@
 
     if (!isSpecial) {
       tiles.innerHTML = "";
-      const shapes = ["▲","◆","●","■","★","♥"];
-      q.choices.forEach((c, i) => {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = `kk-tile-answer t${i % 4}`;
-        btn.dataset.choiceId = c.id;
-        btn.innerHTML = `<span class="shape">${shapes[i % shapes.length]}</span><span>${escapeHtml(c.text)}</span>`;
-        btn.addEventListener("click", () => answerGame(q, c, btn));
-        tiles.appendChild(btn);
-      });
+
+      // If this question has a prompt image (picture_prompt type, or any
+      // MCQ where the author attached an image), render it above the tiles.
+      // We insert it as a sibling BEFORE #tiles so it doesn't pollute the
+      // tile grid CSS but still flows with the question card.
+      const imageUrl = q.image_url || q.image || "";
+      // Always clear any previous prompt image first — questions advance
+      // through this function and a stale image from question N-1 would
+      // otherwise stick around if N has no image.
+      const existing = document.getElementById("kk-game-prompt-image");
+      if (existing) existing.remove();
+      if (imageUrl && tiles.parentNode) {
+        const wrap = document.createElement("div");
+        wrap.id = "kk-game-prompt-image";
+        wrap.className = "kk-game-prompt-image";
+        const img = document.createElement("img");
+        img.src = imageUrl;
+        img.alt = "";
+        wrap.appendChild(img);
+        tiles.parentNode.insertBefore(wrap, tiles);
+      }
+
+      // For picture_prompt we want lettered chips (A/B/C/D) like the
+      // screenshot reference, not the colourful Kahoot-style shape tiles.
+      // For everything else (classic MCQ) keep the existing look.
+      if (qtype === "picture_prompt") {
+        const letters = ["A", "B", "C", "D", "E", "F"];
+        q.choices.forEach((c, i) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "kk-pp-answer-btn";
+          btn.dataset.choiceId = c.id;
+          btn.innerHTML = `
+            <span class="kk-pp-letter">${letters[i] || (i + 1)}</span>
+            <span class="kk-pp-text">${escapeHtml(c.text || "")}</span>
+          `;
+          btn.addEventListener("click", () => answerGame(q, c, btn));
+          tiles.appendChild(btn);
+        });
+      } else {
+        const shapes = ["▲","◆","●","■","★","♥"];
+        q.choices.forEach((c, i) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = `kk-tile-answer t${i % 4}`;
+          btn.dataset.choiceId = c.id;
+          btn.innerHTML = `<span class="shape">${shapes[i % shapes.length]}</span><span>${escapeHtml(c.text)}</span>`;
+          btn.addEventListener("click", () => answerGame(q, c, btn));
+          tiles.appendChild(btn);
+        });
+      }
     }
 
     // ── Server-synced timer ──

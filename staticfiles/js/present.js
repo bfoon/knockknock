@@ -554,6 +554,27 @@
 
 
   function renderQuestionResults(q, chartId, questionType, labels, tallyData) {
+    // For GAME sessions we deliberately hide the live chart until the
+    // timer ends. The server stops broadcasting tallies during the
+    // round (see consumers.py _on_answer) and bundles the final tally
+    // into the correct_answer reveal. While we wait, render a clean
+    // "locked" panel so the presenter screen isn't empty.
+    //
+    // The lock lifts as soon as either:
+    //   - a tally arrives (which only happens at reveal time for games), or
+    //   - a correct_answer reveal arrives for this question.
+    const revealForThis = q && q.id ? correctRevealByQuestion[normalizeChoiceId(q.id)] : null;
+    const tallyEmpty = !tallyData || (
+      (!tallyData.counts || Object.keys(tallyData.counts).length === 0)
+      && (!tallyData.texts || tallyData.texts.length === 0)
+      && (!tallyData.values || tallyData.values.length === 0)
+      && (!tallyData.points || tallyData.points.length === 0)
+    );
+    if (kind === "game" && tallyEmpty && !revealForThis) {
+      renderGameChartLocked(q);
+      return;
+    }
+
     if (questionType === "picture_choice") {
       renderPictureChoicePresenter(q, tallyData);
     } else if (questionType === "puzzle") {
@@ -566,9 +587,88 @@
     if (reveal) renderCorrectAnswerPresenter(q, questionType, reveal);
   }
 
+  function renderGameChartLocked(q) {
+    if (!specialEl) return;
+    destroyChartForSpecialDisplay();
+    if (liveCanvas) liveCanvas.style.display = "none";
+    specialEl.style.display = "block";
+    ensureGameLockedStyles();
+    specialEl.innerHTML = `
+      <div class="kk-game-locked">
+        <div class="kk-game-locked-icon">🔒</div>
+        <h2>Answers locked</h2>
+        <p>The chart and correct answer reveal when the timer ends.</p>
+        <div class="kk-game-locked-sub">Keep them honest — no peeking.</div>
+      </div>
+    `;
+  }
+
+  function ensureGameLockedStyles() {
+    if (document.getElementById("kk-game-locked-styles")) return;
+    const style = document.createElement("style");
+    style.id = "kk-game-locked-styles";
+    style.textContent = `
+      .kk-game-locked {
+        width: 100%; height: 100%;
+        display: grid; place-items: center; align-content: center;
+        text-align: center; padding: clamp(1.5rem, 4vw, 4rem);
+        border-radius: 32px;
+        background:
+          radial-gradient(circle at top, rgba(124, 58, 237, 0.20), transparent 40%),
+          linear-gradient(135deg, rgba(15, 23, 42, 0.55), rgba(30, 41, 59, 0.45));
+        color: #e2e8f0;
+      }
+      .kk-game-locked-icon {
+        font-size: clamp(3.5rem, 9vw, 8rem);
+        line-height: 1; margin-bottom: .5rem;
+        filter: drop-shadow(0 6px 24px rgba(124, 58, 237, 0.4));
+        animation: kk-game-locked-pulse 2.4s ease-in-out infinite;
+      }
+      .kk-game-locked h2 {
+        font-family: 'Clash Display', system-ui, sans-serif;
+        font-size: clamp(1.6rem, 3.5vw, 3.5rem);
+        font-weight: 900; margin: .25rem 0;
+      }
+      .kk-game-locked p {
+        font-size: clamp(.95rem, 1.5vw, 1.4rem);
+        color: rgba(226, 232, 240, 0.78);
+        max-width: 700px; margin: 0;
+      }
+      .kk-game-locked-sub {
+        margin-top: 1rem; font-size: .85rem;
+        letter-spacing: .12em; text-transform: uppercase;
+        color: rgba(124, 58, 237, 0.85); font-weight: 700;
+      }
+      @keyframes kk-game-locked-pulse {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50%      { transform: scale(1.08); opacity: .85; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
   function onCorrectAnswerReveal(msg) {
     if (!msg || !msg.question_id) return;
     correctRevealByQuestion[normalizeChoiceId(msg.question_id)] = msg;
+
+    // Games hold the tally back until the timer ends, then ship it
+    // bundled into this reveal message. Adopt it as the latest tally
+    // so renderQuestionResults can draw the chart at the same moment
+    // the correct-answer overlay appears. For polls this is a no-op
+    // (reveals don't carry a tally there).
+    if (msg.tally) {
+      const qid = normalizeChoiceId(msg.question_id);
+      const q = currentState && currentState.question ? currentState.question : null;
+      const normalized = q
+        ? normalizeTallyForQuestion(q, msg.tally)
+        : msg.tally;
+      latestTally = normalized;
+      latestTallyByQuestion[qid] = normalized;
+      if (currentState && currentState.question
+          && normalizeChoiceId(currentState.question.id) === qid) {
+        currentState.tally = normalized;
+      }
+    }
 
     if (currentState && currentState.question && normalizeChoiceId(currentState.question.id) === normalizeChoiceId(msg.question_id)) {
       renderCurrentQuestion(currentState);

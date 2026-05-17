@@ -36,7 +36,7 @@ from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.db.models import Max
 from django.http import (
-    Http404, HttpResponse, HttpResponseBadRequest, JsonResponse,
+    FileResponse, Http404, HttpResponse, HttpResponseBadRequest, JsonResponse,
 )
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -446,7 +446,31 @@ def registrations_export(request, pk):
 
 
 @login_required
+@xframe_options_sameorigin
 def certificate_download(request, pk, reg_id):
+    """
+    Serve an attendee's certificate PDF.
+
+    Previously this redirected to `cert.pdf_file.url` (i.e. /media/...).
+    Two problems with that for the in-page preview:
+
+      1. Django's XFrameOptionsMiddleware sets X-Frame-Options: DENY by
+         default, so the browser refuses to embed the media response in
+         our same-origin iframe — Firefox shows the "another site has
+         embedded it" warning. Setting @xframe_options_sameorigin on the
+         redirect response doesn't help because the *media* response is
+         what actually paints inside the iframe.
+      2. /media/ isn't always served by Django (whitenoise covers static
+         only), so the header story depends on what's fronting media.
+
+    Streaming the PDF straight from this view sidesteps both problems —
+    we own the headers, and the response that paints in the iframe is
+    the one wearing the sameorigin allowance.
+
+    `?download=1` (or any truthy value) flips to attachment disposition
+    so a "Download" link can force a save even if the browser would
+    otherwise display the PDF inline.
+    """
     event = _own_event_or_404(request.user, pk)
     reg = get_object_or_404(Registration, pk=reg_id, event=event)
     if reg.status != Registration.STATUS_CHECKED_IN:
@@ -454,9 +478,24 @@ def certificate_download(request, pk, reg_id):
         return redirect("attendance:event_detail", pk=event.pk)
     cert = services.generate_certificate(reg)
     if not cert.pdf_file:
-        messages.warning(request, f"Certificate issued (serial {cert.serial}) — install reportlab to render PDFs.")
+        messages.warning(
+            request,
+            f"Certificate issued (serial {cert.serial}) — install reportlab to render PDFs.",
+        )
         return redirect("attendance:event_detail", pk=event.pk)
-    return redirect(cert.pdf_file.url)
+
+    # Open the saved PDF and stream it back. FileResponse handles the
+    # Content-Type, Content-Length and range requests for us.
+    force_download = bool(request.GET.get("download"))
+    safe_name = (reg.full_name or reg.email or f"attendee-{reg.pk}").replace('"', "")
+    filename = f"certificate-{safe_name}.pdf"
+    response = FileResponse(
+        cert.pdf_file.open("rb"),
+        as_attachment=force_download,
+        filename=filename,
+        content_type="application/pdf",
+    )
+    return response
 
 
 @login_required

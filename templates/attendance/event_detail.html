@@ -268,10 +268,16 @@
               </button>
             {% else %}
               {% if event.generate_certificates %}
-                <a href="{% url 'attendance:certificate_download' event.pk r.pk %}"
-                   class="kk-btn kk-btn-ghost btn-sm" title="Certificate">
+                {# Opens the certificate preview modal (defined once near the #}
+                {# bottom of this template). The JS listener reads the data-* #}
+                {# attrs to load the right PDF and wire the download button. #}
+                <button type="button"
+                        class="kk-btn kk-btn-ghost btn-sm kk-cert-open"
+                        title="Preview & download certificate"
+                        data-cert-url="{% url 'attendance:certificate_download' event.pk r.pk %}"
+                        data-cert-name="{{ r.full_name|default:r.email|escape }}">
                   <i class="bi bi-award"></i>
-                </a>
+                </button>
               {% endif %}
               <button name="action" value="uncheck_in" class="kk-btn kk-btn-ghost btn-sm" title="Undo check-in">
                 <i class="bi bi-arrow-counterclockwise"></i>
@@ -792,6 +798,139 @@
 })();
 </script>
 
+<!--{# ─────────── Certificate preview modal ───────────────────────────────-->
+<!--   Single modal reused by every certificate button on the page. The-->
+<!--   click handler reads `data-cert-url` + `data-cert-name` off the-->
+<!--   button and points the iframe + download link at the right PDF.-->
+
+<!--   The view at certificate_download already redirects to the saved-->
+<!--   PDF's media URL after generating it on first hit, so the iframe-->
+<!--   can use that URL directly — browsers display PDFs inline by-->
+<!--   default. Same URL backs the "Download" button below (the-->
+<!--   `download` attribute respects the redirect target since both-->
+<!--   the view and /media/ live on the same origin).-->
+<!--─────────────────────────────────────────────────────────────────── #}-->
+<div class="modal fade" id="kk-cert-modal" tabindex="-1"
+     aria-labelledby="kk-cert-modal-title" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content kk-cert-modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="kk-cert-modal-title">
+          <i class="bi bi-award"></i> Certificate preview
+        </h5>
+        <button type="button" class="btn-close btn-close-white"
+                data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-0">
+        {# Holder collapses to its loading state until a button sets the src. #}
+        <div class="kk-cert-frame-wrap">
+          <div class="kk-cert-loading" id="kk-cert-loading">
+            <div class="spinner-border" role="status" aria-hidden="true"></div>
+            <div class="mt-2 kk-text-dim small">Generating preview…</div>
+          </div>
+          <iframe id="kk-cert-frame"
+                  class="kk-cert-frame"
+                  title="Certificate preview"></iframe>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <span class="kk-text-dim small me-auto" id="kk-cert-name-label"></span>
+        <button type="button" class="kk-btn kk-btn-ghost"
+                data-bs-dismiss="modal">Close</button>
+        <a id="kk-cert-download" class="kk-btn kk-btn-primary" href="#" download>
+          <i class="bi bi-download"></i> Download PDF
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  // The Bootstrap JS bundle is loaded at the bottom of base.html, AFTER
+  // renders. If we ran this IIFE synchronously, the
+  // global `bootstrap` would still be undefined and the modal would
+  // silently never wire up. Waiting for DOMContentLoaded sidesteps the
+  // ordering problem regardless of where this script ends up in the page.
+  function init() {
+    const modalEl = document.getElementById("kk-cert-modal");
+    if (!modalEl) {
+      console.error("[cert-modal] #kk-cert-modal element missing.");
+      return;
+    }
+    if (typeof bootstrap === "undefined" || !bootstrap.Modal) {
+      console.error(
+        "[cert-modal] Bootstrap JS not loaded yet. Make sure "
+        + "bootstrap.bundle.min.js is included before this script runs."
+      );
+      return;
+    }
+
+    const modal = new bootstrap.Modal(modalEl);
+    const frame = document.getElementById("kk-cert-frame");
+    const loading = document.getElementById("kk-cert-loading");
+    const dlLink = document.getElementById("kk-cert-download");
+    const nameLabel = document.getElementById("kk-cert-name-label");
+
+    document.querySelectorAll(".kk-cert-open").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const url = btn.dataset.certUrl;
+        const who = btn.dataset.certName || "";
+        if (!url) {
+          console.warn("[cert-modal] button missing data-cert-url", btn);
+          return;
+        }
+
+        // Reset state every time so the previous attendee's preview
+        // doesn't flash before the new one loads.
+        loading.style.display = "";
+        frame.style.opacity = "0";
+        frame.src = "about:blank";
+        dlLink.href = url + (url.includes("?") ? "&" : "?") + "download=1";
+        // The view does a redirect to the saved PDF. Suggest a sensible
+        // filename to the browser via the `download` attribute — Chrome
+        // and Firefox honour it across same-origin redirects.
+        dlLink.setAttribute(
+          "download",
+          who ? `certificate-${who}.pdf` : "certificate.pdf"
+        );
+        nameLabel.textContent = who ? `For ${who}` : "";
+
+        modal.show();
+
+        // Defer the actual iframe load until the modal is opening, so
+        // we don't kick off a PDF generation request the user is about
+        // to cancel by tapping outside the dialog.
+        requestAnimationFrame(() => { frame.src = url; });
+      });
+    });
+
+    // Hide the spinner once the PDF has actually painted.
+    frame.addEventListener("load", () => {
+      if (frame.src && frame.src !== "about:blank") {
+        loading.style.display = "none";
+        frame.style.opacity = "1";
+      }
+    });
+
+    // Bootstrap fires this when the modal is fully dismissed; blank the
+    // iframe so the PDF stops downloading / rendering in the background.
+    modalEl.addEventListener("hidden.bs.modal", () => {
+      frame.src = "about:blank";
+      loading.style.display = "";
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    // Already past parsing — schedule on the next tick so any inline
+    // scripts following us still have a chance to load Bootstrap first.
+    setTimeout(init, 0);
+  }
+})();
+</script>
+
 <style>
 .kk-status-strip { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
 .kk-status-pill {
@@ -934,6 +1073,46 @@
   border: 1px solid var(--kk-border);
   border-radius: var(--kk-radius);
   padding: 1.25rem 1.5rem;
+}
+/* ── Certificate preview modal ─────────────────────────────────── */
+.kk-cert-modal-content {
+  background: var(--kk-surface);
+  border: 1px solid var(--kk-border);
+  border-radius: 14px;
+  color: inherit;
+}
+.kk-cert-modal-content .modal-header,
+.kk-cert-modal-content .modal-footer {
+  border-color: var(--kk-border);
+}
+.kk-cert-modal-content .modal-title i { color: #fbbf24; }
+
+.kk-cert-frame-wrap {
+  position: relative;
+  /* PDFs read best landscape — match the aspect ratio of the
+     A4/Letter landscape certificates we render. */
+  aspect-ratio: 4 / 3;
+  background: #0f172a;
+  overflow: hidden;
+}
+.kk-cert-frame {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  border: 0;
+  background: #0f172a;
+  opacity: 0;
+  transition: opacity .25s ease;
+}
+.kk-cert-loading {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  align-content: center;
+  z-index: 1;
+  color: var(--kk-text-dim);
+}
+.kk-cert-loading .spinner-border {
+  width: 2.5rem; height: 2.5rem;
+  color: rgba(124, 58, 237, 0.85);
 }
 </style>
 {% endblock %}

@@ -312,6 +312,17 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 },
             )
 
+        # For GAME sessions we hold the live tally back until the timer
+        # expires (see _on_reveal_answer / _correct_answer_payload below).
+        # Showing a running chart while the round is still open lets
+        # late-clicking participants see which answer is winning and
+        # copy it — that defeats the whole point of a timed quiz.
+        # Polls still get the live chart on every submission, including
+        # the reaction-burst path above, because that's the experience
+        # we want there.
+        if result.get("kind") == "game":
+            return
+
         tally = await self._tally(self.session_pk, msg.get("question_id"))
 
         await self.channel_layer.group_send(
@@ -960,6 +971,13 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             correct_choice_ids = [c["id"] for c in correct_choices]
             correct_order = []
 
+        # Game answers don't broadcast tallies on submission (see
+        # _on_answer above) — the chart is intentionally hidden during
+        # the round. Bundle the final tally INTO this reveal payload
+        # so the presenter screen can render the chart and the
+        # correct-answer overlay at the same moment the timer ends.
+        tally = self._game_tally_payload(session, question.id)
+
         return {
             "type": "correct_answer",
             "reason": "timer_ended",
@@ -968,6 +986,7 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             "correct_choice_ids": correct_choice_ids,
             "correct_order": correct_order,
             "correct_choices": correct_choices,
+            "tally": tally,
         }
 
     @database_sync_to_async
@@ -1146,7 +1165,27 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 payload["my_answer"] = self._my_answer_for(session, current, uid)
 
         if current:
-            payload["tally"] = self._sync_tally(session, current.id)
+            # Games hide the tally until the question's timer is up
+            # (matches the live-broadcast rule in _on_answer). If a
+            # presenter reloads mid-round, the snapshot must NOT
+            # carry a chart back to them. Polls always include the
+            # tally because their chart is part of the live UX.
+            include_tally = True
+            if session.kind == "game":
+                include_tally = False
+                started = session.question_started_at
+                if started:
+                    total_allowed = (
+                        int(getattr(current, "time_limit", 0) or 0)
+                        + int(session.time_extension_seconds or 0)
+                    )
+                    elapsed = (timezone.now() - started).total_seconds()
+                    # Match the 0.25s grace used by _correct_answer_payload
+                    # so the chart appears exactly when the reveal does.
+                    if elapsed >= max(0, total_allowed) - 0.25:
+                        include_tally = True
+            if include_tally:
+                payload["tally"] = self._sync_tally(session, current.id)
 
         return payload
 

@@ -517,6 +517,11 @@
     if (nextQuestionId && previousQuestionId !== nextQuestionId) {
       revealRequestQuestionId = null;
       clearTimeout(revealRetryTimer);
+      // Strip any reveal banner from the previous question — it lives on
+      // #chart-wrap, which is shared across questions, so without this it
+      // would linger until renderCorrectAnswerPresenter is called again.
+      const cw = document.getElementById("chart-wrap");
+      if (cw) cw.querySelectorAll(".kk-correct-answer-banner").forEach(el => el.remove());
     }
     if (typeof s.server_time_ms === "number") {
       presenterClockSkewMs = s.server_time_ms - Date.now();
@@ -657,7 +662,14 @@
     }
 
     const reveal = q && q.id ? correctRevealByQuestion[normalizeChoiceId(q.id)] : null;
-    if (reveal) renderCorrectAnswerPresenter(q, questionType, reveal);
+    if (reveal) {
+      renderCorrectAnswerPresenter(q, questionType, reveal);
+    } else {
+      // No reveal yet for this question — make sure no banner from a
+      // previous render is still sitting on #chart-wrap.
+      const cw = document.getElementById("chart-wrap");
+      if (cw) cw.querySelectorAll(".kk-correct-answer-banner").forEach(el => el.remove());
+    }
   }
 
   function renderPicturePromptPresenter(q) {
@@ -875,33 +887,121 @@
     const style = document.createElement("style");
     style.id = "kk-correct-answer-reveal-styles";
     style.textContent = `
-      .kk-correct-answer-reveal {
+      /* Big, prominent reveal banner anchored to the bottom of the chart wrap.
+         Sits above the live chart (z-index 60) but only covers the bottom
+         strip, so the tally bars stay visible underneath. */
+      .kk-correct-answer-banner {
         position: absolute;
-        left: clamp(12px, 2vw, 24px);
-        top: clamp(12px, 2vw, 24px);
+        left: 50%;
+        bottom: clamp(14px, 2.5vw, 28px);
+        transform: translateX(-50%);
         z-index: 60;
-        max-width: min(520px, calc(100% - 32px));
-        padding: .8rem 1rem;
-        border-radius: 18px;
-        background: linear-gradient(135deg, rgba(22,163,74,.94), rgba(20,83,45,.92));
+        width: min(92%, 1100px);
+        padding: clamp(.9rem, 1.6vw, 1.5rem) clamp(1.1rem, 2vw, 2rem);
+        border-radius: 24px;
+        background: linear-gradient(135deg, rgba(22,163,74,.96), rgba(20,83,45,.94));
         color: #fff;
-        border: 1px solid rgba(255,255,255,.24);
-        box-shadow: 0 20px 55px rgba(0,0,0,.38), 0 0 28px rgba(34,197,94,.25);
-        backdrop-filter: blur(12px);
-        font-weight: 900;
-        line-height: 1.25;
+        border: 2px solid rgba(255,255,255,.32);
+        box-shadow:
+          0 24px 60px rgba(0,0,0,.45),
+          0 0 0 6px rgba(34,197,94,.18),
+          0 0 38px rgba(34,197,94,.35);
+        backdrop-filter: blur(10px);
         pointer-events: none;
+        display: flex;
+        align-items: center;
+        gap: clamp(.8rem, 1.6vw, 1.4rem);
+        animation: kkCorrectBannerIn .55s cubic-bezier(.2,.9,.3,1.2) both;
       }
-      .kk-correct-answer-reveal .label { display:block; font-size:.78rem; letter-spacing:.08em; text-transform:uppercase; opacity:.82; margin-bottom:.25rem; }
-      .kk-correct-answer-reveal .answer { display:flex; align-items:center; gap:.65rem; font-size:clamp(1rem,1.7vw,1.35rem); }
-      .kk-correct-answer-reveal img { width:54px; height:54px; object-fit:cover; border-radius:12px; background:#fff; border:2px solid rgba(255,255,255,.85); }
+      @keyframes kkCorrectBannerIn {
+        0%   { opacity: 0; transform: translate(-50%, 30px) scale(.92); }
+        60%  { opacity: 1; transform: translate(-50%, -6px) scale(1.02); }
+        100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+      }
+      .kk-correct-answer-banner .kk-cab-check {
+        flex: 0 0 auto;
+        font-size: clamp(2.4rem, 4.8vw, 4rem);
+        line-height: 1;
+        filter: drop-shadow(0 6px 18px rgba(0,0,0,.4));
+        animation: kkCorrectCheckPop .8s ease-out both;
+      }
+      @keyframes kkCorrectCheckPop {
+        0%   { transform: scale(.4) rotate(-12deg); opacity: 0; }
+        70%  { transform: scale(1.18) rotate(6deg); opacity: 1; }
+        100% { transform: scale(1) rotate(0); }
+      }
+      .kk-correct-answer-banner .kk-cab-body {
+        flex: 1 1 auto;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: .2rem;
+      }
+      .kk-correct-answer-banner .kk-cab-label {
+        font-size: clamp(.78rem, 1.05vw, .95rem);
+        letter-spacing: .14em;
+        text-transform: uppercase;
+        opacity: .85;
+        font-weight: 800;
+      }
+      .kk-correct-answer-banner .kk-cab-text {
+        font-family: 'Clash Display', system-ui, sans-serif;
+        font-weight: 900;
+        font-size: clamp(1.4rem, 3.2vw, 2.6rem);
+        line-height: 1.15;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+      }
+      .kk-correct-answer-banner .kk-cab-thumb {
+        flex: 0 0 auto;
+        width: clamp(60px, 7vw, 96px);
+        height: clamp(60px, 7vw, 96px);
+        object-fit: cover;
+        border-radius: 16px;
+        background: #fff;
+        border: 3px solid rgba(255,255,255,.9);
+        box-shadow: 0 8px 24px rgba(0,0,0,.35);
+      }
+      /* Multiple correct-choice chips for multi-answer questions */
+      .kk-correct-answer-banner .kk-cab-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .5rem;
+        margin-top: .35rem;
+      }
+      .kk-correct-answer-banner .kk-cab-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        padding: .3rem .65rem;
+        border-radius: 999px;
+        background: rgba(255,255,255,.18);
+        border: 1px solid rgba(255,255,255,.32);
+        font-weight: 800;
+        font-size: clamp(.85rem, 1.1vw, 1rem);
+      }
+      .kk-correct-answer-banner .kk-cab-chip img {
+        width: 28px; height: 28px; object-fit: cover; border-radius: 6px;
+        border: 1.5px solid rgba(255,255,255,.85);
+      }
+
+      /* Full-stage card used for puzzle reveal (replaces the chart). */
       .kk-correct-answer-card {
-        width:100%; height:100%; display:grid; place-items:center; align-content:center; text-align:center;
+        width:100%; height:100%;
+        display:grid; place-items:center; align-content:center; text-align:center;
         padding:clamp(1.5rem,4vw,4rem); border-radius:32px;
-        background:radial-gradient(circle at top, rgba(34,197,94,.28), transparent 38%), linear-gradient(135deg, rgba(22,163,74,.24), rgba(34,211,238,.13));
+        background:
+          radial-gradient(circle at top, rgba(34,197,94,.28), transparent 38%),
+          linear-gradient(135deg, rgba(22,163,74,.24), rgba(34,211,238,.13));
       }
-      .kk-correct-answer-card h2 { font-family:'Clash Display',system-ui,sans-serif; font-size:clamp(2rem,5vw,5rem); margin:.5rem 0; font-weight:950; }
-      .kk-correct-answer-card p { font-size:clamp(1.05rem,2vw,1.7rem); color:rgba(255,255,255,.82); max-width:900px; }
+      .kk-correct-answer-card h2 {
+        font-family:'Clash Display',system-ui,sans-serif;
+        font-size:clamp(2rem,5vw,5rem); margin:.5rem 0; font-weight:950;
+      }
+      .kk-correct-answer-card p {
+        font-size:clamp(1.05rem,2vw,1.7rem);
+        color:rgba(255,255,255,.92); max-width:900px;
+      }
     `;
     document.head.appendChild(style);
   }
@@ -916,23 +1016,67 @@
       return questionType === "puzzle" ? `${i + 1}. ${label}` : label;
     }).join(questionType === "puzzle" ? " • " : ", ");
 
+    // Puzzle: full-stage card with the correct order spelled out.
     if (questionType === "puzzle") {
       destroyChartForSpecialDisplay();
-      specialEl.innerHTML = `<div class="kk-correct-answer-card"><div style="font-size:clamp(4rem,11vw,10rem);">🧩✅</div><h2>Correct order</h2><p>${escapeHtml(answerText || "The correct puzzle order is highlighted for participants.")}</p></div>`;
+      specialEl.innerHTML = `
+        <div class="kk-correct-answer-card">
+          <div style="font-size:clamp(4rem,11vw,10rem);">🧩✅</div>
+          <h2>Correct order</h2>
+          <p>${escapeHtml(answerText || "The correct puzzle order is highlighted for participants.")}</p>
+        </div>`;
       return;
     }
 
-    // Append a non-destructive overlay so the existing picture-choice chart,
-    // photo X-axis labels, and winner/avatar logic remain untouched.
-    specialEl.querySelectorAll(".kk-correct-answer-reveal").forEach(el => el.remove());
-    const first = correctChoices[0] || {};
-    const img = first.image_url ? `<img src="${escapeHtml(first.image_url)}" alt="">` : "";
-    const label = questionType === "picture_choice" ? "Correct picture" : "Correct answer";
-    const text = answerText || "See the highlighted correct answer.";
-    const badge = document.createElement("div");
-    badge.className = "kk-correct-answer-reveal";
-    badge.innerHTML = `<span class="label">Time ended — ${escapeHtml(label)}</span><span class="answer">${img}<span>${escapeHtml(text)}</span></span>`;
-    specialEl.appendChild(badge);
+    // MCQ / picture_prompt / picture_choice: prominent banner anchored to
+    // the bottom of the chart wrap, leaving the tally bars visible above it.
+    // We mount the banner on #chart-wrap (one level up from specialEl) so
+    // it survives any later re-render of #special-display contents — and
+    // so it isn't clipped to the chart area.
+    const wrap = document.getElementById("chart-wrap") || specialEl;
+    wrap.querySelectorAll(".kk-correct-answer-banner").forEach(el => el.remove());
+
+    const label =
+      questionType === "picture_choice" ? "Correct picture"
+      : (correctChoices.length > 1 ? "Correct answers" : "Correct answer");
+
+    // For picture-choice and single-correct MCQ, show one big thumbnail next
+    // to the answer text. For multi-correct, show a chip per choice instead.
+    let thumbHtml = "";
+    let textHtml = "";
+    let chipsHtml = "";
+
+    if (correctChoices.length <= 1) {
+      const first = correctChoices[0] || {};
+      const imgUrl = first.image_url || "";
+      thumbHtml = imgUrl ? `<img class="kk-cab-thumb" src="${escapeHtml(imgUrl)}" alt="">` : "";
+      textHtml = escapeHtml(answerText || "See the highlighted correct answer.");
+    } else {
+      // Multi-correct: short summary text + a row of chips.
+      textHtml = escapeHtml(`${correctChoices.length} correct answers`);
+      chipsHtml = `<div class="kk-cab-chips">${
+        correctChoices.map(c => {
+          const t = escapeHtml(c.text || "Answer");
+          const im = c.image_url ? `<img src="${escapeHtml(c.image_url)}" alt="">` : "";
+          return `<span class="kk-cab-chip">${im}<span>${t}</span></span>`;
+        }).join("")
+      }</div>`;
+    }
+
+    const banner = document.createElement("div");
+    banner.className = "kk-correct-answer-banner";
+    banner.setAttribute("role", "status");
+    banner.setAttribute("aria-live", "polite");
+    banner.innerHTML = `
+      <span class="kk-cab-check" aria-hidden="true">✅</span>
+      <div class="kk-cab-body">
+        <span class="kk-cab-label">Time ended — ${escapeHtml(label)}</span>
+        <span class="kk-cab-text">${textHtml}</span>
+        ${chipsHtml}
+      </div>
+      ${thumbHtml}
+    `;
+    wrap.appendChild(banner);
   }
 
   // ─────────────────────── Title-slide presenter ───────────────────────

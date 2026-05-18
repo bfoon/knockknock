@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+{% block title %}Feedback · {{ event.title }}{% endblock %}
+
+{% block content %}
+<div class="kk-public-wrap">
+  <div class="kk-public-card">
+    <div class="mb-3">
+      <span class="kk-fb-badge"><i class="bi bi-chat-square-text"></i> Feedback</span>
+      <h1 class="mt-2 mb-1">{{ event.title }}</h1>
+      <p class="kk-text-dim mb-0">
+        <i class="bi bi-calendar-event"></i>
+        {{ event.starts_at|date:"l, j F Y" }}
+      </p>
+    </div>
+
+    {% if registration %}
+      <p class="kk-text-dim small mb-3">
+        Submitting as <strong>{{ registration.full_name|default:"you" }}</strong>.
+      </p>
+    {% else %}
+      <p class="kk-text-dim small mb-3">
+        <i class="bi bi-incognito"></i> Your response will be submitted anonymously.
+      </p>
+    {% endif %}
+
+    {% if survey.intro_text %}
+      <div class="kk-fb-intro mb-4">{{ survey.intro_text|linebreaks }}</div>
+    {% endif %}
+
+    <form method="post" class="kk-fb-public-form">
+      {% csrf_token %}
+
+      {% for item in form_items %}
+        {% if item.is_separator %}
+          <div class="kk-fb-section-header">
+            <span class="kk-fb-section-rule" aria-hidden="true"></span>
+            <h2 class="kk-fb-section-title">{{ item.text }}</h2>
+            <span class="kk-fb-section-rule" aria-hidden="true"></span>
+          </div>
+        {% else %}
+          {% with field=item.field %}
+          <div class="kk-fb-question mb-4">
+            <label class="form-label fw-semibold">
+              {{ field.label }}{% if field.field.required %} <span class="text-danger">*</span>{% endif %}
+            </label>
+
+            {# Rating: render as a row of 5 numbered radio chips. #}
+            {% if field.field.widget.attrs.class == "kk-feedback-rating-input" %}
+              <div class="kk-rating-row" role="radiogroup" aria-label="{{ field.label }}">
+                {% for sub in field %}
+                  <label class="kk-rating-chip">
+                    {{ sub.tag }}
+                    <span>{{ sub.choice_label }}</span>
+                  </label>
+                {% endfor %}
+              </div>
+              <div class="kk-rating-scale">
+                <span>Poor</span><span>Excellent</span>
+              </div>
+
+            {# Multiple choice + yes/no: rendered as a stack of radios. #}
+            {% elif field.field.widget.input_type == "radio" %}
+              <div class="kk-radio-stack">
+                {% for sub in field %}
+                  <label class="kk-radio-row">
+                    {{ sub.tag }}
+                    <span>{{ sub.choice_label }}</span>
+                  </label>
+                {% endfor %}
+              </div>
+
+            {# Open text — render the widget directly. #}
+            {% else %}
+              {{ field }}
+            {% endif %}
+
+            {% if field.errors %}
+              <div class="text-danger small mt-1">{{ field.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+          {% endwith %}
+        {% endif %}
+      {% endfor %}
+
+      <button type="submit" class="kk-btn kk-btn-primary kk-btn-lg w-100">
+        <i class="bi bi-send"></i> Submit feedback
+      </button>
+    </form>
+  </div>
+</div>
+
+<style>
+/* Box-sizing safety — if base.html sets it globally this is a no-op,
+   otherwise it prevents padding from making elements overflow. */
+.kk-public-wrap, .kk-public-wrap * { box-sizing: border-box; }
+
+.kk-public-wrap {
+  max-width: 640px;
+  /* Horizontal page padding so the card never touches viewport edges
+     on phones. Vertical breathing room too. */
+  margin: 0 auto;
+  padding: 1rem;
+}
+.kk-public-card {
+  background: var(--kk-surface); border: 1px solid var(--kk-border);
+  border-radius: var(--kk-radius);
+  padding: 2rem;
+  /* Wrap long words / URLs so a single answer can't push the card
+     wider than the viewport. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+}
+@media (max-width: 540px) {
+  .kk-public-wrap { padding: .5rem; }
+  .kk-public-card { padding: 1.1rem; border-radius: 14px; }
+}
+
+.kk-fb-badge {
+  display: inline-block; font-size: .72rem; padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(124, 58, 237, 0.18);
+  color: #c4b5fd;
+  font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+}
+.kk-fb-intro {
+  padding: .9rem 1rem;
+  background: rgba(34,211,238,0.08);
+  border: 1px solid rgba(34,211,238,0.22);
+  border-radius: 10px;
+  color: var(--kk-text-dim, #cbd5e1);
+}
+
+/* Section header (separator) between groups of questions.
+   `flex-wrap: wrap` so a long title doesn't crush the rules off-screen
+   on narrow phones — instead the title sits centered on its own line. */
+.kk-fb-section-header {
+  display: flex; align-items: center; gap: .75rem;
+  margin: 2rem 0 1.25rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.kk-fb-section-header:first-child {
+  /* No extra top margin if the survey opens with a separator. */
+  margin-top: .5rem;
+}
+.kk-fb-section-rule {
+  flex: 1 1 60px;
+  min-width: 24px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--kk-border, rgba(255,255,255,.18)), transparent);
+}
+.kk-fb-section-title {
+  flex: 0 1 auto;
+  max-width: 100%;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #a5f3fc;
+  padding: .2rem .8rem;
+  border: 1px solid rgba(34,211,238,.32);
+  border-radius: 999px;
+  background: rgba(34,211,238,.08);
+  text-align: center;
+  word-break: break-word;
+}
+
+/* Rating chips — phone-friendly sizing. Default desktop sizing first,
+   then a tighter override for narrow screens so 5 chips fit on a
+   ~340px wide content area without overflow. */
+.kk-rating-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: .5rem;
+  margin-top: .35rem;
+}
+.kk-rating-chip {
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  padding: .9rem .25rem;
+  min-width: 0;
+  border-radius: 12px;
+  background: var(--kk-surface-2, rgba(255,255,255,0.04));
+  border: 1.5px solid var(--kk-border);
+  cursor: pointer;
+  font-weight: 700; font-size: 1.15rem;
+  transition: all .15s ease;
+  user-select: none;
+}
+.kk-rating-chip input { position: absolute; opacity: 0; pointer-events: none; }
+.kk-rating-chip:hover {
+  border-color: rgba(124,58,237,0.6);
+  transform: translateY(-1px);
+}
+.kk-rating-chip:has(input:checked) {
+  background: linear-gradient(135deg, rgba(124,58,237,0.32), rgba(34,211,238,0.22));
+  border-color: rgba(124,58,237,0.9);
+  box-shadow: 0 0 0 3px rgba(124,58,237,0.18);
+}
+@media (max-width: 540px) {
+  .kk-rating-row { gap: .3rem; }
+  .kk-rating-chip {
+    padding: .7rem .15rem;
+    font-size: 1rem;
+    border-width: 1px;
+    border-radius: 10px;
+  }
+}
+.kk-rating-scale {
+  display: flex; justify-content: space-between;
+  font-size: .72rem; color: var(--kk-text-dim, #9ca3af);
+  margin-top: .35rem;
+}
+
+/* Yes/No + multiple-choice radios */
+.kk-radio-stack {
+  display: flex; flex-direction: column; gap: .45rem;
+  margin-top: .25rem;
+}
+.kk-radio-row {
+  display: flex; align-items: center; gap: .65rem;
+  padding: .75rem .95rem;
+  border-radius: 10px;
+  background: var(--kk-surface-2, rgba(255,255,255,0.03));
+  border: 1.5px solid var(--kk-border);
+  cursor: pointer;
+  min-width: 0;
+  word-break: break-word;
+}
+.kk-radio-row > span { min-width: 0; flex: 1 1 auto; }
+.kk-radio-row:has(input:checked) {
+  border-color: rgba(124,58,237,0.9);
+  background: rgba(124,58,237,0.10);
+}
+.kk-radio-row input { accent-color: #a78bfa; flex: 0 0 auto; }
+@media (max-width: 540px) {
+  .kk-radio-row { padding: .65rem .75rem; }
+}
+
+/* Inputs/textareas in any feedback question: stretch to the card
+   width but never exceed it. Belt-and-braces against a base
+   stylesheet that doesn't set width:100% on .form-control. */
+.kk-fb-question .form-control,
+.kk-fb-question textarea,
+.kk-fb-question input[type="text"],
+.kk-fb-question input[type="email"],
+.kk-fb-question input[type="number"] {
+  width: 100%;
+  max-width: 100%;
+}
+.kk-fb-question textarea { resize: vertical; }
+.kk-fb-question .form-label { word-break: break-word; }
+
+/* The submit button should also obey the card width. */
+.kk-fb-public-form .kk-btn { max-width: 100%; }
+</style>
+{% endblock %}

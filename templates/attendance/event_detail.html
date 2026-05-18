@@ -31,6 +31,9 @@
     <a href="{% url 'attendance:agenda_editor' event.pk %}" class="kk-btn kk-btn-ghost">
       <i class="bi bi-list-ol"></i> Agenda
     </a>
+    <a href="{% url 'attendance:feedback_editor' event.pk %}" class="kk-btn kk-btn-ghost">
+      <i class="bi bi-chat-square-text"></i> Feedback
+    </a>
     {% if event.generate_certificates %}
       <a href="{% url 'attendance:certificate_picker' event.pk %}" class="kk-btn kk-btn-ghost">
         <i class="bi bi-award"></i> Certificate design

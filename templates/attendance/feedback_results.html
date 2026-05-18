@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}Feedback results · {{ event.title }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <div class="kk-text-dim small">
+      <a href="{% url 'attendance:feedback_editor' event.pk %}" class="kk-text-dim text-decoration-none">
+        <i class="bi bi-arrow-left"></i> Back to editor
+      </a>
+    </div>
+    <h1 class="mb-1 mt-1"><i class="bi bi-bar-chart"></i> Feedback results</h1>
+    <p class="kk-text-dim mb-0">
+      {{ event.title }} · {{ response_count }} response{{ response_count|pluralize }}
+    </p>
+  </div>
+</div>
+
+{% if not response_count %}
+  <div class="kk-empty">
+    <div class="em">📭</div>
+    <h3>No responses yet</h3>
+    <p class="kk-text-dim">
+      Once attendees scan the walk-in or ticket QR after the event ends,
+      their feedback will show up here.
+    </p>
+  </div>
+{% else %}
+
+{# ── Per-question summaries ────────────────────────────────── #}
+<section class="mb-5">
+  <h2 class="kk-section-title mb-3"><i class="bi bi-graph-up"></i> Question summaries</h2>
+
+  {% for s in question_summaries %}
+    {% if s.kind == "separator" %}
+      <div class="kk-fb-results-section-header">
+        <span class="kk-fb-results-section-rule" aria-hidden="true"></span>
+        <h3 class="kk-fb-results-section-title">{{ s.question.text }}</h3>
+        <span class="kk-fb-results-section-rule" aria-hidden="true"></span>
+      </div>
+    {% else %}
+    <div class="kk-card mb-3">
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+        <div>
+          <h3 class="h5 mb-1">{{ s.question.text }}</h3>
+          <span class="kk-text-dim small">
+            {{ s.question.get_question_type_display }} · {{ s.count }} response{{ s.count|pluralize }}
+          </span>
+        </div>
+        {% if s.kind == "rate_1_5" %}
+          <div class="kk-avg-pill"><strong>{{ s.average }}</strong>/5 avg</div>
+        {% endif %}
+      </div>
+
+      {% if s.kind == "open_text" %}
+        {% if s.entries %}
+          <ul class="kk-fb-open-list">
+            {% for entry in s.entries %}
+              <li>
+                <div class="kk-fb-open-text">{{ entry.text|linebreaksbr }}</div>
+                <div class="kk-fb-open-meta kk-text-dim small">— {{ entry.name }}</div>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="kk-text-dim small mb-0">No answers submitted.</p>
+        {% endif %}
+
+      {% elif s.kind == "rate_1_5" %}
+        {% for star, count in s.rows %}
+          <div class="kk-bar-row">
+            <span class="kk-bar-label">{{ star }} ★</span>
+            <div class="kk-bar-track">
+              <div class="kk-bar-fill"
+                   style="width: {% if s.count %}{% widthratio count s.count 100 %}{% else %}0{% endif %}%;"></div>
+            </div>
+            <span class="kk-bar-count">{{ count }}</span>
+          </div>
+        {% endfor %}
+
+      {% elif s.kind == "multiple_choice" %}
+        {% for option, count in s.rows %}
+          <div class="kk-bar-row">
+            <span class="kk-bar-label">{{ option }}</span>
+            <div class="kk-bar-track">
+              <div class="kk-bar-fill"
+                   style="width: {% if s.count %}{% widthratio count s.count 100 %}{% else %}0{% endif %}%;"></div>
+            </div>
+            <span class="kk-bar-count">{{ count }}</span>
+          </div>
+        {% endfor %}
+
+      {% elif s.kind == "yes_no" %}
+        <div class="kk-bar-row">
+          <span class="kk-bar-label">Yes</span>
+          <div class="kk-bar-track">
+            <div class="kk-bar-fill kk-bar-fill-yes"
+                 style="width: {% if s.count %}{% widthratio s.yes s.count 100 %}{% else %}0{% endif %}%;"></div>
+          </div>
+          <span class="kk-bar-count">{{ s.yes }}</span>
+        </div>
+        <div class="kk-bar-row">
+          <span class="kk-bar-label">No</span>
+          <div class="kk-bar-track">
+            <div class="kk-bar-fill kk-bar-fill-no"
+                 style="width: {% if s.count %}{% widthratio s.no s.count 100 %}{% else %}0{% endif %}%;"></div>
+          </div>
+          <span class="kk-bar-count">{{ s.no }}</span>
+        </div>
+      {% endif %}
+    </div>
+    {% endif %}
+  {% endfor %}
+</section>
+
+{# ── Per-response browse ──────────────────────────────────── #}
+<section>
+  <h2 class="kk-section-title mb-3"><i class="bi bi-list-ul"></i> Individual responses</h2>
+  {% for r in responses %}
+    <details class="kk-card mb-2">
+      <summary class="kk-fb-resp-head">
+        <strong>{{ r.display_name }}</strong>
+        <span class="kk-text-dim small">{{ r.submitted_at|date:"D j M · H:i" }}</span>
+      </summary>
+      <div class="kk-fb-resp-body">
+        {% for a in r.answers.all %}
+          <div class="mb-2">
+            <div class="kk-text-dim small">{{ a.question.text }}</div>
+            <div>{{ a.display_value|default:"—" }}</div>
+          </div>
+        {% endfor %}
+      </div>
+    </details>
+  {% endfor %}
+</section>
+
+{% endif %}
+
+<style>
+.kk-card {
+  background: var(--kk-surface); border: 1px solid var(--kk-border);
+  border-radius: var(--kk-radius); padding: 1.1rem 1.25rem;
+}
+.kk-avg-pill {
+  background: rgba(34,197,94,0.15);
+  border: 1px solid rgba(34,197,94,0.3);
+  color: #86efac;
+  padding: .3rem .75rem; border-radius: 999px;
+  font-size: .9rem;
+}
+.kk-bar-row {
+  display: grid;
+  grid-template-columns: minmax(6rem, 8rem) 1fr 3rem;
+  align-items: center; gap: .75rem;
+  margin: .35rem 0;
+}
+.kk-bar-label { font-size: .9rem; }
+.kk-bar-track {
+  height: 14px; background: rgba(255,255,255,0.06);
+  border-radius: 999px; overflow: hidden;
+}
+.kk-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #7c3aed, #22d3ee);
+  border-radius: 999px;
+}
+.kk-bar-fill-yes { background: linear-gradient(90deg, #16a34a, #22c55e); }
+.kk-bar-fill-no  { background: linear-gradient(90deg, #b91c1c, #ef4444); }
+.kk-bar-count { font-weight: 700; text-align: right; }
+
+.kk-fb-open-list { list-style: none; padding: 0; margin: 0; }
+.kk-fb-open-list li {
+  padding: .65rem 0;
+  border-bottom: 1px dashed var(--kk-border);
+}
+.kk-fb-open-list li:last-child { border-bottom: 0; }
+.kk-fb-open-text { white-space: pre-wrap; }
+.kk-fb-open-meta { margin-top: .15rem; }
+
+.kk-fb-resp-head {
+  cursor: pointer;
+  display: flex; justify-content: space-between; align-items: center;
+  list-style: none;
+}
+.kk-fb-resp-head::-webkit-details-marker { display: none; }
+.kk-fb-resp-body { margin-top: .85rem; padding-top: .85rem; border-top: 1px solid var(--kk-border); }
+
+/* Section header (separator) on the results page. */
+.kk-fb-results-section-header {
+  display: flex; align-items: center; gap: .75rem;
+  margin: 1.5rem 0 .75rem;
+}
+.kk-fb-results-section-rule {
+  flex: 1 1 auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--kk-border, rgba(255,255,255,.18)), transparent);
+}
+.kk-fb-results-section-title {
+  flex: 0 0 auto;
+  margin: 0;
+  font-size: .85rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #a5f3fc;
+  padding: .15rem .7rem;
+  border: 1px solid rgba(34,211,238,.32);
+  border-radius: 999px;
+  background: rgba(34,211,238,.08);
+}
+</style>
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Thanks · {{ event.title }}{% endblock %}
+{% block content %}
+<div class="kk-public-wrap">
+  <div class="kk-public-card text-center">
+    <div class="kk-empty">
+      <div class="em">🙌</div>
+      <h2 class="mb-2">{{ thanks_text }}</h2>
+      <p class="kk-text-dim mb-0">
+        Your response for <strong>{{ event.title }}</strong> has been recorded.
+      </p>
+    </div>
+  </div>
+</div>
+<style>
+  .kk-public-wrap, .kk-public-wrap * { box-sizing: border-box; }
+  .kk-public-wrap {
+    max-width: 540px; margin: 2rem auto; padding: 1rem;
+  }
+  .kk-public-card {
+    background: var(--kk-surface); border: 1px solid var(--kk-border);
+    border-radius: var(--kk-radius); padding: 2rem;
+    overflow-wrap: anywhere; word-break: break-word;
+  }
+  @media (max-width: 540px) {
+    .kk-public-wrap { margin: 1rem auto; padding: .5rem; }
+    .kk-public-card { padding: 1.25rem; border-radius: 14px; }
+  }
+</style>
+{% endblock %}

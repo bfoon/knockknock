@@ -54,6 +54,7 @@ from .models import (
     PRESET_FIELDS, Registration, RegistrationAnswer,
 )
 from . import services
+from .feedback_views import should_route_to_feedback
 
 
 # ─────────────────── helpers ───────────────────
@@ -871,6 +872,8 @@ def public_register(request, public_token):
     Walk-ins reach this same view via the scan path with `?walk_in=1` set.
     """
     event = _public_event_or_404(public_token)
+    if should_route_to_feedback(event):
+        return redirect("attendance:public_feedback_by_token", public_token=public_token)
     if not event.is_qr_active():
         return render(request, "attendance/public_event_ended.html",
                       {"event": event}, status=410)
@@ -952,6 +955,12 @@ def _save_answers(reg, form):
 def ticket(request, token):
     """Attendee's personal page — shows their QR + agenda + announcements."""
     reg = get_object_or_404(Registration, token=token)
+    # If the event has ended and the organizer has activated the feedback
+    # survey, the personal ticket QR should land on the survey instead.
+    # We redirect rather than render inline so the ticket page itself
+    # stays focused on its current responsibilities.
+    if should_route_to_feedback(reg.event):
+        return redirect("attendance:public_feedback_by_ticket", token=str(reg.token))
     return render(request, "attendance/ticket.html", {
         "registration": reg, "event": reg.event,
         # 5 newest announcements rendered server-side so a reload still
@@ -1037,6 +1046,8 @@ def public_check_in(request, public_token):
         flip status.
     """
     event = _public_event_or_404(public_token)
+    if should_route_to_feedback(event):
+        return redirect("attendance:public_feedback_by_token", public_token=public_token)
     if not event.is_qr_active():
         return render(request, "attendance/public_event_ended.html",
                       {"event": event}, status=410)

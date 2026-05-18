@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 from . import venue_views
+from . import feedback_views
 
 app_name = "attendance"
 
@@ -59,6 +60,30 @@ urlpatterns = [
     path("venues/<int:pk>/edit/",       venue_views.venue_edit,    name="venue_edit"),
     path("venues/<int:pk>/delete/",     venue_views.venue_delete,  name="venue_delete"),
     path("venues/site-settings/",       venue_views.site_settings, name="site_settings"),
+
+    # ── Feedback (post-event survey) ─────────────────────────
+    # Organizer side: design questions, toggle active, browse results.
+    # All gated to event owner; activation also requires event.status==ENDED
+    # (enforced in feedback_views.feedback_toggle_active).
+    path("<int:pk>/feedback/",                  feedback_views.feedback_editor,          name="feedback_editor"),
+    path("<int:pk>/feedback/save/",             feedback_views.feedback_survey_update,   name="feedback_survey_update"),
+    path("<int:pk>/feedback/toggle/",           feedback_views.feedback_toggle_active,   name="feedback_toggle_active"),
+    path("<int:pk>/feedback/q/add/",            feedback_views.feedback_question_add,    name="feedback_question_add"),
+    path("<int:pk>/feedback/q/<int:question_id>/",
+                                                feedback_views.feedback_question_edit,   name="feedback_question_edit"),
+    path("<int:pk>/feedback/q/<int:question_id>/delete/",
+                                                feedback_views.feedback_question_delete, name="feedback_question_delete"),
+    path("<int:pk>/feedback/q/reorder/",        feedback_views.feedback_question_reorder, name="feedback_question_reorder"),
+    path("<int:pk>/feedback/results/",          feedback_views.feedback_results,         name="feedback_results"),
+
+    # Public-facing survey pages. Two entry points so QR scans don't
+    # need to change after the event is marked Ended:
+    #   - /e/<token>/feedback/  ← reached from the event-level walk-in QR
+    #   - /t/<token>/feedback/  ← reached from a personal ticket QR
+    # Both are also linked to automatically from `public_check_in` and
+    # `ticket` when the survey is active (see feedback_views.should_route_to_feedback).
+    path("e/<str:public_token>/feedback/",      feedback_views.public_feedback_by_token, name="public_feedback_by_token"),
+    path("t/<uuid:token>/feedback/",            feedback_views.public_feedback_by_ticket, name="public_feedback_by_ticket"),
 
     # ── Public attendee paths (short for SMS / printing) ─────
     path("e/<str:public_token>/",        views.public_register,  name="public_register"),

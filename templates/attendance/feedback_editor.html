@@ -1,0 +1,510 @@
+{% extends "base.html" %}
+{% block title %}Feedback · {{ event.title }}{% endblock %}
+
+{% block content %}
+{# Mirrors agenda_editor's layout: header, settings strip, then a #}
+{# question list with an "add question" composer. JS at the bottom #}
+{# handles inline create/edit/delete and drag-reorder via the JSON #}
+{# endpoints in feedback_views.py. #}
+
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <div class="kk-text-dim small">
+      <a href="{% url 'attendance:event_detail' event.pk %}" class="kk-text-dim text-decoration-none">
+        <i class="bi bi-arrow-left"></i> {{ event.title }}
+      </a>
+    </div>
+    <h1 class="mb-1 mt-1"><i class="bi bi-chat-square-text"></i> Feedback</h1>
+    <p class="kk-text-dim mb-0">
+      Collect ratings and comments after the workshop or meeting ends.
+      Scans of the walk-in QR and personal ticket QRs will route here
+      once activated.
+    </p>
+  </div>
+
+  <div class="d-flex gap-2 flex-wrap">
+    {% if response_count %}
+      <a href="{% url 'attendance:feedback_results' event.pk %}" class="kk-btn kk-btn-ghost">
+        <i class="bi bi-bar-chart"></i> Results ({{ response_count }})
+      </a>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Activation strip ───────────────────────────────────────── #}
+<div class="kk-feedback-strip mb-4">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
+    <div>
+      <div class="d-flex align-items-center gap-2">
+        <span class="kk-status-dot {% if survey.is_active %}is-on{% endif %}"></span>
+        <strong>
+          {% if survey.is_active and can_accept_now %}
+            Survey active — scans land on feedback
+          {% elif survey.is_active and not can_accept_now %}
+            Survey marked active, waiting on event status
+          {% else %}
+            Survey not active
+          {% endif %}
+        </strong>
+      </div>
+      <p class="kk-text-dim small mb-0 mt-1">
+        {% if not is_event_ended %}
+          Activate after you've ended the event from the event page.
+          {% if event.status != "ended" %}
+            <span class="text-warning">
+              <i class="bi bi-info-circle"></i> Event status: <em>{{ event.get_status_display }}</em>.
+            </span>
+          {% endif %}
+        {% else %}
+          The event is ended. Toggle the survey on to start collecting responses.
+        {% endif %}
+      </p>
+    </div>
+
+    <form method="post"
+          action="{% url 'attendance:feedback_toggle_active' event.pk %}"
+          class="d-flex gap-2">
+      {% csrf_token %}
+      {% if survey.is_active %}
+        <input type="hidden" name="active" value="0">
+        <button type="submit" class="kk-btn kk-btn-ghost">
+          <i class="bi bi-pause-circle"></i> Pause survey
+        </button>
+      {% else %}
+        <input type="hidden" name="active" value="1">
+        <button type="submit"
+                class="kk-btn kk-btn-primary"
+                {% if not is_event_ended or not has_answerable %}disabled{% endif %}>
+          <i class="bi bi-play-circle"></i> Activate survey
+        </button>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+{# ── Intro / thanks text ─────────────────────────────────────── #}
+<form method="post"
+      action="{% url 'attendance:feedback_survey_update' event.pk %}"
+      class="kk-card mb-4">
+  {% csrf_token %}
+  <h3 class="kk-section-title mb-3"><i class="bi bi-card-text"></i> Survey text</h3>
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label">Intro message <span class="kk-text-dim small">(shown above the questions)</span></label>
+      <textarea name="intro_text" class="form-control" rows="2"
+                placeholder="Thanks for joining today! Your feedback helps us improve.">{{ survey.intro_text }}</textarea>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Thank-you message <span class="kk-text-dim small">(shown after submission)</span></label>
+      <textarea name="thanks_text" class="form-control" rows="2"
+                placeholder="Thanks for your feedback!">{{ survey.thanks_text }}</textarea>
+    </div>
+  </div>
+  <div class="mt-3">
+    <button type="submit" class="kk-btn kk-btn-ghost">
+      <i class="bi bi-check2"></i> Save text
+    </button>
+  </div>
+</form>
+
+{# ── Questions list ──────────────────────────────────────────── #}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="kk-section-title mb-0"><i class="bi bi-list-check"></i> Questions</h2>
+  <button type="button" class="kk-btn kk-btn-primary" id="kk-fb-add-btn">
+    <i class="bi bi-plus-lg"></i> Add question
+  </button>
+</div>
+
+<div id="kk-fb-question-list">
+  {% for q in questions %}
+    {% include "attendance/_feedback_question_row.html" with q=q %}
+  {% empty %}
+    <div class="kk-empty">
+      <div class="em">📝</div>
+      <h3>No questions yet</h3>
+      <p class="kk-text-dim">Click "Add question" to get started.</p>
+    </div>
+  {% endfor %}
+</div>
+
+{# ── Composer modal (for add + edit, same form) ─────────────── #}
+<div class="kk-modal" id="kk-fb-modal" aria-hidden="true">
+  <div class="kk-modal-card">
+    <div class="kk-modal-head">
+      <h3 id="kk-fb-modal-title" class="mb-0">Add question</h3>
+      <button type="button" class="kk-modal-close" data-fb-modal-close>&times;</button>
+    </div>
+    <form id="kk-fb-form" class="kk-modal-body">
+      {% csrf_token %}
+      <input type="hidden" name="question_id" id="kk-fb-qid" value="">
+      <div class="mb-3">
+        <label class="form-label" id="kk-fb-text-label">Question</label>
+        <input type="text" name="text" id="kk-fb-text" class="form-control" maxlength="400" required>
+        <div class="form-text" id="kk-fb-text-help" style="display:none;">
+          Shown as a section header on the public form — groups the questions below it.
+        </div>
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-7">
+          <label class="form-label">Type</label>
+          <select name="question_type" id="kk-fb-type" class="form-select">
+            {% for value, label in question_types %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-5 d-flex align-items-end" id="kk-fb-required-wrap">
+          <div class="form-check">
+            <input type="checkbox" name="required" id="kk-fb-required" class="form-check-input">
+            <label class="form-check-label" for="kk-fb-required">Required</label>
+          </div>
+        </div>
+      </div>
+      <div class="mb-3" id="kk-fb-choices-wrap" style="display:none;">
+        <label class="form-label">Options <span class="kk-text-dim small">(one per line)</span></label>
+        <textarea name="choices_text" id="kk-fb-choices" class="form-control" rows="4"
+                  placeholder="Excellent&#10;Good&#10;Average&#10;Poor"></textarea>
+      </div>
+      <div id="kk-fb-error" class="text-danger small mb-2" style="display:none;"></div>
+      <div class="d-flex justify-content-end gap-2">
+        <button type="button" class="kk-btn kk-btn-ghost" data-fb-modal-close>Cancel</button>
+        <button type="submit" class="kk-btn kk-btn-primary" id="kk-fb-save">
+          <i class="bi bi-check2"></i> Save
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+  .kk-feedback-strip {
+    background: var(--kk-surface);
+    border: 1px solid var(--kk-border);
+    border-radius: var(--kk-radius);
+    padding: 1.1rem 1.25rem;
+  }
+  .kk-status-dot {
+    display: inline-block; width: 10px; height: 10px;
+    border-radius: 999px;
+    background: #6b7280;
+    box-shadow: 0 0 0 3px rgba(107,114,128,.18);
+  }
+  .kk-status-dot.is-on {
+    background: #22c55e;
+    box-shadow: 0 0 0 3px rgba(34,197,94,.25), 0 0 12px rgba(34,197,94,.55);
+  }
+  .kk-card {
+    background: var(--kk-surface);
+    border: 1px solid var(--kk-border);
+    border-radius: var(--kk-radius);
+    padding: 1.25rem 1.4rem;
+  }
+  .kk-fb-row {
+    display: flex; align-items: center; gap: .9rem;
+    padding: .9rem 1.1rem;
+    background: var(--kk-surface);
+    border: 1px solid var(--kk-border);
+    border-radius: var(--kk-radius);
+    margin-bottom: .65rem;
+  }
+  .kk-fb-row .kk-fb-grab {
+    cursor: grab; color: var(--kk-text-dim, #9ca3af); user-select: none;
+  }
+  .kk-fb-row .kk-fb-body { flex: 1 1 auto; min-width: 0; }
+  .kk-fb-row .kk-fb-title { font-weight: 600; }
+  .kk-fb-row .kk-fb-meta { font-size: .85rem; color: var(--kk-text-dim, #9ca3af); }
+  .kk-fb-row .kk-fb-actions { display: flex; gap: .4rem; }
+  .kk-fb-type-pill {
+    display: inline-block; padding: 2px 8px;
+    border-radius: 999px; font-size: .72rem; font-weight: 700;
+    letter-spacing: .04em; text-transform: uppercase;
+    background: rgba(124,58,237,.18); color: #c4b5fd;
+    border: 1px solid rgba(124,58,237,.32);
+    margin-right: .35rem;
+  }
+  .kk-fb-required-pill {
+    display: inline-block; padding: 2px 8px;
+    border-radius: 999px; font-size: .72rem; font-weight: 700;
+    background: rgba(239,68,68,.16); color: #fca5a5;
+    border: 1px solid rgba(239,68,68,.32);
+  }
+
+  /* Separator rows: pill-coloured to stand out from question rows. */
+  .kk-fb-row.kk-fb-row-separator {
+    background: linear-gradient(135deg, rgba(34,211,238,.10), rgba(124,58,237,.08));
+    border-color: rgba(34,211,238,.32);
+    border-left: 4px solid rgba(34,211,238,.65);
+  }
+  .kk-fb-sep-title {
+    font-weight: 800;
+    font-size: 1.05rem;
+    letter-spacing: .01em;
+  }
+  .kk-fb-type-pill.kk-fb-type-pill-sep {
+    background: rgba(34,211,238,.16);
+    color: #a5f3fc;
+    border-color: rgba(34,211,238,.36);
+  }
+
+  /* Modal */
+  .kk-modal {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(2,6,23,.62);
+    display: none; align-items: center; justify-content: center;
+    padding: 1rem;
+  }
+  .kk-modal.is-open { display: flex; }
+  .kk-modal-card {
+    background: var(--kk-surface); border: 1px solid var(--kk-border);
+    border-radius: var(--kk-radius);
+    width: 100%; max-width: 540px;
+    box-shadow: 0 30px 60px rgba(0,0,0,.45);
+  }
+  .kk-modal-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1rem 1.25rem; border-bottom: 1px solid var(--kk-border);
+  }
+  .kk-modal-close {
+    background: transparent; border: 0; font-size: 1.5rem;
+    color: var(--kk-text-dim, #9ca3af); cursor: pointer;
+  }
+  .kk-modal-body { padding: 1.25rem; }
+</style>
+
+<script>
+(() => {
+  const csrf = document.querySelector('[name=csrfmiddlewaretoken]')?.value || "";
+  const list = document.getElementById("kk-fb-question-list");
+  const modal = document.getElementById("kk-fb-modal");
+  const modalTitle = document.getElementById("kk-fb-modal-title");
+  const form = document.getElementById("kk-fb-form");
+  const typeSel = document.getElementById("kk-fb-type");
+  const choicesWrap = document.getElementById("kk-fb-choices-wrap");
+  const errorBox = document.getElementById("kk-fb-error");
+  const addUrl = "{% url 'attendance:feedback_question_add' event.pk %}";
+  const reorderUrl = "{% url 'attendance:feedback_question_reorder' event.pk %}";
+
+  function urlEdit(qid) {
+    return `/attendance/{{ event.pk }}/feedback/q/${qid}/`;
+  }
+  function urlDelete(qid) {
+    return `/attendance/{{ event.pk }}/feedback/q/${qid}/delete/`;
+  }
+
+  function openModal(question) {
+    errorBox.style.display = "none";
+    if (question) {
+      modalTitle.textContent = "Edit question";
+      document.getElementById("kk-fb-qid").value = question.id;
+      document.getElementById("kk-fb-text").value = question.text || "";
+      typeSel.value = question.question_type || "open_text";
+      document.getElementById("kk-fb-required").checked = !!question.required;
+      document.getElementById("kk-fb-choices").value = (question.choices || []).join("\n");
+    } else {
+      modalTitle.textContent = "Add question";
+      form.reset();
+      document.getElementById("kk-fb-qid").value = "";
+    }
+    syncTypeUi();
+    modal.classList.add("is-open");
+  }
+  function closeModal() {
+    modal.classList.remove("is-open");
+  }
+  function syncTypeUi() {
+    const t = typeSel.value;
+    // Options textarea only makes sense for MCQ.
+    choicesWrap.style.display = (t === "multiple_choice") ? "block" : "none";
+    // Separators are pure section headers: no "Required" toggle, and
+    // the text field is relabelled "Section title" to clarify what it
+    // becomes on the public page.
+    const isSeparator = (t === "separator");
+    const reqWrap = document.getElementById("kk-fb-required-wrap");
+    if (reqWrap) reqWrap.style.display = isSeparator ? "none" : "";
+    const textLabel = document.getElementById("kk-fb-text-label");
+    const textHelp = document.getElementById("kk-fb-text-help");
+    if (textLabel) textLabel.textContent = isSeparator ? "Section title" : "Question";
+    if (textHelp) textHelp.style.display = isSeparator ? "block" : "none";
+    if (isSeparator) {
+      const req = document.getElementById("kk-fb-required");
+      if (req) req.checked = false;
+    }
+  }
+
+  // Open / close hooks
+  document.getElementById("kk-fb-add-btn").addEventListener("click", () => openModal(null));
+  modal.querySelectorAll("[data-fb-modal-close]").forEach(el => {
+    el.addEventListener("click", closeModal);
+  });
+  typeSel.addEventListener("change", syncTypeUi);
+
+  // Renders a row from a JSON question payload.
+  function renderRow(q) {
+    const wrap = document.createElement("div");
+    wrap.dataset.qid = q.id;
+    wrap.draggable = true;
+    const isSep = q.question_type === "separator";
+
+    if (isSep) {
+      // Separator: pill-shaped, accent-coloured, no "Required" / no choices.
+      wrap.className = "kk-fb-row kk-fb-row-separator";
+      wrap.innerHTML = `
+        <span class="kk-fb-grab" aria-hidden="true">⋮⋮</span>
+        <div class="kk-fb-body">
+          <div class="kk-fb-sep-title"></div>
+          <div class="kk-fb-meta">
+            <span class="kk-fb-type-pill kk-fb-type-pill-sep">Section title</span>
+          </div>
+        </div>
+        <div class="kk-fb-actions">
+          <button type="button" class="kk-btn kk-btn-ghost btn-sm" data-edit><i class="bi bi-pencil"></i></button>
+          <button type="button" class="kk-btn kk-btn-ghost btn-sm" data-delete><i class="bi bi-trash"></i></button>
+        </div>
+      `;
+      wrap.querySelector(".kk-fb-sep-title").textContent = q.text;
+    } else {
+      wrap.className = "kk-fb-row";
+      const reqPill = q.required
+        ? `<span class="kk-fb-required-pill">Required</span>`
+        : "";
+      wrap.innerHTML = `
+        <span class="kk-fb-grab" aria-hidden="true">⋮⋮</span>
+        <div class="kk-fb-body">
+          <div class="kk-fb-title"></div>
+          <div class="kk-fb-meta">
+            <span class="kk-fb-type-pill"></span>
+            ${reqPill}
+            <span class="kk-fb-choice-summary kk-text-dim"></span>
+          </div>
+        </div>
+        <div class="kk-fb-actions">
+          <button type="button" class="kk-btn kk-btn-ghost btn-sm" data-edit><i class="bi bi-pencil"></i></button>
+          <button type="button" class="kk-btn kk-btn-ghost btn-sm" data-delete><i class="bi bi-trash"></i></button>
+        </div>
+      `;
+      wrap.querySelector(".kk-fb-title").textContent = q.text;
+      wrap.querySelector(".kk-fb-type-pill").textContent = q.type_label || q.question_type;
+      const sumEl = wrap.querySelector(".kk-fb-choice-summary");
+      if (q.question_type === "multiple_choice" && q.choices && q.choices.length) {
+        sumEl.textContent = "  · " + q.choices.join(", ");
+      } else {
+        sumEl.textContent = "";
+      }
+    }
+    wrap.querySelector("[data-edit]").addEventListener("click", () => openModal(q));
+    wrap.querySelector("[data-delete]").addEventListener("click", () => removeRow(q.id));
+    attachDrag(wrap);
+    return wrap;
+  }
+
+  // Submit handler — POST to add or edit.
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const qid = document.getElementById("kk-fb-qid").value;
+    const fd = new FormData(form);
+    const url = qid ? urlEdit(qid) : addUrl;
+    errorBox.style.display = "none";
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "X-CSRFToken": csrf },
+        body: fd,
+        credentials: "same-origin",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        errorBox.textContent = data.error || "Couldn't save the question.";
+        errorBox.style.display = "block";
+        return;
+      }
+      const q = data.question;
+      const existing = list.querySelector(`[data-qid="${q.id}"]`);
+      if (existing) {
+        existing.replaceWith(renderRow(q));
+      } else {
+        // Replace the empty state if present.
+        const empty = list.querySelector(".kk-empty");
+        if (empty) empty.remove();
+        list.appendChild(renderRow(q));
+      }
+      closeModal();
+    } catch (err) {
+      errorBox.textContent = "Network error — try again.";
+      errorBox.style.display = "block";
+    }
+  });
+
+  // Delete.
+  async function removeRow(qid) {
+    if (!confirm("Delete this question? Submitted answers will also be removed.")) return;
+    const res = await fetch(urlDelete(qid), {
+      method: "POST",
+      headers: { "X-CSRFToken": csrf },
+      credentials: "same-origin",
+    });
+    if (!res.ok) return alert("Couldn't delete.");
+    const row = list.querySelector(`[data-qid="${qid}"]`);
+    if (row) row.remove();
+  }
+
+  // Wire up rows that came in from the server template.
+  list.querySelectorAll(".kk-fb-row").forEach(row => {
+    const qid = row.dataset.qid;
+    const editBtn = row.querySelector("[data-edit]");
+    const delBtn = row.querySelector("[data-delete]");
+    editBtn.addEventListener("click", () => {
+      // Pull current values out of the row to repopulate the modal.
+      // Separators use `.kk-fb-sep-title` as their visible label —
+      // questions use `.kk-fb-title`. Fall back gracefully so a class
+      // mismatch never throws.
+      const titleEl = row.querySelector(".kk-fb-title")
+                    || row.querySelector(".kk-fb-sep-title");
+      openModal({
+        id: qid,
+        text: titleEl ? titleEl.textContent : "",
+        question_type: row.dataset.qtype || "open_text",
+        required: row.dataset.qrequired === "1",
+        choices: (row.dataset.qchoices || "").split("\n").filter(Boolean),
+      });
+    });
+    delBtn.addEventListener("click", () => removeRow(qid));
+    attachDrag(row);
+  });
+
+  // Drag-reorder.
+  let dragRow = null;
+  function attachDrag(row) {
+    row.addEventListener("dragstart", () => {
+      dragRow = row;
+      row.style.opacity = "0.5";
+    });
+    row.addEventListener("dragend", () => {
+      if (dragRow) dragRow.style.opacity = "";
+      dragRow = null;
+      saveOrder();
+    });
+    row.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      if (!dragRow || dragRow === row) return;
+      const rect = row.getBoundingClientRect();
+      const after = (e.clientY - rect.top) > rect.height / 2;
+      row.parentNode.insertBefore(dragRow, after ? row.nextSibling : row);
+    });
+  }
+  async function saveOrder() {
+    const ids = Array.from(list.querySelectorAll(".kk-fb-row"))
+      .map(r => Number(r.dataset.qid)).filter(Boolean);
+    if (!ids.length) return;
+    await fetch(reorderUrl, {
+      method: "POST",
+      headers: {
+        "X-CSRFToken": csrf,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ order: ids }),
+      credentials: "same-origin",
+    });
+  }
+})();
+</script>
+{% endblock %}

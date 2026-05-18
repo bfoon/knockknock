@@ -1,0 +1,55 @@
+{# One row in the feedback editor's question list. Server-rendered #}
+{# on first load; the JS clones a similar shape for new rows.       #}
+{% if q.is_separator %}
+  <div class="kk-fb-row kk-fb-row-separator"
+       data-qid="{{ q.pk }}"
+       data-qtype="separator"
+       data-qrequired="0"
+       data-qchoices=""
+       draggable="true">
+    <span class="kk-fb-grab" aria-hidden="true">⋮⋮</span>
+    <div class="kk-fb-body">
+      <div class="kk-fb-sep-title">{{ q.text }}</div>
+      <div class="kk-fb-meta">
+        <span class="kk-fb-type-pill kk-fb-type-pill-sep">Section title</span>
+      </div>
+    </div>
+    <div class="kk-fb-actions">
+      <button type="button" class="kk-btn kk-btn-ghost btn-sm" data-edit>
+        <i class="bi bi-pencil"></i>
+      </button>
+      <button type="button" class="kk-btn kk-btn-ghost btn-sm" data-delete>
+        <i class="bi bi-trash"></i>
+      </button>
+    </div>
+  </div>
+{% else %}
+  <div class="kk-fb-row"
+       data-qid="{{ q.pk }}"
+       data-qtype="{{ q.question_type }}"
+       data-qrequired="{% if q.required %}1{% else %}0{% endif %}"
+       data-qchoices="{% for c in q.cleaned_choices %}{{ c }}{% if not forloop.last %}&#10;{% endif %}{% endfor %}"
+       draggable="true">
+    <span class="kk-fb-grab" aria-hidden="true">⋮⋮</span>
+    <div class="kk-fb-body">
+      <div class="kk-fb-title">{{ q.text }}</div>
+      <div class="kk-fb-meta">
+        <span class="kk-fb-type-pill">{{ q.get_question_type_display }}</span>
+        {% if q.required %}<span class="kk-fb-required-pill">Required</span>{% endif %}
+        {% if q.question_type == "multiple_choice" and q.cleaned_choices %}
+          <span class="kk-fb-choice-summary kk-text-dim">
+            &nbsp;·&nbsp; {{ q.cleaned_choices|join:", " }}
+          </span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="kk-fb-actions">
+      <button type="button" class="kk-btn kk-btn-ghost btn-sm" data-edit>
+        <i class="bi bi-pencil"></i>
+      </button>
+      <button type="button" class="kk-btn kk-btn-ghost btn-sm" data-delete>
+        <i class="bi bi-trash"></i>
+      </button>
+    </div>
+  </div>
+{% endif %}

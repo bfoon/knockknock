@@ -41,6 +41,7 @@ from django.http import (
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.text import slugify
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.http import require_GET, require_POST
 
@@ -693,6 +694,86 @@ def agenda_preview(request, pk):
     """
     event = _own_event_or_404(request.user, pk)
     return render(request, "attendance/agenda_preview.html", {"event": event})
+
+
+# ── Agenda download (PDF / PNG via headless Chromium) ──────────
+
+@login_required
+@xframe_options_sameorigin
+def agenda_print(request, pk):
+    """
+    Standalone agenda page for headless rendering.
+
+    Loaded by services.render_agenda_pdf / render_agenda_png to capture
+    real PDF / PNG files. Honours ?theme=dark|light so all 10 agenda
+    templates can be flipped to a light palette without changing the
+    template partials themselves — the page only overrides the --kk-*
+    CSS variables.
+
+    Decorated with @xframe_options_sameorigin so it can also be viewed
+    in an iframe for debugging; harmless when Playwright is the caller.
+    """
+    event = _own_event_or_404(request.user, pk)
+    theme = request.GET.get("theme", "dark")
+    if theme not in ("dark", "light"):
+        theme = "dark"
+    return render(request, "attendance/agenda_print.html", {
+        "event": event,
+        "theme": theme,
+    })
+
+
+@login_required
+def agenda_download(request, pk):
+    """
+    Stream a real downloadable file (PDF or PNG) of the agenda in the
+    selected theme. No print dialog — Playwright drives a headless
+    Chromium server-side that captures the rendered page.
+
+    Query params:
+        format=pdf|png     (default: pdf)
+        theme=dark|light   (default: dark)
+
+    Returns the bytes with Content-Disposition: attachment so the
+    browser starts a download rather than rendering inline. Filename
+    is slugified from the event title, e.g. "dev-summit-agenda-dark.pdf".
+
+    If Playwright isn't installed we don't 500 — services raises a
+    RuntimeError, we surface it as a flash message and bounce the user
+    back to the event detail page. Mirrors how the reportlab-backed
+    certificate flow handles its missing-dep case.
+    """
+    event = _own_event_or_404(request.user, pk)
+
+    fmt = (request.GET.get("format") or "pdf").lower()
+    if fmt not in ("pdf", "png"):
+        return HttpResponseBadRequest("format must be 'pdf' or 'png'.")
+
+    theme = (request.GET.get("theme") or "dark").lower()
+    if theme not in ("dark", "light"):
+        theme = "dark"
+
+    try:
+        if fmt == "pdf":
+            data = services.render_agenda_pdf(request, event, theme=theme)
+            content_type = "application/pdf"
+        else:
+            data = services.render_agenda_png(request, event, theme=theme)
+            content_type = "image/png"
+    except RuntimeError as e:
+        messages.error(
+            request,
+            f"Could not generate agenda download: {e}",
+        )
+        return redirect("attendance:event_detail", pk=event.pk)
+
+    slug = slugify(event.title) or f"event-{event.pk}"
+    filename = f"{slug}-agenda-{theme}.{fmt}"
+
+    response = HttpResponse(data, content_type=content_type)
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response["Content-Length"] = str(len(data))
+    return response
 
 
 # ── Stats endpoint feeding the dashboard charts ─────────────────

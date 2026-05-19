@@ -80,11 +80,18 @@
 </div>
 
 <style>
-.kk-public-wrap { max-width: 540px; margin: 2rem auto; }
+.kk-public-wrap {
+  max-width: 540px; margin: 2rem auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
 .kk-public-card {
   background: var(--kk-surface); border: 1px solid var(--kk-border);
   border-radius: var(--kk-radius); padding: 1.75rem;
+  max-width: 100%;
+  overflow: hidden;
 }
+.kk-public-card, .kk-public-card * { min-width: 0; }
 .kk-public-head { margin-bottom: 1.5rem; }
 .kk-public-section {
   padding: 1.25rem 0;
@@ -102,7 +109,13 @@
   border: 1px solid rgba(124, 58, 237, 0.3);
   border-radius: 10px;
 }
-.kk-geofence-notice > i { color: #c4b5fd; font-size: 1.25rem; line-height: 1; margin-top: 2px; }
+/* Lock the icon column so a long text body doesn't squash it to 0,
+   and let the text column shrink + wrap freely. */
+.kk-geofence-notice > i {
+  color: #c4b5fd; font-size: 1.25rem; line-height: 1; margin-top: 2px;
+  flex-shrink: 0;
+}
+.kk-geofence-notice > div { min-width: 0; overflow-wrap: anywhere; }
 
 .kk-directions-btn {
   display: inline-flex; align-items: center; gap: .45rem;
@@ -114,10 +127,20 @@
   font-size: .85rem; font-weight: 500;
   text-decoration: none;
   transition: background .15s, color .15s;
+  max-width: 100%;
 }
 .kk-directions-btn:hover {
   background: rgba(34, 211, 238, 0.22);
   color: #a5f3fc;
+}
+
+@media (max-width: 480px) {
+  .kk-public-wrap {
+    margin-top: 1rem;
+    padding-left: .75rem;
+    padding-right: .75rem;
+  }
+  .kk-public-card { padding: 1.25rem; }
 }
 </style>
 {% endblock %}

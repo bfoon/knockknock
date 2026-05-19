@@ -118,6 +118,50 @@
               id="kk-agenda-refresh">
         <i class="bi bi-arrow-clockwise"></i> Refresh preview
       </button>
+
+      {# ── Download agenda ─────────────────────────────────────
+         PDF + PNG, dark + light. Each link hits the agenda_download
+         view which streams the rendered file. The view shells out to
+         Playwright server-side, so no print dialog. #}
+      <div class="kk-agenda-dl-block mt-3">
+        <div class="kk-agenda-dl-block-head">
+          <i class="bi bi-download"></i> Download agenda
+        </div>
+        <div class="kk-agenda-dl-grid">
+          <a class="kk-agenda-dl-tile"
+             href="{% url 'attendance:agenda_download' event.pk %}?format=pdf&theme=dark">
+            <span class="kk-agenda-dl-tile-format">PDF</span>
+            <span class="kk-agenda-dl-tile-theme">
+              <span class="kk-agenda-dl-swatch kk-agenda-dl-swatch--dark"></span>
+              Dark
+            </span>
+          </a>
+          <a class="kk-agenda-dl-tile"
+             href="{% url 'attendance:agenda_download' event.pk %}?format=pdf&theme=light">
+            <span class="kk-agenda-dl-tile-format">PDF</span>
+            <span class="kk-agenda-dl-tile-theme">
+              <span class="kk-agenda-dl-swatch kk-agenda-dl-swatch--light"></span>
+              Light
+            </span>
+          </a>
+          <a class="kk-agenda-dl-tile"
+             href="{% url 'attendance:agenda_download' event.pk %}?format=png&theme=dark">
+            <span class="kk-agenda-dl-tile-format">PNG</span>
+            <span class="kk-agenda-dl-tile-theme">
+              <span class="kk-agenda-dl-swatch kk-agenda-dl-swatch--dark"></span>
+              Dark
+            </span>
+          </a>
+          <a class="kk-agenda-dl-tile"
+             href="{% url 'attendance:agenda_download' event.pk %}?format=png&theme=light">
+            <span class="kk-agenda-dl-tile-format">PNG</span>
+            <span class="kk-agenda-dl-tile-theme">
+              <span class="kk-agenda-dl-swatch kk-agenda-dl-swatch--light"></span>
+              Light
+            </span>
+          </a>
+        </div>
+      </div>
     </div>
   </aside>
 </div>
@@ -224,6 +268,46 @@
   position: absolute; inset: 0;
   width: 100%; height: 100%; border: 0;
 }
+
+/* Download tiles */
+.kk-agenda-dl-block-head {
+  font-size: .82rem; font-weight: 600;
+  color: var(--kk-text-dim);
+  display: flex; align-items: center; gap: .4rem;
+  margin-bottom: .5rem;
+}
+.kk-agenda-dl-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: .4rem;
+}
+.kk-agenda-dl-tile {
+  display: flex; flex-direction: column; gap: .15rem;
+  padding: .55rem .7rem;
+  background: var(--kk-surface-2);
+  border: 1px solid var(--kk-border);
+  border-radius: 8px;
+  color: inherit; text-decoration: none;
+  transition: border-color .15s, background .15s;
+}
+.kk-agenda-dl-tile:hover {
+  border-color: rgba(124, 58, 237, 0.45);
+  background: rgba(124, 58, 237, 0.08);
+  color: inherit;
+}
+.kk-agenda-dl-tile-format {
+  font-size: .68rem; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--kk-text-dim);
+}
+.kk-agenda-dl-tile-theme {
+  display: inline-flex; align-items: center; gap: .35rem;
+  font-size: .85rem;
+}
+.kk-agenda-dl-swatch {
+  flex-shrink: 0;
+  width: 14px; height: 14px; border-radius: 3px;
+  border: 1px solid var(--kk-border);
+}
+.kk-agenda-dl-swatch--dark { background: #0b1120; }
+.kk-agenda-dl-swatch--light { background: #ffffff; }
 
 #kk-agenda-toast {
   position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);

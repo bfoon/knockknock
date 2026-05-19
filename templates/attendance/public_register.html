@@ -85,16 +85,29 @@
 </div>
 
 <style>
-.kk-public-wrap { max-width: 640px; margin: 0 auto; }
+.kk-public-wrap {
+  max-width: 640px; margin: 0 auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+/* Cover image stays inside the wrap padding. */
 .kk-public-cover {
   height: 180px; background-size: cover; background-position: center;
   border-radius: var(--kk-radius); margin-bottom: -2rem; position: relative; z-index: 0;
+  max-width: 100%;
 }
 .kk-public-card {
   background: var(--kk-surface); border: 1px solid var(--kk-border);
   border-radius: var(--kk-radius); padding: 2rem; position: relative; z-index: 1;
+  /* Same overflow protection as the ticket card. */
+  max-width: 100%;
+  overflow: hidden;
 }
-.kk-public-blurb { color: var(--kk-text-dim); line-height: 1.6; }
+.kk-public-card, .kk-public-card * { min-width: 0; }
+.kk-public-blurb {
+  color: var(--kk-text-dim); line-height: 1.6;
+  overflow-wrap: anywhere;
+}
 .kk-public-capacity {
   display: inline-flex; align-items: center; gap: .4rem;
   padding: .35rem .8rem; border-radius: 999px;
@@ -116,10 +129,40 @@
   font-size: .85rem; font-weight: 500;
   text-decoration: none;
   transition: background .15s, color .15s;
+  /* Keep the button on one line but allow it to shrink rather than
+     push the layout if the parent is narrower than the label. */
+  max-width: 100%;
 }
 .kk-directions-btn:hover {
   background: rgba(34, 211, 238, 0.22);
   color: #a5f3fc;
+}
+
+/* Form fields: Django renders {{ field }} with whatever widget the form
+   declared. Some custom widgets ship without width:100% / box-sizing,
+   which is the usual reason inputs overflow on phones. Defensive
+   universal rule below catches anything we forgot to class. */
+.kk-public-form input,
+.kk-public-form select,
+.kk-public-form textarea {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.kk-public-form input[type="text"],
+.kk-public-form input[type="email"],
+.kk-public-form input[type="tel"],
+.kk-public-form input[type="url"],
+.kk-public-form input[type="number"],
+.kk-public-form input[type="password"],
+.kk-public-form select,
+.kk-public-form textarea {
+  width: 100%;
+}
+
+@media (max-width: 480px) {
+  .kk-public-wrap { padding-left: .75rem; padding-right: .75rem; }
+  .kk-public-card { padding: 1.25rem; }
+  .kk-public-cover { height: 140px; margin-bottom: -1.5rem; }
 }
 </style>
 {% endblock %}

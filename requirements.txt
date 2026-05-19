@@ -13,3 +13,5 @@ matplotlib
 python-docx
 openpyxl
 reportlab
+playwright
+chromium

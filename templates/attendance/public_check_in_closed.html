@@ -13,4 +13,27 @@
     </div>
   </div>
 </div>
+
+<style>
+/* Same mobile-safe wrap rules as the other public pages. Defined
+   inline because this template doesn't share a stylesheet with them. */
+.kk-public-wrap {
+  max-width: 540px; margin: 2rem auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+.kk-public-card {
+  background: var(--kk-surface); border: 1px solid var(--kk-border);
+  border-radius: var(--kk-radius); padding: 1.75rem;
+  max-width: 100%;
+}
+@media (max-width: 480px) {
+  .kk-public-wrap {
+    margin-top: 1rem;
+    padding-left: .75rem;
+    padding-right: .75rem;
+  }
+  .kk-public-card { padding: 1.25rem; }
+}
+</style>
 {% endblock %}

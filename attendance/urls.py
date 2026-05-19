@@ -40,6 +40,13 @@ urlpatterns = [
     path("<int:pk>/agenda/reorder/",               views.agenda_reorder,      name="agenda_reorder"),
     path("<int:pk>/agenda/template/",              views.agenda_set_template, name="agenda_set_template"),
     path("<int:pk>/agenda/preview/",               views.agenda_preview,      name="agenda_preview"),
+    # Headless-renderable agenda page. Loaded by services.render_agenda_*
+    # under Playwright to produce real PDF / PNG files. Honours
+    # ?theme=dark|light so all 10 agenda templates flip palette in one go.
+    path("<int:pk>/agenda/print/",                 views.agenda_print,        name="agenda_print"),
+    # Actual file download endpoint. ?format=pdf|png&theme=dark|light.
+    # Streams the rendered bytes as an attachment — no print dialog.
+    path("<int:pk>/agenda/download/",              views.agenda_download,     name="agenda_download"),
 
     path("<int:pk>/announce/",              views.announcement_send,    name="announcement_send"),
     path("<int:pk>/r/<int:reg_id>/action/", views.registration_action,  name="registration_action"),

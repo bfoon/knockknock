@@ -22,6 +22,8 @@ Certificate rendering:
 import io
 import logging
 from datetime import datetime
+from io import BytesIO
+from urllib.parse import urlencode
 
 import qrcode
 from asgiref.sync import async_to_sync
@@ -901,3 +903,150 @@ def render_certificate_preview_png(event, *, template_key=None,
     c.save()
     buf.seek(0)
     return (buf.read(), "application/pdf")
+
+
+def _try_import_playwright():
+    """Single import point for the optional Playwright dependency.
+
+    Returns a tuple (sync_playwright, Error) where:
+      - sync_playwright is the context-manager entry point.
+      - Error is Playwright's base exception class, used to catch
+        browser-launch failures separately from generic Exceptions.
+    Returns (None, None) when the package isn't installed at all.
+    """
+    try:
+        from playwright.sync_api import sync_playwright, Error
+        return sync_playwright, Error
+    except ImportError:
+        return None, None
+
+
+def _render_agenda_via_browser(request, event, *, theme: str, output: str):
+    """
+    Spin up headless Chromium, point it at the agenda print page, and
+    return the rendered bytes.
+
+    Args:
+        request: the Django HttpRequest — used to build the absolute URL
+                 and to forward the user's session cookie so the print
+                 page (which is @login_required) authenticates.
+        event:   AttendanceEvent
+        theme:   "dark" or "light"
+        output:  "pdf" or "png"
+
+    Returns:
+        (bytes, content_type, file_ext)
+
+    Raises:
+        RuntimeError with a human-readable message when:
+          - Playwright isn't installed at all, or
+          - Playwright is installed but the Chromium binary isn't on
+            disk (most commonly because `playwright install chromium`
+            was never run inside the runtime environment).
+        The view catches RuntimeError and turns it into a flash
+        message + redirect, instead of returning a 500.
+    """
+    sync_playwright, PlaywrightError = _try_import_playwright()
+    if sync_playwright is None:
+        raise RuntimeError(
+            "Playwright is not installed. Run "
+            "`pip install playwright && playwright install chromium`."
+        )
+
+    # Build the absolute URL of the print page, including the theme
+    # query so the page renders the right palette. We use the existing
+    # `agenda_print` URL name (registered in urls.py).
+    from django.urls import reverse
+    qs = urlencode({"theme": theme})
+    print_url = request.build_absolute_uri(
+        reverse("attendance:agenda_print", kwargs={"pk": event.pk}) + f"?{qs}"
+    )
+
+    # Forward the session + CSRF cookies so the headless browser is
+    # authenticated as the same organiser. Without this, the print
+    # page hits the login redirect and we'd render a login screen.
+    cookies = []
+    domain = request.get_host().split(":")[0]
+    for name in ("sessionid", "csrftoken"):
+        if name in request.COOKIES:
+            cookies.append({
+                "name": name,
+                "value": request.COOKIES[name],
+                "domain": domain,
+                "path": "/",
+            })
+
+    with sync_playwright() as p:
+        # Most common failure mode at this line: the Python package is
+        # installed but the browser binary isn't on disk yet, because
+        # `playwright install chromium` was never run inside the image.
+        # Translate that into a RuntimeError so the view shows a
+        # friendly flash message instead of returning a 500.
+        try:
+            browser = p.chromium.launch(args=["--no-sandbox"])
+        except PlaywrightError as e:
+            logger.exception("Playwright failed to launch Chromium")
+            raise RuntimeError(
+                "The Chromium browser used to render the agenda isn't "
+                "available on the server. An administrator needs to run "
+                "`playwright install chromium` inside the running "
+                "container, or rebuild the image with "
+                "`RUN playwright install --with-deps chromium` in the "
+                f"Dockerfile. (Underlying error: {e})"
+            ) from e
+
+        try:
+            context = browser.new_context(
+                viewport={"width": 900, "height": 1200},
+                device_scale_factor=2,  # crisper PNGs / sharper PDFs
+            )
+            if cookies:
+                context.add_cookies(cookies)
+
+            page = context.new_page()
+            page.goto(print_url, wait_until="networkidle", timeout=15000)
+            # Page sets body[data-render-ready=1] once fonts have loaded.
+            try:
+                page.wait_for_selector(
+                    "body[data-render-ready='1']", timeout=5000,
+                )
+            except Exception:
+                # Don't hard-fail if the signal doesn't fire — networkidle
+                # is usually enough. Continue with whatever's painted.
+                logger.debug("agenda_print render_ready signal not seen")
+
+            if output == "pdf":
+                # Emulate print so any (future) @media print rules apply.
+                page.emulate_media(media="print")
+                data = page.pdf(
+                    format="A4",
+                    print_background=True,
+                    margin={"top": "14mm", "right": "12mm",
+                            "bottom": "14mm", "left": "12mm"},
+                )
+                return data, "application/pdf", "pdf"
+
+            elif output == "png":
+                data = page.screenshot(full_page=True, type="png")
+                return data, "image/png", "png"
+
+            else:
+                raise ValueError(f"Unknown output format: {output!r}")
+        finally:
+            browser.close()
+
+
+def render_agenda_pdf(request, event, *, theme: str = "dark") -> bytes:
+    """Public helper: render the agenda as a PDF in the chosen theme."""
+    data, _ct, _ext = _render_agenda_via_browser(
+        request, event, theme=theme, output="pdf",
+    )
+    return data
+
+
+def render_agenda_png(request, event, *, theme: str = "dark") -> bytes:
+    """Public helper: render the agenda as a full-page PNG screenshot."""
+    data, _ct, _ext = _render_agenda_via_browser(
+        request, event, theme=theme, output="png",
+    )
+    return data

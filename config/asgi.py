@@ -12,12 +12,16 @@ from channels.auth import AuthMiddlewareStack
 from channels.security.websocket import AllowedHostsOriginValidator
 
 import presentations.routing
+import boardly.routing
 
 application = ProtocolTypeRouter({
     "http": django_asgi_app,
     "websocket": AllowedHostsOriginValidator(
         AuthMiddlewareStack(
-            URLRouter(presentations.routing.websocket_urlpatterns)
+            URLRouter(
+                presentations.routing.websocket_urlpatterns
+                + boardly.routing.websocket_urlpatterns
+            )
         )
     ),
 })

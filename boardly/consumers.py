@@ -16,9 +16,12 @@ Speaks JSON. Client → server messages:
     {type:"like", id}                          someone liked a note
     {type:"mod", action, id}                   presenter moderation
                                                action ∈ hide|show|delete|pin|unpin
+    {type:"set_state", state}                  presenter opens/closes the board
+                                               state ∈ open|ended
 
 Server → client messages:
     {type:"state", ...}        full snapshot (sent on connect)
+    {type:"board_state", state} live state change (lobby/open/ended)
     {type:"note_added", note}  a new note for the board
     {type:"note_ack", ...}     confirmation back to the author
     {type:"note_rejected", reason}
@@ -97,6 +100,11 @@ class BoardConsumer(AsyncWebsocketConsumer):
             # Only the presenter screen may moderate.
             if self.is_presenter:
                 await self._handle_mod(data)
+
+        elif mtype == "set_state":
+            # Only the presenter screen may open/close the board.
+            if self.is_presenter:
+                await self._handle_set_state(data)
 
     # ── note posting ─────────────────────────────────────────────────
     async def _handle_note(self, data):
@@ -181,6 +189,21 @@ class BoardConsumer(AsyncWebsocketConsumer):
                 "payload": {"type": "note_restored", "id": note_id},
             })
 
+    # ── presenter: open / close the board ────────────────────────────
+    async def _handle_set_state(self, data):
+        new_state = data.get("state")
+        if new_state not in {"open", "ended"}:
+            return
+        ok = await self._set_state(new_state)
+        if not ok:
+            return
+        # Tell the whole board (presenter + every participant) so the
+        # participant pads move waiting → compose → ended live.
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {"type": "board_state", "state": new_state},
+        })
+
     # ── group fanout ─────────────────────────────────────────────────
     async def fanout(self, event):
         await self.send_json(event["payload"])
@@ -210,6 +233,16 @@ class BoardConsumer(AsyncWebsocketConsumer):
         from .models import BoardSession
         s = BoardSession.objects.filter(code=self.code).first()
         return bool(s and s.state in ("open", "running"))
+
+    @sync_to_async
+    def _set_state(self, new_state):
+        from .models import BoardSession
+        s = BoardSession.objects.filter(code=self.code).first()
+        if not s:
+            return False
+        s.state = new_state
+        s.save(update_fields=["state", "updated_at"])
+        return True
 
     @sync_to_async
     def _snapshot(self):

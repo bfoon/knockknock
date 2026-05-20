@@ -57,6 +57,12 @@
 
     <button class="kk-tool" id="btn-moderate" title="Moderation mode"><i class="bi bi-shield-check"></i></button>
     <button class="kk-tool" id="btn-fullscreen" title="Fullscreen"><i class="bi bi-arrows-fullscreen"></i></button>
+
+    {# Open / close the board — the master control participants wait on. #}
+    <button class="kk-btn kk-btn-primary kk-board-power" id="btn-power"
+            data-state="{{ session.state }}">
+      <i class="bi bi-play-fill"></i> <span id="btn-power-label">Open board</span>
+    </button>
   </header>
 
   {# ── The whiteboard canvas ──────────────────────────────────────── #}

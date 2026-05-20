@@ -280,9 +280,22 @@
       <i class="bi bi-people"></i> Attendees
       <span class="kk-text-dim small">({{ registrations_accepted|length }})</span>
     </h2>
+
+    {# Search — filters the list below client-side by name/email/phone. #}
+    {% if registrations_accepted %}
+    <div class="kk-attendee-search">
+      <i class="bi bi-search"></i>
+      <input type="search" id="kk-attendee-search-input"
+             placeholder="Search attendees by name, email or phone…"
+             autocomplete="off" aria-label="Search attendees">
+      <span class="kk-attendee-search-count" id="kk-attendee-search-count"></span>
+    </div>
+    {% endif %}
+
     <div id="kk-attendee-list" class="kk-attendee-scroll">
       {% for r in registrations_accepted %}
-        <div class="kk-list-item kk-attendee" data-reg-id="{{ r.pk }}">
+        <div class="kk-list-item kk-attendee" data-reg-id="{{ r.pk }}"
+             data-search="{{ r.display_name|lower }} {{ r.email|lower }} {{ r.phone|lower }}">
           {% if r.status == "checked_in" %}
             <span class="kk-presence-dot kk-presence-here" title="Checked in"></span>
           {% else %}
@@ -332,6 +345,11 @@
           <p>No registrations yet. Share the link below to get the word out.</p>
         </div>
       {% endfor %}
+      {# Shown by the search JS when a query matches nobody. #}
+      <div class="kk-empty" id="kk-attendee-no-match" style="display:none;">
+        <div class="em">🔍</div>
+        <p>No attendees match your search.</p>
+      </div>
     </div>
   </div>
 
@@ -361,6 +379,24 @@
   {{ attendee_details|json_script:"kk-attendee-details" }}
 
   <style>
+  /* Attendee search box. */
+  .kk-attendee-search {
+    display: flex; align-items: center; gap: .5rem;
+    padding: .4rem .7rem; margin-bottom: .6rem;
+    background: var(--kk-surface); border: 1px solid var(--kk-border);
+    border-radius: 10px;
+  }
+  .kk-attendee-search > i { color: var(--kk-text-dim); flex-shrink: 0; }
+  .kk-attendee-search input {
+    flex: 1 1 auto; min-width: 0;
+    background: none; border: 0; outline: none;
+    color: inherit; font: inherit; padding: .15rem 0;
+  }
+  .kk-attendee-search input::placeholder { color: var(--kk-text-dim); }
+  .kk-attendee-search-count {
+    flex-shrink: 0; color: var(--kk-text-dim);
+    font-size: .82rem; white-space: nowrap;
+  }
   /* Scrollable attendee list — caps height so a long roster doesn't
      push the rest of the page down; scrolls internally instead. */
   .kk-attendee-scroll {
@@ -413,10 +449,48 @@
      certificate modal below already uses. */
   (function () {
     function init() {
-      var modalEl = document.getElementById("kk-attendee-modal");
       var listEl = document.getElementById("kk-attendee-list");
+      if (!listEl) return;
+
+      // ── Attendee search — client-side filter by name/email/phone ──
+      // Wired first, and independent of Bootstrap: search must work even
+      // if the modal library failed to load.
+      (function wireSearch() {
+        var searchInput = document.getElementById("kk-attendee-search-input");
+        var noMatchEl = document.getElementById("kk-attendee-no-match");
+        var countEl = document.getElementById("kk-attendee-search-count");
+        if (!searchInput) return;
+        var rows = Array.prototype.slice.call(
+          listEl.querySelectorAll(".kk-attendee"));
+
+        function applyFilter() {
+          var q = searchInput.value.trim().toLowerCase();
+          var shown = 0;
+          rows.forEach(function (row) {
+            var hay = row.getAttribute("data-search") || "";
+            var match = q === "" || hay.indexOf(q) !== -1;
+            row.style.display = match ? "" : "none";
+            if (match) shown++;
+          });
+          if (noMatchEl) {
+            noMatchEl.style.display =
+              (q !== "" && shown === 0) ? "" : "none";
+          }
+          if (countEl) {
+            countEl.textContent = q === ""
+              ? "" : shown + " of " + rows.length;
+          }
+        }
+        searchInput.addEventListener("input", applyFilter);
+        searchInput.addEventListener("keydown", function (e) {
+          if (e.key === "Escape") { searchInput.value = ""; applyFilter(); }
+        });
+      })();
+
+      // ── Attendee detail modal (needs Bootstrap) ──
+      var modalEl = document.getElementById("kk-attendee-modal");
       var dataEl = document.getElementById("kk-attendee-details");
-      if (!modalEl || !listEl || !dataEl) return;
+      if (!modalEl || !dataEl) return;
       if (typeof bootstrap === "undefined" || !bootstrap.Modal) {
         console.error("[attendee-modal] Bootstrap JS not loaded.");
         return;

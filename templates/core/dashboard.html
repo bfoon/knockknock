@@ -466,10 +466,35 @@
 /* Recent games row that contains both the edit link and a Results button. */
 .kk-list-item-game {
   display: flex;
-  align-items: flex-start;
-  gap: .65rem;
+  align-items: center;
+  flex-wrap: wrap;          /* Results + duplicate + delete can wrap below
+                               the title when the column is narrow */
+  gap: .5rem;
 }
-.kk-list-item-game .kk-list-item-title { font-weight: 600; }
+.kk-list-item-game > a:first-of-type {
+  flex: 1 1 200px;          /* the edit link grows but can shrink so the
+                               buttons stay inside the card */
+  min-width: 0;
+}
+.kk-list-item-game .kk-list-item-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Keep the action buttons from being squeezed below their fixed size. */
+.kk-list-item-game .kk-btn,
+.kk-list-item-game .kk-row-action-form,
+.kk-list-item-game .kk-row-delete-form {
+  flex: 0 0 auto;
+}
+/* The ms-2 / ms-1 Bootstrap margins push the Results button past the edge
+   once the row wraps — neutralise them; the flex `gap` handles spacing. */
+.kk-list-item-row .ms-1,
+.kk-list-item-row .ms-2,
+.kk-list-item-game .ms-1,
+.kk-list-item-game .ms-2 {
+  margin-left: 0 !important;
+}
 
 /* ──────────────────────────────────────────────────────────────
    ROW + DELETE BUTTON
@@ -480,6 +505,8 @@
 .kk-list-item-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;          /* let action buttons drop to a new line
+                               instead of spilling past the card edge */
   gap: .35rem;
   /* Inherit the same hover/border treatment .kk-list-item already has;
      the row just adds the trash on the right. */
@@ -488,12 +515,21 @@
   display: flex;
   align-items: center;
   gap: .65rem;
-  flex: 1 1 auto;
-  min-width: 0;          /* allow long titles to truncate naturally */
+  flex: 1 1 240px;          /* grow, but allow shrinking below content size
+                               so long titles truncate instead of pushing
+                               the action buttons out of the card */
+  min-width: 0;             /* allow long titles to truncate naturally */
   text-decoration: none;
   color: inherit;
   /* Soak up the same padding the original .kk-list-item used so the row
      keeps its original click-target size. */
+}
+.kk-list-item-row .kk-list-item-title,
+.kk-list-item-row .kk-list-item-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;      /* keep titles/meta on one line so they
+                               truncate cleanly rather than wrapping */
 }
 .kk-list-item-row .kk-list-item-main:hover {
   text-decoration: none;

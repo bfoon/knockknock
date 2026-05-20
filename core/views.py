@@ -3,6 +3,7 @@ from django.shortcuts import render, redirect
 from polls.models import Questionnaire
 from games.models import Quiz
 from presentations.models import LiveSession
+from boardly.models import BoardSession
 from attendance.models import AttendanceEvent
 from attendance.venue_models import Venue
 
@@ -67,11 +68,16 @@ def dashboard(request):
         AttendanceEvent.objects.filter(owner=request.user)
         .order_by("-starts_at")[:DASHBOARD_RECENT_LIMIT]
     )
+    boards = (
+        BoardSession.objects.filter(owner=request.user)
+        .order_by("-updated_at")[:DASHBOARD_RECENT_LIMIT]
+    )
 
     # Totals so the section headers / footers can read "See all (12)".
     questionnaires_total = Questionnaire.objects.filter(owner=request.user).count()
     quizzes_total = Quiz.objects.filter(owner=request.user).count()
     attendance_events_total = AttendanceEvent.objects.filter(owner=request.user).count()
+    boards_total = BoardSession.objects.filter(owner=request.user).count()
 
     plan = get_effective_plan(request.user)
     subscription = get_effective_subscription(request.user)
@@ -92,12 +98,14 @@ def dashboard(request):
         "quizzes": quizzes,
         "recent_sessions": recent_sessions,
         "attendance_events": attendance_events,
+        "boards": boards,
 
         # Totals + cap, so the template can show "See all (N)" only when it
         # makes sense (i.e. when there are more items than fit on the dashboard).
         "questionnaires_total": questionnaires_total,
         "quizzes_total": quizzes_total,
         "attendance_events_total": attendance_events_total,
+        "boards_total": boards_total,
         "recent_limit": DASHBOARD_RECENT_LIMIT,
 
         "plan": plan,

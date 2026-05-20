@@ -351,6 +351,64 @@
     };
   }
 
+  /*
+   * Wrap a long x-axis label into multiple lines so adjacent labels
+   * don't overlap. Chart.js renders an ARRAY returned from a tick
+   * callback as one line per element, so we split on words to fit a
+   * pixel budget and cap the number of lines (truncating with an
+   * ellipsis past the cap so a very long label can't push the chart
+   * area up indefinitely).
+   */
+  function wrapAxisLabel(text, maxWidthPx, fontPx) {
+    const label = String(text == null ? "" : text);
+    if (!label) return label;
+
+    // Rough average character width for the bold axis font (~0.6em).
+    // Good enough for layout without measuring every glyph on a canvas.
+    const charPx = Math.max(4, fontPx * 0.6);
+    const maxChars = Math.max(4, Math.floor(maxWidthPx / charPx));
+
+    // Short enough already — leave it on one line.
+    if (label.length <= maxChars) return label;
+
+    const MAX_LINES = 3;
+    const words = label.split(/\s+/);
+    const lines = [];
+    let current = "";
+
+    words.forEach((word) => {
+      // A single word longer than the budget: hard-split it.
+      if (word.length > maxChars) {
+        if (current) { lines.push(current); current = ""; }
+        let rest = word;
+        while (rest.length > maxChars) {
+          lines.push(rest.slice(0, maxChars - 1) + "-");
+          rest = rest.slice(maxChars - 1);
+        }
+        current = rest;
+        return;
+      }
+      const candidate = current ? current + " " + word : word;
+      if (candidate.length > maxChars) {
+        if (current) lines.push(current);
+        current = word;
+      } else {
+        current = candidate;
+      }
+    });
+    if (current) lines.push(current);
+
+    if (lines.length > MAX_LINES) {
+      const kept = lines.slice(0, MAX_LINES);
+      let last = kept[MAX_LINES - 1];
+      last = last.slice(0, Math.max(1, maxChars - 1)).replace(/\s+$/, "") + "…";
+      kept[MAX_LINES - 1] = last;
+      return kept;
+    }
+    return lines;
+  }
+
+
   function baseOptions(values, chartKind, indexAxis) {
     const textColor = getTextColor();
     const dimColor = getDimTextColor();
@@ -360,6 +418,16 @@
     const maxValue = safeYAxisMax(values);
     const axisFontSizes = getAxisFontSizes();
 
+    // Wrapped x-axis labels can occupy 2–3 lines. Reserve extra bottom
+    // padding so those lines aren't clipped. Only relevant for vertical
+    // bar/column charts (categories on x). The exact line count is
+    // decided per-label at render time; here we just give generous room.
+    const baseBottom = 58;
+    const lineHeight = Math.round(axisFontSizes.x * 1.25);
+    const bottomPad = isHorizontal
+      ? baseBottom
+      : baseBottom + lineHeight * 2;   // room for up to ~3 wrapped lines
+
     const options = {
       responsive: true,
       maintainAspectRatio: false,
@@ -368,13 +436,13 @@
       /*
        * This padding fixes both problems:
        * - top label/crown has space
-       * - bottom x-axis labels have space
+       * - bottom x-axis labels have space (incl. wrapped multi-line ones)
        */
       layout: {
         padding: {
           top: 62,
           right: 28,
-          bottom: 58,
+          bottom: bottomPad,
           left: 16,
         },
       },
@@ -436,6 +504,25 @@
           font: {
             size: axisFontSizes.x,
             weight: "600",
+          },
+          /*
+           * Wrap long category labels onto multiple lines so they don't
+           * overlap their neighbours. Only applies when the x-axis holds
+           * the CATEGORY labels — i.e. vertical bar/column charts. On a
+           * horizontal bar chart the x-axis is the numeric value axis
+           * (categories sit on y), so we leave those ticks untouched.
+           */
+          callback: function (value, index) {
+            const raw = this.getLabelForValue(value);
+            if (isHorizontal) return raw;          // numeric axis — no wrap
+            const scale = this;
+            const count = (scale.ticks && scale.ticks.length) ||
+                          (scale.chart.data.labels || []).length || 1;
+            // Per-label width budget: the x-axis width split across all
+            // categories, minus a small gutter so lines don't touch.
+            const axisWidth = (scale.width || scale.chart.width || 0);
+            const budget = Math.max(28, (axisWidth / count) - 10);
+            return wrapAxisLabel(raw, budget, axisFontSizes.x);
           },
         },
         grid: {

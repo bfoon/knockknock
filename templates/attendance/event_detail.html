@@ -280,7 +280,7 @@
       <i class="bi bi-people"></i> Attendees
       <span class="kk-text-dim small">({{ registrations_accepted|length }})</span>
     </h2>
-    <div id="kk-attendee-list">
+    <div id="kk-attendee-list" class="kk-attendee-scroll">
       {% for r in registrations_accepted %}
         <div class="kk-list-item kk-attendee" data-reg-id="{{ r.pk }}">
           {% if r.status == "checked_in" %}
@@ -289,14 +289,16 @@
             <span class="kk-presence-dot" title="Not yet here"></span>
           {% endif %}
           <div class="flex-grow-1">
-            <div class="kk-list-item-title">
-              {{ r.display_name }}
-              {% if r.is_walk_in %}<span class="kk-badge-walkin">walk-in</span>{% endif %}
-            </div>
-            <div class="kk-list-item-meta">
-              {{ r.email|default:r.phone }}
-              {% if r.checked_in_at %} · arrived {{ r.checked_in_at|time:"H:i" }}{% endif %}
-            </div>
+            <button type="button" class="kk-attendee-open" title="View attendee details">
+              <span class="kk-list-item-title">
+                {{ r.display_name }}
+                {% if r.is_walk_in %}<span class="kk-badge-walkin">walk-in</span>{% endif %}
+              </span>
+              <span class="kk-list-item-meta">
+                {{ r.email|default:r.phone }}
+                {% if r.check_ins.all %} · {{ r.check_ins.all|length }} check-in{{ r.check_ins.all|length|pluralize }}{% elif r.checked_in_at %} · arrived {{ r.checked_in_at|time:"H:i" }}{% endif %}
+              </span>
+            </button>
           </div>
           <form method="post" action="{% url 'attendance:registration_action' event.pk r.pk %}" class="d-flex gap-1">
             {% csrf_token %}
@@ -332,6 +334,147 @@
       {% endfor %}
     </div>
   </div>
+
+  {# ── Attendee detail modal — one reused instance ── #}
+  <div class="modal fade" id="kk-attendee-modal" tabindex="-1"
+       aria-labelledby="kk-attendee-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="kk-attendee-modal-title">Attendee</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"
+                  aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="kk-attendee-modal-body">
+          <!-- filled by JS -->
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="kk-btn kk-btn-ghost btn-sm"
+                  data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Attendee detail payloads — serialised safely by Django. The modal #}
+  {# JS reads this and looks up the clicked attendee by registration id. #}
+  {{ attendee_details|json_script:"kk-attendee-details" }}
+
+  <style>
+  /* Scrollable attendee list — caps height so a long roster doesn't
+     push the rest of the page down; scrolls internally instead. */
+  .kk-attendee-scroll {
+    max-height: 420px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-right: .25rem;   /* breathing room for the scrollbar */
+  }
+  .kk-attendee-scroll::-webkit-scrollbar { width: 8px; }
+  .kk-attendee-scroll::-webkit-scrollbar-thumb {
+    background: var(--kk-border); border-radius: 4px;
+  }
+  /* The clickable name button — looks like plain text, acts like a link. */
+  .kk-attendee-open {
+    display: block; width: 100%; text-align: left;
+    background: none; border: 0; padding: 0; cursor: pointer;
+    color: inherit; font: inherit;
+  }
+  .kk-attendee-open:hover .kk-list-item-title { text-decoration: underline; }
+  .kk-attendee-open .kk-list-item-title,
+  .kk-attendee-open .kk-list-item-meta { display: block; }
+  /* Modal detail rows. */
+  .kk-detail-row {
+    display: flex; justify-content: space-between; gap: 1rem;
+    padding: .4rem 0; border-bottom: 1px solid var(--kk-border);
+  }
+  .kk-detail-row:last-child { border-bottom: 0; }
+  .kk-detail-row .lbl { color: var(--kk-text-dim); }
+  .kk-detail-row .val { text-align: right; overflow-wrap: anywhere; }
+  .kk-detail-h {
+    font-size: .8rem; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--kk-text-dim); margin: 1rem 0 .35rem;
+  }
+  .kk-checkin-item {
+    display: flex; justify-content: space-between; gap: 1rem;
+    padding: .35rem .6rem; margin-bottom: .3rem;
+    background: var(--kk-surface); border: 1px solid var(--kk-border);
+    border-radius: 8px;
+  }
+  </style>
+
+  <script>
+  /* Attendee detail modal — reads the json_script payload keyed by
+     registration id. No extra server round-trip. */
+  (function () {
+    var modalEl = document.getElementById("kk-attendee-modal");
+    var listEl = document.getElementById("kk-attendee-list");
+    var dataEl = document.getElementById("kk-attendee-details");
+    if (!modalEl || !listEl || !dataEl || typeof bootstrap === "undefined") return;
+
+    var details = {};
+    try { details = JSON.parse(dataEl.textContent) || {}; }
+    catch (err) { return; }
+
+    var modal = new bootstrap.Modal(modalEl);
+    var titleEl = document.getElementById("kk-attendee-modal-title");
+    var bodyEl = document.getElementById("kk-attendee-modal-body");
+
+    function esc(s) {
+      var d = document.createElement("div");
+      d.textContent = s == null ? "" : String(s);
+      return d.innerHTML;
+    }
+    function row(label, value) {
+      return '<div class="kk-detail-row"><span class="lbl">' +
+        esc(label) + '</span><span class="val">' + esc(value) +
+        "</span></div>";
+    }
+
+    listEl.addEventListener("click", function (e) {
+      var opener = e.target.closest(".kk-attendee-open");
+      if (!opener) return;
+      var rowEl = opener.closest(".kk-attendee");
+      if (!rowEl) return;
+
+      var d = details[rowEl.dataset.regId];
+      if (!d) return;
+
+      titleEl.textContent = d.name || "Attendee";
+
+      var html = "";
+      html += row("Status", d.status || "—");
+      html += row("Email", d.email || "—");
+      html += row("Phone", d.phone || "—");
+      if (d.is_walk_in) html += row("Type", "Walk-in");
+      html += row("Registered", d.registered || "—");
+      html += row("Total check-ins",
+                  d.checkins ? d.checkins.length : 0);
+
+      html += '<div class="kk-detail-h">Check-in history</div>';
+      if (d.checkins && d.checkins.length) {
+        d.checkins.forEach(function (c) {
+          html += '<div class="kk-checkin-item"><span>' +
+            esc(c.day) + " · " + esc(c.date) +
+            '</span><span class="kk-text-dim">' +
+            esc(c.time) + " · " + esc(c.method) + "</span></div>";
+        });
+      } else {
+        html += '<p class="kk-text-dim small mb-0">No check-ins recorded yet.</p>';
+      }
+
+      if (d.answers && d.answers.length) {
+        html += '<div class="kk-detail-h">Registration answers</div>';
+        d.answers.forEach(function (a) {
+          html += row(a.label, a.value || "—");
+        });
+      }
+
+      bodyEl.innerHTML = html;
+      modal.show();
+    });
+  })();
+  </script>
+
 
   {# ─── RIGHT COLUMN ────────────────────────────────────── #}
   <div class="col-lg-5">

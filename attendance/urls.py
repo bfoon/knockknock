@@ -99,15 +99,23 @@ urlpatterns = [
     #   - /t/<token>/feedback/  ← reached from a personal ticket QR
     # Both are also linked to automatically from `public_check_in` and
     # `ticket` when the survey is active (see feedback_views.should_route_to_feedback).
+    #
+    # NOTE: the /t/ token routes use <str:token>, NOT <uuid:token>.
+    # Django's uuid converter rejects anything that isn't a canonical
+    # lowercase-hyphenated UUID — uppercase, or a dashless 32-char form,
+    # gets a hard router 404 before the view ever runs. QR scanners and
+    # copy-paste can easily produce those variants. With <str:token> the
+    # request reaches the view, which normalises the token and returns a
+    # clean "ticket not found" instead of an opaque 404.
     path("e/<str:public_token>/feedback/",      feedback_views.public_feedback_by_token, name="public_feedback_by_token"),
-    path("t/<uuid:token>/feedback/",            feedback_views.public_feedback_by_ticket, name="public_feedback_by_ticket"),
+    path("t/<str:token>/feedback/",             feedback_views.public_feedback_by_ticket, name="public_feedback_by_ticket"),
 
     # ── Public attendee paths (short for SMS / printing) ─────
     path("e/<str:public_token>/",        views.public_register,  name="public_register"),
     path("e/<str:public_token>/qr.png",  views.public_qr,        name="public_qr"),
     path("e/<str:public_token>/checkin/", views.public_check_in, name="public_check_in"),
 
-    path("t/<uuid:token>/",          views.ticket,             name="ticket"),
-    path("t/<uuid:token>/qr.png",    views.ticket_qr,          name="ticket_qr"),
-    path("t/<uuid:token>/checkin/",  views.attendee_check_in,  name="attendee_check_in"),
+    path("t/<str:token>/",          views.ticket,             name="ticket"),
+    path("t/<str:token>/qr.png",    views.ticket_qr,          name="ticket_qr"),
+    path("t/<str:token>/checkin/",  views.attendee_check_in,  name="attendee_check_in"),
 ]

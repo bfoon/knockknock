@@ -672,8 +672,154 @@ class Registration(models.Model):
             if save:
                 self.save(update_fields=["status", "checked_in_at"])
 
+    def record_daily_check_in(self, *, device_token="", method="ticket"):
+        """
+        Record a check-in for *today* (server timezone), deduplicated.
+
+        Returns (check_in, created, reason):
+          • created=True  → a new CheckIn row was made for today.
+          • created=False → already checked in today; `reason` is
+            "already_today" in every duplicate case (a repeat scan on
+            this registration, OR this device already used today). Both
+            are surfaced to the attendee with the same gentle message.
+
+        The check-in is linked to the organiser-defined AgendaDay whose
+        date equals today, when one exists; otherwise just the calendar
+        date is used so check-in never hard-fails for events with no
+        agenda.
+
+        Also keeps the legacy Registration.status / checked_in_at in sync
+        so the rest of the app (capacity, certificates) still works.
+        """
+        from django.db import IntegrityError
+
+        today = timezone.localdate()
+
+        # Already checked in today on this registration?
+        existing = self.check_ins.filter(day=today).first()
+        if existing:
+            return existing, False, "already_today"
+
+        # This device already used today for this event? Treated as the
+        # same "already checked in today" case — blocked, gentle message.
+        if device_token:
+            device_clash = CheckIn.objects.filter(
+                event=self.event, day=today, device_token=device_token,
+            ).exclude(registration=self).first()
+            if device_clash:
+                return device_clash, False, "already_today"
+
+        # Link to the agenda day matching today's date, if the organiser
+        # defined one. NULL is fine — `day` still anchors the row.
+        agenda_day = self.event.agenda_days.filter(date=today).first()
+
+        try:
+            check_in = CheckIn.objects.create(
+                registration=self, event=self.event, day=today,
+                agenda_day=agenda_day,
+                device_token=device_token or "", method=method,
+            )
+        except IntegrityError:
+            # Lost a race — another request created today's row first.
+            existing = self.check_ins.filter(day=today).first()
+            return existing, False, "already_today"
+
+        # Keep the legacy single-timestamp fields meaningful: status flips
+        # to checked-in, and checked_in_at records the *first* check-in.
+        if self.status == self.STATUS_ACCEPTED:
+            self.status = self.STATUS_CHECKED_IN
+            if not self.checked_in_at:
+                self.checked_in_at = check_in.checked_in_at
+            self.save(update_fields=["status", "checked_in_at"])
+
+        return check_in, True, ""
+
     def get_ticket_url(self):
         return reverse("attendance:ticket", kwargs={"token": str(self.token)})
+
+
+# ───────────────────── CheckIn (per-day log) ─────────────────────
+
+class CheckIn(models.Model):
+    """
+    One check-in event for one registration on one calendar day.
+
+    The original design stored a single ``checked_in_at`` on Registration,
+    which only models a one-time arrival. Multi-day events need a row per
+    day, so each scan creates (or is deduplicated against) a CheckIn here.
+
+    ``device_token`` is a random value generated client-side and kept in
+    the browser's localStorage. It is NOT a hardware identifier — browsers
+    don't expose one. It simply lets us recognise the same browser/device
+    so a second scan on the same day is treated as a duplicate rather than
+    a fresh check-in. Clearing browser storage resets it; that is an
+    accepted limitation of any web-based device recognition.
+    """
+
+    METHOD_TICKET = "ticket"      # personal QR
+    METHOD_SELF = "self"          # event-level QR + identifier lookup
+    METHOD_ORGANIZER = "organizer"  # marked by the organizer in the dashboard
+    METHOD_CHOICES = [
+        (METHOD_TICKET, "Personal QR"),
+        (METHOD_SELF, "Self check-in"),
+        (METHOD_ORGANIZER, "Organizer"),
+    ]
+
+    registration = models.ForeignKey(
+        Registration, on_delete=models.CASCADE, related_name="check_ins",
+    )
+    # Denormalised for fast per-event queries without a join through
+    # Registration. Kept in sync on create.
+    event = models.ForeignKey(
+        AttendanceEvent, on_delete=models.CASCADE, related_name="check_ins",
+    )
+    # The calendar day this check-in counts for (server timezone). This
+    # is always set and is what the uniqueness constraints key on, since
+    # a date is available even when the organiser hasn't built an agenda.
+    day = models.DateField(db_index=True)
+    # The organiser-defined agenda day this check-in belongs to, when one
+    # matches today's date. NULL when the event has no agenda days, or
+    # today isn't a scheduled day — in that case `day` alone is used.
+    agenda_day = models.ForeignKey(
+        "AgendaDay", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="check_ins",
+    )
+    checked_in_at = models.DateTimeField(auto_now_add=True)
+
+    device_token = models.CharField(
+        max_length=64, blank=True, db_index=True,
+        help_text="Random per-browser token, stored client-side. "
+                  "Used to spot duplicate same-day scans.",
+    )
+    method = models.CharField(
+        max_length=10, choices=METHOD_CHOICES, default=METHOD_TICKET,
+    )
+
+    class Meta:
+        ordering = ["-checked_in_at"]
+        indexes = [
+            models.Index(fields=["event", "day"]),
+            models.Index(fields=["registration", "day"]),
+        ]
+        constraints = [
+            # A registration can be checked in at most once per day.
+            models.UniqueConstraint(
+                fields=["registration", "day"],
+                name="uniq_checkin_registration_day",
+            ),
+            # The same device can't be used for two check-ins on the same
+            # day for the same event — blocks one phone checking in many
+            # people, or the same person twice. Empty device_token rows
+            # (organizer-marked, or storage disabled) are exempt.
+            models.UniqueConstraint(
+                fields=["event", "day", "device_token"],
+                condition=~models.Q(device_token=""),
+                name="uniq_checkin_event_day_device",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.registration.display_name()} · {self.day}"
 
 
 # ───────────────────── RegistrationAnswer ─────────────────────

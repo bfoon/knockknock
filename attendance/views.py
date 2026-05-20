@@ -28,6 +28,7 @@ Three groups, separated by who they're for:
 
 import csv
 import json
+import uuid
 from collections import Counter, defaultdict
 from datetime import timedelta
 
@@ -51,7 +52,7 @@ from .forms import (
 )
 from .models import (
     AGENDA_TEMPLATES, AGENDA_TEMPLATE_KEYS, AgendaItem,
-    AttendanceEvent, CERTIFICATE_TEMPLATES, Certificate, EventField,
+    AttendanceEvent, CERTIFICATE_TEMPLATES, Certificate, CheckIn, EventField,
     PRESET_FIELDS, Registration, RegistrationAnswer, AgendaDay,
 )
 from . import services
@@ -66,6 +67,24 @@ def _own_event_or_404(user, pk):
 
 def _public_event_or_404(token):
     return get_object_or_404(AttendanceEvent, public_token=token)
+
+
+def _registration_or_404(token):
+    """
+    Resolve a personal-ticket token (a string from the URL) to a
+    Registration.
+
+    The /t/ routes use <str:token> rather than <uuid:token> so that
+    non-canonical forms — uppercase, or the 32-char dashless form a QR
+    scanner sometimes yields — reach the view instead of being rejected
+    by the router with an opaque 404. We normalise here: anything that
+    isn't a parseable UUID, or doesn't match a row, gets a clean 404.
+    """
+    try:
+        normalised = uuid.UUID(str(token))
+    except (ValueError, AttributeError, TypeError):
+        raise Http404("Invalid ticket link.")
+    return get_object_or_404(Registration, token=normalised)
 
 
 def _next_field_order(event):
@@ -88,6 +107,22 @@ def _parse_coords(request):
         return (float(raw_lat), float(raw_lng))
     except (TypeError, ValueError):
         return (None, None)
+
+
+def _device_token(request):
+    """
+    Read the client-generated device token from the request.
+
+    The check-in pages create a random token in the browser's
+    localStorage and send it back on every check-in (hidden form field
+    on POST, query string on GET). It is not a hardware id — it just
+    lets the per-day dedup recognise the same browser. Returns "" when
+    absent (e.g. storage disabled), which the dedup treats as exempt.
+    """
+    raw = (request.POST.get("device_token")
+           or request.GET.get("device_token") or "").strip()
+    # Keep it bounded and simple — the field is max_length=64.
+    return raw[:64]
 
 
 def _ensure_default_day(event):
@@ -195,7 +230,46 @@ def _apply_venue_defaults(event, venue):
 def event_detail(request, pk):
     """The organizer's live dashboard for one event."""
     event = _own_event_or_404(request.user, pk)
-    regs = event.registrations.select_related("user").order_by("-registered_at")
+    regs = (
+        event.registrations
+        .select_related("user")
+        # Prefetched for the attendee-detail modal: per-day check-in
+        # history and the answers the attendee gave on the reg form.
+        .prefetch_related("check_ins__agenda_day", "answers__field")
+        .order_by("-registered_at")
+    )
+
+    accepted = [r for r in regs if r.status in (
+        Registration.STATUS_ACCEPTED, Registration.STATUS_CHECKED_IN,
+    )]
+
+    # Per-attendee detail payloads for the modal. Built here (rather than
+    # hand-assembled as JSON in the template) so Django's json_script can
+    # serialise them safely — no escaping pitfalls.
+    attendee_details = {}
+    for r in accepted:
+        attendee_details[r.pk] = {
+            "name": r.display_name(),
+            "email": r.email,
+            "phone": r.phone,
+            "status": r.get_status_display(),
+            "is_walk_in": r.is_walk_in,
+            "registered": r.registered_at.strftime("%-d %b %Y, %H:%M"),
+            "checkins": [
+                {
+                    "day": (c.agenda_day.label if c.agenda_day
+                            and c.agenda_day.label else str(c.day)),
+                    "date": c.day.strftime("%-d %b %Y"),
+                    "time": c.checked_in_at.strftime("%H:%M"),
+                    "method": c.get_method_display(),
+                }
+                for c in r.check_ins.all()
+            ],
+            "answers": [
+                {"label": a.field.label, "value": a.value}
+                for a in r.answers.all()
+            ],
+        }
 
     # Build the QR URL that gets projected/printed at the venue.
     public_qr_target = request.build_absolute_uri(
@@ -206,9 +280,8 @@ def event_detail(request, pk):
         "event": event,
         "registrations": regs,
         "registrations_pending": [r for r in regs if r.status == Registration.STATUS_PENDING],
-        "registrations_accepted": [r for r in regs if r.status in (
-            Registration.STATUS_ACCEPTED, Registration.STATUS_CHECKED_IN,
-        )],
+        "registrations_accepted": accepted,
+        "attendee_details": attendee_details,
         "checked_in_count": event.checked_in_count(),
         "accepted_count": event.accepted_count(),
         "pending_count": event.pending_count(),
@@ -1123,7 +1196,7 @@ def _save_answers(reg, form):
 
 def ticket(request, token):
     """Attendee's personal page — shows their QR + agenda + announcements."""
-    reg = get_object_or_404(Registration, token=token)
+    reg = _registration_or_404(token)
     # If the event has ended and the organizer has activated the feedback
     # survey, the personal ticket QR should land on the survey instead.
     # We redirect rather than render inline so the ticket page itself
@@ -1142,7 +1215,7 @@ def ticket(request, token):
 @require_GET
 def ticket_qr(request, token):
     """PNG QR encoding the attendee's check-in URL."""
-    reg = get_object_or_404(Registration, token=token)
+    reg = _registration_or_404(token)
     target = request.build_absolute_uri(
         reverse("attendance:attendee_check_in", kwargs={"token": str(reg.token)})
     )
@@ -1260,9 +1333,19 @@ def public_check_in(request, public_token):
                             "out_of_range": True,
                         }, status=403)
 
-                matched.mark_checked_in()
-                services.broadcast_check_in(matched)
-                return redirect("attendance:ticket", token=str(matched.token))
+                matched, created, reason = matched.record_daily_check_in(
+                    device_token=_device_token(request),
+                    method=CheckIn.METHOD_SELF,
+                )
+                if created:
+                    services.broadcast_check_in(matched)
+                else:
+                    # Already checked in today (repeat, or reused device)
+                    # — same gentle message, then on to their ticket.
+                    messages.info(request,
+                                  "You're already checked in for today.")
+                return redirect("attendance:ticket",
+                                token=str(matched.token))
     else:
         form = QuickCheckInForm(event)
 
@@ -1282,7 +1365,7 @@ def attendee_check_in(request, token):
     first hit (no lat/lng in URL), and only after we have coords and
     confirm they're inside the radius do we mark them checked in.
     """
-    reg = get_object_or_404(Registration, token=token)
+    reg = _registration_or_404(token)
     event = reg.event
 
     if not event.is_check_in_open():
@@ -1291,9 +1374,13 @@ def attendee_check_in(request, token):
     if reg.status == Registration.STATUS_PENDING:
         messages.info(request, "Your registration is still pending review.")
         return redirect("attendance:ticket", token=str(reg.token))
-    if reg.status != Registration.STATUS_ACCEPTED:
-        # Already checked in, or declined/cancelled — back to the ticket.
+    if reg.status in (Registration.STATUS_DECLINED,
+                      Registration.STATUS_CANCELLED):
+        # Withdrawn registrations can't check in at all.
         return redirect("attendance:ticket", token=str(reg.token))
+    # Note: STATUS_CHECKED_IN is NOT bounced here any more. A multi-day
+    # event means someone checked in yesterday is still eligible today;
+    # record_daily_check_in() handles same-day duplicate suppression.
 
     # Geofence gate.
     if event.has_geofence():
@@ -1315,8 +1402,17 @@ def attendee_check_in(request, token):
                 "out_of_range": True,
             }, status=403)
 
-    reg.mark_checked_in()
-    services.broadcast_check_in(reg)
+    check_in, created, reason = reg.record_daily_check_in(
+        device_token=_device_token(request),
+        method=CheckIn.METHOD_TICKET,
+    )
+    if created:
+        services.broadcast_check_in(reg)
+        messages.success(request, "You're checked in. Enjoy the event!")
+    else:
+        # Both a repeat scan and a reused device land here — same gentle
+        # message, no fuss.
+        messages.info(request, "You're already checked in for today.")
     return redirect("attendance:ticket", token=str(reg.token))
 
 

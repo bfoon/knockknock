@@ -39,6 +39,7 @@
              alt="Your personal QR" class="kk-ticket-qr">
         {% if event.is_check_in_open %}
           <a href="{% url 'attendance:attendee_check_in' registration.token %}"
+             id="kk-checkin-link"
              class="kk-btn kk-btn-primary kk-btn-lg w-100 mt-3">
             <i class="bi bi-door-open"></i> I'm here — check me in
           </a>
@@ -436,4 +437,41 @@
   .kk-ticket-section .d-flex.gap-2.flex-wrap > .kk-btn { width: 100%; }
 }
 </style>
+
+<script>
+/* Device token — a random per-browser id kept in localStorage so the
+   server can spot duplicate same-day check-ins. NOT a hardware id; it
+   resets if the visitor clears site data, which is an accepted limit. */
+(function () {
+  var KEY = "kk_device_token";
+  function deviceToken() {
+    var t = null;
+    try { t = localStorage.getItem(KEY); } catch (e) { /* storage off */ }
+    if (!t) {
+      // 32 hex chars. crypto.randomUUID() where available, else fallback.
+      if (window.crypto && crypto.randomUUID) {
+        t = crypto.randomUUID().replace(/-/g, "");
+      } else {
+        t = "";
+        for (var i = 0; i < 32; i++) {
+          t += Math.floor(Math.random() * 16).toString(16);
+        }
+      }
+      try { localStorage.setItem(KEY, t); } catch (e) { /* storage off */ }
+    }
+    return t;
+  }
+
+  // Append the token to the check-in link so the GET carries it.
+  var link = document.getElementById("kk-checkin-link");
+  if (link) {
+    var tok = deviceToken();
+    if (tok) {
+      var u = new URL(link.href, window.location.origin);
+      u.searchParams.set("device_token", tok);
+      link.href = u.toString();
+    }
+  }
+})();
+</script>
 {% endblock %}

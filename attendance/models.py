@@ -756,7 +756,51 @@ class Certificate(models.Model):
         return self.serial
 
 
-# ───────────────────── Agenda items ─────────────────────
+# ───────────────────── Agenda days & items ─────────────────────
+
+class AgendaDay(models.Model):
+    """
+    One day in a multi-day agenda.
+
+    Single-day events still have exactly one AgendaDay row (created
+    automatically the first time an item is added, or backfilled by
+    the migration for legacy events). Multi-day events have one row
+    per day — Day 1, Day 2, "Pre-conference Workshop", whatever the
+    organiser wants.
+
+    `date` is the calendar date the day's sessions occur on. Used by
+    the "you are here" indicator on the live pages to anchor each
+    session to the right wall-clock moment.
+
+    `label` is the human-readable header shown above the day's
+    sessions in every agenda style. If blank, no header is rendered,
+    which keeps single-day agendas looking exactly the way they
+    looked before this model existed.
+    """
+
+    event = models.ForeignKey(
+        AttendanceEvent, on_delete=models.CASCADE, related_name="agenda_days",
+    )
+    date = models.DateField(
+        help_text="Calendar date this day's sessions occur on.",
+    )
+    label = models.CharField(
+        max_length=120, blank=True,
+        help_text="Header shown above this day's sessions "
+                  "(e.g. 'Day 1', 'Pre-conference workshop'). "
+                  "Leave blank for no header — useful for single-day events.",
+    )
+    order = models.PositiveIntegerField(
+        default=0,
+        help_text="Display order. Days with the same order fall back to date.",
+    )
+
+    class Meta:
+        ordering = ("order", "date", "id")
+
+    def __str__(self):
+        return self.label or self.date.isoformat()
+
 
 class AgendaItem(models.Model):
     """
@@ -767,9 +811,14 @@ class AgendaItem(models.Model):
     organiser fills in AgendaItem rows, the ticket and event pages will
     render those instead, styled by the event's chosen agenda template.
 
-    Times are stored as local naive `TimeField` values plus a date
-    derived from the event start. Storing the date implicitly via the
-    event keeps day-of-event recurring blocks easy.
+    Each item belongs to exactly one AgendaDay. The day's `date` plus
+    the item's `start_time` gives the precise moment the session
+    starts — used by the live "now" indicator.
+
+    The `event` field is retained for cheap reverse-lookups (still
+    used by exports, certificates, and the legacy `agenda_items`
+    related-name on AttendanceEvent). It's kept in sync automatically
+    in `save()` so callers don't have to set it twice.
     """
 
     STATUS_UPCOMING = "upcoming"
@@ -784,10 +833,17 @@ class AgendaItem(models.Model):
     event = models.ForeignKey(
         AttendanceEvent, on_delete=models.CASCADE, related_name="agenda_items",
     )
+    day = models.ForeignKey(
+        AgendaDay, on_delete=models.CASCADE, related_name="items",
+        # Nullable in the model to let the data migration backfill it
+        # without a chicken-and-egg problem. After the migration runs,
+        # the application layer (forms, views) never produces NULL.
+        null=True, blank=True,
+    )
     order = models.PositiveIntegerField(default=0)
 
     start_time = models.TimeField(
-        help_text="Local start time on the event day.",
+        help_text="Local start time on this day.",
     )
     end_time = models.TimeField(
         null=True, blank=True,
@@ -813,17 +869,23 @@ class AgendaItem(models.Model):
     )
 
     class Meta:
-        ordering = ("order", "start_time")
+        ordering = ("day__order", "day__date", "order", "start_time")
 
     def __str__(self):
         return f"{self.start_time}  {self.title}"
+
+    def save(self, *args, **kwargs):
+        # Keep `event` in sync with the chosen day. Callers can pass
+        # only `day` and we'll resolve the event from it.
+        if self.day_id and not self.event_id:
+            self.event_id = self.day.event_id
+        super().save(*args, **kwargs)
 
     @property
     def duration_label(self):
         """Human-readable duration like '45 min' or '1 h 30 min'."""
         if not (self.start_time and self.end_time):
             return ""
-        # Naive minutes-based calc — adequate for same-day agendas.
         s = self.start_time.hour * 60 + self.start_time.minute
         e = self.end_time.hour * 60 + self.end_time.minute
         mins = e - s

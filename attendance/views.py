@@ -47,12 +47,12 @@ from django.views.decorators.http import require_GET, require_POST
 
 from .forms import (
     AgendaItemForm, AnnouncementForm, DynamicRegistrationForm, EventFieldForm,
-    EventForm, QuickCheckInForm,
+    EventForm, QuickCheckInForm, AgendaDayForm,
 )
 from .models import (
     AGENDA_TEMPLATES, AGENDA_TEMPLATE_KEYS, AgendaItem,
     AttendanceEvent, CERTIFICATE_TEMPLATES, Certificate, EventField,
-    PRESET_FIELDS, Registration, RegistrationAnswer,
+    PRESET_FIELDS, Registration, RegistrationAnswer, AgendaDay,
 )
 from . import services
 from .feedback_views import should_route_to_feedback
@@ -89,6 +89,29 @@ def _parse_coords(request):
     except (TypeError, ValueError):
         return (None, None)
 
+
+def _ensure_default_day(event):
+    """Return the day this event's legacy editor should target.
+
+    Behaviour:
+      • If the event has zero days, create one using
+        event.starts_at.date() as the date and an empty label
+        (no header rendered). This is what the data migration would
+        have produced for legacy events.
+      • Otherwise return the first day by order, which is what the
+        legacy single-day editor was implicitly always targeting.
+
+    This is the bridge that keeps the pre-multi-day editor working
+    until Batch 2 replaces it with proper day management.
+    """
+    day = event.agenda_days.order_by("order", "date", "id").first()
+    if day:
+        return day
+    return event.agenda_days.create(
+        date=event.starts_at.date(),
+        label="",
+        order=0,
+    )
 
 # ═══════════════════════════════════════════════════════════════
 # ORGANIZER-SIDE
@@ -583,11 +606,24 @@ def certificate_preview(request, pk):
 
 @login_required
 def agenda_editor(request, pk):
-    """Standalone page for managing the structured agenda + visual template."""
+    """Standalone page for managing the structured agenda + visual template.
+
+    Context exposes BOTH `items` (flat list — what the legacy editor
+    template iterates) AND `days` (grouped — what the Batch 2 editor
+    will iterate). Keeping both means we can ship the data-layer
+    multi-day support without breaking the existing UI.
+    """
     event = _own_event_or_404(request.user, pk)
     return render(request, "attendance/agenda_editor.html", {
         "event": event,
-        "items": event.agenda_items.all(),
+        # Flat list — used by the legacy template that doesn't know
+        # about days yet. Pulled from AgendaItem directly so we get
+        # items regardless of whether they have a day FK set.
+        "items": AgendaItem.objects.filter(event=event).order_by(
+            "day__order", "day__date", "order", "start_time",
+        ),
+        # Day-grouped — used by the upcoming day-aware editor.
+        "days": event.agenda_days.prefetch_related("items").all(),
         "templates": AGENDA_TEMPLATES,
     })
 
@@ -611,17 +647,42 @@ def _agenda_item_to_json(item):
 @login_required
 @require_POST
 def agenda_item_add(request, pk):
-    """Create a new agenda row. Body posts whatever AgendaItemForm expects."""
+    """Create a new agenda row.
+
+    Accepts an optional `day_id` POST param. When supplied (the new
+    multi-day editor), the item attaches to that day. When omitted
+    (the legacy single-day editor), the item attaches to the event's
+    first day, creating a default day on the fly if none exists.
+
+    This forgiveness is intentional — it keeps the existing UI alive
+    until Batch 2 ships a day-aware editor. The new editor SHOULD
+    always send day_id explicitly; if it doesn't, we still recover.
+    """
     event = _own_event_or_404(request.user, pk)
+
+    day_id = request.POST.get("day_id")
+    if day_id:
+        try:
+            day = event.agenda_days.get(pk=day_id)
+        except AgendaDay.DoesNotExist:
+            return JsonResponse(
+                {"ok": False, "error": "Day not found on this event."}, status=404,
+            )
+    else:
+        # Legacy editor path: pick (or create) the default day.
+        day = _ensure_default_day(event)
+
     form = AgendaItemForm(request.POST)
     if not form.is_valid():
         return JsonResponse({
             "ok": False,
             "error": "; ".join(f"{k}: {v[0]}" for k, v in form.errors.items()),
         }, status=400)
+
     item = form.save(commit=False)
     item.event = event
-    item.order = (event.agenda_items.aggregate(Max("order"))["order__max"] or 0) + 1
+    item.day = day
+    item.order = (day.items.aggregate(Max("order"))["order__max"] or 0) + 1
     item.save()
     return JsonResponse({"ok": True, "item": _agenda_item_to_json(item)})
 
@@ -653,16 +714,43 @@ def agenda_item_delete(request, pk, item_id):
 @login_required
 @require_POST
 def agenda_reorder(request, pk):
-    """Save drag-order. Body: {"order": [3, 1, 2]}."""
+    """Save drag-order for items.
+
+    Body: {"order": [3, 1, 2], "day_id": 7}   ← new editor
+    Body: {"order": [3, 1, 2]}                ← legacy editor
+
+    When `day_id` is omitted, the reorder applies within the event's
+    first day. With only one day, this matches the pre-multi-day
+    behaviour exactly. With multiple days, the legacy editor would
+    only have shown items from one day at a time anyway, so this
+    stays consistent.
+    """
     event = _own_event_or_404(request.user, pk)
     try:
         payload = json.loads(request.body or "{}")
+        day_id = payload.get("day_id")
         ids = payload.get("order") or []
     except ValueError:
         return HttpResponseBadRequest("Bad JSON.")
+
+    if day_id:
+        if not event.agenda_days.filter(pk=day_id).exists():
+            return JsonResponse(
+                {"ok": False, "error": "Day not found on this event."}, status=404,
+            )
+        scope = {"day_id": day_id}
+    else:
+        # Legacy editor: scope to the first day if there is one.
+        # If there isn't, fall back to all event items (handles the
+        # tiny window where data migration is mid-flight).
+        first_day = event.agenda_days.order_by("order", "date", "id").first()
+        scope = {"day_id": first_day.pk} if first_day else {}
+
     with transaction.atomic():
         for index, item_id in enumerate(ids):
-            AgendaItem.objects.filter(pk=item_id, event=event).update(order=index)
+            AgendaItem.objects.filter(
+                pk=item_id, event=event, **scope,
+            ).update(order=index)
     return JsonResponse({"ok": True})
 
 
@@ -1367,3 +1455,84 @@ def event_duplicate(request, pk):
     if nxt.startswith("/"):
         return redirect(nxt)
     return redirect("attendance:event_list")
+
+
+@login_required
+@require_POST
+def agenda_day_add(request, pk):
+    """Create a new day. POSTs whatever AgendaDayForm expects."""
+    event = _own_event_or_404(request.user, pk)
+
+    form = AgendaDayForm(request.POST)
+    if not form.is_valid():
+        return JsonResponse({
+            "ok": False,
+            "error": "; ".join(f"{k}: {v[0]}" for k, v in form.errors.items()),
+        }, status=400)
+
+    day = form.save(commit=False)
+    day.event = event
+    day.order = (event.agenda_days.aggregate(Max("order"))["order__max"] or 0) + 1
+    day.save()
+    return JsonResponse({
+        "ok": True,
+        "day": {
+            "id": day.pk,
+            "date": day.date.isoformat(),
+            "label": day.label,
+            "order": day.order,
+        },
+    })
+
+
+@login_required
+@require_POST
+def agenda_day_edit(request, pk, day_id):
+    event = _own_event_or_404(request.user, pk)
+    day = get_object_or_404(AgendaDay, pk=day_id, event=event)
+    form = AgendaDayForm(request.POST, instance=day)
+    if not form.is_valid():
+        return JsonResponse({
+            "ok": False,
+            "error": "; ".join(f"{k}: {v[0]}" for k, v in form.errors.items()),
+        }, status=400)
+    form.save()
+    return JsonResponse({
+        "ok": True,
+        "day": {
+            "id": day.pk,
+            "date": day.date.isoformat(),
+            "label": day.label,
+            "order": day.order,
+        },
+    })
+
+
+@login_required
+@require_POST
+def agenda_day_delete(request, pk, day_id):
+    """Delete a day. Cascades to delete all its sessions.
+
+    The editor UI MUST confirm with the organiser before calling this
+    — deleting a day silently removes every item inside it.
+    """
+    event = _own_event_or_404(request.user, pk)
+    day = get_object_or_404(AgendaDay, pk=day_id, event=event)
+    day.delete()
+    return JsonResponse({"ok": True, "deleted_id": day_id})
+
+
+@login_required
+@require_POST
+def agenda_day_reorder(request, pk):
+    """Save drag-order for days. Body: {"order": [3, 1, 2]}."""
+    event = _own_event_or_404(request.user, pk)
+    try:
+        payload = json.loads(request.body or "{}")
+        ids = payload.get("order") or []
+    except ValueError:
+        return HttpResponseBadRequest("Bad JSON.")
+    with transaction.atomic():
+        for index, day_id in enumerate(ids):
+            AgendaDay.objects.filter(pk=day_id, event=event).update(order=index)
+    return JsonResponse({"ok": True})

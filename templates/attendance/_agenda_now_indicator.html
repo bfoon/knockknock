@@ -1,0 +1,223 @@
+
+{% if event.agenda_days.exists %}
+  <script type="application/json" id="kk-agenda-now-data">
+    {
+      "items": [
+        {% for day in event.agenda_days.all %}
+          {% for item in day.items.all %}
+            {
+              "date":  "{{ day.date|date:'Y-m-d' }}",
+              "start": "{{ item.start_time|time:'H:i' }}",
+              "end":   "{% if item.end_time %}{{ item.end_time|time:'H:i' }}{% endif %}"
+            }{% if not forloop.last or not forloop.parentloop.last %},{% endif %}
+          {% endfor %}
+        {% endfor %}
+      ]
+    }
+  </script>
+
+  <div class="kk-agenda-now" aria-hidden="true" hidden>
+    <span class="kk-agenda-now-pill">NOW</span>
+    <span class="kk-agenda-now-line"></span>
+  </div>
+
+  <style>
+    .kk-agenda-now-host { position: relative; }
+
+    .kk-agenda-now {
+      position: absolute;
+      left: 0; right: 0; top: 0;
+      height: 0;
+      pointer-events: none;
+      z-index: 5;
+      display: flex; align-items: center; gap: 8px;
+      transition: top .35s cubic-bezier(.4, 0, .2, 1), opacity .25s;
+    }
+    .kk-agenda-now[hidden] { display: none !important; }
+
+    .kk-agenda-now-pill {
+      flex: 0 0 auto;
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: .62rem;
+      font-weight: 800;
+      letter-spacing: .18em;
+      color: #fff;
+      background: #ef4444;
+      box-shadow: 0 4px 10px rgba(239, 68, 68, .35),
+                  0 0 0 3px rgba(239, 68, 68, .15);
+      transform: translateY(-50%);
+      margin-left: -4px;
+    }
+
+    .kk-agenda-now-line {
+      flex: 1 1 auto;
+      height: 2px;
+      background: linear-gradient(90deg,
+        #ef4444 0%, #ef4444 70%, rgba(239, 68, 68, 0) 100%);
+      transform: translateY(-50%);
+      box-shadow: 0 0 8px rgba(239, 68, 68, .45);
+      border-radius: 1px;
+    }
+
+    .kk-agenda-now.is-next .kk-agenda-now-pill {
+      background: #f59e0b;
+      box-shadow: 0 4px 10px rgba(245, 158, 11, .35),
+                  0 0 0 3px rgba(245, 158, 11, .15);
+    }
+    .kk-agenda-now.is-next .kk-agenda-now-line {
+      background: linear-gradient(90deg,
+        #f59e0b 0%, #f59e0b 70%, rgba(245, 158, 11, 0) 100%);
+      box-shadow: 0 0 8px rgba(245, 158, 11, .35);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .kk-agenda-now { transition: none; }
+    }
+  </style>
+
+  <script>
+    (function () {
+      "use strict";
+
+      var dataEl = document.getElementById("kk-agenda-now-data");
+      if (!dataEl) return;
+
+      var data;
+      try {
+        data = JSON.parse(dataEl.textContent.trim());
+      } catch (e) {
+        return;
+      }
+      if (!data || !data.items || !data.items.length) return;
+
+      var host = dataEl.closest(".kk-agenda-now-host");
+      var indicator = host && host.querySelector(".kk-agenda-now");
+      if (!host || !indicator) return;
+
+      var pill = indicator.querySelector(".kk-agenda-now-pill");
+
+      // Build a Date from an item's own date string ("YYYY-MM-DD")
+      // plus a "HH:MM" time. Each item carries its day's date, so
+      // multi-day agendas are anchored to the right wall-clock
+      // moment per day.
+      function toDate(dateStr, timeStr) {
+        if (!dateStr || !timeStr) return null;
+        var d = dateStr.split("-");
+        var t = timeStr.split(":");
+        if (d.length !== 3 || t.length < 2) return null;
+        var out = new Date(
+          parseInt(d[0], 10),
+          parseInt(d[1], 10) - 1,
+          parseInt(d[2], 10),
+          parseInt(t[0], 10),
+          parseInt(t[1], 10),
+          0, 0
+        );
+        return isNaN(out.getTime()) ? null : out;
+      }
+
+      function findRows() {
+        return host.querySelectorAll(
+          ".kk-ag-status-upcoming, .kk-ag-status-live, .kk-ag-status-done"
+        );
+      }
+
+      function pickTarget(now) {
+        var rows = findRows();
+        if (!rows.length) return null;
+        if (rows.length !== data.items.length) {
+          // Document order is out of sync with the JSON sidecar.
+          // Bail rather than mis-anchor.
+          return null;
+        }
+
+        var items = data.items.map(function (it, i) {
+          return {
+            row:   rows[i],
+            start: toDate(it.date, it.start),
+            end:   toDate(it.date, it.end),
+          };
+        }).filter(function (it) { return it.start; });
+
+        if (!items.length) return null;
+
+        // Sort by start time. Day order in the editor is the
+        // authoritative source, but if the organiser puts dates
+        // out of `order` we still want the indicator to follow the
+        // actual chronology of when things happen.
+        items.sort(function (a, b) { return a.start - b.start; });
+
+        var last = items[items.length - 1];
+        var lastEnd = last.end || new Date(last.start.getTime() + 60 * 60 * 1000);
+        if (now > lastEnd) return null;
+
+        // Inside a session?
+        for (var i = 0; i < items.length; i++) {
+          var it = items[i];
+          var endAt = it.end;
+          if (!endAt) {
+            endAt = (i + 1 < items.length)
+              ? items[i + 1].start
+              : new Date(it.start.getTime() + 60 * 60 * 1000);
+          }
+          if (now >= it.start && now < endAt) {
+            return { row: it.row, mode: "now" };
+          }
+        }
+
+        // Snap to next upcoming.
+        for (var j = 0; j < items.length; j++) {
+          if (items[j].start > now) {
+            return { row: items[j].row, mode: "next" };
+          }
+        }
+
+        return null;
+      }
+
+      function position() {
+        var target = pickTarget(new Date());
+        if (!target) {
+          indicator.setAttribute("hidden", "");
+          return;
+        }
+
+        var top = 0;
+        var node = target.row;
+        while (node && node !== host) {
+          top += node.offsetTop || 0;
+          node = node.offsetParent;
+          if (node === document.body) break;
+        }
+
+        indicator.style.top = top + "px";
+        indicator.classList.toggle("is-next", target.mode === "next");
+        if (pill) pill.textContent = target.mode === "next" ? "UP NEXT" : "NOW";
+        indicator.removeAttribute("hidden");
+      }
+
+      function schedule() {
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", position, { once: true });
+        } else {
+          (window.requestAnimationFrame || setTimeout)(position);
+        }
+      }
+      schedule();
+
+      var resizeTimer = null;
+      window.addEventListener("resize", function () {
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(position, 100);
+      });
+
+      setInterval(position, 30 * 1000);
+
+      document.addEventListener("visibilitychange", function () {
+        if (!document.hidden) position();
+      });
+    })();
+  </script>
+{% endif %}

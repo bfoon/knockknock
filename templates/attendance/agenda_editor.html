@@ -9,8 +9,8 @@
     </a>
     <h1 class="mb-0 mt-1">Agenda</h1>
     <p class="text-secondary mb-0">
-      Add the sessions, drag to reorder, pick a visual style — your attendees see it
-      on their ticket and the live event page.
+      Add days and sessions, drag to reorder, pick a visual style — your attendees see it on
+      their ticket and the live event page.
     </p>
   </div>
   <div class="d-flex gap-2">
@@ -23,63 +23,79 @@
 <div id="kk-agenda-toast"></div>
 
 <div class="kk-agenda-grid">
-  <!-- ── LEFT: editor ─────────────────────────────────────────── -->
+  {# ── LEFT: day-grouped editor ───────────────────────────── #}
   <section class="kk-agenda-editor">
     <div class="d-flex justify-content-between align-items-center mb-3">
-      <h3 class="mb-0">Sessions</h3>
-      <button id="kk-agenda-add" class="kk-btn kk-btn-primary btn-sm">
-        <i class="bi bi-plus-lg"></i> Add session
+      <h3 class="mb-0">Schedule</h3>
+      <button id="kk-agenda-add-day" class="kk-btn kk-btn-primary btn-sm" type="button">
+        <i class="bi bi-calendar-plus"></i> Add day
       </button>
     </div>
 
-    <div id="kk-agenda-rows" class="kk-agenda-rows">
-      {% for item in items %}
-        <div class="kk-agenda-row" data-id="{{ item.pk }}">
-          <i class="bi bi-grip-vertical kk-agenda-handle"></i>
-          <div class="kk-agenda-time-block">
-            <input type="time" class="form-control form-control-sm kk-ag-start"
-                   value="{{ item.start_time|time:'H:i' }}">
-            <input type="time" class="form-control form-control-sm kk-ag-end"
-                   value="{{ item.end_time|time:'H:i' }}" placeholder="end">
-          </div>
-          <div class="flex-grow-1 kk-agenda-body">
-            <input type="text" class="form-control form-control-sm kk-ag-title"
-                   value="{{ item.title }}" placeholder="Session title" required>
-            <div class="d-flex gap-2 mt-1">
-              <input type="text" class="form-control form-control-sm kk-ag-speaker"
-                     value="{{ item.speaker }}" placeholder="Speaker (optional)">
-              <input type="text" class="form-control form-control-sm kk-ag-track"
-                     value="{{ item.track }}" placeholder="Track / room (optional)">
+    <div id="kk-agenda-days" class="kk-agenda-days">
+      {% for day in days %}
+        <div class="kk-agenda-day" data-day-id="{{ day.pk }}">
+
+          <div class="kk-agenda-day-head">
+            <div class="kk-agenda-day-head-fields">
+              <input type="date"
+                     class="form-control form-control-sm kk-ag-day-date"
+                     value="{{ day.date|date:'Y-m-d' }}"
+                     title="Date of this day">
+              <input type="text"
+                     class="form-control form-control-sm kk-ag-day-label"
+                     value="{{ day.label }}"
+                     placeholder="Day {{ forloop.counter }} (label — optional)"
+                     maxlength="120"
+                     title="Label shown above this day's sessions">
             </div>
-            <textarea class="form-control form-control-sm kk-ag-desc mt-1" rows="2"
-                      placeholder="Description (optional)">{{ item.description }}</textarea>
+            <div class="kk-agenda-day-head-actions">
+              <span class="kk-text-dim small kk-ag-day-meta">
+                {{ day.items.count }} session{{ day.items.count|pluralize }}
+              </span>
+              <button class="kk-agenda-day-delete" type="button"
+                      title="Delete this day and all its sessions">
+                <i class="bi bi-trash"></i>
+              </button>
+            </div>
           </div>
-          <div class="kk-agenda-meta">
-            <select class="form-select form-select-sm kk-ag-status">
-              <option value="upcoming" {% if item.status == "upcoming" %}selected{% endif %}>Upcoming</option>
-              <option value="live"     {% if item.status == "live" %}selected{% endif %}>Live now</option>
-              <option value="done"     {% if item.status == "done" %}selected{% endif %}>Done</option>
-            </select>
-            <input type="color" class="form-control form-control-color form-control-sm kk-ag-colour"
-                   value="{{ item.accent_colour|default:'#7c3aed' }}"
-                   title="Optional accent colour for this row">
-            <button class="kk-agenda-delete" title="Delete" type="button">
-              <i class="bi bi-x-lg"></i>
-            </button>
+
+          {# Items in this day. #}
+          <div class="kk-agenda-rows" data-day-id="{{ day.pk }}">
+            {% for item in day.items.all %}
+              {% include "attendance/_agenda_editor_row.html" with item=item %}
+            {% endfor %}
           </div>
+
+          {% if not day.items.all %}
+            <div class="kk-agenda-day-empty">
+              <span class="kk-text-dim small">
+                <i class="bi bi-info-circle"></i> No sessions yet for this day.
+              </span>
+            </div>
+          {% endif %}
+
+          <button class="kk-btn kk-btn-ghost btn-sm w-100 kk-agenda-add-session"
+                  type="button">
+            <i class="bi bi-plus-lg"></i> Add session to this day
+          </button>
         </div>
       {% endfor %}
     </div>
 
-    {% if not items %}
+    {% if not days %}
       <div class="kk-agenda-empty" id="kk-agenda-empty">
         <i class="bi bi-calendar3"></i>
-        <p class="mb-0">No sessions yet — click "Add session" to start.</p>
+        <p class="mb-0">No days yet — click "Add day" above to start.</p>
+        <p class="kk-text-dim small mt-2 mb-0">
+          For a single-day event you only need one. For a multi-day workshop
+          add a day for each calendar date.
+        </p>
       </div>
     {% endif %}
   </section>
 
-  <!-- ── RIGHT: style picker + live preview ────────────────────── -->
+  {# ── RIGHT: style picker + live preview ─────────────────── #}
   <aside class="kk-agenda-side">
     <div class="kk-agenda-side-section mb-3">
       <h4 class="mb-2">Visual style</h4>
@@ -119,10 +135,6 @@
         <i class="bi bi-arrow-clockwise"></i> Refresh preview
       </button>
 
-      {# ── Download agenda ─────────────────────────────────────
-         PDF + PNG, dark + light. Each link hits the agenda_download
-         view which streams the rendered file. The view shells out to
-         Playwright server-side, so no print dialog. #}
       <div class="kk-agenda-dl-block mt-3">
         <div class="kk-agenda-dl-block-head">
           <i class="bi bi-download"></i> Download agenda
@@ -167,6 +179,7 @@
 </div>
 
 <style>
+/* The shell — same as the legacy editor. */
 .kk-agenda-grid {
   display: grid;
   grid-template-columns: 1fr 360px;
@@ -176,7 +189,6 @@
 @media (max-width: 1000px) {
   .kk-agenda-grid { grid-template-columns: 1fr; }
 }
-
 .kk-agenda-editor, .kk-agenda-side {
   background: var(--kk-surface);
   border: 1px solid var(--kk-border);
@@ -185,44 +197,87 @@
 }
 .kk-agenda-side { position: sticky; top: 1rem; max-height: calc(100vh - 2rem); overflow-y: auto; }
 
-.kk-agenda-rows { display: flex; flex-direction: column; gap: .65rem; }
+/* Day card — new in multi-day editor. */
+.kk-agenda-days {
+  display: flex; flex-direction: column; gap: 1rem;
+}
+.kk-agenda-day {
+  background: var(--kk-surface-2);
+  border: 1px solid var(--kk-border);
+  border-radius: 12px;
+  padding: 0.9rem;
+}
+.kk-agenda-day-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: .75rem;
+  margin-bottom: .85rem;
+  padding-bottom: .75rem;
+  border-bottom: 1px dashed var(--kk-border);
+}
+.kk-agenda-day-head-fields {
+  display: flex; gap: .5rem; flex: 1; min-width: 0;
+}
+.kk-agenda-day-head-fields .kk-ag-day-date {
+  width: 150px; flex-shrink: 0;
+  font-weight: 600;
+}
+.kk-agenda-day-head-fields .kk-ag-day-label {
+  flex: 1; min-width: 0;
+}
+.kk-agenda-day-head-actions {
+  display: flex; align-items: center; gap: .5rem;
+  flex-shrink: 0;
+}
+.kk-ag-day-meta { white-space: nowrap; }
+.kk-agenda-day-delete {
+  background: transparent; border: 0; color: var(--kk-text-dim);
+  padding: 4px 8px; border-radius: 6px; cursor: pointer;
+}
+.kk-agenda-day-delete:hover {
+  color: #fb7185; background: rgba(251, 113, 133, 0.12);
+}
+.kk-agenda-day-empty {
+  padding: .75rem; text-align: center;
+  border: 1px dashed var(--kk-border); border-radius: 8px;
+  margin-bottom: .65rem;
+}
+.kk-agenda-add-session { margin-top: .65rem; }
+
+/* Item rows — same look as legacy, slight tweak so they don't have
+   their own background (the day card has it). */
+.kk-agenda-rows { display: flex; flex-direction: column; gap: .55rem; }
 .kk-agenda-row {
   display: grid;
   grid-template-columns: 20px 110px 1fr auto;
   gap: .75rem;
   align-items: start;
-  padding: .75rem;
-  background: var(--kk-surface-2);
+  padding: .65rem;
+  background: var(--kk-surface);
   border: 1px solid var(--kk-border);
   border-radius: 10px;
-  transition: border-color .15s, opacity .25s;
+  transition: border-color .15s, opacity .25s, transform .25s;
 }
 .kk-agenda-row.dragging { opacity: .5; border-style: dashed; }
 .kk-agenda-row.removing { opacity: 0; transform: scale(.97); }
 .kk-agenda-row:hover { border-color: rgba(124, 58, 237, 0.4); }
-
 .kk-agenda-handle { cursor: grab; color: var(--kk-text-dim); padding-top: .35rem; }
 .kk-agenda-time-block { display: flex; flex-direction: column; gap: .25rem; }
 .kk-agenda-body { min-width: 0; }
 .kk-agenda-body input, .kk-agenda-body textarea { width: 100%; }
 .kk-agenda-meta { display: flex; flex-direction: column; gap: .25rem; align-items: stretch; }
 .kk-agenda-meta select { min-width: 110px; }
-
 .kk-agenda-delete {
   background: transparent; border: 0; color: var(--kk-text-dim);
   padding: 4px 8px; border-radius: 6px; cursor: pointer;
 }
 .kk-agenda-delete:hover { color: #fb7185; background: rgba(251, 113, 133, 0.12); }
 
-.kk-agenda-empty {
-  text-align: center; padding: 2.5rem 1rem; color: var(--kk-text-dim);
-}
+/* Empty state */
+.kk-agenda-empty { text-align: center; padding: 2.5rem 1rem; color: var(--kk-text-dim); }
 .kk-agenda-empty i { font-size: 2rem; display: block; margin-bottom: .5rem; }
 
-/* Style picker */
-.kk-agenda-template-list {
-  display: flex; flex-direction: column; gap: .4rem;
-}
+/* Style picker — unchanged from legacy editor. */
+.kk-agenda-template-list { display: flex; flex-direction: column; gap: .4rem; }
 .kk-agenda-template {
   display: flex; align-items: center; gap: .65rem;
   padding: .55rem .75rem;
@@ -249,12 +304,16 @@
 }
 .kk-agenda-swatch span { flex: 1; }
 .kk-agenda-template-meta { flex-grow: 1; min-width: 0; }
-.kk-agenda-template-name { font-weight: 600; font-size: .87rem;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.kk-agenda-template-sub { font-size: .72rem; color: var(--kk-text-dim);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kk-agenda-template-name {
+  font-weight: 600; font-size: .87rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.kk-agenda-template-sub {
+  font-size: .72rem; color: var(--kk-text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
-/* Live preview */
+/* Live preview — unchanged. */
 .kk-agenda-preview-wrap {
   position: relative;
   width: 100%;
@@ -269,7 +328,7 @@
   width: 100%; height: 100%; border: 0;
 }
 
-/* Download tiles */
+/* Download tiles — unchanged. */
 .kk-agenda-dl-block-head {
   font-size: .82rem; font-weight: 600;
   color: var(--kk-text-dim);
@@ -309,6 +368,7 @@
 .kk-agenda-dl-swatch--dark { background: #0b1120; }
 .kk-agenda-dl-swatch--light { background: #ffffff; }
 
+/* Toasts */
 #kk-agenda-toast {
   position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
   z-index: 1080; display: flex; flex-direction: column; gap: .5rem;
@@ -326,13 +386,16 @@
 </style>
 
 <script>
-(function(){
-  const eventPk = {{ event.pk }};
+(function () {
+  const eventPk   = {{ event.pk }};
+  const eventDate = "{{ event.starts_at|date:'Y-m-d' }}";
   const csrf = document.cookie.split('; ').find(r => r.startsWith('csrftoken='))?.split('=')[1];
-  const rows = document.getElementById('kk-agenda-rows');
-  const empty = document.getElementById('kk-agenda-empty');
-  const preview = document.getElementById('kk-agenda-preview');
+  const daysWrap  = document.getElementById('kk-agenda-days');
+  const emptyWrap = document.getElementById('kk-agenda-empty');
+  const preview   = document.getElementById('kk-agenda-preview');
   const toastWrap = document.getElementById('kk-agenda-toast');
+
+  // ─────────────── helpers ───────────────
 
   function toast(msg, kind) {
     const t = document.createElement('div');
@@ -344,46 +407,64 @@
   }
 
   async function post(url, data) {
-    const headers = {'X-CSRFToken': csrf};
+    const headers = { 'X-CSRFToken': csrf };
     let body;
     if (data instanceof FormData) {
       body = data;
-    } else if (typeof data === 'object') {
+    } else if (typeof data === 'object' && data !== null) {
       headers['Content-Type'] = 'application/json';
       body = JSON.stringify(data);
     }
     try {
-      const res = await fetch(url, {method: 'POST', headers, body, credentials: 'same-origin'});
+      const res = await fetch(url, { method: 'POST', headers, body, credentials: 'same-origin' });
       const j = await res.json().catch(() => ({}));
       if (!res.ok && !j.error) j.error = `HTTP ${res.status}`;
       return j;
     } catch (e) {
-      return {ok: false, error: 'Network error'};
+      return { ok: false, error: 'Network error' };
     }
   }
 
-  // ── Refresh the preview iframe ──
   function refreshPreview() {
-    // Dedicated lightweight preview endpoint, decorated with
-    // @xframe_options_sameorigin server-side so the iframe is allowed
-    // to render it. Adding a cache-buster querystring forces Firefox
-    // to actually re-fetch rather than reusing a stale render.
     preview.src = `/attendance/${eventPk}/agenda/preview/?t=${Date.now()}`;
   }
   document.getElementById('kk-agenda-refresh').addEventListener('click', refreshPreview);
   refreshPreview();
 
-  // ── Save a row (debounced) ──
+  // Re-count sessions shown next to a day's header.
+  function refreshDayMeta(dayEl) {
+    const n = dayEl.querySelectorAll('.kk-agenda-row').length;
+    const meta = dayEl.querySelector('.kk-ag-day-meta');
+    if (meta) meta.textContent = `${n} session${n === 1 ? '' : 's'}`;
+  }
+
+  // Pick a sensible default date for a brand-new day. Use the latest
+  // existing day + 1 calendar day if any exist; otherwise fall back
+  // to the event's start date.
+  function nextDateGuess() {
+    const dayDates = [...daysWrap.querySelectorAll('.kk-ag-day-date')]
+      .map(i => i.value).filter(Boolean).sort();
+    if (!dayDates.length) return eventDate;
+    const last = new Date(dayDates[dayDates.length - 1] + 'T00:00:00');
+    last.setDate(last.getDate() + 1);
+    const yy = last.getFullYear();
+    const mm = String(last.getMonth() + 1).padStart(2, '0');
+    const dd = String(last.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
+  }
+
+  // ─────────────── item rows ───────────────
+
   function rowToFormData(row) {
     const fd = new FormData();
-    fd.append('start_time', row.querySelector('.kk-ag-start').value);
-    fd.append('end_time',   row.querySelector('.kk-ag-end').value);
-    fd.append('title',      row.querySelector('.kk-ag-title').value);
-    fd.append('description',row.querySelector('.kk-ag-desc').value);
-    fd.append('speaker',    row.querySelector('.kk-ag-speaker').value);
-    fd.append('track',      row.querySelector('.kk-ag-track').value);
+    fd.append('start_time',    row.querySelector('.kk-ag-start').value);
+    fd.append('end_time',      row.querySelector('.kk-ag-end').value);
+    fd.append('title',         row.querySelector('.kk-ag-title').value);
+    fd.append('description',   row.querySelector('.kk-ag-desc').value);
+    fd.append('speaker',       row.querySelector('.kk-ag-speaker').value);
+    fd.append('track',         row.querySelector('.kk-ag-track').value);
     fd.append('accent_colour', row.querySelector('.kk-ag-colour').value);
-    fd.append('status',     row.querySelector('.kk-ag-status').value);
+    fd.append('status',        row.querySelector('.kk-ag-status').value);
     return fd;
   }
 
@@ -399,6 +480,39 @@
     }, 700));
   }
 
+  function buildRow(item) {
+    const div = document.createElement('div');
+    div.className = 'kk-agenda-row';
+    div.dataset.id = item.id;
+    div.innerHTML = `
+      <i class="bi bi-grip-vertical kk-agenda-handle"></i>
+      <div class="kk-agenda-time-block">
+        <input type="time" class="form-control form-control-sm kk-ag-start" value="${item.start_time || ''}">
+        <input type="time" class="form-control form-control-sm kk-ag-end" value="${item.end_time || ''}" placeholder="end">
+      </div>
+      <div class="flex-grow-1 kk-agenda-body">
+        <input type="text" class="form-control form-control-sm kk-ag-title" value="${escapeAttr(item.title || '')}" placeholder="Session title">
+        <div class="d-flex gap-2 mt-1">
+          <input type="text" class="form-control form-control-sm kk-ag-speaker" value="${escapeAttr(item.speaker || '')}" placeholder="Speaker (optional)">
+          <input type="text" class="form-control form-control-sm kk-ag-track" value="${escapeAttr(item.track || '')}" placeholder="Track / room (optional)">
+        </div>
+        <textarea class="form-control form-control-sm kk-ag-desc mt-1" rows="2" placeholder="Description (optional)">${escapeText(item.description || '')}</textarea>
+      </div>
+      <div class="kk-agenda-meta">
+        <select class="form-select form-select-sm kk-ag-status">
+          <option value="upcoming" ${item.status === 'upcoming' ? 'selected' : ''}>Upcoming</option>
+          <option value="live"     ${item.status === 'live'     ? 'selected' : ''}>Live now</option>
+          <option value="done"     ${item.status === 'done'     ? 'selected' : ''}>Done</option>
+        </select>
+        <input type="color" class="form-control form-control-color form-control-sm kk-ag-colour" value="${item.accent_colour || '#7c3aed'}">
+        <button class="kk-agenda-delete" type="button"><i class="bi bi-x-lg"></i></button>
+      </div>`;
+    return div;
+  }
+
+  function escapeAttr(s) { return String(s).replace(/"/g, '&quot;'); }
+  function escapeText(s) { return String(s).replace(/</g, '&lt;'); }
+
   function wireRow(row) {
     row.querySelectorAll('input, textarea, select').forEach(el => {
       el.addEventListener('change', () => scheduleSave(row));
@@ -408,6 +522,7 @@
     });
     row.querySelector('.kk-agenda-delete').addEventListener('click', async () => {
       if (!confirm('Delete this session?')) return;
+      const dayEl = row.closest('.kk-agenda-day');
       const id = row.dataset.id;
       if (id) {
         const res = await post(`/attendance/${eventPk}/agenda/${id}/delete/`);
@@ -416,93 +531,182 @@
       row.classList.add('removing');
       setTimeout(() => {
         row.remove();
-        if (!rows.querySelectorAll('.kk-agenda-row').length && empty) empty.style.display = '';
+        if (dayEl) refreshDayMeta(dayEl);
         refreshPreview();
       }, 250);
     });
     attachDrag(row);
   }
-  rows.querySelectorAll('.kk-agenda-row').forEach(wireRow);
 
-  // ── Add new row ──
-  document.getElementById('kk-agenda-add').addEventListener('click', async () => {
+  // ─────────────── days ───────────────
+
+  function wireDay(dayEl) {
+    const dayId = dayEl.dataset.dayId;
+
+    // Date / label auto-save (debounced).
+    const dateInput  = dayEl.querySelector('.kk-ag-day-date');
+    const labelInput = dayEl.querySelector('.kk-ag-day-label');
+    let dayTimer = null;
+    function scheduleDaySave() {
+      clearTimeout(dayTimer);
+      dayTimer = setTimeout(async () => {
+        const fd = new FormData();
+        fd.append('date',  dateInput.value);
+        fd.append('label', labelInput.value);
+        const res = await post(`/attendance/${eventPk}/agenda/days/${dayId}/`, fd);
+        if (!res.ok) toast(res.error || 'Could not save day', 'error');
+        else refreshPreview();
+      }, 700);
+    }
+    dateInput.addEventListener('change', scheduleDaySave);
+    dateInput.addEventListener('input',  scheduleDaySave);
+    labelInput.addEventListener('input', scheduleDaySave);
+
+    // Delete day.
+    dayEl.querySelector('.kk-agenda-day-delete').addEventListener('click', async () => {
+      const n = dayEl.querySelectorAll('.kk-agenda-row').length;
+      const msg = n
+        ? `Delete this day AND its ${n} session${n === 1 ? '' : 's'}? This can't be undone.`
+        : 'Delete this empty day?';
+      if (!confirm(msg)) return;
+      const res = await post(`/attendance/${eventPk}/agenda/days/${dayId}/delete/`);
+      if (!res.ok) { toast(res.error || 'Could not delete day', 'error'); return; }
+      dayEl.style.opacity = '0';
+      dayEl.style.transition = 'opacity .25s';
+      setTimeout(() => {
+        dayEl.remove();
+        if (!daysWrap.querySelectorAll('.kk-agenda-day').length && emptyWrap) {
+          emptyWrap.style.display = '';
+        }
+        refreshPreview();
+      }, 250);
+    });
+
+    // Add session inside this day.
+    dayEl.querySelector('.kk-agenda-add-session').addEventListener('click', async () => {
+      const fd = new FormData();
+      fd.append('day_id',     dayId);
+      fd.append('start_time', '09:00');
+      fd.append('title',      'New session');
+      fd.append('status',     'upcoming');
+      const res = await post(`/attendance/${eventPk}/agenda/add/`, fd);
+      if (!res.ok) { toast(res.error || 'Could not add session', 'error'); return; }
+      const rowsEl = dayEl.querySelector('.kk-agenda-rows');
+      const row = buildRow(res.item);
+      rowsEl.appendChild(row);
+      wireRow(row);
+      refreshDayMeta(dayEl);
+      // Hide the "no sessions yet" hint if it was showing.
+      const hint = dayEl.querySelector('.kk-agenda-day-empty');
+      if (hint) hint.remove();
+      row.querySelector('.kk-ag-title').select();
+      refreshPreview();
+    });
+
+    // Wire each existing row.
+    dayEl.querySelectorAll('.kk-agenda-row').forEach(wireRow);
+  }
+
+  // Initial wiring.
+  daysWrap.querySelectorAll('.kk-agenda-day').forEach(wireDay);
+
+  // Add a new day.
+  document.getElementById('kk-agenda-add-day').addEventListener('click', async () => {
     const fd = new FormData();
-    fd.append('start_time', '09:00');
-    fd.append('title', 'New session');
-    fd.append('status', 'upcoming');
-    const res = await post(`/attendance/${eventPk}/agenda/add/`, fd);
-    if (!res.ok) { toast(res.error || 'Could not add', 'error'); return; }
-    if (empty) empty.style.display = 'none';
-    const item = res.item;
-    const div = document.createElement('div');
-    div.className = 'kk-agenda-row';
-    div.dataset.id = item.id;
-    div.innerHTML = `
-      <i class="bi bi-grip-vertical kk-agenda-handle"></i>
-      <div class="kk-agenda-time-block">
-        <input type="time" class="form-control form-control-sm kk-ag-start" value="${item.start_time}">
-        <input type="time" class="form-control form-control-sm kk-ag-end" value="${item.end_time}" placeholder="end">
-      </div>
-      <div class="flex-grow-1 kk-agenda-body">
-        <input type="text" class="form-control form-control-sm kk-ag-title" value="${item.title}" placeholder="Session title">
-        <div class="d-flex gap-2 mt-1">
-          <input type="text" class="form-control form-control-sm kk-ag-speaker" value="${item.speaker}" placeholder="Speaker (optional)">
-          <input type="text" class="form-control form-control-sm kk-ag-track" value="${item.track}" placeholder="Track / room (optional)">
+    fd.append('date',  nextDateGuess());
+    fd.append('label', '');
+    const res = await post(`/attendance/${eventPk}/agenda/days/add/`, fd);
+    if (!res.ok) { toast(res.error || 'Could not add day', 'error'); return; }
+
+    const d = res.day;
+    const dayEl = document.createElement('div');
+    dayEl.className = 'kk-agenda-day';
+    dayEl.dataset.dayId = d.id;
+    const newIndex = daysWrap.querySelectorAll('.kk-agenda-day').length + 1;
+    dayEl.innerHTML = `
+      <div class="kk-agenda-day-head">
+        <div class="kk-agenda-day-head-fields">
+          <input type="date" class="form-control form-control-sm kk-ag-day-date" value="${d.date}">
+          <input type="text" class="form-control form-control-sm kk-ag-day-label" value="${escapeAttr(d.label || '')}" placeholder="Day ${newIndex} (label — optional)" maxlength="120">
         </div>
-        <textarea class="form-control form-control-sm kk-ag-desc mt-1" rows="2" placeholder="Description (optional)">${item.description}</textarea>
+        <div class="kk-agenda-day-head-actions">
+          <span class="kk-text-dim small kk-ag-day-meta">0 sessions</span>
+          <button class="kk-agenda-day-delete" type="button" title="Delete this day and all its sessions">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
       </div>
-      <div class="kk-agenda-meta">
-        <select class="form-select form-select-sm kk-ag-status">
-          <option value="upcoming" selected>Upcoming</option>
-          <option value="live">Live now</option>
-          <option value="done">Done</option>
-        </select>
-        <input type="color" class="form-control form-control-color form-control-sm kk-ag-colour" value="${item.accent_colour || '#7c3aed'}">
-        <button class="kk-agenda-delete" type="button"><i class="bi bi-x-lg"></i></button>
+      <div class="kk-agenda-rows" data-day-id="${d.id}"></div>
+      <div class="kk-agenda-day-empty">
+        <span class="kk-text-dim small">
+          <i class="bi bi-info-circle"></i> No sessions yet for this day.
+        </span>
       </div>
-    `;
-    rows.appendChild(div);
-    wireRow(div);
-    div.querySelector('.kk-ag-title').select();
+      <button class="kk-btn kk-btn-ghost btn-sm w-100 kk-agenda-add-session" type="button">
+        <i class="bi bi-plus-lg"></i> Add session to this day
+      </button>`;
+    daysWrap.appendChild(dayEl);
+    wireDay(dayEl);
+
+    if (emptyWrap) emptyWrap.style.display = 'none';
     refreshPreview();
+    dayEl.querySelector('.kk-ag-day-label').focus();
   });
 
-  // ── Drag-and-drop reorder ──
+  // ─────────────── drag-and-drop reorder ───────────────
+  //
+  // Reorder is constrained to ONE day's items at a time. Dragging an
+  // item to a different day isn't supported here (would require a
+  // server-side "move item to day" endpoint — leaving that for later).
   let dragged = null;
+  let dragSourceRows = null;
+
   function attachDrag(row) {
-    // Only the handle initiates drag; otherwise text inputs become unusable.
     const handle = row.querySelector('.kk-agenda-handle');
     handle.addEventListener('mousedown', () => row.draggable = true);
     handle.addEventListener('mouseup',   () => row.draggable = false);
     row.addEventListener('dragstart', e => {
-      dragged = row; row.classList.add('dragging');
+      dragged = row;
+      dragSourceRows = row.parentElement;
+      row.classList.add('dragging');
       e.dataTransfer.effectAllowed = 'move';
     });
     row.addEventListener('dragend', () => {
-      row.classList.remove('dragging'); row.draggable = false;
+      row.classList.remove('dragging');
+      row.draggable = false;
+      if (dragSourceRows) saveOrderForDay(dragSourceRows);
       dragged = null;
-      saveOrder();
+      dragSourceRows = null;
     });
   }
-  rows.addEventListener('dragover', e => {
+
+  // Each day's .kk-agenda-rows owns its own dragover listener so an
+  // item dragged inside Day 1 can't accidentally drop into Day 2.
+  daysWrap.addEventListener('dragover', e => {
     if (!dragged) return;
+    const rowsEl = e.target.closest('.kk-agenda-rows');
+    if (!rowsEl || rowsEl !== dragSourceRows) return; // same-day only
     e.preventDefault();
-    const after = [...rows.querySelectorAll('.kk-agenda-row:not(.dragging)')]
+    const after = [...rowsEl.querySelectorAll('.kk-agenda-row:not(.dragging)')]
       .find(el => e.clientY <= el.getBoundingClientRect().top + el.offsetHeight / 2);
-    if (after) rows.insertBefore(dragged, after);
-    else rows.appendChild(dragged);
+    if (after) rowsEl.insertBefore(dragged, after);
+    else rowsEl.appendChild(dragged);
   });
-  function saveOrder() {
-    const ids = [...rows.querySelectorAll('.kk-agenda-row')].map(r => +r.dataset.id);
-    post(`/attendance/${eventPk}/agenda/reorder/`, {order: ids});
+
+  function saveOrderForDay(rowsEl) {
+    const dayId = rowsEl.dataset.dayId;
+    const ids = [...rowsEl.querySelectorAll('.kk-agenda-row')].map(r => +r.dataset.id);
+    post(`/attendance/${eventPk}/agenda/reorder/`, { day_id: +dayId, order: ids });
     refreshPreview();
   }
 
-  // ── Style picker ──
+  // ─────────────── style picker ───────────────
+
   document.querySelectorAll('.kk-agenda-template').forEach(btn => {
     btn.addEventListener('click', async () => {
       const key = btn.dataset.key;
-      const fd = new FormData(); fd.append('template_key', key);
+      const fd = new FormData();
+      fd.append('template_key', key);
       const res = await post(`/attendance/${eventPk}/agenda/template/`, fd);
       if (!res.ok) { toast(res.error || 'Could not save style', 'error'); return; }
       document.querySelectorAll('.kk-agenda-template').forEach(b => b.classList.remove('is-active'));

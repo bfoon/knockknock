@@ -953,26 +953,50 @@ def _render_agenda_via_browser(request, event, *, theme: str, output: str):
             "`pip install playwright && playwright install chromium`."
         )
 
-    # Build the absolute URL of the print page, including the theme
-    # query so the page renders the right palette. We use the existing
-    # `agenda_print` URL name (registered in urls.py).
+    # Build the print URL.
+    #
+    # We deliberately do NOT use request.build_absolute_uri() here:
+    # the public host that the user's browser sees is often unreachable
+    # from inside the container that Playwright is running in (different
+    # port, different docker network, behind a TLS-terminating proxy).
+    # The AGENDA_RENDER_BASE_URL setting names where Django is actually
+    # reachable on the internal network, e.g.:
+    #
+    #   AGENDA_RENDER_BASE_URL = "http://127.0.0.1:8000"   # same container
+    #   AGENDA_RENDER_BASE_URL = "http://web:8000"         # docker-compose svc
+    #
+    # If the setting isn't set we fall back to build_absolute_uri, which
+    # works fine with `python manage.py runserver` in local dev.
+    from django.conf import settings
     from django.urls import reverse
+    from urllib.parse import urlparse
+
     qs = urlencode({"theme": theme})
-    print_url = request.build_absolute_uri(
-        reverse("attendance:agenda_print", kwargs={"pk": event.pk}) + f"?{qs}"
-    )
+    path = reverse("attendance:agenda_print", kwargs={"pk": event.pk}) + f"?{qs}"
+    base = (getattr(settings, "AGENDA_RENDER_BASE_URL", "") or "").rstrip("/")
+    if base:
+        print_url = f"{base}{path}"
+    else:
+        print_url = request.build_absolute_uri(path)
 
     # Forward the session + CSRF cookies so the headless browser is
     # authenticated as the same organiser. Without this, the print
     # page hits the login redirect and we'd render a login screen.
+    #
+    # The cookie domain MUST match the host Playwright is navigating to,
+    # not the public host the user came in on — otherwise Chromium
+    # refuses to send the cookie.
     cookies = []
-    domain = request.get_host().split(":")[0]
+    if base:
+        cookie_host = urlparse(base).hostname or request.get_host().split(":")[0]
+    else:
+        cookie_host = request.get_host().split(":")[0]
     for name in ("sessionid", "csrftoken"):
         if name in request.COOKIES:
             cookies.append({
                 "name": name,
                 "value": request.COOKIES[name],
-                "domain": domain,
+                "domain": cookie_host,
                 "path": "/",
             })
 

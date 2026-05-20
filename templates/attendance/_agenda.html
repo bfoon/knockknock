@@ -1,28 +1,67 @@
-<!--{# Renders the structured agenda for `event`. Falls back to event.agenda-->
-<!--   plain text if no AgendaItem rows exist. Arg: event #}-->
-{% with items=event.agenda_items.all %}
-  {% if items %}
-    {% if event.agenda_template_key == "boardroom" %}
-      {% include "attendance/_agenda_styles/boardroom.html" with event=event items=items %}
-    {% elif event.agenda_template_key == "swimlanes" %}
-      {% include "attendance/_agenda_styles/swimlanes.html" with event=event items=items %}
-    {% elif event.agenda_template_key == "blocks" %}
-      {% include "attendance/_agenda_styles/blocks.html" with event=event items=items %}
-    {% elif event.agenda_template_key == "minimal_grid" %}
-      {% include "attendance/_agenda_styles/minimal_grid.html" with event=event items=items %}
-    {% elif event.agenda_template_key == "duotone" %}
-      {% include "attendance/_agenda_styles/duotone.html" with event=event items=items %}
-    {% elif event.agenda_template_key == "conference" %}
-      {% include "attendance/_agenda_styles/conference.html" with event=event items=items %}
-    {% elif event.agenda_template_key == "ticket_strip" %}
-      {% include "attendance/_agenda_styles/ticket_strip.html" with event=event items=items %}
-    {% elif event.agenda_template_key == "checklist" %}
-      {% include "attendance/_agenda_styles/checklist.html" with event=event items=items %}
-    {% elif event.agenda_template_key == "neon_card" %}
-      {% include "attendance/_agenda_styles/neon_card.html" with event=event items=items %}
-    {% else %}
-      {% include "attendance/_agenda_styles/timeline.html" with event=event items=items %}
-    {% endif %}
+
+{% with days=event.agenda_days.all %}
+  {% if days or event.agenda_items.exists %}
+    <div class="kk-agenda-now-host">
+
+      {% for day in days %}
+        {% with items=day.items.all day_index=forloop.counter day_count=days|length is_first=forloop.first is_last=forloop.last %}
+
+          {% include "attendance/_agenda_day_header.html" with day=day day_index=day_index day_count=day_count is_first=is_first %}
+
+          {% if event.agenda_template_key == "boardroom" %}
+            {% include "attendance/_agenda_styles/boardroom.html" with event=event day=day items=items day_index=day_index day_count=day_count is_first=is_first is_last=is_last %}
+          {% elif event.agenda_template_key == "swimlanes" %}
+            {% include "attendance/_agenda_styles/swimlanes.html" with event=event day=day items=items day_index=day_index day_count=day_count is_first=is_first is_last=is_last %}
+          {% elif event.agenda_template_key == "blocks" %}
+            {% include "attendance/_agenda_styles/blocks.html" with event=event day=day items=items day_index=day_index day_count=day_count is_first=is_first is_last=is_last %}
+          {% elif event.agenda_template_key == "minimal_grid" %}
+            {% include "attendance/_agenda_styles/minimal_grid.html" with event=event day=day items=items day_index=day_index day_count=day_count is_first=is_first is_last=is_last %}
+          {% elif event.agenda_template_key == "duotone" %}
+            {% include "attendance/_agenda_styles/duotone.html" with event=event day=day items=items day_index=day_index day_count=day_count is_first=is_first is_last=is_last %}
+          {% elif event.agenda_template_key == "conference" %}
+            {% include "attendance/_agenda_styles/conference.html" with event=event day=day items=items day_index=day_index day_count=day_count is_first=is_first is_last=is_last %}
+          {% elif event.agenda_template_key == "ticket_strip" %}
+            {% include "attendance/_agenda_styles/ticket_strip.html" with event=event day=day items=items day_index=day_index day_count=day_count is_first=is_first is_last=is_last %}
+          {% elif event.agenda_template_key == "checklist" %}
+            {% include "attendance/_agenda_styles/checklist.html" with event=event day=day items=items day_index=day_index day_count=day_count is_first=is_first is_last=is_last %}
+          {% elif event.agenda_template_key == "neon_card" %}
+            {% include "attendance/_agenda_styles/neon_card.html" with event=event day=day items=items day_index=day_index day_count=day_count is_first=is_first is_last=is_last %}
+          {% else %}
+            {% include "attendance/_agenda_styles/timeline.html" with event=event day=day items=items day_index=day_index day_count=day_count is_first=is_first is_last=is_last %}
+          {% endif %}
+        {% endwith %}
+      {% endfor %}
+
+      {% if not days %}
+        {% with items=event.agenda_items.all day_index=1 day_count=0 is_first=True is_last=True %}
+          {% if event.agenda_template_key == "boardroom" %}
+            {% include "attendance/_agenda_styles/boardroom.html" with event=event day=None items=items day_index=day_index day_count=day_count is_first=is_first is_last=is_last %}
+          {% elif event.agenda_template_key == "swimlanes" %}
+            {% include "attendance/_agenda_styles/swimlanes.html" with event=event day=None items=items day_index=day_index day_count=day_count is_first=is_first is_last=is_last %}
+          {% elif event.agenda_template_key == "blocks" %}
+            {% include "attendance/_agenda_styles/blocks.html" with event=event day=None items=items day_index=day_index day_count=day_count is_first=is_first is_last=is_last %}
+          {% elif event.agenda_template_key == "minimal_grid" %}
+            {% include "attendance/_agenda_styles/minimal_grid.html" with event=event day=None items=items day_index=day_index day_count=day_count is_first=is_first is_last=is_last %}
+          {% elif event.agenda_template_key == "duotone" %}
+            {% include "attendance/_agenda_styles/duotone.html" with event=event day=None items=items day_index=day_index day_count=day_count is_first=is_first is_last=is_last %}
+          {% elif event.agenda_template_key == "conference" %}
+            {% include "attendance/_agenda_styles/conference.html" with event=event day=None items=items day_index=day_index day_count=day_count is_first=is_first is_last=is_last %}
+          {% elif event.agenda_template_key == "ticket_strip" %}
+            {% include "attendance/_agenda_styles/ticket_strip.html" with event=event day=None items=items day_index=day_index day_count=day_count is_first=is_first is_last=is_last %}
+          {% elif event.agenda_template_key == "checklist" %}
+            {% include "attendance/_agenda_styles/checklist.html" with event=event day=None items=items day_index=day_index day_count=day_count is_first=is_first is_last=is_last %}
+          {% elif event.agenda_template_key == "neon_card" %}
+            {% include "attendance/_agenda_styles/neon_card.html" with event=event day=None items=items day_index=day_index day_count=day_count is_first=is_first is_last=is_last %}
+          {% else %}
+            {% include "attendance/_agenda_styles/timeline.html" with event=event day=None items=items day_index=day_index day_count=day_count is_first=is_first is_last=is_last %}
+          {% endif %}
+        {% endwith %}
+      {% endif %}
+
+      {% if agenda_live %}
+        {% include "attendance/_agenda_now_indicator.html" with event=event %}
+      {% endif %}
+    </div>
   {% elif event.agenda %}
     <div class="kk-agenda-fallback">{{ event.agenda|linebreaks }}</div>
   {% endif %}

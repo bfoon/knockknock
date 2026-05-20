@@ -55,7 +55,7 @@
     {% if event.agenda or event.agenda_items.exists %}
       <div class="kk-ticket-section">
         <h3><i class="bi bi-list-check"></i> Agenda</h3>
-        {% include "attendance/_agenda.html" with event=event %}
+        {% include "attendance/_agenda.html" with event=event agenda_live=True %}
       </div>
     {% endif %}
 

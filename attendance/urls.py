@@ -34,6 +34,16 @@ urlpatterns = [
 
     # Agenda
     path("<int:pk>/agenda/",                       views.agenda_editor,       name="agenda_editor"),
+
+    # Day-level routes — multi-day editor. The agenda_editor.html JS
+    # hits these via /attendance/<pk>/agenda/days/... . Keep these
+    # ABOVE the item-level routes so `days/add/` doesn't get matched
+    # as an item_id of "days".
+    path("<int:pk>/agenda/days/add/",              views.agenda_day_add,      name="agenda_day_add"),
+    path("<int:pk>/agenda/days/reorder/",          views.agenda_day_reorder,  name="agenda_day_reorder"),
+    path("<int:pk>/agenda/days/<int:day_id>/",         views.agenda_day_edit,    name="agenda_day_edit"),
+    path("<int:pk>/agenda/days/<int:day_id>/delete/",  views.agenda_day_delete,  name="agenda_day_delete"),
+
     path("<int:pk>/agenda/add/",                   views.agenda_item_add,     name="agenda_item_add"),
     path("<int:pk>/agenda/<int:item_id>/",         views.agenda_item_edit,    name="agenda_item_edit"),
     path("<int:pk>/agenda/<int:item_id>/delete/",  views.agenda_item_delete,  name="agenda_item_delete"),

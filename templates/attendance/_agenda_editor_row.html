@@ -1,0 +1,36 @@
+
+<div class="kk-agenda-row" data-id="{{ item.pk }}">
+  <i class="bi bi-grip-vertical kk-agenda-handle"></i>
+  <div class="kk-agenda-time-block">
+    <input type="time" class="form-control form-control-sm kk-ag-start"
+           value="{{ item.start_time|time:'H:i' }}">
+    <input type="time" class="form-control form-control-sm kk-ag-end"
+           value="{{ item.end_time|time:'H:i' }}" placeholder="end">
+  </div>
+  <div class="flex-grow-1 kk-agenda-body">
+    <input type="text" class="form-control form-control-sm kk-ag-title"
+           value="{{ item.title }}" placeholder="Session title" required>
+    <div class="d-flex gap-2 mt-1">
+      <input type="text" class="form-control form-control-sm kk-ag-speaker"
+             value="{{ item.speaker }}" placeholder="Speaker (optional)">
+      <input type="text" class="form-control form-control-sm kk-ag-track"
+             value="{{ item.track }}" placeholder="Track / room (optional)">
+    </div>
+    <textarea class="form-control form-control-sm kk-ag-desc mt-1" rows="2"
+              placeholder="Description (optional)">{{ item.description }}</textarea>
+  </div>
+  <div class="kk-agenda-meta">
+    <select class="form-select form-select-sm kk-ag-status">
+      <option value="upcoming" {% if item.status == "upcoming" %}selected{% endif %}>Upcoming</option>
+      <option value="live"     {% if item.status == "live" %}selected{% endif %}>Live now</option>
+      <option value="done"     {% if item.status == "done" %}selected{% endif %}>Done</option>
+    </select>
+    <input type="color"
+           class="form-control form-control-color form-control-sm kk-ag-colour"
+           value="{{ item.accent_colour|default:'#7c3aed' }}"
+           title="Optional accent colour for this row">
+    <button class="kk-agenda-delete" title="Delete" type="button">
+      <i class="bi bi-x-lg"></i>
+    </button>
+  </div>
+</div>

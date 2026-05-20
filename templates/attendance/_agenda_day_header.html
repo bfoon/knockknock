@@ -1,0 +1,37 @@
+
+{% if day and day.date and day.label or day and day_count > 1 %}
+  <div class="kk-agenda-day-header{% if is_first %} kk-agenda-day-header--first{% endif %}">
+    <div class="kk-agenda-day-header-label">
+      {% if day.label %}
+        {{ day.label }}
+      {% else %}
+        Day {{ day_index }}
+      {% endif %}
+    </div>
+    <div class="kk-agenda-day-header-date">
+      {{ day.date|date:"l, j F Y" }}
+    </div>
+  </div>
+{% endif %}
+
+{% if is_first %}
+<style>
+.kk-agenda-day-header {
+  display: flex; align-items: baseline; gap: 14px;
+  margin: 28px 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--kk-border, rgba(148, 163, 184, .22));
+  flex-wrap: wrap;
+}
+.kk-agenda-day-header--first { margin-top: 0; }
+.kk-agenda-day-header-label {
+  font-size: 1.05rem; font-weight: 800;
+  letter-spacing: .06em; text-transform: uppercase;
+  color: var(--kk-text, #f1f5f9);
+}
+.kk-agenda-day-header-date {
+  font-size: .82rem; color: var(--kk-text-dim, #94a3b8);
+  letter-spacing: .04em;
+}
+</style>
+{% endif %}

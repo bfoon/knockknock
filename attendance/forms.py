@@ -20,7 +20,7 @@ Three forms here:
 from django import forms
 from django.core.exceptions import ValidationError
 
-from .models import AttendanceEvent, EventField, AgendaItem
+from .models import AttendanceEvent, EventField, AgendaItem, AgendaDay
 from .venue_models import Venue
 
 
@@ -444,3 +444,45 @@ class AnnouncementForm(forms.Form):
         choices=TARGET_CHOICES, initial="all",
         widget=forms.Select(attrs={"class": "form-select"}),
     )
+
+
+class AgendaDayForm(forms.ModelForm):
+    """Form for a single day in the agenda editor.
+
+    `date` is required because every session on the day needs an
+    absolute moment for the live "you are here" indicator. `label`
+    is optional — if left blank, no header is rendered above this
+    day's sessions (which makes single-day agendas look unchanged).
+    """
+
+    class Meta:
+        model = AgendaDay
+        fields = ("date", "label", "order")
+        widgets = {
+            "date": forms.DateInput(attrs={
+                "type": "date",
+                "class": "form-control form-control-sm",
+            }),
+            "label": forms.TextInput(attrs={
+                "class": "form-control form-control-sm",
+                "placeholder": "e.g. Day 1, Pre-conference workshop "
+                               "(leave blank to hide header)",
+                "maxlength": "120",
+            }),
+            "order": forms.HiddenInput(),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # `order` is set automatically when the day is created (max+1)
+        # and updated by the reorder endpoint, so the user never types it.
+        self.fields["order"].required = False
+
+    def clean_order(self):
+        # Default to 0; the view bumps it to max+1 before save.
+        return self.cleaned_data.get("order") or 0
+
+    def clean_label(self):
+        # Normalise whitespace so "" and "   " are equivalent — both
+        # mean "no header".
+        return (self.cleaned_data.get("label") or "").strip()

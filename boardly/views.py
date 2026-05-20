@@ -1,17 +1,22 @@
 """
 boardly/views.py — HTTP views for the Boardly board.
 
-Three roles, same as the poll:
+Roles:
   • board_play(code)      — participant sticky-pad   → play_board.html
   • board_stage(code)     — presenter projector view → stage_board.html
   • board_create()        — make a new board (owner)
+  • board_list()          — all of the owner's saved boards
+  • board_delete(code)    — delete a board (owner, POST only)
 
 The WebSocket (consumers.BoardConsumer) handles everything live; these
 views just render the shells and supply context.
 """
 
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.views.decorators.http import require_POST
 
 from .models import BoardSession
 
@@ -66,3 +71,32 @@ def board_create(request):
         return redirect("boardly:stage", code=session.code)
 
     return render(request, "boardly/create_board.html")
+
+
+@login_required
+def board_list(request):
+    """All boards owned by the current user — the 'saved boards' view."""
+    boards = (
+        BoardSession.objects
+        .filter(owner=request.user)
+        .order_by("-created_at")
+    )
+    return render(request, "boardly/board_list.html", {
+        "boards": boards,
+        "boards_total": boards.count(),
+    })
+
+
+@login_required
+@require_POST
+def board_delete(request, code):
+    """Delete a board the current user owns, then return to `next`."""
+    session = get_object_or_404(
+        BoardSession, code=code.upper(), owner=request.user,
+    )
+    title = session.title
+    session.delete()
+    messages.success(request, f"Deleted “{title}”.")
+    # Honour an explicit ?next / form field; otherwise the board list.
+    nxt = request.POST.get("next") or request.GET.get("next")
+    return redirect(nxt or reverse("boardly:list"))

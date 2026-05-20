@@ -34,6 +34,35 @@
   gap: .85rem;
   flex-wrap: nowrap;
 }
+
+/* Back-to-dashboard button in the presenter header. */
+.kk-board-back {
+  display: inline-grid;
+  place-items: center;
+  width: 38px; height: 38px;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  border: 1px solid var(--kk-border);
+  background: var(--kk-surface);
+  color: var(--kk-text);
+  font-size: 1.05rem;
+  text-decoration: none;
+  transition: background .15s ease, border-color .15s ease, transform .12s ease;
+}
+.kk-board-back:hover {
+  background: var(--kk-surface-2);
+  border-color: rgba(124,58,237,.5);
+  color: var(--kk-text);
+  transform: translateX(-2px);
+}
+
+/* The Boardly wordmark, now a link home. */
+.kk-brand-link {
+  text-decoration: none;
+  transition: opacity .15s ease;
+}
+.kk-brand-link:hover { opacity: .8; }
+
 .kk-board-title-wrap { min-width: 0; }
 .kk-board-title {
   font-family: var(--kk-font-display);
@@ -411,7 +440,9 @@
 .kk-join-panel {
   position: absolute;
   left: 1rem; bottom: 1rem;
-  z-index: 8;
+  /* Above the moderation tray (z-index 9) so the collapse toggle is
+     always reachable, even while moderating. */
+  z-index: 12;
   background: #fff;
   color: #111;
   border-radius: 16px;
@@ -421,6 +452,12 @@
 .kk-join-inner {
   display: flex; align-items: center; gap: .9rem;
   padding: .9rem 1.1rem .9rem .9rem;
+  /* Collapsing animates this region's height/opacity away, while the
+     panel shell and its toggle button stay put and visible. */
+  overflow: hidden;
+  transition: max-height .3s cubic-bezier(.4,0,.2,1),
+              opacity .2s ease, padding .3s ease;
+  max-height: 200px;
 }
 .kk-qr-box {
   width: 116px; height: 116px;
@@ -454,9 +491,38 @@
   color: #fff;
   cursor: pointer;
   box-shadow: 0 4px 10px rgba(0,0,0,.35);
+  z-index: 1;
 }
-.kk-join-panel.collapsed { transform: translateY(calc(100% + 1.4rem)); }
+
+/* Collapsed: tuck only the QR content away — the panel stays anchored
+   at bottom:1rem so it can never slide behind the moderation tray, and
+   the toggle button remains visible to bring it back. */
+.kk-join-panel.collapsed .kk-join-inner {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+}
+.kk-join-panel.collapsed {
+  /* A small label so the collapsed pill still reads as "the QR panel". */
+  min-width: 132px;
+}
+.kk-join-panel.collapsed::after {
+  content: "Join code";
+  display: block;
+  padding: .55rem .9rem;
+  font-size: .82rem;
+  font-weight: 700;
+  color: #6b7280;
+  font-family: var(--kk-font-body);
+}
 .kk-join-panel.collapsed .kk-join-collapse { transform: rotate(180deg); }
+
+/* While moderating, the tray slides up from the bottom — raise the join
+   panel so it rests just above the tray instead of overlapping it. */
+.kk-board-stage.moderating .kk-join-panel {
+  transform: translateY(-9.5rem);
+}
 
 /* Fullscreen — give the board all the room. */
 .kk-board-stage.fullscreen .kk-board-header { display: none; }

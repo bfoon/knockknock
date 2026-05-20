@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}My boards · Boardly{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-end justify-content-between flex-wrap gap-3 mb-4">
+  <div>
+    <h1 class="mb-1"><span class="kk-brand-mark">📌</span> My boards</h1>
+    <p class="text-secondary mb-0">
+      {% if boards_total %}
+        {{ boards_total }} saved board{{ boards_total|pluralize }} — open one to present it again.
+      {% else %}
+        Your saved Boardly boards will appear here.
+      {% endif %}
+    </p>
+  </div>
+  <a href="{% url 'boardly:create' %}" class="kk-btn kk-btn-primary">
+    <i class="bi bi-plus-lg"></i> New board
+  </a>
+</div>
+
+{% for b in boards %}
+  <div class="kk-list-item kk-list-item-row">
+    {# Open the presenter screen — the 'running' view of a board. #}
+    <a href="{% url 'boardly:stage' b.code %}" class="kk-list-item-main">
+      <span class="kk-q-index">{{ forloop.counter }}</span>
+      <div class="flex-grow-1">
+        <div class="kk-list-item-title">{{ b.title }}</div>
+        <div class="kk-list-item-meta">
+          Code <strong>{{ b.code }}</strong> ·
+          {{ b.notes.count }} note{{ b.notes.count|pluralize }} ·
+          <span class="kk-status-mini kk-status-mini-{{ b.state }}">{{ b.get_state_display }}</span> ·
+          {{ b.created_at|timesince }} ago
+        </div>
+      </div>
+      <i class="bi bi-arrow-right text-secondary"></i>
+    </a>
+
+    {# Quick link straight to the participant join screen. #}
+    <a href="{% url 'boardly:play' b.code %}"
+       class="kk-btn kk-btn-ghost btn-sm ms-2"
+       title="Open the participant join screen">
+      <i class="bi bi-box-arrow-up-right"></i> Join view
+    </a>
+
+    {# Inline POST delete — same pattern as the dashboard rows. #}
+    <form method="post"
+          action="{% url 'boardly:delete' b.code %}"
+          class="kk-row-delete-form ms-1"
+          onsubmit="return confirm('Delete “{{ b.title|escapejs }}”? This cannot be undone.');">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{% url 'boardly:list' %}">
+      <button type="submit"
+              class="kk-row-delete"
+              title="Delete board"
+              aria-label="Delete {{ b.title }}">
+        <i class="bi bi-trash3-fill"></i>
+      </button>
+    </form>
+  </div>
+{% empty %}
+  <div class="kk-empty">
+    <div class="em">📌</div>
+    <p>No boards yet.</p>
+    <a href="{% url 'boardly:create' %}" class="kk-btn kk-btn-primary btn-sm mt-2">
+      Create your first board <i class="bi bi-arrow-right"></i>
+    </a>
+  </div>
+{% endfor %}
+
+<div class="mt-4">
+  <a href="{% url 'core:dashboard' %}" class="kk-nav-link">
+    <i class="bi bi-arrow-left"></i> Back to dashboard
+  </a>
+</div>
+{% endblock %}

@@ -151,6 +151,14 @@
       Create event <i class="bi bi-arrow-right"></i>
     </span>
   </a>
+  <a href="{% url 'boardly:create' %}" class="kk-action-tile boardly">
+    <span class="kk-tile-icon">📌</span>
+    <h2>New Boardly Board</h2>
+    <p>A live sticky-note wall — participants scan a QR code and their ideas appear on screen instantly.</p>
+    <span class="kk-btn kk-btn-primary btn-sm">
+      Create board <i class="bi bi-arrow-right"></i>
+    </span>
+  </a>
 </div>
 
 <!--{# ─────────────────────────────────────────────────────────────-->
@@ -163,7 +171,7 @@
 <div class="row g-4">
 
   <!-- ── Questionnaires ──────────────────────────────────────── -->
-  <div class="col-lg-4">
+  <div class="col-lg-6 col-xl-3">
     <h2 class="kk-section-title"><i class="bi bi-collection"></i> Recent questionnaires</h2>
     {% for q in questionnaires %}
       <div class="kk-list-item kk-list-item-row">
@@ -227,7 +235,7 @@
   </div>
 
   <!-- ── Games ───────────────────────────────────────────────── -->
-  <div class="col-lg-4">
+  <div class="col-lg-6 col-xl-3">
     <h2 class="kk-section-title"><i class="bi bi-controller"></i> Recent games</h2>
     {% for g in quizzes %}
       <div class="kk-list-item kk-list-item-game kk-list-item-row">
@@ -290,7 +298,7 @@
   </div>
 
   <!-- ── Events ──────────────────────────────────────────────── -->
-  <div class="col-lg-4">
+  <div class="col-lg-6 col-xl-3">
     <h2 class="kk-section-title"><i class="bi bi-calendar-event"></i> Recent events</h2>
     {% for e in attendance_events %}
       <div class="kk-list-item kk-list-item-row">
@@ -351,6 +359,56 @@
       </a>
     {% endif %}
   </div>
+
+  <!-- ── Boards ──────────────────────────────────────────────── -->
+  <div class="col-lg-6 col-xl-3">
+    <h2 class="kk-section-title"><i class="bi bi-sticky"></i> Recent boards</h2>
+    {% for b in boards %}
+      <div class="kk-list-item kk-list-item-row">
+        {# Open the presenter screen — that's the "running" view of a board. #}
+        <a href="{% url 'boardly:stage' b.code %}" class="kk-list-item-main">
+          <span class="kk-q-index">{{ forloop.counter }}</span>
+          <div class="flex-grow-1">
+            <div class="kk-list-item-title">{{ b.title }}</div>
+            <div class="kk-list-item-meta">
+              {{ b.notes.count }} note{{ b.notes.count|pluralize }} ·
+              <span class="kk-status-mini kk-status-mini-{{ b.state }}">{{ b.get_state_display }}</span>
+            </div>
+          </div>
+          <i class="bi bi-arrow-right text-secondary"></i>
+        </a>
+        {# Same inline POST delete pattern as the other columns. #}
+        <form method="post"
+              action="{% url 'boardly:delete' b.code %}"
+              class="kk-row-delete-form"
+              onsubmit="return confirm('Delete “{{ b.title|escapejs }}”? This cannot be undone.');">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{% url 'core:dashboard' %}">
+          <button type="submit"
+                  class="kk-row-delete"
+                  title="Delete board"
+                  aria-label="Delete {{ b.title }}">
+            <i class="bi bi-trash3-fill"></i>
+          </button>
+        </form>
+      </div>
+    {% empty %}
+      <div class="kk-empty"><div class="em">📌</div><p>No boards yet. Create your first one!</p></div>
+    {% endfor %}
+
+    {% if boards_total > recent_limit %}
+      <a href="{% url 'boardly:list' %}" class="kk-see-all">
+        See all boards
+        <span class="kk-see-all-count">{{ boards_total }}</span>
+        <i class="bi bi-arrow-right"></i>
+      </a>
+    {% elif boards_total > 0 %}
+      <a href="{% url 'boardly:list' %}" class="kk-see-all kk-see-all-muted">
+        See all
+        <i class="bi bi-arrow-right"></i>
+      </a>
+    {% endif %}
+  </div>
 </div>
 
 
@@ -360,6 +418,18 @@
   border: 1px solid var(--kk-border);
   border-radius: var(--kk-radius);
   padding: .9rem 1.1rem;
+}
+
+/* Boardly creation tile — pink accent to match the sticky-note theme.
+   (app.css styles .menti and .game; .boardly is defined here.) */
+.kk-action-tile.boardly {
+  background: linear-gradient(135deg, #2a0f22, #3d1430);
+  border-color: rgba(236, 72, 153, 0.3);
+}
+.kk-action-tile.boardly::before {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(400px 200px at 100% 0%, rgba(236, 72, 153, 0.25), transparent);
+  pointer-events: none;
 }
 .kk-quota-track {
   height: 6px;
@@ -389,6 +459,9 @@
 .kk-status-mini-live   { background: rgba(251, 113, 133, 0.15); color: #fb7185; }
 .kk-status-mini-closed { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
 .kk-status-mini-ended  { background: var(--kk-surface-2); color: var(--kk-text-dim); }
+/* Boardly board states (lobby / open / running / ended). */
+.kk-status-mini-lobby   { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+.kk-status-mini-running { background: rgba(251, 113, 133, 0.15); color: #fb7185; }
 
 /* Recent games row that contains both the edit link and a Results button. */
 .kk-list-item-game {

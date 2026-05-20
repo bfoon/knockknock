@@ -22,8 +22,14 @@
   {# ── Top bar ────────────────────────────────────────────────────── #}
   <header class="kk-stage-header kk-board-header">
     <div class="d-flex align-items-center gap-2">
+      {# Back to the KnockKnock dashboard. #}
+      <a href="{% url 'core:dashboard' %}" class="kk-board-back" title="Back to dashboard">
+        <i class="bi bi-arrow-left"></i>
+      </a>
       {% if logo_url %}<img src="{{ logo_url }}" alt="" style="height:30px; border-radius:6px;">{% endif %}
-      <span class="kk-brand"><span class="kk-brand-mark">📌</span>Board<span class="kk-brand-dash">ly</span></span>
+      <a href="{% url 'core:home' %}" class="kk-brand kk-brand-link">
+        <span class="kk-brand-mark">📌</span>Board<span class="kk-brand-dash">ly</span>
+      </a>
     </div>
 
     <div class="kk-board-title-wrap">

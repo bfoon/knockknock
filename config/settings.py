@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     "organizations",
     "collaborations",
     "attendance",
+    "boardly",
     "icebreakers.apps.IcebreakersConfig",
 ]
 

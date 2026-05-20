@@ -1,0 +1,139 @@
+{% load static %}<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ session.title }} · Boardly · Presenter</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://api.fontshare.com/v2/css?f[]=clash-display@600,700&f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Patrick+Hand&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'css/app.css' %}?v=4">
+<link rel="stylesheet" href="{% static 'css/boardly.css' %}?v=1">
+</head>
+<body>
+
+<div class="kk-stage kk-board-stage" id="stage"
+     data-code="{{ session.code }}"
+     data-kind="board"
+     data-mode="{{ session.mode }}"
+     data-join-url="{{ join_url }}">
+
+  {# ── Top bar ────────────────────────────────────────────────────── #}
+  <header class="kk-stage-header kk-board-header">
+    <div class="d-flex align-items-center gap-2">
+      {% if logo_url %}<img src="{{ logo_url }}" alt="" style="height:30px; border-radius:6px;">{% endif %}
+      <span class="kk-brand"><span class="kk-brand-mark">📌</span>Board<span class="kk-brand-dash">ly</span></span>
+    </div>
+
+    <div class="kk-board-title-wrap">
+      <span class="kk-board-title">{{ session.title }}</span>
+    </div>
+
+    <div class="kk-stage-spacer flex-grow-1"></div>
+
+    {# Live stats. #}
+    <div class="kk-board-stats">
+      <span class="kk-board-stat" title="Notes on the board">
+        <i class="bi bi-sticky"></i> <b id="stat-notes">0</b>
+      </span>
+      <span class="kk-board-stat" title="Participants connected">
+        <i class="bi bi-people"></i> <b id="stat-people">0</b>
+      </span>
+    </div>
+
+    {# Layout switch — presenter picks per board. #}
+    <div class="kk-board-layouts" role="group" aria-label="Board layout">
+      <button class="kk-board-layout is-active" data-layout="grid"    title="Neat grid"><i class="bi bi-grid-3x3-gap"></i></button>
+      <button class="kk-board-layout"           data-layout="masonry" title="Masonry columns"><i class="bi bi-columns-gap"></i></button>
+      <button class="kk-board-layout"           data-layout="scatter" title="Scattered sticky look"><i class="bi bi-shuffle"></i></button>
+    </div>
+
+    <button class="kk-tool" id="btn-moderate" title="Moderation mode"><i class="bi bi-shield-check"></i></button>
+    <button class="kk-tool" id="btn-fullscreen" title="Fullscreen"><i class="bi bi-arrows-fullscreen"></i></button>
+  </header>
+
+  {# ── The whiteboard canvas ──────────────────────────────────────── #}
+  <main class="kk-board-canvas" id="board-canvas">
+
+    {# Decorative whiteboard frame + clip, echoing the illustration. #}
+    <div class="kk-board-clip" aria-hidden="true"></div>
+
+    <div class="kk-board-sheet" id="board-sheet">
+
+      {# Hand-drawn heading block. #}
+      <div class="kk-board-heading">
+        <h1 class="kk-board-heading-title">
+          <span class="kk-board-tick">≈</span>
+          {{ session.title|default:"IDEA BOARD" }}
+          <span class="kk-board-tick">≈</span>
+        </h1>
+        <p class="kk-board-heading-sub" id="board-prompt-display">Ideas, insights &amp; inspiration</p>
+        <div class="kk-board-heading-rule"><i class="bi bi-heart-fill"></i></div>
+      </div>
+
+      {# Grouped columns wrapper — shown when the board has topic groups. #}
+      <div class="kk-board-columns" id="board-columns" style="display:none;"></div>
+
+      {# Ungrouped notes wrapper — grid / masonry / scatter all render here. #}
+      <div class="kk-notes-area layout-grid" id="notes-area">
+        <div class="kk-board-empty" id="board-empty">
+          <div class="kk-board-empty-emoji">📝</div>
+          <p>Notes will appear here as people post them.</p>
+          <p class="small">Scan the code to join in.</p>
+        </div>
+      </div>
+
+      {# Hand-drawn footer line. #}
+      <div class="kk-board-footer">
+        <i class="bi bi-heart-fill"></i>
+        <span>Together we make great things happen!</span>
+        <i class="bi bi-heart-fill"></i>
+      </div>
+    </div>
+
+    {# Floating reaction bursts land here. #}
+    <div class="kk-board-fx" id="board-fx" aria-hidden="true"></div>
+  </main>
+
+  {# ── Join panel — QR + code, bottom-left, hideable ──────────────── #}
+  <aside class="kk-join-panel" id="join-panel">
+    <button class="kk-join-collapse" id="join-collapse" title="Hide / show join panel">
+      <i class="bi bi-chevron-down"></i>
+    </button>
+    <div class="kk-join-inner">
+      <div class="kk-qr-box" id="qr-box"><!-- QR rendered by JS --></div>
+      <div class="kk-join-meta">
+        <p class="kk-join-label">Scan to add a sticky note</p>
+        <p class="kk-join-code">{{ session.code }}</p>
+        <p class="kk-join-url">{{ join_url }}</p>
+      </div>
+    </div>
+  </aside>
+
+  {# ── Moderation tray — slides up when moderation mode is on ─────── #}
+  <div class="kk-mod-tray" id="mod-tray" aria-hidden="true">
+    <div class="kk-mod-tray-head">
+      <strong><i class="bi bi-shield-check"></i> Moderation</strong>
+      <span class="text-secondary small">Tap a note on the board to hide or remove it.</span>
+      <button class="kk-btn kk-btn-ghost btn-sm ms-auto" id="mod-close">Done</button>
+    </div>
+    <div class="kk-mod-hidden" id="mod-hidden-list">
+      <span class="text-secondary small">Hidden notes appear here — tap to restore.</span>
+    </div>
+  </div>
+</div>
+
+{# Per-note moderation popover (cloned by JS). #}
+<template id="tpl-mod-popover">
+  <div class="kk-mod-pop">
+    <button data-act="hide"><i class="bi bi-eye-slash"></i> Hide</button>
+    <button data-act="delete" class="is-danger"><i class="bi bi-trash"></i> Remove</button>
+    <button data-act="pin"><i class="bi bi-pin-angle"></i> Pin</button>
+  </div>
+</template>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script src="{% static 'js/boardly_stage.js' %}?v=1"></script>
+</body>
+</html>

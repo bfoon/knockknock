@@ -22,12 +22,14 @@
   </a>
   <div class="kk-nav-spacer"></div>
   {% if user.is_authenticated %}
+    {# Desktop links — unchanged layout, just kept md-and-up. #}
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'core:dashboard' %}">Dashboard</a>
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'polls:list' %}">Menti</a>
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'games:list' %}">Game</a>
+    <a class="kk-nav-link d-none d-md-inline" href="{% url 'boardly:create' %}">Boardly</a>
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'attendance:event_list' %}">Attendance</a>
-    <a class="kk-nav-link" href="{% url 'accounts:profile' %}"><i class="bi bi-person-circle"></i></a>
-    <form action="{% url 'accounts:logout' %}" method="post" class="d-inline">{% csrf_token %}
+    <a class="kk-nav-link d-none d-md-inline" href="{% url 'accounts:profile' %}"><i class="bi bi-person-circle"></i></a>
+    <form action="{% url 'accounts:logout' %}" method="post" class="d-none d-md-inline">{% csrf_token %}
       <button class="kk-btn kk-btn-ghost btn-sm">Log out</button>
     </form>
   {% else %}
@@ -36,10 +38,81 @@
 <!--       Hide it below the md breakpoint — the homepage covers the same-->
 <!--       entry point for first-time visitors. #}-->
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'core:join' %}">Join a session</a>
-    <a class="kk-nav-link" href="{% url 'accounts:login' %}">Log in</a>
-    <a class="kk-btn kk-btn-primary btn-sm" href="{% url 'accounts:signup' %}">Sign up</a>
+    <a class="kk-nav-link d-none d-md-inline" href="{% url 'accounts:login' %}">Log in</a>
+    <a class="kk-btn kk-btn-primary btn-sm d-none d-md-inline" href="{% url 'accounts:signup' %}">Sign up</a>
   {% endif %}
+
+  {# Hamburger — phones only. Toggles the slide-out drawer below. #}
+  <button class="kk-nav-burger d-md-none" id="kkNavBurger"
+          type="button" aria-label="Open menu"
+          aria-expanded="false" aria-controls="kkNavDrawer">
+    <i class="bi bi-list"></i>
+  </button>
 </nav>
+
+{# ── Mobile slide-out drawer ──────────────────────────────────────────
+   Hidden on md and up (desktop keeps the inline links above). Holds the
+   same destinations so phone users get full navigation. ─────────────── #}
+<div class="kk-drawer-backdrop d-md-none" id="kkNavBackdrop" hidden></div>
+
+<aside class="kk-drawer d-md-none" id="kkNavDrawer"
+       aria-hidden="true" aria-label="Main menu">
+  <div class="kk-drawer-head">
+    <span class="kk-brand">
+      <span class="kk-brand-mark">🚪</span>
+      <span class="kk-brand-text">knock<span class="kk-brand-dash">·</span>knock</span>
+    </span>
+    <button class="kk-drawer-close" id="kkNavClose"
+            type="button" aria-label="Close menu">
+      <i class="bi bi-x-lg"></i>
+    </button>
+  </div>
+
+  <nav class="kk-drawer-body">
+    {% if user.is_authenticated %}
+      <a class="kk-drawer-link" href="{% url 'core:dashboard' %}">
+        <i class="bi bi-grid-1x2"></i> Dashboard
+      </a>
+
+      <div class="kk-drawer-label">Create &amp; manage</div>
+      <a class="kk-drawer-link" href="{% url 'polls:list' %}">
+        <i class="bi bi-collection"></i> Menti
+      </a>
+      <a class="kk-drawer-link" href="{% url 'games:list' %}">
+        <i class="bi bi-controller"></i> Game
+      </a>
+      <a class="kk-drawer-link" href="{% url 'boardly:create' %}">
+        <i class="bi bi-sticky"></i> Boardly
+      </a>
+      <a class="kk-drawer-link" href="{% url 'attendance:event_list' %}">
+        <i class="bi bi-calendar-event"></i> Attendance
+      </a>
+
+      <div class="kk-drawer-label">Account</div>
+      <a class="kk-drawer-link" href="{% url 'accounts:profile' %}">
+        <i class="bi bi-person-circle"></i> Profile
+      </a>
+      <form action="{% url 'accounts:logout' %}" method="post" class="kk-drawer-form">
+        {% csrf_token %}
+        <button type="submit" class="kk-btn kk-btn-ghost w-100">
+          <i class="bi bi-box-arrow-right"></i> Log out
+        </button>
+      </form>
+    {% else %}
+      <a class="kk-drawer-link" href="{% url 'core:join' %}">
+        <i class="bi bi-box-arrow-in-right"></i> Join a session
+      </a>
+      <a class="kk-drawer-link" href="{% url 'accounts:login' %}">
+        <i class="bi bi-person"></i> Log in
+      </a>
+      <div class="kk-drawer-form">
+        <a class="kk-btn kk-btn-primary w-100" href="{% url 'accounts:signup' %}">
+          Sign up <i class="bi bi-arrow-right"></i>
+        </a>
+      </div>
+    {% endif %}
+  </nav>
+</aside>
 
 <style>
 /* Keep the nav from overflowing on small screens. The nav itself is
@@ -67,6 +140,153 @@
   .kk-brand-text { display: none; }   /* leave the door emoji as the brand */
   .kk-nav .kk-nav-link { font-size: .9rem; }
 }
+
+/* ──────────────────────────────────────────────────────────────
+   MOBILE MENU — hamburger button + slide-out drawer
+   Desktop (md and up) keeps the inline links untouched; everything
+   below is for the < md phone/tablet experience only.
+   ────────────────────────────────────────────────────────────── */
+
+/* Hamburger button. */
+.kk-nav-burger {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--kk-radius, 12px);
+  border: 1px solid var(--kk-border, rgba(255, 255, 255, .08));
+  background: var(--kk-surface, #1a1a2e);
+  color: var(--kk-text, #f5f6ff);
+  font-size: 1.25rem;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
+}
+.kk-nav-burger:hover {
+  background: var(--kk-surface-2, #232342);
+  border-color: rgba(124, 58, 237, .5);
+}
+
+/* Dim backdrop behind the open drawer. */
+.kk-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(5, 5, 12, .6);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  transition: opacity .25s ease;
+}
+.kk-drawer-backdrop.show { opacity: 1; }
+
+/* The drawer panel itself — slides in from the right. */
+.kk-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 301;
+  height: 100%;
+  height: 100dvh;
+  width: min(82vw, 320px);
+  display: flex;
+  flex-direction: column;
+  background: var(--kk-bg-2, #11111f);
+  border-left: 1px solid var(--kk-border, rgba(255, 255, 255, .08));
+  box-shadow: -24px 0 60px rgba(0, 0, 0, .55);
+  transform: translateX(100%);
+  transition: transform .28s cubic-bezier(.4, 0, .2, 1);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.kk-drawer.open { transform: translateX(0); }
+
+/* Drawer header — brand on the left, close on the right. */
+.kk-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.1rem;
+  border-bottom: 1px solid var(--kk-border, rgba(255, 255, 255, .08));
+  position: sticky;
+  top: 0;
+  background: var(--kk-bg-2, #11111f);
+}
+.kk-drawer-close {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--kk-border, rgba(255, 255, 255, .08));
+  background: var(--kk-surface, #1a1a2e);
+  color: var(--kk-text, #f5f6ff);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.kk-drawer-close:hover {
+  background: var(--kk-danger, #f43f5e);
+  color: #fff;
+}
+
+/* Drawer body — the list of links. */
+.kk-drawer-body {
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+  padding: .85rem .8rem 1.4rem;
+}
+
+/* Small uppercase group label between sections. */
+.kk-drawer-label {
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--kk-text-dim, #a0a0b8);
+  padding: .9rem .65rem .35rem;
+}
+
+/* A drawer navigation link. */
+.kk-drawer-link {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  padding: .8rem .65rem;
+  border-radius: var(--kk-radius, 12px);
+  color: var(--kk-text, #f5f6ff);
+  text-decoration: none;
+  font-size: 1rem;
+  font-weight: 500;
+  transition: background .15s ease, transform .12s ease;
+}
+.kk-drawer-link:hover,
+.kk-drawer-link:focus-visible {
+  background: var(--kk-surface, #1a1a2e);
+  color: var(--kk-text, #f5f6ff);
+  transform: translateX(2px);
+}
+.kk-drawer-link i {
+  font-size: 1.1rem;
+  color: var(--kk-accent-2, #22d3ee);
+  width: 1.3rem;
+  text-align: center;
+  flex: 0 0 auto;
+}
+
+/* Wrapper for the log-out / sign-up full-width button in the drawer. */
+.kk-drawer-form {
+  padding: .65rem .65rem 0;
+}
+
+/* Lock body scroll while the drawer is open. */
+body.kk-drawer-locked {
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kk-drawer,
+  .kk-drawer-backdrop { transition: none; }
+}
 </style>
 
 {% if messages %}
@@ -82,6 +302,69 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+/* Mobile menu drawer — open/close, backdrop, Esc, body-scroll lock.
+   Self-contained; runs on every page that extends base.html. */
+(function () {
+  var burger   = document.getElementById("kkNavBurger");
+  var drawer   = document.getElementById("kkNavDrawer");
+  var backdrop = document.getElementById("kkNavBackdrop");
+  var closeBtn = document.getElementById("kkNavClose");
+  if (!burger || !drawer || !backdrop) return;
+
+  function openDrawer() {
+    backdrop.hidden = false;
+    /* Next frame so the CSS transition runs from the hidden state. */
+    requestAnimationFrame(function () {
+      drawer.classList.add("open");
+      backdrop.classList.add("show");
+    });
+    drawer.setAttribute("aria-hidden", "false");
+    burger.setAttribute("aria-expanded", "true");
+    document.body.classList.add("kk-drawer-locked");
+    if (closeBtn) closeBtn.focus();
+  }
+
+  function closeDrawer() {
+    drawer.classList.remove("open");
+    backdrop.classList.remove("show");
+    drawer.setAttribute("aria-hidden", "true");
+    burger.setAttribute("aria-expanded", "false");
+    document.body.classList.remove("kk-drawer-locked");
+    /* Hide the backdrop only after the fade-out finishes. */
+    var hide = function () { backdrop.hidden = true; };
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      hide();
+    } else {
+      setTimeout(hide, 280);
+    }
+    burger.focus();
+  }
+
+  burger.addEventListener("click", openDrawer);
+  backdrop.addEventListener("click", closeDrawer);
+  if (closeBtn) closeBtn.addEventListener("click", closeDrawer);
+
+  /* Close when a drawer link is tapped (so navigation feels immediate). */
+  drawer.addEventListener("click", function (e) {
+    if (e.target.closest(".kk-drawer-link")) closeDrawer();
+  });
+
+  /* Esc closes the drawer. */
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && drawer.classList.contains("open")) closeDrawer();
+  });
+
+  /* If the viewport grows to desktop while the drawer is open, reset it. */
+  window.addEventListener("resize", function () {
+    if (window.innerWidth >= 768 && drawer.classList.contains("open")) {
+      closeDrawer();
+    }
+  });
+})();
+</script>
+
 {% block scripts %}{% endblock %}
 </body>
 </html>

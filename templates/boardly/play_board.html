@@ -1,0 +1,187 @@
+{% load static %}<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{{ session.title }} · Boardly</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://api.fontshare.com/v2/css?f[]=clash-display@600,700&f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'css/app.css' %}?v=4">
+<link rel="stylesheet" href="{% static 'css/boardly.css' %}?v=1">
+<style>
+  /* Page-level layout — full-height column so the sticky-pad card fills the
+     viewport below the header and never gets clipped at the bottom. The same
+     pattern used in the fixed play_poll.html. */
+  html, body { width: 100%; max-width: 100%; overflow-x: hidden; }
+  body { min-height: 100dvh; }
+
+  .kk-play {
+    width: min(100%, 620px);
+    max-width: 100%;
+    margin-inline: auto;
+    padding: clamp(.75rem, 3vw, 1.25rem);
+    box-sizing: border-box;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+  .kk-play > header { flex: 0 0 auto; }
+
+  .kk-play-card {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* The compose step fills the leftover height and pins its submit button. */
+  #step-compose {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-bottom: max(.85rem, env(safe-area-inset-bottom));
+  }
+  #compose-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: .15rem;
+  }
+  #compose-actions {
+    flex: 0 0 auto;
+    padding-top: .6rem;
+  }
+</style>
+</head>
+<body>
+
+<div class="kk-play" id="play"
+     data-code="{{ session.code }}"
+     data-kind="board"
+     data-mode="{{ session.mode }}">
+
+  <header class="d-flex align-items-center gap-3 mb-3">
+    {% if logo_url %}<img src="{{ logo_url }}" alt="" style="height:32px; border-radius:6px;">{% endif %}
+    <span class="kk-stage-code">{{ session.code }}</span>
+    <span class="text-secondary small flex-grow-1">{{ session.title }}</span>
+    <span class="text-secondary small" id="status-dot">●</span>
+  </header>
+
+  {# ── Step: enter name ───────────────────────────────────────────── #}
+  <div id="step-nick" class="kk-play-card">
+    <h2 class="mb-3">What's your name?</h2>
+    <input type="text" id="nick-input" class="form-control form-control-lg mb-3"
+           placeholder="Your nickname" maxlength="40">
+    <button class="kk-btn kk-btn-primary kk-btn-lg w-100" id="nick-go">
+      Join board <i class="bi bi-arrow-right"></i>
+    </button>
+  </div>
+
+  {# ── Step: waiting for presenter to open the board ──────────────── #}
+  <div id="step-wait" class="kk-play-card" style="display:none;">
+    <div class="text-center py-4">
+      {% if logo_url %}<img src="{{ logo_url }}" alt="" style="max-height:64px; border-radius:10px; margin-bottom:1rem;">{% endif %}
+      <div style="font-size:3rem;">📌</div>
+      <h2>You're in!</h2>
+      <p class="text-secondary mb-0">Waiting for the presenter to open the board…</p>
+    </div>
+  </div>
+
+  {# ── Step: the sticky pad — compose & submit notes ──────────────── #}
+  <div id="step-compose" class="kk-play-card" style="display:none;">
+
+    <div class="kk-pad-head">
+      <h2 id="board-prompt" class="kk-pad-prompt">Share your idea</h2>
+      <span class="kk-pad-count" id="my-note-count" title="Notes you've posted">0</span>
+    </div>
+
+    <div id="compose-scroll">
+
+      {# Live sticky-note preview — mirrors what lands on the board. #}
+      <div class="kk-sticky-preview" id="sticky-preview" data-color="0">
+        <span class="kk-sticky-icon" id="preview-icon" aria-hidden="true">
+          <i class="bi bi-lightbulb"></i>
+        </span>
+        <p class="kk-sticky-text" id="preview-text">Your note appears here…</p>
+      </div>
+
+      {# Column / topic picker — shown only when the board has groups. #}
+      <div class="kk-field" id="group-field" style="display:none;">
+        <label class="form-label">Add to column</label>
+        <div class="kk-group-pills" id="group-pills"><!-- filled from state --></div>
+      </div>
+
+      {# Note text. #}
+      <div class="kk-field">
+        <label class="form-label" for="note-input">Your note</label>
+        <textarea id="note-input" class="form-control" rows="3" maxlength="180"
+                  placeholder="Type an idea, insight, or question…"></textarea>
+        <div class="kk-char-count"><span id="char-now">0</span>/180</div>
+      </div>
+
+      {# Sticky-note colour picker. #}
+      <div class="kk-field">
+        <label class="form-label">Note colour</label>
+        <div class="kk-color-row" id="color-row" role="radiogroup" aria-label="Note colour">
+          <button type="button" class="kk-color-dot is-active" data-color="0" style="--c:#fbcfe8" role="radio" aria-checked="true" aria-label="Pink"></button>
+          <button type="button" class="kk-color-dot" data-color="1" style="--c:#fde68a" role="radio" aria-checked="false" aria-label="Yellow"></button>
+          <button type="button" class="kk-color-dot" data-color="2" style="--c:#bbf7d0" role="radio" aria-checked="false" aria-label="Green"></button>
+          <button type="button" class="kk-color-dot" data-color="3" style="--c:#bfdbfe" role="radio" aria-checked="false" aria-label="Blue"></button>
+          <button type="button" class="kk-color-dot" data-color="4" style="--c:#ddd6fe" role="radio" aria-checked="false" aria-label="Purple"></button>
+          <button type="button" class="kk-color-dot" data-color="5" style="--c:#fed7aa" role="radio" aria-checked="false" aria-label="Orange"></button>
+        </div>
+      </div>
+
+      {# Optional doodle icon — matches the illustration's little glyphs. #}
+      <div class="kk-field">
+        <label class="form-label">Icon <span class="text-secondary">(optional)</span></label>
+        <div class="kk-icon-row" id="icon-row" role="radiogroup" aria-label="Note icon">
+          <button type="button" class="kk-icon-pick is-active" data-icon="lightbulb" role="radio" aria-checked="true"><i class="bi bi-lightbulb"></i></button>
+          <button type="button" class="kk-icon-pick" data-icon="star" role="radio" aria-checked="false"><i class="bi bi-star"></i></button>
+          <button type="button" class="kk-icon-pick" data-icon="heart" role="radio" aria-checked="false"><i class="bi bi-heart"></i></button>
+          <button type="button" class="kk-icon-pick" data-icon="chat" role="radio" aria-checked="false"><i class="bi bi-chat-dots"></i></button>
+          <button type="button" class="kk-icon-pick" data-icon="people" role="radio" aria-checked="false"><i class="bi bi-people"></i></button>
+          <button type="button" class="kk-icon-pick" data-icon="target" role="radio" aria-checked="false"><i class="bi bi-bullseye"></i></button>
+          <button type="button" class="kk-icon-pick" data-icon="rocket" role="radio" aria-checked="false"><i class="bi bi-rocket-takeoff"></i></button>
+          <button type="button" class="kk-icon-pick" data-icon="check" role="radio" aria-checked="false"><i class="bi bi-check-circle"></i></button>
+          <button type="button" class="kk-icon-pick" data-icon="none" role="radio" aria-checked="false" aria-label="No icon"><i class="bi bi-slash-circle"></i></button>
+        </div>
+      </div>
+
+      {# Notes this participant has already posted (with live reaction counts). #}
+      <div class="kk-field" id="mine-field" style="display:none;">
+        <label class="form-label">Your notes on the board</label>
+        <div class="kk-mine-list" id="mine-list"><!-- filled live --></div>
+      </div>
+    </div>
+
+    <div id="compose-actions">
+      <div class="kk-pad-fade" aria-hidden="true"></div>
+      <button class="kk-btn kk-btn-primary kk-btn-lg w-100" id="post-note">
+        <i class="bi bi-send"></i> Post to board
+      </button>
+      <p class="kk-post-hint text-secondary small text-center mt-2 mb-0" id="post-hint">
+        It appears on the screen instantly.
+      </p>
+    </div>
+  </div>
+
+  {# ── Step: board closed / ended ─────────────────────────────────── #}
+  <div id="step-ended" class="kk-play-card kk-player-end" style="display:none;">
+    <div class="text-center py-4">
+      <div style="font-size:3.5rem;">🎉</div>
+      <h2>Board closed</h2>
+      <p class="text-secondary mb-0">Thanks for sharing your ideas!</p>
+    </div>
+  </div>
+
+  {# Toast for submit feedback / moderation messages. #}
+  <div class="kk-toast" id="toast" role="status" aria-live="polite"></div>
+</div>
+
+<script src="{% static 'js/boardly_play.js' %}?v=1"></script>
+</body>
+</html>

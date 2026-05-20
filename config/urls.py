@@ -9,12 +9,21 @@ urlpatterns = [
     path("polls/", include("polls.urls")),
     path("games/", include("games.urls")),
     path("live/", include("presentations.urls")),
-    path("", include("core.urls")),
     path("billing/", include("subscriptions.urls")),
     path("orgs/", include("organizations.urls")),
     path("collab/", include("collaborations.urls")),
     path("attendance/", include("attendance.urls")),
-    path("icebreakers/", include("icebreakers.urls", namespace="icebreakers"))
+
+    # Boardly — mounted under its own "board/" prefix so it can't collide
+    # with core.urls (which also lives at "").  With this prefix the
+    # boardly/urls.py routes become e.g. /board/new/, /board/<code>/.
+    path("board/", include("boardly.urls", namespace="boardly")),
+
+    path("icebreakers/", include("icebreakers.urls", namespace="icebreakers")),
+
+    # core.urls owns "" (home, dashboard, join) — keep it LAST so its
+    # patterns are only tried after every prefixed app above.
+    path("", include("core.urls")),
 ]
 
 if settings.DEBUG:

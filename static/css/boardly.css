@@ -1,0 +1,714 @@
+/* ════════════════════════════════════════════════════════════════════
+   Boardly — live sticky-note board for KnockKnock
+   Drop into static/css/boardly.css. Builds on app.css design tokens.
+   ════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* The six sticky-note colours, paired light fill + slightly deeper edge
+     so each note reads as paper, not a flat rectangle. */
+  --note-0: #fbcfe8; --note-0-deep: #f5a8d0;   /* pink   */
+  --note-1: #fde68a; --note-1-deep: #f6cf4d;   /* yellow */
+  --note-2: #bbf7d0; --note-2-deep: #86e3a6;   /* green  */
+  --note-3: #bfdbfe; --note-3-deep: #8fbef5;   /* blue   */
+  --note-4: #ddd6fe; --note-4-deep: #bcaff7;   /* purple */
+  --note-5: #fed7aa; --note-5-deep: #f9b878;   /* orange */
+
+  --board-ink: #1e2a52;          /* navy hand-drawn ink   */
+  --board-ink-soft: #44508a;
+  --board-pink: #ec4899;         /* heart / accent pink   */
+  --board-paper: #fdfdfb;        /* whiteboard sheet      */
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   PRESENTER STAGE
+   ───────────────────────────────────────────────────────────────────── */
+.kk-board-stage {
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.kk-board-header {
+  flex: 0 0 auto;
+  gap: .85rem;
+  flex-wrap: nowrap;
+}
+.kk-board-title-wrap { min-width: 0; }
+.kk-board-title {
+  font-family: var(--kk-font-display);
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--kk-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kk-board-stats { display: flex; gap: .65rem; }
+.kk-board-stat {
+  display: inline-flex; align-items: center; gap: .35rem;
+  padding: .3rem .7rem;
+  border-radius: 999px;
+  background: var(--kk-surface);
+  border: 1px solid var(--kk-border);
+  font-size: .9rem; color: var(--kk-text-dim);
+}
+.kk-board-stat b { color: var(--kk-text); font-family: var(--kk-font-mono); }
+
+.kk-board-layouts {
+  display: flex; gap: .25rem;
+  background: var(--kk-surface);
+  border: 1px solid var(--kk-border);
+  border-radius: 12px;
+  padding: .25rem;
+}
+.kk-board-layout {
+  width: 36px; height: 36px;
+  display: grid; place-items: center;
+  border: 0; border-radius: 9px;
+  background: transparent;
+  color: var(--kk-text-dim);
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.kk-board-layout:hover { color: var(--kk-text); background: var(--kk-surface-2); }
+.kk-board-layout.is-active {
+  background: linear-gradient(135deg, var(--kk-accent), var(--kk-accent-2));
+  color: #fff;
+}
+
+/* ── The whiteboard canvas ──────────────────────────────────────────── */
+.kk-board-canvas {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  padding: 1.1rem;
+  overflow: hidden;
+}
+
+/* Aluminium clip across the top of the whiteboard, like the photo. */
+.kk-board-clip {
+  position: absolute;
+  top: .35rem; left: 50%;
+  transform: translateX(-50%);
+  width: clamp(220px, 42%, 520px);
+  height: 26px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #e2e6ea, #aab2bb 45%, #cfd5da 55%, #8b949d);
+  box-shadow: 0 6px 14px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.7);
+  z-index: 3;
+}
+.kk-board-clip::before,
+.kk-board-clip::after {
+  content: "";
+  position: absolute; top: 6px;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #f1f3f5, #6b7178);
+}
+.kk-board-clip::before { left: 16px; }
+.kk-board-clip::after  { right: 16px; }
+
+/* The white sheet that holds the notes. */
+.kk-board-sheet {
+  position: relative;
+  height: 100%;
+  margin: 18px auto 0;
+  max-width: 1500px;
+  background:
+    radial-gradient(120% 80% at 50% 0%, #ffffff, var(--board-paper) 70%);
+  border-radius: 14px;
+  box-shadow:
+    0 22px 60px rgba(0,0,0,.45),
+    inset 0 0 0 1px rgba(0,0,0,.05);
+  padding: clamp(1rem, 2.5vw, 2.2rem) clamp(1rem, 3vw, 2.6rem);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Hand-drawn heading. */
+.kk-board-heading { flex: 0 0 auto; text-align: center; margin-bottom: .6rem; }
+.kk-board-heading-title {
+  font-family: "Caveat", cursive;
+  font-weight: 700;
+  font-size: clamp(2rem, 4.6vw, 3.6rem);
+  color: var(--board-ink);
+  letter-spacing: .04em;
+  margin: 0;
+  line-height: 1;
+}
+.kk-board-tick { color: var(--board-pink); font-weight: 700; }
+.kk-board-heading-sub {
+  font-family: "Caveat", cursive;
+  font-size: clamp(1rem, 1.9vw, 1.5rem);
+  color: var(--board-ink-soft);
+  margin: .1rem 0 .25rem;
+}
+.kk-board-heading-rule {
+  height: 1px; width: min(60%, 420px);
+  margin: 0 auto;
+  background: var(--board-ink-soft);
+  position: relative;
+  opacity: .5;
+}
+.kk-board-heading-rule i {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--board-pink);
+  background: var(--board-paper);
+  padding: 0 .4rem;
+  font-size: .85rem;
+}
+
+/* Notes area — the scrollable region that auto-fits more notes. */
+.kk-notes-area {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: .5rem .15rem 1rem;
+  /* --note-w shrinks as the board fills so more notes fit on screen.
+     boardly_stage.js recomputes it from the note count. */
+  --note-w: 200px;
+}
+.kk-notes-area::-webkit-scrollbar { width: 8px; }
+.kk-notes-area::-webkit-scrollbar-thumb {
+  background: rgba(30,42,82,.18); border-radius: 8px;
+}
+
+/* Layout: neat grid (matches the illustration). */
+.kk-notes-area.layout-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--note-w), 1fr));
+  gap: clamp(.6rem, 1.4vw, 1.1rem);
+  align-content: start;
+  justify-items: center;
+}
+
+/* Layout: masonry columns (Pinterest-style). */
+.kk-notes-area.layout-masonry {
+  display: block;
+  column-width: var(--note-w);
+  column-gap: clamp(.6rem, 1.4vw, 1.1rem);
+}
+.kk-notes-area.layout-masonry .kk-note {
+  display: inline-block;
+  width: 100%;
+  margin-bottom: clamp(.6rem, 1.4vw, 1.1rem);
+  break-inside: avoid;
+}
+
+/* Layout: scattered sticky look — slight random offsets via per-note vars. */
+.kk-notes-area.layout-scatter {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--note-w), 1fr));
+  gap: clamp(1rem, 2vw, 1.6rem);
+  align-content: start;
+  justify-items: center;
+}
+.kk-notes-area.layout-scatter .kk-note {
+  transform: rotate(var(--tilt, 0deg)) translateY(var(--drift, 0px));
+}
+
+/* ── A sticky note ──────────────────────────────────────────────────── */
+.kk-note {
+  position: relative;
+  width: 100%;
+  max-width: 260px;
+  min-height: 150px;
+  padding: .85rem .9rem .95rem;
+  border-radius: 3px 3px 8px 3px;
+  background:
+    linear-gradient(135deg,
+      var(--note, var(--note-0)) 0%,
+      var(--note, var(--note-0)) 78%,
+      var(--note-deep, var(--note-0-deep)) 100%);
+  color: #2a2a35;
+  font-family: "Patrick Hand", "Satoshi", sans-serif;
+  box-shadow:
+    0 1px 1px rgba(0,0,0,.10),
+    0 8px 18px rgba(0,0,0,.20);
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+  transform: rotate(var(--tilt, 0deg));
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+/* Folded paper corner. */
+.kk-note::after {
+  content: "";
+  position: absolute;
+  right: 0; bottom: 0;
+  width: 22px; height: 22px;
+  background: linear-gradient(135deg, transparent 50%, rgba(0,0,0,.12) 50%);
+  border-bottom-right-radius: 8px;
+}
+.kk-note:hover {
+  transform: rotate(0deg) translateY(-3px) scale(1.02);
+  box-shadow: 0 4px 6px rgba(0,0,0,.12), 0 16px 32px rgba(0,0,0,.28);
+  z-index: 4;
+}
+
+.kk-note-icon {
+  font-size: 1.15rem;
+  color: rgba(42,42,53,.6);
+  line-height: 1;
+}
+.kk-note-text {
+  flex: 1 1 auto;
+  font-size: clamp(.9rem, 1.05vw, 1.05rem);
+  line-height: 1.22;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  margin: 0;
+}
+.kk-note-foot {
+  display: flex; align-items: center; gap: .4rem;
+  margin-top: .15rem;
+}
+.kk-note-author {
+  font-size: .78rem;
+  color: rgba(42,42,53,.55);
+  flex: 1 1 auto;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Like / reaction control on each note. */
+.kk-note-like {
+  display: inline-flex; align-items: center; gap: .25rem;
+  border: 0;
+  background: rgba(255,255,255,.55);
+  border-radius: 999px;
+  padding: .15rem .5rem;
+  font-family: var(--kk-font-body);
+  font-size: .82rem; font-weight: 700;
+  color: #be3a6e;
+  cursor: pointer;
+  transition: transform .12s ease, background .15s ease;
+}
+.kk-note-like:hover { background: rgba(255,255,255,.85); }
+.kk-note-like:active { transform: scale(.88); }
+.kk-note-like.liked { background: #be3a6e; color: #fff; }
+.kk-note-like .bi { font-size: .8rem; }
+
+/* Pinned note — highlighted by the presenter. */
+.kk-note.pinned {
+  outline: 3px solid var(--board-pink);
+  outline-offset: 2px;
+}
+.kk-note.pinned .kk-note-pin {
+  position: absolute; top: -10px; left: 50%;
+  transform: translateX(-50%) rotate(-12deg);
+  font-size: 1.3rem;
+  color: var(--board-pink);
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,.3));
+}
+
+/* Note entrance — pop in like it was just stuck on. */
+@keyframes kk-note-stick {
+  0%   { opacity: 0; transform: rotate(var(--tilt,0deg)) scale(.4) translateY(-26px); }
+  60%  { opacity: 1; transform: rotate(var(--tilt,0deg)) scale(1.08); }
+  100% { opacity: 1; transform: rotate(var(--tilt,0deg)) scale(1); }
+}
+.kk-note.is-new { animation: kk-note-stick .5s cubic-bezier(.34,1.56,.64,1); }
+
+/* Note removal — peel away. */
+@keyframes kk-note-peel {
+  to { opacity: 0; transform: rotate(14deg) scale(.5) translateY(40px); }
+}
+.kk-note.is-leaving { animation: kk-note-peel .35s ease-in forwards; pointer-events: none; }
+
+/* Moderation mode — notes show they're tappable. */
+.kk-board-stage.moderating .kk-note { cursor: pointer; }
+.kk-board-stage.moderating .kk-note:hover { outline: 2px dashed var(--kk-accent); }
+
+/* Hidden-by-moderator note. */
+.kk-note.hidden-note { display: none; }
+
+/* ── Grouped columns ────────────────────────────────────────────────── */
+.kk-board-columns {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(220px, 1fr);
+  gap: clamp(.6rem, 1.5vw, 1.2rem);
+  overflow-x: auto;
+  padding: .5rem .15rem 1rem;
+}
+.kk-board-column {
+  display: flex; flex-direction: column;
+  min-height: 0;
+  background: rgba(30,42,82,.04);
+  border: 1px dashed rgba(30,42,82,.2);
+  border-radius: 12px;
+  padding: .6rem .55rem;
+}
+.kk-board-column-head {
+  font-family: "Caveat", cursive;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--board-ink);
+  text-align: center;
+  margin-bottom: .45rem;
+  display: flex; align-items: center; justify-content: center; gap: .4rem;
+}
+.kk-board-column-head .count {
+  font-family: var(--kk-font-mono);
+  font-size: .8rem;
+  color: var(--board-ink-soft);
+  background: rgba(30,42,82,.1);
+  border-radius: 999px;
+  padding: .05rem .45rem;
+}
+.kk-board-column-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex; flex-direction: column;
+  gap: .55rem;
+}
+.kk-board-column-body .kk-note { max-width: none; min-height: 110px; }
+
+/* Empty state. */
+.kk-board-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: var(--board-ink-soft);
+  font-family: "Caveat", cursive;
+  padding: 2.5rem 1rem;
+  margin: auto;
+}
+.kk-board-empty-emoji { font-size: 3rem; }
+.kk-board-empty p { font-size: 1.5rem; margin: .2rem 0; }
+.kk-board-empty p.small { font-size: 1.1rem; opacity: .7; }
+
+/* Hand-drawn footer. */
+.kk-board-footer {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center; gap: .8rem;
+  padding-top: .5rem;
+  font-family: "Caveat", cursive;
+  font-size: clamp(1.1rem, 2vw, 1.7rem);
+  color: var(--board-ink);
+}
+.kk-board-footer .bi { color: var(--board-pink); }
+
+/* ── Reaction burst FX ──────────────────────────────────────────────── */
+.kk-board-fx { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+.kk-fx-heart {
+  position: absolute;
+  font-size: 1.6rem;
+  animation: kk-fx-float 1.1s ease-out forwards;
+}
+@keyframes kk-fx-float {
+  0%   { opacity: 0; transform: translateY(0) scale(.4); }
+  20%  { opacity: 1; transform: translateY(-10px) scale(1.15); }
+  100% { opacity: 0; transform: translateY(-90px) scale(1.4); }
+}
+
+/* ── Join / QR panel ────────────────────────────────────────────────── */
+.kk-join-panel {
+  position: absolute;
+  left: 1rem; bottom: 1rem;
+  z-index: 8;
+  background: #fff;
+  color: #111;
+  border-radius: 16px;
+  box-shadow: 0 16px 40px rgba(0,0,0,.5);
+  transition: transform .3s cubic-bezier(.4,0,.2,1);
+}
+.kk-join-inner {
+  display: flex; align-items: center; gap: .9rem;
+  padding: .9rem 1.1rem .9rem .9rem;
+}
+.kk-qr-box {
+  width: 116px; height: 116px;
+  display: grid; place-items: center;
+  background: #fff;
+  border-radius: 10px;
+}
+.kk-qr-box img, .kk-qr-box canvas { width: 100%; height: 100%; }
+.kk-join-meta { min-width: 0; }
+.kk-join-label {
+  font-size: .8rem; color: #6b7280; margin: 0 0 .1rem;
+  font-family: var(--kk-font-body);
+}
+.kk-join-code {
+  font-family: var(--kk-font-mono);
+  font-size: 1.7rem; font-weight: 700;
+  letter-spacing: .14em;
+  color: #1a0b2e;
+  margin: 0;
+}
+.kk-join-url {
+  font-size: .78rem; color: #9ca3af; margin: .1rem 0 0;
+  font-family: var(--kk-font-mono);
+}
+.kk-join-collapse {
+  position: absolute; top: -14px; right: 10px;
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--kk-accent);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(0,0,0,.35);
+}
+.kk-join-panel.collapsed { transform: translateY(calc(100% + 1.4rem)); }
+.kk-join-panel.collapsed .kk-join-collapse { transform: rotate(180deg); }
+
+/* Fullscreen — give the board all the room. */
+.kk-board-stage.fullscreen .kk-board-header { display: none; }
+
+/* ── Moderation tray ────────────────────────────────────────────────── */
+.kk-mod-tray {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  z-index: 9;
+  background: var(--kk-surface);
+  border-top: 1px solid var(--kk-border);
+  padding: .8rem 1.1rem 1rem;
+  transform: translateY(100%);
+  transition: transform .3s cubic-bezier(.4,0,.2,1);
+}
+.kk-board-stage.moderating .kk-mod-tray { transform: translateY(0); }
+.kk-mod-tray-head {
+  display: flex; align-items: center; gap: .8rem;
+  margin-bottom: .6rem;
+}
+.kk-mod-hidden {
+  display: flex; gap: .5rem; flex-wrap: wrap;
+  max-height: 84px; overflow-y: auto;
+}
+.kk-mod-chip {
+  display: inline-flex; align-items: center; gap: .4rem;
+  padding: .3rem .6rem;
+  background: var(--kk-surface-2);
+  border-radius: 999px;
+  font-size: .82rem;
+  cursor: pointer;
+}
+.kk-mod-chip:hover { background: var(--kk-accent); color: #fff; }
+
+/* Per-note moderation popover. */
+.kk-mod-pop {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  background: var(--kk-surface);
+  border: 1px solid var(--kk-border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 12px 30px rgba(0,0,0,.5);
+}
+.kk-mod-pop button {
+  display: inline-flex; align-items: center; gap: .35rem;
+  border: 0; background: transparent;
+  color: var(--kk-text);
+  padding: .55rem .8rem;
+  font-size: .85rem;
+  cursor: pointer;
+}
+.kk-mod-pop button:hover { background: var(--kk-surface-2); }
+.kk-mod-pop button.is-danger:hover { background: var(--kk-danger); color: #fff; }
+
+/* ─────────────────────────────────────────────────────────────────────
+   PARTICIPANT STICKY PAD
+   ───────────────────────────────────────────────────────────────────── */
+.kk-pad-head {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: .6rem;
+  margin-bottom: .65rem;
+}
+.kk-pad-prompt { margin: 0; font-size: clamp(1.3rem, 5.5vw, 1.7rem); }
+.kk-pad-count {
+  margin-left: auto;
+  font-family: var(--kk-font-mono);
+  font-weight: 700;
+  background: rgba(124,58,237,.18);
+  color: var(--kk-accent-2);
+  border-radius: 999px;
+  min-width: 34px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 .5rem;
+}
+
+.kk-field { margin-bottom: 1rem; }
+.kk-char-count {
+  text-align: right;
+  font-size: .75rem;
+  color: var(--kk-text-dim);
+  margin-top: .2rem;
+}
+
+/* Live sticky-note preview. */
+.kk-sticky-preview {
+  position: relative;
+  border-radius: 3px 3px 10px 3px;
+  padding: 1rem 1.05rem 1.1rem;
+  margin-bottom: 1rem;
+  min-height: 116px;
+  display: flex; flex-direction: column; gap: .45rem;
+  color: #2a2a35;
+  font-family: "Patrick Hand", "Satoshi", sans-serif;
+  box-shadow: 0 1px 1px rgba(0,0,0,.12), 0 10px 24px rgba(0,0,0,.30);
+  transform: rotate(-1.5deg);
+  transition: background .2s ease;
+}
+.kk-sticky-preview::after {
+  content: "";
+  position: absolute; right: 0; bottom: 0;
+  width: 24px; height: 24px;
+  background: linear-gradient(135deg, transparent 50%, rgba(0,0,0,.12) 50%);
+  border-bottom-right-radius: 10px;
+}
+.kk-sticky-preview[data-color="0"] { background: linear-gradient(135deg, var(--note-0), var(--note-0-deep)); }
+.kk-sticky-preview[data-color="1"] { background: linear-gradient(135deg, var(--note-1), var(--note-1-deep)); }
+.kk-sticky-preview[data-color="2"] { background: linear-gradient(135deg, var(--note-2), var(--note-2-deep)); }
+.kk-sticky-preview[data-color="3"] { background: linear-gradient(135deg, var(--note-3), var(--note-3-deep)); }
+.kk-sticky-preview[data-color="4"] { background: linear-gradient(135deg, var(--note-4), var(--note-4-deep)); }
+.kk-sticky-preview[data-color="5"] { background: linear-gradient(135deg, var(--note-5), var(--note-5-deep)); }
+.kk-sticky-icon { font-size: 1.3rem; color: rgba(42,42,53,.6); line-height: 1; }
+.kk-sticky-text {
+  margin: 0; flex: 1 1 auto;
+  font-size: 1.05rem; line-height: 1.25;
+  overflow-wrap: anywhere; word-break: break-word;
+}
+.kk-sticky-text.is-placeholder { opacity: .5; }
+
+/* Colour picker. */
+.kk-color-row { display: flex; gap: .55rem; flex-wrap: wrap; }
+.kk-color-dot {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  background: var(--c);
+  cursor: pointer;
+  box-shadow: 0 3px 8px rgba(0,0,0,.3);
+  transition: transform .12s ease, border-color .15s ease;
+}
+.kk-color-dot:hover { transform: scale(1.08); }
+.kk-color-dot.is-active {
+  border-color: #fff;
+  transform: scale(1.12);
+}
+
+/* Icon picker. */
+.kk-icon-row { display: flex; gap: .45rem; flex-wrap: wrap; }
+.kk-icon-pick {
+  width: 44px; height: 44px;
+  display: grid; place-items: center;
+  border-radius: 12px;
+  border: 1px solid var(--kk-border);
+  background: var(--kk-surface);
+  color: var(--kk-text-dim);
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: transform .12s ease, border-color .15s ease, color .15s ease;
+}
+.kk-icon-pick:hover { transform: translateY(-2px); color: var(--kk-text); }
+.kk-icon-pick.is-active {
+  border-color: var(--kk-accent);
+  background: rgba(124,58,237,.18);
+  color: var(--kk-text);
+}
+
+/* Group / column pills. */
+.kk-group-pills { display: flex; gap: .45rem; flex-wrap: wrap; }
+.kk-group-pill {
+  padding: .45rem .85rem;
+  border-radius: 999px;
+  border: 1px solid var(--kk-border);
+  background: var(--kk-surface);
+  color: var(--kk-text-dim);
+  font-size: .9rem;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+.kk-group-pill.is-active {
+  background: linear-gradient(135deg, var(--kk-accent), var(--kk-accent-2));
+  color: #fff;
+  border-color: transparent;
+}
+
+/* "Your notes on the board" list. */
+.kk-mine-list { display: flex; flex-direction: column; gap: .5rem; }
+.kk-mine-item {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .55rem .7rem;
+  border-radius: 12px;
+  background: var(--kk-surface);
+  border: 1px solid var(--kk-border);
+}
+.kk-mine-swatch {
+  width: 16px; height: 16px; border-radius: 4px;
+  flex: 0 0 auto;
+  box-shadow: 0 1px 3px rgba(0,0,0,.4);
+}
+.kk-mine-text {
+  flex: 1 1 auto; min-width: 0;
+  font-size: .92rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.kk-mine-likes {
+  flex: 0 0 auto;
+  font-size: .82rem; font-weight: 700;
+  color: var(--kk-accent-3);
+}
+.kk-mine-item.removed { opacity: .4; }
+.kk-mine-item.removed .kk-mine-text { text-decoration: line-through; }
+
+/* Pinned-footer fade hint above the post button. */
+.kk-pad-fade {
+  position: absolute;
+  left: 0; right: 0; bottom: 100%;
+  height: 18px;
+  background: linear-gradient(to top, rgba(0,0,0,.28), transparent);
+  pointer-events: none;
+}
+#compose-actions { position: relative; }
+
+/* Toast. */
+.kk-toast {
+  position: fixed;
+  left: 50%; bottom: max(1.2rem, env(safe-area-inset-bottom));
+  transform: translateX(-50%) translateY(140%);
+  background: var(--kk-surface-2);
+  border: 1px solid var(--kk-border);
+  border-left: 4px solid var(--kk-success);
+  color: var(--kk-text);
+  padding: .7rem 1.1rem;
+  border-radius: 12px;
+  font-size: .92rem;
+  box-shadow: 0 12px 30px rgba(0,0,0,.5);
+  z-index: 50;
+  transition: transform .3s cubic-bezier(.34,1.4,.64,1);
+  max-width: 90vw;
+}
+.kk-toast.show { transform: translateX(-50%) translateY(0); }
+.kk-toast.is-error { border-left-color: var(--kk-danger); }
+.kk-toast.is-warn  { border-left-color: var(--kk-warn); }
+
+/* ── Responsive ─────────────────────────────────────────────────────── */
+@media (max-width: 980px) {
+  .kk-board-stage { height: auto; overflow: auto; }
+  .kk-board-canvas { min-height: 70vh; }
+  .kk-board-title-wrap { display: none; }
+}
+@media (max-width: 720px) {
+  .kk-board-header { flex-wrap: wrap; gap: .5rem; }
+  .kk-board-stats { order: 3; }
+  .kk-join-panel { left: .6rem; right: .6rem; }
+  .kk-join-inner { justify-content: center; }
+}
+@media (max-width: 480px) {
+  .kk-color-dot { width: 36px; height: 36px; }
+  .kk-icon-pick { width: 40px; height: 40px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kk-note.is-new,
+  .kk-note.is-leaving,
+  .kk-fx-heart { animation: none !important; }
+}

@@ -292,8 +292,15 @@
     const headers = {'X-CSRFToken': csrf};
     let payload;
     if (body instanceof FormData) {
-      payload = body;
-    } else if (typeof body === 'object') {
+      // An EMPTY FormData still makes fetch send a multipart body with a
+      // boundary but zero parts — Django's multipart parser rejects that
+      // with a 400. A bodyless POST is fine here: the CSRF token rides in
+      // the header, so only send the FormData when it actually has data.
+      let hasEntries = false;
+      // eslint-disable-next-line no-unused-vars
+      for (const _ of body.keys()) { hasEntries = true; break; }
+      payload = hasEntries ? body : undefined;
+    } else if (body && typeof body === 'object') {
       headers['Content-Type'] = 'application/json';
       payload = JSON.stringify(body);
     }

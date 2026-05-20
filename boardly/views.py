@@ -51,12 +51,20 @@ def board_stage(request, code):
 def board_create(request):
     """Create a board and jump straight to the presenter screen."""
     if request.method == "POST":
+        # Per-participant note cap: blank or non-numeric → 0 (unlimited).
+        try:
+            limit = int(request.POST.get("per_participant_limit", "0") or 0)
+        except (TypeError, ValueError):
+            limit = 0
+        limit = max(0, min(limit, 999))
+
         session = BoardSession.objects.create(
             owner=request.user,
             title=request.POST.get("title", "Idea Board")[:140] or "Idea Board",
             prompt=request.POST.get("prompt", "Share your idea")[:200],
             mode=request.POST.get("mode", "open"),
             layout=request.POST.get("layout", "grid"),
+            per_participant_limit=limit,
             state="open",
         )
         # Optional: seed topic columns from a comma-separated field.

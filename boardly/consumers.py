@@ -16,8 +16,14 @@ Speaks JSON. Client → server messages:
     {type:"like", id}                          someone liked a note
     {type:"mod", action, id}                   presenter moderation
                                                action ∈ hide|show|delete|pin|unpin
+    {type:"move", id, x, y}                    presenter dragged a note
+                                               x,y are 0.0–1.0 fractions
+    {type:"burn", id}                          presenter burns a note —
+                                               animate everywhere, then delete
     {type:"set_state", state}                  presenter opens/closes the board
                                                state ∈ open|ended
+    {type:"set_limit", limit}                  presenter changes the
+                                               per-participant note cap (0 = off)
 
 Server → client messages:
     {type:"state", ...}        full snapshot (sent on connect)
@@ -27,7 +33,10 @@ Server → client messages:
     {type:"note_rejected", reason}
     {type:"note_likes", id, likes}
     {type:"note_moderated", action, id}
+    {type:"note_moved", id, x, y}              broadcast new position
+    {type:"note_burned", id}                   play burn FX, then drop note
     {type:"note_removed"/"note_restored", id}  targeted at the author
+    {type:"limit_changed", limit}              new per-participant cap
     {type:"participants", count}
     {type:"board_ended"}
 """
@@ -101,10 +110,25 @@ class BoardConsumer(AsyncWebsocketConsumer):
             if self.is_presenter:
                 await self._handle_mod(data)
 
+        elif mtype == "move":
+            # Only the presenter may rearrange the board.
+            if self.is_presenter:
+                await self._handle_move(data)
+
+        elif mtype == "burn":
+            # Only the presenter may burn (animated delete) a note.
+            if self.is_presenter:
+                await self._handle_burn(data)
+
         elif mtype == "set_state":
             # Only the presenter screen may open/close the board.
             if self.is_presenter:
                 await self._handle_set_state(data)
+
+        elif mtype == "set_limit":
+            # Only the presenter may change the per-participant cap.
+            if self.is_presenter:
+                await self._handle_set_limit(data)
 
     # ── note posting ─────────────────────────────────────────────────
     async def _handle_note(self, data):
@@ -120,6 +144,23 @@ class BoardConsumer(AsyncWebsocketConsumer):
             await self.send_json({"type": "note_rejected",
                                   "reason": "The board isn't open."})
             return
+
+        # Per-participant cap. 0 means unlimited. Notes are counted by
+        # author nickname within this session — consistent with how the
+        # rest of the consumer identifies participants. Note this is a
+        # soft limit: it can't tell two participants with the same
+        # nickname apart, and a participant who rejoins under a new name
+        # gets a fresh count.
+        limit = await self._note_limit()
+        if limit:
+            already = await self._author_note_count(self.nick or "Anonymous")
+            if already >= limit:
+                await self.send_json({
+                    "type": "note_rejected",
+                    "reason": f"You've reached the {limit}-note limit "
+                              f"for this board.",
+                })
+                return
 
         try:
             color = int(data.get("color", 0))
@@ -189,7 +230,61 @@ class BoardConsumer(AsyncWebsocketConsumer):
                 "payload": {"type": "note_restored", "id": note_id},
             })
 
-    # ── presenter: open / close the board ────────────────────────────
+    # ── presenter: drag a note to a new position ─────────────────────
+    async def _handle_move(self, data):
+        note_id = data.get("id")
+        try:
+            x = float(data.get("x"))
+            y = float(data.get("y"))
+        except (TypeError, ValueError):
+            return
+        # Clamp to the board so a note can't be dragged off-sheet.
+        x = max(0.0, min(x, 1.0))
+        y = max(0.0, min(y, 1.0))
+
+        ok = await self._set_note_pos(note_id, x, y)
+        if not ok:
+            return
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {"type": "note_moved", "id": note_id, "x": x, "y": y},
+        })
+
+    # ── presenter: burn a note (animated delete) ─────────────────────
+    async def _handle_burn(self, data):
+        note_id = data.get("id")
+        # Broadcast the burn first so every screen plays the animation
+        # while the row still exists, THEN remove it from the DB.
+        ok = await self._note_exists(note_id)
+        if not ok:
+            return
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {"type": "note_burned", "id": note_id},
+        })
+        await self._delete_note(note_id)
+        # Also tell the author their note is gone (mirrors moderation).
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {"type": "note_removed", "id": note_id},
+        })
+
+    # ── presenter: change the per-participant note cap ───────────────
+    async def _handle_set_limit(self, data):
+        try:
+            limit = int(data.get("limit", 0))
+        except (TypeError, ValueError):
+            return
+        limit = max(0, min(limit, 999))  # 0 = unlimited
+        ok = await self._set_limit(limit)
+        if not ok:
+            return
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {"type": "limit_changed", "limit": limit},
+        })
+
+
     async def _handle_set_state(self, data):
         new_state = data.get("state")
         if new_state not in {"open", "ended"}:
@@ -245,6 +340,56 @@ class BoardConsumer(AsyncWebsocketConsumer):
         return True
 
     @sync_to_async
+    def _note_limit(self):
+        """Current per-participant cap. 0 = unlimited."""
+        from .models import BoardSession
+        s = BoardSession.objects.filter(code=self.code).first()
+        return s.per_participant_limit if s else 0
+
+    @sync_to_async
+    def _author_note_count(self, author):
+        """How many notes this author has already posted to the board."""
+        from .models import Note
+        return Note.objects.filter(
+            session__code=self.code, author=author,
+        ).count()
+
+    @sync_to_async
+    def _set_limit(self, limit):
+        from .models import BoardSession
+        s = BoardSession.objects.filter(code=self.code).first()
+        if not s:
+            return False
+        s.per_participant_limit = limit
+        s.save(update_fields=["per_participant_limit", "updated_at"])
+        return True
+
+    @sync_to_async
+    def _set_note_pos(self, note_id, x, y):
+        from .models import Note
+        note = Note.objects.filter(id=note_id, session__code=self.code).first()
+        if not note:
+            return False
+        note.pos_x = x
+        note.pos_y = y
+        note.save(update_fields=["pos_x", "pos_y"])
+        return True
+
+    @sync_to_async
+    def _note_exists(self, note_id):
+        from .models import Note
+        return Note.objects.filter(
+            id=note_id, session__code=self.code,
+        ).exists()
+
+    @sync_to_async
+    def _delete_note(self, note_id):
+        from .models import Note
+        Note.objects.filter(id=note_id, session__code=self.code).delete()
+        return True
+
+
+    @sync_to_async
     def _snapshot(self):
         from .models import BoardSession
         s = BoardSession.objects.filter(code=self.code).first()
@@ -260,6 +405,7 @@ class BoardConsumer(AsyncWebsocketConsumer):
             "groups": groups,
             "notes": notes,
             "participants": s.participant_count,
+            "limit": s.per_participant_limit,
         }
 
     @sync_to_async

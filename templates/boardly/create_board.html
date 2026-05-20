@@ -50,6 +50,19 @@
       </select>
     </div>
 
+    <div class="mb-3">
+      <label class="form-label" for="per_participant_limit">
+        Notes per participant
+      </label>
+      <input type="number" name="per_participant_limit"
+             id="per_participant_limit" class="form-control"
+             min="0" max="999" step="1" value="0">
+      <div class="form-text">
+        Maximum sticky notes one person can post. 0 means unlimited.
+        You can also change this live from the board.
+      </div>
+    </div>
+
     <div class="mb-4">
       <label class="form-label" for="groups">Topic columns <span class="text-secondary">(optional)</span></label>
       <input type="text" name="groups" id="groups" class="form-control"

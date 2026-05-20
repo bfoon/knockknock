@@ -478,8 +478,12 @@
 }
 .kk-list-item-game .kk-list-item-title {
   font-weight: 600;
+  /* overflow/ellipsis/nowrap handled by the shared truncation rule below */
+}
+.kk-list-item-game > a .mt-2 {
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 /* Keep the action buttons from being squeezed below their fixed size. */
 .kk-list-item-game .kk-btn,
@@ -524,8 +528,20 @@
   /* Soak up the same padding the original .kk-list-item used so the row
      keeps its original click-target size. */
 }
+/* The title/meta live inside an inner .flex-grow-1 div. For the
+   ellipsis below to take effect, EVERY flex ancestor between the text
+   and the card edge must be allowed to shrink — otherwise the inner
+   div stays as wide as its text and the title spills past the card.
+   .kk-list-item-main already has min-width:0; this covers the inner
+   wrapper (and the games-row link, which has no .kk-list-item-main). */
+.kk-list-item-row .kk-list-item-main > .flex-grow-1,
+.kk-list-item-game > a {
+  min-width: 0;
+}
 .kk-list-item-row .kk-list-item-title,
-.kk-list-item-row .kk-list-item-meta {
+.kk-list-item-row .kk-list-item-meta,
+.kk-list-item-game .kk-list-item-title,
+.kk-list-item-game .kk-list-item-meta {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;      /* keep titles/meta on one line so they

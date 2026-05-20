@@ -53,6 +53,11 @@ class BoardSession(models.Model):
     allow_likes = models.BooleanField(default=True)
     participant_count = models.IntegerField(default=0)
 
+    # Max notes a single participant may post. 0 = unlimited. Set at
+    # creation and editable live from the presenter stage; the consumer
+    # enforces it per author in _handle_note.
+    per_participant_limit = models.PositiveSmallIntegerField(default=0)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -108,6 +113,13 @@ class Note(models.Model):
     hidden = models.BooleanField(default=False)
     pinned = models.BooleanField(default=False)
 
+    # Free position on the board, set when the presenter drags a note.
+    # Stored as fractions (0.0–1.0) of the board sheet's width/height so
+    # the layout survives different projector resolutions. NULL means the
+    # note has never been dragged and should follow the automatic layout.
+    pos_x = models.FloatField(null=True, blank=True)
+    pos_y = models.FloatField(null=True, blank=True)
+
     created_at = models.DateTimeField()
 
     class Meta:
@@ -128,4 +140,8 @@ class Note(models.Model):
             "hidden": self.hidden,
             "pinned": self.pinned,
             "group_id": self.group_id,
+            # null until the presenter drags the note; the client falls
+            # back to automatic layout when these are null.
+            "pos_x": self.pos_x,
+            "pos_y": self.pos_y,
         }

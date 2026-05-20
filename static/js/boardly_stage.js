@@ -61,6 +61,12 @@
   const notes = new Map();         // id → note dict
   let openPopover = null;
 
+  // ── tool state (added: drag / draw / limit / export) ───────────────
+  let freeArrange = false;         // notes absolutely positioned & draggable
+  let noteLimit = 0;               // per-participant cap; 0 = unlimited
+  let drawTool = null;             // null | "highlighter" | "pen"
+  // The freehand/highlighter strokes are presenter-local — never sent.
+
   // ── WebSocket ──────────────────────────────────────────────────────
   let sock = null;
   let reconnectTimer = null;
@@ -100,6 +106,12 @@
         notes.clear();
         (msg.notes || []).forEach((n) => notes.set(n.id, n));
         if (typeof msg.participants === "number") setPeople(msg.participants);
+        if (typeof msg.limit === "number") { noteLimit = msg.limit; reflectLimit(); }
+        // If any note arrived with a saved position, the presenter had
+        // previously arranged the board — restore free-arrange mode.
+        if ([...notes.values()].some((n) => n.pos_x != null && n.pos_y != null)) {
+          freeArrange = true;
+        }
         reflectPower();
         renderAll();
         break;
@@ -132,6 +144,33 @@
           renderAll();
         }
         renderHiddenTray();
+        break;
+      }
+
+      case "note_burned": {
+        // Play the burn animation, then drop the note. The server has
+        // already deleted it server-side; we just animate locally.
+        animateBurn(msg.id);
+        break;
+      }
+
+      case "note_moved": {
+        // Someone (this presenter or another connected presenter screen)
+        // dragged a note. Store the fractional position and apply it.
+        const n = notes.get(msg.id);
+        if (n) {
+          n.pos_x = msg.x;
+          n.pos_y = msg.y;
+          // A move implies free arrangement — switch if we haven't.
+          if (!freeArrange) enterFreeArrange();
+          applyNotePosition(msg.id);
+        }
+        break;
+      }
+
+      case "limit_changed": {
+        noteLimit = Number(msg.limit) || 0;
+        reflectLimit();
         break;
       }
 
@@ -255,6 +294,24 @@
     like.innerHTML = `<i class="bi bi-heart-fill"></i> <span class="like-n">${n.likes || 0}</span>`;
     foot.appendChild(like);
 
+    // Always-visible presenter controls: burn (animated delete) and
+    // remove (plain delete). No moderation mode needed.
+    const burn = document.createElement("button");
+    burn.type = "button";
+    burn.className = "kk-note-act kk-note-burn";
+    burn.dataset.burn = n.id;
+    burn.title = "Burn this note";
+    burn.innerHTML = '<i class="bi bi-fire"></i>';
+    foot.appendChild(burn);
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "kk-note-act kk-note-remove";
+    remove.dataset.remove = n.id;
+    remove.title = "Remove this note";
+    remove.innerHTML = '<i class="bi bi-trash"></i>';
+    foot.appendChild(remove);
+
     el.appendChild(foot);
     return el;
   }
@@ -289,7 +346,9 @@
 
   function renderFlat(ordered, newId) {
     if (!notesArea) return;
-    notesArea.className = `kk-notes-area layout-${layout}`;
+    // Free-arrange overrides the grid/masonry/scatter layouts: notes are
+    // absolutely positioned from their saved fractional coordinates.
+    notesArea.className = `kk-notes-area layout-${freeArrange ? "free" : layout}`;
     // Keep the empty-state node, clear notes.
     notesArea.querySelectorAll(".kk-note").forEach((el) => el.remove());
     ordered.forEach((n) => {
@@ -297,6 +356,7 @@
       if (n.id === newId) el.classList.add("is-new");
       notesArea.appendChild(el);
     });
+    if (freeArrange) layoutFreeNotes();
   }
 
   function renderColumns(ordered, newId) {
@@ -408,10 +468,25 @@
     const pinBtn = pop.querySelector('[data-act="pin"]');
     if (pinBtn && n.pinned) pinBtn.innerHTML = '<i class="bi bi-pin-angle-fill"></i> Unpin';
 
+    // Inject a "Burn" button if the template doesn't already have one.
+    if (!pop.querySelector('[data-act="burn"]')) {
+      const burnBtn = document.createElement("button");
+      burnBtn.dataset.act = "burn";
+      burnBtn.className = "is-danger";
+      burnBtn.innerHTML = '<i class="bi bi-fire"></i> Burn';
+      pop.appendChild(burnBtn);
+    }
+
     pop.addEventListener("click", (e) => {
       const b = e.target.closest("button");
       if (!b) return;
       const raw = b.dataset.act;
+      if (raw === "burn") {
+        // Burn is an animated delete — its own message type.
+        send({ type: "burn", id });
+        closePopover();
+        return;
+      }
       let action = raw;
       if (raw === "hide") action = n.hidden ? "show" : "hide";
       if (raw === "pin") action = n.pinned ? "unpin" : "pin";
@@ -461,6 +536,457 @@
     });
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  //  PRESENTER TOOLS — drag-to-move, burn, draw, limit, export.
+  //  Added as a self-contained block so the rest of the file is intact.
+  //  The toolbar buttons, styles, and export libraries are injected from
+  //  here so the stage_board.html template needs no edits.
+  // ════════════════════════════════════════════════════════════════════
+
+  const boardSheet = document.getElementById("board-sheet");
+  const boardCanvas = document.getElementById("board-canvas");
+
+  // ── injected styles ─────────────────────────────────────────────────
+  function injectToolStyles() {
+    if (document.getElementById("boardly-tools-css")) return;
+    const css = document.createElement("style");
+    css.id = "boardly-tools-css";
+    css.textContent = `
+      .kk-notes-area.layout-free { position: relative; min-height: 60vh; }
+      .kk-notes-area.layout-free .kk-note { position: absolute; margin: 0;
+        transform: translate(-50%, -50%) rotate(var(--tilt, 0deg)); }
+      .kk-notes-area.layout-free .kk-note.dragging {
+        cursor: grabbing; z-index: 50; transform: translate(-50%,-50%)
+        rotate(0deg) scale(1.04); box-shadow: 0 14px 30px rgba(0,0,0,.4); }
+      .layout-free .kk-note { cursor: grab; }
+      @keyframes kk-burn {
+        0%   { filter: brightness(1); }
+        35%  { filter: brightness(1.4) sepia(.5) saturate(2); }
+        70%  { filter: brightness(.6) sepia(1) saturate(3) hue-rotate(-12deg); }
+        100% { filter: brightness(0) saturate(4); opacity: 0; }
+      }
+      .kk-note.is-burning { animation: kk-burn .9s ease-in forwards;
+        pointer-events: none; }
+      .kk-note.is-burning .kk-ember {
+        position: absolute; inset: 0; border-radius: inherit;
+        background: radial-gradient(circle at 50% 100%,
+          rgba(255,170,40,.95), rgba(255,60,0,.6) 40%, transparent 70%);
+        mix-blend-mode: screen; animation: kk-ember .9s ease-in forwards; }
+      @keyframes kk-ember {
+        0% { opacity: 0; } 30% { opacity: 1; } 100% { opacity: 0; } }
+      .kk-burn-spark { position: absolute; width: 6px; height: 6px;
+        border-radius: 50%; background: #ffb028;
+        box-shadow: 0 0 8px 2px rgba(255,140,0,.9); pointer-events: none; }
+      #board-draw-layer { position: absolute; inset: 0; z-index: 40;
+        touch-action: none; }
+      #board-draw-layer.inactive { pointer-events: none; }
+      .kk-tool.is-active { background: rgba(124,58,237,.35);
+        border-color: rgba(124,58,237,.7); }
+      .kk-limit-box { display: inline-flex; align-items: center; gap: .25rem;
+        padding: .15rem .35rem; border: 1px solid var(--kk-border, #333);
+        border-radius: 8px; }
+      .kk-limit-box input { width: 3ch; background: transparent;
+        border: 0; color: inherit; text-align: center;
+        font: inherit; -moz-appearance: textfield; }
+      .kk-limit-box input::-webkit-outer-spin-button,
+      .kk-limit-box input::-webkit-inner-spin-button { -webkit-appearance: none; }
+      .kk-limit-box button { background: none; border: 0; color: inherit;
+        cursor: pointer; line-height: 1; padding: 0 .15rem; opacity: .8; }
+      .kk-limit-box button:hover { opacity: 1; }
+      .kk-tool.is-busy { opacity: .5; pointer-events: none; }
+      /* Always-visible per-note presenter buttons (burn / remove). */
+      .kk-note-act {
+        background: rgba(0,0,0,.06); border: 1px solid rgba(0,0,0,.12);
+        border-radius: 7px; cursor: pointer; padding: 2px 7px;
+        font-size: .82rem; line-height: 1; color: #6b7280;
+        opacity: .35; transition: opacity .12s ease, color .12s ease,
+        background .12s ease; margin-left: 4px; }
+      .kk-note:hover .kk-note-act { opacity: 1; }
+      .kk-note-burn:hover { color: #ea580c;
+        background: rgba(234,88,12,.14); border-color: rgba(234,88,12,.4); }
+      .kk-note-remove:hover { color: #dc2626;
+        background: rgba(220,38,38,.14); border-color: rgba(220,38,38,.4); }
+      /* On touch screens there's no hover — keep them always visible. */
+      @media (hover: none) {
+        .kk-note-act { opacity: .8; }
+      }
+    `;
+    document.head.appendChild(css);
+  }
+
+  // ── injected toolbar ────────────────────────────────────────────────
+  let btnHi, btnPen, btnEraseDraw, limitInput, btnExportPng, btnExportPdf;
+
+  function injectToolbar() {
+    const header = document.querySelector(".kk-board-header");
+    if (!header || document.getElementById("btn-draw-hi")) return;
+    const anchor = powerBtn || null;
+
+    const mk = (id, title, icon) => {
+      const b = document.createElement("button");
+      b.className = "kk-tool";
+      b.id = id;
+      b.title = title;
+      b.innerHTML = `<i class="bi ${icon}"></i>`;
+      header.insertBefore(b, anchor);
+      return b;
+    };
+
+    btnHi = mk("btn-draw-hi", "Highlighter", "bi-highlighter");
+    btnPen = mk("btn-draw-pen", "Freehand pen", "bi-pencil");
+    btnEraseDraw = mk("btn-draw-clear", "Clear drawing", "bi-eraser");
+
+    const limitBox = document.createElement("span");
+    limitBox.className = "kk-limit-box";
+    limitBox.title = "Notes allowed per participant (0 = unlimited)";
+    limitBox.innerHTML =
+      '<i class="bi bi-person-lock"></i>' +
+      '<button type="button" data-step="-1">&minus;</button>' +
+      '<input type="text" inputmode="numeric" id="limit-input" value="0">' +
+      '<button type="button" data-step="1">+</button>';
+    header.insertBefore(limitBox, anchor);
+    limitInput = limitBox.querySelector("#limit-input");
+
+    limitBox.addEventListener("click", (e) => {
+      const step = e.target.closest("button");
+      if (!step) return;
+      changeLimit((parseInt(limitInput.value, 10) || 0) +
+                  Number(step.dataset.step));
+    });
+    limitInput.addEventListener("change", () => {
+      changeLimit(parseInt(limitInput.value, 10) || 0);
+    });
+
+    btnExportPng = mk("btn-export-png", "Save board as image", "bi-image");
+    btnExportPdf = mk("btn-export-pdf", "Save board as PDF", "bi-file-pdf");
+  }
+
+  // ── per-participant limit ───────────────────────────────────────────
+  function reflectLimit() {
+    if (limitInput) limitInput.value = String(noteLimit);
+  }
+  function changeLimit(v) {
+    const next = Math.max(0, Math.min(Math.floor(v) || 0, 999));
+    noteLimit = next;
+    reflectLimit();
+    send({ type: "set_limit", limit: next });
+  }
+
+  // ── free arrange + drag-to-move ─────────────────────────────────────
+  function enterFreeArrange() {
+    freeArrange = true;
+    layoutBtns.forEach((b) => b.classList.remove("is-active"));
+    renderAll();
+  }
+
+  function applyNotePosition(id) {
+    const n = notes.get(id);
+    const el = findNoteEl(id);
+    if (!n || !el) return;
+    if (n.pos_x == null || n.pos_y == null) return;
+    el.style.left = (n.pos_x * 100) + "%";
+    el.style.top = (n.pos_y * 100) + "%";
+  }
+
+  // Give un-positioned notes a deterministic starting spot.
+  function ensurePosition(n) {
+    if (n.pos_x != null && n.pos_y != null) return;
+    const seed = Number(n.id) || 1;
+    n.pos_x = 0.12 + ((seed * 0.137) % 0.76);
+    n.pos_y = 0.14 + ((seed * 0.231) % 0.66);
+  }
+
+  function layoutFreeNotes() {
+    if (!notesArea) return;
+    notesArea.querySelectorAll(".kk-note").forEach((el) => {
+      const n = notes.get(Number(el.dataset.id));
+      if (!n) return;
+      ensurePosition(n);
+      applyNotePosition(n.id);
+    });
+  }
+
+  let dragEl = null, dragId = null, dragMoved = false;
+
+  function onPointerMove(e) {
+    if (!dragEl) return;
+    const rect = notesArea.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    let x = (e.clientX - rect.left) / rect.width;
+    let y = (e.clientY - rect.top) / rect.height;
+    x = Math.max(0, Math.min(x, 1));
+    y = Math.max(0, Math.min(y, 1));
+    dragMoved = true;
+    dragEl.style.left = (x * 100) + "%";
+    dragEl.style.top = (y * 100) + "%";
+    const n = notes.get(dragId);
+    if (n) { n.pos_x = x; n.pos_y = y; }
+  }
+
+  function onPointerUp() {
+    if (!dragEl) return;
+    dragEl.classList.remove("dragging");
+    const n = notes.get(dragId);
+    if (dragMoved && n && n.pos_x != null) {
+      send({ type: "move", id: dragId, x: n.pos_x, y: n.pos_y });
+    }
+    dragEl = null;
+    dragId = null;
+  }
+
+  function startDragFrom(el) {
+    dragEl = el;
+    dragId = Number(el.dataset.id);
+    dragMoved = false;
+    el.classList.add("dragging");
+  }
+
+  // ── burn animation ──────────────────────────────────────────────────
+  function animateBurn(id) {
+    const el = findNoteEl(id);
+    notes.delete(id);
+    if (!el) { renderAll(); return; }
+
+    const ember = document.createElement("span");
+    ember.className = "kk-ember";
+    el.appendChild(ember);
+    el.classList.add("is-burning");
+
+    const r = el.getBoundingClientRect();
+    const host = fx ? fx.getBoundingClientRect() : null;
+    if (fx && host) {
+      for (let i = 0; i < 10; i++) {
+        const s = document.createElement("span");
+        s.className = "kk-burn-spark";
+        s.style.left = (r.left - host.left + Math.random() * r.width) + "px";
+        s.style.top = (r.top - host.top + r.height *
+                       (0.5 + Math.random() * 0.5)) + "px";
+        fx.appendChild(s);
+        const dx = (Math.random() - 0.5) * 80;
+        const dy = -60 - Math.random() * 90;
+        s.animate(
+          [{ transform: "translate(0,0)", opacity: 1 },
+           { transform: `translate(${dx}px,${dy}px)`, opacity: 0 }],
+          { duration: 700 + Math.random() * 500, easing: "ease-out" }
+        );
+        setTimeout(() => s.remove(), 1300);
+      }
+    }
+    setTimeout(() => { renderAll(); renderHiddenTray(); }, 950);
+  }
+
+  // ── drawing overlay (presenter-local highlighter + pen) ─────────────
+  let drawLayer = null, drawCtx = null, drawing = false;
+  const drawStrokes = [];
+
+  function ensureDrawLayer() {
+    if (drawLayer || !boardCanvas) return;
+    drawLayer = document.createElement("canvas");
+    drawLayer.id = "board-draw-layer";
+    drawLayer.className = "inactive";
+    boardCanvas.appendChild(drawLayer);
+    drawCtx = drawLayer.getContext("2d");
+    sizeDrawLayer();
+    window.addEventListener("resize", sizeDrawLayer);
+
+    drawLayer.addEventListener("pointerdown", drawDown);
+    drawLayer.addEventListener("pointermove", drawMove);
+    window.addEventListener("pointerup", drawUp);
+  }
+
+  function sizeDrawLayer() {
+    if (!drawLayer || !boardCanvas) return;
+    const r = boardCanvas.getBoundingClientRect();
+    drawLayer.width = r.width;
+    drawLayer.height = r.height;
+    repaintStrokes();
+  }
+
+  function strokeStyleFor(tool) {
+    return tool === "highlighter"
+      ? { color: "rgba(250,204,21,.38)", width: 22, cap: "round" }
+      : { color: "#ef4444", width: 3.5, cap: "round" };
+  }
+
+  function repaintStrokes() {
+    if (!drawCtx || !drawLayer) return;
+    drawCtx.clearRect(0, 0, drawLayer.width, drawLayer.height);
+    drawStrokes.forEach((st) => {
+      const s = strokeStyleFor(st.tool);
+      drawCtx.strokeStyle = s.color;
+      drawCtx.lineWidth = s.width;
+      drawCtx.lineCap = s.cap;
+      drawCtx.lineJoin = "round";
+      drawCtx.beginPath();
+      st.pts.forEach((p, i) => {
+        if (i === 0) drawCtx.moveTo(p.x, p.y);
+        else drawCtx.lineTo(p.x, p.y);
+      });
+      drawCtx.stroke();
+    });
+  }
+
+  let activeStroke = null;
+  function drawDown(e) {
+    if (!drawTool) return;
+    drawing = true;
+    activeStroke = { tool: drawTool, pts: [pointIn(e)] };
+    drawStrokes.push(activeStroke);
+    e.preventDefault();
+  }
+  function drawMove(e) {
+    if (!drawing || !activeStroke) return;
+    activeStroke.pts.push(pointIn(e));
+    repaintStrokes();
+  }
+  function drawUp() { drawing = false; activeStroke = null; }
+  function pointIn(e) {
+    const r = drawLayer.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  function setDrawTool(tool) {
+    drawTool = (drawTool === tool) ? null : tool;
+    ensureDrawLayer();
+    if (drawLayer) drawLayer.classList.toggle("inactive", !drawTool);
+    if (btnHi) btnHi.classList.toggle("is-active", drawTool === "highlighter");
+    if (btnPen) btnPen.classList.toggle("is-active", drawTool === "pen");
+  }
+  function clearDrawing() {
+    drawStrokes.length = 0;
+    repaintStrokes();
+  }
+
+  // ── export (PNG / PDF) ──────────────────────────────────────────────
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const existing = [...document.scripts].find((s) => s.src === src);
+      if (existing) {
+        if (existing.dataset.loaded) resolve();
+        else {
+          existing.addEventListener("load", () => resolve());
+          existing.addEventListener("error", () => reject(new Error(src)));
+        }
+        return;
+      }
+      const s = document.createElement("script");
+      s.src = src;
+      s.addEventListener("load", () => { s.dataset.loaded = "1"; resolve(); });
+      s.addEventListener("error", () => reject(new Error("load failed: " + src)));
+      document.head.appendChild(s);
+    });
+  }
+
+  const H2C_SRC = "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
+  const JSPDF_SRC = "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js";
+
+  async function captureBoard() {
+    await loadScript(H2C_SRC);
+    if (typeof html2canvas === "undefined") {
+      throw new Error("html2canvas unavailable");
+    }
+    // If the presenter has drawn on the board, capture the whole canvas
+    // (which includes the draw overlay); otherwise just the sheet.
+    const target = drawStrokes.length ? boardCanvas : boardSheet;
+    if (!target) throw new Error("nothing to export");
+    return html2canvas(target, {
+      backgroundColor: "#ffffff",
+      scale: 2,
+      useCORS: true,
+      logging: false,
+    });
+  }
+
+  function exportFilename(ext) {
+    const t = ((promptDisplay && promptDisplay.textContent) || "board")
+      .trim().replace(/[^\w-]+/g, "_").slice(0, 40) || "board";
+    const d = new Date().toISOString().slice(0, 10);
+    return `boardly_${t}_${d}.${ext}`;
+  }
+
+  function flashBusy(btn, on) {
+    if (btn) btn.classList.toggle("is-busy", on);
+  }
+
+  async function exportPNG() {
+    flashBusy(btnExportPng, true);
+    try {
+      const canvas = await captureBoard();
+      const a = document.createElement("a");
+      a.href = canvas.toDataURL("image/png");
+      a.download = exportFilename("png");
+      a.click();
+    } catch (err) {
+      alert("Couldn't export the image. Check your connection and retry.");
+      console.error(err);
+    } finally {
+      flashBusy(btnExportPng, false);
+    }
+  }
+
+  async function exportPDF() {
+    flashBusy(btnExportPdf, true);
+    try {
+      const canvas = await captureBoard();
+      await loadScript(JSPDF_SRC);
+      const JsPDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+      if (!JsPDF) throw new Error("jsPDF unavailable");
+
+      const img = canvas.toDataURL("image/png");
+      const orientation = canvas.width >= canvas.height ? "l" : "p";
+      const pdf = new JsPDF({ orientation, unit: "pt", format: "a4" });
+      const pw = pdf.internal.pageSize.getWidth();
+      const ph = pdf.internal.pageSize.getHeight();
+      const ratio = Math.min(pw / canvas.width, ph / canvas.height);
+      const w = canvas.width * ratio;
+      const h = canvas.height * ratio;
+      pdf.addImage(img, "PNG", (pw - w) / 2, (ph - h) / 2, w, h);
+      pdf.save(exportFilename("pdf"));
+    } catch (err) {
+      alert("Couldn't export the PDF. Check your connection and retry.");
+      console.error(err);
+    } finally {
+      flashBusy(btnExportPdf, false);
+    }
+  }
+
+  // ── wiring for the tools (called from init) ─────────────────────────
+  function initTools() {
+    injectToolStyles();
+    injectToolbar();
+    reflectLimit();
+
+    if (btnHi) btnHi.addEventListener("click", () => setDrawTool("highlighter"));
+    if (btnPen) btnPen.addEventListener("click", () => setDrawTool("pen"));
+    if (btnEraseDraw) btnEraseDraw.addEventListener("click", clearDrawing);
+    if (btnExportPng) btnExportPng.addEventListener("click", exportPNG);
+    if (btnExportPdf) btnExportPdf.addEventListener("click", exportPDF);
+
+    // Drag-to-move: delegated pointer events on the notes area. The first
+    // drag flips the board into free-arrange mode.
+    if (notesArea) {
+      notesArea.addEventListener("pointerdown", (e) => {
+        if (drawTool || moderating) return;
+        const el = e.target.closest(".kk-note");
+        if (!el) return;
+        // Don't begin a drag from any of the in-note buttons.
+        if (e.target.closest(".kk-note-like") ||
+            e.target.closest(".kk-note-act")) return;
+        if (!freeArrange) {
+          enterFreeArrange();   // re-renders the notes area
+          requestAnimationFrame(() => {
+            const fresh = findNoteEl(Number(el.dataset.id));
+            if (fresh) startDragFrom(fresh);
+          });
+        } else {
+          startDragFrom(el);
+        }
+      });
+      window.addEventListener("pointermove", onPointerMove);
+      window.addEventListener("pointerup", onPointerUp);
+    }
+  }
+
   // ── wiring ─────────────────────────────────────────────────────────
   function init() {
     layout = "grid";
@@ -472,6 +998,10 @@
     layoutBtns.forEach((b) => {
       b.addEventListener("click", () => {
         layout = b.dataset.layout || "grid";
+        // Picking a layout leaves free-arrange mode. Saved note
+        // positions are kept server-side and reappear next time the
+        // presenter drags a note.
+        freeArrange = false;
         layoutBtns.forEach((x) => x.classList.toggle("is-active", x === b));
         renderAll();
       });
@@ -487,8 +1017,25 @@
       });
     }
 
-    // Note interactions: like (always) / moderate (when moderating).
+    // Note interactions: like / burn / remove (always) and moderate
+    // (when moderating).
     stage.addEventListener("click", (e) => {
+      const burnBtn = e.target.closest(".kk-note-burn");
+      if (burnBtn) {
+        const id = Number(burnBtn.dataset.burn);
+        if (confirm("Burn this note? It will be permanently removed.")) {
+          send({ type: "burn", id });
+        }
+        return;
+      }
+      const removeBtn = e.target.closest(".kk-note-remove");
+      if (removeBtn) {
+        const id = Number(removeBtn.dataset.remove);
+        if (confirm("Remove this note? It will be permanently deleted.")) {
+          send({ type: "mod", action: "delete", id });
+        }
+        return;
+      }
       const likeBtn = e.target.closest(".kk-note-like");
       if (likeBtn && !moderating) {
         send({ type: "like", id: Number(likeBtn.dataset.like) });
@@ -515,6 +1062,7 @@
 
     drawQR();
     reflectPower();
+    initTools();
     connect();
   }
 

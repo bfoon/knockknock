@@ -67,6 +67,7 @@
   let selectedColor = 0;
   let selectedIcon = "lightbulb";
   let selectedGroup = null;    // group id, or null
+  let noteLimit = 0;           // per-participant cap; 0 = unlimited
   const myNotes = [];          // {id, text, color, likes, removed}
 
   // ── step switching ─────────────────────────────────────────────────
@@ -178,6 +179,33 @@
     return NOTE_FILLS[Math.max(0, Math.min(Number(c) || 0, 5))];
   }
 
+  // ── per-participant limit ──────────────────────────────────────────
+  // Notes the server still counts against us: those with a real id that
+  // haven't been removed, plus any optimistic (id == null) pending ones.
+  function postedCount() {
+    return myNotes.filter((n) => !n.removed).length;
+  }
+
+  // Reflect the cap in the post button + hint. Called whenever the limit
+  // changes or our note set changes.
+  function refreshLimitUI() {
+    if (!noteLimit) {
+      // Unlimited — restore the default hint and make sure we're enabled.
+      if (postHint) postHint.textContent = "It appears on the screen instantly.";
+      if (postBtn && !posting) postBtn.disabled = false;
+      return;
+    }
+    const used = postedCount();
+    const remaining = Math.max(noteLimit - used, 0);
+    if (postHint) {
+      postHint.textContent = remaining > 0
+        ? `${remaining} of ${noteLimit} note${noteLimit === 1 ? "" : "s"} left.`
+        : `You've used all ${noteLimit} of your notes.`;
+    }
+    // Disable posting at the cap; never override the busy lock.
+    if (postBtn && !posting) postBtn.disabled = remaining <= 0;
+  }
+
   // ── WebSocket ──────────────────────────────────────────────────────
   let sock = null;
   let reconnectTimer = null;
@@ -230,6 +258,7 @@
       case "state": {
         boardState = msg.state || "lobby";
         if (promptEl && msg.prompt) promptEl.textContent = msg.prompt;
+        if (typeof msg.limit === "number") noteLimit = msg.limit;
         renderGroups(msg.groups || []);
         // Reconcile likes for any of *our* notes already on the board.
         if (Array.isArray(msg.notes)) {
@@ -239,6 +268,7 @@
           });
           renderMine();
         }
+        refreshLimitUI();
         syncStep();
         break;
       }
@@ -259,13 +289,26 @@
         const pending = myNotes.find((m) => m.id == null && m.text === msg.text);
         if (pending) pending.id = msg.id;
         renderMine();
+        refreshLimitUI();
         showToast("Posted to the board! 🎉");
+        break;
+      }
+
+      case "limit_changed": {
+        noteLimit = Number(msg.limit) || 0;
+        refreshLimitUI();
         break;
       }
 
       case "note_rejected": {
         showToast(msg.reason || "Couldn't post that note.", true);
+        // If the server rejected the post, drop the optimistic entry we
+        // pushed in postNote() so our local count stays accurate.
+        const idx = myNotes.findIndex((m) => m.id == null);
+        if (idx !== -1) myNotes.splice(idx, 1);
+        renderMine();
         unlockPost();
+        refreshLimitUI();
         break;
       }
 
@@ -277,13 +320,13 @@
 
       case "note_removed": {
         const mine = myNotes.find((m) => m.id === msg.id);
-        if (mine) { mine.removed = true; renderMine(); }
+        if (mine) { mine.removed = true; renderMine(); refreshLimitUI(); }
         break;
       }
 
       case "note_restored": {
         const mine = myNotes.find((m) => m.id === msg.id);
-        if (mine) { mine.removed = false; renderMine(); }
+        if (mine) { mine.removed = false; renderMine(); refreshLimitUI(); }
         break;
       }
 
@@ -303,7 +346,11 @@
   }
   function unlockPost() {
     posting = false;
-    if (postBtn) { postBtn.disabled = false; postBtn.classList.remove("is-busy"); }
+    if (postBtn) {
+      postBtn.classList.remove("is-busy");
+      // Re-enable only if the participant still has notes left.
+      postBtn.disabled = !!(noteLimit && postedCount() >= noteLimit);
+    }
   }
 
   function postNote() {
@@ -312,6 +359,13 @@
     if (!text) { showToast("Type something first ✏️", true); return; }
     if (boardState !== "open" && boardState !== "running") {
       showToast("The board isn't open yet.", true);
+      return;
+    }
+    // Client-side cap check for instant feedback. The server enforces
+    // the real limit too — this just avoids a pointless round-trip.
+    if (noteLimit && postedCount() >= noteLimit) {
+      showToast(`You've reached the ${noteLimit}-note limit.`, true);
+      refreshLimitUI();
       return;
     }
     lockPost();

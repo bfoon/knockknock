@@ -180,6 +180,61 @@
 
   {# Toast for submit feedback / moderation messages. #}
   <div class="kk-toast" id="toast" role="status" aria-live="polite"></div>
+  <dialog id="note-edit-dialog" class="kk-edit-dialog">
+    <form method="dialog" class="kk-edit-form" id="note-edit-form">
+      <header class="kk-edit-head">
+        <strong><i class="bi bi-pencil"></i> Edit your note</strong>
+        <button type="button" class="kk-edit-x" id="note-edit-cancel" aria-label="Close">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </header>
+
+      <input type="hidden" id="edit-note-id" value="">
+
+      <label class="form-label" for="edit-note-text">Your note</label>
+      <textarea id="edit-note-text" class="form-control" rows="3"
+                maxlength="180" required></textarea>
+      <div class="kk-char-count"><span id="edit-char-now">0</span>/180</div>
+
+      <label class="form-label mt-2">Note colour</label>
+      <div class="kk-color-row" id="edit-color-row" role="radiogroup" aria-label="Note colour">
+        <button type="button" class="kk-color-dot is-active" data-color="0" style="--c:#fbcfe8" role="radio" aria-checked="true" aria-label="Pink"></button>
+        <button type="button" class="kk-color-dot" data-color="1" style="--c:#fde68a" role="radio" aria-checked="false" aria-label="Yellow"></button>
+        <button type="button" class="kk-color-dot" data-color="2" style="--c:#bbf7d0" role="radio" aria-checked="false" aria-label="Green"></button>
+        <button type="button" class="kk-color-dot" data-color="3" style="--c:#bfdbfe" role="radio" aria-checked="false" aria-label="Blue"></button>
+        <button type="button" class="kk-color-dot" data-color="4" style="--c:#ddd6fe" role="radio" aria-checked="false" aria-label="Purple"></button>
+        <button type="button" class="kk-color-dot" data-color="5" style="--c:#fed7aa" role="radio" aria-checked="false" aria-label="Orange"></button>
+      </div>
+
+      <label class="form-label mt-2">Icon</label>
+      <div class="kk-icon-row" id="edit-icon-row" role="radiogroup" aria-label="Note icon">
+        <button type="button" class="kk-icon-pick is-active" data-icon="lightbulb" role="radio" aria-checked="true"><i class="bi bi-lightbulb"></i></button>
+        <button type="button" class="kk-icon-pick" data-icon="star" role="radio" aria-checked="false"><i class="bi bi-star"></i></button>
+        <button type="button" class="kk-icon-pick" data-icon="heart" role="radio" aria-checked="false"><i class="bi bi-heart"></i></button>
+        <button type="button" class="kk-icon-pick" data-icon="chat" role="radio" aria-checked="false"><i class="bi bi-chat-dots"></i></button>
+        <button type="button" class="kk-icon-pick" data-icon="people" role="radio" aria-checked="false"><i class="bi bi-people"></i></button>
+        <button type="button" class="kk-icon-pick" data-icon="target" role="radio" aria-checked="false"><i class="bi bi-bullseye"></i></button>
+        <button type="button" class="kk-icon-pick" data-icon="rocket" role="radio" aria-checked="false"><i class="bi bi-rocket-takeoff"></i></button>
+        <button type="button" class="kk-icon-pick" data-icon="check" role="radio" aria-checked="false"><i class="bi bi-check-circle"></i></button>
+        <button type="button" class="kk-icon-pick" data-icon="none" role="radio" aria-checked="false" aria-label="No icon"><i class="bi bi-slash-circle"></i></button>
+      </div>
+
+      {# Column picker — shown by JS only when the board has groups. #}
+      <div class="kk-field mt-2" id="edit-group-field" style="display:none;">
+        <label class="form-label" for="edit-note-group">Column</label>
+        <select id="edit-note-group" class="form-select">
+          <option value="">— No column —</option>
+        </select>
+      </div>
+
+      <div class="kk-edit-actions mt-3">
+        <button type="button" class="kk-btn kk-btn-ghost" id="note-edit-cancel2">Cancel</button>
+        <button type="submit" class="kk-btn kk-btn-primary" id="note-edit-save">
+          <i class="bi bi-check-lg"></i> Save changes
+        </button>
+      </div>
+    </form>
+  </dialog>
 </div>
 
 <script src="{% static 'js/boardly_play.js' %}?v=1"></script>

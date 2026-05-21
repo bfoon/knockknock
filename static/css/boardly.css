@@ -831,3 +831,137 @@
   border-radius: 12px;
   box-shadow: 0 10px 28px rgba(0,0,0,.45);
 }
+
+/* ════════════════════════════════════════════════════════════════════
+ *  NOTE EDITING — the edit dialog (presenter + participant) and the
+ *  presenter's add-column control. The original note is preserved in the
+ *  server-side edit history, so editing here never loses recorded data.
+ * ══════════════════════════════════════════════════════════════════ */
+
+/* ── the <dialog> editor ─────────────────────────────────────────── */
+.kk-edit-dialog {
+  border: none;
+  border-radius: 16px;
+  padding: 0;
+  width: min(440px, 92vw);
+  background: var(--kk-surface, #1c1d22);
+  color: var(--kk-text, #f4f4f5);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+}
+.kk-edit-dialog::backdrop {
+  background: rgba(0, 0, 0, .55);
+  backdrop-filter: blur(2px);
+}
+.kk-edit-form {
+  padding: 1.1rem 1.25rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+}
+.kk-edit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: .9rem;
+}
+.kk-edit-head strong { font-size: 1.05rem; }
+.kk-edit-x {
+  background: transparent;
+  border: none;
+  color: var(--kk-text-dim, #a1a1aa);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: .25rem .4rem;
+  border-radius: 8px;
+}
+.kk-edit-x:hover { background: rgba(255, 255, 255, .08); color: var(--kk-text, #fff); }
+.kk-edit-actions {
+  display: flex;
+  gap: .6rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+.kk-edit-hint { margin: .6rem 0 0; }
+
+/* The edit dialog reuses .kk-color-row / .kk-icon-row from the compose
+   pad; nudge their spacing inside the dialog. */
+.kk-edit-form .kk-color-row,
+.kk-edit-form .kk-icon-row { margin-top: .35rem; }
+
+/* ── add-column control on the stage ─────────────────────────────── */
+.kk-board-addcol {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin: .75rem auto;
+  justify-content: center;
+}
+.kk-addcol-form {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+.kk-addcol-form .form-control { width: 12rem; }
+
+/* ── "(edited)" marker on a note ──────────────────────────────────── */
+.kk-note-edited {
+  font-size: .68rem;
+  font-style: italic;
+  opacity: .55;
+  margin-left: .3rem;
+}
+
+/* ── per-note edit button in the participant's "my notes" list ────── */
+.kk-mine-edit {
+  background: transparent;
+  border: 1px solid var(--kk-border, rgba(255, 255, 255, .15));
+  color: var(--kk-text-dim, #d4d4d8);
+  border-radius: 8px;
+  padding: .2rem .5rem;
+  cursor: pointer;
+  font-size: .8rem;
+  margin-left: .35rem;
+  flex: 0 0 auto;
+}
+.kk-mine-edit:hover {
+  background: rgba(255, 255, 255, .08);
+  color: var(--kk-text, #fff);
+}
+.kk-mine-edit:disabled { opacity: .35; cursor: default; }
+
+/* The presenter popover gets an Edit row; reuse popover button styling. */
+.kk-mod-pop [data-act="edit"] { /* inherits .kk-mod-pop button styles */ }
+
+/* ════════════════════════════════════════════════════════════════════
+ *  COLUMN DRAG-AND-DROP + LOCK
+ *  Presenter drags sticky notes between columns. The board owner can
+ *  lock cross-column moves; locked boards drop the drag affordances.
+ * ══════════════════════════════════════════════════════════════════ */
+
+/* A draggable note shows the grab cursor on hover. */
+.kk-note-draggable { cursor: grab; }
+.kk-note-draggable:active { cursor: grabbing; }
+
+/* The note currently being dragged. */
+.kk-note-dragging {
+  opacity: .55;
+  transform: rotate(0deg) scale(.97);
+}
+
+/* The column body the note is hovering over — highlighted drop target. */
+.kk-board-column-body.drop-over {
+  outline: 2px dashed var(--kk-accent, #7c3aed);
+  outline-offset: -4px;
+  background: rgba(124, 58, 237, .10);
+  border-radius: 12px;
+}
+
+/* When the board is locked, make it visually clear notes are pinned in
+   place — no grab cursor, and a subtle lock affordance is enough. */
+.kk-board-columns.columns-locked .kk-note { cursor: default; }
+
+/* The header lock toggle: lit when columns are locked. */
+#btn-lock-columns.is-active {
+  background: rgba(124, 58, 237, .35);
+  border-color: rgba(124, 58, 237, .7);
+  color: #fff;
+}

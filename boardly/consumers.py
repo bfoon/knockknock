@@ -18,6 +18,17 @@ Speaks JSON. Client → server messages:
                                                action ∈ hide|show|delete|pin|unpin
     {type:"move", id, x, y}                    presenter dragged a note
                                                x,y are 0.0–1.0 fractions
+    {type:"edit", id, text, color, icon,       edit a note's content; the
+           group_id}                           presenter may edit any note,
+                                               an author only their own.
+                                               Omitted fields are unchanged.
+                                               The original is preserved in
+                                               a NoteEdit history row.
+    {type:"move_group", id, group_id}          move a note to another column
+                                               (group_id null = no column)
+    {type:"add_group", name}                   presenter adds a topic column
+    {type:"set_column_lock", locked}           presenter locks/unlocks
+                                               cross-column note moves
     {type:"burn", id}                          presenter burns a note —
                                                animate everywhere, then delete
     {type:"set_state", state}                  presenter opens/closes the board
@@ -31,6 +42,10 @@ Server → client messages:
     {type:"note_added", note}  a new note for the board
     {type:"note_ack", ...}     confirmation back to the author
     {type:"note_rejected", reason}
+    {type:"note_edited", note}  a note's content changed (full note dict)
+    {type:"edit_rejected", reason}
+    {type:"group_added", group} a new column {id, name}
+    {type:"column_lock_changed", locked}       cross-column moves locked?
     {type:"note_likes", id, likes}
     {type:"note_moderated", action, id}
     {type:"note_moved", id, x, y}              broadcast new position
@@ -114,6 +129,26 @@ class BoardConsumer(AsyncWebsocketConsumer):
             # Only the presenter may rearrange the board.
             if self.is_presenter:
                 await self._handle_move(data)
+
+        elif mtype == "edit":
+            # Presenter may edit any note; a participant may edit only
+            # their own. _handle_edit enforces ownership.
+            await self._handle_edit(data)
+
+        elif mtype == "move_group":
+            # Only the presenter may move a note between columns.
+            if self.is_presenter:
+                await self._handle_move_group(data)
+
+        elif mtype == "add_group":
+            # Only the presenter may add a column to a live board.
+            if self.is_presenter:
+                await self._handle_add_group(data)
+
+        elif mtype == "set_column_lock":
+            # Only the presenter may lock/unlock cross-column moves.
+            if self.is_presenter:
+                await self._handle_set_column_lock(data)
 
         elif mtype == "burn":
             # Only the presenter may burn (animated delete) a note.
@@ -250,6 +285,134 @@ class BoardConsumer(AsyncWebsocketConsumer):
             "payload": {"type": "note_moved", "id": note_id, "x": x, "y": y},
         })
 
+    # ── edit a note's content (presenter: any note; author: own) ─────
+    async def _handle_edit(self, data):
+        note_id = data.get("id")
+
+        # Normalise the incoming fields. Any field that's absent (None)
+        # is left unchanged; _edit_note treats None as "keep".
+        text = data.get("text")
+        if text is not None:
+            text = str(text).strip()
+            if not text:
+                await self.send_json({"type": "edit_rejected",
+                                      "reason": "Note can't be empty."})
+                return
+            text = text[:MAX_NOTE_LEN]
+
+        color = data.get("color")
+        if color is not None:
+            try:
+                color = max(0, min(int(color), 5))
+            except (TypeError, ValueError):
+                color = None
+
+        icon = data.get("icon")
+        if icon is not None and icon not in ALLOWED_ICONS:
+            icon = "none"
+
+        # group_id may legitimately be null (= no column), so we use a
+        # sentinel to tell "not supplied" apart from "set to none".
+        has_group = "group_id" in data
+        group_id = data.get("group_id")
+
+        # Respect the column lock. If the board is locked and this edit
+        # would move the note to a different column, drop the column
+        # change but still apply any text/colour/icon edits, and tell the
+        # client why the column didn't move.
+        column_blocked = False
+        if has_group and await self._columns_locked():
+            same = await self._note_in_group(note_id, group_id)
+            if not same:
+                has_group = False
+                group_id = None
+                column_blocked = True
+
+        if self.is_presenter:
+            editor_kind, editor_name = "presenter", "Presenter"
+        else:
+            editor_kind, editor_name = "author", (self.nick or "Anonymous")
+
+        note, reason = await self._edit_note(
+            note_id=note_id, text=text, color=color, icon=icon,
+            has_group=has_group, group_id=group_id,
+            editor_kind=editor_kind, editor_name=editor_name,
+            require_author=None if self.is_presenter else editor_name,
+        )
+        if note is None:
+            await self.send_json({"type": "edit_rejected",
+                                  "reason": reason or "Can't edit that note."})
+            return
+
+        if column_blocked:
+            await self.send_json({
+                "type": "edit_rejected",
+                "reason": "Columns are locked — the note's other changes "
+                          "were saved, but it stayed in its column.",
+            })
+
+        # Broadcast the updated note to everyone — full dict so each
+        # client can re-render it in place.
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {"type": "note_edited", "note": note},
+        })
+
+    # ── presenter: move a note to a different column ─────────────────
+    async def _handle_move_group(self, data):
+        note_id = data.get("id")
+        group_id = data.get("group_id")  # may be null → ungrouped
+
+        # Enforce the column lock. When the board is locked, a note may
+        # not be moved ACROSS columns — only no-op "moves" to its current
+        # column are allowed (the client shouldn't send those anyway).
+        if await self._columns_locked():
+            same = await self._note_in_group(note_id, group_id)
+            if not same:
+                await self.send_json({
+                    "type": "edit_rejected",
+                    "reason": "Columns are locked — notes can't be moved "
+                              "between columns.",
+                })
+                return
+
+        note, reason = await self._edit_note(
+            note_id=note_id, text=None, color=None, icon=None,
+            has_group=True, group_id=group_id,
+            editor_kind="presenter", editor_name="Presenter",
+            require_author=None,
+        )
+        if note is None:
+            return
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {"type": "note_edited", "note": note},
+        })
+
+    # ── presenter: add a topic column to a live board ────────────────
+    async def _handle_add_group(self, data):
+        name = (data.get("name") or "").strip()[:60]
+        if not name:
+            return
+        group = await self._create_group(name)
+        if group is None:
+            return
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {"type": "group_added", "group": group},
+        })
+
+    # ── presenter: lock / unlock cross-column note moves ─────────────
+    async def _handle_set_column_lock(self, data):
+        locked = bool(data.get("locked"))
+        ok = await self._set_column_lock(locked)
+        if not ok:
+            return
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {"type": "column_lock_changed", "locked": locked},
+        })
+
     # ── presenter: burn a note (animated delete) ─────────────────────
     async def _handle_burn(self, data):
         note_id = data.get("id")
@@ -365,6 +528,48 @@ class BoardConsumer(AsyncWebsocketConsumer):
         return True
 
     @sync_to_async
+    def _columns_locked(self):
+        """True when cross-column note moves are disallowed."""
+        from .models import BoardSession
+        s = BoardSession.objects.filter(code=self.code).first()
+        return bool(s and s.lock_columns)
+
+    @sync_to_async
+    def _set_column_lock(self, locked):
+        from .models import BoardSession
+        s = BoardSession.objects.filter(code=self.code).first()
+        if not s:
+            return False
+        s.lock_columns = bool(locked)
+        s.save(update_fields=["lock_columns", "updated_at"])
+        return True
+
+    @sync_to_async
+    def _note_in_group(self, note_id, group_id):
+        """
+        True if the note already belongs to ``group_id`` — i.e. a "move"
+        to that group would be a no-op. Used to tell a real cross-column
+        move apart from a same-column drop when the board is locked.
+        ``group_id`` None means "no column".
+        """
+        from .models import Note
+        note = Note.objects.filter(
+            id=note_id, session__code=self.code,
+        ).first()
+        if not note:
+            # Unknown note — treat as "not a no-op" so it gets rejected
+            # by the normal path rather than silently passing the lock.
+            return False
+        current = note.group_id
+        target = None if group_id is None else group_id
+        try:
+            if target is not None:
+                target = int(target)
+        except (TypeError, ValueError):
+            return False
+        return current == target
+
+    @sync_to_async
     def _set_note_pos(self, note_id, x, y):
         from .models import Note
         note = Note.objects.filter(id=note_id, session__code=self.code).first()
@@ -406,6 +611,7 @@ class BoardConsumer(AsyncWebsocketConsumer):
             "notes": notes,
             "participants": s.participant_count,
             "limit": s.per_participant_limit,
+            "lock_columns": s.lock_columns,
         }
 
     @sync_to_async
@@ -420,6 +626,95 @@ class BoardConsumer(AsyncWebsocketConsumer):
             author=author, group=group, created_at=timezone.now(),
         )
         return note.as_dict()
+
+    @sync_to_async
+    def _edit_note(self, note_id, text, color, icon, has_group, group_id,
+                   editor_kind, editor_name, require_author):
+        """
+        Apply an edit to a note and record a NoteEdit history row.
+
+        Any of text/color/icon may be None meaning "leave unchanged".
+        ``has_group`` False means the column isn't being touched; True
+        means set it to ``group_id`` (which itself may be None = no
+        column). ``require_author`` (a nickname) restricts the edit to
+        that author's own notes; None lets the presenter edit anything.
+
+        Returns (note_dict, None) on success or (None, reason) on
+        failure. The original field values are preserved in the
+        NoteEdit row, so nothing recorded is lost.
+        """
+        from .models import Note, NoteEdit
+
+        note = Note.objects.filter(
+            id=note_id, session__code=self.code,
+        ).select_related("session").first()
+        if not note:
+            return None, "That note no longer exists."
+
+        if require_author is not None and note.author != require_author:
+            return None, "You can only edit your own notes."
+
+        # Resolve the target group, if the column is being changed.
+        new_group = note.group
+        new_group_id = note.group_id
+        if has_group:
+            if group_id is None:
+                new_group, new_group_id = None, None
+            else:
+                g = note.session.groups.filter(id=group_id).first()
+                if g is None:
+                    return None, "That column doesn't exist."
+                new_group, new_group_id = g, g.id
+
+        # Snapshot the "before" values.
+        old = {
+            "text": note.text, "color": note.color, "icon": note.icon,
+            "group_id": note.group_id,
+        }
+        new = {
+            "text": note.text if text is None else text,
+            "color": note.color if color is None else color,
+            "icon": note.icon if icon is None else icon,
+            "group_id": new_group_id,
+        }
+
+        # Nothing actually changed → no-op, no history row.
+        if new == old:
+            return note.as_dict(), None
+
+        note.text = new["text"]
+        note.color = new["color"]
+        note.icon = new["icon"]
+        note.group = new_group
+        note.edited_at = timezone.now()
+        note.save(update_fields=[
+            "text", "color", "icon", "group", "edited_at",
+        ])
+
+        NoteEdit.objects.create(
+            note=note,
+            edited_by=editor_kind,
+            editor_name=editor_name[:40],
+            old_text=old["text"], new_text=new["text"],
+            old_color=old["color"], new_color=new["color"],
+            old_icon=old["icon"], new_icon=new["icon"],
+            old_group_id=old["group_id"], new_group_id=new["group_id"],
+        )
+        return note.as_dict(), None
+
+    @sync_to_async
+    def _create_group(self, name):
+        """Add a topic column to this board, appended after existing ones."""
+        from .models import BoardGroup, BoardSession
+        s = BoardSession.objects.filter(code=self.code).first()
+        if not s:
+            return None
+        last = s.groups.order_by("-position").first()
+        position = (last.position + 1) if last else 0
+        g = BoardGroup.objects.create(
+            session=s, name=name, position=position,
+        )
+        return {"id": g.id, "name": g.name}
 
     @sync_to_async
     def _add_like(self, note_id):

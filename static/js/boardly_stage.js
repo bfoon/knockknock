@@ -34,6 +34,7 @@
 
   const layoutBtns = Array.from(document.querySelectorAll(".kk-board-layout"));
   const btnModerate = document.getElementById("btn-moderate");
+  const btnLockColumns = document.getElementById("btn-lock-columns");
   const btnFullscreen = document.getElementById("btn-fullscreen");
 
   const modTray = document.getElementById("mod-tray");
@@ -64,6 +65,8 @@
   // ── tool state (added: drag / draw / limit / export) ───────────────
   let freeArrange = false;         // notes absolutely positioned & draggable
   let noteLimit = 0;               // per-participant cap; 0 = unlimited
+  let lockColumns = false;         // when true, notes can't be dragged
+                                   // between columns (within-column OK)
   let drawTool = null;             // null | "highlighter" | "pen"
   // The freehand/highlighter strokes are presenter-local — never sent.
 
@@ -107,6 +110,9 @@
         (msg.notes || []).forEach((n) => notes.set(n.id, n));
         if (typeof msg.participants === "number") setPeople(msg.participants);
         if (typeof msg.limit === "number") { noteLimit = msg.limit; reflectLimit(); }
+        if (typeof msg.lock_columns === "boolean") {
+          lockColumns = msg.lock_columns;
+        }
         // If any note arrived with a saved position, the presenter had
         // previously arranged the board — restore free-arrange mode.
         if ([...notes.values()].some((n) => n.pos_x != null && n.pos_y != null)) {
@@ -114,6 +120,7 @@
         }
         reflectPower();
         renderAll();
+        reflectLock();
         break;
 
       case "board_state":
@@ -165,6 +172,39 @@
           if (!freeArrange) enterFreeArrange();
           applyNotePosition(msg.id);
         }
+        break;
+      }
+
+      case "note_edited": {
+        // A note's content (text / colour / icon / column) changed.
+        // Replace our cached copy and re-render.
+        if (msg.note) {
+          notes.set(msg.note.id, msg.note);
+          renderAll();
+        }
+        break;
+      }
+
+      case "edit_rejected": {
+        // Surface the reason — reuse the alert path the exports use.
+        alert(msg.reason || "That edit was rejected.");
+        break;
+      }
+
+      case "group_added": {
+        // A new topic column. Avoid duplicating if it's already known.
+        if (msg.group && !groups.some((g) => g.id === msg.group.id)) {
+          groups.push(msg.group);
+          renderAll();
+          renderAddColumn();
+        }
+        break;
+      }
+
+      case "column_lock_changed": {
+        lockColumns = !!msg.locked;
+        reflectLock();
+        renderAll();   // re-render so draggable attributes update
         break;
       }
 
@@ -285,6 +325,12 @@
     const author = document.createElement("span");
     author.className = "kk-note-author";
     author.textContent = n.author || "Anonymous";
+    if (n.edited) {
+      const ed = document.createElement("span");
+      ed.className = "kk-note-edited";
+      ed.textContent = "(edited)";
+      author.appendChild(ed);
+    }
     foot.appendChild(author);
 
     const like = document.createElement("button");
@@ -417,6 +463,7 @@
   function renderColumns(ordered, newId) {
     if (!columnsWrap) return;
     columnsWrap.innerHTML = "";
+    columnsWrap.classList.toggle("columns-locked", lockColumns);
     const byGroup = new Map();
     groups.forEach((g) => byGroup.set(g.id, []));
     const loose = [];
@@ -425,44 +472,150 @@
       else loose.push(n);
     });
 
-    groups.forEach((g) => {
+    // Build one column. `gid` is the group id, or null for the "Other"
+    // catch-all column (notes with no/!matching group).
+    function buildColumn(gid, name, list) {
       const col = document.createElement("div");
       col.className = "kk-board-column";
       const head = document.createElement("div");
       head.className = "kk-board-column-head";
-      const list = byGroup.get(g.id) || [];
-      head.innerHTML = `${escapeHtml(g.name)} <span class="count">${list.length}</span>`;
+      head.innerHTML = `${escapeHtml(name)} <span class="count">${list.length}</span>`;
       const body = document.createElement("div");
       body.className = "kk-board-column-body";
+      // The drop target carries its group id so a drop knows where to
+      // move the note. "" marks the ungrouped "Other" column.
+      body.dataset.groupId = gid == null ? "" : String(gid);
       list.forEach((n) => {
         const el = buildNote(n);
         if (n.id === newId) el.classList.add("is-new");
+        // Notes are draggable between columns unless the board is
+        // locked. The drag itself is wired by enableColumnDnD().
+        if (!lockColumns) {
+          el.setAttribute("draggable", "true");
+          el.classList.add("kk-note-draggable");
+        }
         body.appendChild(el);
       });
       col.append(head, body);
-      columnsWrap.appendChild(col);
+      return col;
+    }
+
+    groups.forEach((g) => {
+      columnsWrap.appendChild(buildColumn(g.id, g.name, byGroup.get(g.id) || []));
     });
 
     // Notes that didn't match a column get an extra "Other" column.
-    if (loose.length) {
-      const col = document.createElement("div");
-      col.className = "kk-board-column";
-      col.innerHTML = `<div class="kk-board-column-head">Other <span class="count">${loose.length}</span></div>`;
-      const body = document.createElement("div");
-      body.className = "kk-board-column-body";
-      loose.forEach((n) => {
-        const el = buildNote(n);
-        if (n.id === newId) el.classList.add("is-new");
-        body.appendChild(el);
-      });
-      col.appendChild(body);
-      columnsWrap.appendChild(col);
+    // It's a valid drop target too, so a note can be moved out of any
+    // column back to ungrouped.
+    if (loose.length || (!lockColumns && groups.length)) {
+      columnsWrap.appendChild(buildColumn(null, "Other", loose));
     }
+
+    enableColumnDnD();
   }
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  // ── column drag-and-drop ────────────────────────────────────────────
+  // Notes are dragged between columns with native HTML5 drag events. The
+  // listeners are delegated and attached to columnsWrap exactly once; the
+  // per-render work in renderColumns is just setting draggable + group id.
+  let dndWired = false;
+  let dragNoteId = null;
+
+  function enableColumnDnD() {
+    if (!columnsWrap || dndWired) return;
+    dndWired = true;
+
+    columnsWrap.addEventListener("dragstart", (e) => {
+      if (lockColumns) { e.preventDefault(); return; }
+      const noteEl = e.target.closest(".kk-note");
+      if (!noteEl) return;
+      dragNoteId = Number(noteEl.dataset.id);
+      noteEl.classList.add("kk-note-dragging");
+      // Some browsers need data set for the drag to start.
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = "move";
+        try { e.dataTransfer.setData("text/plain", String(dragNoteId)); } catch (_) {}
+      }
+    });
+
+    columnsWrap.addEventListener("dragend", (e) => {
+      const noteEl = e.target.closest(".kk-note");
+      if (noteEl) noteEl.classList.remove("kk-note-dragging");
+      columnsWrap.querySelectorAll(".kk-board-column-body.drop-over")
+        .forEach((b) => b.classList.remove("drop-over"));
+      dragNoteId = null;
+    });
+
+    columnsWrap.addEventListener("dragover", (e) => {
+      if (lockColumns || dragNoteId == null) return;
+      const body = e.target.closest(".kk-board-column-body");
+      if (!body) return;
+      e.preventDefault();   // allow the drop
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+      if (!body.classList.contains("drop-over")) {
+        columnsWrap.querySelectorAll(".kk-board-column-body.drop-over")
+          .forEach((b) => b.classList.remove("drop-over"));
+        body.classList.add("drop-over");
+      }
+    });
+
+    columnsWrap.addEventListener("dragleave", (e) => {
+      const body = e.target.closest(".kk-board-column-body");
+      // Only clear when the pointer actually left the body, not when it
+      // crossed onto a child note inside the same body.
+      if (body && !body.contains(e.relatedTarget)) {
+        body.classList.remove("drop-over");
+      }
+    });
+
+    columnsWrap.addEventListener("drop", (e) => {
+      if (lockColumns || dragNoteId == null) return;
+      const body = e.target.closest(".kk-board-column-body");
+      if (!body) return;
+      e.preventDefault();
+      body.classList.remove("drop-over");
+
+      const raw = body.dataset.groupId;
+      const targetGroup = raw === "" ? null : Number(raw);
+      const n = notes.get(dragNoteId);
+      // No-op if the note is already in that column.
+      const current = n && n.group_id != null ? n.group_id : null;
+      if (n && current !== targetGroup) {
+        send({ type: "move_group", id: dragNoteId, group_id: targetGroup });
+        // Optimistic: move locally so the board updates instantly; the
+        // server's note_edited broadcast confirms (or a lock rejection
+        // will leave the authoritative state unchanged on next render).
+        n.group_id = targetGroup;
+        renderAll();
+      }
+      dragNoteId = null;
+    });
+  }
+
+  // ── column lock (presenter toggle) ──────────────────────────────────
+  function reflectLock() {
+    if (btnLockColumns) {
+      btnLockColumns.classList.toggle("is-active", lockColumns);
+      const icon = btnLockColumns.querySelector("i");
+      if (icon) icon.className = lockColumns ? "bi bi-lock-fill" : "bi bi-unlock";
+      btnLockColumns.title = lockColumns
+        ? "Columns locked — notes can't be moved between columns. Click to unlock."
+        : "Lock columns — prevent moving notes between columns.";
+    }
+    if (columnsWrap) columnsWrap.classList.toggle("columns-locked", lockColumns);
+  }
+
+  function toggleLock() {
+    // Optimistic flip; the broadcast confirms for every screen.
+    lockColumns = !lockColumns;
+    reflectLock();
+    renderAll();
+    send({ type: "set_column_lock", locked: lockColumns });
   }
 
   function findNoteEl(id) {
@@ -536,6 +689,12 @@
       const b = e.target.closest("button");
       if (!b) return;
       const raw = b.dataset.act;
+      if (raw === "edit") {
+        // Open the note editor dialog for this note.
+        closePopover();
+        openNoteEditor(id);
+        return;
+      }
       if (raw === "burn") {
         // Burn is an animated delete — its own message type.
         send({ type: "burn", id });
@@ -579,6 +738,140 @@
       modHiddenList.appendChild(chip);
     });
   }
+
+  // ════════════════════════════════════════════════════════════════════
+  //  NOTE EDITING + COLUMN MANAGEMENT (presenter)
+  //  • Edit any note's text / colour / icon / column — the original is
+  //    preserved server-side in the note's edit history.
+  //  • Add new topic columns to a live board.
+  //  Notes can also be moved between columns straight from the editor's
+  //  column picker (the server treats that as an edit too).
+  // ════════════════════════════════════════════════════════════════════
+
+  const editDialog   = document.getElementById("note-edit-dialog");
+  const editForm     = document.getElementById("note-edit-form");
+  const editId       = document.getElementById("edit-note-id");
+  const editText     = document.getElementById("edit-note-text");
+  const editColorRow = document.getElementById("edit-color-row");
+  const editIconRow  = document.getElementById("edit-icon-row");
+  const editGroupBox = document.getElementById("edit-group-field");
+  const editGroupSel = document.getElementById("edit-note-group");
+
+  // Radiogroup behaviour inside the editor (colour + icon pickers).
+  function wireEditPicker(row, attr) {
+    if (!row) return;
+    row.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-" + attr + "]");
+      if (!btn) return;
+      row.querySelectorAll("[data-" + attr + "]").forEach((b) => {
+        const on = b === btn;
+        b.classList.toggle("is-active", on);
+        b.setAttribute("aria-checked", on ? "true" : "false");
+      });
+    });
+  }
+  wireEditPicker(editColorRow, "color");
+  wireEditPicker(editIconRow, "icon");
+
+  function editPicked(row, attr, fallback) {
+    const on = row && row.querySelector("[data-" + attr + "].is-active");
+    return on ? on.getAttribute("data-" + attr) : fallback;
+  }
+  function editSetPicked(row, attr, value) {
+    if (!row) return;
+    row.querySelectorAll("[data-" + attr + "]").forEach((b) => {
+      const on = String(b.getAttribute("data-" + attr)) === String(value);
+      b.classList.toggle("is-active", on);
+      b.setAttribute("aria-checked", on ? "true" : "false");
+    });
+  }
+
+  // Rebuild the editor's column <select> from the current groups.
+  function refreshEditGroupOptions(selectedId) {
+    if (!editGroupSel) return;
+    editGroupSel.innerHTML = '<option value="">— No column —</option>';
+    groups.forEach((g) => {
+      const o = document.createElement("option");
+      o.value = String(g.id);
+      o.textContent = g.name;
+      if (String(g.id) === String(selectedId)) o.selected = true;
+      editGroupSel.appendChild(o);
+    });
+    if (editGroupBox) editGroupBox.style.display = groups.length ? "" : "none";
+  }
+
+  function openNoteEditor(id) {
+    const n = notes.get(id);
+    if (!n || !editDialog) return;
+    editId.value = n.id;
+    editText.value = n.text || "";
+    editSetPicked(editColorRow, "color", n.color != null ? n.color : 0);
+    editSetPicked(editIconRow, "icon", n.icon || "none");
+    refreshEditGroupOptions(n.group_id);
+    if (typeof editDialog.showModal === "function") editDialog.showModal();
+    else editDialog.setAttribute("open", "");
+    editText.focus();
+  }
+  function closeNoteEditor() {
+    if (!editDialog) return;
+    if (typeof editDialog.close === "function") editDialog.close();
+    else editDialog.removeAttribute("open");
+  }
+
+  ["note-edit-cancel", "note-edit-cancel2"].forEach((cid) => {
+    const b = document.getElementById(cid);
+    if (b) b.addEventListener("click", closeNoteEditor);
+  });
+
+  if (editForm) {
+    editForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const id = Number(editId.value);
+      const text = (editText.value || "").trim();
+      if (!text) { editText.focus(); return; }
+      const groupRaw = editGroupSel ? editGroupSel.value : "";
+      send({
+        type: "edit",
+        id,
+        text,
+        color: Number(editPicked(editColorRow, "color", 0)) || 0,
+        icon: editPicked(editIconRow, "icon", "none") || "none",
+        group_id: groupRaw === "" ? null : Number(groupRaw),
+      });
+      closeNoteEditor();
+    });
+  }
+
+  // ── add-column control ──────────────────────────────────────────────
+  const addColBox    = document.getElementById("board-addcol");
+  const addColBtn    = document.getElementById("addcol-btn");
+  const addColForm   = document.getElementById("addcol-form");
+  const addColInput  = document.getElementById("addcol-input");
+  const addColSave   = document.getElementById("addcol-save");
+  const addColCancel = document.getElementById("addcol-cancel");
+
+  // The presenter can always add a column — the control sits just below
+  // the columns wrapper and is visible whether or not the board already
+  // has groups. (Adding the first column flips the board into columns.)
+  function renderAddColumn() {
+    if (addColBox) addColBox.style.display = "";
+  }
+  function showAddColForm(on) {
+    if (addColForm) addColForm.style.display = on ? "" : "none";
+    if (addColBtn)  addColBtn.style.display  = on ? "none" : "";
+    if (on && addColInput) { addColInput.value = ""; addColInput.focus(); }
+  }
+  if (addColBtn)    addColBtn.addEventListener("click", () => showAddColForm(true));
+  if (addColCancel) addColCancel.addEventListener("click", () => showAddColForm(false));
+  if (addColSave)   addColSave.addEventListener("click", () => {
+    const name = (addColInput.value || "").trim();
+    if (!name) { addColInput.focus(); return; }
+    send({ type: "add_group", name });
+    showAddColForm(false);
+  });
+  if (addColInput)  addColInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); addColSave && addColSave.click(); }
+  });
 
   // ── QR ─────────────────────────────────────────────────────────────
   function drawQR() {
@@ -1166,6 +1459,8 @@
     if (btnModerate) btnModerate.addEventListener("click", () => setModerating(!moderating));
     if (modClose) modClose.addEventListener("click", () => setModerating(false));
 
+    if (btnLockColumns) btnLockColumns.addEventListener("click", toggleLock);
+
     if (btnFullscreen) {
       btnFullscreen.addEventListener("click", () => {
         if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
@@ -1218,6 +1513,7 @@
 
     drawQR();
     reflectPower();
+    renderAddColumn();
     initTools();
     connect();
 

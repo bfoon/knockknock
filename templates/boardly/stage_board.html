@@ -55,6 +55,7 @@
       <button class="kk-board-layout"           data-layout="scatter" title="Scattered sticky look"><i class="bi bi-shuffle"></i></button>
     </div>
 
+    <button class="kk-tool" id="btn-lock-columns" title="Lock columns — prevent moving notes between columns"><i class="bi bi-unlock"></i></button>
     <button class="kk-tool" id="btn-moderate" title="Moderation mode"><i class="bi bi-shield-check"></i></button>
     <button class="kk-tool" id="btn-fullscreen" title="Fullscreen"><i class="bi bi-arrows-fullscreen"></i></button>
 
@@ -86,6 +87,20 @@
 
       {# Grouped columns wrapper — shown when the board has topic groups. #}
       <div class="kk-board-columns" id="board-columns" style="display:none;"></div>
+
+      {# Add-a-column control — JS shows this on the stage only.
+         Visible whenever the presenter wants to extend the board. #}
+      <div class="kk-board-addcol" id="board-addcol" style="display:none;">
+        <button type="button" class="kk-btn kk-btn-ghost btn-sm" id="addcol-btn">
+          <i class="bi bi-plus-lg"></i> Add column
+        </button>
+        <div class="kk-addcol-form" id="addcol-form" style="display:none;">
+          <input type="text" id="addcol-input" class="form-control form-control-sm"
+                 maxlength="60" placeholder="Column name">
+          <button type="button" class="kk-btn kk-btn-primary btn-sm" id="addcol-save">Add</button>
+          <button type="button" class="kk-btn kk-btn-ghost btn-sm" id="addcol-cancel">Cancel</button>
+        </div>
+      </div>
 
       {# Ungrouped notes wrapper — grid / masonry / scatter all render here. #}
       <div class="kk-notes-area layout-grid" id="notes-area">
@@ -139,11 +154,73 @@
 {# Per-note moderation popover (cloned by JS). #}
 <template id="tpl-mod-popover">
   <div class="kk-mod-pop">
+    <button data-act="edit"><i class="bi bi-pencil"></i> Edit</button>
     <button data-act="hide"><i class="bi bi-eye-slash"></i> Hide</button>
     <button data-act="delete" class="is-danger"><i class="bi bi-trash"></i> Remove</button>
     <button data-act="pin"><i class="bi bi-pin-angle"></i> Pin</button>
   </div>
 </template>
+
+{# Note editor dialog (shown by JS when the presenter taps Edit, or an
+   author taps one of their own notes). Reuses the compose controls. #}
+<dialog id="note-edit-dialog" class="kk-edit-dialog">
+  <form method="dialog" class="kk-edit-form" id="note-edit-form">
+    <header class="kk-edit-head">
+      <strong><i class="bi bi-pencil"></i> Edit note</strong>
+      <button type="button" class="kk-edit-x" id="note-edit-cancel" aria-label="Close">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </header>
+
+    <input type="hidden" id="edit-note-id" value="">
+
+    <label class="form-label" for="edit-note-text">Text</label>
+    <textarea id="edit-note-text" class="form-control" rows="3"
+              maxlength="180" required></textarea>
+
+    <label class="form-label mt-3">Colour</label>
+    <div class="kk-color-row" id="edit-color-row" role="radiogroup" aria-label="Note colour">
+      <button type="button" class="kk-color-dot is-active" data-color="0" style="--c:#fbcfe8" role="radio" aria-checked="true" aria-label="Pink"></button>
+      <button type="button" class="kk-color-dot" data-color="1" style="--c:#fde68a" role="radio" aria-checked="false" aria-label="Yellow"></button>
+      <button type="button" class="kk-color-dot" data-color="2" style="--c:#bbf7d0" role="radio" aria-checked="false" aria-label="Green"></button>
+      <button type="button" class="kk-color-dot" data-color="3" style="--c:#bfdbfe" role="radio" aria-checked="false" aria-label="Blue"></button>
+      <button type="button" class="kk-color-dot" data-color="4" style="--c:#ddd6fe" role="radio" aria-checked="false" aria-label="Purple"></button>
+      <button type="button" class="kk-color-dot" data-color="5" style="--c:#fed7aa" role="radio" aria-checked="false" aria-label="Orange"></button>
+    </div>
+
+    <label class="form-label mt-3">Icon</label>
+    <div class="kk-icon-row" id="edit-icon-row" role="radiogroup" aria-label="Note icon">
+      <button type="button" class="kk-icon-pick is-active" data-icon="lightbulb" role="radio" aria-checked="true"><i class="bi bi-lightbulb"></i></button>
+      <button type="button" class="kk-icon-pick" data-icon="star" role="radio" aria-checked="false"><i class="bi bi-star"></i></button>
+      <button type="button" class="kk-icon-pick" data-icon="heart" role="radio" aria-checked="false"><i class="bi bi-heart"></i></button>
+      <button type="button" class="kk-icon-pick" data-icon="chat" role="radio" aria-checked="false"><i class="bi bi-chat-dots"></i></button>
+      <button type="button" class="kk-icon-pick" data-icon="people" role="radio" aria-checked="false"><i class="bi bi-people"></i></button>
+      <button type="button" class="kk-icon-pick" data-icon="target" role="radio" aria-checked="false"><i class="bi bi-bullseye"></i></button>
+      <button type="button" class="kk-icon-pick" data-icon="rocket" role="radio" aria-checked="false"><i class="bi bi-rocket-takeoff"></i></button>
+      <button type="button" class="kk-icon-pick" data-icon="check" role="radio" aria-checked="false"><i class="bi bi-check-circle"></i></button>
+      <button type="button" class="kk-icon-pick" data-icon="none" role="radio" aria-checked="false" aria-label="No icon"><i class="bi bi-slash-circle"></i></button>
+    </div>
+
+    {# Column picker — shown by JS only when the board has groups. #}
+    <div class="kk-field mt-3" id="edit-group-field" style="display:none;">
+      <label class="form-label" for="edit-note-group">Column</label>
+      <select id="edit-note-group" class="form-select">
+        <option value="">— No column —</option>
+        {# <option> list rebuilt live by JS from board groups. #}
+      </select>
+    </div>
+
+    <footer class="kk-edit-actions">
+      <button type="button" class="kk-btn kk-btn-ghost" id="note-edit-cancel2">Cancel</button>
+      <button type="submit" class="kk-btn kk-btn-primary" id="note-edit-save">
+        <i class="bi bi-check-lg"></i> Save changes
+      </button>
+    </footer>
+    <p class="kk-edit-hint text-secondary small">
+      The original is kept in the note's edit history — nothing is lost.
+    </p>
+  </form>
+</dialog>
 
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script src="{% static 'js/boardly_stage.js' %}?v=1"></script>

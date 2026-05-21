@@ -58,6 +58,13 @@ class BoardSession(models.Model):
     # enforces it per author in _handle_note.
     per_participant_limit = models.PositiveSmallIntegerField(default=0)
 
+    # When True, sticky notes can't be dragged from one topic column to
+    # another. Notes stay movable by default; the owner sets this at
+    # board creation and can also flip it live from the presenter stage.
+    # Only affects cross-column moves — it never locks a board that has
+    # no columns at all.
+    lock_columns = models.BooleanField(default=False)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -113,6 +120,12 @@ class Note(models.Model):
     hidden = models.BooleanField(default=False)
     pinned = models.BooleanField(default=False)
 
+    # Edit tracking. The Note row always holds the *current* values; the
+    # full before/after of every change is preserved in NoteEdit rows so
+    # nothing originally recorded is ever lost. ``edited_at`` is the time
+    # of the most recent edit (NULL = never edited).
+    edited_at = models.DateTimeField(null=True, blank=True)
+
     # Free position on the board, set when the presenter drags a note.
     # Stored as fractions (0.0–1.0) of the board sheet's width/height so
     # the layout survives different projector resolutions. NULL means the
@@ -144,4 +157,51 @@ class Note(models.Model):
             # back to automatic layout when these are null.
             "pos_x": self.pos_x,
             "pos_y": self.pos_y,
+            # True once the note has been edited at least once; lets the
+            # client show an "(edited)" marker. The actual history lives
+            # in NoteEdit rows.
+            "edited": self.edited_at is not None,
         }
+
+
+class NoteEdit(models.Model):
+    """
+    One row per edit of a Note — an append-only history.
+
+    Editing a note never destroys what was recorded: the Note row holds
+    the current values, and every change (by presenter or author) writes
+    a NoteEdit snapshot of the field values *before* and *after*. This is
+    what makes editing "not change the data recorded" — the original is
+    always recoverable.
+    """
+    EDITOR_CHOICES = [
+        ("presenter", "Presenter"),
+        ("author", "Author"),
+    ]
+
+    note = models.ForeignKey(
+        Note, on_delete=models.CASCADE, related_name="edits",
+    )
+    edited_by = models.CharField(
+        max_length=12, choices=EDITOR_CHOICES, default="presenter",
+    )
+    # Who made the change, as a display name (presenter label or nick).
+    editor_name = models.CharField(max_length=40, default="")
+
+    # Snapshot of the four editable fields, before and after this edit.
+    old_text = models.CharField(max_length=180, blank=True)
+    new_text = models.CharField(max_length=180, blank=True)
+    old_color = models.PositiveSmallIntegerField(default=0)
+    new_color = models.PositiveSmallIntegerField(default=0)
+    old_icon = models.CharField(max_length=20, default="none")
+    new_icon = models.CharField(max_length=20, default="none")
+    old_group_id = models.IntegerField(null=True, blank=True)
+    new_group_id = models.IntegerField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"edit of note {self.note_id} at {self.created_at:%Y-%m-%d %H:%M}"

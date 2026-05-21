@@ -68,7 +68,9 @@
   let selectedIcon = "lightbulb";
   let selectedGroup = null;    // group id, or null
   let noteLimit = 0;           // per-participant cap; 0 = unlimited
-  const myNotes = [];          // {id, text, color, likes, removed}
+  let boardGroups = [];        // [{id, name}] — kept for the edit dialog
+  // {id, text, color, icon, group_id, likes, removed}
+  const myNotes = [];
 
   // ── step switching ─────────────────────────────────────────────────
   function showStep(name) {
@@ -119,6 +121,7 @@
 
   // ── group pills ────────────────────────────────────────────────────
   function renderGroups(groups) {
+    boardGroups = groups || [];
     if (!groupField || !groupPills) return;
     if (!groups || !groups.length) {
       groupField.style.display = "none";
@@ -170,6 +173,18 @@
       likes.innerHTML = `<i class="bi bi-heart-fill"></i> ${n.likes || 0}`;
 
       item.append(sw, txt, likes);
+
+      // Edit button — re-opens the note in the editor dialog. A removed
+      // note can't be edited (it's hidden/deleted on the board).
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "kk-mine-edit";
+      edit.innerHTML = '<i class="bi bi-pencil"></i>';
+      edit.title = n.removed ? "This note was removed" : "Edit this note";
+      edit.disabled = !!n.removed;
+      edit.addEventListener("click", () => openNoteEditor(n.id));
+      item.appendChild(edit);
+
       mineList.appendChild(item);
     });
   }
@@ -318,6 +333,27 @@
         break;
       }
 
+      case "note_edited": {
+        // A note changed (by us elsewhere, or by the presenter). If it's
+        // one of ours, sync the local copy so the editor and list match.
+        if (msg.note) {
+          const mine = myNotes.find((m) => m.id === msg.note.id);
+          if (mine) {
+            mine.text = msg.note.text;
+            mine.color = msg.note.color;
+            mine.icon = msg.note.icon;
+            mine.group_id = msg.note.group_id;
+            renderMine();
+          }
+        }
+        break;
+      }
+
+      case "edit_rejected": {
+        showToast(msg.reason || "Couldn't save that edit.", true);
+        break;
+      }
+
       case "note_removed": {
         const mine = myNotes.find((m) => m.id === msg.id);
         if (mine) { mine.removed = true; renderMine(); refreshLimitUI(); }
@@ -377,13 +413,122 @@
       group_id: selectedGroup,
     });
     // Track optimistically; note_ack fills in the real id.
-    myNotes.push({ id: null, text, color: selectedColor, likes: 0, removed: false });
+    myNotes.push({
+      id: null, text, color: selectedColor, icon: selectedIcon,
+      group_id: selectedGroup, likes: 0, removed: false,
+    });
 
     // Reset the pad for the next note.
     if (noteInput) noteInput.value = "";
     if (charNow) charNow.textContent = "0";
     refreshPreview();
     setTimeout(unlockPost, 400);
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  //  NOTE EDITING (participant)
+  //  Lets a participant re-open one of their own notes and change its
+  //  text / colour / icon / column. The server preserves the original in
+  //  the note's edit history and only allows editing notes you authored.
+  // ════════════════════════════════════════════════════════════════════
+  const editDialog   = document.getElementById("note-edit-dialog");
+  const editForm     = document.getElementById("note-edit-form");
+  const editId       = document.getElementById("edit-note-id");
+  const editText     = document.getElementById("edit-note-text");
+  const editCharNow  = document.getElementById("edit-char-now");
+  const editColorRow = document.getElementById("edit-color-row");
+  const editIconRow  = document.getElementById("edit-icon-row");
+  const editGroupBox = document.getElementById("edit-group-field");
+  const editGroupSel = document.getElementById("edit-note-group");
+
+  function wireEditPicker(row, attr) {
+    if (!row) return;
+    row.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-" + attr + "]");
+      if (!btn) return;
+      row.querySelectorAll("[data-" + attr + "]").forEach((b) => {
+        const on = b === btn;
+        b.classList.toggle("is-active", on);
+        b.setAttribute("aria-checked", on ? "true" : "false");
+      });
+    });
+  }
+  wireEditPicker(editColorRow, "color");
+  wireEditPicker(editIconRow, "icon");
+
+  function editPicked(row, attr, fallback) {
+    const on = row && row.querySelector("[data-" + attr + "].is-active");
+    return on ? on.getAttribute("data-" + attr) : fallback;
+  }
+  function editSetPicked(row, attr, value) {
+    if (!row) return;
+    row.querySelectorAll("[data-" + attr + "]").forEach((b) => {
+      const on = String(b.getAttribute("data-" + attr)) === String(value);
+      b.classList.toggle("is-active", on);
+      b.setAttribute("aria-checked", on ? "true" : "false");
+    });
+  }
+
+  function refreshEditGroupOptions(selectedId) {
+    if (!editGroupSel) return;
+    editGroupSel.innerHTML = '<option value="">— No column —</option>';
+    boardGroups.forEach((g) => {
+      const o = document.createElement("option");
+      o.value = String(g.id);
+      o.textContent = g.name;
+      if (String(g.id) === String(selectedId)) o.selected = true;
+      editGroupSel.appendChild(o);
+    });
+    if (editGroupBox) editGroupBox.style.display = boardGroups.length ? "" : "none";
+  }
+
+  function openNoteEditor(id) {
+    const n = myNotes.find((m) => m.id === id);
+    if (!n || n.id == null || !editDialog) return;
+    if (n.removed) { showToast("That note was removed.", true); return; }
+    editId.value = n.id;
+    editText.value = n.text || "";
+    if (editCharNow) editCharNow.textContent = String(editText.value.length);
+    editSetPicked(editColorRow, "color", n.color != null ? n.color : 0);
+    editSetPicked(editIconRow, "icon", n.icon || "none");
+    refreshEditGroupOptions(n.group_id);
+    if (typeof editDialog.showModal === "function") editDialog.showModal();
+    else editDialog.setAttribute("open", "");
+    editText.focus();
+  }
+  function closeNoteEditor() {
+    if (!editDialog) return;
+    if (typeof editDialog.close === "function") editDialog.close();
+    else editDialog.removeAttribute("open");
+  }
+
+  if (editText && editCharNow) {
+    editText.addEventListener("input", () => {
+      editCharNow.textContent = String(editText.value.length);
+    });
+  }
+  ["note-edit-cancel", "note-edit-cancel2"].forEach((cid) => {
+    const b = document.getElementById(cid);
+    if (b) b.addEventListener("click", closeNoteEditor);
+  });
+
+  if (editForm) {
+    editForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const id = Number(editId.value);
+      const text = (editText.value || "").trim();
+      if (!text) { showToast("Note can't be empty.", true); editText.focus(); return; }
+      const groupRaw = editGroupSel ? editGroupSel.value : "";
+      send({
+        type: "edit",
+        id,
+        text,
+        color: Number(editPicked(editColorRow, "color", 0)) || 0,
+        icon: editPicked(editIconRow, "icon", "none") || "none",
+        group_id: groupRaw === "" ? null : Number(groupRaw),
+      });
+      closeNoteEditor();
+    });
   }
 
   // ── wiring ─────────────────────────────────────────────────────────

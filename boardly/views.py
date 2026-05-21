@@ -65,6 +65,8 @@ def board_create(request):
             mode=request.POST.get("mode", "open"),
             layout=request.POST.get("layout", "grid"),
             per_participant_limit=limit,
+            # Unchecked checkbox isn't submitted at all → default movable.
+            lock_columns=bool(request.POST.get("lock_columns")),
             state="open",
         )
         # Optional: seed topic columns from a comma-separated field.

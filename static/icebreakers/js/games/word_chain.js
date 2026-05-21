@@ -37,6 +37,17 @@ export default function init(ctx) {
   makeCanvasPassive(canvasHost, renderer);
 
   scene.add(new THREE.AmbientLight(0x303a55, 0.7));
+  const key = new THREE.DirectionalLight(new THREE.Color(colors.a), 0.6);
+  key.position.set(3, 4, 6);
+  scene.add(key);
+
+  // Arena floor + a guide character at the base of the chain.
+  // (Both were referenced in the render loop but never created — fixed.)
+  const arena = addGameArena(scene, colors);
+  arena.position.y = -5.5;
+  const guide = makeGameCharacter({ primary: colors.a, secondary: colors.b, scale: 0.55, skin: "#f1c27d" });
+  guide.position.set(0, -5.4, 1.5);
+  scene.add(guide);
 
   // ── Soft ambient particles in the background ───────────────
   const pgeom = new THREE.BufferGeometry();
@@ -292,8 +303,8 @@ export default function init(ctx) {
     camera.position.y = Math.sin(t * 0.13) * 0.3;
     camera.lookAt(0, 0, 0);
 
-    const t = performance.now() / 1000;
-    arena.userData.tick?.(t); guide.userData.tick?.(t, 0);
+    arena.userData.tick?.(t);
+    guide.userData.tick?.(t, 0);
     renderer.render(scene, camera);
   }
 

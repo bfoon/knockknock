@@ -242,8 +242,8 @@ export default function init(ctx) {
   function loop() {
     if (!running) return;
     requestAnimationFrame(loop);
-    const t = performance.now() / 1000;
-    arena.userData.tick?.(t);
+    const clock = performance.now() / 1000;
+    arena.userData.tick?.(clock);
     phaseTime += 1 / 60;
     const t = phaseTime;
 

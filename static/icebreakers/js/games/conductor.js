@@ -108,11 +108,15 @@ export default function init(ctx) {
   }
 
   // ── HUD ─────────────────────────────────────────────────────
+  // Nudge the overlay up a touch so the oversized motion icon never
+  // reaches down into the footer control bar.
   const overlay = el("div", { class: "kk-game-overlay", parent: stage });
+  overlay.style.justifyContent = "center";
+  overlay.style.paddingBottom = "7rem";
   const motionIcon = el("div", {
     parent: overlay,
     style: {
-      fontSize: "clamp(5rem, 14vw, 12rem)",
+      fontSize: "clamp(4.5rem, 12vw, 10rem)",
       lineHeight: "1",
       transition: "transform .1s ease",
       filter: "drop-shadow(0 8px 30px rgba(0,0,0,.4))",
@@ -134,6 +138,16 @@ export default function init(ctx) {
   });
 
   const timer = el("div", { class: "kk-game-timer", parent: stage, text: "—" });
+
+  // Footer: raise its stacking context and give it a solid backing so
+  // nothing in the scene/overlay can render over the controls.
+  function dressBottom() {
+    bottom.style.position = "relative";
+    bottom.style.zIndex = "60";
+    bottom.style.background = "linear-gradient(0deg, rgba(10,14,26,.96), rgba(10,14,26,.78))";
+    bottom.style.backdropFilter = "blur(8px)";
+  }
+  dressBottom();
 
   // ── State ──────────────────────────────────────────────────
   let running = true;
@@ -165,6 +179,7 @@ export default function init(ctx) {
     seqIdx = 0;
     beatCount = 0;
     bottom.innerHTML = "";
+    dressBottom();
     bottom.appendChild(makeButton('<i class="bi bi-stop-fill"></i> Stop', { ghost: true, onClick: stopSequence }));
 
     const totalSec = SEQUENCE.reduce((a, s) => a + (s.beats * 60) / s.bpm, 0);
@@ -212,6 +227,7 @@ export default function init(ctx) {
     motionLabel.textContent = "Stopped";
     tempoLabel.textContent = "Tap Start to resume";
     bottom.innerHTML = "";
+    dressBottom();
     bottom.appendChild(makeButton('<i class="bi bi-play-fill"></i> Restart', { onClick: startSequence }));
   }
 
@@ -222,6 +238,7 @@ export default function init(ctx) {
     motionLabel.textContent = "Nicely done";
     tempoLabel.textContent = "Welcome back to the meeting";
     bottom.innerHTML = "";
+    dressBottom();
     bottom.appendChild(makeButton('<i class="bi bi-arrow-clockwise"></i> Play again', { onClick: startSequence }));
   }
 

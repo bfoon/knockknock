@@ -72,6 +72,18 @@ export default function init(ctx) {
   fill.position.set(-3, -2, 4);
   scene.add(fill);
 
+  // Arena floor + two host characters flanking the cube.
+  // (These were referenced in the render loop but never created — fixed.)
+  const arena = addGameArena(scene, colors);
+  const hostA = makeGameCharacter({ primary: colors.a, secondary: colors.b, scale: 0.5, skin: "#f7d6c2" });
+  hostA.position.set(-2.6, -0.15, -1.2);
+  hostA.rotation.y = 0.5;
+  scene.add(hostA);
+  const hostB = makeGameCharacter({ primary: colors.b, secondary: colors.a, scale: 0.5, skin: "#f1c27d" });
+  hostB.position.set(2.6, -0.15, -1.2);
+  hostB.rotation.y = -0.5;
+  scene.add(hostB);
+
   // The cube — six rounded gradient faces. The trait text actually
   // lives on a DOM overlay (much sharper than canvas textures).
   // The cube is purely the aesthetic backdrop that rotates.
@@ -180,6 +192,9 @@ export default function init(ctx) {
   const queue = shuffle(PROMPTS.slice());
   let idx = -1;
 
+  // Cube target rotation — declared before nextPrompt() uses it.
+  const cubeTarget = { x: 0.3, y: 0.4 };
+
   function nextPrompt() {
     idx = (idx + 1) % queue.length;
     promptText.style.opacity = "0";
@@ -205,7 +220,6 @@ export default function init(ctx) {
   }));
 
   // ── Render loop ────────────────────────────────────────────
-  const cubeTarget = { x: 0.3, y: 0.4 };
   let running = true;
 
   function loop() {

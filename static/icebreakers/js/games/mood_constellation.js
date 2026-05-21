@@ -38,9 +38,21 @@ export default function init(ctx) {
   renderer.domElement.style.height = "100%";
   makeCanvasPassive(canvasHost, renderer);
 
+  scene.add(new THREE.AmbientLight(0x303a55, 0.7));
+  const key = new THREE.DirectionalLight(new THREE.Color(colors.a), 0.6);
+  key.position.set(3, 4, 6);
+  scene.add(key);
+
+  // Arena floor + a single guide character at the base of the field.
+  // Pushed well below the active word range so it never sits behind
+  // the footer controls.
+  const arena = addGameArena(scene, colors);
+  arena.position.y = -6.5;
+  const guide = makeGameCharacter({ primary: colors.a, secondary: colors.b, scale: 0.5, skin: "#f7d6c2" });
+  guide.position.set(0, -6.3, 2.0);
+  scene.add(guide);
+
   // ── Starfield background ───────────────────────────────────
-  // Tiny dots so the empty stage doesn't feel barren before anyone
-  // submits. Using buffer-geometry for speed.
   const starGeom = new THREE.BufferGeometry();
   const starCount = 800;
   const starPos = new Float32Array(starCount * 3);
@@ -62,9 +74,13 @@ export default function init(ctx) {
   );
   scene.add(stars);
 
+  // Vertical bounds for the word field. Kept clear of the top HUD and
+  // the bottom controls so nothing in the constellation overlaps the UI.
+  const FIELD_TOP = 4.6;
+  const FIELD_BOTTOM = -3.4;
+  const FIELD_SPAN = FIELD_TOP - FIELD_BOTTOM;
+
   // ── Word sprites ───────────────────────────────────────────
-  // Each unique word has a sprite. Y position = energy. X drifts
-  // gently. Z = z-depth for parallax.
   function makeWordSprite(word, color) {
     const canvas = document.createElement("canvas");
     const fontSize = 80;
@@ -76,7 +92,6 @@ export default function init(ctx) {
     const w = Math.min(g.measureText(word).width + padding * 2, canvas.width);
 
     g.clearRect(0, 0, canvas.width, canvas.height);
-    // Glow.
     g.shadowColor = color;
     g.shadowBlur = 24;
     g.fillStyle = "#ffffff";
@@ -94,22 +109,20 @@ export default function init(ctx) {
     return spr;
   }
 
-  const submissions = []; // [{ word, energy, count, sprite, vy, vx, baseY, baseX }]
+  const submissions = []; // [{ word, energy, count, sprite, baseY, baseX, pulse }]
 
   function addSubmission(word, energy) {
     word = String(word).trim().slice(0, 22);
     if (!word) return;
     energy = Math.max(1, Math.min(10, Number(energy) || 5));
 
-    // Combine duplicates (case-insensitive).
     const norm = word.toLowerCase();
     let existing = submissions.find((s) => s.norm === norm);
     if (existing) {
       existing.count += 1;
-      existing.energy = (existing.energy + energy) / 2; // average energy
+      existing.energy = (existing.energy + energy) / 2;
       const scale = 4 + Math.log2(existing.count + 1) * 1.5;
       existing.sprite.scale.set(scale, scale / 4, 1);
-      // Brief pulse so the audience sees a re-vote land.
       existing.pulse = 1;
       updateSubmissionPosition(existing);
       updateCount();
@@ -123,8 +136,6 @@ export default function init(ctx) {
 
     const sub = {
       word, norm, energy, count: 1, sprite,
-      vx: (Math.random() - 0.5) * 0.003,
-      vy: (Math.random() - 0.5) * 0.003,
       baseY: 0, baseX: 0,
       pulse: 1,
       color,
@@ -135,9 +146,8 @@ export default function init(ctx) {
   }
 
   function updateSubmissionPosition(sub) {
-    // Y in world space: -6 (energy 1) ... +6 (energy 10).
-    sub.baseY = ((sub.energy - 1) / 9) * 12 - 6;
-    // X spread by hash of the word, plus a little randomness.
+    // Map energy 1..10 into the clear field range.
+    sub.baseY = FIELD_BOTTOM + ((sub.energy - 1) / 9) * FIELD_SPAN;
     let h = 0;
     for (let i = 0; i < sub.word.length; i++) h = (h * 31 + sub.word.charCodeAt(i)) | 0;
     sub.baseX = ((h % 1000) / 1000 - 0.5) * 14;
@@ -150,9 +160,9 @@ export default function init(ctx) {
 
   // ── Energy axis labels ─────────────────────────────────────
   const axisLabels = [
-    { y: 6, text: "⚡ HIGH ENERGY" },
-    { y: 0, text: "○ STEADY" },
-    { y: -6, text: "💤 LOW ENERGY" },
+    { y: FIELD_TOP, text: "⚡ HIGH ENERGY" },
+    { y: (FIELD_TOP + FIELD_BOTTOM) / 2, text: "○ STEADY" },
+    { y: FIELD_BOTTOM, text: "💤 LOW ENERGY" },
   ];
   for (const a of axisLabels) {
     const c = document.createElement("canvas");
@@ -207,8 +217,17 @@ export default function init(ctx) {
   countEl.textContent = "Waiting for the first submission…";
 
   // ── Manual-entry footer ────────────────────────────────────
+  // The footer lives in the runner's <footer> bar, which already sits
+  // above the canvas. We additionally raise its stacking context and
+  // give it a solid backing so no sprite can ever bleed over the
+  // controls.
   function buildBottom() {
     bottom.innerHTML = "";
+    bottom.style.position = "relative";
+    bottom.style.zIndex = "60";
+    bottom.style.background = "linear-gradient(0deg, rgba(10,14,26,.96), rgba(10,14,26,.78))";
+    bottom.style.backdropFilter = "blur(8px)";
+
     const form = el("form", {
       parent: bottom,
       style: { display: "flex", gap: ".5rem", flexWrap: "wrap", alignItems: "center", justifyContent: "center" },
@@ -245,8 +264,7 @@ export default function init(ctx) {
   }
   buildBottom();
 
-  // Add a few seed submissions so the empty state doesn't look broken.
-  // (The presenter can clear these with one tap.)
+  // Seed submissions so the empty state doesn't look broken.
   setTimeout(() => {
     if (submissions.length === 0) {
       ["focused", "tired", "curious", "energised", "ready"].forEach((w, i) => {
@@ -264,19 +282,15 @@ export default function init(ctx) {
     requestAnimationFrame(loop);
     const t = (performance.now() - start) / 1000;
 
-    // Camera gentle parallax.
     camera.position.x = Math.sin(t * 0.1) * 0.5;
     camera.position.y = Math.sin(t * 0.13) * 0.3;
-    camera.lookAt(0, 0, 0);
+    camera.lookAt(0, 0.4, 0);
 
-    // Stars slowly drift.
     stars.rotation.y = t * 0.005;
 
-    // Words gently bob and drift around their base position.
     for (const s of submissions) {
       s.sprite.position.x = s.baseX + Math.sin(t * 0.6 + s.baseY) * 0.4;
-      s.sprite.position.y = s.baseY + Math.cos(t * 0.5 + s.baseX) * 0.3;
-      // Pulse on submission.
+      s.sprite.position.y = s.baseY + Math.cos(t * 0.5 + s.baseX) * 0.25;
       if (s.pulse > 0) {
         s.pulse = Math.max(0, s.pulse - 0.02);
         const k = 1 + s.pulse * 0.3;
@@ -286,8 +300,8 @@ export default function init(ctx) {
       }
     }
 
-    const t = performance.now() / 1000;
-    arena.userData.tick?.(t); guide.userData.tick?.(t, 0);
+    arena.userData.tick?.(t);
+    guide.userData.tick?.(t, 0);
     renderer.render(scene, camera);
   }
 

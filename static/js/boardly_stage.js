@@ -316,6 +316,57 @@
     return el;
   }
 
+  // ── fit-to-pad text sizing ─────────────────────────────────────────
+  // The pad grows taller with its text up to a cap (--note-max-h in
+  // boardly.css). While the pad has room to grow, the text stays at full
+  // size and the quick-out below keeps it there. Only once the pad is
+  // capped and the text still overflows do we shrink the font until it
+  // fits. The footer (author + like + burn + remove) is a non-shrinking
+  // row pinned to the bottom, so it is always fully visible.
+  const FIT_MAX_PX = 17;   // comfortable maximum (~1.05rem)
+  const FIT_MIN_PX = 9;    // never shrink past this; tiny text stays legible
+
+  function fitNoteText(noteEl) {
+    const textEl = noteEl.querySelector(".kk-note-text");
+    if (!textEl) return;
+
+    // Set the maximum font first. This reflows the pad, which grows up to
+    // its max-height cap. We then read the text region's clientHeight —
+    // the room left between the icon and the footer at the pad's current
+    // (possibly grown) height. If the text fits, we're done; the pad simply
+    // grew to hold full-size text.
+    let lo = FIT_MIN_PX, hi = FIT_MAX_PX, best = FIT_MIN_PX;
+    textEl.style.fontSize = hi + "px";
+
+    // Quick out: pad grew enough (or text is short) — keep full size.
+    if (textEl.scrollHeight <= textEl.clientHeight) {
+      textEl.style.removeProperty("font-size");
+      noteEl.style.setProperty("--note-fs", hi + "px");
+      return;
+    }
+
+    // Pad is capped and text still overflows — binary search for the
+    // largest size that fits the capped pad.
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      textEl.style.fontSize = mid + "px";
+      if (textEl.scrollHeight <= textEl.clientHeight) {
+        best = mid; lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    textEl.style.removeProperty("font-size");
+    noteEl.style.setProperty("--note-fs", best + "px");
+  }
+
+  function fitAllNotes() {
+    // Measure in a single frame so layout is settled before we read sizes.
+    requestAnimationFrame(() => {
+      stage.querySelectorAll(".kk-note").forEach(fitNoteText);
+    });
+  }
+
   function renderAll(newId) {
     // Empty state.
     const visible = [...notes.values()].filter((n) => !n.hidden);
@@ -342,6 +393,10 @@
     } else {
       renderFlat(ordered, newId);
     }
+
+    // After the notes are in the DOM, shrink any long text so it fits the
+    // fixed sticky pads without pushing the action buttons off the note.
+    fitAllNotes();
   }
 
   function renderFlat(ordered, newId) {
@@ -880,6 +935,52 @@
   const H2C_SRC = "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
   const JSPDF_SRC = "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js";
 
+  // The board normally lives inside fixed-height, scrolling containers, so
+  // a plain html2canvas() snapshot only captures the pads visible on screen.
+  // For export we temporarily lift those height/overflow constraints so the
+  // whole board — every sticky pad, including the ones scrolled out of view —
+  // lays out at its full natural height, capture it, then restore everything
+  // exactly as it was.
+  //
+  // Each entry remembers an element and the inline styles we overrode so the
+  // restore is lossless (we put back the *inline* value, which may be "").
+  function expandForCapture() {
+    const saved = [];
+    const override = (el, props) => {
+      if (!el) return;
+      const prev = {};
+      for (const k of Object.keys(props)) prev[k] = el.style[k];
+      saved.push({ el, prev });
+      Object.assign(el.style, props);
+    };
+
+    // The scroll/clip chain from the stage down to the notes.
+    override(stage, { height: "auto", overflow: "visible" });
+    override(boardCanvas, { overflow: "visible", height: "auto" });
+    override(boardSheet, { height: "auto", overflow: "visible" });
+
+    // Both the flat notes area and the grouped-columns wrapper can scroll.
+    override(notesArea, { overflow: "visible", maxHeight: "none", height: "auto" });
+    override(columnsWrap, { overflow: "visible", maxHeight: "none", height: "auto" });
+    // Individual grouped-column bodies scroll independently too.
+    if (columnsWrap) {
+      columnsWrap.querySelectorAll(".kk-board-column-body").forEach((b) =>
+        override(b, { overflow: "visible", maxHeight: "none", height: "auto" }));
+    }
+
+    return () => {
+      // Restore in reverse so nested overrides unwind cleanly.
+      for (let i = saved.length - 1; i >= 0; i--) {
+        const { el, prev } = saved[i];
+        for (const k of Object.keys(prev)) {
+          if (prev[k]) el.style[k] = prev[k];
+          else el.style.removeProperty(
+            k.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase()));
+        }
+      }
+    };
+  }
+
   async function captureBoard() {
     await loadScript(H2C_SRC);
     if (typeof html2canvas === "undefined") {
@@ -889,12 +990,37 @@
     // (which includes the draw overlay); otherwise just the sheet.
     const target = drawStrokes.length ? boardCanvas : boardSheet;
     if (!target) throw new Error("nothing to export");
-    return html2canvas(target, {
-      backgroundColor: "#ffffff",
-      scale: 2,
-      useCORS: true,
-      logging: false,
-    });
+
+    const restore = expandForCapture();
+    try {
+      // Let the browser apply the expanded layout before measuring/painting.
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      // Measure the now-unclipped full size so html2canvas paints all of it
+      // rather than just the original viewport-height window.
+      const fullW = Math.ceil(target.scrollWidth);
+      const fullH = Math.ceil(target.scrollHeight);
+      // Browsers cap canvas dimensions (~32767px). On an enormous board the
+      // 2× scale could blow past that and silently produce a blank canvas, so
+      // step the scale down just enough to stay under the limit.
+      const MAX_DIM = 32000;
+      let scale = 2;
+      const longest = Math.max(fullW, fullH);
+      if (longest * scale > MAX_DIM) scale = Math.max(1, MAX_DIM / longest);
+      return await html2canvas(target, {
+        backgroundColor: "#ffffff",
+        scale,
+        useCORS: true,
+        logging: false,
+        width: fullW,
+        height: fullH,
+        windowWidth: fullW,
+        windowHeight: fullH,
+        scrollX: 0,
+        scrollY: 0,
+      });
+    } finally {
+      restore();
+    }
   }
 
   function exportFilename(ext) {
@@ -932,15 +1058,45 @@
       const JsPDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
       if (!JsPDF) throw new Error("jsPDF unavailable");
 
-      const img = canvas.toDataURL("image/png");
-      const orientation = canvas.width >= canvas.height ? "l" : "p";
-      const pdf = new JsPDF({ orientation, unit: "pt", format: "a4" });
+      // Portrait A4. The captured board is one tall image; we slice it into
+      // page-height bands and lay each band on its own page so every sticky
+      // pad makes it into the PDF, however many there are.
+      const pdf = new JsPDF({ orientation: "p", unit: "pt", format: "a4" });
+      const margin = 24;                                  // pt, all sides
       const pw = pdf.internal.pageSize.getWidth();
       const ph = pdf.internal.pageSize.getHeight();
-      const ratio = Math.min(pw / canvas.width, ph / canvas.height);
-      const w = canvas.width * ratio;
-      const h = canvas.height * ratio;
-      pdf.addImage(img, "PNG", (pw - w) / 2, (ph - h) / 2, w, h);
+      const availW = pw - margin * 2;
+      const availH = ph - margin * 2;
+
+      // The board is scaled so its full width fits the printable width.
+      const scale = availW / canvas.width;
+      // How many source pixels fit on one page at that scale.
+      const pageSrcH = Math.floor(availH / scale);
+      const pages = Math.max(1, Math.ceil(canvas.height / pageSrcH));
+
+      // A reusable slice canvas — one page-band of the source at a time.
+      const slice = document.createElement("canvas");
+      const sctx = slice.getContext("2d");
+
+      for (let p = 0; p < pages; p++) {
+        const srcY = p * pageSrcH;
+        const srcH = Math.min(pageSrcH, canvas.height - srcY);
+        slice.width = canvas.width;
+        slice.height = srcH;
+        sctx.clearRect(0, 0, slice.width, slice.height);
+        // White background so any sub-pixel gaps aren't transparent.
+        sctx.fillStyle = "#ffffff";
+        sctx.fillRect(0, 0, slice.width, slice.height);
+        sctx.drawImage(canvas, 0, srcY, canvas.width, srcH,
+                                0, 0,    canvas.width, srcH);
+
+        const img = slice.toDataURL("image/png");
+        const drawW = availW;
+        const drawH = srcH * scale;
+        if (p > 0) pdf.addPage();
+        pdf.addImage(img, "PNG", margin, margin, drawW, drawH);
+      }
+
       pdf.save(exportFilename("pdf"));
     } catch (err) {
       alert("Couldn't export the PDF. Check your connection and retry.");
@@ -1064,6 +1220,14 @@
     reflectPower();
     initTools();
     connect();
+
+    // Re-fit note text when the viewport changes — column widths and the
+    // pad height shift on resize, so the largest font that fits changes too.
+    let fitResizeTimer = null;
+    window.addEventListener("resize", () => {
+      clearTimeout(fitResizeTimer);
+      fitResizeTimer = setTimeout(fitAllNotes, 150);
+    });
   }
 
   if (document.readyState === "loading") {

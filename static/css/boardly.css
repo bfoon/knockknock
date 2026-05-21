@@ -221,7 +221,10 @@
   column-gap: clamp(.6rem, 1.4vw, 1.1rem);
 }
 .kk-notes-area.layout-masonry .kk-note {
-  display: inline-block;
+  /* inline-flex (not inline-block) so the note still flows inside the CSS
+     columns while keeping its internal flex column — that's what lets the
+     text fill the pad and the footer stay pinned to the bottom. */
+  display: inline-flex;
   width: 100%;
   margin-bottom: clamp(.6rem, 1.4vw, 1.1rem);
   break-inside: avoid;
@@ -244,7 +247,15 @@
   position: relative;
   width: 100%;
   max-width: 260px;
-  min-height: 150px;
+  /* The pad grows taller with its text, from a comfortable minimum up to
+     a maximum cap. Text stays full size while the pad has room to grow;
+     only once the pad hits --note-max-h does fitNoteText() in
+     boardly_stage.js shrink the text to fit. The footer (author + like +
+     burn + remove) is a non-shrinking row pinned to the bottom, so it is
+     never pushed off the pad. */
+  min-height: var(--note-h, 168px);
+  max-height: var(--note-max-h, 320px);
+  overflow: hidden;
   padding: .85rem .9rem .95rem;
   border-radius: 3px 3px 8px 3px;
   background:
@@ -285,13 +296,18 @@
 }
 .kk-note-text {
   flex: 1 1 auto;
-  font-size: clamp(.9rem, 1.05vw, 1.05rem);
+  min-height: 0;
+  /* fitNoteText() in boardly_stage.js sets --note-fs per note so long
+     text shrinks to fit; this is the comfortable starting/maximum size. */
+  font-size: var(--note-fs, clamp(.9rem, 1.05vw, 1.05rem));
   line-height: 1.22;
+  overflow: hidden;
   overflow-wrap: anywhere;
   word-break: break-word;
   margin: 0;
 }
 .kk-note-foot {
+  flex: 0 0 auto;
   display: flex; align-items: center; gap: .4rem;
   margin-top: .15rem;
 }
@@ -397,7 +413,7 @@
   display: flex; flex-direction: column;
   gap: .55rem;
 }
-.kk-board-column-body .kk-note { max-width: none; min-height: 110px; }
+.kk-board-column-body .kk-note { max-width: none; min-height: var(--note-h, 168px); max-height: var(--note-max-h, 320px); }
 
 /* Empty state. */
 .kk-board-empty {

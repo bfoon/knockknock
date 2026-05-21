@@ -27,6 +27,9 @@ Speaks JSON. Client → server messages:
     {type:"move_group", id, group_id}          move a note to another column
                                                (group_id null = no column)
     {type:"add_group", name}                   presenter adds a topic column
+    {type:"rename_group", id, name}            presenter renames a column
+    {type:"delete_group", id}                  presenter deletes a column —
+                                               its notes are deleted too
     {type:"set_column_lock", locked}           presenter locks/unlocks
                                                cross-column note moves
     {type:"burn", id}                          presenter burns a note —
@@ -45,6 +48,9 @@ Server → client messages:
     {type:"note_edited", note}  a note's content changed (full note dict)
     {type:"edit_rejected", reason}
     {type:"group_added", group} a new column {id, name}
+    {type:"group_renamed", id, name}           a column was renamed
+    {type:"group_removed", id, note_ids}       a column (and its notes)
+                                               were deleted
     {type:"column_lock_changed", locked}       cross-column moves locked?
     {type:"note_likes", id, likes}
     {type:"note_moderated", action, id}
@@ -144,6 +150,16 @@ class BoardConsumer(AsyncWebsocketConsumer):
             # Only the presenter may add a column to a live board.
             if self.is_presenter:
                 await self._handle_add_group(data)
+
+        elif mtype == "rename_group":
+            # Only the presenter may rename a column.
+            if self.is_presenter:
+                await self._handle_rename_group(data)
+
+        elif mtype == "delete_group":
+            # Only the presenter may delete a column.
+            if self.is_presenter:
+                await self._handle_delete_group(data)
 
         elif mtype == "set_column_lock":
             # Only the presenter may lock/unlock cross-column moves.
@@ -400,6 +416,37 @@ class BoardConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_send(self.group, {
             "type": "fanout",
             "payload": {"type": "group_added", "group": group},
+        })
+
+    # ── presenter: rename a column ───────────────────────────────────
+    async def _handle_rename_group(self, data):
+        group_id = data.get("id")
+        name = (data.get("name") or "").strip()[:60]
+        if not name:
+            return
+        ok = await self._rename_group(group_id, name)
+        if not ok:
+            return
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {"type": "group_renamed", "id": group_id, "name": name},
+        })
+
+    # ── presenter: delete a column (and the notes inside it) ─────────
+    async def _handle_delete_group(self, data):
+        group_id = data.get("id")
+        note_ids = await self._delete_group(group_id)
+        if note_ids is None:
+            return
+        # Broadcast the column removal along with the ids of the notes
+        # that went with it, so every screen can drop them too.
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {
+                "type": "group_removed",
+                "id": group_id,
+                "note_ids": note_ids,
+            },
         })
 
     # ── presenter: lock / unlock cross-column note moves ─────────────
@@ -715,6 +762,43 @@ class BoardConsumer(AsyncWebsocketConsumer):
             session=s, name=name, position=position,
         )
         return {"id": g.id, "name": g.name}
+
+    @sync_to_async
+    def _rename_group(self, group_id, name):
+        """Rename a column on this board. Returns True on success."""
+        from .models import BoardGroup
+        g = BoardGroup.objects.filter(
+            id=group_id, session__code=self.code,
+        ).first()
+        if not g:
+            return False
+        g.name = name
+        g.save(update_fields=["name"])
+        return True
+
+    @sync_to_async
+    def _delete_group(self, group_id):
+        """
+        Delete a column AND the notes inside it.
+
+        Returns the list of deleted note ids (possibly empty) so the
+        broadcast can tell every screen which notes to drop, or None if
+        the column doesn't belong to this board.
+        """
+        from .models import BoardGroup
+        g = BoardGroup.objects.filter(
+            id=group_id, session__code=self.code,
+        ).first()
+        if not g:
+            return None
+        # Collect the note ids before deleting so clients can prune them.
+        note_ids = list(g.notes.values_list("id", flat=True))
+        # Notes inside the column go with it. The BoardGroup→Note FK is
+        # SET_NULL, so deleting the group alone would orphan the notes;
+        # we delete them explicitly first to honour "delete notes too".
+        g.notes.all().delete()
+        g.delete()
+        return note_ids
 
     @sync_to_async
     def _add_like(self, note_id):

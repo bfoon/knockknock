@@ -201,6 +201,21 @@
         break;
       }
 
+      case "group_renamed": {
+        const g = groups.find((x) => x.id === msg.id);
+        if (g) { g.name = msg.name; renderAll(); }
+        break;
+      }
+
+      case "group_removed": {
+        // Drop the column and every note that was inside it.
+        groups = groups.filter((g) => g.id !== msg.id);
+        (msg.note_ids || []).forEach((nid) => notes.delete(nid));
+        renderAll();
+        renderHiddenTray();
+        break;
+      }
+
       case "column_lock_changed": {
         lockColumns = !!msg.locked;
         reflectLock();
@@ -462,7 +477,12 @@
 
   function renderColumns(ordered, newId) {
     if (!columnsWrap) return;
+    // Flag the wipe so a rename input's blur handler (fired when the
+    // input is detached) knows not to commit — restoreActiveRename will
+    // re-open it instead.
+    columnsReRendering = true;
     columnsWrap.innerHTML = "";
+    columnsReRendering = false;
     columnsWrap.classList.toggle("columns-locked", lockColumns);
     const byGroup = new Map();
     groups.forEach((g) => byGroup.set(g.id, []));
@@ -473,13 +493,43 @@
     });
 
     // Build one column. `gid` is the group id, or null for the "Other"
-    // catch-all column (notes with no/!matching group).
+    // catch-all column (notes with no/!matching group). Real columns get
+    // an editable name and a delete button; "Other" is auto-generated so
+    // it gets neither.
     function buildColumn(gid, name, list) {
       const col = document.createElement("div");
       col.className = "kk-board-column";
       const head = document.createElement("div");
       head.className = "kk-board-column-head";
-      head.innerHTML = `${escapeHtml(name)} <span class="count">${list.length}</span>`;
+
+      const nameEl = document.createElement("span");
+      nameEl.className = "kk-col-name";
+      nameEl.textContent = name;
+
+      const count = document.createElement("span");
+      count.className = "count";
+      count.textContent = String(list.length);
+
+      if (gid != null) {
+        // Real column: clicking the name turns it into an input; the
+        // button beside it deletes the whole column.
+        nameEl.classList.add("is-editable");
+        nameEl.title = "Click to rename this column";
+        nameEl.dataset.gid = String(gid);
+        nameEl.tabIndex = 0;
+
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "kk-col-delete";
+        del.dataset.gid = String(gid);
+        del.title = "Delete this column";
+        del.innerHTML = '<i class="bi bi-trash"></i>';
+
+        head.append(nameEl, count, del);
+      } else {
+        head.append(nameEl, count);
+      }
+
       const body = document.createElement("div");
       body.className = "kk-board-column-body";
       // The drop target carries its group id so a drop knows where to
@@ -512,6 +562,9 @@
     }
 
     enableColumnDnD();
+    // If a column rename was in progress, a re-render just destroyed its
+    // input — re-open it from the saved snapshot so the edit survives.
+    restoreActiveRename();
   }
 
   function escapeHtml(s) {
@@ -525,6 +578,19 @@
   // per-render work in renderColumns is just setting draggable + group id.
   let dndWired = false;
   let dragNoteId = null;
+
+  // While the presenter is renaming a column, this holds the live edit so
+  // a background re-render (a note arriving, a like, a participant
+  // joining — all call renderAll) doesn't wipe the input mid-edit. After
+  // renderColumns rebuilds, it re-opens the rename from this snapshot.
+  // Shape: { gid, value, selStart, selEnd } or null.
+  let activeRename = null;
+  // True only during columnsWrap.innerHTML wipe — lets a rename input's
+  // blur handler tell a re-render apart from the presenter clicking away.
+  let columnsReRendering = false;
+  // Set by wireColumnControls; renderColumns calls it after rebuilding to
+  // re-open an in-progress rename. No-op until column controls are wired.
+  let restoreActiveRename = function () {};
 
   function enableColumnDnD() {
     if (!columnsWrap || dndWired) return;
@@ -594,6 +660,135 @@
         renderAll();
       }
       dragNoteId = null;
+    });
+
+    wireColumnControls();
+  }
+
+  // ── column rename + delete (presenter) ──────────────────────────────
+  // Delegated handlers on columnsWrap, attached once alongside the DnD
+  // wiring. Renaming swaps the name span for an input in place; deleting
+  // confirms (warning how many notes go with the column) then sends.
+  function wireColumnControls() {
+    if (!columnsWrap) return;
+
+    // Delete a column.
+    columnsWrap.addEventListener("click", (e) => {
+      const del = e.target.closest(".kk-col-delete");
+      if (!del) return;
+      const gid = Number(del.dataset.gid);
+      const g = groups.find((x) => x.id === gid);
+      const inCol = [...notes.values()]
+        .filter((n) => n.group_id === gid).length;
+      const label = g ? `“${g.name}”` : "this column";
+      const warn = inCol
+        ? `Delete ${label} and its ${inCol} note${inCol === 1 ? "" : "s"}? `
+          + "The notes will be permanently removed."
+        : `Delete ${label}? It has no notes.`;
+      if (confirm(warn)) {
+        send({ type: "delete_group", id: gid });
+      }
+    });
+
+    // Start renaming: click (or Enter/Space) on an editable name.
+    // `preset` (optional) restores an in-progress rename after a
+    // re-render — it carries the typed-so-far value and caret position.
+    function beginRename(nameEl, preset) {
+      if (!nameEl || nameEl.querySelector("input")) return;
+      const gid = Number(nameEl.dataset.gid);
+      // The committed name is what's on the group, not the (possibly
+      // half-typed) value being restored.
+      const g0 = groups.find((x) => x.id === gid);
+      const current = preset ? (g0 ? g0.name : nameEl.textContent)
+                             : nameEl.textContent;
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "kk-col-name-input";
+      input.maxLength = 60;
+      input.value = preset ? preset.value : current;
+      nameEl.textContent = "";
+      nameEl.appendChild(input);
+      input.focus();
+      if (preset && preset.selStart != null) {
+        try { input.setSelectionRange(preset.selStart, preset.selEnd); }
+        catch (_) { /* non-text input edge case */ }
+      } else {
+        input.select();
+      }
+
+      // Mark this rename as live so background re-renders preserve it.
+      const snapshot = () => {
+        activeRename = {
+          gid,
+          value: input.value,
+          selStart: input.selectionStart,
+          selEnd: input.selectionEnd,
+        };
+      };
+      snapshot();
+      input.addEventListener("input", snapshot);
+      input.addEventListener("keyup", snapshot);
+      input.addEventListener("select", snapshot);
+
+      let done = false;
+      const commit = (save) => {
+        if (done) return;
+        done = true;
+        activeRename = null;   // rename is over — stop preserving it
+        const next = (input.value || "").trim();
+        if (save && next && next !== current) {
+          send({ type: "rename_group", id: gid, name: next });
+          // Optimistic; the broadcast confirms for every screen.
+          const g = groups.find((x) => x.id === gid);
+          if (g) g.name = next;
+          renderAll();
+        } else {
+          // Cancelled or unchanged — restore the plain name.
+          nameEl.textContent = current;
+        }
+      };
+      input.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") { ev.preventDefault(); commit(true); }
+        else if (ev.key === "Escape") { ev.preventDefault(); commit(false); }
+      });
+      // Blur usually means the presenter clicked away — commit the
+      // rename. But a background re-render also blurs the input by
+      // detaching it from the DOM. columnsReRendering is true only
+      // during that wipe, so we skip the commit and let renderColumns
+      // re-open the rename from the snapshot.
+      input.addEventListener("blur", () => {
+        if (columnsReRendering &&
+            activeRename && activeRename.gid === gid) {
+          return;
+        }
+        commit(true);
+      });
+      // Don't let a click inside the input bubble to the rename handler.
+      input.addEventListener("click", (ev) => ev.stopPropagation());
+    }
+
+    // Expose so renderColumns can re-open a rename after rebuilding.
+    restoreActiveRename = function () {
+      if (!activeRename || !columnsWrap) return;
+      const nameEl = columnsWrap.querySelector(
+        '.kk-col-name.is-editable[data-gid="' + activeRename.gid + '"]'
+      );
+      if (nameEl && !nameEl.querySelector("input")) {
+        beginRename(nameEl, activeRename);
+      }
+    };
+
+    columnsWrap.addEventListener("click", (e) => {
+      const nameEl = e.target.closest(".kk-col-name.is-editable");
+      if (nameEl && !e.target.closest("input")) beginRename(nameEl);
+    });
+    columnsWrap.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      const nameEl = e.target.closest(".kk-col-name.is-editable");
+      if (nameEl && !nameEl.querySelector("input")) {
+        e.preventDefault();
+        beginRename(nameEl);
+      }
     });
   }
 

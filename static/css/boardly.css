@@ -965,3 +965,61 @@
   border-color: rgba(124, 58, 237, .7);
   color: #fff;
 }
+
+/* ════════════════════════════════════════════════════════════════════
+ *  COLUMN RENAME + DELETE (presenter)
+ *  The column name is click-to-edit; a trash button removes the whole
+ *  column (and its notes). The auto-generated "Other" column has neither.
+ * ══════════════════════════════════════════════════════════════════ */
+
+/* The editable column name — looks like plain text until hovered. */
+.kk-col-name.is-editable {
+  cursor: text;
+  border-radius: 6px;
+  padding: 0 .25rem;
+  transition: background .12s ease;
+}
+.kk-col-name.is-editable:hover,
+.kk-col-name.is-editable:focus-visible {
+  background: rgba(30, 42, 82, .10);
+  outline: none;
+}
+
+/* Inline rename input — sized to sit in the header without reflow. */
+.kk-col-name-input {
+  font-family: "Caveat", cursive;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--board-ink);
+  background: #fff;
+  border: 1px solid var(--kk-accent, #7c3aed);
+  border-radius: 6px;
+  padding: 0 .3rem;
+  width: 9rem;
+  max-width: 60vw;
+  text-align: center;
+}
+
+/* The delete-column button — muted, reddens on hover. */
+.kk-col-delete {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--board-ink-soft);
+  cursor: pointer;
+  padding: .05rem .35rem;
+  font-size: .9rem;
+  line-height: 1;
+  opacity: .45;
+  transition: opacity .12s ease, color .12s ease, background .12s ease;
+}
+.kk-board-column:hover .kk-col-delete { opacity: 1; }
+.kk-col-delete:hover {
+  color: #dc2626;
+  background: rgba(220, 38, 38, .12);
+  border-color: rgba(220, 38, 38, .35);
+}
+/* Touch screens have no hover — keep the delete button visible. */
+@media (hover: none) {
+  .kk-col-delete { opacity: .8; }
+}

@@ -354,6 +354,36 @@
         break;
       }
 
+      case "group_added": {
+        // A column was added live — show it as a pill option.
+        if (msg.group &&
+            !boardGroups.some((g) => g.id === msg.group.id)) {
+          renderGroups(boardGroups.concat([msg.group]));
+        }
+        break;
+      }
+
+      case "group_renamed": {
+        const g = boardGroups.find((x) => x.id === msg.id);
+        if (g) { g.name = msg.name; renderGroups(boardGroups); }
+        break;
+      }
+
+      case "group_removed": {
+        // The column is gone, and its notes with it. Drop any of ours
+        // that were inside it, and clear the selection if it pointed
+        // at the deleted column.
+        const removed = new Set(msg.note_ids || []);
+        for (let i = myNotes.length - 1; i >= 0; i--) {
+          if (removed.has(myNotes[i].id)) myNotes.splice(i, 1);
+        }
+        if (selectedGroup === msg.id) selectedGroup = null;
+        renderGroups(boardGroups.filter((g) => g.id !== msg.id));
+        renderMine();
+        refreshLimitUI();
+        break;
+      }
+
       case "note_removed": {
         const mine = myNotes.find((m) => m.id === msg.id);
         if (mine) { mine.removed = true; renderMine(); refreshLimitUI(); }

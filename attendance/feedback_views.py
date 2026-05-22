@@ -26,7 +26,7 @@ from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.db.models import Avg, Max
 from django.http import (
-    HttpResponseBadRequest, JsonResponse,
+    HttpResponse, HttpResponseBadRequest, JsonResponse,
 )
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -38,6 +38,9 @@ from .feedback_models import (
 from .feedback_forms import (
     FeedbackQuestionForm, build_public_feedback_form,
     parse_public_feedback_answers,
+)
+from .feedback_exports import (
+    build_feedback_xlsx, build_feedback_docx, export_filename,
 )
 
 
@@ -329,6 +332,49 @@ def feedback_results(request, pk):
         "response_count": responses.count(),
         "question_summaries": question_summaries,
     })
+
+
+# ─────────────────────────── Report downloads ───────────────────────────
+
+# Content-types for the Office Open XML formats. Spelled out here so the
+# two download views below stay one-liners.
+_XLSX_CT = (
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+_DOCX_CT = (
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+)
+
+
+def _attachment_response(data, filename, content_type):
+    """Wrap raw bytes as a downloadable file response."""
+    resp = HttpResponse(data, content_type=content_type)
+    # quotes around the filename keep spaces / punctuation safe.
+    resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+    resp["Content-Length"] = str(len(data))
+    return resp
+
+
+@login_required
+def feedback_results_xlsx(request, pk):
+    """Download the feedback report as an Excel workbook."""
+    event = _own_event_or_404(request.user, pk)
+    survey = _get_or_create_survey(event)
+    data = build_feedback_xlsx(event, survey)
+    return _attachment_response(
+        data, export_filename(event, "xlsx"), _XLSX_CT,
+    )
+
+
+@login_required
+def feedback_results_docx(request, pk):
+    """Download the feedback report as a Word document."""
+    event = _own_event_or_404(request.user, pk)
+    survey = _get_or_create_survey(event)
+    data = build_feedback_docx(event, survey)
+    return _attachment_response(
+        data, export_filename(event, "docx"), _DOCX_CT,
+    )
 
 
 # ─────────────────────────── Public survey ───────────────────────────

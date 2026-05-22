@@ -14,6 +14,18 @@
       {{ event.title }} · {{ response_count }} response{{ response_count|pluralize }}
     </p>
   </div>
+  {% if response_count %}
+  <div class="d-flex gap-2">
+    <a href="{% url 'attendance:feedback_results_xlsx' event.pk %}"
+       class="btn btn-outline-light btn-sm">
+      <i class="bi bi-file-earmark-spreadsheet"></i> Download Excel
+    </a>
+    <a href="{% url 'attendance:feedback_results_docx' event.pk %}"
+       class="btn btn-outline-light btn-sm">
+      <i class="bi bi-file-earmark-word"></i> Download Word
+    </a>
+  </div>
+  {% endif %}
 </div>
 
 {% if not response_count %}

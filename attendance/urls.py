@@ -92,6 +92,8 @@ urlpatterns = [
                                                 feedback_views.feedback_question_delete, name="feedback_question_delete"),
     path("<int:pk>/feedback/q/reorder/",        feedback_views.feedback_question_reorder, name="feedback_question_reorder"),
     path("<int:pk>/feedback/results/",          feedback_views.feedback_results,         name="feedback_results"),
+    path("<int:pk>/feedback/results/export.xlsx", feedback_views.feedback_results_xlsx,   name="feedback_results_xlsx"),
+    path("<int:pk>/feedback/results/export.docx", feedback_views.feedback_results_docx,   name="feedback_results_docx"),
 
     # Public-facing survey pages. Two entry points so QR scans don't
     # need to change after the event is marked Ended:

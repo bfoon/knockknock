@@ -161,6 +161,65 @@ class Note(models.Model):
             # client show an "(edited)" marker. The actual history lives
             # in NoteEdit rows.
             "edited": self.edited_at is not None,
+            # Freehand / highlighter strokes drawn ON this note. Each is a
+            # dict {id, tool, points:[[x,y],…]} with x,y as 0.0–1.0
+            # fractions of the note's own width/height, so the marks ride
+            # with the pad wherever it moves and survive any projector
+            # resolution. Empty list when the note has never been drawn on.
+            # Prefetch ``drawings`` upstream to avoid an N+1 here.
+            "drawings": [d.as_dict() for d in self.drawings.all()],
+        }
+
+
+class NoteDrawing(models.Model):
+    """
+    One freehand / highlighter stroke drawn ON a sticky note.
+
+    Strokes belong to a Note and are stored in the note's OWN coordinate
+    space — every point is a (x, y) pair of 0.0–1.0 fractions of the
+    note's width/height. Because the coordinates are note-local rather
+    than board-pixel, a stroke automatically rides with its pad when the
+    presenter drags it, when the layout changes (grid / masonry / scatter
+    / free / columns), and across different projector resolutions. The
+    rows persist, so the marks survive a refresh or rejoining the board;
+    they only disappear when erased (this row is deleted) or when the
+    parent note is removed (cascade).
+
+    ``points`` is a JSON list of [x, y] pairs, e.g.
+        [[0.12, 0.20], [0.18, 0.24], …]
+    kept compact so a stroke is one small row.
+    """
+    TOOL_CHOICES = [
+        ("highlighter", "Highlighter"),
+        ("pen", "Pen"),
+    ]
+
+    note = models.ForeignKey(
+        Note, on_delete=models.CASCADE, related_name="drawings",
+    )
+    tool = models.CharField(
+        max_length=12, choices=TOOL_CHOICES, default="pen",
+    )
+    # List of [x, y] fractional points (0.0–1.0) in the note's local box.
+    points = models.JSONField(default=list)
+    # Who drew it, for parity with NoteEdit. Presenter-drawn for now.
+    drawn_by = models.CharField(max_length=40, default="Presenter")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self):
+        return f"{self.tool} stroke on note {self.note_id}"
+
+    def as_dict(self):
+        """Serialised form sent in WebSocket payloads."""
+        return {
+            "id": self.id,
+            "tool": self.tool,
+            # Emit as plain [x, y] pairs — the client repaints from these.
+            "points": self.points or [],
         }
 
 

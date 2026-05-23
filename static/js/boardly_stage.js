@@ -198,6 +198,43 @@
         break;
       }
 
+      case "note_drawn": {
+        // A stroke was committed on a note. Append the authoritative copy
+        // (with its real id) and drop any matching provisional stroke this
+        // screen drew optimistically, so we don't end up with a duplicate.
+        const n = notes.get(msg.note_id);
+        if (n && msg.drawing) {
+          if (!n.drawings) n.drawings = [];
+          // Remove the first pending stroke that matches tool + length —
+          // it's the optimistic one we just drew; the server copy replaces
+          // it. (Other presenters' strokes have no local pending twin.)
+          const di = n.drawings.findIndex(
+            (d) => d._pending && d.tool === msg.drawing.tool &&
+                   (d.points || []).length === (msg.drawing.points || []).length
+          );
+          if (di !== -1) n.drawings.splice(di, 1);
+          n.drawings.push(msg.drawing);
+          const el = findNoteEl(msg.note_id);
+          if (el) paintNoteDrawing(el, n);
+        }
+        break;
+      }
+
+      case "note_erased": {
+        // Specific strokes were removed from a note (everywhere). Drop the
+        // listed ids; leave any other strokes (incl. still-pending ones)
+        // untouched. The local screen that erased has already removed them
+        // optimistically — this is a harmless no-op there.
+        const n = notes.get(msg.note_id);
+        if (n && n.drawings && Array.isArray(msg.drawing_ids)) {
+          const gone = new Set(msg.drawing_ids);
+          n.drawings = n.drawings.filter((d) => !gone.has(d.id));
+          const el = findNoteEl(msg.note_id);
+          if (el) paintNoteDrawing(el, n);
+        }
+        break;
+      }
+
       case "group_added": {
         // A new topic column. Avoid duplicating if it's already known.
         if (msg.group && !groups.some((g) => g.id === msg.group.id)) {
@@ -432,6 +469,10 @@
     // Measure in a single frame so layout is settled before we read sizes.
     requestAnimationFrame(() => {
       stage.querySelectorAll(".kk-note").forEach(fitNoteText);
+      // Pad heights may have changed while fitting text; repaint each
+      // pad's drawing on the next frame so its canvas matches the final
+      // size and the strokes land in the right place.
+      requestAnimationFrame(repaintAllDrawings);
     });
   }
 
@@ -1235,9 +1276,31 @@
       .kk-burn-spark { position: absolute; width: 6px; height: 6px;
         border-radius: 50%; background: #ffb028;
         box-shadow: 0 0 8px 2px rgba(255,140,0,.9); pointer-events: none; }
-      #board-draw-layer { position: absolute; inset: 0; z-index: 40;
-        touch-action: none; }
-      #board-draw-layer.inactive { pointer-events: none; }
+      /* Per-note drawing canvas — overlays the pad, sits above the text
+         but below the footer controls so likes / burn / remove stay
+         clickable. Pointer events pass through to the pad. */
+      .kk-note { position: relative; }
+      .kk-note-draw {
+        position: absolute; inset: 0;
+        z-index: 2;
+        pointer-events: none;
+        border-radius: inherit;
+      }
+      .kk-note-text, .kk-note-icon, .kk-note-pin { position: relative; z-index: 1; }
+      .kk-note-foot { position: relative; z-index: 3; }
+      /* Tool cursors over the board while a draw / erase tool is active. */
+      .kk-board-stage.kk-drawing-on .kk-note { cursor: crosshair; }
+      .kk-board-stage.kk-drawing-on .kk-note * { cursor: crosshair; }
+      .kk-board-stage.kk-erasing-on .kk-note { cursor: cell; }
+      /* While drawing OR erasing, stop touch gestures on pads from
+         scrolling the board so a finger draws / scrubs instead. */
+      .kk-board-stage.kk-drawing-on .kk-note,
+      .kk-board-stage.kk-erasing-on .kk-note { touch-action: none; }
+      /* Keep the footer buttons usable even with a tool active. */
+      .kk-board-stage.kk-drawing-on .kk-note-foot,
+      .kk-board-stage.kk-drawing-on .kk-note-foot *,
+      .kk-board-stage.kk-erasing-on .kk-note-foot,
+      .kk-board-stage.kk-erasing-on .kk-note-foot * { cursor: pointer; }
       .kk-tool.is-active { background: rgba(124,58,237,.35);
         border-color: rgba(124,58,237,.7); }
       .kk-limit-box { display: inline-flex; align-items: center; gap: .25rem;
@@ -1433,86 +1496,279 @@
     setTimeout(() => { renderAll(); renderHiddenTray(); }, 950);
   }
 
-  // ── drawing overlay (presenter-local highlighter + pen) ─────────────
-  let drawLayer = null, drawCtx = null, drawing = false;
-  const drawStrokes = [];
-
-  function ensureDrawLayer() {
-    if (drawLayer || !boardCanvas) return;
-    drawLayer = document.createElement("canvas");
-    drawLayer.id = "board-draw-layer";
-    drawLayer.className = "inactive";
-    boardCanvas.appendChild(drawLayer);
-    drawCtx = drawLayer.getContext("2d");
-    sizeDrawLayer();
-    window.addEventListener("resize", sizeDrawLayer);
-
-    drawLayer.addEventListener("pointerdown", drawDown);
-    drawLayer.addEventListener("pointermove", drawMove);
-    window.addEventListener("pointerup", drawUp);
-  }
-
-  function sizeDrawLayer() {
-    if (!drawLayer || !boardCanvas) return;
-    const r = boardCanvas.getBoundingClientRect();
-    drawLayer.width = r.width;
-    drawLayer.height = r.height;
-    repaintStrokes();
-  }
+  // ── per-note drawing (highlighter + pen, bound to each pad) ─────────
+  //
+  // Strokes belong to a sticky note, not the board. Each pad carries its
+  // own <canvas class="kk-note-draw"> sized to the pad, and a stroke is
+  // stored in NOTE-LOCAL fractions (0..1 of the pad's width/height). That
+  // makes the marks ride with the pad when it's dragged or the layout
+  // changes, and — because the consumer persists them — survive a refresh
+  // or rejoining the board. They only vanish when erased or when the note
+  // is removed.
+  //
+  // drawTool: null | "highlighter" | "pen" | "erase"
+  //   pen / highlighter  → draw on a pad
+  //   erase              → tap a pad to clear that pad's drawing
+  let drawing = false;            // a stroke is in progress
+  let drawNoteEl = null;          // the pad being drawn on
+  let drawNoteId = null;
+  let activePts = null;           // points captured this stroke (fractions)
+  let activeCanvas = null;        // the pad canvas we're painting into
 
   function strokeStyleFor(tool) {
     return tool === "highlighter"
-      ? { color: "rgba(250,204,21,.38)", width: 22, cap: "round" }
-      : { color: "#ef4444", width: 3.5, cap: "round" };
+      ? { color: "rgba(250,204,21,.45)", widthFrac: 0.085, cap: "round" }
+      : { color: "#ef4444", widthFrac: 0.018, cap: "round" };
   }
 
-  function repaintStrokes() {
-    if (!drawCtx || !drawLayer) return;
-    drawCtx.clearRect(0, 0, drawLayer.width, drawLayer.height);
-    drawStrokes.forEach((st) => {
-      const s = strokeStyleFor(st.tool);
-      drawCtx.strokeStyle = s.color;
-      drawCtx.lineWidth = s.width;
-      drawCtx.lineCap = s.cap;
-      drawCtx.lineJoin = "round";
-      drawCtx.beginPath();
-      st.pts.forEach((p, i) => {
-        if (i === 0) drawCtx.moveTo(p.x, p.y);
-        else drawCtx.lineTo(p.x, p.y);
-      });
-      drawCtx.stroke();
+  // Lazily attach (and size) a drawing canvas inside a pad. Returns the
+  // canvas, or null if the pad has no usable size yet.
+  function ensureNoteCanvas(noteEl) {
+    let cv = noteEl.querySelector(".kk-note-draw");
+    if (!cv) {
+      cv = document.createElement("canvas");
+      cv.className = "kk-note-draw";
+      // The canvas sits above the pad's text but below its footer buttons
+      // so likes / burn / remove stay clickable.
+      noteEl.insertBefore(cv, noteEl.firstChild);
+    }
+    sizeNoteCanvas(noteEl, cv);
+    return cv;
+  }
+
+  // Match the canvas backing store to the pad's current pixel size (with
+  // devicePixelRatio for crispness), then repaint from stored fractions.
+  function sizeNoteCanvas(noteEl, cv) {
+    cv = cv || noteEl.querySelector(".kk-note-draw");
+    if (!cv) return;
+    const w = noteEl.clientWidth, h = noteEl.clientHeight;
+    if (!w || !h) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+    cv.style.width = w + "px";
+    cv.style.height = h + "px";
+    const ctx = cv.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  // Paint a single note's stored strokes onto its canvas. `note` is the
+  // cached note dict (its .drawings array drives the paint).
+  function paintNoteDrawing(noteEl, note) {
+    if (!noteEl || !note) return;
+    const list = note.drawings || [];
+    let cv = noteEl.querySelector(".kk-note-draw");
+    // No strokes and no canvas → nothing to do (don't create one).
+    if (!list.length && !cv) return;
+    if (!cv) cv = ensureNoteCanvas(noteEl);
+    else sizeNoteCanvas(noteEl, cv);
+    if (!cv) return;
+    const ctx = cv.getContext("2d");
+    const w = noteEl.clientWidth, h = noteEl.clientHeight;
+    ctx.clearRect(0, 0, w, h);
+    list.forEach((st) => strokePathOnto(ctx, st, w, h));
+  }
+
+  // Draw one stored stroke (fractional points) onto a pad-sized context.
+  function strokePathOnto(ctx, st, w, h) {
+    const pts = st.points || [];
+    if (pts.length < 2) return;
+    const s = strokeStyleFor(st.tool);
+    ctx.strokeStyle = s.color;
+    // Line width scales with the pad so a mark keeps its visual weight at
+    // any pad size. Tie it to the smaller dimension.
+    ctx.lineWidth = Math.max(1.5, s.widthFrac * Math.min(w, h));
+    ctx.lineCap = s.cap;
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    pts.forEach((p, i) => {
+      const x = p[0] * w, y = p[1] * h;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+
+  // Repaint every visible pad's drawing — called after any (re)render or
+  // resize, since layout changes move/resize the pads.
+  function repaintAllDrawings() {
+    stage.querySelectorAll(".kk-note").forEach((el) => {
+      const n = notes.get(Number(el.dataset.id));
+      if (n) paintNoteDrawing(el, n);
     });
   }
 
-  let activeStroke = null;
+  // Convert a pointer event to the pad's local fractions, clamped 0..1.
+  function noteFracFromEvent(noteEl, e) {
+    const r = noteEl.getBoundingClientRect();
+    const x = (e.clientX - r.left) / (r.width || 1);
+    const y = (e.clientY - r.top) / (r.height || 1);
+    return [
+      Math.max(0, Math.min(x, 1)),
+      Math.max(0, Math.min(y, 1)),
+    ];
+  }
+
+  // ── draw / erase gesture, delegated from the notes area / columns ───
+  // The pen and highlighter build a stroke; the eraser scrubs over the
+  // pad and removes any individual stroke its path passes near.
+  let erasing = false;            // an erase scrub is in progress
+  let eraseNoteEl = null;
+  let eraseNoteId = null;
+  let erasedThisScrub = null;     // Set of stroke ids removed this scrub
+
+  // Smallest distance (in fraction-of-pad units) from the eraser tip to a
+  // stroke for it to count as "touched". ~3.5% of the pad's size.
+  const ERASE_RADIUS = 0.05;
+
+  // Point-to-segment distance in the pad's normalised box. Used to decide
+  // whether the eraser tip passed close enough to a stroke segment.
+  function distToSegment(px, py, ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    let t = len2 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    const cx = ax + t * dx, cy = ay + t * dy;
+    return Math.hypot(px - cx, py - cy);
+  }
+
+  // True if the eraser point [ex,ey] touches stroke `st` (fractional pts).
+  function eraserHitsStroke(ex, ey, st) {
+    const pts = st.points || [];
+    if (!pts.length) return false;
+    if (pts.length === 1) {
+      return Math.hypot(ex - pts[0][0], ey - pts[0][1]) <= ERASE_RADIUS;
+    }
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i];
+      if (distToSegment(ex, ey, a[0], a[1], b[0], b[1]) <= ERASE_RADIUS) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Erase any strokes on the current pad that the eraser point touches.
+  // Removes them locally (optimistic) and collects ids to tell the server.
+  function eraseStrokesAt(frac) {
+    const n = notes.get(eraseNoteId);
+    if (!n || !n.drawings || !n.drawings.length) return;
+    const [ex, ey] = frac;
+    const survivors = [];
+    let changed = false;
+    for (const st of n.drawings) {
+      if (eraserHitsStroke(ex, ey, st)) {
+        changed = true;
+        // A pending stroke has no server id yet — drop it locally only.
+        if (st.id != null) erasedThisScrub.add(st.id);
+      } else {
+        survivors.push(st);
+      }
+    }
+    if (changed) {
+      n.drawings = survivors;
+      if (eraseNoteEl) paintNoteDrawing(eraseNoteEl, n);
+    }
+  }
+
   function drawDown(e) {
-    if (!drawTool) return;
-    drawing = true;
-    activeStroke = { tool: drawTool, pts: [pointIn(e)] };
-    drawStrokes.push(activeStroke);
+    const noteEl = e.target.closest(".kk-note");
+    if (!noteEl) return;
+    // Never start from an in-note control (likes / burn / remove).
+    if (e.target.closest(".kk-note-like") ||
+        e.target.closest(".kk-note-act")) return;
+
+    if (drawTool === "erase") {
+      e.preventDefault();
+      e.stopPropagation();
+      erasing = true;
+      eraseNoteEl = noteEl;
+      eraseNoteId = Number(noteEl.dataset.id);
+      erasedThisScrub = new Set();
+      try { noteEl.setPointerCapture(e.pointerId); } catch (err) {}
+      eraseStrokesAt(noteFracFromEvent(noteEl, e));
+      return;
+    }
+
+    if (drawTool !== "pen" && drawTool !== "highlighter") return;
     e.preventDefault();
+    e.stopPropagation();
+    drawing = true;
+    drawNoteEl = noteEl;
+    drawNoteId = Number(noteEl.dataset.id);
+    activeCanvas = ensureNoteCanvas(noteEl);
+    activePts = [noteFracFromEvent(noteEl, e)];
+    try { noteEl.setPointerCapture(e.pointerId); } catch (err) {}
   }
+
   function drawMove(e) {
-    if (!drawing || !activeStroke) return;
-    activeStroke.pts.push(pointIn(e));
-    repaintStrokes();
+    if (erasing && eraseNoteEl) {
+      e.preventDefault();
+      eraseStrokesAt(noteFracFromEvent(eraseNoteEl, e));
+      return;
+    }
+    if (!drawing || !drawNoteEl) return;
+    e.preventDefault();
+    activePts.push(noteFracFromEvent(drawNoteEl, e));
+    // Live preview: clear + repaint the committed strokes, then the
+    // in-progress one on top.
+    const n = notes.get(drawNoteId);
+    paintNoteDrawing(drawNoteEl, n || { drawings: [] });
+    if (activeCanvas) {
+      const ctx = activeCanvas.getContext("2d");
+      const w = drawNoteEl.clientWidth, h = drawNoteEl.clientHeight;
+      strokePathOnto(ctx, { tool: drawTool, points: activePts }, w, h);
+    }
   }
-  function drawUp() { drawing = false; activeStroke = null; }
-  function pointIn(e) {
-    const r = drawLayer.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
+
+  function drawEnd(e) {
+    // Finish an erase scrub: tell the server which real strokes went.
+    if (erasing) {
+      erasing = false;
+      const noteId = eraseNoteId;
+      const ids = erasedThisScrub ? [...erasedThisScrub] : [];
+      eraseNoteEl = null; eraseNoteId = null; erasedThisScrub = null;
+      if (noteId != null && ids.length) {
+        send({ type: "erase_strokes", note_id: noteId, drawing_ids: ids });
+      }
+      return;
+    }
+
+    if (!drawing) return;
+    drawing = false;
+    const pts = activePts || [];
+    const noteId = drawNoteId;
+    const tool = drawTool;
+    drawNoteEl = null; drawNoteId = null; activePts = null; activeCanvas = null;
+
+    // A dot / accidental tap (one point) isn't a stroke — ignore it.
+    if (pts.length < 2 || noteId == null) return;
+
+    // Optimistic local commit so the mark doesn't flicker away before the
+    // server echoes it back. The broadcast appends the authoritative copy
+    // (with its real id); we tag this provisional one so the echo can
+    // replace it rather than duplicate.
+    const n = notes.get(noteId);
+    if (n) {
+      if (!n.drawings) n.drawings = [];
+      const provisional = { id: null, tool, points: pts, _pending: true };
+      n.drawings.push(provisional);
+      const el = findNoteEl(noteId);
+      if (el) paintNoteDrawing(el, n);
+    }
+    send({ type: "draw", note_id: noteId, tool, points: pts });
   }
 
   function setDrawTool(tool) {
     drawTool = (drawTool === tool) ? null : tool;
-    ensureDrawLayer();
-    if (drawLayer) drawLayer.classList.toggle("inactive", !drawTool);
-    if (btnHi) btnHi.classList.toggle("is-active", drawTool === "highlighter");
+    // Reflect active state across the three draw tools.
+    if (btnHi)  btnHi.classList.toggle("is-active", drawTool === "highlighter");
     if (btnPen) btnPen.classList.toggle("is-active", drawTool === "pen");
-  }
-  function clearDrawing() {
-    drawStrokes.length = 0;
-    repaintStrokes();
+    if (btnEraseDraw) btnEraseDraw.classList.toggle("is-active", drawTool === "erase");
+    // While a draw/erase tool is on, the board shows a tool cursor and the
+    // pads aren't draggable (the drag handler checks drawTool too).
+    stage.classList.toggle("kk-drawing-on", !!drawTool && drawTool !== "erase");
+    stage.classList.toggle("kk-erasing-on", drawTool === "erase");
   }
 
   // ── export (PNG / PDF) ──────────────────────────────────────────────
@@ -1589,9 +1845,10 @@
     if (typeof html2canvas === "undefined") {
       throw new Error("html2canvas unavailable");
     }
-    // If the presenter has drawn on the board, capture the whole canvas
-    // (which includes the draw overlay); otherwise just the sheet.
-    const target = drawStrokes.length ? boardCanvas : boardSheet;
+    // Drawings now live inside each pad (per-note canvases), so capturing
+    // the board sheet already includes every stroke. The sheet is the
+    // export target whether or not anything has been drawn.
+    const target = boardSheet;
     if (!target) throw new Error("nothing to export");
 
     const restore = expandForCapture();
@@ -1717,9 +1974,34 @@
 
     if (btnHi) btnHi.addEventListener("click", () => setDrawTool("highlighter"));
     if (btnPen) btnPen.addEventListener("click", () => setDrawTool("pen"));
-    if (btnEraseDraw) btnEraseDraw.addEventListener("click", clearDrawing);
+    // The eraser is a tool mode: turn it on, then scrub across a pad to
+    // rub out the individual strokes your path passes over.
+    if (btnEraseDraw) {
+      btnEraseDraw.title = "Eraser — scrub over a stroke to remove it";
+      btnEraseDraw.addEventListener("click", () => setDrawTool("erase"));
+    }
     if (btnExportPng) btnExportPng.addEventListener("click", exportPNG);
     if (btnExportPdf) btnExportPdf.addEventListener("click", exportPDF);
+
+    // ── Draw / erase gestures (delegated at the stage so they work in
+    // both the flat notes area AND grouped columns). drawDown handles all
+    // three tools: pen / highlighter build a stroke, the eraser scrubs.
+    stage.addEventListener("pointerdown", (e) => {
+      if (drawTool === "pen" || drawTool === "highlighter" ||
+          drawTool === "erase") {
+        drawDown(e);
+      }
+    }, true);   // capture phase: claim the gesture before drag/click handlers
+    window.addEventListener("pointermove", drawMove);
+    window.addEventListener("pointerup", drawEnd);
+    window.addEventListener("pointercancel", drawEnd);
+
+    // Keep the per-note canvases sized to their pads on resize.
+    let drawResizeTimer = null;
+    window.addEventListener("resize", () => {
+      clearTimeout(drawResizeTimer);
+      drawResizeTimer = setTimeout(repaintAllDrawings, 160);
+    });
 
     // Drag-to-move: delegated pointer events on the notes area. The first
     // drag flips the board into free-arrange mode.

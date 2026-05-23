@@ -38,6 +38,17 @@ Speaks JSON. Client → server messages:
                                                state ∈ open|ended
     {type:"set_limit", limit}                  presenter changes the
                                                per-participant note cap (0 = off)
+    {type:"draw", note_id, tool, points}       presenter drew a stroke ON a
+                                               note. tool ∈ pen|highlighter;
+                                               points is a list of [x,y] pairs,
+                                               each 0.0–1.0 fractions of the
+                                               note's own box. Persisted so it
+                                               rides with the note and survives
+                                               refresh.
+    {type:"erase_strokes", note_id,            presenter erased one or more
+           drawing_ids}                        individual strokes on a note —
+                                               removes only the listed stroke
+                                               ids (scrub-to-erase).
 
 Server → client messages:
     {type:"state", ...}        full snapshot (sent on connect)
@@ -58,6 +69,10 @@ Server → client messages:
     {type:"note_burned", id}                   play burn FX, then drop note
     {type:"note_removed"/"note_restored", id}  targeted at the author
     {type:"limit_changed", limit}              new per-participant cap
+    {type:"note_drawn", note_id, drawing}      a stroke was added to a note
+                                               (drawing = {id, tool, points})
+    {type:"note_erased", note_id,              the listed strokes were removed
+           drawing_ids}                        from a note (everywhere)
     {type:"participants", count}
     {type:"board_ended"}
 """
@@ -180,6 +195,16 @@ class BoardConsumer(AsyncWebsocketConsumer):
             # Only the presenter may change the per-participant cap.
             if self.is_presenter:
                 await self._handle_set_limit(data)
+
+        elif mtype == "draw":
+            # Only the presenter may draw on notes.
+            if self.is_presenter:
+                await self._handle_draw(data)
+
+        elif mtype == "erase_strokes":
+            # Only the presenter may erase strokes.
+            if self.is_presenter:
+                await self._handle_erase_strokes(data)
 
     # ── note posting ─────────────────────────────────────────────────
     async def _handle_note(self, data):
@@ -495,7 +520,77 @@ class BoardConsumer(AsyncWebsocketConsumer):
         })
 
 
-    async def _handle_set_state(self, data):
+    # ── presenter: draw a stroke on a note / erase a note's drawing ──
+    async def _handle_draw(self, data):
+        note_id = data.get("note_id")
+        tool = data.get("tool")
+        if tool not in {"pen", "highlighter"}:
+            tool = "pen"
+
+        # Validate and clamp the point list. Each point is an [x, y] pair
+        # of 0.0–1.0 fractions of the note's own box; anything outside is
+        # clamped so a stroke can't claim coordinates off the pad.
+        raw = data.get("points")
+        if not isinstance(raw, list) or len(raw) < 2:
+            return
+        points = []
+        for p in raw:
+            if (isinstance(p, (list, tuple)) and len(p) == 2):
+                try:
+                    x = max(0.0, min(float(p[0]), 1.0))
+                    y = max(0.0, min(float(p[1]), 1.0))
+                except (TypeError, ValueError):
+                    continue
+                points.append([round(x, 4), round(y, 4)])
+        if len(points) < 2:
+            return
+        # Guard against absurdly long strokes (one row stays small).
+        if len(points) > 1000:
+            points = points[:1000]
+
+        drawing = await self._add_drawing(note_id, tool, points)
+        if drawing is None:
+            return
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {
+                "type": "note_drawn",
+                "note_id": note_id,
+                "drawing": drawing,
+            },
+        })
+
+    async def _handle_erase_strokes(self, data):
+        note_id = data.get("note_id")
+        raw_ids = data.get("drawing_ids")
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return
+        # Coerce to ints, drop anything unparseable, and de-dupe.
+        ids = []
+        for v in raw_ids:
+            try:
+                ids.append(int(v))
+            except (TypeError, ValueError):
+                continue
+        ids = list(dict.fromkeys(ids))   # preserve order, unique
+        if not ids:
+            return
+
+        removed = await self._delete_strokes(note_id, ids)
+        if not removed:
+            return
+        # Broadcast only the ids that were actually removed, so every
+        # screen drops exactly those strokes and nothing else.
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {
+                "type": "note_erased",
+                "note_id": note_id,
+                "drawing_ids": removed,
+            },
+        })
+
+
         new_state = data.get("state")
         if new_state not in {"open", "ended"}:
             return
@@ -640,6 +735,45 @@ class BoardConsumer(AsyncWebsocketConsumer):
         Note.objects.filter(id=note_id, session__code=self.code).delete()
         return True
 
+    @sync_to_async
+    def _add_drawing(self, note_id, tool, points):
+        """
+        Persist one stroke on a note and return its dict, or None if the
+        note doesn't belong to this board. The stroke survives refresh
+        because it's a real row tied to the note.
+        """
+        from .models import Note, NoteDrawing
+        note = Note.objects.filter(
+            id=note_id, session__code=self.code,
+        ).first()
+        if not note:
+            return None
+        d = NoteDrawing.objects.create(
+            note=note, tool=tool, points=points, drawn_by="Presenter",
+        )
+        return d.as_dict()
+
+    @sync_to_async
+    def _delete_strokes(self, note_id, ids):
+        """
+        Delete specific strokes (by id) from a note — the scrub eraser.
+
+        Only strokes that actually belong to this note on this board are
+        removed; any id that doesn't match is ignored. Returns the list of
+        ids that were really deleted (so the broadcast tells every screen
+        exactly what to drop), or an empty list if nothing matched.
+        """
+        from .models import NoteDrawing
+        qs = NoteDrawing.objects.filter(
+            id__in=ids, note_id=note_id, note__session__code=self.code,
+        )
+        # Capture the ids that exist before deleting them.
+        real_ids = list(qs.values_list("id", flat=True))
+        if not real_ids:
+            return []
+        qs.delete()
+        return real_ids
+
 
     @sync_to_async
     def _snapshot(self):
@@ -647,7 +781,8 @@ class BoardConsumer(AsyncWebsocketConsumer):
         s = BoardSession.objects.filter(code=self.code).first()
         if not s:
             return {"type": "state", "state": "closed", "notes": []}
-        notes = [n.as_dict() for n in s.notes.all().order_by("created_at")]
+        notes = [n.as_dict() for n in
+                 s.notes.all().prefetch_related("drawings").order_by("created_at")]
         groups = [{"id": g.id, "name": g.name}
                   for g in s.groups.all().order_by("position")]
         return {

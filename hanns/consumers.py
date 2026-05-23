@@ -51,6 +51,7 @@ class PresentConsumer(AsyncWebsocketConsumer):
         self.group = f"hanns_{self.code}"
         self.nick = None
         self.is_presenter = False
+        self.is_controller = False
 
         self.deck = await self._get_deck(self.code)
         if self.deck is None:
@@ -84,6 +85,14 @@ class PresentConsumer(AsyncWebsocketConsumer):
             self.is_presenter = True
             await self._broadcast_participants()
 
+        elif mtype == "controller_hello":
+            pin = str(data.get("pin") or "").strip()
+            if pin and pin == await self._control_pin():
+                self.is_controller = True
+                await self.send_json({"type": "controller_ok", "current_slide": await self._current_slide()})
+            else:
+                await self.send_json({"type": "controller_denied"})
+
         elif mtype == "join":
             self.nick = (data.get("nick") or "").strip()[:40] or "Anonymous"
             await self._bump_participants(+1)
@@ -93,8 +102,8 @@ class PresentConsumer(AsyncWebsocketConsumer):
             await self._handle_react(data)
 
         elif mtype == "goto":
-            # Only the presenter screen drives the live slide index.
-            if self.is_presenter:
+            # Presenter screen or PIN-approved phone controller drives slides.
+            if self.is_presenter or self.is_controller:
                 await self._handle_goto(data)
 
     # ── reactions ────────────────────────────────────────────────────
@@ -168,6 +177,17 @@ class PresentConsumer(AsyncWebsocketConsumer):
     def _set_current_slide(self, index):
         from .models import Deck
         Deck.objects.filter(code=self.code).update(current_slide=index)
+
+    @sync_to_async
+    def _current_slide(self):
+        from .models import Deck
+        d = Deck.objects.filter(code=self.code).first()
+        return int(d.current_slide) if d else 0
+
+    @sync_to_async
+    def _control_pin(self):
+        total = sum((i + 1) * ord(ch) for i, ch in enumerate(self.code or "HANNS"))
+        return str(1000 + (total % 9000))
 
     @sync_to_async
     def _snapshot(self):

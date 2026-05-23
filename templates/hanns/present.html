@@ -6,8 +6,8 @@
 <title>{{ deck.title }} · Presenting · Hanns</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Archivo:wght@400;500;600;700;800&family=Archivo+Expanded:wght@600;700;800&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=1">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Archivo:wght@400;500;600;700;800&family=Archivo+Expanded:wght@600;700;800&family=Spline+Sans+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800;900&family=Manrope:wght@300;400;500;600;700;800&family=Poppins:wght@300;400;500;600;700;800;900&family=Montserrat:wght@300;400;500;600;700;800;900&family=Roboto:wght@300;400;500;700;900&family=Open+Sans:wght@300;400;500;600;700;800&family=Lato:wght@300;400;700;900&family=Nunito+Sans:wght@300;400;600;700;800;900&family=Raleway:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=DM+Serif+Display:ital@0;1&family=Bebas+Neue&family=Oswald:wght@300;400;500;600;700&family=Merriweather:wght@300;400;700;900&family=Libre+Baskerville:wght@400;700&family=Lora:ital,wght@0,400..700;1,400..700&family=Cormorant+Garamond:ital,wght@0,300..700;1,300..700&family=Space+Grotesk:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Barlow+Condensed:wght@300;400;500;600;700;800&family=Rubik:wght@300;400;500;600;700;800;900&family=Quicksand:wght@300;400;500;600;700&family=Sora:wght@300;400;500;600;700;800&family=Exo+2:wght@300;400;500;600;700;800;900&family=Ubuntu:wght@300;400;500;700&family=Work+Sans:wght@300;400;500;600;700;800;900&family=Noto+Sans:wght@300;400;500;600;700;800;900&family=Noto+Serif:wght@400;500;600;700;800;900&family=Source+Serif+4:opsz,wght@8..60,300..900&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Serif:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700;800&family=Fira+Code:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Cinzel:wght@400;500;600;700;800;900&family=Abril+Fatface&family=Anton&family=Pacifico&family=Caveat:wght@400;500;600;700&family=Permanent+Marker&family=Righteous&family=Kanit:wght@300;400;500;600;700;800;900&family=Lexend:wght@300;400;500;600;700;800;900&family=Urbanist:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=6">
 <style>
   /* The present overlay styles live in hanns.css; here we force it on so
      the stage IS the page (no editor chrome on the projector). */
@@ -30,8 +30,10 @@
       <button id="pp-next">›</button>
     </div>
 
+    <button class="controller-pill" id="open-controller" type="button" title="Phone controller (press C)">📱 Controller</button>
+
     <div class="present-badge">
-      <div class="qr" id="present-qr"></div>
+      <div class="qr" id="present-qr" title="Click for QR modal"></div>
       <div class="meta">
         <div class="lbl">Scan to react
           <span class="aud">· <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-8 0v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg><b id="aud-count">0</b></span>
@@ -43,18 +45,44 @@
   </div>
 </div>
 
+<div class="present-modal" id="qr-modal" aria-hidden="true">
+  <div class="present-modal-card">
+    <button class="modal-close" data-close-present-modal type="button">✕</button>
+    <h2 id="qr-modal-title">Presentation</h2>
+    <p>Scan to join and react during the presentation.</p>
+    <div class="modal-qr" id="qr-modal-code"></div>
+    <div class="modal-actions">
+      <button id="download-qr" type="button">Download QR card</button>
+      <a href="{{ join_url }}" target="_blank" rel="noopener">Open join page</a>
+    </div>
+  </div>
+</div>
+
+<div class="present-modal" id="controller-modal" aria-hidden="true">
+  <div class="present-modal-card">
+    <button class="modal-close" data-close-present-modal type="button">✕</button>
+    <h2 id="controller-modal-title">Phone controller</h2>
+    <p>Scan this hidden QR on your phone, enter the PIN, then control slides and read presenter notes.</p>
+    <div class="modal-qr" id="controller-modal-qr"></div>
+    <div class="control-pin" id="controller-pin">----</div>
+    <p id="controller-url"></p>
+  </div>
+</div>
+
 <script>
   window.__HANNS_PRESENT__ = {
     deck: {{ deck_json|safe }},
     wsUrl: (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/hanns/{{ deck.code }}/",
     joinUrl: "{{ join_url }}",
+    controlUrl: "{{ control_url }}",
+    controlPin: "{{ control_pin }}",
     stateUrl: "{% url 'hanns:set_state' deck.code %}",
     editUrl: "{% url 'hanns:edit' deck.code %}",
     csrftoken: "{{ csrf_token }}"
   };
 </script>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-<script src="{% static 'hanns/js/hanns_core.js' %}?v=1"></script>
-<script src="{% static 'hanns/js/hanns_present.js' %}?v=1"></script>
+<script src="{% static 'hanns/js/hanns_core.js' %}?v=6"></script>
+<script src="{% static 'hanns/js/hanns_present.js' %}?v=6"></script>
 </body>
 </html>

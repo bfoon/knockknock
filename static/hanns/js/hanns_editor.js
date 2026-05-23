@@ -4,9 +4,9 @@
 (function(){
 "use strict";
 const Hx = window.Hanns;
-const {Deck,TEMPLATES,BACKGROUNDS,ANIMS,TRANSITIONS,PALETTE,FONTS,
+const {Deck,TEMPLATES,BACKGROUNDS,ANIMS,TRANSITIONS,PALETTE,FONTS,OBJECTS,SHAPES,
   newSlide,curSlide,selEl,paintSlide,renderElement,
-  makeText,makeShape,makeLine,makeImage,W,H,$,$$,uid,clamp,genCode}=Hx;
+  makeText,makeShape,makeLine,makeImage,makeVideo,makeLink,makeObject,makeCreativeShape,makeTable,makeChart,makeMap,W,H,$,$$,uid,clamp,genCode}=Hx;
 
 const canvas   = $("#canvas");
 const wrap     = $("#canvas-wrap");
@@ -80,19 +80,20 @@ function addSlide(fromTpl){
   const s = fromTpl ? Object.assign(newSlide(),fromTpl) : newSlide();
   Deck.slides.splice(Deck.cur+1,0,s);
   gotoSlide(Deck.cur+1);
+  markDirty();
   toast("Slide added");
 }
 function deleteSlide(i){
   if(Deck.slides.length===1){toast("A deck needs at least one slide");return;}
   Deck.slides.splice(i,1);
-  Deck.cur=clamp(Deck.cur,0,Deck.slides.length-1);Deck.sel=null;renderAll();
+  Deck.cur=clamp(Deck.cur,0,Deck.slides.length-1);Deck.sel=null;renderAll();markDirty();
 }
 function applyTemplate(tpl){
   const built=tpl.build();
   const s=curSlide();
   s.bg=built.bg;s.bgSize=built.bgSize||null;
   s.els=built.els.map(e=>Object.assign({},e));
-  Deck.sel=null;renderAll();
+  Deck.sel=null;renderAll();markDirty();
   closeDrawers();toast(`Applied “${tpl.name}”`);
 }
 
@@ -107,15 +108,34 @@ function addElement(kind){
   else if(kind==="ellipse") el=makeShape("ellipse",{x:cx,y:cy});
   else if(kind==="line") el=makeLine({x:cx,y:H/2});
   else if(kind==="image"){el=makeImage("",{x:cx,y:cy});}
-  s.els.push(el);Deck.sel=el.id;renderAll();
+  else if(kind==="video"){el=makeVideo({x:W/2-320,y:H/2-180});}
+  else if(kind==="link"){el=makeLink({x:W/2-260,y:H/2-60});}
+  else if(kind==="object"){el=makeObject("water_glass",{x:W/2-115,y:H/2-150});}
+  else if(kind==="table"){el=makeTable({x:W/2-310,y:H/2-145});}
+  else if(kind==="chart"){el=makeChart("bar",{x:W/2-325,y:H/2-165});}
+  else if(kind==="graph"){el=makeChart("line",{x:W/2-325,y:H/2-165,title:"Growth graph",accent:"#22c55e"});}
+  else if(kind==="map"){el=makeMap("gambia",{x:W/2-325,y:H/2-180});}
+  else if(kind==="creative_shape"){el=makeCreativeShape("blob_01",{x:W/2-120,y:H/2-120});}
+  if(!el)return;
+  s.els.push(el);Deck.sel=el.id;renderAll();markDirty();
   if(kind==="image")pickImageFor(el.id);
+}
+function addObject(kind){
+  const d=(OBJECTS||[]).find(o=>o.kind===kind);
+  const el=makeObject(kind,{x:Math.round(W/2-(d?.w||320)/2),y:Math.round(H/2-(d?.h||220)/2)});
+  curSlide().els.push(el);Deck.sel=el.id;renderAll();markDirty();closeDrawers();
+}
+function addCreativeShape(kind){
+  const d=(SHAPES||[]).find(s=>s.kind===kind)||SHAPES[0];
+  const el=makeCreativeShape(kind,{x:Math.round(W/2-120),y:Math.round(H/2-120),fill:d.accent||"#e8482b"});
+  curSlide().els.push(el);Deck.sel=el.id;renderAll();markDirty();closeDrawers();
 }
 function selectEl(id){Deck.sel=id;
   $$(".el",canvas).forEach(n=>n.classList.toggle("selected",n.dataset.id===id));
   renderInspector();
 }
 function deleteEl(id){const s=curSlide();s.els=s.els.filter(e=>e.id!==id);
-  if(Deck.sel===id)Deck.sel=null;renderAll();}
+  if(Deck.sel===id)Deck.sel=null;renderAll();markDirty();}
 
 /* image picker */
 let pendingImgId=null;
@@ -144,14 +164,28 @@ function wireCanvasElements(){
     if(node.classList.contains("image")){
       node.addEventListener("dblclick",()=>pickImageFor(id));
     }
-    // text: dbl-click to edit, commit on blur
-    const ce=node.querySelector("[contenteditable]");
+    // text: double-click enters edit mode; blur/Esc/Ctrl+Enter returns to move mode.
+    // Important: text is NOT permanently contenteditable, otherwise clicks on text
+    // stop the parent drag handler and the user cannot move the text after editing.
+    const ce=node.querySelector("[data-text-inner]");
     if(ce){
-      node.addEventListener("dblclick",()=>{ce.focus();
-        document.getSelection().selectAllChildren(ce);});
-      ce.addEventListener("blur",()=>{const el=curSlide().els.find(x=>x.id===id);
-        if(el){el.text=ce.innerText;renderFilmstrip();markDirty();}});
-      ce.addEventListener("pointerdown",e=>e.stopPropagation());
+      const commitText=()=>{const el=curSlide().els.find(x=>x.id===id);
+        if(el){el.text=ce.innerText;renderFilmstrip();markDirty();}
+        ce.setAttribute("contenteditable","false");
+        node.classList.remove("text-editing");
+        window.getSelection()?.removeAllRanges?.();
+      };
+      node.addEventListener("dblclick",e=>{
+        e.preventDefault();e.stopPropagation();selectEl(id);
+        ce.setAttribute("contenteditable","true");node.classList.add("text-editing");ce.focus();
+        const range=document.createRange();range.selectNodeContents(ce);
+        const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);
+      });
+      ce.addEventListener("blur",commitText);
+      ce.addEventListener("keydown",e=>{
+        if(e.key==="Escape" || ((e.ctrlKey||e.metaKey)&&e.key==="Enter")){e.preventDefault();ce.blur();}
+      });
+      ce.addEventListener("pointerdown",e=>{if(ce.isContentEditable&&document.activeElement===ce)e.stopPropagation();});
     }
     // handles
     $$("[data-handle]",node).forEach(h=>{
@@ -210,6 +244,17 @@ function swatchRow(current,onAttr){
   PALETTE.forEach(c=>{h+=`<div class="sw ${current===c?"active":""}" style="background:${c}" data-${onAttr}="${c}"></div>`;});
   h+="</div>";return h;
 }
+
+function escapeTA(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+function escapeAttr(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");}
+function splitRow(line){return line.includes("\t")?line.split("\t"):line.split(",");}
+function tableToText(el){return (el.tableData||[]).map(r=>(Array.isArray(r)?r:[]).join("\t")).join("\n");}
+function parseTableText(txt){return String(txt||"").split(/\r?\n/).filter(l=>l.trim()).map(l=>splitRow(l).map(c=>c.trim()));}
+function chartToText(el){return (el.chartData||[]).map(r=>[r.label,r.value,r.x,r.y,r.size,...(Array.isArray(r.series)?r.series:[])].filter(v=>v!==undefined&&v!==null&&v!=="").join(",")).join("\n");}
+function parseChartText(txt){return String(txt||"").split(/\r?\n/).filter(l=>l.trim()).map((l,i)=>{const p=splitRow(l).map(x=>x.trim());return {label:p[0]||("Item "+(i+1)),value:Number(p[1])||0,x:p[2]!==undefined&&p[2]!==""?Number(p[2]):i+1,y:p[3]!==undefined&&p[3]!==""?Number(p[3]):Number(p[1])||0,size:p[4]!==undefined&&p[4]!==""?Number(p[4]):Number(p[1])||12,series:p.slice(5).map(Number).filter(v=>!Number.isNaN(v))};});}
+function pinsToText(el){return (el.pins||[]).map(p=>[p.label,p.x,p.y,p.value].filter(v=>v!==undefined&&v!==null&&v!=="").join(",")).join("\n");}
+function parsePinsText(txt){return String(txt||"").split(/\r?\n/).filter(l=>l.trim()).map(l=>{const p=splitRow(l).map(x=>x.trim());return {label:p[0]||"Pin",x:Number(p[1])||50,y:Number(p[2])||50,value:p[3]||""};});}
+
 function renderInspector(){
   // tab state
   $$(".insp-tab").forEach(t=>t.classList.toggle("active",t.dataset.tab===inspTab));
@@ -267,11 +312,106 @@ function elementPanel(el){
       if(el.type==="rect")h+=`<div class="group">${field("Corner radius "+(el.radius||0),`<input type="range" id="f-radius" min="0" max="120" value="${el.radius||0}">`)}</div>`;
     }
   }
+
+  if(el.type==="creative_shape"){
+    const def=(SHAPES||[]).find(s=>s.kind===el.shapeType)||SHAPES[0];
+    h+=`<div class="group"><span class="glabel">Creative shape</span>
+      ${field("Shape",`<select id="f-shapetype">${SHAPES.map(s=>`<option value="${s.kind}" ${el.shapeType===s.kind?"selected":""}>${s.label}</option>`).join("")}</select>`)}
+      <span class="glabel" style="margin-top:.7rem;display:block">Fill</span>${swatchRow(el.fill||def.accent,"fill")}
+      <span class="glabel" style="margin-top:.8rem;display:block">Stroke</span>${swatchRow(el.stroke||"none","stroke")}
+      ${field("Stroke width "+(el.strokeW||0),`<input type="range" id="f-shape-strokew" min="0" max="18" value="${el.strokeW||0}">`)}
+      ${field("Opacity "+Math.round((el.opacity==null?1:el.opacity)*100)+"%",`<input type="range" id="f-shape-opacity" min="0.1" max="1" step="0.05" value="${el.opacity==null?1:el.opacity}">`)}
+      <div class="insp-empty" style="padding-top:.2rem">${def.group||"Shape"} shape. Use it for cards, decorations, diagrams, icons, labels, and creative slide layouts.</div>
+    </div>`;
+  }
+
   if(el.type==="image"){
     h+=`<div class="group"><span class="glabel">Image</span>
       <button class="tbtn" id="f-pickimg" style="width:100%;justify-content:center">Replace image…</button>
       ${field("Fit",`<div class="seg" id="f-fit"><button data-fit="cover" class="${el.fit==="cover"?"active":""}">Cover</button><button data-fit="contain" class="${el.fit==="contain"?"active":""}">Contain</button></div>`)}
       ${field("Corner radius "+(el.radius||0),`<input type="range" id="f-radius" min="0" max="120" value="${el.radius||0}">`)}
+    </div>`;
+  }
+
+  if(el.type==="video"){
+    h+=`<div class="group"><span class="glabel">Video</span>
+      ${field("Title",`<input type="text" id="f-videotitle" value="${escapeAttr(el.title||"Video")}">`)}
+      ${field("Video URL",`<input type="url" id="f-videosrc" placeholder="https://...mp4 or YouTube embed URL" value="${escapeAttr(el.src||"")}">`)}
+      ${field("Poster image URL",`<input type="url" id="f-videoposter" value="${escapeAttr(el.poster||"")}">`)}
+      ${field("Fit",`<div class="seg" id="f-videofit"><button data-fit="cover" class="${(el.fit||"cover")==="cover"?"active":""}">Cover</button><button data-fit="contain" class="${el.fit==="contain"?"active":""}">Contain</button></div>`)}
+      ${field("Controls",`<div class="seg" id="f-videocontrols"><button data-on="1" class="${el.controls!==false?"active":""}">On</button><button data-on="0" class="${el.controls===false?"active":""}">Off</button></div>`)}
+      ${field("Autoplay",`<div class="seg" id="f-videoautoplay"><button data-on="1" class="${el.autoplay?"active":""}">On</button><button data-on="0" class="${!el.autoplay?"active":""}">Off</button></div>`)}
+      ${field("Muted",`<div class="seg" id="f-videomuted"><button data-on="1" class="${el.muted?"active":""}">On</button><button data-on="0" class="${!el.muted?"active":""}">Off</button></div>`)}
+      ${field("Corner radius "+(el.radius||18),`<input type="range" id="f-videoradius" min="0" max="80" value="${el.radius||18}">`)}
+      <div class="insp-empty" style="padding-top:.2rem">For YouTube/Vimeo, use an embed URL. For direct video, paste an MP4/WebM URL.</div>
+    </div>`;
+  }
+  if(el.type==="link"){
+    h+=`<div class="group"><span class="glabel">Clickable link</span>
+      ${field("Label",`<input type="text" id="f-linklabel" value="${escapeAttr(el.label||"Open link")}">`)}
+      ${field("URL",`<input type="url" id="f-linkurl" value="${escapeAttr(el.url||"https://")}">`)}
+      ${field("Description",`<textarea id="f-linkdesc" rows="3">${escapeTA(el.description||"")}</textarea>`)}
+      ${field("Style",`<select id="f-linkstyle"><option value="button" ${el.linkStyle==="button"?"selected":""}>Button</option><option value="card" ${el.linkStyle==="card"?"selected":""}>Card</option><option value="outline" ${el.linkStyle==="outline"?"selected":""}>Outline</option></select>`)}
+      ${field("Background",`<input type="color" id="f-linkbg" value="${el.bg||el.accent||"#2563eb"}">`)}
+      ${field("Text colour",`<input type="color" id="f-linkcolor" value="${el.textColor||"#ffffff"}">`)}
+      ${field("Corner radius "+(el.radius||22),`<input type="range" id="f-linkradius" min="0" max="80" value="${el.radius||22}">`)}
+    </div>`;
+  }
+  if(el.type==="table"){
+    h+=`<div class="group"><span class="glabel">Table data</span>
+      ${field("Paste table data",`<textarea id="f-tabledata" rows="8" placeholder="Header 1,Header 2&#10;A,10&#10;B,20">${escapeTA(tableToText(el))}</textarea>`)}
+      <div class="row2">
+        ${field("Rows",`<input type="number" id="f-tablerows" min="1" max="40" value="${el.rows||5}">`)}
+        ${field("Columns",`<input type="number" id="f-tablecols" min="1" max="12" value="${el.cols||4}">`)}
+      </div>
+      ${field("Header row",`<div class="seg" id="f-tableheader"><button data-header="1" class="${el.header!==false?"active":""}">On</button><button data-header="0" class="${el.header===false?"active":""}">Off</button></div>`)}
+      ${field("Style",`<select id="f-tabletheme"><option value="clean" ${el.theme==="clean"?"selected":""}>Clean</option><option value="glass" ${el.theme==="glass"?"selected":""}>Glass</option><option value="dark" ${el.theme==="dark"?"selected":""}>Dark</option></select>`)}
+      ${field("Font size "+(el.size||18),`<input type="range" id="f-tablesize" min="10" max="40" value="${el.size||18}">`)}
+      ${field("Header colour",`<input type="color" id="f-tableaccent" value="${el.headerColor||el.accent||"#1d4e89"}">`)}
+      ${field("Header text colour",`<input type="color" id="f-tableheadertext" value="${el.headerTextColor||"#ffffff"}">`)}
+      ${field("Body text colour",`<input type="color" id="f-tabletextcolor" value="${el.textColor||"#16140f"}">`)}
+      ${field("Border colour",`<input type="color" id="f-tableborder" value="${el.borderColor||"#d8dee9"}">`)}
+      ${field("Striped rows",`<div class="seg" id="f-tablestriped"><button data-on="1" class="${el.striped!==false?"active":""}">On</button><button data-on="0" class="${el.striped===false?"active":""}">Off</button></div>`)}
+      <div class="insp-empty" style="padding-top:.2rem">Use comma-separated or tab-separated values. Example: Item,Value</div>
+    </div>`;
+  }
+  if(el.type==="chart"){
+    h+=`<div class="group"><span class="glabel">Chart / graph data</span>
+      ${field("Title",`<input type="text" id="f-charttitle" value="${escapeAttr(el.title||"Chart")}">`)}
+      ${field("Type",`<select id="f-chartkind">
+        ${[
+          ["bar","Bar"],["horizontalBar","Horizontal bar"],["groupedBar","Grouped bar"],["stackedBar","Stacked bar"],["line","Line"],["spline","Smooth line"],["area","Area"],["pie","Pie"],["donut","Donut"],["scatter","Scatter"],["bubble","Bubble"],["radar","Radar"],["gauge","Gauge"],["progress","Progress"],["funnel","Funnel"],["waterfall","Waterfall"],["heatmap","Heatmap"],["treemap","Treemap"],["kpi","KPI card"]
+        ].map(([k,l])=>`<option value="${k}" ${el.chartKind===k?"selected":""}>${l}</option>`).join("")}
+      </select>`)}
+      ${field("Data",`<textarea id="f-chartdata" rows="8" placeholder="Label,Value&#10;Jan,20&#10;Feb,35">${escapeTA(chartToText(el))}</textarea>`)}
+      ${field("Accent colour",`<input type="color" id="f-chartaccent" value="${el.accent||"#e8482b"}">`)}
+      ${field("Show values",`<div class="seg" id="f-chartvalues"><button data-show="1" class="${el.showValues!==false?"active":""}">Show</button><button data-show="0" class="${el.showValues===false?"active":""}">Hide</button></div>`)}
+      <div class="insp-empty" style="padding-top:.2rem">Use Label,Value. For scatter/bubble use Label,Value,X,Y,Size. For grouped/stacked bars add extra series values after Size.</div>
+    </div>`;
+  }
+  if(el.type==="map"){
+    h+=`<div class="group"><span class="glabel">Map</span>
+      ${field("Title",`<input type="text" id="f-maptitle" value="${escapeAttr(el.title||"Map")}">`)}
+      ${field("Map type",`<select id="f-mapkind">
+        ${["gambia","africa","world"].map(k=>`<option value="${k}" ${el.mapKind===k?"selected":""}>${k[0].toUpperCase()+k.slice(1)}</option>`).join("")}
+      </select>`)}
+      ${field("Pins",`<textarea id="f-mappins" rows="8" placeholder="Name,X%,Y%,Value&#10;Banjul,28,44,12">${escapeTA(pinsToText(el))}</textarea>`)}
+      ${field("Accent colour",`<input type="color" id="f-mapaccent" value="${el.accent||"#2f6f4f"}">`)}
+      ${field("Show labels",`<div class="seg" id="f-maplabels"><button data-show="1" class="${el.showLabels!==false?"active":""}">Show</button><button data-show="0" class="${el.showLabels===false?"active":""}">Hide</button></div>`)}
+      <div class="insp-empty" style="padding-top:.2rem">Pins use percentage coordinates: Name, X%, Y%, Value. Example: Brikama,39,54,28</div>
+    </div>`;
+  }
+
+  if(el.type==="object"){
+    const def=(OBJECTS||[]).find(o=>o.kind===el.objectType)||OBJECTS[0];
+    h+=`<div class="group"><span class="glabel">Object / data visual</span>
+      ${field("Object type",`<select id="f-objtype">${OBJECTS.map(o=>`<option value="${o.kind}" ${el.objectType===o.kind?"selected":""}>${o.icon} ${o.label}</option>`).join("")}</select>`)}
+      ${field("Label",`<input type="text" id="f-objlabel" value="${(el.label||def.label).replace(/"/g,"&quot;")}">`)}
+      ${field("Amount / count",`<input type="number" id="f-count" min="1" max="10000" value="${el.count||1}">`)}
+      ${field("Level "+(el.level||0)+"%",`<input type="range" id="f-level" min="0" max="100" value="${el.level||0}">`)}
+      ${field("Accent colour",`<input type="color" id="f-accent" value="${el.accent||def.accent||"#4cc9f0"}">`)}
+      ${field("Show label/count",`<div class="seg" id="f-showcount"><button data-show="1" class="${el.showCount!==false?"active":""}">Show</button><button data-show="0" class="${el.showCount===false?"active":""}">Hide</button></div>`)}
+      <div class="insp-empty" style="padding-top:.2rem">${def.help||"Animated visual object"}</div>
     </div>`;
   }
   h+=`<button class="del-el" id="f-del">Delete element</button>`;
@@ -293,10 +433,77 @@ function bindElementPanel(el){
     seg("f-italic","it",v=>{el.italic=v==="1";renderCanvas();markDirty();});
   }
   if(el.type==="rect"){bindRange("f-radius",v=>{el.radius=v;renderCanvas();markDirty();},v=>v,"Corner radius");}
+
+  if(el.type==="creative_shape"){
+    const st=$("#f-shapetype");st&&st.addEventListener("change",()=>{const d=(SHAPES||[]).find(s=>s.kind===st.value)||SHAPES[0];el.shapeType=d.kind;el.fill=el.fill||d.accent||"#e8482b";renderCanvas();markDirty();renderInspector();});
+    bindRange("f-shape-strokew",v=>{el.strokeW=v;renderCanvas();markDirty();},v=>v,"Stroke width");
+    bindRange("f-shape-opacity",v=>{el.opacity=v;renderCanvas();markDirty();},v=>Math.round(v*100)+"%","Opacity");
+  }
+
   if(el.type==="image"){bindRange("f-radius",v=>{el.radius=v;renderCanvas();markDirty();},v=>v,"Corner radius");
     $("#f-pickimg")&&$("#f-pickimg").addEventListener("click",()=>pickImageFor(el.id));
     seg("f-fit","fit",v=>{el.fit=v;renderCanvas();markDirty();});}
   if(el.type==="rect"||el.type==="ellipse"){bindRange("f-strokew",v=>{el.strokeW=v;renderCanvas();markDirty();},v=>v,"Stroke width");}
+
+  if(el.type==="video"){
+    const vt=$("#f-videotitle");vt&&vt.addEventListener("input",()=>{el.title=vt.value;renderCanvas();markDirty();});
+    const vs=$("#f-videosrc");vs&&vs.addEventListener("input",()=>{el.src=vs.value;renderCanvas();markDirty();});
+    const vp=$("#f-videoposter");vp&&vp.addEventListener("input",()=>{el.poster=vp.value;renderCanvas();markDirty();});
+    seg("f-videofit","fit",v=>{el.fit=v;renderCanvas();markDirty();});
+    seg("f-videocontrols","on",v=>{el.controls=v==="1";renderCanvas();markDirty();});
+    seg("f-videoautoplay","on",v=>{el.autoplay=v==="1";renderCanvas();markDirty();});
+    seg("f-videomuted","on",v=>{el.muted=v==="1";renderCanvas();markDirty();});
+    bindRange("f-videoradius",v=>{el.radius=v;renderCanvas();markDirty();},v=>v,"Corner radius");
+  }
+  if(el.type==="link"){
+    const ll=$("#f-linklabel");ll&&ll.addEventListener("input",()=>{el.label=ll.value;renderCanvas();markDirty();});
+    const lu=$("#f-linkurl");lu&&lu.addEventListener("input",()=>{el.url=lu.value;renderCanvas();markDirty();});
+    const ld=$("#f-linkdesc");ld&&ld.addEventListener("input",()=>{el.description=ld.value;renderCanvas();markDirty();});
+    const ls=$("#f-linkstyle");ls&&ls.addEventListener("change",()=>{el.linkStyle=ls.value;renderCanvas();markDirty();});
+    const lb=$("#f-linkbg");lb&&lb.addEventListener("input",()=>{el.bg=lb.value;el.accent=lb.value;renderCanvas();markDirty();});
+    const lc=$("#f-linkcolor");lc&&lc.addEventListener("input",()=>{el.textColor=lc.value;renderCanvas();markDirty();});
+    bindRange("f-linkradius",v=>{el.radius=v;renderCanvas();markDirty();},v=>v,"Corner radius");
+  }
+  if(el.type==="table"){
+    const data=$("#f-tabledata");data&&data.addEventListener("input",()=>{el.tableData=parseTableText(data.value);el.rows=el.tableData.length;el.cols=Math.max(1,...el.tableData.map(r=>r.length));renderCanvas();markDirty();});
+    const rows=$("#f-tablerows");rows&&rows.addEventListener("input",()=>{el.rows=Math.max(1,Number(rows.value)||1);renderCanvas();markDirty();});
+    const cols=$("#f-tablecols");cols&&cols.addEventListener("input",()=>{el.cols=Math.max(1,Number(cols.value)||1);renderCanvas();markDirty();});
+    const theme=$("#f-tabletheme");theme&&theme.addEventListener("change",()=>{el.theme=theme.value;renderCanvas();markDirty();});
+    bindRange("f-tablesize",v=>{el.size=v;renderCanvas();markDirty();},v=>v,"Font size");
+    const acc=$("#f-tableaccent");acc&&acc.addEventListener("input",()=>{el.accent=acc.value;el.headerColor=acc.value;renderCanvas();markDirty();});
+    const htc=$("#f-tableheadertext");htc&&htc.addEventListener("input",()=>{el.headerTextColor=htc.value;renderCanvas();markDirty();});
+    const txc=$("#f-tabletextcolor");txc&&txc.addEventListener("input",()=>{el.textColor=txc.value;renderCanvas();markDirty();});
+    const brd=$("#f-tableborder");brd&&brd.addEventListener("input",()=>{el.borderColor=brd.value;renderCanvas();markDirty();});
+    seg("f-tablestriped","on",v=>{el.striped=v==="1";renderCanvas();markDirty();});
+    seg("f-tableheader","header",v=>{el.header=v==="1";renderCanvas();markDirty();});
+  }
+  if(el.type==="chart"){
+    const title=$("#f-charttitle");title&&title.addEventListener("input",()=>{el.title=title.value;renderCanvas();markDirty();});
+    const kind=$("#f-chartkind");kind&&kind.addEventListener("change",()=>{el.chartKind=kind.value;renderCanvas();markDirty();});
+    const data=$("#f-chartdata");data&&data.addEventListener("input",()=>{el.chartData=parseChartText(data.value);renderCanvas();markDirty();});
+    const acc=$("#f-chartaccent");acc&&acc.addEventListener("input",()=>{el.accent=acc.value;renderCanvas();markDirty();});
+    seg("f-chartvalues","show",v=>{el.showValues=v==="1";renderCanvas();markDirty();});
+  }
+  if(el.type==="map"){
+    const title=$("#f-maptitle");title&&title.addEventListener("input",()=>{el.title=title.value;renderCanvas();markDirty();});
+    const kind=$("#f-mapkind");kind&&kind.addEventListener("change",()=>{el.mapKind=kind.value;renderCanvas();markDirty();});
+    const pins=$("#f-mappins");pins&&pins.addEventListener("input",()=>{el.pins=parsePinsText(pins.value);renderCanvas();markDirty();});
+    const acc=$("#f-mapaccent");acc&&acc.addEventListener("input",()=>{el.accent=acc.value;renderCanvas();markDirty();});
+    seg("f-maplabels","show",v=>{el.showLabels=v==="1";renderCanvas();markDirty();});
+  }
+
+  if(el.type==="object"){
+    const type=$("#f-objtype");type&&type.addEventListener("change",()=>{
+      const d=(OBJECTS||[]).find(o=>o.kind===type.value)||OBJECTS[0];
+      el.objectType=d.kind;el.label=d.label;el.icon=d.icon;el.count=d.count;el.level=d.level||0;el.accent=d.accent||el.accent;
+      el.w=d.w||el.w;el.h=d.h||el.h;renderAll();markDirty();
+    });
+    const lab=$("#f-objlabel");lab&&lab.addEventListener("input",()=>{el.label=lab.value;renderCanvas();markDirty();});
+    const count=$("#f-count");count&&count.addEventListener("input",()=>{el.count=Math.max(1,Number(count.value)||1);renderCanvas();markDirty();});
+    bindRange("f-level",v=>{el.level=v;renderCanvas();markDirty();},v=>v+"%","Level");
+    const acc=$("#f-accent");acc&&acc.addEventListener("input",()=>{el.accent=acc.value;renderCanvas();markDirty();});
+    seg("f-showcount","show",v=>{el.showCount=v==="1";renderCanvas();markDirty();});
+  }
   // swatches
   $$(".sw[data-color]",inspBody).forEach(s=>s.addEventListener("click",()=>{el.color=s.dataset.color;activateSwatch(s,"color");renderCanvas();markDirty();}));
   $$(".sw[data-fill]",inspBody).forEach(s=>s.addEventListener("click",()=>{el.fill=s.dataset.fill;activateSwatch(s,"fill");renderCanvas();markDirty();}));
@@ -344,6 +551,7 @@ function slidePanel(){
   bgs+="</div>";
   let trans=Object.entries(TRANSITIONS).map(([k,v])=>`<button class="chip ${s.transition===k?"active":""}" data-trans="${k}">${v}</button>`).join("");
   return `<div class="group"><span class="glabel">Slide background</span>${bgs}</div>
+    <div class="group"><span class="glabel">Presenter notes</span>${field("Notes for phone controller",`<textarea id="s-notes" rows="6" placeholder="Private notes visible on presenter phone only">${escapeTA(s.notes||"")}</textarea>`)}</div>
     <div class="group"><span class="glabel">Transition in</span><div class="chiprow">${trans}</div></div>
     <div class="group">
       <button class="tbtn" id="s-dup" style="width:100%;justify-content:center;margin-bottom:.5rem">Duplicate slide</button>
@@ -354,6 +562,7 @@ function bindSlidePanel(){
   const s=curSlide();
   $$(".bg-cell[data-bgi]",inspBody).forEach(c=>c.addEventListener("click",()=>{
     const b=BACKGROUNDS[Number(c.dataset.bgi)];s.bg=b.css;s.bgSize=b.size||null;renderAll();markDirty();}));
+  const notes=$("#s-notes");notes&&notes.addEventListener("input",()=>{s.notes=notes.value;renderFilmstrip();markDirty();});
   $$(".chip[data-trans]",inspBody).forEach(c=>c.addEventListener("click",()=>{
     s.transition=c.dataset.trans;$$(".chip[data-trans]",inspBody).forEach(x=>x.classList.remove("active"));c.classList.add("active");markDirty();}));
   $("#s-dup")&&$("#s-dup").addEventListener("click",()=>{const copy=JSON.parse(JSON.stringify(s));copy.id=uid();copy.els.forEach(e=>e.id=uid());
@@ -365,7 +574,7 @@ function bindSlidePanel(){
    DRAWERS (templates / backgrounds)
    ════════════════════════════════════════════════════════════════════ */
 function buildTplGallery(){
-  const g=$("#tpl-grid");g.innerHTML="";
+  const g=$("#tpl-grid");if(!g)return;g.innerHTML="";
   TEMPLATES.forEach(tpl=>{
     const card=document.createElement("div");card.className="tpl";
     card.innerHTML=`<span class="tname">${tpl.name}</span>`;
@@ -378,107 +587,39 @@ function buildTplGallery(){
   });
 }
 function buildBgGallery(){
-  const g=$("#bg-grid");g.innerHTML="";
+  const g=$("#bg-grid");if(!g)return;g.innerHTML="";
   BACKGROUNDS.forEach((b,i)=>{const cell=document.createElement("div");cell.className="bg-cell";
     cell.style.background=b.css;if(b.size)cell.style.backgroundSize=b.size;
     cell.innerHTML=`<span class="bgn">${b.name}</span>`;
-    cell.addEventListener("click",()=>{const s=curSlide();s.bg=b.css;s.bgSize=b.size||null;renderAll();});
+    cell.addEventListener("click",()=>{const s=curSlide();s.bg=b.css;s.bgSize=b.size||null;renderAll();markDirty();});
     g.appendChild(cell);});
 }
-function openDrawer(which){closeDrawers();$("#drawer-"+which).classList.add("open");
-  $("#rail-tpl").classList.toggle("active",which==="tpl");$("#rail-bg").classList.toggle("active",which==="bg");}
+function buildObjGallery(){
+  const g=$("#obj-grid");if(!g)return;g.innerHTML="";
+  (OBJECTS||[]).forEach(o=>{
+    const card=document.createElement("button");card.type="button";card.className="obj-card";
+    card.style.setProperty("--accent",o.accent||"#4cc9f0");
+    card.innerHTML=`<span class="oi">${o.icon}</span><div class="on">${o.label}</div><div class="oh">${o.help||""}</div>`;
+    card.addEventListener("click",()=>addObject(o.kind));
+    g.appendChild(card);
+  });
+}
+
+function buildShapeGallery(){
+  const g=$("#shape-grid");if(!g)return;g.innerHTML="";
+  (SHAPES||[]).forEach(s=>{
+    const card=document.createElement("button");card.type="button";card.className="shape-card";
+    card.style.setProperty("--accent",s.accent||"#e8482b");
+    card.innerHTML=`<svg viewBox="0 0 100 100" preserveAspectRatio="none"><path d="${s.d}"></path></svg><span>${s.label}</span>`;
+    card.addEventListener("click",()=>addCreativeShape(s.kind));
+    g.appendChild(card);
+  });
+}
+
+function openDrawer(which){closeDrawers();const d=$("#drawer-"+which);if(d)d.classList.add("open");
+  $("#rail-tpl")?.classList.toggle("active",which==="tpl");$("#rail-bg")?.classList.toggle("active",which==="bg");$("#rail-obj")?.classList.toggle("active",which==="obj");$("#rail-shape")?.classList.toggle("active",which==="shape");}
 function closeDrawers(){$$(".drawer").forEach(d=>d.classList.remove("open"));
-  $("#rail-tpl").classList.remove("active");$("#rail-bg").classList.remove("active");}
-
-/* ════════════════════════════════════════════════════════════════════
-   PRESENT MODE  +  live audience emoji
-   ════════════════════════════════════════════════════════════════════ */
-const REACTIONS=["❤️","👏","🔥","😂","😮","💯","🎉","👍","✨","🙌","🤯","💜"];
-const present   = $("#present");
-const pCanvas   = $("#present-canvas");
-const emojiLayer= $("#emoji-layer");
-let pIndex=0;
-
-function fitPresentCanvas(){
-  const pad=0;const aw=window.innerWidth-pad, ah=window.innerHeight-pad;
-  const z=Math.min(aw/W, ah/H);
-  pCanvas.style.width=W+"px";pCanvas.style.height=H+"px";
-  pCanvas.style.transform=`scale(${z})`;pCanvas.style.transformOrigin="center center";
-}
-function presentTransition(node,kind){
-  const map={
-    none:[{opacity:1}],
-    fade:[{opacity:0},{opacity:1}],
-    slide:[{transform:"translateX(60px)",opacity:0},{transform:"translateX(0)",opacity:1}],
-    push:[{transform:"translateX(100%)"},{transform:"translateX(0)"}],
-    zoom:[{transform:"scale(1.08)",opacity:0},{transform:"scale(1)",opacity:1}],
-    flip:[{transform:"perspective(1200px) rotateY(12deg)",opacity:0},{transform:"perspective(1200px) rotateY(0)",opacity:1}],
-    reveal:[{clipPath:"inset(0 0 100% 0)"},{clipPath:"inset(0 0 0 0)"}],
-  };
-  node.animate(map[kind]||map.fade,{duration:480,easing:"cubic-bezier(.22,1,.36,1)",fill:"both"});
-}
-function showPresentSlide(i){
-  pIndex=clamp(i,0,Deck.slides.length-1);
-  const s=Deck.slides[pIndex];
-  paintSlide(pCanvas,s,{live:true});
-  presentTransition(pCanvas,s.transition||"fade");
-  $("#pp-pos").textContent=`${pIndex+1} / ${Deck.slides.length}`;
-  Live.goto(pIndex);
-}
-function enterPresent(){
-  present.classList.add("on");
-  document.body.style.overflow="hidden";
-  $("#present-code").textContent=Deck.code;
-  $("#sim-code").textContent=Deck.code;
-  $("#sim-title").textContent=Deck.title;
-  $("#present-url").textContent="hanns.live/"+Deck.code.toLowerCase();
-  drawPresentQR();
-  buildReactionPad();
-  fitPresentCanvas();
-  showPresentSlide(Deck.cur);
-  Live.start(Deck.code);
-}
-function exitPresent(){present.classList.remove("on");document.body.style.overflow="";Live.stop();}
-function drawPresentQR(){
-  const box=$("#present-qr");box.innerHTML="";
-  if(typeof QRCode==="undefined")return;
-  new QRCode(box,{text:"https://hanns.live/"+Deck.code.toLowerCase(),width:84,height:84,
-    colorDark:"#16140f",colorLight:"#ffffff",correctLevel:QRCode.CorrectLevel.M});
-}
-function buildReactionPad(){
-  const g=$("#react-grid");g.innerHTML="";
-  REACTIONS.forEach(em=>{const b=document.createElement("button");b.className="react";b.textContent=em;
-    b.addEventListener("click",()=>Live.react(em));g.appendChild(b);});
-}
-function spawnEmoji(em){
-  const e=document.createElement("div");e.className="emoji-fly";e.textContent=em;
-  e.style.left=(8+Math.random()*84)+"%";
-  e.style.setProperty("--spin",(Math.random()*40-20)+"deg");
-  e.style.fontSize=(2+Math.random()*1.6)+"rem";
-  emojiLayer.appendChild(e);
-  setTimeout(()=>e.remove(),3700);
-}
-
-/* ── Live: local stand-in for the WebSocket layer ─────────────────────
-   Replace these four methods with a real socket to go multi-device.
-   start(code): open ws/hanns/<code>/ ; presenter_hello
-   react(em):   send {type:"react",emoji} (or, here, echo locally)
-   goto(i):     send {type:"goto",index:i}
-   stop():      close
-   Incoming {type:"reaction",emoji} → spawnEmoji(emoji).               */
-const Live={
-  _demo:null,
-  start(code){
-    // Demo heartbeat so you can SEE reactions flowing from "the audience".
-    this.stop();
-    this._demo=setInterval(()=>{
-      if(Math.random()<0.7) spawnEmoji(REACTIONS[Math.random()*REACTIONS.length|0]);
-    },900);
-  },
-  react(em){ spawnEmoji(em); /* + socket.send({type:"react",emoji:em}) */ },
-  goto(i){ /* socket.send({type:"goto",index:i}) */ },
-  stop(){ if(this._demo){clearInterval(this._demo);this._demo=null;} },
-};
+  $("#rail-tpl")?.classList.remove("active");$("#rail-bg")?.classList.remove("active");$("#rail-obj")?.classList.remove("active");$("#rail-shape")?.classList.remove("active");}
 
 /* ════════════════════════════════════════════════════════════════════
    EXPORT (save / standalone html)
@@ -512,7 +653,7 @@ function loadServerDeck(){
     Deck.code  = d.code  || Deck.code;
     Deck.slides = d.slides.map(s=>Object.assign(newSlide(),{
       id:String(s.id||uid()), bg:s.bg, bgSize:s.bgSize||null,
-      transition:s.transition||"fade",
+      transition:s.transition||"fade", notes:s.notes||"",
       els:(s.els||[]).map(e=>Object.assign({},e)),
     }));
   } else {
@@ -527,14 +668,15 @@ function loadServerDeck(){
 
 /* Persist the whole deck to Django (deck_save). Debounced autosave + an
    explicit Save button both call this. */
-let saveTimer=null, saving=false;
+let saveTimer=null, saving=false, queuedSave=false;
 function deckPayload(){
   return {title:Deck.title, allow_reactions:true,
-    slides:Deck.slides.map(s=>({bg:s.bg,bgSize:s.bgSize,transition:s.transition,els:s.els}))};
+    slides:Deck.slides.map(s=>({bg:s.bg,bgSize:s.bgSize,transition:s.transition,notes:s.notes||"",els:s.els}))};
 }
 async function saveDeck(silent){
-  if(!SRV.saveUrl||saving)return;
-  saving=true;updateSaveState("saving");
+  if(!SRV.saveUrl){updateSaveState("error");if(!silent)toast("Save URL is missing");return false;}
+  if(saving){queuedSave=true;return false;}
+  clearTimeout(saveTimer);saving=true;queuedSave=false;updateSaveState("saving");
   try{
     const r=await fetch(SRV.saveUrl,{method:"POST",
       headers:{"Content-Type":"application/json","X-CSRFToken":SRV.csrftoken||""},
@@ -543,10 +685,11 @@ async function saveDeck(silent){
     await r.json();
     updateSaveState("saved");
     if(!silent)toast("Saved");
-  }catch(err){console.error(err);updateSaveState("error");if(!silent)toast("Couldn’t save — check your connection");}
-  finally{saving=false;}
+    return true;
+  }catch(err){console.error(err);updateSaveState("error");if(!silent)toast("Couldn’t save — check your connection");return false;}
+  finally{saving=false;if(queuedSave){queuedSave=false;saveDeck(true);}}
 }
-function scheduleSave(){updateSaveState("dirty");clearTimeout(saveTimer);saveTimer=setTimeout(()=>saveDeck(true),1400);}
+function scheduleSave(){updateSaveState("dirty");clearTimeout(saveTimer);saveTimer=setTimeout(()=>saveDeck(true),900);}
 function updateSaveState(state){
   const b=$("#btn-save");if(!b)return;
   const map={saving:"Saving…",saved:"Saved",dirty:"Save",error:"Retry save"};
@@ -558,10 +701,14 @@ function init(){
 
   // rail add buttons
   $$(".rail .tool[data-add]").forEach(b=>b.addEventListener("click",()=>addElement(b.dataset.add)));
-  $("#rail-tpl").addEventListener("click",()=>{const open=$("#drawer-tpl").classList.contains("open");open?closeDrawers():openDrawer("tpl");});
-  $("#rail-bg").addEventListener("click",()=>{const open=$("#drawer-bg").classList.contains("open");open?closeDrawers():openDrawer("bg");});
+  $("#rail-tpl")?.addEventListener("click",()=>{const open=$("#drawer-tpl").classList.contains("open");open?closeDrawers():openDrawer("tpl");});
+  $("#rail-bg")?.addEventListener("click",()=>{const open=$("#drawer-bg").classList.contains("open");open?closeDrawers():openDrawer("bg");});
+  $("#rail-obj")?.addEventListener("click",()=>{const open=$("#drawer-obj").classList.contains("open");open?closeDrawers():openDrawer("obj");});
+  $("#rail-shape")?.addEventListener("click",()=>{const open=$("#drawer-shape").classList.contains("open");open?closeDrawers():openDrawer("shape");});
   $$("[data-close-drawer]").forEach(b=>b.addEventListener("click",closeDrawers));
-  $("#btn-templates").addEventListener("click",()=>openDrawer("tpl"));
+  $("#btn-templates")?.addEventListener("click",()=>openDrawer("tpl"));
+  $("#btn-objects")?.addEventListener("click",()=>openDrawer("obj"));
+  $("#btn-shapes")?.addEventListener("click",()=>openDrawer("shape"));
 
   // filmstrip
   $("#add-slide").addEventListener("click",()=>addSlide());
@@ -582,28 +729,25 @@ function init(){
 
   // present — save first, then open the server-rendered stage (real socket)
   $("#btn-present").addEventListener("click",async()=>{
-    await saveDeck(true);
-    if(SRV.presentUrl)window.location.href=SRV.presentUrl;
-    else enterPresent(); // fallback (standalone)
+    const ok = await saveDeck(false);
+    if(ok && SRV.presentUrl) window.location.href=SRV.presentUrl;
   });
-  $("#present-exit").addEventListener("click",exitPresent);
-  $("#pp-prev").addEventListener("click",()=>showPresentSlide(pIndex-1));
-  $("#pp-next").addEventListener("click",()=>showPresentSlide(pIndex+1));
 
   // save (explicit) + Ctrl/Cmd-S
   $("#btn-save")&&$("#btn-save").addEventListener("click",()=>saveDeck(false));
+
+  // export
+  $("#btn-export")&&$("#btn-export").addEventListener("click",()=>{$("#export-deckname").textContent=Deck.title;$("#export-modal").classList.add("on");});
+  $$("[data-close-modal]").forEach(b=>b.addEventListener("click",()=>$("#export-modal").classList.remove("on")));
+  $("#export-json")&&$("#export-json").addEventListener("click",()=>{exportJSON();$("#export-modal").classList.remove("on");});
+  $("#export-html")&&$("#export-html").addEventListener("click",()=>{exportStandaloneHTML();$("#export-modal").classList.remove("on");});
   document.addEventListener("keydown",e=>{
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="s"){e.preventDefault();saveDeck(false);}
   });
+  document.addEventListener("visibilitychange",()=>{if(document.hidden&&appReady)saveDeck(true);});
 
   // keyboard
   document.addEventListener("keydown",e=>{
-    if(present.classList.contains("on")){
-      if(e.key==="Escape")exitPresent();
-      else if(e.key==="ArrowRight"||e.key===" ")showPresentSlide(pIndex+1);
-      else if(e.key==="ArrowLeft")showPresentSlide(pIndex-1);
-      return;
-    }
     const tag=(e.target.tagName||"").toLowerCase();
     const editing=e.target.isContentEditable||tag==="input"||tag==="textarea";
     if(editing)return;
@@ -612,9 +756,9 @@ function init(){
     else if(e.key==="ArrowLeft")gotoSlide(Deck.cur-1);
   });
 
-  window.addEventListener("resize",()=>{applyZoom();if(present.classList.contains("on"))fitPresentCanvas();renderFilmstrip();});
+  window.addEventListener("resize",()=>{applyZoom();renderFilmstrip();});
 
-  buildTplGallery();buildBgGallery();
+  buildTplGallery();buildBgGallery();buildObjGallery();buildShapeGallery();
   renderAll();
   appReady=true;
   updateSaveState("saved");
@@ -629,7 +773,7 @@ const STANDALONE_VIEWER = `<!doctype html><html><head><meta charset="utf-8">
 #st{position:fixed;inset:0;display:grid;place-items:center}
 #cv{width:960px;height:540px;position:relative;overflow:hidden;transform-origin:center}
 .el{position:absolute}.el-inner{width:100%;height:100%;position:relative}
-.shape{width:100%;height:100%}.imgbox{width:100%;height:100%;background-size:cover;background-position:center}
+.shape{width:100%;height:100%}.imgbox{width:100%;height:100%;background-size:cover;background-position:center}.dataMini{width:100%;height:100%;background:#fff;border-radius:18px;overflow:hidden;color:#111;font-family:Archivo,sans-serif;box-shadow:0 16px 40px #0002}.dataMini table{width:100%;height:100%;border-collapse:collapse;table-layout:fixed}.dataMini th,.dataMini td{border:1px solid #0001;padding:8px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.dataMini th{background:var(--accent,#1d4e89);color:#fff}.chartMini{padding:18px 22px}.chartMini h3,.mapMini h3{margin:0 0 14px;font-size:22px}.barMini{height:22px;background:var(--accent,#e8482b);border-radius:999px;margin:8px 0}.mapMini{padding:18px 22px;background:linear-gradient(135deg,#ecfeff,#f8fafc)}.pinMini{display:inline-block;background:var(--accent,#2f6f4f);color:#fff;border-radius:999px;padding:8px 12px;margin:6px;font-weight:700}.objectMini{width:100%;height:100%;display:grid;place-items:center;background:#fff;border-radius:18px;font-size:34px}
 .nav{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);display:flex;gap:.5rem;
 background:rgba(20,18,14,.8);border:1px solid #333;border-radius:999px;padding:.4rem .6rem;z-index:5}
 .nav button{background:0;border:0;color:#fff;font-size:1.1rem;cursor:pointer;width:30px;height:30px;border-radius:50%}
@@ -651,6 +795,10 @@ function paint(s,live){cv.innerHTML="";cv.style.background=s.bg;if(s.bgSize)cv.s
     if(el.stroke&&el.stroke!=="none"&&el.strokeW)sh.style.border=el.strokeW+"px solid "+el.stroke;inr.appendChild(sh);}
   else if(el.type==="line"){var ln=document.createElement("div");ln.className="shape";ln.style.background=el.fill;ln.style.borderRadius="999px";inr.appendChild(ln);}
   else if(el.type==="image"){var im=document.createElement("div");im.className="imgbox";if(el.src){im.style.backgroundImage='url("'+el.src+'")';im.style.backgroundSize=el.fit;}im.style.borderRadius=(el.radius||0)+"px";inr.appendChild(im);}
+  else if(el.type==="table"){var tb=document.createElement("div");tb.className="dataMini";tb.style.setProperty("--accent",el.accent||"#1d4e89");var h="<table>";(el.tableData||[]).forEach(function(r,ri){h+="<tr>";(r||[]).forEach(function(c){h+=(ri===0&&el.header!==false?"<th>":"<td>")+String(c).replace(/[<>&]/g,function(x){return {"<":"&lt;",">":"&gt;","&":"&amp;"}[x]})+(ri===0&&el.header!==false?"</th>":"</td>")});h+="</tr>"});tb.innerHTML=h+"</table>";inr.appendChild(tb);}
+  else if(el.type==="chart"){var ch=document.createElement("div");ch.className="dataMini chartMini";ch.style.setProperty("--accent",el.accent||"#e8482b");var cd=el.chartData||[];var m=Math.max(1);cd.forEach(function(d){m=Math.max(m,Number(d.value)||0)});var h2="<h3>"+(el.title||"Chart")+"</h3>";cd.forEach(function(d){var v=Number(d.value)||0;h2+="<div style='font-weight:700;margin-top:8px'>"+(d.label||"")+" <span style='float:right'>"+v+"</span></div><div class='barMini' style='width:"+(v/m*92+4)+"%'></div>"});ch.innerHTML=h2;inr.appendChild(ch);}
+  else if(el.type==="map"){var mp=document.createElement("div");mp.className="dataMini mapMini";mp.style.setProperty("--accent",el.accent||"#2f6f4f");var mh="<h3>"+(el.title||"Map")+"</h3>";(el.pins||[]).forEach(function(pin){mh+="<span class='pinMini'>"+(pin.label||"Pin")+(pin.value?" · "+pin.value:"")+"</span>"});mp.innerHTML=mh;inr.appendChild(mp);}
+  else if(el.type==="object"){var ob=document.createElement("div");ob.className="objectMini";var ic=el.icon||"●";var n=Math.min(Number(el.count)||1,60);ob.textContent=Array(n).fill(ic).join(" ");inr.appendChild(ob);}
   n.appendChild(inr);cv.appendChild(n);
   if(live&&el.anim&&el.anim!=="none"){var f={fade:[{opacity:0},{opacity:1}],rise:[{opacity:0,transform:"translateY(40px) rotate("+(el.rot||0)+"deg)"},{opacity:1,transform:"translateY(0) rotate("+(el.rot||0)+"deg)"}],drop:[{opacity:0,transform:"translateY(-40px)"},{opacity:1,transform:"translateY(0)"}],left:[{opacity:0,transform:"translateX(-60px)"},{opacity:1,transform:"translateX(0)"}],right:[{opacity:0,transform:"translateX(60px)"},{opacity:1,transform:"translateX(0)"}],zoom:[{opacity:0,transform:"scale(.6)"},{opacity:1,transform:"scale(1)"}],pop:[{opacity:0,transform:"scale(.3)"},{opacity:1,transform:"scale(1)"}],blur:[{opacity:0,filter:"blur(14px)"},{opacity:1,filter:"blur(0)"}],reveal:[{opacity:0,clipPath:"inset(0 100% 0 0)"},{opacity:1,clipPath:"inset(0 0 0 0)"}]};
    n.style.opacity=0;n.animate(f[el.anim]||f.fade,{duration:640,delay:(el.animDelay||0)*1000,easing:"cubic-bezier(.22,1,.36,1)",fill:"both"});}

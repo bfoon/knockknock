@@ -34,6 +34,16 @@ def _join_url(request, deck):
     return request.build_absolute_uri(reverse("hanns:join", args=[deck.code]))
 
 
+def _control_pin(deck):
+    """Deterministic 4-digit presenter-controller PIN. No migration needed."""
+    total = sum((i + 1) * ord(ch) for i, ch in enumerate(deck.code or "HANNS"))
+    return str(1000 + (total % 9000))
+
+
+def _control_url(request, deck):
+    return request.build_absolute_uri(reverse("hanns:control", args=[deck.code]))
+
+
 # ── owner-facing ─────────────────────────────────────────────────────
 @login_required
 def deck_list(request):
@@ -113,6 +123,7 @@ def deck_save(request, code):
                 "bg": s.get("bg", "#f6f1e7"),
                 "bgSize": s.get("bgSize"),
                 "transition": s.get("transition", "fade"),
+                "notes": s.get("notes", ""),
                 "els": s.get("els", []) if isinstance(s.get("els"), list) else [],
             }))
         Slide.objects.bulk_create(bulk)
@@ -135,6 +146,21 @@ def deck_present(request, code):
         "deck": deck,
         "deck_json": json.dumps(deck.as_dict()),
         "join_url": _join_url(request, deck),
+        "control_url": _control_url(request, deck),
+        "control_pin": _control_pin(deck),
+    })
+
+
+def deck_control(request, code):
+    """
+    Hidden presenter phone controller. Public page, protected by the PIN shown
+    only from the presenter screen controller modal.
+    """
+    deck = get_object_or_404(Deck, code=code.upper())
+    return render(request, "hanns/control.html", {
+        "deck": deck,
+        "deck_json": json.dumps(deck.as_dict()),
+        "control_pin": _control_pin(deck),
     })
 
 

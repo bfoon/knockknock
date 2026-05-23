@@ -39,6 +39,7 @@ urlpatterns = [
     path("<str:code>/edit/", views.deck_edit, name="edit"),
     path("<str:code>/save/", views.deck_save, name="save"),
     path("<str:code>/present/", views.deck_present, name="present"),
+    path("<str:code>/control/", views.deck_control, name="control"),
     path("<str:code>/state/", views.deck_set_state, name="set_state"),
     path("<str:code>/delete/", views.deck_delete, name="delete"),
 

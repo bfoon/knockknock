@@ -20,9 +20,12 @@
   .lead{font-family:"Fraunces",serif;font-size:2.4rem;font-weight:600;margin:.4rem 0 0;line-height:1}
   .lead em{font-style:italic;color:var(--fog2)}
   .sub{color:var(--fog);font-size:.9rem;margin-top:.4rem;font-family:"Spline Sans Mono",monospace}
+  .top-actions{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;justify-content:flex-end}
   .btn{display:inline-flex;align-items:center;gap:.5rem;background:var(--signal);color:#fff;border:0;
     border-radius:11px;padding:.7rem 1.1rem;font-weight:700;font-size:.92rem;cursor:pointer;text-decoration:none}
   .btn:hover{background:var(--signal2)}
+  .btn.secondary{background:var(--ink3);border:1px solid var(--line);color:var(--fog2)}
+  .btn.secondary:hover{background:#363126;border-color:#4b4536;color:#fff}
   form.inline{display:inline}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1.2rem}
   .card{background:var(--ink2);border:1px solid var(--line);border-radius:16px;overflow:hidden;
@@ -57,13 +60,19 @@
       <h1 class="lead">Your <em>decks</em></h1>
       <p class="sub">{{ decks_total }} deck{{ decks_total|pluralize }} · magazine-level presentations</p>
     </div>
-    <form class="inline" method="post" action="{% url 'hanns:create' %}">
-      {% csrf_token %}
-      <button class="btn" type="submit">
-        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-        New deck
-      </button>
-    </form>
+    <div class="top-actions">
+      <a class="btn secondary" href="{% url 'core:dashboard' %}">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>
+        Main dashboard
+      </a>
+      <form class="inline" method="post" action="{% url 'hanns:create' %}">
+        {% csrf_token %}
+        <button class="btn" type="submit">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          New deck
+        </button>
+      </form>
+    </div>
   </header>
 
   {% if decks %}

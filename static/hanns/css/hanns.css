@@ -870,3 +870,43 @@ input[type=range]{width:100%;accent-color:var(--signal)}
 @keyframes hannsPhonePoint{0%{opacity:0;transform:scale(.55)}25%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.65)}}
 .phone-notes{white-space:pre-wrap}
 @media (max-width:420px){.phone-secondary-actions{grid-template-columns:1fr}.phone-preview-head{display:block}.phone-preview-head span{display:block;max-width:none;text-align:left;margin-top:4px}.presenter-pointer::before{font-size:64px}}
+
+/* ── Slide drag/drop sorting ─────────────────────────────────────── */
+.thumb{touch-action:manipulation}
+.thumb[draggable="true"]{cursor:grab}
+.thumb.dragging{opacity:.45;transform:scale(.98);cursor:grabbing}
+.thumb.drop-target{border-color:var(--gold);box-shadow:0 0 0 2px rgba(216,162,58,.35)}
+.thumb.drop-before::before,
+.thumb.drop-after::after{
+  content:"";position:absolute;left:8px;right:8px;height:4px;border-radius:999px;
+  background:var(--signal);z-index:8;box-shadow:0 0 16px rgba(232,72,43,.65);
+}
+.thumb.drop-before::before{top:4px}
+.thumb.drop-after::after{bottom:4px}
+.thumb .drag-grip{
+  position:absolute;right:26px;top:4px;z-index:4;
+  font-family:var(--font-mono);font-size:.62rem;line-height:1;color:#fff;
+  background:rgba(0,0,0,.46);border-radius:5px;padding:.12rem .28rem;
+  letter-spacing:-.18em;opacity:.72;pointer-events:none;
+}
+.thumb:hover .drag-grip{opacity:1;background:rgba(0,0,0,.68)}
+
+/* ── Arrange controls ────────────────────────────────────────────── */
+.arrange-grid{display:grid;grid-template-columns:1fr 1fr;gap:.45rem}
+.tbtn.mini{
+  justify-content:center;padding:.45rem .5rem;font-size:.74rem;border-radius:8px;
+  white-space:normal;line-height:1.15;text-align:center;
+}
+
+/* ── Object container visibility ─────────────────────────────────── */
+.object-box.object-bare{
+  background:transparent!important;
+  box-shadow:none!important;
+  border-radius:0!important;
+  overflow:visible!important;
+}
+.object-box.object-bare::before,
+.object-box.object-bare::after{display:none!important}
+.object-box.object-bare .object-grid{padding:8px 8px 44px}
+.object-box.object-bare .object-glass{filter:drop-shadow(0 16px 28px rgba(0,0,0,.22))}
+.object-box.object-bare .object-badge{box-shadow:0 10px 26px rgba(0,0,0,.22)}

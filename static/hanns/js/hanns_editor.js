@@ -17,6 +17,8 @@ let inspTab = "element";
 let appReady = false;     // gates autosave until the deck has loaded
 let zoom = 1;          // current canvas scale
 let zoomMode = "fit";  // "fit" | number
+let slideDragFrom = null;
+let slideDragMoved = false;
 
 function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("on");
   clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("on"),1800);}
@@ -57,18 +59,77 @@ function renderFilmstrip(){
   Deck.slides.forEach((s,i)=>{
     const th=document.createElement("div");
     th.className="thumb"+(i===Deck.cur?" active":"");
-    th.innerHTML=`<span class="num">${i+1}</span><button class="del" title="Delete">✕</button>`;
+    th.draggable=true;
+    th.dataset.index=i;
+    th.title="Drag to reorder slides";
+    th.innerHTML=`<span class="num">${i+1}</span><button class="del" title="Delete">✕</button><span class="drag-grip" title="Drag slide">⋮⋮</span>`;
     const mini=document.createElement("div");mini.className="mini";
     mini.style.width=W+"px";mini.style.height=H+"px";
     paintSlide(mini,s,{live:false});
     // scale mini into the thumb width
     requestAnimationFrame(()=>{const sc=th.clientWidth/W;mini.style.transform=`scale(${sc})`;});
     th.appendChild(mini);
-    th.addEventListener("click",e=>{if(e.target.closest(".del"))return;gotoSlide(i);});
+
+    th.addEventListener("click",e=>{
+      if(e.target.closest(".del"))return;
+      if(slideDragMoved){slideDragMoved=false;return;}
+      gotoSlide(i);
+    });
     th.querySelector(".del").addEventListener("click",e=>{e.stopPropagation();deleteSlide(i);});
+
+    th.addEventListener("dragstart",e=>{
+      slideDragFrom=i;
+      slideDragMoved=false;
+      th.classList.add("dragging");
+      e.dataTransfer.effectAllowed="move";
+      e.dataTransfer.setData("text/plain", String(i));
+    });
+    th.addEventListener("dragover",e=>{
+      e.preventDefault();
+      e.dataTransfer.dropEffect="move";
+      $$(".thumb",slidesEl).forEach(x=>x.classList.remove("drop-target","drop-before","drop-after"));
+      th.classList.add("drop-target");
+      const r=th.getBoundingClientRect();
+      th.classList.toggle("drop-before", e.clientY < r.top + r.height/2);
+      th.classList.toggle("drop-after", e.clientY >= r.top + r.height/2);
+    });
+    th.addEventListener("dragleave",()=>th.classList.remove("drop-target","drop-before","drop-after"));
+    th.addEventListener("drop",e=>{
+      e.preventDefault();e.stopPropagation();
+      const from = slideDragFrom!=null ? slideDragFrom : Number(e.dataTransfer.getData("text/plain"));
+      const r=th.getBoundingClientRect();
+      let to=i + (e.clientY >= r.top + r.height/2 ? 1 : 0);
+      reorderSlide(from,to);
+    });
+    th.addEventListener("dragend",()=>{
+      th.classList.remove("dragging");
+      $$(".thumb",slidesEl).forEach(x=>x.classList.remove("drop-target","drop-before","drop-after"));
+      slideDragFrom=null;
+    });
     slidesEl.appendChild(th);
   });
   requestAnimationFrame(()=>{ if(slidesEl) slidesEl.scrollTop = keepTop; });
+}
+
+function reorderSlide(from,to){
+  from=Number(from);to=Number(to);
+  if(Number.isNaN(from)||Number.isNaN(to))return;
+  if(from<0||from>=Deck.slides.length)return;
+  // `to` is the insertion slot before removing the slide. If dragging down,
+  // remove first means the target slot shifts left by one.
+  if(to>from)to-=1;
+  to=clamp(to,0,Deck.slides.length-1);
+  if(from===to)return;
+  const [moved]=Deck.slides.splice(from,1);
+  Deck.slides.splice(to,0,moved);
+  if(Deck.cur===from)Deck.cur=to;
+  else if(from<Deck.cur && to>=Deck.cur)Deck.cur-=1;
+  else if(from>Deck.cur && to<=Deck.cur)Deck.cur+=1;
+  Deck.sel=null;
+  slideDragMoved=true;
+  renderAll();
+  markDirty();
+  toast("Slide order updated");
 }
 function renderAll(){renderCanvas();renderFilmstrip();renderInspector();updateNotesPanel();}
 /* Call after any genuine content mutation (not navigation) to autosave. */
@@ -138,6 +199,23 @@ function selectEl(id){Deck.sel=id;
 }
 function deleteEl(id){const s=curSlide();s.els=s.els.filter(e=>e.id!==id);
   if(Deck.sel===id)Deck.sel=null;renderAll();markDirty();}
+
+function moveElementLayer(action){
+  const s=curSlide();const el=selEl();if(!s||!el)return;
+  const i=s.els.findIndex(x=>x.id===el.id);
+  if(i<0)return;
+  let ni=i;
+  if(action==="front")ni=s.els.length-1;
+  else if(action==="back")ni=0;
+  else if(action==="forward")ni=Math.min(s.els.length-1,i+1);
+  else if(action==="backward")ni=Math.max(0,i-1);
+  if(ni===i){toast(action==="front"?"Already in front":action==="back"?"Already behind":"No layer change");return;}
+  s.els.splice(i,1);
+  s.els.splice(ni,0,el);
+  Deck.sel=el.id;
+  renderAll();markDirty();
+  toast(action==="front"?"Brought to front":action==="back"?"Sent behind":action==="forward"?"Moved forward":"Moved backward");
+}
 
 /* image picker */
 let pendingImgId=null;
@@ -387,6 +465,15 @@ function elementPanel(el){
     ${field("Rotation "+(el.rot||0)+"°",`<input type="range" id="f-rot" min="-180" max="180" value="${el.rot||0}">`)}
   </div>`;
 
+  h+=`<div class="group"><span class="glabel">Arrange / layer order</span>
+    <div class="arrange-grid">
+      <button class="tbtn mini" id="f-layer-back" type="button" title="Send behind all elements">Send behind</button>
+      <button class="tbtn mini" id="f-layer-backward" type="button" title="Move one step backward">Backward</button>
+      <button class="tbtn mini" id="f-layer-forward" type="button" title="Move one step forward">Forward</button>
+      <button class="tbtn mini" id="f-layer-front" type="button" title="Bring in front of all elements">Bring front</button>
+    </div>
+  </div>`;
+
   if(el.type==="text"){
     h+=`<div class="group"><span class="glabel">Text</span>
       ${field("Content",`<textarea id="f-text">${el.text.replace(/</g,"&lt;")}</textarea>`)}
@@ -546,6 +633,7 @@ function elementPanel(el){
       ${field("Level "+(el.level||0)+"%",`<input type="range" id="f-level" min="0" max="100" value="${el.level||0}">`)}
       ${field("Accent colour",`<input type="color" id="f-accent" value="${el.accent||def.accent||"#4cc9f0"}">`)}
       ${field("Show label/count",`<div class="seg" id="f-showcount"><button data-show="1" class="${el.showCount!==false?"active":""}">Show</button><button data-show="0" class="${el.showCount===false?"active":""}">Hide</button></div>`)}
+      ${field("Container box",`<div class="seg" id="f-objbox"><button data-box="show" class="${!el.hideContainer?"active":""}">Show box</button><button data-box="hide" class="${el.hideContainer?"active":""}">Hide box</button></div>`)}
       <div class="insp-empty" style="padding-top:.2rem">${def.help||"Animated visual object"}</div>
     </div>`;
   }
@@ -557,6 +645,10 @@ function bindElementPanel(el){
   const num=(id,k)=>{const i=$("#"+id);if(i)i.addEventListener("input",()=>{el[k]=Number(i.value)||0;renderCanvas();markDirty();});};
   num("f-x","x");num("f-y","y");num("f-w","w");num("f-h","h");
   bindRange("f-rot",v=>{el.rot=v;renderCanvas();markDirty();},v=>v+"°","Rotation");
+  $("#f-layer-front")&&$("#f-layer-front").addEventListener("click",()=>moveElementLayer("front"));
+  $("#f-layer-forward")&&$("#f-layer-forward").addEventListener("click",()=>moveElementLayer("forward"));
+  $("#f-layer-backward")&&$("#f-layer-backward").addEventListener("click",()=>moveElementLayer("backward"));
+  $("#f-layer-back")&&$("#f-layer-back").addEventListener("click",()=>moveElementLayer("back"));
   if(el.type==="text"){
     const ta=$("#f-text");ta&&ta.addEventListener("input",()=>{el.text=ta.value;renderCanvas();markDirty();});
     const fo=$("#f-font");fo&&fo.addEventListener("change",()=>{el.font=fo.value;renderCanvas();markDirty();});
@@ -658,6 +750,7 @@ function bindElementPanel(el){
     bindRange("f-level",v=>{el.level=v;renderCanvas();markDirty();},v=>v+"%","Level");
     const acc=$("#f-accent");acc&&acc.addEventListener("input",()=>{el.accent=acc.value;renderCanvas();markDirty();});
     seg("f-showcount","show",v=>{el.showCount=v==="1";renderCanvas();markDirty();});
+    seg("f-objbox","box",v=>{el.hideContainer=(v==="hide");renderCanvas();markDirty();});
   }
   // swatches
   $$(".sw[data-color]",inspBody).forEach(s=>s.addEventListener("click",()=>{el.color=s.dataset.color;activateSwatch(s,"color");renderCanvas();markDirty();}));

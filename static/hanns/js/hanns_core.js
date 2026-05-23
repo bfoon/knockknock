@@ -3794,7 +3794,8 @@ function renderGlass(el,mode){
 }
 function renderObject(el){
   const d=objectDef(el.objectType);
-  const box=document.createElement("div");box.className="object-box object-"+(el.objectType||"custom");
+  const box=document.createElement("div");
+  box.className="object-box object-"+(el.objectType||"custom")+(el.hideContainer?" object-bare":"");
   box.style.setProperty("--accent", el.accent||d.accent||"#4cc9f0");
   if(el.objectType==="water_glass") box.appendChild(renderGlass(el,"water"));
   else if(el.objectType==="sand_glass") box.appendChild(renderGlass(el,"sand"));

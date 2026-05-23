@@ -6,22 +6,40 @@
 <title>Controller · {{ deck.title }} · Hanns</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800;900&family=Spline+Sans+Mono:wght@500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=9">
+<link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=11">
 </head>
 <body class="phone-control">
   <main class="phone-card">
     <div class="phone-status" id="status">ENTER PIN TO CONNECT</div>
     <h1>{{ deck.title }}</h1>
     <div class="phone-slide-title" id="slide-title">Slide 1</div>
+
     <div class="pin-row" id="pin-row">
       <input id="pin" inputmode="numeric" maxlength="4" autocomplete="one-time-code" placeholder="PIN">
       <button id="connect" type="button">Connect</button>
     </div>
+
     <div class="phone-controls" id="controls" hidden>
-      <button id="prev" type="button">‹</button>
-      <button id="next" type="button">›</button>
+      <button id="prev" type="button" aria-label="Previous slide">‹</button>
+      <button id="next" type="button" aria-label="Next slide">›</button>
     </div>
-    <button class="phone-btn" id="toggle-notes" type="button" hidden>Show / hide presenter notes</button>
+
+    <div class="phone-secondary-actions" id="phone-secondary-actions" hidden>
+      <button class="phone-btn" id="toggle-preview" type="button">Show slide preview</button>
+      <button class="phone-btn" id="toggle-notes" type="button">Show presenter notes</button>
+    </div>
+
+    <section class="phone-preview-wrap" id="phone-preview-wrap" hidden>
+      <div class="phone-preview-head">
+        <strong>Current slide preview</strong>
+        <span>Tap anywhere to point on the projector</span>
+      </div>
+      <div class="phone-preview-stage" id="phone-preview-stage">
+        <div class="phone-preview-canvas" id="phone-preview-canvas"></div>
+        <div class="phone-preview-pointer" id="phone-preview-pointer" hidden></div>
+      </div>
+    </section>
+
     <section class="phone-notes" id="notes" hidden>No notes for this slide.</section>
   </main>
 <script>
@@ -30,19 +48,132 @@ window.__HANNS_CONTROL__ = {
   wsUrl: (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/hanns/{{ deck.code }}/"
 };
 </script>
+<script src="{% static 'hanns/js/hanns_core.js' %}?v=11"></script>
 <script>
 (function(){
 "use strict";
-const CFG=window.__HANNS_CONTROL__||{};const D=CFG.deck||{slides:[],current_slide:0};
-const $=s=>document.querySelector(s);let i=D.current_slide||0;let sock=null;let connected=false;
+const CFG=window.__HANNS_CONTROL__||{};
+const D=CFG.deck||{slides:[],current_slide:0,title:"Hanns"};
+const Hx=window.Hanns||{};
+const W=Hx.W||960, H=Hx.H||540;
+const $=s=>document.querySelector(s);
+let i=Number(D.current_slide)||0;
+let sock=null;
+let connected=false;
+let previewVisible=false;
+let notesVisible=false;
+
 function params(){return new URLSearchParams(location.search)}
-function setStatus(t){$("#status").textContent=t;}
-function render(){const s=D.slides[i]||{};$("#slide-title").textContent=`Slide ${i+1} / ${D.slides.length||1}`;$("#notes").textContent=s.notes||"No presenter notes for this slide.";}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+function setStatus(t){const el=$("#status"); if(el) el.textContent=t;}
 function send(o){if(sock&&sock.readyState===1)sock.send(JSON.stringify(o));}
-function connect(){const pin=$("#pin").value.trim();if(!pin){setStatus("ENTER THE PIN SHOWN ON THE PRESENTER SCREEN");return;}sock=new WebSocket(CFG.wsUrl);sock.addEventListener("open",()=>send({type:"controller_hello",pin}));sock.addEventListener("message",ev=>{let m;try{m=JSON.parse(ev.data)}catch(e){return}if(m.type==="controller_ok"){connected=true;i=Number(m.current_slide)||i;$("#pin-row").hidden=true;$("#controls").hidden=false;$("#toggle-notes").hidden=false;setStatus("CONNECTED · PHONE CONTROLLER READY");render();}else if(m.type==="controller_denied"){setStatus("WRONG PIN");try{sock.close()}catch(e){}}else if(m.type==="goto"&&typeof m.index==="number"){i=Math.max(0,Math.min(m.index,D.slides.length-1));render();}});sock.addEventListener("close",()=>{if(connected)setStatus("DISCONNECTED · TAP CONNECT AGAIN");});}
-function go(n){if(!connected)return;i=Math.max(0,Math.min(n,D.slides.length-1));render();send({type:"goto",index:i});}
-$("#connect").addEventListener("click",connect);$("#prev").addEventListener("click",()=>go(i-1));$("#next").addEventListener("click",()=>go(i+1));$("#toggle-notes").addEventListener("click",()=>{$("#notes").hidden=!$("#notes").hidden;});
-const qp=params().get("pin");if(qp){$("#pin").value=qp;setTimeout(connect,250);}render();
+function currentSlide(){return (D.slides||[])[i]||{};}
+function mergeSlide(index, slide){
+  if(!slide || !D.slides) return;
+  if(!Array.isArray(D.slides)) D.slides=[];
+  D.slides[index]=Object.assign({},D.slides[index]||{},slide);
+}
+function updateButtons(){
+  const pv=$("#toggle-preview"), nt=$("#toggle-notes");
+  if(pv) pv.textContent=previewVisible?"Hide slide preview":"Show slide preview";
+  if(nt) nt.textContent=notesVisible?"Hide presenter notes":"Show presenter notes";
+}
+function render(){
+  const s=currentSlide();
+  const count=(D.slides&&D.slides.length)||1;
+  const title=$("#slide-title");
+  if(title) title.textContent=`Slide ${i+1} / ${count}`;
+  const notes=$("#notes");
+  if(notes) notes.textContent=(s.notes&&String(s.notes).trim())?s.notes:"No presenter notes for this slide.";
+  renderPreview();
+  updateButtons();
+}
+function fitPreview(){
+  const stage=$("#phone-preview-stage"), canvas=$("#phone-preview-canvas");
+  if(!stage||!canvas) return;
+  const r=stage.getBoundingClientRect();
+  const scale=Math.min(r.width/W, r.height/H);
+  canvas.style.width=W+"px";
+  canvas.style.height=H+"px";
+  canvas.style.transform=`scale(${scale})`;
+  canvas.style.transformOrigin="top left";
+  canvas.style.left=((r.width-(W*scale))/2)+"px";
+  canvas.style.top=((r.height-(H*scale))/2)+"px";
+}
+function renderPreview(){
+  const wrap=$("#phone-preview-wrap"), canvas=$("#phone-preview-canvas");
+  if(!wrap||!canvas||wrap.hidden) return;
+  if(Hx.paintSlide){Hx.paintSlide(canvas,currentSlide(),{live:false});}
+  else {canvas.innerHTML='<div class="phone-preview-empty">Preview unavailable</div>';}
+  fitPreview();
+}
+function localPointer(x,y){
+  const stage=$("#phone-preview-stage"), dot=$("#phone-preview-pointer");
+  if(!stage||!dot) return;
+  const r=stage.getBoundingClientRect();
+  dot.style.left=(x/W*r.width)+"px";
+  dot.style.top=(y/H*r.height)+"px";
+  dot.hidden=false;
+  dot.classList.remove("run");
+  void dot.offsetWidth;
+  dot.classList.add("run");
+  setTimeout(()=>{dot.hidden=true;dot.classList.remove("run");},1800);
+}
+function pointerFromTap(ev){
+  if(!connected||!previewVisible) return;
+  const stage=$("#phone-preview-stage");
+  if(!stage) return;
+  const r=stage.getBoundingClientRect();
+  const x=clamp(((ev.clientX-r.left)/r.width)*W,0,W);
+  const y=clamp(((ev.clientY-r.top)/r.height)*H,0,H);
+  localPointer(x,y);
+  send({type:"pointer",x,y});
+  setStatus("POINTER SENT TO PROJECTOR");
+}
+function connect(){
+  const pin=$("#pin").value.trim();
+  if(!pin){setStatus("ENTER THE PIN SHOWN ON THE PRESENTER SCREEN");return;}
+  if(sock&&sock.readyState===1){try{sock.close();}catch(e){}}
+  sock=new WebSocket(CFG.wsUrl);
+  sock.addEventListener("open",()=>send({type:"controller_hello",pin}));
+  sock.addEventListener("message",ev=>{
+    let m;try{m=JSON.parse(ev.data)}catch(e){return}
+    if(m.type==="controller_ok"){
+      connected=true;
+      if(Array.isArray(m.slides)){D.slides=m.slides;}
+      i=clamp(Number(m.current_slide)||i,0,Math.max(((D.slides||[]).length)-1,0));
+      $("#pin-row").hidden=true;
+      $("#controls").hidden=false;
+      $("#phone-secondary-actions").hidden=false;
+      setStatus("CONNECTED · PHONE CONTROLLER READY");
+      render();
+    }else if(m.type==="controller_denied"){
+      setStatus("WRONG PIN");try{sock.close()}catch(e){}
+    }else if(m.type==="goto"&&typeof m.index==="number"){
+      i=clamp(Number(m.index),0,Math.max(((D.slides||[]).length)-1,0));
+      if(m.slide) mergeSlide(i,m.slide);
+      render();
+    }
+  });
+  sock.addEventListener("close",()=>{if(connected)setStatus("DISCONNECTED · REOPEN THIS PAGE OR REFRESH");});
+}
+function go(n){
+  if(!connected)return;
+  i=clamp(n,0,Math.max(((D.slides||[]).length)-1,0));
+  render();
+  send({type:"goto",index:i});
+}
+
+$("#connect").addEventListener("click",connect);
+$("#prev").addEventListener("click",()=>go(i-1));
+$("#next").addEventListener("click",()=>go(i+1));
+$("#toggle-notes").addEventListener("click",()=>{notesVisible=!notesVisible;$("#notes").hidden=!notesVisible;updateButtons();});
+$("#toggle-preview").addEventListener("click",()=>{previewVisible=!previewVisible;$("#phone-preview-wrap").hidden=!previewVisible;renderPreview();updateButtons();});
+$("#phone-preview-stage").addEventListener("click",pointerFromTap);
+window.addEventListener("resize",fitPreview);
+const qp=params().get("pin");
+if(qp){$("#pin").value=qp;setTimeout(connect,250);}
+render();
 })();
 </script>
 </body>

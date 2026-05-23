@@ -8,6 +8,13 @@ const DECK = CFG.deck || {slides:[], code:"------", title:"Untitled"};
 const $ = (s)=>document.querySelector(s);
 const pCanvas = $("#present-canvas");
 const emojiLayer = $("#emoji-layer");
+let pointerLayer = $("#pointer-layer");
+if(!pointerLayer){
+  pointerLayer = document.createElement("div");
+  pointerLayer.id = "pointer-layer";
+  pointerLayer.className = "pointer-layer";
+  document.body.appendChild(pointerLayer);
+}
 let i = DECK.current_slide || 0;
 let suppressBroadcast = false;
 
@@ -33,7 +40,18 @@ function spawnEmoji(em){
   e.style.left=(8+Math.random()*84)+"%";e.style.setProperty("--spin",(Math.random()*40-20)+"deg");e.style.fontSize=(2+Math.random()*1.6)+"rem";
   emojiLayer.appendChild(e);setTimeout(()=>e.remove(),3700);
 }
-const Live={sock:null,retry:0,start(){if(!CFG.wsUrl)return;try{this.sock=new WebSocket(CFG.wsUrl);}catch(e){return;}this.sock.addEventListener("open",()=>{this.retry=0;this.send({type:"presenter_hello"});});this.sock.addEventListener("message",ev=>{let m;try{m=JSON.parse(ev.data);}catch(e){return;}if(m.type==="reaction")spawnEmoji(m.emoji);else if(m.type==="participants")setCount(m.count);else if(m.type==="state"&&typeof m.count==="number")setCount(m.count);else if(m.type==="goto"&&typeof m.index==="number"&&m.index!==i){suppressBroadcast=true;show(m.index,false);suppressBroadcast=false;}});this.sock.addEventListener("close",()=>{if(this.retry++>6)return;setTimeout(()=>this.start(),Math.min(800*this.retry,5000));});},send(o){if(this.sock&&this.sock.readyState===1)this.sock.send(JSON.stringify(o));},goto(idx){this.send({type:"goto",index:idx});},stop(){if(this.sock){try{this.sock.close();}catch(e){}}this.sock=null;}};
+function showPointer(x,y){
+  const rect = pCanvas.getBoundingClientRect();
+  const px = rect.left + (Number(x)||0) / W * rect.width;
+  const py = rect.top + (Number(y)||0) / H * rect.height;
+  const mark=document.createElement("div");
+  mark.className="presenter-pointer";
+  mark.style.left=px+"px";
+  mark.style.top=py+"px";
+  pointerLayer.appendChild(mark);
+  setTimeout(()=>mark.remove(),3100);
+}
+const Live={sock:null,retry:0,start(){if(!CFG.wsUrl)return;try{this.sock=new WebSocket(CFG.wsUrl);}catch(e){return;}this.sock.addEventListener("open",()=>{this.retry=0;this.send({type:"presenter_hello"});});this.sock.addEventListener("message",ev=>{let m;try{m=JSON.parse(ev.data);}catch(e){return;}if(m.type==="reaction")spawnEmoji(m.emoji);else if(m.type==="participants")setCount(m.count);else if(m.type==="state"&&typeof m.count==="number")setCount(m.count);else if(m.type==="goto"&&typeof m.index==="number"&&m.index!==i){suppressBroadcast=true;show(m.index,false);suppressBroadcast=false;}else if(m.type==="pointer"){showPointer(m.x,m.y);}});this.sock.addEventListener("close",()=>{if(this.retry++>6)return;setTimeout(()=>this.start(),Math.min(800*this.retry,5000));});},send(o){if(this.sock&&this.sock.readyState===1)this.sock.send(JSON.stringify(o));},goto(idx){this.send({type:"goto",index:idx});},stop(){if(this.sock){try{this.sock.close();}catch(e){}}this.sock=null;}};
 function setCount(n){const el=$("#aud-count");if(el)el.textContent=n;}
 function makeQR(box,text,size=180){if(!box||typeof QRCode==="undefined"||!text)return;box.innerHTML="";new QRCode(box,{text,width:size,height:size,colorDark:"#111827",colorLight:"#ffffff",correctLevel:QRCode.CorrectLevel.H});}
 function drawQRs(){makeQR($("#present-qr"),CFG.joinUrl,84);makeQR($("#qr-modal-code"),CFG.joinUrl,220);makeQR($("#controller-modal-qr"),CFG.controlUrl+(CFG.controlPin?`?pin=${encodeURIComponent(CFG.controlPin)}`:""),220);}

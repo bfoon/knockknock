@@ -89,7 +89,14 @@ class PresentConsumer(AsyncWebsocketConsumer):
             pin = str(data.get("pin") or "").strip()
             if pin and pin == await self._control_pin():
                 self.is_controller = True
-                await self.send_json({"type": "controller_ok", "current_slide": await self._current_slide()})
+                await self.send_json({
+                    "type": "controller_ok",
+                    "current_slide": await self._current_slide(),
+                    # Send the latest slides from the DB so phone notes are fresh,
+                    # even if the phone controller page was opened before the
+                    # presenter saved/started the slideshow.
+                    "slides": await self._slides(),
+                })
             else:
                 await self.send_json({"type": "controller_denied"})
 
@@ -105,6 +112,11 @@ class PresentConsumer(AsyncWebsocketConsumer):
             # Presenter screen or PIN-approved phone controller drives slides.
             if self.is_presenter or self.is_controller:
                 await self._handle_goto(data)
+
+        elif mtype == "pointer":
+            # PIN-approved phone controller can point to an area of the slide.
+            if self.is_presenter or self.is_controller:
+                await self._handle_pointer(data)
 
     # ── reactions ────────────────────────────────────────────────────
     async def _handle_react(self, data):
@@ -127,9 +139,25 @@ class PresentConsumer(AsyncWebsocketConsumer):
             return
         index = max(0, index)
         await self._set_current_slide(index)
+        slide = await self._slide(index)
         await self.channel_layer.group_send(self.group, {
             "type": "fanout",
-            "payload": {"type": "goto", "index": index},
+            "payload": {"type": "goto", "index": index, "slide": slide},
+        })
+
+    async def _handle_pointer(self, data):
+        try:
+            x = float(data.get("x"))
+            y = float(data.get("y"))
+        except (TypeError, ValueError):
+            return
+        # x/y are in the 960×540 design coordinate space. Clamp so a bad
+        # phone tap cannot create off-screen overlays.
+        x = max(0, min(960, x))
+        y = max(0, min(540, y))
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {"type": "pointer", "x": x, "y": y},
         })
 
     # ── group fanout ─────────────────────────────────────────────────
@@ -183,6 +211,24 @@ class PresentConsumer(AsyncWebsocketConsumer):
         from .models import Deck
         d = Deck.objects.filter(code=self.code).first()
         return int(d.current_slide) if d else 0
+
+    @sync_to_async
+    def _slides(self):
+        from .models import Deck
+        d = Deck.objects.filter(code=self.code).first()
+        return [s.as_dict() for s in d.slides.all()] if d else []
+
+    @sync_to_async
+    def _slide(self, index):
+        from .models import Deck
+        d = Deck.objects.filter(code=self.code).first()
+        if not d:
+            return {}
+        slides = list(d.slides.all())
+        if not slides:
+            return {}
+        index = max(0, min(int(index), len(slides) - 1))
+        return slides[index].as_dict()
 
     @sync_to_async
     def _control_pin(self):

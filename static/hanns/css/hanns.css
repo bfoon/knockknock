@@ -79,23 +79,29 @@ button{font-family:inherit}
 .tbtn[disabled]{opacity:.4;cursor:not-allowed}
 
 /* ── Workspace: rail · slides · canvas · inspector ─────────────────── */
-.work{display:grid;grid-template-columns:64px 196px minmax(0,1fr) 296px;min-height:0;height:100%;overflow:hidden}
-.work.hide-filmstrip{grid-template-columns:64px 0 minmax(0,1fr) 296px}
-.work.hide-filmstrip .filmstrip{display:none}
-.work.hide-inspector{grid-template-columns:64px 196px minmax(0,1fr) 0}
-.work.hide-inspector .inspector{display:none}
-.work.hide-filmstrip.hide-inspector{grid-template-columns:64px 0 minmax(0,1fr) 0}
-@media (max-width:1180px){
-  .work{grid-template-columns:56px 180px minmax(0,1fr) 260px}
-  .work.auto-compact:not(.show-filmstrip){grid-template-columns:56px 0 minmax(0,1fr) 260px}
-  .work.auto-compact:not(.show-filmstrip) .filmstrip{display:none}
-  .work.hide-filmstrip,.work.auto-compact.hide-filmstrip{grid-template-columns:56px 0 minmax(0,1fr) 260px}
-  .work.hide-inspector{grid-template-columns:56px 180px minmax(0,1fr) 0}
-  .work.hide-filmstrip.hide-inspector{grid-template-columns:56px 0 minmax(0,1fr) 0}
+.work{
+  --rail-w:64px;--filmstrip-w:240px;--edge-w:18px;--inspector-w:296px;
+  display:grid;
+  grid-template-columns:var(--rail-w) var(--filmstrip-w) var(--edge-w) minmax(0,1fr) var(--inspector-w);
+  min-height:0;height:100%;overflow:hidden;position:relative;
 }
-@media (max-width:860px){
-  .work,.work.auto-compact{grid-template-columns:56px minmax(0,1fr)}
-  .filmstrip,.inspector{display:none!important}
+.work.hide-filmstrip{grid-template-columns:var(--rail-w) 0 var(--edge-w) minmax(0,1fr) var(--inspector-w)}
+.work.hide-filmstrip .filmstrip{visibility:hidden;pointer-events:none;min-width:0;width:0;border-right:0}
+.work.hide-inspector{grid-template-columns:var(--rail-w) var(--filmstrip-w) var(--edge-w) minmax(0,1fr) 0}
+.work.hide-inspector .inspector{visibility:hidden;pointer-events:none;min-width:0;width:0;border-left:0}
+.work.hide-filmstrip.hide-inspector{grid-template-columns:var(--rail-w) 0 var(--edge-w) minmax(0,1fr) 0}
+@media (max-width:1180px){
+  .work{--rail-w:56px;--filmstrip-w:220px;--inspector-w:260px}
+  .work.hide-filmstrip,.work.auto-compact.hide-filmstrip{grid-template-columns:var(--rail-w) 0 var(--edge-w) minmax(0,1fr) var(--inspector-w)}
+  .work.hide-inspector{grid-template-columns:var(--rail-w) var(--filmstrip-w) var(--edge-w) minmax(0,1fr) 0}
+  .work.hide-filmstrip.hide-inspector{grid-template-columns:var(--rail-w) 0 var(--edge-w) minmax(0,1fr) 0}
+}
+@media (max-width:760px){
+  .work{--rail-w:56px;--filmstrip-w:min(68vw,250px);--inspector-w:0px}
+  .work .inspector{display:none!important}
+  .work:not(.show-filmstrip){grid-template-columns:var(--rail-w) 0 var(--edge-w) minmax(0,1fr) 0}
+  .work:not(.show-filmstrip) .filmstrip{visibility:hidden;pointer-events:none;min-width:0;width:0;border-right:0}
+  .work.show-filmstrip{grid-template-columns:var(--rail-w) var(--filmstrip-w) var(--edge-w) minmax(0,1fr) 0}
 }
 
 /* Tool rail */
@@ -127,6 +133,7 @@ button{font-family:inherit}
 .filmstrip{
   background:var(--ink);border-right:1px solid var(--line);
   display:flex;flex-direction:column;min-height:0;height:100%;overflow:hidden;
+  min-width:0;position:relative;z-index:5;
 }
 .filmstrip-head{
   padding:.7rem .8rem .5rem;font-family:var(--font-mono);font-size:.64rem;
@@ -138,7 +145,7 @@ button{font-family:inherit}
   width:22px;height:22px;border-radius:6px;cursor:pointer;font-size:1rem;line-height:1;
 }
 .filmstrip-head button:hover{color:var(--cream);border-color:#4b4536}
-.slides{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:.4rem .6rem 1rem;display:flex;flex-direction:column;gap:.55rem;overscroll-behavior:contain;scrollbar-width:thin}
+.slides{flex:1;min-height:0;height:100%;overflow-y:scroll;overflow-x:hidden;padding:.4rem .6rem 1rem;display:flex;flex-direction:column;gap:.55rem;overscroll-behavior-y:contain;scrollbar-width:thin;scrollbar-gutter:stable;touch-action:pan-y;position:relative;z-index:6}
 .slides::-webkit-scrollbar{width:8px}
 .slides::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px}
 .thumb{
@@ -161,6 +168,21 @@ button{font-family:inherit}
 }
 .thumb:hover .del{display:block}
 .thumb .del:hover{background:var(--signal)}
+
+
+/* Visible divider: click to hide/show the slide thumbnails. This is intentionally
+   independent from the top toolbar because narrow screens can hide toolbar buttons. */
+.filmstrip-edge-toggle{
+  min-width:0;width:100%;height:100%;border:0;border-left:1px solid rgba(255,255,255,.06);border-right:1px solid var(--line);
+  background:linear-gradient(180deg,#201d17,#0f0e0b);color:var(--fog-2);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;position:relative;z-index:12;padding:0;
+}
+.filmstrip-edge-toggle:hover{background:linear-gradient(180deg,#2c281f,#17140f);color:var(--cream)}
+.filmstrip-edge-toggle .edge-chev{font-size:18px;line-height:1;writing-mode:vertical-rl;font-weight:900;opacity:.9}
+.filmstrip-edge-toggle .edge-dot{position:absolute;top:14px;width:4px;height:38px;border-radius:999px;background:var(--signal);box-shadow:0 0 18px rgba(232,72,43,.5)}
+.work.hide-filmstrip .filmstrip-edge-toggle .edge-chev{transform:rotate(180deg)}
+.work.hide-filmstrip .filmstrip-edge-toggle .edge-dot{background:#5b8c5a}
+@media (max-width:760px){.filmstrip-edge-toggle{z-index:30}.filmstrip-edge-toggle .edge-dot{top:10px;height:28px}}
 
 /* Canvas stage */
 .stage{
@@ -531,3 +553,72 @@ input[type=range]{width:100%;accent-color:var(--signal)}
 .tbtn.panel-toggle.active{background:var(--signal);border-color:var(--signal);color:#fff}
 .tbtn.panel-toggle svg{width:16px;height:16px}
 .rail .sep{flex:0 0 auto}
+
+
+/* v8 hard fix: make controller button and filmstrip controls impossible to miss */
+.controller-pill,.present-controller-mini{display:inline-flex!important;align-items:center;justify-content:center;gap:.45rem;z-index:9999!important;opacity:1!important;pointer-events:auto!important}
+.controller-pill{position:fixed!important;left:18px!important;bottom:18px!important;background:linear-gradient(135deg,#0ea5e9,#7c3aed)!important;color:#fff!important;border:1px solid rgba(255,255,255,.35)!important;border-radius:999px!important;padding:12px 18px!important;font-weight:950!important;box-shadow:0 18px 50px rgba(0,0,0,.45)!important}
+.present-controller-mini{position:fixed;left:18px;top:18px;background:rgba(15,23,42,.86);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.22);border-radius:999px;color:#fff;padding:9px 13px;font:900 13px Archivo,sans-serif;cursor:pointer;box-shadow:0 12px 34px rgba(0,0,0,.35)}
+.present-controller-mini:hover{background:rgba(56,189,248,.95);color:#020617}
+@media (max-width:640px){.controller-pill{left:12px!important;bottom:12px!important;padding:10px 14px!important}.present-controller-mini{left:12px;top:12px}}
+
+/* v9 phone-controller overflow fix: keep PIN field inside the card on small phones */
+.phone-control,
+.phone-control *{
+  box-sizing:border-box;
+}
+.phone-control{
+  width:100%;
+  min-width:0;
+  overflow-x:hidden;
+  padding:clamp(10px,4vw,18px);
+}
+.phone-card{
+  width:min(520px,100%);
+  max-width:100%;
+  min-width:0;
+  overflow:hidden;
+}
+.pin-row{
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:10px;
+  align-items:stretch;
+}
+.pin-row input{
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  display:block;
+  box-sizing:border-box;
+}
+.pin-row button{
+  max-width:100%;
+  white-space:nowrap;
+  box-sizing:border-box;
+}
+@media (max-width:380px){
+  .phone-card{padding:16px;border-radius:24px}
+  .phone-card h1{font-size:22px;line-height:1.08}
+  .pin-row{grid-template-columns:1fr!important}
+  .pin-row input{font-size:20px;padding:13px 12px;letter-spacing:.14em}
+  .pin-row button{width:100%;padding:13px 14px}
+}
+
+
+/* v10 presenter notes + single phone controller button */
+.present-controller-mini{display:none!important}
+.presenter-notes-panel{position:fixed;right:318px;bottom:22px;width:min(430px,calc(100vw - 92px));z-index:70;background:linear-gradient(145deg,#fbf8f1,#efe6d5);color:#16140f;border:1px solid rgba(232,72,43,.35);border-radius:22px;box-shadow:0 28px 80px rgba(0,0,0,.42);overflow:hidden}
+.presenter-notes-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:14px 16px 10px;border-bottom:1px solid rgba(22,20,15,.12);background:linear-gradient(135deg,#fff7ed,#f6f1e7)}
+.presenter-notes-head strong{display:block;font:900 15px var(--font-x);letter-spacing:.03em}
+.presenter-notes-head span{display:block;margin-top:2px;color:#6b6354;font:700 11px var(--font-mono);text-transform:uppercase;letter-spacing:.14em}
+.presenter-notes-close{border:0;width:32px;height:32px;border-radius:999px;background:#16140f;color:#fff;cursor:pointer;font-weight:900}
+#presenter-notes-box{display:block;width:100%;min-height:142px;max-height:260px;resize:vertical;border:0;outline:0;background:#fff;color:#16140f;padding:16px;font:500 15px/1.5 var(--font-body);box-shadow:inset 0 1px 0 rgba(0,0,0,.05)}
+.presenter-notes-foot{padding:10px 16px 14px;color:#6b6354;font:700 11px var(--font-mono);letter-spacing:.04em}
+.tbtn.has-notes,.tool.has-notes{box-shadow:0 0 0 2px rgba(232,72,43,.45),0 0 22px rgba(232,72,43,.24)}
+.tbtn.has-notes::after{content:"";width:8px;height:8px;border-radius:50%;background:#e8482b;display:inline-block;margin-left:.15rem;box-shadow:0 0 12px rgba(232,72,43,.7)}
+@media (max-width:1180px){.presenter-notes-panel{right:22px}}
+@media (max-width:720px){.presenter-notes-panel{left:12px;right:12px;bottom:12px;width:auto}.presenter-notes-head strong{font-size:14px}}

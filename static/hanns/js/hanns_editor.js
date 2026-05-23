@@ -52,6 +52,7 @@ function renderCanvas(){
   applyZoom();
 }
 function renderFilmstrip(){
+  const keepTop = slidesEl ? slidesEl.scrollTop : 0;
   slidesEl.innerHTML="";
   Deck.slides.forEach((s,i)=>{
     const th=document.createElement("div");
@@ -67,8 +68,9 @@ function renderFilmstrip(){
     th.querySelector(".del").addEventListener("click",e=>{e.stopPropagation();deleteSlide(i);});
     slidesEl.appendChild(th);
   });
+  requestAnimationFrame(()=>{ if(slidesEl) slidesEl.scrollTop = keepTop; });
 }
-function renderAll(){renderCanvas();renderFilmstrip();renderInspector();}
+function renderAll(){renderCanvas();renderFilmstrip();renderInspector();updateNotesPanel();}
 /* Call after any genuine content mutation (not navigation) to autosave. */
 function markDirty(){if(appReady&&typeof scheduleSave==="function")scheduleSave();}
 
@@ -562,12 +564,43 @@ function bindSlidePanel(){
   const s=curSlide();
   $$(".bg-cell[data-bgi]",inspBody).forEach(c=>c.addEventListener("click",()=>{
     const b=BACKGROUNDS[Number(c.dataset.bgi)];s.bg=b.css;s.bgSize=b.size||null;renderAll();markDirty();}));
-  const notes=$("#s-notes");notes&&notes.addEventListener("input",()=>{s.notes=notes.value;renderFilmstrip();markDirty();});
+  const notes=$("#s-notes");notes&&notes.addEventListener("input",()=>{s.notes=notes.value;renderFilmstrip();updateNotesPanel();markDirty();});
   $$(".chip[data-trans]",inspBody).forEach(c=>c.addEventListener("click",()=>{
     s.transition=c.dataset.trans;$$(".chip[data-trans]",inspBody).forEach(x=>x.classList.remove("active"));c.classList.add("active");markDirty();}));
   $("#s-dup")&&$("#s-dup").addEventListener("click",()=>{const copy=JSON.parse(JSON.stringify(s));copy.id=uid();copy.els.forEach(e=>e.id=uid());
     Deck.slides.splice(Deck.cur+1,0,copy);gotoSlide(Deck.cur+1);toast("Slide duplicated");});
   $("#s-del")&&$("#s-del").addEventListener("click",()=>deleteSlide(Deck.cur));
+}
+
+/* presenter notes quick panel */
+function updateNotesPanel(){
+  const panel=$("#presenter-notes-panel"), box=$("#presenter-notes-box"), label=$("#presenter-notes-slide");
+  if(!panel||!box) return;
+  const s=curSlide();
+  if(label) label.textContent = `Slide ${Deck.cur+1} / ${Deck.slides.length}`;
+  if(document.activeElement!==box) box.value = (s&&s.notes)||"";
+  const btn=$("#btn-notes");
+  const rail=$("#rail-notes");
+  const hasNote=!!((s&&s.notes)||"").trim();
+  btn&&btn.classList.toggle("has-notes",hasNote);
+  rail&&rail.classList.toggle("has-notes",hasNote);
+}
+function openNotesPanel(){
+  const panel=$("#presenter-notes-panel"), box=$("#presenter-notes-box");
+  if(!panel||!box) return;
+  panel.hidden=false;
+  updateNotesPanel();
+  setTimeout(()=>box.focus(),40);
+}
+function closeNotesPanel(){const panel=$("#presenter-notes-panel"); if(panel) panel.hidden=true;}
+function toggleNotesPanel(){const panel=$("#presenter-notes-panel"); if(!panel) return; panel.hidden?openNotesPanel():closeNotesPanel();}
+function bindNotesPanel(){
+  const box=$("#presenter-notes-box");
+  $("#btn-notes")?.addEventListener("click",toggleNotesPanel);
+  $("#rail-notes")?.addEventListener("click",toggleNotesPanel);
+  $("#presenter-notes-close")?.addEventListener("click",closeNotesPanel);
+  box&&box.addEventListener("input",()=>{const s=curSlide(); if(!s) return; s.notes=box.value; const slideNotes=$("#s-notes"); if(slideNotes&&document.activeElement!==slideNotes) slideNotes.value=box.value; updateNotesPanel(); markDirty();});
+  document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="m"){e.preventDefault();toggleNotesPanel();}});
 }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -702,29 +735,67 @@ function setPanelToggles(){
   if(!work) return;
   const slidesBtn = $("#btn-toggle-slides");
   const inspBtn = $("#btn-toggle-inspector");
-  const sync = ()=>{
-    slidesBtn?.classList.toggle("active", !work.classList.contains("hide-filmstrip") && (work.classList.contains("show-filmstrip") || window.innerWidth>1180));
-    inspBtn?.classList.toggle("active", !work.classList.contains("hide-inspector"));
-  };
-  slidesBtn?.addEventListener("click",()=>{
-    const isHidden = work.classList.contains("hide-filmstrip") || (!work.classList.contains("show-filmstrip") && window.innerWidth<=1180);
-    work.classList.toggle("hide-filmstrip", !isHidden);
-    work.classList.toggle("show-filmstrip", isHidden);
-    sync();
+  const edgeBtn = $("#filmstrip-edge-toggle");
+
+  function slidesVisible(){
+    return !work.classList.contains("hide-filmstrip") && (work.classList.contains("show-filmstrip") || window.innerWidth > 760);
+  }
+  function setSlidesVisible(visible){
+    work.classList.toggle("hide-filmstrip", !visible);
+    work.classList.toggle("show-filmstrip", !!visible);
+    if(slidesBtn){
+      slidesBtn.classList.toggle("active", !!visible);
+      slidesBtn.setAttribute("aria-pressed", visible ? "true" : "false");
+    }
+    if(edgeBtn){
+      edgeBtn.setAttribute("aria-label", visible ? "Hide slide thumbnails" : "Show slide thumbnails");
+      edgeBtn.setAttribute("title", visible ? "Hide slides" : "Show slides");
+      const chev=edgeBtn.querySelector(".edge-chev");
+      if(chev) chev.textContent = visible ? "‹" : "›";
+    }
     setTimeout(applyZoom,80);
-  });
-  inspBtn?.addEventListener("click",()=>{
-    work.classList.toggle("hide-inspector");
-    sync();
+  }
+  function setInspectorVisible(visible){
+    work.classList.toggle("hide-inspector", !visible);
+    if(inspBtn){
+      inspBtn.classList.toggle("active", !!visible);
+      inspBtn.setAttribute("aria-pressed", visible ? "true" : "false");
+    }
     setTimeout(applyZoom,80);
-  });
-  window.addEventListener("resize",()=>{ sync(); setTimeout(applyZoom,60); });
+  }
+  function sync(){
+    const shouldShow = slidesVisible();
+    if(slidesBtn){
+      slidesBtn.classList.toggle("active", shouldShow);
+      slidesBtn.setAttribute("aria-pressed", shouldShow ? "true" : "false");
+    }
+    if(inspBtn){
+      const iv = !work.classList.contains("hide-inspector");
+      inspBtn.classList.toggle("active", iv);
+      inspBtn.setAttribute("aria-pressed", iv ? "true" : "false");
+    }
+    if(edgeBtn){
+      const chev=edgeBtn.querySelector(".edge-chev");
+      if(chev) chev.textContent = shouldShow ? "‹" : "›";
+      edgeBtn.setAttribute("aria-label", shouldShow ? "Hide slide thumbnails" : "Show slide thumbnails");
+      edgeBtn.setAttribute("title", shouldShow ? "Hide slides" : "Show slides");
+    }
+  }
+
+  slidesBtn?.addEventListener("click",(e)=>{e.preventDefault();setSlidesVisible(!slidesVisible());});
+  edgeBtn?.addEventListener("click",(e)=>{e.preventDefault();setSlidesVisible(!slidesVisible());});
+  inspBtn?.addEventListener("click",(e)=>{e.preventDefault();setInspectorVisible(work.classList.contains("hide-inspector"));});
+  window.addEventListener("resize",()=>{sync();setTimeout(applyZoom,60);});
   sync();
 }
 
 function init(){
   loadServerDeck();
   setPanelToggles();
+  bindNotesPanel();
+  if(slidesEl){
+    slidesEl.addEventListener("wheel",e=>{ e.stopPropagation(); },{passive:true});
+  }
 
   // rail add buttons
   $$(".rail .tool[data-add]").forEach(b=>b.addEventListener("click",()=>addElement(b.dataset.add)));

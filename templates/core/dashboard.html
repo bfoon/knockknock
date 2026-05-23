@@ -159,6 +159,17 @@
       Create board <i class="bi bi-arrow-right"></i>
     </span>
   </a>
+  <form method="post" action="{% url 'hanns:create' %}" class="kk-action-tile-form">
+    {% csrf_token %}
+    <button type="submit" class="kk-action-tile hanns">
+      <span class="kk-tile-icon">🎬</span>
+      <h2>New Hanns Deck</h2>
+      <p>Magazine-level presentations — templates, animations &amp; live audience emoji reactions over a QR code.</p>
+      <span class="kk-btn kk-btn-primary btn-sm">
+        Create deck <i class="bi bi-arrow-right"></i>
+      </span>
+    </button>
+  </form>
 </div>
 
 <!--{# ─────────────────────────────────────────────────────────────-->
@@ -409,6 +420,62 @@
       </a>
     {% endif %}
   </div>
+
+  <!-- ── Decks (Hanns) ───────────────────────────────────────── -->
+  <div class="col-lg-6 col-xl-3">
+    <h2 class="kk-section-title"><i class="bi bi-easel2"></i> Recent decks</h2>
+    {% for d in decks %}
+      <div class="kk-list-item kk-list-item-row">
+        {# Open the editor — the working view of a deck. #}
+        <a href="{% url 'hanns:edit' d.code %}" class="kk-list-item-main">
+          <span class="kk-q-index">{{ forloop.counter }}</span>
+          <div class="flex-grow-1">
+            <div class="kk-list-item-title">{{ d.title }}</div>
+            <div class="kk-list-item-meta">
+              {{ d.slides.count }} slide{{ d.slides.count|pluralize }} ·
+              <span class="kk-status-mini kk-status-mini-{{ d.state }}">{{ d.get_state_display }}</span>
+            </div>
+          </div>
+          <i class="bi bi-arrow-right text-secondary"></i>
+        </a>
+        {# Jump straight into presenting. #}
+        <a href="{% url 'hanns:present' d.code %}"
+           class="kk-btn kk-btn-ghost btn-sm ms-2"
+           title="Present this deck">
+          <i class="bi bi-play-fill"></i> Present
+        </a>
+        {# Same inline POST delete pattern as the other columns. #}
+        <form method="post"
+              action="{% url 'hanns:delete' d.code %}"
+              class="kk-row-delete-form ms-1"
+              onsubmit="return confirm('Delete “{{ d.title|escapejs }}”? This cannot be undone.');">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{% url 'core:dashboard' %}">
+          <button type="submit"
+                  class="kk-row-delete"
+                  title="Delete deck"
+                  aria-label="Delete {{ d.title }}">
+            <i class="bi bi-trash3-fill"></i>
+          </button>
+        </form>
+      </div>
+    {% empty %}
+      <div class="kk-empty"><div class="em">🎬</div><p>No decks yet. Create your first presentation!</p></div>
+    {% endfor %}
+
+    {% if decks_total > recent_limit %}
+      <a href="{% url 'hanns:list' %}" class="kk-see-all">
+        See all decks
+        <span class="kk-see-all-count">{{ decks_total }}</span>
+        <i class="bi bi-arrow-right"></i>
+      </a>
+    {% elif decks_total > 0 %}
+      <a href="{% url 'hanns:list' %}" class="kk-see-all kk-see-all-muted">
+        See all
+        <i class="bi bi-arrow-right"></i>
+      </a>
+    {% endif %}
+  </div>
 </div>
 
 
@@ -429,6 +496,28 @@
 .kk-action-tile.boardly::before {
   content: ""; position: absolute; inset: 0;
   background: radial-gradient(400px 200px at 100% 0%, rgba(236, 72, 153, 0.25), transparent);
+  pointer-events: none;
+}
+
+/* Hanns creation tile — warm amber/ember accent to match the studio
+   theme. The tile is a <button> inside a <form> (its create view is
+   POST-only and jumps straight into the editor), so reset the form and
+   button chrome to make it visually identical to the <a> tiles. */
+.kk-action-tile-form { display: contents; }
+.kk-action-tile.hanns {
+  /* button reset so it sits in the grid exactly like the anchor tiles */
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background: linear-gradient(135deg, #2a1c0f, #3d2a14);
+  border-color: rgba(232, 130, 43, 0.32);
+}
+.kk-action-tile.hanns::before {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(400px 200px at 100% 0%, rgba(232, 130, 43, 0.25), transparent);
   pointer-events: none;
 }
 .kk-quota-track {
@@ -462,6 +551,8 @@
 /* Boardly board states (lobby / open / running / ended). */
 .kk-status-mini-lobby   { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
 .kk-status-mini-running { background: rgba(251, 113, 133, 0.15); color: #fb7185; }
+/* Hanns deck states: draft (neutral), live (reuses pink), ended (neutral). */
+.kk-status-mini-draft   { background: rgba(56, 189, 248, 0.13); color: #7dd3fc; }
 
 /* Recent games row that contains both the edit link and a Results button. */
 .kk-list-item-game {

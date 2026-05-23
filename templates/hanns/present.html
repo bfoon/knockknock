@@ -1,0 +1,60 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ deck.title }} · Presenting · Hanns</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Archivo:wght@400;500;600;700;800&family=Archivo+Expanded:wght@600;700;800&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=1">
+<style>
+  /* The present overlay styles live in hanns.css; here we force it on so
+     the stage IS the page (no editor chrome on the projector). */
+  body{background:#000}
+  .present{display:block;position:fixed;inset:0;z-index:1}
+  .present-badge .meta .lbl{display:flex;gap:.5rem;align-items:center}
+  .aud{display:inline-flex;align-items:center;gap:.3rem;font-family:var(--font-mono);font-size:.62rem;color:#bdb29a}
+</style>
+</head>
+<body>
+<div class="present on" id="present">
+  <div class="present-stage" id="present-stage">
+    <button class="present-exit" id="present-exit">✕ End &amp; exit (Esc)</button>
+    <div class="present-canvas" id="present-canvas"></div>
+    <div class="emoji-layer" id="emoji-layer"></div>
+
+    <div class="present-controls">
+      <button id="pp-prev">‹</button>
+      <span class="pos" id="pp-pos">1 / 1</span>
+      <button id="pp-next">›</button>
+    </div>
+
+    <div class="present-badge">
+      <div class="qr" id="present-qr"></div>
+      <div class="meta">
+        <div class="lbl">Scan to react
+          <span class="aud">· <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-8 0v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg><b id="aud-count">0</b></span>
+        </div>
+        <div class="code" id="present-code">––––––</div>
+        <div class="url" id="present-url">hanns</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  window.__HANNS_PRESENT__ = {
+    deck: {{ deck_json|safe }},
+    wsUrl: (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/hanns/{{ deck.code }}/",
+    joinUrl: "{{ join_url }}",
+    stateUrl: "{% url 'hanns:set_state' deck.code %}",
+    editUrl: "{% url 'hanns:edit' deck.code %}",
+    csrftoken: "{{ csrf_token }}"
+  };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script src="{% static 'hanns/js/hanns_core.js' %}?v=1"></script>
+<script src="{% static 'hanns/js/hanns_present.js' %}?v=1"></script>
+</body>
+</html>

@@ -13,6 +13,7 @@ from channels.security.websocket import AllowedHostsOriginValidator
 
 import presentations.routing
 import boardly.routing
+import hanns.routing
 
 application = ProtocolTypeRouter({
     "http": django_asgi_app,
@@ -21,6 +22,7 @@ application = ProtocolTypeRouter({
             URLRouter(
                 presentations.routing.websocket_urlpatterns
                 + boardly.routing.websocket_urlpatterns
+                + hanns.routing.websocket_urlpatterns
             )
         )
     ),

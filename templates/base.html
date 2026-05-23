@@ -27,6 +27,7 @@
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'polls:list' %}">Menti</a>
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'games:list' %}">Game</a>
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'boardly:create' %}">Boardly</a>
+    <a class="kk-nav-link d-none d-md-inline" href="{% url 'hanns:list' %}">Hanns</a>
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'attendance:event_list' %}">Attendance</a>
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'accounts:profile' %}"><i class="bi bi-person-circle"></i></a>
     <form action="{% url 'accounts:logout' %}" method="post" class="d-none d-md-inline">{% csrf_token %}
@@ -80,6 +81,9 @@
       </a>
       <a class="kk-drawer-link" href="{% url 'boardly:create' %}">
         <i class="bi bi-sticky"></i> Boardly
+      </a>
+      <a class="kk-drawer-link" href="{% url 'hanns:list' %}">
+        <i class="bi bi-easel2"></i> Hanns
       </a>
       <a class="kk-drawer-link" href="{% url 'attendance:event_list' %}">
         <i class="bi bi-calendar-event"></i> Attendance

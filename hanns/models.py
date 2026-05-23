@@ -110,6 +110,7 @@ class Slide(models.Model):
         d = dict(self.data or {})
         d.setdefault("bg", "#f6f1e7")
         d.setdefault("bgSize", None)
+        d.setdefault("bgFx", "none")
         d.setdefault("transition", "fade")
         d.setdefault("els", [])
         # Carry the server id so the editor can map slides back to rows.

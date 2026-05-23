@@ -4,7 +4,7 @@
 (function(){
 "use strict";
 const Hx = window.Hanns;
-const {Deck,TEMPLATES,BACKGROUNDS,ANIMS,TRANSITIONS,PALETTE,FONTS,OBJECTS,SHAPES,
+const {Deck,TEMPLATES,BACKGROUNDS,BG_FX,ANIMS,TRANSITIONS,PALETTE,FONTS,OBJECTS,SHAPES,
   newSlide,curSlide,selEl,paintSlide,renderElement,
   makeText,makeShape,makeLine,makeImage,makeVideo,makeLink,makeObject,makeCreativeShape,makeTable,makeChart,makeMap,W,H,$,$$,uid,clamp,genCode}=Hx;
 
@@ -93,7 +93,7 @@ function deleteSlide(i){
 function applyTemplate(tpl){
   const built=tpl.build();
   const s=curSlide();
-  s.bg=built.bg;s.bgSize=built.bgSize||null;
+  s.bg=built.bg;s.bgSize=built.bgSize||null;s.bgFx=built.bgFx||"none";
   s.els=built.els.map(e=>Object.assign({},e));
   Deck.sel=null;renderAll();markDirty();
   closeDrawers();toast(`Applied “${tpl.name}”`);
@@ -148,6 +148,15 @@ $("#img-input").addEventListener("change",e=>{
   rd.onload=()=>{const el=curSlide().els.find(x=>x.id===pendingImgId);
     if(el){el.src=rd.result;renderAll();markDirty();}pendingImgId=null;e.target.value="";};
   rd.readAsDataURL(f);
+});
+
+$("#data-input")&&$("#data-input").addEventListener("change",e=>{
+  const f=e.target.files[0];
+  if(f&&pendingImport){
+    const el=selEl();
+    if(el&&el.id===pendingImport.id){importDataFile(f,pendingImport.kind);}
+  }
+  pendingImport=null;e.target.value="";
 });
 
 /* ════════════════════════════════════════════════════════════════════
@@ -254,8 +263,101 @@ function tableToText(el){return (el.tableData||[]).map(r=>(Array.isArray(r)?r:[]
 function parseTableText(txt){return String(txt||"").split(/\r?\n/).filter(l=>l.trim()).map(l=>splitRow(l).map(c=>c.trim()));}
 function chartToText(el){return (el.chartData||[]).map(r=>[r.label,r.value,r.x,r.y,r.size,...(Array.isArray(r.series)?r.series:[])].filter(v=>v!==undefined&&v!==null&&v!=="").join(",")).join("\n");}
 function parseChartText(txt){return String(txt||"").split(/\r?\n/).filter(l=>l.trim()).map((l,i)=>{const p=splitRow(l).map(x=>x.trim());return {label:p[0]||("Item "+(i+1)),value:Number(p[1])||0,x:p[2]!==undefined&&p[2]!==""?Number(p[2]):i+1,y:p[3]!==undefined&&p[3]!==""?Number(p[3]):Number(p[1])||0,size:p[4]!==undefined&&p[4]!==""?Number(p[4]):Number(p[1])||12,series:p.slice(5).map(Number).filter(v=>!Number.isNaN(v))};});}
-function pinsToText(el){return (el.pins||[]).map(p=>[p.label,p.x,p.y,p.value].filter(v=>v!==undefined&&v!==null&&v!=="").join(",")).join("\n");}
-function parsePinsText(txt){return String(txt||"").split(/\r?\n/).filter(l=>l.trim()).map(l=>{const p=splitRow(l).map(x=>x.trim());return {label:p[0]||"Pin",x:Number(p[1])||50,y:Number(p[2])||50,value:p[3]||""};});}
+function pinsToText(el){return (el.pins||[]).map(p=>{
+  if(p.lon!=null&&p.lat!=null)return [p.label,p.lon,p.lat,p.value].filter(v=>v!==undefined&&v!==null&&v!=="").join(",");
+  return [p.label,p.x,p.y,p.value].filter(v=>v!==undefined&&v!==null&&v!=="").join(",");
+}).join("\n");}
+function parsePinsText(txt){return String(txt||"").split(/\r?\n/).filter(l=>l.trim()).map(l=>{
+  const p=splitRow(l).map(x=>x.trim());
+  const a=Number(p[1]),b=Number(p[2]);
+  // Heuristic: if either coord is outside 0–100, treat the pair as lon,lat.
+  const isLonLat = (Math.abs(a)>100)||(Math.abs(b)>100)||a<0||b<0;
+  if(isLonLat)return {label:p[0]||"Pin",lon:a||0,lat:b||0,value:p[3]||""};
+  return {label:p[0]||"Pin",x:a||50,y:b||50,value:p[3]||""};
+});}
+
+/* ── CSV / Excel import ───────────────────────────────────────────────
+   A proper CSV line splitter (handles quoted fields containing commas and
+   escaped "" quotes), a delimiter-sniffing matrix parser, and a router
+   that turns an imported sheet into chart data or table data. Excel files
+   are read with SheetJS (window.XLSX, loaded in editor.html). */
+function splitCSVLine(line, delim){
+  const out=[]; let cur="", q=false;
+  for(let i=0;i<line.length;i++){
+    const c=line[i];
+    if(q){
+      if(c==='"'){ if(line[i+1]==='"'){cur+='"';i++;} else q=false; }
+      else cur+=c;
+    } else {
+      if(c==='"') q=true;
+      else if(c===delim){ out.push(cur); cur=""; }
+      else cur+=c;
+    }
+  }
+  out.push(cur);
+  return out.map(s=>s.trim());
+}
+function parseDelimited(text){
+  const lines=String(text||"").replace(/\r\n/g,"\n").replace(/\r/g,"\n").split("\n").filter(l=>l.trim().length);
+  if(!lines.length) return [];
+  // sniff delimiter from the first line: tab > semicolon > comma
+  const first=lines[0];
+  const delim=first.includes("\t")?"\t":(first.includes(";")&&!first.includes(",")?";":",");
+  return lines.map(l=>splitCSVLine(l,delim));
+}
+/* Turn a matrix (array of string rows) into chart data.
+   Assumes row 0 may be a header; col 0 = label, col 1 = value, the rest
+   become extra series for grouped/stacked bars. */
+function matrixToChartData(matrix){
+  if(!matrix.length) return [];
+  let rows=matrix.slice();
+  // drop a header row if its second cell isn't numeric
+  const looksHeader = rows[0].length>1 && rows[0].slice(1).some(c=>c!=="" && isNaN(Number(c)));
+  let headers=null;
+  if(looksHeader){ headers=rows[0]; rows=rows.slice(1); }
+  const data=rows.map((r,i)=>{
+    const label=(r[0]??("Item "+(i+1))).toString();
+    const nums=r.slice(1).map(c=>Number(String(c).replace(/[, ]/g,""))).map(n=>Number.isFinite(n)?n:0);
+    return {label, value:nums[0]||0, series:nums.length>1?nums:[]};
+  });
+  return {data, headers: headers?headers.slice(1):null};
+}
+function importDataFile(file, kind){
+  const isExcel=/\.(xlsx|xls)$/i.test(file.name);
+  const finish=(matrix)=>{
+    if(!matrix||!matrix.length){toast("Couldn't read any rows from that file");return;}
+    const el=selEl(); if(!el) return;
+    if(kind==="table"){
+      el.tableData=matrix.map(r=>r.map(c=>String(c)));
+      el.rows=el.tableData.length; el.cols=Math.max(1,...el.tableData.map(r=>r.length));
+      renderCanvas();renderInspector();markDirty();toast(`Imported ${el.rows}×${el.cols} into table`);
+    } else {
+      const {data,headers}=matrixToChartData(matrix);
+      el.chartData=data;
+      if(headers&&headers.length>1){el.seriesNames=headers;el.showLegend=true;}
+      renderCanvas();renderInspector();markDirty();toast(`Imported ${data.length} rows into chart`);
+    }
+  };
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      if(isExcel){
+        if(typeof XLSX==="undefined"){toast("Excel support is still loading — try again in a second, or use CSV");return;}
+        const wb=XLSX.read(rd.result,{type:"array"});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const matrix=XLSX.utils.sheet_to_json(ws,{header:1,blankrows:false,raw:true})
+          .map(r=>r.map(c=>c==null?"":c));
+        finish(matrix.filter(r=>r.some(c=>String(c).trim()!=="")));
+      } else {
+        finish(parseDelimited(rd.result));
+      }
+    }catch(err){console.error(err);toast("Import failed — check the file format");}
+  };
+  rd.onerror=()=>toast("Couldn't read the file");
+  if(isExcel) rd.readAsArrayBuffer(file); else rd.readAsText(file);
+}
+let pendingImport=null;   // {id, kind}
+function pickDataFileFor(id,kind){pendingImport={id,kind};const di=$("#data-input");if(di)di.click();}
 
 function renderInspector(){
   // tab state
@@ -361,6 +463,7 @@ function elementPanel(el){
   }
   if(el.type==="table"){
     h+=`<div class="group"><span class="glabel">Table data</span>
+      <button class="tbtn" id="f-tableimport" style="width:100%;justify-content:center;margin:.1rem 0 .5rem">⬆ Import from CSV / Excel</button>
       ${field("Paste table data",`<textarea id="f-tabledata" rows="8" placeholder="Header 1,Header 2&#10;A,10&#10;B,20">${escapeTA(tableToText(el))}</textarea>`)}
       <div class="row2">
         ${field("Rows",`<input type="number" id="f-tablerows" min="1" max="40" value="${el.rows||5}">`)}
@@ -378,6 +481,7 @@ function elementPanel(el){
     </div>`;
   }
   if(el.type==="chart"){
+    const palette=Array.isArray(el.palette)&&el.palette.length?el.palette:["#e8482b","#22c55e","#38bdf8","#f59e0b","#a855f7","#ef4444"];
     h+=`<div class="group"><span class="glabel">Chart / graph data</span>
       ${field("Title",`<input type="text" id="f-charttitle" value="${escapeAttr(el.title||"Chart")}">`)}
       ${field("Type",`<select id="f-chartkind">
@@ -385,22 +489,51 @@ function elementPanel(el){
           ["bar","Bar"],["horizontalBar","Horizontal bar"],["groupedBar","Grouped bar"],["stackedBar","Stacked bar"],["line","Line"],["spline","Smooth line"],["area","Area"],["pie","Pie"],["donut","Donut"],["scatter","Scatter"],["bubble","Bubble"],["radar","Radar"],["gauge","Gauge"],["progress","Progress"],["funnel","Funnel"],["waterfall","Waterfall"],["heatmap","Heatmap"],["treemap","Treemap"],["kpi","KPI card"]
         ].map(([k,l])=>`<option value="${k}" ${el.chartKind===k?"selected":""}>${l}</option>`).join("")}
       </select>`)}
-      ${field("Data",`<textarea id="f-chartdata" rows="8" placeholder="Label,Value&#10;Jan,20&#10;Feb,35">${escapeTA(chartToText(el))}</textarea>`)}
-      ${field("Accent colour",`<input type="color" id="f-chartaccent" value="${el.accent||"#e8482b"}">`)}
+      <button class="tbtn" id="f-chartimport" style="width:100%;justify-content:center;margin:.1rem 0 .5rem">⬆ Import from CSV / Excel</button>
+      ${field("Data (or edit here)",`<textarea id="f-chartdata" rows="7" placeholder="Label,Value&#10;Jan,20&#10;Feb,35">${escapeTA(chartToText(el))}</textarea>`)}
+      <div class="insp-empty" style="padding:0 0 .5rem">Label,Value. Scatter/bubble: Label,Value,X,Y,Size. Grouped/stacked: add extra numbers per row.</div>
+    </div>
+    <div class="group"><span class="glabel">Labels &amp; values</span>
       ${field("Show values",`<div class="seg" id="f-chartvalues"><button data-show="1" class="${el.showValues!==false?"active":""}">Show</button><button data-show="0" class="${el.showValues===false?"active":""}">Hide</button></div>`)}
-      <div class="insp-empty" style="padding-top:.2rem">Use Label,Value. For scatter/bubble use Label,Value,X,Y,Size. For grouped/stacked bars add extra series values after Size.</div>
+      ${field("Text size "+(el.labelSize||26),`<input type="range" id="f-chartlabelsize" min="14" max="60" value="${el.labelSize||26}">`)}
+      <div class="row2">
+        ${field("Prefix",`<input type="text" id="f-chartprefix" placeholder="$" value="${escapeAttr(el.valuePrefix||"")}">`)}
+        ${field("Suffix",`<input type="text" id="f-chartsuffix" placeholder="%, km…" value="${escapeAttr(el.valueSuffix||"")}">`)}
+      </div>
+      <div class="row2">
+        ${field("Decimals",`<input type="number" id="f-chartdecimals" min="0" max="4" value="${el.decimals||0}">`)}
+        ${field("Max (gauge/%)",`<input type="number" id="f-chartmax" min="1" value="${el.max||100}">`)}
+      </div>
+    </div>
+    <div class="group"><span class="glabel">Appearance</span>
+      ${field("Theme",`<div class="seg" id="f-charttheme"><button data-mode="light" class="${(el.chartThemeMode||"light")==="light"?"active":""}">Light</button><button data-mode="dark" class="${el.chartThemeMode==="dark"?"active":""}">Dark</button></div>`)}
+      ${field("Gridlines",`<div class="seg" id="f-chartgrid"><button data-on="1" class="${el.gridLines!==false?"active":""}">On</button><button data-on="0" class="${el.gridLines===false?"active":""}">Off</button></div>`)}
+      ${field("Axis numbers",`<div class="seg" id="f-chartaxis"><button data-on="1" class="${el.axisValues!==false?"active":""}">On</button><button data-on="0" class="${el.axisValues===false?"active":""}">Off</button></div>`)}
+      ${field("Legend (grouped/stacked)",`<div class="seg" id="f-chartlegend"><button data-on="1" class="${el.showLegend?"active":""}">On</button><button data-on="0" class="${!el.showLegend?"active":""}">Off</button></div>`)}
+      ${field("Title colour",`<input type="color" id="f-charttitlecolor" value="${el.titleColor||"#111827"}">`)}
+      <span class="glabel" style="margin:.4rem 0 .25rem;display:block">Series colours</span>
+      <div class="palette-row" id="f-chartpalette">
+        ${palette.slice(0,6).map((c,i)=>`<input type="color" class="pal-sw" data-pi="${i}" value="${c}" title="Series ${i+1}">`).join("")}
+      </div>
     </div>`;
   }
   if(el.type==="map"){
     h+=`<div class="group"><span class="glabel">Map</span>
       ${field("Title",`<input type="text" id="f-maptitle" value="${escapeAttr(el.title||"Map")}">`)}
-      ${field("Map type",`<select id="f-mapkind">
-        ${["gambia","africa","world"].map(k=>`<option value="${k}" ${el.mapKind===k?"selected":""}>${k[0].toUpperCase()+k.slice(1)}</option>`).join("")}
+      ${field("Region",`<select id="f-mapkind">
+        ${[["gambia","The Gambia"],["senegal","Senegal"],["africa","Africa"],["europe","Europe"],["world","World"]].map(([k,l])=>`<option value="${k}" ${el.mapKind===k?"selected":""}>${l}</option>`).join("")}
       </select>`)}
-      ${field("Pins",`<textarea id="f-mappins" rows="8" placeholder="Name,X%,Y%,Value&#10;Banjul,28,44,12">${escapeTA(pinsToText(el))}</textarea>`)}
-      ${field("Accent colour",`<input type="color" id="f-mapaccent" value="${el.accent||"#2f6f4f"}">`)}
+      ${field("Quick fill",`<div class="seg" id="f-mapcities"><button data-on="0" class="${!el.useCities?"active":""}">My pins</button><button data-on="1" class="${el.useCities?"active":""}">Major cities</button></div>`)}
+      ${field("Pins (Name, Lon, Lat, Value)",`<textarea id="f-mappins" rows="6" placeholder="Banjul,-16.58,13.45,12">${escapeTA(pinsToText(el))}</textarea>`)}
+      <div class="insp-empty" style="padding:0 0 .5rem">Use real longitude,latitude (e.g. Banjul,-16.58,13.45,12). Pins land on the real map. Switch "Major cities" to auto-place well-known cities.</div>
+    </div>
+    <div class="group"><span class="glabel">Appearance</span>
+      ${field("Land colour",`<input type="color" id="f-mapaccent" value="${el.accent||"#2f6f4f"}">`)}
+      ${field("Theme",`<div class="seg" id="f-maptheme"><button data-mode="light" class="${(el.mapTheme||"light")==="light"?"active":""}">Light</button><button data-mode="dark" class="${el.mapTheme==="dark"?"active":""}">Dark</button></div>`)}
       ${field("Show labels",`<div class="seg" id="f-maplabels"><button data-show="1" class="${el.showLabels!==false?"active":""}">Show</button><button data-show="0" class="${el.showLabels===false?"active":""}">Hide</button></div>`)}
-      <div class="insp-empty" style="padding-top:.2rem">Pins use percentage coordinates: Name, X%, Y%, Value. Example: Brikama,39,54,28</div>
+      ${field("River (Gambia)",`<div class="seg" id="f-mapriver"><button data-on="1" class="${el.showRiver!==false?"active":""}">On</button><button data-on="0" class="${el.showRiver===false?"active":""}">Off</button></div>`)}
+      ${field("Label size "+(el.labelSize||24),`<input type="range" id="f-maplabelsize" min="14" max="48" value="${el.labelSize||24}">`)}
+      ${field("Title colour",`<input type="color" id="f-maptitlecolor" value="${el.titleColor||"#064e3b"}">`)}
     </div>`;
   }
 
@@ -468,6 +601,7 @@ function bindElementPanel(el){
   }
   if(el.type==="table"){
     const data=$("#f-tabledata");data&&data.addEventListener("input",()=>{el.tableData=parseTableText(data.value);el.rows=el.tableData.length;el.cols=Math.max(1,...el.tableData.map(r=>r.length));renderCanvas();markDirty();});
+    $("#f-tableimport")&&$("#f-tableimport").addEventListener("click",()=>pickDataFileFor(el.id,"table"));
     const rows=$("#f-tablerows");rows&&rows.addEventListener("input",()=>{el.rows=Math.max(1,Number(rows.value)||1);renderCanvas();markDirty();});
     const cols=$("#f-tablecols");cols&&cols.addEventListener("input",()=>{el.cols=Math.max(1,Number(cols.value)||1);renderCanvas();markDirty();});
     const theme=$("#f-tabletheme");theme&&theme.addEventListener("change",()=>{el.theme=theme.value;renderCanvas();markDirty();});
@@ -483,15 +617,34 @@ function bindElementPanel(el){
     const title=$("#f-charttitle");title&&title.addEventListener("input",()=>{el.title=title.value;renderCanvas();markDirty();});
     const kind=$("#f-chartkind");kind&&kind.addEventListener("change",()=>{el.chartKind=kind.value;renderCanvas();markDirty();});
     const data=$("#f-chartdata");data&&data.addEventListener("input",()=>{el.chartData=parseChartText(data.value);renderCanvas();markDirty();});
-    const acc=$("#f-chartaccent");acc&&acc.addEventListener("input",()=>{el.accent=acc.value;renderCanvas();markDirty();});
+    $("#f-chartimport")&&$("#f-chartimport").addEventListener("click",()=>pickDataFileFor(el.id,"chart"));
     seg("f-chartvalues","show",v=>{el.showValues=v==="1";renderCanvas();markDirty();});
+    bindRange("f-chartlabelsize",v=>{el.labelSize=v;renderCanvas();markDirty();},v=>v,"Text size");
+    const pre=$("#f-chartprefix");pre&&pre.addEventListener("input",()=>{el.valuePrefix=pre.value;renderCanvas();markDirty();});
+    const suf=$("#f-chartsuffix");suf&&suf.addEventListener("input",()=>{el.valueSuffix=suf.value;renderCanvas();markDirty();});
+    const dec=$("#f-chartdecimals");dec&&dec.addEventListener("input",()=>{el.decimals=Math.max(0,Number(dec.value)||0);renderCanvas();markDirty();});
+    const mx=$("#f-chartmax");mx&&mx.addEventListener("input",()=>{el.max=Math.max(1,Number(mx.value)||100);renderCanvas();markDirty();});
+    seg("f-charttheme","mode",v=>{el.chartThemeMode=v;renderCanvas();markDirty();});
+    seg("f-chartgrid","on",v=>{el.gridLines=v==="1";renderCanvas();markDirty();});
+    seg("f-chartaxis","on",v=>{el.axisValues=v==="1";renderCanvas();markDirty();});
+    seg("f-chartlegend","on",v=>{el.showLegend=v==="1";renderCanvas();markDirty();});
+    const tc=$("#f-charttitlecolor");tc&&tc.addEventListener("input",()=>{el.titleColor=tc.value;renderCanvas();markDirty();});
+    $$("#f-chartpalette .pal-sw").forEach(sw=>sw.addEventListener("input",()=>{
+      const pal=Array.isArray(el.palette)&&el.palette.length?el.palette.slice():["#e8482b","#22c55e","#38bdf8","#f59e0b","#a855f7","#ef4444"];
+      pal[Number(sw.dataset.pi)]=sw.value;el.palette=pal;el.accent=pal[0];renderCanvas();markDirty();
+    }));
   }
   if(el.type==="map"){
     const title=$("#f-maptitle");title&&title.addEventListener("input",()=>{el.title=title.value;renderCanvas();markDirty();});
-    const kind=$("#f-mapkind");kind&&kind.addEventListener("change",()=>{el.mapKind=kind.value;renderCanvas();markDirty();});
-    const pins=$("#f-mappins");pins&&pins.addEventListener("input",()=>{el.pins=parsePinsText(pins.value);renderCanvas();markDirty();});
+    const kind=$("#f-mapkind");kind&&kind.addEventListener("change",()=>{el.mapKind=kind.value;renderCanvas();renderInspector();markDirty();});
+    const pins=$("#f-mappins");pins&&pins.addEventListener("input",()=>{el.pins=parsePinsText(pins.value);el.useCities=false;renderCanvas();markDirty();});
     const acc=$("#f-mapaccent");acc&&acc.addEventListener("input",()=>{el.accent=acc.value;renderCanvas();markDirty();});
+    seg("f-mapcities","on",v=>{el.useCities=v==="1";renderCanvas();renderInspector();markDirty();});
+    seg("f-maptheme","mode",v=>{el.mapTheme=v;renderCanvas();markDirty();});
     seg("f-maplabels","show",v=>{el.showLabels=v==="1";renderCanvas();markDirty();});
+    seg("f-mapriver","on",v=>{el.showRiver=v==="1";renderCanvas();markDirty();});
+    bindRange("f-maplabelsize",v=>{el.labelSize=v;renderCanvas();markDirty();},v=>v,"Label size");
+    const tc=$("#f-maptitlecolor");tc&&tc.addEventListener("input",()=>{el.titleColor=tc.value;renderCanvas();markDirty();});
   }
 
   if(el.type==="object"){
@@ -551,8 +704,11 @@ function slidePanel(){
   BACKGROUNDS.forEach((b,i)=>{const style=`background:${b.css};${b.size?`background-size:${b.size};`:""}`;
     bgs+=`<div class="bg-cell ${s.bg===b.css?"":""}" style="${style}" data-bgi="${i}"><span class="bgn">${b.name}</span></div>`;});
   bgs+="</div>";
+  const curFx=s.bgFx||"none";
+  let fx=(BG_FX||[]).map(f=>`<button class="chip bgfx-chip ${curFx===f.key?"active":""}" data-bgfx="${f.key}" title="${f.hint||""}">${f.label}</button>`).join("");
   let trans=Object.entries(TRANSITIONS).map(([k,v])=>`<button class="chip ${s.transition===k?"active":""}" data-trans="${k}">${v}</button>`).join("");
   return `<div class="group"><span class="glabel">Slide background</span>${bgs}</div>
+    <div class="group"><span class="glabel">Moving background</span><div class="chiprow bgfx-row">${fx}</div></div>
     <div class="group"><span class="glabel">Presenter notes</span>${field("Notes for phone controller",`<textarea id="s-notes" rows="6" placeholder="Private notes visible on presenter phone only">${escapeTA(s.notes||"")}</textarea>`)}</div>
     <div class="group"><span class="glabel">Transition in</span><div class="chiprow">${trans}</div></div>
     <div class="group">
@@ -564,6 +720,10 @@ function bindSlidePanel(){
   const s=curSlide();
   $$(".bg-cell[data-bgi]",inspBody).forEach(c=>c.addEventListener("click",()=>{
     const b=BACKGROUNDS[Number(c.dataset.bgi)];s.bg=b.css;s.bgSize=b.size||null;renderAll();markDirty();}));
+  $$(".bgfx-chip[data-bgfx]",inspBody).forEach(c=>c.addEventListener("click",()=>{
+    s.bgFx=c.dataset.bgfx;
+    $$(".bgfx-chip[data-bgfx]",inspBody).forEach(x=>x.classList.remove("active"));c.classList.add("active");
+    renderAll();markDirty();}));
   const notes=$("#s-notes");notes&&notes.addEventListener("input",()=>{s.notes=notes.value;renderFilmstrip();updateNotesPanel();markDirty();});
   $$(".chip[data-trans]",inspBody).forEach(c=>c.addEventListener("click",()=>{
     s.transition=c.dataset.trans;$$(".chip[data-trans]",inspBody).forEach(x=>x.classList.remove("active"));c.classList.add("active");markDirty();}));
@@ -612,7 +772,7 @@ function buildTplGallery(){
     const card=document.createElement("div");card.className="tpl";
     card.innerHTML=`<span class="tname">${tpl.name}</span>`;
     const mini=document.createElement("div");mini.className="mini";mini.style.width=W+"px";mini.style.height=H+"px";
-    const built=tpl.build();paintSlide(mini,Object.assign(newSlide(),{bg:built.bg,bgSize:built.bgSize,els:built.els}),{live:false});
+    const built=tpl.build();paintSlide(mini,Object.assign(newSlide(),{bg:built.bg,bgSize:built.bgSize,bgFx:built.bgFx||"none",els:built.els}),{live:false});
     requestAnimationFrame(()=>{mini.style.transform=`scale(${card.clientWidth/W})`;});
     card.appendChild(mini);
     card.addEventListener("click",()=>applyTemplate(tpl));
@@ -685,7 +845,7 @@ function loadServerDeck(){
     Deck.title = d.title || "Untitled deck";
     Deck.code  = d.code  || Deck.code;
     Deck.slides = d.slides.map(s=>Object.assign(newSlide(),{
-      id:String(s.id||uid()), bg:s.bg, bgSize:s.bgSize||null,
+      id:String(s.id||uid()), bg:s.bg, bgSize:s.bgSize||null, bgFx:s.bgFx||"none",
       transition:s.transition||"fade", notes:s.notes||"",
       els:(s.els||[]).map(e=>Object.assign({},e)),
     }));
@@ -704,7 +864,7 @@ function loadServerDeck(){
 let saveTimer=null, saving=false, queuedSave=false;
 function deckPayload(){
   return {title:Deck.title, allow_reactions:true,
-    slides:Deck.slides.map(s=>({bg:s.bg,bgSize:s.bgSize,transition:s.transition,notes:s.notes||"",els:s.els}))};
+    slides:Deck.slides.map(s=>({bg:s.bg,bgSize:s.bgSize,bgFx:s.bgFx||"none",transition:s.transition,notes:s.notes||"",els:s.els}))};
 }
 async function saveDeck(silent){
   if(!SRV.saveUrl){updateSaveState("error");if(!silent)toast("Save URL is missing");return false;}

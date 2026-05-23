@@ -73,7 +73,7 @@ def deck_create(request):
     # Seed a single blank slide so the editor never opens empty. The editor
     # immediately offers the template gallery on top of this.
     Slide.objects.create(deck=deck, position=0, data={
-        "bg": "#f6f1e7", "bgSize": None, "transition": "fade", "els": [],
+        "bg": "#f6f1e7", "bgSize": None, "bgFx": "none", "transition": "fade", "els": [],
     })
     return redirect("hanns:edit", code=deck.code)
 
@@ -122,6 +122,7 @@ def deck_save(request, code):
             bulk.append(Slide(deck=deck, position=i, data={
                 "bg": s.get("bg", "#f6f1e7"),
                 "bgSize": s.get("bgSize"),
+                "bgFx": s.get("bgFx", "none"),
                 "transition": s.get("transition", "fade"),
                 "notes": s.get("notes", ""),
                 "els": s.get("els", []) if isinstance(s.get("els"), list) else [],

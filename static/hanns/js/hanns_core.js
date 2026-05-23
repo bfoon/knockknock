@@ -537,6 +537,31 @@ const FONTS = [
   {label:"Plus Jakarta Sans", css:"\"Plus Jakarta Sans\",sans-serif"}
 ];
 
+/* ── moving / animated backgrounds ────────────────────────────────────
+   Each is a per-slide effect applied as a CSS class on the slide canvas
+   (.bgfx-<key>). The motion lives in hanns.css via the container's
+   ::before / ::after layers so it renders the same in the editor,
+   thumbnails and the live stage. Pair any of these with a static `bg`
+   gradient underneath. `none` = a still background. */
+const BG_FX = [
+  {key:"none",      label:"None",            hint:"Static background"},
+  {key:"drift",     label:"Aurora drift",    hint:"Soft colour blobs float and breathe"},
+  {key:"gradient",  label:"Gradient flow",   hint:"Hue slowly pans across the slide"},
+  {key:"stars",     label:"Starfield",       hint:"Twinkling stars drift downward"},
+  {key:"bokeh",     label:"Floating bokeh",  hint:"Glowing orbs rise gently"},
+  {key:"waves",     label:"Ocean waves",     hint:"Layered waves roll sideways"},
+  {key:"bubbles",   label:"Rising bubbles",  hint:"Bubbles float up the slide"},
+  {key:"grid",      label:"Scrolling grid",  hint:"Tech grid pans diagonally"},
+  {key:"rays",      label:"Light rays",      hint:"Conic light sweeps round"},
+  {key:"confetti",  label:"Confetti fall",   hint:"Colour confetti drifts down"},
+  {key:"snow",      label:"Snowfall",        hint:"Soft snow drifts down"},
+  {key:"rain",      label:"Rain",            hint:"Diagonal rain streaks"},
+  {key:"orbit",     label:"Orbiting dots",   hint:"Particles circle the centre"},
+  {key:"pulse",     label:"Spotlight pulse", hint:"A glow breathes from centre"},
+  {key:"mesh",      label:"Mesh shimmer",    hint:"Gradient mesh shifts and shimmers"},
+  {key:"noise",     label:"Film grain",      hint:"Subtle moving grain texture"},
+];
+
 /* ── creative object library: Canva-like visual data objects ─────── */
 const OBJECTS = [
   {
@@ -2751,6 +2776,15 @@ function makeChart(kind="bar",over={}){
     x:150,y:118,w:650,h:330,rot:0,anim:"rise",animDelay:0,
     chartKind:kind, title:isGraph?"Growth graph":"Impact chart", accent:"#e8482b",
     showValues:true, chartTheme:"modern",
+    // ── richer chart controls ──
+    labelSize:26,          // SVG label/value font size (px in chart space)
+    gridLines:true,        // show background gridlines
+    axisValues:true,       // show numeric axis scale on the left
+    showLegend:false,      // legend for grouped/stacked bars
+    seriesNames:["Series 1","Series 2","Series 3"],
+    palette:["#e8482b","#22c55e","#38bdf8","#f59e0b","#a855f7","#ef4444"],
+    valuePrefix:"", valueSuffix:"", decimals:0, unit:"", max:100,
+    titleColor:"", chartThemeMode:"light",
     chartData:[
       {label:"Jan",value:24},{label:"Feb",value:38},{label:"Mar",value:45},
       {label:"Apr",value:62},{label:"May",value:74},{label:"Jun",value:88}
@@ -2758,15 +2792,18 @@ function makeChart(kind="bar",over={}){
   },over));
 }
 function makeMap(kind="gambia",over={}){
+  const geo=(typeof MAP_GEO!=="undefined"&&MAP_GEO[kind])?MAP_GEO[kind]:null;
+  const cities=geo&&geo.cities?geo.cities.slice(0,4).map((c,i)=>({label:c.label,lon:c.lon,lat:c.lat,value:[12,28,18,10][i]||""})):[];
   return elBase("map",Object.assign({
     x:150,y:100,w:650,h:360,rot:0,anim:"rise",animDelay:0,
-    mapKind:kind, title:kind==="gambia"?"Gambia activity map":"Activity map",
-    accent:"#2f6f4f", showLabels:true,
-    pins:[
-      {label:"Banjul",x:28,y:44,value:12},
-      {label:"Brikama",x:39,y:54,value:28},
-      {label:"Soma",x:61,y:48,value:18},
-      {label:"Basse",x:82,y:43,value:10}
+    mapKind:kind, title:(geo?geo.name:"Activity")+" map",
+    accent:"#2f6f4f", showLabels:true, showRiver:true, useCities:false,
+    labelSize:24, mapTheme:"light", titleColor:"",
+    pins: cities.length?cities:[
+      {label:"Banjul",lon:-16.58,lat:13.45,value:12},
+      {label:"Brikama",lon:-16.65,lat:13.27,value:28},
+      {label:"Soma",lon:-15.53,lat:13.43,value:18},
+      {label:"Basse",lon:-14.21,lat:13.31,value:10}
     ]
   },over));
 }
@@ -2838,7 +2875,7 @@ function T_thanks(){return{bg:BACKGROUNDS[8].css,els:[
 ]};}
 
 
-function T_waterLevel(){return{bg:"radial-gradient(80% 80% at 50% 20%,#17405f 0%,#07131f 55%,#020509 100%)",els:[
+function T_waterLevel(){return{bg:"radial-gradient(80% 80% at 50% 20%,#17405f 0%,#07131f 55%,#020509 100%)",bgFx:"bubbles",els:[
   makeText({x:70,y:70,w:520,h:80,text:"Water Level",font:'"Archivo Expanded","Archivo",sans-serif',size:54,weight:800,color:"#ffffff",anim:"left"}),
   makeText({x:74,y:145,w:480,h:80,text:"Specify the percentage and the water animates inside the glass.",size:24,weight:500,color:"#bfeaf7",font:'"Archivo",sans-serif',lh:1.25,anim:"fade",animDelay:.2}),
   makeObject("water_glass",{x:630,y:82,w:230,h:360,level:68,count:1,anim:"pop",animDelay:.15}),
@@ -2857,12 +2894,100 @@ function T_seedGrowth(){return{bg:"linear-gradient(160deg,#10281e,#2f6f4f 65%,#7
   makeObject("seed_pile",{x:525,y:95,w:350,h:300,count:48,level:82,anim:"pop",animDelay:.25}),
   makeText({x:76,y:392,w:380,h:76,text:"48 units",font:'"Archivo Expanded","Archivo",sans-serif',size:48,weight:800,color:"#d8f3a4",anim:"left",animDelay:.35}),
 ]};}
-function T_modernCanva(){return{bg:"radial-gradient(55% 65% at 20% 10%,#ff6a4d 0%,transparent 60%),radial-gradient(60% 80% at 90% 25%,#4cc9f0 0%,transparent 58%),linear-gradient(135deg,#1a1028,#08111f)",els:[
+function T_modernCanva(){return{bg:"radial-gradient(55% 65% at 20% 10%,#ff6a4d 0%,transparent 60%),radial-gradient(60% 80% at 90% 25%,#4cc9f0 0%,transparent 58%),linear-gradient(135deg,#1a1028,#08111f)",bgFx:"mesh",els:[
   makeShape("rect",{x:70,y:72,w:820,h:396,fill:"rgba(255,255,255,.13)",stroke:"rgba(255,255,255,.38)",strokeW:1,radius:34,anim:"zoom"}),
   makeText({x:110,y:112,w:520,h:90,text:"Modern presentation",font:'"Archivo Expanded","Archivo",sans-serif',size:49,weight:800,color:"#ffffff",lh:1.05,anim:"rise",animDelay:.1}),
   makeText({x:112,y:228,w:440,h:88,text:"Canva-style glass cards, gradients, animated icons and clean data objects.",size:24,color:"#e7e6ff",font:'"Archivo",sans-serif',lh:1.3,anim:"fade",animDelay:.25}),
   makeObject("people",{x:595,y:150,w:220,h:180,count:12,anim:"pop",animDelay:.3}),
   makeObject("plates",{x:600,y:330,w:190,h:88,count:5,anim:"rise",animDelay:.42}),
+]};}
+
+/* ── new creative templates: moving backgrounds + objects + shapes ─── */
+function T_cosmicTitle(){return{bg:"radial-gradient(80% 90% at 50% 0%,#312e81 0%,transparent 60%),linear-gradient(160deg,#020617,#0b1027)",bgFx:"stars",els:[
+  makeCreativeShape("burst_12",{x:560,y:-60,w:520,h:520,fill:"#7c3aed",opacity:.5,anim:"zoom"}),
+  makeText({x:80,y:120,w:520,h:60,text:"INTO THE UNKNOWN",size:18,weight:800,ls:7,color:"#a5b4fc",font:'"Spline Sans Mono",monospace',anim:"left"}),
+  makeText({x:78,y:175,w:740,h:220,text:"A cosmic\nbeginning",font:'"Playfair Display",serif',size:104,weight:800,italic:true,color:"#f8fafc",lh:.98,anim:"rise",animDelay:.12}),
+  makeText({x:82,y:430,w:600,h:50,text:"Starfield motion · live audience reactions",size:22,color:"#c7d2fe",font:'"Inter",sans-serif',anim:"fade",animDelay:.35}),
+]};}
+function T_oceanHero(){return{bg:"linear-gradient(180deg,#0c4a6e,#0369a1 55%,#0ea5e9)",bgFx:"waves",els:[
+  makeText({x:70,y:96,w:560,h:60,text:"BLUE ECONOMY",size:18,weight:800,ls:6,color:"#bae6fd",font:'"Spline Sans Mono",monospace',anim:"left"}),
+  makeText({x:68,y:150,w:640,h:200,text:"Riding the\ntide of change",font:'"Fraunces",serif',size:88,weight:700,italic:true,color:"#f0f9ff",lh:1,anim:"rise",animDelay:.1}),
+  makeObject("water_glass",{x:700,y:120,w:190,h:320,level:74,anim:"pop",animDelay:.3}),
+  makeCreativeShape("water_wave",{x:60,y:392,w:840,h:120,fill:"rgba(255,255,255,.18)",anim:"reveal",animDelay:.3}),
+]};}
+function T_bubblePitch(){return{bg:"radial-gradient(70% 80% at 80% 10%,#22d3ee 0%,transparent 60%),linear-gradient(150deg,#06283d,#041d2e)",bgFx:"bubbles",els:[
+  makeText({x:72,y:90,w:540,h:80,text:"Fresh ideas, rising fast",font:'"Sora",sans-serif',size:54,weight:800,color:"#ecfeff",lh:1.05,anim:"rise"}),
+  makeText({x:74,y:200,w:430,h:96,text:"Float your concept above the noise with motion that feels alive.",size:24,color:"#a5f3fc",font:'"Manrope",sans-serif',lh:1.32,anim:"fade",animDelay:.2}),
+  makeObject("idea",{x:560,y:120,w:300,h:300,count:1,showCount:false,anim:"pop",animDelay:.3}),
+  makeCreativeShape("blob_07",{x:90,y:330,w:180,h:180,fill:"rgba(34,211,238,.28)",anim:"zoom",animDelay:.4}),
+]};}
+function T_celebrate(){return{bg:"radial-gradient(80% 80% at 50% 0%,#f59e0b 0%,transparent 55%),linear-gradient(160deg,#7c2d12,#111827)",bgFx:"confetti",els:[
+  makeText({x:120,y:170,w:720,h:160,text:"We did it! 🎉",font:'"Archivo Expanded","Archivo",sans-serif',size:96,weight:800,color:"#fff7ed",align:"center",anim:"pop"}),
+  makeText({x:160,y:340,w:640,h:60,text:"Milestone reached — thank you, team.",size:28,color:"#fde68a",align:"center",font:'"Manrope",sans-serif',anim:"fade",animDelay:.3}),
+  makeObject("trophy",{x:430,y:60,w:110,h:110,count:1,showCount:false,anim:"drop",animDelay:.15}),
+]};}
+function T_snowQuiet(){return{bg:"linear-gradient(170deg,#0f172a,#1e293b 60%,#334155)",bgFx:"snow",els:[
+  makeText({x:120,y:160,w:720,h:200,text:"“Stillness\nspeaks.”",font:'"Cormorant Garamond",serif',size:104,weight:600,italic:true,color:"#e2e8f0",align:"center",lh:1,anim:"blur"}),
+  makeText({x:120,y:400,w:720,h:40,text:"— a quiet section break",size:20,color:"#94a3b8",align:"center",font:'"Inter",sans-serif',anim:"fade",animDelay:.4}),
+]};}
+function T_rainMood(){return{bg:"linear-gradient(160deg,#0b1220,#1e293b)",bgFx:"rain",els:[
+  makeText({x:70,y:110,w:600,h:60,text:"CLIMATE BRIEF",size:18,weight:800,ls:6,color:"#7dd3fc",font:'"Spline Sans Mono",monospace',anim:"left"}),
+  makeText({x:68,y:165,w:700,h:170,text:"When the\nrains return",font:'"Fraunces",serif',size:82,weight:700,color:"#f1f5f9",lh:1,anim:"rise",animDelay:.12}),
+  makeObject("raindrops",{x:640,y:150,w:240,h:240,count:18,accent:"#38bdf8",anim:"pop",animDelay:.3}),
+]};}
+function T_gridTech(){return{bg:"linear-gradient(135deg,#020617,#0b1d3a)",bgFx:"grid",els:[
+  makeText({x:64,y:70,w:560,h:50,text:"SYSTEM STATUS",size:17,weight:800,ls:6,color:"#38bdf8",font:'"JetBrains Mono",monospace',anim:"left"}),
+  makeText({x:62,y:118,w:680,h:120,text:"Live infrastructure",font:'"Space Grotesk",sans-serif',size:62,weight:800,color:"#e2e8f0",anim:"rise",animDelay:.1}),
+  makeObject("server",{x:80,y:255,w:230,h:200,count:6,accent:"#22d3ee",anim:"left",animDelay:.25}),
+  makeObject("cloud",{x:360,y:255,w:230,h:200,count:4,accent:"#60a5fa",anim:"rise",animDelay:.32}),
+  makeObject("database",{x:640,y:255,w:230,h:200,count:3,accent:"#34d399",anim:"right",animDelay:.4}),
+]};}
+function T_spotlight(){return{bg:"radial-gradient(50% 55% at 50% 38%,#1e293b 0%,#020617 70%)",bgFx:"pulse",bgFxColor:"rgba(56,189,248,.35)",els:[
+  makeText({x:160,y:170,w:640,h:180,text:"One bold\nstatement",font:'"Archivo Expanded","Archivo",sans-serif',size:84,weight:800,color:"#f8fafc",align:"center",lh:.98,anim:"zoom"}),
+  makeShape("rect",{x:420,y:380,w:120,h:8,fill:"#38bdf8",radius:6,anim:"reveal",animDelay:.35}),
+  makeText({x:160,y:410,w:640,h:44,text:"Let it land. Then move on.",size:22,color:"#cbd5e1",align:"center",font:'"Inter",sans-serif',anim:"fade",animDelay:.45}),
+]};}
+function T_auroraStat(){return{bg:"linear-gradient(150deg,#0f172a,#1e1b4b 65%,#312e81)",bgFx:"drift",els:[
+  makeText({x:70,y:60,w:520,h:44,text:"IMPACT AT A GLANCE",size:17,weight:800,ls:5,color:"#c4b5fd",font:'"Spline Sans Mono",monospace',anim:"left"}),
+  makeText({x:64,y:104,w:560,h:230,text:"93%",font:'"Archivo Expanded","Archivo",sans-serif',size:200,weight:800,color:"#f5f3ff",lh:.9,anim:"pop"}),
+  makeText({x:70,y:360,w:540,h:90,text:"of viewers remember a slide that moves. Make every frame count.",size:25,color:"#ddd6fe",font:'"Manrope",sans-serif',lh:1.3,anim:"fade",animDelay:.3}),
+  makeObject("people",{x:640,y:150,w:250,h:240,count:16,accent:"#a855f7",showCount:false,anim:"rise",animDelay:.25}),
+]};}
+function T_orbitSystem(){return{bg:"radial-gradient(70% 80% at 50% 50%,#1e1b4b 0%,#020617 75%)",bgFx:"orbit",els:[
+  makeCreativeShape("donut",{x:360,y:130,w:240,h:240,fill:"rgba(168,85,247,.5)",anim:"zoom"}),
+  makeText({x:120,y:60,w:720,h:50,text:"THE ECOSYSTEM",size:18,weight:800,ls:7,color:"#c4b5fd",align:"center",font:'"Spline Sans Mono",monospace',anim:"fade"}),
+  makeText({x:340,y:215,w:280,h:80,text:"Core",font:'"Sora",sans-serif',size:44,weight:800,color:"#f8fafc",align:"center",anim:"pop",animDelay:.2}),
+  makeText({x:120,y:430,w:720,h:50,text:"Everything orbits the value you create.",size:22,color:"#ddd6fe",align:"center",font:'"Inter",sans-serif',anim:"fade",animDelay:.4}),
+]};}
+function T_rayLaunch(){return{bg:"radial-gradient(70% 80% at 50% 30%,#f59e0b 0%,transparent 58%),linear-gradient(160deg,#451a03,#111827)",bgFx:"rays",els:[
+  makeText({x:90,y:130,w:600,h:60,text:"LAUNCH DAY",size:18,weight:800,ls:7,color:"#fde68a",font:'"Spline Sans Mono",monospace',anim:"left"}),
+  makeText({x:88,y:185,w:760,h:180,text:"Ready for\nliftoff",font:'"Bebas Neue",sans-serif',size:128,weight:400,color:"#fffbeb",lh:.92,ls:1,anim:"rise",animDelay:.12}),
+  makeObject("airplane",{x:660,y:300,w:230,h:150,count:1,showCount:false,accent:"#fbbf24",anim:"right",animDelay:.3}),
+]};}
+function T_filmStory(){return{bg:"linear-gradient(160deg,#1c1917,#0c0a09)",bgFx:"noise",els:[
+  makeShape("rect",{x:0,y:60,w:960,h:60,fill:"#0c0a09",anim:"fade"}),
+  makeShape("rect",{x:0,y:420,w:960,h:60,fill:"#0c0a09",anim:"fade"}),
+  makeText({x:90,y:200,w:780,h:140,text:"A documentary look",font:'"Libre Baskerville",serif',size:64,weight:700,color:"#fafaf9",anim:"blur",animDelay:.1}),
+  makeText({x:92,y:330,w:600,h:50,text:"Grain, contrast and a quiet confidence.",size:22,color:"#d6d3d1",font:'"Lora",serif',italic:true,anim:"fade",animDelay:.3}),
+]};}
+function T_gradientBrand(){return{bg:"linear-gradient(135deg,#ec4899,#8b5cf6 50%,#22d3ee)",bgFx:"gradient",els:[
+  makeText({x:80,y:150,w:800,h:200,text:"Bold by\ndefault",font:'"Plus Jakarta Sans",sans-serif',size:110,weight:800,color:"#ffffff",lh:.95,anim:"rise"}),
+  makeText({x:84,y:400,w:600,h:50,text:"A living gradient for brand & product reveals.",size:24,color:"rgba(255,255,255,.92)",font:'"Plus Jakarta Sans",sans-serif',weight:500,anim:"fade",animDelay:.3}),
+  makeCreativeShape("spark",{x:760,y:90,w:120,h:120,fill:"rgba(255,255,255,.85)",anim:"pop",animDelay:.4}),
+]};}
+function T_shapeShowcase(){return{bg:"linear-gradient(150deg,#0f172a,#1e293b)",bgFx:"drift",els:[
+  makeText({x:64,y:54,w:760,h:60,text:"Creative shapes",font:'"Space Grotesk",sans-serif',size:52,weight:800,color:"#f8fafc",anim:"rise"}),
+  makeCreativeShape("blob_03",{x:70,y:150,w:200,h:200,fill:"#f43f5e",anim:"pop",animDelay:.15}),
+  makeCreativeShape("star_8",{x:300,y:150,w:200,h:200,fill:"#fbbf24",anim:"pop",animDelay:.25}),
+  makeCreativeShape("hexagon",{x:530,y:150,w:200,h:200,fill:"#22d3ee",anim:"pop",animDelay:.35}),
+  makeCreativeShape("burst_06",{x:740,y:150,w:200,h:200,fill:"#a855f7",anim:"pop",animDelay:.45}),
+  makeText({x:64,y:400,w:820,h:60,text:"Mix blobs, stars, polygons and bursts as decorative accents.",size:22,color:"#cbd5e1",font:'"Inter",sans-serif',anim:"fade",animDelay:.55}),
+]};}
+function T_growthBubbles(){return{bg:"linear-gradient(160deg,#052e16,#166534 70%,#22c55e)",bgFx:"bubbles",els:[
+  makeText({x:70,y:70,w:560,h:120,text:"Things that grow",font:'"Fraunces",serif',size:70,weight:700,italic:true,color:"#f0fdf4",anim:"rise"}),
+  makeObject("tree",{x:90,y:200,w:240,h:230,count:9,anim:"left",animDelay:.2}),
+  makeObject("seed_pile",{x:370,y:200,w:240,h:230,count:40,level:80,anim:"rise",animDelay:.3}),
+  makeObject("farmer",{x:650,y:200,w:240,h:230,count:6,anim:"right",animDelay:.4}),
 ]};}
 
 const BASE_TEMPLATES = [
@@ -2877,6 +3002,24 @@ const BASE_TEMPLATES = [
   {name:"Agri Impact",     build:T_agriImpact},
   {name:"Seed Growth",     build:T_seedGrowth},
   {name:"Canva Glass",     build:T_modernCanva},
+
+  // ── motion-forward templates (moving backgrounds + objects/shapes) ──
+  {name:"Cosmic Title",    build:T_cosmicTitle},
+  {name:"Ocean Hero",      build:T_oceanHero},
+  {name:"Bubble Pitch",    build:T_bubblePitch},
+  {name:"Celebrate 🎉",    build:T_celebrate},
+  {name:"Snow · Quiet",    build:T_snowQuiet},
+  {name:"Rain · Mood",     build:T_rainMood},
+  {name:"Grid · Tech",     build:T_gridTech},
+  {name:"Spotlight",       build:T_spotlight},
+  {name:"Aurora Stat",     build:T_auroraStat},
+  {name:"Orbit System",    build:T_orbitSystem},
+  {name:"Ray Launch",      build:T_rayLaunch},
+  {name:"Film Story",      build:T_filmStory},
+  {name:"Gradient Brand",  build:T_gradientBrand},
+  {name:"Shape Showcase",  build:T_shapeShowcase},
+  {name:"Growth Bubbles",  build:T_growthBubbles},
+
   {name:"Thank you",       build:T_thanks},
 ];
 
@@ -3225,7 +3368,7 @@ const Deck = {
   code: genCode(),
 };
 function genCode(){const a="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";let s="";for(let i=0;i<6;i++)s+=a[Math.random()*a.length|0];return s;}
-function newSlide(over={}){return Object.assign({id:uid(),bg:BACKGROUNDS[0].css,bgSize:null,transition:"fade",notes:"",els:[]},over);}
+function newSlide(over={}){return Object.assign({id:uid(),bg:BACKGROUNDS[0].css,bgSize:null,bgFx:"none",transition:"fade",notes:"",els:[]},over);}
 function curSlide(){return Deck.slides[Deck.cur];}
 function selEl(){const s=curSlide();return s?s.els.find(e=>e.id===Deck.sel):null;}
 
@@ -3366,64 +3509,130 @@ function polar(cx,cy,r,a){return [cx+r*Math.cos(a),cy+r*Math.sin(a)];}
 function renderChart(el){
   const box=document.createElement("div");box.className="chart-box chart-"+(el.chartKind||"bar");
   box.style.setProperty("--accent",el.accent||"#e8482b");
-  const title=document.createElement("div");title.className="chart-title";title.textContent=el.title||"Chart";box.appendChild(title);
+  const palette=chartPalette(el);
+  box.style.setProperty("--c0",palette[0]);box.style.setProperty("--c1",palette[1]);box.style.setProperty("--c2",palette[2]);
+  box.style.setProperty("--c3",palette[3]);box.style.setProperty("--c4",palette[4]);box.style.setProperty("--c5",palette[5]);
+  if(el.chartThemeMode==="dark")box.classList.add("chart-theme-dark");
+  if(el.gridLines===false)box.classList.add("chart-nogrid");
+  const title=document.createElement("div");title.className="chart-title";title.textContent=el.title||"Chart";
+  if(el.titleColor)title.style.color=el.titleColor;
+  box.appendChild(title);
   const wrap=document.createElement("div");wrap.className="chart-svg-wrap";
-  const S=svg("svg",{viewBox:"0 0 1000 520",preserveAspectRatio:"none"});
+
+  // ── KEY FIX: a coordinate space that MATCHES the element's pixel aspect
+  // ratio, drawn with preserveAspectRatio "meet" (default). The old code
+  // used a fixed 1000×520 viewBox stretched with preserveAspectRatio:none,
+  // which squashed every <text> non-uniformly — that was the blurry text.
+  // Now 1 SVG unit == 1 on-screen px (roughly), so text never distorts. */
+  const VW=1000;
+  const aspect=(Number(el.h)||330) / Math.max(1,(Number(el.w)||650));
+  const VH=Math.round(clamp(VW*aspect,360,1400));   // viewBox height tracks the box
+  const fs=Number(el.labelSize)||26;                 // user-controllable label size
+  const showVals=el.showValues!==false;
+  const S=svg("svg",{viewBox:`0 0 ${VW} ${VH}`,preserveAspectRatio:"xMidYMid meet"});
+  S.style.setProperty("--fs",fs+"px");
+  S.style.setProperty("--fs-sm",Math.round(fs*0.86)+"px");
+
   const data=chartData(el);const vals=data.map(d=>d.value);const max=Math.max(1,...vals,...data.flatMap(d=>d.series||[]))*1.15;
-  const kind=el.chartKind||"bar";const left=85,right=50,top=35,bottom=78,cw=1000-left-right,ch=520-top-bottom;
-  const grid=svg("g",{class:"chart-grid"});for(let i=0;i<=4;i++){let y=top+ch*i/4;grid.appendChild(svg("line",{x1:left,y1:y,x2:1000-right,y2:y}));}S.appendChild(grid);
-  if(!["pie","donut","radar","gauge","treemap","funnel","kpi","progress","heatmap"].includes(kind)){
-    S.appendChild(svg("line",{class:"chart-axis",x1:left,y1:top+ch,x2:1000-right,y2:top+ch}));
+  const kind=el.chartKind||"bar";
+  // margins scale a little with label size so big labels don't clip
+  const left=Math.max(70,fs*2.6), right=44, top=30, bottom=Math.max(64,fs*2.4);
+  const cw=VW-left-right, ch=VH-top-bottom;
+  const axed=!["pie","donut","radar","gauge","treemap","funnel","kpi","progress","heatmap"].includes(kind);
+  if(el.gridLines!==false && axed){
+    const grid=svg("g",{class:"chart-grid"});
+    for(let i=0;i<=4;i++){let y=top+ch*i/4;grid.appendChild(svg("line",{x1:left,y1:y,x2:VW-right,y2:y}));
+      if(el.axisValues!==false)grid.appendChild(svgText(left-12,y+fs*0.34,Math.round(max*(1-i/4)),{class:"chart-axis-val",textAnchor:"end"}));}
+    S.appendChild(grid);
+  }
+  if(axed){
+    S.appendChild(svg("line",{class:"chart-axis",x1:left,y1:top+ch,x2:VW-right,y2:top+ch}));
     S.appendChild(svg("line",{class:"chart-axis",x1:left,y1:top,x2:left,y2:top+ch}));
   }
   if(kind==="pie"||kind==="donut"){
-    const total=Math.max(1,vals.reduce((a,b)=>a+b,0));let a0=-Math.PI/2;const cx=470,cy=250,r=150;
+    const total=Math.max(1,vals.reduce((a,b)=>a+b,0));let a0=-Math.PI/2;const cx=VW*0.46,cy=VH*0.5,r=Math.min(cw,ch)*0.42;
     data.forEach((d,i)=>{const ang=(d.value/total)*Math.PI*2;const a1=a0+ang;const [x0,y0]=polar(cx,cy,r,a0),[x1,y1]=polar(cx,cy,r,a1);const large=ang>Math.PI?1:0;
       S.appendChild(svg("path",{class:"pie-slice",d:`M ${cx} ${cy} L ${x0} ${y0} A ${r} ${r} 0 ${large} 1 ${x1} ${y1} Z`,style:`--i:${i}`}));
-      const mid=(a0+a1)/2;S.appendChild(svgText(cx+(r+66)*Math.cos(mid),cy+(r+45)*Math.sin(mid),d.label,{class:"chart-label",textAnchor:"middle"}));
-      if(el.showValues!==false)S.appendChild(svgText(cx+(r*.62)*Math.cos(mid),cy+(r*.62)*Math.sin(mid),Math.round(d.value),{class:"chart-value",textAnchor:"middle"}));a0=a1;});
-    if(kind==="donut")S.appendChild(svg("circle",{class:"donut-hole",cx:470,cy:250,r:78}));
+      const mid=(a0+a1)/2;S.appendChild(svgText(cx+(r+fs*2.2)*Math.cos(mid),cy+(r+fs*1.5)*Math.sin(mid),d.label,{class:"chart-label",textAnchor:"middle"}));
+      if(showVals)S.appendChild(svgText(cx+(r*.62)*Math.cos(mid),cy+(r*.62)*Math.sin(mid),fmtVal(d.value,el),{class:"chart-value pie-val",textAnchor:"middle"}));a0=a1;});
+    if(kind==="donut")S.appendChild(svg("circle",{class:"donut-hole",cx,cy,r:r*0.52}));
   } else if(kind==="line"||kind==="area"||kind==="spline"){
     const pts=data.map((d,i)=>{const x=left+(data.length===1?cw/2:i*cw/(data.length-1));const y=top+ch-(d.value/max)*ch;return [x,y,d];});
-    const path=pts.map((p,i)=>(i?"L":"M")+p[0]+" "+p[1]).join(" ");
+    const path=kind==="spline"?smoothPath(pts):pts.map((p,i)=>(i?"L":"M")+p[0]+" "+p[1]).join(" ");
     if(kind==="area")S.appendChild(svg("path",{class:"chart-area",d:path+` L ${left+cw} ${top+ch} L ${left} ${top+ch} Z`}));
     S.appendChild(svg("path",{class:"chart-line",d:path}));
-    pts.forEach((p,i)=>{S.appendChild(svg("circle",{class:"chart-dot",cx:p[0],cy:p[1],r:8}));S.appendChild(svgText(p[0],top+ch+38,p[2].label,{class:"chart-label",textAnchor:"middle"}));if(el.showValues!==false)S.appendChild(svgText(p[0],p[1]-16,Math.round(p[2].value),{class:"chart-value",textAnchor:"middle"}));});
+    pts.forEach((p,i)=>{S.appendChild(svg("circle",{class:"chart-dot",cx:p[0],cy:p[1],r:Math.max(6,fs*0.32)}));
+      S.appendChild(svgText(p[0],top+ch+fs*1.5,p[2].label,{class:"chart-label",textAnchor:"middle"}));
+      if(showVals)S.appendChild(svgText(p[0],p[1]-fs*0.7,fmtVal(p[2].value,el),{class:"chart-value",textAnchor:"middle"}));});
   } else if(kind==="scatter"||kind==="bubble"){
     const xs=data.map(d=>d.x), ys=data.map(d=>d.y);const xmin=Math.min(...xs),xmax=Math.max(...xs,xmin+1);const ymin=0,ymax=Math.max(1,...ys)*1.15;
-    data.forEach((d,i)=>{const x=left+((d.x-xmin)/(xmax-xmin))*cw;const y=top+ch-((d.y-ymin)/(ymax-ymin))*ch;const r=kind==="bubble"?Math.max(8,Math.min(38,d.size)):12;
-      S.appendChild(svg("circle",{class:kind==="bubble"?"chart-bubble":"chart-scatter",cx:x,cy:y,r:r,style:`--i:${i}`}));S.appendChild(svgText(x,y-r-8,d.label,{class:"chart-label",textAnchor:"middle"}));});
+    data.forEach((d,i)=>{const x=left+((d.x-xmin)/(xmax-xmin))*cw;const y=top+ch-((d.y-ymin)/(ymax-ymin))*ch;const r=kind==="bubble"?Math.max(8,Math.min(40,d.size)):Math.max(8,fs*0.5);
+      S.appendChild(svg("circle",{class:kind==="bubble"?"chart-bubble":"chart-scatter",cx:x,cy:y,r:r,style:`--i:${i}`}));S.appendChild(svgText(x,y-r-fs*0.4,d.label,{class:"chart-label",textAnchor:"middle"}));});
   } else if(kind==="horizontalBar"){
-    const gap=18;const bh=(ch-gap*(data.length+1))/Math.max(1,data.length);
-    data.forEach((d,i)=>{const w=(d.value/max)*cw;const x=left;const y=top+gap+i*(bh+gap);S.appendChild(svg("rect",{class:"chart-bar",x,y,width:w,height:bh,rx:12,style:`--i:${i}`}));S.appendChild(svgText(left-12,y+bh*.65,d.label,{class:"chart-label",textAnchor:"end"}));if(el.showValues!==false)S.appendChild(svgText(x+w+12,y+bh*.65,Math.round(d.value),{class:"chart-value"}));});
+    const gap=Math.max(12,ch*0.04);const bh=(ch-gap*(data.length+1))/Math.max(1,data.length);
+    data.forEach((d,i)=>{const w=(d.value/max)*cw;const x=left;const y=top+gap+i*(bh+gap);S.appendChild(svg("rect",{class:"chart-bar hbar",x,y,width:w,height:bh,rx:Math.min(12,bh*0.3),style:`--i:${i}`}));S.appendChild(svgText(left-12,y+bh*.5+fs*0.34,d.label,{class:"chart-label",textAnchor:"end"}));if(showVals)S.appendChild(svgText(x+w+12,y+bh*.5+fs*0.34,fmtVal(d.value,el),{class:"chart-value"}));});
   } else if(kind==="groupedBar"||kind==="stackedBar"){
-    const gap=24;const bw=(cw-gap*(data.length+1))/Math.max(1,data.length);const colors=3;
-    data.forEach((d,i)=>{const vals=(d.series&&d.series.length?d.series:[d.value,Math.round(d.value*.65),Math.round(d.value*.35)]).slice(0,4);const x0=left+gap+i*(bw+gap);
-      if(kind==="stackedBar"){let y=top+ch;vals.forEach((v,j)=>{const h=(v/max)*ch;y-=h;S.appendChild(svg("rect",{class:"chart-bar",x:x0,y,width:bw,height:h,rx:j===0?12:3,style:`--i:${j}`}));});}
-      else {const sub=bw/vals.length;vals.forEach((v,j)=>{const h=(v/max)*ch;S.appendChild(svg("rect",{class:"chart-bar",x:x0+j*sub+2,y:top+ch-h,width:Math.max(3,sub-4),height:h,rx:7,style:`--i:${j}`}));});}
-      S.appendChild(svgText(x0+bw/2,top+ch+38,d.label,{class:"chart-label",textAnchor:"middle"}));});
+    const gap=Math.max(16,cw*0.03);const bw=(cw-gap*(data.length+1))/Math.max(1,data.length);
+    data.forEach((d,i)=>{const sv=(d.series&&d.series.length?d.series:[d.value,Math.round(d.value*.65),Math.round(d.value*.35)]).slice(0,6);const x0=left+gap+i*(bw+gap);
+      if(kind==="stackedBar"){let y=top+ch;sv.forEach((v,j)=>{const h=(v/max)*ch;y-=h;S.appendChild(svg("rect",{class:"chart-bar",x:x0,y,width:bw,height:h,rx:j===0?10:3,style:`--i:${j}`}));});}
+      else {const sub=bw/sv.length;sv.forEach((v,j)=>{const h=(v/max)*ch;S.appendChild(svg("rect",{class:"chart-bar",x:x0+j*sub+2,y:top+ch-h,width:Math.max(3,sub-4),height:h,rx:6,style:`--i:${j}`}));});}
+      S.appendChild(svgText(x0+bw/2,top+ch+fs*1.5,d.label,{class:"chart-label",textAnchor:"middle"}));});
   } else if(kind==="radar"){
-    const cx=500,cy=260,r=170,n=data.length||1;for(let ring=1;ring<=4;ring++){const pts=data.map((d,i)=>polar(cx,cy,r*ring/4,-Math.PI/2+i*2*Math.PI/n).join(",")).join(" ");S.appendChild(svg("polygon",{class:"radar-ring",points:pts}));}
-    const poly=data.map((d,i)=>polar(cx,cy,(d.value/max)*r,-Math.PI/2+i*2*Math.PI/n).join(",")).join(" ");S.appendChild(svg("polygon",{class:"radar-fill",points:poly}));data.forEach((d,i)=>{const [x,y]=polar(cx,cy,r+38,-Math.PI/2+i*2*Math.PI/n);S.appendChild(svgText(x,y,d.label,{class:"chart-label",textAnchor:"middle"}));});
+    const cx=VW/2,cy=VH*0.52,r=Math.min(cw,ch)*0.42,n=data.length||1;for(let ring=1;ring<=4;ring++){const pts=data.map((d,i)=>polar(cx,cy,r*ring/4,-Math.PI/2+i*2*Math.PI/n).join(",")).join(" ");S.appendChild(svg("polygon",{class:"radar-ring",points:pts}));}
+    const poly=data.map((d,i)=>polar(cx,cy,(d.value/max)*r,-Math.PI/2+i*2*Math.PI/n).join(",")).join(" ");S.appendChild(svg("polygon",{class:"radar-fill",points:poly}));data.forEach((d,i)=>{const [x,y]=polar(cx,cy,r+fs*1.5,-Math.PI/2+i*2*Math.PI/n);S.appendChild(svgText(x,y,d.label,{class:"chart-label",textAnchor:"middle"}));});
   } else if(kind==="gauge"||kind==="progress"){
     const v=vals[0]||0;const pct=Math.max(0,Math.min(v/(Number(el.max)||100),1));
-    if(kind==="gauge"){const cx=500,cy=340,r=190;S.appendChild(svg("path",{class:"gauge-bg",d:`M ${cx-r} ${cy} A ${r} ${r} 0 0 1 ${cx+r} ${cy}`}));const [ex,ey]=polar(cx,cy,r,Math.PI*(1-pct));S.appendChild(svg("path",{class:"gauge-fill",d:`M ${cx-r} ${cy} A ${r} ${r} 0 ${pct>.5?1:0} 1 ${ex} ${ey}`}));S.appendChild(svgText(cx,cy-20,Math.round(v)+"%",{class:"gauge-value",textAnchor:"middle"}));}
-    else {S.appendChild(svg("rect",{class:"progress-bg",x:150,y:220,width:700,height:84,rx:42}));S.appendChild(svg("rect",{class:"progress-fill",x:150,y:220,width:700*pct,height:84,rx:42}));S.appendChild(svgText(500,276,Math.round(v)+"%",{class:"gauge-value",textAnchor:"middle"}));}
+    if(kind==="gauge"){const cx=VW/2,cy=VH*0.66,r=Math.min(cw,ch)*0.5;S.appendChild(svg("path",{class:"gauge-bg",d:`M ${cx-r} ${cy} A ${r} ${r} 0 0 1 ${cx+r} ${cy}`}));const [ex,ey]=polar(cx,cy,r,Math.PI*(1-pct));S.appendChild(svg("path",{class:"gauge-fill",d:`M ${cx-r} ${cy} A ${r} ${r} 0 ${pct>.5?1:0} 1 ${ex} ${ey}`}));S.appendChild(svgText(cx,cy-fs*0.6,fmtVal(v,el)+(el.unit?"":"%"),{class:"gauge-value",textAnchor:"middle"}));}
+    else {const bw2=cw,bx=left,by=VH/2-42;S.appendChild(svg("rect",{class:"progress-bg",x:bx,y:by,width:bw2,height:84,rx:42}));S.appendChild(svg("rect",{class:"progress-fill",x:bx,y:by,width:bw2*pct,height:84,rx:42}));S.appendChild(svgText(VW/2,by+56,fmtVal(v,el)+(el.unit?"":"%"),{class:"gauge-value",textAnchor:"middle"}));}
   } else if(kind==="funnel"){
-    const total=Math.max(1,vals[0]||max);data.forEach((d,i)=>{const topW=700*(d.value/total),botW=700*((data[i+1]?.value||d.value*.85)/total);const y=70+i*(360/data.length);const h=330/data.length;S.appendChild(svg("path",{class:"funnel-step",d:`M ${500-topW/2} ${y} L ${500+topW/2} ${y} L ${500+botW/2} ${y+h} L ${500-botW/2} ${y+h} Z`,style:`--i:${i}`}));S.appendChild(svgText(500,y+h*.62,d.label+" · "+Math.round(d.value),{class:"chart-value",textAnchor:"middle"}));});
+    const total=Math.max(1,vals[0]||max);const fw=cw;data.forEach((d,i)=>{const topW=fw*(d.value/total),botW=fw*((data[i+1]?.value||d.value*.85)/total);const y=top+i*(ch/data.length);const h=ch/data.length-6;S.appendChild(svg("path",{class:"funnel-step",d:`M ${VW/2-topW/2} ${y} L ${VW/2+topW/2} ${y} L ${VW/2+botW/2} ${y+h} L ${VW/2-botW/2} ${y+h} Z`,style:`--i:${i}`}));S.appendChild(svgText(VW/2,y+h*.6,d.label+" · "+fmtVal(d.value,el),{class:"chart-value",textAnchor:"middle"}));});
   } else if(kind==="waterfall"){
-    let base=0;const gap=22,bw=(cw-gap*(data.length+1))/Math.max(1,data.length);const absMax=Math.max(1,Math.abs(data.reduce((a,d)=>a+d.value,0)),...data.map(d=>Math.abs(d.value)))*1.4;const zero=top+ch*.65;
-    data.forEach((d,i)=>{const x=left+gap+i*(bw+gap);const y0=zero-(base/absMax)*ch*.8;base+=d.value;const y1=zero-(base/absMax)*ch*.8;S.appendChild(svg("rect",{class:"chart-bar",x,y:Math.min(y0,y1),width:bw,height:Math.max(4,Math.abs(y1-y0)),rx:8,style:`--i:${d.value>=0?1:5}`}));S.appendChild(svgText(x+bw/2,top+ch+38,d.label,{class:"chart-label",textAnchor:"middle"}));});
+    let base=0;const gap=Math.max(16,cw*0.03),bw=(cw-gap*(data.length+1))/Math.max(1,data.length);const absMax=Math.max(1,Math.abs(data.reduce((a,d)=>a+d.value,0)),...data.map(d=>Math.abs(d.value)))*1.4;const zero=top+ch*.65;
+    data.forEach((d,i)=>{const x=left+gap+i*(bw+gap);const y0=zero-(base/absMax)*ch*.8;base+=d.value;const y1=zero-(base/absMax)*ch*.8;S.appendChild(svg("rect",{class:"chart-bar",x,y:Math.min(y0,y1),width:bw,height:Math.max(4,Math.abs(y1-y0)),rx:8,style:`--i:${d.value>=0?1:5}`}));S.appendChild(svgText(x+bw/2,top+ch+fs*1.5,d.label,{class:"chart-label",textAnchor:"middle"}));});
   } else if(kind==="heatmap"){
-    const cols=Math.ceil(Math.sqrt(data.length)),cell=80;data.forEach((d,i)=>{const x=190+(i%cols)*cell,y=82+Math.floor(i/cols)*cell;S.appendChild(svg("rect",{class:"heat-cell",x,y,width:cell-8,height:cell-8,rx:12,opacity:Math.max(.25,d.value/max),style:`--i:${i}`}));S.appendChild(svgText(x+cell/2-4,y+cell/2+5,d.label,{class:"heat-label",textAnchor:"middle"}));});
+    const cols=Math.ceil(Math.sqrt(data.length)),cell=Math.min(cw,ch)/Math.max(2,cols);const ox=(VW-cols*cell)/2;data.forEach((d,i)=>{const x=ox+(i%cols)*cell,y=top+10+Math.floor(i/cols)*cell;S.appendChild(svg("rect",{class:"heat-cell",x,y,width:cell-8,height:cell-8,rx:12,opacity:Math.max(.25,d.value/max),style:`--i:${i}`}));S.appendChild(svgText(x+cell/2-4,y+cell/2,d.label,{class:"heat-label",textAnchor:"middle"}));if(showVals)S.appendChild(svgText(x+cell/2-4,y+cell/2+fs*0.9,fmtVal(d.value,el),{class:"heat-val",textAnchor:"middle"}));});
   } else if(kind==="treemap"){
-    const total=Math.max(1,vals.reduce((a,b)=>a+b,0));let x=110,y=80;data.forEach((d,i)=>{const w=Math.max(90,(d.value/total)*760),h=90;if(x+w>900){x=110;y+=105;}S.appendChild(svg("rect",{class:"tree-box",x,y,width:Math.min(w,790),height:h,rx:18,style:`--i:${i}`}));S.appendChild(svgText(x+16,y+36,d.label,{class:"tree-label"}));S.appendChild(svgText(x+16,y+66,Math.round(d.value),{class:"tree-value"}));x+=w+12;});
+    const total=Math.max(1,vals.reduce((a,b)=>a+b,0));let x=left,y=top+10;const rowH=Math.max(80,ch/Math.max(2,Math.ceil(data.length/3)));data.forEach((d,i)=>{const w=Math.max(110,(d.value/total)*cw*1.6);if(x+w>VW-right){x=left;y+=rowH+10;}S.appendChild(svg("rect",{class:"tree-box",x,y,width:Math.min(w,VW-right-left),height:rowH,rx:18,style:`--i:${i}`}));S.appendChild(svgText(x+16,y+fs*1.4,d.label,{class:"tree-label"}));S.appendChild(svgText(x+16,y+fs*2.6,fmtVal(d.value,el),{class:"tree-value"}));x+=w+12;});
   } else if(kind==="kpi"){
-    const d=data[0]||{label:"Metric",value:0};S.appendChild(svgText(500,210,Math.round(d.value).toLocaleString(),{class:"kpi-value",textAnchor:"middle"}));S.appendChild(svgText(500,282,d.label,{class:"kpi-label",textAnchor:"middle"}));S.appendChild(svg("rect",{class:"kpi-line",x:355,y:315,width:290,height:8,rx:4}));
+    const d=data[0]||{label:"Metric",value:0};S.appendChild(svgText(VW/2,VH*0.42,fmtVal(d.value,el),{class:"kpi-value",textAnchor:"middle"}));S.appendChild(svgText(VW/2,VH*0.58,d.label,{class:"kpi-label",textAnchor:"middle"}));S.appendChild(svg("rect",{class:"kpi-line",x:VW/2-145,y:VH*0.64,width:290,height:8,rx:4}));
   } else {
-    const gap=22;const bw=(cw-gap*(data.length+1))/Math.max(1,data.length);data.forEach((d,i)=>{const h=(d.value/max)*ch;const x=left+gap+i*(bw+gap);const y=top+ch-h;S.appendChild(svg("rect",{class:"chart-bar",x,y,width:bw,height:h,rx:12,style:`--i:${i}`}));S.appendChild(svgText(x+bw/2,top+ch+38,d.label,{class:"chart-label",textAnchor:"middle"}));if(el.showValues!==false)S.appendChild(svgText(x+bw/2,y-14,Math.round(d.value),{class:"chart-value",textAnchor:"middle"}));});
+    const gap=Math.max(16,cw*0.03);const bw=(cw-gap*(data.length+1))/Math.max(1,data.length);data.forEach((d,i)=>{const h=(d.value/max)*ch;const x=left+gap+i*(bw+gap);const y=top+ch-h;S.appendChild(svg("rect",{class:"chart-bar",x,y,width:bw,height:h,rx:Math.min(12,bw*0.18),style:`--i:${i}`}));S.appendChild(svgText(x+bw/2,top+ch+fs*1.5,d.label,{class:"chart-label",textAnchor:"middle"}));if(showVals)S.appendChild(svgText(x+bw/2,y-fs*0.55,fmtVal(d.value,el),{class:"chart-value",textAnchor:"middle"}));});
+  }
+  // optional legend for multi-series charts
+  if(el.showLegend && ["groupedBar","stackedBar"].includes(kind)){
+    const names=(Array.isArray(el.seriesNames)&&el.seriesNames.length)?el.seriesNames:["Series 1","Series 2","Series 3"];
+    names.slice(0,6).forEach((nm,j)=>{const lx=left+j*(cw/Math.min(names.length,6));S.appendChild(svg("rect",{class:"legend-sw",x:lx,y:6,width:fs*0.8,height:fs*0.8,rx:4,style:`--i:${j}`}));S.appendChild(svgText(lx+fs,6+fs*0.7,nm,{class:"legend-lbl"}));});
   }
   wrap.appendChild(S);box.appendChild(wrap);return box;
+}
+/* Catmull-Rom → cubic Bézier for smooth-line charts. */
+function smoothPath(pts){
+  if(pts.length<3)return pts.map((p,i)=>(i?"L":"M")+p[0]+" "+p[1]).join(" ");
+  let d="M"+pts[0][0]+" "+pts[0][1];
+  for(let i=0;i<pts.length-1;i++){
+    const p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||p2;
+    const c1x=p1[0]+(p2[0]-p0[0])/6,c1y=p1[1]+(p2[1]-p0[1])/6;
+    const c2x=p2[0]-(p3[0]-p1[0])/6,c2y=p2[1]-(p3[1]-p1[1])/6;
+    d+=` C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2[0]} ${p2[1]}`;
+  }
+  return d;
+}
+/* Per-chart colour palette: user overrides else a sensible default set. */
+function chartPalette(el){
+  const def=["#e8482b","#22c55e","#38bdf8","#f59e0b","#a855f7","#ef4444"];
+  const base=el.accent||def[0];
+  const out=Array.isArray(el.palette)&&el.palette.length?el.palette.slice(0,6):[base,...def.slice(1)];
+  while(out.length<6)out.push(def[out.length]);
+  return out;
+}
+/* Format a value with optional prefix/suffix/decimals from the element. */
+function fmtVal(v,el){
+  const n=Number(v)||0;
+  const dp=Number(el&&el.decimals);
+  let s=Number.isFinite(dp)&&dp>0?n.toFixed(dp):Math.round(n).toLocaleString();
+  if(el&&el.valuePrefix)s=el.valuePrefix+s;
+  if(el&&(el.valueSuffix||el.unit))s=s+(el.valueSuffix||el.unit);
+  return s;
 }
 function renderVideo(el,{live=false}={}){
   const src=String(el.src||"").trim();
@@ -3445,25 +3654,100 @@ function renderLink(el,{live=false}={}){
   a.innerHTML=`<span class="link-ico">↗</span><div><b>${escHTML(el.label||"Open link")}</b><span>${escHTML(el.description||el.url||"")}</span></div>`;
   return a;
 }
-function renderMap(el){
-  const box=document.createElement("div");box.className="map-box map-"+(el.mapKind||"gambia");box.style.setProperty("--accent",el.accent||"#2f6f4f");
-  const title=document.createElement("div");title.className="map-title";title.textContent=el.title||"Map";box.appendChild(title);
-  const S=svg("svg",{viewBox:"0 0 1000 520",preserveAspectRatio:"none"});
-  S.appendChild(svg("rect",{class:"map-water",x:0,y:0,width:1000,height:520,rx:34}));
-  if((el.mapKind||"gambia")==="world"){
-    S.appendChild(svg("path",{class:"map-land",d:"M90 190 C150 95 250 120 300 185 C350 230 305 290 235 292 C160 310 70 270 90 190Z M430 165 C520 95 640 125 690 205 C740 290 625 330 535 305 C450 285 365 230 430 165Z M710 310 C785 260 895 300 920 380 C865 450 740 445 705 375 C690 350 690 328 710 310Z"}));
-  } else if((el.mapKind||"gambia")==="africa"){
-    S.appendChild(svg("path",{class:"map-land",d:"M510 72 C630 90 735 180 744 285 C755 404 650 442 590 478 C548 504 495 450 505 388 C418 358 352 284 380 195 C398 138 445 92 510 72Z"}));
-    S.appendChild(svg("path",{class:"map-river",d:"M355 242 C455 220 538 232 650 252"}));
-  } else {
-    S.appendChild(svg("path",{class:"map-land",d:"M110 270 C250 210 390 250 515 236 C650 221 772 180 896 220 C865 282 712 305 590 310 C425 318 275 310 110 270Z"}));
-    S.appendChild(svg("path",{class:"map-river",d:"M135 264 C300 247 450 278 610 262 C720 252 805 218 885 223"}));
+/* ── Real geographic maps ─────────────────────────────────────────────
+   Each entry has a lon/lat `bounds` and one or more boundary `paths`
+   (arrays of [lon,lat]). We project with a plain equirectangular mapping
+   into the SVG box, so the shapes are recognisably real — not the old
+   hand-drawn blobs. Outlines are deliberately simplified for size.
+   Built-in city pins (lon/lat) are provided per map; users can still pass
+   pins as {x%,y%} or {lon,lat}. */
+const MAP_GEO = {
+  gambia:{
+    name:"The Gambia",
+    bounds:[-16.9,13.0,-13.7,13.9],
+    paths:[[[-16.85,13.48],[-16.55,13.59],[-16.3,13.55],[-16.0,13.82],[-15.6,13.78],[-15.3,13.6],[-15.0,13.7],[-14.6,13.5],[-14.2,13.55],[-13.8,13.46],[-13.83,13.27],[-14.3,13.3],[-14.7,13.25],[-15.1,13.35],[-15.5,13.28],[-15.85,13.35],[-16.2,13.2],[-16.5,13.27],[-16.7,13.06],[-16.85,13.48]]],
+    river:[[-16.55,13.48],[-16.2,13.45],[-15.8,13.5],[-15.4,13.45],[-15.0,13.5],[-14.6,13.42],[-14.2,13.46],[-13.85,13.4]],
+    cities:[{label:"Banjul",lon:-16.58,lat:13.45},{label:"Brikama",lon:-16.65,lat:13.27},{label:"Soma",lon:-15.53,lat:13.43},{label:"Basse",lon:-14.21,lat:13.31},{label:"Farafenni",lon:-15.6,lat:13.57}]
+  },
+  senegal:{
+    name:"Senegal",
+    bounds:[-17.6,12.2,-11.3,16.7],
+    paths:[[[-17.5,14.73],[-17.1,14.95],[-16.5,15.6],[-16.5,16.0],[-16.1,16.5],[-15.0,16.65],[-13.8,16.4],[-13.3,16.05],[-12.5,15.4],[-12.0,14.8],[-11.9,14.0],[-11.4,13.6],[-11.5,13.0],[-12.0,12.5],[-13.0,12.4],[-13.7,12.65],[-15.0,12.5],[-16.3,12.35],[-16.7,12.55],[-16.75,13.06],[-16.5,13.27],[-15.85,13.35],[-15.5,13.28],[-15.1,13.35],[-14.7,13.25],[-14.2,13.55],[-13.8,13.46],[-13.83,13.27],[-14.3,13.3],[-15.1,13.35]],[[-16.85,13.48],[-16.5,13.6],[-16.0,13.82],[-15.3,13.6],[-14.6,13.5],[-13.8,13.46],[-14.2,13.55],[-15.5,13.78],[-16.55,13.59],[-16.85,13.48]]],
+    cities:[{label:"Dakar",lon:-17.45,lat:14.69},{label:"Thiès",lon:-16.93,lat:14.79},{label:"Kaolack",lon:-16.07,lat:14.15},{label:"Saint-Louis",lon:-16.49,lat:16.02},{label:"Tambacounda",lon:-13.67,lat:13.77}]
+  },
+  africa:{
+    name:"Africa",
+    bounds:[-19,-37,52,38],
+    paths:[[[-17,21],[-16,15],[-17,14],[-12,8],[-8,4],[-2,5],[5,4],[9,4],[9,2],[13,-5],[12,-6],[14,-12],[12,-17],[15,-22],[18,-29],[20,-34],[26,-34],[28,-31],[32,-26],[33,-22],[35,-21],[40,-15],[40,-10],[41,-2],[43,2],[48,5],[51,11],[44,11],[43,11],[40,15],[39,15],[38,18],[34,22],[35,24],[32,31],[25,32],[20,32],[11,34],[10,37],[3,37],[0,35],[-6,36],[-10,30],[-12,28],[-13,24],[-17,21]]],
+    cities:[{label:"Lagos",lon:3.4,lat:6.5},{label:"Cairo",lon:31.2,lat:30.0},{label:"Nairobi",lon:36.8,lat:-1.3},{label:"Cape Town",lon:18.4,lat:-33.9},{label:"Accra",lon:-0.2,lat:5.6},{label:"Addis Ababa",lon:38.7,lat:9.0}]
+  },
+  europe:{
+    name:"Europe",
+    bounds:[-11,35,32,62],
+    paths:[[[-9,43],[-9,38],[-6,36],[0,38],[3,42],[7,43],[8,44],[13,45],[16,42],[19,40],[24,40],[27,41],[28,45],[31,46],[31,52],[28,55],[24,57],[24,60],[20,61],[14,55],[12,55],[10,57],[8,57],[5,53],[3,51],[0,51],[-2,50],[-5,49],[-2,47],[-1,46],[-2,43],[-9,43]]],
+    cities:[{label:"London",lon:-0.1,lat:51.5},{label:"Paris",lon:2.35,lat:48.9},{label:"Berlin",lon:13.4,lat:52.5},{label:"Rome",lon:12.5,lat:41.9},{label:"Madrid",lon:-3.7,lat:40.4}]
+  },
+  world:{
+    name:"World",
+    bounds:[-170,-58,180,75],
+    paths:[
+      /* N + S America */ [[-168,66],[-156,71],[-130,70],[-95,69],[-81,73],[-61,82],[-74,68],[-78,52],[-66,49],[-70,42],[-76,35],[-81,25],[-97,26],[-97,18],[-87,21],[-83,9],[-77,8],[-82,-2],[-80,-12],[-71,-18],[-71,-30],[-74,-44],[-75,-52],[-69,-55],[-65,-48],[-62,-39],[-57,-35],[-48,-25],[-40,-20],[-35,-8],[-50,0],[-51,5],[-60,9],[-72,12],[-82,9],[-84,16],[-95,16],[-106,24],[-112,30],[-117,33],[-124,40],[-124,48],[-132,53],[-141,60],[-156,58],[-165,60],[-168,66]],
+      /* Africa+Europe+Asia */ [[-10,36],[-6,36],[0,40],[8,44],[18,40],[27,40],[30,31],[34,28],[35,33],[36,37],[45,40],[50,44],[57,40],[62,38],[70,38],[78,35],[88,30],[97,23],[105,21],[108,15],[110,21],[122,30],[127,35],[130,43],[142,46],[135,35],[140,38],[129,35],[122,40],[120,38],[122,30],[114,22],[105,21],[100,13],[103,1],[95,5],[88,22],[80,8],[77,8],[73,20],[68,24],[63,25],[57,25],[48,30],[44,29],[51,30],[48,16],[43,12],[51,12],[48,5],[41,-2],[40,-10],[40,-15],[35,-21],[33,-22],[32,-26],[28,-31],[26,-34],[20,-34],[18,-29],[15,-22],[12,-17],[14,-12],[12,-6],[13,-5],[9,2],[9,4],[5,4],[-2,5],[-8,4],[-12,8],[-17,14],[-16,15],[-17,21],[-13,24],[-12,28],[-10,30],[-10,36]],
+      /* Australia */ [[114,-22],[122,-18],[130,-12],[137,-12],[142,-11],[146,-18],[150,-25],[153,-28],[150,-37],[143,-39],[135,-35],[129,-32],[123,-34],[115,-34],[114,-28],[114,-22]]
+    ],
+    cities:[{label:"New York",lon:-74,lat:40.7},{label:"London",lon:-0.1,lat:51.5},{label:"Lagos",lon:3.4,lat:6.5},{label:"Dubai",lon:55.3,lat:25.2},{label:"Tokyo",lon:139.7,lat:35.7},{label:"Sydney",lon:151.2,lat:-33.9}]
   }
-  const pins=Array.isArray(el.pins)?el.pins:[];
-  pins.forEach((p,i)=>{const x=clamp(Number(p.x)||50,2,98)*10;const y=clamp(Number(p.y)||50,2,98)*5.2;
-    const g=svg("g",{class:"map-pin",style:`--i:${i}`});g.appendChild(svg("circle",{cx:x,cy:y,r:18}));g.appendChild(svg("circle",{cx:x,cy:y,r:6,class:"map-pin-dot"}));
-    if(el.showLabels!==false)g.appendChild(svgText(x+26,y-14,String(p.label||"Pin"),{class:"map-label"}));
-    if(p.value!=null&&p.value!=="")g.appendChild(svgText(x+26,y+12,String(p.value),{class:"map-value"}));
+};
+function geoProject(lon,lat,bounds,VW,VH,pad){
+  const [minLon,minLat,maxLon,maxLat]=bounds;
+  const w=VW-pad*2,h=VH-pad*2;
+  const sx=w/(maxLon-minLon), sy=h/(maxLat-minLat);
+  const s=Math.min(sx,sy);                 // uniform scale = no distortion
+  const ox=pad+(w-(maxLon-minLon)*s)/2;
+  const oy=pad+(h-(maxLat-minLat)*s)/2;
+  return [ox+(lon-minLon)*s, oy+(maxLat-lat)*s];   // flip lat (north up)
+}
+function renderMap(el){
+  const kind=el.mapKind&&MAP_GEO[el.mapKind]?el.mapKind:"gambia";
+  const geo=MAP_GEO[kind];
+  const box=document.createElement("div");box.className="map-box map-"+kind;box.style.setProperty("--accent",el.accent||"#2f6f4f");
+  if(el.mapTheme==="dark")box.classList.add("map-theme-dark");
+  const title=document.createElement("div");title.className="map-title";title.textContent=el.title||geo.name+" map";
+  if(el.titleColor)title.style.color=el.titleColor;
+  box.appendChild(title);
+
+  // Non-distorting box matched to the element aspect ratio (same fix as charts).
+  const VW=1000, aspect=(Number(el.h)||360)/Math.max(1,(Number(el.w)||650));
+  const VH=Math.round(clamp(VW*aspect,360,1200));
+  const pad=46, fs=Number(el.labelSize)||24;
+  const S=svg("svg",{viewBox:`0 0 ${VW} ${VH}`,preserveAspectRatio:"xMidYMid meet"});
+  S.style.setProperty("--fs",fs+"px");
+  S.style.setProperty("--fs-sm",Math.round(fs*0.82)+"px");
+  S.appendChild(svg("rect",{class:"map-water",x:0,y:0,width:VW,height:VH,rx:30}));
+
+  // landmass paths
+  (geo.paths||[]).forEach(ring=>{
+    const d=ring.map((c,i)=>{const [x,y]=geoProject(c[0],c[1],geo.bounds,VW,VH,pad);return (i?"L":"M")+x.toFixed(1)+" "+y.toFixed(1);}).join(" ")+" Z";
+    S.appendChild(svg("path",{class:"map-land",d}));
+  });
+  // optional river (Gambia)
+  if(geo.river && el.showRiver!==false){
+    const d=geo.river.map((c,i)=>{const [x,y]=geoProject(c[0],c[1],geo.bounds,VW,VH,pad);return (i?"L":"M")+x.toFixed(1)+" "+y.toFixed(1);}).join(" ");
+    S.appendChild(svg("path",{class:"map-river",d}));
+  }
+
+  // pins: accept {lon,lat} OR legacy {x%,y%}; if none, optionally seed cities
+  let pins=Array.isArray(el.pins)?el.pins:[];
+  if(el.useCities && geo.cities){pins=geo.cities.map(c=>({label:c.label,lon:c.lon,lat:c.lat}));}
+  pins.forEach((p,i)=>{
+    let x,y;
+    if(p.lon!=null&&p.lat!=null){[x,y]=geoProject(Number(p.lon),Number(p.lat),geo.bounds,VW,VH,pad);}
+    else {x=clamp(Number(p.x)||50,0,100)/100*VW;y=clamp(Number(p.y)||50,0,100)/100*VH;}
+    const g=svg("g",{class:"map-pin",style:`--i:${i}`});
+    g.appendChild(svg("circle",{cx:x,cy:y,r:Math.max(12,fs*0.6)}));
+    g.appendChild(svg("circle",{cx:x,cy:y,r:Math.max(4,fs*0.22),class:"map-pin-dot"}));
+    if(el.showLabels!==false)g.appendChild(svgText(x+fs*1.1,y-fs*0.5,String(p.label||"Pin"),{class:"map-label"}));
+    if(p.value!=null&&p.value!=="")g.appendChild(svgText(x+fs*1.1,y+fs*0.55,String(p.value),{class:"map-value"}));
     S.appendChild(g);
   });
   box.appendChild(S);return box;
@@ -3492,9 +3776,20 @@ function renderCountGrid(el){
 }
 function renderGlass(el,mode){
   const box=document.createElement("div");box.className="object-glass "+mode;
-  box.style.setProperty("--level", clamp(Number(el.level)||0,0,100)+"%");
+  const lvl=clamp(Number(el.level)||0,0,100);
+  box.style.setProperty("--level", lvl+"%");
   box.style.setProperty("--accent", el.accent|| (mode==="water"?"#4cc9f0":"#d8a23a"));
-  box.innerHTML=`<div class="glass-shine"></div><div class="glass-liquid"><span></span></div><div class="glass-rim"></div>`;
+  // glass body, then the liquid column carrying its own surface line and
+  // wave crests, then drifting bubbles, then the rim/shine on top.
+  box.innerHTML=
+    `<div class="glass-shine"></div>`+
+    `<div class="glass-liquid">`+
+      `<div class="glass-surface"></div>`+
+      `<div class="glass-wave"></div>`+
+    `</div>`+
+    `<div class="glass-bubble b1"></div><div class="glass-bubble b2"></div>`+
+    `<div class="glass-bubble b3"></div><div class="glass-bubble b4"></div>`+
+    `<div class="glass-rim"></div>`;
   return box;
 }
 function renderObject(el){
@@ -3537,6 +3832,18 @@ function paintSlide(container,slide,{live=false}={}){
   container.innerHTML="";
   container.style.background=slide.bg;
   if(slide.bgSize)container.style.backgroundSize=slide.bgSize;else container.style.backgroundSize="";
+  // Animated / moving background: a CSS class drives the motion so it works
+  // identically in the editor, thumbnails and the live stage. `none` clears.
+  const fx=slide.bgFx||"none";
+  // strip any previous bgfx-* class so re-paints don't stack them
+  container.className=container.className.replace(/\bbgfx-[\w-]+/g,"").replace(/\s+/g," ").trim();
+  if(fx&&fx!=="none"){
+    container.classList.add("has-bgfx","bgfx-"+fx);
+    // a few effects want a tinted overlay colour pulled from the slide
+    if(slide.bgFxColor)container.style.setProperty("--bgfx-color",slide.bgFxColor);
+  }else{
+    container.classList.remove("has-bgfx");
+  }
   slide.els.forEach(el=>{
     const node=renderElement(el,{live});
     container.appendChild(node);
@@ -3544,7 +3851,7 @@ function paintSlide(container,slide,{live=false}={}){
   });
 }
 
-window.Hanns = {Deck,TEMPLATES,BACKGROUNDS,ANIMS,TRANSITIONS,PALETTE,FONTS,OBJECTS,SHAPES,
+window.Hanns = {Deck,TEMPLATES,BACKGROUNDS,BG_FX,ANIMS,TRANSITIONS,PALETTE,FONTS,OBJECTS,SHAPES,
   newSlide,curSlide,selEl,paintSlide,renderElement,
   makeText,makeShape,makeLine,makeImage,makeVideo,makeLink,makeObject,makeCreativeShape,makeTable,makeChart,makeMap,W,H,$,$$,uid,clamp,genCode};
 

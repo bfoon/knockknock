@@ -39,6 +39,18 @@ function makeQR(box,text,size=180){if(!box||typeof QRCode==="undefined"||!text)r
 function drawQRs(){makeQR($("#present-qr"),CFG.joinUrl,84);makeQR($("#qr-modal-code"),CFG.joinUrl,220);makeQR($("#controller-modal-qr"),CFG.controlUrl+(CFG.controlPin?`?pin=${encodeURIComponent(CFG.controlPin)}`:""),220);}
 function openModal(id){const m=$(id);if(m)m.classList.add("on");}
 function closeModals(){document.querySelectorAll(".present-modal").forEach(m=>m.classList.remove("on"));}
+
+function ensureControllerQrFallback(){
+  const ctrl = $("#controller-modal-qr");
+  if(ctrl && !ctrl.querySelector("img") && !ctrl.querySelector("canvas")){
+    ctrl.innerHTML = `<div style="font:800 13px Arial;color:#111827;line-height:1.45;padding:10px;word-break:break-word">Open on phone:<br>${(CFG.controlUrl||"").replace(/^https?:\/\//,"")}<br><br>PIN: ${CFG.controlPin||"----"}</div>`;
+  }
+  const join = $("#qr-modal-code");
+  if(join && !join.querySelector("img") && !join.querySelector("canvas")){
+    join.innerHTML = `<div style="font:800 13px Arial;color:#111827;line-height:1.45;padding:10px;word-break:break-word">Open:<br>${(CFG.joinUrl||"").replace(/^https?:\/\//,"")}</div>`;
+  }
+}
+
 function qrImageFrom(box){const img=box&&box.querySelector("img");if(img)return img.src;const canvas=box&&box.querySelector("canvas");return canvas?canvas.toDataURL("image/png"):"";}
 function downloadQR(){
   const src=qrImageFrom($("#qr-modal-code"));if(!src)return;
@@ -49,12 +61,14 @@ function downloadQR(){
 function roundRect(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
 async function endPresent(){Live.stop();if(CFG.stateUrl){try{await fetch(CFG.stateUrl,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded","X-CSRFToken":CFG.csrftoken||""},body:"state=ended"});}catch(e){}}if(CFG.editUrl)window.location.href=CFG.editUrl;}
 function init(){
+  const controllerPillVisiblePatch = $("#open-controller");
+  if(controllerPillVisiblePatch){controllerPillVisiblePatch.style.display="inline-flex";controllerPillVisiblePatch.style.alignItems="center";controllerPillVisiblePatch.style.gap=".4rem";}
   $("#present-code").textContent=DECK.code;$("#present-url").textContent=(CFG.joinUrl||"").replace(/^https?:\/\//,"");
   const qTitle=$("#qr-modal-title");if(qTitle)qTitle.textContent=DECK.title||"Hanns presentation";
   const cTitle=$("#controller-modal-title");if(cTitle)cTitle.textContent=DECK.title||"Hanns presentation";
   const cPin=$("#controller-pin");if(cPin)cPin.textContent=CFG.controlPin||"----";
   const cUrl=$("#controller-url");if(cUrl)cUrl.textContent=(CFG.controlUrl||"").replace(/^https?:\/\//,"");
-  drawQRs();fit();show(i,false);Live.start();
+  drawQRs();ensureControllerQrFallback();fit();show(i,false);Live.start();
   $("#pp-prev").addEventListener("click",()=>show(i-1));$("#pp-next").addEventListener("click",()=>show(i+1));$("#present-exit").addEventListener("click",endPresent);
   $("#present-qr")?.addEventListener("click",()=>openModal("#qr-modal"));$("#open-controller")?.addEventListener("click",()=>openModal("#controller-modal"));
   $("#download-qr")?.addEventListener("click",downloadQR);document.querySelectorAll("[data-close-present-modal]").forEach(b=>b.addEventListener("click",closeModals));

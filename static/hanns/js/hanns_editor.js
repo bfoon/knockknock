@@ -696,8 +696,35 @@ function updateSaveState(state){
   b.dataset.state=state;const lbl=b.querySelector(".save-lbl");if(lbl)lbl.textContent=map[state]||"Save";
 }
 
+
+function setPanelToggles(){
+  const work = $("#work");
+  if(!work) return;
+  const slidesBtn = $("#btn-toggle-slides");
+  const inspBtn = $("#btn-toggle-inspector");
+  const sync = ()=>{
+    slidesBtn?.classList.toggle("active", !work.classList.contains("hide-filmstrip") && (work.classList.contains("show-filmstrip") || window.innerWidth>1180));
+    inspBtn?.classList.toggle("active", !work.classList.contains("hide-inspector"));
+  };
+  slidesBtn?.addEventListener("click",()=>{
+    const isHidden = work.classList.contains("hide-filmstrip") || (!work.classList.contains("show-filmstrip") && window.innerWidth<=1180);
+    work.classList.toggle("hide-filmstrip", !isHidden);
+    work.classList.toggle("show-filmstrip", isHidden);
+    sync();
+    setTimeout(applyZoom,80);
+  });
+  inspBtn?.addEventListener("click",()=>{
+    work.classList.toggle("hide-inspector");
+    sync();
+    setTimeout(applyZoom,80);
+  });
+  window.addEventListener("resize",()=>{ sync(); setTimeout(applyZoom,60); });
+  sync();
+}
+
 function init(){
   loadServerDeck();
+  setPanelToggles();
 
   // rail add buttons
   $$(".rail .tool[data-add]").forEach(b=>b.addEventListener("click",()=>addElement(b.dataset.add)));

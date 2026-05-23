@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Archivo:wght@400;500;600;700;800&family=Archivo+Expanded:wght@600;700;800&family=Spline+Sans+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800;900&family=Manrope:wght@300;400;500;600;700;800&family=Poppins:wght@300;400;500;600;700;800;900&family=Montserrat:wght@300;400;500;600;700;800;900&family=Roboto:wght@300;400;500;700;900&family=Open+Sans:wght@300;400;500;600;700;800&family=Lato:wght@300;400;700;900&family=Nunito+Sans:wght@300;400;600;700;800;900&family=Raleway:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=DM+Serif+Display:ital@0;1&family=Bebas+Neue&family=Oswald:wght@300;400;500;600;700&family=Merriweather:wght@300;400;700;900&family=Libre+Baskerville:wght@400;700&family=Lora:ital,wght@0,400..700;1,400..700&family=Cormorant+Garamond:ital,wght@0,300..700;1,300..700&family=Space+Grotesk:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Barlow+Condensed:wght@300;400;500;600;700;800&family=Rubik:wght@300;400;500;600;700;800;900&family=Quicksand:wght@300;400;500;600;700&family=Sora:wght@300;400;500;600;700;800&family=Exo+2:wght@300;400;500;600;700;800;900&family=Ubuntu:wght@300;400;500;700&family=Work+Sans:wght@300;400;500;600;700;800;900&family=Noto+Sans:wght@300;400;500;600;700;800;900&family=Noto+Serif:wght@400;500;600;700;800;900&family=Source+Serif+4:opsz,wght@8..60,300..900&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Serif:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700;800&family=Fira+Code:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Cinzel:wght@400;500;600;700;800;900&family=Abril+Fatface&family=Anton&family=Pacifico&family=Caveat:wght@400;500;600;700&family=Permanent+Marker&family=Righteous&family=Kanit:wght@300;400;500;600;700;800;900&family=Lexend:wght@300;400;500;600;700;800;900&family=Urbanist:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=6">
+<link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=7">
 </head>
 <body>
 <div class="app">
@@ -28,6 +28,14 @@
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l3 6 6 .9-4.5 4.3 1.1 6.1L12 17.4 6.4 20.3l1.1-6.1L3 9.9 9 9z"/></svg>
       Shapes
     </button>
+    <button class="tbtn ghost panel-toggle active" id="btn-toggle-slides" type="button" title="Show/hide slide thumbnails">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="7" height="5" rx="1"/><rect x="4" y="11" width="7" height="5" rx="1"/><rect x="13" y="4" width="7" height="12" rx="1"/></svg>
+      Slides
+    </button>
+    <button class="tbtn ghost panel-toggle active" id="btn-toggle-inspector" type="button" title="Show/hide style inspector">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="11" cy="18" r="2"/></svg>
+      Inspector
+    </button>
     <button class="tbtn ghost" id="btn-objects" type="button">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 4 7l8 4 8-4-8-4Z"/><path d="M4 12l8 4 8-4"/><path d="M4 17l8 4 8-4"/></svg>
       Objects
@@ -46,7 +54,7 @@
     </button>
   </header>
 
-  <div class="work" id="work">
+  <div class="work auto-compact" id="work">
     <nav class="rail" id="rail">
       <button class="tool" data-add="text" title="Text" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V5h16v2M9 5v14M9 19h6"/></svg><span class="lbl">Text</span></button>
       <button class="tool" data-add="image" title="Image" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 17-5-5-7 7"/></svg><span class="lbl">Image</span></button>
@@ -139,7 +147,7 @@
     csrftoken: "{{ csrf_token }}"
   };
 </script>
-<script src="{% static 'hanns/js/hanns_core.js' %}?v=6"></script>
-<script src="{% static 'hanns/js/hanns_editor.js' %}?v=6"></script>
+<script src="{% static 'hanns/js/hanns_core.js' %}?v=7"></script>
+<script src="{% static 'hanns/js/hanns_editor.js' %}?v=7"></script>
 </body>
 </html>

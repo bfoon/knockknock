@@ -46,6 +46,13 @@
   const joinPanel = document.getElementById("join-panel");
   const joinCollapse = document.getElementById("join-collapse");
 
+  // Enlarged-QR modal refs.
+  const qrModal = document.getElementById("qr-modal");
+  const qrModalClose = document.getElementById("qr-modal-close");
+  const qrCardQr = document.getElementById("qr-card-qr");
+  const qrCard = document.getElementById("qr-card");
+  const qrDownloadBtn = document.getElementById("qr-download");
+
   const ICON_GLYPH = {
     lightbulb: "bi-lightbulb", star: "bi-star", heart: "bi-heart",
     chat: "bi-chat-dots", people: "bi-people", target: "bi-bullseye",
@@ -1079,6 +1086,114 @@
     });
   }
 
+  // ── Enlarged QR modal ──────────────────────────────────────────────
+  // The small join QR is a button; clicking it opens a modal with a big,
+  // framed "join card" (board title + large QR + code + URL) that can be
+  // downloaded as a PNG. The big QR is drawn lazily the first time the
+  // modal opens so the page-load cost stays on the small one only.
+  let bigQRDrawn = false;
+
+  function drawBigQR() {
+    if (bigQRDrawn || !qrCardQr || !JOIN_URL || typeof QRCode === "undefined") return;
+    qrCardQr.innerHTML = "";
+    // Render at high resolution (512px) so the downloaded image stays
+    // crisp when printed or projected, then CSS scales it to the card box.
+    new QRCode(qrCardQr, {
+      text: JOIN_URL, width: 512, height: 512,
+      colorDark: "#111", colorLight: "#fff",
+      correctLevel: QRCode.CorrectLevel.H,   // highest error correction
+    });
+    bigQRDrawn = true;
+  }
+
+  function openQRModal() {
+    if (!qrModal) return;
+    drawBigQR();
+    if (typeof qrModal.showModal === "function") {
+      if (!qrModal.open) qrModal.showModal();
+    } else {
+      qrModal.setAttribute("open", "");   // very old browser fallback
+    }
+  }
+
+  function closeQRModal() {
+    if (!qrModal) return;
+    if (typeof qrModal.close === "function" && qrModal.open) qrModal.close();
+    else qrModal.removeAttribute("open");
+  }
+
+  // A filesystem-safe slug of the board title for the download filename.
+  function qrFilename() {
+    const title = (qrCard && qrCard.querySelector(".kk-qr-card-title"));
+    const t = (title ? title.textContent : "board")
+      .trim().replace(/[^\w-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 50) || "board";
+    return `boardly_${t}_${CODE}_qr.png`;
+  }
+
+  async function downloadQRCard() {
+    if (!qrCard) return;
+    // Prefer html2canvas (captures the full designed card). If it isn't
+    // available, fall back to downloading just the raw QR image so the
+    // button never silently does nothing.
+    if (typeof html2canvas === "function") {
+      qrDownloadBtn && qrDownloadBtn.classList.add("is-busy");
+      try {
+        const canvas = await html2canvas(qrCard, {
+          backgroundColor: "#ffffff",
+          scale: 2,                       // sharp on hi-dpi / for printing
+          useCORS: true,
+          logging: false,
+        });
+        const a = document.createElement("a");
+        a.href = canvas.toDataURL("image/png");
+        a.download = qrFilename();
+        a.click();
+      } catch (err) {
+        console.error(err);
+        downloadRawQR();
+      } finally {
+        qrDownloadBtn && qrDownloadBtn.classList.remove("is-busy");
+      }
+    } else {
+      downloadRawQR();
+    }
+  }
+
+  // Fallback: grab whatever the QR library rendered (canvas or img) and
+  // download that alone.
+  function downloadRawQR() {
+    if (!qrCardQr) return;
+    const c = qrCardQr.querySelector("canvas");
+    const img = qrCardQr.querySelector("img");
+    let href = null;
+    if (c) href = c.toDataURL("image/png");
+    else if (img) href = img.src;
+    if (!href) { alert("Couldn't generate the QR image. Please try again."); return; }
+    const a = document.createElement("a");
+    a.href = href;
+    a.download = qrFilename();
+    a.click();
+  }
+
+  function initQRModal() {
+    if (qrBox) {
+      qrBox.addEventListener("click", (e) => {
+        e.preventDefault();
+        openQRModal();
+      });
+    }
+    if (qrModalClose) qrModalClose.addEventListener("click", closeQRModal);
+    if (qrDownloadBtn) qrDownloadBtn.addEventListener("click", downloadQRCard);
+    if (qrModal) {
+      // Click on the dim backdrop (outside the inner card) closes it.
+      qrModal.addEventListener("click", (e) => {
+        if (e.target === qrModal) closeQRModal();
+      });
+      // <dialog> fires "cancel" on Escape — let it close normally.
+      qrModal.addEventListener("cancel", () => closeQRModal());
+    }
+  }
+
   // ════════════════════════════════════════════════════════════════════
   //  PRESENTER TOOLS — drag-to-move, burn, draw, limit, export.
   //  Added as a self-contained block so the rest of the file is intact.
@@ -1707,6 +1822,7 @@
     }
 
     drawQR();
+    initQRModal();
     reflectPower();
     renderAddColumn();
     initTools();

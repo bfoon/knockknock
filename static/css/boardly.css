@@ -63,7 +63,7 @@
 }
 .kk-brand-link:hover { opacity: .8; }
 
-.kk-board-title-wrap { min-width: 0; }
+.kk-board-title-wrap { min-width: 0; flex: 0 1 auto; }
 .kk-board-title {
   font-family: var(--kk-font-display);
   font-weight: 600;
@@ -72,6 +72,11 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: block;
+  /* Hard cap so a long title can never push the live stats / toolbar off
+     the right edge — the |truncatechars:30 in the template trims the text,
+     and this is the visual safety net for narrower projector widths. */
+  max-width: 22ch;
 }
 
 .kk-board-stats { display: flex; gap: .65rem; }
@@ -480,7 +485,39 @@
   display: grid; place-items: center;
   background: #fff;
   border-radius: 10px;
+  /* It's now a <button> — strip the native chrome and make it read as
+     tappable: a subtle lift + ring on hover, and an explicit pointer. */
+  padding: 0;
+  border: 1px solid transparent;
+  cursor: pointer;
+  position: relative;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
 }
+.kk-qr-box:hover {
+  transform: scale(1.03);
+  border-color: var(--kk-accent);
+  box-shadow: 0 6px 18px rgba(0,0,0,.2);
+}
+.kk-qr-box:focus-visible {
+  outline: 2px solid var(--kk-accent);
+  outline-offset: 2px;
+}
+/* A small "expand" hint badge in the corner so it's obvious the QR opens. */
+.kk-qr-box::after {
+  content: "\F8B6";              /* bi-arrows-fullscreen */
+  font-family: "bootstrap-icons";
+  position: absolute;
+  bottom: 4px; right: 4px;
+  width: 20px; height: 20px;
+  display: grid; place-items: center;
+  font-size: .7rem;
+  border-radius: 6px;
+  background: rgba(17,17,17,.78);
+  color: #fff;
+  opacity: 0;
+  transition: opacity .15s ease;
+}
+.kk-qr-box:hover::after { opacity: 1; }
 .kk-qr-box img, .kk-qr-box canvas { width: 100%; height: 100%; }
 .kk-join-meta { min-width: 0; }
 .kk-join-label {
@@ -538,6 +575,122 @@
    panel so it rests just above the tray instead of overlapping it. */
 .kk-board-stage.moderating .kk-join-panel {
   transform: translateY(-9.5rem);
+}
+
+/* ── Enlarged QR modal ──────────────────────────────────────────────────
+   Opened by clicking the small join QR. The exportable artwork is the
+   #qr-card; the modal chrome around it is not captured. */
+.kk-qr-modal {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  max-width: 92vw;
+  max-height: 92vh;
+  overflow: visible;
+}
+.kk-qr-modal::backdrop {
+  background: rgba(7, 5, 18, .72);
+  backdrop-filter: blur(4px);
+}
+.kk-qr-modal-inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.1rem;
+}
+.kk-qr-modal-x {
+  position: absolute;
+  top: -14px; right: -14px;
+  width: 38px; height: 38px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  border: 0;
+  background: var(--kk-accent);
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(0,0,0,.4);
+  z-index: 2;
+}
+.kk-qr-modal-x:hover { filter: brightness(1.08); }
+
+/* The downloadable "join card". Light paper look so it prints / shares
+   well regardless of the dark stage theme. */
+.kk-qr-card {
+  background: linear-gradient(165deg, #ffffff 0%, #f6f4ff 100%);
+  border-radius: 22px;
+  padding: 2rem 2.4rem 1.8rem;
+  width: min(420px, 86vw);
+  text-align: center;
+  box-shadow: 0 24px 60px rgba(0,0,0,.5);
+  border: 1px solid rgba(124, 58, 237, .15);
+}
+.kk-qr-card-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  margin-bottom: .4rem;
+}
+.kk-qr-card-mark { font-size: 1.25rem; line-height: 1; }
+.kk-qr-card-brandname {
+  font-family: var(--kk-font-display);
+  font-weight: 700;
+  font-size: 1.2rem;
+  color: #1a0b2e;
+}
+.kk-qr-card-dash { color: var(--kk-accent); }
+.kk-qr-card-title {
+  font-family: var(--kk-font-display);
+  font-weight: 700;
+  font-size: 1.45rem;
+  line-height: 1.2;
+  color: #1a0b2e;
+  margin: .35rem 0 .15rem;
+  /* Wrap long titles cleanly inside the card — no truncation here, the
+     full title belongs on the printable artwork. */
+  overflow-wrap: anywhere;
+}
+.kk-qr-card-sub {
+  font-family: var(--kk-font-body);
+  font-size: .9rem;
+  color: #6b7280;
+  margin: 0 0 1.1rem;
+}
+.kk-qr-card-qr {
+  width: 256px; height: 256px;
+  margin: 0 auto;
+  display: grid; place-items: center;
+  background: #fff;
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.06);
+}
+.kk-qr-card-qr img, .kk-qr-card-qr canvas {
+  width: 100% !important; height: 100% !important;
+}
+.kk-qr-card-code {
+  font-family: var(--kk-font-mono);
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: .18em;
+  color: #1a0b2e;
+  margin: 1rem 0 .15rem;
+}
+.kk-qr-card-url {
+  font-family: var(--kk-font-mono);
+  font-size: .82rem;
+  color: #9ca3af;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.kk-qr-modal-actions {
+  display: flex;
+  gap: .6rem;
+}
+.kk-qr-modal-actions .kk-btn.is-busy {
+  opacity: .65;
+  pointer-events: none;
 }
 
 /* Fullscreen — give the board all the room. */

@@ -180,6 +180,10 @@
 </div>
 
 <input type="file" id="img-input" accept="image/*" class="hidden">
+{# Used by the Table/Chart inspector import buttons. Without this input,
+   clicking “Import from CSV / Excel” has nothing to open. #}
+<input type="file" id="data-input" class="hidden"
+       accept=".csv,.tsv,.txt,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
 <div class="toast" id="toast"></div>
 
 
@@ -278,7 +282,9 @@
 })();
 </script>
 
-<script src="{% static 'hanns/js/hanns_core.js' %}?v=19"></script>
-<script src="{% static 'hanns/js/hanns_editor.js' %}?v=19"></script>
+{# SheetJS enables .xlsx/.xls import in the chart/table inspector. CSV/TSV still works without it. #}
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="{% static 'hanns/js/hanns_core.js' %}?v=21"></script>
+<script src="{% static 'hanns/js/hanns_editor.js' %}?v=21"></script>
 </body>
 </html>

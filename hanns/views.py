@@ -34,6 +34,7 @@ from django.views.decorators.http import require_POST
 from django.utils import timezone
 
 from .models import Deck, Slide, DeckCollaborator, DeckInvite
+from .onboarding import ensure_hanns_starter_deck
 
 
 def _join_url(request, deck):
@@ -119,6 +120,11 @@ def _send_hanns_invite_email(*, request, deck, email, link, has_account):
 # ── owner-facing ─────────────────────────────────────────────────────
 @login_required
 def deck_list(request):
+    # First-time Hanns users get a ready-made editable tutorial deck.
+    # It uses the same JSON slide format as normal decks, so it can be
+    # duplicated, edited, presented, or deleted like any other deck.
+    ensure_hanns_starter_deck(request.user)
+
     decks = Deck.objects.filter(
         Q(owner=request.user) | Q(deck_collaborators__user=request.user)
     ).distinct().order_by("-updated_at")

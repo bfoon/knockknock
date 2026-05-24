@@ -1,0 +1,67 @@
+/* HANNS presentation-mode extras: full-screen control + wake-lock status. */
+.fullscreen-pill,
+.wake-pill{
+  position:fixed;
+  z-index:10050;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:.45rem;
+  border:1px solid rgba(255,255,255,.22);
+  color:#fff;
+  border-radius:999px;
+  padding:10px 15px;
+  font-weight:900;
+  letter-spacing:.01em;
+  box-shadow:0 18px 50px rgba(0,0,0,.45);
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+  opacity:.92;
+}
+.fullscreen-pill{
+  left:18px;
+  top:18px;
+  background:linear-gradient(135deg,rgba(17,24,39,.94),rgba(51,65,85,.92));
+  cursor:pointer;
+}
+.fullscreen-pill:hover,
+.fullscreen-pill:focus{
+  opacity:1;
+  transform:translateY(-2px);
+}
+.wake-pill{
+  left:18px;
+  top:66px;
+  background:rgba(15,23,42,.76);
+  color:#dbeafe;
+  font-size:.78rem;
+  font-family:var(--font-mono,monospace);
+  cursor:pointer;
+}
+.wake-pill[data-status="on"]{
+  background:linear-gradient(135deg,rgba(22,163,74,.92),rgba(20,184,166,.9));
+  color:#fff;
+}
+.wake-pill[data-status="blocked"],
+.wake-pill[data-status="unsupported"]{
+  background:linear-gradient(135deg,rgba(234,88,12,.94),rgba(220,38,38,.9));
+  color:#fff;
+}
+.present:fullscreen .fullscreen-pill,
+.present:fullscreen .wake-pill{
+  z-index:2147483647;
+}
+@supports selector(:fullscreen){
+  :fullscreen .fullscreen-pill,
+  :fullscreen .wake-pill,
+  :fullscreen .controller-pill,
+  :fullscreen .present-badge,
+  :fullscreen .present-controls,
+  :fullscreen .present-exit{
+    z-index:2147483647!important;
+  }
+}
+@media (max-width:640px){
+  .fullscreen-pill{left:12px;top:12px;padding:9px 12px;font-size:.82rem;}
+  .wake-pill{left:12px;top:56px;padding:8px 11px;font-size:.68rem;max-width:calc(100vw - 24px);}
+}

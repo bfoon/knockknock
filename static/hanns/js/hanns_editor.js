@@ -20,6 +20,165 @@ let zoomMode = "fit";  // "fit" | number
 let slideDragFrom = null;
 let slideDragMoved = false;
 
+// ── Undo / redo + clipboard ────────────────────────────────────────
+// Keep the history entirely client-side. The existing save endpoint already
+// persists the full deck JSON, so undo/redo only needs to restore Deck state
+// and trigger the normal autosave afterwards.
+const HISTORY_LIMIT = 80;
+let undoStack = [];
+let redoStack = [];
+let lastHistory = "";
+let historyLocked = false;
+let internalClipboard = null;
+
+// ── Live collaboration ─────────────────────────────────────────────
+const CLIENT_ID = "hanns-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+let collabSocket = null;
+let collabReady = false;
+let applyingRemoteDeck = false;
+
+function deepClone(v){return JSON.parse(JSON.stringify(v));}
+function cloneElement(el,offset=24){
+  const copy=deepClone(el);
+  copy.id=uid();
+  copy.x=clamp(Math.round((copy.x||0)+offset),0,Math.max(0,W-(copy.w||80)));
+  copy.y=clamp(Math.round((copy.y||0)+offset),0,Math.max(0,H-(copy.h||40)));
+  return copy;
+}
+function snapshotDeck(){
+  return JSON.stringify({
+    title:Deck.title,
+    code:Deck.code,
+    cur:Deck.cur,
+    sel:Deck.sel,
+    slides:Deck.slides,
+  });
+}
+function restoreSnapshot(raw){
+  const snap=typeof raw==="string"?JSON.parse(raw):raw;
+  Deck.title=snap.title||"Untitled deck";
+  Deck.code=snap.code||Deck.code;
+  Deck.cur=clamp(Number(snap.cur)||0,0,Math.max(0,(snap.slides||[]).length-1));
+  Deck.sel=snap.sel||null;
+  Deck.slides=(snap.slides||[]).map(s=>Object.assign(newSlide(),deepClone(s)));
+  const title=$("#deck-title"); if(title) title.value=Deck.title;
+}
+function resetHistory(){
+  lastHistory=snapshotDeck();
+  undoStack=[lastHistory];
+  redoStack=[];
+  updateUndoRedoButtons();
+}
+function pushHistory(){
+  if(!appReady || historyLocked)return;
+  const snap=snapshotDeck();
+  if(snap===lastHistory)return;
+  undoStack.push(snap);
+  if(undoStack.length>HISTORY_LIMIT)undoStack.shift();
+  lastHistory=snap;
+  redoStack=[];
+  updateUndoRedoButtons();
+}
+function syncDirtyAfterHistoryAction(){
+  lastHistory=snapshotDeck();
+  updateUndoRedoButtons();
+  updateSaveState("dirty");
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(()=>saveDeck(true),650);
+}
+function undo(){
+  if(undoStack.length<=1){toast("Nothing to undo");return;}
+  historyLocked=true;
+  const current=undoStack.pop();
+  redoStack.push(current);
+  const prev=undoStack[undoStack.length-1];
+  restoreSnapshot(prev);
+  renderAll();
+  historyLocked=false;
+  syncDirtyAfterHistoryAction();
+  toast("Undo");
+}
+function redo(){
+  if(!redoStack.length){toast("Nothing to redo");return;}
+  historyLocked=true;
+  const snap=redoStack.pop();
+  undoStack.push(snap);
+  restoreSnapshot(snap);
+  renderAll();
+  historyLocked=false;
+  syncDirtyAfterHistoryAction();
+  toast("Redo");
+}
+function updateUndoRedoButtons(){
+  const ub=$("#btn-undo"), rb=$("#btn-redo");
+  if(ub){ub.disabled=undoStack.length<=1;ub.title="Undo (Ctrl+Z)";}
+  if(rb){rb.disabled=redoStack.length===0;rb.title="Redo (Ctrl+Y or Ctrl+Shift+Z)";}
+}
+function writeInternalClipboard(payload){
+  internalClipboard=deepClone(payload);
+  // Best-effort system clipboard so copy/paste can work between tabs. Browser
+  // permissions may block this; the internal clipboard still works.
+  try{navigator.clipboard?.writeText?.(JSON.stringify({__hanns:true,...payload}));}catch(_){}
+}
+function copySelected(){
+  const el=selEl();
+  if(!el){toast("Select an object first");return false;}
+  writeInternalClipboard({kind:"element",element:el});
+  toast("Copied");
+  return true;
+}
+function cutSelected(){
+  const el=selEl();
+  if(!el){toast("Select an object first");return false;}
+  writeInternalClipboard({kind:"element",element:el});
+  deleteEl(el.id);
+  toast("Cut");
+  return true;
+}
+async function pasteFromSystemText(){
+  try{
+    const txt=await navigator.clipboard?.readText?.();
+    if(!txt)return false;
+    const parsed=JSON.parse(txt);
+    if(parsed&&parsed.__hanns&&parsed.kind==="element"&&parsed.element){
+      pasteElement(parsed.element);return true;
+    }
+  }catch(_){}
+  return false;
+}
+function pasteElement(el){
+  const s=curSlide(); if(!s||!el)return false;
+  const copy=cloneElement(el,28);
+  s.els.push(copy);
+  Deck.sel=copy.id;
+  renderAll();
+  markDirty();
+  toast("Pasted");
+  return true;
+}
+async function pasteClipboard(){
+  if(internalClipboard?.kind==="element"&&internalClipboard.element){
+    pasteElement(internalClipboard.element);
+    return;
+  }
+  if(await pasteFromSystemText())return;
+  toast("Nothing to paste");
+}
+function nudgeSelected(key,shift){
+  const el=selEl(); if(!el)return false;
+  const step=shift?10:1;
+  if(key==="ArrowLeft")el.x=Math.round((el.x||0)-step);
+  else if(key==="ArrowRight")el.x=Math.round((el.x||0)+step);
+  else if(key==="ArrowUp")el.y=Math.round((el.y||0)-step);
+  else if(key==="ArrowDown")el.y=Math.round((el.y||0)+step);
+  else return false;
+  renderCanvas();
+  renderFilmstrip();
+  syncInspectorPos();
+  markDirty();
+  return true;
+}
+
 function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("on");
   clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("on"),1800);}
 
@@ -62,7 +221,7 @@ function renderFilmstrip(){
     th.draggable=true;
     th.dataset.index=i;
     th.title="Drag to reorder slides";
-    th.innerHTML=`<span class="num">${i+1}</span><button class="del" title="Delete">✕</button><span class="drag-grip" title="Drag slide">⋮⋮</span>`;
+    th.innerHTML=`<span class="num">${i+1}</span><button class="dup" title="Duplicate slide" aria-label="Duplicate slide">⧉</button><button class="del" title="Delete" aria-label="Delete slide">✕</button><span class="drag-grip" title="Drag slide">⋮⋮</span>`;
     const mini=document.createElement("div");mini.className="mini";
     mini.style.width=W+"px";mini.style.height=H+"px";
     paintSlide(mini,s,{live:false});
@@ -71,10 +230,11 @@ function renderFilmstrip(){
     th.appendChild(mini);
 
     th.addEventListener("click",e=>{
-      if(e.target.closest(".del"))return;
+      if(e.target.closest(".del")||e.target.closest(".dup"))return;
       if(slideDragMoved){slideDragMoved=false;return;}
       gotoSlide(i);
     });
+    th.querySelector(".dup").addEventListener("click",e=>{e.stopPropagation();duplicateSlide(i);});
     th.querySelector(".del").addEventListener("click",e=>{e.stopPropagation();deleteSlide(i);});
 
     th.addEventListener("dragstart",e=>{
@@ -133,7 +293,7 @@ function reorderSlide(from,to){
 }
 function renderAll(){renderCanvas();renderFilmstrip();renderInspector();updateNotesPanel();}
 /* Call after any genuine content mutation (not navigation) to autosave. */
-function markDirty(){if(appReady&&typeof scheduleSave==="function")scheduleSave();}
+function markDirty(){if(appReady){pushHistory();if(typeof scheduleSave==="function")scheduleSave();}}
 
 /* ════════════════════════════════════════════════════════════════════
    SLIDE ops
@@ -145,6 +305,26 @@ function addSlide(fromTpl){
   gotoSlide(Deck.cur+1);
   markDirty();
   toast("Slide added");
+}
+
+function cloneSlide(slide){
+  const copy = deepClone(slide || newSlide());
+  copy.id = uid();
+  delete copy.position;
+  if(Array.isArray(copy.els)) copy.els.forEach(e=>{ e.id = uid(); });
+  else copy.els = [];
+  return Object.assign(newSlide(), copy);
+}
+function duplicateSlide(i=Deck.cur){
+  if(!Deck.slides.length) return;
+  i = clamp(Number(i)||0, 0, Deck.slides.length-1);
+  const copy = cloneSlide(Deck.slides[i]);
+  Deck.slides.splice(i+1, 0, copy);
+  Deck.cur = i+1;
+  Deck.sel = null;
+  renderAll();
+  markDirty();
+  toast("Slide duplicated");
 }
 function deleteSlide(i){
   if(Deck.slides.length===1){toast("A deck needs at least one slide");return;}
@@ -820,8 +1000,7 @@ function bindSlidePanel(){
   const notes=$("#s-notes");notes&&notes.addEventListener("input",()=>{s.notes=notes.value;renderFilmstrip();updateNotesPanel();markDirty();});
   $$(".chip[data-trans]",inspBody).forEach(c=>c.addEventListener("click",()=>{
     s.transition=c.dataset.trans;$$(".chip[data-trans]",inspBody).forEach(x=>x.classList.remove("active"));c.classList.add("active");markDirty();}));
-  $("#s-dup")&&$("#s-dup").addEventListener("click",()=>{const copy=JSON.parse(JSON.stringify(s));copy.id=uid();copy.els.forEach(e=>e.id=uid());
-    Deck.slides.splice(Deck.cur+1,0,copy);gotoSlide(Deck.cur+1);toast("Slide duplicated");});
+  $("#s-dup")&&$("#s-dup").addEventListener("click",()=>duplicateSlide(Deck.cur));
   $("#s-del")&&$("#s-del").addEventListener("click",()=>deleteSlide(Deck.cur));
 }
 
@@ -959,6 +1138,62 @@ function deckPayload(){
   return {title:Deck.title, allow_reactions:true,
     slides:Deck.slides.map(s=>({bg:s.bg,bgSize:s.bgSize,bgFx:s.bgFx||"none",transition:s.transition,notes:s.notes||"",els:s.els}))};
 }
+
+function applyRemoteDeckPayload(payload, fromClient){
+  if(!payload || fromClient===CLIENT_ID)return;
+  if(applyingRemoteDeck)return;
+  const active=document.activeElement;
+  const tag=(active&&active.tagName||"").toLowerCase();
+  const editing=active && (active.isContentEditable || tag==="input" || tag==="textarea" || tag==="select");
+  if(editing){
+    toast("A collaborator saved changes — finish typing to refresh");
+    return;
+  }
+  applyingRemoteDeck=true;
+  historyLocked=true;
+  Deck.title=payload.title||Deck.title||"Untitled deck";
+  Deck.slides=(payload.slides||[]).map(s=>Object.assign(newSlide(),{
+    id:String(s.id||uid()),
+    bg:s.bg||"#f6f1e7",
+    bgSize:s.bgSize||null,
+    bgFx:s.bgFx||"none",
+    transition:s.transition||"fade",
+    notes:s.notes||"",
+    els:(s.els||[]).map(e=>Object.assign({},e)),
+  }));
+  if(!Deck.slides.length)Deck.slides=[newSlide()];
+  Deck.cur=clamp(Deck.cur,0,Deck.slides.length-1);
+  Deck.sel=null;
+  const title=$("#deck-title"); if(title) title.value=Deck.title;
+  renderAll();
+  resetHistory();
+  updateSaveState("saved");
+  historyLocked=false;
+  applyingRemoteDeck=false;
+  toast("Updated by collaborator");
+}
+function initLiveEditing(){
+  if(!SRV.editorWsUrl || !("WebSocket" in window))return;
+  try{
+    collabSocket=new WebSocket(SRV.editorWsUrl);
+    collabSocket.addEventListener("open",()=>{
+      collabSocket.send(JSON.stringify({type:"editor_hello",clientId:CLIENT_ID}));
+    });
+    collabSocket.addEventListener("message",(ev)=>{
+      let msg;try{msg=JSON.parse(ev.data||"{}");}catch(_){return;}
+      if(msg.type==="editor_ok"){collabReady=true;return;}
+      if(msg.type==="editor_denied"){collabReady=false;return;}
+      if(msg.type==="deck_updated")applyRemoteDeckPayload(msg.deck,msg.clientId);
+    });
+    collabSocket.addEventListener("close",()=>{collabReady=false;setTimeout(initLiveEditing,2500);});
+  }catch(err){console.warn("live collaboration unavailable",err);}
+}
+function broadcastDeckSaved(){
+  if(collabSocket && collabReady && collabSocket.readyState===WebSocket.OPEN){
+    collabSocket.send(JSON.stringify({type:"editor_saved",clientId:CLIENT_ID,deck:deckPayload()}));
+  }
+}
+
 async function saveDeck(silent){
   if(!SRV.saveUrl){updateSaveState("error");if(!silent)toast("Save URL is missing");return false;}
   if(saving){queuedSave=true;return false;}
@@ -970,12 +1205,13 @@ async function saveDeck(silent){
     if(!r.ok)throw new Error("save failed "+r.status);
     await r.json();
     updateSaveState("saved");
+    broadcastDeckSaved();
     if(!silent)toast("Saved");
     return true;
   }catch(err){console.error(err);updateSaveState("error");if(!silent)toast("Couldn’t save — check your connection");return false;}
   finally{saving=false;if(queuedSave){queuedSave=false;saveDeck(true);}}
 }
-function scheduleSave(){updateSaveState("dirty");clearTimeout(saveTimer);saveTimer=setTimeout(()=>saveDeck(true),900);}
+function scheduleSave(){if(applyingRemoteDeck)return;updateSaveState("dirty");clearTimeout(saveTimer);saveTimer=setTimeout(()=>saveDeck(true),900);}
 function updateSaveState(state){
   const b=$("#btn-save");if(!b)return;
   const map={saving:"Saving…",saved:"Saved",dirty:"Save",error:"Retry save"};
@@ -1042,6 +1278,36 @@ function setPanelToggles(){
   sync();
 }
 
+
+function openInviteModal(){
+  const m=$("#invite-modal");
+  if(!m)return;
+  $("#invite-result")&&( $("#invite-result").hidden=true );
+  m.classList.add("on");
+  setTimeout(()=>$("#invite-emails")?.focus(),60);
+}
+function closeInviteModal(){ $("#invite-modal")?.classList.remove("on"); }
+async function sendInvite(){
+  const box=$("#invite-emails"), out=$("#invite-result");
+  const emails=(box&&box.value||"").trim();
+  if(!emails){toast("Enter at least one email");return;}
+  if(out){out.hidden=false;out.textContent="Sending…";out.classList.remove("error");}
+  try{
+    const r=await fetch(SRV.inviteUrl,{method:"POST",
+      headers:{"Content-Type":"application/json","X-CSRFToken":SRV.csrftoken||""},
+      body:JSON.stringify({emails})});
+    const data=await r.json().catch(()=>({}));
+    if(!r.ok || !data.ok)throw new Error(data.error||"Invite failed");
+    if(out)out.textContent=data.message||"Invite sent.";
+    toast("Invite sent");
+    if(box)box.value="";
+  }catch(err){
+    console.error(err);
+    if(out){out.textContent=err.message||"Invite failed";out.classList.add("error");}
+    toast("Could not send invite");
+  }
+}
+
 function init(){
   loadServerDeck();
   setPanelToggles();
@@ -1060,6 +1326,10 @@ function init(){
   $("#btn-templates")?.addEventListener("click",()=>openDrawer("tpl"));
   $("#btn-objects")?.addEventListener("click",()=>openDrawer("obj"));
   $("#btn-shapes")?.addEventListener("click",()=>openDrawer("shape"));
+  $("#btn-invite")?.addEventListener("click",openInviteModal);
+  $("#invite-send")?.addEventListener("click",sendInvite);
+  $$("[data-close-invite]").forEach(b=>b.addEventListener("click",closeInviteModal));
+  $("#invite-modal")?.addEventListener("click",e=>{if(e.target&&e.target.id==="invite-modal")closeInviteModal();});
 
   // filmstrip
   $("#add-slide").addEventListener("click",()=>addSlide());
@@ -1086,6 +1356,9 @@ function init(){
 
   // save (explicit) + Ctrl/Cmd-S
   $("#btn-save")&&$("#btn-save").addEventListener("click",()=>saveDeck(false));
+  $("#btn-undo")&&$("#btn-undo").addEventListener("click",undo);
+  $("#btn-redo")&&$("#btn-redo").addEventListener("click",redo);
+  $("#btn-duplicate-slide")&&$("#btn-duplicate-slide").addEventListener("click",()=>duplicateSlide(Deck.cur));
 
   // export
   $("#btn-export")&&$("#btn-export").addEventListener("click",()=>{$("#export-deckname").textContent=Deck.title;$("#export-modal").classList.add("on");});
@@ -1093,24 +1366,85 @@ function init(){
   $("#export-json")&&$("#export-json").addEventListener("click",()=>{exportJSON();$("#export-modal").classList.remove("on");});
   $("#export-html")&&$("#export-html").addEventListener("click",()=>{exportStandaloneHTML();$("#export-modal").classList.remove("on");});
   document.addEventListener("keydown",e=>{
-    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="s"){e.preventDefault();saveDeck(false);}
+    const tag=(e.target.tagName||"").toLowerCase();
+    const editing=e.target.isContentEditable||tag==="input"||tag==="textarea"||tag==="select";
+    const key=e.key.toLowerCase();
+    const mod=e.ctrlKey||e.metaKey;
+
+    // Browser-like shortcuts, but scoped to the slide editor when not typing.
+    if(mod&&key==="s"){e.preventDefault();saveDeck(false);return;}
+    if(editing)return;
+
+    if(mod&&key==="z"){e.preventDefault();e.shiftKey?redo():undo();return;}
+    if(mod&&key==="y"){e.preventDefault();redo();return;}
+    if(mod&&key==="c"){e.preventDefault();copySelected();return;}
+    if(mod&&key==="x"){e.preventDefault();cutSelected();return;}
+    if(mod&&key==="v"){
+      // When we already have an internal Hanns clipboard, paste immediately.
+      // Otherwise allow the browser paste event to fire so images/plain text
+      // from outside the editor can be handled from e.clipboardData.
+      if(internalClipboard){e.preventDefault();pasteClipboard();}
+      return;
+    }
+    if(mod&&key==="d"){
+      e.preventDefault();
+      if(e.shiftKey){ duplicateSlide(Deck.cur); return; }
+      const el=selEl();
+      if(el) pasteElement(el);
+      else duplicateSlide(Deck.cur);
+      return;
+    }
+
+    if((e.key==="Delete"||e.key==="Backspace")&&Deck.sel){e.preventDefault();deleteEl(Deck.sel);return;}
+    if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)){
+      if(Deck.sel){e.preventDefault();nudgeSelected(e.key,e.shiftKey);return;}
+      if(e.key==="ArrowRight")gotoSlide(Deck.cur+1);
+      else if(e.key==="ArrowLeft")gotoSlide(Deck.cur-1);
+    }
+  });
+  document.addEventListener("paste",e=>{
+    const tag=(e.target.tagName||"").toLowerCase();
+    const editing=e.target.isContentEditable||tag==="input"||tag==="textarea"||tag==="select";
+    if(editing)return;
+    const cd=e.clipboardData;
+    if(!cd)return;
+    const items=[...(cd.items||[])];
+    const img=items.find(it=>it.type&&it.type.startsWith("image/"));
+    if(img){
+      e.preventDefault();
+      const f=img.getAsFile();
+      const rd=new FileReader();
+      rd.onload=()=>{
+        const el=makeImage(rd.result,{x:W/2-180,y:H/2-120,w:360,h:240});
+        curSlide().els.push(el);Deck.sel=el.id;renderAll();markDirty();toast("Pasted image");
+      };
+      rd.readAsDataURL(f);
+      return;
+    }
+    const txt=cd.getData("text/plain");
+    if(txt){
+      try{
+        const parsed=JSON.parse(txt);
+        if(parsed&&parsed.__hanns&&parsed.kind==="element"&&parsed.element){
+          e.preventDefault();pasteElement(parsed.element);return;
+        }
+      }catch(_){}
+      // Plain copied text becomes a text box when pasted onto the slide.
+      if(txt.trim()){
+        e.preventDefault();
+        const el=makeText({x:W/2-210,y:H/2-60,text:txt.trim().slice(0,2000)});
+        curSlide().els.push(el);Deck.sel=el.id;renderAll();markDirty();toast("Pasted text");
+      }
+    }
   });
   document.addEventListener("visibilitychange",()=>{if(document.hidden&&appReady)saveDeck(true);});
-
-  // keyboard
-  document.addEventListener("keydown",e=>{
-    const tag=(e.target.tagName||"").toLowerCase();
-    const editing=e.target.isContentEditable||tag==="input"||tag==="textarea";
-    if(editing)return;
-    if((e.key==="Delete"||e.key==="Backspace")&&Deck.sel){e.preventDefault();deleteEl(Deck.sel);}
-    else if(e.key==="ArrowRight")gotoSlide(Deck.cur+1);
-    else if(e.key==="ArrowLeft")gotoSlide(Deck.cur-1);
-  });
 
   window.addEventListener("resize",()=>{applyZoom();renderFilmstrip();});
 
   buildTplGallery();buildBgGallery();buildObjGallery();buildShapeGallery();
   renderAll();
+  resetHistory();
+  initLiveEditing();
   appReady=true;
   updateSaveState("saved");
 }

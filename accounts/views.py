@@ -124,7 +124,20 @@ def signup_to_org(request, membership_id):
 
 
 def _accept_pending_invite_if_any(request, user):
-    """Auto-accept a pending collaboration or org invite, if one is stashed."""
+    """Auto-accept a pending collaboration, Hanns deck, or org invite, if one is stashed."""
+    # Hanns live-edit invite
+    hanns_token = request.session.pop("pending_hanns_invite_token", None)
+    if hanns_token:
+        from hanns.models import DeckInvite
+        inv = DeckInvite.objects.filter(token=hanns_token).select_related("deck").first()
+        if inv and inv.status == DeckInvite.STATUS_PENDING:
+            if (user.email or "").lower() == inv.email.lower():
+                inv.accept(user)
+                messages.success(request, "Invite accepted — you can now live-edit the presentation.")
+                return redirect("hanns:edit", inv.deck.code)
+            messages.error(request, "This presentation invite was sent to a different email address.")
+            return redirect("core:dashboard")
+
     # Collaboration invite
     token = request.session.pop("pending_invite_token", None)
     if token:

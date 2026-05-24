@@ -19,14 +19,21 @@ browser, and POSTs the whole deck back to deck_save.
 
 import json
 
+from django.conf import settings
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
-from django.http import JsonResponse, HttpResponseBadRequest
+from django.core.mail import send_mail
+from django.core.validators import validate_email
+from django.core.exceptions import ValidationError
+from django.db.models import Q
+from django.http import JsonResponse, HttpResponseBadRequest, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
+from django.utils import timezone
 
-from .models import Deck, Slide
+from .models import Deck, Slide, DeckCollaborator, DeckInvite
 
 
 def _join_url(request, deck):
@@ -44,10 +51,77 @@ def _control_url(request, deck):
     return request.build_absolute_uri(reverse("hanns:control", args=[deck.code]))
 
 
+def _can_edit_deck(user, deck):
+    """Owner and accepted DeckCollaborator records can edit the deck."""
+    if not getattr(user, "is_authenticated", False):
+        return False
+    if deck.owner_id == user.id:
+        return True
+    return DeckCollaborator.objects.filter(
+        deck=deck, user=user, permission=DeckCollaborator.PERMISSION_EDIT,
+    ).exists()
+
+
+def _editable_deck_or_403(request, code):
+    deck = get_object_or_404(Deck, code=code.upper())
+    if not _can_edit_deck(request.user, deck):
+        return deck, JsonResponse({"ok": False, "error": "You do not have edit access to this deck."}, status=403)
+    return deck, None
+
+
+def _split_emails(raw):
+    bits = re_split_emails(raw or "")
+    clean = []
+    seen = set()
+    for email in bits:
+        email = email.strip().lower()
+        if not email or email in seen:
+            continue
+        try:
+            validate_email(email)
+        except ValidationError:
+            continue
+        seen.add(email)
+        clean.append(email)
+    return clean
+
+
+def re_split_emails(raw):
+    import re
+    return re.split(r"[\s,;]+", raw or "")
+
+
+def _send_hanns_invite_email(*, request, deck, email, link, has_account):
+    subject = f"You’re invited to edit “{deck.title}” on Knock-Knock"
+    if has_account:
+        body = (
+            f"Hello,\n\n"
+            f"You have been invited to live-edit the Hanns presentation “{deck.title}”.\n\n"
+            f"Open the deck here:\n{link}\n\n"
+            f"Thank you."
+        )
+    else:
+        body = (
+            f"Hello,\n\n"
+            f"You have been invited to join Knock-Knock and live-edit the Hanns presentation “{deck.title}”.\n\n"
+            f"Create your free account and accept the invite here:\n{link}\n\n"
+            f"Thank you."
+        )
+    send_mail(
+        subject,
+        body,
+        getattr(settings, "DEFAULT_FROM_EMAIL", None) or "no-reply@knockknock.local",
+        [email],
+        fail_silently=True,
+    )
+
+
 # ── owner-facing ─────────────────────────────────────────────────────
 @login_required
 def deck_list(request):
-    decks = Deck.objects.filter(owner=request.user).order_by("-updated_at")
+    decks = Deck.objects.filter(
+        Q(owner=request.user) | Q(deck_collaborators__user=request.user)
+    ).distinct().order_by("-updated_at")
     # First-slide previews for the dashboard thumbnails, as a {code: slide}
     # JSON map. Built here (not in the template) because a slide's as_dict()
     # must be JSON-encoded, which a template can't do inline.
@@ -80,13 +154,19 @@ def deck_create(request):
 
 @login_required
 def deck_edit(request, code):
-    """The editor shell. The deck is serialised into the page as JSON."""
-    deck = get_object_or_404(Deck, code=code.upper(), owner=request.user)
+    """The editor shell. Owner or invited collaborators can edit."""
+    deck = get_object_or_404(Deck, code=code.upper())
+    if not _can_edit_deck(request.user, deck):
+        messages.error(request, "You do not have permission to edit this deck.")
+        return redirect("hanns:list")
     return render(request, "hanns/editor.html", {
         "deck": deck,
         "deck_json": json.dumps(deck.as_dict()),
         "present_url": request.build_absolute_uri(
             reverse("hanns:present", args=[deck.code])),
+        "is_deck_owner": deck.owner_id == request.user.id,
+        "collaborators": deck.deck_collaborators.select_related("user").all(),
+        "pending_invites": deck.deck_invites.filter(status=DeckInvite.STATUS_PENDING),
     })
 
 
@@ -99,7 +179,9 @@ def deck_save(request, code):
     Replaces the slide rows wholesale — simplest correct approach for a
     single-author editor, and cheap at presentation scale (tens of slides).
     """
-    deck = get_object_or_404(Deck, code=code.upper(), owner=request.user)
+    deck, denied = _editable_deck_or_403(request, code)
+    if denied:
+        return denied
     try:
         payload = json.loads(request.body or "{}")
     except (ValueError, TypeError):
@@ -131,6 +213,98 @@ def deck_save(request, code):
 
     return JsonResponse({"ok": True, "saved": deck.slides.count(),
                          "updated_at": deck.updated_at.isoformat()})
+
+
+
+
+@login_required
+@require_POST
+def deck_invite(request, code):
+    """Invite one or more people to live-edit this deck."""
+    deck = get_object_or_404(Deck, code=code.upper(), owner=request.user)
+    try:
+        payload = json.loads(request.body or "{}")
+    except (ValueError, TypeError):
+        payload = request.POST
+
+    raw = payload.get("emails") or payload.get("email") or ""
+    emails = _split_emails(raw)
+    if not emails:
+        return JsonResponse({"ok": False, "error": "Enter at least one valid email address."}, status=400)
+
+    User = get_user_model()
+    added, invited, skipped = [], [], []
+    edit_url = request.build_absolute_uri(reverse("hanns:edit", args=[deck.code]))
+
+    for email in emails:
+        if deck.owner and deck.owner.email and email == deck.owner.email.lower():
+            skipped.append({"email": email, "reason": "owner"})
+            continue
+
+        user = User.objects.filter(email__iexact=email).first()
+        if user:
+            DeckCollaborator.objects.update_or_create(
+                deck=deck,
+                user=user,
+                defaults={
+                    "permission": DeckCollaborator.PERMISSION_EDIT,
+                    "invited_by": request.user,
+                    "accepted_at": timezone.now(),
+                },
+            )
+            _send_hanns_invite_email(
+                request=request, deck=deck, email=email, link=edit_url, has_account=True,
+            )
+            added.append({"email": email, "user": user.get_username()})
+        else:
+            inv = DeckInvite.objects.filter(
+                deck=deck, email=email, status=DeckInvite.STATUS_PENDING,
+            ).first()
+            if not inv:
+                inv = DeckInvite.objects.create(
+                    deck=deck,
+                    email=email,
+                    permission=DeckCollaborator.PERMISSION_EDIT,
+                    invited_by=request.user,
+                )
+            signup_link = request.build_absolute_uri(
+                reverse("hanns:accept_invite", args=[inv.token])
+            )
+            _send_hanns_invite_email(
+                request=request, deck=deck, email=email, link=signup_link, has_account=False,
+            )
+            invited.append({"email": email})
+
+    return JsonResponse({
+        "ok": True,
+        "added": added,
+        "invited": invited,
+        "skipped": skipped,
+        "message": f"{len(added)} account user(s) added, {len(invited)} signup invite(s) sent.",
+    })
+
+
+def deck_accept_invite(request, token):
+    """Accept a Hanns invite. Anonymous users are sent to signup first."""
+    inv = get_object_or_404(DeckInvite, token=token)
+    if inv.status != DeckInvite.STATUS_PENDING:
+        messages.info(request, "This invite has already been used or is no longer active.")
+        return redirect("hanns:list" if request.user.is_authenticated else "accounts:login")
+
+    if not request.user.is_authenticated:
+        request.session["pending_hanns_invite_token"] = str(inv.token)
+        request.session.setdefault("pending_plan_tier", "free")
+        messages.info(request, "Create your Knock-Knock account to accept the presentation invite.")
+        return redirect("accounts:signup_individual")
+
+    user_email = (request.user.email or "").lower()
+    if inv.email.lower() != user_email:
+        messages.error(request, "This invite was sent to a different email address.")
+        return redirect("hanns:list")
+
+    inv.accept(request.user)
+    messages.success(request, f"You can now live-edit “{inv.deck.title}”.")
+    return redirect("hanns:edit", code=inv.deck.code)
 
 
 # ── presenting ───────────────────────────────────────────────────────

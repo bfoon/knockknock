@@ -52,6 +52,7 @@ class PresentConsumer(AsyncWebsocketConsumer):
         self.nick = None
         self.is_presenter = False
         self.is_controller = False
+        self.is_editor = False
 
         self.deck = await self._get_deck(self.code)
         if self.deck is None:
@@ -99,6 +100,17 @@ class PresentConsumer(AsyncWebsocketConsumer):
                 })
             else:
                 await self.send_json({"type": "controller_denied"})
+
+        elif mtype == "editor_hello":
+            if await self._can_edit_current_user():
+                self.is_editor = True
+                await self.send_json({"type": "editor_ok"})
+            else:
+                await self.send_json({"type": "editor_denied"})
+
+        elif mtype == "editor_saved":
+            if self.is_editor:
+                await self._handle_editor_saved(data)
 
         elif mtype == "join":
             self.nick = (data.get("nick") or "").strip()[:40] or "Anonymous"
@@ -158,6 +170,21 @@ class PresentConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_send(self.group, {
             "type": "fanout",
             "payload": {"type": "pointer", "x": x, "y": y},
+        })
+
+
+    async def _handle_editor_saved(self, data):
+        """Fan out a freshly saved deck payload to other live editors."""
+        deck = data.get("deck")
+        if not isinstance(deck, dict):
+            return
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {
+                "type": "deck_updated",
+                "clientId": str(data.get("clientId") or ""),
+                "deck": deck,
+            },
         })
 
     # ── group fanout ─────────────────────────────────────────────────
@@ -234,6 +261,24 @@ class PresentConsumer(AsyncWebsocketConsumer):
     def _control_pin(self):
         total = sum((i + 1) * ord(ch) for i, ch in enumerate(self.code or "HANNS"))
         return str(1000 + (total % 9000))
+
+
+    @sync_to_async
+    def _can_edit_current_user(self):
+        from .models import Deck, DeckCollaborator
+        user = self.scope.get("user")
+        if not user or not getattr(user, "is_authenticated", False):
+            return False
+        d = Deck.objects.filter(code=self.code).first()
+        if not d:
+            return False
+        if d.owner_id == user.id:
+            return True
+        return DeckCollaborator.objects.filter(
+            deck=d,
+            user=user,
+            permission=DeckCollaborator.PERMISSION_EDIT,
+        ).exists()
 
     @sync_to_async
     def _snapshot(self):

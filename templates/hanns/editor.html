@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Archivo:wght@400;500;600;700;800&family=Archivo+Expanded:wght@600;700;800&family=Spline+Sans+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800;900&family=Manrope:wght@300;400;500;600;700;800&family=Poppins:wght@300;400;500;600;700;800;900&family=Montserrat:wght@300;400;500;600;700;800;900&family=Roboto:wght@300;400;500;700;900&family=Open+Sans:wght@300;400;500;600;700;800&family=Lato:wght@300;400;700;900&family=Nunito+Sans:wght@300;400;600;700;800;900&family=Raleway:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=DM+Serif+Display:ital@0;1&family=Bebas+Neue&family=Oswald:wght@300;400;500;600;700&family=Merriweather:wght@300;400;700;900&family=Libre+Baskerville:wght@400;700&family=Lora:ital,wght@0,400..700;1,400..700&family=Cormorant+Garamond:ital,wght@0,300..700;1,300..700&family=Space+Grotesk:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Barlow+Condensed:wght@300;400;500;600;700;800&family=Rubik:wght@300;400;500;600;700;800;900&family=Quicksand:wght@300;400;500;600;700&family=Sora:wght@300;400;500;600;700;800&family=Exo+2:wght@300;400;500;600;700;800;900&family=Ubuntu:wght@300;400;500;700&family=Work+Sans:wght@300;400;500;600;700;800;900&family=Noto+Sans:wght@300;400;500;600;700;800;900&family=Noto+Serif:wght@400;500;600;700;800;900&family=Source+Serif+4:opsz,wght@8..60,300..900&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Serif:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700;800&family=Fira+Code:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Cinzel:wght@400;500;600;700;800;900&family=Abril+Fatface&family=Anton&family=Pacifico&family=Caveat:wght@400;500;600;700&family=Permanent+Marker&family=Righteous&family=Kanit:wght@300;400;500;600;700;800;900&family=Lexend:wght@300;400;500;600;700;800;900&family=Urbanist:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=12">
+<link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=20">
 </head>
 <body>
 <div class="app">
@@ -19,6 +19,22 @@
     </a>
     <input class="file-name" id="deck-title" value="{{ deck.title|escape }}" maxlength="60" aria-label="Deck title">
     <div class="spacer"></div>
+
+    <div class="edit-quick-tools" role="group" aria-label="Quick edit tools">
+      <span class="edit-quick-label">Edit</span>
+      <button class="tbtn ghost iconbtn" id="btn-undo" type="button" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-1"/></svg>
+        <span class="sr-only">Undo</span>
+      </button>
+      <button class="tbtn ghost iconbtn" id="btn-redo" type="button" title="Redo (Ctrl+Y)" aria-label="Redo" disabled>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h1"/></svg>
+        <span class="sr-only">Redo</span>
+      </button>
+      <button class="tbtn ghost iconbtn" id="btn-duplicate-slide" type="button" title="Duplicate current slide (Ctrl/Cmd+Shift+D)" aria-label="Duplicate current slide">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="8" width="10" height="10" rx="2"/><path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        <span class="sr-only">Duplicate slide</span>
+      </button>
+    </div>
 
     <button class="tbtn ghost" id="btn-templates" type="button">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
@@ -32,6 +48,29 @@
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 4h14v16H5z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
       Notes
     </button>
+    <details class="top-options-menu" id="top-options-menu">
+      <summary class="tbtn ghost option-summary" title="More actions">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+        Options
+      </summary>
+      <div class="top-options-panel" role="menu" aria-label="Deck options">
+        {% if is_deck_owner %}
+        <button class="option-item" id="btn-invite" type="button" role="menuitem" title="Invite people to live-edit this deck">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-8 0v2"/><circle cx="12" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
+          <span>Invite editors</span>
+        </button>
+        {% endif %}
+        <button class="option-item" id="btn-export" type="button" role="menuitem">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+          <span>Export</span>
+        </button>
+        <button class="option-item save-option" id="btn-save" data-state="saved" type="button" role="menuitem">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 4h11l3 3v13H5zM8 4v5h7M8 14h8"/></svg>
+          <span class="save-lbl">Saved</span>
+        </button>
+      </div>
+    </details>
+
     <button class="tbtn ghost panel-toggle active" id="btn-toggle-slides" type="button" title="Show/hide slide thumbnails">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="7" height="5" rx="1"/><rect x="4" y="11" width="7" height="5" rx="1"/><rect x="13" y="4" width="7" height="12" rx="1"/></svg>
       Slides
@@ -43,14 +82,6 @@
     <button class="tbtn ghost" id="btn-objects" type="button">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 4 7l8 4 8-4-8-4Z"/><path d="M4 12l8 4 8-4"/><path d="M4 17l8 4 8-4"/></svg>
       Objects
-    </button>
-    <button class="tbtn ghost" id="btn-export" type="button">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
-      Export
-    </button>
-    <button class="tbtn ghost" id="btn-save" data-state="saved" type="button">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 4h11l3 3v13H5zM8 4v5h7M8 14h8"/></svg>
-      <span class="save-lbl">Saved</span>
     </button>
     <button class="tbtn primary" id="btn-present" type="button">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 4 14 8-14 8z"/></svg>
@@ -151,6 +182,36 @@
 <input type="file" id="img-input" accept="image/*" class="hidden">
 <div class="toast" id="toast"></div>
 
+
+{% if is_deck_owner %}
+<div class="modal" id="invite-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="invite-modal-title">
+  <div class="modal-card collab-card">
+    <button class="modal-x" data-close-invite type="button" aria-label="Close invite modal">✕</button>
+    <div class="collab-icon">👥</div>
+    <h3 id="invite-modal-title">Invite live editors</h3>
+    <p>Invite Knock-Knock users to edit this deck with you. If an email does not have an account, they will receive a signup invitation.</p>
+    <label class="collab-label" for="invite-emails">Email addresses</label>
+    <textarea id="invite-emails" rows="4" placeholder="fatou@example.com, lamin@example.com"></textarea>
+    <button class="tbtn primary" id="invite-send" type="button">Send invite</button>
+    <div class="collab-result" id="invite-result" hidden></div>
+    <div class="collab-list">
+      <strong>Current collaborators</strong>
+      {% for c in collaborators %}
+        <span>{{ c.user.get_full_name|default:c.user.username }} · {{ c.user.email }}</span>
+      {% empty %}
+        <span>No collaborators yet.</span>
+      {% endfor %}
+      {% if pending_invites %}
+        <strong>Pending invites</strong>
+        {% for inv in pending_invites %}
+          <span>{{ inv.email }}</span>
+        {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <div class="modal" id="export-modal" aria-hidden="true">
   <div class="modal-card">
     <button class="modal-x" data-close-modal type="button">✕</button>
@@ -166,10 +227,58 @@
     deck: {{ deck_json|safe }},
     saveUrl: "{% url 'hanns:save' deck.code %}",
     presentUrl: "{% url 'hanns:present' deck.code %}",
+    inviteUrl: "{% url 'hanns:invite' deck.code %}",
+    editorWsUrl: (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/hanns/{{ deck.code }}/",
+    canInvite: {{ is_deck_owner|yesno:"true,false" }},
     csrftoken: "{{ csrf_token }}"
   };
 </script>
-<script src="{% static 'hanns/js/hanns_core.js' %}?v=12"></script>
-<script src="{% static 'hanns/js/hanns_editor.js' %}?v=12"></script>
+
+<script>
+(function(){
+  const menu = document.getElementById('top-options-menu');
+  if(!menu) return;
+  const summary = menu.querySelector('.option-summary');
+  const panel = menu.querySelector('.top-options-panel');
+  const topbar = document.querySelector('.topbar');
+  const clamp = (v,min,max)=>Math.max(min,Math.min(max,v));
+
+  function placeOptionsPanel(){
+    if(!menu.open || !summary || !panel) return;
+    const rect = summary.getBoundingClientRect();
+    const gap = 8;
+    const margin = 10;
+    const panelWidth = Math.min(260, window.innerWidth - (margin * 2));
+    const panelHeightMax = Math.max(160, window.innerHeight - rect.bottom - 18);
+
+    // Keep it visually attached to the Options button, but clamp it inside
+    // the viewport so it never disappears behind the slide/canvas area.
+    const idealLeft = rect.left;
+    const left = clamp(idealLeft, margin, window.innerWidth - panelWidth - margin);
+    const top = Math.min(rect.bottom + gap, window.innerHeight - 56);
+    const arrowLeft = clamp(rect.left + rect.width / 2 - left - 7, 16, panelWidth - 24);
+
+    panel.style.setProperty('--options-left', left + 'px');
+    panel.style.setProperty('--options-top', top + 'px');
+    panel.style.setProperty('--options-width', panelWidth + 'px');
+    panel.style.setProperty('--options-max-height', panelHeightMax + 'px');
+    panel.style.setProperty('--options-arrow-left', arrowLeft + 'px');
+  }
+
+  menu.addEventListener('toggle', () => {
+    if(menu.open) requestAnimationFrame(placeOptionsPanel);
+  });
+  window.addEventListener('resize', placeOptionsPanel);
+  window.addEventListener('scroll', placeOptionsPanel, true);
+  if(topbar) topbar.addEventListener('scroll', placeOptionsPanel);
+
+  document.addEventListener('click', (ev) => {
+    if(menu.open && !menu.contains(ev.target)) menu.removeAttribute('open');
+  });
+})();
+</script>
+
+<script src="{% static 'hanns/js/hanns_core.js' %}?v=19"></script>
+<script src="{% static 'hanns/js/hanns_editor.js' %}?v=19"></script>
 </body>
 </html>

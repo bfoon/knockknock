@@ -22,6 +22,7 @@ and audience reactions, never element edits.
 
 import random
 import string
+import uuid
 
 from django.conf import settings
 from django.db import models
@@ -117,3 +118,93 @@ class Slide(models.Model):
         d["id"] = self.id
         d["position"] = self.position
         return d
+
+class DeckCollaborator(models.Model):
+    """A Knock-Knock user who can live-edit a Hanns deck."""
+    PERMISSION_EDIT = "edit"
+    PERMISSION_CHOICES = [
+        (PERMISSION_EDIT, "Can edit"),
+    ]
+
+    deck = models.ForeignKey(
+        Deck, on_delete=models.CASCADE, related_name="deck_collaborators",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name="hanns_collaborations",
+    )
+    permission = models.CharField(
+        max_length=20, choices=PERMISSION_CHOICES, default=PERMISSION_EDIT,
+    )
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="hanns_collaborators_invited",
+    )
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("deck", "user")]
+        ordering = ["user__email", "user__username"]
+
+    def __str__(self):
+        return f"{self.user} can edit {self.deck}"
+
+
+class DeckInvite(models.Model):
+    """Email invitation for a user who does not yet have a Knock-Knock account."""
+    STATUS_PENDING = "pending"
+    STATUS_ACCEPTED = "accepted"
+    STATUS_REVOKED = "revoked"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_ACCEPTED, "Accepted"),
+        (STATUS_REVOKED, "Revoked"),
+    ]
+
+    deck = models.ForeignKey(
+        Deck, on_delete=models.CASCADE, related_name="deck_invites",
+    )
+    email = models.EmailField(db_index=True)
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    permission = models.CharField(
+        max_length=20, choices=DeckCollaborator.PERMISSION_CHOICES,
+        default=DeckCollaborator.PERMISSION_EDIT,
+    )
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="hanns_invites_sent",
+    )
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    accepted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="hanns_invites_accepted",
+    )
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("deck", "email", "status")]
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Invite {self.email} to {self.deck}"
+
+    def accept(self, user):
+        from django.utils import timezone
+
+        collab, _ = DeckCollaborator.objects.update_or_create(
+            deck=self.deck,
+            user=user,
+            defaults={
+                "permission": self.permission,
+                "invited_by": self.invited_by,
+                "accepted_at": timezone.now(),
+            },
+        )
+        self.status = self.STATUS_ACCEPTED
+        self.accepted_by = user
+        self.accepted_at = timezone.now()
+        self.save(update_fields=["status", "accepted_by", "accepted_at"])
+        return collab
+

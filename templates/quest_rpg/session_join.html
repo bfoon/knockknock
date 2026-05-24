@@ -1,0 +1,38 @@
+{% load static %}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Join {{ session.title }} · Quest RPG</title><link rel="stylesheet" href="{% static 'quest_rpg/css/quest_rpg.css' %}?v=2"></head>
+<body class="quest-phone world-{{ session.world }}">
+<main class="phone-card" id="phone-card">
+  <section id="join-panel">
+    <div class="emoji-orb">🧭</div>
+    <h1>{{ session.title }}</h1>
+    <p>Join as a team. Sit together, discuss, and submit one answer for the team.</p>
+    <div id="phone-connection-status" class="phone-connection-status">Connecting…</div>
+    <label>Team name<input id="team-name" placeholder="Team Lion"></label>
+    <label>Avatar<select id="team-avatar"></select></label>
+    <button id="join-team" class="qbtn primary full" type="button">Join adventure</button>
+    <small>Recommended team size: {% if session.team_size %}{{ session.team_size }}{% else %}N / unlimited{% endif %}</small>
+  </section>
+  <section id="play-panel" class="hidden">
+    <div id="phone-connection-status" class="phone-connection-status">Connected</div>
+    <div class="phone-team" id="phone-team"></div>
+    <div class="phone-progress" id="phone-progress"></div>
+    <div class="phone-question" id="phone-question"></div>
+    <div class="answer-grid" id="answer-grid"></div>
+    <div class="phone-feedback" id="phone-feedback"></div>
+  </section>
+</main>
+<script>
+window.__QUEST_JOIN__={
+  session:{{ session_json|safe }},
+  code:"{{ session.code }}",
+  wsUrl:(location.protocol==='https:'?'wss://':'ws://')+location.host+"/ws/quest/{{ session.code }}/",
+  stateUrl:"{{ state_url|escapejs }}",
+  teamUrl:"{{ team_url|escapejs }}",
+  answerUrl:"{{ answer_url|escapejs }}",
+  csrf:"{{ csrf_token }}"
+};
+</script>
+<script src="{% static 'quest_rpg/js/quest_core.js' %}?v=2"></script>
+<script src="{% static 'quest_rpg/js/quest_join.js' %}?v=2"></script>
+</body></html>

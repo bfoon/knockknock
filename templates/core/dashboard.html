@@ -143,6 +143,15 @@
       {% if can_create %}Create game{% else %}See plans{% endif %} <i class="bi bi-arrow-right"></i>
     </span>
   </a>
+  <a href="{% if can_create %}{% url 'quest_rpg:create' %}{% else %}{% url 'subscriptions:pricing' %}{% endif %}"
+     class="kk-action-tile quest {% if not can_create %}kk-action-tile--locked{% endif %}">
+    <span class="kk-tile-icon">{% if can_create %}🧭{% else %}🔒{% endif %}</span>
+    <h2>New Quest RPG</h2>
+    <p>{% if can_create %}Team adventure quiz — explore worlds, answer together, earn points and chase treasure.{% else %}You've hit your Free plan limit. Upgrade to keep creating.{% endif %}</p>
+    <span class="kk-btn kk-btn-primary btn-sm">
+      {% if can_create %}Create quest{% else %}See plans{% endif %} <i class="bi bi-arrow-right"></i>
+    </span>
+  </a>
   <a href="{% url 'attendance:event_create' %}" class="kk-action-tile attendance">
     <span class="kk-tile-icon">🎟️</span>
     <h2>New Attendance Event</h2>
@@ -302,6 +311,59 @@
       </a>
     {% elif quizzes_total > 0 %}
       <a href="{% url 'games:list' %}" class="kk-see-all kk-see-all-muted">
+        See all
+        <i class="bi bi-arrow-right"></i>
+      </a>
+    {% endif %}
+  </div>
+
+  <!-- ── Quest RPG ────────────────────────────────────────────── -->
+  <div class="col-lg-6 col-xl-3">
+    <h2 class="kk-section-title"><i class="bi bi-compass"></i> Recent quests</h2>
+    {% for s in quest_sessions %}
+      <div class="kk-list-item kk-list-item-row">
+        <a href="{% url 'quest_rpg:edit' s.code %}" class="kk-list-item-main">
+          <span class="kk-q-index">{{ forloop.counter }}</span>
+          <div class="flex-grow-1">
+            <div class="kk-list-item-title">{{ s.title }}</div>
+            <div class="kk-list-item-meta">
+              {{ s.questions.count }} question{{ s.questions.count|pluralize }} · {{ s.get_world_display }} ·
+              <span class="kk-status-mini kk-status-mini-{{ s.status }}">{{ s.get_status_display }}</span>
+            </div>
+          </div>
+          <i class="bi bi-arrow-right text-secondary"></i>
+        </a>
+        <a href="{% url 'quest_rpg:present' s.code %}"
+           class="kk-btn kk-btn-ghost btn-sm ms-2"
+           title="Present this quest">
+          <i class="bi bi-play-fill"></i> Present
+        </a>
+        <form method="post"
+              action="{% url 'quest_rpg:delete' s.code %}"
+              class="kk-row-delete-form ms-1"
+              onsubmit="return confirm('Delete “{{ s.title|escapejs }}”? This cannot be undone.');">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{% url 'core:dashboard' %}">
+          <button type="submit"
+                  class="kk-row-delete"
+                  title="Delete quest"
+                  aria-label="Delete {{ s.title }}">
+            <i class="bi bi-trash3-fill"></i>
+          </button>
+        </form>
+      </div>
+    {% empty %}
+      <div class="kk-empty"><div class="em">🧭</div><p>No quests yet. Create your first RPG team adventure!</p></div>
+    {% endfor %}
+
+    {% if quest_sessions_total > recent_limit %}
+      <a href="{% url 'quest_rpg:list' %}" class="kk-see-all">
+        See all quests
+        <span class="kk-see-all-count">{{ quest_sessions_total }}</span>
+        <i class="bi bi-arrow-right"></i>
+      </a>
+    {% elif quest_sessions_total > 0 %}
+      <a href="{% url 'quest_rpg:list' %}" class="kk-see-all kk-see-all-muted">
         See all
         <i class="bi bi-arrow-right"></i>
       </a>
@@ -496,6 +558,20 @@
 .kk-action-tile.boardly::before {
   content: ""; position: absolute; inset: 0;
   background: radial-gradient(400px 200px at 100% 0%, rgba(236, 72, 153, 0.25), transparent);
+  pointer-events: none;
+}
+
+/* Quest RPG creation tile — immersive adventure styling for the team
+   quiz mode. */
+.kk-action-tile.quest {
+  background: linear-gradient(135deg, #0f1f2a, #172d3d);
+  border-color: rgba(34, 211, 238, 0.32);
+}
+.kk-action-tile.quest::before {
+  content: ""; position: absolute; inset: 0;
+  background:
+    radial-gradient(360px 180px at 100% 0%, rgba(34, 211, 238, 0.22), transparent),
+    radial-gradient(260px 180px at 0% 100%, rgba(34, 197, 94, 0.18), transparent);
   pointer-events: none;
 }
 

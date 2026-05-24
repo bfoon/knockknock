@@ -1,0 +1,29 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ session.title }} · Quest RPG Editor</title>
+<link rel="stylesheet" href="{% static 'quest_rpg/css/quest_rpg.css' %}?v=1">
+</head>
+<body class="quest-editor-body">
+<header class="quest-editor-bar">
+  <a class="kk-mark" href="{% url 'quest_rpg:list' %}">🚪 knock·knock</a>
+  <input id="quest-title" value="{{ session.title|escape }}" maxlength="160">
+  <select id="quest-world">{% for value,label in worlds %}<option value="{{ value }}" {% if session.world == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+  <label class="mini-label">Team <input id="quest-team-size" type="number" min="0" value="{{ session.team_size }}"></label>
+  <button id="add-question" class="qbtn ghost">+ Question</button>
+  <button id="save-quest" class="qbtn">Save</button>
+  <a class="qbtn primary" href="{{ present_url }}" target="_blank">Present</a>
+</header>
+<main class="quest-editor">
+  <section class="quest-editor-help">
+    <h2>Build your adventure</h2>
+    <p>Each question becomes a challenge. Correct answers move teams closer to treasure. Wrong answers trigger danger animation.</p>
+    <div class="world-preview" id="world-preview"></div>
+  </section>
+  <section id="question-list" class="question-list"></section>
+</main>
+<script>window.__QUEST_EDITOR__={session:{{ session_json|safe }},saveUrl:"{% url 'quest_rpg:save' session.code %}",csrf:"{{ csrf_token }}"};</script>
+<script src="{% static 'quest_rpg/js/quest_core.js' %}?v=1"></script>
+<script src="{% static 'quest_rpg/js/quest_edit.js' %}?v=1"></script>
+</body>
+</html>

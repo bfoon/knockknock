@@ -1,0 +1,47 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quest RPG · KnockKnock</title>
+<link rel="stylesheet" href="{% static 'quest_rpg/css/quest_rpg.css' %}?v=1">
+</head>
+<body class="quest-shell">
+  <main class="quest-dashboard">
+    <header class="quest-topline">
+      <div>
+        <div class="kk-mark">🚪 knock·knock</div>
+        <h1>Quest RPG</h1>
+        <p>Team quiz adventures through jungle, sea, space, caves, and forests.</p>
+      </div>
+      <div class="quest-actions">
+        <a class="qbtn ghost" href="{% url 'core:dashboard' %}">Dashboard</a>
+        <a class="qbtn primary" href="{% url 'quest_rpg:create' %}">Create quest</a>
+      </div>
+    </header>
+
+    {% if sessions %}
+      <section class="quest-grid">
+        {% for s in sessions %}
+        <article class="quest-card world-{{ s.world }}">
+          <div class="quest-world-badge">{{ s.get_world_display }}</div>
+          <h2>{{ s.title }}</h2>
+          <p>Code <b>{{ s.code }}</b> · {{ s.questions.count }} questions · team size {% if s.team_size %}{{ s.team_size }}{% else %}N{% endif %}</p>
+          <div class="quest-card-actions">
+            <a class="qbtn" href="{% url 'quest_rpg:edit' s.code %}">Edit</a>
+            <a class="qbtn primary" href="{% url 'quest_rpg:present' s.code %}">Present</a>
+            <form method="post" action="{% url 'quest_rpg:delete' s.code %}" onsubmit="return confirm('Delete this quest?')">{% csrf_token %}<button class="qbtn danger">Delete</button></form>
+          </div>
+        </article>
+        {% endfor %}
+      </section>
+    {% else %}
+      <section class="quest-empty">
+        <div class="big">🧭</div>
+        <h2>No quests yet</h2>
+        <p>Create your first RPG quiz where teams explore, answer, survive danger, and race toward treasure.</p>
+        <a class="qbtn primary" href="{% url 'quest_rpg:create' %}">Create your first quest</a>
+      </section>
+    {% endif %}
+  </main>
+</body>
+</html>

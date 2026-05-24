@@ -1,0 +1,53 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ session.title }} · Quest RPG</title>
+<link rel="stylesheet" href="{% static 'quest_rpg/css/quest_rpg.css' %}?v=2">
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+</head>
+<body class="quest-present-body world-{{ session.world }}">
+<div class="quest-present" id="quest-present">
+  <section class="quest-world-stage">
+    <div class="ambient-layer" id="ambient-layer"></div>
+    <div class="quest-map" id="quest-map"></div>
+    <div class="quest-question-card" id="question-card"></div>
+    <div class="quest-leaderboard" id="leaderboard"></div>
+    <div class="quest-join-card">
+      <div id="quest-qr"></div>
+      <div>
+        <span>Join quest</span>
+        <b>{{ session.code }}</b>
+        <small id="quest-join-url">{{ join_url }}</small>
+      </div>
+    </div>
+    <div class="quest-host-controls">
+      <a href="{{ edit_url }}" class="qbtn ghost">Edit</a>
+      <span id="quest-game-state" class="quest-game-state state-{{ session.status }}">{{ session.status|upper }}</span>
+      <span id="quest-live-status" class="quest-live-status">Connecting…</span>
+      <button id="prev-q" class="qbtn" type="button">‹</button>
+      <button id="start-game" class="qbtn primary" type="button">Start</button>
+      <button id="reveal-q" class="qbtn" type="button">Reveal</button>
+      <button id="next-q" class="qbtn" type="button">›</button>
+      <button id="end-game" class="qbtn danger" type="button">End</button>
+    </div>
+  </section>
+</div>
+<script>
+window.__QUEST_PRESENT__={
+  session:{{ session_json|safe }},
+  joinUrl:"{{ join_url|escapejs }}",
+  joinPath:"{{ join_path|escapejs }}",
+  wsUrl:(location.protocol==='https:'?'wss://':'ws://')+location.host+"/ws/quest/{{ session.code }}/",
+  stateUrl:"{{ state_url|escapejs }}",
+  startUrl:"{{ start_url|escapejs }}",
+  gotoUrl:"{{ goto_url|escapejs }}",
+  revealUrl:"{{ reveal_url|escapejs }}",
+  endUrl:"{{ end_url|escapejs }}",
+  csrf:"{{ csrf_token }}"
+};
+</script>
+<script src="{% static 'quest_rpg/js/quest_core.js' %}?v=2"></script>
+<script src="{% static 'quest_rpg/js/quest_present.js' %}?v=2"></script>
+</body>
+</html>

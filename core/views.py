@@ -6,6 +6,8 @@ from presentations.models import LiveSession
 from boardly.models import BoardSession
 from attendance.models import AttendanceEvent
 from attendance.venue_models import Venue
+from hanns.models import Deck
+from quest_rpg.models import QuestSession
 
 from subscriptions.services import (
     count_items_for_user,
@@ -72,12 +74,22 @@ def dashboard(request):
         BoardSession.objects.filter(owner=request.user)
         .order_by("-updated_at")[:DASHBOARD_RECENT_LIMIT]
     )
+    decks = (
+        Deck.objects.filter(owner=request.user)
+        .order_by("-updated_at")[:DASHBOARD_RECENT_LIMIT]
+    )
+    quest_sessions = (
+        QuestSession.objects.filter(owner=request.user)
+        .order_by("-updated_at")[:DASHBOARD_RECENT_LIMIT]
+    )
 
     # Totals so the section headers / footers can read "See all (12)".
     questionnaires_total = Questionnaire.objects.filter(owner=request.user).count()
     quizzes_total = Quiz.objects.filter(owner=request.user).count()
     attendance_events_total = AttendanceEvent.objects.filter(owner=request.user).count()
     boards_total = BoardSession.objects.filter(owner=request.user).count()
+    decks_total = Deck.objects.filter(owner=request.user).count()
+    quest_sessions_total = QuestSession.objects.filter(owner=request.user).count()
 
     plan = get_effective_plan(request.user)
     subscription = get_effective_subscription(request.user)
@@ -99,6 +111,8 @@ def dashboard(request):
         "recent_sessions": recent_sessions,
         "attendance_events": attendance_events,
         "boards": boards,
+        "decks": decks,
+        "quest_sessions": quest_sessions,
 
         # Totals + cap, so the template can show "See all (N)" only when it
         # makes sense (i.e. when there are more items than fit on the dashboard).
@@ -106,6 +120,8 @@ def dashboard(request):
         "quizzes_total": quizzes_total,
         "attendance_events_total": attendance_events_total,
         "boards_total": boards_total,
+        "decks_total": decks_total,
+        "quest_sessions_total": quest_sessions_total,
         "recent_limit": DASHBOARD_RECENT_LIMIT,
 
         "plan": plan,

@@ -1,0 +1,17 @@
+{% load static %}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Create Quest RPG</title><link rel="stylesheet" href="{% static 'quest_rpg/css/quest_rpg.css' %}?v=1"></head>
+<body class="quest-shell">
+<main class="quest-form-page">
+  <a href="{% url 'quest_rpg:list' %}" class="qback">← Back</a>
+  <form method="post" class="quest-form-card">{% csrf_token %}
+    <div class="emoji-orb">🗺️</div>
+    <h1>Create RPG quest</h1>
+    <p>Teams sit together, discuss each question, and choose one team answer.</p>
+    <label>Quest title<input name="title" placeholder="Forest of Knowledge" required></label>
+    <label>Adventure world<select name="world">{% for value,label in worlds %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
+    <label>Team size<input name="team_size" type="number" min="0" value="4"><small>Use 0 for N/unlimited team size.</small></label>
+    <button class="qbtn primary full">Create quest</button>
+  </form>
+</main>
+</body></html>

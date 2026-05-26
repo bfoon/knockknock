@@ -910,3 +910,97 @@ input[type=range]{width:100%;accent-color:var(--signal)}
 .object-box.object-bare .object-grid{padding:8px 8px 44px}
 .object-box.object-bare .object-glass{filter:drop-shadow(0 16px 28px rgba(0,0,0,.22))}
 .object-box.object-bare .object-badge{box-shadow:0 10px 26px rgba(0,0,0,.22)}
+
+
+
+/* Hanns Options final dropdown fix */
+/* Final Options menu fix: the dropdown is portaled/fixed to the viewport so it can never be clipped by the topbar, slide canvas, Plotly, Leaflet, drawers, or panels. */
+.top-options-menu{
+  position:relative!important;
+  display:inline-flex!important;
+  align-items:center!important;
+  flex:0 0 auto!important;
+  z-index:2147483000!important;
+}
+.top-options-menu > summary,
+.option-summary{
+  list-style:none!important;
+  cursor:pointer!important;
+  user-select:none!important;
+}
+.top-options-menu > summary::-webkit-details-marker{display:none!important;}
+.top-options-menu > summary::marker{content:""!important;}
+.top-options-panel{
+  position:fixed!important;
+  left:var(--options-left, 12px)!important;
+  top:var(--options-top, 58px)!important;
+  width:var(--options-width, 260px)!important;
+  max-height:var(--options-max-height, min(360px, calc(100vh - 80px)))!important;
+  overflow:auto!important;
+  display:none!important;
+  flex-direction:column!important;
+  gap:8px!important;
+  padding:10px!important;
+  border-radius:16px!important;
+  background:linear-gradient(145deg, rgba(33,30,24,.98), rgba(14,13,10,.98))!important;
+  border:1px solid rgba(255,255,255,.14)!important;
+  box-shadow:0 28px 80px rgba(0,0,0,.62), 0 0 0 1px rgba(232,72,43,.13)!important;
+  backdrop-filter:blur(14px)!important;
+  -webkit-backdrop-filter:blur(14px)!important;
+  z-index:2147483646!important;
+  pointer-events:auto!important;
+  transform:none!important;
+}
+.top-options-panel.is-open{display:flex!important;}
+.top-options-panel::before{
+  content:""!important;
+  position:absolute!important;
+  top:-7px!important;
+  left:var(--options-arrow-left, 28px)!important;
+  width:14px!important;
+  height:14px!important;
+  transform:rotate(45deg)!important;
+  background:rgba(33,30,24,.98)!important;
+  border-left:1px solid rgba(255,255,255,.14)!important;
+  border-top:1px solid rgba(255,255,255,.14)!important;
+}
+.option-item{
+  position:relative!important;
+  z-index:1!important;
+  width:100%!important;
+  min-height:40px!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:flex-start!important;
+  gap:10px!important;
+  padding:10px 12px!important;
+  border-radius:12px!important;
+  border:1px solid rgba(255,255,255,.10)!important;
+  background:rgba(255,255,255,.045)!important;
+  color:var(--cream,#fbf8f1)!important;
+  font:800 13px/1.1 var(--font-body,Arial,sans-serif)!important;
+  text-align:left!important;
+  cursor:pointer!important;
+  white-space:nowrap!important;
+}
+.option-item:hover,.option-item:focus-visible{
+  outline:none!important;
+  background:rgba(232,72,43,.18)!important;
+  border-color:rgba(232,72,43,.52)!important;
+  color:#fff!important;
+}
+.option-item svg{flex:0 0 auto!important;}
+.option-item.save-option .save-lbl{white-space:nowrap!important;}
+body.hanns-options-open .canvas-wrap,
+body.hanns-options-open .stage,
+body.hanns-options-open .filmstrip,
+body.hanns-options-open .inspector,
+body.hanns-options-open .drawer{
+  z-index:auto;
+}
+@media(max-width:760px){
+  .top-options-panel{width:min(270px,calc(100vw - 20px))!important;}
+  .option-item{min-height:44px!important;font-size:13px!important;}
+}
+
+

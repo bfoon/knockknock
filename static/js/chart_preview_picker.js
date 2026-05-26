@@ -376,6 +376,71 @@
     return sel?.value || "bar";
   }
 
+
+  function isRichChart(chartId) {
+    return String(chartId || "").startsWith("plotly_") || chartId === "folium_map";
+  }
+
+  function drawRichPreview(canvas, chartId, sample, accent, accent2) {
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    const g = ctx.createLinearGradient(0, 0, w, h);
+    g.addColorStop(0, "rgba(34,211,238,.30)");
+    g.addColorStop(1, "rgba(124,58,237,.30)");
+    ctx.fillStyle = "#0b1020";
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = "rgba(255,255,255,.18)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(8, 8, w - 16, h - 16);
+
+    const labels = sample.labels || [];
+    const data = sample.data || [];
+    const max = Math.max(1, ...data);
+
+    if (chartId === "folium_map" || chartId === "plotly_geo") {
+      ctx.fillStyle = "rgba(14,165,233,.18)";
+      ctx.fillRect(20, 30, w - 40, h - 52);
+      ctx.strokeStyle = "rgba(255,255,255,.34)";
+      for (let i = 0; i < 4; i++) {
+        ctx.beginPath();
+        ctx.moveTo(28 + i * 45, 35);
+        ctx.bezierCurveTo(60 + i * 22, 55, 55 + i * 32, 86, 90 + i * 28, 108);
+        ctx.stroke();
+      }
+      [[.32,.42],[.55,.58],[.72,.37],[.42,.72]].forEach((pt,i)=>{
+        ctx.beginPath(); ctx.arc(20 + pt[0]*(w-40), 30 + pt[1]*(h-52), 7 + i*2, 0, Math.PI*2);
+        ctx.fillStyle = i % 2 ? accent : accent2; ctx.fill();
+        ctx.strokeStyle = "white"; ctx.stroke();
+      });
+    } else if (["plotly_pie","plotly_donut","plotly_sunburst","plotly_gauge"].includes(chartId)) {
+      let start = -Math.PI / 2;
+      const total = data.reduce((a,b)=>a+b,0) || 1;
+      data.slice(0,6).forEach((v,i)=>{
+        const end = start + (v/total)*Math.PI*2;
+        ctx.beginPath(); ctx.moveTo(w/2,h/2); ctx.arc(w/2,h/2,44,start,end); ctx.closePath();
+        ctx.fillStyle = i % 2 ? accent : accent2; ctx.globalAlpha = .92 - i*.06; ctx.fill(); ctx.globalAlpha = 1;
+        start=end;
+      });
+      if (["plotly_donut","plotly_sunburst","plotly_gauge"].includes(chartId)) { ctx.beginPath(); ctx.arc(w/2,h/2,23,0,Math.PI*2); ctx.fillStyle="#0b1020"; ctx.fill(); }
+    } else if (["plotly_line","plotly_area","plotly_scatter","plotly_bubble","plotly_radar"].includes(chartId)) {
+      ctx.strokeStyle = accent2; ctx.lineWidth = 3; ctx.beginPath();
+      data.forEach((v,i)=>{ const x=25+i*((w-50)/Math.max(1,data.length-1)); const y=h-25-(v/max)*(h-55); if(i) ctx.lineTo(x,y); else ctx.moveTo(x,y); });
+      ctx.stroke();
+      data.forEach((v,i)=>{ const x=25+i*((w-50)/Math.max(1,data.length-1)); const y=h-25-(v/max)*(h-55); ctx.beginPath(); ctx.arc(x,y,chartId==='plotly_bubble'?7+v/max*11:5,0,Math.PI*2); ctx.fillStyle=i%2?accent:accent2; ctx.fill(); });
+    } else {
+      const bw = (w - 45) / Math.max(1, data.length);
+      data.forEach((v,i)=>{ const bh=(v/max)*(h-46); ctx.fillStyle=i%2?accent:accent2; ctx.fillRect(24+i*bw, h-22-bh, Math.max(7,bw*.62), bh); });
+    }
+
+    ctx.fillStyle = "rgba(255,255,255,.92)";
+    ctx.font = "bold 11px system-ui, sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(chartId === "folium_map" ? "Folium / Leaflet" : "Plotly rich", 14, 22);
+  }
+
   function render() {
     const canvas = document.getElementById("chart-preview");
     if (!canvas) return;
@@ -389,7 +454,12 @@
       try { currentChart.destroy(); } catch (e) {}
       currentChart = null;
     }
-    currentChart = new Chart(canvas.getContext("2d"), cfg);
+
+    if (isRichChart(chartId)) {
+      drawRichPreview(canvas, chartId, sample, a1, a2);
+    } else {
+      currentChart = new Chart(canvas.getContext("2d"), cfg);
+    }
 
     // Update the small label below the canvas, if present.
     const labelEl = document.getElementById("chart-preview-label");

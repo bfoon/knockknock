@@ -1564,6 +1564,280 @@
     return RENDERERS.leaderboard(ctx);
   };
 
+
+
+  // ───────── Plotly + Folium/Leaflet rich renderers ─────────
+  // These chart IDs are intentionally additive. Existing Chart.js and SVG
+  // renderers still work; these only run when the selected chart_type is one
+  // of the plotly_* or folium_map values.
+  const KK_RICH_CDN = {
+    plotly: "https://cdn.plot.ly/plotly-2.35.2.min.js",
+    leafletJs: "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
+    leafletCss: "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
+  };
+  const kkRichLoading = {};
+
+  function loadScriptOnce(src, testFn) {
+    if (typeof testFn === "function" && testFn()) return Promise.resolve();
+    if (kkRichLoading[src]) return kkRichLoading[src];
+    kkRichLoading[src] = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = src;
+      s.async = true;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error("Failed to load " + src));
+      document.head.appendChild(s);
+    });
+    return kkRichLoading[src];
+  }
+
+  function loadCssOnce(href) {
+    if (document.querySelector(`link[href="${href}"]`)) return;
+    const l = document.createElement("link");
+    l.rel = "stylesheet";
+    l.href = href;
+    document.head.appendChild(l);
+  }
+
+  function plotlyReady() { return !!(window.Plotly && typeof window.Plotly.newPlot === "function"); }
+  function leafletReady() { return !!(window.L && typeof window.L.map === "function"); }
+  function ensurePlotly() { return loadScriptOnce(KK_RICH_CDN.plotly, plotlyReady); }
+  function ensureLeaflet() {
+    loadCssOnce(KK_RICH_CDN.leafletCss);
+    return loadScriptOnce(KK_RICH_CDN.leafletJs, leafletReady);
+  }
+
+  function richMount(specialEl, label, className) {
+    specialEl.innerHTML = `<div class="kk-rich-shell ${className || ""}">
+      <div class="kk-rich-head">
+        <span class="kk-rich-badge">${escapeHtml(label || "Rich visual")}</span>
+        <span class="kk-rich-sub">interactive</span>
+      </div>
+      <div class="kk-rich-mount"><div class="kk-rich-loading">Loading rich visual…</div></div>
+    </div>`;
+    return specialEl.querySelector(".kk-rich-mount");
+  }
+
+  function plotlyLayout(title) {
+    return {
+      title: { text: title || "", font: { color: "#f8fafc", size: 22 }, x: 0.02, xanchor: "left" },
+      paper_bgcolor: "rgba(0,0,0,0)",
+      plot_bgcolor: "rgba(0,0,0,0)",
+      font: { color: "#e5e7eb", family: "Satoshi, Inter, system-ui, sans-serif" },
+      margin: { l: 52, r: 24, t: title ? 58 : 24, b: 48 },
+      colorway: ["#22d3ee", "#7c3aed", "#fb7185", "#fbbf24", "#34d399", "#60a5fa", "#f472b6"],
+      xaxis: { gridcolor: "rgba(255,255,255,.10)", zerolinecolor: "rgba(255,255,255,.12)" },
+      yaxis: { gridcolor: "rgba(255,255,255,.10)", zerolinecolor: "rgba(255,255,255,.12)" },
+      legend: { orientation: "h", y: -0.18 },
+      autosize: true,
+    };
+  }
+
+  function plotlyConfig() {
+    return {
+      responsive: true,
+      displaylogo: false,
+      modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"],
+    };
+  }
+
+  function rowsForRich(ctx) {
+    const { question, tallyData } = ctx;
+    const qtype = String((question && (question.type || question.question_type)) || ctx.questionType || "").toLowerCase();
+    if (["scale", "rating", "nps", "slider", "numeric"].includes(qtype)) {
+      const { vals, min, max } = collectNumeric(question, tallyData || {});
+      if (vals.length) {
+        const bucketCount = Math.min(12, Math.max(5, Math.round(max - min + 1)));
+        const buckets = Array.from({ length: bucketCount }, (_, i) => ({
+          label: String(Math.round(min + ((max - min) * i) / Math.max(1, bucketCount - 1))),
+          n: 0,
+          value: Math.round(min + ((max - min) * i) / Math.max(1, bucketCount - 1)),
+        }));
+        vals.forEach(v => {
+          const idx = Math.max(0, Math.min(bucketCount - 1, Math.round(((v - min) / Math.max(1, max - min)) * (bucketCount - 1))));
+          buckets[idx].n += 1;
+        });
+        return buckets;
+      }
+    }
+    if (["word", "open", "text"].includes(qtype)) {
+      return collectWords(tallyData || {}).map(r => ({ label: r.word, n: r.n, value: r.n }));
+    }
+    const { rows } = aggregateChoices(question || {}, tallyData || {});
+    return rows.map((r, i) => ({ label: r.text || `Option ${i + 1}`, n: r.n || 0, value: r.n || 0 }));
+  }
+
+  function makeRichPlotlyData(chartId, rows) {
+    const labels = rows.map(r => r.label);
+    const values = rows.map(r => Number(r.n || r.value || 0));
+    const maxv = Math.max(1, ...values);
+    switch (chartId) {
+      case "plotly_hbar":
+        return [{ type: "bar", orientation: "h", y: labels, x: values, marker: { line: { color: "rgba(255,255,255,.25)", width: 1 } } }];
+      case "plotly_grouped":
+        return [
+          { type: "bar", name: "Responses", x: labels, y: values },
+          { type: "bar", name: "Target", x: labels, y: values.map(v => Math.max(1, Math.round(v * .72 + maxv * .08))) },
+        ];
+      case "plotly_stacked":
+        return [
+          { type: "bar", name: "Correct / Yes", x: labels, y: values.map(v => Math.round(v * .65)) },
+          { type: "bar", name: "Other", x: labels, y: values.map(v => Math.max(0, v - Math.round(v * .65))) },
+        ];
+      case "plotly_line":
+        return [{ type: "scatter", mode: "lines+markers", x: labels, y: values, line: { width: 4, shape: "spline" }, marker: { size: 10 } }];
+      case "plotly_area":
+        return [{ type: "scatter", mode: "lines", fill: "tozeroy", x: labels, y: values, line: { width: 4, shape: "spline" } }];
+      case "plotly_pie":
+        return [{ type: "pie", labels, values, hole: 0, textinfo: "label+percent" }];
+      case "plotly_donut":
+        return [{ type: "pie", labels, values, hole: .56, textinfo: "label+percent" }];
+      case "plotly_scatter":
+        return [{ type: "scatter", mode: "markers+text", x: labels.map((_, i) => i + 1), y: values, text: labels, textposition: "top center", marker: { size: values.map(v => 10 + (v / maxv) * 22), opacity: .86 } }];
+      case "plotly_bubble":
+        return [{ type: "scatter", mode: "markers+text", x: labels.map((_, i) => i + 1), y: values.map((v, i) => (i % 3) + 1 + v / maxv), text: labels, textposition: "top center", marker: { size: values.map(v => 18 + (v / maxv) * 54), sizemode: "diameter", opacity: .72 } }];
+      case "plotly_heatmap": {
+        const size = Math.max(2, Math.ceil(Math.sqrt(Math.max(1, values.length))));
+        const z = [];
+        for (let r = 0; r < size; r++) {
+          z.push([]);
+          for (let c = 0; c < size; c++) z[r].push(values[r * size + c] || 0);
+        }
+        return [{ type: "heatmap", z, colorscale: "Viridis", showscale: true }];
+      }
+      case "plotly_treemap":
+        return [{ type: "treemap", labels, parents: labels.map(() => ""), values, textinfo: "label+value+percent root" }];
+      case "plotly_funnel":
+        return [{ type: "funnel", y: labels, x: values, textinfo: "value+percent initial" }];
+      case "plotly_waterfall":
+        return [{ type: "waterfall", x: labels, y: values.map((v, i) => i ? v - values[i - 1] : v), measure: values.map((_, i) => i ? "relative" : "absolute") }];
+      case "plotly_radar":
+        return [{ type: "scatterpolar", r: values.concat(values[0] || 0), theta: labels.concat(labels[0] || ""), fill: "toself", line: { width: 3 } }];
+      case "plotly_gauge": {
+        const total = values.reduce((a, b) => a + b, 0);
+        const first = values[0] || 0;
+        const pct = total ? Math.round((first / total) * 100) : 0;
+        return [{ type: "indicator", mode: "gauge+number", value: pct, number: { suffix: "%" }, gauge: { axis: { range: [0, 100] }, bar: { color: "#22d3ee" }, bgcolor: "rgba(255,255,255,.08)" } }];
+      }
+      case "plotly_sunburst":
+        return [{ type: "sunburst", labels: ["Total"].concat(labels), parents: [""].concat(labels.map(() => "Total")), values: [values.reduce((a,b)=>a+b,0)].concat(values), branchvalues: "total" }];
+      default:
+        return [{ type: "bar", x: labels, y: values, marker: { line: { color: "rgba(255,255,255,.25)", width: 1 } } }];
+    }
+  }
+
+  function renderPlotlyRich(ctx, chartId) {
+    const { specialEl, question } = ctx;
+    const mount = richMount(specialEl, chartId.replace(/_/g, " ").toUpperCase(), "kk-rich-plotly");
+    const rows = rowsForRich(ctx).filter(r => Number(r.n || r.value || 0) > 0 || rowsForRich(ctx).length <= 6);
+    if (!rows.length) return emptyState(specialEl, "Waiting for responses to build the rich visual…");
+    ensurePlotly().then(() => {
+      const data = makeRichPlotlyData(chartId, rows);
+      const layout = plotlyLayout((question && question.text) || "Live results");
+      if (chartId === "plotly_stacked") layout.barmode = "stack";
+      if (chartId === "plotly_grouped") layout.barmode = "group";
+      if (chartId === "plotly_radar") {
+        delete layout.xaxis; delete layout.yaxis;
+        layout.polar = { radialaxis: { visible: true, gridcolor: "rgba(255,255,255,.12)" }, bgcolor: "rgba(0,0,0,0)" };
+      }
+      window.Plotly.newPlot(mount, data, layout, plotlyConfig());
+    }).catch(err => {
+      console.warn("[chart_extra] Plotly unavailable", err);
+      mount.innerHTML = `<div class="kk-extra-empty">Plotly could not load. Check internet/CDN access.</div>`;
+    });
+  }
+
+  function extractMapPoints(ctx) {
+    const td = ctx.tallyData || {};
+    const raw = Array.isArray(td.points) ? td.points : [];
+    // Default map bounds roughly around The Gambia/Senegal coast for % based pins.
+    const latMin = 13.05, latMax = 13.75, lngMin = -16.9, lngMax = -13.75;
+    return raw.map((p, i) => {
+      let lat = Number(p.lat ?? p.latitude ?? p.y ?? p.y_value);
+      let lng = Number(p.lng ?? p.lon ?? p.longitude ?? p.x ?? p.x_value);
+      // If x/y look like percentage/image coordinates, convert into a useful geo box.
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat >= 0 && lat <= 100 && lng >= 0 && lng <= 100)) {
+        const x = Number(p.x ?? p.x_value ?? 50);
+        const y = Number(p.y ?? p.y_value ?? 50);
+        lng = lngMin + (Math.max(0, Math.min(100, x)) / 100) * (lngMax - lngMin);
+        lat = latMax - (Math.max(0, Math.min(100, y)) / 100) * (latMax - latMin);
+      }
+      return { lat, lng, label: p.label || p.name || `Pin ${i + 1}`, value: Number(p.value ?? p.count ?? 1) || 1 };
+    }).filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+  }
+
+  function renderFoliumLeaflet(ctx) {
+    const { specialEl } = ctx;
+    const mount = richMount(specialEl, "FOLIUM / LEAFLET MAP", "kk-rich-map");
+    const pts = extractMapPoints(ctx);
+    if (!pts.length) return emptyState(specialEl, "Waiting for map pins…");
+    ensureLeaflet().then(() => {
+      mount.innerHTML = `<div class="kk-leaflet-map"></div>`;
+      const node = mount.querySelector(".kk-leaflet-map");
+      const center = pts.reduce((a,p)=>({lat:a.lat+p.lat/pts.length,lng:a.lng+p.lng/pts.length}), {lat:0,lng:0});
+      const map = window.L.map(node, { zoomControl: true, attributionControl: true }).setView([center.lat, center.lng], pts.length > 1 ? 8 : 10);
+      window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" }).addTo(map);
+      const group = window.L.featureGroup().addTo(map);
+      pts.forEach((p, i) => {
+        const marker = window.L.circleMarker([p.lat, p.lng], {
+          radius: Math.max(8, Math.min(28, 8 + p.value * 2)),
+          color: "#22d3ee",
+          weight: 2,
+          fillColor: i % 2 ? "#7c3aed" : "#22d3ee",
+          fillOpacity: .72,
+        }).bindPopup(`<strong>${escapeHtml(p.label)}</strong><br>${escapeHtml(p.value)} response${p.value === 1 ? "" : "s"}`);
+        marker.addTo(group);
+      });
+      if (pts.length > 1) map.fitBounds(group.getBounds().pad(.18));
+      setTimeout(() => map.invalidateSize(), 60);
+    }).catch(err => {
+      console.warn("[chart_extra] Leaflet unavailable", err);
+      mount.innerHTML = `<div class="kk-extra-empty">Folium/Leaflet map could not load. Check internet/CDN access.</div>`;
+    });
+  }
+
+  function renderPlotlyGeo(ctx) {
+    const { specialEl, question } = ctx;
+    const mount = richMount(specialEl, "PLOTLY GEO MAP", "kk-rich-plotly-map");
+    const pts = extractMapPoints(ctx);
+    if (!pts.length) return emptyState(specialEl, "Waiting for geo pins…");
+    ensurePlotly().then(() => {
+      const data = [{
+        type: "scattergeo",
+        mode: "markers+text",
+        lat: pts.map(p => p.lat),
+        lon: pts.map(p => p.lng),
+        text: pts.map(p => p.label),
+        marker: { size: pts.map(p => Math.max(10, Math.min(38, 10 + p.value * 3))), color: pts.map(p => p.value), colorscale: "Turbo", showscale: true, opacity: .82, line: { color: "white", width: 1 } },
+      }];
+      const layout = plotlyLayout((question && question.text) || "Live map");
+      delete layout.xaxis; delete layout.yaxis;
+      layout.geo = {
+        scope: "world",
+        projection: { type: "natural earth" },
+        showland: true,
+        landcolor: "rgba(148,163,184,.25)",
+        showocean: true,
+        oceancolor: "rgba(14,165,233,.18)",
+        showcountries: true,
+        countrycolor: "rgba(255,255,255,.28)",
+        bgcolor: "rgba(0,0,0,0)",
+        lataxis: { range: [Math.min(...pts.map(p=>p.lat)) - .8, Math.max(...pts.map(p=>p.lat)) + .8] },
+        lonaxis: { range: [Math.min(...pts.map(p=>p.lng)) - .8, Math.max(...pts.map(p=>p.lng)) + .8] },
+      };
+      window.Plotly.newPlot(mount, data, layout, plotlyConfig());
+    }).catch(err => {
+      console.warn("[chart_extra] Plotly geo unavailable", err);
+      mount.innerHTML = `<div class="kk-extra-empty">Plotly geo map could not load. Check internet/CDN access.</div>`;
+    });
+  }
+
+  ["plotly_bar", "plotly_hbar", "plotly_grouped", "plotly_stacked", "plotly_line", "plotly_area", "plotly_pie", "plotly_donut", "plotly_scatter", "plotly_bubble", "plotly_heatmap", "plotly_treemap", "plotly_funnel", "plotly_waterfall", "plotly_radar", "plotly_gauge", "plotly_sunburst"].forEach(id => {
+    RENDERERS[id] = ctx => renderPlotlyRich(ctx, id);
+  });
+  RENDERERS.folium_map = renderFoliumLeaflet;
+  RENDERERS.plotly_geo = renderPlotlyGeo;
+
   // ───────── Word/text data extractor ─────────
   // Pulls phrases from tallyData.texts; if empty, falls back to counts keyed
   // by phrase (covers some servers that aggregate text into counts).
@@ -1637,6 +1911,16 @@
 
   // ───────── Styles ─────────
   const STYLES = `
+
+    .kk-rich-shell { width: 100%; height: 100%; min-height: 360px; display: grid; grid-template-rows: auto 1fr; gap: .75rem; padding: clamp(.75rem, 2vw, 1.25rem); color: #f8fafc; }
+    .kk-rich-head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+    .kk-rich-badge { display: inline-flex; align-items: center; gap: .4rem; padding: .34rem .72rem; border-radius: 999px; background: linear-gradient(135deg, rgba(34,211,238,.20), rgba(124,58,237,.18)); border: 1px solid rgba(34,211,238,.32); font-weight: 900; letter-spacing: .08em; font-size: .72rem; }
+    .kk-rich-sub { opacity: .65; font-size: .8rem; font-weight: 800; text-transform: uppercase; letter-spacing: .12em; }
+    .kk-rich-mount { position: relative; min-height: 320px; height: 100%; border-radius: 20px; overflow: hidden; background: radial-gradient(800px 320px at 25% 0%, rgba(34,211,238,.14), transparent 60%), rgba(2,6,23,.42); border: 1px solid rgba(255,255,255,.10); box-shadow: inset 0 1px 0 rgba(255,255,255,.08); }
+    .kk-rich-loading { position: absolute; inset: 0; display: grid; place-items: center; color: rgba(248,250,252,.72); font-weight: 800; }
+    .kk-leaflet-map { width: 100%; height: 100%; min-height: 340px; border-radius: 20px; overflow: hidden; }
+    .kk-rich-map .leaflet-container { background: #0f172a; font-family: Satoshi, Inter, system-ui, sans-serif; }
+    .kk-rich-map .leaflet-popup-content-wrapper, .kk-rich-map .leaflet-popup-tip { background: #0f172a; color: #f8fafc; }
     .kk-extra {
       width: 100%; height: 100%;
       box-sizing: border-box;

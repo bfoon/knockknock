@@ -30,6 +30,8 @@ let redoStack = [];
 let lastHistory = "";
 let historyLocked = false;
 let internalClipboard = null;
+// Multi-select is editor-only. Bound groups are saved as normal JSON elements.
+let multiSel = new Set();
 
 // ── Live collaboration ─────────────────────────────────────────────
 const CLIENT_ID = "hanns-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -38,11 +40,16 @@ let collabReady = false;
 let applyingRemoteDeck = false;
 
 function deepClone(v){return JSON.parse(JSON.stringify(v));}
-function cloneElement(el,offset=24){
+function cloneElement(el,offset=24,isChild=false){
   const copy=deepClone(el);
   copy.id=uid();
-  copy.x=clamp(Math.round((copy.x||0)+offset),0,Math.max(0,W-(copy.w||80)));
-  copy.y=clamp(Math.round((copy.y||0)+offset),0,Math.max(0,H-(copy.h||40)));
+  if(!isChild){
+    copy.x=clamp(Math.round((copy.x||0)+offset),0,Math.max(0,W-(copy.w||80)));
+    copy.y=clamp(Math.round((copy.y||0)+offset),0,Math.max(0,H-(copy.h||40)));
+  }
+  if(Array.isArray(copy.children)){
+    copy.children=copy.children.map(child=>cloneElement(child,0,true));
+  }
   return copy;
 }
 function snapshotDeck(){
@@ -60,6 +67,7 @@ function restoreSnapshot(raw){
   Deck.code=snap.code||Deck.code;
   Deck.cur=clamp(Number(snap.cur)||0,0,Math.max(0,(snap.slides||[]).length-1));
   Deck.sel=snap.sel||null;
+  multiSel.clear();
   Deck.slides=(snap.slides||[]).map(s=>Object.assign(newSlide(),deepClone(s)));
   const title=$("#deck-title"); if(title) title.value=Deck.title;
 }
@@ -113,36 +121,60 @@ function updateUndoRedoButtons(){
   const ub=$("#btn-undo"), rb=$("#btn-redo");
   if(ub){ub.disabled=undoStack.length<=1;ub.title="Undo (Ctrl+Z)";}
   if(rb){rb.disabled=redoStack.length===0;rb.title="Redo (Ctrl+Y or Ctrl+Shift+Z)";}
+  updateBindButtons();
+}
+function hannsClipboardPayload(payload){
+  return JSON.stringify({__hanns:true,version:1,...deepClone(payload)});
 }
 function writeInternalClipboard(payload){
   internalClipboard=deepClone(payload);
   // Best-effort system clipboard so copy/paste can work between tabs. Browser
-  // permissions may block this; the internal clipboard still works.
-  try{navigator.clipboard?.writeText?.(JSON.stringify({__hanns:true,...payload}));}catch(_){}
+  // permissions may block this; the internal clipboard still works. The real
+  // copy event below also writes this synchronously with clipboardData, which
+  // is more reliable for formatted text objects.
+  try{navigator.clipboard?.writeText?.(hannsClipboardPayload(payload));}catch(_){}
+}
+function payloadFromElements(els){
+  if(!Array.isArray(els)||!els.length)return null;
+  return els.length>1 ? {kind:"elements",elements:els} : {kind:"element",element:els[0]};
+}
+function parseHannsPayload(raw){
+  if(!raw)return null;
+  try{
+    const parsed=JSON.parse(raw);
+    if(parsed&&parsed.__hanns&&parsed.kind==="element"&&parsed.element)return parsed;
+    if(parsed&&parsed.__hanns&&parsed.kind==="elements"&&Array.isArray(parsed.elements))return parsed;
+  }catch(_){}
+  return null;
+}
+function pasteHannsPayload(parsed){
+  if(!parsed)return false;
+  if(parsed.kind==="element"&&parsed.element)return pasteElement(parsed.element);
+  if(parsed.kind==="elements"&&Array.isArray(parsed.elements))return pasteElements(parsed.elements);
+  return false;
 }
 function copySelected(){
-  const el=selEl();
-  if(!el){toast("Select an object first");return false;}
-  writeInternalClipboard({kind:"element",element:el});
-  toast("Copied");
+  const els=selectedElements();
+  if(!els.length){toast("Select an object first");return false;}
+  const payload=payloadFromElements(els);
+  writeInternalClipboard(payload);
+  toast(els.length>1?`Copied ${els.length} objects`:"Copied");
   return true;
 }
 function cutSelected(){
-  const el=selEl();
-  if(!el){toast("Select an object first");return false;}
-  writeInternalClipboard({kind:"element",element:el});
-  deleteEl(el.id);
-  toast("Cut");
+  const els=selectedElements();
+  if(!els.length){toast("Select an object first");return false;}
+  const payload=payloadFromElements(els);
+  writeInternalClipboard(payload);
+  deleteSelected();
+  toast(els.length>1?`Cut ${els.length} objects`:"Cut");
   return true;
 }
 async function pasteFromSystemText(){
   try{
     const txt=await navigator.clipboard?.readText?.();
-    if(!txt)return false;
-    const parsed=JSON.parse(txt);
-    if(parsed&&parsed.__hanns&&parsed.kind==="element"&&parsed.element){
-      pasteElement(parsed.element);return true;
-    }
+    const parsed=parseHannsPayload(txt);
+    if(parsed)return pasteHannsPayload(parsed);
   }catch(_){}
   return false;
 }
@@ -150,28 +182,108 @@ function pasteElement(el){
   const s=curSlide(); if(!s||!el)return false;
   const copy=cloneElement(el,28);
   s.els.push(copy);
+  multiSel.clear();
   Deck.sel=copy.id;
   renderAll();
   markDirty();
   toast("Pasted");
   return true;
 }
+function pasteElements(elements){
+  const s=curSlide(); if(!s||!Array.isArray(elements)||!elements.length)return false;
+  const copies=elements.map(el=>cloneElement(el,28));
+  s.els.push(...copies);
+  multiSel=new Set(copies.map(e=>e.id));
+  Deck.sel=copies[copies.length-1]?.id||null;
+  renderAll();
+  markDirty();
+  toast(`Pasted ${copies.length} objects`);
+  return true;
+}
+async function pasteFromSystemRich(){
+  // Best-effort fallback for browsers that expose copied image files only via
+  // the Async Clipboard API rather than `event.clipboardData.files`.
+  try{
+    if(!navigator.clipboard?.read)return false;
+    const items=await navigator.clipboard.read();
+    for(const item of items||[]){
+      const imgType=(item.types||[]).find(t=>/^image\//i.test(t));
+      if(!imgType)continue;
+      const blob=await item.getType(imgType);
+      const file=new File([blob], "pasted-image." + (imgType.split("/")[1]||"png"), {type:imgType});
+      if(await addImageFiles([file]))return true;
+    }
+  }catch(_){ }
+  return false;
+}
+function cssValue(style, prop){
+  const m=(style||"").match(new RegExp(prop+"\\s*:\\s*([^;]+)","i"));
+  return m?m[1].trim():"";
+}
+function richTextElementFromHtml(html, plain){
+  if(!html||!plain)return null;
+  try{
+    const doc=new DOMParser().parseFromString(html,"text/html");
+    const root=doc.body;
+    if(!root||root.querySelector("img"))return null;
+    const source=root.querySelector("[style],b,strong,i,em,h1,h2,h3,p,div,span")||root;
+    const inline=source.getAttribute?source.getAttribute("style")||"":"";
+    const rawText=(root.innerText||root.textContent||plain||"").replace(/\n{3,}/g,"\n\n").trim();
+    if(!rawText)return null;
+    const size=parseInt(cssValue(inline,"font-size"),10);
+    const color=cssValue(inline,"color")||cssValue(inline,"-webkit-text-fill-color")||"#16140f";
+    const fam=cssValue(inline,"font-family")||'"Inter",sans-serif';
+    const weight=cssValue(inline,"font-weight")||(root.querySelector("b,strong")?"700":"600");
+    const align=cssValue(inline,"text-align")||"left";
+    const italic=!!root.querySelector("i,em") || /font-style\s*:\s*italic/i.test(inline);
+    return makeText({
+      x:W/2-240,y:H/2-70,w:480,h:150,
+      text:rawText.slice(0,3000),
+      font:fam,
+      size:Number.isFinite(size)?clamp(size,14,96):34,
+      color:color||"#16140f",
+      weight:String(weight||"600").includes("bold")?700:(parseInt(weight,10)||600),
+      italic,
+      align:["left","center","right"].includes(String(align).toLowerCase())?String(align).toLowerCase():"left"
+    });
+  }catch(_){return null;}
+}
+function pasteFormattedTextObjectFromHtml(html, plain){
+  const el=richTextElementFromHtml(html, plain);
+  if(!el)return false;
+  curSlide().els.push(el);
+  multiSel.clear();
+  Deck.sel=el.id;
+  renderAll();
+  markDirty();
+  toast("Pasted formatted text");
+  return true;
+}
 async function pasteClipboard(){
+  // Prefer the system clipboard first. This lets copied images/text/URLs from
+  // outside Hanns win even if internalClipboard still contains an old object.
+  if(await pasteFromSystemRich())return;
+  if(await pasteFromSystemText())return;
+  if(internalClipboard?.kind==="elements"&&Array.isArray(internalClipboard.elements)){
+    pasteElements(internalClipboard.elements);
+    return;
+  }
   if(internalClipboard?.kind==="element"&&internalClipboard.element){
     pasteElement(internalClipboard.element);
     return;
   }
-  if(await pasteFromSystemText())return;
   toast("Nothing to paste");
 }
 function nudgeSelected(key,shift){
-  const el=selEl(); if(!el)return false;
+  const els=selectedElements(); if(!els.length)return false;
   const step=shift?10:1;
-  if(key==="ArrowLeft")el.x=Math.round((el.x||0)-step);
-  else if(key==="ArrowRight")el.x=Math.round((el.x||0)+step);
-  else if(key==="ArrowUp")el.y=Math.round((el.y||0)-step);
-  else if(key==="ArrowDown")el.y=Math.round((el.y||0)+step);
+  let dx=0,dy=0;
+  if(key==="ArrowLeft")dx=-step;
+  else if(key==="ArrowRight")dx=step;
+  else if(key==="ArrowUp")dy=-step;
+  else if(key==="ArrowDown")dy=step;
   else return false;
+  els.forEach(el=>{el.x=Math.round((el.x||0)+dx);el.y=Math.round((el.y||0)+dy);});
   renderCanvas();
   renderFilmstrip();
   syncInspectorPos();
@@ -207,7 +319,7 @@ function renderCanvas(){
   const s=curSlide();if(!s)return;
   paintSlide(canvas,s,{live:false});
   // re-mark selection
-  if(Deck.sel){const n=canvas.querySelector(`.el[data-id="${Deck.sel}"]`);if(n)n.classList.add("selected");}
+  applySelectionDom();
   wireCanvasElements();
   $("#nav-pos").textContent=`${Deck.cur+1} / ${Deck.slides.length}`;
   applyZoom();
@@ -340,6 +452,94 @@ function applyTemplate(tpl){
   closeDrawers();toast(`Applied “${tpl.name}”`);
 }
 
+/* ── multi-select + bind/unbind ─────────────────────────────────── */
+function topLevelEls(){return Array.from(canvas.children).filter(n=>n.classList&&n.classList.contains("el"));}
+function currentElements(){const s=curSlide();return s&&Array.isArray(s.els)?s.els:[];}
+function elById(id){return currentElements().find(e=>e.id===id)||null;}
+function selectedIds(){
+  const existing=new Set(currentElements().map(e=>e.id));
+  multiSel=new Set([...multiSel].filter(id=>existing.has(id)));
+  if(multiSel.size)return [...multiSel];
+  return Deck.sel&&existing.has(Deck.sel)?[Deck.sel]:[];
+}
+function selectedElements(){return selectedIds().map(elById).filter(Boolean);}
+function applySelectionDom(){
+  const ids=new Set(selectedIds());
+  const multi=ids.size>1;
+  topLevelEls().forEach(n=>{
+    const on=ids.has(n.dataset.id);
+    n.classList.toggle("selected",on);
+    n.classList.toggle("multi-selected",on&&multi);
+  });
+  updateBindButtons();
+}
+function updateBindButtons(){
+  const count=selectedIds().length;
+  const el=selEl();
+  const bind=$("#btn-bind"), unbind=$("#btn-unbind");
+  if(bind){bind.disabled=count<2;bind.title=count<2?"Select 2 or more objects to bind":"Bind selected objects (Ctrl/Cmd+G)";}
+  if(unbind){unbind.disabled=!(el&&el.type==="group");unbind.title=(el&&el.type==="group")?"Unbind selected group (Ctrl/Cmd+Shift+G)":"Select a bound group to unbind";}
+}
+function selectEl(id,additive=false){
+  if(additive){
+    if(multiSel.has(id))multiSel.delete(id);
+    else multiSel.add(id);
+    if(multiSel.size===1){Deck.sel=[...multiSel][0];}
+    else if(multiSel.size>1){Deck.sel=id;}
+    else Deck.sel=null;
+  }else{
+    multiSel.clear();
+    Deck.sel=id;
+  }
+  applySelectionDom();
+  renderInspector();
+}
+function clearSelection(){Deck.sel=null;multiSel.clear();applySelectionDom();renderInspector();}
+function boundsFor(els){
+  const minX=Math.min(...els.map(e=>Number(e.x)||0));
+  const minY=Math.min(...els.map(e=>Number(e.y)||0));
+  const maxX=Math.max(...els.map(e=>(Number(e.x)||0)+(Number(e.w)||0)));
+  const maxY=Math.max(...els.map(e=>(Number(e.y)||0)+(Number(e.h)||0)));
+  return {x:minX,y:minY,w:Math.max(20,maxX-minX),h:Math.max(20,maxY-minY)};
+}
+function bindSelected(){
+  const s=curSlide();const ids=selectedIds();
+  if(!s||ids.length<2){toast("Select 2 or more objects, then click Bind");return;}
+  const all=currentElements();
+  const picked=all.filter(e=>ids.includes(e.id));
+  if(picked.length<2){toast("Select 2 or more objects, then click Bind");return;}
+  const b=boundsFor(picked);
+  const children=picked.map(e=>{const c=deepClone(e);c.x=Math.round((c.x||0)-b.x);c.y=Math.round((c.y||0)-b.y);return c;});
+  const firstIndex=Math.min(...picked.map(e=>all.findIndex(x=>x.id===e.id)).filter(i=>i>=0));
+  const group={id:uid(),type:"group",x:b.x,y:b.y,w:b.w,h:b.h,rot:0,anim:"none",animDelay:0,name:"Bound group",children};
+  s.els=all.filter(e=>!ids.includes(e.id));
+  s.els.splice(Math.max(0,firstIndex),0,group);
+  multiSel.clear();Deck.sel=group.id;
+  renderAll();markDirty();toast(`Bound ${children.length} objects`);
+}
+function unbindSelected(){
+  const s=curSlide();const group=selEl();
+  if(!s||!group||group.type!=="group"||!Array.isArray(group.children)){toast("Select a bound group first");return;}
+  const idx=s.els.findIndex(e=>e.id===group.id);
+  const children=group.children.map(child=>{
+    const c=deepClone(child);c.id=uid();
+    c.x=Math.round((group.x||0)+(c.x||0));
+    c.y=Math.round((group.y||0)+(c.y||0));
+    c.rot=Math.round((c.rot||0)+(group.rot||0));
+    if(Array.isArray(c.children))c.children=c.children.map(ch=>cloneElement(ch,0,true));
+    return c;
+  });
+  s.els.splice(idx,1,...children);
+  multiSel=new Set(children.map(e=>e.id));Deck.sel=children[children.length-1]?.id||null;
+  renderAll();markDirty();toast(`Unbound ${children.length} objects`);
+}
+function deleteSelected(){
+  const ids=selectedIds();
+  if(!ids.length)return;
+  const s=curSlide();s.els=s.els.filter(e=>!ids.includes(e.id));
+  Deck.sel=null;multiSel.clear();renderAll();markDirty();
+}
+
 /* ════════════════════════════════════════════════════════════════════
    ELEMENT add / select / delete
    ════════════════════════════════════════════════════════════════════ */
@@ -360,25 +560,21 @@ function addElement(kind){
   else if(kind==="map"){el=makeMap("gambia",{x:W/2-325,y:H/2-180});}
   else if(kind==="creative_shape"){el=makeCreativeShape("blob_01",{x:W/2-120,y:H/2-120});}
   if(!el)return;
-  s.els.push(el);Deck.sel=el.id;renderAll();markDirty();
+  s.els.push(el);multiSel.clear();Deck.sel=el.id;renderAll();markDirty();
   if(kind==="image")pickImageFor(el.id);
 }
 function addObject(kind){
   const d=(OBJECTS||[]).find(o=>o.kind===kind);
   const el=makeObject(kind,{x:Math.round(W/2-(d?.w||320)/2),y:Math.round(H/2-(d?.h||220)/2)});
-  curSlide().els.push(el);Deck.sel=el.id;renderAll();markDirty();closeDrawers();
+  curSlide().els.push(el);multiSel.clear();Deck.sel=el.id;renderAll();markDirty();closeDrawers();
 }
 function addCreativeShape(kind){
   const d=(SHAPES||[]).find(s=>s.kind===kind)||SHAPES[0];
   const el=makeCreativeShape(kind,{x:Math.round(W/2-120),y:Math.round(H/2-120),fill:d.accent||"#e8482b"});
-  curSlide().els.push(el);Deck.sel=el.id;renderAll();markDirty();closeDrawers();
-}
-function selectEl(id){Deck.sel=id;
-  $$(".el",canvas).forEach(n=>n.classList.toggle("selected",n.dataset.id===id));
-  renderInspector();
+  curSlide().els.push(el);multiSel.clear();Deck.sel=el.id;renderAll();markDirty();closeDrawers();
 }
 function deleteEl(id){const s=curSlide();s.els=s.els.filter(e=>e.id!==id);
-  if(Deck.sel===id)Deck.sel=null;renderAll();markDirty();}
+  if(Deck.sel===id)Deck.sel=null;multiSel.delete(id);renderAll();markDirty();}
 
 function moveElementLayer(action){
   const s=curSlide();const el=selEl();if(!s||!el)return;
@@ -397,15 +593,182 @@ function moveElementLayer(action){
   toast(action==="front"?"Brought to front":action==="back"?"Sent behind":action==="forward"?"Moved forward":"Moved backward");
 }
 
-/* image picker */
+/* image picker + universal image import */
 let pendingImgId=null;
 function pickImageFor(id){pendingImgId=id;$("#img-input").click();}
-$("#img-input").addEventListener("change",e=>{
-  const f=e.target.files[0];if(!f||!pendingImgId)return;
-  const rd=new FileReader();
-  rd.onload=()=>{const el=curSlide().els.find(x=>x.id===pendingImgId);
-    if(el){el.src=rd.result;renderAll();markDirty();}pendingImgId=null;e.target.value="";};
-  rd.readAsDataURL(f);
+function isImageFile(file){return !!file && ((file.type||"").startsWith("image/") || /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(file.name||""));}
+async function uploadImageBlob(blob,name="image.png"){
+  if(!SRV.imageUploadUrl)throw new Error("Image upload URL is missing");
+  const safeName=String(name||"image.png").replace(/[^\w.\-]+/g,"_")||"image.png";
+  const fd=new FormData();
+  fd.append("image",blob,safeName);
+  const r=await fetch(SRV.imageUploadUrl,{method:"POST",headers:{"X-CSRFToken":SRV.csrftoken||""},body:fd});
+  let data=null;try{data=await r.json();}catch(_){ }
+  if(!r.ok||!data||!data.ok||!data.url)throw new Error((data&&data.error)||("Image upload failed "+r.status));
+  return data.url;
+}
+function readFileAsDataURL(file){
+  return new Promise((resolve,reject)=>{
+    const rd=new FileReader();
+    rd.onload=()=>resolve(rd.result);
+    rd.onerror=()=>reject(rd.error||new Error("Could not read image"));
+    rd.readAsDataURL(file);
+  });
+}
+function dataURLToBlob(dataURL){
+  const parts=String(dataURL||"").split(",");
+  const meta=parts[0]||"";
+  const mime=(meta.match(/data:([^;]+)/)||[])[1]||"image/png";
+  const bin=atob(parts.slice(1).join(","));
+  const bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+  return new Blob([bytes],{type:mime});
+}
+async function persistImageSource(src,name="image.png"){
+  const val=String(src||"");
+  if(/^data:image\//i.test(val)){
+    const ext=((val.match(/^data:image\/([a-z0-9+.-]+)/i)||[])[1]||"png").replace("jpeg","jpg").replace("svg+xml","svg");
+    return await uploadImageBlob(dataURLToBlob(val), name && /\.[a-z0-9]+$/i.test(name)?name:("image."+ext));
+  }
+  if(/^blob:/i.test(val)){
+    const blob=await fetch(val).then(r=>r.blob());
+    return await uploadImageBlob(blob,name||"image.png");
+  }
+  return val;
+}
+async function fileToDataURL(file){
+  // Despite the historic name, this now returns a stable media URL when the
+  // Django upload endpoint exists. Storing base64 data URLs inside slide JSON
+  // makes autosave exceed DATA_UPLOAD_MAX_MEMORY_SIZE once users paste images.
+  if(SRV.imageUploadUrl)return await uploadImageBlob(file,file.name||"image.png");
+  if((file.size||0)>750*1024)throw new Error("Image upload endpoint missing for large image");
+  return await readFileAsDataURL(file);
+}
+function canvasPointFromEvent(e){
+  const r=canvas.getBoundingClientRect();
+  const z=zoom||1;
+  return {
+    x:clamp(Math.round((e.clientX-r.left)/z),0,W),
+    y:clamp(Math.round((e.clientY-r.top)/z),0,H),
+  };
+}
+function guessImageSize(src, fallbackW=330, fallbackH=210){
+  return new Promise(resolve=>{
+    const im=new Image();
+    im.onload=()=>{
+      const ratio=(im.naturalWidth||fallbackW)/(im.naturalHeight||fallbackH);
+      let w=Math.min(420,Math.max(120,im.naturalWidth||fallbackW));
+      let h=Math.round(w/ratio);
+      if(h>320){h=320;w=Math.round(h*ratio);}
+      resolve({w,h});
+    };
+    im.onerror=()=>resolve({w:fallbackW,h:fallbackH});
+    im.src=src;
+  });
+}
+async function addImageSource(src,{x=W/2-170,y=H/2-105,name="Image",select=true}={}){
+  if(!src)return null;
+  try{src=await persistImageSource(src,name||"image.png");}
+  catch(err){console.warn("Hanns image persist failed",err);toast("Image upload failed");return null;}
+  const size=await guessImageSize(src);
+  const el=makeImage(src,{
+    x:clamp(Math.round(x),0,Math.max(0,W-size.w)),
+    y:clamp(Math.round(y),0,Math.max(0,H-size.h)),
+    w:size.w,h:size.h,
+    alt:name||"Image",
+  });
+  curSlide().els.push(el);
+  if(select){multiSel.clear();Deck.sel=el.id;}
+  renderAll();markDirty();
+  return el;
+}
+async function addImageFiles(files,origin){
+  const imgs=[...(files||[])].filter(isImageFile);
+  if(!imgs.length)return 0;
+  const base=origin||{x:W/2-170,y:H/2-105};
+  let n=0;
+  for(const file of imgs){
+    try{
+      const src=await fileToDataURL(file);
+      await addImageSource(src,{x:base.x+(n%3)*34,y:base.y+Math.floor(n/3)*34,name:file.name||"Image",select:true});
+      n++;
+    }catch(err){console.warn("Hanns image import failed",err);}
+  }
+  if(n)toast(n===1?"Image added":"Images added: "+n);
+  return n;
+}
+function isLikelyImageUrl(url){
+  if(!url)return false;
+  const u=String(url).trim();
+  return /^data:image\//i.test(u) || /^blob:/i.test(u) || /^https?:\/\//i.test(u) && (/\.(png|jpe?g|gif|webp|svg|bmp|avif)(\?|#|$)/i.test(u) || /images?\./i.test(u) || /unsplash|pexels|pixabay|cloudinary|imgur|googleusercontent|fbcdn|twimg|cdn/i.test(u));
+}
+function extractImageUrlsFromHtml(html){
+  const urls=[];
+  if(!html)return urls;
+  try{
+    const doc=new DOMParser().parseFromString(html,"text/html");
+    doc.querySelectorAll("img,source").forEach(img=>{
+      const src=img.getAttribute("src")||img.getAttribute("data-src")||img.getAttribute("srcset")||"";
+      if(src){
+        const first=src.split(",")[0].trim().split(/\s+/)[0];
+        if(first)urls.push(first);
+      }
+    });
+  }catch(_){ }
+  const re=/url\(["']?([^"')]+)["']?\)|https?:[^\s"'<>]+?\.(?:png|jpe?g|gif|webp|svg|bmp|avif)(?:\?[^\s"'<>]*)?/ig;
+  let m;
+  while((m=re.exec(html))){urls.push((m[1]||m[0]||"").trim());}
+  return [...new Set(urls)].filter(Boolean);
+}
+async function addImageUrls(urls,origin){
+  const clean=[...new Set((urls||[]).map(x=>String(x||"").trim()).filter(Boolean))];
+  let n=0;
+  const base=origin||{x:W/2-170,y:H/2-105};
+  for(const url of clean){
+    if(!isLikelyImageUrl(url))continue;
+    await addImageSource(url,{x:base.x+(n%3)*34,y:base.y+Math.floor(n/3)*34,name:"Web image",select:true});
+    n++;
+  }
+  if(n)toast(n===1?"Web image added":"Web images added: "+n);
+  return n;
+}
+async function collectImageFilesFromItems(items){
+  const out=[];
+  async function walkEntry(entry){
+    if(!entry)return;
+    if(entry.isFile){
+      await new Promise(resolve=>entry.file(file=>{if(isImageFile(file))out.push(file);resolve();},()=>resolve()));
+    }else if(entry.isDirectory){
+      const reader=entry.createReader();
+      let batch=[];
+      do{
+        batch=await new Promise(resolve=>reader.readEntries(resolve,()=>resolve([])));
+        for(const child of batch)await walkEntry(child);
+      }while(batch.length);
+    }
+  }
+  for(const item of [...(items||[])]){
+    const entry=item.webkitGetAsEntry?.();
+    if(entry) await walkEntry(entry);
+    else{
+      const f=item.getAsFile?.();
+      if(isImageFile(f))out.push(f);
+    }
+  }
+  return out;
+}
+$("#img-input").addEventListener("change",async e=>{
+  const files=[...(e.target.files||[])].filter(isImageFile);
+  if(!files.length){pendingImgId=null;e.target.value="";return;}
+  if(pendingImgId){
+    const file=files[0];
+    const src=await fileToDataURL(file);
+    const el=curSlide().els.find(x=>x.id===pendingImgId);
+    if(el){el.src=src;el.alt=file.name||el.alt||"Image";renderAll();markDirty();toast("Image replaced");}
+  }else{
+    await addImageFiles(files);
+  }
+  pendingImgId=null;e.target.value="";
 });
 
 $("#data-input")&&$("#data-input").addEventListener("change",e=>{
@@ -422,12 +785,12 @@ $("#data-input")&&$("#data-input").addEventListener("change",e=>{
    All maths happen in slide space (divide pointer deltas by zoom).
    ════════════════════════════════════════════════════════════════════ */
 function wireCanvasElements(){
-  $$(".el",canvas).forEach(node=>{
+  topLevelEls().forEach(node=>{
     const id=node.dataset.id;
     node.addEventListener("pointerdown",e=>{
       if(e.target.closest("[data-handle]"))return; // handled below
       if(e.target.isContentEditable&&node.classList.contains("selected"))return; // editing text
-      selectEl(id);startDrag(e,node,id);
+      selectEl(id,e.shiftKey||e.metaKey||e.ctrlKey);startDrag(e,node,id);
     });
     // image element: click placeholder to choose a file
     if(node.classList.contains("image")){
@@ -458,24 +821,30 @@ function wireCanvasElements(){
     }
     // handles
     $$("[data-handle]",node).forEach(h=>{
-      h.addEventListener("pointerdown",e=>{e.stopPropagation();selectEl(id);
+      h.addEventListener("pointerdown",e=>{e.stopPropagation();selectEl(id,false);
         if(h.dataset.handle==="rot")startRotate(e,node,id);
         else startResize(e,node,id,h.dataset.handle);});
     });
   });
 }
 function startDrag(e,node,id){
-  const el=curSlide().els.find(x=>x.id===id);if(!el)return;
-  const sx=e.clientX, sy=e.clientY, ox=el.x, oy=el.y;
-  const mv=ev=>{el.x=Math.round(ox+(ev.clientX-sx)/zoom);el.y=Math.round(oy+(ev.clientY-sy)/zoom);
-    node.style.left=el.x+"px";node.style.top=el.y+"px";};
+  const el=elById(id);if(!el)return;
+  const moving=(multiSel.size>1&&multiSel.has(id))?selectedElements():[el];
+  const start=moving.map(x=>({el:x,x:Number(x.x)||0,y:Number(x.y)||0}));
+  const sx=e.clientX, sy=e.clientY;
+  const mv=ev=>{
+    const dx=Math.round((ev.clientX-sx)/zoom), dy=Math.round((ev.clientY-sy)/zoom);
+    start.forEach(o=>{o.el.x=o.x+dx;o.el.y=o.y+dy;});
+    if(moving.length===1){node.style.left=el.x+"px";node.style.top=el.y+"px";}
+    else renderCanvas();
+  };
   const up=()=>{document.removeEventListener("pointermove",mv);document.removeEventListener("pointerup",up);renderFilmstrip();syncInspectorPos();markDirty();};
   document.addEventListener("pointermove",mv);document.addEventListener("pointerup",up);
 }
 function startResize(e,node,id,corner){
   const el=curSlide().els.find(x=>x.id===id);if(!el)return;
   const sx=e.clientX, sy=e.clientY;
-  const o={x:el.x,y:el.y,w:el.w,h:el.h};
+  const o={x:el.x,y:el.y,w:el.w,h:el.h,children:Array.isArray(el.children)?deepClone(el.children):null};
   const mv=ev=>{
     const dx=(ev.clientX-sx)/zoom, dy=(ev.clientY-sy)/zoom;
     let {x,y,w,h}=o;
@@ -484,6 +853,10 @@ function startResize(e,node,id,corner){
     if(corner.includes("w")){w=Math.max(20,o.w-dx);x=o.x+dx;}
     if(corner.includes("n")){h=Math.max(12,o.h-dy);y=o.y+dy;}
     el.x=Math.round(x);el.y=Math.round(y);el.w=Math.round(w);el.h=Math.round(h);
+    if(el.type==="group"&&o.children&&o.w&&o.h){
+      const rx=el.w/o.w, ry=el.h/o.h;
+      el.children=o.children.map(c=>{const cc=deepClone(c);cc.x=Math.round((c.x||0)*rx);cc.y=Math.round((c.y||0)*ry);cc.w=Math.round((c.w||0)*rx);cc.h=Math.round((c.h||0)*ry);return cc;});
+    }
     node.style.left=el.x+"px";node.style.top=el.y+"px";
     node.style.width=el.w+"px";node.style.height=el.h+"px";
   };
@@ -500,8 +873,7 @@ function startRotate(e,node,id){
   document.addEventListener("pointermove",mv);document.addEventListener("pointerup",up);
 }
 // click empty canvas → deselect
-canvas.addEventListener("pointerdown",e=>{if(e.target===canvas){Deck.sel=null;
-  $$(".el",canvas).forEach(n=>n.classList.remove("selected"));renderInspector();}});
+canvas.addEventListener("pointerdown",e=>{if(e.target===canvas){clearSelection();}});
 
 /* ════════════════════════════════════════════════════════════════════
    INSPECTOR
@@ -622,6 +994,8 @@ function renderInspector(){
   $$(".insp-tab").forEach(t=>t.classList.toggle("active",t.dataset.tab===inspTab));
   const el=selEl();
   if(inspTab==="slide"){inspBody.innerHTML=slidePanel();bindSlidePanel();return;}
+  const selected=selectedElements();
+  if(selected.length>1){inspBody.innerHTML=multiSelectionPanel(selected);bindMultiSelectionPanel();return;}
   if(!el){
     inspBody.innerHTML=`<div class="insp-empty"><span class="big">Nothing selected</span>
       Pick an element on the canvas, or add one from the left rail. Switch to <b>Slide</b> to style the background &amp; transition.</div>`;
@@ -630,6 +1004,21 @@ function renderInspector(){
   if(inspTab==="animate"){inspBody.innerHTML=animatePanel(el);bindAnimatePanel(el);return;}
   inspBody.innerHTML=elementPanel(el);bindElementPanel(el);
 }
+function multiSelectionPanel(els){
+  return `<div class="group"><span class="glabel">Selected objects</span>
+    <div class="bind-summary"><b>${els.length}</b><span>objects selected. Click Bind to move, copy, layer and resize them as one object.</span></div>
+    <div class="bind-action-row">
+      <button class="tbtn primary" id="f-bind-selected" type="button">🔗 Bind selected</button>
+      <button class="tbtn" id="f-clear-selection" type="button">Clear</button>
+    </div>
+    <div class="insp-empty" style="padding-top:.8rem">Tip: hold Shift/Ctrl/Cmd and click objects to add or remove them from the selection.</div>
+  </div>`;
+}
+function bindMultiSelectionPanel(){
+  $("#f-bind-selected")?.addEventListener("click",bindSelected);
+  $("#f-clear-selection")?.addEventListener("click",clearSelection);
+}
+
 function elementPanel(el){
   let h="";
   // position group
@@ -823,6 +1212,12 @@ function elementPanel(el){
       <div class="insp-empty" style="padding-top:.2rem">${def.help||"Animated visual object"}</div>
     </div>`;
   }
+  if(el.type==="group"){
+    h+=`<div class="group"><span class="glabel">Bound group</span>
+      <div class="bind-summary"><b>${Array.isArray(el.children)?el.children.length:0}</b><span>objects are bound together. You can move, resize, copy, layer, animate, or unbind them later.</span></div>
+      <button class="tbtn primary" id="f-unbind-group" type="button" style="width:100%;justify-content:center">⛓ Unbind group</button>
+    </div>`;
+  }
   h+=`<button class="del-el" id="f-del">Delete element</button>`;
   return h;
 }
@@ -835,6 +1230,7 @@ function bindElementPanel(el){
   $("#f-layer-forward")&&$("#f-layer-forward").addEventListener("click",()=>moveElementLayer("forward"));
   $("#f-layer-backward")&&$("#f-layer-backward").addEventListener("click",()=>moveElementLayer("backward"));
   $("#f-layer-back")&&$("#f-layer-back").addEventListener("click",()=>moveElementLayer("back"));
+  $("#f-unbind-group")&&$("#f-unbind-group").addEventListener("click",unbindSelected);
   if(el.type==="text"){
     const ta=$("#f-text");ta&&ta.addEventListener("input",()=>{el.text=ta.value;renderCanvas();markDirty();});
     const fo=$("#f-font");fo&&fo.addEventListener("change",()=>{el.font=fo.value;renderCanvas();markDirty();});
@@ -1206,21 +1602,49 @@ function broadcastDeckSaved(){
   }
 }
 
+
+async function normalizeEmbeddedImagesInDeck(){
+  let changed=false;
+  const walk=(els)=>{
+    const tasks=[];
+    (els||[]).forEach(el=>{
+      if(!el||typeof el!=="object")return;
+      if(el.type==="image" && el.src && /^(data:image\/|blob:)/i.test(String(el.src))){
+        tasks.push((async()=>{
+          const old=el.src;
+          el.src=await persistImageSource(el.src,el.alt||"image.png");
+          if(el.src!==old)changed=true;
+        })());
+      }
+      if(Array.isArray(el.children))tasks.push(...walk(el.children));
+    });
+    return tasks;
+  };
+  const tasks=[];
+  (Deck.slides||[]).forEach(slide=>tasks.push(...walk(slide.els||[])));
+  if(tasks.length)await Promise.all(tasks);
+  return changed;
+}
+
 async function saveDeck(silent){
   if(!SRV.saveUrl){updateSaveState("error");if(!silent)toast("Save URL is missing");return false;}
   if(saving){queuedSave=true;return false;}
   clearTimeout(saveTimer);saving=true;queuedSave=false;updateSaveState("saving");
   try{
+    if(await normalizeEmbeddedImagesInDeck()){renderAll();}
     const r=await fetch(SRV.saveUrl,{method:"POST",
       headers:{"Content-Type":"application/json","X-CSRFToken":SRV.csrftoken||""},
       body:JSON.stringify(deckPayload())});
-    if(!r.ok)throw new Error("save failed "+r.status);
+    if(!r.ok){
+      let data=null;try{data=await r.json();}catch(_){ }
+      throw new Error((data&&data.error)||("save failed "+r.status));
+    }
     await r.json();
     updateSaveState("saved");
     broadcastDeckSaved();
     if(!silent)toast("Saved");
     return true;
-  }catch(err){console.error(err);updateSaveState("error");if(!silent)toast("Couldn’t save — check your connection");return false;}
+  }catch(err){console.error(err);updateSaveState("error");if(!silent)toast(err&&err.message?err.message:"Couldn’t save — check your connection");return false;}
   finally{saving=false;if(queuedSave){queuedSave=false;saveDeck(true);}}
 }
 function scheduleSave(){if(applyingRemoteDeck)return;updateSaveState("dirty");clearTimeout(saveTimer);saveTimer=setTimeout(()=>saveDeck(true),900);}
@@ -1330,6 +1754,8 @@ function init(){
 
   // rail add buttons
   $$(".rail .tool[data-add]").forEach(b=>b.addEventListener("click",()=>addElement(b.dataset.add)));
+  $("#btn-bind")?.addEventListener("click",bindSelected);
+  $("#btn-unbind")?.addEventListener("click",unbindSelected);
   $("#rail-tpl")?.addEventListener("click",()=>{const open=$("#drawer-tpl").classList.contains("open");open?closeDrawers():openDrawer("tpl");});
   $("#rail-bg")?.addEventListener("click",()=>{const open=$("#drawer-bg").classList.contains("open");open?closeDrawers():openDrawer("bg");});
   $("#rail-obj")?.addEventListener("click",()=>{const open=$("#drawer-obj").classList.contains("open");open?closeDrawers():openDrawer("obj");});
@@ -1389,13 +1815,22 @@ function init(){
 
     if(mod&&key==="z"){e.preventDefault();e.shiftKey?redo():undo();return;}
     if(mod&&key==="y"){e.preventDefault();redo();return;}
-    if(mod&&key==="c"){e.preventDefault();copySelected();return;}
-    if(mod&&key==="x"){e.preventDefault();cutSelected();return;}
+    if(mod&&key==="c"){
+      // Let the native copy event fire so we can write Hanns object JSON to
+      // clipboardData synchronously. This preserves formatted text objects.
+      return;
+    }
+    if(mod&&key==="x"){
+      // Same for cut: the cut event writes the payload then removes objects.
+      return;
+    }
     if(mod&&key==="v"){
-      // When we already have an internal Hanns clipboard, paste immediately.
-      // Otherwise allow the browser paste event to fire so images/plain text
-      // from outside the editor can be handled from e.clipboardData.
-      if(internalClipboard){e.preventDefault();pasteClipboard();}
+      // Do not intercept Ctrl/Cmd+V here. Let the real browser `paste` event
+      // run first so images/files/HTML/image URLs copied from outside Hanns can
+      // be read from `event.clipboardData`. The paste handler below will fall
+      // back to the internal Hanns clipboard only when the system clipboard has
+      // nothing usable. This prevents an old copied Hanns object from blocking
+      // pasted images from folders/web pages.
       return;
     }
     if(mod&&key==="d"){
@@ -1407,47 +1842,152 @@ function init(){
       return;
     }
 
-    if((e.key==="Delete"||e.key==="Backspace")&&Deck.sel){e.preventDefault();deleteEl(Deck.sel);return;}
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="g"){e.preventDefault(); if(e.shiftKey)unbindSelected(); else bindSelected(); return;}
+    if((e.key==="Delete"||e.key==="Backspace")&&selectedIds().length){e.preventDefault();deleteSelected();return;}
     if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)){
       if(Deck.sel){e.preventDefault();nudgeSelected(e.key,e.shiftKey);return;}
       if(e.key==="ArrowRight")gotoSlide(Deck.cur+1);
       else if(e.key==="ArrowLeft")gotoSlide(Deck.cur-1);
     }
   });
-  document.addEventListener("paste",e=>{
+  document.addEventListener("copy",e=>{
+    const tag=(e.target.tagName||"").toLowerCase();
+    const editing=e.target.isContentEditable||tag==="input"||tag==="textarea"||tag==="select";
+    if(editing)return;
+    const els=selectedElements();
+    if(!els.length)return;
+    const payload=payloadFromElements(els);
+    internalClipboard=deepClone(payload);
+    const raw=hannsClipboardPayload(payload);
+    try{
+      e.clipboardData.setData("application/x-hanns-elements",raw);
+      e.clipboardData.setData("text/plain",raw);
+      e.preventDefault();
+      toast(els.length>1?`Copied ${els.length} objects`:"Copied");
+    }catch(_){
+      writeInternalClipboard(payload);
+    }
+  });
+  document.addEventListener("cut",e=>{
+    const tag=(e.target.tagName||"").toLowerCase();
+    const editing=e.target.isContentEditable||tag==="input"||tag==="textarea"||tag==="select";
+    if(editing)return;
+    const els=selectedElements();
+    if(!els.length)return;
+    const payload=payloadFromElements(els);
+    internalClipboard=deepClone(payload);
+    const raw=hannsClipboardPayload(payload);
+    try{
+      e.clipboardData.setData("application/x-hanns-elements",raw);
+      e.clipboardData.setData("text/plain",raw);
+      e.preventDefault();
+      deleteSelected();
+      toast(els.length>1?`Cut ${els.length} objects`:"Cut");
+    }catch(_){
+      cutSelected();
+    }
+  });
+  document.addEventListener("paste",async e=>{
     const tag=(e.target.tagName||"").toLowerCase();
     const editing=e.target.isContentEditable||tag==="input"||tag==="textarea"||tag==="select";
     if(editing)return;
     const cd=e.clipboardData;
     if(!cd)return;
-    const items=[...(cd.items||[])];
-    const img=items.find(it=>it.type&&it.type.startsWith("image/"));
-    if(img){
+    const hannsRaw=cd.getData("application/x-hanns-elements")||"";
+    const hannsParsed=parseHannsPayload(hannsRaw);
+    if(hannsParsed){
       e.preventDefault();
-      const f=img.getAsFile();
-      const rd=new FileReader();
-      rd.onload=()=>{
-        const el=makeImage(rd.result,{x:W/2-180,y:H/2-120,w:360,h:240});
-        curSlide().els.push(el);Deck.sel=el.id;renderAll();markDirty();toast("Pasted image");
-      };
-      rd.readAsDataURL(f);
+      pasteHannsPayload(hannsParsed);
+      return;
+    }
+    const items=[...(cd.items||[])];
+    const files=[...(cd.files||[])].filter(isImageFile);
+    const itemFiles=items.map(it=>it.type&&it.type.startsWith("image/")?it.getAsFile():null).filter(isImageFile);
+    if(files.length||itemFiles.length){
+      e.preventDefault();
+      await addImageFiles([...files,...itemFiles]);
+      return;
+    }
+    const html=cd.getData("text/html");
+    const htmlUrls=extractImageUrlsFromHtml(html);
+    if(htmlUrls.length){
+      e.preventDefault();
+      if(await addImageUrls(htmlUrls))return;
+    }
+    const uri=(cd.getData("text/uri-list")||"").split(/\r?\n/).find(x=>x&&!x.startsWith("#"));
+    if(uri&&isLikelyImageUrl(uri)){
+      e.preventDefault();
+      await addImageUrls([uri]);
       return;
     }
     const txt=cd.getData("text/plain");
     if(txt){
-      try{
-        const parsed=JSON.parse(txt);
-        if(parsed&&parsed.__hanns&&parsed.kind==="element"&&parsed.element){
-          e.preventDefault();pasteElement(parsed.element);return;
-        }
-      }catch(_){}
-      // Plain copied text becomes a text box when pasted onto the slide.
-      if(txt.trim()){
+      const parsed=parseHannsPayload(txt);
+      if(parsed){
         e.preventDefault();
-        const el=makeText({x:W/2-210,y:H/2-60,text:txt.trim().slice(0,2000)});
-        curSlide().els.push(el);Deck.sel=el.id;renderAll();markDirty();toast("Pasted text");
+        pasteHannsPayload(parsed);
+        return;
+      }
+      const trimmed=txt.trim();
+      if(isLikelyImageUrl(trimmed)){
+        e.preventDefault();
+        await addImageUrls([trimmed]);
+        return;
+      }
+      if(html&&pasteFormattedTextObjectFromHtml(html, trimmed)){
+        e.preventDefault();
+        return;
+      }
+      // Plain copied text becomes a text box when pasted onto the slide.
+      if(trimmed){
+        e.preventDefault();
+        const el=makeText({x:W/2-210,y:H/2-60,text:trimmed.slice(0,2000)});
+        curSlide().els.push(el);multiSel.clear();Deck.sel=el.id;renderAll();markDirty();toast("Pasted text");
+        return;
       }
     }
+    // If the system clipboard had no usable image/HTML/URL/text payload,
+    // fall back to the last Hanns object copied inside the editor.
+    if(internalClipboard){
+      e.preventDefault();
+      await pasteClipboard();
+    }
+  });
+
+  // Drop images from your computer, a folder, or a web page directly onto the slide.
+  const dropOverlay=document.createElement("div");
+  dropOverlay.className="hanns-drop-overlay";
+  dropOverlay.innerHTML='<div><b>Drop images on the slide</b><span>Files, folders, web images, image URLs and copied pictures become movable Hanns objects.</span></div>';
+  stage.appendChild(dropOverlay);
+  let dragDepth=0;
+  function showDrop(){dragDepth++;dropOverlay.classList.add("on");}
+  function hideDrop(force=false){dragDepth=force?0:Math.max(0,dragDepth-1);if(!dragDepth)dropOverlay.classList.remove("on");}
+  ["dragenter","dragover"].forEach(type=>{
+    stage.addEventListener(type,e=>{
+      if(!e.dataTransfer)return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect="copy";
+      if(type==="dragenter")showDrop();
+    });
+  });
+  stage.addEventListener("dragleave",()=>hideDrop());
+  stage.addEventListener("drop",async e=>{
+    if(!e.dataTransfer)return;
+    e.preventDefault();hideDrop(true);
+    const pt=canvasPointFromEvent(e);
+    let files=[...(e.dataTransfer.files||[])].filter(isImageFile);
+    if(!files.length && e.dataTransfer.items?.length){
+      files=await collectImageFilesFromItems(e.dataTransfer.items);
+    }
+    if(await addImageFiles(files,pt))return;
+    const html=e.dataTransfer.getData("text/html");
+    const urls=extractImageUrlsFromHtml(html);
+    const uri=(e.dataTransfer.getData("text/uri-list")||"").split(/\r?\n/).find(x=>x&&!x.startsWith("#"));
+    const plain=e.dataTransfer.getData("text/plain");
+    if(uri)urls.push(uri);
+    if(plain&&isLikelyImageUrl(plain.trim()))urls.push(plain.trim());
+    if(await addImageUrls(urls,pt))return;
+    toast("Drop an image, folder, or image URL");
   });
   document.addEventListener("visibilitychange",()=>{if(document.hidden&&appReady)saveDeck(true);});
 

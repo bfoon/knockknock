@@ -38,6 +38,7 @@ urlpatterns = [
 
     path("<str:code>/edit/", views.deck_edit, name="edit"),
     path("<str:code>/save/", views.deck_save, name="save"),
+    path("<str:code>/image-upload/", views.deck_image_upload, name="image_upload"),
     path("invite/<uuid:token>/accept/", views.deck_accept_invite, name="accept_invite"),
     path("<str:code>/present/", views.deck_present, name="present"),
     path("<str:code>/control/", views.deck_control, name="control"),

@@ -18,14 +18,17 @@ browser, and POSTs the whole deck back to deck_save.
 """
 
 import json
+import os
+import uuid
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.mail import send_mail
+from django.core.files.storage import default_storage
 from django.core.validators import validate_email
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ValidationError, RequestDataTooBig
 from django.db.models import Q
 from django.http import JsonResponse, HttpResponseBadRequest, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
@@ -190,6 +193,14 @@ def deck_save(request, code):
         return denied
     try:
         payload = json.loads(request.body or "{}")
+    except RequestDataTooBig:
+        return JsonResponse({
+            "ok": False,
+            "error": (
+                "The deck save request is too large. Images should be uploaded "
+                "as media files first, not stored as base64 inside the slide JSON."
+            ),
+        }, status=413)
     except (ValueError, TypeError):
         return HttpResponseBadRequest("invalid JSON")
 
@@ -221,6 +232,50 @@ def deck_save(request, code):
                          "updated_at": deck.updated_at.isoformat()})
 
 
+@login_required
+@require_POST
+def deck_image_upload(request, code):
+    """
+    Store pasted/dropped Hanns slide images as normal media files and return
+    a stable URL. This keeps slide JSON small and prevents
+    DATA_UPLOAD_MAX_MEMORY_SIZE errors when autosave runs.
+    """
+    deck, denied = _editable_deck_or_403(request, code)
+    if denied:
+        return denied
+
+    image = request.FILES.get("image") or request.FILES.get("file")
+    if not image:
+        return JsonResponse({"ok": False, "error": "No image file was uploaded."}, status=400)
+
+    content_type = (getattr(image, "content_type", "") or "").lower()
+    original_name = os.path.basename(getattr(image, "name", "") or "image")
+    _, ext = os.path.splitext(original_name)
+    ext = (ext or "").lower()
+
+    allowed_exts = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif"}
+    if not (content_type.startswith("image/") or ext in allowed_exts):
+        return JsonResponse({"ok": False, "error": "Only image files can be uploaded."}, status=400)
+
+    max_size = int(getattr(settings, "HANNS_IMAGE_UPLOAD_MAX_SIZE", 15 * 1024 * 1024))
+    if getattr(image, "size", 0) and image.size > max_size:
+        return JsonResponse({
+            "ok": False,
+            "error": f"Image is too large. Maximum allowed size is {max_size // (1024 * 1024)} MB.",
+        }, status=413)
+
+    if ext not in allowed_exts:
+        # Prefer the browser MIME type when the filename has no usable extension.
+        ext = ".jpg" if content_type in {"image/jpeg", "image/jpg"} else ".png"
+
+    rel_path = f"hanns/decks/{deck.code}/images/{uuid.uuid4().hex}{ext}"
+    saved_path = default_storage.save(rel_path, image)
+    url = default_storage.url(saved_path)
+    return JsonResponse({
+        "ok": True,
+        "url": request.build_absolute_uri(url),
+        "path": saved_path,
+    })
 
 
 @login_required

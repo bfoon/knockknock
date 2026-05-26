@@ -3445,6 +3445,18 @@ function renderElement(el,{live=false}={}){
     inner.appendChild(renderObject(el));
   } else if(el.type==="creative_shape"){
     inner.appendChild(renderCreativeShape(el));
+  } else if(el.type==="group"){
+    inner.classList.add("group-inner");
+    const box=document.createElement("div");
+    box.className="group-box";
+    (Array.isArray(el.children)?el.children:[]).forEach(child=>{
+      const cn=renderElement(child,{live:true});
+      cn.classList.add("group-child");
+      cn.removeAttribute("data-id");
+      cn.style.pointerEvents="none";
+      box.appendChild(cn);
+    });
+    inner.appendChild(box);
   }
   node.appendChild(inner);
 

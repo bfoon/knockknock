@@ -1954,3 +1954,40 @@ body::after {
 }
 
 .kk-list-item-main{display:flex;align-items:center;gap:1rem;flex:1;color:inherit;text-decoration:none;min-width:0}.kk-list-item-row{display:flex;align-items:center;gap:.4rem}.kk-row-delete{display:inline-grid;place-items:center;width:36px;height:36px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.06);color:#fb7185}.kk-row-delete:hover{background:#f43f5e;color:#fff}.kk-status-mini{font-weight:800;color:#22d3ee}.kk-text-dim{color:var(--kk-text-dim)!important;}
+
+
+/* ──────────────────────────────────────────────────────────────
+   Plotly + Folium rich chart/map picker support
+   ────────────────────────────────────────────────────────────── */
+.kk-rich-chart-note {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .55rem .75rem;
+  border-radius: 12px;
+  border: 1px solid rgba(34, 211, 238, .20);
+  background: linear-gradient(135deg, rgba(34,211,238,.08), rgba(124,58,237,.08));
+  color: var(--kk-text-dim);
+  font-size: .82rem;
+}
+.kk-rich-chart-note b { color: var(--kk-text); }
+.kk-chart-tile[data-chart-id^="plotly_"] .kk-chart-icon,
+.kk-chart-tile[data-chart-id="folium_map"] .kk-chart-icon {
+  filter: drop-shadow(0 0 10px rgba(34,211,238,.55));
+}
+.kk-chart-tile[data-chart-id^="plotly_"]::after,
+.kk-chart-tile[data-chart-id="folium_map"]::after {
+  content: "RICH";
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(34,211,238,.16);
+  border: 1px solid rgba(34,211,238,.35);
+  color: #67e8f9;
+  font-size: .56rem;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+.kk-chart-tile { position: relative; }

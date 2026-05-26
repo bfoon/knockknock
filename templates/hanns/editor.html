@@ -7,9 +7,101 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Archivo:wght@400;500;600;700;800&family=Archivo+Expanded:wght@600;700;800&family=Spline+Sans+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800;900&family=Manrope:wght@300;400;500;600;700;800&family=Poppins:wght@300;400;500;600;700;800;900&family=Montserrat:wght@300;400;500;600;700;800;900&family=Roboto:wght@300;400;500;700;900&family=Open+Sans:wght@300;400;500;600;700;800&family=Lato:wght@300;400;700;900&family=Nunito+Sans:wght@300;400;600;700;800;900&family=Raleway:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=DM+Serif+Display:ital@0;1&family=Bebas+Neue&family=Oswald:wght@300;400;500;600;700&family=Merriweather:wght@300;400;700;900&family=Libre+Baskerville:wght@400;700&family=Lora:ital,wght@0,400..700;1,400..700&family=Cormorant+Garamond:ital,wght@0,300..700;1,300..700&family=Space+Grotesk:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Barlow+Condensed:wght@300;400;500;600;700;800&family=Rubik:wght@300;400;500;600;700;800;900&family=Quicksand:wght@300;400;500;600;700&family=Sora:wght@300;400;500;600;700;800&family=Exo+2:wght@300;400;500;600;700;800;900&family=Ubuntu:wght@300;400;500;700&family=Work+Sans:wght@300;400;500;600;700;800;900&family=Noto+Sans:wght@300;400;500;600;700;800;900&family=Noto+Serif:wght@400;500;600;700;800;900&family=Source+Serif+4:opsz,wght@8..60,300..900&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Serif:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700;800&family=Fira+Code:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Cinzel:wght@400;500;600;700;800;900&family=Abril+Fatface&family=Anton&family=Pacifico&family=Caveat:wght@400;500;600;700&family=Permanent+Marker&family=Righteous&family=Kanit:wght@300;400;500;600;700;800;900&family=Lexend:wght@300;400;500;600;700;800;900&family=Urbanist:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=23">
+<link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=27">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="{% static 'hanns/css/hanns_rich_data.css' %}?v=23">
+<link rel="stylesheet" href="{% static 'hanns/css/hanns_rich_data.css' %}?v=27">
+
+<style id="hanns-options-final-style">
+/* Final Options menu fix: the dropdown is portaled/fixed to the viewport so it can never be clipped by the topbar, slide canvas, Plotly, Leaflet, drawers, or panels. */
+.top-options-menu{
+  position:relative!important;
+  display:inline-flex!important;
+  align-items:center!important;
+  flex:0 0 auto!important;
+  z-index:2147483000!important;
+}
+.top-options-menu > summary,
+.option-summary{
+  list-style:none!important;
+  cursor:pointer!important;
+  user-select:none!important;
+}
+.top-options-menu > summary::-webkit-details-marker{display:none!important;}
+.top-options-menu > summary::marker{content:""!important;}
+.top-options-panel{
+  position:fixed!important;
+  left:var(--options-left, 12px)!important;
+  top:var(--options-top, 58px)!important;
+  width:var(--options-width, 260px)!important;
+  max-height:var(--options-max-height, min(360px, calc(100vh - 80px)))!important;
+  overflow:auto!important;
+  display:none!important;
+  flex-direction:column!important;
+  gap:8px!important;
+  padding:10px!important;
+  border-radius:16px!important;
+  background:linear-gradient(145deg, rgba(33,30,24,.98), rgba(14,13,10,.98))!important;
+  border:1px solid rgba(255,255,255,.14)!important;
+  box-shadow:0 28px 80px rgba(0,0,0,.62), 0 0 0 1px rgba(232,72,43,.13)!important;
+  backdrop-filter:blur(14px)!important;
+  -webkit-backdrop-filter:blur(14px)!important;
+  z-index:2147483646!important;
+  pointer-events:auto!important;
+  transform:none!important;
+}
+.top-options-panel.is-open{display:flex!important;}
+.top-options-panel::before{
+  content:""!important;
+  position:absolute!important;
+  top:-7px!important;
+  left:var(--options-arrow-left, 28px)!important;
+  width:14px!important;
+  height:14px!important;
+  transform:rotate(45deg)!important;
+  background:rgba(33,30,24,.98)!important;
+  border-left:1px solid rgba(255,255,255,.14)!important;
+  border-top:1px solid rgba(255,255,255,.14)!important;
+}
+.option-item{
+  position:relative!important;
+  z-index:1!important;
+  width:100%!important;
+  min-height:40px!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:flex-start!important;
+  gap:10px!important;
+  padding:10px 12px!important;
+  border-radius:12px!important;
+  border:1px solid rgba(255,255,255,.10)!important;
+  background:rgba(255,255,255,.045)!important;
+  color:var(--cream,#fbf8f1)!important;
+  font:800 13px/1.1 var(--font-body,Arial,sans-serif)!important;
+  text-align:left!important;
+  cursor:pointer!important;
+  white-space:nowrap!important;
+}
+.option-item:hover,.option-item:focus-visible{
+  outline:none!important;
+  background:rgba(232,72,43,.18)!important;
+  border-color:rgba(232,72,43,.52)!important;
+  color:#fff!important;
+}
+.option-item svg{flex:0 0 auto!important;}
+.option-item.save-option .save-lbl{white-space:nowrap!important;}
+body.hanns-options-open .canvas-wrap,
+body.hanns-options-open .stage,
+body.hanns-options-open .filmstrip,
+body.hanns-options-open .inspector,
+body.hanns-options-open .drawer{
+  z-index:auto;
+}
+@media(max-width:760px){
+  .top-options-panel{width:min(270px,calc(100vw - 20px))!important;}
+  .option-item{min-height:44px!important;font-size:13px!important;}
+}
+</style>
+
 </head>
 <body>
 <div class="app">
@@ -232,6 +324,7 @@
   window.__HANNS__ = {
     deck: {{ deck_json|safe }},
     saveUrl: "{% url 'hanns:save' deck.code %}",
+    imageUploadUrl: "{% url 'hanns:image_upload' deck.code %}",
     presentUrl: "{% url 'hanns:present' deck.code %}",
     inviteUrl: "{% url 'hanns:invite' deck.code %}",
     editorWsUrl: (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/hanns/{{ deck.code }}/",
@@ -240,55 +333,100 @@
   };
 </script>
 
-<script>
+
+<script id="hanns-options-final-script">
 (function(){
   const menu = document.getElementById('top-options-menu');
   if(!menu) return;
   const summary = menu.querySelector('.option-summary');
   const panel = menu.querySelector('.top-options-panel');
   const topbar = document.querySelector('.topbar');
-  const clamp = (v,min,max)=>Math.max(min,Math.min(max,v));
+  if(!summary || !panel) return;
+
+  // Portal the panel to <body>. This is the most reliable way to avoid
+  // topbar overflow, slide/canvas stacking, Plotly/Leaflet z-index, and
+  // drawer layering problems.
+  if(panel.parentElement !== document.body){
+    document.body.appendChild(panel);
+  }
+
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+
+  function isOpen(){ return panel.classList.contains('is-open'); }
 
   function placeOptionsPanel(){
-    if(!menu.open || !summary || !panel) return;
+    if(!isOpen()) return;
     const rect = summary.getBoundingClientRect();
-    const gap = 8;
     const margin = 10;
-    const panelWidth = Math.min(260, window.innerWidth - (margin * 2));
-    const panelHeightMax = Math.max(160, window.innerHeight - rect.bottom - 18);
-
-    // Keep it visually attached to the Options button, but clamp it inside
-    // the viewport so it never disappears behind the slide/canvas area.
-    const idealLeft = rect.left;
-    const left = clamp(idealLeft, margin, window.innerWidth - panelWidth - margin);
-    const top = Math.min(rect.bottom + gap, window.innerHeight - 56);
-    const arrowLeft = clamp(rect.left + rect.width / 2 - left - 7, 16, panelWidth - 24);
+    const gap = 8;
+    const width = Math.min(270, window.innerWidth - margin * 2);
+    const maxHeight = Math.max(160, Math.min(390, window.innerHeight - rect.bottom - 18));
+    const idealLeft = rect.left + (rect.width / 2) - (width / 2);
+    const left = clamp(idealLeft, margin, window.innerWidth - width - margin);
+    const top = clamp(rect.bottom + gap, margin, Math.max(margin, window.innerHeight - 60));
+    const arrowLeft = clamp(rect.left + rect.width / 2 - left - 7, 16, width - 24);
 
     panel.style.setProperty('--options-left', left + 'px');
     panel.style.setProperty('--options-top', top + 'px');
-    panel.style.setProperty('--options-width', panelWidth + 'px');
-    panel.style.setProperty('--options-max-height', panelHeightMax + 'px');
+    panel.style.setProperty('--options-width', width + 'px');
+    panel.style.setProperty('--options-max-height', maxHeight + 'px');
     panel.style.setProperty('--options-arrow-left', arrowLeft + 'px');
   }
 
-  menu.addEventListener('toggle', () => {
-    if(menu.open) requestAnimationFrame(placeOptionsPanel);
+  function openOptions(){
+    menu.setAttribute('open', '');
+    panel.classList.add('is-open');
+    panel.removeAttribute('hidden');
+    summary.setAttribute('aria-expanded', 'true');
+    document.body.classList.add('hanns-options-open');
+    requestAnimationFrame(placeOptionsPanel);
+  }
+
+  function closeOptions(){
+    menu.removeAttribute('open');
+    panel.classList.remove('is-open');
+    panel.setAttribute('hidden', '');
+    summary.setAttribute('aria-expanded', 'false');
+    document.body.classList.remove('hanns-options-open');
+  }
+
+  // Prevent the native <details> layout from placing the menu inline.
+  summary.addEventListener('click', function(ev){
+    ev.preventDefault();
+    ev.stopPropagation();
+    isOpen() ? closeOptions() : openOptions();
   });
+
+  panel.addEventListener('click', function(ev){
+    const item = ev.target.closest('.option-item');
+    if(item) setTimeout(closeOptions, 80);
+  });
+
+  document.addEventListener('pointerdown', function(ev){
+    if(!isOpen()) return;
+    if(menu.contains(ev.target) || panel.contains(ev.target)) return;
+    closeOptions();
+  }, true);
+
+  document.addEventListener('keydown', function(ev){
+    if(ev.key === 'Escape' && isOpen()) closeOptions();
+  });
+
   window.addEventListener('resize', placeOptionsPanel);
   window.addEventListener('scroll', placeOptionsPanel, true);
   if(topbar) topbar.addEventListener('scroll', placeOptionsPanel);
 
-  document.addEventListener('click', (ev) => {
-    if(menu.open && !menu.contains(ev.target)) menu.removeAttribute('open');
-  });
+  // Safe initial state: hidden until Options is clicked.
+  closeOptions();
 })();
 </script>
+
 
 {# SheetJS enables .xlsx/.xls import in the chart/table inspector. CSV/TSV still works without it. #}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="{% static 'hanns/js/hanns_core.js' %}?v=23"></script>
-<script src="{% static 'hanns/js/hanns_editor.js' %}?v=23"></script>
+<script src="{% static 'hanns/js/hanns_core.js' %}?v=27"></script>
+<script src="{% static 'hanns/js/hanns_editor.js' %}?v=27"></script>
 </body>
 </html>

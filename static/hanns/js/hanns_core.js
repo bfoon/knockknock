@@ -2776,6 +2776,9 @@ function makeChart(kind="bar",over={}){
     x:150,y:118,w:650,h:330,rot:0,anim:"rise",animDelay:0,
     chartKind:kind, title:isGraph?"Growth graph":"Impact chart", accent:"#e8482b",
     showValues:true, chartTheme:"modern",
+    renderEngine:"svg",          // svg | plotly
+    plotlyTemplate:"plotly_white",
+    plotlyModebar:false,
     // ── richer chart controls ──
     labelSize:26,          // SVG label/value font size (px in chart space)
     gridLines:true,        // show background gridlines
@@ -2797,6 +2800,8 @@ function makeMap(kind="gambia",over={}){
   return elBase("map",Object.assign({
     x:150,y:100,w:650,h:360,rot:0,anim:"rise",animDelay:0,
     mapKind:kind, title:(geo?geo.name:"Activity")+" map",
+    mapEngine:"svg",             // svg | folium | plotly
+    tileLayer:"osm", zoom:null,
     accent:"#2f6f4f", showLabels:true, showRiver:true, useCities:false,
     labelSize:24, mapTheme:"light", titleColor:"",
     pins: cities.length?cities:[
@@ -3506,7 +3511,124 @@ function svg(tag,attrs={},children=[]){
 }
 function svgText(x,y,text,attrs={}){const t=svg("text",Object.assign({x,y},attrs));t.textContent=text;return t;}
 function polar(cx,cy,r,a){return [cx+r*Math.cos(a),cy+r*Math.sin(a)];}
+
+function plotlyPalette(el){ return chartPalette(el); }
+function plotlyTheme(el){
+  const dark = el.chartThemeMode === "dark";
+  return {
+    paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)",
+    font:{family:"Inter, Archivo, Arial, sans-serif", size:Math.max(12, Number(el.labelSize||20)*0.62), color:dark?"#f8fafc":"#111827"},
+    margin:{l:52,r:26,t:56,b:48},
+    title:{text:el.title||"Chart", font:{size:Math.max(18, Number(el.labelSize||26)*0.82), color:el.titleColor || (dark?"#ffffff":"#111827")}},
+    showlegend:!!el.showLegend,
+    xaxis:{gridcolor:dark?"rgba(255,255,255,.14)":"rgba(15,23,42,.12)", zerolinecolor:dark?"rgba(255,255,255,.2)":"rgba(15,23,42,.2)"},
+    yaxis:{gridcolor:dark?"rgba(255,255,255,.14)":"rgba(15,23,42,.12)", zerolinecolor:dark?"rgba(255,255,255,.2)":"rgba(15,23,42,.2)"},
+  };
+}
+function plotlyChartSpec(el){
+  const data = chartData(el), kind = el.chartKind || "bar", pal = plotlyPalette(el);
+  const labels = data.map(d=>d.label), vals = data.map(d=>d.value);
+  const layout = plotlyTheme(el); let traces=[];
+  const vFmt = (v)=>fmtVal(v,el);
+  if(kind==="pie" || kind==="donut"){
+    traces=[{type:"pie", labels, values:vals, hole:kind==="donut"?.48:0, marker:{colors:pal}, textinfo:el.showValues===false?"label":"label+percent", hovertemplate:"%{label}: %{value}<extra></extra>"}];
+    Object.assign(layout,{margin:{l:20,r:20,t:56,b:20}, showlegend:true});
+  } else if(kind==="line" || kind==="spline" || kind==="area"){
+    traces=[{type:"scatter", mode:"lines+markers", x:labels, y:vals, fill:kind==="area"?"tozeroy":"none", line:{color:pal[0], width:4, shape:kind==="spline"?"spline":"linear"}, marker:{size:9, color:pal[0]}, hovertemplate:"%{x}: %{y}<extra></extra>"}];
+  } else if(kind==="scatter" || kind==="bubble"){
+    traces=[{type:"scatter", mode:"markers+text", x:data.map(d=>d.x), y:data.map(d=>d.y), text:labels, textposition:"top center", marker:{color:pal[0], size:kind==="bubble"?data.map(d=>Math.max(14, Math.min(64, d.size))):14, opacity:.82, line:{color:"rgba(255,255,255,.72)", width:1.5}}, hovertemplate:"%{text}<br>x=%{x}<br>y=%{y}<extra></extra>"}];
+  } else if(kind==="horizontalBar"){
+    traces=[{type:"bar", orientation:"h", y:labels, x:vals, marker:{color:pal}, text:el.showValues===false?undefined:vals.map(vFmt), textposition:"auto", hovertemplate:"%{y}: %{x}<extra></extra>"}];
+    layout.margin.l = 92;
+  } else if(kind==="groupedBar" || kind==="stackedBar"){
+    const maxSeries = Math.max(1, ...data.map(d=>(d.series&&d.series.length)||0));
+    const names = (Array.isArray(el.seriesNames)&&el.seriesNames.length?el.seriesNames:[]);
+    traces = Array.from({length:Math.min(6,maxSeries||3)}, (_,j)=>({
+      type:"bar", name:names[j] || `Series ${j+1}`, x:labels, y:data.map(d=>(d.series&&d.series[j]!=null)?Number(d.series[j]):(j===0?d.value:0)), marker:{color:pal[j%pal.length]}, hovertemplate:"%{x}: %{y}<extra></extra>"
+    }));
+    layout.barmode = kind==="stackedBar"?"stack":"group"; layout.showlegend = true;
+  } else if(kind==="radar"){
+    traces=[{type:"scatterpolar", r:vals, theta:labels, fill:"toself", line:{color:pal[0], width:4}, marker:{color:pal[0]}}];
+    Object.assign(layout,{polar:{bgcolor:"rgba(0,0,0,0)", radialaxis:{visible:true, gridcolor:"rgba(148,163,184,.3)"}}, showlegend:false, margin:{l:38,r:38,t:58,b:34}});
+  } else if(kind==="gauge" || kind==="progress" || kind==="kpi"){
+    const v = vals[0] || 0;
+    traces=[{type:"indicator", mode:kind==="kpi"?"number+delta":"gauge+number", value:v, number:{suffix:el.valueSuffix||el.unit||"", prefix:el.valuePrefix||"", font:{size:52}}, gauge:{axis:{range:[0, Number(el.max)||100]}, bar:{color:pal[0]}, bgcolor:"rgba(148,163,184,.15)", borderwidth:0, steps:[{range:[0,(Number(el.max)||100)*.55],color:"rgba(148,163,184,.18)"},{range:[(Number(el.max)||100)*.55,Number(el.max)||100],color:"rgba(34,197,94,.16)"}]}}];
+    Object.assign(layout,{margin:{l:24,r:24,t:62,b:24}});
+  } else if(kind==="funnel"){
+    traces=[{type:"funnel", y:labels, x:vals, marker:{color:pal}, textinfo:el.showValues===false?"label":"value+percent previous"}];
+  } else if(kind==="waterfall"){
+    traces=[{type:"waterfall", x:labels, y:vals, measure:data.map((_,i)=>i===data.length-1?"total":"relative"), connector:{line:{color:"rgba(148,163,184,.55)"}}, increasing:{marker:{color:pal[1]}}, decreasing:{marker:{color:pal[5]||"#ef4444"}}, totals:{marker:{color:pal[0]}}}];
+  } else if(kind==="heatmap"){
+    const n=Math.max(2, Math.ceil(Math.sqrt(data.length))); let z=[]; for(let r=0;r<n;r++){z.push([]);for(let c=0;c<n;c++){z[r].push(data[r*n+c]?.value || 0);}}
+    traces=[{type:"heatmap", z, colorscale:[[0,pal[2]],[.5,pal[3]],[1,pal[0]]], hoverongaps:false}];
+  } else if(kind==="treemap"){
+    traces=[{type:"treemap", labels, parents:labels.map(()=>""), values:vals, marker:{colors:pal}, textinfo:"label+value"}];
+    Object.assign(layout,{margin:{l:10,r:10,t:58,b:10}});
+  } else {
+    traces=[{type:"bar", x:labels, y:vals, marker:{color:pal}, text:el.showValues===false?undefined:vals.map(vFmt), textposition:"auto", hovertemplate:"%{x}: %{y}<extra></extra>"}];
+  }
+  return {traces, layout, config:{responsive:true, displayModeBar:!!el.plotlyModebar, displaylogo:false, modeBarButtonsToRemove:["lasso2d","select2d"]}};
+}
+function renderPlotlyChart(el){
+  const box=document.createElement("div"); box.className="plotly-box"+(el.chartThemeMode==="dark"?" plotly-dark":"");
+  const target=document.createElement("div"); target.className="plotly-target"; box.appendChild(target);
+  const snapshot=JSON.parse(JSON.stringify(el||{}));
+  setTimeout(()=>{
+    if(!target.isConnected || !window.Plotly) return;
+    const {traces,layout,config}=plotlyChartSpec(snapshot);
+    window.Plotly.newPlot(target,traces,layout,config).then(()=>{
+      try{ window.Plotly.Plots.resize(target); }catch(e){}
+    }).catch(()=>{});
+    if(window.ResizeObserver){ const ro=new ResizeObserver(()=>{try{window.Plotly.Plots.resize(target);}catch(e){}}); ro.observe(target); }
+  },0);
+  return box;
+}
+function plotlyMapSpec(el, geo){
+  const pins = (Array.isArray(el.pins)&&el.pins.length?el.pins:(geo.cities||[]).map(c=>({label:c.label,lon:c.lon,lat:c.lat,value:""}))).filter(p=>p.lon!=null&&p.lat!=null);
+  const dark = el.mapTheme === "dark";
+  const trace={type:"scattergeo", mode:"markers+text", lon:pins.map(p=>Number(p.lon)), lat:pins.map(p=>Number(p.lat)), text:pins.map(p=>p.label||"Pin"), textposition:"top center", marker:{size:pins.map(p=>Math.max(10, Math.min(34, Number(p.value)||16))), color:el.accent||"#2f6f4f", opacity:.85, line:{color:"white", width:1}}, hovertemplate:"%{text}<br>%{lat:.2f}, %{lon:.2f}<extra></extra>"};
+  const [minLon,minLat,maxLon,maxLat]=geo.bounds;
+  return {traces:[trace], layout:{paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", margin:{l:0,r:0,t:46,b:0}, title:{text:el.title||geo.name+" map", font:{size:24,color:el.titleColor||(dark?"#fff":"#111827")}}, font:{family:"Inter, Archivo, sans-serif", color:dark?"#fff":"#111827"}, geo:{scope:el.mapKind==="world"?"world":(el.mapKind==="europe"?"europe":"africa"), projection:{type:"natural earth"}, lonaxis:{range:[minLon,maxLon]}, lataxis:{range:[minLat,maxLat]}, showland:true, landcolor:dark?"rgba(31,41,55,.92)":"#e2e8f0", showocean:true, oceancolor:dark?"rgba(15,23,42,.92)":"#dbeafe", showcountries:true, countrycolor:dark?"rgba(255,255,255,.18)":"rgba(15,23,42,.25)", showlakes:true, lakecolor:dark?"rgba(15,23,42,.9)":"#bfdbfe"}}, config:{responsive:true, displayModeBar:!!el.plotlyModebar, displaylogo:false}};
+}
+function renderPlotlyMap(el, geo){
+  const box=document.createElement("div"); box.className="plotly-map-box"+(el.mapTheme==="dark"?" plotly-dark":"");
+  const target=document.createElement("div"); target.className="plotly-target"; box.appendChild(target);
+  const snapshot=JSON.parse(JSON.stringify(el||{}));
+  setTimeout(()=>{ if(!target.isConnected || !window.Plotly) return; const spec=plotlyMapSpec(snapshot, geo); window.Plotly.newPlot(target,spec.traces,spec.layout,spec.config).then(()=>{try{window.Plotly.Plots.resize(target);}catch(e){}}).catch(()=>{}); if(window.ResizeObserver){const ro=new ResizeObserver(()=>{try{window.Plotly.Plots.resize(target);}catch(e){}}); ro.observe(target);} },0);
+  return box;
+}
+function tileUrl(kind){
+  if(kind==="dark") return "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+  if(kind==="light") return "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+  if(kind==="satellite") return "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+  return "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+}
+function renderFoliumMap(el, geo){
+  const box=document.createElement("div"); box.className="folium-box"+(el.mapTheme==="dark"?" folium-dark":"");
+  const title=document.createElement("div"); title.className="folium-title"; title.textContent=el.title||geo.name+" map"; if(el.titleColor) title.style.color=el.titleColor; box.appendChild(title);
+  const target=document.createElement("div"); target.className="folium-target"; box.appendChild(target);
+  const snapshot=JSON.parse(JSON.stringify(el||{}));
+  setTimeout(()=>{
+    if(!target.isConnected || !window.L) return;
+    if(target._leaflet_id) return;
+    const g = MAP_GEO[snapshot.mapKind] || geo;
+    const center=[(g.bounds[1]+g.bounds[3])/2,(g.bounds[0]+g.bounds[2])/2];
+    const map = window.L.map(target,{attributionControl:false,zoomControl:false,scrollWheelZoom:false,dragging:true,doubleClickZoom:false,boxZoom:false,keyboard:false,tap:false}).setView(center, Number(snapshot.zoom)|| (snapshot.mapKind==="gambia"?7:3));
+    window.L.tileLayer(tileUrl(snapshot.tileLayer||"osm"),{maxZoom:18}).addTo(map);
+    const b = [[g.bounds[1],g.bounds[0]],[g.bounds[3],g.bounds[2]]]; map.fitBounds(b,{padding:[18,18]});
+    const pins = snapshot.useCities && g.cities ? g.cities : (Array.isArray(snapshot.pins)?snapshot.pins:[]);
+    pins.filter(p=>p.lon!=null&&p.lat!=null).forEach((p)=>{
+      const html=`<div class="folium-pin" style="--accent:${snapshot.accent||"#2f6f4f"}"></div>`;
+      const icon=window.L.divIcon({html, className:"folium-pin-wrap", iconSize:[28,28], iconAnchor:[14,14]});
+      window.L.marker([Number(p.lat),Number(p.lon)],{icon}).addTo(map).bindPopup(`<b>${escHTML(p.label||"Pin")}</b>${p.value!=null&&p.value!==""?"<br>Value: "+escHTML(String(p.value)):""}`);
+    });
+    setTimeout(()=>map.invalidateSize(),220);
+  },0);
+  return box;
+}
+
 function renderChart(el){
+  if((el.renderEngine||"svg") === "plotly" && window.Plotly) return renderPlotlyChart(el);
   const box=document.createElement("div");box.className="chart-box chart-"+(el.chartKind||"bar");
   box.style.setProperty("--accent",el.accent||"#e8482b");
   const palette=chartPalette(el);
@@ -3710,6 +3832,8 @@ function geoProject(lon,lat,bounds,VW,VH,pad){
 function renderMap(el){
   const kind=el.mapKind&&MAP_GEO[el.mapKind]?el.mapKind:"gambia";
   const geo=MAP_GEO[kind];
+  if((el.mapEngine||"svg") === "plotly" && window.Plotly) return renderPlotlyMap(el,geo);
+  if(["folium","leaflet"].includes(el.mapEngine||"") && window.L) return renderFoliumMap(el,geo);
   const box=document.createElement("div");box.className="map-box map-"+kind;box.style.setProperty("--accent",el.accent||"#2f6f4f");
   if(el.mapTheme==="dark")box.classList.add("map-theme-dark");
   const title=document.createElement("div");title.className="map-title";title.textContent=el.title||geo.name+" map";

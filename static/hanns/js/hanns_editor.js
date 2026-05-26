@@ -756,6 +756,7 @@ function elementPanel(el){
           ["bar","Bar"],["horizontalBar","Horizontal bar"],["groupedBar","Grouped bar"],["stackedBar","Stacked bar"],["line","Line"],["spline","Smooth line"],["area","Area"],["pie","Pie"],["donut","Donut"],["scatter","Scatter"],["bubble","Bubble"],["radar","Radar"],["gauge","Gauge"],["progress","Progress"],["funnel","Funnel"],["waterfall","Waterfall"],["heatmap","Heatmap"],["treemap","Treemap"],["kpi","KPI card"]
         ].map(([k,l])=>`<option value="${k}" ${el.chartKind===k?"selected":""}>${l}</option>`).join("")}
       </select>`)}
+      ${field("Render engine",`<select id="f-chartengine"><option value="svg" ${(el.renderEngine||"svg")==="svg"?"selected":""}>Classic SVG (fast)</option><option value="plotly" ${el.renderEngine==="plotly"?"selected":""}>Plotly rich interactive</option></select>`)}
       <button class="tbtn" id="f-chartimport" style="width:100%;justify-content:center;margin:.1rem 0 .5rem">⬆ Import from CSV / Excel</button>
       ${field("Data (or edit here)",`<textarea id="f-chartdata" rows="7" placeholder="Label,Value&#10;Jan,20&#10;Feb,35">${escapeTA(chartToText(el))}</textarea>`)}
       <div class="insp-empty" style="padding:0 0 .5rem">Label,Value. Scatter/bubble: Label,Value,X,Y,Size. Grouped/stacked: add extra numbers per row.</div>
@@ -778,6 +779,8 @@ function elementPanel(el){
       ${field("Axis numbers",`<div class="seg" id="f-chartaxis"><button data-on="1" class="${el.axisValues!==false?"active":""}">On</button><button data-on="0" class="${el.axisValues===false?"active":""}">Off</button></div>`)}
       ${field("Legend (grouped/stacked)",`<div class="seg" id="f-chartlegend"><button data-on="1" class="${el.showLegend?"active":""}">On</button><button data-on="0" class="${!el.showLegend?"active":""}">Off</button></div>`)}
       ${field("Title colour",`<input type="color" id="f-charttitlecolor" value="${el.titleColor||"#111827"}">`)}
+      ${field("Plotly template",`<select id="f-plotlytemplate"><option value="plotly_white" ${(el.plotlyTemplate||"plotly_white")==="plotly_white"?"selected":""}>White</option><option value="plotly_dark" ${el.plotlyTemplate==="plotly_dark"?"selected":""}>Dark</option><option value="presentation" ${el.plotlyTemplate==="presentation"?"selected":""}>Presentation</option><option value="simple_white" ${el.plotlyTemplate==="simple_white"?"selected":""}>Simple white</option></select>`)}
+      ${field("Plotly toolbar",`<div class="seg" id="f-plotlymodebar"><button data-on="1" class="${el.plotlyModebar?"active":""}">Show</button><button data-on="0" class="${!el.plotlyModebar?"active":""}">Hide</button></div>`)}
       <span class="glabel" style="margin:.4rem 0 .25rem;display:block">Series colours</span>
       <div class="palette-row" id="f-chartpalette">
         ${palette.slice(0,6).map((c,i)=>`<input type="color" class="pal-sw" data-pi="${i}" value="${c}" title="Series ${i+1}">`).join("")}
@@ -790,6 +793,9 @@ function elementPanel(el){
       ${field("Region",`<select id="f-mapkind">
         ${[["gambia","The Gambia"],["senegal","Senegal"],["africa","Africa"],["europe","Europe"],["world","World"]].map(([k,l])=>`<option value="${k}" ${el.mapKind===k?"selected":""}>${l}</option>`).join("")}
       </select>`)}
+      ${field("Map engine",`<select id="f-mapengine"><option value="svg" ${(el.mapEngine||"svg")==="svg"?"selected":""}>Classic SVG map</option><option value="folium" ${el.mapEngine==="folium"?"selected":""}>Folium / Leaflet rich map</option><option value="plotly" ${el.mapEngine==="plotly"?"selected":""}>Plotly geo map</option></select>`)}
+      ${field("Tile layer (Folium)",`<select id="f-tilelayer"><option value="osm" ${(el.tileLayer||"osm")==="osm"?"selected":""}>OpenStreetMap</option><option value="light" ${el.tileLayer==="light"?"selected":""}>Carto light</option><option value="dark" ${el.tileLayer==="dark"?"selected":""}>Carto dark</option><option value="satellite" ${el.tileLayer==="satellite"?"selected":""}>Satellite</option></select>`)}
+      ${field("Zoom (Folium)",`<input type="number" id="f-mapzoom" min="1" max="18" value="${el.zoom||""}" placeholder="Auto">`)}
       ${field("Quick fill",`<div class="seg" id="f-mapcities"><button data-on="0" class="${!el.useCities?"active":""}">My pins</button><button data-on="1" class="${el.useCities?"active":""}">Major cities</button></div>`)}
       ${field("Pins (Name, Lon, Lat, Value)",`<textarea id="f-mappins" rows="6" placeholder="Banjul,-16.58,13.45,12">${escapeTA(pinsToText(el))}</textarea>`)}
       <div class="insp-empty" style="padding:0 0 .5rem">Use real longitude,latitude (e.g. Banjul,-16.58,13.45,12). Pins land on the real map. Switch "Major cities" to auto-place well-known cities.</div>
@@ -888,6 +894,7 @@ function bindElementPanel(el){
   if(el.type==="chart"){
     const title=$("#f-charttitle");title&&title.addEventListener("input",()=>{el.title=title.value;renderCanvas();markDirty();});
     const kind=$("#f-chartkind");kind&&kind.addEventListener("change",()=>{el.chartKind=kind.value;renderCanvas();markDirty();});
+    const engine=$("#f-chartengine");engine&&engine.addEventListener("change",()=>{el.renderEngine=engine.value;renderCanvas();markDirty();});
     const data=$("#f-chartdata");data&&data.addEventListener("input",()=>{el.chartData=parseChartText(data.value);renderCanvas();markDirty();});
     $("#f-chartimport")&&$("#f-chartimport").addEventListener("click",()=>pickDataFileFor(el.id,"chart"));
     seg("f-chartvalues","show",v=>{el.showValues=v==="1";renderCanvas();markDirty();});
@@ -901,6 +908,8 @@ function bindElementPanel(el){
     seg("f-chartaxis","on",v=>{el.axisValues=v==="1";renderCanvas();markDirty();});
     seg("f-chartlegend","on",v=>{el.showLegend=v==="1";renderCanvas();markDirty();});
     const tc=$("#f-charttitlecolor");tc&&tc.addEventListener("input",()=>{el.titleColor=tc.value;renderCanvas();markDirty();});
+    const pt=$("#f-plotlytemplate");pt&&pt.addEventListener("change",()=>{el.plotlyTemplate=pt.value; if(pt.value==="plotly_dark") el.chartThemeMode="dark"; renderCanvas();markDirty();});
+    seg("f-plotlymodebar","on",v=>{el.plotlyModebar=v==="1";renderCanvas();markDirty();});
     $$("#f-chartpalette .pal-sw").forEach(sw=>sw.addEventListener("input",()=>{
       const pal=Array.isArray(el.palette)&&el.palette.length?el.palette.slice():["#e8482b","#22c55e","#38bdf8","#f59e0b","#a855f7","#ef4444"];
       pal[Number(sw.dataset.pi)]=sw.value;el.palette=pal;el.accent=pal[0];renderCanvas();markDirty();
@@ -909,6 +918,9 @@ function bindElementPanel(el){
   if(el.type==="map"){
     const title=$("#f-maptitle");title&&title.addEventListener("input",()=>{el.title=title.value;renderCanvas();markDirty();});
     const kind=$("#f-mapkind");kind&&kind.addEventListener("change",()=>{el.mapKind=kind.value;renderCanvas();renderInspector();markDirty();});
+    const meng=$("#f-mapengine");meng&&meng.addEventListener("change",()=>{el.mapEngine=meng.value;renderCanvas();markDirty();});
+    const tile=$("#f-tilelayer");tile&&tile.addEventListener("change",()=>{el.tileLayer=tile.value;renderCanvas();markDirty();});
+    const zoom=$("#f-mapzoom");zoom&&zoom.addEventListener("input",()=>{el.zoom=zoom.value?Math.max(1,Math.min(18,Number(zoom.value)||7)):null;renderCanvas();markDirty();});
     const pins=$("#f-mappins");pins&&pins.addEventListener("input",()=>{el.pins=parsePinsText(pins.value);el.useCities=false;renderCanvas();markDirty();});
     const acc=$("#f-mapaccent");acc&&acc.addEventListener("input",()=>{el.accent=acc.value;renderCanvas();markDirty();});
     seg("f-mapcities","on",v=>{el.useCities=v==="1";renderCanvas();renderInspector();markDirty();});

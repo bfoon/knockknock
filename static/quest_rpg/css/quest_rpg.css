@@ -21,3 +21,30 @@
   .quest-live-status,.quest-game-state{font-size:10px;padding:6px 8px}
   .quest-join-card small{max-width:calc(100vw - 180px)}
 }
+
+
+/* ════════════════════════════════════════════════════════════════════
+   Quest RPG · Knock-Knock flyer style alignment
+   ════════════════════════════════════════════════════════════════════ */
+:root{--accent:#ff3f98;--blue:#22d3ee;--gold:#ffd166;--green:#3ee6a8;--panel:rgba(16,18,46,.76);--panel2:rgba(27,25,74,.72);--line:rgba(255,255,255,.13);--text:#f8fbff;--muted:#b9c2e7;}
+.quest-shell,.quest-form-page,.quest-presenter,.quest-player,.quest-editor-body{
+  background:
+    radial-gradient(900px 560px at 86% -8%, rgba(255, 138, 31, .22), transparent 60%),
+    radial-gradient(780px 520px at 5% 5%, rgba(139, 92, 246, .34), transparent 60%),
+    radial-gradient(620px 420px at 60% 110%, rgba(34, 211, 238, .14), transparent 60%),
+    linear-gradient(135deg, #050616, #090b23 45%, #160a2c) !important;
+}
+.kk-mark,.quest-topline h1,.quest-form-card h1{
+  background:linear-gradient(110deg,#fff 8%,#ff8a1f 36%,#ff3f98 62%,#22d3ee 95%);
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+}
+.quest-card,.quest-form-card,.question-edit-card,.quest-editor-bar,.quest-host-panel,.quest-join-card{
+  background:linear-gradient(135deg,rgba(255,255,255,.12),rgba(255,255,255,.04))!important;
+  border-color:rgba(255,255,255,.13)!important;
+  box-shadow:0 26px 90px rgba(0,0,0,.45),0 0 42px rgba(124,58,237,.18)!important;
+  backdrop-filter:blur(18px);
+}
+.qbtn.primary{background:linear-gradient(135deg,#ff8a1f,#ff3f98,#8b5cf6)!important;border-color:rgba(255,255,255,.16)!important;}
+.qbtn,.quest-dashboard-link{border-color:rgba(255,255,255,.13)!important;background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.04))!important;color:#fff!important;box-shadow:0 12px 34px rgba(0,0,0,.24);}
+.quest-dashboard-link{display:inline-flex;align-items:center;gap:.45rem;border-radius:999px;padding:.55rem .9rem;text-decoration:none;font-weight:900;}
+.world-jungle{--accent:#3ee6a8}.world-sea{--accent:#22d3ee}.world-space{--accent:#8b5cf6}.world-cave{--accent:#ff8a1f}.world-forest{--accent:#5ce28a}

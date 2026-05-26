@@ -1176,3 +1176,211 @@
 @media (hover: none) {
   .kk-col-delete { opacity: .8; }
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   FLYER-STYLE PRESENTER HEADER FIX
+   Fixes Boardly presenter logo/dashboard overlap by replacing the old
+   38px square back button behaviour with a dedicated left brand group.
+   This is intentionally appended late so it overrides earlier rules.
+   ════════════════════════════════════════════════════════════════════ */
+.kk-board-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: nowrap;
+  min-width: 0;
+  padding-inline: clamp(.8rem, 1.5vw, 1.4rem);
+}
+
+.kk-board-left {
+  flex: 0 0 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: .95rem;
+}
+
+.kk-board-dashboard {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .45rem;
+  min-width: 120px;
+  height: 42px;
+  padding: 0 .82rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.14);
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.08), rgba(255,255,255,.02)),
+    rgba(19, 16, 36, .78);
+  color: var(--kk-text, #fff);
+  text-decoration: none;
+  font-weight: 800;
+  letter-spacing: -.01em;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+  transition: transform .15s ease, border-color .15s ease, background .15s ease;
+}
+.kk-board-dashboard:hover {
+  color: #fff;
+  border-color: rgba(34,211,238,.55);
+  background:
+    linear-gradient(135deg, rgba(124,58,237,.25), rgba(34,211,238,.16)),
+    rgba(19, 16, 36, .95);
+  transform: translateY(-1px);
+}
+.kk-board-dashboard i {
+  color: var(--kk-accent-2, #22d3ee);
+  font-size: 1rem;
+}
+.kk-board-dashboard span {
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.kk-board-brand {
+  flex: 0 0 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: .72rem;
+  text-decoration: none;
+  color: var(--kk-text, #fff);
+}
+.kk-board-brand:hover { color: var(--kk-text, #fff); opacity: .96; }
+
+.kk-board-logo-mark {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  border-radius: 15px;
+  display: inline-grid;
+  place-items: center;
+  font-family: var(--kk-font-display, system-ui, sans-serif);
+  font-size: 1.42rem;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: -.06em;
+  background:
+    radial-gradient(circle at 24% 18%, rgba(255,255,255,.45), transparent 24%),
+    linear-gradient(135deg, #22d3ee 0%, #7c3aed 42%, #fb7185 68%, #f97316 100%);
+  box-shadow:
+    0 14px 34px rgba(124,58,237,.35),
+    0 0 0 1px rgba(255,255,255,.18) inset;
+  position: relative;
+  overflow: hidden;
+}
+.kk-board-logo-mark::after {
+  content: "";
+  position: absolute;
+  inset: -40% -15% auto auto;
+  width: 70%;
+  height: 140%;
+  transform: rotate(34deg);
+  background: rgba(255,255,255,.24);
+}
+.kk-board-logo-mark--sm {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  font-size: 1.05rem;
+  box-shadow: 0 8px 20px rgba(124,58,237,.30), 0 0 0 1px rgba(255,255,255,.18) inset;
+}
+
+.kk-board-brand-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1;
+  gap: .18rem;
+}
+.kk-board-brand-name {
+  display: block;
+  font-family: var(--kk-font-display, system-ui, sans-serif);
+  font-size: clamp(1.28rem, 1.7vw, 1.85rem);
+  font-weight: 900;
+  color: var(--kk-text, #fff);
+  letter-spacing: -.06em;
+  white-space: nowrap;
+}
+.kk-board-brand-name span {
+  background: linear-gradient(135deg, #22d3ee, #a855f7 42%, #fb7185 70%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.kk-board-brand-sub {
+  display: block;
+  font-size: clamp(.58rem, .7vw, .75rem);
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--kk-text-dim, #a0a0b8);
+  white-space: nowrap;
+}
+
+.kk-board-title-wrap {
+  flex: 0 1 360px;
+  min-width: 120px;
+  max-width: 420px;
+  margin-inline-start: .35rem;
+}
+.kk-board-title {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--kk-font-display, system-ui, sans-serif);
+  font-size: clamp(1rem, 1.2vw, 1.28rem);
+  font-weight: 800;
+  color: var(--kk-text, #fff);
+  letter-spacing: -.03em;
+}
+
+/* Keep the action side tidy on projector widths. */
+.kk-board-stats,
+.kk-board-layouts,
+.kk-board-power {
+  flex: 0 0 auto;
+}
+
+.kk-qr-card-brand--flyer {
+  gap: .55rem;
+  justify-content: center;
+}
+
+@media (max-width: 1280px) {
+  .kk-board-dashboard { min-width: 106px; padding-inline: .68rem; }
+  .kk-board-brand-sub { display: none; }
+  .kk-board-title-wrap { flex-basis: 260px; }
+}
+
+@media (max-width: 1080px) {
+  .kk-board-header { gap: .65rem; }
+  .kk-board-dashboard { min-width: 42px; width: 42px; padding: 0; }
+  .kk-board-dashboard span { display: none; }
+  .kk-board-title-wrap { flex-basis: 190px; }
+}
+
+@media (max-width: 980px) {
+  .kk-board-stage { height: auto; overflow: auto; }
+  .kk-board-canvas { min-height: 70vh; }
+  .kk-board-title-wrap { display: none; }
+}
+
+@media (max-width: 720px) {
+  .kk-board-header {
+    flex-wrap: wrap;
+    gap: .55rem;
+  }
+  .kk-board-left {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .kk-board-brand-name { font-size: 1.28rem; }
+  .kk-board-logo-mark { width: 40px; height: 40px; border-radius: 13px; font-size: 1.2rem; }
+  .kk-board-stats { order: 3; }
+  .kk-join-panel { left: .6rem; right: .6rem; }
+  .kk-join-inner { justify-content: center; }
+}

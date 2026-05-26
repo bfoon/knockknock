@@ -10,11 +10,32 @@
 <link rel="stylesheet" href="{% static 'css/app.css' %}?v=4">
 <link rel="stylesheet" href="{% static 'css/boardly.css' %}?v=1">
 </head>
-<body>
+<body class="kk-standard-page kk-board-create">
 
-<div class="kk-main kk-main-narrow">
-  <h1 class="mb-1"><span class="kk-brand-mark">📌</span> New board</h1>
-  <p class="text-secondary mb-4">A live sticky-note wall your audience fills in real time.</p>
+<div class="kk-flyer-shell kk-main-narrow">
+  <nav class="kk-flyer-nav" aria-label="Boardly navigation">
+    <a class="kk-flyer-brand" href="{% url 'core:home' %}">
+      <span class="kk-logo-mark" aria-hidden="true"></span>
+      <span class="kk-flyer-brand-text">
+        <span class="kk-flyer-brand-name">knock<span class="dot">·</span>knock</span>
+        <span class="kk-flyer-brand-sub">Boardly live wall</span>
+      </span>
+    </a>
+    <a href="{% url 'core:dashboard' %}" class="kk-return-chip">
+      <i class="bi bi-grid-1x2"></i> <span>Back to main dashboard</span>
+    </a>
+  </nav>
+
+  <section class="kk-flyer-card kk-flyer-hero-main mb-4">
+    <span class="kk-flyer-kicker"><i class="bi bi-sticky"></i> Boardly</span>
+    <h1 class="kk-flyer-title">New <span class="kk-flyer-gradient">board</span></h1>
+    <p class="kk-flyer-sub mb-0">Create a live sticky-note wall your audience can fill in real time — perfect for brainstorming, reflections and group feedback.</p>
+    <div class="kk-flyer-badges">
+      <span class="kk-flyer-badge"><i class="bi bi-lightning-charge"></i> Fast to launch</span>
+      <span class="kk-flyer-badge"><i class="bi bi-people"></i> Live collaboration</span>
+      <span class="kk-flyer-badge"><i class="bi bi-qr-code"></i> QR join ready</span>
+    </div>
+  </section>
 
   <form method="post" class="kk-card">
     {% csrf_token %}

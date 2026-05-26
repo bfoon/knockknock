@@ -1259,3 +1259,698 @@ h1, h2, h3, h4, .display-1, .display-2, .display-3 {
   height: 100% !important;
   display: block;
 }
+
+/* ──────────────────────────────────────────────────────────────────────
+   Knock-Knock flyer theme refresh
+   Apply this section after the existing styles. It gives the app templates
+   the same premium neon flyer look used in the Knock-Knock/HANNS posters.
+   ────────────────────────────────────────────────────────────────────── */
+:root {
+  --kk-bg: #070714;
+  --kk-bg-2: #0d0b1f;
+  --kk-surface: rgba(20, 18, 44, .82);
+  --kk-surface-2: rgba(36, 30, 74, .86);
+  --kk-border: rgba(255, 255, 255, .12);
+  --kk-text: #f8fbff;
+  --kk-text-dim: #b9bed8;
+  --kk-accent: #8b5cf6;
+  --kk-accent-2: #22d3ee;
+  --kk-accent-3: #fb3c8f;
+  --kk-orange: #ff9f1c;
+  --kk-pink: #ff4fd8;
+  --kk-blue: #3b82f6;
+  --kk-glass: rgba(255, 255, 255, .06);
+  --kk-glow-pink: 0 0 40px rgba(251, 60, 143, .32);
+  --kk-glow-blue: 0 0 40px rgba(34, 211, 238, .26);
+  --kk-shadow-glow: 0 22px 70px -24px rgba(139, 92, 246, .8);
+}
+
+html, body { overflow-x: hidden; }
+body {
+  background:
+    radial-gradient(900px 520px at 12% -10%, rgba(251, 60, 143, .24), transparent 62%),
+    radial-gradient(780px 500px at 88% 4%, rgba(34, 211, 238, .17), transparent 60%),
+    radial-gradient(820px 560px at 55% 110%, rgba(255, 159, 28, .12), transparent 60%),
+    linear-gradient(135deg, #060612 0%, #0b0820 46%, #140a2d 100%);
+  background-attachment: fixed;
+}
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+}
+body::before {
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(255,255,255,.13) 1px, transparent 0),
+    linear-gradient(115deg, transparent 0 58%, rgba(255,255,255,.045) 58% 59%, transparent 59% 100%);
+  background-size: 34px 34px, 100% 100%;
+  mask-image: radial-gradient(circle at 82% 8%, #000 0 22%, transparent 48%), radial-gradient(circle at 8% 92%, #000 0 22%, transparent 46%);
+}
+body::after {
+  background:
+    conic-gradient(from 210deg at 85% 20%, transparent, rgba(251,60,143,.12), transparent 28%),
+    conic-gradient(from 30deg at 8% 80%, transparent, rgba(34,211,238,.10), transparent 30%);
+  filter: blur(1px);
+}
+
+/* Brand and navigation */
+.kk-nav {
+  border-bottom: 1px solid rgba(255,255,255,.10);
+  background: linear-gradient(90deg, rgba(7,7,20,.82), rgba(20,10,45,.72));
+  box-shadow: 0 12px 40px rgba(0,0,0,.24);
+}
+.kk-brand { gap: .7rem; }
+.kk-brand-mark {
+  width: 42px;
+  height: 42px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(255,255,255,.11), rgba(255,255,255,.02));
+  border: 1px solid rgba(255,255,255,.12);
+  box-shadow: 0 0 34px rgba(251,60,143,.20), inset 0 0 0 1px rgba(255,255,255,.05);
+  flex: 0 0 auto;
+  font-size: 0;
+}
+.kk-logo-svg { width: 31px; height: 31px; display: block; filter: drop-shadow(0 0 10px rgba(251,60,143,.45)); }
+.kk-brand-text {
+  text-transform: lowercase;
+  letter-spacing: -.04em;
+  font-size: clamp(1.08rem, 2vw, 1.45rem);
+}
+.kk-brand-dash {
+  color: transparent;
+  background: linear-gradient(135deg, var(--kk-accent-2), var(--kk-pink), var(--kk-orange));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+.kk-nav-link {
+  border-radius: 999px;
+  padding: .42rem .75rem;
+}
+.kk-nav-link:hover {
+  background: rgba(255,255,255,.06);
+  color: #fff;
+}
+
+/* Buttons and surfaces */
+.kk-btn-primary {
+  background: linear-gradient(135deg, #ff7a18 0%, #fb3c8f 45%, #7c3aed 74%, #22d3ee 100%);
+  color: #fff;
+  border: 0;
+  box-shadow: 0 16px 42px -16px rgba(251, 60, 143, .85), 0 0 0 1px rgba(255,255,255,.10) inset;
+}
+.kk-btn-primary:hover { color: #fff; filter: saturate(1.12) brightness(1.08); transform: translateY(-1px); }
+.kk-btn-ghost {
+  background: rgba(255,255,255,.04);
+  border-color: rgba(255,255,255,.14);
+  color: #e8ecff;
+}
+.kk-btn-ghost:hover { background: rgba(255,255,255,.09); }
+.kk-card {
+  background: linear-gradient(145deg, rgba(28, 23, 62, .86), rgba(11, 10, 29, .78));
+  border: 1px solid rgba(255,255,255,.13);
+  box-shadow: 0 24px 80px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.08);
+  backdrop-filter: blur(18px);
+}
+.form-control,
+.form-select {
+  background: rgba(255,255,255,.07);
+  border: 1px solid rgba(255,255,255,.13);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+}
+.form-control:focus,
+.form-select:focus {
+  border-color: rgba(34,211,238,.72);
+  box-shadow: 0 0 0 .2rem rgba(34, 211, 238, .14), 0 0 30px rgba(124,58,237,.18);
+}
+.form-label {
+  color: #dce3ff;
+  letter-spacing: .01em;
+}
+.kk-text-dim { color: var(--kk-text-dim); }
+.text-secondary { color: var(--kk-text-dim) !important; }
+.text-light { color: #fff !important; }
+
+/* Shared flyer-style auth pages */
+.kk-page-auth .kk-main,
+.kk-page-profile .kk-main { max-width: 1240px; }
+.kk-auth-shell {
+  width: min(1180px, 100%);
+  margin: clamp(1rem, 3vw, 2rem) auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1.04fr) minmax(360px, .78fr);
+  gap: clamp(1rem, 3vw, 2rem);
+  align-items: stretch;
+}
+.kk-auth-showcase,
+.kk-profile-hero {
+  position: relative;
+  overflow: hidden;
+  min-height: 640px;
+  border-radius: 34px;
+  padding: clamp(1.35rem, 3vw, 2.4rem);
+  border: 1px solid rgba(255,255,255,.13);
+  background:
+    radial-gradient(500px 330px at 72% 14%, rgba(34,211,238,.18), transparent 66%),
+    radial-gradient(460px 360px at 8% 20%, rgba(251,60,143,.23), transparent 62%),
+    linear-gradient(145deg, rgba(26,17,57,.9), rgba(7,7,20,.72));
+  box-shadow: 0 26px 90px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.08);
+}
+.kk-auth-showcase::before,
+.kk-profile-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(135deg, transparent 0 38%, rgba(255,255,255,.06) 38.4% 39.1%, transparent 39.5% 100%),
+    radial-gradient(circle at 1px 1px, rgba(255,255,255,.16) 1px, transparent 0);
+  background-size: 100% 100%, 28px 28px;
+  mask-image: radial-gradient(circle at 92% 8%, #000 0 30%, transparent 60%);
+  opacity: .72;
+}
+.kk-auth-showcase > *,
+.kk-profile-hero > * { position: relative; z-index: 1; }
+.kk-auth-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  color: #fff;
+  padding: .48rem .8rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,.075);
+  border: 1px solid rgba(255,255,255,.12);
+  font-weight: 800;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+  font-size: .72rem;
+}
+.kk-auth-title {
+  font-size: clamp(2.8rem, 6.5vw, 5.7rem);
+  line-height: .92;
+  margin: 1.3rem 0 1rem;
+}
+.kk-gradient-text {
+  color: transparent;
+  background: linear-gradient(100deg, #fff 0 16%, #ff9f1c 30%, #fb3c8f 58%, #8b5cf6 76%, #22d3ee 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  text-shadow: 0 0 42px rgba(251,60,143,.18);
+}
+.kk-auth-copy {
+  color: #dbe4ff;
+  font-size: clamp(1rem, 1.5vw, 1.22rem);
+  max-width: 680px;
+  line-height: 1.55;
+}
+.kk-auth-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .6rem;
+  margin: 1.35rem 0 1.8rem;
+}
+.kk-auth-badge,
+.kk-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .48rem .78rem;
+  border-radius: 999px;
+  color: #fff;
+  border: 1px solid rgba(255,255,255,.13);
+  background: rgba(255,255,255,.07);
+  font-size: .8rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.kk-pill--accent,
+.kk-auth-badge--hot {
+  background: linear-gradient(135deg, #ff7a18, #fb3c8f 52%, #7c3aed);
+  border-color: transparent;
+  box-shadow: 0 12px 34px rgba(251, 60, 143, .24);
+}
+.kk-auth-ui-board {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .9rem;
+  margin-top: 1.5rem;
+}
+.kk-auth-mini-card,
+.kk-auth-stat-card,
+.kk-auth-panel {
+  background: linear-gradient(145deg, rgba(255,255,255,.09), rgba(255,255,255,.035));
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 22px;
+  padding: 1rem;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 18px 44px rgba(0,0,0,.22);
+}
+.kk-auth-mini-card h3,
+.kk-auth-stat-card h3 { font-size: .82rem; text-transform: uppercase; letter-spacing: .12em; color: #cbd5ff; margin-bottom: .75rem; }
+.kk-auth-poll-row {
+  display: grid;
+  grid-template-columns: 28px 1fr 44px;
+  gap: .55rem;
+  align-items: center;
+  margin: .55rem 0;
+  font-size: .86rem;
+}
+.kk-auth-poll-bar {
+  height: 11px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.09);
+  overflow: hidden;
+}
+.kk-auth-poll-bar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #ff9f1c, #fb3c8f, #8b5cf6, #22d3ee); }
+.kk-auth-wordcloud {
+  min-height: 134px;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  gap: .55rem .8rem;
+}
+.kk-auth-wordcloud span { font-weight: 900; line-height: 1; }
+.kk-auth-wordcloud .xl { font-size: 1.7rem; color: #fb3c8f; }
+.kk-auth-wordcloud .lg { font-size: 1.35rem; color: #ff9f1c; }
+.kk-auth-wordcloud .md { font-size: 1.05rem; color: #22d3ee; }
+.kk-auth-wordcloud .sm { font-size: .86rem; color: #a78bfa; }
+.kk-auth-feature-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .75rem;
+  margin-top: 1.2rem;
+}
+.kk-auth-feature {
+  display: flex;
+  gap: .7rem;
+  align-items: center;
+  padding: .8rem;
+  border-radius: 18px;
+  background: rgba(255,255,255,.055);
+  border: 1px solid rgba(255,255,255,.09);
+  color: #edf2ff;
+  font-weight: 700;
+}
+.kk-auth-feature i {
+  color: #22d3ee;
+  font-size: 1.18rem;
+  filter: drop-shadow(0 0 10px rgba(34,211,238,.35));
+}
+.kk-auth-panel {
+  align-self: center;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border-radius: 30px;
+}
+.kk-auth-panel-head { text-align: center; margin-bottom: 1.3rem; }
+.kk-auth-panel-title { font-size: clamp(2rem, 3vw, 2.8rem); margin-bottom: .35rem; }
+.kk-auth-panel-sub { color: var(--kk-text-dim); margin-bottom: 0; }
+.kk-auth-form-card { padding: 0; background: transparent; border: 0; box-shadow: none; }
+.kk-auth-form-card .kk-card { padding: 0; }
+.kk-auth-panel form.kk-card { background: transparent; border: 0; box-shadow: none; padding: 0; backdrop-filter: none; }
+.kk-auth-foot-note { text-align: center; margin-top: 1rem; color: var(--kk-text-dim); }
+.kk-auth-cta-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: .6rem;
+  margin-top: 1rem;
+}
+.kk-auth-cta-strip span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .35rem;
+  min-height: 44px;
+  border-radius: 16px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.09);
+  color: #e9edff;
+  font-size: .82rem;
+  font-weight: 700;
+}
+
+/* Signup stepper */
+.kk-step-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .55rem;
+  margin: 1.25rem 0 .55rem;
+}
+.kk-step {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.12);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--kk-text-dim);
+  font-weight: 900;
+}
+.kk-step--active { background: linear-gradient(135deg, #ff7a18, #fb3c8f, #7c3aed); color: #fff; box-shadow: 0 0 24px rgba(251,60,143,.25); }
+.kk-step-line { width: min(64px, 14vw); height: 2px; background: linear-gradient(90deg, rgba(255,255,255,.24), rgba(255,255,255,.07)); }
+.kk-step-labels {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.1rem;
+  font-size: .76rem;
+  color: var(--kk-text-dim);
+  flex-wrap: wrap;
+}
+.kk-step-label--active { color: #fff; font-weight: 800; }
+
+/* Profile page refresh */
+.kk-profile-shell {
+  display: grid;
+  grid-template-columns: minmax(0, .86fr) minmax(360px, 1fr);
+  gap: clamp(1rem, 3vw, 2rem);
+  width: min(1120px, 100%);
+  margin: clamp(1rem, 3vw, 2rem) auto;
+}
+.kk-profile-hero { min-height: 560px; }
+.kk-profile-card { padding: clamp(1.25rem, 3vw, 2rem) !important; border-radius: 30px; }
+.kk-profile-logo-preview {
+  display: grid;
+  place-items: center;
+  width: 112px;
+  height: 112px;
+  margin: 0 auto 1rem;
+  border-radius: 28px;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.14);
+  box-shadow: 0 18px 50px rgba(0,0,0,.28);
+  overflow: hidden;
+}
+.kk-profile-logo-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.kk-profile-metric-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .8rem;
+  margin-top: 1.4rem;
+}
+.kk-profile-metric {
+  padding: 1rem;
+  border-radius: 22px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.1);
+}
+.kk-profile-metric strong { display: block; font-size: 1.5rem; color: #fff; }
+.kk-profile-metric span { color: var(--kk-text-dim); font-size: .84rem; }
+
+/* Compact pages */
+@media (max-width: 980px) {
+  .kk-auth-shell,
+  .kk-profile-shell { grid-template-columns: 1fr; }
+  .kk-auth-showcase,
+  .kk-profile-hero { min-height: auto; }
+  .kk-auth-title { font-size: clamp(2.65rem, 12vw, 4.5rem); }
+}
+@media (max-width: 640px) {
+  .kk-main { padding: 1rem .85rem 2.5rem; }
+  .kk-auth-showcase,
+  .kk-auth-panel,
+  .kk-profile-hero,
+  .kk-profile-card { border-radius: 24px; }
+  .kk-auth-ui-board,
+  .kk-auth-feature-list,
+  .kk-profile-metric-grid { grid-template-columns: 1fr; }
+  .kk-auth-cta-strip { grid-template-columns: 1fr; }
+  .kk-auth-panel { padding: 1rem; }
+}
+
+
+/* ════════════════════════════════════════════════════════════════════
+   Knock-Knock flyer standard layer
+   Shared by auth, Boardly, Hanns and game pages.
+   ════════════════════════════════════════════════════════════════════ */
+:root {
+  --kk-flyer-ink: #060718;
+  --kk-flyer-ink-2: #0c1028;
+  --kk-flyer-card: rgba(16, 18, 46, .76);
+  --kk-flyer-card-2: rgba(27, 25, 74, .72);
+  --kk-flyer-line: rgba(255,255,255,.12);
+  --kk-flyer-glow: 0 26px 90px rgba(0,0,0,.48), 0 0 44px rgba(124,58,237,.20);
+  --kk-flyer-orange: #ff8a1f;
+  --kk-flyer-pink: #ff3f98;
+  --kk-flyer-violet: #8b5cf6;
+  --kk-flyer-cyan: #22d3ee;
+  --kk-flyer-green: #3ee6a8;
+  --kk-flyer-yellow: #ffd166;
+}
+
+.kk-flyer-bg,
+.kk-standard-page {
+  min-height: 100vh;
+  background:
+    radial-gradient(900px 560px at 86% -8%, rgba(255, 112, 67, .26), transparent 62%),
+    radial-gradient(760px 520px at 10% 0%, rgba(124, 58, 237, .34), transparent 58%),
+    radial-gradient(620px 420px at 58% 102%, rgba(34, 211, 238, .16), transparent 60%),
+    linear-gradient(135deg, #050616 0%, #090b23 45%, #160a2c 100%);
+  position: relative;
+  overflow-x: hidden;
+}
+.kk-flyer-bg::before,
+.kk-standard-page::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: .52;
+  background:
+    linear-gradient(115deg, transparent 0 42%, rgba(255,255,255,.06) 43%, transparent 46%),
+    radial-gradient(circle at 12% 80%, rgba(255,255,255,.10) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 88% 32%, rgba(255,255,255,.12) 0 1px, transparent 1.8px);
+  background-size: auto, 34px 34px, 42px 42px;
+  mask-image: linear-gradient(to bottom, #000, rgba(0,0,0,.1));
+}
+
+.kk-flyer-shell {
+  width: min(1180px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: clamp(1rem, 3vw, 2rem) 0 clamp(2rem, 5vw, 4rem);
+  position: relative;
+  z-index: 1;
+}
+
+.kk-flyer-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .85rem;
+  margin-bottom: clamp(1.2rem, 3vw, 2.2rem);
+  padding: .72rem .85rem;
+  border: 1px solid var(--kk-flyer-line);
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(255,255,255,.11), rgba(255,255,255,.035));
+  box-shadow: var(--kk-flyer-glow);
+  backdrop-filter: blur(18px);
+}
+
+.kk-logo-mark,
+.kk-brand-mark--flyer {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 14px;
+  font-size: 0;
+  background:
+    linear-gradient(135deg, #3b82f6 0 20%, #8b5cf6 20% 42%, #ff3f98 42% 66%, #ff8a1f 66% 100%);
+  box-shadow: 0 0 24px rgba(255,63,152,.32), inset 0 1px 0 rgba(255,255,255,.24);
+  position: relative;
+  transform: rotate(-4deg);
+}
+.kk-logo-mark::before,
+.kk-brand-mark--flyer::before {
+  content: "K";
+  font-size: 1.3rem;
+  line-height: 1;
+  font-family: var(--kk-font-display, system-ui, sans-serif);
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 2px 10px rgba(0,0,0,.35);
+  transform: rotate(4deg);
+}
+
+.kk-flyer-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: .65rem;
+  color: #fff;
+  text-decoration: none;
+  min-width: 0;
+}
+.kk-flyer-brand-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.kk-flyer-brand-name {
+  font-family: var(--kk-font-display, system-ui, sans-serif);
+  font-size: clamp(1.1rem, 2vw, 1.45rem);
+  font-weight: 900;
+  letter-spacing: -.045em;
+  line-height: 1;
+}
+.kk-flyer-brand-name .dot { color: var(--kk-flyer-pink); }
+.kk-flyer-brand-sub {
+  margin-top: .16rem;
+  color: rgba(236, 242, 255, .68);
+  font-size: .68rem;
+  text-transform: uppercase;
+  letter-spacing: .18em;
+  font-weight: 800;
+}
+
+.kk-return-chip,
+.kk-dashboard-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .45rem;
+  min-height: 40px;
+  padding: .56rem .9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.14);
+  color: #fff;
+  text-decoration: none;
+  font-weight: 800;
+  font-size: .9rem;
+  background: linear-gradient(135deg, rgba(255,138,31,.18), rgba(255,63,152,.18), rgba(34,211,238,.12));
+  box-shadow: 0 12px 34px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.12);
+  transition: transform .15s ease, border-color .15s ease, filter .15s ease;
+  white-space: nowrap;
+}
+.kk-return-chip:hover,
+.kk-dashboard-chip:hover {
+  color: #fff;
+  transform: translateY(-1px);
+  border-color: rgba(34,211,238,.45);
+  filter: brightness(1.08);
+}
+.kk-return-chip--mini { min-height: 34px; padding: .4rem .7rem; font-size: .78rem; }
+
+.kk-flyer-hero {
+  display: grid;
+  grid-template-columns: minmax(0, .95fr) minmax(300px, .72fr);
+  gap: clamp(1rem, 3vw, 2rem);
+  align-items: stretch;
+  margin-bottom: 1.25rem;
+}
+.kk-flyer-card {
+  border-radius: 30px;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.13), rgba(255,255,255,.045)),
+    var(--kk-flyer-card);
+  border: 1px solid var(--kk-flyer-line);
+  box-shadow: var(--kk-flyer-glow);
+  backdrop-filter: blur(18px);
+  position: relative;
+  overflow: hidden;
+}
+.kk-flyer-card::after {
+  content: "";
+  position: absolute;
+  width: 260px;
+  height: 260px;
+  border-radius: 50%;
+  right: -120px;
+  top: -120px;
+  background: radial-gradient(circle, rgba(255,63,152,.28), transparent 66%);
+  pointer-events: none;
+}
+.kk-flyer-hero-main { padding: clamp(1.4rem, 4vw, 2.6rem); }
+.kk-flyer-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .35rem .7rem;
+  border-radius: 999px;
+  color: #eaf6ff;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.07);
+  font-size: .76rem;
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.kk-flyer-title {
+  margin: .8rem 0 .65rem;
+  font-family: var(--kk-font-display, system-ui, sans-serif);
+  font-size: clamp(2.35rem, 7vw, 5.8rem);
+  line-height: .9;
+  letter-spacing: -.07em;
+  font-weight: 900;
+}
+.kk-flyer-gradient,
+.kk-gradient-text {
+  background: linear-gradient(110deg, #fff 8%, var(--kk-flyer-orange) 32%, var(--kk-flyer-pink) 58%, var(--kk-flyer-cyan) 92%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.kk-flyer-sub {
+  color: rgba(237, 243, 255, .74);
+  font-size: clamp(1rem, 2vw, 1.14rem);
+  line-height: 1.55;
+  max-width: 60ch;
+}
+.kk-flyer-badges { display: flex; flex-wrap: wrap; gap: .55rem; margin-top: 1rem; }
+.kk-flyer-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .48rem .7rem;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(255,255,255,.07);
+  border: 1px solid rgba(255,255,255,.1);
+  font-weight: 750;
+  font-size: .82rem;
+}
+.kk-flyer-grid-card { padding: 1rem; display: grid; gap: .75rem; }
+.kk-flyer-mini-panel {
+  padding: .9rem;
+  border-radius: 20px;
+  background: rgba(0,0,0,.24);
+  border: 1px solid rgba(255,255,255,.09);
+}
+.kk-flyer-mini-panel strong { color: #fff; display: block; margin-bottom: .35rem; }
+.kk-flyer-mini-panel span { color: rgba(235,241,255,.68); font-size: .9rem; }
+
+.kk-card,
+.kk-list-item,
+.form-control,
+.form-select {
+  box-shadow: 0 18px 52px rgba(0,0,0,.22);
+}
+.kk-card {
+  background: linear-gradient(135deg, rgba(255,255,255,.10), rgba(255,255,255,.035));
+  border-color: rgba(255,255,255,.12);
+  backdrop-filter: blur(16px);
+}
+.form-control,
+.form-select {
+  background: rgba(9, 11, 35, .74);
+  border-color: rgba(255,255,255,.12);
+}
+.form-text { color: rgba(220,228,255,.56) !important; }
+
+@media (max-width: 860px) {
+  .kk-flyer-hero { grid-template-columns: 1fr; }
+  .kk-flyer-nav { border-radius: 20px; }
+  .kk-flyer-title { font-size: clamp(2.4rem, 14vw, 4.4rem); }
+}
+@media (max-width: 520px) {
+  .kk-flyer-shell { width: min(100% - 1rem, 1180px); }
+  .kk-flyer-brand-sub { display: none; }
+  .kk-return-chip span:not(.keep) { display: none; }
+}
+
+.kk-list-item-main{display:flex;align-items:center;gap:1rem;flex:1;color:inherit;text-decoration:none;min-width:0}.kk-list-item-row{display:flex;align-items:center;gap:.4rem}.kk-row-delete{display:inline-grid;place-items:center;width:36px;height:36px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.06);color:#fb7185}.kk-row-delete:hover{background:#f43f5e;color:#fff}.kk-status-mini{font-weight:800;color:#22d3ee}.kk-text-dim{color:var(--kk-text-dim)!important;}

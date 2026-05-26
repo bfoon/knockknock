@@ -2,9 +2,11 @@
 {% block title %}My boards · Boardly{% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-end justify-content-between flex-wrap gap-3 mb-4">
-  <div>
-    <h1 class="mb-1"><span class="kk-brand-mark">📌</span> My boards</h1>
+<div class="kk-flyer-card kk-flyer-hero-main mb-4">
+  <div class="d-flex align-items-start justify-content-between flex-wrap gap-3">
+    <div>
+      <span class="kk-flyer-kicker"><i class="bi bi-sticky"></i> Boardly</span>
+      <h1 class="kk-flyer-title mb-1">My <span class="kk-flyer-gradient">boards</span></h1>
     <p class="text-secondary mb-0">
       {% if boards_total %}
         {{ boards_total }} saved board{{ boards_total|pluralize }} — open one to present it again.
@@ -12,10 +14,16 @@
         Your saved Boardly boards will appear here.
       {% endif %}
     </p>
+    </div>
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+      <a href="{% url 'core:dashboard' %}" class="kk-return-chip">
+        <i class="bi bi-grid-1x2"></i> <span>Back to main dashboard</span>
+      </a>
+      <a href="{% url 'boardly:create' %}" class="kk-btn kk-btn-primary">
+        <i class="bi bi-plus-lg"></i> New board
+      </a>
+    </div>
   </div>
-  <a href="{% url 'boardly:create' %}" class="kk-btn kk-btn-primary">
-    <i class="bi bi-plus-lg"></i> New board
-  </a>
 </div>
 
 {% for b in boards %}
@@ -67,9 +75,4 @@
   </div>
 {% endfor %}
 
-<div class="mt-4">
-  <a href="{% url 'core:dashboard' %}" class="kk-nav-link">
-    <i class="bi bi-arrow-left"></i> Back to dashboard
-  </a>
-</div>
 {% endblock %}

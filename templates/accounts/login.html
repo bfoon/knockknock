@@ -1,26 +1,72 @@
 {% extends "base.html" %}
 {% block title %}Log in · Knock-Knock{% endblock %}
+{% block body_class %}kk-page-auth{% endblock %}
 
 {% block content %}
-<div class="kk-main-narrow mx-auto">
-  <h1 class="text-center mb-4">Welcome back</h1>
-  <form method="post" class="kk-card">
-    {% csrf_token %}
-    {% if form.non_field_errors %}
-      <div class="kk-flash kk-flash-error mb-3">{{ form.non_field_errors }}</div>
-    {% endif %}
-    <div class="mb-3">
-      <label class="form-label">Username</label>
-      <input type="text" name="username" class="form-control form-control-lg" required autofocus>
+<div class="kk-auth-shell">
+  <section class="kk-auth-showcase">
+    <span class="kk-auth-kicker"><i class="bi bi-lightning-charge-fill"></i> Knock-Knock live</span>
+    <h1 class="kk-auth-title">Knock, knock.<br><span class="kk-gradient-text">Who’s back?</span></h1>
+    <p class="kk-auth-copy">Log in and continue building live polls, word clouds and quiz games your audience won’t shut up about.</p>
+    <div class="kk-auth-badges">
+      <span class="kk-auth-badge kk-auth-badge--hot">Mentimeter style</span>
+      <span class="kk-auth-badge">Kahoot style games</span>
+      <span class="kk-auth-badge">No download to play</span>
     </div>
-    <div class="mb-3">
-      <label class="form-label">Password</label>
-      <input type="password" name="password" class="form-control form-control-lg" required>
+
+      <div class="kk-auth-ui-board">
+        <div class="kk-auth-mini-card">
+          <h3><i class="bi bi-bar-chart-fill"></i> Live poll</h3>
+          <div class="kk-auth-poll-row"><span>44%</span><div class="kk-auth-poll-bar"><span style="width:44%"></span></div><small>Energy</small></div>
+          <div class="kk-auth-poll-row"><span>28%</span><div class="kk-auth-poll-bar"><span style="width:28%"></span></div><small>Focus</small></div>
+          <div class="kk-auth-poll-row"><span>18%</span><div class="kk-auth-poll-bar"><span style="width:18%"></span></div><small>Fun</small></div>
+        </div>
+        <div class="kk-auth-mini-card">
+          <h3><i class="bi bi-cloud-fill"></i> Word cloud</h3>
+          <div class="kk-auth-wordcloud">
+            <span class="xl">engage</span><span class="lg">learn</span><span class="md">teams</span><span class="sm">quiz</span>
+            <span class="lg">ideas</span><span class="md">feedback</span><span class="sm">live</span><span class="xl">fun</span>
+          </div>
+        </div>
+      </div>
+      <div class="kk-auth-feature-list">
+        <div class="kk-auth-feature"><i class="bi bi-qr-code-scan"></i> QR / 6-digit join</div>
+        <div class="kk-auth-feature"><i class="bi bi-trophy-fill"></i> Quiz games</div>
+        <div class="kk-auth-feature"><i class="bi bi-people-fill"></i> Team collaboration</div>
+        <div class="kk-auth-feature"><i class="bi bi-phone"></i> No download needed</div>
+      </div>
+  </section>
+
+  <aside class="kk-auth-panel">
+    <div class="kk-auth-panel-head">
+      <span class="kk-auth-kicker"><i class="bi bi-person-check"></i> Welcome back</span>
+      <h2 class="kk-auth-panel-title mt-3">Log in</h2>
+      <p class="kk-auth-panel-sub">Access your presentations, games, teams and HANNS tools.</p>
     </div>
-    <button class="kk-btn kk-btn-primary kk-btn-lg w-100">Log in</button>
-    <p class="text-center mt-3 mb-0 text-secondary">
-      No account? <a href="{% url 'accounts:signup' %}" class="text-light">Sign up</a>
-    </p>
-  </form>
+
+    <form method="post" class="kk-card kk-auth-form-card">
+      {% csrf_token %}
+      {% if form.non_field_errors %}
+        <div class="kk-flash kk-flash-error mb-3">{{ form.non_field_errors }}</div>
+      {% endif %}
+      <div class="mb-3">
+        <label class="form-label">Username</label>
+        <input type="text" name="username" class="form-control form-control-lg" required autofocus>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Password</label>
+        <input type="password" name="password" class="form-control form-control-lg" required>
+      </div>
+      <button class="kk-btn kk-btn-primary kk-btn-lg w-100">Log in <i class="bi bi-arrow-right"></i></button>
+      <p class="kk-auth-foot-note">
+        No account? <a href="{% url 'accounts:signup' %}" class="text-light">Sign up</a>
+      </p>
+    </form>
+    <div class="kk-auth-cta-strip">
+      <span><i class="bi bi-shield-check"></i> Secure</span>
+      <span><i class="bi bi-speedometer2"></i> Fast</span>
+      <span><i class="bi bi-stars"></i> Creative</span>
+    </div>
+  </aside>
 </div>
 {% endblock %}

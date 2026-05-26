@@ -1,23 +1,64 @@
 {% extends "base.html" %}
 {% block title %}Sign up · Knock-Knock{% endblock %}
+{% block body_class %}kk-page-auth{% endblock %}
 
 {% block content %}
-<div class="kk-main-narrow mx-auto">
-  <h1 class="text-center mb-4">Create your account</h1>
-  <form method="post" class="kk-card">
-    {% csrf_token %}
-    {% for field in form %}
-      <div class="mb-3">
-        <label class="form-label">{{ field.label }}</label>
-        {{ field }}
-        {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors|join:", " }}</div>{% endif %}
-        {% if field.help_text %}<div class="text-secondary small mt-1">{{ field.help_text|safe }}</div>{% endif %}
+<div class="kk-auth-shell">
+  <section class="kk-auth-showcase">
+    <span class="kk-auth-kicker"><i class="bi bi-stars"></i> Start free</span>
+    <h1 class="kk-auth-title">Create better<br><span class="kk-gradient-text">live sessions.</span></h1>
+    <p class="kk-auth-copy">Build live polls, word clouds, quizzes and audience engagement experiences in one beautiful Knock-Knock workspace.</p>
+    <div class="kk-auth-badges">
+      <span class="kk-auth-badge kk-auth-badge--hot">20 templates</span>
+      <span class="kk-auth-badge">12+ chart styles</span>
+      <span class="kk-auth-badge">Avatars & leaderboards</span>
+    </div>
+
+      <div class="kk-auth-ui-board">
+        <div class="kk-auth-mini-card">
+          <h3><i class="bi bi-bar-chart-fill"></i> Live poll</h3>
+          <div class="kk-auth-poll-row"><span>44%</span><div class="kk-auth-poll-bar"><span style="width:44%"></span></div><small>Energy</small></div>
+          <div class="kk-auth-poll-row"><span>28%</span><div class="kk-auth-poll-bar"><span style="width:28%"></span></div><small>Focus</small></div>
+          <div class="kk-auth-poll-row"><span>18%</span><div class="kk-auth-poll-bar"><span style="width:18%"></span></div><small>Fun</small></div>
+        </div>
+        <div class="kk-auth-mini-card">
+          <h3><i class="bi bi-cloud-fill"></i> Word cloud</h3>
+          <div class="kk-auth-wordcloud">
+            <span class="xl">engage</span><span class="lg">learn</span><span class="md">teams</span><span class="sm">quiz</span>
+            <span class="lg">ideas</span><span class="md">feedback</span><span class="sm">live</span><span class="xl">fun</span>
+          </div>
+        </div>
       </div>
-    {% endfor %}
-    <button class="kk-btn kk-btn-primary kk-btn-lg w-100">Sign me up</button>
-    <p class="text-center mt-3 mb-0 text-secondary">
-      Already have an account? <a href="{% url 'accounts:login' %}" class="text-light">Log in</a>
-    </p>
-  </form>
+      <div class="kk-auth-feature-list">
+        <div class="kk-auth-feature"><i class="bi bi-qr-code-scan"></i> QR / 6-digit join</div>
+        <div class="kk-auth-feature"><i class="bi bi-trophy-fill"></i> Quiz games</div>
+        <div class="kk-auth-feature"><i class="bi bi-people-fill"></i> Team collaboration</div>
+        <div class="kk-auth-feature"><i class="bi bi-phone"></i> No download needed</div>
+      </div>
+  </section>
+
+  <aside class="kk-auth-panel">
+    <div class="kk-auth-panel-head">
+      <span class="kk-auth-kicker"><i class="bi bi-rocket-takeoff"></i> New account</span>
+      <h2 class="kk-auth-panel-title mt-3">Create your account</h2>
+      <p class="kk-auth-panel-sub">Start creating interactive presentations and games.</p>
+    </div>
+
+    <form method="post" class="kk-card kk-auth-form-card">
+      {% csrf_token %}
+      {% for field in form %}
+        <div class="mb-3">
+          <label class="form-label">{{ field.label }}</label>
+          {{ field }}
+          {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors|join:", " }}</div>{% endif %}
+          {% if field.help_text %}<div class="text-secondary small mt-1">{{ field.help_text|safe }}</div>{% endif %}
+        </div>
+      {% endfor %}
+      <button class="kk-btn kk-btn-primary kk-btn-lg w-100">Sign me up <i class="bi bi-arrow-right"></i></button>
+      <p class="kk-auth-foot-note">
+        Already have an account? <a href="{% url 'accounts:login' %}" class="text-light">Log in</a>
+      </p>
+    </form>
+  </aside>
 </div>
 {% endblock %}

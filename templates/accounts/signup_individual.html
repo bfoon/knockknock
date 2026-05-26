@@ -1,49 +1,78 @@
 {% extends "base.html" %}
 {% block title %}{% if is_free %}Sign up free{% else %}Individual signup{% endif %} · Knock-Knock{% endblock %}
+{% block body_class %}kk-page-auth{% endblock %}
 
 {% block content %}
-<div class="kk-main-narrow mx-auto">
-  <div class="text-center mb-4">
+<div class="kk-auth-shell">
+  <section class="kk-auth-showcase">
     {% if is_free %}
-      <span class="kk-pill">FREE</span>
-      <h1 class="mt-3">Create your free account</h1>
-      <p class="kk-text-dim">5 mentis or games on us. No card needed.</p>
+      <span class="kk-auth-kicker"><i class="bi bi-gift-fill"></i> Free plan</span>
+      <h1 class="kk-auth-title">Start free.<br><span class="kk-gradient-text">No card.</span></h1>
+      <p class="kk-auth-copy">Create up to 5 mentis or games and let participants join with a QR code or 6-digit code.</p>
     {% else %}
-      <span class="kk-pill kk-pill--accent">INDIVIDUAL</span>
-      <h1 class="mt-3">Start your individual plan</h1>
-      <p class="kk-text-dim">After signup we'll take you to mock checkout.</p>
+      <span class="kk-auth-kicker"><i class="bi bi-person-hearts"></i> Individual plan</span>
+      <h1 class="kk-auth-title">Your creative<br><span class="kk-gradient-text">session studio.</span></h1>
+      <p class="kk-auth-copy">Build polished interactive presentations for training, events, classes and meetings.</p>
     {% endif %}
-  </div>
+    <div class="kk-auth-badges">
+      <span class="kk-auth-badge kk-auth-badge--hot">Fast to launch</span>
+      <span class="kk-auth-badge">Easy to use</span>
+      <span class="kk-auth-badge">No download to play</span>
+    </div>
 
-  <form method="post" enctype="multipart/form-data" class="kk-card">
-    {% csrf_token %}
-    {% for field in form %}
-      <div class="mb-3">
-        <label class="form-label">{{ field.label }}</label>
-        {{ field }}
-        {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors|join:", " }}</div>{% endif %}
-        {% if field.help_text %}<div class="text-secondary small mt-1">{{ field.help_text|safe }}</div>{% endif %}
+      <div class="kk-auth-ui-board">
+        <div class="kk-auth-mini-card">
+          <h3><i class="bi bi-bar-chart-fill"></i> Live poll</h3>
+          <div class="kk-auth-poll-row"><span>44%</span><div class="kk-auth-poll-bar"><span style="width:44%"></span></div><small>Energy</small></div>
+          <div class="kk-auth-poll-row"><span>28%</span><div class="kk-auth-poll-bar"><span style="width:28%"></span></div><small>Focus</small></div>
+          <div class="kk-auth-poll-row"><span>18%</span><div class="kk-auth-poll-bar"><span style="width:18%"></span></div><small>Fun</small></div>
+        </div>
+        <div class="kk-auth-mini-card">
+          <h3><i class="bi bi-cloud-fill"></i> Word cloud</h3>
+          <div class="kk-auth-wordcloud">
+            <span class="xl">engage</span><span class="lg">learn</span><span class="md">teams</span><span class="sm">quiz</span>
+            <span class="lg">ideas</span><span class="md">feedback</span><span class="sm">live</span><span class="xl">fun</span>
+          </div>
+        </div>
       </div>
-    {% endfor %}
-    <button class="kk-btn kk-btn-primary kk-btn-lg w-100">
-      {% if is_free %}Sign me up{% else %}Continue to payment <i class="bi bi-arrow-right"></i>{% endif %}
-    </button>
-    <p class="text-center mt-3 mb-0 text-secondary">
-      Already have an account? <a href="{% url 'accounts:login' %}" class="text-light">Log in</a>
-    </p>
-  </form>
-</div>
+      <div class="kk-auth-feature-list">
+        <div class="kk-auth-feature"><i class="bi bi-qr-code-scan"></i> QR / 6-digit join</div>
+        <div class="kk-auth-feature"><i class="bi bi-trophy-fill"></i> Quiz games</div>
+        <div class="kk-auth-feature"><i class="bi bi-people-fill"></i> Team collaboration</div>
+        <div class="kk-auth-feature"><i class="bi bi-phone"></i> No download needed</div>
+      </div>
+  </section>
 
-<style>
-.kk-pill {
-  display: inline-block; padding: .25rem .75rem;
-  border-radius: 999px; font-size: .7rem; font-weight: 700;
-  letter-spacing: .15em;
-  background: rgba(255,255,255,.08); color: var(--kk-text-dim);
-}
-.kk-pill--accent {
-  background: linear-gradient(135deg, var(--kk-accent), var(--kk-accent-2));
-  color: #fff;
-}
-</style>
+  <aside class="kk-auth-panel">
+    <div class="kk-auth-panel-head">
+      {% if is_free %}
+        <span class="kk-pill">FREE</span>
+        <h2 class="kk-auth-panel-title mt-3">Create your free account</h2>
+        <p class="kk-auth-panel-sub">5 mentis or games on us. No card needed.</p>
+      {% else %}
+        <span class="kk-pill kk-pill--accent">INDIVIDUAL</span>
+        <h2 class="kk-auth-panel-title mt-3">Start your individual plan</h2>
+        <p class="kk-auth-panel-sub">After signup we’ll take you to mock checkout.</p>
+      {% endif %}
+    </div>
+
+    <form method="post" enctype="multipart/form-data" class="kk-card kk-auth-form-card">
+      {% csrf_token %}
+      {% for field in form %}
+        <div class="mb-3">
+          <label class="form-label">{{ field.label }}</label>
+          {{ field }}
+          {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors|join:", " }}</div>{% endif %}
+          {% if field.help_text %}<div class="text-secondary small mt-1">{{ field.help_text|safe }}</div>{% endif %}
+        </div>
+      {% endfor %}
+      <button class="kk-btn kk-btn-primary kk-btn-lg w-100">
+        {% if is_free %}Sign me up{% else %}Continue to payment <i class="bi bi-arrow-right"></i>{% endif %}
+      </button>
+      <p class="kk-auth-foot-note">
+        Already have an account? <a href="{% url 'accounts:login' %}" class="text-light">Log in</a>
+      </p>
+    </form>
+  </aside>
+</div>
 {% endblock %}

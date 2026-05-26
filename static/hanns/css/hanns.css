@@ -1114,3 +1114,7 @@ input[type=range]{width:100%;accent-color:var(--signal)}
 .stage .drawer .drawer-head{position:sticky;top:0;z-index:2;background:var(--ink-2);}
 .stage .drawer .drawer-body{position:relative;z-index:1;}
 .top-options-panel{z-index:2147483000!important;}
+
+
+.phone-brandline{display:flex;align-items:center;justify-content:center;gap:.55rem;margin-bottom:.75rem;color:#b9c2e7;}
+.phone-brandline small{font-family:var(--font-mono,monospace);font-size:.62rem;text-transform:uppercase;letter-spacing:.16em;color:#aeb8de;}

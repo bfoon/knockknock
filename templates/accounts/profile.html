@@ -1,14 +1,36 @@
 {% extends "base.html" %}
 {% block title %}Profile · Knock-Knock{% endblock %}
+{% block body_class %}kk-page-profile{% endblock %}
 
 {% block content %}
-<div class="kk-main-narrow mx-auto">
-  <h1 class="mb-4">Your profile</h1>
-  <form method="post" enctype="multipart/form-data" class="kk-card">
+<div class="kk-profile-shell">
+  <section class="kk-profile-hero">
+    <span class="kk-auth-kicker"><i class="bi bi-person-badge"></i> Profile studio</span>
+    <h1 class="kk-auth-title">Your Knock-Knock<br><span class="kk-gradient-text">identity.</span></h1>
+    <p class="kk-auth-copy">Keep your profile and organization branding ready for presentations, games, teams, HANNS, Boardly and attendance sessions.</p>
+    <div class="kk-auth-badges">
+      <span class="kk-auth-badge kk-auth-badge--hot">Brand ready</span>
+      <span class="kk-auth-badge">Secure account</span>
+      <span class="kk-auth-badge">Presentation profile</span>
+    </div>
+    <div class="kk-profile-metric-grid">
+      <div class="kk-profile-metric"><strong>Live</strong><span>Polls, quizzes and sessions</span></div>
+      <div class="kk-profile-metric"><strong>HANNS</strong><span>Creative guidance built in</span></div>
+      <div class="kk-profile-metric"><strong>QR</strong><span>Fast audience joining</span></div>
+      <div class="kk-profile-metric"><strong>Team</strong><span>Collaboration workspace</span></div>
+    </div>
+  </section>
+
+  <form method="post" enctype="multipart/form-data" class="kk-card kk-profile-card">
     {% csrf_token %}
+    <div class="kk-auth-panel-head">
+      <span class="kk-auth-kicker"><i class="bi bi-pencil-square"></i> Edit profile</span>
+      <h2 class="kk-auth-panel-title mt-3">Your profile</h2>
+      <p class="kk-auth-panel-sub">Update your details and logo.</p>
+    </div>
     {% if profile.logo %}
-      <div class="mb-3 text-center">
-        <img src="{{ profile.logo.url }}" alt="logo" style="max-height:80px; border-radius:12px;">
+      <div class="kk-profile-logo-preview">
+        <img src="{{ profile.logo.url }}" alt="Profile logo">
       </div>
     {% endif %}
     {% for field in form %}
@@ -19,7 +41,7 @@
         {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors|join:", " }}</div>{% endif %}
       </div>
     {% endfor %}
-    <button class="kk-btn kk-btn-primary">Save</button>
+    <button class="kk-btn kk-btn-primary kk-btn-lg w-100">Save profile <i class="bi bi-check2-circle"></i></button>
   </form>
 </div>
 {% endblock %}

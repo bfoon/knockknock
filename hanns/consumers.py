@@ -137,11 +137,22 @@ class PresentConsumer(AsyncWebsocketConsumer):
             return
         if not await self._reactions_allowed():
             return
-        # Fan the reaction out to every screen on this deck — the presenter
-        # stage floats it up; other phones can ignore it.
+
+        # Always fan out the reaction. A previous build called
+        # _record_reaction() but did not define it, which stopped BOTH the
+        # floating emoji and the counter. This version records when the DB
+        # table exists and safely falls back to in-memory counts if migrations
+        # have not run yet.
+        try:
+            counts = await self._record_reaction(emoji)
+            if not counts:
+                counts = self._memory_reaction_counts(emoji)
+        except Exception:
+            counts = self._memory_reaction_counts(emoji)
+
         await self.channel_layer.group_send(self.group, {
             "type": "fanout",
-            "payload": {"type": "reaction", "emoji": emoji},
+            "payload": {"type": "reaction", "emoji": emoji, "reaction_counts": counts},
         })
 
     async def _handle_goto(self, data):
@@ -207,6 +218,13 @@ class PresentConsumer(AsyncWebsocketConsumer):
     # caveat Boardly's participant count carries. Promote to a Redis/db
     # counter if you run multiple workers and need a global figure.
     _counts = {}
+    _reaction_counts_memory = {}
+
+    def _memory_reaction_counts(self, emoji=None):
+        bucket = PresentConsumer._reaction_counts_memory.setdefault(self.code, {})
+        if emoji:
+            bucket[emoji] = int(bucket.get(emoji, 0)) + 1
+        return dict(bucket)
 
     async def _bump_participants(self, delta):
         PresentConsumer._counts[self.code] = max(
@@ -258,6 +276,50 @@ class PresentConsumer(AsyncWebsocketConsumer):
         return slides[index].as_dict()
 
     @sync_to_async
+    def _record_reaction(self, emoji):
+        """Persist one reaction and return the latest totals.
+
+        This method is intentionally defensive: if the DeckReaction table has
+        not been migrated yet, the caller falls back to in-memory counts instead
+        of breaking live reactions.
+        """
+        from django.db.models import Count
+        from .models import Deck, DeckReaction
+
+        d = Deck.objects.filter(code=self.code).first()
+        if not d:
+            return {}
+
+        DeckReaction.objects.create(
+            deck=d,
+            emoji=emoji,
+            slide_index=max(0, int(getattr(d, "current_slide", 0) or 0)),
+            nick=(self.nick or "Guest")[:80],
+        )
+
+        return {
+            row["emoji"]: int(row["total"] or 0)
+            for row in DeckReaction.objects.filter(deck=d)
+            .values("emoji")
+            .annotate(total=Count("id"))
+        }
+
+    @sync_to_async
+    def _reaction_counts(self):
+        from django.db.models import Count
+        from .models import Deck, DeckReaction
+
+        d = Deck.objects.filter(code=self.code).first()
+        if not d:
+            return {}
+        return {
+            row["emoji"]: int(row["total"] or 0)
+            for row in DeckReaction.objects.filter(deck=d)
+            .values("emoji")
+            .annotate(total=Count("id"))
+        }
+
+    @sync_to_async
     def _control_pin(self):
         total = sum((i + 1) * ord(ch) for i, ch in enumerate(self.code or "HANNS"))
         return str(1000 + (total % 9000))
@@ -282,10 +344,20 @@ class PresentConsumer(AsyncWebsocketConsumer):
 
     @sync_to_async
     def _snapshot(self):
-        from .models import Deck
+        from django.db.models import Count
+        from .models import Deck, DeckReaction
         d = Deck.objects.filter(code=self.code).first()
         if not d:
             return {"type": "state"}
+        try:
+            reaction_counts = {
+                row["emoji"]: int(row["total"] or 0)
+                for row in DeckReaction.objects.filter(deck=d)
+                .values("emoji")
+                .annotate(total=Count("id"))
+            }
+        except Exception:
+            reaction_counts = dict(PresentConsumer._reaction_counts_memory.get(self.code, {}))
         return {
             "type": "state",
             "code": d.code,
@@ -294,4 +366,5 @@ class PresentConsumer(AsyncWebsocketConsumer):
             "allow_reactions": d.allow_reactions,
             "live": d.state == "live",
             "count": PresentConsumer._counts.get(self.code, 0),
+            "reaction_counts": reaction_counts,
         }

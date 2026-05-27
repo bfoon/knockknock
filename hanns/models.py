@@ -208,3 +208,26 @@ class DeckInvite(models.Model):
         self.save(update_fields=["status", "accepted_by", "accepted_at"])
         return collab
 
+
+
+
+class DeckReaction(models.Model):
+    """One audience emoji reaction recorded during a Hanns presentation."""
+
+    deck = models.ForeignKey(
+        Deck, on_delete=models.CASCADE, related_name="deck_reactions",
+    )
+    emoji = models.CharField(max_length=16)
+    slide_index = models.PositiveIntegerField(default=0)
+    nick = models.CharField(max_length=80, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["deck", "emoji"]),
+            models.Index(fields=["deck", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.emoji} on {self.deck} at slide {self.slide_index + 1}"

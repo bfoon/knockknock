@@ -36,7 +36,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 from django.utils import timezone
 
-from .models import Deck, Slide, DeckCollaborator, DeckInvite
+from .models import Deck, Slide, DeckCollaborator, DeckInvite, DeckReaction
 from .onboarding import ensure_hanns_starter_deck
 from .powerpoint_importer import import_powerpoint_into_deck
 
@@ -278,6 +278,7 @@ def deck_image_upload(request, code):
         "path": saved_path,
     })
 
+
 @login_required
 @require_POST
 def deck_powerpoint_import(request, code):
@@ -332,7 +333,6 @@ def deck_import_powerpoint_new(request):
 
     messages.success(request, "PowerPoint imported into Hanns.")
     return redirect("hanns:edit", code=deck.code)
-
 
 
 @login_required
@@ -433,6 +433,10 @@ def deck_present(request, code):
     # Entering the stage flips the deck live so audience reactions are
     # accepted; deck_set_state(ended) closes it again.
     if deck.state != "live":
+        # Fresh presentation run: clear previous emoji totals so the small
+        # presenter counter starts at zero for this live session. The actual
+        # new reactions will be recorded again by the WebSocket consumer.
+        DeckReaction.objects.filter(deck=deck).delete()
         deck.state = "live"
         deck.save(update_fields=["state"])
     return render(request, "hanns/present.html", {
@@ -475,6 +479,8 @@ def deck_set_state(request, code):
     deck = get_object_or_404(Deck, code=code.upper(), owner=request.user)
     state = request.POST.get("state")
     if state in dict(Deck.STATE_CHOICES):
+        if state == "live" and deck.state != "live":
+            DeckReaction.objects.filter(deck=deck).delete()
         deck.state = state
         deck.save(update_fields=["state"])
     return JsonResponse({"ok": True, "state": deck.state})

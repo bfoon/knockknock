@@ -9,6 +9,7 @@ const DECK = CFG.deck || {slides:[], code:"------", title:"Untitled"};
 const $ = (s)=>document.querySelector(s);
 const pCanvas = $("#present-canvas");
 const emojiLayer = $("#emoji-layer");
+const reactionCounter = $("#reaction-counter");
 let pointerLayer = $("#pointer-layer");
 if(!pointerLayer){
   pointerLayer = document.createElement("div");
@@ -21,6 +22,48 @@ let suppressBroadcast = false;
 let wakeLock = null;
 let wakeWanted = true;
 let wakeRetryTimer = null;
+const localReactionCounts = {};
+function normalizeReactionCounts(counts){
+  if(!counts)return {};
+  if(Array.isArray(counts)){
+    return counts.reduce((acc,row)=>{
+      const emoji = row && (row.emoji || row.name || row.key);
+      const n = Number(row && (row.count || row.total || row.value));
+      if(emoji && Number.isFinite(n) && n > 0)acc[emoji]=n;
+      return acc;
+    },{});
+  }
+  if(typeof counts === "object"){
+    return Object.keys(counts).reduce((acc,k)=>{
+      const n = Number(counts[k]);
+      if(k && Number.isFinite(n) && n > 0)acc[k]=n;
+      return acc;
+    },{});
+  }
+  return {};
+}
+function renderReactionCounts(counts){
+  if(!reactionCounter)return;
+  const clean = normalizeReactionCounts(counts);
+  Object.keys(clean).forEach(k=>{ localReactionCounts[k] = clean[k]; });
+  const rows = Object.entries(localReactionCounts)
+    .filter(([,n])=>Number(n)>0)
+    .sort((a,b)=>b[1]-a[1]);
+  reactionCounter.innerHTML = "";
+  reactionCounter.classList.toggle("has-counts", rows.length > 0);
+  if(!rows.length)return;
+  rows.slice(0,12).forEach(([emoji,count])=>{
+    const chip = document.createElement("span");
+    chip.className = "reaction-count-chip";
+    chip.innerHTML = `<span class="reaction-count-emoji">${emoji}</span><b>${count}</b>`;
+    reactionCounter.appendChild(chip);
+  });
+}
+function incrementReactionCount(emoji){
+  if(!emoji)return;
+  localReactionCounts[emoji] = Number(localReactionCounts[emoji] || 0) + 1;
+  renderReactionCounts(localReactionCounts);
+}
 
 function fit(){
   if(!pCanvas)return;
@@ -137,7 +180,7 @@ document.addEventListener("visibilitychange",()=>{
 });
 document.addEventListener("fullscreenchange",()=>{updateFullscreenButton();fit();keepScreenAwake("fullscreenchange");});
 
-const Live={sock:null,retry:0,start(){if(!CFG.wsUrl)return;try{this.sock=new WebSocket(CFG.wsUrl);}catch(e){return;}this.sock.addEventListener("open",()=>{this.retry=0;this.send({type:"presenter_hello"});keepScreenAwake("websocket-open");});this.sock.addEventListener("message",ev=>{let m;try{m=JSON.parse(ev.data);}catch(e){return;}if(m.type==="reaction")spawnEmoji(m.emoji);else if(m.type==="participants")setCount(m.count);else if(m.type==="state"&&typeof m.count==="number")setCount(m.count);else if(m.type==="goto"&&typeof m.index==="number"){keepScreenAwake("phone-controller");if(m.index!==i){suppressBroadcast=true;show(m.index,false);suppressBroadcast=false;}}else if(m.type==="pointer"){showPointer(m.x,m.y);}});this.sock.addEventListener("close",()=>{if(this.retry++>6)return;setTimeout(()=>this.start(),Math.min(800*this.retry,5000));});},send(o){if(this.sock&&this.sock.readyState===1)this.sock.send(JSON.stringify(o));},goto(idx){this.send({type:"goto",index:idx});},stop(){if(this.sock){try{this.sock.close();}catch(e){}}this.sock=null;}};
+const Live={sock:null,retry:0,start(){if(!CFG.wsUrl)return;try{this.sock=new WebSocket(CFG.wsUrl);}catch(e){return;}this.sock.addEventListener("open",()=>{this.retry=0;this.send({type:"presenter_hello"});keepScreenAwake("websocket-open");});this.sock.addEventListener("message",ev=>{let m;try{m=JSON.parse(ev.data);}catch(e){return;}if(m.type==="reaction"){spawnEmoji(m.emoji);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);else incrementReactionCount(m.emoji);}else if(m.type==="participants")setCount(m.count);else if(m.type==="state"){if(typeof m.count==="number")setCount(m.count);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);}else if(m.type==="goto"&&typeof m.index==="number"){keepScreenAwake("phone-controller");if(m.index!==i){suppressBroadcast=true;show(m.index,false);suppressBroadcast=false;}}else if(m.type==="pointer"){showPointer(m.x,m.y);}});this.sock.addEventListener("close",()=>{if(this.retry++>6)return;setTimeout(()=>this.start(),Math.min(800*this.retry,5000));});},send(o){if(this.sock&&this.sock.readyState===1)this.sock.send(JSON.stringify(o));},goto(idx){this.send({type:"goto",index:idx});},stop(){if(this.sock){try{this.sock.close();}catch(e){}}this.sock=null;}};
 function setCount(n){const el=$("#aud-count");if(el)el.textContent=n;}
 function makeQR(box,text,size=180){if(!box||typeof QRCode==="undefined"||!text)return;box.innerHTML="";new QRCode(box,{text:text,width:size,height:size,colorDark:"#111827",colorLight:"#ffffff",correctLevel:QRCode.CorrectLevel.H});}
 function drawQRs(){makeQR($("#present-qr"),CFG.joinUrl,84);makeQR($("#qr-modal-code"),CFG.joinUrl,220);makeQR($("#controller-modal-qr"),CFG.controlUrl+(CFG.controlPin?`?pin=${encodeURIComponent(CFG.controlPin)}`:""),220);}
@@ -172,7 +215,7 @@ function init(){
   const cTitle=$("#controller-modal-title");if(cTitle)cTitle.textContent=DECK.title||"Hanns presentation";
   const cPin=$("#controller-pin");if(cPin)cPin.textContent=CFG.controlPin||"----";
   const cUrl=$("#controller-url");if(cUrl)cUrl.textContent=(CFG.controlUrl||"").replace(/^https?:\/\//,"");
-  drawQRs();ensureControllerQrFallback();fit();show(i,false);Live.start();keepScreenAwake("presentation-start");
+  drawQRs();ensureControllerQrFallback();renderReactionCounts(CFG.reactionCounts || DECK.reaction_counts || {});fit();show(i,false);Live.start();keepScreenAwake("presentation-start");
   $("#pp-prev")?.addEventListener("click",()=>show(i-1));
   $("#pp-next")?.addEventListener("click",()=>show(i+1));
   $("#present-exit")?.addEventListener("click",endPresent);

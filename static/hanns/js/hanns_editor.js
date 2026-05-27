@@ -123,49 +123,25 @@ function updateUndoRedoButtons(){
   if(rb){rb.disabled=redoStack.length===0;rb.title="Redo (Ctrl+Y or Ctrl+Shift+Z)";}
   updateBindButtons();
 }
-function hannsClipboardPayload(payload){
-  return JSON.stringify({__hanns:true,version:1,...deepClone(payload)});
-}
 function writeInternalClipboard(payload){
   internalClipboard=deepClone(payload);
   // Best-effort system clipboard so copy/paste can work between tabs. Browser
-  // permissions may block this; the internal clipboard still works. The real
-  // copy event below also writes this synchronously with clipboardData, which
-  // is more reliable for formatted text objects.
-  try{navigator.clipboard?.writeText?.(hannsClipboardPayload(payload));}catch(_){}
-}
-function payloadFromElements(els){
-  if(!Array.isArray(els)||!els.length)return null;
-  return els.length>1 ? {kind:"elements",elements:els} : {kind:"element",element:els[0]};
-}
-function parseHannsPayload(raw){
-  if(!raw)return null;
-  try{
-    const parsed=JSON.parse(raw);
-    if(parsed&&parsed.__hanns&&parsed.kind==="element"&&parsed.element)return parsed;
-    if(parsed&&parsed.__hanns&&parsed.kind==="elements"&&Array.isArray(parsed.elements))return parsed;
-  }catch(_){}
-  return null;
-}
-function pasteHannsPayload(parsed){
-  if(!parsed)return false;
-  if(parsed.kind==="element"&&parsed.element)return pasteElement(parsed.element);
-  if(parsed.kind==="elements"&&Array.isArray(parsed.elements))return pasteElements(parsed.elements);
-  return false;
+  // permissions may block this; the internal clipboard still works.
+  try{navigator.clipboard?.writeText?.(JSON.stringify({__hanns:true,...payload}));}catch(_){}
 }
 function copySelected(){
   const els=selectedElements();
   if(!els.length){toast("Select an object first");return false;}
-  const payload=payloadFromElements(els);
-  writeInternalClipboard(payload);
+  if(els.length>1)writeInternalClipboard({kind:"elements",elements:els});
+  else writeInternalClipboard({kind:"element",element:els[0]});
   toast(els.length>1?`Copied ${els.length} objects`:"Copied");
   return true;
 }
 function cutSelected(){
   const els=selectedElements();
   if(!els.length){toast("Select an object first");return false;}
-  const payload=payloadFromElements(els);
-  writeInternalClipboard(payload);
+  if(els.length>1)writeInternalClipboard({kind:"elements",elements:els});
+  else writeInternalClipboard({kind:"element",element:els[0]});
   deleteSelected();
   toast(els.length>1?`Cut ${els.length} objects`:"Cut");
   return true;
@@ -173,8 +149,14 @@ function cutSelected(){
 async function pasteFromSystemText(){
   try{
     const txt=await navigator.clipboard?.readText?.();
-    const parsed=parseHannsPayload(txt);
-    if(parsed)return pasteHannsPayload(parsed);
+    if(!txt)return false;
+    const parsed=JSON.parse(txt);
+    if(parsed&&parsed.__hanns&&parsed.kind==="element"&&parsed.element){
+      pasteElement(parsed.element);return true;
+    }
+    if(parsed&&parsed.__hanns&&parsed.kind==="elements"&&Array.isArray(parsed.elements)){
+      pasteElements(parsed.elements);return true;
+    }
   }catch(_){}
   return false;
 }
@@ -215,49 +197,6 @@ async function pasteFromSystemRich(){
     }
   }catch(_){ }
   return false;
-}
-function cssValue(style, prop){
-  const m=(style||"").match(new RegExp(prop+"\\s*:\\s*([^;]+)","i"));
-  return m?m[1].trim():"";
-}
-function richTextElementFromHtml(html, plain){
-  if(!html||!plain)return null;
-  try{
-    const doc=new DOMParser().parseFromString(html,"text/html");
-    const root=doc.body;
-    if(!root||root.querySelector("img"))return null;
-    const source=root.querySelector("[style],b,strong,i,em,h1,h2,h3,p,div,span")||root;
-    const inline=source.getAttribute?source.getAttribute("style")||"":"";
-    const rawText=(root.innerText||root.textContent||plain||"").replace(/\n{3,}/g,"\n\n").trim();
-    if(!rawText)return null;
-    const size=parseInt(cssValue(inline,"font-size"),10);
-    const color=cssValue(inline,"color")||cssValue(inline,"-webkit-text-fill-color")||"#16140f";
-    const fam=cssValue(inline,"font-family")||'"Inter",sans-serif';
-    const weight=cssValue(inline,"font-weight")||(root.querySelector("b,strong")?"700":"600");
-    const align=cssValue(inline,"text-align")||"left";
-    const italic=!!root.querySelector("i,em") || /font-style\s*:\s*italic/i.test(inline);
-    return makeText({
-      x:W/2-240,y:H/2-70,w:480,h:150,
-      text:rawText.slice(0,3000),
-      font:fam,
-      size:Number.isFinite(size)?clamp(size,14,96):34,
-      color:color||"#16140f",
-      weight:String(weight||"600").includes("bold")?700:(parseInt(weight,10)||600),
-      italic,
-      align:["left","center","right"].includes(String(align).toLowerCase())?String(align).toLowerCase():"left"
-    });
-  }catch(_){return null;}
-}
-function pasteFormattedTextObjectFromHtml(html, plain){
-  const el=richTextElementFromHtml(html, plain);
-  if(!el)return false;
-  curSlide().els.push(el);
-  multiSel.clear();
-  Deck.sel=el.id;
-  renderAll();
-  markDirty();
-  toast("Pasted formatted text");
-  return true;
 }
 async function pasteClipboard(){
   // Prefer the system clipboard first. This lets copied images/text/URLs from
@@ -1494,6 +1433,69 @@ function openDrawer(which){closeDrawers();const d=$("#drawer-"+which);if(d)d.cla
 function closeDrawers(){$$(".drawer").forEach(d=>d.classList.remove("open"));
   $("#rail-tpl")?.classList.remove("active");$("#rail-bg")?.classList.remove("active");$("#rail-obj")?.classList.remove("active");$("#rail-shape")?.classList.remove("active");}
 
+
+/* ════════════════════════════════════════════════════════════════════
+   POWERPOINT IMPORT
+   ════════════════════════════════════════════════════════════════════ */
+function applyImportedDeckPayload(deck){
+  if(!deck || !Array.isArray(deck.slides))return false;
+  historyLocked=true;
+  Deck.title=deck.title||Deck.title||"Imported PowerPoint";
+  Deck.code=deck.code||Deck.code;
+  Deck.slides=deck.slides.map(s=>Object.assign(newSlide(),{
+    id:String(s.id||uid()),
+    bg:s.bg||"#f6f1e7",
+    bgSize:s.bgSize||null,
+    bgFx:s.bgFx||"none",
+    transition:s.transition||"fade",
+    notes:s.notes||"",
+    els:(s.els||[]).map(e=>Object.assign({},e)),
+  }));
+  if(!Deck.slides.length)Deck.slides=[newSlide()];
+  Deck.cur=0;
+  Deck.sel=null;
+  multiSel.clear();
+  const title=$("#deck-title"); if(title) title.value=Deck.title;
+  renderAll();
+  resetHistory();
+  historyLocked=false;
+  updateSaveState("saved");
+  broadcastDeckSaved();
+  return true;
+}
+async function importPowerPointFile(file){
+  if(!file)return;
+  if(!SRV.powerpointImportUrl){toast("PowerPoint import URL is missing");return;}
+  const name=String(file.name||"").toLowerCase();
+  if(!/\.(pptx?|ppsx?)$/.test(name)){
+    toast("Choose a .ppt or .pptx file");
+    return;
+  }
+  const ok=confirm("Import this PowerPoint into the current Hanns deck? This will replace the current slides in this deck.");
+  if(!ok)return;
+  const oldState=$("#btn-import-powerpoint")?.textContent;
+  updateSaveState("saving");
+  toast("Importing PowerPoint…");
+  const fd=new FormData();
+  fd.append("powerpoint",file,file.name||"presentation.pptx");
+  try{
+    const r=await fetch(SRV.powerpointImportUrl,{method:"POST",headers:{"X-CSRFToken":SRV.csrftoken||""},body:fd});
+    let data=null;try{data=await r.json();}catch(_){ }
+    if(!r.ok || !data || !data.ok)throw new Error((data&&data.error)||("PowerPoint import failed "+r.status));
+    if(applyImportedDeckPayload(data.deck)){
+      const count=data.slide_count || (data.deck&&data.deck.slides?data.deck.slides.length:0);
+      toast(`PowerPoint imported · ${count} slide${count===1?"":"s"}`);
+      if(Array.isArray(data.warnings)&&data.warnings.length)console.warn("Hanns PowerPoint import warnings",data.warnings);
+    }
+  }catch(err){
+    console.error(err);
+    updateSaveState("error");
+    toast(err&&err.message?err.message:"Could not import PowerPoint");
+  }finally{
+    const input=$("#ppt-import-input"); if(input)input.value="";
+  }
+}
+
 /* ════════════════════════════════════════════════════════════════════
    EXPORT (save / standalone html)
    ════════════════════════════════════════════════════════════════════ */
@@ -1798,6 +1800,10 @@ function init(){
   $("#btn-redo")&&$("#btn-redo").addEventListener("click",redo);
   $("#btn-duplicate-slide")&&$("#btn-duplicate-slide").addEventListener("click",()=>duplicateSlide(Deck.cur));
 
+  // PowerPoint import
+  $("#btn-import-powerpoint")&&$("#btn-import-powerpoint").addEventListener("click",()=>{$("#ppt-import-input")?.click();});
+  $("#ppt-import-input")&&$("#ppt-import-input").addEventListener("change",e=>importPowerPointFile(e.target.files&&e.target.files[0]));
+
   // export
   $("#btn-export")&&$("#btn-export").addEventListener("click",()=>{$("#export-deckname").textContent=Deck.title;$("#export-modal").classList.add("on");});
   $$("[data-close-modal]").forEach(b=>b.addEventListener("click",()=>$("#export-modal").classList.remove("on")));
@@ -1815,15 +1821,8 @@ function init(){
 
     if(mod&&key==="z"){e.preventDefault();e.shiftKey?redo():undo();return;}
     if(mod&&key==="y"){e.preventDefault();redo();return;}
-    if(mod&&key==="c"){
-      // Let the native copy event fire so we can write Hanns object JSON to
-      // clipboardData synchronously. This preserves formatted text objects.
-      return;
-    }
-    if(mod&&key==="x"){
-      // Same for cut: the cut event writes the payload then removes objects.
-      return;
-    }
+    if(mod&&key==="c"){e.preventDefault();copySelected();return;}
+    if(mod&&key==="x"){e.preventDefault();cutSelected();return;}
     if(mod&&key==="v"){
       // Do not intercept Ctrl/Cmd+V here. Let the real browser `paste` event
       // run first so images/files/HTML/image URLs copied from outside Hanns can
@@ -1850,56 +1849,12 @@ function init(){
       else if(e.key==="ArrowLeft")gotoSlide(Deck.cur-1);
     }
   });
-  document.addEventListener("copy",e=>{
-    const tag=(e.target.tagName||"").toLowerCase();
-    const editing=e.target.isContentEditable||tag==="input"||tag==="textarea"||tag==="select";
-    if(editing)return;
-    const els=selectedElements();
-    if(!els.length)return;
-    const payload=payloadFromElements(els);
-    internalClipboard=deepClone(payload);
-    const raw=hannsClipboardPayload(payload);
-    try{
-      e.clipboardData.setData("application/x-hanns-elements",raw);
-      e.clipboardData.setData("text/plain",raw);
-      e.preventDefault();
-      toast(els.length>1?`Copied ${els.length} objects`:"Copied");
-    }catch(_){
-      writeInternalClipboard(payload);
-    }
-  });
-  document.addEventListener("cut",e=>{
-    const tag=(e.target.tagName||"").toLowerCase();
-    const editing=e.target.isContentEditable||tag==="input"||tag==="textarea"||tag==="select";
-    if(editing)return;
-    const els=selectedElements();
-    if(!els.length)return;
-    const payload=payloadFromElements(els);
-    internalClipboard=deepClone(payload);
-    const raw=hannsClipboardPayload(payload);
-    try{
-      e.clipboardData.setData("application/x-hanns-elements",raw);
-      e.clipboardData.setData("text/plain",raw);
-      e.preventDefault();
-      deleteSelected();
-      toast(els.length>1?`Cut ${els.length} objects`:"Cut");
-    }catch(_){
-      cutSelected();
-    }
-  });
   document.addEventListener("paste",async e=>{
     const tag=(e.target.tagName||"").toLowerCase();
     const editing=e.target.isContentEditable||tag==="input"||tag==="textarea"||tag==="select";
     if(editing)return;
     const cd=e.clipboardData;
     if(!cd)return;
-    const hannsRaw=cd.getData("application/x-hanns-elements")||"";
-    const hannsParsed=parseHannsPayload(hannsRaw);
-    if(hannsParsed){
-      e.preventDefault();
-      pasteHannsPayload(hannsParsed);
-      return;
-    }
     const items=[...(cd.items||[])];
     const files=[...(cd.files||[])].filter(isImageFile);
     const itemFiles=items.map(it=>it.type&&it.type.startsWith("image/")?it.getAsFile():null).filter(isImageFile);
@@ -1922,20 +1877,19 @@ function init(){
     }
     const txt=cd.getData("text/plain");
     if(txt){
-      const parsed=parseHannsPayload(txt);
-      if(parsed){
-        e.preventDefault();
-        pasteHannsPayload(parsed);
-        return;
-      }
+      try{
+        const parsed=JSON.parse(txt);
+        if(parsed&&parsed.__hanns&&parsed.kind==="element"&&parsed.element){
+          e.preventDefault();pasteElement(parsed.element);return;
+        }
+        if(parsed&&parsed.__hanns&&parsed.kind==="elements"&&Array.isArray(parsed.elements)){
+          e.preventDefault();pasteElements(parsed.elements);return;
+        }
+      }catch(_){}
       const trimmed=txt.trim();
       if(isLikelyImageUrl(trimmed)){
         e.preventDefault();
         await addImageUrls([trimmed]);
-        return;
-      }
-      if(html&&pasteFormattedTextObjectFromHtml(html, trimmed)){
-        e.preventDefault();
         return;
       }
       // Plain copied text becomes a text box when pasted onto the slide.

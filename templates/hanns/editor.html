@@ -154,6 +154,10 @@ body.hanns-options-open .drawer{
           <span>Invite editors</span>
         </button>
         {% endif %}
+        <button class="option-item" id="btn-import-powerpoint" type="button" role="menuitem" title="Import a PowerPoint file into this Hanns deck">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m8 14 4-4 4 4"/></svg>
+          <span>Import PowerPoint</span>
+        </button>
         <button class="option-item" id="btn-export" type="button" role="menuitem">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
           <span>Export</span>
@@ -310,6 +314,9 @@ body.hanns-options-open .drawer{
 </div>
 {% endif %}
 
+
+<input type="file" id="ppt-import-input" class="hidden" accept=".ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation">
+
 <div class="modal" id="export-modal" aria-hidden="true">
   <div class="modal-card">
     <button class="modal-x" data-close-modal type="button">✕</button>
@@ -325,6 +332,7 @@ body.hanns-options-open .drawer{
     deck: {{ deck_json|safe }},
     saveUrl: "{% url 'hanns:save' deck.code %}",
     imageUploadUrl: "{% url 'hanns:image_upload' deck.code %}",
+    powerpointImportUrl: "{% url 'hanns:powerpoint_import' deck.code %}",
     presentUrl: "{% url 'hanns:present' deck.code %}",
     inviteUrl: "{% url 'hanns:invite' deck.code %}",
     editorWsUrl: (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/hanns/{{ deck.code }}/",

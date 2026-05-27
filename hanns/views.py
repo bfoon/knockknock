@@ -38,6 +38,7 @@ from django.utils import timezone
 
 from .models import Deck, Slide, DeckCollaborator, DeckInvite
 from .onboarding import ensure_hanns_starter_deck
+from .powerpoint_importer import import_powerpoint_into_deck
 
 
 def _join_url(request, deck):
@@ -276,6 +277,62 @@ def deck_image_upload(request, code):
         "url": request.build_absolute_uri(url),
         "path": saved_path,
     })
+
+@login_required
+@require_POST
+def deck_powerpoint_import(request, code):
+    """
+    Import a PowerPoint file into the current Hanns deck.
+
+    The importer converts PPT/PPTX slides into Hanns JSON slides so the user
+    can keep editing text, images, shapes and animations inside the editor.
+    Uploaded media is stored as normal media files; the slide JSON stores only
+    URLs so autosave remains small.
+    """
+    deck, denied = _editable_deck_or_403(request, code)
+    if denied:
+        return denied
+
+    upload = request.FILES.get("powerpoint") or request.FILES.get("file") or request.FILES.get("ppt")
+    if not upload:
+        return JsonResponse({"ok": False, "error": "No PowerPoint file was uploaded."}, status=400)
+
+    try:
+        result = import_powerpoint_into_deck(request=request, deck=deck, uploaded_file=upload, replace=True)
+    except Exception as exc:
+        return JsonResponse({
+            "ok": False,
+            "error": str(exc) or "PowerPoint import failed.",
+        }, status=400)
+
+    return JsonResponse({
+        "ok": True,
+        "deck": deck.as_dict(),
+        "slide_count": deck.slides.count(),
+        "warnings": result.get("warnings", []),
+    })
+
+
+@login_required
+@require_POST
+def deck_import_powerpoint_new(request):
+    """Create a brand-new Hanns deck directly from an uploaded PPT/PPTX file."""
+    upload = request.FILES.get("powerpoint") or request.FILES.get("file") or request.FILES.get("ppt")
+    if not upload:
+        messages.error(request, "Please choose a PowerPoint file to import.")
+        return redirect("hanns:list")
+
+    deck = Deck.objects.create(owner=request.user, title="Imported PowerPoint", state="draft")
+    try:
+        import_powerpoint_into_deck(request=request, deck=deck, uploaded_file=upload, replace=True)
+    except Exception as exc:
+        deck.delete()
+        messages.error(request, str(exc) or "PowerPoint import failed.")
+        return redirect("hanns:list")
+
+    messages.success(request, "PowerPoint imported into Hanns.")
+    return redirect("hanns:edit", code=deck.code)
+
 
 
 @login_required

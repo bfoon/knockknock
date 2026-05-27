@@ -35,10 +35,12 @@ urlpatterns = [
     # ── Literal / specific routes first ──────────────────────────────
     path("", views.deck_list, name="list"),
     path("new/", views.deck_create, name="create"),
+    path("import-powerpoint/", views.deck_import_powerpoint_new, name="import_powerpoint_new"),
 
     path("<str:code>/edit/", views.deck_edit, name="edit"),
     path("<str:code>/save/", views.deck_save, name="save"),
     path("<str:code>/image-upload/", views.deck_image_upload, name="image_upload"),
+    path("<str:code>/powerpoint-import/", views.deck_powerpoint_import, name="powerpoint_import"),
     path("invite/<uuid:token>/accept/", views.deck_accept_invite, name="accept_invite"),
     path("<str:code>/present/", views.deck_present, name="present"),
     path("<str:code>/control/", views.deck_control, name="control"),

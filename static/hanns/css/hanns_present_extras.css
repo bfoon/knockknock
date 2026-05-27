@@ -65,3 +65,73 @@
   .fullscreen-pill{left:12px;top:12px;padding:9px 12px;font-size:.82rem;}
   .wake-pill{left:12px;top:56px;padding:8px 11px;font-size:.68rem;max-width:calc(100vw - 24px);}
 }
+
+
+/* v27 — Clean fullscreen mode
+   When the presenter enters browser fullscreen, hide all projector UI widgets
+   and leave only the fullscreen toggle visible as the exit control. The slide
+   itself, animations, emoji reactions, and phone pointer effects remain visible. */
+#present:fullscreen .wake-pill,
+#present:fullscreen .controller-pill,
+#present:fullscreen .present-badge,
+#present:fullscreen .present-controls,
+#present:fullscreen .present-exit,
+#present:fullscreen .phone-sim,
+#present:fullscreen .present-modal,
+.present:fullscreen .wake-pill,
+.present:fullscreen .controller-pill,
+.present:fullscreen .present-badge,
+.present:fullscreen .present-controls,
+.present:fullscreen .present-exit,
+.present:fullscreen .phone-sim,
+.present:fullscreen .present-modal{
+  display:none!important;
+  opacity:0!important;
+  pointer-events:none!important;
+}
+
+#present:fullscreen .fullscreen-pill,
+.present:fullscreen .fullscreen-pill,
+:fullscreen .fullscreen-pill{
+  display:inline-flex!important;
+  opacity:.92!important;
+  pointer-events:auto!important;
+  z-index:2147483647!important;
+  left:18px!important;
+  top:18px!important;
+  background:linear-gradient(135deg,rgba(220,38,38,.96),rgba(234,88,12,.94))!important;
+  color:#fff!important;
+  border-color:rgba(255,255,255,.28)!important;
+}
+
+#present:fullscreen .fullscreen-pill:hover,
+.present:fullscreen .fullscreen-pill:hover,
+:fullscreen .fullscreen-pill:hover,
+#present:fullscreen .fullscreen-pill:focus-visible,
+.present:fullscreen .fullscreen-pill:focus-visible,
+:fullscreen .fullscreen-pill:focus-visible{
+  opacity:1!important;
+  transform:translateY(-2px)!important;
+  outline:none!important;
+}
+
+/* Hide the same widgets when browsers apply fullscreen to html/body rather than
+   the #present element, or when JS adds a helper class in future versions. */
+:fullscreen .wake-pill,
+:fullscreen .controller-pill,
+:fullscreen .present-badge,
+:fullscreen .present-controls,
+:fullscreen .present-exit,
+:fullscreen .phone-sim,
+:fullscreen .present-modal,
+body.hanns-clean-fullscreen .wake-pill,
+body.hanns-clean-fullscreen .controller-pill,
+body.hanns-clean-fullscreen .present-badge,
+body.hanns-clean-fullscreen .present-controls,
+body.hanns-clean-fullscreen .present-exit,
+body.hanns-clean-fullscreen .phone-sim,
+body.hanns-clean-fullscreen .present-modal{
+  display:none!important;
+  opacity:0!important;
+  pointer-events:none!important;
+}

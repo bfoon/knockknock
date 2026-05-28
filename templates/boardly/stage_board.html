@@ -19,16 +19,16 @@
      data-mode="{{ session.mode }}"
      data-join-url="{{ join_url }}">
 
-  {# ── Top bar ────────────────────────────────────────────────────── #}
+<!--  {# ── Top bar ────────────────────────────────────────────────────── #}-->
   <header class="kk-stage-header kk-board-header">
     <div class="kk-board-left">
-      {# Back to the Knock-Knock dashboard. Kept wide on purpose so the label never overlaps the brand. #}
+<!--      {# Back to the Knock-Knock dashboard. Kept wide on purpose so the label never overlaps the brand. #}-->
       <a href="{% url 'core:dashboard' %}" class="kk-board-dashboard" title="Back to main dashboard">
         <i class="bi bi-grid-1x2"></i>
         <span>Dashboard</span>
       </a>
 
-      {# Flyer-style Boardly mark. Uses one clean brand mark only, so no optional logo can collide with the wordmark. #}
+<!--      {# Flyer-style Boardly mark. Uses one clean brand mark only, so no optional logo can collide with the wordmark. #}-->
       <a href="{% url 'core:home' %}" class="kk-board-brand" title="Knock-Knock home">
         <span class="kk-board-logo-mark" aria-hidden="true">K</span>
         <span class="kk-board-brand-copy">
@@ -44,7 +44,7 @@
 
     <div class="kk-stage-spacer flex-grow-1"></div>
 
-    {# Live stats. #}
+<!--    {# Live stats. #}-->
     <div class="kk-board-stats">
       <span class="kk-board-stat" title="Notes on the board">
         <i class="bi bi-sticky"></i> <b id="stat-notes">0</b>
@@ -54,7 +54,7 @@
       </span>
     </div>
 
-    {# Layout switch — presenter picks per board. #}
+<!--    {# Layout switch — presenter picks per board. #}-->
     <div class="kk-board-layouts" role="group" aria-label="Board layout">
       <button class="kk-board-layout is-active" data-layout="grid"    title="Neat grid"><i class="bi bi-grid-3x3-gap"></i></button>
       <button class="kk-board-layout"           data-layout="masonry" title="Masonry columns"><i class="bi bi-columns-gap"></i></button>
@@ -65,17 +65,17 @@
     <button class="kk-tool" id="btn-moderate" title="Moderation mode"><i class="bi bi-shield-check"></i></button>
     <button class="kk-tool" id="btn-fullscreen" title="Fullscreen"><i class="bi bi-arrows-fullscreen"></i></button>
 
-    {# Open / close the board — the master control participants wait on. #}
+<!--    {# Open / close the board — the master control participants wait on. #}-->
     <button class="kk-btn kk-btn-primary kk-board-power" id="btn-power"
             data-state="{{ session.state }}">
       <i class="bi bi-play-fill"></i> <span id="btn-power-label">Open board</span>
     </button>
   </header>
 
-  {# ── The whiteboard canvas ──────────────────────────────────────── #}
+<!--  {# ── The whiteboard canvas ──────────────────────────────────────── #}-->
   <main class="kk-board-canvas" id="board-canvas">
 
-    {# Decorative whiteboard frame + clip, echoing the illustration. #}
+<!--    {# Decorative whiteboard frame + clip, echoing the illustration. #}-->
     <div class="kk-board-clip" aria-hidden="true"></div>
 
     <div class="kk-board-sheet" id="board-sheet">
@@ -91,11 +91,11 @@
         <div class="kk-board-heading-rule"><i class="bi bi-heart-fill"></i></div>
       </div>
 
-      {# Grouped columns wrapper — shown when the board has topic groups. #}
+<!--      {# Grouped columns wrapper — shown when the board has topic groups. #}-->
       <div class="kk-board-columns" id="board-columns" style="display:none;"></div>
 
-      {# Add-a-column control — JS shows this on the stage only.
-         Visible whenever the presenter wants to extend the board. #}
+<!--      {# Add-a-column control — JS shows this on the stage only.-->
+<!--         Visible whenever the presenter wants to extend the board. #}-->
       <div class="kk-board-addcol" id="board-addcol" style="display:none;">
         <button type="button" class="kk-btn kk-btn-ghost btn-sm" id="addcol-btn">
           <i class="bi bi-plus-lg"></i> Add column
@@ -108,7 +108,7 @@
         </div>
       </div>
 
-      {# Ungrouped notes wrapper — grid / masonry / scatter all render here. #}
+<!--      {# Ungrouped notes wrapper — grid / masonry / scatter all render here. #}-->
       <div class="kk-notes-area layout-grid" id="notes-area">
         <div class="kk-board-empty" id="board-empty">
           <div class="kk-board-empty-emoji">📝</div>
@@ -125,11 +125,11 @@
       </div>
     </div>
 
-    {# Floating reaction bursts land here. #}
+<!--    {# Floating reaction bursts land here. #}-->
     <div class="kk-board-fx" id="board-fx" aria-hidden="true"></div>
   </main>
 
-  {# ── Join panel — QR + code, bottom-left, hideable ──────────────── #}
+<!--  {# ── Join panel — QR + code, bottom-left, hideable ──────────────── #}-->
   <aside class="kk-join-panel" id="join-panel">
     <button class="kk-join-collapse" id="join-collapse" title="Hide / show join panel">
       <i class="bi bi-chevron-down"></i>
@@ -159,11 +159,11 @@
   </div>
 </div>
 
-{# ── Enlarged / designed QR modal ──────────────────────────────────────
-   Opened when the presenter clicks the small QR in the join panel. Shows
-   a big, framed "join card" (board title + QR + code + URL) that can be
-   downloaded as a PNG via the button below it. The downloadable artwork is
-   the #qr-card element; html2canvas renders exactly what's on screen. #}
+<!--{# ── Enlarged / designed QR modal ──────────────────────────────────────-->
+<!--   Opened when the presenter clicks the small QR in the join panel. Shows-->
+<!--   a big, framed "join card" (board title + QR + code + URL) that can be-->
+<!--   downloaded as a PNG via the button below it. The downloadable artwork is-->
+<!--   the #qr-card element; html2canvas renders exactly what's on screen. #}-->
 <dialog id="qr-modal" class="kk-qr-modal">
   <div class="kk-qr-modal-inner">
     <button type="button" class="kk-qr-modal-x" id="qr-modal-close" aria-label="Close">
@@ -191,7 +191,7 @@
   </div>
 </dialog>
 
-{# Per-note moderation popover (cloned by JS). #}
+<!--{# Per-note moderation popover (cloned by JS). #}-->
 <template id="tpl-mod-popover">
   <div class="kk-mod-pop">
     <button data-act="edit"><i class="bi bi-pencil"></i> Edit</button>
@@ -201,8 +201,8 @@
   </div>
 </template>
 
-{# Note editor dialog (shown by JS when the presenter taps Edit, or an
-   author taps one of their own notes). Reuses the compose controls. #}
+<!--{# Note editor dialog (shown by JS when the presenter taps Edit, or an-->
+<!--   author taps one of their own notes). Reuses the compose controls. #}-->
 <dialog id="note-edit-dialog" class="kk-edit-dialog">
   <form method="dialog" class="kk-edit-form" id="note-edit-form">
     <header class="kk-edit-head">

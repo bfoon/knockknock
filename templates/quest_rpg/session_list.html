@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Quest RPG · KnockKnock</title>
-<link rel="stylesheet" href="{% static 'quest_rpg/css/quest_rpg.css' %}?v=1">
+<link rel="stylesheet" href="{% static 'quest_rpg/css/quest_rpg.css' %}?v=5">
 </head>
 <body class="quest-shell">
   <main class="quest-dashboard">
@@ -11,7 +11,7 @@
       <div>
         <div class="kk-mark">🚪 knock·knock</div>
         <h1>Quest RPG</h1>
-        <p>Team quiz adventures through jungle, sea, space, caves, and forests.</p>
+        <p>Self-paced team adventure quizzes through jungle, sea, space, caves, and forests.</p>
       </div>
       <div class="quest-actions">
         <a class="qbtn ghost" href="{% url 'core:dashboard' %}">Dashboard</a>
@@ -38,7 +38,7 @@
       <section class="quest-empty">
         <div class="big">🧭</div>
         <h2>No quests yet</h2>
-        <p>Create your first RPG quiz where teams explore, answer, survive danger, and race toward treasure.</p>
+        <p>Create your first self-paced RPG quiz where each team uses one device, explores, answers, survives danger, and races toward treasure.</p>
         <a class="qbtn primary" href="{% url 'quest_rpg:create' %}">Create your first quest</a>
       </section>
     {% endif %}

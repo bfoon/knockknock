@@ -58,6 +58,7 @@ class QuestSession(models.Model):
     current_question = models.PositiveIntegerField(default=0)
     allow_rejoin = models.BooleanField(default=True)
     show_correct_after_answer = models.BooleanField(default=False)
+    started_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -79,7 +80,7 @@ class QuestSession(models.Model):
     def question_count(self):
         return self.questions.count()
 
-    def as_dict(self):
+    def as_dict(self, include_answers=True):
         return {
             "id": self.id,
             "code": self.code,
@@ -89,7 +90,8 @@ class QuestSession(models.Model):
             "status": self.status,
             "current_question": self.current_question,
             "show_correct_after_answer": self.show_correct_after_answer,
-            "questions": [q.as_dict() for q in self.questions.all()],
+            "started_at": self.started_at.isoformat() if self.started_at else "",
+            "questions": [q.as_dict(include_answer=include_answers) for q in self.questions.all()],
             "teams": [t.as_dict() for t in self.teams.all()],
         }
 
@@ -132,7 +134,7 @@ class QuestQuestion(models.Model):
             "points": self.points,
             "treasure_hint": self.treasure_hint,
             "danger_text": self.danger_text,
-            "explanation": self.explanation,
+            "explanation": self.explanation if include_answer else "",
         }
         if include_answer:
             data["correct_option"] = self.correct_option
@@ -160,6 +162,7 @@ class QuestTeam(models.Model):
     correct_count = models.PositiveIntegerField(default=0)
     wrong_count = models.PositiveIntegerField(default=0)
     progress = models.PositiveIntegerField(default=0)
+    completed_at = models.DateTimeField(null=True, blank=True)
     last_seen_at = models.DateTimeField(default=timezone.now)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -179,6 +182,7 @@ class QuestTeam(models.Model):
             "correct_count": self.correct_count,
             "wrong_count": self.wrong_count,
             "progress": self.progress,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else "",
         }
 
 
@@ -188,6 +192,7 @@ class QuestResponse(models.Model):
     selected_option = models.CharField(max_length=1)
     is_correct = models.BooleanField(default=False)
     points_awarded = models.PositiveIntegerField(default=0)
+    wrong_choices = models.JSONField(default=list, blank=True)
     answered_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -201,5 +206,6 @@ class QuestResponse(models.Model):
             "selected_option": self.selected_option,
             "is_correct": self.is_correct,
             "points_awarded": self.points_awarded,
+            "wrong_choices": self.wrong_choices or [],
             "answered_at": self.answered_at.isoformat(),
         }

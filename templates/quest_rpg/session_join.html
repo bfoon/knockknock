@@ -1,22 +1,29 @@
 {% load static %}<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Join {{ session.title }} · Quest RPG</title><link rel="stylesheet" href="{% static 'quest_rpg/css/quest_rpg.css' %}?v=2"></head>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Join {{ session.title }} · Quest RPG</title>
+<link rel="stylesheet" href="{% static 'quest_rpg/css/quest_rpg.css' %}?v=5">
+</head>
 <body class="quest-phone world-{{ session.world }}">
-<main class="phone-card" id="phone-card">
+<main class="phone-card adventure-phone-card" id="phone-card">
   <section id="join-panel">
     <div class="emoji-orb">🧭</div>
     <h1>{{ session.title }}</h1>
-    <p>Join as a team. Sit together, discuss, and submit one answer for the team.</p>
+    <p>Join as one team. Use this computer or phone as the team device, discuss together, and answer at your own pace.</p>
     <div id="phone-connection-status" class="phone-connection-status">Connecting…</div>
     <label>Team name<input id="team-name" placeholder="Team Lion"></label>
     <label>Avatar<select id="team-avatar"></select></label>
-    <button id="join-team" class="qbtn primary full" type="button">Join adventure</button>
+    <button id="join-team" class="qbtn primary full" type="button">Enter adventure</button>
     <small>Recommended team size: {% if session.team_size %}{{ session.team_size }}{% else %}N / unlimited{% endif %}</small>
   </section>
+
   <section id="play-panel" class="hidden">
-    <div id="phone-connection-status" class="phone-connection-status">Connected</div>
+    <div id="phone-live-status" class="phone-connection-status">Connected</div>
     <div class="phone-team" id="phone-team"></div>
+    <div class="team-adventure-map" id="team-adventure-map"></div>
     <div class="phone-progress" id="phone-progress"></div>
+    <div class="phone-stage-story" id="phone-stage-story"></div>
     <div class="phone-question" id="phone-question"></div>
     <div class="answer-grid" id="answer-grid"></div>
     <div class="phone-feedback" id="phone-feedback"></div>
@@ -33,6 +40,6 @@ window.__QUEST_JOIN__={
   csrf:"{{ csrf_token }}"
 };
 </script>
-<script src="{% static 'quest_rpg/js/quest_core.js' %}?v=2"></script>
-<script src="{% static 'quest_rpg/js/quest_join.js' %}?v=2"></script>
+<script src="{% static 'quest_rpg/js/quest_core.js' %}?v=5"></script>
+<script src="{% static 'quest_rpg/js/quest_join.js' %}?v=5"></script>
 </body></html>

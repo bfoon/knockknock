@@ -2,7 +2,7 @@
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ session.title }} · Quest RPG Editor</title>
-<link rel="stylesheet" href="{% static 'quest_rpg/css/quest_rpg.css' %}?v=1">
+<link rel="stylesheet" href="{% static 'quest_rpg/css/quest_rpg.css' %}?v=5">
 </head>
 <body class="quest-editor-body">
 <header class="quest-editor-bar">
@@ -17,13 +17,13 @@
 <main class="quest-editor">
   <section class="quest-editor-help">
     <h2>Build your adventure</h2>
-    <p>Each question becomes a challenge. Correct answers move teams closer to treasure. Wrong answers trigger danger animation.</p>
+    <p>Each question becomes a self-paced stage. Every team uses one device, answers together, and moves closer to the treasure when they get it right.</p>
     <div class="world-preview" id="world-preview"></div>
   </section>
   <section id="question-list" class="question-list"></section>
 </main>
 <script>window.__QUEST_EDITOR__={session:{{ session_json|safe }},saveUrl:"{% url 'quest_rpg:save' session.code %}",csrf:"{{ csrf_token }}"};</script>
-<script src="{% static 'quest_rpg/js/quest_core.js' %}?v=1"></script>
-<script src="{% static 'quest_rpg/js/quest_edit.js' %}?v=1"></script>
+<script src="{% static 'quest_rpg/js/quest_core.js' %}?v=5"></script>
+<script src="{% static 'quest_rpg/js/quest_edit.js' %}?v=5"></script>
 </body>
 </html>

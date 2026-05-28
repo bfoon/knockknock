@@ -94,11 +94,12 @@ class QuestConsumer(AsyncWebsocketConsumer):
     @sync_to_async
     def _snapshot(self):
         session = QuestSession.objects.prefetch_related("questions", "teams").get(code=self.code)
-        data = session.as_dict()
+        data = session.as_dict(include_answers=False)
         current = min(session.current_question, max(0, len(data["questions"]) - 1)) if data["questions"] else 0
         data["current_question"] = current
         data["responses"] = list(QuestResponse.objects.filter(question__session=session).values(
-            "team_id", "question_id", "selected_option", "is_correct", "points_awarded"
+            "team_id", "question_id", "selected_option", "is_correct",
+            "points_awarded", "wrong_choices", "answered_at"
         ))
         return data
 
@@ -122,46 +123,91 @@ class QuestConsumer(AsyncWebsocketConsumer):
     @sync_to_async
     def _record_answer(self, team_id, selected):
         session = QuestSession.objects.get(code=self.code)
-        question = QuestQuestion.objects.filter(session=session, position=session.current_question).first()
-        if not question:
-            return {"ok": False, "message": "No active question."}
+        if session.status == QuestSession.STATUS_ENDED:
+            return {"ok": False, "message": "This quest has ended."}
+        if session.status != QuestSession.STATUS_LIVE:
+            return {"ok": False, "message": "The adventure is not open yet. Ask the owner to press Open Adventure."}
+
         team = QuestTeam.objects.get(id=team_id, session=session)
+        total = session.questions.count()
+        if total <= 0:
+            return {"ok": False, "message": "No active challenge."}
+        if team.progress >= total:
+            return {
+                "ok": True,
+                "complete": True,
+                "message": "Your team already reached the treasure.",
+                "next_position": total,
+                "completed_at": team.completed_at.isoformat() if team.completed_at else "",
+            }
+
+        question = QuestQuestion.objects.filter(session=session, position=team.progress).first()
+        if not question:
+            return {"ok": False, "message": "No active challenge."}
+
         existing = QuestResponse.objects.filter(team=team, question=question).first()
-        if existing:
+        if existing and existing.is_correct:
             return {
                 "ok": True,
                 "already_answered": True,
-                "correct": existing.is_correct,
-                "points_awarded": existing.points_awarded,
-                "correct_option": question.correct_option,
-                "explanation": question.explanation,
+                "correct": True,
+                "points_awarded": 0,
+                "correct_option": question.correct_option if session.show_correct_after_answer else "",
+                "explanation": question.explanation if session.show_correct_after_answer else "",
+                "treasure_hint": question.treasure_hint,
+                "danger_text": question.danger_text,
+                "wrong_choices": existing.wrong_choices or [],
+                "next_position": team.progress,
+                "complete": team.progress >= total,
+                "completed_at": team.completed_at.isoformat() if team.completed_at else "",
             }
+
+        now = timezone.now()
         correct = selected == question.correct_option
         points = question.points if correct else 0
-        QuestResponse.objects.create(
-            team=team,
-            question=question,
-            selected_option=selected,
-            is_correct=correct,
-            points_awarded=points,
-        )
+        wrong_choices = list(existing.wrong_choices or []) if existing else []
+        if not correct:
+            wrong_choices.append({"option": selected, "at": now.isoformat()})
+
+        if existing:
+            existing.selected_option = selected
+            existing.is_correct = correct
+            existing.points_awarded = points
+            existing.wrong_choices = wrong_choices
+            existing.save(update_fields=["selected_option", "is_correct", "points_awarded", "wrong_choices"])
+        else:
+            QuestResponse.objects.create(
+                team=team,
+                question=question,
+                selected_option=selected,
+                is_correct=correct,
+                points_awarded=points,
+                wrong_choices=wrong_choices,
+            )
         if correct:
             team.points += points
             team.correct_count += 1
-            team.progress = max(team.progress, session.current_question + 1)
+            team.progress = max(team.progress, question.position + 1)
+            if team.progress >= total and not team.completed_at:
+                team.completed_at = now
         else:
             team.wrong_count += 1
-        team.last_seen_at = timezone.now()
-        team.save(update_fields=["points", "correct_count", "wrong_count", "progress", "last_seen_at"])
+        team.last_seen_at = now
+        team.save(update_fields=["points", "correct_count", "wrong_count", "progress", "completed_at", "last_seen_at"])
         return {
             "ok": True,
             "already_answered": False,
             "correct": correct,
             "points_awarded": points,
-            "correct_option": question.correct_option,
-            "explanation": question.explanation,
+            "correct_option": question.correct_option if (correct or session.show_correct_after_answer) else "",
+            "explanation": question.explanation if (correct or session.show_correct_after_answer) else "",
             "treasure_hint": question.treasure_hint,
             "danger_text": question.danger_text,
+            "wrong_choices": wrong_choices,
+            "stage_position": question.position,
+            "next_position": team.progress,
+            "complete": team.progress >= total,
+            "completed_at": team.completed_at.isoformat() if team.completed_at else "",
         }
 
     @sync_to_async
@@ -181,4 +227,11 @@ class QuestConsumer(AsyncWebsocketConsumer):
 
     @sync_to_async
     def _set_status(self, status):
-        QuestSession.objects.filter(code=self.code).update(status=status)
+        session = QuestSession.objects.get(code=self.code)
+        was_live = session.status == QuestSession.STATUS_LIVE
+        session.status = status
+        update_fields = ["status"]
+        if status == QuestSession.STATUS_LIVE and not was_live:
+            session.started_at = timezone.now()
+            update_fields.append("started_at")
+        session.save(update_fields=update_fields)

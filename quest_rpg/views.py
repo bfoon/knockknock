@@ -27,21 +27,26 @@ def _join_path(session):
     return reverse("quest_rpg:join", args=[session.code])
 
 
-def _session_snapshot(session_or_code):
+def _session_snapshot(session_or_code, include_answers=False):
     if isinstance(session_or_code, QuestSession):
         code = session_or_code.code
     else:
         code = str(session_or_code).upper()
     session = QuestSession.objects.prefetch_related("questions", "teams").get(code=code)
-    data = session.as_dict()
+    data = session.as_dict(include_answers=include_answers)
     data["current_question"] = min(
         session.current_question,
         max(0, len(data.get("questions", [])) - 1),
     ) if data.get("questions") else 0
+    # selected_option is safe to send because the public/team snapshot still does
+    # not include correct_option unless include_answers=True. It lets each team
+    # review the wrong trails they tried without revealing the answer key.
+    response_fields = [
+        "team_id", "question_id", "selected_option", "is_correct",
+        "points_awarded", "wrong_choices", "answered_at",
+    ]
     data["responses"] = list(
-        QuestResponse.objects.filter(question__session=session).values(
-            "team_id", "question_id", "selected_option", "is_correct", "points_awarded"
-        )
+        QuestResponse.objects.filter(question__session=session).values(*response_fields)
     )
     return data
 
@@ -77,7 +82,7 @@ def _broadcast_payload(session, payload):
 def _default_questions():
     return [
         {
-            "prompt": "Your team reaches a locked ancient gate. Which key principle opens the first door?",
+            "prompt": "Your team reaches a locked jungle gate. Which action opens the first door?",
             "option_a": "Team discussion before answering",
             "option_b": "One person guessing quickly",
             "option_c": "Ignoring the question",
@@ -89,7 +94,7 @@ def _default_questions():
             "explanation": "Quest mode rewards teams that discuss and choose together.",
         },
         {
-            "prompt": "A bridge appears over danger. What moves your team closer to the treasure?",
+            "prompt": "A glowing bridge appears over the river. What moves your team closer to the treasure?",
             "option_a": "More wrong answers",
             "option_b": "Correct answers and teamwork",
             "option_c": "Leaving the team screen",
@@ -101,7 +106,7 @@ def _default_questions():
             "explanation": "Correct answers add points and progress on the map.",
         },
         {
-            "prompt": "The final treasure chest asks: what does the leaderboard show?",
+            "prompt": "The treasure chest asks: what will prove your team led the adventure?",
             "option_a": "Only team names",
             "option_b": "The host password",
             "option_c": "Team avatars, points, and correct answers",
@@ -145,58 +150,117 @@ def _get_or_create_team(session, name, avatar):
     return team
 
 
+def _team_active_question(session, team):
+    """Return the next unanswered challenge for this team.
+
+    Adventure mode is self-paced: the session no longer decides which
+    question everyone is on. Each team's ``progress`` stores how many
+    stages it has completed, so the next active question is position=progress.
+    """
+    total = session.questions.count()
+    if total <= 0:
+        return None, 0, True
+    if team.progress >= total:
+        return None, total, True
+    question = QuestQuestion.objects.filter(session=session, position=team.progress).first()
+    return question, total, False
+
+
 def _record_answer(session, team_id, selected):
     selected = (selected or "").strip().upper()[:1]
     if selected not in {"A", "B", "C", "D"}:
         return {"ok": False, "message": "Choose A, B, C, or D."}
+    if session.status == QuestSession.STATUS_ENDED:
+        return {"ok": False, "message": "This quest has ended."}
     if session.status != QuestSession.STATUS_LIVE:
-        return {"ok": False, "message": "The host has not started this quest yet."}
+        return {"ok": False, "message": "The adventure is not open yet. Ask the owner to press Open Adventure."}
 
-    question = QuestQuestion.objects.filter(session=session, position=session.current_question).first()
-    if not question:
-        return {"ok": False, "message": "No active question."}
     team = QuestTeam.objects.get(id=int(team_id), session=session)
-    existing = QuestResponse.objects.filter(team=team, question=question).first()
-    if existing:
+    question, total, complete = _team_active_question(session, team)
+    if complete:
+        return {
+            "ok": True,
+            "complete": True,
+            "message": "Your team already reached the treasure.",
+            "next_position": total,
+            "completed_at": team.completed_at.isoformat() if team.completed_at else "",
+        }
+    if not question:
+        return {"ok": False, "message": "No active challenge."}
+
+    previous = QuestResponse.objects.filter(team=team, question=question).first()
+    if previous and previous.is_correct:
         return {
             "ok": True,
             "already_answered": True,
-            "correct": existing.is_correct,
-            "points_awarded": existing.points_awarded,
-            "correct_option": question.correct_option,
-            "explanation": question.explanation,
+            "correct": True,
+            "points_awarded": 0,
+            "correct_option": question.correct_option if session.show_correct_after_answer else "",
+            "explanation": question.explanation if session.show_correct_after_answer else "",
             "treasure_hint": question.treasure_hint,
             "danger_text": question.danger_text,
+            "wrong_choices": previous.wrong_choices or [],
+            "next_position": team.progress,
+            "complete": team.progress >= total,
+            "completed_at": team.completed_at.isoformat() if team.completed_at else "",
         }
 
+    now = timezone.now()
     correct = selected == question.correct_option
     points = question.points if correct else 0
-    QuestResponse.objects.create(
-        team=team,
-        question=question,
-        selected_option=selected,
-        is_correct=correct,
-        points_awarded=points,
-    )
+    wrong_choices = list(previous.wrong_choices or []) if previous else []
+
+    if not correct:
+        wrong_choices.append({
+            "option": selected,
+            "at": now.isoformat(),
+        })
+
+    if previous:
+        previous.selected_option = selected
+        previous.is_correct = correct
+        previous.points_awarded = points
+        previous.wrong_choices = wrong_choices
+        previous.save(update_fields=["selected_option", "is_correct", "points_awarded", "wrong_choices"])
+    else:
+        QuestResponse.objects.create(
+            team=team,
+            question=question,
+            selected_option=selected,
+            is_correct=correct,
+            points_awarded=points,
+            wrong_choices=wrong_choices,
+        )
+
+    update_fields = ["points", "correct_count", "wrong_count", "progress", "completed_at", "last_seen_at"]
     if correct:
         team.points += points
         team.correct_count += 1
-        team.progress = max(team.progress, session.current_question + 1)
+        team.progress = max(team.progress, question.position + 1)
+        if team.progress >= total and not team.completed_at:
+            # Leaderboard winner order is based on who reached the treasure first.
+            team.completed_at = now
     else:
+        # Wrong answers do not move the team. They can try the same stage again.
         team.wrong_count += 1
-    team.last_seen_at = timezone.now()
-    team.save(update_fields=["points", "correct_count", "wrong_count", "progress", "last_seen_at"])
+    team.last_seen_at = now
+    team.save(update_fields=update_fields)
+
     return {
         "ok": True,
         "already_answered": False,
         "correct": correct,
         "points_awarded": points,
-        "correct_option": question.correct_option,
-        "explanation": question.explanation,
+        "correct_option": question.correct_option if (correct or session.show_correct_after_answer) else "",
+        "explanation": question.explanation if (correct or session.show_correct_after_answer) else "",
         "treasure_hint": question.treasure_hint,
         "danger_text": question.danger_text,
+        "wrong_choices": wrong_choices,
+        "stage_position": question.position,
+        "next_position": team.progress,
+        "complete": team.progress >= total,
+        "completed_at": team.completed_at.isoformat() if team.completed_at else "",
     }
-
 
 @login_required
 def session_list(request):
@@ -230,7 +294,7 @@ def session_edit(request, code):
     _seed_questions(session)
     return render(request, "quest_rpg/session_edit.html", {
         "session": session,
-        "session_json": json.dumps(session.as_dict()),
+        "session_json": json.dumps(session.as_dict(include_answers=True)),
         "present_url": request.build_absolute_uri(reverse("quest_rpg:present", args=[session.code])),
         "worlds": QuestSession.WORLD_CHOICES,
     })
@@ -279,7 +343,7 @@ def session_save(request, code):
             ))
         QuestQuestion.objects.bulk_create(rows)
 
-    return JsonResponse({"ok": True, "session": session.as_dict()})
+    return JsonResponse({"ok": True, "session": session.as_dict(include_answers=True)})
 
 
 @login_required
@@ -326,8 +390,11 @@ def session_state(request, code):
 def session_start(request, code):
     session = get_object_or_404(QuestSession, code=code.upper(), owner=request.user)
     _seed_questions(session)
+    was_live = session.status == QuestSession.STATUS_LIVE
     session.status = QuestSession.STATUS_LIVE
-    session.save(update_fields=["status"])
+    if not was_live:
+        session.started_at = timezone.now()
+    session.save(update_fields=["status", "started_at"])
     payload = _broadcast_session(session, "start")
     return JsonResponse({"ok": True, **payload})
 
@@ -365,11 +432,14 @@ def session_reveal(request, code):
 @require_POST
 def session_reset_scores(request, code):
     session = get_object_or_404(QuestSession, code=code.upper(), owner=request.user)
-    QuestTeam.objects.filter(session=session).update(points=0, correct_count=0, wrong_count=0, progress=0)
+    QuestTeam.objects.filter(session=session).update(
+        points=0, correct_count=0, wrong_count=0, progress=0, completed_at=None
+    )
     QuestResponse.objects.filter(question__session=session).delete()
     session.current_question = 0
     session.status = QuestSession.STATUS_DRAFT
-    session.save(update_fields=["current_question", "status"])
+    session.started_at = None
+    session.save(update_fields=["current_question", "status", "started_at"])
     messages.success(request, "Quest scores reset.")
     _broadcast_session(session, "reset")
     return redirect("quest_rpg:edit", code=session.code)

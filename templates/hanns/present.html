@@ -19,6 +19,71 @@
   .present-badge .meta .lbl{display:flex;gap:.5rem;align-items:center}
   .aud{display:inline-flex;align-items:center;gap:.3rem;font-family:var(--font-mono);font-size:.62rem;color:#bdb29a}
 
+
+  /* v35 — End & exit stays under the emoji counter, only appears on hover,
+     and is hidden in browser fullscreen. The emoji counter remains visible. */
+  .reaction-top-stack{
+    position:absolute!important;
+    top:18px!important;
+    right:18px!important;
+    z-index:230!important;
+    display:flex!important;
+    flex-direction:column!important;
+    align-items:flex-end!important;
+    gap:8px!important;
+    pointer-events:none!important;
+  }
+  .reaction-top-stack .reaction-counter{
+    position:static!important;
+    top:auto!important;
+    right:auto!important;
+    margin:0!important;
+    pointer-events:none!important;
+    z-index:auto!important;
+  }
+  .reaction-top-stack .present-exit{
+    position:static!important;
+    top:auto!important;
+    right:auto!important;
+    opacity:0!important;
+    transform:translateY(-6px)!important;
+    pointer-events:none!important;
+    transition:opacity .18s ease, transform .18s ease!important;
+    background:rgba(20,18,14,.78)!important;
+    border:1px solid rgba(255,255,255,.14)!important;
+    color:#fff!important;
+    border-radius:10px!important;
+    padding:.5rem .8rem!important;
+    cursor:pointer!important;
+    font-weight:700!important;
+    box-shadow:0 12px 32px rgba(0,0,0,.35)!important;
+    backdrop-filter:blur(8px)!important;
+    -webkit-backdrop-filter:blur(8px)!important;
+  }
+  .present-stage:hover .reaction-top-stack .present-exit{
+    opacity:1!important;
+    transform:translateY(0)!important;
+    pointer-events:auto!important;
+  }
+  .reaction-top-stack .present-exit:hover,
+  .reaction-top-stack .present-exit:focus-visible{
+    background:rgba(232,72,43,.92)!important;
+    border-color:rgba(255,255,255,.22)!important;
+    outline:none!important;
+  }
+  #present:fullscreen .reaction-top-stack .present-exit,
+  .present:fullscreen .reaction-top-stack .present-exit,
+  :fullscreen .reaction-top-stack .present-exit,
+  body.hanns-clean-fullscreen .reaction-top-stack .present-exit{
+    display:none!important;
+    opacity:0!important;
+    pointer-events:none!important;
+  }
+  @media (max-width:640px){
+    .reaction-top-stack{top:12px!important;right:12px!important;}
+    .reaction-top-stack .present-exit{font-size:.82rem!important;padding:.45rem .65rem!important;}
+  }
+
   .present-modal-card h2,
   .modal-title-safe{
     max-width:100%;
@@ -31,13 +96,15 @@
 <body>
 <div class="present on" id="present">
   <div class="present-stage" id="present-stage">
-    <button class="present-exit" id="present-exit">✕ End &amp; exit (Esc)</button>
 <button class="fullscreen-pill" id="present-fullscreen" type="button" title="Full screen (press F)">⛶ Full screen</button>
     <div class="wake-pill" id="wake-pill" title="Screen wake lock status">☀ Keep screen awake</div>
     <div class="present-canvas" id="present-canvas"></div>
     <div class="emoji-layer" id="emoji-layer"></div>
     <div class="pointer-layer" id="pointer-layer" aria-hidden="true"></div>
-    <div class="reaction-counter" id="reaction-counter" aria-live="polite" title="Live reaction totals"></div>
+    <div class="reaction-top-stack" id="reaction-top-stack" aria-label="Presenter reaction tools">
+      <div class="reaction-counter" id="reaction-counter" aria-live="polite" title="Live reaction totals"></div>
+      <button class="present-exit" id="present-exit" type="button">✕ End &amp; exit (Esc)</button>
+    </div>
 
     <div class="present-controls">
       <button id="pp-prev">‹</button>
@@ -101,7 +168,7 @@
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="{% static 'hanns/js/hanns_core.js' %}?v=32"></script>
-<script src="{% static 'hanns/js/hanns_present.js' %}?v=33"></script>
+<script src="{% static 'hanns/js/hanns_present.js' %}?v=35"></script>
 
 <script>
 (function(){

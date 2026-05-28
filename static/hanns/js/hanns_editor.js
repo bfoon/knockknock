@@ -30,6 +30,8 @@ let redoStack = [];
 let lastHistory = "";
 let historyLocked = false;
 let internalClipboard = null;
+let internalClipboardText = "";
+let internalClipboardAt = 0;
 // Multi-select is editor-only. Bound groups are saved as normal JSON elements.
 let multiSel = new Set();
 
@@ -123,28 +125,65 @@ function updateUndoRedoButtons(){
   if(rb){rb.disabled=redoStack.length===0;rb.title="Redo (Ctrl+Y or Ctrl+Shift+Z)";}
   updateBindButtons();
 }
-function writeInternalClipboard(payload){
-  internalClipboard=deepClone(payload);
-  // Best-effort system clipboard so copy/paste can work between tabs. Browser
-  // permissions may block this; the internal clipboard still works.
-  try{navigator.clipboard?.writeText?.(JSON.stringify({__hanns:true,...payload}));}catch(_){}
+function normaliseClipboardPayload(payload){
+  if(!payload||typeof payload!=="object")return null;
+  if(payload.kind==="elements"&&Array.isArray(payload.elements)){
+    return {kind:"elements",elements:deepClone(payload.elements)};
+  }
+  if(payload.kind==="element"&&payload.element){
+    return {kind:"element",element:deepClone(payload.element)};
+  }
+  return null;
 }
-function copySelected(){
-  const els=selectedElements();
-  if(!els.length){toast("Select an object first");return false;}
-  if(els.length>1)writeInternalClipboard({kind:"elements",elements:els});
-  else writeInternalClipboard({kind:"element",element:els[0]});
-  toast(els.length>1?`Copied ${els.length} objects`:"Copied");
+function writeInternalClipboard(payload,clipboardEvent){
+  const clean=normaliseClipboardPayload(payload);
+  if(!clean)return false;
+  internalClipboard=clean;
+  internalClipboardText=JSON.stringify({__hanns:true,...clean});
+  internalClipboardAt=Date.now();
+
+  // ClipboardEvent.setData is the reliable path for Ctrl/Cmd+C/X inside the
+  // browser. navigator.clipboard.writeText is only a fallback for toolbar or
+  // programmatic copy because some browsers block it without permission.
+  if(clipboardEvent?.clipboardData){
+    try{
+      clipboardEvent.clipboardData.setData("application/x-hanns",internalClipboardText);
+      clipboardEvent.clipboardData.setData("text/plain",internalClipboardText);
+      clipboardEvent.preventDefault();
+      return true;
+    }catch(_){}
+  }
+  try{navigator.clipboard?.writeText?.(internalClipboardText);}catch(_){}
   return true;
 }
-function cutSelected(){
+function selectedClipboardPayload(){
   const els=selectedElements();
-  if(!els.length){toast("Select an object first");return false;}
-  if(els.length>1)writeInternalClipboard({kind:"elements",elements:els});
-  else writeInternalClipboard({kind:"element",element:els[0]});
+  if(!els.length)return null;
+  return els.length>1?{kind:"elements",elements:els}:{kind:"element",element:els[0]};
+}
+function copySelected(clipboardEvent){
+  const payload=selectedClipboardPayload();
+  if(!payload){toast("Select an object first");return false;}
+  writeInternalClipboard(payload,clipboardEvent);
+  toast(payload.kind==="elements"?`Copied ${payload.elements.length} objects`:"Copied");
+  return true;
+}
+function cutSelected(clipboardEvent){
+  const payload=selectedClipboardPayload();
+  if(!payload){toast("Select an object first");return false;}
+  writeInternalClipboard(payload,clipboardEvent);
   deleteSelected();
-  toast(els.length>1?`Cut ${els.length} objects`:"Cut");
+  toast(payload.kind==="elements"?`Cut ${payload.elements.length} objects`:"Cut");
   return true;
+}
+function pasteInternalClipboard(){
+  if(internalClipboard?.kind==="elements"&&Array.isArray(internalClipboard.elements)){
+    return pasteElements(internalClipboard.elements);
+  }
+  if(internalClipboard?.kind==="element"&&internalClipboard.element){
+    return pasteElement(internalClipboard.element);
+  }
+  return false;
 }
 async function pasteFromSystemText(){
   try{
@@ -199,18 +238,13 @@ async function pasteFromSystemRich(){
   return false;
 }
 async function pasteClipboard(){
-  // Prefer the system clipboard first. This lets copied images/text/URLs from
-  // outside Hanns win even if internalClipboard still contains an old object.
+  // Prefer real image/file/HTML clipboard data from outside Hanns. If the
+  // clipboard contains Hanns JSON, paste that. If browser permissions block
+  // reading the system clipboard, use the internal clipboard created by the
+  // last in-editor copy/cut.
   if(await pasteFromSystemRich())return;
   if(await pasteFromSystemText())return;
-  if(internalClipboard?.kind==="elements"&&Array.isArray(internalClipboard.elements)){
-    pasteElements(internalClipboard.elements);
-    return;
-  }
-  if(internalClipboard?.kind==="element"&&internalClipboard.element){
-    pasteElement(internalClipboard.element);
-    return;
-  }
+  if(pasteInternalClipboard())return;
   toast("Nothing to paste");
 }
 function nudgeSelected(key,shift){
@@ -832,18 +866,67 @@ function tableToText(el){return (el.tableData||[]).map(r=>(Array.isArray(r)?r:[]
 function parseTableText(txt){return String(txt||"").split(/\r?\n/).filter(l=>l.trim()).map(l=>splitRow(l).map(c=>c.trim()));}
 function chartToText(el){return (el.chartData||[]).map(r=>[r.label,r.value,r.x,r.y,r.size,...(Array.isArray(r.series)?r.series:[])].filter(v=>v!==undefined&&v!==null&&v!=="").join(",")).join("\n");}
 function parseChartText(txt){return String(txt||"").split(/\r?\n/).filter(l=>l.trim()).map((l,i)=>{const p=splitRow(l).map(x=>x.trim());return {label:p[0]||("Item "+(i+1)),value:Number(p[1])||0,x:p[2]!==undefined&&p[2]!==""?Number(p[2]):i+1,y:p[3]!==undefined&&p[3]!==""?Number(p[3]):Number(p[1])||0,size:p[4]!==undefined&&p[4]!==""?Number(p[4]):Number(p[1])||12,series:p.slice(5).map(Number).filter(v=>!Number.isNaN(v))};});}
+const GEO_TEMPLATE = "Name,Lon,Lat,Value\nBanjul,-16.58,13.45,12\nBrikama,-16.65,13.27,28\nSoma,-15.53,13.43,18\nBasse,-14.21,13.31,10\n";
+function cleanGeoNumber(v){
+  const raw=String(v==null?"":v).trim().replace(/^['"]|['"]$/g,"");
+  if(!raw)return NaN;
+  const n=Number(raw.replace(/\s+/g,""));
+  return Number.isFinite(n)?n:NaN;
+}
+function cleanGeoValue(v){
+  const raw=String(v==null?"":v).trim();
+  if(raw==="")return "";
+  const n=Number(raw.replace(/\s+/g,""));
+  return Number.isFinite(n)?n:raw;
+}
+function looksLikeGeoHeader(row){
+  const h=(row||[]).map(c=>String(c||"").trim().toLowerCase());
+  return h.some(c=>["lon","lng","longitude"].includes(c)) && h.some(c=>["lat","latitude"].includes(c));
+}
+function geoColumnMap(header){
+  const h=(header||[]).map(c=>String(c||"").trim().toLowerCase());
+  const find=(names,fallback)=>{const i=h.findIndex(c=>names.includes(c));return i>=0?i:fallback;};
+  return {
+    name: find(["name","label","location","site","place"],0),
+    lon: find(["lon","lng","longitude","long"],1),
+    lat: find(["lat","latitude"],2),
+    value: find(["value","count","amount","total","number","score"],3),
+  };
+}
+function matrixToGeoPins(matrix){
+  const rows=(matrix||[]).map(r=>Array.isArray(r)?r:[]).filter(r=>r.some(c=>String(c??"").trim()!==""));
+  if(!rows.length)return [];
+  const hasHeader=looksLikeGeoHeader(rows[0]);
+  const map=hasHeader?geoColumnMap(rows[0]):{name:0,lon:1,lat:2,value:3};
+  const body=hasHeader?rows.slice(1):rows;
+  const pins=[];
+  body.forEach((r,i)=>{
+    const label=String(r[map.name]??`Pin ${i+1}`).trim()||`Pin ${i+1}`;
+    const lon=cleanGeoNumber(r[map.lon]);
+    const lat=cleanGeoNumber(r[map.lat]);
+    if(!Number.isFinite(lon)||!Number.isFinite(lat))return;
+    if(lon < -180 || lon > 180 || lat < -90 || lat > 90)return;
+    pins.push({label,lon,lat,value:cleanGeoValue(r[map.value])});
+  });
+  return pins;
+}
 function pinsToText(el){return (el.pins||[]).map(p=>{
   if(p.lon!=null&&p.lat!=null)return [p.label,p.lon,p.lat,p.value].filter(v=>v!==undefined&&v!==null&&v!=="").join(",");
   return [p.label,p.x,p.y,p.value].filter(v=>v!==undefined&&v!==null&&v!=="").join(",");
 }).join("\n");}
-function parsePinsText(txt){return String(txt||"").split(/\r?\n/).filter(l=>l.trim()).map(l=>{
-  const p=splitRow(l).map(x=>x.trim());
-  const a=Number(p[1]),b=Number(p[2]);
-  // Heuristic: if either coord is outside 0–100, treat the pair as lon,lat.
-  const isLonLat = (Math.abs(a)>100)||(Math.abs(b)>100)||a<0||b<0;
-  if(isLonLat)return {label:p[0]||"Pin",lon:a||0,lat:b||0,value:p[3]||""};
-  return {label:p[0]||"Pin",x:a||50,y:b||50,value:p[3]||""};
-});}
+function parsePinsText(txt){
+  const text=String(txt||"");
+  const matrix=parseDelimited(text);
+  const pins=matrixToGeoPins(matrix);
+  if(pins.length)return pins;
+  // Legacy fallback for older Hanns maps that used x,y percentage pins.
+  return text.split(/\r?\n/).filter(l=>l.trim()).map(l=>{
+    const p=splitRow(l).map(x=>x.trim());
+    const a=Number(p[1]),b=Number(p[2]);
+    if(!Number.isFinite(a)||!Number.isFinite(b))return null;
+    return {label:p[0]||"Pin",x:a||50,y:b||50,value:p[3]||""};
+  }).filter(Boolean);
+}
 
 /* ── CSV / Excel import ───────────────────────────────────────────────
    A proper CSV line splitter (handles quoted fields containing commas and
@@ -900,6 +983,12 @@ function importDataFile(file, kind){
       el.tableData=matrix.map(r=>r.map(c=>String(c)));
       el.rows=el.tableData.length; el.cols=Math.max(1,...el.tableData.map(r=>r.length));
       renderCanvas();renderInspector();markDirty();toast(`Imported ${el.rows}×${el.cols} into table`);
+    } else if(kind==="map"){
+      const pins=matrixToGeoPins(matrix);
+      if(!pins.length){toast("No valid geo rows found. Use: Name,Lon,Lat,Value");return;}
+      el.pins=pins;
+      el.useCities=false;
+      renderCanvas();renderInspector();markDirty();closeGeoModal();toast(`Imported ${pins.length} map pin${pins.length===1?"":"s"}`);
     } else {
       const {data,headers}=matrixToChartData(matrix);
       el.chartData=data;
@@ -1126,7 +1215,11 @@ function elementPanel(el){
       ${field("Zoom (Folium)",`<input type="number" id="f-mapzoom" min="1" max="18" value="${el.zoom||""}" placeholder="Auto">`)}
       ${field("Quick fill",`<div class="seg" id="f-mapcities"><button data-on="0" class="${!el.useCities?"active":""}">My pins</button><button data-on="1" class="${el.useCities?"active":""}">Major cities</button></div>`)}
       ${field("Pins (Name, Lon, Lat, Value)",`<textarea id="f-mappins" rows="6" placeholder="Banjul,-16.58,13.45,12">${escapeTA(pinsToText(el))}</textarea>`)}
-      <div class="insp-empty" style="padding:0 0 .5rem">Use real longitude,latitude (e.g. Banjul,-16.58,13.45,12). Pins land on the real map. Switch "Major cities" to auto-place well-known cities.</div>
+      <div class="map-import-actions">
+        <button class="tbtn primary" id="f-mapimport" type="button">Import / paste geo data</button>
+        <button class="tbtn" id="f-maptemplate" type="button">Download template</button>
+      </div>
+      <div class="insp-empty" style="padding:.45rem 0 .5rem">Use real longitude,latitude (e.g. Banjul,-16.58,13.45,12). CSV/Excel import supports <b>Name, Lon, Lat, Value</b>. Pins land on the real map. Switch "Major cities" to auto-place well-known cities.</div>
     </div>
     <div class="group"><span class="glabel">Appearance</span>
       ${field("Land colour",`<input type="color" id="f-mapaccent" value="${el.accent||"#2f6f4f"}">`)}
@@ -1257,6 +1350,8 @@ function bindElementPanel(el){
     const tile=$("#f-tilelayer");tile&&tile.addEventListener("change",()=>{el.tileLayer=tile.value;renderCanvas();markDirty();});
     const zoom=$("#f-mapzoom");zoom&&zoom.addEventListener("input",()=>{el.zoom=zoom.value?Math.max(1,Math.min(18,Number(zoom.value)||7)):null;renderCanvas();markDirty();});
     const pins=$("#f-mappins");pins&&pins.addEventListener("input",()=>{el.pins=parsePinsText(pins.value);el.useCities=false;renderCanvas();markDirty();});
+    $("#f-mapimport")?.addEventListener("click",()=>openGeoModal(el));
+    $("#f-maptemplate")?.addEventListener("click",downloadGeoTemplate);
     const acc=$("#f-mapaccent");acc&&acc.addEventListener("input",()=>{el.accent=acc.value;renderCanvas();markDirty();});
     seg("f-mapcities","on",v=>{el.useCities=v==="1";renderCanvas();renderInspector();markDirty();});
     seg("f-maptheme","mode",v=>{el.mapTheme=v;renderCanvas();markDirty();});
@@ -1717,6 +1812,54 @@ function setPanelToggles(){
 }
 
 
+
+function currentMapElement(){
+  const el=selEl();
+  return el&&el.type==="map"?el:null;
+}
+function openGeoModal(el=currentMapElement()){
+  if(!el){toast("Select a map first");return;}
+  const m=$("#geo-import-modal"), ta=$("#geo-import-text");
+  if(!m||!ta)return;
+  ta.value=pinsToText(el)||"Banjul,-16.58,13.45,12\nBrikama,-16.65,13.27,28\nSoma,-15.53,13.43,18\nBasse,-14.21,13.31,10";
+  m.classList.add("on");
+  m.setAttribute("aria-hidden","false");
+  setTimeout(()=>ta.focus(),60);
+}
+function closeGeoModal(){
+  const m=$("#geo-import-modal");
+  if(!m)return;
+  m.classList.remove("on");
+  m.setAttribute("aria-hidden","true");
+}
+function applyGeoModal(){
+  const el=currentMapElement();
+  const ta=$("#geo-import-text");
+  if(!el||!ta){toast("Select a map first");return;}
+  const pins=parsePinsText(ta.value);
+  if(!pins.length){toast("No valid geo rows found. Use: Name,Lon,Lat,Value");return;}
+  el.pins=pins;
+  el.useCities=false;
+  const livePins=$("#f-mappins"); if(livePins)livePins.value=pinsToText(el);
+  renderCanvas();renderInspector();markDirty();closeGeoModal();toast(`Applied ${pins.length} map pin${pins.length===1?"":"s"}`);
+}
+function downloadGeoTemplate(){
+  const blob=new Blob([GEO_TEMPLATE],{type:"text/csv;charset=utf-8"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="hanns_map_geo_template.csv";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},300);
+}
+function importGeoDataFile(){
+  const el=currentMapElement();
+  if(!el){toast("Select a map first");return;}
+  pendingImport={id:el.id,kind:"map"};
+  const di=$("#data-input");
+  if(di)di.click();
+}
+
 function openInviteModal(){
   const m=$("#invite-modal");
   if(!m)return;
@@ -1770,6 +1913,11 @@ function init(){
   $("#invite-send")?.addEventListener("click",sendInvite);
   $$("[data-close-invite]").forEach(b=>b.addEventListener("click",closeInviteModal));
   $("#invite-modal")?.addEventListener("click",e=>{if(e.target&&e.target.id==="invite-modal")closeInviteModal();});
+  $("#geo-apply")?.addEventListener("click",applyGeoModal);
+  $("#geo-upload")?.addEventListener("click",importGeoDataFile);
+  $("#geo-download-template")?.addEventListener("click",downloadGeoTemplate);
+  $$('[data-close-geo]').forEach(b=>b.addEventListener("click",closeGeoModal));
+  $("#geo-import-modal")?.addEventListener("click",e=>{if(e.target&&e.target.id==="geo-import-modal")closeGeoModal();});
 
   // filmstrip
   $("#add-slide").addEventListener("click",()=>addSlide());
@@ -1821,8 +1969,17 @@ function init(){
 
     if(mod&&key==="z"){e.preventDefault();e.shiftKey?redo():undo();return;}
     if(mod&&key==="y"){e.preventDefault();redo();return;}
-    if(mod&&key==="c"){e.preventDefault();copySelected();return;}
-    if(mod&&key==="x"){e.preventDefault();cutSelected();return;}
+    if(mod&&key==="c"){
+      // Let the browser fire the real copy event so we can write Hanns object
+      // data synchronously to event.clipboardData. This fixes copy/cut/paste
+      // inside slides even when navigator.clipboard permission is blocked.
+      if(selectedIds().length)return;
+    }
+    if(mod&&key==="x"){
+      // Same as copy: the cut event below writes the selected object(s) to the
+      // clipboard, then removes them from the slide.
+      if(selectedIds().length)return;
+    }
     if(mod&&key==="v"){
       // Do not intercept Ctrl/Cmd+V here. Let the real browser `paste` event
       // run first so images/files/HTML/image URLs copied from outside Hanns can
@@ -1849,6 +2006,21 @@ function init(){
       else if(e.key==="ArrowLeft")gotoSlide(Deck.cur-1);
     }
   });
+  document.addEventListener("copy",e=>{
+    const tag=(e.target.tagName||"").toLowerCase();
+    const editing=e.target.isContentEditable||tag==="input"||tag==="textarea"||tag==="select";
+    if(editing)return;
+    if(!selectedIds().length)return;
+    copySelected(e);
+  });
+  document.addEventListener("cut",e=>{
+    const tag=(e.target.tagName||"").toLowerCase();
+    const editing=e.target.isContentEditable||tag==="input"||tag==="textarea"||tag==="select";
+    if(editing)return;
+    if(!selectedIds().length)return;
+    cutSelected(e);
+  });
+
   document.addEventListener("paste",async e=>{
     const tag=(e.target.tagName||"").toLowerCase();
     const editing=e.target.isContentEditable||tag==="input"||tag==="textarea"||tag==="select";
@@ -1875,10 +2047,12 @@ function init(){
       await addImageUrls([uri]);
       return;
     }
+    const hannsRaw=cd.getData("application/x-hanns")||"";
     const txt=cd.getData("text/plain");
-    if(txt){
+    const hannsTxt=hannsRaw||txt;
+    if(hannsTxt){
       try{
-        const parsed=JSON.parse(txt);
+        const parsed=JSON.parse(hannsTxt);
         if(parsed&&parsed.__hanns&&parsed.kind==="element"&&parsed.element){
           e.preventDefault();pasteElement(parsed.element);return;
         }
@@ -1886,6 +2060,16 @@ function init(){
           e.preventDefault();pasteElements(parsed.elements);return;
         }
       }catch(_){}
+    }
+    if(txt&&txt.trim()&&internalClipboard&&internalClipboardAt&&(Date.now()-internalClipboardAt<15000)&&txt!==internalClipboardText&&!html&&!uri){
+      // If an object was just copied/cut in Hanns but the browser refused to
+      // update text/plain, the clipboard may still contain old external text.
+      // In that short window, paste the latest Hanns object instead of turning
+      // that stale text into a text box.
+      e.preventDefault();
+      if(pasteInternalClipboard())return;
+    }
+    if(txt){
       const trimmed=txt.trim();
       if(isLikelyImageUrl(trimmed)){
         e.preventDefault();
@@ -1904,6 +2088,7 @@ function init(){
     // fall back to the last Hanns object copied inside the editor.
     if(internalClipboard){
       e.preventDefault();
+      if(pasteInternalClipboard())return;
       await pasteClipboard();
     }
   });

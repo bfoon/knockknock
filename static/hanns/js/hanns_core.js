@@ -3610,10 +3610,27 @@ function renderPlotlyMap(el, geo){
   return box;
 }
 function tileUrl(kind){
+  /* v31: Do not call tile.openstreetmap.org directly from Hanns.
+     OSM's volunteer tile servers can block embedded applications when the
+     browser/proxy does not send a suitable Referer/User-Agent. Use stable
+     OSM-data basemaps instead, so selecting "OpenStreetMap" still shows an
+     OpenStreetMap-based map without the "Access blocked" tile. */
   if(kind==="dark") return "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
   if(kind==="light") return "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
   if(kind==="satellite") return "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
-  return "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+  if(kind==="voyager" || kind==="osm") return "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+  return "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+}
+function tileOptions(kind){
+  const k=kind||"osm";
+  const opts={maxZoom:18, detectRetina:true, crossOrigin:true};
+  if(k==="satellite"){
+    opts.attribution="Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community";
+  }else{
+    opts.subdomains="abcd";
+    opts.attribution="© OpenStreetMap contributors © CARTO";
+  }
+  return opts;
 }
 function renderFoliumMap(el, geo){
   const box=document.createElement("div"); box.className="folium-box"+(el.mapTheme==="dark"?" folium-dark":"");
@@ -3626,7 +3643,14 @@ function renderFoliumMap(el, geo){
     const g = MAP_GEO[snapshot.mapKind] || geo;
     const center=[(g.bounds[1]+g.bounds[3])/2,(g.bounds[0]+g.bounds[2])/2];
     const map = window.L.map(target,{attributionControl:false,zoomControl:false,scrollWheelZoom:false,dragging:true,doubleClickZoom:false,boxZoom:false,keyboard:false,tap:false}).setView(center, Number(snapshot.zoom)|| (snapshot.mapKind==="gambia"?7:3));
-    window.L.tileLayer(tileUrl(snapshot.tileLayer||"osm"),{maxZoom:18}).addTo(map);
+    const tileKind = snapshot.tileLayer || "osm";
+    let baseLayer = window.L.tileLayer(tileUrl(tileKind), tileOptions(tileKind)).addTo(map);
+    baseLayer.on("tileerror", ()=>{
+      if(target.__hannsTileFallback) return;
+      target.__hannsTileFallback = true;
+      try{ map.removeLayer(baseLayer); }catch(_e){}
+      baseLayer = window.L.tileLayer(tileUrl("light"), tileOptions("light")).addTo(map);
+    });
     const b = [[g.bounds[1],g.bounds[0]],[g.bounds[3],g.bounds[2]]]; map.fitBounds(b,{padding:[18,18]});
     const pins = snapshot.useCities && g.cities ? g.cities : (Array.isArray(snapshot.pins)?snapshot.pins:[]);
     pins.filter(p=>p.lon!=null&&p.lat!=null).forEach((p)=>{

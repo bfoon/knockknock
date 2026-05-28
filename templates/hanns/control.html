@@ -7,12 +7,22 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800;900&family=Spline+Sans+Mono:wght@500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=11">
+
+<style>
+  .phone-card h1,
+  .title-safe{
+    max-width:100%;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+</style>
 </head>
 <body class="phone-control">
 <main class="phone-card">
     <div class="phone-brandline"><span class="mark">Hanns<span class="dot">.</span></span><small>Knock-Knock controller</small></div>
     <div class="phone-status" id="status">ENTER PIN TO CONNECT</div>
-    <h1>{{ deck.title }}</h1>
+    <h1 id="control-deck-title" class="title-safe" title="{{ deck.title|escape }}">{% if deck.title|length > 26 %}{{ deck.title|slice:":26" }}....{% else %}{{ deck.title }}{% endif %}</h1>
     <div class="phone-slide-title" id="slide-title">Slide 1</div>
 
     <div class="pin-row" id="pin-row">
@@ -50,6 +60,18 @@ window.__HANNS_CONTROL__ = {
 };
 </script>
 <script src="{% static 'hanns/js/hanns_core.js' %}?v=11"></script>
+
+<script>
+(function(){
+  "use strict";
+  const el = document.getElementById("control-deck-title");
+  if(!el) return;
+  const full = "{{ deck.title|escapejs }}";
+  const text = full.length > 26 ? full.slice(0, 26) + "...." : full;
+  el.textContent = text;
+  el.title = full;
+})();
+</script>
 <script>
 (function(){
 "use strict";

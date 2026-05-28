@@ -271,7 +271,7 @@
       <div class="status"><span class="dot-i" id="dot"></span><span>Live</span></div>
     </div>
 
-    <h1 id="join-title" title="{{ deck.title|escape }}">{{ deck.title }}</h1>
+    <h1 id="join-title" title="{{ deck.title|escape }}">{% if deck.title|length > 26 %}{{ deck.title|slice:":26" }}....{% else %}{{ deck.title }}{% endif %}</h1>
 
     <div class="meta-row">
       <div class="code">CODE · <strong id="join-code">{{ deck.code }}</strong></div>

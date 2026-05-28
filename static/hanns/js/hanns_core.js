@@ -2804,6 +2804,9 @@ function makeMap(kind="gambia",over={}){
     tileLayer:"osm", zoom:null,
     accent:"#2f6f4f", showLabels:true, showRiver:true, useCities:false,
     labelSize:24, mapTheme:"light", titleColor:"",
+    // Optional affected-area polygons drawn from imported/input coordinates.
+    // Each area: {label, coordinates:[[lon,lat],...], value, fill, stroke, fillOpacity}
+    areas:[], areaFill:"#e8482b", areaStroke:"#ffffff", areaOpacity:0.42,
     pins: cities.length?cities:[
       {label:"Banjul",lon:-16.58,lat:13.45,value:12},
       {label:"Brikama",lon:-16.65,lat:13.27,value:28},
@@ -3595,12 +3598,44 @@ function renderPlotlyChart(el){
   },0);
   return box;
 }
+
+function validAreaPoint(pt){return Array.isArray(pt)&&pt.length>=2&&Number.isFinite(Number(pt[0]))&&Number.isFinite(Number(pt[1]));}
+function normaliseAreaRing(coords){
+  const ring=(Array.isArray(coords)?coords:[]).filter(validAreaPoint).map(p=>[Number(p[0]),Number(p[1])]);
+  if(ring.length<3) return [];
+  const a=ring[0], b=ring[ring.length-1];
+  if(a[0]!==b[0]||a[1]!==b[1]) ring.push([a[0],a[1]]);
+  return ring;
+}
+function mapAreas(el){
+  return (Array.isArray(el.areas)?el.areas:[]).map((a,i)=>{
+    const ring=normaliseAreaRing(a.coordinates||a.coords||a.points||[]);
+    if(ring.length<4) return null;
+    return {
+      label:a.label||a.name||`Area ${i+1}`,
+      value:a.value==null?"":a.value,
+      coordinates:ring,
+      fill:a.fill||el.areaFill||el.accent||"#e8482b",
+      stroke:a.stroke||el.areaStroke||"#ffffff",
+      fillOpacity:Math.max(0,Math.min(1,Number(a.fillOpacity ?? el.areaOpacity ?? .42)))
+    };
+  }).filter(Boolean);
+}
+function hexToRgba(hex, opacity){
+  const raw=String(hex||"#e8482b").replace("#","").trim();
+  const v=raw.length===3?raw.split("").map(c=>c+c).join(""):raw;
+  const n=parseInt(v,16);
+  if(!Number.isFinite(n)) return `rgba(232,72,43,${opacity})`;
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${opacity})`;
+}
+
 function plotlyMapSpec(el, geo){
   const pins = (Array.isArray(el.pins)&&el.pins.length?el.pins:(geo.cities||[]).map(c=>({label:c.label,lon:c.lon,lat:c.lat,value:""}))).filter(p=>p.lon!=null&&p.lat!=null);
   const dark = el.mapTheme === "dark";
+  const areaTraces=mapAreas(el).map(a=>({type:"scattergeo",mode:"lines",lon:a.coordinates.map(p=>p[0]),lat:a.coordinates.map(p=>p[1]),fill:"toself",fillcolor:hexToRgba(a.fill,a.fillOpacity),line:{color:a.stroke,width:2},name:a.label,text:a.coordinates.map(()=>a.label),hovertemplate:`${a.label}${a.value!==""?"<br>Value: "+a.value:""}<extra></extra>`}));
   const trace={type:"scattergeo", mode:"markers+text", lon:pins.map(p=>Number(p.lon)), lat:pins.map(p=>Number(p.lat)), text:pins.map(p=>p.label||"Pin"), textposition:"top center", marker:{size:pins.map(p=>Math.max(10, Math.min(34, Number(p.value)||16))), color:el.accent||"#2f6f4f", opacity:.85, line:{color:"white", width:1}}, hovertemplate:"%{text}<br>%{lat:.2f}, %{lon:.2f}<extra></extra>"};
   const [minLon,minLat,maxLon,maxLat]=geo.bounds;
-  return {traces:[trace], layout:{paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", margin:{l:0,r:0,t:46,b:0}, title:{text:el.title||geo.name+" map", font:{size:24,color:el.titleColor||(dark?"#fff":"#111827")}}, font:{family:"Inter, Archivo, sans-serif", color:dark?"#fff":"#111827"}, geo:{scope:el.mapKind==="world"?"world":(el.mapKind==="europe"?"europe":"africa"), projection:{type:"natural earth"}, lonaxis:{range:[minLon,maxLon]}, lataxis:{range:[minLat,maxLat]}, showland:true, landcolor:dark?"rgba(31,41,55,.92)":"#e2e8f0", showocean:true, oceancolor:dark?"rgba(15,23,42,.92)":"#dbeafe", showcountries:true, countrycolor:dark?"rgba(255,255,255,.18)":"rgba(15,23,42,.25)", showlakes:true, lakecolor:dark?"rgba(15,23,42,.9)":"#bfdbfe"}}, config:{responsive:true, displayModeBar:!!el.plotlyModebar, displaylogo:false}};
+  return {traces:[...areaTraces,trace], layout:{paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", margin:{l:0,r:0,t:46,b:0}, title:{text:el.title||geo.name+" map", font:{size:24,color:el.titleColor||(dark?"#fff":"#111827")}}, font:{family:"Inter, Archivo, sans-serif", color:dark?"#fff":"#111827"}, geo:{scope:el.mapKind==="world"?"world":(el.mapKind==="europe"?"europe":"africa"), projection:{type:"natural earth"}, lonaxis:{range:[minLon,maxLon]}, lataxis:{range:[minLat,maxLat]}, showland:true, landcolor:dark?"rgba(31,41,55,.92)":"#e2e8f0", showocean:true, oceancolor:dark?"rgba(15,23,42,.92)":"#dbeafe", showcountries:true, countrycolor:dark?"rgba(255,255,255,.18)":"rgba(15,23,42,.25)", showlakes:true, lakecolor:dark?"rgba(15,23,42,.9)":"#bfdbfe"}}, config:{responsive:true, displayModeBar:!!el.plotlyModebar, displaylogo:false}};
 }
 function renderPlotlyMap(el, geo){
   const box=document.createElement("div"); box.className="plotly-map-box"+(el.mapTheme==="dark"?" plotly-dark":"");
@@ -3610,27 +3645,12 @@ function renderPlotlyMap(el, geo){
   return box;
 }
 function tileUrl(kind){
-  /* v31: Do not call tile.openstreetmap.org directly from Hanns.
-     OSM's volunteer tile servers can block embedded applications when the
-     browser/proxy does not send a suitable Referer/User-Agent. Use stable
-     OSM-data basemaps instead, so selecting "OpenStreetMap" still shows an
-     OpenStreetMap-based map without the "Access blocked" tile. */
   if(kind==="dark") return "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
   if(kind==="light") return "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
   if(kind==="satellite") return "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
-  if(kind==="voyager" || kind==="osm") return "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+  // Use Carto Voyager for the OpenStreetMap option. It is based on OSM data,
+  // but avoids the volunteer tile-server "Access blocked" issue from tile.openstreetmap.org.
   return "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
-}
-function tileOptions(kind){
-  const k=kind||"osm";
-  const opts={maxZoom:18, detectRetina:true, crossOrigin:true};
-  if(k==="satellite"){
-    opts.attribution="Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community";
-  }else{
-    opts.subdomains="abcd";
-    opts.attribution="© OpenStreetMap contributors © CARTO";
-  }
-  return opts;
 }
 function renderFoliumMap(el, geo){
   const box=document.createElement("div"); box.className="folium-box"+(el.mapTheme==="dark"?" folium-dark":"");
@@ -3643,15 +3663,15 @@ function renderFoliumMap(el, geo){
     const g = MAP_GEO[snapshot.mapKind] || geo;
     const center=[(g.bounds[1]+g.bounds[3])/2,(g.bounds[0]+g.bounds[2])/2];
     const map = window.L.map(target,{attributionControl:false,zoomControl:false,scrollWheelZoom:false,dragging:true,doubleClickZoom:false,boxZoom:false,keyboard:false,tap:false}).setView(center, Number(snapshot.zoom)|| (snapshot.mapKind==="gambia"?7:3));
-    const tileKind = snapshot.tileLayer || "osm";
-    let baseLayer = window.L.tileLayer(tileUrl(tileKind), tileOptions(tileKind)).addTo(map);
-    baseLayer.on("tileerror", ()=>{
-      if(target.__hannsTileFallback) return;
-      target.__hannsTileFallback = true;
-      try{ map.removeLayer(baseLayer); }catch(_e){}
-      baseLayer = window.L.tileLayer(tileUrl("light"), tileOptions("light")).addTo(map);
-    });
+    const tiles=window.L.tileLayer(tileUrl(snapshot.tileLayer||"osm"),{maxZoom:18});
+    tiles.on("tileerror",()=>{try{map.removeLayer(tiles);window.L.tileLayer(tileUrl("light"),{maxZoom:18}).addTo(map);}catch(e){}});
+    tiles.addTo(map);
     const b = [[g.bounds[1],g.bounds[0]],[g.bounds[3],g.bounds[2]]]; map.fitBounds(b,{padding:[18,18]});
+    mapAreas(snapshot).forEach(a=>{
+      const latlngs=a.coordinates.map(p=>[p[1],p[0]]);
+      window.L.polygon(latlngs,{color:a.stroke,weight:2,fillColor:a.fill,fillOpacity:a.fillOpacity}).addTo(map)
+        .bindPopup(`<b>${escHTML(a.label)}</b>${a.value!==""?"<br>Value: "+escHTML(String(a.value)):""}`);
+    });
     const pins = snapshot.useCities && g.cities ? g.cities : (Array.isArray(snapshot.pins)?snapshot.pins:[]);
     pins.filter(p=>p.lon!=null&&p.lat!=null).forEach((p)=>{
       const html=`<div class="folium-pin" style="--accent:${snapshot.accent||"#2f6f4f"}"></div>`;
@@ -3895,6 +3915,20 @@ function renderMap(el){
     const d=geo.river.map((c,i)=>{const [x,y]=geoProject(c[0],c[1],geo.bounds,VW,VH,pad);return (i?"L":"M")+x.toFixed(1)+" "+y.toFixed(1);}).join(" ");
     S.appendChild(svg("path",{class:"map-river",d}));
   }
+
+  // affected areas / polygons imported from coordinate rows or GeoJSON.
+  mapAreas(el).forEach((a,i)=>{
+    const d=a.coordinates.map((c,j)=>{const [x,y]=geoProject(Number(c[0]),Number(c[1]),geo.bounds,VW,VH,pad);return (j?"L":"M")+x.toFixed(1)+" "+y.toFixed(1);}).join(" ")+" Z";
+    const path=svg("path",{class:"map-area",d,style:`--area-fill:${a.fill};--area-stroke:${a.stroke};--area-opacity:${a.fillOpacity};--i:${i}`});
+    S.appendChild(path);
+    if(el.showLabels!==false){
+      const xs=a.coordinates.map(c=>geoProject(Number(c[0]),Number(c[1]),geo.bounds,VW,VH,pad)[0]);
+      const ys=a.coordinates.map(c=>geoProject(Number(c[0]),Number(c[1]),geo.bounds,VW,VH,pad)[1]);
+      const cx=xs.reduce((m,v)=>m+v,0)/xs.length, cy=ys.reduce((m,v)=>m+v,0)/ys.length;
+      S.appendChild(svgText(cx,cy,String(a.label||"Area"),{class:"map-area-label"}));
+      if(a.value!=="")S.appendChild(svgText(cx,cy+fs,String(a.value),{class:"map-area-value"}));
+    }
+  });
 
   // pins: accept {lon,lat} OR legacy {x%,y%}; if none, optionally seed cities
   let pins=Array.isArray(el.pins)?el.pins:[];

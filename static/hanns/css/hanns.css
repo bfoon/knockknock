@@ -1006,18 +1006,22 @@ body.hanns-options-open .drawer{
 
 
 
-/* v32 — Map geo-data import modal + inspector actions */
-.map-import-actions{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin:-.15rem 0 .25rem}
-.map-import-actions .tbtn{width:100%;justify-content:center;padding:.48rem .55rem;font-size:.76rem}
-.geo-modal{position:fixed;inset:0;background:rgba(8,7,5,.72);backdrop-filter:blur(6px);z-index:500;display:none;align-items:center;justify-content:center;padding:18px}
-.geo-modal.on{display:flex}
-.geo-modal-card{width:min(620px,calc(100vw - 28px));max-height:calc(100vh - 28px);overflow:auto}
-.geo-modal-icon{width:48px;height:48px;border-radius:16px;display:grid;place-items:center;background:linear-gradient(135deg,rgba(34,211,238,.24),rgba(232,72,43,.22));border:1px solid rgba(255,255,255,.10);font-size:1.45rem;margin-bottom:.55rem}
-.geo-label{display:block;font-family:var(--font-mono);font-size:.68rem;text-transform:uppercase;letter-spacing:.14em;color:var(--fog-2);margin:.7rem 0 .35rem;font-weight:800}
-#geo-import-text{width:100%;min-height:190px;resize:vertical;background:var(--ink);border:1px solid var(--line);border-radius:14px;color:var(--cream);padding:.8rem;font:700 .9rem/1.45 var(--font-mono);outline:none}
-#geo-import-text:focus{border-color:var(--signal);box-shadow:0 0 0 3px rgba(232,72,43,.16)}
-.geo-help{margin:.55rem 0 .7rem;color:var(--fog-2);font-size:.78rem;line-height:1.45}.geo-help code{background:rgba(0,0,0,.22);border:1px solid rgba(255,255,255,.08);border-radius:7px;padding:.12rem .3rem;color:var(--cream)}
-.geo-modal-actions{display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:.55rem}.geo-modal-actions .tbtn{margin:0!important;width:100%;justify-content:center;white-space:normal;text-align:center}
-.geo-sample-box{margin-top:.85rem;border:1px dashed rgba(255,255,255,.16);border-radius:16px;padding:.75rem;background:rgba(255,255,255,.035)}
-.geo-sample-box strong{display:block;color:var(--fog-2);font-size:.72rem;text-transform:uppercase;letter-spacing:.12em;margin-bottom:.45rem}.geo-sample-box pre{margin:0;white-space:pre-wrap;color:var(--cream);font:700 .78rem/1.35 var(--font-mono)}
-@media(max-width:640px){.map-import-actions,.geo-modal-actions{grid-template-columns:1fr}.geo-modal-card{padding:1rem}.geo-modal{padding:10px}#geo-import-text{min-height:170px}}
+/* v32 — Map coordinate input/import helpers */
+.geo-action-row{display:flex;flex-wrap:wrap;gap:.42rem;margin:-.25rem 0 .7rem}
+.geo-action-row .chip{border-radius:10px;padding:.42rem .62rem;font-size:.72rem;background:rgba(255,255,255,.04)}
+.map-area{fill:var(--area-fill,#e8482b);fill-opacity:var(--area-opacity,.42);stroke:var(--area-stroke,#fff);stroke-width:3;stroke-linejoin:round;filter:drop-shadow(0 8px 18px rgba(0,0,0,.22));animation:mapAreaIn .7s cubic-bezier(.22,1,.36,1) both;animation-delay:calc(var(--i,0)*.08s)}
+.map-area-label{font-weight:900;fill:#0f172a;paint-order:stroke;stroke:rgba(255,255,255,.86);stroke-width:5;font-size:var(--fs-sm,20px)}
+.map-area-value{font-weight:900;fill:#111827;paint-order:stroke;stroke:rgba(255,255,255,.86);stroke-width:5;font-size:var(--fs-sm,20px)}
+.map-theme-dark .map-area-label,.map-theme-dark .map-area-value{fill:#fff;stroke:rgba(15,23,42,.75)}
+@keyframes mapAreaIn{from{opacity:0;transform:scale(.96);transform-origin:center}to{opacity:1;transform:scale(1)}}
+.hanns-geo-modal{position:fixed;inset:0;z-index:2147483647;display:none;place-items:center;padding:18px;background:rgba(5,6,12,.72);backdrop-filter:blur(8px)}
+.hanns-geo-modal.on{display:grid}
+.hanns-geo-card{width:min(760px,96vw);max-height:92vh;overflow:auto;background:linear-gradient(145deg,#211e18,#11100d);border:1px solid rgba(255,255,255,.14);border-radius:22px;box-shadow:0 32px 90px rgba(0,0,0,.62);padding:18px;color:var(--cream,#fbf8f1);position:relative}
+.hanns-geo-card h3{font-family:var(--font-display,serif);font-size:1.45rem;margin:.2rem 2rem .4rem 0}
+.hanns-geo-card p{color:var(--fog-2,#cfc6b2);font-size:.88rem;line-height:1.45;margin:.25rem 0 .8rem}
+.hanns-geo-card textarea{width:100%;min-height:230px;background:#0d0c09;border:1px solid var(--line,#3a352a);border-radius:14px;color:#fff;padding:12px;font-family:var(--font-mono,monospace);font-size:.82rem;line-height:1.45;resize:vertical}
+.hanns-geo-close{position:absolute;right:14px;top:14px;width:34px;height:34px;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#fff;cursor:pointer}
+.hanns-geo-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.55rem;margin:.9rem 0}
+.hanns-geo-actions button{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.07);color:#fff;border-radius:12px;padding:.62rem .8rem;font-weight:900;cursor:pointer}
+.hanns-geo-actions #map-area-apply{background:var(--signal,#e8482b);border-color:var(--signal,#e8482b)}
+.hanns-geo-sample{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:10px;color:#d8d2c6;white-space:pre-wrap;font-size:.72rem;line-height:1.35;max-height:120px;overflow:auto}

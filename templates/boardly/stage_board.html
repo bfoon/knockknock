@@ -9,15 +9,18 @@
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Patrick+Hand&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'css/app.css' %}?v=4">
-<link rel="stylesheet" href="{% static 'css/boardly.css' %}?v=3">
+<link rel="stylesheet" href="{% static 'css/boardly.css' %}?v=5">
 </head>
 <body>
 
-<div class="kk-stage kk-board-stage" id="stage"
+<div class="kk-stage kk-board-stage kk-board-template-{{ session.template_key|default:'custom' }}" id="stage"
      data-code="{{ session.code }}"
      data-kind="board"
      data-mode="{{ session.mode }}"
-     data-join-url="{{ join_url }}">
+     data-join-url="{{ join_url }}"
+     data-flow-id="{{ session.flow_id|default:'' }}"
+     data-page-number="{{ page_number }}"
+     data-page-total="{{ page_total }}">
 
 <!--  {# ── Top bar ────────────────────────────────────────────────────── #}-->
   <header class="kk-stage-header kk-board-header">
@@ -40,6 +43,9 @@
 
     <div class="kk-board-title-wrap">
       <span class="kk-board-title" title="{{ session.title }}">{{ session.title|truncatechars:30 }}</span>
+      {% if session.flow_id %}
+        <span class="kk-board-page-mini">{{ page_number }}/{{ page_total }} · {{ session.module_label|default:"PAGE" }}</span>
+      {% endif %}
     </div>
 
     <div class="kk-stage-spacer flex-grow-1"></div>
@@ -80,6 +86,50 @@
 
     <div class="kk-board-sheet" id="board-sheet">
 
+      {% if session.flow_id %}
+      <nav class="kk-board-flowbar" aria-label="Board pages">
+        <div class="kk-flowbar-project">
+          <span class="kk-flowbar-kicker">Board flow</span>
+          <strong>{{ session.flow.name }}</strong>
+          <span>Page {{ page_number }} of {{ page_total }}</span>
+        </div>
+
+        <div class="kk-flowbar-pages" role="list">
+          {% for page in flow_pages %}
+            <a role="listitem"
+               class="kk-flow-page {% if page.id == session.id %}is-current{% endif %}"
+               href="{% url 'boardly:stage' page.code %}"
+               title="{{ page.title }}">
+              <span>{{ forloop.counter }}</span>
+              <b>{{ page.module_label|default:"Page" }}</b>
+            </a>
+          {% endfor %}
+        </div>
+
+        <div class="kk-flowbar-actions">
+          {% if previous_page %}
+            <a class="kk-btn kk-btn-ghost kk-flow-nav-btn" href="{% url 'boardly:stage' previous_page.code %}">
+              <i class="bi bi-arrow-left"></i> Previous
+            </a>
+          {% else %}
+            <span class="kk-btn kk-btn-ghost kk-flow-nav-btn is-disabled">
+              <i class="bi bi-arrow-left"></i> Previous
+            </span>
+          {% endif %}
+
+          {% if next_page %}
+            <a class="kk-btn kk-btn-primary kk-flow-nav-btn" href="{% url 'boardly:stage' next_page.code %}">
+              Next <i class="bi bi-arrow-right"></i>
+            </a>
+          {% else %}
+            <span class="kk-btn kk-btn-primary kk-flow-nav-btn is-disabled">
+              Last page <i class="bi bi-check2-circle"></i>
+            </span>
+          {% endif %}
+        </div>
+      </nav>
+      {% endif %}
+
       {# Hand-drawn heading block. #}
       <div class="kk-board-heading">
         <h1 class="kk-board-heading-title">
@@ -87,7 +137,7 @@
           {{ session.title|default:"IDEA BOARD" }}
           <span class="kk-board-tick">≈</span>
         </h1>
-        <p class="kk-board-heading-sub" id="board-prompt-display">Ideas, insights &amp; inspiration</p>
+        <p class="kk-board-heading-sub" id="board-prompt-display">{{ session.prompt|default:"Ideas, insights & inspiration" }}</p>
         <div class="kk-board-heading-rule"><i class="bi bi-heart-fill"></i></div>
       </div>
 
@@ -264,6 +314,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<script src="{% static 'js/boardly_stage.js' %}?v=4"></script>
+<script src="{% static 'js/boardly_stage.js' %}?v=5"></script>
 </body>
 </html>

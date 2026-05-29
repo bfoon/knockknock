@@ -8,7 +8,7 @@
 <link href="https://api.fontshare.com/v2/css?f[]=clash-display@600,700&f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'css/app.css' %}?v=4">
-<link rel="stylesheet" href="{% static 'css/boardly.css' %}?v=1">
+<link rel="stylesheet" href="{% static 'css/boardly.css' %}?v=5">
 </head>
 <body class="kk-standard-page kk-board-create">
 
@@ -27,68 +27,112 @@
   </nav>
 
   <section class="kk-flyer-card kk-flyer-hero-main mb-4">
-    <span class="kk-flyer-kicker"><i class="bi bi-sticky"></i> Boardly</span>
-    <h1 class="kk-flyer-title">New <span class="kk-flyer-gradient">board</span></h1>
-    <p class="kk-flyer-sub mb-0">Create a live sticky-note wall your audience can fill in real time — perfect for brainstorming, reflections and group feedback.</p>
+    <span class="kk-flyer-kicker"><i class="bi bi-layout-split"></i> Boardly templates</span>
+    <h1 class="kk-flyer-title">Create a <span class="kk-flyer-gradient">multi-page board</span></h1>
+    <p class="kk-flyer-sub mb-0">
+      Build Boardly like a PDF or slide deck: one project, different pages, and a clean Next button to move through the flow.
+    </p>
     <div class="kk-flyer-badges">
-      <span class="kk-flyer-badge"><i class="bi bi-lightning-charge"></i> Fast to launch</span>
-      <span class="kk-flyer-badge"><i class="bi bi-people"></i> Live collaboration</span>
-      <span class="kk-flyer-badge"><i class="bi bi-qr-code"></i> QR join ready</span>
+      <span class="kk-flyer-badge"><i class="bi bi-lightbulb"></i> Innovation</span>
+      <span class="kk-flyer-badge"><i class="bi bi-stars"></i> Ideation</span>
+      <span class="kk-flyer-badge"><i class="bi bi-truck"></i> Logistics</span>
+      <span class="kk-flyer-badge"><i class="bi bi-briefcase"></i> Business</span>
+      <span class="kk-flyer-badge"><i class="bi bi-diagram-3"></i> Value chain</span>
     </div>
   </section>
 
-  <form method="post" class="kk-card">
+  <form method="post" class="kk-card kk-template-form">
     {% csrf_token %}
 
     <div class="mb-3">
-      <label class="form-label" for="title">Board title</label>
-      <input type="text" name="title" id="title" class="form-control"
-             value="Idea Board" maxlength="140" required>
-    </div>
-
-    <div class="mb-3">
-      <label class="form-label" for="prompt">Prompt for participants</label>
-      <input type="text" name="prompt" id="prompt" class="form-control"
-             value="Share your idea, insight or inspiration"
-             maxlength="200" required>
-    </div>
-
-    <div class="mb-3">
-      <label class="form-label" for="layout">Default layout</label>
-      <select name="layout" id="layout" class="form-select">
-        <option value="grid">Neat grid — tidy rows, like a planned wall</option>
-        <option value="masonry">Masonry — varied heights, Pinterest style</option>
-        <option value="scatter">Scattered — organic, hand-stuck look</option>
-      </select>
-      <div class="form-text">You can also switch layout live from the board.</div>
-    </div>
-
-    <div class="mb-3">
-      <label class="form-label" for="mode">Mode</label>
-      <select name="mode" id="mode" class="form-select">
-        <option value="open">Open — notes appear instantly</option>
-        <option value="moderated">Moderated — you curate as they arrive</option>
-      </select>
-    </div>
-
-    <div class="mb-3">
-      <label class="form-label" for="per_participant_limit">
-        Notes per participant
-      </label>
-      <input type="number" name="per_participant_limit"
-             id="per_participant_limit" class="form-control"
-             min="0" max="999" step="1" value="0">
+      <label class="form-label" for="project_name">Project name</label>
+      <input type="text" name="project_name" id="project_name" class="form-control"
+             value="Project Name" maxlength="120" required>
       <div class="form-text">
-        Maximum sticky notes one person can post. 0 means unlimited.
-        You can also change this live from the board.
+        Boardly will name the pages like EXPLORE-MODULE PROJECT NAME, CREATE-MODULE PROJECT NAME, EVALUATE-MODULE PROJECT NAME.
       </div>
     </div>
 
     <div class="mb-4">
-      <label class="form-label" for="groups">Topic columns <span class="text-secondary">(optional)</span></label>
+      <label class="form-label">Default board template</label>
+      <div class="kk-template-grid">
+        <label class="kk-template-card kk-template-card--blank">
+          <input type="radio" name="template_key" value="blank">
+          <span class="kk-template-icon"><i class="bi bi-plus-square-dotted"></i></span>
+          <span class="kk-template-title">Blank board</span>
+          <span class="kk-template-desc">One open sticky wall with your own columns.</span>
+          <span class="kk-template-count">1 page</span>
+        </label>
+
+        {% for t in template_cards %}
+          <label class="kk-template-card">
+            <input type="radio" name="template_key" value="{{ t.key }}" {% if forloop.first %}checked{% endif %}>
+            <span class="kk-template-icon"><i class="bi {{ t.icon }}"></i></span>
+            <span class="kk-template-title">{{ t.name }}</span>
+            <span class="kk-template-desc">{{ t.description }}</span>
+            <span class="kk-template-count">{{ t.page_count }} linked pages</span>
+          </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="form-check form-switch mb-4">
+      <input type="checkbox" name="create_linked_flow" id="create_linked_flow"
+             class="form-check-input" value="1" checked>
+      <label class="form-check-label" for="create_linked_flow">
+        Create as linked pages with Previous / Next navigation
+      </label>
+      <div class="form-text">Turn this off only if you want a single page from the selected template.</div>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label" for="title">Single-board title <span class="text-secondary">(used for blank boards)</span></label>
+      <input type="text" name="title" id="title" class="form-control"
+             value="Idea Board" maxlength="140">
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label" for="prompt">Single-board prompt <span class="text-secondary">(used for blank boards)</span></label>
+      <input type="text" name="prompt" id="prompt" class="form-control"
+             value="Share your idea, insight or inspiration"
+             maxlength="200">
+    </div>
+
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label" for="layout">Default layout</label>
+        <select name="layout" id="layout" class="form-select">
+          <option value="grid">Neat grid — tidy rows, like a planned wall</option>
+          <option value="masonry">Masonry — varied heights, Pinterest style</option>
+          <option value="scatter">Scattered — organic, hand-stuck look</option>
+        </select>
+        <div class="form-text">You can still switch layout live from the board.</div>
+      </div>
+
+      <div class="col-md-6">
+        <label class="form-label" for="mode">Mode</label>
+        <select name="mode" id="mode" class="form-select">
+          <option value="open">Open — notes appear instantly</option>
+          <option value="moderated">Moderated — you curate as they arrive</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="mt-3">
+      <label class="form-label" for="per_participant_limit">Notes per participant</label>
+      <input type="number" name="per_participant_limit"
+             id="per_participant_limit" class="form-control"
+             min="0" max="999" step="1" value="0">
+      <div class="form-text">0 means unlimited. This applies to every generated page.</div>
+    </div>
+
+    <div class="mt-3 mb-4">
+      <label class="form-label" for="groups">Custom topic columns <span class="text-secondary">(optional)</span></label>
       <input type="text" name="groups" id="groups" class="form-control"
              placeholder="Keep, Start, Stop">
-      <div class="form-text">Comma-separated. Leave blank for one open wall.</div>
+      <div class="form-text">
+        Leave blank to use the selected template’s own columns. If filled, these columns are applied to every generated page.
+      </div>
 
       <div class="form-check mt-2">
         <input type="checkbox" name="lock_columns" id="lock_columns"
@@ -96,15 +140,11 @@
         <label class="form-check-label" for="lock_columns">
           Lock columns — stop sticky notes being dragged between columns
         </label>
-        <div class="form-text">
-          Off by default, so notes are movable. You can also toggle this
-          live from the board. Has no effect on a board without columns.
-        </div>
       </div>
     </div>
 
     <button type="submit" class="kk-btn kk-btn-primary kk-btn-lg w-100">
-      Create board <i class="bi bi-arrow-right"></i>
+      Create board flow <i class="bi bi-arrow-right"></i>
     </button>
   </form>
 </div>

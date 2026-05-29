@@ -5,15 +5,15 @@
 <div class="kk-flyer-card kk-flyer-hero-main mb-4">
   <div class="d-flex align-items-start justify-content-between flex-wrap gap-3">
     <div>
-      <span class="kk-flyer-kicker"><i class="bi bi-sticky"></i> Boardly</span>
+      <span class="kk-flyer-kicker"><i class="bi bi-layout-split"></i> Boardly</span>
       <h1 class="kk-flyer-title mb-1">My <span class="kk-flyer-gradient">boards</span></h1>
-    <p class="text-secondary mb-0">
-      {% if boards_total %}
-        {{ boards_total }} saved board{{ boards_total|pluralize }} — open one to present it again.
-      {% else %}
-        Your saved Boardly boards will appear here.
-      {% endif %}
-    </p>
+      <p class="text-secondary mb-0">
+        {% if boards_total %}
+          {{ boards_total }} saved board project{{ boards_total|pluralize }} — linked templates open like PDF pages.
+        {% else %}
+          Your saved Boardly boards will appear here.
+        {% endif %}
+      </p>
     </div>
     <div class="d-flex flex-wrap gap-2 align-items-center">
       <a href="{% url 'core:dashboard' %}" class="kk-return-chip">
@@ -26,16 +26,55 @@
   </div>
 </div>
 
+{% if flow_cards %}
+  <h2 class="kk-section-title"><i class="bi bi-link-45deg"></i> Linked board flows</h2>
+{% endif %}
+
+{% for card in flow_cards %}
+  <div class="kk-flow-list-card">
+    <div class="kk-flow-list-head">
+      <a href="{% url 'boardly:stage' card.first_page.code %}" class="kk-flow-list-main">
+        <span class="kk-flow-list-icon"><i class="bi bi-layout-split"></i></span>
+        <span>
+          <strong>{{ card.flow.name }}</strong>
+          <small>
+            {{ card.page_count }} linked page{{ card.page_count|pluralize }} ·
+            {{ card.notes_total }} note{{ card.notes_total|pluralize }} ·
+            {{ card.flow.get_template_key_display }} ·
+            {{ card.flow.created_at|timesince }} ago
+          </small>
+        </span>
+      </a>
+      <a href="{% url 'boardly:stage' card.first_page.code %}" class="kk-btn kk-btn-primary btn-sm">
+        Present flow <i class="bi bi-arrow-right"></i>
+      </a>
+    </div>
+
+    <div class="kk-flow-list-pages">
+      {% for page in card.pages %}
+        <a href="{% url 'boardly:stage' page.code %}" class="kk-flow-list-page">
+          <span>{{ forloop.counter }}</span>
+          <b>{{ page.module_label|default:"PAGE" }}</b>
+          <em>{{ page.code }}</em>
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+{% endfor %}
+
+{% if boards %}
+  <h2 class="kk-section-title mt-4"><i class="bi bi-sticky"></i> Single boards</h2>
+{% endif %}
+
 {% for b in boards %}
   <div class="kk-list-item kk-list-item-row">
-    {# Open the presenter screen — the 'running' view of a board. #}
     <a href="{% url 'boardly:stage' b.code %}" class="kk-list-item-main">
       <span class="kk-q-index">{{ forloop.counter }}</span>
       <div class="flex-grow-1">
         <div class="kk-list-item-title">{{ b.title }}</div>
         <div class="kk-list-item-meta">
           Code <strong>{{ b.code }}</strong> ·
-          {{ b.notes.count }} note{{ b.notes.count|pluralize }} ·
+          {{ b.note_total }} note{{ b.note_total|pluralize }} ·
           <span class="kk-status-mini kk-status-mini-{{ b.state }}">{{ b.get_state_display }}</span> ·
           {{ b.created_at|timesince }} ago
         </div>
@@ -43,14 +82,12 @@
       <i class="bi bi-arrow-right text-secondary"></i>
     </a>
 
-    {# Quick link straight to the participant join screen. #}
     <a href="{% url 'boardly:play' b.code %}"
        class="kk-btn kk-btn-ghost btn-sm ms-2"
        title="Open the participant join screen">
       <i class="bi bi-box-arrow-up-right"></i> Join view
     </a>
 
-    {# Inline POST delete — same pattern as the dashboard rows. #}
     <form method="post"
           action="{% url 'boardly:delete' b.code %}"
           class="kk-row-delete-form ms-1"
@@ -66,13 +103,15 @@
     </form>
   </div>
 {% empty %}
-  <div class="kk-empty">
-    <div class="em">📌</div>
-    <p>No boards yet.</p>
-    <a href="{% url 'boardly:create' %}" class="kk-btn kk-btn-primary btn-sm mt-2">
-      Create your first board <i class="bi bi-arrow-right"></i>
-    </a>
-  </div>
+  {% if not flow_cards %}
+    <div class="kk-empty">
+      <div class="em">📌</div>
+      <p>No boards yet.</p>
+      <a href="{% url 'boardly:create' %}" class="kk-btn kk-btn-primary btn-sm mt-2">
+        Create your first board <i class="bi bi-arrow-right"></i>
+      </a>
+    </div>
+  {% endif %}
 {% endfor %}
 
 {% endblock %}

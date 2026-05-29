@@ -19,6 +19,45 @@ def _gen_code(length=6):
     return "".join(random.choice(alphabet) for _ in range(length))
 
 
+class BoardFlow(models.Model):
+    """
+    A linked multi-page Boardly project.
+
+    Think of this like a PDF/deck: each BoardSession is one page/module,
+    and the flow keeps them together so the presenter can click Previous
+    and Next through Explore → Create → Evaluate, etc.
+    """
+    TEMPLATE_CHOICES = [
+        ("innovation", "Innovation"),
+        ("ideation", "Ideation"),
+        ("logistics", "Logistics"),
+        ("business", "Business"),
+        ("value_chain", "Value Chain"),
+        ("custom", "Custom"),
+    ]
+
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="board_flows",
+        null=True,
+        blank=True,
+    )
+    name = models.CharField(max_length=140, default="Board Project")
+    template_key = models.CharField(
+        max_length=40, choices=TEMPLATE_CHOICES, default="custom",
+    )
+    description = models.CharField(max_length=240, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.name
+
+
 class BoardSession(models.Model):
     STATE_CHOICES = [
         ("lobby", "Lobby"),       # created, not yet open
@@ -50,6 +89,21 @@ class BoardSession(models.Model):
     mode = models.CharField(max_length=12, choices=MODE_CHOICES, default="open")
     layout = models.CharField(max_length=10, choices=LAYOUT_CHOICES, default="grid")
 
+    # Multi-page / PDF-style flow support. A session can still stand alone;
+    # when linked to BoardFlow, it becomes one page/module in that project.
+    flow = models.ForeignKey(
+        BoardFlow,
+        on_delete=models.CASCADE,
+        related_name="pages",
+        null=True,
+        blank=True,
+    )
+    template_key = models.CharField(max_length=40, blank=True, default="custom")
+    module_key = models.CharField(max_length=40, blank=True, default="")
+    module_label = models.CharField(max_length=80, blank=True, default="")
+    module_order = models.PositiveSmallIntegerField(default=0)
+    module_description = models.CharField(max_length=240, blank=True, default="")
+
     allow_likes = models.BooleanField(default=True)
     participant_count = models.IntegerField(default=0)
 
@@ -69,7 +123,7 @@ class BoardSession(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["-created_at"]
+        ordering = ["module_order", "-created_at", "id"]
 
     def __str__(self):
         return f"{self.title} ({self.code})"
@@ -85,6 +139,10 @@ class BoardSession(models.Model):
     @property
     def is_open(self):
         return self.state in ("open", "running")
+
+    @property
+    def page_label(self):
+        return self.module_label or self.title
 
 
 class BoardGroup(models.Model):

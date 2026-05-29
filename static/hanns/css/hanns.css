@@ -1429,3 +1429,27 @@ body.hanns-options-open .drawer{
 .stat-body{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:.15em;padding:6% 0}
 .stat-title{font-family:var(--font-body);font-weight:800;font-size:clamp(.6rem,15cqh,1.2rem);line-height:1.05}
 .stat-text{font-family:var(--font-body);font-size:clamp(.42rem,10cqh,.82rem);line-height:1.25}
+
+/* ── Pie percent (single value) ─────────────────────────────────────── */
+.pie-pct{position:absolute;inset:0;display:grid;place-items:center;container-type:size}
+.pie-pct-svg{width:100%;height:100%;display:block;overflow:visible;filter:drop-shadow(0 6px 16px rgba(0,0,0,.10))}
+.pie-pct-wedge{animation:piePctIn .6s cubic-bezier(.22,1,.36,1) both;transform-origin:100px 100px}
+.pie-pct-static .pie-pct-wedge{animation:none}
+@keyframes piePctIn{from{opacity:.2;transform:scale(.6)}to{opacity:1;transform:scale(1)}}
+.pie-pct-num{position:absolute;transform:translate(-50%,-50%);pointer-events:none}
+.pie-pct-num b{font-family:var(--font-x);font-weight:800;font-size:var(--num-size,18cqw);letter-spacing:-.01em;text-shadow:0 1px 4px rgba(0,0,0,.25)}
+.object-num-fixed .pie-pct-num b{font-size:var(--num-size)!important}
+
+/* ── Radial bars (concentric arcs) ──────────────────────────────────── */
+.radial-bars{position:absolute;inset:0;display:grid;place-items:center;container-type:size}
+.radial-bars-svg{width:100%;height:100%;display:block;overflow:visible}
+.rb-fill{animation:rbDraw 1s cubic-bezier(.22,1,.36,1) both;animation-delay:calc(var(--i) * .12s)}
+.radial-static .rb-fill{animation:none}
+@keyframes rbDraw{from{stroke-dasharray:0 9999}}
+
+/* ── Teardrop number badge ──────────────────────────────────────────── */
+.drop-badge{position:absolute;inset:0;display:grid;place-items:center;container-type:size}
+.drop-badge-svg{width:100%;height:100%;display:block;overflow:visible;filter:drop-shadow(0 6px 16px rgba(0,0,0,.14))}
+.drop-badge-num{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;
+  font-family:var(--font-x);font-weight:800;font-size:var(--num-size,32cqw);letter-spacing:-.02em}
+.object-num-fixed .drop-badge-num{font-size:var(--num-size)!important}

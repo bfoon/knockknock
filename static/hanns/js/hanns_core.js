@@ -717,6 +717,40 @@ const OBJECTS = [
     "help": "Rounded row: number badge + title + body text (editable)"
   },
   {
+    "kind": "pie_percent",
+    "label": "Pie percent",
+    "icon": "◐",
+    "count": 1,
+    "level": 55,
+    "w": 200,
+    "h": 200,
+    "accent": "#2f7fb0",
+    "fill": true,
+    "help": "Single-value pie — accent wedge sized to the %, faded remainder"
+  },
+  {
+    "kind": "radial_bars",
+    "label": "Radial bars (rings)",
+    "icon": "◎",
+    "count": 1,
+    "level": 0,
+    "w": 240,
+    "h": 240,
+    "accent": "#3a7fc4",
+    "help": "Concentric progress arcs — editable values & colours"
+  },
+  {
+    "kind": "teardrop_badge",
+    "label": "Teardrop number badge",
+    "icon": "💧",
+    "count": 1,
+    "level": 0,
+    "w": 130,
+    "h": 130,
+    "accent": "#2f7fb0",
+    "help": "Rounded petal badge holding a number (pinwheel layouts)"
+  },
+  {
     "kind": "percent_bar",
     "label": "Percent bar",
     "icon": "📊",
@@ -3755,6 +3789,118 @@ function T_pillGrid(){
   ]};
 }
 
+/* ── Pie / radial templates (uploaded references batch) ─────────────── */
+
+/* 1 — Four teardrop number badges pinwheeling around centre, with side
+   captions + corner icons (reference image 1). */
+function T_pinwheelBadges(){
+  const blurb="Get a modern PowerPoint Presentation that is beautifully designed. Easy to change colors.";
+  return {bg:"#ffffff",els:[
+    makeText({x:60,y:24,w:840,h:54,text:"Free Templates",font:'"Montserrat",sans-serif',size:44,weight:800,color:"#4a4f57",align:"center",anim:"rise"}),
+    makeText({x:60,y:84,w:840,h:30,text:"You can download professional diagrams for free",size:18,color:"#9aa0a6",align:"center",font:'"Montserrat",sans-serif',anim:"fade",animDelay:.1}),
+    // centre pinwheel of four teardrops
+    makeObject("teardrop_badge",{x:494,y:272,w:140,h:140,dropNumber:"01",dropCorner:"br",accent:"#2f8fc4",hideContainer:true,anim:"pop",animDelay:.2}),
+    makeObject("teardrop_badge",{x:646,y:272,w:140,h:140,dropNumber:"02",dropCorner:"bl",accent:"#1f9e8a",hideContainer:true,anim:"pop",animDelay:.26}),
+    makeObject("teardrop_badge",{x:494,y:420,w:140,h:140,dropNumber:"03",dropCorner:"tr",accent:"#e0a81e",hideContainer:true,anim:"pop",animDelay:.32}),
+    makeObject("teardrop_badge",{x:646,y:420,w:140,h:140,dropNumber:"04",dropCorner:"tl",accent:"#8cbf2a",hideContainer:true,anim:"pop",animDelay:.38}),
+    // left captions + icons
+    makeObject("info_node",{x:70,y:212,w:90,h:90,nodeIcon:"chart",nodeShowTitle:false,nodeShowText:false,hideContainer:true,accent:"#2f8fc4",anim:"left",animDelay:.3}),
+    makeText({x:180,y:228,w:210,h:24,text:"Content Here",size:18,weight:800,color:"#2f8fc4",font:'"Montserrat",sans-serif',anim:"fade",animDelay:.32}),
+    makeText({x:180,y:258,w:210,h:80,text:blurb,size:12,color:"#6b7077",font:'"Montserrat",sans-serif',lh:1.35,anim:"fade",animDelay:.35}),
+    makeObject("info_node",{x:70,y:470,w:90,h:90,nodeIcon:"chart",nodeShowTitle:false,nodeShowText:false,hideContainer:true,accent:"#e0a81e",anim:"left",animDelay:.4}),
+    makeText({x:180,y:486,w:210,h:24,text:"Content Here",size:18,weight:800,color:"#e0a81e",font:'"Montserrat",sans-serif',anim:"fade",animDelay:.42}),
+    makeText({x:180,y:516,w:210,h:80,text:blurb,size:12,color:"#6b7077",font:'"Montserrat",sans-serif',lh:1.35,anim:"fade",animDelay:.45}),
+    // right captions + icons
+    makeObject("info_node",{x:830,y:212,w:90,h:90,nodeIcon:"plane",nodeShowTitle:false,nodeShowText:false,hideContainer:true,accent:"#1f9e8a",anim:"right",animDelay:.3}),
+    makeText({x:700,y:228,w:120,h:24,text:"Content Here",size:18,weight:800,color:"#1f9e8a",align:"right",font:'"Montserrat",sans-serif',anim:"fade",animDelay:.32}),
+    makeText({x:680,y:258,w:210,h:80,text:blurb,size:12,color:"#6b7077",align:"right",font:'"Montserrat",sans-serif',lh:1.35,anim:"fade",animDelay:.35}),
+    makeObject("info_node",{x:830,y:470,w:90,h:90,nodeIcon:"megaphone",nodeShowTitle:false,nodeShowText:false,hideContainer:true,accent:"#8cbf2a",anim:"right",animDelay:.4}),
+    makeText({x:700,y:486,w:120,h:24,text:"Content Here",size:18,weight:800,color:"#8cbf2a",align:"right",font:'"Montserrat",sans-serif',anim:"fade",animDelay:.42}),
+    makeText({x:680,y:516,w:210,h:80,text:blurb,size:12,color:"#6b7077",align:"right",font:'"Montserrat",sans-serif',lh:1.35,anim:"fade",animDelay:.45}),
+  ]};
+}
+
+/* 2 — Row of four single-value pie charts + captions + legend (reference 2). */
+function T_pieRow(){
+  const data=[{p:55,c:"#2f7fc4"},{p:40,c:"#1f9e8a"},{p:35,c:"#8cbf2a"},{p:70,c:"#e0a81e"}];
+  const xs=[60,290,520,750];
+  const cell=(i,d)=>{
+    const o=data[i];
+    return [
+      makeObject("pie_percent",{x:xs[i]+25,y:120,w:130,h:130,level:o.p,accent:o.c,anim:"pop",animDelay:d}),
+      makeText({x:xs[i],y:270,w:180,h:24,text:"Add Text",size:16,weight:800,color:"#3a3a3a",align:"center",font:'"Montserrat",sans-serif',anim:"fade",animDelay:d+.05}),
+      makeText({x:xs[i]+10,y:298,w:160,h:70,text:"Get a modern PowerPoint Presentation that is beautifully designed.",size:11,color:"#6b7077",align:"center",font:'"Montserrat",sans-serif',lh:1.3,anim:"fade",animDelay:d+.08}),
+    ];
+  };
+  return {bg:"#ffffff",els:[
+    makeText({x:60,y:30,w:840,h:44,text:"Pie Charts",font:'"Montserrat",sans-serif',size:38,weight:800,color:"#4a4f57",align:"center",anim:"rise"}),
+    ...cell(0,.2),...cell(1,.26),...cell(2,.32),...cell(3,.38),
+    makeText({x:60,y:420,w:840,h:24,text:"Contents Here",size:14,weight:700,color:"#3a3a3a",align:"center",font:'"Montserrat",sans-serif',anim:"fade",animDelay:.5}),
+    makeText({x:120,y:448,w:720,h:60,text:"Get a modern PowerPoint Presentation that is beautifully designed. I hope and I believe that this Template will your Time, Money and Reputation. Easy to change colors, photos and Text.",size:11,color:"#9aa0a6",align:"center",font:'"Montserrat",sans-serif',lh:1.4,anim:"fade",animDelay:.55}),
+  ]};
+}
+
+/* 3 — Multi-segment donut with right-side % callouts + icons (reference 3). */
+function T_donutCallouts(){
+  const para="You can simply impress your audience and add a unique zing and appeal to your Presentations.";
+  return {bg:"#ffffff",els:[
+    makeText({x:60,y:28,w:840,h:44,text:"Donut Callouts",font:'"Montserrat",sans-serif',size:38,weight:800,color:"#4a4f57",align:"center",anim:"rise"}),
+    makeObject("food_wheel",{x:70,y:120,w:320,h:320,centerTitle:"",centerFill:"#ffffff",numberColor:"#ffffff",
+      segments:[
+        {label:"40%",color:"#cf2e2e",value:40},
+        {label:"10%",color:"#e0a81e",value:10},
+        {label:"20%",color:"#2f8f7f",value:20},
+        {label:"30%",color:"#2f7fc4",value:30}
+      ],anim:"pop",animDelay:.2}),
+    // three callouts on the right
+    ...[["85%","#cf2e2e","chat",150],["70%","#e0a81e","search",270],["65%","#2f8f7f","clock",390]].flatMap(([pct,c,icon,y],k)=>([
+      makeObject("info_node",{x:430,y:y,w:60,h:60,nodeIcon:icon,nodeShowTitle:false,nodeShowText:false,hideContainer:true,accent:c,anim:"pop",animDelay:.3+k*.06}),
+      makeText({x:510,y:y+8,w:90,h:40,text:pct,size:26,weight:800,color:c,font:'"Montserrat",sans-serif',anim:"fade",animDelay:.32+k*.06}),
+      makeText({x:600,y:y+4,w:160,h:40,text:"Simple PowerPoint Presentation",size:12,weight:600,color:"#3a3a3a",font:'"Montserrat",sans-serif',lh:1.25,anim:"fade",animDelay:.34+k*.06}),
+      makeText({x:770,y:y,w:160,h:70,text:para,size:10,color:"#9aa0a6",font:'"Montserrat",sans-serif',lh:1.3,anim:"fade",animDelay:.36+k*.06}),
+    ])),
+  ]};
+}
+
+/* 4 — Concentric radial bars + value labels + caption list (reference 4). */
+function T_radialList(){
+  const data=[{p:85,c:"#3a7fc4"},{p:75,c:"#6fae3a"},{p:65,c:"#e0a81e"},{p:55,c:"#e0633a"}];
+  return {bg:"#ffffff",els:[
+    makeText({x:60,y:30,w:840,h:42,text:"Radial Bars",font:'"Montserrat",sans-serif',size:36,weight:800,color:"#4a4f57",align:"center",anim:"rise"}),
+    makeObject("radial_bars",{x:70,y:130,w:300,h:300,segments:data.map(o=>({label:o.p+"%",color:o.c,value:o.p})),anim:"pop",animDelay:.2}),
+    // value labels to the right of the rings
+    ...data.flatMap((o,k)=>([
+      makeText({x:400,y:150+k*40,w:90,h:24,text:o.p+"%",size:16,weight:800,color:o.c,font:'"Montserrat",sans-serif',anim:"fade",animDelay:.3+k*.05}),
+    ])),
+    makeText({x:520,y:140,w:200,h:28,text:"Add Contents Here",size:18,weight:800,color:"#2f8fc4",font:'"Montserrat",sans-serif',anim:"fade",animDelay:.4}),
+    makeText({x:520,y:172,w:380,h:80,text:"You can simply impress your audience and add a unique zing and appeal to your Presentations. Get a modern PowerPoint Presentation that is beautifully designed.",size:12,color:"#6b7077",font:'"Montserrat",sans-serif',lh:1.4,anim:"fade",animDelay:.45}),
+    ...data.flatMap((o,k)=>([
+      makeCreativeShape("blob_01",{x:520,y:280+k*55,w:16,h:16,fill:o.c,anim:"pop",animDelay:.5+k*.05}),
+      makeText({x:548,y:278+k*55,w:380,h:40,text:"You can simply impress your audience and add a unique zing and appeal to your Presentations.",size:11,color:"#6b7077",font:'"Montserrat",sans-serif',lh:1.3,anim:"fade",animDelay:.52+k*.05}),
+    ])),
+  ]};
+}
+
+/* 5 — Row of pie charts with icon below + caption (reference 5). */
+function T_pieIconRow(){
+  const data=[{p:60,c:"#e0a81e",icon:"briefcase"},{p:35,c:"#1f9e8a",icon:"chat"},{p:50,c:"#cf2e7a",icon:"briefcase"},{p:30,c:"#7a3aa8",icon:"person"}];
+  const xs=[60,290,520,750];
+  const cell=(i,d)=>{
+    const o=data[i];
+    return [
+      makeText({x:xs[i],y:120,w:180,h:24,text:"Contents Here",size:16,weight:800,color:o.c,align:"center",font:'"Montserrat",sans-serif',anim:"fade",animDelay:d}),
+      makeObject("pie_percent",{x:xs[i]+35,y:150,w:110,h:110,level:o.p,accent:o.c,anim:"pop",animDelay:d+.05}),
+      makeObject("info_node",{x:xs[i]+55,y:270,w:64,h:64,nodeIcon:o.icon,nodeShowTitle:false,nodeShowText:false,hideContainer:true,accent:o.c,anim:"pop",animDelay:d+.1}),
+      makeText({x:xs[i],y:340,w:180,h:24,text:"Add Text",size:15,weight:700,color:"#3a3a3a",align:"center",font:'"Montserrat",sans-serif',anim:"fade",animDelay:d+.12}),
+      makeText({x:xs[i]+10,y:366,w:160,h:60,text:"Get a modern PowerPoint Presentation that is beautifully designed.",size:11,color:"#9aa0a6",align:"center",font:'"Montserrat",sans-serif',lh:1.3,anim:"fade",animDelay:d+.15}),
+    ];
+  };
+  return {bg:"#ffffff",els:[
+    makeText({x:60,y:34,w:840,h:44,text:"Pie + Icons",font:'"Montserrat",sans-serif',size:36,weight:800,color:"#4a4f57",align:"center",anim:"rise"}),
+    ...cell(0,.2),...cell(1,.26),...cell(2,.32),...cell(3,.38),
+  ]};
+}
+
 const BASE_TEMPLATES = [
   {name:"Infographic · Animal bars",   build:T_animalsBars},
   {name:"Infographic · Our Profit",    build:T_ourProfit},
@@ -3776,6 +3922,11 @@ const BASE_TEMPLATES = [
   {name:"Arrows · Big contents",       build:T_bigArrows},
   {name:"List · Number callouts",      build:T_numberCallouts},
   {name:"List · Contents pills",       build:T_pillGrid},
+  {name:"Pie · Pinwheel badges",       build:T_pinwheelBadges},
+  {name:"Pie · Chart row",             build:T_pieRow},
+  {name:"Pie · Donut callouts",        build:T_donutCallouts},
+  {name:"Pie · Radial bars list",      build:T_radialList},
+  {name:"Pie · Icon row",              build:T_pieIconRow},
   {name:"Infographic · Beer (teal)",   build:T_beerInfographicAlt},
   {name:"Infographic · Funnels",       build:T_funnelInfographic},
   {name:"Infographic · Gauge board",   build:T_gaugeDashboard},
@@ -5350,6 +5501,126 @@ function renderStatItem(el){
   return wrap;
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   Pie / radial objects (uploaded references batch).
+     • pie_percent    — a single-value pie: an accent wedge sized to the
+       level, with the remainder shown as a faded tint of the same colour.
+       Optional % label in/near the wedge.
+     • radial_bars    — concentric progress arcs (nested rings), each with
+       its own value + colour. Editable via the `segments` array.
+     • teardrop_badge — a rounded "petal" badge holding a number, the corner
+       it points to rotates so 4 can pinwheel around a centre.
+   ──────────────────────────────────────────────────────────────────── */
+
+/* ── pie_percent: one filled wedge + faded remainder ────────────────── */
+function renderPiePercent(el){
+  const d=objectDef(el.objectType);
+  const lvl=clamp(Number(el.level)||0,0,100);
+  const accent=el.accent||d.accent||"#2f7fb0";
+  const wrap=document.createElement("div");
+  wrap.className="pie-pct"+(el.objAnim===false?" pie-pct-static":"");
+  wrap.style.setProperty("--accent",accent);
+  const NS="http://www.w3.org/2000/svg";
+  const cx=100, cy=100, r=88;
+  const ang=(lvl/100)*Math.PI*2;
+  const a0=-Math.PI/2, a1=a0+ang;
+  const [x0,y0]=[cx+r*Math.cos(a0), cy+r*Math.sin(a0)];
+  const [x1,y1]=[cx+r*Math.cos(a1), cy+r*Math.sin(a1)];
+  const large=ang>Math.PI?1:0;
+  const S=document.createElementNS(NS,"svg");
+  S.setAttribute("viewBox","0 0 200 200");
+  S.setAttribute("class","pie-pct-svg");
+  S.setAttribute("preserveAspectRatio","xMidYMid meet");
+  // faded full disc (the remainder) + the accent wedge on top
+  let inner=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="${accent}" opacity="0.28"/>`;
+  if(lvl>0 && lvl<100){
+    inner+=`<path class="pie-pct-wedge" fill="${accent}" d="M ${cx} ${cy} L ${x0.toFixed(2)} ${y0.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)} Z"/>`;
+  }else if(lvl>=100){
+    inner+=`<circle class="pie-pct-wedge" cx="${cx}" cy="${cy}" r="${r}" fill="${accent}"/>`;
+  }
+  S.innerHTML=inner;
+  wrap.appendChild(S);
+  if(el.showValue!==false){
+    const num=document.createElement("div");
+    num.className="pie-pct-num";
+    // place the % inside the wedge (mid-angle) by default, or centre
+    const mid=a0+ang/2, rr=r*0.55;
+    const px=(cx+rr*Math.cos(mid))/200*100, py=(cy+rr*Math.sin(mid))/200*100;
+    if(el.numberPos==="center"){ num.style.left="50%"; num.style.top="50%"; }
+    else { num.style.left=px.toFixed(1)+"%"; num.style.top=py.toFixed(1)+"%"; }
+    num.style.color=el.numberColor||"#ffffff";
+    const countAttr=(el.numberMode==="countup"&&el.objAnim!==false)?` data-count-to="${lvl}"`:"";
+    num.innerHTML=`<b${countAttr}>${lvl}%</b>`;
+    wrap.appendChild(num);
+  }
+  return wrap;
+}
+
+/* ── radial_bars: concentric progress arcs ──────────────────────────── */
+function radialSegs(el){
+  const def=[
+    {label:"85%",color:"#3a7fc4",value:85},
+    {label:"75%",color:"#6fae3a",value:75},
+    {label:"65%",color:"#e0a81e",value:65},
+    {label:"55%",color:"#e0633a",value:55},
+  ];
+  let segs=Array.isArray(el.segments)&&el.segments.length?el.segments:def;
+  return segs.slice(0,7).map((s,i)=>({label:s.label||"",color:s.color||"#888",value:(Number(s.value)||parseFloat(s.label)||0)}));
+}
+function renderRadialBars(el){
+  const segs=radialSegs(el);
+  const wrap=document.createElement("div");
+  wrap.className="radial-bars"+(el.objAnim===false?" radial-static":"");
+  const NS="http://www.w3.org/2000/svg";
+  const cx=110, cy=110, S=document.createElementNS(NS,"svg");
+  S.setAttribute("viewBox","0 0 220 220");
+  S.setAttribute("class","radial-bars-svg");
+  S.setAttribute("preserveAspectRatio","xMidYMid meet");
+  const n=segs.length, rOuter=96, ringGap=2, thick=(rOuter-26)/n - ringGap;
+  let inner="";
+  segs.forEach((s,i)=>{
+    const r=rOuter - i*(thick+ringGap) - thick/2;
+    const C=2*Math.PI*r;
+    const dash=(clamp(s.value,0,100)/100*C);
+    inner+=`<circle cx="${cx}" cy="${cy}" r="${r.toFixed(1)}" fill="none" stroke="${s.color}" stroke-opacity=".18" stroke-width="${thick.toFixed(1)}"/>`;
+    inner+=`<circle class="rb-fill" style="--i:${i}" cx="${cx}" cy="${cy}" r="${r.toFixed(1)}" fill="none" stroke="${s.color}" stroke-width="${thick.toFixed(1)}" stroke-linecap="round" stroke-dasharray="${dash.toFixed(1)} ${(C-dash).toFixed(1)}" transform="rotate(-90 ${cx} ${cy})"/>`;
+  });
+  S.innerHTML=inner;
+  wrap.appendChild(S);
+  return wrap;
+}
+
+/* ── teardrop_badge: rounded petal holding a number ─────────────────── */
+function renderTeardropBadge(el){
+  const d=objectDef(el.objectType);
+  const accent=el.accent||d.accent||"#2f7fb0";
+  const corner=el.dropCorner||"tl";    // which corner the petal point sits in
+  const filled=el.dropStyle!=="outline";
+  const rot={tl:0,tr:90,br:180,bl:270}[corner]||0;
+  const wrap=document.createElement("div");
+  wrap.className="drop-badge"+(el.objAnim===false?" drop-static":"");
+  wrap.style.setProperty("--accent",accent);
+  const NS="http://www.w3.org/2000/svg";
+  const S=document.createElementNS(NS,"svg");
+  S.setAttribute("viewBox","0 0 120 120");
+  S.setAttribute("class","drop-badge-svg");
+  S.setAttribute("preserveAspectRatio","xMidYMid meet");
+  // a circle with one squared corner (teardrop), rotated to the chosen corner
+  const path=`M 18 60 A 42 42 0 1 1 60 102 L 18 102 Z`;
+  S.innerHTML=`<g transform="rotate(${rot} 60 60)">`+
+    (filled
+      ? `<path d="${path}" fill="${accent}"/>`
+      : `<path d="${path}" fill="none" stroke="${accent}" stroke-width="4"/>`)+
+    `</g>`;
+  wrap.appendChild(S);
+  const num=document.createElement("div");
+  num.className="drop-badge-num";
+  num.style.color = filled ? (el.numberColor||"#ffffff") : (el.numberColor||accent);
+  num.textContent = el.dropNumber!=null ? el.dropNumber : "01";
+  wrap.appendChild(num);
+  return wrap;
+}
+
 function renderCountGrid(el){
   const wrap=document.createElement("div");wrap.className="object-grid";
   const n=miniCount(el.count, el.objectType==="wall" ? 80 : 120);
@@ -5529,6 +5800,9 @@ function renderObject(el){
   else if(el.objectType==="funnel_stack") art=renderFunnelStack(el);
   else if(el.objectType==="percent_ring") art=renderPercentRing(el);
   else if(el.objectType==="stat_item") art=renderStatItem(el);
+  else if(el.objectType==="pie_percent") art=renderPiePercent(el);
+  else if(el.objectType==="radial_bars") art=renderRadialBars(el);
+  else if(el.objectType==="teardrop_badge") art=renderTeardropBadge(el);
   else if(d.shape && VESSEL_PATHS[d.shape]) art=renderVessel(el,d.shape);
   else art=renderCountGrid(el);
   art.classList.add("object-art");
@@ -5539,7 +5813,9 @@ function renderObject(el){
      || el.objectType==="coffee_segments" || el.objectType==="info_node"
      || el.objectType==="diet_plate" || el.objectType==="food_wheel"
      || el.objectType==="funnel_stack"
-     || el.objectType==="percent_ring" || el.objectType==="stat_item") return box;
+     || el.objectType==="percent_ring" || el.objectType==="stat_item"
+     || el.objectType==="pie_percent" || el.objectType==="radial_bars"
+     || el.objectType==="teardrop_badge") return box;
 
   // ── the number + label (independent) ─────────────────────────────
   const pos = el.numberPos || (d.fill?"onfill":"below");

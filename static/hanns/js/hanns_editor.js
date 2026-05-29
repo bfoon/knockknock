@@ -1361,6 +1361,11 @@ Affected Area 1,-16.52,13.39,45,#e8482b,#ffffff">${escapeTA(areasToText(el))}</t
       ${el.objectType==="food_wheel" ? `
       ${field("Centre title",`<input type="text" id="f-fwtitle" value="${((el.centerTitle!=null?el.centerTitle:"HEALTHY\\nFOOD")).replace(/\n/g,"\\n").replace(/"/g,"&quot;")}"> <span class="insp-empty" style="font-size:.7em">\\n = line break</span>`)}
       ` : ""}
+      ${el.objectType==="teardrop_badge" ? `
+      ${field("Number",`<input type="text" id="f-dropnum" value="${(el.dropNumber!=null?String(el.dropNumber):"01").replace(/"/g,"&quot;")}">`)}
+      ${field("Point corner",`<div class="seg" id="f-dropcorner"><button data-dc="tl" class="${(el.dropCorner||"tl")==="tl"?"active":""}">↖</button><button data-dc="tr" class="${el.dropCorner==="tr"?"active":""}">↗</button><button data-dc="bl" class="${el.dropCorner==="bl"?"active":""}">↙</button><button data-dc="br" class="${el.dropCorner==="br"?"active":""}">↘</button></div>`)}
+      ${field("Style",`<div class="seg" id="f-dropstyle"><button data-ds="solid" class="${el.dropStyle!=="outline"?"active":""}">Solid</button><button data-ds="outline" class="${el.dropStyle==="outline"?"active":""}">Outline</button></div>`)}
+      ` : ""}
       ${el.objectType==="stat_item" ? `
       ${field("Number",`<input type="text" id="f-statnum" value="${(el.statNumber!=null?String(el.statNumber):"01").replace(/"/g,"&quot;")}">`)}
       ${field("Show number",`<div class="seg" id="f-statshownum"><button data-ssn="1" class="${el.statShowNumber!==false?"active":""}">Show</button><button data-ssn="0" class="${el.statShowNumber===false?"active":""}">Hide</button></div>`)}
@@ -1556,6 +1561,10 @@ function bindElementPanel(el){
     const sx=$("#f-stattext");sx&&sx.addEventListener("input",()=>{el.statText=sx.value;renderCanvas();markDirty();});
     seg("f-statshowtext","ssx",v=>{el.statShowText=(v==="1");renderCanvas();markDirty();});
     seg("f-statstyle","sty",v=>{el.statStyle=v;renderCanvas();markDirty();});
+    // teardrop_badge controls
+    const dn=$("#f-dropnum");dn&&dn.addEventListener("input",()=>{el.dropNumber=dn.value;renderCanvas();markDirty();});
+    seg("f-dropcorner","dc",v=>{el.dropCorner=v;renderCanvas();markDirty();});
+    seg("f-dropstyle","ds",v=>{el.dropStyle=v;renderCanvas();markDirty();});
   }
   // swatches
   $$(".sw[data-color]",inspBody).forEach(s=>s.addEventListener("click",()=>{el.color=s.dataset.color;activateSwatch(s,"color");renderCanvas();markDirty();}));
@@ -1577,6 +1586,7 @@ function segObjectKind(el){
   return ({
     diet_plate:      {key:"segments", hasSub:true,  hasValue:true,  label:"Slices"},
     food_wheel:      {key:"segments", hasSub:false, hasValue:true,  label:"Segments"},
+    radial_bars:     {key:"segments", hasSub:false, hasValue:true,  label:"Rings"},
     funnel_stack:    {key:"bands",    hasSub:false, hasValue:false, label:"Bands"},
     coffee_segments: {key:"bands",    hasSub:true,  hasValue:false, label:"Bands"},
   })[el.objectType] || null;
@@ -1595,6 +1605,9 @@ function segDefaults(kind){
       {label:"15%",color:"#e8821e"},{label:"10%",color:"#f5cd2a"},
       {label:"35%",color:"#5a9e48"},{label:"25%",color:"#e8503a"},
       {label:"20%",color:"#5bb0cf"}];
+    case "radial_bars": return [
+      {label:"85%",color:"#3a7fc4",value:85},{label:"75%",color:"#6fae3a",value:75},
+      {label:"65%",color:"#e0a81e",value:65},{label:"55%",color:"#e0633a",value:55}];
     case "funnel_stack": return [
       {label:"01",color:"#2f4fb0"},{label:"02",color:"#1f9e8a"},
       {label:"03",color:"#d83a3a"},{label:"04",color:"#e08a1e"},

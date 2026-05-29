@@ -3,14 +3,16 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ session.title }} · Quest RPG</title>
-<link rel="stylesheet" href="{% static 'quest_rpg/css/quest_rpg.css' %}?v=5">
+<link rel="stylesheet" href="{% static 'quest_rpg/css/quest_rpg.css' %}?v=7">
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body class="quest-present-body world-{{ session.world }}">
 <div class="quest-present" id="quest-present">
-  <section class="quest-world-stage adventure-projector-stage">
-    <div class="ambient-layer" id="ambient-layer"></div>
-    <div class="quest-map adventure-world-map" id="quest-map"></div>
+  <section class="quest-world-stage adventure-projector-stage quest-3d-stage">
+    <!-- 3D world canvas host (replaces the old flat map) -->
+    <div class="quest-3d-canvas" id="quest-3d"></div>
+
     <div class="quest-question-card adventure-status-card" id="question-card"></div>
     <div class="quest-leaderboard" id="leaderboard"></div>
     <div class="quest-join-card">
@@ -44,7 +46,7 @@ window.__QUEST_PRESENT__={
   csrf:"{{ csrf_token }}"
 };
 </script>
-<script src="{% static 'quest_rpg/js/quest_core.js' %}?v=5"></script>
-<script src="{% static 'quest_rpg/js/quest_present.js' %}?v=5"></script>
+<script src="{% static 'quest_rpg/js/quest_core.js' %}?v=7"></script>
+<script src="{% static 'quest_rpg/js/quest_present.js' %}?v=7"></script>
 </body>
 </html>

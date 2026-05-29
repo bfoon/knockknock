@@ -103,3 +103,86 @@
 .projector-stage-node{z-index:3!important}.projector-stage-node:after,.team-stage-node:after{content:"";position:absolute;inset:-5px;border-radius:inherit;border:1px solid rgba(255,255,255,.13);animation:pulse 2.2s ease-in-out infinite;pointer-events:none}.treasure-goal{z-index:4!important;right:4%!important;top:45%!important}.team-map-goal{z-index:4!important;right:8px!important;top:48%!important;transform:translateY(-50%)}
 .adventure-token{z-index:6!important;display:grid!important;grid-template-columns:auto 1fr;max-width:220px}.adventure-token em{grid-column:2/3;display:block;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-style:normal;color:#ffb6ad;font-size:10px;font-weight:900}.winner-token em{color:#ffe2a0}.rank em,.adventure-leader-callout em{display:block;margin-top:4px;font-style:normal;color:#ffb6ad;font-weight:900;font-size:11px;line-height:1.25}.rank strong{font-size:14px;white-space:nowrap}.rank.complete strong{color:#ffd166}.rank.complete{background:linear-gradient(135deg,rgba(255,209,102,.22),rgba(255,255,255,.07))!important}.team-wrong-log{margin:12px 0 0;padding:11px;border-radius:16px;border:1px solid rgba(255,77,46,.26);background:rgba(255,77,46,.10);display:grid;gap:7px;color:#ffd6cf}.team-wrong-log b{color:#fff;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.team-wrong-log span{display:block;font-size:12px;line-height:1.35}.team-wrong-log strong{color:#ffd166}.team-hero{transition:left .75s cubic-bezier(.2,1,.2,1), top .75s cubic-bezier(.2,1,.2,1)!important}.team-stage-node{z-index:3!important}.phone-team strong{font-size:13px;white-space:nowrap}.adventure-stat-grid div:nth-child(2){background:linear-gradient(135deg,rgba(34,211,238,.14),rgba(255,255,255,.05))}
 @media(max-width:620px){.adventure-route-line{stroke-width:8}.adventure-route-glow{stroke-width:18}.adventure-token em{display:none}.team-wrong-log{max-height:130px;overflow:auto}.rank strong{font-size:12px}}
+
+/* ============================================================ */
+/* 3D mode — projector stage + player view (added for 3D rework) */
+/* ============================================================ */
+
+/* Projector: the 3D canvas fills the whole stage behind overlays. */
+.quest-3d-stage{position:relative;height:100%;overflow:hidden}
+.quest-3d-canvas{position:absolute;inset:0;z-index:0}
+.quest-3d-canvas canvas{display:block;width:100%!important;height:100%!important}
+/* lift existing overlays above the 3D canvas */
+.quest-3d-stage .quest-question-card,
+.quest-3d-stage .quest-leaderboard,
+.quest-3d-stage .quest-join-card,
+.quest-3d-stage .quest-host-controls{z-index:6}
+/* give the status card a touch more contrast over the live scene */
+.quest-3d-stage .adventure-status-card{background:rgba(10,7,18,.74);backdrop-filter:blur(16px)}
+.quest-3d-stage .quest-leaderboard{background:rgba(10,7,18,.74);backdrop-filter:blur(16px)}
+
+/* Player phone: the map host now holds a 3D canvas. */
+.team-adventure-map.team-3d{height:240px;background:#04060f;position:relative}
+.team-adventure-map.team-3d canvas{display:block;width:100%!important;height:100%!important;border-radius:28px}
+
+/* Floating "+points" reward badge over the player canvas. */
+.reward-pop{position:absolute;left:50%;top:40%;transform:translate(-50%,10px) scale(.7);
+  font-weight:950;font-size:42px;color:var(--gold);text-shadow:0 4px 18px rgba(0,0,0,.6),0 0 24px var(--gold);
+  opacity:0;transition:transform .5s cubic-bezier(.2,1,.2,1),opacity .4s;pointer-events:none;z-index:9}
+.reward-pop.on{opacity:1;transform:translate(-50%,-30px) scale(1.15)}
+
+/* Live-status pills inherit kind colouring */
+.quest-live-status[data-kind="good"],.phone-connection-status[data-kind="good"]{color:var(--green)}
+.quest-live-status[data-kind="warn"],.phone-connection-status[data-kind="warn"]{color:var(--gold)}
+.quest-live-status[data-kind="bad"],.phone-connection-status[data-kind="bad"]{color:var(--accent)}
+
+@media(max-width:900px){
+  .quest-3d-stage .quest-leaderboard{display:block;position:absolute;right:3vw;top:auto;bottom:4vh;width:min(330px,46vw)}
+}
+/* ════════════════════════════════════════════════════════════════════
+   Quest RPG · projector add-ons
+   1) collapsible status panel  2) leaderboard coin rewards
+   3) tap-to-enlarge QR modal   4) (treasure winner avatars are in 3D)
+   ════════════════════════════════════════════════════════════════════ */
+
+/* 1 — show / hide the big status card -------------------------------- */
+.adventure-status-card{transition:opacity .28s ease, transform .28s ease}
+.adventure-status-card.collapsed{opacity:0;transform:translateY(24px) scale(.97);pointer-events:none}
+#toggle-info{font-size:12px}
+
+/* 2 — coin rewards on the leaderboard -------------------------------- */
+.quest-leaderboard .rank small{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.quest-leaderboard .rank small em{flex-basis:100%}
+.rank-coin{display:inline-flex;align-items:center;gap:.3ch;text-decoration:none;font-style:normal;
+  font-weight:950;font-size:12px;line-height:1;color:#2a1c05;
+  background:linear-gradient(135deg,#ffe9a8,#ffcf5a);border:1px solid rgba(255,209,102,.7);
+  border-radius:999px;padding:5px 10px;box-shadow:0 4px 14px rgba(255,193,7,.22);white-space:nowrap}
+.rank-coin.tier-1{box-shadow:0 5px 18px rgba(255,193,7,.5);transform:scale(1.04)}
+.rank-coin.tier-2{background:linear-gradient(135deg,#eef2f7,#c4cedb);border-color:rgba(220,228,238,.8);color:#1d2530}
+.rank-coin.tier-3{background:linear-gradient(135deg,#f7cb9c,#e09a5c);border-color:rgba(226,154,94,.85);color:#3a230e}
+.rank-coin.pending{filter:saturate(.55);opacity:.72}
+
+/* 3 — tap-to-enlarge QR modal ---------------------------------------- */
+.quest-join-card.enlargeable{cursor:zoom-in}
+.quest-join-card.enlargeable:hover{box-shadow:0 26px 90px rgba(0,0,0,.5),0 0 50px color-mix(in srgb,var(--accent) 34%, transparent)!important}
+.quest-join-card.enlargeable #quest-qr{transition:transform .18s ease}
+.quest-join-card.enlargeable:hover #quest-qr{transform:scale(1.05)}
+.quest-qr-modal{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;opacity:0;transition:opacity .22s ease}
+.quest-qr-modal.on{opacity:1}
+.quest-qr-modal[hidden]{display:none}
+.quest-qr-modal-backdrop{position:absolute;inset:0;background:rgba(4,3,12,.82);backdrop-filter:blur(8px)}
+.quest-qr-modal-card{position:relative;z-index:1;display:grid;justify-items:center;gap:10px;
+  padding:26px 26px 22px;border-radius:28px;text-align:center;max-width:min(92vw,460px);
+  background:linear-gradient(135deg,rgba(28,24,52,.96),rgba(16,14,34,.96));
+  border:1px solid rgba(255,255,255,.16);box-shadow:0 40px 120px rgba(0,0,0,.6);
+  transform:scale(.92);transition:transform .22s cubic-bezier(.2,1,.2,1)}
+.quest-qr-modal.on .quest-qr-modal-card{transform:scale(1)}
+.quest-qr-modal-qr{background:#fff;border-radius:18px;padding:16px;line-height:0}
+.quest-qr-modal-qr img,.quest-qr-modal-qr canvas{display:block}
+.quest-qr-modal-code{font-size:40px;letter-spacing:.16em;font-weight:950}
+.quest-qr-modal-url{color:var(--muted);font-size:13px;overflow-wrap:anywhere;max-width:90%}
+.quest-qr-modal-card p{margin:4px 0 0;color:var(--muted);font-size:13px}
+.quest-qr-modal-close{position:absolute;top:10px;right:10px;width:38px;height:38px;border-radius:50%;
+  border:1px solid var(--line);background:rgba(255,255,255,.08);color:#fff;font-size:16px;font-weight:900;cursor:pointer}
+.quest-qr-modal-close:hover{background:rgba(255,255,255,.18)}
+@media(max-width:620px){.quest-qr-modal-code{font-size:32px}}

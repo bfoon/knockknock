@@ -3,14 +3,15 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Join {{ session.title }} · Quest RPG</title>
-<link rel="stylesheet" href="{% static 'quest_rpg/css/quest_rpg.css' %}?v=5">
+<link rel="stylesheet" href="{% static 'quest_rpg/css/quest_rpg.css' %}?v=7">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body class="quest-phone world-{{ session.world }}">
 <main class="phone-card adventure-phone-card" id="phone-card">
   <section id="join-panel">
     <div class="emoji-orb">🧭</div>
     <h1>{{ session.title }}</h1>
-    <p>Join as one team. Use this computer or phone as the team device, discuss together, and answer at your own pace.</p>
+    <p>Join as one team. Use this device as the team's controller, discuss together, and guide your 3D hero to the treasure at your own pace.</p>
     <div id="phone-connection-status" class="phone-connection-status">Connecting…</div>
     <label>Team name<input id="team-name" placeholder="Team Lion"></label>
     <label>Avatar<select id="team-avatar"></select></label>
@@ -21,6 +22,7 @@
   <section id="play-panel" class="hidden">
     <div id="phone-live-status" class="phone-connection-status">Connected</div>
     <div class="phone-team" id="phone-team"></div>
+    <!-- 3D over-the-shoulder hero view (canvas mounts here) -->
     <div class="team-adventure-map" id="team-adventure-map"></div>
     <div class="phone-progress" id="phone-progress"></div>
     <div class="phone-stage-story" id="phone-stage-story"></div>
@@ -40,6 +42,6 @@ window.__QUEST_JOIN__={
   csrf:"{{ csrf_token }}"
 };
 </script>
-<script src="{% static 'quest_rpg/js/quest_core.js' %}?v=5"></script>
-<script src="{% static 'quest_rpg/js/quest_join.js' %}?v=5"></script>
+<script src="{% static 'quest_rpg/js/quest_core.js' %}?v=7"></script>
+<script src="{% static 'quest_rpg/js/quest_join.js' %}?v=7"></script>
 </body></html>

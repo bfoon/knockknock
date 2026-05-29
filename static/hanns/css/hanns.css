@@ -1119,3 +1119,185 @@ body.hanns-options-open .drawer{
 .hanns-geo-actions button{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.07);color:#fff;border-radius:12px;padding:.62rem .8rem;font-weight:900;cursor:pointer}
 .hanns-geo-actions #map-area-apply{background:var(--signal,#e8482b);border-color:var(--signal,#e8482b)}
 .hanns-geo-sample{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:10px;color:#d8d2c6;white-space:pre-wrap;font-size:.72rem;line-height:1.35;max-height:120px;overflow:auto}
+/* ════════════════════════════════════════════════════════════════════
+   FILL-SHAPE OBJECTS — vessels (funnel/wine/beer/coffee/bar), gauge,
+   the on-object riding number, resize scaling, and animation on/off.
+   Added for: resize-aware sizing, number-on-object, anim toggle.
+   ════════════════════════════════════════════════════════════════════ */
+
+/* Resize fix: make container-query units (cqw/cqh/cqmin) resolve against
+   the object box itself, so contents scale when the object is resized.
+   Previously there was no container, so cqw tracked the viewport. */
+.object-box{container-type:size}
+.object-badge b{font-size:clamp(.55rem,6cqmin,1.15rem)}
+.object-badge span{font-size:clamp(.42rem,4cqmin,.8rem)}
+
+/* ── Vessel (funnel / wine / beer / coffee / bar) — one self-contained SVG ─
+   The liquid is clipped INSIDE the SVG and rises via scaleY about the
+   bottom, so it can never extend past the outline. */
+.object-vessel{position:absolute;inset:0;width:100%;height:100%}
+.vessel-svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.v-glass{fill:rgba(255,255,255,.05)}
+.v-body{fill:var(--accent)}
+.v-surface{fill:rgba(255,255,255,.45);animation:vSheen 3.6s ease-in-out infinite}
+/* the fill rises from the bottom of the vessel */
+.v-fill{transform-box:view-box;transform-origin:50px var(--fill-origin,140px);
+  animation:vRise 1.05s cubic-bezier(.22,1,.36,1) both}
+.v-bub{fill:rgba(255,255,255,.75);opacity:0;
+  animation:vBub var(--bd,4.2s) ease-in var(--bdl,0s) infinite}
+.v-bub.b1{--bd:4.4s;--bdl:.2s}
+.v-bub.b2{--bd:5.6s;--bdl:1.4s}
+.v-bub.b3{--bd:4.9s;--bdl:2.6s}
+.v-outline{fill:none;stroke:rgba(255,255,255,.8);stroke-width:3px}
+.vf{fill:rgba(255,255,255,.92);stroke:rgba(255,255,255,.85);stroke-width:1.5px}
+.vf-line{stroke:rgba(255,255,255,.85);stroke-width:3.2px;stroke-linecap:round}
+.vf-base{fill:rgba(255,255,255,.85)}
+/* a number-only or label-only badge centres instead of spreading apart */
+.object-badge.solo{justify-content:center}
+/* let every object (incl. legacy glasses) resize down freely */
+.object-glass{min-width:0}
+.object-grid{grid-template-columns:repeat(auto-fit,minmax(22px,1fr))}
+/* beer reads lighter/foamier at the top; coffee body keeps a warm rim */
+.vessel-beer .v-surface{fill:rgba(255,255,255,.85);ry:5}
+
+@keyframes vRise{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes vSheen{0%,100%{opacity:.3}50%{opacity:.6}}
+@keyframes vBub{0%{opacity:0;transform:translateY(0) scale(.6)}
+  12%{opacity:.85}80%{opacity:.6}
+  100%{opacity:0;transform:translateY(var(--bub-rise,-60px)) scale(1)}}
+
+
+/* ── The number that rides the fill surface ───────────────────────── */
+.vessel-number{position:absolute;left:0;right:0;bottom:var(--level);z-index:8;text-align:center;
+  transform:translateY(50%);pointer-events:none;animation:labelRise 1s cubic-bezier(.22,1,.36,1) both}
+.vessel-number b{display:inline-block;font-family:var(--font-mono);font-weight:900;line-height:1;
+  font-size:clamp(.7rem,11cqmin,2.1rem);color:#0e1116;
+  background:rgba(255,255,255,.88);border-radius:999px;padding:.18em .5em;
+  box-shadow:0 6px 18px rgba(0,0,0,.25)}
+.vessel-number--center{bottom:50%;animation:none}
+/* legacy glasses: liquid lives in an inset glass (height 84%, centred), so
+   the surface line sits at 8% + level*0.84 of the box */
+.object-water_glass .vessel-number,
+.object-sand_glass  .vessel-number{bottom:calc(8% + (var(--level)) * 0.84)}
+.object-water_glass .vessel-number--center,
+.object-sand_glass  .vessel-number--center{bottom:50%}
+
+.object-caption{position:absolute;left:8%;right:8%;bottom:10px;z-index:7;text-align:center;
+  font-family:var(--font-mono);font-size:clamp(.45rem,4.6cqmin,.85rem);letter-spacing:.04em;
+  text-transform:uppercase;color:#e9e4d8;text-shadow:0 1px 3px rgba(0,0,0,.5);pointer-events:none}
+
+@keyframes labelRise{from{bottom:0}}
+
+/* ── Gauge / dial ─────────────────────────────────────────────────── */
+.object-gauge{position:absolute;inset:0;display:grid;place-items:center}
+.gauge-svg{width:92%;height:92%}
+.g-track{fill:none;stroke:rgba(255,255,255,.20);stroke-width:16;stroke-linecap:round}
+.g-fill{fill:none;stroke:var(--accent);stroke-width:16;stroke-linecap:round;
+  stroke-dasharray:100;animation:gaugeDraw 1s cubic-bezier(.22,1,.36,1) both}
+.g-needle{transform-box:view-box;transform-origin:100px 100px;transform:rotate(var(--angle));
+  animation:needleSwing 1s cubic-bezier(.34,1.56,.64,1) both}
+.g-needle line{stroke:#11151b;stroke-width:5;stroke-linecap:round}
+.g-needle circle{fill:#11151b}
+.gauge-num{position:absolute;bottom:12%;left:0;right:0;text-align:center}
+.gauge-num b{font-family:var(--font-mono);font-weight:900;color:#fff;
+  font-size:clamp(.8rem,12cqmin,2rem);text-shadow:0 2px 8px rgba(0,0,0,.45)}
+
+@keyframes gaugeDraw{from{stroke-dashoffset:100}to{stroke-dashoffset:0}}
+@keyframes needleSwing{from{transform:rotate(-90deg)}}
+
+/* ── Animation OFF: freeze every idle / fill / entrance motion ─────── */
+.object-static .glass-liquid,
+.object-static .glass-wave,
+.object-static .glass-wave::before,
+.object-static .glass-wave::after,
+.object-static .glass-surface,
+.object-static .glass-bubble,
+.object-static .object-item,
+.object-static .vessel-number,
+.object-static .v-fill,
+.object-static .v-surface,
+.object-static .v-bub,
+.object-static .g-fill,
+.object-static .g-needle{animation:none!important}
+.object-static .glass-liquid{height:var(--level)}   /* sit at final fill */
+.object-static .glass-bubble{display:none}
+.object-static .v-fill{transform:none}
+.object-static .v-bub{display:none}
+.object-static .g-fill{stroke-dashoffset:0}
+.object-static .g-needle{transform:rotate(var(--angle))}
+/* ════════════════════════════════════════════════════════════════════
+   Object visual zoom — grow the art INSIDE the fixed container box.
+   The .object-box keeps its w/h and clips overflow; only the inner
+   .object-art is scaled, from its centre, so the box never changes.
+   ──────────────────────────────────────────────────────────────────── */
+.object-art{transform:scale(var(--obj-scale,1));transform-origin:center center;
+  will-change:transform}
+/* glasses/vessels/gauge are absolutely positioned (inset:0) — keep that,
+   the scale composes with their own inset:0 box fine. */
+.object-box.object-scaled{overflow:hidden}
+
+/* ════════════════════════════════════════════════════════════════════
+   SDG colour wheel
+   ──────────────────────────────────────────────────────────────────── */
+.sdg-wheel{position:absolute;inset:0;display:grid;place-items:center}
+.sdg-wheel-svg{width:100%;height:100%;display:block;overflow:visible}
+.sdg-wedge{transform-box:view-box;transform-origin:200px 200px;
+  animation:sdgWedgeIn .6s cubic-bezier(.22,1,.36,1) both;
+  animation-delay:calc(var(--i) * .045s)}
+.sdg-wedge path{stroke:rgba(0,0,0,.06);stroke-width:.5;
+  transition:transform .25s ease}
+.sdg-wedge:hover{filter:brightness(1.08)}
+@keyframes sdgWedgeIn{from{opacity:0;transform:scale(.55) rotate(-12deg)}
+  to{opacity:1;transform:scale(1) rotate(0)}}
+.sdg-static .sdg-wedge{animation:none}
+
+.sdg-wheel-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:42%;text-align:center;display:flex;flex-direction:column;gap:.04em;
+  pointer-events:none;line-height:.96;
+  font-family:var(--font-x);font-weight:800;letter-spacing:-.01em;
+  container-type:inline-size}
+.sdg-wheel-center .sdg-c1{font-size:14cqw;text-transform:uppercase}
+.sdg-wheel-center .sdg-c2{font-size:26cqw;font-weight:900;letter-spacing:-.02em;
+  display:flex;justify-content:center;align-items:center}
+.sdg-wheel-center.dark .sdg-c1,.sdg-wheel-center.dark .sdg-c2{color:#1f9bd6}
+.sdg-wheel-center.light .sdg-c1,.sdg-wheel-center.light .sdg-c2{color:#fff;
+  text-shadow:0 1px 6px rgba(0,0,0,.35)}
+/* the "O" rendered as a mini multicolour ring, like the official mark */
+.sdg-dot{display:inline-block;width:.92em;height:.92em;margin:0 .04em;border-radius:50%;
+  background:conic-gradient(#E5243B,#DDA63A,#4C9F38,#C5192D,#FF3A21,#26BDE2,#FCC30B,
+    #A21942,#FD6925,#DD1367,#FD9D24,#BF8B2E,#3F7E44,#0A97D9,#56C02B,#00689D,#19486A,#E5243B);
+  -webkit-mask:radial-gradient(circle,transparent 38%,#000 40%);
+          mask:radial-gradient(circle,transparent 38%,#000 40%);
+  vertical-align:middle;animation:sdgSpin 9s linear infinite}
+.sdg-static .sdg-dot{animation:none}
+@keyframes sdgSpin{to{transform:rotate(360deg)}}
+
+/* ════════════════════════════════════════════════════════════════════
+   SDG numbered tiles
+   ──────────────────────────────────────────────────────────────────── */
+.sdg-tiles{position:absolute;inset:0;display:grid;
+  grid-template-columns:repeat(var(--sdg-cols,6),1fr);
+  gap:2.2%;padding:2.5%;align-content:stretch;container-type:size}
+.sdg-tile{background:var(--c);border-radius:6px;position:relative;overflow:hidden;
+  display:flex;flex-direction:column;justify-content:space-between;
+  padding:7% 7% 5%;min-height:0;container-type:size;
+  box-shadow:0 6px 16px rgba(0,0,0,.18);
+  animation:sdgTileIn .5s cubic-bezier(.22,1,.36,1) both;
+  animation-delay:calc(var(--i) * .04s)}
+.sdg-static .sdg-tile{animation:none}
+@keyframes sdgTileIn{from{opacity:0;transform:translateY(10px) scale(.96)}
+  to{opacity:1;transform:none}}
+.sdg-tile-head{display:flex;flex-direction:column;gap:.15em;color:#fff;z-index:2;
+  max-width:100%}
+.sdg-tile-num{font-family:var(--font-x);font-weight:900;line-height:.9;
+  font-size:clamp(.8rem,20cqh,2.2rem)}
+.sdg-tile-title{font-family:var(--font-body);font-weight:800;line-height:1.02;
+  letter-spacing:-.005em;text-transform:uppercase;hyphens:auto;overflow-wrap:anywhere;
+  max-width:64%;
+  font-size:clamp(.32rem,6cqh,.78rem)}
+.sdg-tile-icon{position:absolute;right:6%;bottom:6%;width:30%;height:30%;
+  opacity:.96;filter:drop-shadow(0 2px 4px rgba(0,0,0,.18))}
+
+/* Frameless chart — bars/lines sit directly on the slide (used by the
+   infographic default templates). No card background, border, or shadow. */
+.chart-box.chart-bare{background:none!important;border:none!important;box-shadow:none!important;border-radius:0!important}

@@ -1322,14 +1322,38 @@ Affected Area 1,-16.52,13.39,45,#e8482b,#ffffff">${escapeTA(areasToText(el))}</t
 
   if(el.type==="object"){
     const def=(OBJECTS||[]).find(o=>o.kind===el.objectType)||OBJECTS[0];
+    const isSdg = el.objectType==="sdg_wheel"||el.objectType==="sdg_tiles"||el.objectType==="sdg";
     h+=`<div class="group"><span class="glabel">Object / data visual</span>
       ${field("Object type",`<select id="f-objtype">${OBJECTS.map(o=>`<option value="${o.kind}" ${el.objectType===o.kind?"selected":""}>${o.icon} ${o.label}</option>`).join("")}</select>`)}
-      ${field("Label",`<input type="text" id="f-objlabel" value="${(el.label||def.label).replace(/"/g,"&quot;")}">`)}
-      ${field("Amount / count",`<input type="number" id="f-count" min="1" max="10000" value="${el.count||1}">`)}
-      ${field("Level "+(el.level||0)+"%",`<input type="range" id="f-level" min="0" max="100" value="${el.level||0}">`)}
-      ${field("Accent colour",`<input type="color" id="f-accent" value="${el.accent||def.accent||"#4cc9f0"}">`)}
-      ${field("Show label/count",`<div class="seg" id="f-showcount"><button data-show="1" class="${el.showCount!==false?"active":""}">Show</button><button data-show="0" class="${el.showCount===false?"active":""}">Hide</button></div>`)}
+      ${isSdg ? "" : field("Label",`<input type="text" id="f-objlabel" value="${(el.label||def.label).replace(/"/g,"&quot;")}">`)}
+      ${isSdg ? "" : field("Amount / count",`<input type="number" id="f-count" min="1" max="10000" value="${el.count||1}">`)}
+      ${isSdg ? "" : field("Level "+(el.level||0)+"%",`<input type="range" id="f-level" min="0" max="100" value="${el.level||0}">`)}
+      ${isSdg ? "" : field("Accent colour",`<input type="color" id="f-accent" value="${el.accent||def.accent||"#4cc9f0"}">`)}
+      ${isSdg ? "" : field("Show number / count",`<div class="seg" id="f-showval"><button data-v="1" class="${((el.showValue!==undefined)?el.showValue!==false:(el.showCount!==false))?"active":""}">Show</button><button data-v="0" class="${((el.showValue!==undefined)?el.showValue===false:(el.showCount===false))?"active":""}">Hide</button></div>`)}
+      ${isSdg ? "" : field("Show label",`<div class="seg" id="f-showlbl"><button data-l="1" class="${((el.showLabel!==undefined)?el.showLabel!==false:(el.showCount!==false))?"active":""}">Show</button><button data-l="0" class="${((el.showLabel!==undefined)?el.showLabel===false:(el.showCount===false))?"active":""}">Hide</button></div>`)}
       ${field("Container box",`<div class="seg" id="f-objbox"><button data-box="show" class="${!el.hideContainer?"active":""}">Show box</button><button data-box="hide" class="${el.hideContainer?"active":""}">Hide box</button></div>`)}
+      ${(def.fill||el.objectType==="water_glass"||el.objectType==="sand_glass") ? `
+      ${field("Number position",`<div class="seg" id="f-numpos">
+        <button data-numpos="below" class="${(el.numberPos||"onfill")==="below"?"active":""}">Below</button>
+        <button data-numpos="onfill" class="${(el.numberPos||"onfill")==="onfill"?"active":""}">On fill</button>
+        <button data-numpos="center" class="${el.numberPos==="center"?"active":""}">Center</button></div>`)}
+      ${field("Number behaviour",`<div class="seg" id="f-nummode">
+        <button data-nummode="static" class="${(el.numberMode||"static")==="static"?"active":""}">Static</button>
+        <button data-nummode="countup" class="${el.numberMode==="countup"?"active":""}">Count up</button></div>`)}
+      ` : ""}
+      ${field("Object size "+Math.round((el.objScale||1)*100)+"%",`<input type="range" id="f-objscale" min="40" max="400" step="5" value="${Math.round((el.objScale||1)*100)}">`)}
+      ${(el.objectType==="sdg_wheel"||el.objectType==="sdg_tiles"||el.objectType==="sdg") ? `
+      ${field("Goals shown ("+(el.count||17)+" of 17)",`<input type="range" id="f-sdgcount" min="1" max="17" value="${el.count||17}">`)}
+      ${field("Goal icons",`<div class="seg" id="f-sdgicons"><button data-si="1" class="${el.sdgIcons!==false?"active":""}">Show</button><button data-si="0" class="${el.sdgIcons===false?"active":""}">Hide</button></div>`)}
+      ${(el.objectType!=="sdg_tiles") ? `
+      ${field("Centre logo",`<div class="seg" id="f-sdgcenter"><button data-sc="1" class="${el.sdgCenter!==false?"active":""}">Show</button><button data-sc="0" class="${el.sdgCenter===false?"active":""}">Hide</button></div>`)}
+      ${field("Centre text",`<div class="seg" id="f-sdgtheme"><button data-st="dark" class="${(el.sdgTheme||"dark")!=="light"?"active":""}">SDG blue</button><button data-st="light" class="${el.sdgTheme==="light"?"active":""}">White</button></div>`)}
+      ` : `
+      ${field("Tile titles",`<div class="seg" id="f-sdgtitles"><button data-stt="1" class="${el.sdgTitles!==false?"active":""}">Show</button><button data-stt="0" class="${el.sdgTitles===false?"active":""}">Hide</button></div>`)}
+      ${field("Columns "+(el.sdgCols||"auto"),`<input type="range" id="f-sdgcols" min="1" max="9" value="${el.sdgCols||0}"> <span class="insp-empty" style="font-size:.7em">0 = auto</span>`)}
+      `}
+      ` : ""}
+      ${field("Animation",`<div class="seg" id="f-objanim"><button data-objanim="on" class="${el.objAnim!==false?"active":""}">On</button><button data-objanim="off" class="${el.objAnim===false?"active":""}">Off</button></div>`)}
       <div class="insp-empty" style="padding-top:.2rem">${def.help||"Animated visual object"}</div>
     </div>`;
   }
@@ -1461,14 +1485,27 @@ function bindElementPanel(el){
     const type=$("#f-objtype");type&&type.addEventListener("change",()=>{
       const d=(OBJECTS||[]).find(o=>o.kind===type.value)||OBJECTS[0];
       el.objectType=d.kind;el.label=d.label;el.icon=d.icon;el.count=d.count;el.level=d.level||0;el.accent=d.accent||el.accent;
+      el.numberPos=d.fill?"onfill":"below";
       el.w=d.w||el.w;el.h=d.h||el.h;renderAll();markDirty();
     });
     const lab=$("#f-objlabel");lab&&lab.addEventListener("input",()=>{el.label=lab.value;renderCanvas();markDirty();});
     const count=$("#f-count");count&&count.addEventListener("input",()=>{el.count=Math.max(1,Number(count.value)||1);renderCanvas();markDirty();});
     bindRange("f-level",v=>{el.level=v;renderCanvas();markDirty();},v=>v+"%","Level");
     const acc=$("#f-accent");acc&&acc.addEventListener("input",()=>{el.accent=acc.value;renderCanvas();markDirty();});
-    seg("f-showcount","show",v=>{el.showCount=v==="1";renderCanvas();markDirty();});
+    seg("f-showval","v",v=>{el.showValue=v==="1";renderCanvas();markDirty();});
+    seg("f-showlbl","l",v=>{el.showLabel=v==="1";renderCanvas();markDirty();});
     seg("f-objbox","box",v=>{el.hideContainer=(v==="hide");renderCanvas();markDirty();});
+    seg("f-numpos","numpos",v=>{el.numberPos=v;renderCanvas();markDirty();});
+    seg("f-nummode","nummode",v=>{el.numberMode=v;renderCanvas();markDirty();});
+    seg("f-objanim","objanim",v=>{el.objAnim=(v==="on");renderCanvas();markDirty();});
+    bindRange("f-objscale",v=>{el.objScale=Math.max(0.4,Math.min(4,v/100));renderCanvas();markDirty();},v=>v+"%","Object size");
+    // SDG-specific controls
+    bindRange("f-sdgcount",v=>{el.count=Math.max(1,Math.min(17,v));renderCanvas();markDirty();},v=>v+" of 17","Goals shown");
+    seg("f-sdgicons","si",v=>{el.sdgIcons=(v==="1");renderCanvas();markDirty();});
+    seg("f-sdgcenter","sc",v=>{el.sdgCenter=(v==="1");renderCanvas();markDirty();});
+    seg("f-sdgtheme","st",v=>{el.sdgTheme=v;renderCanvas();markDirty();});
+    seg("f-sdgtitles","stt",v=>{el.sdgTitles=(v==="1");renderCanvas();markDirty();});
+    bindRange("f-sdgcols",v=>{el.sdgCols=v||0;renderCanvas();markDirty();},v=>v||"auto","Columns");
   }
   // swatches
   $$(".sw[data-color]",inspBody).forEach(s=>s.addEventListener("click",()=>{el.color=s.dataset.color;activateSwatch(s,"color");renderCanvas();markDirty();}));

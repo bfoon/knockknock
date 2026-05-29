@@ -587,6 +587,84 @@ const OBJECTS = [
     "help": "Animated sand level by percentage"
   },
   {
+    "kind": "funnel_cup",
+    "label": "Funnel cup",
+    "icon": "🥤",
+    "count": 1,
+    "level": 65,
+    "w": 230,
+    "h": 300,
+    "accent": "#ff5a3c",
+    "fill": true,
+    "shape": "funnel",
+    "help": "Tapered cup — fills to a percentage"
+  },
+  {
+    "kind": "wine_glass",
+    "label": "Wine glass",
+    "icon": "🍷",
+    "count": 1,
+    "level": 45,
+    "w": 200,
+    "h": 320,
+    "accent": "#e0457b",
+    "fill": true,
+    "shape": "wine",
+    "help": "Wine glass — fills to a percentage"
+  },
+  {
+    "kind": "beer_glass",
+    "label": "Beer glass",
+    "icon": "🍺",
+    "count": 1,
+    "level": 80,
+    "w": 210,
+    "h": 320,
+    "accent": "#f5a623",
+    "fill": true,
+    "shape": "beer",
+    "help": "Beer / pint glass — fills to a percentage"
+  },
+  {
+    "kind": "coffee_cup",
+    "label": "Coffee cup",
+    "icon": "☕",
+    "count": 1,
+    "level": 70,
+    "w": 220,
+    "h": 300,
+    "accent": "#7b4b27",
+    "fill": true,
+    "shape": "coffee",
+    "help": "Take-away coffee cup — fills to a percentage"
+  },
+  {
+    "kind": "percent_bar",
+    "label": "Percent bar",
+    "icon": "📊",
+    "count": 1,
+    "level": 65,
+    "w": 130,
+    "h": 320,
+    "accent": "#4cc9f0",
+    "fill": true,
+    "shape": "bar",
+    "help": "Vertical bar — fills to a percentage"
+  },
+  {
+    "kind": "gauge",
+    "label": "Gauge / dial",
+    "icon": "🎛️",
+    "count": 1,
+    "level": 65,
+    "w": 300,
+    "h": 220,
+    "accent": "#22c55e",
+    "fill": true,
+    "shape": "gauge",
+    "help": "Speedometer dial — needle points to a percentage"
+  },
+  {
     "kind": "seed_pile",
     "label": "Seeds",
     "icon": "🌱",
@@ -1819,15 +1897,26 @@ const OBJECTS = [
     "help": "Animated un flags quantity object"
   },
   {
-    "kind": "sdg",
-    "label": "SDG icons",
-    "icon": "⭕",
+    "kind": "sdg_wheel",
+    "label": "SDG colour wheel",
+    "icon": "🎯",
     "count": 17,
     "level": 0,
-    "w": 360,
-    "h": 230,
-    "accent": "#e11d48",
-    "help": "Animated sdg icons quantity object"
+    "w": 420,
+    "h": 420,
+    "accent": "#26BDE2",
+    "help": "Official 17-goal Sustainable Development Goals colour wheel with centre logo"
+  },
+  {
+    "kind": "sdg_tiles",
+    "label": "SDG tiles (1–17)",
+    "icon": "🔲",
+    "count": 17,
+    "level": 0,
+    "w": 760,
+    "h": 420,
+    "accent": "#4C9F38",
+    "help": "Individual numbered SDG goal tiles in official colours"
   },
   {
     "kind": "leaf",
@@ -2711,7 +2800,7 @@ const SHAPES = [
   }
 ];
 function shapeDef(kind){return SHAPES.find(s=>s.kind===kind)||SHAPES[0];}
-function objectDef(kind){return OBJECTS.find(o=>o.kind===kind)||OBJECTS[0];}
+function objectDef(kind){if(kind==="sdg")kind="sdg_wheel";return OBJECTS.find(o=>o.kind===kind)||OBJECTS[0];}
 
 /* ════════════════════════════════════════════════════════════════════
    ELEMENT FACTORIES — every element is a plain data object.
@@ -2822,6 +2911,11 @@ function makeObject(kind="water_glass",over={}){
     objectType:kind, label:d.label, icon:d.icon, count:d.count||1, level:d.level||0,
     accent:d.accent||"#4cc9f0", w:d.w||320, h:d.h||220,
     showCount:true, anim:"rise", animDelay:0,
+    // number on the object: where it sits and how it behaves while filling
+    numberPos: d.fill ? "onfill" : "below",   // below | onfill | center
+    numberMode: "static",                      // static | countup
+    objAnim: true,                             // idle/fill animation on/off
+    objScale: 1,                               // visual zoom of the inner art inside the fixed box
   },over));
 }
 
@@ -2998,7 +3092,170 @@ function T_growthBubbles(){return{bg:"linear-gradient(160deg,#052e16,#166534 70%
   makeObject("farmer",{x:650,y:200,w:240,h:230,count:6,anim:"right",animDelay:.4}),
 ]};}
 
+/* ════════════════════════════════════════════════════════════════════
+   Uploaded reference templates — added as built-in defaults.
+   Canvas is 960×540. Faithful re-creations (originals, in the Hanns visual
+   language) of the seven infographic layouts the user supplied.
+   ──────────────────────────────────────────────────────────────────── */
+
+/* 1 ─ Animals stat bars: a descending bar chart with caption rows beside it,
+   echoing the "Animals ppt download" cow/pig/bull/yeti percentage bars. */
+function T_animalsBars(){
+  const pal=["#cf4a45","#5aa75a","#e08a3c","#4ba3c7"];
+  return {bg:"#ffffff",els:[
+    makeText({x:120,y:28,w:720,h:64,text:"Animal impact metrics",font:'"Fraunces",serif',size:46,weight:600,color:"#2a2a2a",align:"center",anim:"rise"}),
+    makeChart("bar",{x:40,y:150,w:680,h:360,title:"",chartFrame:"none",accent:"#cf4a45",
+      palette:pal,showValues:true,gridLines:false,axisValues:false,max:100,valueSuffix:"%",
+      labelSize:22,chartThemeMode:"light",anim:"rise",animDelay:.1,
+      chartData:[{label:"Cow",value:85},{label:"Pig",value:65},{label:"Bull",value:45},{label:"Yeti",value:25}]}),
+    makeObject("cow",{x:70,y:118,w:120,h:110,count:1,showCount:false,hideContainer:true,anim:"pop",animDelay:.3}),
+    // four caption rows on the right
+    makeShape("rect",{x:760,y:150,w:150,h:46,fill:pal[0],radius:8,anim:"left",animDelay:.2}),
+    makeText({x:760,y:162,w:150,h:24,text:"Caption",size:16,weight:800,color:"#fff",align:"center",font:'"Archivo",sans-serif',anim:"fade",animDelay:.25}),
+    makeText({x:760,y:206,w:160,h:48,text:"This slide is an editable slide with all your needs.",size:13,color:"#444",font:'"Archivo",sans-serif',lh:1.3,anim:"fade",animDelay:.3}),
+    makeShape("rect",{x:760,y:240,w:150,h:46,fill:pal[1],radius:8,anim:"left",animDelay:.3}),
+    makeText({x:760,y:252,w:150,h:24,text:"Caption",size:16,weight:800,color:"#fff",align:"center",font:'"Archivo",sans-serif',anim:"fade",animDelay:.35}),
+    makeText({x:760,y:296,w:160,h:48,text:"This slide is an editable slide with all your needs.",size:13,color:"#444",font:'"Archivo",sans-serif',lh:1.3,anim:"fade",animDelay:.4}),
+    makeShape("rect",{x:760,y:330,w:150,h:46,fill:pal[2],radius:8,anim:"left",animDelay:.4}),
+    makeText({x:760,y:342,w:150,h:24,text:"Caption",size:16,weight:800,color:"#fff",align:"center",font:'"Archivo",sans-serif',anim:"fade",animDelay:.45}),
+    makeText({x:760,y:386,w:160,h:48,text:"This slide is an editable slide with all your needs.",size:13,color:"#444",font:'"Archivo",sans-serif',lh:1.3,anim:"fade",animDelay:.5}),
+    makeShape("rect",{x:760,y:420,w:150,h:46,fill:pal[3],radius:8,anim:"left",animDelay:.5}),
+    makeText({x:760,y:432,w:150,h:24,text:"Caption",size:16,weight:800,color:"#fff",align:"center",font:'"Archivo",sans-serif',anim:"fade",animDelay:.55}),
+    makeText({x:760,y:476,w:160,h:48,text:"This slide is an editable slide with all your needs.",size:13,color:"#444",font:'"Archivo",sans-serif',lh:1.3,anim:"fade",animDelay:.6}),
+  ]};
+}
+
+/* 2 ─ "Our Profit": two big-number metric circles on the left, a paired
+   (grouped) bar chart climbing on the right. Soft cream background. */
+function T_ourProfit(){
+  return {bg:"#fbf0d9",els:[
+    makeText({x:70,y:60,w:420,h:70,text:"Our Profit",font:'"Quicksand",sans-serif',size:54,weight:800,color:"#1f4e4a",anim:"rise"}),
+    // metric circle 1
+    makeCreativeShape("blob_01",{x:90,y:230,w:200,h:200,fill:"#ffffff",anim:"pop",animDelay:.15}),
+    makeText({x:90,y:300,w:200,h:70,text:"5M",font:'"Quicksand",sans-serif',size:54,weight:800,color:"#e0a83c",align:"center",anim:"fade",animDelay:.25}),
+    makeText({x:80,y:440,w:220,h:30,text:"Lorem ipsum",size:22,weight:800,color:"#1f4e4a",align:"center",font:'"Quicksand",sans-serif',anim:"fade",animDelay:.3}),
+    makeText({x:80,y:474,w:220,h:44,text:"Lorem ipsum dolor sit amet, usu utinam.",size:14,color:"#6b7d6b",align:"center",font:'"Quicksand",sans-serif',lh:1.3,anim:"fade",animDelay:.35}),
+    // metric circle 2
+    makeCreativeShape("blob_01",{x:330,y:230,w:200,h:200,fill:"#ffffff",anim:"pop",animDelay:.25}),
+    makeText({x:330,y:300,w:200,h:70,text:"138K",font:'"Quicksand",sans-serif',size:48,weight:800,color:"#1f4e4a",align:"center",anim:"fade",animDelay:.35}),
+    makeText({x:320,y:440,w:220,h:30,text:"Lorem ipsum dolor",size:22,weight:800,color:"#1f4e4a",align:"center",font:'"Quicksand",sans-serif',anim:"fade",animDelay:.4}),
+    makeText({x:320,y:474,w:220,h:44,text:"Lorem ipsum dolor sit amet, usu utinam.",size:14,color:"#6b7d6b",align:"center",font:'"Quicksand",sans-serif',lh:1.3,anim:"fade",animDelay:.45}),
+    // paired climbing bars on the right
+    makeChart("groupedBar",{x:560,y:150,w:380,h:360,title:"",chartFrame:"none",accent:"#e0a83c",
+      palette:["#e0a83c","#1f6b63"],showValues:true,gridLines:false,axisValues:false,
+      showLegend:false,labelSize:18,chartThemeMode:"light",max:6,anim:"rise",animDelay:.3,
+      seriesNames:["Target","Actual"],
+      chartData:[
+        {label:"Year",value:1,series:[1,0.5]},
+        {label:"Year",value:3,series:[3,1.5]},
+        {label:"Year",value:4,series:[4,2.5]},
+        {label:"Year",value:5,series:[5,3.8]}
+      ]}),
+  ]};
+}
+
+/* 3 ─ Beer glass infographic: a filled beer vessel on the left, four rounded
+   caption bars stepping in blue on the right. */
+function T_beerInfographic(){
+  const blues=["#cfe9f5","#aedcf0","#6fc0e6","#2f8fc4"];
+  const row=(i,y,d)=>([
+    makeShape("rect",{x:330,y:y,w:560,h:74,fill:blues[i],radius:38,anim:"left",animDelay:d}),
+    makeCreativeShape("blob_01",{x:318,y:y-6,w:86,h:86,fill:"#eef6fb",anim:"pop",animDelay:d+.05}),
+    makeText({x:420,y:y+12,w:300,h:28,text:"Lorem ipsum",size:22,weight:800,color:"#1f5b7a",font:'"Montserrat",sans-serif',anim:"fade",animDelay:d+.1}),
+    makeText({x:420,y:y+40,w:450,h:30,text:"Lorem ipsum dolor sit amet, consectetuer adipiscing elit, sed diam.",size:11,color:"#4a6577",font:'"Montserrat",sans-serif',lh:1.25,anim:"fade",animDelay:d+.12}),
+  ]);
+  return {bg:"#ffffff",els:[
+    makeObject("beer_glass",{x:40,y:50,w:240,h:440,level:78,showValue:false,showLabel:false,hideContainer:true,anim:"pop",animDelay:.1}),
+    ...row(0,60,.2),
+    ...row(1,150,.3),
+    ...row(2,240,.4),
+    ...row(3,330,.5),
+  ]};
+}
+
+/* 4 ─ Coffee infographic: a filled take-away coffee cup centre, four circular
+   icon nodes in the corners, on a deep blue field. */
+function T_coffeeInfographic(){
+  const node=(x,y,d)=>([
+    makeCreativeShape("blob_01",{x:x,y:y,w:130,h:130,fill:"#1b4e78",stroke:"#ffffff",strokeW:3,anim:"pop",animDelay:d}),
+    makeText({x:x,y:y+78,w:130,h:24,text:"Lorem ipsum",size:13,weight:700,color:"#bcd4e6",align:"center",font:'"Montserrat",sans-serif',anim:"fade",animDelay:d+.08}),
+    makeText({x:x,y:y+98,w:130,h:24,text:"dolor sit amet, consectetuer",size:9,color:"#8fb2cb",align:"center",font:'"Montserrat",sans-serif',lh:1.2,anim:"fade",animDelay:d+.1}),
+  ]);
+  return {bg:"#1a4a73",els:[
+    makeText({x:200,y:48,w:560,h:50,text:"COFFEE INFOGRAPHIC",font:'"Montserrat",sans-serif',size:34,weight:800,color:"#ffffff",align:"center",ls:1,anim:"rise"}),
+    makeObject("coffee_cup",{x:360,y:130,w:240,h:360,level:70,accent:"#7b4b27",numberPos:"center",showLabel:false,hideContainer:true,anim:"pop",animDelay:.2}),
+    ...node(60,60,.3),
+    ...node(770,60,.35),
+    ...node(60,360,.4),
+    ...node(770,360,.45),
+  ]};
+}
+
+/* 5 ─ Beer glass infographic (alternate accent) — same family as #3 but a
+   warmer label palette, so the user has both variants as defaults. */
+function T_beerInfographicAlt(){
+  const tones=["#d9efe9","#bfe6da","#88cdbb","#3f9e86"];
+  const row=(i,y,d)=>([
+    makeShape("rect",{x:330,y:y,w:560,h:74,fill:tones[i],radius:38,anim:"right",animDelay:d}),
+    makeCreativeShape("blob_01",{x:318,y:y-6,w:86,h:86,fill:"#f0faf6",anim:"pop",animDelay:d+.05}),
+    makeText({x:420,y:y+12,w:300,h:28,text:"Lorem ipsum",size:22,weight:800,color:"#1f6b57",font:'"Montserrat",sans-serif',anim:"fade",animDelay:d+.1}),
+    makeText({x:420,y:y+40,w:450,h:30,text:"Lorem ipsum dolor sit amet, consectetuer adipiscing elit, sed diam.",size:11,color:"#3f6356",font:'"Montserrat",sans-serif',lh:1.25,anim:"fade",animDelay:d+.12}),
+  ]);
+  return {bg:"#ffffff",els:[
+    makeObject("beer_glass",{x:40,y:50,w:240,h:440,level:64,accent:"#f0a500",showValue:false,showLabel:false,hideContainer:true,anim:"pop",animDelay:.1}),
+    ...row(0,60,.2),
+    ...row(1,150,.3),
+    ...row(2,240,.4),
+    ...row(3,330,.5),
+  ]};
+}
+
+/* 6 ─ Funnel infographic: four tapered funnel vessels filled to set
+   percentages, each over a coloured caption card, on a navy field. */
+function T_funnelInfographic(){
+  const cols=["#f5b942","#ec4899","#22b6e6","#f0653f"];
+  const pcts=[10,45,65,90];
+  const xs=[60,290,520,750];
+  const cell=(i,d)=>([
+    makeObject("funnel_cup",{x:xs[i],y:130,w:150,h:200,level:pcts[i],accent:cols[i],numberPos:"center",showLabel:false,hideContainer:true,anim:"rise",animDelay:d}),
+    makeShape("rect",{x:xs[i]-6,y:360,w:162,h:140,fill:cols[i],radius:18,anim:"fade",animDelay:d+.1}),
+    makeText({x:xs[i]+8,y:374,w:138,h:120,text:'"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do."',size:11,color:"#1b2436",font:'"Montserrat",sans-serif',lh:1.3,anim:"fade",animDelay:d+.15}),
+  ]);
+  return {bg:"#12233f",els:[
+    makeShape("rect",{x:370,y:36,w:220,h:50,fill:"#ff5fa2",radius:14,anim:"pop"}),
+    makeText({x:370,y:48,w:220,h:30,text:"INFOGRAPHIC",size:24,weight:800,color:"#ffffff",align:"center",ls:1,font:'"Montserrat",sans-serif',anim:"fade",animDelay:.1}),
+    ...cell(0,.2),
+    ...cell(1,.3),
+    ...cell(2,.4),
+    ...cell(3,.5),
+  ]};
+}
+
+/* 7 ─ Fuel-gauge dashboard: three half-circle gauges with captions beneath,
+   echoing the "Three Colored Fuel Gauge Dashboard" reference. */
+function T_gaugeDashboard(){
+  const gauge=(x,pct,d)=>([
+    makeObject("gauge",{x:x,y:120,w:260,h:180,level:pct,accent:"#22c55e",showValue:true,showLabel:false,anim:"pop",animDelay:d}),
+    makeText({x:x+30,y:330,w:200,h:30,text:"Text Here",size:22,weight:800,color:"#1f2937",font:'"Archivo",sans-serif',anim:"fade",animDelay:d+.1}),
+    makeText({x:x+30,y:366,w:200,h:120,text:"This slide is 100% editable. Adapt it to your needs and capture your audience's attention.",size:14,italic:true,color:"#6b7280",font:'"Archivo",sans-serif',lh:1.4,anim:"fade",animDelay:d+.15}),
+  ]);
+  return {bg:"#ffffff",els:[
+    makeText({x:60,y:24,w:840,h:50,text:"Three Colored Fuel Gauge Dashboard",font:'"Archivo Expanded","Archivo",sans-serif',size:34,weight:800,color:"#1f2937",anim:"rise"}),
+    ...gauge(40,85,.2),
+    ...gauge(350,15,.3),
+    ...gauge(660,90,.4),
+    makeText({x:60,y:500,w:840,h:30,text:"This graph/chart is linked to data, and changes automatically. Edit values in the inspector.",size:13,italic:true,color:"#9ca3af",align:"center",font:'"Archivo",sans-serif',anim:"fade",animDelay:.6}),
+  ]};
+}
+
 const BASE_TEMPLATES = [
+  {name:"Infographic · Animal bars",   build:T_animalsBars},
+  {name:"Infographic · Our Profit",    build:T_ourProfit},
+  {name:"Infographic · Beer (blue)",   build:T_beerInfographic},
+  {name:"Infographic · Coffee cup",    build:T_coffeeInfographic},
+  {name:"Infographic · Beer (teal)",   build:T_beerInfographicAlt},
+  {name:"Infographic · Funnels",       build:T_funnelInfographic},
+  {name:"Infographic · Gauge board",   build:T_gaugeDashboard},
   {name:"Title · Ember",   build:T_titleEmber},
   {name:"Title · Serif",   build:T_titleBone},
   {name:"Section · Dusk",  build:T_sectionDusk},
@@ -3692,9 +3949,12 @@ function renderChart(el){
   box.style.setProperty("--c3",palette[3]);box.style.setProperty("--c4",palette[4]);box.style.setProperty("--c5",palette[5]);
   if(el.chartThemeMode==="dark")box.classList.add("chart-theme-dark");
   if(el.gridLines===false)box.classList.add("chart-nogrid");
-  const title=document.createElement("div");title.className="chart-title";title.textContent=el.title||"Chart";
-  if(el.titleColor)title.style.color=el.titleColor;
-  box.appendChild(title);
+  if(el.chartFrame==="none")box.classList.add("chart-bare");
+  if(el.showTitle!==false && (el.title===undefined || (el.title||"").trim()!=="")){
+    const title=document.createElement("div");title.className="chart-title";title.textContent=el.title||"Chart";
+    if(el.titleColor)title.style.color=el.titleColor;
+    box.appendChild(title);
+  }
   const wrap=document.createElement("div");wrap.className="chart-svg-wrap";
 
   // ── KEY FIX: a coordinate space that MATCHES the element's pixel aspect
@@ -3956,6 +4216,153 @@ function objectIcons(kind){
   };
   return maps[kind]||[objectDef(kind).icon||"●"];
 }
+/* ════════════════════════════════════════════════════════════════════
+   SDG (Sustainable Development Goals) — proper colour wheel + tiles.
+   Official UN colours and the 17 goal titles. The glyphs are simplified,
+   recognisable white line/solid icons drawn in a shared 0..100 viewBox so
+   they scale cleanly inside a wedge or a tile. Not the trademarked vector
+   artwork — clean originals in the SDG visual language.
+   ──────────────────────────────────────────────────────────────────── */
+const SDG_COLORS = [
+  "#E5243B","#DDA63A","#4C9F38","#C5192D","#FF3A21","#26BDE2","#FCC30B",
+  "#A21942","#FD6925","#DD1367","#FD9D24","#BF8B2E","#3F7E44","#0A97D9",
+  "#56C02B","#00689D","#19486A"
+];
+const SDG_TITLES = [
+  "No Poverty","Zero Hunger","Good Health and Well-being","Quality Education",
+  "Gender Equality","Clean Water and Sanitation","Affordable and Clean Energy",
+  "Decent Work and Economic Growth","Industry, Innovation and Infrastructure",
+  "Reduced Inequalities","Sustainable Cities and Communities",
+  "Responsible Consumption and Production","Climate Action","Life Below Water",
+  "Life on Land","Peace, Justice and Strong Institutions","Partnerships for the Goals"
+];
+/* Each glyph is a string of SVG children drawn in a 0 0 100 100 viewBox,
+   white fill/stroke. Kept deliberately simple but identifiable. */
+const SDG_GLYPHS = (()=>{
+  const wf='fill="#fff"', ws='fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"';
+  return [
+    /* 1 No Poverty — family group */
+    `<g ${wf}><circle cx="28" cy="30" r="7"/><circle cx="50" cy="26" r="8"/><circle cx="72" cy="30" r="7"/><rect x="22" y="40" width="12" height="30" rx="5"/><rect x="43" y="36" width="14" height="36" rx="6"/><rect x="66" y="40" width="12" height="30" rx="5"/><circle cx="40" cy="46" r="5"/><rect x="36" y="54" width="8" height="20" rx="4"/></g>`,
+    /* 2 Zero Hunger — steaming bowl */
+    `<g ${wf}><path d="M20 52 h60 a30 22 0 0 1 -60 0 Z"/><ellipse cx="50" cy="52" rx="30" ry="6"/></g><g ${ws}><path d="M38 24 q6 6 0 12"/><path d="M50 20 q6 6 0 12"/><path d="M62 24 q6 6 0 12"/></g>`,
+    /* 3 Good Health — heartbeat + heart */
+    `<g ${ws}><path d="M14 52 h14 l6 -16 l10 30 l8 -22 l5 8 h8"/></g><path ${wf} d="M70 40 c4 -8 18 -4 14 6 c-2 7 -14 14 -14 14 c0 0 -12 -7 -14 -14 c-4 -10 10 -14 14 -6 Z"/>`,
+    /* 4 Quality Education — open book + pencil */
+    `<g ${wf}><path d="M16 36 c10 -6 24 -6 32 0 v32 c-8 -6 -22 -6 -32 0 Z"/><path d="M84 36 c-10 -6 -22 -6 -30 0 v32 c8 -6 20 -6 30 0 Z"/></g><g ${ws}><path d="M70 18 l8 8 l-26 26"/></g>`,
+    /* 5 Gender Equality — combined symbol */
+    `<g ${ws}><circle cx="50" cy="44" r="14"/><path d="M50 58 v22"/><path d="M40 70 h20"/><path d="M60 34 l14 -14"/><path d="M66 20 h10 v10"/></g>`,
+    /* 6 Clean Water — glass with drop + arrow */
+    `<g ${wf}><path d="M50 18 c10 14 16 22 16 30 a16 16 0 0 1 -32 0 c0 -8 6 -16 16 -30 Z"/></g><g ${ws}><path d="M50 60 v20"/><path d="M42 72 l8 10 l8 -10"/></g>`,
+    /* 7 Affordable Energy — sun with power symbol */
+    `<g ${ws}><circle cx="50" cy="50" r="14"/><path d="M50 30 v-12 M50 70 v12 M30 50 h-12 M70 50 h12 M36 36 l-8 -8 M64 36 l8 -8 M36 64 l-8 8 M64 64 l8 8"/><path d="M50 44 v10"/></g>`,
+    /* 8 Decent Work — bar chart + arrow */
+    `<g ${wf}><rect x="22" y="58" width="10" height="20"/><rect x="38" y="48" width="10" height="30"/><rect x="54" y="40" width="10" height="38"/></g><g ${ws}><path d="M24 44 l16 -10 l12 6 l22 -16"/><path d="M70 18 h10 v10"/></g>`,
+    /* 9 Industry — stacked cubes */
+    `<g ${ws}><rect x="32" y="46" width="22" height="22"/><rect x="54" y="46" width="22" height="22"/><rect x="43" y="24" width="22" height="22"/></g>`,
+    /* 10 Reduced Inequalities — equals with arrows */
+    `<g ${ws}><path d="M50 20 l-10 12 h20 Z M50 80 l-10 -12 h20 Z M20 50 l12 -10 v20 Z M80 50 l-12 -10 v20 Z"/><path d="M38 44 h24 M38 56 h24"/></g>`,
+    /* 11 Sustainable Cities — buildings */
+    `<g ${wf}><path d="M22 78 V46 l12 -10 v42 Z"/><rect x="40" y="40" width="16" height="38"/><rect x="60" y="50" width="14" height="28"/></g><g ${ws}><path d="M28 54 h2 M28 62 h2 M45 48 h6 M45 58 h6 M45 68 h6"/></g>`,
+    /* 12 Responsible Consumption — infinity */
+    `<g ${ws}><path d="M30 50 c0 -10 14 -10 20 0 c6 10 20 10 20 0 c0 -10 -14 -10 -20 0 c-6 10 -20 10 -20 0 Z"/></g>`,
+    /* 13 Climate Action — eye with globe */
+    `<g ${ws}><path d="M18 50 q32 -26 64 0 q-32 26 -64 0 Z"/><circle cx="50" cy="50" r="12"/><path d="M40 46 q10 4 20 0 M44 54 q6 3 12 0"/></g>`,
+    /* 14 Life Below Water — fish + waves */
+    `<g ${wf}><path d="M30 50 c8 -12 28 -12 36 0 c-8 12 -28 12 -36 0 Z M66 50 l10 -8 v16 Z"/><circle cx="40" cy="47" r="2.5" fill="#0A97D9"/></g><g ${ws}><path d="M20 70 q6 -6 12 0 t12 0 t12 0 t12 0"/></g>`,
+    /* 15 Life on Land — tree + birds */
+    `<g ${wf}><path d="M50 30 c10 0 16 10 12 18 c8 -2 12 8 4 12 H34 c-8 -4 -4 -14 4 -12 c-4 -8 2 -18 12 -18 Z"/><rect x="47" y="58" width="6" height="16"/></g><g ${ws}><path d="M26 30 q4 -4 8 0 q4 -4 8 0"/></g>`,
+    /* 16 Peace & Justice — dove + gavel */
+    `<g ${wf}><path d="M30 44 c10 -10 26 -10 32 -2 c4 6 -2 12 -10 12 c6 4 4 12 -4 12 c-10 0 -22 -10 -18 -22 Z"/></g><g ${ws}><path d="M58 56 l16 16 M64 50 l8 8"/></g>`,
+    /* 17 Partnerships — interlocking rings */
+    `<g ${ws}><circle cx="40" cy="40" r="12"/><circle cx="60" cy="40" r="12"/><circle cx="40" cy="60" r="12"/><circle cx="60" cy="60" r="12"/><circle cx="50" cy="50" r="12"/></g>`
+  ];
+})();
+
+function sdgGoals(el){
+  /* how many of the 17 to show (count), default all 17 */
+  const n=Math.max(1,Math.min(17,Number(el&&el.count)||17));
+  return n;
+}
+
+/* ── Colour wheel: 17 wedges around a hollow centre ─────────────────── */
+function renderSdgWheel(el){
+  const n=sdgGoals(el);
+  const showCenter = el.sdgCenter!==false;     // SUSTAINABLE DEVELOPMENT GOALS text
+  const showIcons  = el.sdgIcons!==false;      // glyph in each wedge
+  const dark = el.sdgTheme!=="light";
+  const wrap=document.createElement("div");
+  wrap.className="sdg-wheel"+(el.objAnim===false?" sdg-static":"");
+  const cx=200, cy=200, rOut=190, rIn=showCenter?92:78;
+  const gap=2.4;                                // degrees of gap between wedges
+  const seg=360/17;
+  const NS="http://www.w3.org/2000/svg";
+  const S=document.createElementNS(NS,"svg");
+  S.setAttribute("viewBox","0 0 400 400");
+  S.setAttribute("class","sdg-wheel-svg");
+  S.setAttribute("preserveAspectRatio","xMidYMid meet");
+  const pol=(r,a)=>[cx+r*Math.cos(a),cy+r*Math.sin(a)];
+  for(let i=0;i<n;i++){
+    // start at top (-90deg), go clockwise
+    const a0=(-90 + i*seg + gap/2)*Math.PI/180;
+    const a1=(-90 + (i+1)*seg - gap/2)*Math.PI/180;
+    const [x0,y0]=pol(rOut,a0), [x1,y1]=pol(rOut,a1);
+    const [x2,y2]=pol(rIn,a1),  [x3,y3]=pol(rIn,a0);
+    const path=`M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${rOut} ${rOut} 0 0 1 ${x1.toFixed(2)} ${y1.toFixed(2)} L ${x2.toFixed(2)} ${y2.toFixed(2)} A ${rIn} ${rIn} 0 0 0 ${x3.toFixed(2)} ${y3.toFixed(2)} Z`;
+    const g=document.createElementNS(NS,"g");
+    g.setAttribute("class","sdg-wedge");
+    g.style.setProperty("--i",i);
+    const p=document.createElementNS(NS,"path");
+    p.setAttribute("d",path);
+    p.setAttribute("fill",SDG_COLORS[i]);
+    g.appendChild(p);
+    if(showIcons){
+      const am=(-90 + (i+0.5)*seg)*Math.PI/180;
+      const rm=(rOut+rIn)/2;
+      const [mx,my]=pol(rm,am);
+      const ic=document.createElementNS(NS,"g");
+      const s=0.46;                       // glyph scale within wedge
+      ic.setAttribute("transform",`translate(${(mx-50*s).toFixed(2)} ${(my-50*s).toFixed(2)}) scale(${s})`);
+      ic.innerHTML=SDG_GLYPHS[i];
+      g.appendChild(ic);
+    }
+    S.appendChild(g);
+  }
+  wrap.appendChild(S);
+  if(showCenter){
+    const c=document.createElement("div");
+    c.className="sdg-wheel-center"+(dark?" dark":" light");
+    c.innerHTML=`<span class="sdg-c1">SUSTAINABLE</span><span class="sdg-c1">DEVELOPMENT</span><span class="sdg-c2">G<i class="sdg-dot"></i>ALS</span>`;
+    wrap.appendChild(c);
+  }
+  return wrap;
+}
+
+/* ── Tile grid: numbered coloured squares ───────────────────────────── */
+function renderSdgTiles(el){
+  const n=sdgGoals(el);
+  const showTitle = el.sdgTitles!==false;
+  const showIcons = el.sdgIcons!==false;
+  const cols = Math.max(1,Math.min(17, Number(el.sdgCols)|| (n>=15?6:(n>=8?5:(n>=4?4:n)))));
+  const wrap=document.createElement("div");
+  wrap.className="sdg-tiles"+(el.objAnim===false?" sdg-static":"");
+  wrap.style.setProperty("--sdg-cols",cols);
+  for(let i=0;i<n;i++){
+    const t=document.createElement("div");
+    t.className="sdg-tile";
+    t.style.setProperty("--c",SDG_COLORS[i]);
+    t.style.setProperty("--i",i);
+    const icon = showIcons
+      ? `<svg class="sdg-tile-icon" viewBox="0 0 100 100">${SDG_GLYPHS[i]}</svg>`
+      : "";
+    const title = showTitle
+      ? `<span class="sdg-tile-title">${SDG_TITLES[i].toUpperCase()}</span>`
+      : "";
+    t.innerHTML=`<div class="sdg-tile-head"><b class="sdg-tile-num">${i+1}</b>${title}</div>${icon}`;
+    wrap.appendChild(t);
+  }
+  return wrap;
+}
+
 function renderCountGrid(el){
   const wrap=document.createElement("div");wrap.className="object-grid";
   const n=miniCount(el.count, el.objectType==="wall" ? 80 : 120);
@@ -3986,19 +4393,175 @@ function renderGlass(el,mode){
     `<div class="glass-rim"></div>`;
   return box;
 }
+/* ── Fill-shape objects (vessels + gauge) ─────────────────────────────
+   A vessel is any shape whose interior is described by a normalised
+   (0..1) SVG path. The liquid is the SAME .glass-liquid element used by
+   the water glass — height:var(--level), animated by liquidRise — but
+   here it lives inside a wrapper that is CSS-clipped to the vessel
+   outline, so it reads as the shape filling up. The number can ride the
+   surface (bottom:var(--level)) or sit centred; see renderObject. */
+/* Vessel interior outlines, authored directly in the SVG's 100 (wide) ×
+   140 (tall) viewBox so the liquid is clipped INSIDE the same SVG — no
+   reliance on external CSS clip-path, so it can never spill past the
+   shape. preserveAspectRatio="none" lets the shape fill the element box,
+   and a 100-wide / 140-tall box maps cleanly to bottom:level% for the
+   HTML number overlay. */
+const VESSEL_PATHS = {
+  funnel: "M8 8 L92 8 L70 136 L30 136 Z",
+  wine:   "M18 7 L82 7 C82 56 68 76 50 76 C32 76 18 56 18 7 Z",
+  beer:   "M20 7 L80 7 L71 136 L29 136 Z",
+  coffee: "M20 22 L80 22 L71 136 L29 136 Z",
+  bar:    "M16 6 L84 6 L84 134 L16 134 Z",
+};
+/* The liquid only occupies a shape's interior, which is not the full box
+   (a wine bowl is just the top half). {top,bottom} are the y-bounds of the
+   fillable interior in the 0..140 viewBox; level maps onto that range. */
+const FILL_BOUNDS = {
+  funnel: {top:10, bottom:134},
+  wine:   {top:10, bottom:74},
+  beer:   {top:10, bottom:134},
+  coffee: {top:24, bottom:134},
+  bar:    {top:9,  bottom:131},
+};
+function isFillKind(kind){
+  const d=objectDef(kind);
+  return !!d.fill || kind==="water_glass" || kind==="sand_glass";
+}
+function vesselFurnitureSVG(shape){
+  // decorative bits drawn in the same 100×140 space, over the liquid.
+  // NOTE: the backtick must stay on the same line as `return` — a newline
+  // after `return` triggers automatic semicolon insertion and returns undefined.
+  if(shape==="coffee") return `<path class="vf" d="M16 22 L84 22 L80 9 L20 9 Z"/>`+
+      `<rect class="vf" x="42" y="2.5" width="16" height="7.5" rx="3"/>`;
+  if(shape==="wine") return `<line class="vf-line" x1="50" y1="76" x2="50" y2="128"/>`+
+      `<ellipse class="vf-base" cx="50" cy="131" rx="21" ry="3.6"/>`;
+  return "";
+}
+function renderVessel(el,shape){
+  const d=objectDef(el.objectType);
+  const lvl=clamp(Number(el.level)||0,0,100);
+  const path=VESSEL_PATHS[shape]||VESSEL_PATHS.bar;
+  const b=FILL_BOUNDS[shape]||FILL_BOUNDS.bar;
+  const cid="vc"+uid();
+  const accent=el.accent||d.accent||"#4cc9f0";
+  const surfY=(b.bottom-(lvl/100)*(b.bottom-b.top));   // liquid surface y
+  const fillH=(b.bottom-surfY);                          // visible column height
+  const surfFrac=((140-surfY)/140*100).toFixed(2);       // surface as % from box bottom
+  const bubRise=(-fillH*0.62).toFixed(1);
+  const wrap=document.createElement("div");
+  wrap.className="object-vessel vessel-"+shape;
+  wrap.style.setProperty("--level", surfFrac+"%");        // drives the HTML number overlay
+  wrap.style.setProperty("--accent", accent);
+  wrap.style.setProperty("--bub-rise", bubRise+"px");
+  wrap.style.setProperty("--fill-origin", b.bottom.toFixed(0)+"px");
+  const bubbles = lvl>12
+    ? `<circle class="v-bub b1" cx="36" cy="${(b.bottom-4).toFixed(0)}" r="2.2"/>`+
+      `<circle class="v-bub b2" cx="56" cy="${(b.bottom-2).toFixed(0)}" r="1.5"/>`+
+      `<circle class="v-bub b3" cx="68" cy="${(b.bottom-5).toFixed(0)}" r="2.7"/>`
+    : "";
+  wrap.innerHTML=
+    `<svg class="vessel-svg" viewBox="0 0 100 140" preserveAspectRatio="none">`+
+      `<defs><clipPath id="${cid}"><path d="${path}"/></clipPath></defs>`+
+      `<path class="v-glass" d="${path}"/>`+
+      `<g clip-path="url(#${cid})">`+
+        `<g class="v-fill">`+
+          `<rect class="v-body" x="-2" y="${surfY.toFixed(2)}" width="104" height="${(fillH+4).toFixed(2)}"/>`+
+          `<ellipse class="v-surface" cx="50" cy="${surfY.toFixed(2)}" rx="62" ry="3"/>`+
+        `</g>`+
+        bubbles+
+      `</g>`+
+      vesselFurnitureSVG(shape)+
+      `<path class="v-outline" d="${path}" vector-effect="non-scaling-stroke"/>`+
+    `</svg>`;
+  return wrap;
+}
+function renderGauge(el,showValue=true){
+  const d=objectDef(el.objectType);
+  const lvl=clamp(Number(el.level)||0,0,100);
+  const wrap=document.createElement("div");
+  wrap.className="object-gauge";
+  wrap.style.setProperty("--accent", el.accent||d.accent||"#22c55e");
+  // needle: -90deg at 0%, +90deg at 100%
+  wrap.style.setProperty("--angle", (lvl*1.8-90).toFixed(1)+"deg");
+  const ang=Math.PI*(1-lvl/100);                  // fill-arc end angle
+  const cx=100, cy=100, r=80;
+  const ex=(cx+r*Math.cos(ang)).toFixed(1);
+  const ey=(cy-r*Math.sin(ang)).toFixed(1);
+  // The fill sweeps at most a half-circle (0→100% = 180°), so the
+  // large-arc-flag is ALWAYS 0. Setting it to 1 above 50% drew the
+  // long way round, which is what broke the dial.
+  const countAttr = (el.numberMode==="countup" && el.objAnim!==false) ? ` data-count-to="${lvl}"` : "";
+  wrap.innerHTML=
+    `<svg class="gauge-svg" viewBox="0 0 200 124" preserveAspectRatio="xMidYMid meet">`+
+      `<path class="g-track" d="M20 100 A80 80 0 0 1 180 100"/>`+
+      `<path class="g-fill" d="M20 100 A80 80 0 0 1 ${ex} ${ey}" pathLength="100"/>`+
+      `<g class="g-needle"><line x1="100" y1="100" x2="100" y2="28"/><circle cx="100" cy="100" r="8"/></g>`+
+    `</svg>`+
+    (showValue ? `<div class="gauge-num"><b${countAttr}>${lvl}%</b></div>` : "");
+  return wrap;
+}
 function renderObject(el){
   const d=objectDef(el.objectType);
+  const fill=isFillKind(el.objectType);
+  const lvl=clamp(Number(el.level)||0,0,100);
+  // Independent show controls. Back-compat: older slides only stored
+  // `showCount`, which governed both — so fall back to it when the newer
+  // per-field flags are absent.
+  const showValue = (el.showValue!==undefined) ? el.showValue!==false : (el.showCount!==false);
+  const showLabel = (el.showLabel!==undefined) ? el.showLabel!==false : (el.showCount!==false);
   const box=document.createElement("div");
-  box.className="object-box object-"+(el.objectType||"custom")+(el.hideContainer?" object-bare":"");
+  box.className="object-box object-"+(el.objectType||"custom")
+    +(el.hideContainer?" object-bare":"")
+    +(el.objAnim===false?" object-static":"");
   box.style.setProperty("--accent", el.accent||d.accent||"#4cc9f0");
-  if(el.objectType==="water_glass") box.appendChild(renderGlass(el,"water"));
-  else if(el.objectType==="sand_glass") box.appendChild(renderGlass(el,"sand"));
-  else if(el.objectType==="glass_cup") box.appendChild(renderGlass(Object.assign({},el,{level:0}),"empty"));
-  else box.appendChild(renderCountGrid(el));
-  if(el.showCount!==false){
-    const badge=document.createElement("div");badge.className="object-badge";
-    const value = (el.objectType==="water_glass"||el.objectType==="sand_glass") ? `${clamp(Number(el.level)||0,0,100)}%` : (Number(el.count)||1).toLocaleString();
-    badge.innerHTML=`<b>${value}</b><span>${el.label||d.label}</span>`;box.appendChild(badge);
+  if(fill) box.style.setProperty("--level", lvl+"%");
+  // Visual zoom of the inner art WITHOUT changing the container box. The
+  // scale is applied to the inner visual only (see .object-art in CSS); the
+  // box keeps its w/h and clips overflow, so the art grows in place.
+  const scale = clamp(Number(el.objScale)||1, 0.4, 4);
+  box.style.setProperty("--obj-scale", scale);
+  if(scale!==1) box.classList.add("object-scaled");
+
+  // ── inner visual ─────────────────────────────────────────────────
+  let art;
+  if(el.objectType==="water_glass") art=renderGlass(el,"water");
+  else if(el.objectType==="sand_glass") art=renderGlass(el,"sand");
+  else if(el.objectType==="glass_cup") art=renderGlass(Object.assign({},el,{level:0}),"empty");
+  else if(el.objectType==="gauge") art=renderGauge(el,showValue);
+  else if(el.objectType==="sdg_wheel" || el.objectType==="sdg") art=renderSdgWheel(el);
+  else if(el.objectType==="sdg_tiles") art=renderSdgTiles(el);
+  else if(d.shape && VESSEL_PATHS[d.shape]) art=renderVessel(el,d.shape);
+  else art=renderCountGrid(el);
+  art.classList.add("object-art");
+  box.appendChild(art);
+
+  // SDG composites carry their own captions/labels — skip the generic badge.
+  if(el.objectType==="sdg_wheel" || el.objectType==="sdg_tiles" || el.objectType==="sdg") return box;
+
+  // ── the number + label (independent) ─────────────────────────────
+  const pos = el.numberPos || (d.fill?"onfill":"below");
+  const value = fill ? `${lvl}%` : (Number(el.count)||1).toLocaleString();
+  const countAttr = (fill && el.numberMode==="countup" && el.objAnim!==false) ? ` data-count-to="${lvl}"` : "";
+  const labelText = el.label || d.label;
+  const onObject = fill && el.objectType!=="gauge" && (pos==="onfill"||pos==="center");
+
+  if(el.objectType==="gauge"){
+    // value sits in the dial (handled by renderGauge via showValue); the
+    // name caption can show below it
+    if(showLabel && labelText){const cap=document.createElement("div");cap.className="object-caption";cap.textContent=labelText;box.appendChild(cap);}
+  } else if(onObject){
+    if(showValue){
+      const num=document.createElement("div");
+      num.className="vessel-number"+(pos==="center"?" vessel-number--center":"");
+      num.innerHTML=`<b${countAttr}>${value}</b>`;
+      box.appendChild(num);
+    }
+    if(showLabel && labelText){const cap=document.createElement("div");cap.className="object-caption";cap.textContent=labelText;box.appendChild(cap);}
+  } else if(showValue || showLabel){
+    const badge=document.createElement("div");
+    badge.className="object-badge"+((showValue&&showLabel)?"":" solo");
+    badge.innerHTML=(showValue?`<b${countAttr}>${value}</b>`:"")+(showLabel?`<span>${labelText}</span>`:"");
+    box.appendChild(badge);
   }
   return box;
 }
@@ -4022,6 +4585,30 @@ function animateIn(node,el){
     easing:a==="pop"?"cubic-bezier(.34,1.56,.64,1)":"cubic-bezier(.22,1,.36,1)",fill:"both"});
 }
 
+/* Count a number up from 0 → target while the fill rises (present/preview).
+   Position of the label is handled by CSS (labelRise); this only animates
+   the digits, so it stays in sync with the liquid. */
+function animateCountUp(node,el){
+  if(!el || el.type!=="object" || el.numberMode!=="countup" || el.objAnim===false) return;
+  const targets=node.querySelectorAll("[data-count-to]");
+  if(!targets.length) return;
+  const dur=1000, delay=(el.animDelay||0)*1000;
+  targets.forEach(t=>{
+    const to=Math.round(Number(t.getAttribute("data-count-to"))||0);
+    const suffix=/%/.test(t.textContent||"")?"%":"";
+    const start=performance.now()+delay;
+    t.textContent="0"+suffix;
+    function step(now){
+      const p=clamp((now-start)/dur,0,1);
+      if(now<start){requestAnimationFrame(step);return;}
+      const eased=1-Math.pow(1-p,3);
+      t.textContent=Math.round(to*eased)+suffix;
+      if(p<1)requestAnimationFrame(step); else t.textContent=to+suffix;
+    }
+    requestAnimationFrame(step);
+  });
+}
+
 /* paint a slide into a container at native 960×540 */
 function paintSlide(container,slide,{live=false}={}){
   container.innerHTML="";
@@ -4042,7 +4629,7 @@ function paintSlide(container,slide,{live=false}={}){
   slide.els.forEach(el=>{
     const node=renderElement(el,{live});
     container.appendChild(node);
-    if(live)animateIn(node,el);
+    if(live){animateIn(node,el);animateCountUp(node,el);}
   });
 }
 

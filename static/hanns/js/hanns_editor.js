@@ -1489,20 +1489,82 @@ function syncInspectorPos(){const el=selEl();if(!el||inspTab!=="element")return;
   ["x","y","w","h"].forEach(k=>{const i=$("#f-"+k);if(i)i.value=el[k];});}
 function renderInspectorSoft(){/* placeholder for partial refreshes */}
 
+/* ── Animation magic: apply cinematic stagger to all elements ─────── */
+const ANIM_PRESETS = [
+  {key:"cinematic",  label:"✦ Cinematic",   hint:"Rise + stagger 0.15s each",    anim:"rise",   step:0.15},
+  {key:"cascade",    label:"↓ Cascade",      hint:"Drop down, stagger 0.12s each", anim:"drop",   step:0.12},
+  {key:"reveal",     label:"▶ Reveal",       hint:"Wipe reveal, stagger 0.18s",   anim:"reveal", step:0.18},
+  {key:"zoom_all",   label:"⊕ Zoom burst",  hint:"Zoom in, stagger 0.1s each",   anim:"zoom",   step:0.10},
+  {key:"fade_all",   label:"◌ Soft fade",   hint:"All fade in together",          anim:"fade",   step:0},
+  {key:"pop_all",    label:"✦ Pop",          hint:"Pop, stagger 0.1s each",        anim:"pop",    step:0.10},
+  {key:"none_all",   label:"✕ No animation",hint:"Remove all animations",         anim:"none",   step:0},
+];
+function applyAnimPreset(preset){
+  const s=curSlide();if(!s||!s.els.length)return;
+  s.els.forEach((el,i)=>{
+    el.anim=preset.anim;
+    el.animDelay=parseFloat((preset.step>0?i*preset.step:0).toFixed(2));
+  });
+  renderCanvas();renderInspector();markDirty();pushHistory();
+  toast(preset.label+" applied to "+s.els.length+" elements");
+}
+
 /* animate tab */
+const ANIM_ICONS = {
+  none:   `<svg viewBox="0 0 28 28" width="26" height="26"><circle cx="14" cy="14" r="10" fill="none" stroke="currentColor" stroke-width="2"/><line x1="8" y1="8" x2="20" y2="20" stroke="currentColor" stroke-width="2"/></svg>`,
+  fade:   `<svg viewBox="0 0 28 28" width="26" height="26"><circle cx="14" cy="14" r="9" fill="currentColor" opacity="0.22"/><circle cx="14" cy="14" r="9" fill="none" stroke="currentColor" stroke-width="2" opacity="0.7"/><text x="14" y="18" text-anchor="middle" font-size="8" fill="currentColor">abc</text></svg>`,
+  rise:   `<svg viewBox="0 0 28 28" width="26" height="26"><rect x="6" y="14" width="16" height="9" rx="2" fill="currentColor" opacity="0.18"/><rect x="6" y="8" width="16" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><polyline points="14,16 14,5 11,9 14,5 17,9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>`,
+  drop:   `<svg viewBox="0 0 28 28" width="26" height="26"><rect x="6" y="6" width="16" height="9" rx="2" fill="currentColor" opacity="0.18"/><rect x="6" y="13" width="16" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><polyline points="14,12 14,22 11,18 14,22 17,18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>`,
+  left:   `<svg viewBox="0 0 28 28" width="26" height="26"><rect x="14" y="7" width="9" height="14" rx="2" fill="currentColor" opacity="0.18"/><rect x="5" y="7" width="9" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><polyline points="11,14 1,14 5,11 1,14 5,17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>`,
+  right:  `<svg viewBox="0 0 28 28" width="26" height="26"><rect x="5" y="7" width="9" height="14" rx="2" fill="currentColor" opacity="0.18"/><rect x="14" y="7" width="9" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><polyline points="17,14 27,14 23,11 27,14 23,17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>`,
+  zoom:   `<svg viewBox="0 0 28 28" width="26" height="26"><circle cx="14" cy="14" r="5" fill="currentColor" opacity="0.18"/><circle cx="14" cy="14" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><line x1="14" y1="5" x2="14" y2="23" stroke="currentColor" stroke-width="1.2" opacity="0.45"/><line x1="5" y1="14" x2="23" y2="14" stroke="currentColor" stroke-width="1.2" opacity="0.45"/></svg>`,
+  pop:    `<svg viewBox="0 0 28 28" width="26" height="26"><circle cx="14" cy="14" r="5" fill="currentColor"/><line x1="14" y1="2" x2="14" y2="6" stroke="currentColor" stroke-width="2"/><line x1="14" y1="22" x2="14" y2="26" stroke="currentColor" stroke-width="2"/><line x1="2" y1="14" x2="6" y2="14" stroke="currentColor" stroke-width="2"/><line x1="22" y1="14" x2="26" y2="14" stroke="currentColor" stroke-width="2"/><line x1="5" y1="5" x2="8" y2="8" stroke="currentColor" stroke-width="2"/><line x1="20" y1="20" x2="23" y2="23" stroke="currentColor" stroke-width="2"/><line x1="23" y1="5" x2="20" y2="8" stroke="currentColor" stroke-width="2"/><line x1="5" y1="23" x2="8" y2="20" stroke="currentColor" stroke-width="2"/></svg>`,
+  blur:   `<svg viewBox="0 0 28 28" width="26" height="26"><text x="14" y="19" text-anchor="middle" font-size="14" fill="currentColor" opacity="0.25" filter="url(#b)">A</text><text x="14" y="19" text-anchor="middle" font-size="14" fill="currentColor">A</text><defs><filter id="b"><feGaussianBlur stdDeviation="2"/></filter></defs></svg>`,
+  reveal: `<svg viewBox="0 0 28 28" width="26" height="26"><rect x="5" y="7" width="18" height="14" rx="2" fill="currentColor" opacity="0.12"/><rect x="5" y="7" width="9" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><line x1="14" y1="7" x2="14" y2="21" stroke="currentColor" stroke-width="2"/></svg>`,
+};
 function animatePanel(el){
-  let chips=Object.entries(ANIMS).map(([k,v])=>`<button class="chip ${el.anim===k?"active":""}" data-anim="${k}">${v.label}</button>`).join("");
-  return `<div class="group"><span class="glabel">Entrance — this element</span>
-    <div class="chiprow">${chips}</div></div>
-    <div class="group">${field("Delay "+(el.animDelay||0).toFixed(1)+"s",`<input type="range" id="f-delay" min="0" max="2" step="0.1" value="${el.animDelay||0}">`)}</div>
-    <div class="group"><button class="tbtn" id="f-preview" style="width:100%;justify-content:center"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 4 14 8-14 8z"/></svg> Preview animations</button></div>
-    <div class="insp-empty" style="padding-top:.5rem">Entrance plays when the slide appears in <b>Present</b>. Set a per-element delay to stagger the reveal — the magazine trick.</div>`;
+  const animCards=Object.entries(ANIMS).map(([k,v])=>`
+    <button class="anim-card ${el.anim===k?"active":""}" data-anim="${k}" title="${v.label}">
+      <span class="anim-card-icon">${ANIM_ICONS[k]||""}</span>
+      <span class="anim-card-name">${v.label}</span>
+    </button>`).join("");
+
+  const presetBtns=ANIM_PRESETS.map(p=>`
+    <button class="anim-preset-btn" data-preset="${p.key}" title="${p.hint}">${p.label}</button>`).join("");
+
+  return `
+    <div class="group">
+      <span class="glabel">Entrance — this element</span>
+      <div class="anim-card-grid">${animCards}</div>
+    </div>
+    <div class="group">
+      ${field(`Delay ${(el.animDelay||0).toFixed(1)}s`,`<input type="range" id="f-delay" min="0" max="2" step="0.1" value="${el.animDelay||0}">`)}
+    </div>
+    <div class="group">
+      <button class="tbtn" id="f-preview" style="width:100%;justify-content:center;margin-bottom:.5rem">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 4 14 8-14 8z"/></svg>
+        Preview animations
+      </button>
+    </div>
+    <div class="group">
+      <span class="glabel">Apply to all elements on this slide</span>
+      <div class="anim-preset-row">${presetBtns}</div>
+      <div class="insp-empty" style="padding-top:.35rem">Stagger creates cinematic reveals — each element enters after the previous one.</div>
+    </div>`;
 }
 function bindAnimatePanel(el){
-  $$(".chip[data-anim]",inspBody).forEach(c=>c.addEventListener("click",()=>{
-    el.anim=c.dataset.anim;$$(".chip[data-anim]",inspBody).forEach(x=>x.classList.remove("active"));c.classList.add("active");markDirty();}));
+  $$(".anim-card[data-anim]",inspBody).forEach(c=>c.addEventListener("click",()=>{
+    el.anim=c.dataset.anim;
+    $$(".anim-card[data-anim]",inspBody).forEach(x=>x.classList.remove("active"));
+    c.classList.add("active");
+    markDirty();
+  }));
   bindRange("f-delay",v=>{el.animDelay=v;markDirty();},v=>v.toFixed(1)+"s","Delay");
   $("#f-preview")&&$("#f-preview").addEventListener("click",previewAnimations);
+  $$(".anim-preset-btn[data-preset]",inspBody).forEach(b=>b.addEventListener("click",()=>{
+    const p=ANIM_PRESETS.find(x=>x.key===b.dataset.preset);
+    if(p)applyAnimPreset(p);
+  }));
 }
 function previewAnimations(){const s=curSlide();paintSlide(canvas,s,{live:true});
   // restore editor interactivity after the preview plays
@@ -1705,9 +1767,165 @@ function exportStandaloneHTML(){
   toast("Exported standalone HTML");
 }
 
-/* ════════════════════════════════════════════════════════════════════
-   WIRING
-   ════════════════════════════════════════════════════════════════════ */
+/* ── AI Slide Generator ───────────────────────────────────────────── */
+function ensureAiSlideModal(){
+  let m=document.getElementById("hanns-ai-modal");
+  if(m)return m;
+  m=document.createElement("div");
+  m.id="hanns-ai-modal";
+  m.className="hanns-geo-modal";
+  m.innerHTML=`<div class="hanns-geo-card hanns-ai-card" role="dialog" aria-modal="true" aria-labelledby="hanns-ai-title">
+    <button class="hanns-geo-close" id="hanns-ai-close" aria-label="Close">✕</button>
+    <h3 id="hanns-ai-title">✦ AI slide designer</h3>
+    <p>Describe what you want and Hanns AI will build you a complete, beautifully animated slide in seconds.</p>
+    <div class="ai-topic-chips">
+      <button class="ai-topic-chip" data-topic="Show our Q3 results with a big number, chart and bullet points">📊 Results</button>
+      <button class="ai-topic-chip" data-topic="Create a bold title slide for a workshop on food security">🌾 Workshop title</button>
+      <button class="ai-topic-chip" data-topic="Make a two-column comparison of before and after">↔ Before / After</button>
+      <button class="ai-topic-chip" data-topic="A dramatic quote slide with a powerful statement">💬 Quote slide</button>
+      <button class="ai-topic-chip" data-topic="Project update with progress percentage and key milestones">📋 Project update</button>
+      <button class="ai-topic-chip" data-topic="Community health impact with stats and people visual">❤️ Health impact</button>
+    </div>
+    <textarea id="hanns-ai-prompt" rows="4" placeholder="e.g. &quot;A dramatic title slide for our annual report with the headline: The Future of Agriculture. Dark background, bold serif, animated rise effect.&quot;"></textarea>
+    <div style="display:flex;gap:.5rem;margin:.6rem 0;flex-wrap:wrap;align-items:center">
+      <label style="font-size:.76rem;color:var(--fog-2);flex:1;min-width:100px">Add to deck as:
+        <select id="hanns-ai-mode" style="margin-left:.3rem;background:var(--ink-3);border:1px solid var(--line);color:var(--cream);border-radius:7px;padding:.2rem .4rem;font-size:.78rem">
+          <option value="replace">Replace current slide</option>
+          <option value="new" selected>Add new slide</option>
+        </select>
+      </label>
+    </div>
+    <div class="hanns-geo-actions" style="justify-content:flex-end">
+      <button class="chip" id="hanns-ai-cancel">Cancel</button>
+      <button id="hanns-ai-go" style="background:var(--signal);border:1px solid var(--signal);border-radius:12px;padding:.62rem 1.1rem;font-weight:900;color:#fff;cursor:pointer;font-size:.88rem">
+        ✦ Design this slide
+      </button>
+    </div>
+    <div id="hanns-ai-status" style="display:none;padding:.6rem .8rem;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid var(--line);font-size:.82rem;color:var(--fog-2);margin-top:.4rem"></div>
+  </div>`;
+  document.body.appendChild(m);
+  m.addEventListener("click",e=>{if(e.target===m)closeAiModal();});
+  m.querySelector("#hanns-ai-close").addEventListener("click",closeAiModal);
+  m.querySelector("#hanns-ai-cancel").addEventListener("click",closeAiModal);
+  m.querySelectorAll(".ai-topic-chip").forEach(c=>c.addEventListener("click",()=>{
+    m.querySelector("#hanns-ai-prompt").value=c.dataset.topic;
+  }));
+  m.querySelector("#hanns-ai-go").addEventListener("click",runAiSlideGen);
+  return m;
+}
+function openAiSlideModal(){
+  const m=ensureAiSlideModal();m.classList.add("on");
+  setTimeout(()=>m.querySelector("#hanns-ai-prompt").focus(),60);
+}
+function closeAiModal(){
+  const m=document.getElementById("hanns-ai-modal");
+  if(m)m.classList.remove("on");
+}
+function setAiStatus(msg,err=false){
+  const s=document.getElementById("hanns-ai-status");
+  if(!s)return;
+  if(!msg){s.style.display="none";s.textContent="";return;}
+  s.style.display="block";s.textContent=msg;
+  s.style.color=err?"var(--signal-2)":"var(--fog-2)";
+}
+
+async function runAiSlideGen(){
+  const promptEl=document.getElementById("hanns-ai-prompt");
+  const modeEl=document.getElementById("hanns-ai-mode");
+  const goBtn=document.getElementById("hanns-ai-go");
+  const prompt=(promptEl?.value||"").trim();
+  if(!prompt){toast("Please describe your slide first");return;}
+
+  goBtn.disabled=true;goBtn.textContent="Designing…";
+  setAiStatus("🤖 AI is designing your slide…");
+
+  // Build the system prompt that tells the AI exactly which element schema to use
+  const systemPrompt=`You are Hanns AI, an expert presentation designer. You create JSON slide data for the Hanns editor.
+
+The slide canvas is 960×540px. Return ONLY valid JSON (no markdown, no explanation) in this exact shape:
+{
+  "bg": "<css background>",
+  "transition": "fade|slide|zoom|reveal|flip",
+  "bgFx": "none|drift|gradient|stars|bokeh|waves|rays|pulse",
+  "els": [
+    {
+      "id": "unique_id",
+      "type": "text|rect|ellipse|line|image",
+      "x": number, "y": number, "w": number, "h": number, "rot": 0,
+      "anim": "fade|rise|drop|left|right|zoom|pop|blur|reveal|none",
+      "animDelay": number (0–2, stagger by 0.15 for cinematic effect),
+      ...type-specific fields
+    }
+  ]
+}
+
+Text element extra fields: text, font (use "Fraunces,serif" for headlines, "Archivo,sans-serif" for body), size (10–260), weight (300|400|500|600|700|800), italic (bool), color (#hex), align (left|center|right), lh (0.9–2), ls (letter-spacing px), fill ("none" or #hex background).
+
+Rect/ellipse extra fields: fill (#hex), stroke (#hex or "none"), strokeW (0–20), radius (0–120 for rect).
+
+Line extra fields: fill (#hex).
+
+Design principles:
+- Use dramatic editorial layouts with large display type (80–160px headlines)
+- Layer shapes behind text for depth (semi-transparent fills with opacity in rgba)
+- Stagger animations: animDelay 0, 0.15, 0.30, 0.45 etc for cinematic reveal
+- Use bold, high-contrast colour combinations
+- Prefer Fraunces serif for display text and Archivo for body
+- Make the design feel like a magazine cover — editorial, confident, beautiful
+- Common background patterns: use linear-gradient or radial-gradient CSS values
+- Keep text within safe area: x > 60, y > 40, right edge < 900, bottom < 500
+- Accent colour #e8482b (signal red), warm paper #f6f1e7, dark ink #16140f
+
+Available bgFx values: none, drift, gradient, stars, bokeh, waves, rays, pulse, confetti, orbit.
+Return ONLY the JSON object. No markdown fences.`;
+
+  try{
+    const resp=await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        model:"claude-sonnet-4-20250514",
+        max_tokens:1800,
+        system:systemPrompt,
+        messages:[{role:"user",content:`Design a professional, visually striking Hanns presentation slide for:\n\n${prompt}\n\nMake it editorial, cinematic, and beautiful. Return only the JSON.`}]
+      })
+    });
+    const data=await resp.json();
+    if(!resp.ok||!data||data.error){
+      throw new Error((data&&data.error&&(data.error.message||JSON.stringify(data.error)))||"API error");
+    }
+    const raw=(data.content||[]).map(b=>b.text||"").join("").trim();
+    // Strip possible markdown fences
+    const clean=raw.replace(/^```[a-z]*\n?/,"").replace(/\n?```$/,"").trim();
+    let slide;
+    try{slide=JSON.parse(clean);}
+    catch(pe){throw new Error("AI returned invalid JSON. Try a different prompt.");}
+
+    // Ensure IDs are unique
+    (slide.els||[]).forEach(el=>{el.id=uid();});
+
+    const mode=modeEl?.value||"new";
+    if(mode==="replace"){
+      const s=curSlide();
+      s.bg=slide.bg||s.bg;
+      s.transition=slide.transition||s.transition;
+      s.bgFx=slide.bgFx||"none";
+      s.els=slide.els||[];
+    } else {
+      // new slide
+      const s=Object.assign(newSlide(),{bg:slide.bg||"#f6f1e7",transition:slide.transition||"fade",bgFx:slide.bgFx||"none",els:slide.els||[]});
+      Deck.slides.splice(Deck.cur+1,0,s);
+      Deck.cur=Deck.cur+1;
+    }
+    pushHistory();renderAll();markDirty();
+    closeAiModal();
+    toast("✦ AI slide ready!");
+  }catch(err){
+    setAiStatus("Error: "+(err&&err.message?err.message:"Something went wrong. Try again."),true);
+  }finally{
+    if(goBtn){goBtn.disabled=false;goBtn.textContent="✦ Design this slide";}
+  }
+}
 /* Server hooks injected by the Django editor template (editor.html):
    window.__HANNS__ = {deck:{…}, saveUrl, presentUrl, csrftoken}        */
 const SRV = (window.__HANNS__||{});
@@ -2000,6 +2218,9 @@ function init(){
   $$("[data-close-modal]").forEach(b=>b.addEventListener("click",()=>$("#export-modal").classList.remove("on")));
   $("#export-json")&&$("#export-json").addEventListener("click",()=>{exportJSON();$("#export-modal").classList.remove("on");});
   $("#export-html")&&$("#export-html").addEventListener("click",()=>{exportStandaloneHTML();$("#export-modal").classList.remove("on");});
+
+  // AI Slide Generator — wired to the ✦ AI Design button in the topbar
+  $("#btn-ai-design")&&$("#btn-ai-design").addEventListener("click",openAiSlideModal);
   document.addEventListener("keydown",e=>{
     const tag=(e.target.tagName||"").toLowerCase();
     const editing=e.target.isContentEditable||tag==="input"||tag==="textarea"||tag==="select";

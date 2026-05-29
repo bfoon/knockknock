@@ -1049,7 +1049,58 @@ body.hanns-options-open .drawer{
 
 
 
-/* v32 — Map coordinate input/import helpers */
+/* ── Animation cards (Animate inspector tab) ─────────────────────── */
+.anim-card-grid{
+  display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin:.2rem 0 .1rem;
+}
+.anim-card{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+  padding:6px 4px 5px;border-radius:9px;border:1px solid var(--line);
+  background:transparent;color:var(--fog-2);cursor:pointer;transition:.13s;
+  font-size:.6rem;font-weight:700;line-height:1.1;text-align:center;
+  min-height:54px;
+}
+.anim-card:hover{background:rgba(255,255,255,.07);border-color:#4b4536;color:var(--cream);}
+.anim-card.active{background:rgba(232,72,43,.16);border-color:rgba(232,72,43,.55);color:var(--signal-2);}
+.anim-card-icon{display:flex;align-items:center;justify-content:center;height:26px;}
+.anim-card-name{font-size:.58rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;opacity:.8;}
+.anim-card.active .anim-card-name{opacity:1;}
+
+/* ── Slide-wide animation preset strip ───────────────────────────── */
+.anim-preset-row{
+  display:flex;flex-wrap:wrap;gap:5px;margin:.2rem 0 0;
+}
+.anim-preset-btn{
+  flex:0 0 auto;padding:.34rem .6rem;border-radius:8px;
+  background:rgba(255,255,255,.04);border:1px solid var(--line);
+  color:var(--fog-2);font-size:.72rem;font-weight:700;cursor:pointer;transition:.13s;
+  white-space:nowrap;
+}
+.anim-preset-btn:hover{background:rgba(232,72,43,.14);border-color:rgba(232,72,43,.4);color:var(--cream);}
+
+/* ── AI Slide Designer modal ─────────────────────────────────────── */
+.hanns-ai-card{max-width:min(600px,95vw);}
+.hanns-ai-card h3{font-family:var(--font-display);font-size:1.5rem;margin:.2rem 2rem .3rem 0;color:var(--cream);}
+.hanns-ai-card p{color:var(--fog-2);font-size:.88rem;line-height:1.5;margin:.2rem 0 .7rem;}
+.hanns-ai-card textarea{
+  width:100%;min-height:90px;background:#0d0c09;border:1px solid var(--line);
+  border-radius:12px;color:#fff;padding:11px 13px;font-family:var(--font-body);
+  font-size:.88rem;line-height:1.45;resize:vertical;
+}
+.hanns-ai-card textarea:focus{outline:none;border-color:var(--signal);}
+.ai-topic-chips{display:flex;flex-wrap:wrap;gap:6px;margin:.2rem 0 .8rem;}
+.ai-topic-chip{
+  padding:.3rem .65rem;border-radius:20px;border:1px solid var(--line);
+  background:rgba(255,255,255,.05);color:var(--fog-2);font-size:.76rem;
+  font-weight:700;cursor:pointer;transition:.13s;
+}
+.ai-topic-chip:hover{background:rgba(232,72,43,.14);border-color:rgba(232,72,43,.45);color:var(--cream);}
+/* ✦ AI Design topbar button */
+.tbtn.ai-btn{
+  background:linear-gradient(135deg,rgba(232,72,43,.9),rgba(216,162,58,.8));
+  border-color:var(--signal);color:#fff;font-weight:700;
+}
+.tbtn.ai-btn:hover{background:linear-gradient(135deg,var(--signal),var(--gold));border-color:var(--gold);}
 .geo-action-row{display:flex;flex-wrap:wrap;gap:.42rem;margin:-.25rem 0 .7rem}
 .geo-action-row .chip{border-radius:10px;padding:.42rem .62rem;font-size:.72rem;background:rgba(255,255,255,.04)}
 .map-area{fill:var(--area-fill,#e8482b);fill-opacity:var(--area-opacity,.42);stroke:var(--area-stroke,#fff);stroke-width:3;stroke-linejoin:round;filter:drop-shadow(0 8px 18px rgba(0,0,0,.22));animation:mapAreaIn .7s cubic-bezier(.22,1,.36,1) both;animation-delay:calc(var(--i,0)*.08s)}

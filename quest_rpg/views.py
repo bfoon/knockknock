@@ -1,4 +1,5 @@
 import json
+import logging
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
@@ -13,6 +14,8 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
 from .models import QuestQuestion, QuestResponse, QuestSession, QuestTeam
+
+logger = logging.getLogger(__name__)
 
 
 def _join_url(request, session):
@@ -54,29 +57,30 @@ def _session_snapshot(session_or_code, include_answers=False):
 def _broadcast_session(session, reason="state", extra=None):
     """Push an updated snapshot to projector and phones.
 
-    Start/end/next/reveal now work even when the presenter button is clicked
-    before the WebSocket host handshake finishes because the HTTP endpoint also
-    broadcasts through Channels.
+    The realtime push is best-effort: if the channel layer is unreachable
+    (e.g. Redis down or a transport hiccup) we log it and carry on. The HTTP
+    action (join / answer / start / end) has already been written to the
+    database, so it must succeed regardless of whether the live broadcast does.
     """
     payload = {"type": "state", "reason": reason, "session": _session_snapshot(session)}
     if extra:
         payload.update(extra)
-    channel_layer = get_channel_layer()
-    if channel_layer:
-        async_to_sync(channel_layer.group_send)(
-            f"quest_{session.code}",
-            {"type": "fanout", "payload": payload},
-        )
+    _safe_group_send(session, {"type": "fanout", "payload": payload})
     return payload
 
 
 def _broadcast_payload(session, payload):
+    _safe_group_send(session, {"type": "fanout", "payload": payload})
+
+
+def _safe_group_send(session, message):
     channel_layer = get_channel_layer()
-    if channel_layer:
-        async_to_sync(channel_layer.group_send)(
-            f"quest_{session.code}",
-            {"type": "fanout", "payload": payload},
-        )
+    if not channel_layer:
+        return
+    try:
+        async_to_sync(channel_layer.group_send)(f"quest_{session.code}", message)
+    except Exception:  # noqa: BLE001 - never let a live-sync glitch break the action
+        logger.exception("Quest live broadcast failed for session %s", session.code)
 
 
 def _default_questions():
@@ -175,7 +179,10 @@ def _record_answer(session, team_id, selected):
     if session.status != QuestSession.STATUS_LIVE:
         return {"ok": False, "message": "The adventure is not open yet. Ask the owner to press Open Adventure."}
 
-    team = QuestTeam.objects.get(id=int(team_id), session=session)
+    try:
+        team = QuestTeam.objects.get(id=int(team_id), session=session)
+    except (QuestTeam.DoesNotExist, TypeError, ValueError):
+        return {"ok": False, "message": "We couldn't find your team for this quest. Tap rejoin and enter your team name again."}
     question, total, complete = _team_active_question(session, team)
     if complete:
         return {

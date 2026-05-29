@@ -694,6 +694,29 @@ const OBJECTS = [
     "help": "Inverted stack of funnel bands — editable count, colours & labels (sales-funnel style)"
   },
   {
+    "kind": "percent_ring",
+    "label": "Percent ring",
+    "icon": "◍",
+    "count": 1,
+    "level": 67,
+    "w": 200,
+    "h": 200,
+    "accent": "#2f7fb0",
+    "fill": true,
+    "help": "Circular progress ring with the % in the centre"
+  },
+  {
+    "kind": "stat_item",
+    "label": "Stat pill (number + text)",
+    "icon": "🔖",
+    "count": 1,
+    "level": 0,
+    "w": 420,
+    "h": 110,
+    "accent": "#2f7fb0",
+    "help": "Rounded row: number badge + title + body text (editable)"
+  },
+  {
     "kind": "percent_bar",
     "label": "Percent bar",
     "icon": "📊",
@@ -3544,6 +3567,194 @@ function T_funnelIconsBothSides(){
   ]};
 }
 
+/* ── Funnel / stat / arrow templates (uploaded references batch) ─────── */
+
+/* 1 — Funnel with alternating side captions (reference image 1). */
+function T_funnelCaptions(){
+  const bands=[
+    {label:"Text Here",color:"#2f7f86"},
+    {label:"Text Here",color:"#9a8467"},
+    {label:"Text Here",color:"#ef5b3f"},
+    {label:"Text Here",color:"#4a4f57"},
+  ];
+  const cap="This slide is 100% editable. Adapt it to your needs and capture your audience's attention.";
+  return {bg:"#ffffff",els:[
+    makeText({x:60,y:24,w:840,h:54,text:"Funnel",font:'"Montserrat",sans-serif',size:40,weight:600,color:"#3a3a3a",align:"center",anim:"rise"}),
+    makeObject("funnel_stack",{x:280,y:100,w:400,h:430,funnelGap:14,funnelTip:false,numberColor:"#ffffff",
+      bands,anim:"pop",animDelay:.2}),
+    makeText({x:660,y:160,w:250,h:90,text:cap,size:13,color:"#7a838c",font:'"Montserrat",sans-serif',lh:1.4,anim:"fade",animDelay:.3}),
+    makeText({x:40,y:300,w:250,h:90,text:cap,size:13,color:"#7a838c",align:"right",font:'"Montserrat",sans-serif',lh:1.4,anim:"fade",animDelay:.4}),
+    makeText({x:580,y:420,w:280,h:90,text:cap,size:13,color:"#7a838c",font:'"Montserrat",sans-serif',lh:1.4,anim:"fade",animDelay:.45}),
+    makeText({x:80,y:520,w:260,h:60,text:cap,size:13,color:"#7a838c",align:"right",font:'"Montserrat",sans-serif',lh:1.4,anim:"fade",animDelay:.5}),
+    makeText({x:40,y:512,w:200,h:24,text:"WWW.COMPANY.COM",size:13,weight:700,color:"#6b7077",font:'"Montserrat",sans-serif',anim:"fade",animDelay:.6}),
+  ]};
+}
+
+/* 2 — Percentage row of taps/icons with % + title + text (reference 2). */
+function T_percentTaps(){
+  const data=[
+    {pct:20,c:"#34465c",t:"Title - 1"},
+    {pct:30,c:"#d2691e",t:"Title - 2"},
+    {pct:40,c:"#9aa0a6",t:"Title - 3"},
+    {pct:50,c:"#e0a81e",t:"Title - 4"},
+    {pct:10,c:"#3a7fc4",t:"Title - 5"},
+  ];
+  const xs=[40,230,420,610,800];
+  const cell=(i,d)=>{
+    const o=data[i];
+    return [
+      makeObject("info_node",{x:xs[i],y:170,w:120,h:130,nodeIcon:"tap",nodeTextColor:o.c,nodeShowTitle:false,nodeShowText:false,hideContainer:true,accent:o.c,anim:"pop",animDelay:d}),
+      makeText({x:xs[i],y:300,w:120,h:40,text:o.pct+"%",size:34,weight:800,color:o.c,align:"center",font:'"Montserrat",sans-serif',anim:"fade",animDelay:d+.05}),
+      makeText({x:xs[i],y:344,w:120,h:24,text:o.t,size:15,weight:700,color:"#3a3a3a",align:"center",font:'"Montserrat",sans-serif',anim:"fade",animDelay:d+.08}),
+      makeText({x:xs[i],y:368,w:120,h:24,text:"Enter your text here.",size:10,color:"#9aa0a6",align:"center",font:'"Montserrat",sans-serif',anim:"fade",animDelay:d+.1}),
+    ];
+  };
+  return {bg:"#ffffff",els:[
+    makeText({x:60,y:34,w:840,h:24,text:"YOUR TEXT HERE",size:14,weight:600,color:"#9aa0a6",align:"center",ls:3,font:'"Montserrat",sans-serif',anim:"fade"}),
+    makeText({x:60,y:58,w:840,h:40,text:"Percentage Template And Presentation",font:'"Montserrat",sans-serif',size:30,weight:800,color:"#2a2a2a",align:"center",anim:"rise",animDelay:.05}),
+    ...cell(0,.2),...cell(1,.26),...cell(2,.32),...cell(3,.38),...cell(4,.44),
+  ]};
+}
+
+/* 3 — Row of percent rings with banner captions (reference 3). */
+function T_percentRings(){
+  const data=[{p:67,c:"#2f7fc4"},{p:43,c:"#1f9e8a"},{p:78,c:"#6fae3a"},{p:55,c:"#e0a81e"},{p:90,c:"#e0392e"}];
+  const xs=[40,230,420,610,800];
+  const cell=(i,d)=>{
+    const o=data[i];
+    return [
+      makeObject("percent_ring",{x:xs[i]+18,y:120,w:84,h:84,level:o.p,accent:o.c,numberMode:"countup",anim:"pop",animDelay:d}),
+      makeText({x:xs[i],y:212,w:120,h:24,text:"Contents Here",size:13,weight:700,color:"#3a3a3a",align:"center",font:'"Montserrat",sans-serif',anim:"fade",animDelay:d+.05}),
+      makeShape("rect",{x:xs[i]+10,y:248,w:100,h:120,fill:o.c,radius:4,anim:"rise",animDelay:d+.08}),
+      makeText({x:xs[i]+16,y:258,w:88,h:110,text:"Get a modern presentation that is beautifully designed.",size:9,color:"#ffffff",align:"center",font:'"Montserrat",sans-serif',lh:1.3,anim:"fade",animDelay:d+.12}),
+    ];
+  };
+  return {bg:"#ffffff",els:[
+    makeText({x:60,y:30,w:840,h:46,text:"Percent Rings",font:'"Montserrat",sans-serif',size:38,weight:800,color:"#4a4f57",align:"center",anim:"rise"}),
+    makeText({x:60,y:78,w:840,h:24,text:"A row of editable circular progress rings",size:14,color:"#9aa0a6",align:"center",font:'"Montserrat",sans-serif',anim:"fade",animDelay:.1}),
+    ...cell(0,.2),...cell(1,.26),...cell(2,.32),...cell(3,.38),...cell(4,.44),
+  ]};
+}
+
+/* 4 — Numbered content cards + horizontal % bars with icons (reference 4). */
+function T_numberedBars(){
+  const data=[
+    {n:"01",c:"#e8941e",p:50,icon:"search"},
+    {n:"02",c:"#6fae3a",p:60,icon:"chart"},
+    {n:"03",c:"#1f9e8a",p:85,icon:"diamond"},
+    {n:"04",c:"#2f8fc4",p:70,icon:"bulb"},
+  ];
+  const row=(i,y,d)=>{
+    const o=data[i];
+    return [
+      makeText({x:40,y:y+6,w:230,h:60,text:"Get a modern presentation that is beautifully designed. Easy to change colors.",size:11,color:"#6b7077",align:"right",font:'"Montserrat",sans-serif',lh:1.35,anim:"fade",animDelay:d+.1}),
+      makeObject("stat_item",{x:300,y:y,w:150,h:74,statNumber:o.n,statTitle:"Contents",statShowText:false,statStyle:"solid",accent:o.c,anim:"left",animDelay:d}),
+      makeShape("rect",{x:470,y:y+14,w:Math.round(360*o.p/100),h:46,fill:o.c,radius:4,anim:"left",animDelay:d+.05}),
+      makeText({x:482,y:y+22,w:120,h:30,text:o.p+"%",size:22,weight:800,color:"#fff",font:'"Montserrat",sans-serif',anim:"fade",animDelay:d+.12}),
+      makeObject("info_node",{x:840,y:y+2,w:70,h:70,nodeIcon:o.icon,nodeShowTitle:false,nodeShowText:false,hideContainer:true,accent:o.c,anim:"pop",animDelay:d+.1}),
+    ];
+  };
+  return {bg:"#ffffff",els:[
+    makeText({x:60,y:34,w:840,h:52,text:"Numbered Bars",font:'"Montserrat",sans-serif',size:42,weight:800,color:"#4a4f57",align:"center",anim:"rise"}),
+    ...row(0,140,.2),...row(1,228,.28),...row(2,316,.36),...row(3,404,.44),
+  ]};
+}
+
+/* 5 — Two opposing arrows with content (reference 5). */
+function T_twoArrows(){
+  const para="You can simply impress your audience and add a unique zing and appeal to your Presentations.";
+  return {bg:"#ffffff",els:[
+    makeText({x:60,y:30,w:840,h:46,text:"Two Arrows",font:'"Montserrat",sans-serif',size:40,weight:800,color:"#4a4f57",align:"center",anim:"rise"}),
+    makeText({x:240,y:96,w:480,h:48,text:"You can simply impress your audience and add a unique zing and appeal to your Presentations.",size:14,weight:700,color:"#3a3a3a",align:"center",font:'"Montserrat",sans-serif',lh:1.3,anim:"fade",animDelay:.1}),
+    // right-pointing arrow (top)
+    makeCreativeShape("arrow_right",{x:430,y:200,w:300,h:80,fill:"#2f8fc4",anim:"right",animDelay:.2}),
+    makeObject("info_node",{x:440,y:206,w:64,h:64,nodeIcon:"chat",nodeShowTitle:false,nodeShowText:false,hideContainer:true,anim:"pop",animDelay:.3}),
+    makeText({x:510,y:228,w:200,h:24,text:"Contents Title",size:15,weight:800,color:"#fff",font:'"Montserrat",sans-serif',anim:"fade",animDelay:.3}),
+    // left-pointing arrow (bottom)
+    makeCreativeShape("arrow_left",{x:330,y:400,w:300,h:80,fill:"#e8941e",anim:"left",animDelay:.25}),
+    makeText({x:400,y:428,w:200,h:24,text:"Contents Title",size:15,weight:800,color:"#fff",align:"center",font:'"Montserrat",sans-serif',anim:"fade",animDelay:.35}),
+    // left text block
+    makeShape("rect",{x:90,y:206,w:220,h:36,fill:"#e8941e",radius:18,anim:"left",animDelay:.2}),
+    makeText({x:90,y:214,w:220,h:24,text:"Contents Title",size:15,weight:800,color:"#fff",align:"center",font:'"Montserrat",sans-serif',anim:"fade",animDelay:.25}),
+    makeText({x:90,y:260,w:230,h:120,text:para+"\n\n"+para,size:11,color:"#6b7077",font:'"Montserrat",sans-serif',lh:1.4,anim:"fade",animDelay:.3}),
+    // right text block
+    makeShape("rect",{x:700,y:330,w:220,h:36,fill:"#2f8fc4",radius:18,anim:"right",animDelay:.25}),
+    makeText({x:700,y:338,w:220,h:24,text:"Contents Title",size:15,weight:800,color:"#fff",align:"center",font:'"Montserrat",sans-serif',anim:"fade",animDelay:.3}),
+    makeText({x:700,y:384,w:230,h:120,text:para+"\n\n"+para,size:11,color:"#6b7077",font:'"Montserrat",sans-serif',lh:1.4,anim:"fade",animDelay:.35}),
+  ]};
+}
+
+/* 6 — Big opposing CONTENTS arrows with corner callouts (reference 6). */
+function T_bigArrows(){
+  const blurb="Get a modern presentation that is beautifully designed. Easy to change colors, photos and text.";
+  return {bg:"#ffffff",els:[
+    makeText({x:60,y:30,w:840,h:46,text:"Big Arrows",font:'"Montserrat",sans-serif',size:40,weight:800,color:"#9aa0a6",align:"center",anim:"rise"}),
+    makeCreativeShape("arrow_left",{x:60,y:250,w:380,h:90,fill:"#2f8fc4",anim:"left",animDelay:.2}),
+    makeText({x:150,y:278,w:240,h:40,text:"CONTENTS",size:26,weight:800,color:"#fff",font:'"Montserrat",sans-serif',anim:"fade",animDelay:.3}),
+    makeCreativeShape("arrow_right",{x:520,y:330,w:380,h:90,fill:"#e8941e",anim:"right",animDelay:.25}),
+    makeText({x:560,y:358,w:240,h:40,text:"CONTENTS",size:26,weight:800,color:"#fff",font:'"Montserrat",sans-serif',anim:"fade",animDelay:.35}),
+    makeObject("info_node",{x:430,y:150,w:64,h:64,nodeIcon:"plane",nodeShowTitle:false,nodeShowText:false,hideContainer:true,anim:"pop",animDelay:.3}),
+    makeObject("info_node",{x:470,y:430,w:64,h:64,nodeIcon:"chart",nodeShowTitle:false,nodeShowText:false,hideContainer:true,accent:"#e8941e",anim:"pop",animDelay:.4}),
+    makeText({x:150,y:150,w:200,h:24,text:"Add Contents Title",size:14,weight:800,color:"#2f8fc4",font:'"Montserrat",sans-serif',anim:"fade",animDelay:.3}),
+    makeText({x:150,y:176,w:220,h:70,text:blurb,size:11,color:"#6b7077",font:'"Montserrat",sans-serif',lh:1.35,anim:"fade",animDelay:.35}),
+    makeText({x:600,y:440,w:200,h:24,text:"Add Contents Title",size:14,weight:800,color:"#e8941e",font:'"Montserrat",sans-serif',anim:"fade",animDelay:.4}),
+    makeText({x:600,y:466,w:240,h:70,text:blurb,size:11,color:"#6b7077",font:'"Montserrat",sans-serif',lh:1.35,anim:"fade",animDelay:.45}),
+  ]};
+}
+
+/* 7 — Big-number callout list with icon tabs (reference 7). */
+function T_numberCallouts(){
+  const data=[
+    {n:"01",c:"#2f6f86",icon:"chat",side:"left",y:130},
+    {n:"02",c:"#1f9e8a",icon:"clipboard",side:"right",y:225},
+    {n:"03",c:"#e0a81e",icon:"box",side:"left",y:320},
+    {n:"04",c:"#d83a3a",icon:"plane",side:"right",y:415},
+  ];
+  const item=(o,d)=>{
+    if(o.side==="left"){
+      return [
+        makeText({x:50,y:o.y+6,w:90,h:60,text:o.n,size:48,weight:800,color:o.c,font:'"Montserrat",sans-serif',anim:"fade",animDelay:d}),
+        makeText({x:170,y:o.y,w:230,h:22,text:"Title Goes Here",size:16,weight:800,color:"#3a3a3a",align:"right",font:'"Montserrat",sans-serif',anim:"fade",animDelay:d+.05}),
+        makeText({x:170,y:o.y+24,w:230,h:40,text:"There are many variations of passages of Lorem Ipsum available",size:11,color:"#9aa0a6",align:"right",font:'"Montserrat",sans-serif',lh:1.3,anim:"fade",animDelay:d+.08}),
+        makeObject("info_node",{x:430,y:o.y,w:74,h:74,nodeIcon:o.icon,nodeShowTitle:false,nodeShowText:false,hideContainer:true,accent:o.c,anim:"pop",animDelay:d+.1}),
+      ];
+    }
+    return [
+      makeObject("info_node",{x:430,y:o.y,w:74,h:74,nodeIcon:o.icon,nodeShowTitle:false,nodeShowText:false,hideContainer:true,accent:o.c,anim:"pop",animDelay:d}),
+      makeText({x:540,y:o.y,w:240,h:22,text:"Title Goes Here",size:16,weight:800,color:"#3a3a3a",font:'"Montserrat",sans-serif',anim:"fade",animDelay:d+.05}),
+      makeText({x:540,y:o.y+24,w:250,h:40,text:"There are many variations of passages of Lorem Ipsum available",size:11,color:"#9aa0a6",font:'"Montserrat",sans-serif',lh:1.3,anim:"fade",animDelay:d+.08}),
+      makeText({x:820,y:o.y+6,w:90,h:60,text:o.n,size:48,weight:800,color:o.c,font:'"Montserrat",sans-serif',anim:"fade",animDelay:d+.1}),
+    ];
+  };
+  return {bg:"#ffffff",els:[
+    makeText({x:60,y:28,w:840,h:46,text:"Great Template",font:'"Montserrat",sans-serif',size:40,weight:800,color:"#4a4f57",anim:"rise"}),
+    makeText({x:62,y:80,w:600,h:24,text:"ADD YOUR SUBTITLE HERE",size:15,weight:700,color:"#9aa0a6",ls:2,font:'"Montserrat",sans-serif',anim:"fade",animDelay:.1}),
+    ...item(data[0],.2),...item(data[1],.28),...item(data[2],.36),...item(data[3],.44),
+  ]};
+}
+
+/* 8 — Grid of rounded number pills (reference 8). */
+function T_pillGrid(){
+  const data=[
+    {n:"01",c:"#2f8fc4"},{n:"02",c:"#5b6a78"},
+    {n:"03",c:"#1f9e8a"},{n:"04",c:"#6fae3a"},
+    {n:"05",c:"#e0392e"},{n:"06",c:"#e0941e"},
+  ];
+  const cells=[];
+  data.forEach((o,i)=>{
+    const col=i%2, rowi=Math.floor(i/2);
+    const x=60+col*440, y=130+rowi*130;
+    cells.push(makeObject("stat_item",{x,y,w:400,h:96,statNumber:o.n,statTitle:"Contents Title",
+      statText:"Get a modern presentation that is beautifully designed. Easy to change colors and text.",
+      accent:o.c,statStyle:"solid",anim:(col===0?"left":"right"),animDelay:.2+i*.06}));
+  });
+  return {bg:"#ffffff",els:[
+    makeText({x:60,y:30,w:840,h:44,text:"Contents Pills",font:'"Montserrat",sans-serif',size:36,weight:800,color:"#4a4f57",align:"center",anim:"rise"}),
+    makeText({x:60,y:76,w:840,h:24,text:"Six editable rounded number pills",size:14,color:"#9aa0a6",align:"center",font:'"Montserrat",sans-serif',anim:"fade",animDelay:.1}),
+    ...cells,
+  ]};
+}
+
 const BASE_TEMPLATES = [
   {name:"Infographic · Animal bars",   build:T_animalsBars},
   {name:"Infographic · Our Profit",    build:T_ourProfit},
@@ -3557,6 +3768,14 @@ const BASE_TEMPLATES = [
   {name:"Funnel · Steps + list",       build:T_funnelSteps},
   {name:"Funnel · Two-sided",          build:T_funnelTwoSided},
   {name:"Funnel · Icons both sides",   build:T_funnelIconsBothSides},
+  {name:"Funnel · Side captions",      build:T_funnelCaptions},
+  {name:"Percent · Tap icons",         build:T_percentTaps},
+  {name:"Percent · Rings",             build:T_percentRings},
+  {name:"List · Numbered bars",        build:T_numberedBars},
+  {name:"Arrows · Two opposing",       build:T_twoArrows},
+  {name:"Arrows · Big contents",       build:T_bigArrows},
+  {name:"List · Number callouts",      build:T_numberCallouts},
+  {name:"List · Contents pills",       build:T_pillGrid},
   {name:"Infographic · Beer (teal)",   build:T_beerInfographicAlt},
   {name:"Infographic · Funnels",       build:T_funnelInfographic},
   {name:"Infographic · Gauge board",   build:T_gaugeDashboard},
@@ -4799,6 +5018,8 @@ const NODE_ICONS = {
   chart:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M32 70 V50 M46 70 V42 M60 70 V34"/><path d="M30 40 l14 -8 l10 4 l18 -12"/></g>`,
   search:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linecap="round"><circle cx="46" cy="48" r="14"/><path d="M57 59 l12 12"/></g>`,
   dollar:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linecap="round"><path d="M58 40 q-16 -6 -16 6 q0 8 16 8 q16 0 16 8 q0 12 -16 6"/><path d="M50 32 v44"/></g>`,
+  tap:`<g fill="#1f5e86"><rect x="40" y="40" width="30" height="12" rx="3"/><path d="M28 44 h14 v8 h-14 q-4 0 -4 -4 q0 -4 4 -4 Z"/><rect x="50" y="28" width="8" height="14" rx="2"/><rect x="44" y="24" width="20" height="6" rx="3"/><path d="M28 52 v6 h8 v-6 Z"/><path d="M32 62 q-5 8 0 12 q5 -4 0 -12 Z"/></g>`,
+  chat:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linejoin="round"><path d="M28 38 h44 v26 h-30 l-10 9 v-9 h-4 Z"/><path d="M40 48 h20 M40 56 h12"/></g>`,
 };
 // Food icons (FOOD_ICONS) are merged into the node-icon set just below where
 // FOOD_ICONS is defined, so info_node can also carry an orange/bread/etc.
@@ -4807,11 +5028,15 @@ function renderInfoNode(el){
   const wrap=document.createElement("div");
   wrap.className="info-node"+(el.objAnim===false?" info-static":"");
   if(el.nodeTextColor) wrap.style.setProperty("--node-text", el.nodeTextColor);
+  const showTitle = el.nodeShowTitle!==false;
+  const showText  = el.nodeShowText!==false;
   const title = el.nodeTitle || "Lorem ipsum";
   const body  = el.nodeText  || "dolor sit amet, consectetuer";
+  const cap = (showTitle||showText)
+    ? `<div class="info-node-cap">${showTitle?`<b>${escHTML(title)}</b>`:""}${showText?`<span>${escHTML(body)}</span>`:""}</div>`
+    : "";
   wrap.innerHTML=
-    `<svg class="info-node-svg" viewBox="0 0 108 108"><circle cx="54" cy="48" r="46" fill="#ffffff"/>${icon}</svg>`+
-    `<div class="info-node-cap"><b>${escHTML(title)}</b><span>${escHTML(body)}</span></div>`;
+    `<svg class="info-node-svg" viewBox="0 0 108 108"><circle cx="54" cy="48" r="46" fill="#ffffff"/>${icon}</svg>`+cap;
   return wrap;
 }
 
@@ -5059,6 +5284,72 @@ function renderFunnelStack(el){
   return wrap;
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   Extra infographic objects:
+     • percent_ring — a circular progress ring with the % in the centre
+       (the "67% / 43% …" donut gauges). Level + accent + label editable.
+     • stat_item    — a rounded horizontal pill: a number badge on the left,
+       a title and body text on the right (the "01 Contents Title …" rows).
+   Both reusable on any slide and driven by the standard object controls.
+   ──────────────────────────────────────────────────────────────────── */
+
+/* ── percent_ring: circular progress + centre % ─────────────────────── */
+function renderPercentRing(el){
+  const d=objectDef(el.objectType);
+  const lvl=clamp(Number(el.level)||0,0,100);
+  const accent=el.accent||d.accent||"#2f7fb0";
+  const wrap=document.createElement("div");
+  wrap.className="pct-ring"+(el.objAnim===false?" pct-ring-static":"");
+  wrap.style.setProperty("--accent",accent);
+  const NS="http://www.w3.org/2000/svg";
+  const r=80, cx=100, cy=100, C=2*Math.PI*r;
+  const dash=(lvl/100*C).toFixed(2);
+  const S=document.createElementNS(NS,"svg");
+  S.setAttribute("viewBox","0 0 200 200");
+  S.setAttribute("class","pct-ring-svg");
+  S.setAttribute("preserveAspectRatio","xMidYMid meet");
+  const thick=el.ringThick||16;
+  S.innerHTML=
+    `<circle class="pr-track" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke-width="${thick}"/>`+
+    `<circle class="pr-fill" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke-width="${thick}" `+
+      `stroke-linecap="round" stroke-dasharray="${dash} ${(C-dash).toFixed(2)}" `+
+      `transform="rotate(-90 ${cx} ${cy})" pathLength="${C.toFixed(2)}"/>`;
+  wrap.appendChild(S);
+  if(el.showValue!==false){
+    const num=document.createElement("div");
+    num.className="pct-ring-num";
+    num.style.color=el.numberColor||accent;
+    const countAttr=(el.numberMode==="countup"&&el.objAnim!==false)?` data-count-to="${lvl}"`:"";
+    num.innerHTML=`<b${countAttr}>${lvl}%</b>`;
+    wrap.appendChild(num);
+  }
+  return wrap;
+}
+
+/* ── stat_item: rounded pill row (number badge + title + body) ───────── */
+function renderStatItem(el){
+  const d=objectDef(el.objectType);
+  const accent=el.accent||d.accent||"#2f7fb0";
+  const wrap=document.createElement("div");
+  wrap.className="stat-item"+(el.objAnim===false?" stat-static":"");
+  wrap.style.setProperty("--accent",accent);
+  const num   = el.statNumber!=null ? el.statNumber : "01";
+  const title = el.statTitle!=null ? el.statTitle : "Contents Title";
+  const body  = el.statText!=null ? el.statText : "Get a modern presentation that is beautifully designed.";
+  const showBadge = el.statShowNumber!==false;
+  const showTitle = el.statShowTitle!==false;
+  const showText  = el.statShowText!==false;
+  const solid = el.statStyle==="solid";        // solid pill vs outline-badge style
+  wrap.classList.toggle("stat-solid", solid);
+  wrap.innerHTML=
+    (showBadge?`<div class="stat-badge"><b>${escHTML(String(num))}</b></div>`:"")+
+    `<div class="stat-body">`+
+      (showTitle?`<b class="stat-title" style="color:${solid?"#fff":accent}">${escHTML(title)}</b>`:"")+
+      (showText?`<span class="stat-text" style="color:${solid?"rgba(255,255,255,.9)":(el.statTextColor||"#5b6166")}">${escHTML(body)}</span>`:"")+
+    `</div>`;
+  return wrap;
+}
+
 function renderCountGrid(el){
   const wrap=document.createElement("div");wrap.className="object-grid";
   const n=miniCount(el.count, el.objectType==="wall" ? 80 : 120);
@@ -5236,6 +5527,8 @@ function renderObject(el){
   else if(el.objectType==="diet_plate") art=renderDietPlate(el);
   else if(el.objectType==="food_wheel") art=renderFoodWheel(el);
   else if(el.objectType==="funnel_stack") art=renderFunnelStack(el);
+  else if(el.objectType==="percent_ring") art=renderPercentRing(el);
+  else if(el.objectType==="stat_item") art=renderStatItem(el);
   else if(d.shape && VESSEL_PATHS[d.shape]) art=renderVessel(el,d.shape);
   else art=renderCountGrid(el);
   art.classList.add("object-art");
@@ -5245,7 +5538,8 @@ function renderObject(el){
   if(el.objectType==="sdg_wheel" || el.objectType==="sdg_tiles" || el.objectType==="sdg"
      || el.objectType==="coffee_segments" || el.objectType==="info_node"
      || el.objectType==="diet_plate" || el.objectType==="food_wheel"
-     || el.objectType==="funnel_stack") return box;
+     || el.objectType==="funnel_stack"
+     || el.objectType==="percent_ring" || el.objectType==="stat_item") return box;
 
   // ── the number + label (independent) ─────────────────────────────
   const pos = el.numberPos || (d.fill?"onfill":"below");

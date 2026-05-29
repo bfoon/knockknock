@@ -1361,12 +1361,23 @@ Affected Area 1,-16.52,13.39,45,#e8482b,#ffffff">${escapeTA(areasToText(el))}</t
       ${el.objectType==="food_wheel" ? `
       ${field("Centre title",`<input type="text" id="f-fwtitle" value="${((el.centerTitle!=null?el.centerTitle:"HEALTHY\\nFOOD")).replace(/\n/g,"\\n").replace(/"/g,"&quot;")}"> <span class="insp-empty" style="font-size:.7em">\\n = line break</span>`)}
       ` : ""}
+      ${el.objectType==="stat_item" ? `
+      ${field("Number",`<input type="text" id="f-statnum" value="${(el.statNumber!=null?String(el.statNumber):"01").replace(/"/g,"&quot;")}">`)}
+      ${field("Show number",`<div class="seg" id="f-statshownum"><button data-ssn="1" class="${el.statShowNumber!==false?"active":""}">Show</button><button data-ssn="0" class="${el.statShowNumber===false?"active":""}">Hide</button></div>`)}
+      ${field("Title",`<input type="text" id="f-stattitle" value="${(el.statTitle!=null?el.statTitle:"Contents Title").replace(/"/g,"&quot;")}">`)}
+      ${field("Show title",`<div class="seg" id="f-statshowtitle"><button data-sst="1" class="${el.statShowTitle!==false?"active":""}">Show</button><button data-sst="0" class="${el.statShowTitle===false?"active":""}">Hide</button></div>`)}
+      ${field("Body text",`<input type="text" id="f-stattext" value="${(el.statText!=null?el.statText:"Get a modern presentation that is beautifully designed.").replace(/"/g,"&quot;")}">`)}
+      ${field("Show text",`<div class="seg" id="f-statshowtext"><button data-ssx="1" class="${el.statShowText!==false?"active":""}">Show</button><button data-ssx="0" class="${el.statShowText===false?"active":""}">Hide</button></div>`)}
+      ${field("Style",`<div class="seg" id="f-statstyle"><button data-sty="card" class="${el.statStyle!=="solid"?"active":""}">Card</button><button data-sty="solid" class="${el.statStyle==="solid"?"active":""}">Solid</button></div>`)}
+      ` : ""}
       ${el.objectType==="info_node" ? `
       ${field("Node icon",`<select id="f-nodeicon">
-        ${["mug","pot","carton","box","beans","orange","bread","milk","cheese","meat","broccoli","apple","fish","clipboard","megaphone","plane","person","handshake","diamond","bulb","briefcase","clock","chart","search","dollar"].map(k=>`<option value="${k}" ${(el.nodeIcon||"mug")===k?"selected":""}>${k.charAt(0).toUpperCase()+k.slice(1)}</option>`).join("")}
+        ${["mug","pot","carton","box","beans","orange","bread","milk","cheese","meat","broccoli","apple","fish","clipboard","megaphone","plane","person","handshake","diamond","bulb","briefcase","clock","chart","search","dollar","tap","chat"].map(k=>`<option value="${k}" ${(el.nodeIcon||"mug")===k?"selected":""}>${k.charAt(0).toUpperCase()+k.slice(1)}</option>`).join("")}
       </select>`)}
       ${field("Node title",`<input type="text" id="f-nodetitle" value="${(el.nodeTitle||"Lorem ipsum").replace(/"/g,"&quot;")}">`)}
+      ${field("Show title",`<div class="seg" id="f-nodeshowtitle"><button data-nst="1" class="${el.nodeShowTitle!==false?"active":""}">Show</button><button data-nst="0" class="${el.nodeShowTitle===false?"active":""}">Hide</button></div>`)}
       ${field("Node text",`<input type="text" id="f-nodetext" value="${(el.nodeText||"dolor sit amet, consectetuer").replace(/"/g,"&quot;")}">`)}
+      ${field("Show text",`<div class="seg" id="f-nodeshowtext"><button data-nsx="1" class="${el.nodeShowText!==false?"active":""}">Show</button><button data-nsx="0" class="${el.nodeShowText===false?"active":""}">Hide</button></div>`)}
       ${field("Text colour",`<span style="display:flex;gap:.4rem;align-items:center"><input type="color" id="f-nodetextcolor" value="${el.nodeTextColor||"#2f3a3f"}"><button class="chip" id="f-nodetextcolor-auto" type="button" title="Reset to default (white)">Auto</button></span>`)}
       ` : ""}
       ${field("Animation",`<div class="seg" id="f-objanim"><button data-objanim="on" class="${el.objAnim!==false?"active":""}">On</button><button data-objanim="off" class="${el.objAnim===false?"active":""}">Off</button></div>`)}
@@ -1528,13 +1539,23 @@ function bindElementPanel(el){
     // info_node controls
     const ni=$("#f-nodeicon");ni&&ni.addEventListener("change",()=>{el.nodeIcon=ni.value;renderCanvas();markDirty();});
     const nt=$("#f-nodetitle");nt&&nt.addEventListener("input",()=>{el.nodeTitle=nt.value;renderCanvas();markDirty();});
+    seg("f-nodeshowtitle","nst",v=>{el.nodeShowTitle=(v==="1");renderCanvas();markDirty();});
     const nx=$("#f-nodetext");nx&&nx.addEventListener("input",()=>{el.nodeText=nx.value;renderCanvas();markDirty();});
+    seg("f-nodeshowtext","nsx",v=>{el.nodeShowText=(v==="1");renderCanvas();markDirty();});
     const ntc=$("#f-nodetextcolor");ntc&&ntc.addEventListener("input",()=>{el.nodeTextColor=ntc.value;renderCanvas();markDirty();});
     const ntcAuto=$("#f-nodetextcolor-auto");ntcAuto&&ntcAuto.addEventListener("click",()=>{el.nodeTextColor="";renderInspector();renderCanvas();markDirty();});
     // food_wheel centre title (\n for line break)
     const fwt=$("#f-fwtitle");fwt&&fwt.addEventListener("input",()=>{el.centerTitle=fwt.value.replace(/\\n/g,"\n");renderCanvas();markDirty();});
     // segment / band editor (diet_plate, food_wheel, funnel_stack, coffee_segments)
     wireSegEditor(el);
+    // stat_item controls
+    const sn=$("#f-statnum");sn&&sn.addEventListener("input",()=>{el.statNumber=sn.value;renderCanvas();markDirty();});
+    seg("f-statshownum","ssn",v=>{el.statShowNumber=(v==="1");renderCanvas();markDirty();});
+    const st=$("#f-stattitle");st&&st.addEventListener("input",()=>{el.statTitle=st.value;renderCanvas();markDirty();});
+    seg("f-statshowtitle","sst",v=>{el.statShowTitle=(v==="1");renderCanvas();markDirty();});
+    const sx=$("#f-stattext");sx&&sx.addEventListener("input",()=>{el.statText=sx.value;renderCanvas();markDirty();});
+    seg("f-statshowtext","ssx",v=>{el.statShowText=(v==="1");renderCanvas();markDirty();});
+    seg("f-statstyle","sty",v=>{el.statStyle=v;renderCanvas();markDirty();});
   }
   // swatches
   $$(".sw[data-color]",inspBody).forEach(s=>s.addEventListener("click",()=>{el.color=s.dataset.color;activateSwatch(s,"color");renderCanvas();markDirty();}));

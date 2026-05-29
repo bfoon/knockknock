@@ -1406,3 +1406,26 @@ body.hanns-options-open .drawer{
 .seg-row .seg-del:hover{background:rgba(232,72,43,.85);color:#fff;border-color:transparent}
 .seg-row .seg-pct{flex:0 0 auto;font-family:var(--font-mono,monospace);font-size:.66rem;color:#a8a294;min-width:30px;text-align:right}
 .seg-editor .seg-add{margin-top:2px}
+
+/* ── Percent ring (circular progress) ───────────────────────────────── */
+.pct-ring{position:absolute;inset:0;display:grid;place-items:center;container-type:size}
+.pct-ring-svg{width:100%;height:100%;display:block;overflow:visible}
+.pr-track{stroke:rgba(0,0,0,.10)}
+.pr-fill{stroke:var(--accent);animation:prDraw 1s cubic-bezier(.22,1,.36,1) both}
+.pct-ring-static .pr-fill{animation:none}
+@keyframes prDraw{from{stroke-dasharray:0 9999}}
+.pct-ring-num{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none}
+.pct-ring-num b{font-family:var(--font-x);font-weight:800;font-size:var(--num-size,30cqw);letter-spacing:-.02em}
+.object-num-fixed .pct-ring-num b{font-size:var(--num-size)!important}
+
+/* ── Stat pill (number badge + title + body) ────────────────────────── */
+.stat-item{position:absolute;inset:0;display:flex;align-items:center;gap:4%;container-type:size;
+  background:#fff;border-radius:999px;box-shadow:0 6px 18px rgba(0,0,0,.10);padding:0 4% 0 0;overflow:hidden}
+.stat-item.stat-solid{background:var(--accent)}
+.stat-badge{flex:0 0 auto;height:100%;aspect-ratio:1;display:grid;place-items:center;
+  border-radius:999px;background:var(--accent);color:#fff}
+.stat-item.stat-solid .stat-badge{background:rgba(255,255,255,.22)}
+.stat-badge b{font-family:var(--font-x);font-weight:800;font-size:clamp(.9rem,26cqh,2.4rem)}
+.stat-body{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:.15em;padding:6% 0}
+.stat-title{font-family:var(--font-body);font-weight:800;font-size:clamp(.6rem,15cqh,1.2rem);line-height:1.05}
+.stat-text{font-family:var(--font-body);font-size:clamp(.42rem,10cqh,.82rem);line-height:1.25}

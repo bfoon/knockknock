@@ -18,6 +18,7 @@
 
   const CODE = stage.dataset.code;
   const JOIN_URL = stage.dataset.joinUrl || "";
+  const COLUMN_REORDER_URL = stage.dataset.columnReorderUrl || "";
 
   // ── element refs ───────────────────────────────────────────────────
   const statNotes = document.getElementById("stat-notes");
@@ -36,6 +37,9 @@
   const btnModerate = document.getElementById("btn-moderate");
   const btnLockColumns = document.getElementById("btn-lock-columns");
   const btnFullscreen = document.getElementById("btn-fullscreen");
+  const btnBackground = document.getElementById("btn-background");
+  const bgModal = document.getElementById("bg-modal");
+  const bgModalClose = document.getElementById("bg-modal-close");
 
   const modTray = document.getElementById("mod-tray");
   const modClose = document.getElementById("mod-close");
@@ -104,6 +108,17 @@
 
   function send(obj) {
     if (sock && sock.readyState === WebSocket.OPEN) sock.send(JSON.stringify(obj));
+  }
+
+  function getCookie(name) {
+    const parts = (document.cookie || "").split(";").map((x) => x.trim());
+    for (const part of parts) {
+      if (part.startsWith(name + "=")) {
+        return decodeURIComponent(part.slice(name.length + 1));
+      }
+    }
+    const input = document.querySelector('input[name="csrfmiddlewaretoken"]');
+    return input ? input.value : "";
   }
 
   // ── inbound ────────────────────────────────────────────────────────
@@ -257,6 +272,14 @@
         (msg.note_ids || []).forEach((nid) => notes.delete(nid));
         renderAll();
         renderHiddenTray();
+        break;
+      }
+
+      case "group_reordered": {
+        if (Array.isArray(msg.groups)) {
+          groups = msg.groups.map((g) => ({ id: g.id, name: g.name }));
+          renderAll();
+        }
         break;
       }
 
@@ -547,6 +570,13 @@
     function buildColumn(gid, name, list) {
       const col = document.createElement("div");
       col.className = "kk-board-column";
+      if (gid != null) {
+        col.dataset.gid = String(gid);
+        if (COLUMN_REORDER_URL) {
+          col.setAttribute("draggable", "true");
+          col.classList.add("kk-board-column-draggable");
+        }
+      }
       const head = document.createElement("div");
       head.className = "kk-board-column-head";
 
@@ -626,6 +656,7 @@
   // per-render work in renderColumns is just setting draggable + group id.
   let dndWired = false;
   let dragNoteId = null;
+  let dragColumnId = null;
 
   // While the presenter is renaming a column, this holds the live edit so
   // a background re-render (a note arriving, a like, a participant
@@ -645,8 +676,23 @@
     dndWired = true;
 
     columnsWrap.addEventListener("dragstart", (e) => {
-      if (lockColumns) { e.preventDefault(); return; }
       const noteEl = e.target.closest(".kk-note");
+
+      // Drag a whole column by grabbing its card/header. This reorders the
+      // BoardGroup.position values through a normal HTTP endpoint so the
+      // order survives refreshes and reopens.
+      const colEl = e.target.closest(".kk-board-column[data-gid]");
+      if (COLUMN_REORDER_URL && colEl && !noteEl && !e.target.closest("button,input,textarea,select,a")) {
+        dragColumnId = Number(colEl.dataset.gid);
+        colEl.classList.add("kk-board-column-dragging");
+        if (e.dataTransfer) {
+          e.dataTransfer.effectAllowed = "move";
+          try { e.dataTransfer.setData("text/plain", "column:" + dragColumnId); } catch (_) {}
+        }
+        return;
+      }
+
+      if (lockColumns) { e.preventDefault(); return; }
       if (!noteEl) return;
       dragNoteId = Number(noteEl.dataset.id);
       noteEl.classList.add("kk-note-dragging");
@@ -662,10 +708,26 @@
       if (noteEl) noteEl.classList.remove("kk-note-dragging");
       columnsWrap.querySelectorAll(".kk-board-column-body.drop-over")
         .forEach((b) => b.classList.remove("drop-over"));
+      columnsWrap.querySelectorAll(".kk-board-column-dragging,.col-drop-before,.col-drop-after")
+        .forEach((el) => el.classList.remove("kk-board-column-dragging", "col-drop-before", "col-drop-after"));
       dragNoteId = null;
+      dragColumnId = null;
     });
 
     columnsWrap.addEventListener("dragover", (e) => {
+      if (dragColumnId != null) {
+        const col = e.target.closest(".kk-board-column[data-gid]");
+        if (!col || Number(col.dataset.gid) === dragColumnId) return;
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+        const rect = col.getBoundingClientRect();
+        const before = e.clientX < rect.left + rect.width / 2;
+        columnsWrap.querySelectorAll(".col-drop-before,.col-drop-after")
+          .forEach((el) => el.classList.remove("col-drop-before", "col-drop-after"));
+        col.classList.add(before ? "col-drop-before" : "col-drop-after");
+        return;
+      }
+
       if (lockColumns || dragNoteId == null) return;
       const body = e.target.closest(".kk-board-column-body");
       if (!body) return;
@@ -688,6 +750,20 @@
     });
 
     columnsWrap.addEventListener("drop", (e) => {
+      if (dragColumnId != null) {
+        const target = e.target.closest(".kk-board-column[data-gid]");
+        if (!target) return;
+        e.preventDefault();
+        const targetId = Number(target.dataset.gid);
+        const rect = target.getBoundingClientRect();
+        const before = e.clientX < rect.left + rect.width / 2;
+        reorderColumnsLocal(dragColumnId, targetId, before);
+        columnsWrap.querySelectorAll(".col-drop-before,.col-drop-after")
+          .forEach((el) => el.classList.remove("col-drop-before", "col-drop-after"));
+        dragColumnId = null;
+        return;
+      }
+
       if (lockColumns || dragNoteId == null) return;
       const body = e.target.closest(".kk-board-column-body");
       if (!body) return;
@@ -711,6 +787,48 @@
     });
 
     wireColumnControls();
+  }
+
+
+  function reorderColumnsLocal(sourceId, targetId, before) {
+    if (!sourceId || !targetId || sourceId === targetId) return;
+    const current = groups.slice();
+    const from = current.findIndex((g) => g.id === sourceId);
+    const to0 = current.findIndex((g) => g.id === targetId);
+    if (from < 0 || to0 < 0) return;
+
+    const [moved] = current.splice(from, 1);
+    let to = current.findIndex((g) => g.id === targetId);
+    if (to < 0) to = current.length;
+    if (!before) to += 1;
+    current.splice(to, 0, moved);
+    groups = current;
+    renderAll();
+    persistColumnOrder();
+  }
+
+  function persistColumnOrder() {
+    if (!COLUMN_REORDER_URL) return;
+    fetch(COLUMN_REORDER_URL, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCookie("csrftoken"),
+      },
+      body: JSON.stringify({ order: groups.map((g) => g.id) }),
+    })
+      .then((r) => r.ok ? r.json() : Promise.reject(r))
+      .then((data) => {
+        if (data && Array.isArray(data.groups)) {
+          groups = data.groups.map((g) => ({ id: g.id, name: g.name }));
+          renderAll();
+        }
+      })
+      .catch(() => {
+        // Keep the optimistic order in the UI; the next full state refresh
+        // will restore the database order if the save failed.
+      });
   }
 
   // ── column rename + delete (presenter) ──────────────────────────────
@@ -1115,6 +1233,20 @@
   if (addColInput)  addColInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); addColSave && addColSave.click(); }
   });
+
+  // ── board background modal ─────────────────────────────────────────
+  if (btnBackground && bgModal) {
+    btnBackground.addEventListener("click", () => {
+      if (typeof bgModal.showModal === "function") bgModal.showModal();
+      else bgModal.setAttribute("open", "open");
+    });
+  }
+  if (bgModalClose && bgModal) {
+    bgModalClose.addEventListener("click", () => {
+      if (typeof bgModal.close === "function") bgModal.close();
+      else bgModal.removeAttribute("open");
+    });
+  }
 
   // ── QR ─────────────────────────────────────────────────────────────
   function drawQR() {

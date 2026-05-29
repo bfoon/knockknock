@@ -88,6 +88,10 @@ class BoardSession(models.Model):
     state = models.CharField(max_length=12, choices=STATE_CHOICES, default="lobby")
     mode = models.CharField(max_length=12, choices=MODE_CHOICES, default="open")
     layout = models.CharField(max_length=10, choices=LAYOUT_CHOICES, default="grid")
+    background_image = models.ImageField(
+        upload_to="boardly/backgrounds/", null=True, blank=True,
+        help_text="Optional photo/background used behind the board sheet.",
+    )
 
     # Multi-page / PDF-style flow support. A session can still stand alone;
     # when linked to BoardFlow, it becomes one page/module in that project.

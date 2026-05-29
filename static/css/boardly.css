@@ -1730,3 +1730,321 @@
     order: 3;
   }
 }
+
+/* ════════════════════════════════════════════════════════════════════
+ *  FLOW LIST + PDF-STYLE FLOW MAP REFINEMENT
+ *  Cleaner linked-board cards with connected nodes, labels and lines.
+ * ══════════════════════════════════════════════════════════════════ */
+.kk-flow-list-card--clean {
+  position: relative;
+  overflow: hidden;
+  padding: 1.05rem 1.1rem 1.15rem;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(124,58,237,.22), transparent 34%),
+    linear-gradient(135deg, rgba(255,255,255,.075), rgba(255,255,255,.025)),
+    var(--kk-surface, rgba(255,255,255,.04));
+}
+.kk-flow-list-card--clean::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(255,255,255,.035) 1px, transparent 1px);
+  background-size: 34px 34px;
+  opacity: .35;
+}
+.kk-flow-list-card--clean > * { position: relative; z-index: 1; }
+.kk-flow-list-head--clean {
+  padding-bottom: .85rem;
+  border-bottom: 1px solid var(--kk-border, rgba(255,255,255,.12));
+}
+.kk-flow-list-map {
+  position: relative;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(190px, 1fr);
+  gap: 1rem;
+  overflow-x: auto;
+  padding: 1.15rem .2rem .1rem;
+  scrollbar-width: thin;
+}
+.kk-flow-list-map::before {
+  content: "";
+  position: absolute;
+  top: 2.05rem;
+  left: 2.2rem;
+  right: 2.2rem;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg,
+    rgba(124,58,237,.85),
+    rgba(236,72,153,.85),
+    rgba(14,165,233,.72));
+  box-shadow: 0 0 20px rgba(124,58,237,.25);
+}
+.kk-flow-list-node {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    "dot copy"
+    "dot code";
+  gap: .08rem .65rem;
+  align-items: center;
+  padding: .72rem .82rem .72rem .62rem;
+  border-radius: 16px;
+  border: 1px solid var(--kk-border, rgba(255,255,255,.14));
+  background: rgba(12,16,34,.72);
+  color: var(--kk-text, #fff);
+  text-decoration: none;
+  box-shadow: 0 10px 28px rgba(0,0,0,.20);
+  transition: transform .12s ease, border-color .12s ease, background .12s ease;
+}
+.kk-flow-list-node:hover {
+  transform: translateY(-2px);
+  border-color: rgba(124,58,237,.55);
+  background: rgba(22,25,52,.86);
+  color: var(--kk-text, #fff);
+}
+.kk-flow-list-node-dot {
+  grid-area: dot;
+  position: relative;
+  z-index: 2;
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--kk-accent, #7c3aed), var(--kk-accent-2, #ec4899));
+  color: #fff;
+  font-family: var(--kk-font-mono);
+  font-weight: 900;
+  box-shadow: 0 0 0 5px rgba(12,16,34,.82), 0 8px 20px rgba(0,0,0,.35);
+}
+.kk-flow-list-node-copy { grid-area: copy; min-width: 0; }
+.kk-flow-list-node-copy b {
+  display: block;
+  font-family: var(--kk-font-display);
+  font-size: .96rem;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kk-flow-list-node-copy small {
+  display: block;
+  color: var(--kk-text-dim, #a7a8b7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kk-flow-list-node em {
+  grid-area: code;
+  font-style: normal;
+  font-family: var(--kk-font-mono);
+  font-size: .72rem;
+  color: var(--kk-text-dim, #a7a8b7);
+}
+
+/* Presenter flow map — compact, labelled, and connected like a PDF workflow. */
+.kk-board-flowbar--map {
+  grid-template-columns: minmax(180px, .85fr) minmax(320px, 2fr) auto;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.86), rgba(246,244,255,.78)),
+    rgba(255,255,255,.72);
+  backdrop-filter: blur(8px);
+}
+.kk-flow-map {
+  position: relative;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(140px, 1fr);
+  gap: .75rem;
+  min-width: 0;
+  overflow-x: auto;
+  padding: .18rem .2rem;
+}
+.kk-flow-map::before {
+  content: "";
+  position: absolute;
+  top: 1.42rem;
+  left: 1.3rem;
+  right: 1.3rem;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(124,58,237,.60), rgba(236,72,153,.55));
+  border-radius: 999px;
+}
+.kk-flow-node {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  min-width: 0;
+  padding: .4rem .52rem;
+  border-radius: 14px;
+  color: var(--board-ink);
+  text-decoration: none;
+  background: rgba(255,255,255,.78);
+  border: 1px solid rgba(30,42,82,.12);
+}
+.kk-flow-node:hover { color: var(--board-ink); border-color: rgba(124,58,237,.45); }
+.kk-flow-node-dot {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--board-ink);
+  border: 2px solid rgba(124,58,237,.42);
+  font-family: var(--kk-font-mono);
+  font-weight: 900;
+  box-shadow: 0 0 0 4px rgba(255,255,255,.76);
+}
+.kk-flow-node-copy { min-width: 0; display: block; }
+.kk-flow-node-copy b,
+.kk-flow-node-copy small {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kk-flow-node-copy b { font-size: .76rem; line-height: 1.1; }
+.kk-flow-node-copy small { max-width: 170px; font-size: .67rem; color: var(--board-ink-soft); }
+.kk-flow-node.is-current {
+  background: linear-gradient(135deg, var(--kk-accent, #7c3aed), var(--kk-accent-2, #ec4899));
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 10px 22px rgba(124,58,237,.22);
+}
+.kk-flow-node.is-current .kk-flow-node-dot {
+  color: #fff;
+  background: rgba(255,255,255,.20);
+  border-color: rgba(255,255,255,.55);
+  box-shadow: 0 0 0 4px rgba(124,58,237,.18);
+}
+.kk-flow-node.is-current small { color: rgba(255,255,255,.78); }
+.kk-flow-node.is-complete .kk-flow-node-dot {
+  background: rgba(16,185,129,.95);
+  border-color: rgba(16,185,129,.95);
+  color: #fff;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ *  PHOTO BACKGROUNDS
+ * ══════════════════════════════════════════════════════════════════ */
+.kk-board-sheet.has-photo-bg {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.86), rgba(255,255,255,.78)),
+    var(--board-bg-image) center / cover no-repeat;
+}
+.kk-board-sheet.has-photo-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255,255,255,.35), transparent 42%),
+    rgba(255,255,255,.08);
+  z-index: 0;
+}
+.kk-board-sheet.has-photo-bg > * { position: relative; z-index: 1; }
+.kk-bg-modal {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  max-width: min(92vw, 520px);
+}
+.kk-bg-modal::backdrop {
+  background: rgba(7,5,18,.72);
+  backdrop-filter: blur(4px);
+}
+.kk-bg-form {
+  width: min(92vw, 520px);
+  border-radius: 22px;
+  border: 1px solid var(--kk-border, rgba(255,255,255,.15));
+  background: var(--kk-surface, #171426);
+  color: var(--kk-text, #fff);
+  padding: 1rem;
+  box-shadow: 0 24px 70px rgba(0,0,0,.52);
+}
+.kk-bg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  margin-bottom: .75rem;
+}
+.kk-bg-x {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 0;
+  background: rgba(255,255,255,.08);
+  color: var(--kk-text, #fff);
+  cursor: pointer;
+}
+.kk-bg-current {
+  height: 130px;
+  border-radius: 16px;
+  background-size: cover;
+  background-position: center;
+  margin-bottom: .85rem;
+  border: 1px solid var(--kk-border, rgba(255,255,255,.14));
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
+}
+.kk-bg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-top: 1rem;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ *  COLUMN REORDERING
+ * ══════════════════════════════════════════════════════════════════ */
+.kk-board-column-draggable { cursor: grab; }
+.kk-board-column-draggable:active { cursor: grabbing; }
+.kk-board-column-dragging {
+  opacity: .58;
+  transform: scale(.985);
+}
+.kk-board-column.col-drop-before,
+.kk-board-column.col-drop-after { position: relative; }
+.kk-board-column.col-drop-before::before,
+.kk-board-column.col-drop-after::after {
+  content: "";
+  position: absolute;
+  top: .45rem;
+  bottom: .45rem;
+  width: 4px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--kk-accent, #7c3aed), var(--kk-accent-2, #ec4899));
+  box-shadow: 0 0 16px rgba(124,58,237,.45);
+  z-index: 5;
+}
+.kk-board-column.col-drop-before::before { left: -.55rem; }
+.kk-board-column.col-drop-after::after { right: -.55rem; }
+.kk-board-column-head::before {
+  content: "⋮⋮";
+  letter-spacing: -.12em;
+  color: rgba(30,42,82,.35);
+  font-family: var(--kk-font-mono);
+  transform: rotate(90deg);
+}
+
+@media (max-width: 1050px) {
+  .kk-board-flowbar--map { grid-template-columns: 1fr; }
+  .kk-flow-map { grid-auto-columns: minmax(175px, 1fr); }
+}
+@media (max-width: 720px) {
+  .kk-flow-list-map { grid-auto-columns: minmax(220px, 86vw); }
+  .kk-flow-list-map::before { display: none; }
+}

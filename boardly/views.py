@@ -6,9 +6,13 @@ BoardSession pages/modules from a default template, then the presenter
 moves through them with Previous / Next navigation.
 """
 
+import json
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.files.base import ContentFile
 from django.db.models import Count
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -224,9 +228,15 @@ def _create_session_from_module(
     per_participant_limit,
     lock_columns,
     group_override=None,
+    background_image=None,
 ):
     """Create one BoardSession page inside a linked BoardFlow."""
     prompt = module["prompt"].format(project=project_name)[:200]
+    if background_image:
+        try:
+            background_image.seek(0)
+        except Exception:
+            pass
     session = BoardSession.objects.create(
         owner=request.user,
         flow=flow,
@@ -239,6 +249,7 @@ def _create_session_from_module(
         prompt=prompt,
         mode=mode,
         layout=layout,
+        background_image=background_image,
         per_participant_limit=per_participant_limit,
         lock_columns=lock_columns,
         state="open",
@@ -295,6 +306,7 @@ def board_stage(request, code):
         "next_page": next_page,
         "page_number": page_number,
         "page_total": page_total,
+        "can_edit_board": request.user.is_authenticated and session.owner_id == request.user.id,
     })
 
 
@@ -314,6 +326,7 @@ def board_create(request):
         )[:120]
         custom_groups = _split_groups(request.POST.get("groups", ""))
         create_linked_flow = bool(request.POST.get("create_linked_flow"))
+        background_image = request.FILES.get("background_image")
 
         if template_key in BOARD_TEMPLATES and create_linked_flow:
             template = BOARD_TEMPLATES[template_key]
@@ -340,6 +353,7 @@ def board_create(request):
                     # If the user entered manual groups, apply them to every
                     # generated page; otherwise use each template's columns.
                     group_override=custom_groups or None,
+                    background_image=background_image,
                 )
                 if first_session is None:
                     first_session = session
@@ -373,6 +387,7 @@ def board_create(request):
             prompt=prompt,
             mode=mode,
             layout=layout,
+            background_image=background_image,
             per_participant_limit=limit,
             lock_columns=lock_columns,
             state="open",
@@ -432,6 +447,92 @@ def board_list(request):
         "boards": boards,
         "boards_total": boards.count() + len(flow_cards),
     })
+
+
+@login_required
+@require_POST
+def board_columns_reorder(request, code):
+    """Persist presenter drag-and-drop column ordering for one board."""
+    session = get_object_or_404(
+        BoardSession, code=code.upper(), owner=request.user,
+    )
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        payload = {}
+
+    raw_order = payload.get("order") or request.POST.getlist("order[]")
+    try:
+        ordered_ids = [int(x) for x in raw_order]
+    except (TypeError, ValueError):
+        return JsonResponse({"ok": False, "error": "Invalid column order."}, status=400)
+
+    existing = {g.id: g for g in session.groups.all()}
+    # Keep only ids that belong to this board, preserving the client order.
+    clean_order = [gid for gid in ordered_ids if gid in existing]
+    if not clean_order:
+        return JsonResponse({"ok": False, "error": "No matching columns found."}, status=400)
+
+    # Append any missing columns so a stale client cannot accidentally hide them.
+    for gid in sorted(existing, key=lambda pk: existing[pk].position):
+        if gid not in clean_order:
+            clean_order.append(gid)
+
+    for pos, gid in enumerate(clean_order):
+        group = existing[gid]
+        if group.position != pos:
+            group.position = pos
+            group.save(update_fields=["position"])
+
+    return JsonResponse({
+        "ok": True,
+        "groups": [
+            {"id": gid, "name": existing[gid].name, "position": pos}
+            for pos, gid in enumerate(clean_order)
+        ],
+    })
+
+
+@login_required
+@require_POST
+def board_background(request, code):
+    """Upload or clear the photo background for a board page."""
+    session = get_object_or_404(
+        BoardSession.objects.select_related("flow"),
+        code=code.upper(),
+        owner=request.user,
+    )
+    apply_to_flow = bool(request.POST.get("apply_to_flow")) and session.flow_id
+    targets = list(session.flow.pages.all()) if apply_to_flow else [session]
+
+    if request.POST.get("action") == "clear":
+        for target in targets:
+            if target.background_image:
+                target.background_image.delete(save=False)
+            target.background_image = None
+            target.save(update_fields=["background_image", "updated_at"])
+        messages.success(request, "Board background removed.")
+        return redirect("boardly:stage", code=session.code)
+
+    uploaded = request.FILES.get("background_image")
+    if not uploaded:
+        messages.error(request, "Please select a photo to use as the board background.")
+        return redirect("boardly:stage", code=session.code)
+
+    # If applying one upload across all pages, copy the bytes so every page
+    # gets its own saved image reference and the uploaded stream is not reused.
+    data = uploaded.read()
+    for target in targets:
+        if target.background_image:
+            target.background_image.delete(save=False)
+        target.background_image.save(uploaded.name, ContentFile(data), save=False)
+        target.save(update_fields=["background_image", "updated_at"])
+
+    messages.success(
+        request,
+        "Board background updated for the whole flow." if apply_to_flow else "Board background updated.",
+    )
+    return redirect("boardly:stage", code=session.code)
 
 
 @login_required

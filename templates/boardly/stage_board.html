@@ -20,7 +20,8 @@
      data-join-url="{{ join_url }}"
      data-flow-id="{{ session.flow_id|default:'' }}"
      data-page-number="{{ page_number }}"
-     data-page-total="{{ page_total }}">
+     data-page-total="{{ page_total }}"
+     data-column-reorder-url="{% if can_edit_board %}{% url 'boardly:columns_reorder' session.code %}{% endif %}">
 
 <!--  {# ── Top bar ────────────────────────────────────────────────────── #}-->
   <header class="kk-stage-header kk-board-header">
@@ -69,6 +70,9 @@
 
     <button class="kk-tool" id="btn-lock-columns" title="Lock columns — prevent moving notes between columns"><i class="bi bi-unlock"></i></button>
     <button class="kk-tool" id="btn-moderate" title="Moderation mode"><i class="bi bi-shield-check"></i></button>
+    {% if can_edit_board %}
+      <button class="kk-tool" id="btn-background" title="Board background photo"><i class="bi bi-image"></i></button>
+    {% endif %}
     <button class="kk-tool" id="btn-fullscreen" title="Fullscreen"><i class="bi bi-arrows-fullscreen"></i></button>
 
 <!--    {# Open / close the board — the master control participants wait on. #}-->
@@ -84,24 +88,29 @@
 <!--    {# Decorative whiteboard frame + clip, echoing the illustration. #}-->
     <div class="kk-board-clip" aria-hidden="true"></div>
 
-    <div class="kk-board-sheet" id="board-sheet">
+    <div class="kk-board-sheet {% if session.background_image %}has-photo-bg{% endif %}"
+         id="board-sheet"
+         {% if session.background_image %}style="--board-bg-image: url('{{ session.background_image.url }}');"{% endif %}>
 
       {% if session.flow_id %}
-      <nav class="kk-board-flowbar" aria-label="Board pages">
+      <nav class="kk-board-flowbar kk-board-flowbar--map" aria-label="Board pages">
         <div class="kk-flowbar-project">
           <span class="kk-flowbar-kicker">Board flow</span>
           <strong>{{ session.flow.name }}</strong>
-          <span>Page {{ page_number }} of {{ page_total }}</span>
+          <span>Page {{ page_number }} of {{ page_total }} · {{ session.flow.get_template_key_display }}</span>
         </div>
 
-        <div class="kk-flowbar-pages" role="list">
+        <div class="kk-flow-map" role="list">
           {% for page in flow_pages %}
             <a role="listitem"
-               class="kk-flow-page {% if page.id == session.id %}is-current{% endif %}"
+               class="kk-flow-node {% if page.id == session.id %}is-current{% endif %} {% if forloop.counter < page_number %}is-complete{% endif %}"
                href="{% url 'boardly:stage' page.code %}"
                title="{{ page.title }}">
-              <span>{{ forloop.counter }}</span>
-              <b>{{ page.module_label|default:"Page" }}</b>
+              <span class="kk-flow-node-dot">{{ forloop.counter }}</span>
+              <span class="kk-flow-node-copy">
+                <b>{{ page.module_label|default:"PAGE" }}</b>
+                <small>{% if page.module_description %}{{ page.module_description|truncatechars:38 }}{% else %}{{ page.code }}{% endif %}</small>
+              </span>
             </a>
           {% endfor %}
         </div>
@@ -209,6 +218,41 @@
   </div>
 </div>
 
+{% if can_edit_board %}
+<dialog id="bg-modal" class="kk-bg-modal">
+  <form method="post" enctype="multipart/form-data" action="{% url 'boardly:background' session.code %}" class="kk-bg-form">
+    {% csrf_token %}
+    <header class="kk-bg-head">
+      <strong><i class="bi bi-image"></i> Board background</strong>
+      <button type="button" class="kk-bg-x" id="bg-modal-close" aria-label="Close"><i class="bi bi-x-lg"></i></button>
+    </header>
+
+    <p class="text-secondary small mb-3">Upload a photo to sit behind this board page. Use soft images for best sticky-note visibility.</p>
+
+    {% if session.background_image %}
+      <div class="kk-bg-current" style="background-image:url('{{ session.background_image.url }}')"></div>
+    {% endif %}
+
+    <label class="form-label" for="bg-input">Choose photo</label>
+    <input type="file" class="form-control" id="bg-input" name="background_image" accept="image/*">
+
+    {% if session.flow_id %}
+      <div class="form-check mt-3">
+        <input type="checkbox" class="form-check-input" id="apply_to_flow" name="apply_to_flow" value="1">
+        <label class="form-check-label" for="apply_to_flow">Apply to all linked pages in this flow</label>
+      </div>
+    {% endif %}
+
+    <div class="kk-bg-actions">
+      <button type="submit" class="kk-btn kk-btn-primary"><i class="bi bi-upload"></i> Save background</button>
+      {% if session.background_image %}
+        <button type="submit" name="action" value="clear" class="kk-btn kk-btn-ghost"><i class="bi bi-x-circle"></i> Clear</button>
+      {% endif %}
+    </div>
+  </form>
+</dialog>
+{% endif %}
+
 <!--{# ── Enlarged / designed QR modal ──────────────────────────────────────-->
 <!--   Opened when the presenter clicks the small QR in the join panel. Shows-->
 <!--   a big, framed "join card" (board title + QR + code + URL) that can be-->
@@ -314,6 +358,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<script src="{% static 'js/boardly_stage.js' %}?v=5"></script>
+<script src="{% static 'js/boardly_stage.js' %}?v=6"></script>
 </body>
 </html>

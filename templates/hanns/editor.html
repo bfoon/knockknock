@@ -107,84 +107,104 @@ body.hanns-options-open .drawer{
 <div class="app">
 
   <header class="topbar">
-    <a class="brand" href="{% url 'hanns:list' %}" title="Back to your decks">
-      <span class="brand-mark">Hanns<span class="dot">.</span></span>
-      <span class="brand-sub">studio</span>
-    </a>
-<input class="file-name" id="deck-title" value="{{ deck.title|escape }}" maxlength="60" aria-label="Deck title">
-    <div class="spacer"></div>
 
-    <div class="edit-quick-tools" role="group" aria-label="Quick edit tools">
-      <span class="edit-quick-label">Edit</span>
-      <button class="tbtn ghost iconbtn" id="btn-undo" type="button" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-1"/></svg>
-        <span class="sr-only">Undo</span>
-      </button>
-      <button class="tbtn ghost iconbtn" id="btn-redo" type="button" title="Redo (Ctrl+Y)" aria-label="Redo" disabled>
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h1"/></svg>
-        <span class="sr-only">Redo</span>
-      </button>
-      <button class="tbtn ghost iconbtn" id="btn-duplicate-slide" type="button" title="Duplicate current slide (Ctrl/Cmd+Shift+D)" aria-label="Duplicate current slide">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="8" width="10" height="10" rx="2"/><path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-        <span class="sr-only">Duplicate slide</span>
+    <!-- LEFT: Brand + title + edit history -->
+    <div class="topbar-left">
+      <a class="brand" href="{% url 'hanns:list' %}" title="Back to your decks">
+        <span class="brand-mark">Hanns<span class="dot">.</span></span>
+        <span class="brand-sub">studio</span>
+      </a>
+      <div class="topbar-divider"></div>
+      <input class="file-name" id="deck-title" value="{{ deck.title|escape }}" maxlength="60" aria-label="Deck title">
+      <div class="topbar-edit-cluster" role="group" aria-label="Quick edit tools">
+        <button class="tbtn ghost iconbtn" id="btn-undo" type="button" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-1"/></svg>
+        </button>
+        <button class="tbtn ghost iconbtn" id="btn-redo" type="button" title="Redo (Ctrl+Y)" aria-label="Redo" disabled>
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h1"/></svg>
+        </button>
+        <button class="tbtn ghost iconbtn" id="btn-duplicate-slide" type="button" title="Duplicate current slide (Ctrl/Cmd+Shift+D)" aria-label="Duplicate current slide">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="8" width="10" height="10" rx="2"/><path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- CENTER: Grouped action buttons -->
+    <div class="topbar-center">
+
+      <!-- Insert group -->
+      <div class="tbtn-group" role="group" aria-label="Insert">
+        <span class="tbtn-group-label">Insert</span>
+        <button class="tbtn ghost compact" id="btn-templates" type="button" title="Creative templates">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          Templates
+        </button>
+        <button class="tbtn ghost compact" id="btn-shapes" type="button" title="Creative shapes">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l3 6 6 .9-4.5 4.3 1.1 6.1L12 17.4 6.4 20.3l1.1-6.1L3 9.9 9 9z"/></svg>
+          Shapes
+        </button>
+        <button class="tbtn ghost compact" id="btn-objects" type="button" title="Objects &amp; quantities">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 4 7l8 4 8-4-8-4Z"/><path d="M4 12l8 4 8-4"/><path d="M4 17l8 4 8-4"/></svg>
+          Objects
+        </button>
+      </div>
+
+      <div class="topbar-divider"></div>
+
+      <!-- View group -->
+      <div class="tbtn-group" role="group" aria-label="View panels">
+        <span class="tbtn-group-label">View</span>
+        <button class="tbtn ghost compact panel-toggle active" id="btn-toggle-slides" type="button" title="Show/hide slide thumbnails">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="7" height="5" rx="1"/><rect x="4" y="11" width="7" height="5" rx="1"/><rect x="13" y="4" width="7" height="12" rx="1"/></svg>
+          Slides
+        </button>
+        <button class="tbtn ghost compact panel-toggle active" id="btn-toggle-inspector" type="button" title="Show/hide style inspector">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="11" cy="18" r="2"/></svg>
+          Inspector
+        </button>
+        <button class="tbtn ghost compact" id="btn-notes" type="button" title="Add private presenter notes for this slide">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 4h14v16H5z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+          Notes
+        </button>
+      </div>
+
+    </div>
+
+    <!-- RIGHT: Options + Save + Present -->
+    <div class="topbar-right">
+      <details class="top-options-menu" id="top-options-menu">
+        <summary class="tbtn ghost compact option-summary" title="More actions">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+          Options
+        </summary>
+        <div class="top-options-panel" role="menu" aria-label="Deck options">
+          {% if is_deck_owner %}
+          <button class="option-item" id="btn-invite" type="button" role="menuitem" title="Invite people to live-edit this deck">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-8 0v2"/><circle cx="12" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
+            <span>Invite editors</span>
+          </button>
+          {% endif %}
+          <button class="option-item" id="btn-import-powerpoint" type="button" role="menuitem" title="Import a PowerPoint file into this Hanns deck">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m8 14 4-4 4 4"/></svg>
+            <span>Import PowerPoint</span>
+          </button>
+          <button class="option-item" id="btn-export" type="button" role="menuitem">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+            <span>Export</span>
+          </button>
+          <button class="option-item save-option" id="btn-save" data-state="saved" type="button" role="menuitem">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 4h11l3 3v13H5zM8 4v5h7M8 14h8"/></svg>
+            <span class="save-lbl">Saved</span>
+          </button>
+        </div>
+      </details>
+
+      <button class="tbtn primary" id="btn-present" type="button">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 4 14 8-14 8z"/></svg>
+        Present
       </button>
     </div>
 
-    <button class="tbtn ghost" id="btn-templates" type="button">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-      Templates
-    </button>
-    <button class="tbtn ghost" id="btn-shapes" type="button">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l3 6 6 .9-4.5 4.3 1.1 6.1L12 17.4 6.4 20.3l1.1-6.1L3 9.9 9 9z"/></svg>
-      Shapes
-    </button>
-    <button class="tbtn ghost" id="btn-notes" type="button" title="Add private presenter notes for this slide">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 4h14v16H5z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
-      Notes
-    </button>
-    <details class="top-options-menu" id="top-options-menu">
-      <summary class="tbtn ghost option-summary" title="More actions">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
-        Options
-      </summary>
-      <div class="top-options-panel" role="menu" aria-label="Deck options">
-        {% if is_deck_owner %}
-        <button class="option-item" id="btn-invite" type="button" role="menuitem" title="Invite people to live-edit this deck">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-8 0v2"/><circle cx="12" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
-          <span>Invite editors</span>
-        </button>
-        {% endif %}
-        <button class="option-item" id="btn-import-powerpoint" type="button" role="menuitem" title="Import a PowerPoint file into this Hanns deck">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m8 14 4-4 4 4"/></svg>
-          <span>Import PowerPoint</span>
-        </button>
-        <button class="option-item" id="btn-export" type="button" role="menuitem">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
-          <span>Export</span>
-        </button>
-        <button class="option-item save-option" id="btn-save" data-state="saved" type="button" role="menuitem">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 4h11l3 3v13H5zM8 4v5h7M8 14h8"/></svg>
-          <span class="save-lbl">Saved</span>
-        </button>
-      </div>
-    </details>
-
-    <button class="tbtn ghost panel-toggle active" id="btn-toggle-slides" type="button" title="Show/hide slide thumbnails">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="7" height="5" rx="1"/><rect x="4" y="11" width="7" height="5" rx="1"/><rect x="13" y="4" width="7" height="12" rx="1"/></svg>
-      Slides
-    </button>
-    <button class="tbtn ghost panel-toggle active" id="btn-toggle-inspector" type="button" title="Show/hide style inspector">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="11" cy="18" r="2"/></svg>
-      Inspector
-    </button>
-    <button class="tbtn ghost" id="btn-objects" type="button">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 4 7l8 4 8-4-8-4Z"/><path d="M4 12l8 4 8-4"/><path d="M4 17l8 4 8-4"/></svg>
-      Objects
-    </button>
-    <button class="tbtn primary" id="btn-present" type="button">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 4 14 8-14 8z"/></svg>
-      Present
-    </button>
   </header>
 
   <div class="work auto-compact" id="work">

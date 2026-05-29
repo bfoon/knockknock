@@ -12,6 +12,8 @@ Resulting URLs:
     /board/                     → list   (the owner's saved boards)
     /board/new/                 → create
     /board/<code>/present/      → stage  (presenter / projector)
+    /board/<code>/columns/reorder/ → reorder columns (POST only)
+    /board/<code>/background/   → update board background (POST only)
     /board/<code>/delete/       → delete (POST only)
     /board/<code>/              → play   (participant; encoded in the QR)
 
@@ -40,6 +42,10 @@ urlpatterns = [
 
     # Presenter / projector screen — extra "present/" segment.
     path("<str:code>/present/", views.board_stage, name="stage"),
+
+    # Persist presenter column ordering and board background updates.
+    path("<str:code>/columns/reorder/", views.board_columns_reorder, name="columns_reorder"),
+    path("<str:code>/background/", views.board_background, name="background"),
 
     # Delete a board (POST only) — extra "delete/" segment.
     path("<str:code>/delete/", views.board_delete, name="delete"),

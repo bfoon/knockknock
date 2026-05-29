@@ -9,7 +9,7 @@
       <h1 class="kk-flyer-title mb-1">My <span class="kk-flyer-gradient">boards</span></h1>
       <p class="text-secondary mb-0">
         {% if boards_total %}
-          {{ boards_total }} saved board project{{ boards_total|pluralize }} — linked templates open like PDF pages.
+          {{ boards_total }} saved board project{{ boards_total|pluralize }} — linked flows open like PDF pages.
         {% else %}
           Your saved Boardly boards will appear here.
         {% endif %}
@@ -27,20 +27,20 @@
 </div>
 
 {% if flow_cards %}
-  <h2 class="kk-section-title"><i class="bi bi-link-45deg"></i> Linked board flows</h2>
+  <h2 class="kk-section-title"><i class="bi bi-diagram-3"></i> Linked board flows</h2>
 {% endif %}
 
 {% for card in flow_cards %}
-  <div class="kk-flow-list-card">
-    <div class="kk-flow-list-head">
+  <article class="kk-flow-list-card kk-flow-list-card--clean">
+    <div class="kk-flow-list-head kk-flow-list-head--clean">
       <a href="{% url 'boardly:stage' card.first_page.code %}" class="kk-flow-list-main">
-        <span class="kk-flow-list-icon"><i class="bi bi-layout-split"></i></span>
+        <span class="kk-flow-list-icon"><i class="bi bi-diagram-3"></i></span>
         <span>
           <strong>{{ card.flow.name }}</strong>
           <small>
-            {{ card.page_count }} linked page{{ card.page_count|pluralize }} ·
-            {{ card.notes_total }} note{{ card.notes_total|pluralize }} ·
             {{ card.flow.get_template_key_display }} ·
+            {{ card.page_count }} page{{ card.page_count|pluralize }} ·
+            {{ card.notes_total }} note{{ card.notes_total|pluralize }} ·
             {{ card.flow.created_at|timesince }} ago
           </small>
         </span>
@@ -50,16 +50,19 @@
       </a>
     </div>
 
-    <div class="kk-flow-list-pages">
+    <div class="kk-flow-list-map" role="list" aria-label="{{ card.flow.name }} pages">
       {% for page in card.pages %}
-        <a href="{% url 'boardly:stage' page.code %}" class="kk-flow-list-page">
-          <span>{{ forloop.counter }}</span>
-          <b>{{ page.module_label|default:"PAGE" }}</b>
+        <a role="listitem" href="{% url 'boardly:stage' page.code %}" class="kk-flow-list-node">
+          <span class="kk-flow-list-node-dot">{{ forloop.counter }}</span>
+          <span class="kk-flow-list-node-copy">
+            <b>{{ page.module_label|default:"PAGE" }}</b>
+            <small>{{ page.title|truncatechars:42 }}</small>
+          </span>
           <em>{{ page.code }}</em>
         </a>
       {% endfor %}
     </div>
-  </div>
+  </article>
 {% endfor %}
 
 {% if boards %}

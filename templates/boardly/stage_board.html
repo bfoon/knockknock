@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Patrick+Hand&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'css/app.css' %}?v=4">
-<link rel="stylesheet" href="{% static 'css/boardly.css' %}?v=5">
+<link rel="stylesheet" href="{% static 'css/boardly.css' %}?v=7">
 </head>
 <body>
 
@@ -73,6 +73,16 @@
     {% if can_edit_board %}
       <button class="kk-tool" id="btn-background" title="Board background photo"><i class="bi bi-image"></i></button>
     {% endif %}
+
+    <div class="kk-board-export-group" role="group" aria-label="Export board">
+      <button class="kk-tool kk-tool-export" id="btn-export-png" type="button" title="Export board as image (PNG)">
+        <i class="bi bi-image"></i>
+      </button>
+      <button class="kk-tool kk-tool-export" id="btn-export-pdf" type="button" title="Export board as PDF">
+        <i class="bi bi-file-earmark-pdf"></i>
+      </button>
+    </div>
+
     <button class="kk-tool" id="btn-fullscreen" title="Fullscreen"><i class="bi bi-arrows-fullscreen"></i></button>
 
 <!--    {# Open / close the board — the master control participants wait on. #}-->
@@ -358,6 +368,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<script src="{% static 'js/boardly_stage.js' %}?v=6"></script>
+<script src="{% static 'js/boardly_stage.js' %}?v=8"></script>
 </body>
 </html>

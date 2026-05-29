@@ -1472,13 +1472,29 @@
 
   function injectToolbar() {
     const header = document.querySelector(".kk-board-header");
-    if (!header || document.getElementById("btn-draw-hi")) return;
+
+    // Export buttons may be present directly in stage_board.html so they stay
+    // visible even when the injected toolbar is crowded. Reuse them instead
+    // of creating duplicate ids.
+    btnExportPng = document.getElementById("btn-export-png") || btnExportPng;
+    btnExportPdf = document.getElementById("btn-export-pdf") || btnExportPdf;
+
+    if (!header) return;
+    if (document.getElementById("btn-draw-hi")) {
+      btnHi = document.getElementById("btn-draw-hi");
+      btnPen = document.getElementById("btn-draw-pen");
+      btnEraseDraw = document.getElementById("btn-draw-clear");
+      return;
+    }
     const anchor = powerBtn || null;
 
     const mk = (id, title, icon) => {
+      const existing = document.getElementById(id);
+      if (existing) return existing;
       const b = document.createElement("button");
       b.className = "kk-tool";
       b.id = id;
+      b.type = "button";
       b.title = title;
       b.innerHTML = `<i class="bi ${icon}"></i>`;
       header.insertBefore(b, anchor);
@@ -1510,8 +1526,8 @@
       changeLimit(parseInt(limitInput.value, 10) || 0);
     });
 
-    btnExportPng = mk("btn-export-png", "Save board as image", "bi-image");
-    btnExportPdf = mk("btn-export-pdf", "Save board as PDF", "bi-file-pdf");
+    btnExportPng = btnExportPng || mk("btn-export-png", "Save board as image", "bi-image");
+    btnExportPdf = btnExportPdf || mk("btn-export-pdf", "Save board as PDF", "bi-file-pdf");
   }
 
   // ── per-participant limit ───────────────────────────────────────────
@@ -1904,21 +1920,47 @@
   }
 
   // ── export (PNG / PDF) ──────────────────────────────────────────────
+  function exportLibraryReady(src) {
+    if (/html2canvas/i.test(src)) return typeof window.html2canvas === "function";
+    if (/jspdf/i.test(src)) {
+      return !!((window.jspdf && window.jspdf.jsPDF) || window.jsPDF);
+    }
+    return false;
+  }
+
   function loadScript(src) {
     return new Promise((resolve, reject) => {
-      const existing = [...document.scripts].find((s) => s.src === src);
+      if (exportLibraryReady(src)) { resolve(); return; }
+
+      // Browser normalises script.src to an absolute URL. Compare both the
+      // normalised absolute URL and the original string so a preloaded CDN
+      // script in the template does not make exports wait forever.
+      const wanted = new URL(src, window.location.href).href;
+      const existing = [...document.scripts].find((s) => s.src === wanted || s.src === src);
+
+      const done = () => {
+        if (exportLibraryReady(src) || !/html2canvas|jspdf/i.test(src)) resolve();
+        else reject(new Error("loaded but library missing: " + src));
+      };
+
       if (existing) {
-        if (existing.dataset.loaded) resolve();
-        else {
-          existing.addEventListener("load", () => resolve());
-          existing.addEventListener("error", () => reject(new Error(src)));
-        }
+        if (existing.dataset.loaded || exportLibraryReady(src)) { resolve(); return; }
+        existing.addEventListener("load", () => { existing.dataset.loaded = "1"; done(); }, { once: true });
+        existing.addEventListener("error", () => reject(new Error("load failed: " + src)), { once: true });
+
+        // Important fix: html2canvas is already included by stage_board.html.
+        // When this function runs after the page load, the old code attached
+        // a new load listener to a script that had already finished loading,
+        // so image/PDF export silently hung. This micro-check resolves that.
+        setTimeout(() => { if (exportLibraryReady(src)) resolve(); }, 0);
         return;
       }
+
       const s = document.createElement("script");
       s.src = src;
-      s.addEventListener("load", () => { s.dataset.loaded = "1"; resolve(); });
-      s.addEventListener("error", () => reject(new Error("load failed: " + src)));
+      s.async = true;
+      s.addEventListener("load", () => { s.dataset.loaded = "1"; done(); }, { once: true });
+      s.addEventListener("error", () => reject(new Error("load failed: " + src)), { once: true });
       document.head.appendChild(s);
     });
   }
@@ -1998,10 +2040,12 @@
       let scale = 2;
       const longest = Math.max(fullW, fullH);
       if (longest * scale > MAX_DIM) scale = Math.max(1, MAX_DIM / longest);
+      target.classList.add("kk-exporting");
       return await html2canvas(target, {
         backgroundColor: "#ffffff",
         scale,
         useCORS: true,
+        allowTaint: false,
         logging: false,
         width: fullW,
         height: fullH,
@@ -2011,6 +2055,7 @@
         scrollY: 0,
       });
     } finally {
+      target.classList.remove("kk-exporting");
       restore();
     }
   }
@@ -2035,7 +2080,7 @@
       a.download = exportFilename("png");
       a.click();
     } catch (err) {
-      alert("Couldn't export the image. Check your connection and retry.");
+      alert("Couldn't export the image. If this board uses a photo background, make sure the image is served from your own site/media folder, then retry.");
       console.error(err);
     } finally {
       flashBusy(btnExportPng, false);
@@ -2091,7 +2136,7 @@
 
       pdf.save(exportFilename("pdf"));
     } catch (err) {
-      alert("Couldn't export the PDF. Check your connection and retry.");
+      alert("Couldn't export the PDF. If this board uses a photo background, make sure the image is served from your own site/media folder, then retry.");
       console.error(err);
     } finally {
       flashBusy(btnExportPdf, false);

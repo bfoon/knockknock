@@ -2048,3 +2048,48 @@
   .kk-flow-list-map { grid-auto-columns: minmax(220px, 86vw); }
   .kk-flow-list-map::before { display: none; }
 }
+
+
+/* ════════════════════════════════════════════════════════════════════
+ *  BOARD EXPORT CONTROLS FIX
+ *  Keeps Image/PDF export visible beside the presenter tools and freezes
+ *  hover transforms during capture so html2canvas gets a clean board.
+ * ══════════════════════════════════════════════════════════════════ */
+.kk-board-export-group {
+  display: inline-flex;
+  align-items: center;
+  gap: .28rem;
+  padding: .22rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06);
+  flex: 0 0 auto;
+}
+
+.kk-tool-export {
+  /* Icon-only — same fixed size as every other .kk-tool. */
+  width: 36px !important;
+  min-width: 36px;
+  padding-inline: 0;
+}
+
+#btn-export-pdf i { color: #ffb4c0; }
+#btn-export-png i { color: #bde7ff; }
+
+.kk-tool.is-busy,
+.kk-tool-export.is-busy {
+  opacity: .55;
+  pointer-events: none;
+}
+
+.kk-board-sheet.kk-exporting,
+.kk-board-sheet.kk-exporting * {
+  animation: none !important;
+  transition: none !important;
+}
+
+.kk-board-sheet.kk-exporting .kk-note:hover {
+  transform: rotate(var(--tilt, 0deg)) !important;
+}
+
+/* Export buttons are always icon-only — no label breakpoint needed. */

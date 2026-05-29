@@ -1342,6 +1342,10 @@ Affected Area 1,-16.52,13.39,45,#e8482b,#ffffff">${escapeTA(areasToText(el))}</t
         <button data-nummode="countup" class="${el.numberMode==="countup"?"active":""}">Count up</button></div>`)}
       ` : ""}
       ${field("Object size "+Math.round((el.objScale||1)*100)+"%",`<input type="range" id="f-objscale" min="40" max="400" step="5" value="${Math.round((el.objScale||1)*100)}">`)}
+      ${(!isSdg && ((el.showValue!==undefined)?el.showValue!==false:(el.showCount!==false))) ? `
+      ${field("Count colour",`<span style="display:flex;gap:.4rem;align-items:center"><input type="color" id="f-numcolor" value="${el.numberColor||(el.objectType==="gauge"?"#ffffff":"#0e1116")}"><button class="chip" id="f-numcolor-auto" type="button" title="Reset to default">Auto</button></span>`)}
+      ${field("Count size "+(Number(el.numberSize)>0?Number(el.numberSize)+"px":"(auto)"),`<input type="range" id="f-numsize" min="0" max="120" step="1" value="${Number(el.numberSize)||0}"> <span class="insp-empty" style="font-size:.7em">0 = auto</span>`)}
+      ` : ""}
       ${(el.objectType==="sdg_wheel"||el.objectType==="sdg_tiles"||el.objectType==="sdg") ? `
       ${field("Goals shown ("+(el.count||17)+" of 17)",`<input type="range" id="f-sdgcount" min="1" max="17" value="${el.count||17}">`)}
       ${field("Goal icons",`<div class="seg" id="f-sdgicons"><button data-si="1" class="${el.sdgIcons!==false?"active":""}">Show</button><button data-si="0" class="${el.sdgIcons===false?"active":""}">Hide</button></div>`)}
@@ -1352,6 +1356,18 @@ Affected Area 1,-16.52,13.39,45,#e8482b,#ffffff">${escapeTA(areasToText(el))}</t
       ${field("Tile titles",`<div class="seg" id="f-sdgtitles"><button data-stt="1" class="${el.sdgTitles!==false?"active":""}">Show</button><button data-stt="0" class="${el.sdgTitles===false?"active":""}">Hide</button></div>`)}
       ${field("Columns "+(el.sdgCols||"auto"),`<input type="range" id="f-sdgcols" min="1" max="9" value="${el.sdgCols||0}"> <span class="insp-empty" style="font-size:.7em">0 = auto</span>`)}
       `}
+      ` : ""}
+      ${segObjectKind(el) ? segEditorMarkup(el) : ""}
+      ${el.objectType==="food_wheel" ? `
+      ${field("Centre title",`<input type="text" id="f-fwtitle" value="${((el.centerTitle!=null?el.centerTitle:"HEALTHY\\nFOOD")).replace(/\n/g,"\\n").replace(/"/g,"&quot;")}"> <span class="insp-empty" style="font-size:.7em">\\n = line break</span>`)}
+      ` : ""}
+      ${el.objectType==="info_node" ? `
+      ${field("Node icon",`<select id="f-nodeicon">
+        ${["mug","pot","carton","box","beans","orange","bread","milk","cheese","meat","broccoli","apple","fish","clipboard","megaphone","plane","person","handshake","diamond","bulb","briefcase","clock","chart","search","dollar"].map(k=>`<option value="${k}" ${(el.nodeIcon||"mug")===k?"selected":""}>${k.charAt(0).toUpperCase()+k.slice(1)}</option>`).join("")}
+      </select>`)}
+      ${field("Node title",`<input type="text" id="f-nodetitle" value="${(el.nodeTitle||"Lorem ipsum").replace(/"/g,"&quot;")}">`)}
+      ${field("Node text",`<input type="text" id="f-nodetext" value="${(el.nodeText||"dolor sit amet, consectetuer").replace(/"/g,"&quot;")}">`)}
+      ${field("Text colour",`<span style="display:flex;gap:.4rem;align-items:center"><input type="color" id="f-nodetextcolor" value="${el.nodeTextColor||"#2f3a3f"}"><button class="chip" id="f-nodetextcolor-auto" type="button" title="Reset to default (white)">Auto</button></span>`)}
       ` : ""}
       ${field("Animation",`<div class="seg" id="f-objanim"><button data-objanim="on" class="${el.objAnim!==false?"active":""}">On</button><button data-objanim="off" class="${el.objAnim===false?"active":""}">Off</button></div>`)}
       <div class="insp-empty" style="padding-top:.2rem">${def.help||"Animated visual object"}</div>
@@ -1499,6 +1515,9 @@ function bindElementPanel(el){
     seg("f-nummode","nummode",v=>{el.numberMode=v;renderCanvas();markDirty();});
     seg("f-objanim","objanim",v=>{el.objAnim=(v==="on");renderCanvas();markDirty();});
     bindRange("f-objscale",v=>{el.objScale=Math.max(0.4,Math.min(4,v/100));renderCanvas();markDirty();},v=>v+"%","Object size");
+    const numc=$("#f-numcolor");numc&&numc.addEventListener("input",()=>{el.numberColor=numc.value;renderCanvas();markDirty();});
+    const numcAuto=$("#f-numcolor-auto");numcAuto&&numcAuto.addEventListener("click",()=>{el.numberColor="";renderInspector();renderCanvas();markDirty();});
+    bindRange("f-numsize",v=>{el.numberSize=v||0;renderCanvas();markDirty();},v=>(v>0?v+"px":"(auto)"),"Count size");
     // SDG-specific controls
     bindRange("f-sdgcount",v=>{el.count=Math.max(1,Math.min(17,v));renderCanvas();markDirty();},v=>v+" of 17","Goals shown");
     seg("f-sdgicons","si",v=>{el.sdgIcons=(v==="1");renderCanvas();markDirty();});
@@ -1506,6 +1525,16 @@ function bindElementPanel(el){
     seg("f-sdgtheme","st",v=>{el.sdgTheme=v;renderCanvas();markDirty();});
     seg("f-sdgtitles","stt",v=>{el.sdgTitles=(v==="1");renderCanvas();markDirty();});
     bindRange("f-sdgcols",v=>{el.sdgCols=v||0;renderCanvas();markDirty();},v=>v||"auto","Columns");
+    // info_node controls
+    const ni=$("#f-nodeicon");ni&&ni.addEventListener("change",()=>{el.nodeIcon=ni.value;renderCanvas();markDirty();});
+    const nt=$("#f-nodetitle");nt&&nt.addEventListener("input",()=>{el.nodeTitle=nt.value;renderCanvas();markDirty();});
+    const nx=$("#f-nodetext");nx&&nx.addEventListener("input",()=>{el.nodeText=nx.value;renderCanvas();markDirty();});
+    const ntc=$("#f-nodetextcolor");ntc&&ntc.addEventListener("input",()=>{el.nodeTextColor=ntc.value;renderCanvas();markDirty();});
+    const ntcAuto=$("#f-nodetextcolor-auto");ntcAuto&&ntcAuto.addEventListener("click",()=>{el.nodeTextColor="";renderInspector();renderCanvas();markDirty();});
+    // food_wheel centre title (\n for line break)
+    const fwt=$("#f-fwtitle");fwt&&fwt.addEventListener("input",()=>{el.centerTitle=fwt.value.replace(/\\n/g,"\n");renderCanvas();markDirty();});
+    // segment / band editor (diet_plate, food_wheel, funnel_stack, coffee_segments)
+    wireSegEditor(el);
   }
   // swatches
   $$(".sw[data-color]",inspBody).forEach(s=>s.addEventListener("click",()=>{el.color=s.dataset.color;activateSwatch(s,"color");renderCanvas();markDirty();}));
@@ -1514,6 +1543,127 @@ function bindElementPanel(el){
   $("#f-del")&&$("#f-del").addEventListener("click",()=>deleteEl(el.id));
 }
 function activateSwatch(node,attr){node.parentElement.querySelectorAll(".sw").forEach(x=>x.classList.remove("active"));node.classList.add("active");}
+/* ── Segment / band editor for composite objects ────────────────────────
+   Lets the user edit the label, value (%) and colour of every slice/band in
+   the diet plate, food wheel, funnel and coffee-cup objects — plus add or
+   remove segments. The value drives the slice/segment size where the object
+   is proportional (pie + donut). Funnel/coffee bands are equal-height, so
+   their value is ignored for geometry but the % label is still editable.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* Which objects expose a segment editor, and where their data lives. */
+function segObjectKind(el){
+  return ({
+    diet_plate:      {key:"segments", hasSub:true,  hasValue:true,  label:"Slices"},
+    food_wheel:      {key:"segments", hasSub:false, hasValue:true,  label:"Segments"},
+    funnel_stack:    {key:"bands",    hasSub:false, hasValue:false, label:"Bands"},
+    coffee_segments: {key:"bands",    hasSub:true,  hasValue:false, label:"Bands"},
+  })[el.objectType] || null;
+}
+
+/* Default seed data per object (mirrors the renderers' own defaults) so the
+   editor has rows to show even before the user customises anything. */
+function segDefaults(kind){
+  switch(kind){
+    case "diet_plate": return [
+      {label:"40%",sub:"fruits & vegetables",color:"#a9cf5a"},
+      {label:"25%",sub:"cellulose",color:"#bfa074"},
+      {label:"25%",sub:"protein",color:"#8fd0d8"},
+      {label:"10%",sub:"fats",color:"#f5cd2a"}];
+    case "food_wheel": return [
+      {label:"15%",color:"#e8821e"},{label:"10%",color:"#f5cd2a"},
+      {label:"35%",color:"#5a9e48"},{label:"25%",color:"#e8503a"},
+      {label:"20%",color:"#5bb0cf"}];
+    case "funnel_stack": return [
+      {label:"01",color:"#2f4fb0"},{label:"02",color:"#1f9e8a"},
+      {label:"03",color:"#d83a3a"},{label:"04",color:"#e08a1e"},
+      {label:"05",color:"#1f9e5a"}];
+    case "coffee_segments": return [
+      {label:"100%",color:"#a9805c"},{label:"",color:"#8c6443",sub:"Lorem ipsum"},
+      {label:"50%",color:"#6f4a2e"},{label:"",color:"#56371f",sub:"Lorem ipsum"}];
+    default: return [];
+  }
+}
+
+/* Read the live segment array for an element (seeding defaults on first use). */
+function segGet(el){
+  const meta=segObjectKind(el); if(!meta) return [];
+  let arr=el[meta.key];
+  if(!Array.isArray(arr) || !arr.length){ arr=segDefaults(el.objectType); el[meta.key]=arr; }
+  return arr;
+}
+function segValueOf(s){ const v=Number(s.value); return isFinite(v)&&v>0 ? v : (parseFloat(s.label)||1); }
+
+function segEditorMarkup(el){
+  const meta=segObjectKind(el); if(!meta) return "";
+  const arr=segGet(el);
+  const total=meta.hasValue ? arr.reduce((a,s)=>a+segValueOf(s),0) : 0;
+  const rows=arr.map((s,i)=>{
+    const pct = meta.hasValue && total>0 ? Math.round(segValueOf(s)/total*100) : null;
+    return `<div class="seg-row" data-i="${i}">
+      <input type="color" class="seg-color" data-i="${i}" value="${s.color||"#cccccc"}">
+      <input type="text" class="seg-label" data-i="${i}" value="${(s.label||"").replace(/"/g,"&quot;")}" placeholder="label">
+      ${meta.hasValue ? `<input type="number" class="seg-value" data-i="${i}" value="${segValueOf(s)}" min="0" step="1" title="value (slice size)">` : ""}
+      ${meta.hasSub ? `<input type="text" class="seg-sub" data-i="${i}" value="${(s.sub||"").replace(/"/g,"&quot;")}" placeholder="sub-caption">` : ""}
+      <button class="seg-del" data-i="${i}" type="button" title="Remove">✕</button>
+      ${pct!=null?`<span class="seg-pct">${pct}%</span>`:""}
+    </div>`;
+  }).join("");
+  return `<div class="group seg-editor"><span class="glabel">${meta.label} · label / value / colour</span>
+    <div class="seg-rows">${rows}</div>
+    <button class="chip seg-add" id="f-seg-add" type="button">+ Add ${meta.label.replace(/s$/,"").toLowerCase()}</button>
+    ${meta.hasValue?`<div class="insp-empty" style="font-size:.7em;padding-top:.2rem">Slice size follows the value. Use the same scale (e.g. percentages that add to 100).</div>`:`<div class="insp-empty" style="font-size:.7em;padding-top:.2rem">Bands are equal height; edit the label text freely.</div>`}
+  </div>`;
+}
+
+function wireSegEditor(el){
+  const meta=segObjectKind(el); if(!meta) return;
+  const refresh=()=>{ renderCanvas(); markDirty(); };
+  const rerender=()=>{ renderInspector(); renderCanvas(); markDirty(); };
+  // colour
+  $$(".seg-color").forEach(inp=>inp.addEventListener("input",()=>{
+    const arr=segGet(el); const i=+inp.dataset.i; if(arr[i]){ arr[i].color=inp.value; refresh(); }
+  }));
+  // label (also re-renders so the % readout updates when label is a number)
+  $$(".seg-label").forEach(inp=>inp.addEventListener("input",()=>{
+    const arr=segGet(el); const i=+inp.dataset.i; if(arr[i]){ arr[i].label=inp.value; refresh(); }
+  }));
+  // value (drives slice size) — soft refresh of the live % badges in the panel
+  $$(".seg-value").forEach(inp=>inp.addEventListener("input",()=>{
+    const arr=segGet(el); const i=+inp.dataset.i;
+    if(arr[i]){ arr[i].value=Math.max(0,Number(inp.value)||0); refresh(); updateSegPct(el); }
+  }));
+  // sub-caption
+  $$(".seg-sub").forEach(inp=>inp.addEventListener("input",()=>{
+    const arr=segGet(el); const i=+inp.dataset.i; if(arr[i]){ arr[i].sub=inp.value; refresh(); }
+  }));
+  // remove
+  $$(".seg-del").forEach(btn=>btn.addEventListener("click",()=>{
+    const arr=segGet(el); const i=+btn.dataset.i;
+    if(arr.length>1){ arr.splice(i,1); rerender(); }
+  }));
+  // add
+  const add=$("#f-seg-add");
+  add&&add.addEventListener("click",()=>{
+    const arr=segGet(el);
+    const pal=["#e8503a","#f5a623","#5a9e48","#5bb0cf","#a8328c","#3a2f6f","#2f4fb0","#1f9e8a"];
+    const row={label:meta.hasValue?"10%":String(arr.length+1).padStart(2,"0"),color:pal[arr.length%pal.length]};
+    if(meta.hasValue) row.value=10;
+    if(meta.hasSub) row.sub="Lorem ipsum";
+    arr.push(row); rerender();
+  });
+}
+
+/* live-update the little % badges next to each row as values change */
+function updateSegPct(el){
+  const meta=segObjectKind(el); if(!meta||!meta.hasValue) return;
+  const arr=segGet(el); const total=arr.reduce((a,s)=>a+segValueOf(s),0)||1;
+  $$(".seg-row").forEach(row=>{
+    const i=+row.dataset.i; const span=row.querySelector(".seg-pct");
+    if(span&&arr[i]) span.textContent=Math.round(segValueOf(arr[i])/total*100)+"%";
+  });
+}
+
 function bindRange(id,onVal,fmt,labelName){const i=$("#"+id);if(!i)return;
   i.addEventListener("input",()=>{const v=Number(i.value);onVal(v);
     const lab=i.closest(".field")?.querySelector("label");if(lab&&labelName)lab.textContent=`${labelName} ${fmt?fmt(v):v}`;});

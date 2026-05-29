@@ -491,7 +491,7 @@ input[type=range]{width:100%;accent-color:var(--signal)}
   background:rgba(10,10,10,.58);border:1px solid rgba(255,255,255,.18);backdrop-filter:blur(8px);
   color:#fff;border-radius:999px;padding:.38rem .62rem;font-family:var(--font-mono);letter-spacing:.04em;
 }
-.object-badge b{font-size:.88rem}.object-badge span{font-size:.62rem;color:#d5d0c6;text-transform:uppercase}
+.object-badge b{font-size:.88rem;color:var(--num-color,inherit)}.object-badge span{font-size:.62rem;color:#d5d0c6;text-transform:uppercase}
 
 /* ── Glass / cup with realistic moving liquid ─────────────────────────
    The liquid is a column whose height is --level. On top of it sit two
@@ -1171,7 +1171,7 @@ body.hanns-options-open .drawer{
 .vessel-number{position:absolute;left:0;right:0;bottom:var(--level);z-index:8;text-align:center;
   transform:translateY(50%);pointer-events:none;animation:labelRise 1s cubic-bezier(.22,1,.36,1) both}
 .vessel-number b{display:inline-block;font-family:var(--font-mono);font-weight:900;line-height:1;
-  font-size:clamp(.7rem,11cqmin,2.1rem);color:#0e1116;
+  font-size:clamp(.7rem,11cqmin,2.1rem);color:var(--num-color,#0e1116);
   background:rgba(255,255,255,.88);border-radius:999px;padding:.18em .5em;
   box-shadow:0 6px 18px rgba(0,0,0,.25)}
 .vessel-number--center{bottom:50%;animation:none}
@@ -1199,8 +1199,15 @@ body.hanns-options-open .drawer{
 .g-needle line{stroke:#11151b;stroke-width:5;stroke-linecap:round}
 .g-needle circle{fill:#11151b}
 .gauge-num{position:absolute;bottom:12%;left:0;right:0;text-align:center}
-.gauge-num b{font-family:var(--font-mono);font-weight:900;color:#fff;
+.gauge-num b{font-family:var(--font-mono);font-weight:900;color:var(--num-color,#fff);
   font-size:clamp(.8rem,12cqmin,2rem);text-shadow:0 2px 8px rgba(0,0,0,.45)}
+
+/* When the user sets an explicit count size, it overrides the responsive
+   default everywhere the object can show a number. Size is in slide-space px
+   and scales with the slide like every other element. */
+.object-num-fixed .gauge-num b,
+.object-num-fixed .vessel-number b,
+.object-num-fixed .object-badge b{font-size:var(--num-size)!important}
 
 @keyframes gaugeDraw{from{stroke-dashoffset:100}to{stroke-dashoffset:0}}
 @keyframes needleSwing{from{transform:rotate(-90deg)}}
@@ -1301,3 +1308,101 @@ body.hanns-options-open .drawer{
 /* Frameless chart — bars/lines sit directly on the slide (used by the
    infographic default templates). No card background, border, or shadow. */
 .chart-box.chart-bare{background:none!important;border:none!important;box-shadow:none!important;border-radius:0!important}
+
+/* ════════════════════════════════════════════════════════════════════
+   Coffee infographic objects
+   ──────────────────────────────────────────────────────────────────── */
+/* Segmented take-away cup */
+.coffee-seg{position:absolute;inset:0;display:grid;place-items:center;container-type:size}
+.coffee-seg-svg{width:100%;height:100%;display:block;overflow:visible}
+.coffee-outline{fill:none;stroke:rgba(0,0,0,.12);stroke-width:2}
+.coffee-band{animation:coffeeBand .55s cubic-bezier(.22,1,.36,1) both;
+  animation-delay:calc(var(--i) * .08s);transform-origin:center}
+.coffee-static .coffee-band{animation:none}
+@keyframes coffeeBand{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.coffee-band-num{position:absolute;left:0;right:0;transform:translateY(-50%);
+  text-align:center;pointer-events:none;
+  font-family:var(--font-x);font-weight:800;letter-spacing:-.01em;
+  color:var(--seg-num-color,#fff);
+  font-size:var(--num-size,12cqw);text-shadow:0 1px 4px rgba(0,0,0,.28)}
+.object-num-fixed .coffee-band-num{font-size:var(--num-size)!important}
+
+/* Icon circle node */
+.info-node{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+  justify-content:flex-start;gap:2%;container-type:size}
+.info-node-svg{width:62%;height:62%;filter:drop-shadow(0 8px 20px rgba(0,0,0,.22))}
+.info-node-cap{text-align:center;line-height:1.18;max-width:92%}
+.info-node-cap b{display:block;font-family:var(--font-body);font-weight:800;
+  color:var(--node-text,var(--num-color,#e8eef4));font-size:clamp(.5rem,9cqw,1rem);letter-spacing:.01em}
+.info-node-cap span{display:block;font-family:var(--font-body);
+  color:var(--node-text,rgba(255,255,255,.62));opacity:var(--node-text-dim,1);
+  font-size:clamp(.4rem,6.6cqw,.8rem)}
+/* when a custom text colour is set, soften the sub-line a touch for hierarchy */
+.info-node[style*="--node-text"] .info-node-cap span{opacity:.7}
+.coffee-band-sub{position:absolute;left:8%;right:8%;transform:translateY(-50%);
+  text-align:center;pointer-events:none;
+  font-family:var(--font-body);font-weight:700;color:#efe6da;
+  font-size:clamp(.42rem,4.6cqw,.78rem);line-height:1.25;text-shadow:0 1px 3px rgba(0,0,0,.3)}
+
+/* ════════════════════════════════════════════════════════════════════
+   Food infographic objects
+   ──────────────────────────────────────────────────────────────────── */
+/* Diet plate (pie on a plate + utensils) */
+.diet-plate{position:absolute;inset:0;display:grid;place-items:center;container-type:size}
+.diet-plate-svg{width:100%;height:100%;display:block;overflow:visible;
+  filter:drop-shadow(0 10px 22px rgba(0,0,0,.10))}
+.diet-slice{animation:dietSlice .5s cubic-bezier(.22,1,.36,1) both;
+  animation-delay:calc(var(--i) * .08s);transform-origin:200px 186px}
+.diet-static .diet-slice{animation:none}
+@keyframes dietSlice{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:scale(1)}}
+.diet-label{position:absolute;transform:translate(-50%,-50%);text-align:center;pointer-events:none;
+  line-height:1.05;font-family:var(--font-body)}
+.diet-label b{display:block;font-weight:800;color:#2f3a3f;font-size:clamp(.6rem,4.4cqmin,1.3rem)}
+.diet-label span{display:block;font-weight:500;color:#4a565b;font-size:clamp(.4rem,2.6cqmin,.72rem)}
+
+/* Food wheel (segmented donut) */
+.food-wheel{position:absolute;inset:0;display:grid;place-items:center;container-type:size}
+.food-wheel-svg{width:100%;height:100%;display:block;overflow:visible}
+.fw-seg{animation:fwSeg .5s cubic-bezier(.22,1,.36,1) both;
+  animation-delay:calc(var(--i) * .08s);transform-origin:200px 200px}
+.food-wheel-static .fw-seg{animation:none}
+@keyframes fwSeg{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:scale(1)}}
+.fw-label{position:absolute;transform:translate(-50%,-50%);pointer-events:none;
+  font-family:var(--font-x);font-weight:800;letter-spacing:-.01em;
+  font-size:var(--num-size,clamp(.6rem,5cqmin,1.4rem));text-shadow:0 1px 3px rgba(0,0,0,.22)}
+.object-num-fixed .fw-label{font-size:var(--num-size)!important}
+.fw-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  text-align:center;line-height:1;display:flex;flex-direction:column;gap:.04em;pointer-events:none;
+  font-family:var(--font-body)}
+.fw-center .fw-c1{font-weight:600;font-size:clamp(.55rem,5.4cqmin,1.3rem);letter-spacing:.02em}
+.fw-center .fw-c2{font-weight:800;font-size:clamp(.7rem,7cqmin,1.8rem)}
+
+/* ════════════════════════════════════════════════════════════════════
+   Funnel (stacked bands) object
+   ──────────────────────────────────────────────────────────────────── */
+.funnel-stack{position:absolute;inset:0;display:grid;place-items:center;container-type:size}
+.funnel-stack-svg{width:100%;height:100%;display:block;overflow:visible;
+  filter:drop-shadow(0 10px 24px rgba(0,0,0,.16))}
+.funnel-band{animation:funnelBand .5s cubic-bezier(.22,1,.36,1) both;
+  animation-delay:calc(var(--i) * .09s);transform-origin:center}
+.funnel-static .funnel-band{animation:none}
+@keyframes funnelBand{from{opacity:0;transform:translateY(-10px) scale(.96)}to{opacity:1;transform:none}}
+.funnel-band-num{position:absolute;left:0;right:0;transform:translateY(-50%);
+  text-align:center;pointer-events:none;
+  font-family:var(--font-x);font-weight:800;letter-spacing:-.01em;
+  color:var(--funnel-num-color,#fff);
+  font-size:var(--num-size,9cqw);text-shadow:0 1px 4px rgba(0,0,0,.28)}
+.object-num-fixed .funnel-band-num{font-size:var(--num-size)!important}
+
+/* ── Segment / band editor (inspector) ──────────────────────────────── */
+.seg-editor .seg-rows{display:flex;flex-direction:column;gap:6px;margin:6px 0}
+.seg-row{display:flex;align-items:center;gap:6px}
+.seg-row .seg-color{width:26px;height:26px;padding:0;border:none;background:none;cursor:pointer;flex:0 0 auto}
+.seg-row .seg-label{flex:1 1 60px;min-width:0}
+.seg-row .seg-value{flex:0 0 56px;width:56px}
+.seg-row .seg-sub{flex:1 1 90px;min-width:0}
+.seg-row .seg-del{flex:0 0 auto;width:24px;height:24px;border-radius:6px;border:1px solid rgba(255,255,255,.18);
+  background:rgba(255,255,255,.06);color:#d9d4c8;cursor:pointer;line-height:1;font-size:.78rem}
+.seg-row .seg-del:hover{background:rgba(232,72,43,.85);color:#fff;border-color:transparent}
+.seg-row .seg-pct{flex:0 0 auto;font-family:var(--font-mono,monospace);font-size:.66rem;color:#a8a294;min-width:30px;text-align:right}
+.seg-editor .seg-add{margin-top:2px}

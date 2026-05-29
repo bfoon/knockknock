@@ -639,6 +639,61 @@ const OBJECTS = [
     "help": "Take-away coffee cup — fills to a percentage"
   },
   {
+    "kind": "coffee_segments",
+    "label": "Coffee cup (segments)",
+    "icon": "🥤",
+    "count": 1,
+    "level": 0,
+    "w": 280,
+    "h": 380,
+    "accent": "#6f4a2e",
+    "help": "Stacked-band take-away cup with per-band % labels (coffee infographic)"
+  },
+  {
+    "kind": "info_node",
+    "label": "Icon node (circle)",
+    "icon": "⚪",
+    "count": 1,
+    "level": 0,
+    "w": 240,
+    "h": 240,
+    "accent": "#1f5e86",
+    "help": "White circle with a line icon and caption — for radial infographics"
+  },
+  {
+    "kind": "diet_plate",
+    "label": "Diet plate (pie)",
+    "icon": "🍽️",
+    "count": 1,
+    "level": 0,
+    "w": 440,
+    "h": 400,
+    "accent": "#a9cf5a",
+    "help": "Pie chart on a plate with fork & knife — editable segments (balanced-diet style)"
+  },
+  {
+    "kind": "food_wheel",
+    "label": "Food wheel (donut)",
+    "icon": "🥗",
+    "count": 1,
+    "level": 0,
+    "w": 420,
+    "h": 420,
+    "accent": "#5a9e48",
+    "help": "Segmented donut with % labels and a centre title — editable segments (healthy-food style)"
+  },
+  {
+    "kind": "funnel_stack",
+    "label": "Funnel (stacked bands)",
+    "icon": "🔻",
+    "count": 1,
+    "level": 0,
+    "w": 460,
+    "h": 460,
+    "accent": "#2f4fb0",
+    "help": "Inverted stack of funnel bands — editable count, colours & labels (sales-funnel style)"
+  },
+  {
     "kind": "percent_bar",
     "label": "Percent bar",
     "icon": "📊",
@@ -2914,6 +2969,8 @@ function makeObject(kind="water_glass",over={}){
     // number on the object: where it sits and how it behaves while filling
     numberPos: d.fill ? "onfill" : "below",   // below | onfill | center
     numberMode: "static",                      // static | countup
+    numberColor: "",                           // "" = use the built-in default per object
+    numberSize: 0,                             // 0 = auto (responsive default); otherwise px in slide space
     objAnim: true,                             // idle/fill animation on/off
     objScale: 1,                               // visual zoom of the inner art inside the fixed box
   },over));
@@ -3173,21 +3230,43 @@ function T_beerInfographic(){
   ]};
 }
 
-/* 4 ─ Coffee infographic: a filled take-away coffee cup centre, four circular
-   icon nodes in the corners, on a deep blue field. */
+/* 4 ─ Coffee infographic — faithful recreation of the reference: a deep-blue
+   field, a centred segmented take-away cup with 100% / 50% band labels, four
+   white icon-circle nodes in the corners, dashed connectors from the cup to
+   each node, and a bottom caption. Built from reusable objects so the cup and
+   each node can be copied onto any other slide. */
 function T_coffeeInfographic(){
-  const node=(x,y,d)=>([
-    makeCreativeShape("blob_01",{x:x,y:y,w:130,h:130,fill:"#1b4e78",stroke:"#ffffff",strokeW:3,anim:"pop",animDelay:d}),
-    makeText({x:x,y:y+78,w:130,h:24,text:"Lorem ipsum",size:13,weight:700,color:"#bcd4e6",align:"center",font:'"Montserrat",sans-serif',anim:"fade",animDelay:d+.08}),
-    makeText({x:x,y:y+98,w:130,h:24,text:"dolor sit amet, consectetuer",size:9,color:"#8fb2cb",align:"center",font:'"Montserrat",sans-serif',lh:1.2,anim:"fade",animDelay:d+.1}),
-  ]);
-  return {bg:"#1a4a73",els:[
-    makeText({x:200,y:48,w:560,h:50,text:"COFFEE INFOGRAPHIC",font:'"Montserrat",sans-serif',size:34,weight:800,color:"#ffffff",align:"center",ls:1,anim:"rise"}),
-    makeObject("coffee_cup",{x:360,y:130,w:240,h:360,level:70,accent:"#7b4b27",numberPos:"center",showLabel:false,hideContainer:true,anim:"pop",animDelay:.2}),
-    ...node(60,60,.3),
-    ...node(770,60,.35),
-    ...node(60,360,.4),
-    ...node(770,360,.45),
+  const NAVY="#1f5e86", LINE="rgba(170,200,225,.6)";
+  // dashed connector segments (thin lines; vertical when h>w)
+  const hLink=(x,y,w,d)=>makeLine({x,y,w,h:2,fill:LINE,dashed:true,anim:"fade",animDelay:d});
+  const vLink=(x,y,h,d)=>makeLine({x,y,w:2,h,fill:LINE,dashed:true,anim:"fade",animDelay:d});
+  return {bg:"#1c5687",els:[
+    // dashed connectors (drawn first, behind everything): cup edge → node
+    hLink(305,300,55,.15), vLink(170,210,92,.15), hLink(170,210,135,.15),     // top-left
+    hLink(600,300,55,.18), vLink(788,210,92,.18), hLink(655,210,135,.18),     // top-right
+    hLink(305,395,55,.2),  vLink(170,395,95,.2),  hLink(170,490,135,.2),      // bottom-left
+    hLink(600,395,55,.22), vLink(788,395,95,.22), hLink(655,490,135,.22),     // bottom-right
+
+    makeText({x:200,y:60,w:560,h:50,text:"COFFEE INFOGRAPHIC",font:'"Montserrat",sans-serif',size:36,weight:800,color:"#ffffff",align:"center",ls:1,anim:"rise"}),
+
+    // centre cup (reusable coffee_segments object) — bands carry their own labels & sub-captions
+    makeObject("coffee_segments",{x:330,y:120,w:300,h:400,hideContainer:true,
+      numberColor:"#ffffff",
+      bands:[
+        {label:"100%",color:"#a9805c"},
+        {label:"",color:"#8c6443",sub:"Lorem ipsum\ndolor sit amet,\nconsectetuer"},
+        {label:"50%",color:"#6f4a2e"},
+        {label:"",color:"#56371f",sub:"Lorem ipsum\ndolor sit amet,\nconsectetuer"}
+      ],
+      anim:"pop",animDelay:.15}),
+
+    // four corner nodes (reusable info_node objects)
+    makeObject("info_node",{x:40,y:40,w:170,h:180,nodeIcon:"mug",hideContainer:true,anim:"pop",animDelay:.3}),
+    makeObject("info_node",{x:750,y:40,w:170,h:180,nodeIcon:"pot",hideContainer:true,anim:"pop",animDelay:.35}),
+    makeObject("info_node",{x:40,y:340,w:170,h:180,nodeIcon:"carton",hideContainer:true,anim:"pop",animDelay:.4}),
+    makeObject("info_node",{x:750,y:340,w:170,h:180,nodeIcon:"box",hideContainer:true,anim:"pop",animDelay:.45}),
+
+    makeText({x:230,y:500,w:500,h:36,text:"Lorem ipsum dolor sit amet, consectetuer adipiscing elit, sed diam nonummy",size:13,weight:600,color:"#cfe0ee",align:"center",font:'"Montserrat",sans-serif',lh:1.3,anim:"fade",animDelay:.5}),
   ]};
 }
 
@@ -3235,7 +3314,7 @@ function T_funnelInfographic(){
    echoing the "Three Colored Fuel Gauge Dashboard" reference. */
 function T_gaugeDashboard(){
   const gauge=(x,pct,d)=>([
-    makeObject("gauge",{x:x,y:120,w:260,h:180,level:pct,accent:"#22c55e",showValue:true,showLabel:false,anim:"pop",animDelay:d}),
+    makeObject("gauge",{x:x,y:120,w:260,h:180,level:pct,accent:"#22c55e",showValue:true,showLabel:false,numberColor:"#1f2937",numberSize:34,anim:"pop",animDelay:d}),
     makeText({x:x+30,y:330,w:200,h:30,text:"Text Here",size:22,weight:800,color:"#1f2937",font:'"Archivo",sans-serif',anim:"fade",animDelay:d+.1}),
     makeText({x:x+30,y:366,w:200,h:120,text:"This slide is 100% editable. Adapt it to your needs and capture your audience's attention.",size:14,italic:true,color:"#6b7280",font:'"Archivo",sans-serif',lh:1.4,anim:"fade",animDelay:d+.15}),
   ]);
@@ -3248,11 +3327,236 @@ function T_gaugeDashboard(){
   ]};
 }
 
+/* ── Food infographic templates (from uploaded references) ──────────── */
+
+/* A) Balanced Diet — a pie-on-a-plate with fork & knife on a soft sage field. */
+function T_balancedDiet(){
+  return {bg:"#cfdcd6",els:[
+    makeText({x:120,y:46,w:720,h:60,text:"BALANCED DIET",font:'"Montserrat",sans-serif',size:40,weight:600,color:"#4a7c74",align:"center",ls:4,anim:"rise"}),
+    makeObject("diet_plate",{x:230,y:120,w:500,h:420,
+      segments:[
+        {label:"40%",sub:"fruits & vegetables",color:"#a9cf5a"},
+        {label:"25%",sub:"cellulose",color:"#bfa074"},
+        {label:"25%",sub:"protein",color:"#8fd0d8"},
+        {label:"10%",sub:"fats",color:"#f5cd2a"}
+      ],
+      hideContainer:true,anim:"pop",animDelay:.15}),
+  ]};
+}
+
+/* B) Healthy Food — a segmented donut with a centre title, radial food
+   callout nodes, dashed connectors and category labels. */
+function T_healthyFood(){
+  const LINE="rgba(120,150,120,.55)";
+  const hLink=(x,y,w,d)=>makeLine({x,y,w,h:2,fill:LINE,dashed:true,anim:"fade",animDelay:d});
+  const vLink=(x,y,h,d)=>makeLine({x,y,w:2,h,fill:LINE,dashed:true,anim:"fade",animDelay:d});
+  return {bg:"#eef2e2",els:[
+    // dashed connectors from the wheel edge out toward the right-hand nodes
+    hLink(615,205,120,.55), hLink(615,385,120,.58),
+    makeText({x:60,y:34,w:840,h:50,text:"HEALTHY FOOD INFOGRAPHIC",font:'"Montserrat",sans-serif',size:40,weight:800,color:"#5a9e48",anim:"rise"}),
+    makeText({x:60,y:84,w:840,h:36,text:"DESIGN TEMPLATE",font:'"Montserrat",sans-serif',size:24,weight:600,color:"#9bbf7e",ls:3,anim:"fade",animDelay:.1}),
+
+    // centre wheel (reusable food_wheel object)
+    makeObject("food_wheel",{x:300,y:120,w:360,h:360,centerTitle:"HEALTHY\nFOOD",centerColor:"#4c8c3f",numberColor:"#ffffff",
+      segments:[
+        {label:"15%",color:"#e8821e"},
+        {label:"10%",color:"#f5cd2a"},
+        {label:"35%",color:"#5a9e48"},
+        {label:"25%",color:"#e8503a"},
+        {label:"20%",color:"#5bb0cf"}
+      ],
+      hideContainer:true,anim:"pop",animDelay:.2}),
+
+    // five food callout nodes around the wheel
+    makeObject("info_node",{x:690,y:120,w:150,h:170,nodeIcon:"orange",nodeTitle:"FRUIT",nodeText:"Lorem ipsum dolor sit amet",hideContainer:true,anim:"pop",animDelay:.3}),
+    makeObject("info_node",{x:720,y:300,w:150,h:170,nodeIcon:"bread",nodeTitle:"BREAD",nodeText:"Lorem ipsum dolor sit amet",hideContainer:true,anim:"pop",animDelay:.35}),
+    makeObject("info_node",{x:380,y:430,w:150,h:170,nodeIcon:"broccoli",nodeTitle:"VEGETABLES",nodeText:"Lorem ipsum dolor sit amet",hideContainer:true,anim:"pop",animDelay:.4}),
+    makeObject("info_node",{x:90,y:300,w:150,h:170,nodeIcon:"meat",nodeTitle:"MEAT",nodeText:"Lorem ipsum dolor sit amet",hideContainer:true,anim:"pop",animDelay:.45}),
+    makeObject("info_node",{x:110,y:120,w:150,h:170,nodeIcon:"milk",nodeTitle:"DAIRY",nodeText:"Lorem ipsum dolor sit amet",hideContainer:true,anim:"pop",animDelay:.5}),
+
+    makeText({x:330,y:548,w:300,h:24,text:"designed for your slides",size:13,color:"#8aa97a",align:"center",font:'"Montserrat",sans-serif',anim:"fade",animDelay:.6}),
+  ]};
+}
+
+/* C) Food Infographics — a clean donut + side icon strip + caption rows,
+   a lighter editorial take on the second reference. */
+function T_foodInfographics(){
+  return {bg:"#f7f4ee",els:[
+    makeShape("rect",{x:60,y:48,w:250,h:46,fill:"#e8503a",radius:6,anim:"left"}),
+    makeText({x:74,y:54,w:230,h:34,text:"FOOD",font:'"Montserrat",sans-serif',size:30,weight:800,color:"#fff",anim:"fade",animDelay:.05}),
+    makeText({x:74,y:100,w:300,h:30,text:"INFOGRAPHICS",font:'"Montserrat",sans-serif',size:22,weight:700,color:"#9aa0a6",ls:2,anim:"fade",animDelay:.1}),
+
+    makeObject("food_wheel",{x:300,y:130,w:360,h:360,centerTitle:"",centerFill:"#ffffff",numberColor:"#ffffff",
+      segments:[
+        {label:"30%",color:"#e8503a"},
+        {label:"25%",color:"#f5a623"},
+        {label:"25%",color:"#5a9e48"},
+        {label:"20%",color:"#5bb0cf"}
+      ],
+      hideContainer:true,anim:"pop",animDelay:.2}),
+
+    // three caption rows on the right
+    makeObject("info_node",{x:690,y:140,w:120,h:140,nodeIcon:"apple",hideContainer:true,anim:"pop",animDelay:.3}),
+    makeText({x:800,y:160,w:140,h:90,text:"Lorem ipsum dolor sit amet, consectetuer.",size:14,color:"#5b6166",font:'"Montserrat",sans-serif',lh:1.35,anim:"fade",animDelay:.35}),
+    makeObject("info_node",{x:690,y:270,w:120,h:140,nodeIcon:"cheese",hideContainer:true,anim:"pop",animDelay:.4}),
+    makeText({x:800,y:290,w:140,h:90,text:"Lorem ipsum dolor sit amet, consectetuer.",size:14,color:"#5b6166",font:'"Montserrat",sans-serif',lh:1.35,anim:"fade",animDelay:.45}),
+    makeObject("info_node",{x:690,y:400,w:120,h:140,nodeIcon:"fish",hideContainer:true,anim:"pop",animDelay:.5}),
+    makeText({x:800,y:420,w:140,h:90,text:"Lorem ipsum dolor sit amet, consectetuer.",size:14,color:"#5b6166",font:'"Montserrat",sans-serif',lh:1.35,anim:"fade",animDelay:.55}),
+
+    // left icon strip
+    makeObject("info_node",{x:60,y:200,w:110,h:130,nodeIcon:"orange",hideContainer:true,anim:"left",animDelay:.3}),
+    makeObject("info_node",{x:60,y:330,w:110,h:130,nodeIcon:"broccoli",hideContainer:true,anim:"left",animDelay:.4}),
+  ]};
+}
+
+/* ── Funnel diagram templates (from uploaded references) ────────────── */
+
+/* A) Sales funnel target — funnel with % bands and a left-side numbered
+   callout list with icons + dashed leaders (reference image 1 & 2 blend). */
+function T_salesFunnel(){
+  const bands=[
+    {label:"95%",color:"#2f6fb0"},
+    {label:"75%",color:"#1f93b0"},
+    {label:"50%",color:"#1f9e8a"},
+    {label:"42%",color:"#6fae3a"},
+    {label:"25%",color:"#e0a81e"},
+    {label:"9%", color:"#e0631e"},
+  ];
+  const icons=["chart","person","megaphone","search","clipboard","plane"];
+  const row=(i,y,d)=>([
+    makeObject("info_node",{x:36,y:y,w:80,h:80,nodeIcon:icons[i],hideContainer:true,anim:"left",animDelay:d}),
+    makeText({x:120,y:y+8,w:120,h:22,text:"TITLE 0"+(6-i),size:14,weight:800,color:"#3a5a8a",font:'"Montserrat",sans-serif',anim:"fade",animDelay:d+.05}),
+    makeText({x:120,y:y+30,w:200,h:48,text:"Lorem ipsum dolor sit amet, consectetuer elit.",size:10,color:"#7a838c",font:'"Montserrat",sans-serif',lh:1.25,anim:"fade",animDelay:d+.08}),
+  ]);
+  return {bg:"#ffffff",els:[
+    makeText({x:60,y:34,w:840,h:44,text:"SALES FUNNEL TARGET",font:'"Montserrat",sans-serif',size:36,weight:800,color:"#2a2a2a",anim:"rise"}),
+    makeText({x:60,y:78,w:840,h:34,text:"DIAGRAM TEMPLATE",font:'"Montserrat",sans-serif',size:24,weight:700,color:"#9aa0a6",ls:1,anim:"fade",animDelay:.1}),
+    makeObject("funnel_stack",{x:470,y:96,w:430,h:430,funnel3d:true,funnelTip:false,funnelGap:6,numberColor:"#ffffff",
+      bands,anim:"pop",animDelay:.2}),
+    ...row(0,110,.3), ...row(1,168,.34), ...row(2,226,.38),
+    ...row(3,284,.42), ...row(4,342,.46), ...row(5,400,.5),
+  ]};
+}
+
+/* B) 5-level stacked funnel — bold inverted stack with right-side icon
+   callouts (reference image 2 / 4). */
+function T_stackedFunnel5(){
+  const bands=[
+    {label:"01",color:"#2f2f8c"},
+    {label:"02",color:"#1f9e8a"},
+    {label:"03",color:"#cf2230"},
+    {label:"04",color:"#c8801a"},
+    {label:"05",color:"#138a4e"},
+  ];
+  const cols=["#4a4ab0","#1f9e8a","#cf2230","#c8801a","#138a4e"];
+  const icons=["clipboard","megaphone","plane","person","handshake"];
+  const cap=(i,y,d)=>([
+    makeObject("info_node",{x:690,y:y,w:80,h:80,nodeIcon:icons[i],hideContainer:true,anim:"pop",animDelay:d}),
+    makeText({x:790,y:y+8,w:160,h:24,text:"Add Your Text Here",size:16,weight:800,color:cols[i],font:'"Montserrat",sans-serif',anim:"fade",animDelay:d+.05}),
+    makeText({x:790,y:y+34,w:160,h:48,text:"Lorem ipsum dolor sit amet consectetuer adipiscing elit.",size:11,color:"#6b7077",font:'"Montserrat",sans-serif',lh:1.3,anim:"fade",animDelay:d+.08}),
+  ]);
+  return {bg:"#f7f7f7",els:[
+    makeText({x:60,y:40,w:840,h:54,text:"5 Level Stacked Funnel Template",font:'"Montserrat",sans-serif',size:40,weight:800,color:"#3a3a3a",align:"center",anim:"rise"}),
+    makeObject("funnel_stack",{x:120,y:130,w:520,h:400,funnel3d:true,funnelGap:10,numberColor:"#ffffff",
+      bands,anim:"pop",animDelay:.2}),
+    ...cap(0,150,.3), ...cap(1,230,.35), ...cap(2,310,.4),
+    ...cap(3,388,.45), ...cap(4,452,.5),
+  ]};
+}
+
+/* C) Funnel infographic — stepped pyramid with numbered circles list on the
+   right (reference image 3). */
+function T_funnelSteps(){
+  const cols=["#1f9e8a","#8cbf4a","#e0a81e","#cf3a2e","#3a5a8a"];
+  const bands=[
+    {label:"STEP 01",color:"#1f9e8a"},
+    {label:"STEP 02",color:"#8cbf4a"},
+    {label:"STEP 03",color:"#e0a81e"},
+    {label:"STEP 04",color:"#cf3a2e"},
+    {label:"STEP 05",color:"#3a5a8a"},
+  ];
+  const item=(i,y,d)=>([
+    makeCreativeShape("blob_01",{x:560,y:y,w:40,h:40,fill:cols[i],anim:"pop",animDelay:d}),
+    makeText({x:560,y:y+6,w:40,h:28,text:String(i+1),size:20,weight:800,color:"#fff",align:"center",font:'"Montserrat",sans-serif',anim:"fade",animDelay:d+.03}),
+    makeText({x:616,y:y+2,w:300,h:24,text:"YOUR TITLE HERE",size:16,weight:800,color:cols[i],font:'"Montserrat",sans-serif',anim:"fade",animDelay:d+.05}),
+    makeText({x:616,y:y+26,w:320,h:30,text:"There are many variations of passages of lorem ipsum available.",size:11,color:"#7a838c",font:'"Montserrat",sans-serif',lh:1.3,anim:"fade",animDelay:d+.08}),
+  ]);
+  return {bg:"#ffffff",els:[
+    makeText({x:300,y:30,w:520,h:30,text:"Enter your subhead line here",size:16,color:"#aab0b6",align:"center",font:'"Montserrat",sans-serif',anim:"fade"}),
+    makeText({x:300,y:58,w:520,h:48,text:"Funnel Infographic",font:'"Montserrat",sans-serif',size:34,weight:600,color:"#4a565b",align:"center",anim:"rise",animDelay:.05}),
+    makeObject("funnel_stack",{x:60,y:120,w:440,h:400,funnelTip:false,funnelGap:4,numberColor:"#ffffff",
+      bands,anim:"pop",animDelay:.2}),
+    ...item(0,150,.3), ...item(1,224,.35), ...item(2,298,.4),
+    ...item(3,372,.45), ...item(4,446,.5),
+  ]};
+}
+
+/* D) Funnel diagram (two-sided) — centred inverted stack with a paragraph on
+   each side (reference image 6). */
+function T_funnelTwoSided(){
+  const bands=[
+    {label:"SAMPLE TEXT",color:"#2f7fb0"},
+    {label:"SAMPLE TEXT",color:"#1f9e8a"},
+    {label:"SAMPLE TEXT",color:"#6fae3a"},
+    {label:"SAMPLE TEXT",color:"#e0a81e"},
+    {label:"$",color:"#cf3a2e"},
+  ];
+  return {bg:"#ffffff",els:[
+    makeText({x:60,y:36,w:840,h:48,text:"FUNNEL DIAGRAM",font:'"Montserrat",sans-serif',size:36,weight:800,color:"#3a3a3a",align:"center",ls:1,anim:"rise"}),
+    makeObject("funnel_stack",{x:300,y:110,w:360,h:420,funnelGap:6,numberColor:"#ffffff",
+      bands,anim:"pop",animDelay:.2}),
+    makeText({x:60,y:300,w:200,h:28,text:"LOREM IPSUM",size:18,weight:800,color:"#3a3a3a",font:'"Montserrat",sans-serif',anim:"left",animDelay:.3}),
+    makeText({x:60,y:330,w:210,h:150,text:"Lorem ipsum is simply dummy text of the printing and typesetting industry. Lorem ipsum has been the industry's standard dummy text ever since the 1500s.",size:12,color:"#6b7077",font:'"Montserrat",sans-serif',lh:1.45,anim:"fade",animDelay:.35}),
+    makeText({x:700,y:300,w:200,h:28,text:"LOREM IPSUM",size:18,weight:800,color:"#3a3a3a",font:'"Montserrat",sans-serif',anim:"right",animDelay:.3}),
+    makeText({x:700,y:330,w:210,h:150,text:"Lorem ipsum is simply dummy text of the printing and typesetting industry. Lorem ipsum has been the industry's standard dummy text ever since the 1500s.",size:12,color:"#6b7077",font:'"Montserrat",sans-serif',lh:1.45,anim:"fade",animDelay:.35}),
+  ]};
+}
+
+/* E) Funnel diagrams — inverted pyramid with icons + callouts on both sides
+   (reference image 4). */
+function T_funnelIconsBothSides(){
+  const bands=[
+    {label:"",color:"#f5a623"},
+    {label:"",color:"#e8503a"},
+    {label:"",color:"#a8328c"},
+    {label:"",color:"#3a2f6f"},
+    {label:"",color:"#2aa0e0"},
+    {label:"",color:"#8cbf2a"},
+  ];
+  const icons=["bulb","dollar","diamond","briefcase","clock","chart"];
+  const leftCap=(y,c,d)=>([
+    makeText({x:90,y:y,w:260,h:24,text:"Title Goes Here",size:18,weight:800,color:c,font:'"Montserrat",sans-serif',anim:"left",animDelay:d}),
+    makeText({x:90,y:y+26,w:260,h:80,text:"Lorem Ipsum is simply dummy text of the printing and typesetting industry.",size:12,color:"#7a838c",font:'"Montserrat",sans-serif',lh:1.4,anim:"fade",animDelay:d+.05}),
+  ]);
+  const rightCap=(y,c,d)=>([
+    makeText({x:680,y:y,w:240,h:24,text:"Title Goes Here",size:18,weight:800,color:c,font:'"Montserrat",sans-serif',align:"right",anim:"right",animDelay:d}),
+    makeText({x:660,y:y+26,w:260,h:80,text:"Lorem Ipsum is simply dummy text of the printing and typesetting industry.",size:12,color:"#7a838c",align:"right",font:'"Montserrat",sans-serif',lh:1.4,anim:"fade",animDelay:d+.05}),
+  ]);
+  // icons sit centred on each band
+  const ico=(i,y,d)=>makeObject("info_node",{x:430,y:y,w:64,h:64,nodeIcon:icons[i],hideContainer:true,anim:"pop",animDelay:d});
+  return {bg:"#ffffff",els:[
+    makeText({x:60,y:36,w:840,h:52,text:"Funnel Diagrams",font:'"Montserrat",sans-serif',size:46,weight:700,color:"#6b7077",align:"center",anim:"rise"}),
+    makeText({x:60,y:92,w:840,h:30,text:"Type The Subtitle Of Your Great Here",size:16,color:"#aab0b6",align:"center",font:'"Montserrat",sans-serif',anim:"fade",animDelay:.1}),
+    makeObject("funnel_stack",{x:300,y:130,w:360,h:400,funnelGap:7,bands,anim:"pop",animDelay:.2}),
+    ico(0,150,.3), ico(1,212,.34), ico(2,274,.38), ico(3,336,.42), ico(4,398,.46), ico(5,452,.5),
+    ...leftCap(150,"#f5a623",.3), ...leftCap(300,"#a8328c",.4), ...leftCap(440,"#2aa0e0",.5),
+    ...rightCap(225,"#e8503a",.35), ...rightCap(370,"#3a2f6f",.45), ...rightCap(470,"#8cbf2a",.55),
+  ]};
+}
+
 const BASE_TEMPLATES = [
   {name:"Infographic · Animal bars",   build:T_animalsBars},
   {name:"Infographic · Our Profit",    build:T_ourProfit},
   {name:"Infographic · Beer (blue)",   build:T_beerInfographic},
   {name:"Infographic · Coffee cup",    build:T_coffeeInfographic},
+  {name:"Infographic · Balanced diet", build:T_balancedDiet},
+  {name:"Infographic · Healthy food",  build:T_healthyFood},
+  {name:"Infographic · Food (donut)",  build:T_foodInfographics},
+  {name:"Funnel · Sales target",       build:T_salesFunnel},
+  {name:"Funnel · 5 stacked",          build:T_stackedFunnel5},
+  {name:"Funnel · Steps + list",       build:T_funnelSteps},
+  {name:"Funnel · Two-sided",          build:T_funnelTwoSided},
+  {name:"Funnel · Icons both sides",   build:T_funnelIconsBothSides},
   {name:"Infographic · Beer (teal)",   build:T_beerInfographicAlt},
   {name:"Infographic · Funnels",       build:T_funnelInfographic},
   {name:"Infographic · Gauge board",   build:T_gaugeDashboard},
@@ -3679,11 +3983,19 @@ function renderElement(el,{live=false}={}){
   } else if(el.type==="rect"||el.type==="ellipse"){
     const s=document.createElement("div");s.className="shape";
     s.style.background=el.fill;s.style.borderRadius=el.type==="ellipse"?"50%":(el.radius||0)+"px";
-    if(el.stroke&&el.stroke!=="none"&&el.strokeW)s.style.border=`${el.strokeW}px solid ${el.stroke}`;
+    if(el.stroke&&el.stroke!=="none"&&el.strokeW)s.style.border=`${el.strokeW}px ${el.dashed?"dashed":"solid"} ${el.stroke}`;
     inner.appendChild(s);
   } else if(el.type==="line"){
     const s=document.createElement("div");s.className="shape";
-    s.style.background=el.fill;s.style.borderRadius="999px";
+    if(el.dashed){
+      const c=el.fill||"#94a3b8";
+      const vert=(Number(el.h)||0) > (Number(el.w)||0);
+      const ang=vert?"0deg":"90deg";
+      s.style.background=`repeating-linear-gradient(${ang}, ${c} 0 8px, transparent 8px 16px)`;
+      s.style.borderRadius="0";
+    } else {
+      s.style.background=el.fill;s.style.borderRadius="999px";
+    }
     inner.appendChild(s);
   } else if(el.type==="image"){
     const im=document.createElement("div");im.className="imgbox"+(el.src?"":" placeholder");
@@ -4363,6 +4675,390 @@ function renderSdgTiles(el){
   return wrap;
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   Coffee-infographic objects.
+   Two reusable objects modelled on the uploaded reference:
+     • coffee_segments — a take-away cup with a lid, split into stacked
+       brown bands. Each band can carry its own % label. Lightest at top,
+       darkest at the base, exactly like the reference.
+     • info_node — a white disc holding a simple white-on-blue line icon
+       (mug / pot / carton / box / beans) with a small caption beneath.
+   Both draw their own SVG so they sit cleanly on any background and scale
+   with the slide. White line-icons are originals in a flat infographic style.
+   ──────────────────────────────────────────────────────────────────── */
+
+/* Default 4-band brown ramp (top→bottom = light→dark), matching the image. */
+const COFFEE_BANDS_DEFAULT = [
+  {label:"100%", color:"#a9805c"},
+  {label:"",     color:"#8c6443"},
+  {label:"50%",  color:"#6f4a2e"},
+  {label:"",     color:"#56371f"},
+];
+
+function coffeeBands(el){
+  let bands = Array.isArray(el.bands) && el.bands.length ? el.bands : COFFEE_BANDS_DEFAULT;
+  // clamp to a sane range
+  bands = bands.slice(0, 8).map(b=>({label:b.label||"", color:b.color||"#6f4a2e"}));
+  return bands;
+}
+
+/* ── Segmented take-away cup ─────────────────────────────────────────── */
+function renderCoffeeSegments(el){
+  const bands = coffeeBands(el);
+  const n = bands.length;
+  const wrap=document.createElement("div");
+  wrap.className="coffee-seg"+(el.objAnim===false?" coffee-static":"");
+  const NS="http://www.w3.org/2000/svg";
+  // Cup body is a downward taper (wider at top). Coordinates in a 200×300 box.
+  const topY=64, botY=292, topHalf=78, botHalf=58, cx=100;
+  const xAt=(y)=>{ const t=(y-topY)/(botY-topY); return {l:cx-(topHalf+(botHalf-topHalf)*t), r:cx+(topHalf+(botHalf-topHalf)*t)}; };
+  const S=document.createElementNS(NS,"svg");
+  S.setAttribute("viewBox","0 0 200 300");
+  S.setAttribute("class","coffee-seg-svg");
+  S.setAttribute("preserveAspectRatio","xMidYMid meet");
+
+  // clip to the cup body so bands fill it exactly
+  const cid="cup"+Math.random().toString(36).slice(2,8);
+  const tL=xAt(topY), bL=xAt(botY);
+  const bodyPath=`M ${tL.l} ${topY} L ${tL.r} ${topY} L ${bL.r} ${botY} L ${bL.l} ${botY} Z`;
+  S.innerHTML=`<defs><clipPath id="${cid}"><path d="${bodyPath}"/></clipPath></defs>`;
+
+  // bands
+  const g=document.createElementNS(NS,"g");
+  g.setAttribute("clip-path",`url(#${cid})`);
+  const bandH=(botY-topY)/n;
+  bands.forEach((b,i)=>{
+    const y0=topY+i*bandH, y1=y0+bandH+0.5;
+    const r=document.createElementNS(NS,"rect");
+    r.setAttribute("x","0");r.setAttribute("y",y0.toFixed(1));
+    r.setAttribute("width","200");r.setAttribute("height",(y1-y0).toFixed(1));
+    r.setAttribute("fill",b.color);
+    r.setAttribute("class","coffee-band");
+    r.style.setProperty("--i",i);
+    g.appendChild(r);
+  });
+  S.appendChild(g);
+
+  // cup outline
+  const outline=document.createElementNS(NS,"path");
+  outline.setAttribute("d",bodyPath);
+  outline.setAttribute("class","coffee-outline");
+  S.appendChild(outline);
+
+  // lid: a trapezoid sitting on top + a small lip
+  const lid=document.createElementNS(NS,"g");
+  lid.setAttribute("class","coffee-lid");
+  lid.innerHTML=
+    `<path d="M ${tL.l-6} ${topY} L ${tL.r+6} ${topY} L ${tL.r-4} ${topY-34} L ${tL.l+4} ${topY-34} Z" fill="#ffffff"/>`+
+    `<rect x="${tL.l+10}" y="${topY-46}" width="${(tL.r-tL.l)-20}" height="14" rx="7" fill="#ffffff"/>`;
+  S.appendChild(lid);
+
+  wrap.appendChild(S);
+
+  // percentage labels + optional sub-captions positioned over their band
+  const showLabels = el.bandLabels!==false;
+  if(showLabels){
+    wrap.style.setProperty("--seg-num-color", el.numberColor||"#ffffff");
+    bands.forEach((b,i)=>{
+      const midFrac=((i+0.5)*bandH+topY)/300;     // 0..1 down the box
+      if(b.label){
+        const lab=document.createElement("div");
+        lab.className="coffee-band-num";
+        lab.style.top=(midFrac*100).toFixed(2)+"%";
+        lab.textContent=b.label;
+        wrap.appendChild(lab);
+      }
+      if(b.sub){
+        const sub=document.createElement("div");
+        sub.className="coffee-band-sub";
+        sub.style.top=(midFrac*100).toFixed(2)+"%";
+        sub.innerHTML=escHTML(b.sub).replace(/\n/g,"<br>");
+        wrap.appendChild(sub);
+      }
+    });
+  }
+  return wrap;
+}
+
+/* ── Icon node (white disc + line icon + caption) ────────────────────── */
+const NODE_ICONS = {
+  mug:   `<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M30 44 h34 v22 a17 17 0 0 1 -34 0 Z"/><path d="M64 48 h10 a9 9 0 0 1 0 18 h-10"/><path d="M40 30 q5 -7 0 -14 M52 30 q5 -7 0 -14"/></g>`,
+  pot:   `<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M34 46 h30 l-3 26 a12 12 0 0 1 -24 0 Z"/><path d="M64 50 l14 -8 M70 40 l8 -2"/><path d="M40 46 h24"/></g>`,
+  carton:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linejoin="round"><path d="M34 40 h22 v34 h-22 Z"/><path d="M34 40 l11 -10 l11 10"/><circle cx="45" cy="58" r="5"/><path d="M60 46 h12 v28 h-12 Z"/></g>`,
+  box:   `<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linejoin="round"><path d="M30 44 l24 -10 l24 10 l-24 10 Z"/><path d="M30 44 v22 l24 10 v-22 Z"/><path d="M78 44 v22 l-24 10 v-22 Z"/></g>`,
+  beans: `<g fill="none" stroke="#1f5e86" stroke-width="4.5" stroke-linecap="round"><ellipse cx="44" cy="50" rx="11" ry="16" transform="rotate(-24 44 50)"/><path d="M44 38 q-4 12 0 24" transform="rotate(-24 44 50)"/><ellipse cx="64" cy="58" rx="11" ry="16" transform="rotate(-24 64 58)"/><path d="M64 46 q-4 12 0 24" transform="rotate(-24 64 58)"/></g>`,
+  clipboard:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linejoin="round"><rect x="34" y="32" width="32" height="40" rx="4"/><rect x="42" y="26" width="16" height="9" rx="3" fill="#1f5e86"/><path d="M40 46 h20 M40 54 h20 M40 62 h12"/></g>`,
+  megaphone:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linejoin="round"><path d="M34 46 v10 h8 l22 12 V34 l-22 12 Z"/><path d="M42 56 v10 h6 v-8"/><path d="M70 44 q8 6 0 16"/></g>`,
+  plane:`<g fill="#1f5e86"><path d="M30 50 L76 32 L60 72 L52 58 Z"/><path d="M52 58 L60 72 L48 66 Z" opacity=".55"/></g>`,
+  person:`<g fill="#1f5e86"><circle cx="50" cy="40" r="10"/><path d="M32 70 a18 18 0 0 1 36 0 Z"/></g>`,
+  handshake:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M30 46 l10 -4 l10 6 l10 -6 l10 4"/><path d="M40 48 l-8 8 q-2 4 2 6 l10 8 q3 2 6 0 l12 -10"/><path d="M50 56 l8 7 M44 62 l6 5"/></g>`,
+  diamond:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linejoin="round"><path d="M36 38 h28 l10 12 -24 26 -24 -26 Z"/><path d="M26 50 h48 M44 38 l-8 12 14 26 M64 38 l8 12 -14 26"/></g>`,
+  bulb:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M50 28 a16 16 0 0 1 10 28 v6 h-20 v-6 a16 16 0 0 1 10 -28 Z"/><path d="M44 70 h12 M46 76 h8"/></g>`,
+  briefcase:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linejoin="round"><rect x="30" y="44" width="40" height="28" rx="4"/><path d="M42 44 v-6 h16 v6"/><path d="M30 56 h40"/></g>`,
+  clock:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linecap="round"><circle cx="50" cy="52" r="22"/><path d="M50 40 v12 l8 6"/></g>`,
+  chart:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M32 70 V50 M46 70 V42 M60 70 V34"/><path d="M30 40 l14 -8 l10 4 l18 -12"/></g>`,
+  search:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linecap="round"><circle cx="46" cy="48" r="14"/><path d="M57 59 l12 12"/></g>`,
+  dollar:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linecap="round"><path d="M58 40 q-16 -6 -16 6 q0 8 16 8 q16 0 16 8 q0 12 -16 6"/><path d="M50 32 v44"/></g>`,
+};
+// Food icons (FOOD_ICONS) are merged into the node-icon set just below where
+// FOOD_ICONS is defined, so info_node can also carry an orange/bread/etc.
+function renderInfoNode(el){
+  const icon = NODE_ICONS[el.nodeIcon] || NODE_ICONS.mug;
+  const wrap=document.createElement("div");
+  wrap.className="info-node"+(el.objAnim===false?" info-static":"");
+  if(el.nodeTextColor) wrap.style.setProperty("--node-text", el.nodeTextColor);
+  const title = el.nodeTitle || "Lorem ipsum";
+  const body  = el.nodeText  || "dolor sit amet, consectetuer";
+  wrap.innerHTML=
+    `<svg class="info-node-svg" viewBox="0 0 108 108"><circle cx="54" cy="48" r="46" fill="#ffffff"/>${icon}</svg>`+
+    `<div class="info-node-cap"><b>${escHTML(title)}</b><span>${escHTML(body)}</span></div>`;
+  return wrap;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Food-infographic objects.
+   Reusable building blocks modelled on the three uploaded references:
+     • diet_plate  — a pie chart resting on a white plate, with a fork on
+       the left and a knife on the right (the "Balanced Diet" reference).
+     • food_wheel  — a segmented donut with per-segment % labels and a
+       centred title (the "Healthy Food" reference). Pairs with info_node
+       circles + the FOOD_ICONS set for the radial food callouts.
+   Colours/labels are fully editable through each object's `segments` array.
+   ──────────────────────────────────────────────────────────────────── */
+
+/* Flat colour food/utensil icons (originals) in a 0..100 viewBox. */
+const FOOD_ICONS = {
+  orange: `<circle cx="50" cy="50" r="34" fill="#f59e0b"/><circle cx="50" cy="50" r="26" fill="#fbbf24"/>`+
+    Array.from({length:8},(_,i)=>{const a=i*Math.PI/4;return `<path d="M50 50 L${(50+26*Math.cos(a)).toFixed(1)} ${(50+26*Math.sin(a)).toFixed(1)}" stroke="#f59e0b" stroke-width="2"/>`;}).join("")+
+    `<circle cx="50" cy="50" r="5" fill="#fff7ed"/>`,
+  bread:  `<path d="M24 54 q0 -26 26 -26 q26 0 26 26 v18 q0 4 -4 4 H28 q-4 0 -4 -4 Z" fill="#f4c542"/><path d="M30 58 q0 -18 20 -18 q20 0 20 18" fill="none" stroke="#e0a82e" stroke-width="2"/><circle cx="42" cy="52" r="2.5" fill="#e0a82e"/><circle cx="56" cy="58" r="2.5" fill="#e0a82e"/><circle cx="50" cy="46" r="2" fill="#e0a82e"/>`,
+  milk:   `<path d="M40 30 h20 v8 l6 10 v26 q0 4 -4 4 H38 q-4 0 -4 -4 V48 l6 -10 Z" fill="#dbeafe"/><rect x="40" y="54" width="20" height="14" fill="#fff"/><path d="M40 30 h20 v8 H40 Z" fill="#bfdbfe"/>`,
+  cheese: `<path d="M28 60 L66 44 q8 -3 8 6 v16 q0 4 -4 4 H32 q-4 0 -4 -4 Z" fill="#fbbf24"/><circle cx="44" cy="60" r="3" fill="#f59e0b"/><circle cx="56" cy="56" r="2.5" fill="#f59e0b"/><circle cx="62" cy="64" r="2" fill="#f59e0b"/>`,
+  meat:   `<ellipse cx="52" cy="52" rx="22" ry="16" fill="#e8503a"/><ellipse cx="52" cy="52" rx="14" ry="9" fill="#f08a78"/><path d="M30 46 q-12 -6 -16 2 q8 2 10 8" fill="#f4f4f4" stroke="#d8d8d8" stroke-width="1.5"/>`,
+  broccoli:`<rect x="46" y="56" width="8" height="18" rx="3" fill="#86b94b"/><circle cx="42" cy="46" r="11" fill="#4c8c3f"/><circle cx="58" cy="46" r="11" fill="#4c8c3f"/><circle cx="50" cy="38" r="12" fill="#5a9e48"/>`,
+  apple:  `<path d="M50 36 q-16 -2 -16 18 q0 18 16 22 q16 -4 16 -22 q0 -20 -16 -18 Z" fill="#e8503a"/><path d="M50 36 q2 -8 8 -10" fill="none" stroke="#4c8c3f" stroke-width="3" stroke-linecap="round"/><ellipse cx="60" cy="30" rx="6" ry="3" fill="#5a9e48" transform="rotate(-20 60 30)"/>`,
+  fish:   `<path d="M28 50 q14 -16 36 0 q-14 16 -36 0 Z" fill="#7cc6e0"/><path d="M64 50 l12 -9 v18 Z" fill="#5bb0cf"/><circle cx="40" cy="47" r="2.5" fill="#0e4a5e"/>`,
+};
+// info_node can carry any food icon too (orange/bread/milk/cheese/meat/…).
+if(typeof NODE_ICONS!=="undefined") Object.assign(NODE_ICONS, FOOD_ICONS);
+
+/* ── diet_plate: pie on a plate with fork + knife ────────────────────── */
+function dietSegments(el){
+  const def=[
+    {label:"40%",sub:"fruits & vegetables",color:"#a9cf5a"},
+    {label:"25%",sub:"cellulose",color:"#bfa074"},
+    {label:"25%",sub:"protein",color:"#8fd0d8"},
+    {label:"10%",sub:"fats",color:"#f5cd2a"},
+  ];
+  let segs=Array.isArray(el.segments)&&el.segments.length?el.segments:def;
+  return segs.slice(0,10).map(s=>({label:s.label||"",sub:s.sub||"",color:s.color||"#cccccc",value:Number(s.value)|| (parseFloat(s.label)||1)}));
+}
+function renderDietPlate(el){
+  const segs=dietSegments(el);
+  const wrap=document.createElement("div");
+  wrap.className="diet-plate"+(el.objAnim===false?" diet-static":"");
+  const NS="http://www.w3.org/2000/svg";
+  const S=document.createElementNS(NS,"svg");
+  S.setAttribute("viewBox","0 0 400 360");
+  S.setAttribute("class","diet-plate-svg");
+  S.setAttribute("preserveAspectRatio","xMidYMid meet");
+  const showUtensils = el.utensils!==false;
+  let inner="";
+  // fork (left) and knife (right)
+  if(showUtensils){
+    inner+=`<g fill="#5b5f63">`+
+      // fork
+      `<rect x="40" y="150" width="9" height="150" rx="4"/>`+
+      `<path d="M30 96 v40 q0 10 14 12 q14 -2 14 -12 v-40 h-4 v36 h-3 v-36 h-4 v36 h-3 v-36 h-4 v36 h-3 v-36 Z"/>`+
+      // knife
+      `<rect x="351" y="150" width="9" height="150" rx="4"/>`+
+      `<path d="M348 96 q22 4 22 40 q0 16 -10 18 V96 Z"/>`+
+    `</g>`;
+  }
+  // plate: two soft discs
+  inner+=`<circle cx="200" cy="186" r="150" fill="#ffffff"/>`+
+         `<circle cx="200" cy="186" r="150" fill="none" stroke="#e9edef" stroke-width="2"/>`+
+         `<circle cx="200" cy="186" r="120" fill="#fbfdfd" stroke="#eef2f3" stroke-width="2"/>`;
+  // pie
+  const cx=200, cy=186, r=108;
+  const total=Math.max(1,segs.reduce((a,s)=>a+s.value,0));
+  let a0=-Math.PI/2;
+  segs.forEach((s,i)=>{
+    const ang=(s.value/total)*Math.PI*2, a1=a0+ang;
+    const x0=(cx+r*Math.cos(a0)).toFixed(2), y0=(cy+r*Math.sin(a0)).toFixed(2);
+    const x1=(cx+r*Math.cos(a1)).toFixed(2), y1=(cy+r*Math.sin(a1)).toFixed(2);
+    const large=ang>Math.PI?1:0;
+    inner+=`<path class="diet-slice" style="--i:${i}" d="M ${cx} ${cy} L ${x0} ${y0} A ${r} ${r} 0 ${large} 1 ${x1} ${y1} Z" fill="${s.color}"/>`;
+    a0=a1;
+  });
+  S.innerHTML=inner;
+  wrap.appendChild(S);
+  // labels positioned over each slice (HTML so they scale + wrap)
+  a0=-Math.PI/2;
+  segs.forEach(s=>{
+    const ang=(s.value/total)*Math.PI*2, mid=a0+ang/2; a0+=ang;
+    const lx=(cx+r*0.6*Math.cos(mid))/400*100, ly=(cy+r*0.6*Math.sin(mid))/360*100;
+    const lab=document.createElement("div");
+    lab.className="diet-label";
+    lab.style.left=lx.toFixed(2)+"%"; lab.style.top=ly.toFixed(2)+"%";
+    lab.innerHTML=`<b>${escHTML(s.label)}</b>${s.sub?`<span>${escHTML(s.sub)}</span>`:""}`;
+    wrap.appendChild(lab);
+  });
+  return wrap;
+}
+
+/* ── food_wheel: segmented donut with % labels + centre title ────────── */
+function wheelSegments(el){
+  const def=[
+    {label:"15%",color:"#e8821e"},
+    {label:"10%",color:"#f5cd2a"},
+    {label:"35%",color:"#5a9e48"},
+    {label:"25%",color:"#e8503a"},
+    {label:"20%",color:"#5bb0cf"},
+  ];
+  let segs=Array.isArray(el.segments)&&el.segments.length?el.segments:def;
+  return segs.slice(0,12).map(s=>({label:s.label||"",color:s.color||"#cccccc",value:Number(s.value)||(parseFloat(s.label)||1)}));
+}
+function renderFoodWheel(el){
+  const segs=wheelSegments(el);
+  const wrap=document.createElement("div");
+  wrap.className="food-wheel"+(el.objAnim===false?" food-wheel-static":"");
+  const NS="http://www.w3.org/2000/svg";
+  const S=document.createElementNS(NS,"svg");
+  S.setAttribute("viewBox","0 0 400 400");
+  S.setAttribute("class","food-wheel-svg");
+  S.setAttribute("preserveAspectRatio","xMidYMid meet");
+  const cx=200, cy=200, rOut=180, rIn=104, gap=0.018;
+  const total=Math.max(1,segs.reduce((a,s)=>a+s.value,0));
+  const pol=(r,a)=>[cx+r*Math.cos(a),cy+r*Math.sin(a)];
+  let a0=-Math.PI/2, inner="";
+  const mids=[];
+  segs.forEach((s,i)=>{
+    const ang=(s.value/total)*Math.PI*2;
+    const s0=a0+gap, s1=a0+ang-gap;
+    const [x0,y0]=pol(rOut,s0), [x1,y1]=pol(rOut,s1);
+    const [x2,y2]=pol(rIn,s1),  [x3,y3]=pol(rIn,s0);
+    const large=(s1-s0)>Math.PI?1:0;
+    inner+=`<path class="fw-seg" style="--i:${i}" fill="${s.color}" d="M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${rOut} ${rOut} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)} L ${x2.toFixed(2)} ${y2.toFixed(2)} A ${rIn} ${rIn} 0 ${large} 0 ${x3.toFixed(2)} ${y3.toFixed(2)} Z"/>`;
+    mids.push({a:a0+ang/2,label:s.label});
+    a0+=ang;
+  });
+  // inner hole
+  inner+=`<circle cx="${cx}" cy="${cy}" r="${rIn-6}" fill="${el.centerFill||"#f3f5ed"}"/>`;
+  S.innerHTML=inner;
+  wrap.appendChild(S);
+  // % labels on each segment
+  mids.forEach(m=>{
+    if(!m.label) return;
+    const rm=(rOut+rIn)/2;
+    const lx=(cx+rm*Math.cos(m.a))/400*100, ly=(cy+rm*Math.sin(m.a))/400*100;
+    const lab=document.createElement("div");
+    lab.className="fw-label";
+    lab.style.left=lx.toFixed(2)+"%"; lab.style.top=ly.toFixed(2)+"%";
+    lab.style.color=el.numberColor||"#ffffff";
+    lab.textContent=m.label;
+    wrap.appendChild(lab);
+  });
+  // centre title
+  if(el.centerTitle!==""){
+    const c=document.createElement("div");
+    c.className="fw-center";
+    const t=(el.centerTitle||"HEALTHY\nFOOD").split("\n");
+    c.innerHTML=t.map((line,i)=>`<span class="${i===t.length-1?"fw-c2":"fw-c1"}">${escHTML(line)}</span>`).join("");
+    c.style.color=el.centerColor||"#4c8c3f";
+    wrap.appendChild(c);
+  }
+  return wrap;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Funnel objects.
+   funnel_stack — an inverted stack of trapezoid bands (the classic sales /
+   conversion funnel). Editable band count, per-band colour + label, an
+   optional gap between bands (the floating-segments look), and a subtle 3D
+   top-ellipse + side shading. Reusable on any slide; pairs with info_node
+   for the side callouts.
+   ──────────────────────────────────────────────────────────────────── */
+
+const FUNNEL_PALETTE = ["#2f4fb0","#1f9e8a","#d83a3a","#e08a1e","#1f9e5a","#6f5aa8","#3aa0d8"];
+
+function funnelBands(el){
+  const def=[
+    {label:"01",color:"#2f4fb0"},
+    {label:"02",color:"#1f9e8a"},
+    {label:"03",color:"#d83a3a"},
+    {label:"04",color:"#e08a1e"},
+    {label:"05",color:"#1f9e5a"},
+  ];
+  let bands = Array.isArray(el.bands)&&el.bands.length ? el.bands : def;
+  return bands.slice(0,9).map((b,i)=>({label:b.label!=null?b.label:"",color:b.color||FUNNEL_PALETTE[i%FUNNEL_PALETTE.length],value:b.value}));
+}
+
+function renderFunnelStack(el){
+  const bands=funnelBands(el);
+  const n=bands.length;
+  const gap = el.funnelGap!=null ? Number(el.funnelGap) : 8;   // vertical gap between bands (viewBox units)
+  const pointed = el.funnelTip!==false;                         // last band tapers to a point
+  const ellipse = el.funnel3d===true;                           // 3D top ellipse + segment caps
+  const proportional = el.funnelProportional===true;            // band height tracks value
+  const wrap=document.createElement("div");
+  wrap.className="funnel-stack"+(el.objAnim===false?" funnel-static":"");
+  const NS="http://www.w3.org/2000/svg";
+  const VW=400, VH=400;
+  const S=document.createElementNS(NS,"svg");
+  S.setAttribute("viewBox",`0 0 ${VW} ${VH}`);
+  S.setAttribute("class","funnel-stack-svg");
+  S.setAttribute("preserveAspectRatio","xMidYMid meet");
+  const cx=VW/2;
+  const topHalf=190, tipHalf=pointed?0:36;          // half-widths top→bottom
+  const usableH=VH-12;
+  // band heights: equal by default, or proportional to value when requested
+  const valOf=(b)=>{const v=Number(b.value); return isFinite(v)&&v>0?v:(parseFloat(b.label)||1);};
+  const totalV=bands.reduce((a,b)=>a+valOf(b),0)||n;
+  const heights=bands.map((b,i)=> proportional ? (usableH-gap*(n-1))*(valOf(b)/totalV) : (usableH-gap*(n-1))/n );
+  // cumulative fraction boundaries for the taper (0..1 down the funnel)
+  const fracBounds=[0]; let acc=0;
+  heights.forEach(h=>{ acc+=h; fracBounds.push(acc/(usableH-gap*(n-1))); });
+  const halfAt=(frac)=> topHalf + (tipHalf-topHalf)*frac;   // frac 0..1 down the funnel
+  let inner="", yCur=6;
+  const bandMids=[];
+  bands.forEach((b,i)=>{
+    const y0=yCur, y1=y0+heights[i]; yCur=y1+gap;
+    const tH=halfAt(fracBounds[i]), bH=halfAt(fracBounds[i+1]);
+    const last=(i===n-1);
+    bandMids.push((y0+y1)/2);
+    if(last && pointed){
+      inner+=`<path class="funnel-band" style="--i:${i}" fill="${b.color}" d="M ${cx-tH} ${y0} L ${cx+tH} ${y0} L ${cx} ${y1} Z"/>`;
+    }else{
+      inner+=`<path class="funnel-band" style="--i:${i}" fill="${b.color}" d="M ${cx-tH} ${y0} L ${cx+tH} ${y0} L ${cx+bH} ${y1} L ${cx-bH} ${y1} Z"/>`;
+      if(ellipse){
+        inner+=`<path class="funnel-cap" d="M ${cx-bH} ${y1} A ${bH} 7 0 0 0 ${cx+bH} ${y1} A ${bH} 7 0 0 0 ${cx-bH} ${y1} Z" fill="${b.color}" opacity=".55"/>`;
+      }
+    }
+    if(ellipse && i===0){
+      inner+=`<ellipse class="funnel-top" cx="${cx}" cy="${y0}" rx="${tH}" ry="9" fill="${b.color}" opacity=".75"/>`;
+    }
+  });
+  S.innerHTML=inner;
+  wrap.appendChild(S);
+
+  // band labels (HTML so they scale + wrap)
+  const showLabels = el.bandLabels!==false;
+  if(showLabels){
+    wrap.style.setProperty("--funnel-num-color", el.numberColor||"#ffffff");
+    bands.forEach((b,i)=>{
+      if(b.label==="") return;
+      const midFrac=bandMids[i]/VH;
+      const lab=document.createElement("div");
+      lab.className="funnel-band-num";
+      lab.style.top=(midFrac*100).toFixed(2)+"%";
+      lab.textContent=b.label;
+      wrap.appendChild(lab);
+    });
+  }
+  return wrap;
+}
+
 function renderCountGrid(el){
   const wrap=document.createElement("div");wrap.className="object-grid";
   const n=miniCount(el.count, el.objectType==="wall" ? 80 : 120);
@@ -4521,6 +5217,11 @@ function renderObject(el){
   const scale = clamp(Number(el.objScale)||1, 0.4, 4);
   box.style.setProperty("--obj-scale", scale);
   if(scale!==1) box.classList.add("object-scaled");
+  // Editable readout styling. These override the built-in per-object
+  // defaults only when set; an empty colour / 0 size means "use default".
+  if(el.numberColor) box.style.setProperty("--num-color", el.numberColor);
+  const nSize = Number(el.numberSize)||0;
+  if(nSize>0){ box.style.setProperty("--num-size", nSize+"px"); box.classList.add("object-num-fixed"); }
 
   // ── inner visual ─────────────────────────────────────────────────
   let art;
@@ -4530,13 +5231,21 @@ function renderObject(el){
   else if(el.objectType==="gauge") art=renderGauge(el,showValue);
   else if(el.objectType==="sdg_wheel" || el.objectType==="sdg") art=renderSdgWheel(el);
   else if(el.objectType==="sdg_tiles") art=renderSdgTiles(el);
+  else if(el.objectType==="coffee_segments") art=renderCoffeeSegments(el);
+  else if(el.objectType==="info_node") art=renderInfoNode(el);
+  else if(el.objectType==="diet_plate") art=renderDietPlate(el);
+  else if(el.objectType==="food_wheel") art=renderFoodWheel(el);
+  else if(el.objectType==="funnel_stack") art=renderFunnelStack(el);
   else if(d.shape && VESSEL_PATHS[d.shape]) art=renderVessel(el,d.shape);
   else art=renderCountGrid(el);
   art.classList.add("object-art");
   box.appendChild(art);
 
   // SDG composites carry their own captions/labels — skip the generic badge.
-  if(el.objectType==="sdg_wheel" || el.objectType==="sdg_tiles" || el.objectType==="sdg") return box;
+  if(el.objectType==="sdg_wheel" || el.objectType==="sdg_tiles" || el.objectType==="sdg"
+     || el.objectType==="coffee_segments" || el.objectType==="info_node"
+     || el.objectType==="diet_plate" || el.objectType==="food_wheel"
+     || el.objectType==="funnel_stack") return box;
 
   // ── the number + label (independent) ─────────────────────────────
   const pos = el.numberPos || (d.fill?"onfill":"below");

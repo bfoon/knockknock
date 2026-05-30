@@ -89,6 +89,7 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             "draw": self._on_draw,
             "clear_draw": self._on_clear_draw,
             "group_display": self._on_group_display,
+            "request_overview": self._on_request_overview,
             "fullscreen": self._on_fullscreen,
             "ping": self._on_ping,
             "room_join_request": self._on_room_join_request,
@@ -507,6 +508,74 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 "payload": {"type": "fullscreen"},
             },
         )
+
+    async def _on_request_overview(self, msg):
+        """Presenter opened the group/overview grid.
+
+        Returns EVERY question in the deck with its real choice labels and the
+        accumulated answer counts, so the overview grid shows actual data
+        instead of empty placeholder bars.
+        """
+        if self.role != "presenter":
+            return
+
+        overview = await self._build_overview(self.session_pk)
+        await self.send_json({
+            "type": "overview",
+            "questions": overview,
+        })
+
+    @database_sync_to_async
+    def _build_overview(self, session_pk):
+        try:
+            session = (
+                LiveSession.objects
+                .select_related("questionnaire", "quiz")
+                .get(pk=session_pk)
+            )
+        except LiveSession.DoesNotExist:
+            return []
+
+        out = []
+        for idx, q in enumerate(session.questions()):
+            qid = q.id
+            qtype = getattr(q, "type", None) or getattr(q, "question_type", "mcq")
+
+            # Real choice labels (poll or game).
+            labels = []
+            try:
+                if session.kind == "poll":
+                    for c in self._poll_choices_payload(q):
+                        labels.append({"id": str(c.get("id")), "text": c.get("text", "")})
+                else:
+                    for c in self._game_choices_payload(q, "presenter"):
+                        labels.append({"id": str(c.get("id")), "text": c.get("text", "")})
+            except Exception:
+                labels = []
+
+            # Real accumulated tally from the DB.
+            try:
+                tally = self._sync_tally(session, qid)
+            except Exception:
+                tally = {"counts": {}, "texts": []}
+
+            counts = tally.get("counts", {}) if isinstance(tally, dict) else {}
+            text_n = len(tally.get("texts", []) or []) if isinstance(tally, dict) else 0
+            total_answers = sum(counts.values()) + text_n
+
+            out.append({
+                "index": idx,
+                "id": str(qid),
+                "text": getattr(q, "text", "") or f"Question {idx + 1}",
+                "type": str(qtype),
+                "chart_type": getattr(q, "chart_type", "bar") or "bar",
+                "labels": labels,
+                "counts": counts,
+                "text_count": text_n,
+                "total": total_answers,
+            })
+
+        return out
 
     async def _on_ping(self, msg):
         await self.send_json({

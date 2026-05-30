@@ -245,6 +245,10 @@
           showEnded();
           break;
 
+        case "overview":
+          onOverview(msg);
+          break;
+
         case "draw":
           // handled by draw_overlay if your app broadcasts it elsewhere
           break;
@@ -1742,73 +1746,128 @@
           }
         }
       } else {
+        // Ask the server for every question's real labels + accumulated
+        // counts, then render. renderGroup() shows a loading state until the
+        // "overview" message arrives and calls renderGroupFrom().
         renderGroup();
+        send({ type: "request_overview" });
         show("group");
       }
     });
   }
 
-  function renderGroup() {
-    if (!currentState || !groupGrid) return;
+  // Holds the most recent overview from the server + live Chart instances so
+  // we can destroy them before re-rendering (avoids canvas reuse errors).
+  let latestOverview = null;
+  let groupCharts = [];
 
+  function destroyGroupCharts() {
+    groupCharts.forEach(c => { try { c.destroy(); } catch (e) {} });
+    groupCharts = [];
+  }
+
+  function renderGroup() {
+    // Loading placeholder shown until the "overview" message arrives.
+    if (!groupGrid) return;
+    destroyGroupCharts();
+    groupGrid.innerHTML = `
+      <div class="kk-group-loading" style="grid-column:1/-1; text-align:center;
+           color:rgba(203,213,225,.8); font-weight:700; padding:2rem;">
+        Loading results overview…
+      </div>`;
+    // If we already have a cached overview, render it immediately (it'll be
+    // refreshed when the new message lands).
+    if (latestOverview) renderGroupFrom(latestOverview);
+  }
+
+  function onOverview(msg) {
+    latestOverview = Array.isArray(msg.questions) ? msg.questions : [];
+    // Only paint if the group view is actually visible.
+    if (views.group && views.group.style.display === "block") {
+      renderGroupFrom(latestOverview);
+    }
+  }
+
+  const GROUP_COLORS = ["#7c3aed", "#22d3ee", "#fb7185", "#fbbf24", "#34d399", "#60a5fa", "#f472b6", "#a3e635"];
+
+  function renderGroupFrom(questions) {
+    if (!groupGrid) return;
+    destroyGroupCharts();
     groupGrid.innerHTML = "";
 
-    const total = Number(currentState.total || 0);
+    if (!questions || !questions.length) {
+      groupGrid.innerHTML = `
+        <div style="grid-column:1/-1; text-align:center; color:rgba(203,213,225,.7);
+             font-weight:700; padding:2rem;">No questions in this deck yet.</div>`;
+      return;
+    }
 
-    for (let i = 0; i < total; i++) {
+    questions.forEach((q, i) => {
       const tile = document.createElement("div");
       tile.className = "kk-group-tile";
-      tile.innerHTML = `
-        <div class="kk-group-tile-title">Q${i + 1}</div>
-        <canvas height="180"></canvas>
-      `;
 
+      const totalAnswers = Number(q.total || 0);
+      const titleText = q.text ? String(q.text) : `Question ${i + 1}`;
+
+      // Build labels + values from REAL data.
+      const choiceLabels = Array.isArray(q.labels) ? q.labels : [];
+      const counts = q.counts || {};
+
+      let labels, values;
+      if (choiceLabels.length) {
+        labels = choiceLabels.map(c => c.text || "—");
+        values = choiceLabels.map(c => Number(counts[String(c.id)] || 0));
+      } else {
+        // Non-choice types (word/open/numeric): show the count buckets we have,
+        // or a single "responses" bar from text_count.
+        const keys = Object.keys(counts);
+        if (keys.length) {
+          labels = keys;
+          values = keys.map(k => Number(counts[k] || 0));
+        } else {
+          labels = ["Responses"];
+          values = [Number(q.text_count || 0)];
+        }
+      }
+
+      tile.innerHTML = `
+        <div class="kk-group-tile-title" title="${escapeHtml(titleText)}">
+          Q${i + 1}. ${escapeHtml(titleText.length > 40 ? titleText.slice(0, 39) + "…" : titleText)}
+          <span style="opacity:.6; font-weight:600;"> · ${totalAnswers}</span>
+        </div>
+        <div class="kk-group-canvas-wrap" style="position:relative; height:180px;">
+          <canvas></canvas>
+        </div>
+      `;
       groupGrid.appendChild(tile);
 
       const canvas = tile.querySelector("canvas");
-      const labels = ["A", "B", "C", "D"];
-      const values = labels.map(() => 0);
-
-      new Chart(canvas, {
+      const chart = new Chart(canvas, {
         type: "bar",
         data: {
           labels,
           datasets: [{
             data: values,
-            backgroundColor: ["#7c3aed", "#22d3ee", "#fb7185", "#fbbf24"],
+            backgroundColor: labels.map((_, idx) => GROUP_COLORS[idx % GROUP_COLORS.length]),
             borderRadius: 6,
           }],
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: {
-            legend: {
-              display: false,
-            },
-          },
+          animation: false,
+          plugins: { legend: { display: false } },
           scales: {
-            x: {
-              ticks: {
-                color: "#cbd5e1",
-              },
-              grid: {
-                color: "rgba(255,255,255,.08)",
-              },
-            },
-            y: {
-              beginAtZero: true,
-              ticks: {
-                color: "#cbd5e1",
-              },
-              grid: {
-                color: "rgba(255,255,255,.08)",
-              },
-            },
+            x: { ticks: { color: "#cbd5e1", maxRotation: 0,
+                 callback: function (v) { const s = this.getLabelForValue(v); return s.length > 8 ? s.slice(0, 7) + "…" : s; } },
+                 grid: { color: "rgba(255,255,255,.08)" } },
+            y: { beginAtZero: true, ticks: { color: "#cbd5e1", precision: 0 },
+                 grid: { color: "rgba(255,255,255,.08)" } },
           },
         },
       });
-    }
+      groupCharts.push(chart);
+    });
   }
 
   // ─────────────────────── Drawing tools ───────────────────────

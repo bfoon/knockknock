@@ -1987,6 +1987,20 @@ function exportStandaloneHTML(){
   download((Deck.title||"deck").replace(/\s+/g,"_")+".html",new Blob([html],{type:"text/html"}));
   toast("Exported standalone HTML");
 }
+async function exportPowerPoint(){
+  // The .pptx is built server-side from the saved deck (real editable charts,
+  // shapes, notes), so flush any pending edits first, then trigger the
+  // download by navigating to the export endpoint.
+  const url = (window.__HANNS__ && window.__HANNS__.powerpointExportUrl) || "";
+  if(!url){ toast("PowerPoint export URL is missing"); return; }
+  toast("Preparing PowerPoint…");
+  try{ await saveDeck(true); }catch(_){ /* still try to export last saved state */ }
+  // A hidden iframe download keeps the editor open (no full navigation away).
+  let f=document.getElementById("hanns-pptx-dl");
+  if(!f){ f=document.createElement("iframe"); f.id="hanns-pptx-dl"; f.style.display="none"; document.body.appendChild(f); }
+  f.src=url;
+  toast("Exported PowerPoint");
+}
 
 /* ── AI Slide Generator ───────────────────────────────────────────── */
 function ensureAiSlideModal(){
@@ -2439,6 +2453,7 @@ function init(){
   $$("[data-close-modal]").forEach(b=>b.addEventListener("click",()=>$("#export-modal").classList.remove("on")));
   $("#export-json")&&$("#export-json").addEventListener("click",()=>{exportJSON();$("#export-modal").classList.remove("on");});
   $("#export-html")&&$("#export-html").addEventListener("click",()=>{exportStandaloneHTML();$("#export-modal").classList.remove("on");});
+  $("#export-pptx")&&$("#export-pptx").addEventListener("click",()=>{exportPowerPoint();$("#export-modal").classList.remove("on");});
 
   // AI Slide Generator — wired to the ✦ AI Design button in the topbar
   $("#btn-ai-design")&&$("#btn-ai-design").addEventListener("click",openAiSlideModal);

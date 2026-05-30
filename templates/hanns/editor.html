@@ -345,9 +345,10 @@ body.hanns-options-open .drawer{
   <div class="modal-card">
     <button class="modal-x" data-close-modal type="button">✕</button>
     <h3>Export <span id="export-deckname">{{ deck.title|escape }}</span></h3>
-    <p>Download a backup JSON or a standalone browser presentation.</p>
+    <p>Download a backup JSON, a standalone browser presentation, or a PowerPoint file.</p>
     <button class="tbtn primary" id="export-json" type="button">Download .hanns JSON</button>
     <button class="tbtn" id="export-html" type="button">Download standalone HTML</button>
+    <button class="tbtn" id="export-pptx" type="button">Download PowerPoint (.pptx)</button>
   </div>
 </div>
 
@@ -357,6 +358,7 @@ body.hanns-options-open .drawer{
     saveUrl: "{% url 'hanns:save' deck.code %}",
     imageUploadUrl: "{% url 'hanns:image_upload' deck.code %}",
     powerpointImportUrl: "{% url 'hanns:powerpoint_import' deck.code %}",
+    powerpointExportUrl: "{% url 'hanns:powerpoint_export' deck.code %}",
     presentUrl: "{% url 'hanns:present' deck.code %}",
     inviteUrl: "{% url 'hanns:invite' deck.code %}",
     editorWsUrl: (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/hanns/{{ deck.code }}/",

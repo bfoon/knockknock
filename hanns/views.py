@@ -39,6 +39,8 @@ from django.utils import timezone
 from .models import Deck, Slide, DeckCollaborator, DeckInvite, DeckReaction
 from .onboarding import ensure_hanns_starter_deck
 from .powerpoint_importer import import_powerpoint_into_deck
+from .powerpoint_exporter import export_deck_to_pptx, export_filename
+from .html_exporter import export_deck_to_html, html_export_filename
 
 
 def _join_url(request, deck):
@@ -446,6 +448,84 @@ def deck_present(request, code):
         "control_url": _control_url(request, deck),
         "control_pin": _control_pin(deck),
     })
+
+
+@login_required
+def deck_export_powerpoint(request, code):
+    """Download the deck as a .pptx file.
+
+    Exports every slide and element (text, images, shapes, lines, charts) plus
+    speaker notes. Available to the owner and edit-collaborators.
+    """
+    deck = get_object_or_404(Deck, code=code.upper())
+    if not _can_edit_deck(request.user, deck):
+        return HttpResponseForbidden("You do not have access to export this deck.")
+
+    try:
+        buf = export_deck_to_pptx(deck)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+
+    from django.http import FileResponse
+    response = FileResponse(
+        buf,
+        as_attachment=True,
+        filename=export_filename(deck),
+        content_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    )
+    return response
+
+
+@login_required
+def deck_export_html(request, code):
+    """Download the deck as a single self-contained .html file.
+
+    The exported file bundles the real Hanns renderer (hanns_core.js +
+    hanns.css), so it looks identical to the editor/stage and plays offline in
+    any browser. Available to the owner and edit-collaborators.
+    """
+    deck = get_object_or_404(Deck, code=code.upper())
+    if not _can_edit_deck(request.user, deck):
+        return HttpResponseForbidden("You do not have access to export this deck.")
+
+    # Read the real static assets so the export uses the SAME renderer the app
+    # ships. We bundle both CSS files (base + rich data) plus the core JS.
+    from django.contrib.staticfiles import finders
+
+    def _read_static(rel):
+        path = finders.find(rel)
+        if not path:
+            return ""
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                return fh.read()
+        except OSError:
+            return ""
+
+    css = _read_static("hanns/css/hanns.css")
+    rich_css = _read_static("hanns/css/hanns_rich_data.css")
+    core_js = _read_static("hanns/js/hanns_core.js")
+
+    if not core_js:
+        return HttpResponseBadRequest(
+            "Could not locate hanns_core.js in static files. Run collectstatic "
+            "or check STATICFILES settings."
+        )
+
+    css_combined = (css or "") + "\n\n" + (rich_css or "")
+    html = export_deck_to_html(
+        deck,
+        css_text=css_combined,
+        core_js_text=core_js,
+        request=request,
+    )
+
+    from django.http import HttpResponse
+    response = HttpResponse(html, content_type="text/html; charset=utf-8")
+    response["Content-Disposition"] = (
+        f'attachment; filename="{html_export_filename(deck)}"'
+    )
+    return response
 
 
 def deck_control(request, code):

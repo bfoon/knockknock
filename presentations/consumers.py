@@ -52,6 +52,11 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
         self.role = None
         self.uid = None
         self.session_pk = None
+        # Per-connection cursor for OPEN (self-paced) mode. In orchestra mode
+        # this is ignored and everyone follows session.current_question_index.
+        # `None` means "not yet started self-pacing" — fall back to the session
+        # index until the participant taps next/back themselves.
+        self.self_index = None
 
         session = await self._get_session(self.code)
         if not session:
@@ -143,6 +148,22 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 )
 
         session = await self._get_session(self.code)
+
+        # In OPEN (self-paced) mode, seed this participant's personal cursor so
+        # they begin at wherever the session currently is, then pace themselves.
+        if (
+            session
+            and self.role == "participant"
+            and session.mode == "open"
+            and self.self_index is None
+        ):
+            if session.state == "running":
+                self.self_index = max(0, session.current_question_index)
+            elif session.state == "lobby":
+                self.self_index = None  # wait in lobby until they tap start
+            else:
+                self.self_index = session.current_question_index
+
         await self.send_json(
             await self._state_payload(session, uid=self.uid, role=self.role)
         )
@@ -361,7 +382,72 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
         )
 
     async def _on_self_advance(self, msg):
-        await self.send_json({"type": "self_advance_ack"})
+        """Open (self-paced) mode: move THIS participant's own cursor.
+
+        Orchestra mode ignores this entirely — participants follow the
+        presenter. In open mode each participant walks the deck at their own
+        speed without affecting anyone else.
+
+        msg.direction: "next" (default) | "back"
+        msg.index:     optional absolute jump (used on first tap from lobby)
+        """
+        if self.role != "participant":
+            await self.send_json({"type": "self_advance_ack"})
+            return
+
+        session = await self._get_session(self.code)
+        if not session:
+            return
+
+        # Only self-pace in open mode. In orchestra mode, ack and do nothing
+        # so the participant stays locked to the presenter's index.
+        if session.mode != "open":
+            await self.send_json({"type": "self_advance_ack", "locked": True})
+            return
+
+        total = await self._question_count(self.session_pk)
+        if total <= 0:
+            await self.send_json({"type": "self_advance_ack", "total": 0})
+            return
+
+        # Starting point: personal cursor if set, else the session index.
+        # If the session is still in lobby (presenter hasn't pressed start),
+        # an open-mode participant may begin the deck themselves at Q0.
+        base = self.self_index
+        if base is None:
+            if session.state == "lobby":
+                base = -1  # first "next" lands on 0
+            else:
+                base = max(0, session.current_question_index)
+
+        # Absolute jump?
+        if msg.get("index") is not None:
+            try:
+                target = int(msg.get("index"))
+            except (TypeError, ValueError):
+                target = base
+        else:
+            direction = (msg.get("direction") or "next").lower()
+            delta = -1 if direction == "back" else +1
+            target = base + delta
+
+        # Past the end → this participant has finished the deck.
+        if target >= total:
+            self.self_index = total  # sentinel = "finished"
+            await self.send_json({
+                "type": "self_finished",
+                "total": total,
+            })
+            return
+
+        target = max(0, min(total - 1, target))
+        self.self_index = target
+
+        # Send this participant their own question view (no group broadcast —
+        # self-pacing is private to this connection).
+        await self.send_json(
+            await self._state_payload(session, uid=self.uid, role=self.role)
+        )
 
     async def _on_draw(self, msg):
         if self.role != "presenter":
@@ -454,6 +540,21 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
     async def broadcast(self, event):
         payload = event["payload"]
 
+        # A replay rewinds the session to the lobby (see presentations.views
+        # .replay). Reset this connection's self-paced cursor so participants
+        # restart cleanly, then hand them a fresh state payload instead of the
+        # bare "replay" notice.
+        if payload.get("type") == "replay":
+            self.self_index = None
+            session = await self._get_session(self.code)
+            if session:
+                payload = await self._state_payload(
+                    session, uid=self.uid, role=self.role
+                )
+            else:
+                await self.send_json({"type": "replay"})
+                return
+
         if payload.get("type") == "state" and self.role == "participant" and self.uid:
             session = await self._get_session(self.code)
             payload = await self._state_payload(session, uid=self.uid, role=self.role)
@@ -500,6 +601,19 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             )
         except LiveSession.DoesNotExist:
             return None
+
+    @database_sync_to_async
+    def _question_count(self, session_pk):
+        """Number of questions in this session's deck (open-mode bounds)."""
+        try:
+            session = (
+                LiveSession.objects
+                .select_related("questionnaire", "quiz")
+                .get(pk=session_pk)
+            )
+        except LiveSession.DoesNotExist:
+            return 0
+        return len(session.questions())
 
     @database_sync_to_async
     def _get_participant(self, session_pk, uid):
@@ -992,7 +1106,20 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
     @database_sync_to_async
     def _state_payload(self, session, uid=None, role=None):
         questions = session.questions()
+
+        # ── Choose the active question index ──
+        # Orchestra mode: everyone follows session.current_question_index.
+        # Open (self-paced) mode: a participant with a personal cursor sees
+        # THEIR question; the presenter still sees the session index.
         idx = session.current_question_index
+        self_paced = (
+            session.mode == "open"
+            and role == "participant"
+            and self.self_index is not None
+        )
+        if self_paced:
+            idx = self.self_index
+
         current = questions[idx] if 0 <= idx < len(questions) else None
 
         question_data = None
@@ -1101,6 +1228,16 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             "template_id": session.template_id,
             "index": idx,
             "total": len(questions),
+            # Self-pace awareness for the participant client:
+            #  - is_self_paced: this client is walking the deck on its own
+            #  - can_self_advance: open mode + session running/has questions
+            "is_self_paced": bool(self_paced),
+            "can_self_advance": bool(
+                session.mode == "open"
+                and role == "participant"
+                and session.state in ("lobby", "running", "ended")
+                and len(questions) > 0
+            ),
             "question": question_data,
             "participants": session.participants.count(),
             "chart_background": getattr(

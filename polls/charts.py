@@ -1,4 +1,3 @@
-
 """Chart registry for Knock-Knock polls.
 
 This registry powers the question editor chart picker. It is deliberately
@@ -80,31 +79,40 @@ ALL_CHARTS = OrderedDict([
 
     # Folium/Leaflet style maps
     ("folium_map", _c("Folium / Leaflet map", "🗺️", "Maps", "Interactive Leaflet map matching Folium output style.")),
+
+    # ── New creative charts (v4) — beyond Mentimeter's default set ──
+    ("dot_matrix", _c("Dot matrix", "⣏", "Creative", "Each respondent = one dot. Great for 'X out of 100'.")),
+    ("radial_bar", _c("Radial bars", "🌀", "Creative", "Nightingale rose / circular bars with a live total core.")),
+    ("comparison_bars", _c("Diverging bars", "🦋", "Creative", "Butterfly split — disagree left, agree right.")),
+    ("bee_swarm", _c("Bee swarm", "🐝", "Creative", "Every numeric answer as a dot, with a live average line.")),
+    ("packed_circles", _c("Packed circles", "🫧", "Creative", "Polished circle-pack sized by share.")),
+    ("hero_number", _c("Hero number", "🔢", "Creative", "Giant animated count-up of the leading answer.")),
+    ("stream_graph", _c("Stream graph", "🌊", "Creative", "Flowing themeriver of the top answers.")),
 ])
 
 
 CURATED_BY_TYPE = {
-    "mcq": ["bar", "donut", "ranked_bar", "plotly_bar", "plotly_donut", "plotly_treemap"],
-    "image_choice": ["bar", "gallery", "plotly_bar", "plotly_donut"],
-    "yes_no": ["donut", "split_card", "plotly_donut", "plotly_gauge"],
-    "likert": ["stacked_bar", "heatmap", "plotly_stacked", "plotly_heatmap"],
-    "ranking": ["ranked_bar", "flow", "plotly_hbar", "plotly_treemap"],
-    "word": ["wordcloud", "tags", "frequency_list", "plotly_bar"],
-    "open": ["responses_list", "quotes_carousel", "tags", "plotly_bar"],
-    "scale": ["histogram", "gauge", "distribution", "plotly_gauge", "plotly_line", "plotly_heatmap"],
-    "rating": ["avg_marker", "gauge", "histogram", "plotly_gauge", "plotly_bar"],
-    "nps": ["nps_segments", "gauge", "distribution", "plotly_gauge", "plotly_bar"],
-    "slider": ["histogram", "gauge", "plotly_gauge", "plotly_line"],
-    "numeric": ["histogram", "distribution", "plotly_bar", "plotly_line"],
-    "date": ["timeline", "line", "plotly_line"],
-    "datetime": ["timeline", "line", "plotly_line"],
-    "time": ["timeline", "line", "plotly_line"],
+    "mcq": ["bar", "donut", "ranked_bar", "dot_matrix", "packed_circles", "radial_bar", "plotly_bar", "plotly_donut", "plotly_treemap"],
+    "image_choice": ["bar", "gallery", "dot_matrix", "packed_circles", "plotly_bar", "plotly_donut"],
+    "yes_no": ["hero_number", "donut", "split_card", "dot_matrix", "plotly_donut", "plotly_gauge"],
+    "likert": ["comparison_bars", "stacked_bar", "heatmap", "radial_bar", "plotly_stacked", "plotly_heatmap"],
+    "ranking": ["ranked_bar", "radial_bar", "flow", "plotly_hbar", "plotly_treemap"],
+    "word": ["wordcloud", "packed_circles", "stream_graph", "tags", "frequency_list", "plotly_bar"],
+    "open": ["responses_list", "quotes_carousel", "stream_graph", "tags", "plotly_bar"],
+    "scale": ["histogram", "bee_swarm", "gauge", "distribution", "plotly_gauge", "plotly_line", "plotly_heatmap"],
+    "rating": ["avg_marker", "radial_bar", "gauge", "histogram", "plotly_gauge", "plotly_bar"],
+    "nps": ["nps_segments", "hero_number", "gauge", "bee_swarm", "plotly_gauge", "plotly_bar"],
+    "slider": ["histogram", "bee_swarm", "gauge", "plotly_gauge", "plotly_line"],
+    "numeric": ["histogram", "bee_swarm", "distribution", "plotly_bar", "plotly_line"],
+    "date": ["timeline", "line", "stream_graph", "plotly_line"],
+    "datetime": ["timeline", "line", "stream_graph", "plotly_line"],
+    "time": ["timeline", "line", "radial_bar", "plotly_line"],
     "pin_image": ["heatmap", "scatter", "plotly_heatmap"],
     "pin_map": ["folium_map", "plotly_geo", "map", "heatmap", "scatter"],
     "two_by_two": ["scatter", "heatmap", "plotly_scatter", "plotly_heatmap"],
-    "matrix": ["heatmap", "plotly_heatmap", "stacked_bar"],
-    "points_allocation": ["ranked_bar", "treemap", "progress_bars", "plotly_treemap", "plotly_hbar"],
-    "reaction": ["live_burst", "bubble_count", "tags", "plotly_bubble"],
+    "matrix": ["heatmap", "comparison_bars", "plotly_heatmap", "stacked_bar"],
+    "points_allocation": ["ranked_bar", "treemap", "dot_matrix", "progress_bars", "plotly_treemap", "plotly_hbar"],
+    "reaction": ["live_burst", "bubble_count", "packed_circles", "tags", "plotly_bubble"],
 }
 
 DEFAULT_CURATED = ["bar", "line", "donut", "plotly_bar", "plotly_line", "plotly_donut"]

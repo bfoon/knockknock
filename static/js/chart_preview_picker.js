@@ -1,492 +1,446 @@
-/* Knock-Knock — chart picker preview
+/* Knock-Knock — chart picker preview (TRUE WYSIWYG, v4)
  *
- * Renders a tiny sample chart into a canvas next to the editor's chart picker
- * so users can see what each chart looks like before saving.
+ * REPLACES the old mock-based preview. Instead of redrawing a simplified
+ * Chart.js approximation, this version reuses the EXACT same renderers the
+ * live presenter stage uses:
  *
- * Usage in question_edit.html:
- *   <canvas id="chart-preview" width="220" height="140"></canvas>
- *   <script src="{% static 'js/chart_preview_picker.js' %}"></script>
+ *   1. window.kkRenderExtraChart  (chart_extra.js — ranked_bar, flow, treemap,
+ *                                  wordcloud, heatmap, plotly_*, folium_map, …)
+ *   2. window.kkRenderLive        (chart_preview.js — bar/column/pie/donut/…)
  *
- * The script listens for clicks on `.kk-chart-tile` (set up by the editor)
- * and redraws using the current question type's sample data.
+ * It builds the same `ctx` object present.js passes, but with synthetic
+ * sample data shaped to match each question type's real tally wire format
+ * ({counts}, {texts}, {points}). What you see in the picker is pixel-identical
+ * to what the audience will see on stage.
  *
- * It does NOT replace the live presentation renderer — that's a separate concern.
+ * Markup expected in question_edit.html (see template patch):
+ *   <div class="kk-chart-preview-stage" id="chart-preview-stage">
+ *     <div class="kk-chart-wrap" id="chart-preview-wrap">
+ *       <canvas id="chart-preview-canvas"></canvas>
+ *       <div id="chart-preview-special" class="kk-chart-special"></div>
+ *     </div>
+ *   </div>
+ *   <div id="chart-preview-label">Bar</div>
+ *
+ * The old tiny <canvas id="chart-preview"> still works as a fallback target
+ * if the new stage markup isn't present.
  */
 (function () {
   "use strict";
-  if (typeof Chart === "undefined") {
-    console.warn("[chart-preview] Chart.js not loaded; preview disabled.");
-    return;
-  }
 
-  // Default plugin off — preview is small, no legend or axis text
-  Chart.defaults.plugins.legend.display = false;
-  Chart.defaults.maintainAspectRatio = false;
+  // ─────────────────────────────────────────────────────────────
+  // Synthetic sample data per QUESTION type, in real wire format.
+  // Each builder returns { question, tally, questionType }.
+  // `question.choices` mirrors the server JSON: [{id, text, image_url}].
+  // `tally` mirrors _sync_tally output: {counts:{id:n}, texts:[], points:[]}.
+  // ─────────────────────────────────────────────────────────────
 
-  // ── Sample data by question type ──────────────────────────────
-  // Each entry yields { labels, data, accentMap } for the preview.
-  const SAMPLES = {
-    mcq:               { labels: ["Red", "Blue", "Green", "Yellow"], data: [12, 19, 7, 14] },
-    image_choice:      { labels: ["Cat", "Dog", "Bird", "Fish"],     data: [22, 30, 8, 11] },
-    yes_no:            { labels: ["Yes", "No"],                       data: [42, 18] },
-    likert:            { labels: ["S.Disagree","Disagree","Neutral","Agree","S.Agree"], data: [3, 8, 12, 22, 15] },
-    ranking:           { labels: ["Speed", "Quality", "Price", "Support"], data: [40, 28, 18, 14] },
-
-    scale:             { labels: ["1","2","3","4","5","6","7","8","9","10"], data: [1,2,3,5,8,11,12,9,5,3] },
-    rating:            { labels: ["★","★★","★★★","★★★★","★★★★★"], data: [2, 4, 12, 22, 30] },
-    nps:               { labels: ["0","1","2","3","4","5","6","7","8","9","10"], data: [1,1,2,3,5,8,9,12,15,18,16] },
-    slider:            { labels: ["0–20","20–40","40–60","60–80","80–100"], data: [3, 8, 14, 22, 11] },
-    numeric:           { labels: ["<10","10–25","25–50","50–100",">100"], data: [4, 9, 16, 11, 5] },
-
-    word:              { labels: ["clarity","focus","speed","trust","fun","ease","power"], data: [22,18,15,12,9,8,5] },
-    open:              { labels: ["Response A","Response B","Response C"],                data: [1, 1, 1] },
-
-    date:              { labels: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], data: [3, 5, 8, 12, 18, 14, 9] },
-    datetime:          { labels: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], data: [3, 5, 8, 12, 18, 14, 9] },
-    time:              { labels: ["6am","9am","12pm","3pm","6pm","9pm"],       data: [2, 8, 14, 11, 18, 12] },
-
-    file_upload:       { labels: ["Photos","PDFs"], data: [14, 6] },
-
-    pin_image:         { labels: ["Q1","Q2","Q3","Q4"], data: [12, 22, 8, 18] },
-    pin_map:           { labels: ["North","South","East","West"], data: [14, 9, 22, 11] },
-    two_by_two:        { labels: ["Q1","Q2","Q3","Q4"], data: [14, 22, 9, 18] },
-
-    matrix:            { labels: ["Row 1","Row 2","Row 3","Row 4"], data: [3.4, 4.1, 2.8, 4.6] },
-    points_allocation: { labels: ["Feature A","Feature B","Feature C","Feature D"], data: [35, 25, 22, 18] },
-    reaction:          { labels: ["🔥","❤️","😂","👏","😮"], data: [44, 32, 18, 11, 6] },
+  // A small stable demo palette of choice labels per type.
+  const CHOICE_SETS = {
+    mcq:          ["Red", "Blue", "Green", "Yellow"],
+    image_choice: ["Mountains", "Beach", "City", "Forest"],
+    yes_no:       ["Yes", "No"],
+    likert:       ["Strongly disagree", "Disagree", "Neutral", "Agree", "Strongly agree"],
+    ranking:      ["Speed", "Quality", "Price", "Support"],
+    matrix:       ["Onboarding", "Dashboard", "Search", "Reports"],
+    points_allocation: ["Feature A", "Feature B", "Feature C", "Feature D"],
+    reaction:     ["🔥", "❤️", "😂", "👏", "😮"],
   };
 
-  function sampleFor(qtype) {
-    return SAMPLES[qtype] || SAMPLES.mcq;
-  }
+  // Demo counts to make the charts look lively and ranked.
+  const COUNT_SETS = {
+    mcq:          [12, 19, 7, 14],
+    image_choice: [22, 30, 8, 17],
+    yes_no:       [42, 18],
+    likert:       [3, 8, 12, 22, 15],
+    ranking:      [40, 28, 18, 14],
+    matrix:       [18, 24, 11, 27],
+    points_allocation: [35, 25, 22, 18],
+    reaction:     [44, 32, 18, 11, 6],
+  };
 
-  // ── Chart-id → Chart.js config builder ─────────────────────────
-  // Returns a Chart.js config object. Designed to render readably at ~220×140.
-  function makeConfig(chartId, sample, accent, accent2) {
-    const labels = sample.labels;
-    const data = sample.data;
-    const bg = labels.map((_, i) => i % 2 === 0 ? accent : accent2);
+  // Sample free-text answers for word/open charts.
+  const SAMPLE_TEXTS = [
+    "clarity", "focus", "clarity", "speed", "trust", "focus", "clarity",
+    "fun", "ease", "speed", "power", "trust", "focus", "clarity", "speed",
+    "innovative", "simple", "fast", "reliable", "simple", "fast", "delightful",
+  ];
 
-    const noScales = { x: { display: false }, y: { display: false } };
-    const tinyTicks = {
-      x: { display: false, grid: { display: false } },
-      y: { display: false, grid: { display: false } },
-    };
+  // Numeric distributions for scale/rating/nps/slider/numeric.
+  const NUMERIC_SETS = {
+    scale:   spread(1, 10, [1, 2, 3, 5, 8, 11, 12, 9, 5, 3]),
+    rating:  spread(1, 5,  [2, 4, 12, 22, 30]),
+    nps:     spread(0, 10, [1, 1, 2, 3, 5, 8, 9, 12, 15, 18, 16]),
+    slider:  spread(0, 100, null, 60),   // 60 random-ish values 0..100
+    numeric: spread(0, 120, null, 50),
+  };
 
-    switch (chartId) {
-      // ── Bars ────────────────────────────────────────────────
-      case "bar":
-      case "column":
-      case "rounded_bar":
-      case "gradient_bar":
-        return {
-          type: "bar",
-          data: { labels, datasets: [{ data, backgroundColor: bg,
-                                       borderRadius: chartId === "rounded_bar" ? 8 : 2 }] },
-          options: { scales: tinyTicks },
-        };
-
-      case "horizontal_bar":
-        return {
-          type: "bar",
-          data: { labels, datasets: [{ data, backgroundColor: bg, borderRadius: 4 }] },
-          options: { indexAxis: "y", scales: tinyTicks },
-        };
-
-      case "stacked_bar": {
-        const half = Math.ceil(labels.length / 2);
-        const a = data.slice(0, half);
-        const b = data.slice(half).concat(Array(half - data.slice(half).length).fill(0));
-        return {
-          type: "bar",
-          data: { labels: labels.slice(0, half),
-            datasets: [
-              { data: a, backgroundColor: accent  },
-              { data: b, backgroundColor: accent2 },
-            ]},
-          options: {
-            scales: {
-              x: { stacked: true, display: false },
-              y: { stacked: true, display: false },
-            },
-          },
-        };
-      }
-
-      case "grouped_bar":
-        return {
-          type: "bar",
-          data: { labels: labels.slice(0, 4),
-            datasets: [
-              { data: data.slice(0, 4), backgroundColor: accent  },
-              { data: data.slice(0, 4).map(v => v * 0.6), backgroundColor: accent2 },
-            ]},
-          options: { scales: tinyTicks },
-        };
-
-      case "ranked_bar": {
-        // Sort desc for visual ranking
-        const pairs = labels.map((l, i) => [l, data[i]]).sort((a, b) => b[1] - a[1]);
-        return {
-          type: "bar",
-          data: { labels: pairs.map(p => p[0]),
-                  datasets: [{ data: pairs.map(p => p[1]), backgroundColor: bg }] },
-          options: { indexAxis: "y", scales: tinyTicks },
-        };
-      }
-
-      case "lollipop": {
-        // Bar + scatter overlay to mimic a lollipop
-        return {
-          type: "bar",
-          data: { labels,
-            datasets: [
-              { type: "bar", data, backgroundColor: bg, barThickness: 3, borderRadius: 0 },
-              { type: "scatter",
-                data: data.map((v, i) => ({ x: labels[i], y: v })),
-                pointBackgroundColor: bg, pointRadius: 5 },
-            ]},
-          options: { scales: tinyTicks },
-        };
-      }
-
-      case "bubble_count":
-        return {
-          type: "bubble",
-          data: { datasets: [{
-            data: labels.map((l, i) => ({ x: i, y: 1, r: Math.max(4, data[i] / 2) })),
-            backgroundColor: bg,
-          }]},
-          options: { scales: noScales },
-        };
-
-      // ── Circular ───────────────────────────────────────────
-      case "donut":
-        return {
-          type: "doughnut",
-          data: { labels, datasets: [{ data, backgroundColor: bg, borderWidth: 0 }] },
-          options: { cutout: "60%" },
-        };
-      case "pie":
-        return {
-          type: "pie",
-          data: { labels, datasets: [{ data, backgroundColor: bg, borderWidth: 0 }] },
-        };
-      case "polar":
-        return {
-          type: "polarArea",
-          data: { labels, datasets: [{ data, backgroundColor: bg, borderWidth: 0 }] },
-          options: { scales: { r: { display: false } } },
-        };
-      case "radar":
-        return {
-          type: "radar",
-          data: { labels, datasets: [{
-            data, borderColor: accent, backgroundColor: accent + "55",
-            pointRadius: 0, borderWidth: 2,
-          }]},
-          options: { scales: { r: { display: false } } },
-        };
-
-      case "split_card":
-        // Yes/No styled donut
-        return {
-          type: "doughnut",
-          data: {
-            labels: labels.slice(0, 2),
-            datasets: [{ data: data.slice(0, 2), backgroundColor: [accent, accent2], borderWidth: 0 }],
-          },
-          options: { cutout: "72%", rotation: -90, circumference: 180 },
-        };
-
-      // ── Lines & distribution ───────────────────────────────
-      case "line":
-      case "smooth_area":
-      case "area":
-      case "distribution":
-        return {
-          type: "line",
-          data: { labels, datasets: [{
-            data,
-            borderColor: accent,
-            backgroundColor: accent + "33",
-            fill: chartId !== "line",
-            tension: chartId === "smooth_area" || chartId === "distribution" ? 0.5 : 0.2,
-            pointRadius: 0, borderWidth: 2,
-          }]},
-          options: { scales: tinyTicks },
-        };
-
-      case "histogram":
-        return {
-          type: "bar",
-          data: { labels, datasets: [{ data, backgroundColor: accent, barPercentage: 1, categoryPercentage: 1 }] },
-          options: { scales: tinyTicks },
-        };
-
-      case "gauge": {
-        // Half-doughnut gauge: value vs (max - value)
-        const max = Math.max(...data) * 1.6;
-        const val = data.reduce((a, b) => a + b, 0) / data.length;
-        return {
-          type: "doughnut",
-          data: { datasets: [{ data: [val, max - val],
-                               backgroundColor: [accent, "rgba(255,255,255,.12)"],
-                               borderWidth: 0 }] },
-          options: { rotation: -90, circumference: 180, cutout: "72%" },
-        };
-      }
-
-      case "avg_marker":
-        return {
-          type: "bar",
-          data: { labels, datasets: [{ data, backgroundColor: bg, borderRadius: 3 }] },
-          options: { scales: tinyTicks },
-        };
-
-      case "nps_segments": {
-        // Three coloured bars: detractors / passives / promoters
-        return {
-          type: "bar",
-          data: {
-            labels: ["Detractors","Passives","Promoters"],
-            datasets: [{
-              data: [
-                data.slice(0, 7).reduce((a, b) => a + b, 0),
-                data.slice(7, 9).reduce((a, b) => a + b, 0),
-                data.slice(9).reduce((a, b) => a + b, 0),
-              ],
-              backgroundColor: ["#ef4444","#fbbf24","#22c55e"],
-              borderRadius: 4,
-            }],
-          },
-          options: { scales: tinyTicks },
-        };
-      }
-
-      // ── Text/special ───────────────────────────────────────
-      case "wordcloud":
-      case "bubble":
-      case "tags":
-        // Use bubbles as a stand-in
-        return {
-          type: "bubble",
-          data: { datasets: [{
-            data: labels.map((l, i) => ({
-              x: (i % 4) + 0.4, y: Math.floor(i / 4) + 0.4,
-              r: Math.max(8, data[i] || 4),
-            })),
-            backgroundColor: labels.map((_, i) => i % 2 === 0 ? accent : accent2),
-          }]},
-          options: { scales: noScales },
-        };
-
-      case "frequency_list":
-      case "responses_list":
-      case "open_list":
-      case "quotes_carousel":
-        // Render as horizontal bar (closest visual stand-in for "list")
-        return {
-          type: "bar",
-          data: { labels, datasets: [{ data, backgroundColor: bg, borderRadius: 2 }] },
-          options: { indexAxis: "y", scales: tinyTicks },
-        };
-
-      // ── Spatial ────────────────────────────────────────────
-      case "heatmap": {
-        // Coloured grid using bubbles in a 4×4 layout
-        const points = [];
-        for (let i = 0; i < 16; i++) {
-          const v = (data[i % data.length] || 5) * (0.4 + Math.random() * 0.6);
-          points.push({ x: i % 4, y: Math.floor(i / 4), r: 8 + v / 3 });
-        }
-        return {
-          type: "bubble",
-          data: { datasets: [{ data: points, backgroundColor: accent + "aa" }] },
-          options: { scales: noScales },
-        };
-      }
-
-      case "scatter":
-        return {
-          type: "scatter",
-          data: { datasets: [{
-            data: labels.map((_, i) => ({
-              x: Math.random(), y: Math.random(),
-            })),
-            backgroundColor: accent,
-            pointRadius: 6,
-          }]},
-          options: { scales: noScales },
-        };
-
-      // ── Time ───────────────────────────────────────────────
-      case "timeline":
-        return {
-          type: "line",
-          data: { labels, datasets: [{
-            data, borderColor: accent, backgroundColor: accent + "44",
-            fill: true, tension: 0.3, pointRadius: 3, borderWidth: 2,
-          }]},
-          options: { scales: tinyTicks },
-        };
-
-      // ── Progress / leaderboard ─────────────────────────────
-      case "progress_bars":
-      case "leaderboard":
-        return {
-          type: "bar",
-          data: { labels, datasets: [{ data, backgroundColor: bg, borderRadius: 6 }] },
-          options: { indexAxis: "y", scales: tinyTicks },
-        };
-
-      // ── Media / live ───────────────────────────────────────
-      case "gallery":
-      case "live_burst":
-      case "map":
-      case "treemap":
-      case "flow":
-      default:
-        // Generic fallback — a colourful bar so the preview still draws
-        return {
-          type: "bar",
-          data: { labels, datasets: [{ data, backgroundColor: bg, borderRadius: 4 }] },
-          options: { scales: tinyTicks },
-        };
+  // Build a counts dict {valueString: n} from a min..max histogram array,
+  // OR generate `count` pseudo-random values in [min,max] when hist is null.
+  function spread(min, max, hist, count) {
+    const counts = {};
+    if (Array.isArray(hist)) {
+      hist.forEach((n, i) => { counts[String(min + i)] = n; });
+      return counts;
     }
-  }
-
-  // ── Picker integration ─────────────────────────────────────────
-  let currentChart = null;
-
-  function getAccents() {
-    const style = getComputedStyle(document.documentElement);
-    const a1 = style.getPropertyValue("--kk-accent")?.trim()   || "#7c3aed";
-    const a2 = style.getPropertyValue("--kk-accent-2")?.trim() || "#22d3ee";
-    return [a1, a2];
-  }
-
-  function getCurrentType() {
-    const sel = document.getElementById("id_question_type");
-    return sel?.value || "mcq";
-  }
-
-  function getCurrentChartId() {
-    const sel = document.getElementById("id_chart_type");
-    return sel?.value || "bar";
-  }
-
-
-  function isRichChart(chartId) {
-    return String(chartId || "").startsWith("plotly_") || chartId === "folium_map";
-  }
-
-  function drawRichPreview(canvas, chartId, sample, accent, accent2) {
-    const ctx = canvas.getContext("2d");
-    const w = canvas.width, h = canvas.height;
-    ctx.clearRect(0, 0, w, h);
-    const g = ctx.createLinearGradient(0, 0, w, h);
-    g.addColorStop(0, "rgba(34,211,238,.30)");
-    g.addColorStop(1, "rgba(124,58,237,.30)");
-    ctx.fillStyle = "#0b1020";
-    ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, w, h);
-    ctx.strokeStyle = "rgba(255,255,255,.18)";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(8, 8, w - 16, h - 16);
-
-    const labels = sample.labels || [];
-    const data = sample.data || [];
-    const max = Math.max(1, ...data);
-
-    if (chartId === "folium_map" || chartId === "plotly_geo") {
-      ctx.fillStyle = "rgba(14,165,233,.18)";
-      ctx.fillRect(20, 30, w - 40, h - 52);
-      ctx.strokeStyle = "rgba(255,255,255,.34)";
-      for (let i = 0; i < 4; i++) {
-        ctx.beginPath();
-        ctx.moveTo(28 + i * 45, 35);
-        ctx.bezierCurveTo(60 + i * 22, 55, 55 + i * 32, 86, 90 + i * 28, 108);
-        ctx.stroke();
-      }
-      [[.32,.42],[.55,.58],[.72,.37],[.42,.72]].forEach((pt,i)=>{
-        ctx.beginPath(); ctx.arc(20 + pt[0]*(w-40), 30 + pt[1]*(h-52), 7 + i*2, 0, Math.PI*2);
-        ctx.fillStyle = i % 2 ? accent : accent2; ctx.fill();
-        ctx.strokeStyle = "white"; ctx.stroke();
-      });
-    } else if (["plotly_pie","plotly_donut","plotly_sunburst","plotly_gauge"].includes(chartId)) {
-      let start = -Math.PI / 2;
-      const total = data.reduce((a,b)=>a+b,0) || 1;
-      data.slice(0,6).forEach((v,i)=>{
-        const end = start + (v/total)*Math.PI*2;
-        ctx.beginPath(); ctx.moveTo(w/2,h/2); ctx.arc(w/2,h/2,44,start,end); ctx.closePath();
-        ctx.fillStyle = i % 2 ? accent : accent2; ctx.globalAlpha = .92 - i*.06; ctx.fill(); ctx.globalAlpha = 1;
-        start=end;
-      });
-      if (["plotly_donut","plotly_sunburst","plotly_gauge"].includes(chartId)) { ctx.beginPath(); ctx.arc(w/2,h/2,23,0,Math.PI*2); ctx.fillStyle="#0b1020"; ctx.fill(); }
-    } else if (["plotly_line","plotly_area","plotly_scatter","plotly_bubble","plotly_radar"].includes(chartId)) {
-      ctx.strokeStyle = accent2; ctx.lineWidth = 3; ctx.beginPath();
-      data.forEach((v,i)=>{ const x=25+i*((w-50)/Math.max(1,data.length-1)); const y=h-25-(v/max)*(h-55); if(i) ctx.lineTo(x,y); else ctx.moveTo(x,y); });
-      ctx.stroke();
-      data.forEach((v,i)=>{ const x=25+i*((w-50)/Math.max(1,data.length-1)); const y=h-25-(v/max)*(h-55); ctx.beginPath(); ctx.arc(x,y,chartId==='plotly_bubble'?7+v/max*11:5,0,Math.PI*2); ctx.fillStyle=i%2?accent:accent2; ctx.fill(); });
-    } else {
-      const bw = (w - 45) / Math.max(1, data.length);
-      data.forEach((v,i)=>{ const bh=(v/max)*(h-46); ctx.fillStyle=i%2?accent:accent2; ctx.fillRect(24+i*bw, h-22-bh, Math.max(7,bw*.62), bh); });
+    // pseudo-random but deterministic-ish bell-ish distribution
+    const N = count || 40;
+    let seed = 1337;
+    const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+    for (let i = 0; i < N; i++) {
+      const v = Math.round(min + (max - min) * (rnd() * 0.5 + rnd() * 0.5)); // triangular-ish
+      counts[String(v)] = (counts[String(v)] || 0) + 1;
     }
-
-    ctx.fillStyle = "rgba(255,255,255,.92)";
-    ctx.font = "bold 11px system-ui, sans-serif";
-    ctx.textAlign = "left";
-    ctx.fillText(chartId === "folium_map" ? "Folium / Leaflet" : "Plotly rich", 14, 22);
+    return counts;
   }
 
-  function render() {
-    const canvas = document.getElementById("chart-preview");
-    if (!canvas) return;
-    const qtype = getCurrentType();
-    const chartId = getCurrentChartId();
-    const sample = sampleFor(qtype);
-    const [a1, a2] = getAccents();
-    const cfg = makeConfig(chartId, sample, a1, a2);
-
-    if (currentChart) {
-      try { currentChart.destroy(); } catch (e) {}
-      currentChart = null;
-    }
-
-    if (isRichChart(chartId)) {
-      drawRichPreview(canvas, chartId, sample, a1, a2);
-    } else {
-      currentChart = new Chart(canvas.getContext("2d"), cfg);
-    }
-
-    // Update the small label below the canvas, if present.
-    const labelEl = document.getElementById("chart-preview-label");
-    if (labelEl) {
-      const tile = document.querySelector(`.kk-chart-tile[data-chart-id="${chartId}"]`);
-      labelEl.textContent = tile?.querySelector(".kk-chart-label")?.textContent || chartId;
-    }
-  }
-
-  // Wire up: clicks on tiles, changes on the hidden select, and question-type changes.
-  function init() {
-    const picker = document.getElementById("chart-picker");
-    if (!picker) return;
-    picker.addEventListener("click", (e) => {
-      const tile = e.target.closest(".kk-chart-tile");
-      if (tile) {
-        // The picker's own click handler updates the hidden select before us
-        // because addEventListener ordering matches DOM order. Defer one tick.
-        setTimeout(render, 0);
+  // Demo coordinate points for pin_image / pin_map / two_by_two heatmaps.
+  function samplePoints() {
+    const pts = [];
+    const clusters = [[28, 34], [62, 40], [48, 68], [72, 22]];
+    let seed = 7;
+    const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+    clusters.forEach((c, ci) => {
+      const n = 6 + ci * 3;
+      for (let i = 0; i < n; i++) {
+        pts.push({
+          x: Math.max(2, Math.min(98, c[0] + (rnd() - 0.5) * 18)),
+          y: Math.max(2, Math.min(98, c[1] + (rnd() - 0.5) * 18)),
+          value: 1,
+          label: `Pin ${pts.length + 1}`,
+        });
       }
     });
+    return pts;
+  }
 
-    document.getElementById("id_chart_type")?.addEventListener("change", render);
-    document.getElementById("id_question_type")?.addEventListener("change", () => {
-      // Type change is followed by a server-side redirect, but render the
-      // preview anyway in case the user toggles type without reloading.
-      setTimeout(render, 0);
+  function choiceObjects(type) {
+    const labels = CHOICE_SETS[type] || CHOICE_SETS.mcq;
+    return labels.map((text, i) => ({
+      id: i + 1,
+      text,
+      // image_choice / gallery want an image_url; use a tiny inline SVG swatch
+      image_url: type === "image_choice"
+        ? swatchDataUri(i)
+        : "",
+    }));
+  }
+
+  // A cheap inline SVG gradient swatch so image_choice/gallery previews show
+  // "images" without any network request.
+  function swatchDataUri(i) {
+    const pals = [
+      ["#22d3ee", "#0ea5e9"], ["#7c3aed", "#a855f7"],
+      ["#fb7185", "#f43f5e"], ["#fbbf24", "#f59e0b"],
+      ["#34d399", "#10b981"], ["#60a5fa", "#3b82f6"],
+    ];
+    const [a, b] = pals[i % pals.length];
+    const svg =
+      `<svg xmlns='http://www.w3.org/2000/svg' width='160' height='120'>` +
+      `<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>` +
+      `<stop offset='0' stop-color='${a}'/><stop offset='1' stop-color='${b}'/>` +
+      `</linearGradient></defs><rect width='160' height='120' rx='12' fill='url(%23g)'/>` +
+      `</svg>`;
+    return "data:image/svg+xml;utf8," + svg.replace(/#/g, "%23");
+  }
+
+  // Build the {question, tally} pair for a given question type.
+  function buildSample(type) {
+    const t = String(type || "mcq").toLowerCase();
+
+    // Choice-shaped types: counts keyed by choice id.
+    if (CHOICE_SETS[t]) {
+      const choices = choiceObjects(t);
+      const nums = COUNT_SETS[t] || choices.map((_, i) => 10 + i * 3);
+      const counts = {};
+      choices.forEach((c, i) => { counts[String(c.id)] = nums[i] || 0; });
+
+      // points_allocation: counts ARE the point totals (already summing ~100).
+      const tally = { counts, texts: [] };
+      return {
+        questionType: t,
+        question: { type: t, text: previewQuestionText(t), choices },
+        tally,
+      };
+    }
+
+    // Word / open text types.
+    if (t === "word" || t === "open" || t === "open_text") {
+      return {
+        questionType: t,
+        question: { type: t, text: previewQuestionText(t), choices: [] },
+        tally: { counts: {}, texts: SAMPLE_TEXTS.slice() },
+      };
+    }
+
+    // Numeric types: counts keyed by stringified numeric value.
+    if (NUMERIC_SETS[t]) {
+      return {
+        questionType: t,
+        question: { type: t, text: previewQuestionText(t), choices: [] },
+        tally: { counts: NUMERIC_SETS[t], texts: [] },
+      };
+    }
+
+    // Date / time types — counts keyed by bucket label.
+    if (t === "date" || t === "datetime" || t === "time") {
+      const labels = t === "time"
+        ? ["6am", "9am", "12pm", "3pm", "6pm", "9pm"]
+        : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+      const data = t === "time" ? [2, 8, 14, 11, 18, 12] : [3, 5, 8, 12, 18, 14, 9];
+      const choices = labels.map((text, i) => ({ id: i + 1, text, image_url: "" }));
+      const counts = {};
+      choices.forEach((c, i) => { counts[String(c.id)] = data[i]; });
+      return {
+        questionType: t,
+        question: { type: t, text: previewQuestionText(t), choices },
+        tally: { counts, texts: [] },
+      };
+    }
+
+    // Spatial types — coordinate point clouds.
+    if (t === "pin_image" || t === "pin_map" || t === "two_by_two") {
+      return {
+        questionType: t,
+        question: { type: t, text: previewQuestionText(t), choices: [] },
+        tally: { counts: {}, texts: [], points: samplePoints() },
+      };
+    }
+
+    if (t === "file_upload") {
+      const choices = [
+        { id: 1, text: "Photos", image_url: swatchDataUri(0) },
+        { id: 2, text: "PDFs", image_url: swatchDataUri(1) },
+      ];
+      return {
+        questionType: t,
+        question: { type: t, text: previewQuestionText(t), choices },
+        tally: { counts: { 1: 14, 2: 6 }, texts: [] },
+      };
+    }
+
+    // Fallback → mcq.
+    return buildSample("mcq");
+  }
+
+  function previewQuestionText(type) {
+    const map = {
+      mcq: "What's your favourite colour?",
+      image_choice: "Pick a holiday vibe",
+      yes_no: "Did you enjoy the session?",
+      likert: "I found this useful",
+      ranking: "Rank what matters most",
+      matrix: "Rate each feature",
+      points_allocation: "Spend 100 points",
+      reaction: "React live!",
+      word: "Describe today in one word",
+      open: "Any feedback?",
+      scale: "Rate 1–10",
+      rating: "How many stars?",
+      nps: "How likely to recommend?",
+      slider: "Pick a value",
+      numeric: "Enter a number",
+      date: "Pick a day",
+      datetime: "Pick date & time",
+      time: "Pick a time",
+      pin_image: "Tap where it matters",
+      pin_map: "Drop a pin",
+      two_by_two: "Plot impact vs effort",
+      file_upload: "Upload a file",
+    };
+    return map[type] || "Sample question";
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // DOM targets
+  // ─────────────────────────────────────────────────────────────
+  function el(id) { return document.getElementById(id); }
+
+  function getCurrentType() {
+    const sel = el("id_question_type");
+    return (sel && sel.value) || "mcq";
+  }
+  function getCurrentChartId() {
+    const sel = el("id_chart_type");
+    return (sel && sel.value) || "bar";
+  }
+
+  // Holder object survives across renders so Chart.js can destroy/rebuild.
+  const previewHolder = { chart: null };
+
+  // Build (or reuse) the live-style preview stage. If the new markup isn't
+  // in the template yet, synthesize it inside the legacy wrapper so the
+  // upgrade is backwards compatible.
+  function ensureStage() {
+    let wrap = el("chart-preview-wrap");
+    let canvas = el("chart-preview-canvas");
+    let special = el("chart-preview-special");
+
+    if (wrap && canvas && special) {
+      return { wrap, canvas, special };
+    }
+
+    // Legacy path: there's only the old tiny <canvas id="chart-preview">.
+    const legacy = el("chart-preview");
+    const host = legacy ? legacy.parentElement : el("chart-preview-stage");
+    if (!host) return null;
+
+    host.innerHTML = "";
+    wrap = document.createElement("div");
+    wrap.id = "chart-preview-wrap";
+    wrap.className = "kk-chart-wrap kk-chart-preview-wrap-live";
+
+    canvas = document.createElement("canvas");
+    canvas.id = "chart-preview-canvas";
+
+    special = document.createElement("div");
+    special.id = "chart-preview-special";
+    special.className = "kk-chart-special";
+    special.style.display = "none";
+
+    wrap.appendChild(canvas);
+    wrap.appendChild(special);
+    host.appendChild(wrap);
+    return { wrap, canvas, special };
+  }
+
+  // Mirror present.js's destroyChartForSpecialDisplay so chart_extra.js can
+  // hide the canvas and paint into specialEl exactly as it does on stage.
+  function makeDestroyFn(canvas, special) {
+    return function destroyChartForSpecialDisplay() {
+      if (previewHolder.chart) {
+        try { previewHolder.chart.destroy(); } catch (e) {}
+        previewHolder.chart = null;
+      }
+      if (canvas) canvas.style.display = "none";
+      if (special) {
+        special.style.display = "block";
+        special.innerHTML = "";
+      }
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Render: the WYSIWYG core.
+  // ─────────────────────────────────────────────────────────────
+  let renderToken = 0;
+
+  function render() {
+    const stage = ensureStage();
+    if (!stage) return;
+    const { wrap, canvas, special } = stage;
+
+    const type = getCurrentType();
+    const chartId = getCurrentChartId();
+    const { question, tally, questionType } = buildSample(type);
+
+    // Reset the stage to a clean state before each render.
+    const destroyForSpecial = makeDestroyFn(canvas, special);
+    if (previewHolder.chart) {
+      try { previewHolder.chart.destroy(); } catch (e) {}
+      previewHolder.chart = null;
+    }
+    canvas.style.display = "block";
+    special.style.display = "none";
+    special.innerHTML = "";
+
+    // chart_preview.js (kkRenderLive) reads its holder off the wrapper for
+    // bar/line/pie via `holder.chart`; we pass previewHolder so it lines up.
+    const labels = question.choices;
+
+    const myToken = ++renderToken;
+
+    // 1) Try the rich/custom renderers (identical call shape to present.js).
+    if (typeof window.kkRenderExtraChart === "function") {
+      const handled = window.kkRenderExtraChart({
+        chartId,
+        questionType,
+        question,
+        labels,
+        tallyData: tally,
+        liveCanvas: canvas,
+        specialEl: special,
+        chartHolder: previewHolder,
+        destroyChartForSpecialDisplay: destroyForSpecial,
+      });
+      if (handled) {
+        finishLabel(chartId);
+        return;
+      }
+    }
+
+    // 2) Fall through to the Chart.js pipeline (bar/column/pie/donut/…).
+    if (typeof window.kkRenderLive === "function") {
+      canvas.style.display = "block";
+      special.style.display = "block";
+      special.innerHTML = "";
+      window.kkRenderLive(
+        canvas,
+        special,
+        chartId,
+        questionType,
+        labels,
+        tally,
+        previewHolder
+      );
+    } else {
+      special.style.display = "block";
+      special.innerHTML =
+        '<div class="kk-extra-empty">Chart renderers not loaded. ' +
+        'Ensure chart_preview.js and chart_extra.js load before this script.</div>';
+    }
+
+    finishLabel(chartId);
+
+    // Some renderers (Plotly/Leaflet) load async; nudge a resize so they
+    // size correctly inside the small preview box.
+    if (myToken === renderToken) {
+      requestAnimationFrame(() => {
+        try {
+          if (previewHolder.chart && previewHolder.chart.resize) {
+            previewHolder.chart.resize();
+          }
+          if (window.Plotly) {
+            const p = special.querySelector(".kk-rich-mount > div");
+            if (p) window.Plotly.Plots.resize(p);
+          }
+        } catch (e) {}
+      });
+    }
+  }
+
+  function finishLabel(chartId) {
+    const labelEl = el("chart-preview-label");
+    if (!labelEl) return;
+    const tile = document.querySelector(`.kk-chart-tile[data-chart-id="${chartId}"]`);
+    const txt = tile && tile.querySelector(".kk-chart-label");
+    labelEl.textContent = (txt && txt.textContent.trim()) || chartId;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Wiring
+  // ─────────────────────────────────────────────────────────────
+  function init() {
+    const picker = el("chart-picker");
+
+    if (picker) {
+      picker.addEventListener("click", (e) => {
+        const tile = e.target.closest(".kk-chart-tile");
+        if (tile) setTimeout(render, 0);  // let the picker update the select first
+      });
+    }
+
+    const chartSel = el("id_chart_type");
+    if (chartSel) chartSel.addEventListener("change", render);
+
+    const typeSel = el("id_question_type");
+    if (typeSel) typeSel.addEventListener("change", () => setTimeout(render, 0));
+
+    // Re-render on resize (debounced) so async rich charts stay crisp.
+    let rAF = null;
+    window.addEventListener("resize", () => {
+      if (rAF) cancelAnimationFrame(rAF);
+      rAF = requestAnimationFrame(render);
     });
 
     render();

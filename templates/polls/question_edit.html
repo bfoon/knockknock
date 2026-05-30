@@ -194,13 +194,16 @@
             </div>
           </div>
 
-          {# Right column: live preview #}
+          {# Right column: TRUE live preview — reuses the on-stage renderers #}
           <div class="col-5">
-            <div class="kk-chart-preview-wrap">
-              <canvas id="chart-preview" width="220" height="140"></canvas>
+            <div class="kk-chart-preview-wrap" id="chart-preview-stage">
+              <div class="kk-chart-wrap kk-chart-preview-wrap-live" id="chart-preview-wrap">
+                <canvas id="chart-preview-canvas"></canvas>
+                <div id="chart-preview-special" class="kk-chart-special" style="display:none;"></div>
+              </div>
               <div id="chart-preview-label" class="text-secondary small text-center mt-1">Bar</div>
               <p class="text-secondary" style="font-size:.7rem; text-align:center; margin:0;">
-                <i class="bi bi-info-circle"></i> Sample data preview
+                <i class="bi bi-magic"></i> Exactly how it appears on stage · sample data
               </p>
             </div>
           </div>
@@ -302,7 +305,10 @@
     </div>
   </div>
 </form>
-<script src="{% static 'js/chart_preview_picker.js' %}?v=3"></script>
+{# True WYSIWYG: load the SAME renderers the presenter stage uses, then the picker. #}
+<script src="{% static 'js/chart_preview.js' %}?v=4"></script>
+<script src="{% static 'js/chart_extra.js' %}?v=4"></script>
+<script src="{% static 'js/chart_preview_picker.js' %}?v=4"></script>
 <style>
 .kk-type-badge {
   display: inline-block;
@@ -343,17 +349,43 @@
   background: var(--kk-surface-2);
   border: 1px solid var(--kk-border);
   border-radius: var(--kk-radius);
-  padding: .75rem .5rem .5rem;
+  padding: .6rem .6rem .5rem;
   height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
 }
-.kk-chart-preview-wrap canvas {
-  display: block;
-  width: 100% !important;
-  max-height: 140px;
+/* Mini "stage" so the real renderers (which expect a .kk-chart-wrap with
+   height and a dark backdrop) look identical to the presenter view. */
+.kk-chart-preview-wrap-live {
+  position: relative;
+  width: 100%;
+  height: 300px;
+  min-height: 260px;
+  border-radius: 14px;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(124,58,237,.14), transparent 60%),
+    linear-gradient(180deg, #0b1020, #0a0f1c);
+  border: 1px solid rgba(255,255,255,.07);
+  /* expose the same stage CSS vars the renderers read via cssVar() */
+  --stage-fg: #f5f6ff;
+  --stage-accent-2: #22d3ee;
 }
+.kk-chart-preview-wrap-live > canvas,
+.kk-chart-preview-wrap-live > #chart-preview-special {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+.kk-chart-preview-wrap-live #chart-preview-special {
+  overflow: hidden;
+}
+/* Rich (Plotly/Leaflet) shells can be tall; keep them inside the box. */
+.kk-chart-preview-wrap-live .kk-rich-shell,
+.kk-chart-preview-wrap-live .kk-rich-mount,
+.kk-chart-preview-wrap-live .kk-leaflet-map { height: 100%; }
 </style>
 
 <script>

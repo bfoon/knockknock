@@ -953,9 +953,14 @@
       <i class="bi bi-check2-circle"></i> Answer submitted — waiting for the next question…
     </div>
     {% if session.mode == "open" %}
-    <button class="kk-btn kk-btn-ghost w-100 mt-3" id="self-next" style="display:none;">
-      Next question <i class="bi bi-chevron-right"></i>
-    </button>
+    <div id="self-nav" class="d-flex gap-2 mt-3" style="display:none !important;">
+      <button class="kk-btn kk-btn-ghost" id="self-back" style="flex:1;">
+        <i class="bi bi-chevron-left"></i> Back
+      </button>
+      <button class="kk-btn kk-btn-primary" id="self-next" style="flex:2;">
+        Next question <i class="bi bi-chevron-right"></i>
+      </button>
+    </div>
     {% endif %}
   </div>
 
@@ -989,7 +994,7 @@
   </div>
 </div>
 
-<script src="{% static 'js/play.js' %}?v=12"></script>
+<script src="{% static 'js/play.js' %}?v=13"></script>
 
 <script>
 /* ────────────────────────────────────────────────────────────────────

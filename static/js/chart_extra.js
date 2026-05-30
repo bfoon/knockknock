@@ -1609,11 +1609,7 @@
 
   function richMount(specialEl, label, className) {
     specialEl.innerHTML = `<div class="kk-rich-shell ${className || ""}">
-      <div class="kk-rich-head">
-        <span class="kk-rich-badge">${escapeHtml(label || "Rich visual")}</span>
-        <span class="kk-rich-sub">interactive</span>
-      </div>
-      <div class="kk-rich-mount"><div class="kk-rich-loading">Loading rich visual…</div></div>
+      <div class="kk-rich-mount"><div class="kk-rich-loading">Loading visual…</div></div>
     </div>`;
     return specialEl.querySelector(".kk-rich-mount");
   }
@@ -1637,7 +1633,25 @@
     return {
       responsive: true,
       displaylogo: false,
-      modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"],
+      // On a live presentation screen we want a clean static visual — no
+      // floating toolbar, no drag/zoom/pan handles, no hover cursors. These
+      // are the "extra unnecessary things" that otherwise appear over charts.
+      displayModeBar: false,
+      staticPlot: false,      // keep tooltips, but…
+      scrollZoom: false,
+      doubleClick: false,
+      showTips: false,
+      editable: false,
+      modeBarButtonsToRemove: [
+        "lasso2d", "select2d", "autoScale2d", "zoom2d", "pan2d",
+        "zoomIn2d", "zoomOut2d", "resetScale2d", "toImage",
+        "hoverClosestCartesian", "hoverCompareCartesian",
+        "toggleSpikelines", "zoom3d", "pan3d", "orbitRotation",
+        "tableRotation", "resetCameraDefault3d", "resetCameraLastSave3d",
+        "hoverClosest3d", "zoomInGeo", "zoomOutGeo", "resetGeo",
+        "hoverClosestGeo", "sendDataToCloud", "hoverClosestPie",
+        "resetViewMapbox", "toggleHover", "resetViews",
+      ],
     };
   }
 
@@ -1671,6 +1685,8 @@
     const labels = rows.map(r => r.label);
     const values = rows.map(r => Number(r.n || r.value || 0));
     const maxv = Math.max(1, ...values);
+    // Slice colours for pie/donut, matching the bottom legend swatches.
+    const PIE_COLORS = ["#22d3ee", "#7c3aed", "#fb7185", "#fbbf24", "#34d399", "#60a5fa", "#f472b6", "#a3e635"];
     switch (chartId) {
       case "plotly_hbar":
         return [{ type: "bar", orientation: "h", y: labels, x: values, marker: { line: { color: "rgba(255,255,255,.25)", width: 1 } } }];
@@ -1689,9 +1705,19 @@
       case "plotly_area":
         return [{ type: "scatter", mode: "lines", fill: "tozeroy", x: labels, y: values, line: { width: 4, shape: "spline" } }];
       case "plotly_pie":
-        return [{ type: "pie", labels, values, hole: 0, textinfo: "label+percent" }];
+        return [{
+          type: "pie", labels, values, hole: 0,
+          textinfo: "percent", textposition: "inside", insidetextorientation: "horizontal",
+          texttemplate: "%{percent}", automargin: true, sort: false,
+          marker: { colors: PIE_COLORS, line: { color: "rgba(11,16,32,.65)", width: 2 } },
+        }];
       case "plotly_donut":
-        return [{ type: "pie", labels, values, hole: .56, textinfo: "label+percent" }];
+        return [{
+          type: "pie", labels, values, hole: .56,
+          textinfo: "percent", textposition: "inside", insidetextorientation: "horizontal",
+          texttemplate: "%{percent}", automargin: true, sort: false,
+          marker: { colors: PIE_COLORS, line: { color: "rgba(11,16,32,.65)", width: 2 } },
+        }];
       case "plotly_scatter":
         return [{ type: "scatter", mode: "markers+text", x: labels.map((_, i) => i + 1), y: values, text: labels, textposition: "top center", marker: { size: values.map(v => 10 + (v / maxv) * 22), opacity: .86 } }];
       case "plotly_bubble":
@@ -1740,10 +1766,54 @@
         delete layout.xaxis; delete layout.yaxis;
         layout.polar = { radialaxis: { visible: true, gridcolor: "rgba(255,255,255,.12)" }, bgcolor: "rgba(0,0,0,0)" };
       }
+      // Pie / donut: the legend below the chart already names every slice and
+      // the question is shown above it, so suppress the floating outside
+      // labels (which otherwise overflow the container) and drop the title.
+      const isPie = chartId === "plotly_pie" || chartId === "plotly_donut";
+      if (isPie) {
+        layout.title = "";
+        layout.margin = { l: 8, r: 8, t: 8, b: 8 };
+        layout.showlegend = false;
+      }
+      // Clear the "Loading visual…" placeholder BEFORE drawing — Plotly
+      // appends its plot node and would otherwise leave the loading text
+      // sitting behind/over the chart.
+      mount.innerHTML = "";
       window.Plotly.newPlot(mount, data, layout, plotlyConfig());
     }).catch(err => {
-      console.warn("[chart_extra] Plotly unavailable", err);
-      mount.innerHTML = `<div class="kk-extra-empty">Plotly could not load. Check internet/CDN access.</div>`;
+      console.warn("[chart_extra] Plotly unavailable, falling back to built-in chart", err);
+      // CDN blocked or offline: don't strand the audience on "Loading visual…".
+      // Map the Plotly chart id to the closest built-in renderer and draw that.
+      const fallbackMap = {
+        plotly_donut: "donut", plotly_pie: "pie", plotly_bar: "bar",
+        plotly_hbar: "horizontal_bar", plotly_line: "line", plotly_area: "area",
+        plotly_stacked: "stacked_bar", plotly_grouped: "grouped_bar",
+        plotly_scatter: "scatter", plotly_heatmap: "heatmap",
+        plotly_treemap: "treemap", plotly_radar: "radar", plotly_gauge: "gauge",
+      };
+      const fb = fallbackMap[chartId] || "bar";
+      specialEl.innerHTML = "";
+      let drew = false;
+      try {
+        if (typeof RENDERERS[fb] === "function") {
+          RENDERERS[fb](Object.assign({}, ctx, { chartId: fb }));
+          drew = true;
+        }
+      } catch (e) { drew = false; }
+      if (!drew && typeof window.kkRenderLive === "function" && ctx.liveCanvas) {
+        // Last resort: the Chart.js pipeline.
+        try {
+          if (ctx.liveCanvas) ctx.liveCanvas.style.display = "block";
+          window.kkRenderLive(
+            ctx.liveCanvas, specialEl, fb, ctx.questionType,
+            (ctx.question && ctx.question.choices) || [], ctx.tallyData, ctx.chartHolder || {}
+          );
+          drew = true;
+        } catch (e) {}
+      }
+      if (!drew) {
+        specialEl.innerHTML = `<div class="kk-extra-empty">Couldn't load the rich chart. Check network/CDN access to cdn.plot.ly.</div>`;
+      }
     });
   }
 
@@ -1908,6 +1978,407 @@
       return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
     } catch (e) { return ""; }
   }
+
+
+  // ════════════════════════════════════════════════════════════════════
+  //  NEW CREATIVE RENDERERS (v4)  —  beyond the Mentimeter default set.
+  //  Each follows the same contract: paint into ctx.specialEl, read
+  //  ctx.tallyData / ctx.question, degrade gracefully when empty.
+  // ════════════════════════════════════════════════════════════════════
+
+  const KK_PALETTE = ["#22d3ee", "#7c3aed", "#fb7185", "#fbbf24", "#34d399", "#60a5fa", "#f472b6", "#a3e635"];
+
+  // Pick the right data rows for a renderer regardless of question shape.
+  // Returns [{label, n}] sorted desc, plus total.
+  function universalRows(ctx) {
+    const q = ctx.question || {};
+    const qtype = String(q.type || ctx.questionType || "").toLowerCase();
+    const td = ctx.tallyData || {};
+
+    if (["word", "open", "open_text"].includes(qtype)) {
+      const w = collectWords(td).map(r => ({ label: r.word, n: r.n }));
+      return { rows: w, total: sum(w.map(r => r.n)) };
+    }
+    if (["scale", "rating", "nps", "slider", "numeric"].includes(qtype)) {
+      const { vals, min, max } = collectNumeric(q, td);
+      const counts = {};
+      vals.forEach(v => { counts[v] = (counts[v] || 0) + 1; });
+      const rows = [];
+      for (let i = min; i <= max; i++) rows.push({ label: String(i), n: counts[i] || 0 });
+      return { rows, total: sum(rows.map(r => r.n)) };
+    }
+    const agg = aggregateChoices(q, td);
+    return { rows: agg.rows.map(r => ({ label: r.text, n: r.n })), total: agg.total };
+  }
+
+  // ───────── dot_matrix (waffle / isotype) ─────────
+  // Each respondent = one dot. 10×N grid. Brilliant for "X out of 100".
+  RENDERERS.dot_matrix = function (ctx) {
+    const { specialEl } = ctx;
+    const { rows, total } = universalRows(ctx);
+    if (!total) return emptyState(specialEl, "Waiting for the first response…");
+
+    const sorted = rows.slice().sort((a, b) => b.n - a.n);
+    const TOTAL_DOTS = 100;
+    // Allocate dots proportionally, largest-remainder so they sum to 100.
+    const exact = sorted.map(r => (r.n / total) * TOTAL_DOTS);
+    const floor = exact.map(Math.floor);
+    let used = sum(floor);
+    const rem = exact.map((e, i) => ({ i, frac: e - floor[i] })).sort((a, b) => b.frac - a.frac);
+    let k = 0;
+    while (used < TOTAL_DOTS && k < rem.length) { floor[rem[k].i]++; used++; k++; }
+
+    let dotHtml = "", di = 0;
+    sorted.forEach((r, ci) => {
+      const color = KK_PALETTE[ci % KK_PALETTE.length];
+      for (let d = 0; d < floor[ci]; d++) {
+        dotHtml += `<span class="kk-dot" style="--c:${color}; --d:${di * 8}ms"></span>`;
+        di++;
+      }
+    });
+
+    const legend = sorted.map((r, ci) => `
+      <span class="kk-dot-legend">
+        <i style="background:${KK_PALETTE[ci % KK_PALETTE.length]}"></i>
+        ${escapeHtml(r.label)} <b>${Math.round((r.n / total) * 100)}%</b>
+      </span>`).join("");
+
+    specialEl.innerHTML = `
+      <div class="kk-extra kk-dotmatrix">
+        <div class="kk-dot-grid">${dotHtml}</div>
+        <div class="kk-dot-legend-row">${legend}</div>
+      </div>`;
+  };
+
+  // ───────── radial_bar (Nightingale rose / circular bars) ─────────
+  RENDERERS.radial_bar = function (ctx) {
+    const { specialEl } = ctx;
+    const { rows, total } = universalRows(ctx);
+    if (!total) return emptyState(specialEl, "Waiting for votes…");
+
+    const data = rows.slice(0, 12);
+    const top = maxValue(data.map(r => r.n)) || 1;
+    const VB = 600, cx = VB / 2, cy = VB / 2;
+    const innerR = 70, maxR = 250;
+    const n = data.length;
+    const gap = 0.12; // radians between wedges
+    const seg = (Math.PI * 2) / n;
+
+    const wedges = data.map((r, i) => {
+      const a0 = i * seg + gap / 2 - Math.PI / 2;
+      const a1 = (i + 1) * seg - gap / 2 - Math.PI / 2;
+      const rr = innerR + (maxR - innerR) * (r.n / top);
+      const x0 = cx + innerR * Math.cos(a0), y0 = cy + innerR * Math.sin(a0);
+      const x1 = cx + rr * Math.cos(a0), y1 = cy + rr * Math.sin(a0);
+      const x2 = cx + rr * Math.cos(a1), y2 = cy + rr * Math.sin(a1);
+      const x3 = cx + innerR * Math.cos(a1), y3 = cy + innerR * Math.sin(a1);
+      const large = (a1 - a0) > Math.PI ? 1 : 0;
+      const color = KK_PALETTE[i % KK_PALETTE.length];
+      const path = `M${x0.toFixed(1)} ${y0.toFixed(1)} L${x1.toFixed(1)} ${y1.toFixed(1)} ` +
+        `A${rr.toFixed(1)} ${rr.toFixed(1)} 0 ${large} 1 ${x2.toFixed(1)} ${y2.toFixed(1)} ` +
+        `L${x3.toFixed(1)} ${y3.toFixed(1)} A${innerR} ${innerR} 0 ${large} 0 ${x0.toFixed(1)} ${y0.toFixed(1)} Z`;
+      // label at outer mid-angle
+      const am = (a0 + a1) / 2;
+      const lr = rr + 18;
+      const lx = cx + lr * Math.cos(am), ly = cy + lr * Math.sin(am);
+      const anchor = Math.cos(am) > 0.2 ? "start" : Math.cos(am) < -0.2 ? "end" : "middle";
+      return `
+        <path d="${path}" fill="${color}" opacity="0.9"
+              style="transform-origin:${cx}px ${cy}px; animation:kkRoseIn .6s cubic-bezier(.34,1.4,.5,1) both; animation-delay:${i * 60}ms"/>
+        <text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="${anchor}"
+              dominant-baseline="middle" font-family="'Clash Display',system-ui,sans-serif"
+              font-weight="800" font-size="17" fill="#f8fafc">${escapeHtml(String(r.label).slice(0, 14))}</text>
+        <text x="${lx.toFixed(1)}" y="${(ly + 18).toFixed(1)}" text-anchor="${anchor}"
+              dominant-baseline="middle" font-size="13" fill="rgba(248,250,252,.6)">${r.n}</text>`;
+    }).join("");
+
+    specialEl.innerHTML = `
+      <div class="kk-extra kk-rose">
+        <svg viewBox="0 0 ${VB} ${VB}" preserveAspectRatio="xMidYMid meet" class="kk-rose-svg">
+          <circle cx="${cx}" cy="${cy}" r="${innerR - 6}" fill="rgba(255,255,255,.04)" stroke="rgba(255,255,255,.12)"/>
+          <text x="${cx}" y="${cy - 6}" text-anchor="middle" font-family="'Clash Display',system-ui,sans-serif"
+                font-weight="900" font-size="40" fill="#f8fafc">${total}</text>
+          <text x="${cx}" y="${cy + 22}" text-anchor="middle" font-size="13" letter-spacing="3"
+                fill="rgba(248,250,252,.6)">VOTES</text>
+          ${wedges}
+        </svg>
+      </div>`;
+  };
+
+  // ───────── comparison_bars (diverging / butterfly) ─────────
+  // For Likert: negative side (disagree) left, positive (agree) right,
+  // neutral straddles the centre. Falls back to a centred diverging bar.
+  RENDERERS.comparison_bars = function (ctx) {
+    const { specialEl } = ctx;
+    const { rows, total } = universalRows(ctx);
+    if (!total) return emptyState(specialEl, "Waiting for responses…");
+
+    const n = rows.length;
+    // Heuristic split: first ~half = negative, middle (if odd) = neutral, rest positive.
+    const mid = (n % 2 === 1) ? Math.floor(n / 2) : -1;
+    const top = maxValue(rows.map(r => r.n)) || 1;
+
+    const bars = rows.map((r, i) => {
+      const side = mid === -1
+        ? (i < n / 2 ? "neg" : "pos")
+        : (i < mid ? "neg" : i > mid ? "pos" : "neutral");
+      const w = (r.n / top) * 100;
+      const color = side === "neg" ? "#fb7185" : side === "pos" ? "#34d399" : "#fbbf24";
+      return `
+        <div class="kk-cmp-row" style="--d:${i * 60}ms">
+          <div class="kk-cmp-half left">
+            ${side === "neg" ? `<span class="kk-cmp-fill" style="--w:${w}%; --c:${color}"></span>` : ""}
+          </div>
+          <div class="kk-cmp-mid">
+            <span class="kk-cmp-label">${escapeHtml(r.label)}</span>
+            <span class="kk-cmp-n">${r.n}</span>
+          </div>
+          <div class="kk-cmp-half right">
+            ${side !== "neg" ? `<span class="kk-cmp-fill ${side}" style="--w:${w}%; --c:${color}"></span>` : ""}
+          </div>
+        </div>`;
+    }).join("");
+
+    specialEl.innerHTML = `
+      <div class="kk-extra kk-cmp">
+        <div class="kk-cmp-axis"><span></span></div>
+        <div class="kk-cmp-rows">${bars}</div>
+      </div>`;
+  };
+
+  // ───────── bee_swarm (numeric dot distribution) ─────────
+  RENDERERS.bee_swarm = function (ctx) {
+    const { specialEl, question } = ctx;
+    const { vals, min, max } = collectNumeric(question || {}, ctx.tallyData || {});
+    if (!vals.length) return emptyState(specialEl, "Waiting for numbers…");
+
+    const VBW = 1000, VBH = 460, padX = 60, padTop = 40, padBot = 70;
+    const axisY = VBH - padBot;
+    const range = Math.max(1, max - min);
+    const xFor = v => padX + ((v - min) / range) * (VBW - padX * 2);
+
+    // Bin values to the same x, stack vertically with jitter for swarm look.
+    const buckets = new Map();
+    const dots = vals.map(v => {
+      const xKey = Math.round(xFor(v) / 14) * 14;
+      const stack = buckets.get(xKey) || 0;
+      buckets.set(xKey, stack + 1);
+      const dir = stack % 2 === 0 ? 1 : -1;
+      const lvl = Math.ceil(stack / 2);
+      const y = axisY - 14 - lvl * 13 * 0 + dir * lvl * 11; // center around axis
+      const t = (v - min) / range;
+      const color = KK_PALETTE[Math.min(KK_PALETTE.length - 1, Math.floor(t * KK_PALETTE.length))];
+      return { x: xKey, y: axisY - 16 - (lvl * 12), color, v };
+    });
+
+    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const meanX = xFor(mean);
+
+    const ticks = [];
+    const step = range <= 10 ? 1 : Math.ceil(range / 10);
+    for (let v = min; v <= max; v += step) {
+      ticks.push(`<text x="${xFor(v).toFixed(1)}" y="${axisY + 26}" text-anchor="middle"
+        font-size="16" fill="rgba(248,250,252,.55)">${v}</text>`);
+    }
+
+    const circles = dots.map((d, i) => `
+      <circle cx="${d.x}" cy="${d.y.toFixed(1)}" r="6.5" fill="${d.color}" opacity="0.88"
+              style="animation:kkSwarmIn .5s cubic-bezier(.34,1.4,.5,1) both; animation-delay:${Math.min(i * 6, 900)}ms"/>`).join("");
+
+    specialEl.innerHTML = `
+      <div class="kk-extra kk-swarm">
+        <svg viewBox="0 0 ${VBW} ${VBH}" preserveAspectRatio="xMidYMid meet" class="kk-swarm-svg">
+          <line x1="${padX}" y1="${axisY}" x2="${VBW - padX}" y2="${axisY}" stroke="rgba(255,255,255,.16)" stroke-width="2"/>
+          ${ticks.join("")}
+          <line x1="${meanX.toFixed(1)}" y1="${padTop}" x2="${meanX.toFixed(1)}" y2="${axisY}"
+                stroke="#fbbf24" stroke-width="2" stroke-dasharray="6 6" opacity="0.8"/>
+          <text x="${meanX.toFixed(1)}" y="${padTop - 10}" text-anchor="middle"
+                font-family="'Clash Display',system-ui,sans-serif" font-weight="800"
+                font-size="18" fill="#fbbf24">avg ${mean.toFixed(1)}</text>
+          ${circles}
+        </svg>
+      </div>`;
+  };
+
+  // ───────── packed_circles (hierarchical circle pack) ─────────
+  // A more polished cousin of `bubble` — concentric pack, sized by share.
+  RENDERERS.packed_circles = function (ctx) {
+    const { specialEl } = ctx;
+    const { rows, total } = universalRows(ctx);
+    if (!total) return emptyState(specialEl, "Waiting for responses…");
+
+    const data = rows.slice(0, 14).sort((a, b) => b.n - a.n);
+    const VB = 700, cx = VB / 2, cy = VB / 2;
+    const rMax = VB * 0.27, rMin = VB * 0.05;
+    const top = data[0].n || 1;
+    const rFor = nn => rMin + (rMax - rMin) * Math.sqrt(nn / top);
+
+    const placed = [];
+    data.forEach((r, i) => {
+      const rad = rFor(r.n);
+      let cx0, cy0, ok = false;
+      if (i === 0) { cx0 = cx; cy0 = cy; ok = true; }
+      else {
+        for (let a = 0; a < 600 && !ok; a++) {
+          const sr = (a / 600) * VB * 0.42;
+          const ang = a * 2.399; // golden-angle spiral
+          cx0 = cx + Math.cos(ang) * sr;
+          cy0 = cy + Math.sin(ang) * sr;
+          if (cx0 - rad < 6 || cx0 + rad > VB - 6 || cy0 - rad < 6 || cy0 + rad > VB - 6) continue;
+          ok = placed.every(p => Math.hypot(p.cx - cx0, p.cy - cy0) > p.r + rad + 4);
+        }
+      }
+      if (ok) placed.push({ cx: cx0, cy: cy0, r: rad, label: r.label, n: r.n, c: KK_PALETTE[i % KK_PALETTE.length] });
+    });
+
+    const circles = placed.map((p, i) => {
+      const fs = Math.max(12, Math.min(p.r * 0.4, 34));
+      const maxChars = Math.max(3, Math.floor((p.r * 1.7) / (fs * 0.55)));
+      const lbl = String(p.label).length > maxChars ? String(p.label).slice(0, maxChars - 1) + "…" : p.label;
+      return `
+        <g style="transform-origin:${p.cx}px ${p.cy}px; animation:kkPackIn .55s cubic-bezier(.34,1.4,.5,1) both; animation-delay:${i * 50}ms">
+          <circle cx="${p.cx.toFixed(1)}" cy="${p.cy.toFixed(1)}" r="${p.r.toFixed(1)}" fill="${p.c}" opacity="0.9"/>
+          <circle cx="${p.cx.toFixed(1)}" cy="${(p.cy - p.r * 0.32).toFixed(1)}" r="${(p.r * 0.74).toFixed(1)}"
+                  fill="url(#kkPackSheen)" opacity="0.5"/>
+          <text x="${p.cx.toFixed(1)}" y="${p.cy.toFixed(1)}" text-anchor="middle" dominant-baseline="middle"
+                font-family="'Clash Display',system-ui,sans-serif" font-weight="800"
+                font-size="${fs.toFixed(0)}" fill="rgba(15,23,42,.92)">${escapeHtml(lbl)}</text>
+          <text x="${p.cx.toFixed(1)}" y="${(p.cy + fs * 0.85).toFixed(1)}" text-anchor="middle" dominant-baseline="middle"
+                font-weight="700" font-size="${(fs * 0.6).toFixed(0)}" fill="rgba(15,23,42,.6)">${p.n}</text>
+        </g>`;
+    }).join("");
+
+    specialEl.innerHTML = `
+      <div class="kk-extra kk-pack">
+        <svg viewBox="0 0 ${VB} ${VB}" preserveAspectRatio="xMidYMid meet" class="kk-pack-svg">
+          <defs><radialGradient id="kkPackSheen" cx="50%" cy="35%" r="55%">
+            <stop offset="0%" stop-color="#fff" stop-opacity="0.8"/>
+            <stop offset="70%" stop-color="#fff" stop-opacity="0.05"/>
+            <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+          </radialGradient></defs>
+          ${circles}
+        </svg>
+      </div>`;
+  };
+
+  // ───────── hero_number (big animated count-up) ─────────
+  // For yes_no / single-stat moments: giant number that counts up live.
+  RENDERERS.hero_number = function (ctx) {
+    const { specialEl } = ctx;
+    const { rows, total } = universalRows(ctx);
+    if (!total) return emptyState(specialEl, "Waiting for the first response…");
+
+    const sorted = rows.slice().sort((a, b) => b.n - a.n);
+    const leader = sorted[0];
+    const pct = Math.round((leader.n / total) * 100);
+
+    specialEl.innerHTML = `
+      <div class="kk-extra kk-hero">
+        <div class="kk-hero-pct" data-target="${pct}">0<span>%</span></div>
+        <div class="kk-hero-label">${escapeHtml(leader.label)}</div>
+        <div class="kk-hero-sub">${leader.n} of ${total} responses</div>
+        <div class="kk-hero-chips">
+          ${sorted.slice(1, 5).map((r, i) => `
+            <span class="kk-hero-chip" style="--c:${KK_PALETTE[(i + 1) % KK_PALETTE.length]}">
+              ${escapeHtml(r.label)} · ${Math.round((r.n / total) * 100)}%
+            </span>`).join("")}
+        </div>
+      </div>`;
+
+    // Count-up animation.
+    const elNum = specialEl.querySelector(".kk-hero-pct");
+    if (elNum) {
+      const target = pct;
+      const start = performance.now(), dur = 900;
+      function tick(now) {
+        const p = Math.min(1, (now - start) / dur);
+        const eased = 1 - Math.pow(1 - p, 3);
+        elNum.firstChild.textContent = String(Math.round(target * eased));
+        if (p < 1) requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    }
+  };
+
+  // ───────── stream_graph (themeriver-ish, top words/choices) ─────────
+  // A flowing stacked-area "river" — good for word/choice share at a glance.
+  RENDERERS.stream_graph = function (ctx) {
+    const { specialEl } = ctx;
+    const { rows, total } = universalRows(ctx);
+    if (!total) return emptyState(specialEl, "Waiting for responses…");
+
+    const data = rows.slice(0, 6).sort((a, b) => b.n - a.n);
+    const VBW = 1000, VBH = 460;
+    const STEPS = 7;
+    // Synthesize a gentle ramp per series so it reads as "growth over time".
+    const series = data.map((r, i) => {
+      const target = r.n;
+      const pts = [];
+      for (let s = 0; s < STEPS; s++) {
+        const t = s / (STEPS - 1);
+        // ease toward target with a little per-series phase
+        const v = target * (0.15 + 0.85 * Math.pow(t, 1 + (i % 3) * 0.25));
+        pts.push(v);
+      }
+      return { label: r.label, n: r.n, pts, c: KK_PALETTE[i % KK_PALETTE.length] };
+    });
+
+    // Stack & center (themeriver baseline = -totalAtStep/2).
+    const totalsAt = [];
+    for (let s = 0; s < STEPS; s++) totalsAt[s] = sum(series.map(se => se.pts[s]));
+    const maxStackTotal = Math.max(...totalsAt) || 1;
+    const yScale = (VBH * 0.8) / maxStackTotal;
+    const xAt = s => 40 + (s / (STEPS - 1)) * (VBW - 80);
+
+    // Compute baseline per step (centered).
+    const baseline = totalsAt.map(t => (VBH / 2) + (t * yScale) / 2);
+
+    let cumulative = baseline.slice();
+    const paths = series.map((se) => {
+      const topPts = [], botPts = [];
+      for (let s = 0; s < STEPS; s++) {
+        const h = se.pts[s] * yScale;
+        const yBot = cumulative[s];
+        const yTop = yBot - h;
+        botPts.push([xAt(s), yBot]);
+        topPts.push([xAt(s), yTop]);
+        cumulative[s] = yTop;
+      }
+      const smooth = (pts) => pts.map((p, i) => {
+        if (i === 0) return `M${p[0].toFixed(1)} ${p[1].toFixed(1)}`;
+        const prev = pts[i - 1];
+        const cxm = (prev[0] + p[0]) / 2;
+        return `C${cxm.toFixed(1)} ${prev[1].toFixed(1)} ${cxm.toFixed(1)} ${p[1].toFixed(1)} ${p[0].toFixed(1)} ${p[1].toFixed(1)}`;
+      }).join(" ");
+      const d = `${smooth(topPts)} L${botPts[botPts.length - 1][0].toFixed(1)} ${botPts[botPts.length - 1][1].toFixed(1)} ` +
+        smooth(botPts.slice().reverse()).replace(/^M/, "L") + " Z";
+      const midY = (topPts[STEPS - 1][1] + botPts[STEPS - 1][1]) / 2;
+      return { d, c: se.c, label: se.label, n: se.n, midY };
+    });
+
+    const bands = paths.map((p, i) => `
+      <path d="${p.d}" fill="${p.c}" opacity="0.82"
+            style="animation:kkStreamIn .7s ease both; animation-delay:${i * 80}ms"/>`).join("");
+    const labels = paths.map(p => `
+      <text x="${VBW - 70}" y="${p.midY.toFixed(1)}" text-anchor="end" dominant-baseline="middle"
+            font-family="'Clash Display',system-ui,sans-serif" font-weight="800" font-size="16"
+            fill="#0f172a">${escapeHtml(String(p.label).slice(0, 14))}</text>`).join("");
+
+    specialEl.innerHTML = `
+      <div class="kk-extra kk-stream">
+        <svg viewBox="0 0 ${VBW} ${VBH}" preserveAspectRatio="xMidYMid meet" class="kk-stream-svg">
+          ${bands}${labels}
+        </svg>
+      </div>`;
+  };
+
+  // Sensible alias so older/auto chart ids still resolve to something rich.
+  RENDERERS.waffle = RENDERERS.dot_matrix;
+  RENDERERS.rose = RENDERERS.radial_bar;
+  RENDERERS.diverging_bar = RENDERERS.comparison_bars;
+  RENDERERS.split_count = RENDERERS.hero_number;
+
+
 
   // ───────── Styles ─────────
   const STYLES = `
@@ -2594,5 +3065,89 @@
       color: rgba(248,250,252,.7);
     }
     .kk-heat-waiting-emoji { font-size: 3rem; opacity: .55; }
+
+    /* ════ NEW CREATIVE CHARTS (v4) ════ */
+
+    /* ── dot_matrix / waffle ── */
+    .kk-dotmatrix { display: flex; flex-direction: column; gap: 1.25rem; align-items: center; justify-content: center; padding: 1.5rem; }
+    .kk-dot-grid {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      gap: clamp(6px, 1.1vw, 12px);
+      width: min(58vh, 100%); max-width: 520px; aspect-ratio: 1/1;
+    }
+    .kk-dot {
+      border-radius: 50%;
+      background: var(--c, #22d3ee);
+      box-shadow: 0 2px 10px color-mix(in srgb, var(--c, #22d3ee) 45%, transparent);
+      animation: kkDotPop .4s cubic-bezier(.34,1.5,.5,1) both;
+      animation-delay: var(--d, 0ms);
+    }
+    @keyframes kkDotPop { from { transform: scale(0); opacity: 0; } }
+    .kk-dot-legend-row { display: flex; flex-wrap: wrap; gap: .5rem 1.1rem; justify-content: center; }
+    .kk-dot-legend { display: inline-flex; align-items: center; gap: .4rem; font-weight: 700; font-size: .95rem; color: #f8fafc; }
+    .kk-dot-legend i { width: 14px; height: 14px; border-radius: 4px; display: inline-block; }
+    .kk-dot-legend b { font-family: 'Clash Display', system-ui, sans-serif; }
+
+    /* ── radial_bar / rose ── */
+    .kk-rose { display: grid; place-items: center; height: 100%; }
+    .kk-rose-svg { width: min(94%, 640px); height: auto; max-height: 100%; }
+    @keyframes kkRoseIn { from { transform: scale(0); opacity: 0; } }
+
+    /* ── comparison_bars / diverging ── */
+    .kk-cmp { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: center; padding: 1.5rem 1rem; gap: .65rem; }
+    .kk-cmp-axis { position: absolute; left: 50%; top: 1rem; bottom: 1rem; width: 2px; background: rgba(255,255,255,.18); transform: translateX(-50%); }
+    .kk-cmp-rows { display: flex; flex-direction: column; gap: .7rem; }
+    .kk-cmp-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 0; animation: kkRankIn .45s cubic-bezier(.4,0,.2,1) both; animation-delay: var(--d, 0ms); }
+    .kk-cmp-half { height: 26px; position: relative; }
+    .kk-cmp-half.left { display: flex; justify-content: flex-end; }
+    .kk-cmp-fill { display: block; height: 100%; width: var(--w, 0%); background: var(--c, #22d3ee); border-radius: 8px; box-shadow: 0 0 16px color-mix(in srgb, var(--c, #22d3ee) 40%, transparent); animation: kkCmpGrow .6s cubic-bezier(.4,0,.2,1) both; }
+    .kk-cmp-half.left .kk-cmp-fill { border-radius: 8px 0 0 8px; }
+    .kk-cmp-half.right .kk-cmp-fill { border-radius: 0 8px 8px 0; }
+    .kk-cmp-half.right .kk-cmp-fill.neutral { border-radius: 8px; }
+    @keyframes kkCmpGrow { from { width: 0; } }
+    .kk-cmp-mid { min-width: 140px; max-width: 220px; text-align: center; padding: 0 .75rem; display: flex; flex-direction: column; }
+    .kk-cmp-label { font-weight: 700; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .kk-cmp-n { font-family: 'Clash Display', system-ui, sans-serif; font-weight: 900; font-size: .85rem; opacity: .7; }
+
+    /* ── bee_swarm ── */
+    .kk-swarm { display: grid; place-items: center; height: 100%; }
+    .kk-swarm-svg { width: min(98%, 1000px); height: auto; max-height: 100%; }
+    @keyframes kkSwarmIn { from { transform: translateY(14px); opacity: 0; } }
+
+    /* ── packed_circles ── */
+    .kk-pack { display: grid; place-items: center; height: 100%; }
+    .kk-pack-svg { width: min(92%, 680px); height: auto; max-height: 100%; }
+    @keyframes kkPackIn { from { transform: scale(0); opacity: 0; } }
+
+    /* ── hero_number ── */
+    .kk-hero { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .35rem; text-align: center; padding: 1.5rem; }
+    .kk-hero-pct {
+      font-family: 'Clash Display', system-ui, sans-serif; font-weight: 900;
+      font-size: clamp(5rem, 22vh, 13rem); line-height: .9;
+      background: linear-gradient(135deg, #22d3ee, #7c3aed);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+      letter-spacing: -.04em;
+    }
+    .kk-hero-pct span { font-size: .42em; }
+    .kk-hero-label { font-size: clamp(1.4rem, 3.5vh, 2.4rem); font-weight: 800; color: #f8fafc; }
+    .kk-hero-sub { color: rgba(248,250,252,.6); font-weight: 600; }
+    .kk-hero-chips { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: center; margin-top: 1rem; }
+    .kk-hero-chip { padding: .3em .8em; border-radius: 999px; font-weight: 700; font-size: .9rem; color: #f8fafc; background: color-mix(in srgb, var(--c, #22d3ee) 18%, transparent); border: 1px solid color-mix(in srgb, var(--c, #22d3ee) 45%, transparent); }
+
+    /* ── stream_graph ── */
+    .kk-stream { display: grid; place-items: center; height: 100%; }
+    .kk-stream-svg { width: min(98%, 1000px); height: auto; max-height: 100%; }
+    @keyframes kkStreamIn { from { opacity: 0; transform: translateY(10px); } }
+
+    /* Kill any Plotly chrome that slips through config (modebar, drag cursors,
+       the "Produced with Plotly" link) so the live stage stays clean. */
+    .kk-rich-mount .modebar,
+    .kk-rich-mount .modebar-container,
+    .kk-rich-mount .js-plotly-plot .plotly .modebar { display: none !important; }
+    .kk-rich-mount .js-plotly-plot .plotly a[href*="plot.ly"],
+    .kk-rich-mount .js-plotly-plot .plotly a[href*="plotly.com"] { display: none !important; }
+    .kk-rich-mount .js-plotly-plot .cursor-crosshair,
+    .kk-rich-mount .js-plotly-plot .drag { cursor: default !important; }
   `;
 })();

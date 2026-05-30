@@ -51,6 +51,8 @@
   const scoreChip = document.getElementById("score-chip");
   const timerChip = document.getElementById("timer-chip");
   const selfNext  = document.getElementById("self-next");
+  const selfBack  = document.getElementById("self-back");
+  const selfNav   = document.getElementById("self-nav");
   const waitNick  = document.getElementById("wait-nick");
   const waitAvatar = document.getElementById("wait-avatar");
   const roomTag   = document.getElementById("room-tag");
@@ -236,6 +238,23 @@
 
   function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
+  // ── Self-pace (open mode) navigation ──
+  // Driven entirely by the server's per-participant flags on each state:
+  //   can_self_advance → show the Back/Next row
+  //   index            → disable Back on the first slide
+  // This replaces the old "reveal Next only after answering" logic so a
+  // participant can also skip ahead without answering (open mode is self-paced).
+  function setSelfNav(s) {
+    const canPace = !!(s && s.can_self_advance);
+    if (selfNav) {
+      selfNav.style.setProperty("display", canPace ? "flex" : "none", "important");
+    } else if (selfNext) {
+      // Fallback for older markup without the nav wrapper.
+      selfNext.style.display = canPace ? "block" : "none";
+    }
+    if (selfBack) selfBack.disabled = (Number(s && s.index) || 0) <= 0;
+  }
+
   function requestCorrectAnswerReveal(delayMs) {
     if (kind !== "game" || !currentQuestion || !currentQuestion.id) return;
 
@@ -265,7 +284,17 @@
       case "answer_rejected":  onAnswerRejected(msg); break;
       case "correct_answer":   onCorrectAnswerReveal(msg); break;
       case "ended":            onEnded(); break;
+      case "self_finished":    onSelfFinished(msg); break;
+      case "replay":           location.reload(); break;
     }
+  }
+
+  function onSelfFinished(msg) {
+    // Open mode: this participant walked past the last slide. Show the end
+    // card (the same one used when the session ends) and hide the nav.
+    if (selfNav) selfNav.style.setProperty("display", "none", "important");
+    else if (selfNext) selfNext.style.display = "none";
+    onEnded();
   }
 
   // ─────────────────────── State / question rendering ───────────────────────
@@ -309,7 +338,8 @@
     // New question? Reset transient UI bits.
     if (currentQuestion?.id !== q.id) {
       qResult.style.display = "none";
-      if (selfNext) selfNext.style.display = "none";
+      if (selfNav) selfNav.style.setProperty("display", "none", "important");
+      else if (selfNext) selfNext.style.display = "none";
       questionReceivedAt = Date.now();
       myChoiceId = null;
       answeredQuestionId = null;
@@ -326,6 +356,11 @@
     qProgress.textContent = `Question ${s.index + 1} / ${s.total}`;
     show(stepQuestion);
 
+    // Self-pace nav visibility is decided by the server's per-participant
+    // flags, evaluated on every state (covers open mode whether or not the
+    // participant has answered yet).
+    setSelfNav(s);
+
     if (kind === "poll") renderPollQuestion(q, s);
     else                 renderGameQuestion(q, s);
 
@@ -339,7 +374,7 @@
     } else if (kind === "poll" && s.my_answer) {
       // Renderers also lock+toast, but make absolutely sure the chip shows.
       answeredQuestionId = q.id;
-      if (mode === "open" && selfNext) selfNext.style.display = "block";
+      if (mode === "open") { if (selfNav) selfNav.style.setProperty("display","flex","important"); else if (selfNext) selfNext.style.display = "block"; }
     }
 
     // Cache + draw tally chart (if applicable).
@@ -438,7 +473,7 @@
   function markAnswered(q) {
     answeredQuestionId = q.id;
     showResult("Submitted ✓");
-    if (mode === "open" && selfNext) selfNext.style.display = "block";
+    if (mode === "open") { if (selfNav) selfNav.style.setProperty("display","flex","important"); else if (selfNext) selfNext.style.display = "block"; }
   }
 
   function renderPollQuestion(q, s) {
@@ -1839,7 +1874,7 @@
         if (Number(b.dataset.value)     === Number(my.value))     b.classList.add("picked");
       });
       showResult("Submitted ✓");
-      if (mode === "open" && selfNext) selfNext.style.display = "block";
+      if (mode === "open") { if (selfNav) selfNav.style.setProperty("display","flex","important"); else if (selfNext) selfNext.style.display = "block"; }
     }
   }
 
@@ -2046,7 +2081,10 @@
   }
 
   if (selfNext) {
-    selfNext.addEventListener("click", () => send({ type: "self_advance" }));
+    selfNext.addEventListener("click", () => send({ type: "self_advance", direction: "next" }));
+  }
+  if (selfBack) {
+    selfBack.addEventListener("click", () => send({ type: "self_advance", direction: "back" }));
   }
 
   // ─────────────────────── helpers ───────────────────────

@@ -5,6 +5,7 @@ app_name = "presentations"
 
 urlpatterns = [
     path("present/<str:code>/", views.present, name="present"),
+    path("present/<str:code>/replay/", views.replay, name="replay"),
     path("join/", views.join_landing, name="join"),
     path("join/<str:code>/", views.join_code, name="join_code"),
     path("qr/<str:code>/", views.qr_png, name="qr"),

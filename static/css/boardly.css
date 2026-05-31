@@ -2353,6 +2353,8 @@
 .kk-board-style-scholar   { --board-accent: #475569; }
 .kk-board-style-festive   { --board-accent: #e11d48; }
 .kk-board-style-neon      { --board-accent: #9333ea; }
+.kk-board-style-climate   { --board-accent: #16a34a; }
+.kk-board-style-wall      { --board-accent: #0ea5e9; }
 
 /* A subtle accent-tinted glow on the board sheet, distinct per template. */
 .kk-board-stage[data-style]:not([data-style="custom"]) .kk-board-sheet {
@@ -2384,6 +2386,140 @@
   background-image: radial-gradient(120% 80% at 50% 0%,
     rgba(101,163,13,.08), transparent 60%);
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   Designed template backdrops
+   Each style paints a finished scene on the board sheet so a board looks
+   designed the moment it opens — no photo upload needed. All are scoped
+   with :not(.has-photo-bg) so an uploaded background photo still wins,
+   and they sit behind the content via the sheet's own painting (the
+   heading/columns/notes already layer above through existing z-index). */
+.kk-board-sheet:not(.has-photo-bg) {
+  background-color: #f7f9fc;
+}
+
+/* Aurora — soft indigo/violet dawn wash. */
+.kk-board-style-aurora .kk-board-sheet:not(.has-photo-bg) {
+  background-image:
+    radial-gradient(120% 70% at 12% 0%, rgba(99,102,241,.16), transparent 55%),
+    radial-gradient(120% 70% at 100% 8%, rgba(236,72,153,.14), transparent 55%),
+    linear-gradient(180deg, #f3f4ff 0%, #fbf9ff 60%, #ffffff 100%);
+}
+/* Sunrise — warm amber/peach horizon. */
+.kk-board-style-sunrise .kk-board-sheet:not(.has-photo-bg) {
+  background-image:
+    radial-gradient(90% 60% at 50% -8%, rgba(245,158,11,.22), transparent 60%),
+    linear-gradient(180deg, #fff7ed 0%, #fffdf8 55%, #ffffff 100%);
+}
+/* Boardroom — calm teal, business-clean. */
+.kk-board-style-boardroom .kk-board-sheet:not(.has-photo-bg) {
+  background-image:
+    radial-gradient(120% 70% at 100% 0%, rgba(15,118,110,.12), transparent 55%),
+    linear-gradient(180deg, #f1faf8 0%, #ffffff 70%);
+}
+/* Studio — playful pink. */
+.kk-board-style-studio .kk-board-sheet:not(.has-photo-bg) {
+  background-image:
+    radial-gradient(110% 70% at 0% 0%, rgba(219,39,119,.14), transparent 55%),
+    linear-gradient(180deg, #fdf2f8 0%, #ffffff 70%);
+}
+/* Calm — spa-like teal mist. */
+.kk-board-style-calm .kk-board-sheet:not(.has-photo-bg) {
+  background-image:
+    radial-gradient(120% 80% at 50% 0%, rgba(13,148,136,.12), transparent 60%),
+    linear-gradient(180deg, #f0fdfa 0%, #ffffff 75%);
+}
+/* Quadrant / focus / scholar — quiet neutral washes. */
+.kk-board-style-quadrant .kk-board-sheet:not(.has-photo-bg) {
+  background-image:
+    radial-gradient(110% 70% at 50% 0%, rgba(124,58,237,.10), transparent 60%),
+    linear-gradient(180deg, #f7f5ff 0%, #ffffff 70%);
+}
+.kk-board-style-focus .kk-board-sheet:not(.has-photo-bg) {
+  background-image:
+    radial-gradient(110% 70% at 50% 0%, rgba(37,99,235,.10), transparent 60%),
+    linear-gradient(180deg, #eff6ff 0%, #ffffff 70%);
+}
+.kk-board-style-scholar .kk-board-sheet:not(.has-photo-bg) {
+  background-image:
+    linear-gradient(180deg, #f4f6f9 0%, #ffffff 80%);
+}
+/* Festive — celebratory rose. */
+.kk-board-style-festive .kk-board-sheet:not(.has-photo-bg) {
+  background-image:
+    radial-gradient(100% 60% at 50% -6%, rgba(225,29,72,.16), transparent 60%),
+    linear-gradient(180deg, #fff1f3 0%, #ffffff 70%);
+}
+
+/* ── Climate Action — the screenshot look: blue sky → soft meadow with a
+   gentle sun glow. Pure CSS so it ships with no image asset. ───────── */
+.kk-board-style-climate .kk-board-sheet:not(.has-photo-bg) {
+  background-image:
+    radial-gradient(60% 40% at 86% 6%, rgba(250,204,21,.35), transparent 60%),
+    radial-gradient(120% 60% at 50% -10%, rgba(125,211,252,.55), transparent 60%),
+    linear-gradient(180deg,
+      #dff1ff 0%,
+      #eaf7fb 38%,
+      #f0fbef 64%,
+      #e6f6df 100%);
+  background-attachment: scroll;
+}
+/* A meadow band hugging the bottom of the climate sheet. */
+.kk-board-style-climate .kk-board-sheet:not(.has-photo-bg)::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 26%;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(60% 120% at 20% 100%, rgba(34,197,94,.30), transparent 60%),
+    radial-gradient(70% 120% at 80% 100%, rgba(132,204,22,.28), transparent 60%),
+    linear-gradient(180deg, transparent, rgba(74,160,60,.18));
+}
+.kk-board-style-climate .kk-board-sheet > * { position: relative; z-index: 1; }
+.kk-board-style-climate .kk-board-heading-title { color: #166534; }
+
+/* ════════════════════════════════════════════════════════════════════
+   Free message wall (style = "wall")
+   No columns, no sticky-note look — posts render as clean message cards
+   that show their date and no name. */
+.kk-board-style-wall .kk-board-sheet:not(.has-photo-bg) {
+  background-image:
+    radial-gradient(120% 60% at 50% -8%, rgba(14,165,233,.14), transparent 60%),
+    linear-gradient(180deg, #f5fbff 0%, #ffffff 70%);
+}
+.kk-board-style-wall .kk-board-heading-title { color: #0369a1; }
+
+/* Message card — overrides the sticky-note fill/tilt for a calm card. */
+.kk-note.kk-note--msg {
+  --tilt: 0deg !important;
+  background: #ffffff;
+  border: 1px solid rgba(2, 132, 199, .16);
+  border-left: 4px solid var(--board-accent, #0ea5e9);
+  border-radius: 14px;
+  box-shadow: 0 10px 26px rgba(2, 132, 199, .10);
+  transform: none;
+  font-family: var(--kk-font-body, inherit);
+}
+.kk-note.kk-note--msg .kk-note-text {
+  font-family: var(--kk-font-body, inherit);
+  font-size: 1.02rem;
+  line-height: 1.45;
+  color: #0f2233;
+}
+/* Footer reads as a quiet timestamp, not an author line. */
+.kk-note.kk-note--msg .kk-note-foot { border-top: 1px solid rgba(2,132,199,.10); }
+.kk-note-date {
+  font-family: var(--kk-font-mono, monospace);
+  font-size: .72rem;
+  letter-spacing: .02em;
+  color: #5b7488;
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+}
+.kk-note-date i { font-size: .8rem; opacity: .8; }
 
 /* Keep the header from crowding on narrower projectors. */
 @media (max-width: 1100px) {

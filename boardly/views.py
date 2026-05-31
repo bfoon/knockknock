@@ -564,6 +564,76 @@ BOARD_TEMPLATES = {
             },
         ],
     },
+
+    # ── Climate Action ──────────────────────────────────────────────────
+    # A ready-made, fully-designed board that mirrors the Explore → Create
+    # → Evaluate flow. The "climate" style paints a soft sky-and-meadow
+    # backdrop so the board looks finished the moment it opens — no photo
+    # upload needed.
+    "climate": {
+        "name": "Climate Action",
+        "icon": "bi-globe-americas",
+        "style": "climate",
+        "accent": "#16a34a",
+        "description": "Rally a team around a sustainability challenge — from pain points to real actions.",
+        "modules": [
+            {
+                "key": "explore", "label": "EXPLORE",
+                "prompt": "What do we know about {project}? Add pain points, communities, ideas and evidence.",
+                "description": "Understand the challenge.",
+                "columns": [
+                    _col("Pain Points", "exclamation-triangle", "rose"),
+                    _col("Communities", "people", "teal"),
+                    _col("Ideas", "lightbulb", "sky"),
+                    _col("Evidence", "shield-check", "violet"),
+                    _col("Actions", "flag", "green"),
+                ],
+            },
+            {
+                "key": "create", "label": "CREATE",
+                "prompt": "What bold solutions could move {project} forward?",
+                "description": "Generate bold solutions.",
+                "columns": [
+                    _col("Quick Wins", "rocket-takeoff", "amber"),
+                    _col("Big Bets", "star", "violet"),
+                    _col("Partners", "people", "teal"),
+                    _col("Resources", "gem", "sky"),
+                ],
+            },
+            {
+                "key": "evaluate", "label": "EVALUATE",
+                "prompt": "Which actions for {project} have the most impact and are most feasible?",
+                "description": "Prioritise impact & feasibility.",
+                "columns": [
+                    _col("High Impact", "graph-up-arrow", "green"),
+                    _col("Feasible Now", "bullseye", "sky"),
+                    _col("Needs Funding", "cash-coin", "amber"),
+                    _col("Commit To", "flag", "indigo"),
+                ],
+            },
+        ],
+    },
+
+    # ── Inspiration Wall (free / anonymous message board) ────────────────
+    # A column-free board: participants post a message that lands on the
+    # wall with its date and NO name — everyone is anonymous. The "wall"
+    # style is what the play + stage screens read to switch out of
+    # sticky-note mode. Empty ``columns`` means no groups are seeded.
+    "inspiration": {
+        "name": "Inspiration Wall",
+        "icon": "bi-chat-quote",
+        "style": "wall",
+        "accent": "#0ea5e9",
+        "description": "A free, anonymous wall — people post a message and it appears with the date. No sticky notes, no names.",
+        "modules": [
+            {
+                "key": "wall", "label": "WALL",
+                "prompt": "Share an inspiring message, a thought, or a thank-you…",
+                "description": "Anonymous messages with the date — no names.",
+                "columns": [],
+            },
+        ],
+    },
 }
 
 
@@ -712,6 +782,9 @@ def _safe_limit(value):
 def _make_module_title(module_label, project_name):
     # Matches the user's requested PDF/page naming:
     # EXPLORE-MODULE PROJECT NAME, CREATE-MODULE PROJECT NAME, etc.
+    # The free message wall isn't a "module", so it gets a plain title.
+    if (module_label or "").upper() == "WALL":
+        return (project_name or "Inspiration Wall")[:140]
     return f"{module_label.upper()}-MODULE {project_name}"[:140]
 
 
@@ -764,8 +837,16 @@ def board_play(request, code):
         BoardSession.objects.select_related("owner", "flow"),
         code=code.upper(),
     )
+    # Resolve the template style so the phone screen can theme itself and,
+    # for the "wall" style, switch into anonymous message-wall mode (no
+    # nickname, no colour/icon pickers — just a message + date).
+    tmpl = BOARD_TEMPLATES.get(session.template_key, {})
+    board_style = tmpl.get("style", "custom")
+    board_format = "wall" if board_style == "wall" else "sticky"
     return render(request, "boardly/play_board.html", {
         "session": session,
+        "board_style": board_style,
+        "board_format": board_format,
         "logo_url": getattr(session.owner, "logo_url", None)
         if session.owner_id else None,
     })

@@ -8,7 +8,7 @@
 <link href="https://api.fontshare.com/v2/css?f[]=clash-display@600,700&f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'css/app.css' %}?v=4">
-<link rel="stylesheet" href="{% static 'css/boardly.css' %}?v=10">
+<link rel="stylesheet" href="{% static 'css/boardly.css' %}?v=12">
 <style>
   /* Page-level layout — full-height column so the sticky-pad card fills the
      viewport below the header and never gets clipped at the bottom. The same
@@ -61,7 +61,9 @@
 <div class="kk-play" id="play"
      data-code="{{ session.code }}"
      data-kind="board"
-     data-mode="{{ session.mode }}">
+     data-mode="{{ session.mode }}"
+     data-format="{{ board_format|default:'sticky' }}"
+     data-style="{{ board_style|default:'custom' }}">
 
   <header class="d-flex align-items-center gap-3 mb-3">
     {% if logo_url %}<img src="{{ logo_url }}" alt="" style="height:32px; border-radius:6px;">{% endif %}
@@ -249,6 +251,6 @@
   </dialog>
 </div>
 
-<script src="{% static 'js/boardly_play.js' %}?v=2"></script>
+<script src="{% static 'js/boardly_play.js' %}?v=3"></script>
 </body>
 </html>

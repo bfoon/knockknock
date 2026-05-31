@@ -35,6 +35,20 @@
   const headingTitleText = document.getElementById("board-heading-title-text");
   const qrCardTitle = document.getElementById("qr-card-title");
   const CAN_EDIT = stage.dataset.canEdit === "1";
+  // "wall" style → free anonymous message board. Notes render as dated
+  // message cards (no author, no sticky-note colour/icon).
+  const WALL = stage.dataset.style === "wall";
+
+  // Short date for wall message cards, e.g. "31 May 2026, 14:05".
+  function wallDate(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d)) return "";
+    return d.toLocaleString([], {
+      day: "numeric", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    });
+  }
 
   const powerBtn = document.getElementById("btn-power");
   const powerLabel = document.getElementById("btn-power-label");
@@ -528,6 +542,7 @@
   function buildNote(n) {
     const el = document.createElement("div");
     el.className = "kk-note";
+    if (WALL) el.classList.add("kk-note--msg");
     el.dataset.id = n.id;
     if (n.pinned) el.classList.add("pinned");
     el.style.setProperty("--note", NOTE_FILLS[n.color] || NOTE_FILLS[0]);
@@ -559,7 +574,14 @@
 
     const author = document.createElement("span");
     author.className = "kk-note-author";
-    author.textContent = n.author || "Anonymous";
+    if (WALL) {
+      // Anonymous wall: the footer shows the post date, never a name.
+      author.classList.add("kk-note-date");
+      author.innerHTML = '<i class="bi bi-clock"></i>';
+      author.appendChild(document.createTextNode(wallDate(n.ts)));
+    } else {
+      author.textContent = n.author || "Anonymous";
+    }
     if (n.edited) {
       const ed = document.createElement("span");
       ed.className = "kk-note-edited";
@@ -1398,6 +1420,8 @@
   // the columns wrapper and is visible whether or not the board already
   // has groups. (Adding the first column flips the board into columns.)
   function renderAddColumn() {
+    // A message wall has no columns by design — never offer to add one.
+    if (WALL) { if (addColBox) addColBox.style.display = "none"; return; }
     if (addColBox) addColBox.style.display = "";
   }
   function showAddColForm(on) {

@@ -285,6 +285,10 @@ class Note(models.Model):
             # client show an "(edited)" marker. The actual history lives
             # in NoteEdit rows.
             "edited": self.edited_at is not None,
+            # When the note was posted, ISO-8601. Used by the message-wall
+            # format to show a date instead of an author; harmless for
+            # sticky boards, which simply ignore it.
+            "ts": self.created_at.isoformat() if self.created_at else None,
             # Freehand / highlighter strokes drawn ON this note. Each is a
             # dict {id, tool, points:[[x,y],…]} with x,y as 0.0–1.0
             # fractions of the note's own width/height, so the marks ride

@@ -19,6 +19,9 @@
 
   const CODE = root.dataset.code;
   const MODE = root.dataset.mode || "open";
+  // "wall" → free anonymous message board: no nickname, no colour/icon/
+  // column pickers, just a message that posts with its date and no name.
+  const WALL = (root.dataset.format || "sticky") === "wall";
 
   // Persist the participant's nickname per board so a refresh doesn't make
   // them type it again. Scoped by board code so different boards keep
@@ -104,6 +107,9 @@
   function syncStep() {
     reflectNick();
     if (boardState === "ended") { showStep("ended"); return; }
+    // Wall boards are anonymous: there's no name step — everyone posts as
+    // "Anonymous" and the server records no nickname.
+    if (WALL && !nick) { nick = "Anonymous"; }
     if (!nick) { showStep("nick"); return; }
     if (boardState === "open" || boardState === "running") {
       if (!joined) sendJoin();
@@ -117,6 +123,7 @@
 
   // Show the current nickname in the pad/wait headers.
   function reflectNick() {
+    if (WALL) { return; }   // anonymous wall — never surface a name
     if (padNickEl) padNickEl.textContent = nick || "you";
     if (waitNickEl) waitNickEl.textContent = nick ? (", " + nick) : "";
   }
@@ -667,9 +674,55 @@
     // the board state arrives. Otherwise we land on the nick step.
     if (nick && nickInput) nickInput.value = nick;
 
+    applyWallMode();
+
     refreshPreview();
-    showStep(nick ? "wait" : "nick");
+    // Wall boards never show the name step; everyone is anonymous.
+    if (WALL) { nick = nick || "Anonymous"; showStep("wait"); }
+    else { showStep(nick ? "wait" : "nick"); }
     connect();
+  }
+
+  // ── free message-wall mode ───────────────────────────────────────────
+  // Strips the sticky-note chrome down to a single message box: no name,
+  // no colour, no icon, no columns. Posts land on the wall with their date
+  // and no author. Called once at init; a no-op for normal sticky boards.
+  function applyWallMode() {
+    if (!WALL) return;
+    document.body.classList.add("kk-wall-play");
+
+    // Everything posts neutral and anonymous.
+    selectedColor = 0;
+    selectedIcon = "none";
+    selectedGroup = null;
+
+    const hide = (el) => { if (el) el.style.display = "none"; };
+    // Hide the colour + icon pickers (their whole .kk-field wrapper).
+    hide(colorRow && colorRow.closest(".kk-field"));
+    hide(iconRow && iconRow.closest(".kk-field"));
+    hide(groupField);
+    hide(preview);
+    hide(mineField);
+    // Hide the "posting as … / change" line — there are no names here.
+    const asName = document.querySelector(".kk-pad-asname");
+    hide(asName);
+    hide(myCountEl);
+
+    // Friendlier copy for a message wall.
+    const noteLabel = noteInput && noteInput.closest(".kk-field")
+      && noteInput.closest(".kk-field").querySelector(".form-label");
+    if (noteLabel) noteLabel.textContent = "Your message";
+    if (noteInput) noteInput.setAttribute(
+      "placeholder", "Share an inspiring message…");
+    if (postBtn) postBtn.innerHTML =
+      '<i class="bi bi-send"></i> Post anonymously';
+    if (postHint) postHint.textContent =
+      "Your message appears on the wall with today's date — no name shown.";
+
+    // No identity → no "change name" affordances, no name in the lobby.
+    hide(document.getElementById("change-nick-compose"));
+    hide(document.getElementById("change-nick-wait"));
+    if (waitNickEl) waitNickEl.textContent = "";
   }
 
   if (document.readyState === "loading") {

@@ -16,3 +16,4 @@ reportlab
 playwright
 chromium
 python-pptx
+weasyprint

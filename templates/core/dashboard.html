@@ -179,6 +179,14 @@
       </span>
     </button>
   </form>
+  <a href="{% url 'cards:create' %}" class="kk-action-tile cards">
+    <span class="kk-tile-icon">💌</span>
+    <h2>New Group Card</h2>
+    <p>A shared card everyone signs over a QR code — handwritten messages land live, then download it as a PDF.</p>
+    <span class="kk-btn kk-btn-primary btn-sm">
+      Create card <i class="bi bi-arrow-right"></i>
+    </span>
+  </a>
 </div>
 
 <!--{# ─────────────────────────────────────────────────────────────-->
@@ -538,6 +546,66 @@
       </a>
     {% endif %}
   </div>
+
+  <!-- ── Cards ───────────────────────────────────────────────── -->
+  <div class="col-lg-6 col-xl-3">
+    <h2 class="kk-section-title"><i class="bi bi-card-heading"></i> Recent cards</h2>
+    {% for c in cards %}
+      <div class="kk-list-item kk-list-item-row">
+        {# Open the organiser dashboard — share link, QR, moderation. #}
+        <a href="{% url 'cards:detail' c.token %}" class="kk-list-item-main">
+          <span class="kk-q-index">{{ forloop.counter }}</span>
+          <div class="flex-grow-1">
+            <div class="kk-list-item-title">{{ c.title }}</div>
+            <div class="kk-list-item-meta">
+              {{ c.messages.count }} message{{ c.messages.count|pluralize }} ·
+              {% if c.is_closed %}
+                <span class="kk-status-mini kk-status-mini-closed">Closed</span>
+              {% else %}
+                <span class="kk-status-mini kk-status-mini-live">Open</span>
+              {% endif %}
+            </div>
+          </div>
+          <i class="bi bi-arrow-right text-secondary"></i>
+        </a>
+        {# Jump straight to the live wall — the "running" view of a card. #}
+        <a href="{% url 'cards:view' c.token %}"
+           class="kk-btn kk-btn-ghost btn-sm ms-2"
+           title="Open the live wall">
+          <i class="bi bi-easel"></i> Wall
+        </a>
+        {# Same inline POST delete pattern as the other columns. #}
+        <form method="post"
+              action="{% url 'cards:delete' c.token %}"
+              class="kk-row-delete-form ms-1"
+              onsubmit="return confirm('Delete “{{ c.title|escapejs }}”? This cannot be undone.');">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{% url 'core:dashboard' %}">
+          <button type="submit"
+                  class="kk-row-delete"
+                  title="Delete card"
+                  aria-label="Delete {{ c.title }}">
+            <i class="bi bi-trash3-fill"></i>
+          </button>
+        </form>
+      </div>
+    {% empty %}
+      <div class="kk-empty"><div class="em">💌</div><p>No cards yet. Create your first group card!</p></div>
+    {% endfor %}
+
+    {% if cards_total > recent_limit %}
+      <a href="{% url 'cards:my_cards' %}" class="kk-see-all">
+        See all cards
+        <span class="kk-see-all-count">{{ cards_total }}</span>
+        <i class="bi bi-arrow-right"></i>
+      </a>
+    {% elif cards_total > 0 %}
+      <a href="{% url 'cards:my_cards' %}" class="kk-see-all kk-see-all-muted">
+        See all
+        <i class="bi bi-arrow-right"></i>
+      </a>
+    {% endif %}
+  </div>
 </div>
 
 
@@ -594,6 +662,20 @@
 .kk-action-tile.hanns::before {
   content: ""; position: absolute; inset: 0;
   background: radial-gradient(400px 200px at 100% 0%, rgba(232, 130, 43, 0.25), transparent);
+  pointer-events: none;
+}
+
+/* Cards creation tile — rose/violet accent for the group-card theme,
+   echoing the handwritten sticky-note look of the live wall. */
+.kk-action-tile.cards {
+  background: linear-gradient(135deg, #2a0f1f, #2a1430);
+  border-color: rgba(244, 63, 94, 0.3);
+}
+.kk-action-tile.cards::before {
+  content: ""; position: absolute; inset: 0;
+  background:
+    radial-gradient(400px 200px at 100% 0%, rgba(244, 63, 94, 0.22), transparent),
+    radial-gradient(260px 180px at 0% 100%, rgba(124, 58, 237, 0.18), transparent);
   pointer-events: none;
 }
 .kk-quota-track {

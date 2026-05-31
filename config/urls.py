@@ -16,6 +16,7 @@ urlpatterns = [
     path("board/", include("boardly.urls", namespace="boardly")),
     path("hanns/", include("hanns.urls", namespace="hanns")),
     path("quest_rpg/", include("quest_rpg.urls", namespace="quest_rpg")),
+    path("cards/", include("cards.urls", namespace="cards")),
     path("icebreakers/", include("icebreakers.urls", namespace="icebreakers")),
     path("", include("core.urls")),
 ]

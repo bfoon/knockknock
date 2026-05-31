@@ -2,17 +2,30 @@
 {% block title %}{% if is_new %}New event{% else %}Edit · {{ event.title }}{% endif %}{% endblock %}
 
 {% block content %}
-<div class="mb-4">
-  {% if not is_new %}
-    <a href="{% url 'attendance:event_detail' event.pk %}" class="kk-text-dim small text-decoration-none">
-      <i class="bi bi-arrow-left"></i> {{ event.title }}
-    </a>
-  {% endif %}
-  <h1 class="mb-0 mt-1">{% if is_new %}New event{% else %}Edit event{% endif %}</h1>
-  <p class="text-secondary mb-0">
-    {% if is_new %}You'll build the registration form next.{% else %}Tweak the basics.{% endif %}
-  </p>
-</div>
+<div class="kk-form-shell">
+  <div class="kk-form-head">
+    <nav class="kk-crumbs" aria-label="Breadcrumb">
+      <a href="{% url 'attendance:event_list' %}" class="kk-crumb-link">
+        <i class="bi bi-arrow-left"></i> Back to events
+      </a>
+      {% if not is_new %}
+        <span class="kk-crumb-sep">/</span>
+        <a href="{% url 'attendance:event_detail' event.pk %}" class="kk-crumb-link">{{ event.title }}</a>
+      {% endif %}
+    </nav>
+
+    <div class="kk-form-titlebar">
+      <span class="kk-form-titlebar-icon">
+        <i class="bi {% if is_new %}bi-calendar-plus{% else %}bi-calendar-event{% endif %}"></i>
+      </span>
+      <div>
+        <h1 class="kk-form-title">{% if is_new %}New event{% else %}Edit event{% endif %}</h1>
+        <p class="kk-form-subtitle">
+          {% if is_new %}You'll build the registration form next.{% else %}Tweak the basics.{% endif %}
+        </p>
+      </div>
+    </div>
+  </div>
 
 <form method="post" enctype="multipart/form-data" class="kk-form-card">
   {% csrf_token %}
@@ -33,67 +46,74 @@
     </div>
   {% endif %}
 
-  <div class="mb-3">
-    <label class="form-label">Title</label>
-    {{ form.title }}
-    {% if form.title.errors %}<div class="text-danger small">{{ form.title.errors|join:", " }}</div>{% endif %}
-  </div>
+  <div class="kk-section">
+    <h3 class="kk-form-section-title"><i class="bi bi-info-circle"></i> Details</h3>
 
-  <div class="mb-3">
-    <label class="form-label">Description <span class="kk-text-dim small">(public)</span></label>
-    {{ form.description }}
-  </div>
-
-  <div class="mb-3">
-    <label class="form-label">Agenda</label>
-    {{ form.agenda }}
-    <div class="form-text">Shown on tickets and included in confirmation emails.</div>
-  </div>
-
-  <div class="row g-3">
-    <div class="col-md-6">
-      <label class="form-label">Starts at</label>
-      {{ form.starts_at }}
-      {% if form.starts_at.errors %}<div class="text-danger small">{{ form.starts_at.errors|join:", " }}</div>{% endif %}
+    <div class="mb-3">
+      <label class="form-label">Title</label>
+      {{ form.title }}
+      {% if form.title.errors %}<div class="text-danger small">{{ form.title.errors|join:", " }}</div>{% endif %}
     </div>
-    <div class="col-md-6">
-      <label class="form-label">Ends at</label>
-      {{ form.ends_at }}
-      {% if form.ends_at.errors %}<div class="text-danger small">{{ form.ends_at.errors|join:", " }}</div>{% endif %}
+
+    <div class="mb-3">
+      <label class="form-label">Description <span class="kk-text-dim small">(public)</span></label>
+      {{ form.description }}
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Agenda</label>
+      {{ form.agenda }}
+      <div class="form-text">Shown on tickets and included in confirmation emails.</div>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label">Starts at</label>
+        {{ form.starts_at }}
+        {% if form.starts_at.errors %}<div class="text-danger small">{{ form.starts_at.errors|join:", " }}</div>{% endif %}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Ends at</label>
+        {{ form.ends_at }}
+        {% if form.ends_at.errors %}<div class="text-danger small">{{ form.ends_at.errors|join:", " }}</div>{% endif %}
+      </div>
+    </div>
+
+    <div class="row g-3 mt-1">
+      <div class="col-md-6">
+        <label class="form-label">Timezone</label>
+        {{ form.timezone_name }}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Cover image</label>
+        {{ form.cover_image }}
+      </div>
     </div>
   </div>
 
-  <div class="row g-3 mt-1">
-    <div class="col-md-6">
-      <label class="form-label">Timezone</label>
-      {{ form.timezone_name }}
+  {# ───────── Location ────────────────────────────────────────── #}
+  <div class="kk-section">
+    <h3 class="kk-form-section-title"><i class="bi bi-geo-alt"></i> Where</h3>
+
+    <div class="form-check mb-3">
+      {{ form.is_online }}
+      <label class="form-check-label">This is an online event</label>
     </div>
-    <div class="col-md-6">
-      <label class="form-label">Cover image</label>
-      {{ form.cover_image }}
+
+    <div class="mb-3">
+      <label class="form-label">Location <span class="kk-text-dim small">(for in-person events)</span></label>
+      {{ form.location }}
     </div>
-  </div>
 
-  <hr class="my-4">
-
-  <div class="form-check mb-3">
-    {{ form.is_online }}
-    <label class="form-check-label">This is an online event</label>
-  </div>
-
-  <div class="mb-3">
-    <label class="form-label">Location <span class="kk-text-dim small">(for in-person events)</span></label>
-    {{ form.location }}
-  </div>
-
-  <div class="mb-3">
-    <label class="form-label">Meeting URL <span class="kk-text-dim small">(for online events)</span></label>
-    {{ form.online_url }}
-    {% if form.online_url.errors %}<div class="text-danger small">{{ form.online_url.errors|join:", " }}</div>{% endif %}
+    <div class="mb-0">
+      <label class="form-label">Meeting URL <span class="kk-text-dim small">(for online events)</span></label>
+      {{ form.online_url }}
+      {% if form.online_url.errors %}<div class="text-danger small">{{ form.online_url.errors|join:", " }}</div>{% endif %}
+    </div>
   </div>
 
   {# ───────── Geofenced check-in ──────────────────────────────── #}
-  <hr class="my-4">
+  <div class="kk-section">
   <h3 class="kk-form-section-title">
     <i class="bi bi-shield-check"></i> On-site check-in
   </h3>
@@ -180,9 +200,11 @@
       open-air venue.
     </div>
   </div>
+  </div>
 
   {# ───────── Capacity & registration mode ────────────────────── #}
-  <hr class="my-4">
+  <div class="kk-section">
+  <h3 class="kk-form-section-title"><i class="bi bi-people"></i> Capacity &amp; registration</h3>
 
   <div class="row g-3">
     <div class="col-md-6">
@@ -201,13 +223,14 @@
     {{ form.registration_mode }}
   </div>
 
-  <div class="form-check mb-3">
+  <div class="form-check mb-0">
     {{ form.allow_walk_ins }}
     <label class="form-check-label">Allow walk-ins at the venue</label>
   </div>
+  </div>
 
   {# ───────── Certificates ────────────────────────────────────── #}
-  <hr class="my-4">
+  <div class="kk-section">
   <h3 class="kk-form-section-title">
     <i class="bi bi-award"></i> Participation certificates
   </h3>
@@ -260,16 +283,22 @@
   {% if form.non_field_errors %}
     <div class="alert alert-danger">{{ form.non_field_errors|join:", " }}</div>
   {% endif %}
+  </div>
 
-  <div class="d-flex gap-2 mt-4">
+  <div class="kk-form-actions">
     <button type="submit" class="kk-btn kk-btn-primary">
       <i class="bi bi-check2"></i> {% if is_new %}Create event{% else %}Save changes{% endif %}
     </button>
     {% if not is_new %}
       <a href="{% url 'attendance:event_detail' event.pk %}" class="kk-btn kk-btn-ghost">Cancel</a>
     {% endif %}
+    <span class="kk-form-actions-spacer"></span>
+    <a href="{% url 'attendance:event_list' %}" class="kk-btn kk-btn-ghost">
+      <i class="bi bi-arrow-left"></i> Back to list
+    </a>
   </div>
 </form>
+</div>
 
 <!--{# Leaflet for the small venue map preview. We try multiple CDNs in-->
 <!--   sequence because cdnjs.cloudflare.com is blocked on some networks and-->
@@ -492,18 +521,59 @@
 </script>
 
 <style>
+.kk-form-shell {
+  max-width: 860px;
+  margin-inline: auto;
+}
+
+/* ── Header ── */
+.kk-form-head { margin-bottom: 1.25rem; }
+.kk-crumbs {
+  display: flex; align-items: center; gap: .5rem;
+  font-size: .85rem; margin-bottom: 1rem; flex-wrap: wrap;
+}
+.kk-crumb-link {
+  color: var(--kk-text-dim); text-decoration: none;
+  transition: color .15s ease;
+}
+.kk-crumb-link:hover { color: var(--kk-text); }
+.kk-crumb-sep { color: var(--kk-border); }
+
+.kk-form-titlebar { display: flex; align-items: center; gap: 1rem; }
+.kk-form-titlebar-icon {
+  flex: 0 0 auto;
+  width: 52px; height: 52px;
+  display: grid; place-items: center;
+  border-radius: var(--kk-radius);
+  font-size: 1.5rem; color: #fff;
+  background: linear-gradient(135deg, var(--kk-accent), var(--kk-accent-2));
+  box-shadow: var(--kk-shadow-glow);
+}
+.kk-form-title {
+  font-family: var(--kk-font-display);
+  font-size: 1.7rem; line-height: 1.1; margin: 0;
+}
+.kk-form-subtitle { color: var(--kk-text-dim); margin: .15rem 0 0; font-size: .92rem; }
+
+/* ── Card + sections ── */
 .kk-form-card {
   background: var(--kk-surface);
   border: 1px solid var(--kk-border);
-  border-radius: var(--kk-radius);
+  border-radius: var(--kk-radius-lg);
   padding: 1.75rem;
-  max-width: 820px;
 }
+.kk-section {
+  padding: 1.25rem 0;
+  border-top: 1px solid var(--kk-border);
+}
+.kk-section:first-of-type { padding-top: .25rem; border-top: 0; }
+
 .kk-form-section-title {
-  font-size: 1.05rem; font-weight: 600; margin-bottom: .35rem;
+  font-family: var(--kk-font-display);
+  font-size: 1.1rem; font-weight: 600; margin-bottom: .85rem;
   display: flex; align-items: center; gap: .5rem;
 }
-.kk-form-section-title i { color: #7c3aed; }
+.kk-form-section-title i { color: var(--kk-accent-2); }
 
 .kk-venue-empty-hint {
   background: rgba(124, 58, 237, 0.08);
@@ -521,7 +591,7 @@
   border: 1px solid var(--kk-border);
   border-radius: 12px;
   padding: 1rem 1.1rem;
-  margin-bottom: 1rem;
+  margin-bottom: 0;
 }
 .kk-geofence-map {
   height: 280px;
@@ -553,6 +623,26 @@
   background: linear-gradient(135deg, rgba(124, 58, 237, 0.18), rgba(34, 211, 238, 0.18));
   color: #c4b5fd;
   font-size: 1.4rem;
+}
+
+/* ── Sticky action bar ── */
+.kk-form-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  margin: 1.5rem -1.75rem -1.75rem;
+  padding: 1rem 1.75rem;
+  border-top: 1px solid var(--kk-border);
+  border-radius: 0 0 var(--kk-radius-lg) var(--kk-radius-lg);
+  background: color-mix(in srgb, var(--kk-surface) 92%, transparent);
+  backdrop-filter: blur(8px);
+}
+.kk-form-actions-spacer { flex: 1 1 auto; }
+
+@media (max-width: 560px) {
+  .kk-form-card { padding: 1.15rem; }
+  .kk-form-actions { margin: 1.5rem -1.15rem -1.15rem; padding: .85rem 1.15rem; }
+  .kk-form-actions-spacer { flex-basis: 100%; height: 0; }
 }
 </style>
 {% endblock %}

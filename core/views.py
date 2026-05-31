@@ -8,6 +8,7 @@ from attendance.models import AttendanceEvent
 from attendance.venue_models import Venue
 from hanns.models import Deck
 from quest_rpg.models import QuestSession
+from cards.models import Card
 
 from subscriptions.services import (
     count_items_for_user,
@@ -82,6 +83,10 @@ def dashboard(request):
         QuestSession.objects.filter(owner=request.user)
         .order_by("-updated_at")[:DASHBOARD_RECENT_LIMIT]
     )
+    cards = (
+        Card.objects.filter(created_by=request.user)
+        .order_by("-created_at")[:DASHBOARD_RECENT_LIMIT]
+    )
 
     # Totals so the section headers / footers can read "See all (12)".
     questionnaires_total = Questionnaire.objects.filter(owner=request.user).count()
@@ -90,6 +95,7 @@ def dashboard(request):
     boards_total = BoardSession.objects.filter(owner=request.user).count()
     decks_total = Deck.objects.filter(owner=request.user).count()
     quest_sessions_total = QuestSession.objects.filter(owner=request.user).count()
+    cards_total = Card.objects.filter(created_by=request.user).count()
 
     plan = get_effective_plan(request.user)
     subscription = get_effective_subscription(request.user)
@@ -113,6 +119,7 @@ def dashboard(request):
         "boards": boards,
         "decks": decks,
         "quest_sessions": quest_sessions,
+        "cards": cards,
 
         # Totals + cap, so the template can show "See all (N)" only when it
         # makes sense (i.e. when there are more items than fit on the dashboard).
@@ -122,6 +129,7 @@ def dashboard(request):
         "boards_total": boards_total,
         "decks_total": decks_total,
         "quest_sessions_total": quest_sessions_total,
+        "cards_total": cards_total,
         "recent_limit": DASHBOARD_RECENT_LIMIT,
 
         "plan": plan,

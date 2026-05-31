@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 1.2cm; }
+  body { font-family: 'Helvetica', sans-serif; color: {{ card.template_config.ink }}; }
+  .cover { text-align:center; padding: 30px 10px; border-radius: 18px;
+           background: {{ card.template_config.bg }}; }
+  .photo { width: 120px; height:120px; border-radius:50%; object-fit:cover;
+           border:5px solid #fff; }
+  .ph { width:120px;height:120px;border-radius:50%;background:#ffffff66;
+        display:inline-block;line-height:120px;font-size:48px; }
+  h1 { margin: 14px 0 4px; font-size: 26px; }
+  .chip { display:inline-block;background:#ffffffaa;padding:4px 12px;border-radius:20px;
+          font-size:12px;font-weight:bold; }
+  .note { font-style: italic; margin-top:8px; }
+  .grid { margin-top: 24px; }
+  .msg { display:inline-block; width:46%; vertical-align:top; margin:1.5%;
+         padding:14px; border-radius:12px; box-shadow:0 2px 6px #0002; }
+  .mint{background:#d3f9d8}.peach{background:#ffe8cc}.sky{background:#d0ebff}
+  .lemon{background:#fff3bf}.rose{background:#ffdeeb}.lilac{background:#eebefa}
+  .msg .author { font-weight:bold; margin-top:8px; font-size:13px; }
+  .msg .body { font-size:14px; }
+</style>
+</head>
+<body>
+  <div class="cover">
+    {% if card.recipient_photo %}
+      <img class="photo" src="{{ card.recipient_photo.url }}">
+    {% else %}
+      <span class="ph">{{ card.template_config.motif }}</span>
+    {% endif %}
+    <div><span class="chip">{{ card.get_occasion_display }}</span></div>
+    <h1>{{ card.title }}</h1>
+    <div>For {{ card.recipient_name }}</div>
+    {% if card.intro_note %}<div class="note">{{ card.intro_note }}</div>{% endif %}
+  </div>
+  <div class="grid">
+    {% for m in messages_list %}
+      <div class="msg {{ m.color }}">
+        <div class="body">{{ m.body }}</div>
+        <div class="author">— {{ m.author_name }}</div>
+      </div>
+    {% endfor %}
+  </div>
+</body>
+</html>

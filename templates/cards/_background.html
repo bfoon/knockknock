@@ -1,0 +1,31 @@
+{% load cards_extras %}
+{% comment %}
+  Renders the card background layer. Include inside a positioned container:
+    {% include "cards/_background.html" %}
+  Modes (resolved via card.effective_background_mode, which falls back to
+  florals if custom has no image or pattern has no valid id):
+    - custom  : uploaded image (cover, centered)
+    - pattern : data-kk-pattern drives backgrounds.js to paint the SVG
+    - floral  : data-kk-floral drives floral.js to paint the watercolour SVG
+    - solid   : flat paper colour from the template palette
+  The host container should set position:relative; this fills it behind content.
+{% endcomment %}
+{% with mode=card.effective_background_mode %}
+{% if mode == 'custom' %}
+  <div class="kk-card-bg kk-card-bg--custom" aria-hidden="true"
+       style="background-image:url('{{ card.custom_background_url }}')"></div>
+{% elif mode == 'pattern' %}
+  <div class="kk-card-bg kk-card-bg--pattern" aria-hidden="true"
+       data-kk-pattern="{{ card.background_pattern }}"
+       style="background:{{ card.pattern_config.bg }}"></div>
+{% elif mode == 'floral' %}
+  <div class="kk-card-bg kk-card-bg--floral" aria-hidden="true"
+       data-kk-floral
+       data-palette='{{ card.floral_palette|json_attr }}'
+       style="background:{{ card.floral_palette.paper }}"></div>
+{% else %}
+  <div class="kk-card-bg kk-card-bg--solid" aria-hidden="true"
+       style="background:{{ card.floral_palette.paper }}"></div>
+{% endif %}
+{% endwith %}
+

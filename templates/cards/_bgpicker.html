@@ -1,0 +1,52 @@
+{% load cards_extras %}
+{% comment %}
+  Visual background picker. Renders a grid of tappable swatches:
+  florals (one per nothing — single), the fun patterns grouped by family,
+  plain paper, and a custom-image upload. Selection writes to the hidden
+  #id_background_mode / #id_background_pattern inputs (rendered by the form).
+
+  Requires on the page:
+    - the form's hidden background_mode / background_pattern / custom_background
+    - backgrounds.js, floral.js, picker.js (loaded by the including template)
+  Context: `card` may be present (manage page) to preselect current values;
+  `floral_palette_json` provides the active template's floral palette.
+{% endcomment %}
+<div class="kk-bgpick"
+     data-current-mode="{{ card.background_mode|default:'floral' }}"
+     data-current-pattern="{{ card.background_pattern|default:'' }}">
+
+  <div class="kk-bgpick-grid" id="kkBgGrid">
+    {# Floral (themed to the chosen template) #}
+    <button type="button" class="kk-bg-swatch" data-mode="floral"
+            data-palette='{{ floral_palette|json_attr }}' title="Watercolour florals">
+      <span class="kk-bg-thumb" data-thumb="floral"></span>
+      <span class="kk-bg-name">Florals</span>
+    </button>
+
+    {# Fun patterns — rendered from the JS catalogue at runtime #}
+    {# placeholders are filled by picker.js so colours stay in one place #}
+    <span id="kkBgPatternSlots"></span>
+
+    {# Plain paper #}
+    <button type="button" class="kk-bg-swatch" data-mode="solid" title="Plain paper">
+      <span class="kk-bg-thumb" data-thumb="solid"></span>
+      <span class="kk-bg-name">Plain</span>
+    </button>
+
+    {# Custom image upload #}
+    <label class="kk-bg-swatch kk-bg-swatch--custom" data-mode="custom" title="Upload your own">
+      <span class="kk-bg-thumb" data-thumb="custom">
+        {% if card.custom_background %}
+          <img src="{{ card.custom_background.url }}" alt="">
+        {% else %}
+          <i class="bi bi-image"></i>
+        {% endif %}
+      </span>
+      <span class="kk-bg-name">Upload</span>
+      {# the real file input lives here, visually hidden #}
+      <span class="kk-bg-fileholder">
+        {% if form.custom_background %}{{ form.custom_background }}{% else %}<input type="file" name="custom_background" accept="image/*">{% endif %}
+      </span>
+    </label>
+  </div>
+</div>

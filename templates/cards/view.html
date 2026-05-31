@@ -1,0 +1,66 @@
+{% extends "cards/base.html" %}
+{% load static %}
+{% block title %}{{ card.title }}{% endblock %}
+{% block content %}
+<div class="eo-wall eo-tpl--{{ card.template }} has-bg" id="wall"
+     data-feed="{% url 'cards:feed' card.token %}"
+     data-react="{% url 'cards:react' card.token %}"
+     data-closed="{{ card.is_closed|yesno:'1,0' }}"
+     data-owner="{{ is_owner|yesno:'1,0' }}">
+
+  {% include "cards/_background.html" %}
+
+  <div class="eo-wall-head">
+    <div class="eo-photo-wrap">
+      {% if card.recipient_photo %}
+        <img class="eo-wall-photo" src="{{ card.recipient_photo.url }}" alt="{{ card.recipient_name }}">
+      {% else %}
+        <div class="eo-wall-photo eo-wall-photo--ph">{{ card.template_config.motif }}</div>
+      {% endif %}
+<!--      {# Emoji pile — taps land here and cluster like a pebble base. #}-->
+      <div class="eo-emoji-pile" id="emojiPile" aria-hidden="true"></div>
+    </div>
+
+    <div class="eo-chip">{{ card.get_occasion_display }}</div>
+    <h1 class="eo-wall-title">{{ card.title }}</h1>
+    {% if card.intro_note %}<p class="eo-wall-note">{{ card.intro_note }}</p>{% endif %}
+
+<!--    {# Emoji reaction bar. Anyone can tap while the card is open. The organiser-->
+<!--       also sees a running total beside each emoji, and keeps the bar (read-only)-->
+<!--       after the card closes so they can still see the final tally. #}-->
+    {% if not card.is_closed or is_owner %}
+      <div class="eo-emoji-bar{% if card.is_closed %} eo-emoji-bar--readonly{% endif %}"
+           id="emojiBar">
+        {% for r in reaction_bar %}
+          <button type="button" class="eo-emoji-btn" data-emoji="{{ r.emoji }}"
+                  aria-label="React {{ r.emoji }}"{% if card.is_closed %} disabled{% endif %}>
+            <span class="eo-emoji-glyph">{{ r.emoji }}</span>
+            {% if is_owner %}
+              <span class="eo-emoji-count" data-count-for="{{ r.emoji }}">{{ r.count }}</span>
+            {% endif %}
+          </button>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="eo-wall-actions">
+      {% if not card.is_closed %}
+        <a class="eo-btn eo-btn--primary" href="{% url 'cards:post' card.token %}">+ Add your message</a>
+      {% endif %}
+<!--      {# Only the card's creator can download the PDF. #}-->
+      {% if is_owner %}
+        <a class="eo-btn" href="{% url 'cards:pdf' card.token %}">Download PDF</a>
+      {% endif %}
+    </div>
+  </div>
+
+<!--  {# Scrollable message area so a busy card never overflows the viewport. #}-->
+  <div class="eo-wall-scroll">
+    <div class="eo-wall-grid" id="wallGrid"></div>
+    <div class="eo-wall-empty" id="wallEmpty">Be the first to write something 💫</div>
+  </div>
+</div>
+<script src="{% static 'cards/js/backgrounds.js' %}"></script>
+<script src="{% static 'cards/js/floral.js' %}"></script>
+<script src="{% static 'cards/js/wall.js' %}"></script>
+{% endblock %}

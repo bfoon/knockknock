@@ -1,0 +1,49 @@
+{% extends "cards/base.html" %}
+{% load static %}
+{% block title %}Create a Card · KnockKnock{% endblock %}
+{% block content %}
+<div class="eo-shell">
+  <div class="eo-card-panel">
+    <a href="{% url 'cards:my_cards' %}" class="eo-back">← My cards</a>
+    <h1 class="eo-h1">Create a digital card 💌</h1>
+    <p class="eo-sub">Set it up, then share a link or QR code so everyone can sign it.</p>
+
+    <form method="post" enctype="multipart/form-data" class="eo-form">
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="eo-err">{{ form.non_field_errors }}</div>{% endif %}
+
+      <label class="eo-label">Card title{{ form.title }}
+        {% if form.title.errors %}<span class="eo-err">{{ form.title.errors }}</span>{% endif %}</label>
+
+      <label class="eo-label">Who is it for?{{ form.recipient_name }}</label>
+
+      <div class="eo-row">
+        <label class="eo-label">Occasion{{ form.occasion }}</label>
+        <label class="eo-label">Template{{ form.template }}</label>
+      </div>
+
+      <div class="eo-template-preview" id="tplPreview"></div>
+
+      {# Visual background picker — florals, fun patterns, plain, upload #}
+      <div class="eo-label">Background
+        {{ form.background_mode }}{{ form.background_pattern }}
+        {% include "cards/_bgpicker.html" %}
+      </div>
+
+      <label class="eo-label">Recipient photo (centre-top of the card){{ form.recipient_photo }}</label>
+      <label class="eo-label">Intro note (optional){{ form.intro_note }}</label>
+
+      <label class="eo-check">{{ form.moderated }} Review messages before they appear</label>
+
+      <button type="submit" class="eo-btn eo-btn--primary">Create card →</button>
+    </form>
+  </div>
+</div>
+<script>
+  const TEMPLATES = {{ templates_json|default:"{}"|safe }};
+</script>
+<script src="{% static 'cards/js/backgrounds.js' %}"></script>
+<script src="{% static 'cards/js/floral.js' %}"></script>
+<script src="{% static 'cards/js/picker.js' %}"></script>
+<script src="{% static 'cards/js/create.js' %}"></script>
+{% endblock %}

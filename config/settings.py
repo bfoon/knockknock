@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     "boardly",
     "hanns",
     "quest_rpg",
+    "cards",
     "icebreakers.apps.IcebreakersConfig",
 ]
 

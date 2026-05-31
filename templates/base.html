@@ -43,6 +43,7 @@
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'boardly:create' %}">Boardly</a>
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'hanns:list' %}">Hanns</a>
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'attendance:event_list' %}">Attendance</a>
+    <a class="kk-nav-link d-none d-md-inline" href="{% url 'cards:my_cards' %}">Cards</a>
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'accounts:profile' %}"><i class="bi bi-person-circle"></i></a>
     <form action="{% url 'accounts:logout' %}" method="post" class="d-none d-md-inline">{% csrf_token %}
       <button class="kk-btn kk-btn-ghost btn-sm">Log out</button>
@@ -115,6 +116,9 @@
       </a>
       <a class="kk-drawer-link" href="{% url 'attendance:event_list' %}">
         <i class="bi bi-calendar-event"></i> Attendance
+      </a>
+      <a class="kk-drawer-link" href="{% url 'cards:my_cards' %}">
+        <i class="bi bi-card-heading"></i> Cards
       </a>
 
       <div class="kk-drawer-label">Account</div>

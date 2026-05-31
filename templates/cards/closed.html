@@ -1,0 +1,17 @@
+{% extends "cards/base.html" %}
+{% load static %}
+{% block content %}
+<div class="eo-post-bg eo-tpl--{{ card.template }} has-bg">
+  {% include "cards/_background.html" %}
+  <div class="eo-post-card eo-center">
+    <div class="eo-empty-emoji">🔒</div>
+    <h1 class="eo-post-title">This card is closed</h1>
+    <p class="eo-sub">The session for “{{ card.title }}” has ended, so new messages can't be added — but you can still view it.</p>
+    <a class="eo-btn eo-btn--primary" href="{% url 'cards:view' card.token %}">View the card →</a>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{% static 'cards/js/backgrounds.js' %}"></script>
+<script src="{% static 'cards/js/floral.js' %}"></script>
+{% endblock %}

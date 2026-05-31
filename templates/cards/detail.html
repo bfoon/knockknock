@@ -1,0 +1,90 @@
+{% extends "cards/base.html" %}
+{% load static %}
+{% block title %}Manage · {{ card.title }}{% endblock %}
+{% block content %}
+<div class="eo-shell">
+  <a href="{% url 'cards:my_cards' %}" class="eo-back">← My cards</a>
+  <h1 class="eo-h1">{{ card.title }}</h1>
+  <p class="eo-sub">{{ card.get_occasion_display }} · for {{ card.recipient_name }}</p>
+
+  <div class="eo-share-grid">
+    <div class="eo-card-panel">
+      <h3>Share to collect messages</h3>
+      <p class="eo-sub">Anyone with this link (or who scans the QR) can post.</p>
+      <div class="eo-copy-row">
+        <input class="eo-input" id="shareUrl" value="{{ share_url }}" readonly>
+        <button class="eo-btn" onclick="copyShare()">Copy</button>
+      </div>
+      <div class="eo-actions">
+        <a class="eo-btn" href="{% url 'cards:view' card.token %}" target="_blank">Open live wall ↗</a>
+        <a class="eo-btn" href="{% url 'cards:pdf' card.token %}">Download PDF</a>
+      </div>
+    </div>
+    <div class="eo-card-panel eo-qr-panel">
+      <h3>QR code</h3>
+      <img src="{% url 'cards:qr' card.token %}" alt="QR code" class="eo-qr">
+      <a class="eo-btn" href="{% url 'cards:qr' card.token %}" download="card-qr.png">Save QR</a>
+    </div>
+  </div>
+
+  {# ── Appearance: change the background after creation ─────────────── #}
+  <div class="eo-card-panel">
+    <h3>Background</h3>
+    <p class="eo-sub">Pick a look — it updates the sign page, the live wall and the PDF.</p>
+    <form method="post" enctype="multipart/form-data"
+          action="{% url 'cards:update_background' card.token %}" id="bgForm">
+      {% csrf_token %}
+      <input type="hidden" name="background_mode" id="id_background_mode"
+             value="{{ card.background_mode }}">
+      <input type="hidden" name="background_pattern" id="id_background_pattern"
+             value="{{ card.background_pattern }}">
+      {% include "cards/_bgpicker.html" %}
+      <button type="submit" class="eo-btn eo-btn--primary" style="margin-top:14px">
+        Save background
+      </button>
+    </form>
+  </div>
+
+  <div class="eo-card-panel">
+    <div class="eo-header-row">
+      <h3>Messages ({{ messages_list.count }})</h3>
+      {% if not card.is_closed %}
+        <form method="post" action="{% url 'cards:close' card.token %}"
+              onsubmit="return confirm('End the session? No new messages can be added.');">
+          {% csrf_token %}
+          <button class="eo-btn eo-btn--danger">End session</button>
+        </form>
+      {% else %}
+        <span class="eo-chip">Session ended</span>
+      {% endif %}
+    </div>
+    {% for m in messages_list %}
+      <div class="eo-msg-row eo-note--{{ m.color }}">
+        <div>
+          <strong>{{ m.author_name }}</strong>
+          {% if not m.is_approved %}<span class="eo-chip eo-chip--warn">pending</span>{% endif %}
+          <p>{{ m.body }}</p>
+        </div>
+        <form method="post" action="{% url 'cards:moderate' card.token m.pk %}" class="eo-mod">
+          {% csrf_token %}
+          {% if not m.is_approved %}
+            <button name="action" value="approve" class="eo-btn eo-btn--sm">Approve</button>
+          {% endif %}
+          <button name="action" value="delete" class="eo-btn eo-btn--sm eo-btn--danger">Delete</button>
+        </form>
+      </div>
+    {% empty %}
+      <p class="eo-sub">No messages yet — share the link to get started.</p>
+    {% endfor %}
+  </div>
+</div>
+<script>
+function copyShare(){
+  const i=document.getElementById('shareUrl');
+  i.select(); navigator.clipboard.writeText(i.value);
+}
+</script>
+<script src="{% static 'cards/js/backgrounds.js' %}"></script>
+<script src="{% static 'cards/js/floral.js' %}"></script>
+<script src="{% static 'cards/js/picker.js' %}"></script>
+{% endblock %}

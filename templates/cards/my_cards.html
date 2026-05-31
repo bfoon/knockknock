@@ -1,0 +1,33 @@
+{% extends "cards/base.html" %}
+{% block title %}My Cards · KnockKnock{% endblock %}
+{% block content %}
+<div class="eo-shell">
+  <div class="eo-header-row">
+    <h1 class="eo-h1">My cards</h1>
+    <a href="{% url 'cards:create' %}" class="eo-btn eo-btn--primary">+ New card</a>
+  </div>
+
+  {% if cards %}
+    <div class="eo-grid">
+      {% for card in cards %}
+        <a href="{% url 'cards:detail' card.token %}" class="eo-tile eo-tile--{{ card.template }}">
+          <div class="eo-tile-motif">{{ card.template_config.motif }}</div>
+          <div class="eo-tile-body">
+            <div class="eo-chip">{{ card.get_occasion_display }}</div>
+            <h3>{{ card.title }}</h3>
+            <p>For {{ card.recipient_name }}</p>
+            <small>{{ card.messages.count }} message{{ card.messages.count|pluralize }}
+              {% if card.is_closed %}· Closed{% endif %}</small>
+          </div>
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="eo-empty">
+      <div class="eo-empty-emoji">🪄</div>
+      <p>No cards yet. Create your first one!</p>
+      <a href="{% url 'cards:create' %}" class="eo-btn eo-btn--primary">Create a card</a>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

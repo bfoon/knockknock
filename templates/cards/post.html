@@ -1,0 +1,38 @@
+{% extends "cards/base.html" %}
+{% load static %}
+{% block title %}Sign · {{ card.title }}{% endblock %}
+{% block content %}
+<div class="eo-post-bg eo-tpl--{{ card.template }} has-bg">
+  {% include "cards/_background.html" %}
+  <div class="eo-post-card">
+    {% if card.recipient_photo %}
+      <img class="eo-post-photo" src="{{ card.recipient_photo.url }}" alt="{{ card.recipient_name }}">
+    {% else %}
+      <div class="eo-post-photo eo-post-photo--ph">{{ card.template_config.motif }}</div>
+    {% endif %}
+    <div class="eo-chip">{{ card.get_occasion_display }}</div>
+    <h1 class="eo-post-title">{{ card.title }}</h1>
+    <p class="eo-sub">Leave a message for <strong>{{ card.recipient_name }}</strong></p>
+
+    <form method="post" class="eo-form" id="postForm">
+      {% csrf_token %}
+      {{ form.author_name }}
+      {{ form.body }}
+      <div class="eo-swatches">
+        {% for val, label in form.fields.color.choices %}
+          <label class="eo-swatch eo-note--{{ val }}">
+            <input type="radio" name="color" value="{{ val }}" {% if forloop.first %}checked{% endif %}>
+            <span></span>
+          </label>
+        {% endfor %}
+      </div>
+      <button type="submit" class="eo-btn eo-btn--primary">Add my message ✍️</button>
+    </form>
+    <a class="eo-back" href="{% url 'cards:view' card.token %}">See everyone's messages →</a>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{% static 'cards/js/backgrounds.js' %}"></script>
+<script src="{% static 'cards/js/floral.js' %}"></script>
+{% endblock %}

@@ -44,15 +44,47 @@
 .eo-chip--warn{background:#ffd43b33;color:#ffd43b}
 
 /* Tiles (my cards) */
-.eo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;margin-top:8px}
-.eo-tile{border-radius:16px;overflow:hidden;text-decoration:none;color:#1a1a1a;display:flex;flex-direction:column;min-height:170px;transition:transform .15s}
-.eo-tile:hover{transform:translateY(-3px)}
-.eo-tile-motif{font-size:30px;padding:14px 16px 0}
-.eo-tile-body{padding:0 16px 16px}
-.eo-tile-body h3{margin:8px 0 2px;font-size:18px}
-.eo-tile-body p{margin:0;opacity:.8}
-.eo-tile-body small{opacity:.7}
-.eo-empty{text-align:center;padding:60px 20px;color:var(--eo-sub)}
+.eo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:18px;margin-top:18px}
+.eo-tile{
+  border-radius:18px;
+  overflow:hidden;
+  text-decoration:none;
+  color:#172033;
+  display:flex;
+  flex-direction:column;
+  min-height:180px;
+  border:1px solid rgba(255,255,255,.72);
+  background:linear-gradient(145deg,#ffffff,#f1f4ff);
+  box-shadow:0 14px 34px rgba(0,0,0,.28);
+  transition:transform .15s,box-shadow .15s,border-color .15s;
+}
+.eo-tile:hover{
+  transform:translateY(-4px);
+  box-shadow:0 20px 46px rgba(0,0,0,.38);
+  border-color:#fff;
+}
+.eo-tile-motif{font-size:34px;padding:18px 18px 4px}
+.eo-tile-body{padding:0 18px 18px}
+.eo-tile-body h3{margin:10px 0 4px;font-size:18px;color:#111827;line-height:1.25}
+.eo-tile-body p{margin:0;color:#4b5563;font-weight:600}
+.eo-tile-body small{display:block;margin-top:8px;color:#64748b;font-weight:700}
+.eo-tile .eo-chip{background:rgba(108,92,231,.12);color:#4f46e5;border:1px solid rgba(108,92,231,.18)}
+.eo-tile--sunset_bloom{background:linear-gradient(145deg,#fff7fb,#ffe1ea)}
+.eo-tile--midnight_glow{background:linear-gradient(145deg,#f3fbff,#dff7ff)}
+.eo-tile--paper_craft{background:linear-gradient(145deg,#fffdf7,#f1e4d5)}
+.eo-tile--ocean_breeze{background:linear-gradient(145deg,#f5fbff,#d8efff)}
+.eo-tile--golden_hour{background:linear-gradient(145deg,#fffaf0,#ffe2bf)}
+.eo-tile--lavender_fields{background:linear-gradient(145deg,#fbf7ff,#eadcff)}
+.eo-empty{
+  text-align:center;
+  padding:60px 20px;
+  color:#334155;
+  background:linear-gradient(145deg,#ffffff,#f3f5ff);
+  border:1px solid rgba(255,255,255,.72);
+  border-radius:18px;
+  box-shadow:0 14px 34px rgba(0,0,0,.24);
+  margin-top:18px;
+}
 .eo-empty-emoji{font-size:50px}
 
 /* Share + QR */

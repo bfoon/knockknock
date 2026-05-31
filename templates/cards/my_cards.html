@@ -1,23 +1,276 @@
-{% extends "cards/base.html" %}
+{% extends "base.html" %}
 {% block title %}My Cards · KnockKnock{% endblock %}
+{% block body_class %}kk-cards-page{% endblock %}
+{% block main_class %}kk-main kk-main-cards{% endblock %}
+
+{% block head_extra %}
+<style>
+/* Card list page now uses the main KnockKnock top menu from base.html. */
+.kk-main-cards {
+  width: min(100% - 2rem, 1180px);
+  max-width: 1180px;
+  padding: 2rem 0 4rem;
+}
+
+/* Highlight Cards in the desktop nav and drawer when this page is open. */
+body.kk-cards-page .kk-nav-link[href="{% url 'cards:my_cards' %}"],
+body.kk-cards-page .kk-drawer-link[href="{% url 'cards:my_cards' %}"] {
+  color: #fff;
+  background: rgba(255,255,255,.08);
+}
+
+.kk-cards-page .eo-shell {
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.kk-cards-page .eo-header-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+
+.kk-cards-page .eo-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  margin-bottom: .45rem;
+  padding: .35rem .65rem;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 999px;
+  color: rgba(245,246,255,.76);
+  background: rgba(255,255,255,.055);
+  font-size: .78rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.kk-cards-page .eo-h1 {
+  margin: 0;
+  font-family: var(--kk-font-display, system-ui, sans-serif);
+  font-size: clamp(2rem, 5vw, 3.35rem);
+  line-height: .96;
+  letter-spacing: -.05em;
+  color: #fff;
+}
+
+.kk-cards-page .eo-sub {
+  margin: .6rem 0 0;
+  color: rgba(226,232,255,.68);
+  max-width: 56ch;
+}
+
+.kk-cards-page .eo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(245px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.kk-cards-page .eo-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 190px;
+  overflow: hidden;
+  border-radius: 22px;
+  text-decoration: none;
+  color: #101828;
+  background: linear-gradient(145deg, #ffffff 0%, #f5f7ff 100%);
+  border: 1px solid rgba(255,255,255,.72);
+  box-shadow: 0 20px 55px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.9);
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+
+.kk-cards-page .eo-tile::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(260px 150px at 15% 0%, rgba(124,58,237,.16), transparent 65%),
+    radial-gradient(220px 150px at 92% 18%, rgba(34,211,238,.16), transparent 62%),
+    linear-gradient(180deg, rgba(255,255,255,.58), rgba(255,255,255,0));
+}
+
+.kk-cards-page .eo-tile:hover {
+  transform: translateY(-4px);
+  border-color: rgba(255,255,255,.95);
+  box-shadow: 0 26px 68px rgba(0,0,0,.32), 0 0 0 1px rgba(124,58,237,.12) inset;
+}
+
+.kk-cards-page .eo-tile-motif,
+.kk-cards-page .eo-tile-body {
+  position: relative;
+  z-index: 1;
+}
+
+.kk-cards-page .eo-tile-motif {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  margin: 1rem 1rem .15rem;
+  border-radius: 18px;
+  background: rgba(255,255,255,.72);
+  box-shadow: 0 10px 24px rgba(16,24,40,.10);
+  font-size: 2rem;
+}
+
+.kk-cards-page .eo-tile-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: .3rem 1rem 1.05rem;
+}
+
+.kk-cards-page .eo-chip {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  max-width: 100%;
+  margin-bottom: .45rem;
+  padding: .32rem .72rem;
+  border-radius: 999px;
+  background: rgba(16,24,40,.08);
+  color: #263142;
+  font-size: .72rem;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.kk-cards-page .eo-tile-body h3 {
+  margin: 0 0 .25rem;
+  color: #0f172a;
+  font-family: var(--kk-font-display, system-ui, sans-serif);
+  font-size: 1.22rem;
+  line-height: 1.12;
+  letter-spacing: -.025em;
+}
+
+.kk-cards-page .eo-tile-body p {
+  margin: 0;
+  color: #475467;
+  font-weight: 650;
+}
+
+.kk-cards-page .eo-tile-body small {
+  display: block;
+  margin-top: auto;
+  padding-top: .9rem;
+  color: #667085;
+  font-weight: 750;
+}
+
+.kk-cards-page .eo-tile.is-closed {
+  opacity: .82;
+}
+
+.kk-cards-page .eo-tile.is-closed .eo-chip::after {
+  content: "Closed";
+  margin-left: .35rem;
+  padding-left: .45rem;
+  border-left: 1px solid rgba(16,24,40,.22);
+}
+
+/* Soft template tints for the list cards. */
+.kk-cards-page .eo-tile--sunset_bloom {
+  background: linear-gradient(145deg, #fff6f8 0%, #ffe1ec 55%, #fff 100%);
+}
+.kk-cards-page .eo-tile--midnight_glow {
+  background: linear-gradient(145deg, #f5fbff 0%, #dff7ff 55%, #ffffff 100%);
+}
+.kk-cards-page .eo-tile--paper_craft {
+  background: linear-gradient(145deg, #fffaf2 0%, #f1dfca 55%, #ffffff 100%);
+}
+.kk-cards-page .eo-tile--ocean_breeze {
+  background: linear-gradient(145deg, #f4fbff 0%, #d7edff 60%, #ffffff 100%);
+}
+.kk-cards-page .eo-tile--golden_hour {
+  background: linear-gradient(145deg, #fff8e1 0%, #ffe0a8 58%, #ffffff 100%);
+}
+.kk-cards-page .eo-tile--lavender_fields {
+  background: linear-gradient(145deg, #fbf7ff 0%, #eadcff 58%, #ffffff 100%);
+}
+
+.kk-cards-page .eo-empty {
+  margin-top: 1rem;
+  padding: 4.5rem 1.5rem;
+  border: 1px solid rgba(255,255,255,.72);
+  border-radius: 28px;
+  text-align: center;
+  color: #263142;
+  background: linear-gradient(145deg, rgba(255,255,255,.96), rgba(245,247,255,.9));
+  box-shadow: 0 24px 70px rgba(0,0,0,.24);
+}
+
+.kk-cards-page .eo-empty-emoji {
+  font-size: 3.2rem;
+  margin-bottom: .8rem;
+}
+
+.kk-cards-page .eo-empty p {
+  margin: 0 0 1rem;
+  color: #475467;
+  font-weight: 650;
+}
+
+@media (max-width: 620px) {
+  .kk-main-cards {
+    width: min(100% - 1rem, 1180px);
+    padding-top: 1.25rem;
+  }
+
+  .kk-cards-page .eo-header-row {
+    align-items: stretch;
+  }
+
+  .kk-cards-page .eo-header-row .kk-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .kk-cards-page .eo-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="eo-shell">
   <div class="eo-header-row">
-    <h1 class="eo-h1">My cards</h1>
-    <a href="{% url 'cards:create' %}" class="eo-btn eo-btn--primary">+ New card</a>
+    <div>
+      <div class="eo-kicker"><i class="bi bi-card-heading"></i> Cards</div>
+      <h1 class="eo-h1">My cards</h1>
+      <p class="eo-sub">Create, manage, and share beautiful KnockKnock message cards.</p>
+    </div>
+    <a href="{% url 'cards:create' %}" class="kk-btn kk-btn-primary">
+      <i class="bi bi-plus-lg"></i> New card
+    </a>
   </div>
 
   {% if cards %}
     <div class="eo-grid">
       {% for card in cards %}
-        <a href="{% url 'cards:detail' card.token %}" class="eo-tile eo-tile--{{ card.template }}">
-          <div class="eo-tile-motif">{{ card.template_config.motif }}</div>
+        <a href="{% url 'cards:detail' card.token %}"
+           class="eo-tile eo-tile--{{ card.template }}{% if card.is_closed %} is-closed{% endif %}">
+          <div class="eo-tile-motif">{{ card.template_config.motif|default:"💌" }}</div>
           <div class="eo-tile-body">
             <div class="eo-chip">{{ card.get_occasion_display }}</div>
             <h3>{{ card.title }}</h3>
             <p>For {{ card.recipient_name }}</p>
-            <small>{{ card.messages.count }} message{{ card.messages.count|pluralize }}
-              {% if card.is_closed %}· Closed{% endif %}</small>
+            <small>
+              {{ card.messages.count }} message{{ card.messages.count|pluralize }}
+              {% if card.is_closed %} · Closed{% endif %}
+            </small>
           </div>
         </a>
       {% endfor %}
@@ -26,7 +279,9 @@
     <div class="eo-empty">
       <div class="eo-empty-emoji">🪄</div>
       <p>No cards yet. Create your first one!</p>
-      <a href="{% url 'cards:create' %}" class="eo-btn eo-btn--primary">Create a card</a>
+      <a href="{% url 'cards:create' %}" class="kk-btn kk-btn-primary">
+        <i class="bi bi-stars"></i> Create a card
+      </a>
     </div>
   {% endif %}
 </div>

@@ -1,6 +1,367 @@
-{% extends "cards/base.html" %}
+{% extends "base.html" %}
 {% load static %}
 {% block title %}Create a Card · KnockKnock{% endblock %}
+{% block body_class %}kk-cards-page kk-cards-create-page{% endblock %}
+{% block main_class %}kk-main kk-main-cards{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="{% static 'cards/css/cards.css' %}">
+<style>
+/* These pages now use the main KnockKnock top menu from base.html. */
+.kk-main-cards {
+  width: min(100% - 2rem, 1180px);
+  max-width: 1180px;
+  padding: 2rem 0 4rem;
+}
+
+/* Highlight Cards in the desktop nav and mobile drawer. */
+body.kk-cards-page .kk-nav-link[href="{% url 'cards:my_cards' %}"],
+body.kk-cards-page .kk-drawer-link[href="{% url 'cards:my_cards' %}"] {
+  color: #fff;
+  background: rgba(255,255,255,.08);
+}
+
+.kk-cards-page .eo-shell {
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.kk-cards-page .eo-page-head {
+  margin-bottom: 1.1rem;
+}
+
+.kk-cards-page .eo-back {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  margin-bottom: 1rem;
+  color: rgba(226,232,255,.75);
+  text-decoration: none;
+  font-size: .95rem;
+  font-weight: 700;
+}
+
+.kk-cards-page .eo-back:hover {
+  color: #fff;
+}
+
+.kk-cards-page .eo-h1 {
+  margin: 0;
+  font-family: var(--kk-font-display, system-ui, sans-serif);
+  font-size: clamp(2rem, 5vw, 3.35rem);
+  line-height: .96;
+  letter-spacing: -.05em;
+  color: #fff;
+}
+
+.kk-cards-page .eo-sub {
+  margin: .55rem 0 0;
+  color: rgba(226,232,255,.68);
+}
+
+.kk-cards-page .eo-card-panel {
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.98), rgba(245,247,255,.96));
+  color: #111827;
+  border: 1px solid rgba(255,255,255,.72);
+  border-radius: 24px;
+  padding: clamp(1.1rem, 3vw, 1.65rem);
+  margin-bottom: 1rem;
+  box-shadow: 0 24px 70px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.92);
+}
+
+.kk-cards-page .eo-card-panel h1,
+.kk-cards-page .eo-card-panel h2,
+.kk-cards-page .eo-card-panel h3 {
+  color: #101828;
+  font-family: var(--kk-font-display, system-ui, sans-serif);
+  letter-spacing: -.03em;
+}
+
+.kk-cards-page .eo-card-panel .eo-sub {
+  color: #667085;
+}
+
+.kk-cards-page .eo-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.kk-cards-page .eo-label {
+  display: flex;
+  flex-direction: column;
+  gap: .45rem;
+  color: #344054;
+  font-size: .92rem;
+  font-weight: 800;
+}
+
+.kk-cards-page .eo-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.kk-cards-page .eo-form input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+.kk-cards-page .eo-form select,
+.kk-cards-page .eo-form textarea,
+.kk-cards-page .eo-input {
+  width: 100%;
+  min-height: 46px;
+  padding: .72rem .85rem;
+  border-radius: 14px;
+  border: 1px solid rgba(16,24,40,.14);
+  background: #fff;
+  color: #111827;
+  font: inherit;
+  box-shadow: 0 1px 2px rgba(16,24,40,.05);
+}
+
+.kk-cards-page .eo-form input[type="file"] {
+  padding: .62rem;
+  background: #f8fafc;
+}
+
+.kk-cards-page .eo-form textarea {
+  min-height: 116px;
+  resize: vertical;
+}
+
+.kk-cards-page .eo-form input:focus,
+.kk-cards-page .eo-form select:focus,
+.kk-cards-page .eo-form textarea:focus,
+.kk-cards-page .eo-input:focus {
+  outline: none;
+  border-color: rgba(124,58,237,.7);
+  box-shadow: 0 0 0 4px rgba(124,58,237,.14);
+}
+
+.kk-cards-page .eo-check {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  color: #475467;
+  font-weight: 700;
+}
+
+.kk-cards-page .eo-check input {
+  width: 18px;
+  height: 18px;
+}
+
+.kk-cards-page .eo-err {
+  color: #b42318;
+  font-size: .85rem;
+  font-weight: 700;
+}
+
+.kk-cards-page .eo-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .45rem;
+  min-height: 42px;
+  padding: .68rem 1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(16,24,40,.12);
+  background: #fff;
+  color: #111827;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform .14s ease, filter .14s ease, box-shadow .14s ease;
+}
+
+.kk-cards-page .eo-btn:hover {
+  transform: translateY(-1px);
+  color: #111827;
+  box-shadow: 0 10px 24px rgba(16,24,40,.12);
+}
+
+.kk-cards-page .eo-btn--primary {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--kk-accent, #7c3aed), var(--kk-accent-2, #22d3ee));
+  color: #fff;
+  box-shadow: 0 14px 32px rgba(124,58,237,.24);
+}
+
+.kk-cards-page .eo-btn--primary:hover {
+  color: #fff;
+  filter: brightness(1.05);
+}
+
+.kk-cards-page .eo-btn--danger {
+  border-color: rgba(244,63,94,.22);
+  background: #fff1f3;
+  color: #c01048;
+}
+
+.kk-cards-page .eo-btn--danger:hover {
+  color: #9f1239;
+}
+
+.kk-cards-page .eo-btn--sm {
+  min-height: 34px;
+  padding: .45rem .7rem;
+  border-radius: 10px;
+  font-size: .82rem;
+}
+
+.kk-cards-page .eo-actions,
+.kk-cards-page .eo-wall-actions {
+  display: flex;
+  gap: .65rem;
+  flex-wrap: wrap;
+  margin-top: .9rem;
+}
+
+.kk-cards-page .eo-chip {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: .25rem .65rem;
+  border-radius: 999px;
+  background: rgba(124,58,237,.1);
+  color: #5b21b6;
+  font-size: .76rem;
+  font-weight: 900;
+  letter-spacing: .02em;
+}
+
+.kk-cards-page .eo-chip--warn {
+  background: #fff6d0;
+  color: #92400e;
+}
+
+.kk-cards-page .eo-template-preview {
+  min-height: 92px;
+  border-radius: 18px;
+  border: 1px dashed rgba(16,24,40,.18);
+  background:
+    radial-gradient(240px 120px at 10% 0%, rgba(124,58,237,.10), transparent 70%),
+    radial-gradient(240px 120px at 90% 0%, rgba(34,211,238,.10), transparent 70%),
+    #f8fafc;
+  overflow: hidden;
+}
+
+/* Share/detail layout */
+.kk-cards-page .eo-share-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(240px, .9fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.kk-cards-page .eo-copy-row {
+  display: flex;
+  gap: .6rem;
+  margin-top: .85rem;
+}
+
+.kk-cards-page .eo-copy-row .eo-input {
+  flex: 1;
+}
+
+.kk-cards-page .eo-qr-panel {
+  text-align: center;
+}
+
+.kk-cards-page .eo-qr {
+  width: min(190px, 100%);
+  height: auto;
+  padding: .7rem;
+  margin: .7rem auto 1rem;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 14px 34px rgba(16,24,40,.13);
+}
+
+/* Message moderation rows */
+.kk-cards-page .eo-msg-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  margin: .75rem 0;
+  border-radius: 18px;
+  color: #1f2937;
+  border: 1px solid rgba(16,24,40,.08);
+  box-shadow: 0 10px 26px rgba(16,24,40,.08);
+}
+
+.kk-cards-page .eo-msg-row p {
+  margin: .35rem 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.kk-cards-page .eo-mod {
+  display: flex;
+  gap: .45rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.kk-cards-page .eo-note--mint{background:#d3f9d8}
+.kk-cards-page .eo-note--peach{background:#ffe8cc}
+.kk-cards-page .eo-note--sky{background:#d0ebff}
+.kk-cards-page .eo-note--lemon{background:#fff3bf}
+.kk-cards-page .eo-note--rose{background:#ffdeeb}
+.kk-cards-page .eo-note--lilac{background:#eebefa}
+
+/* Background picker readability when it sits on the light panels. */
+.kk-cards-page .kk-bgpick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+  gap: .75rem;
+  align-items: start;
+}
+
+.kk-cards-page .kk-bg-swatch {
+  color: #475467;
+}
+
+.kk-cards-page .kk-bg-thumb {
+  border-color: rgba(16,24,40,.15);
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(16,24,40,.06);
+}
+
+.kk-cards-page .kk-bg-swatch:hover .kk-bg-thumb {
+  border-color: rgba(124,58,237,.45);
+}
+
+.kk-cards-page .kk-bg-swatch.is-selected .kk-bg-thumb {
+  border-color: var(--kk-accent, #7c3aed);
+  box-shadow: 0 0 0 4px rgba(124,58,237,.15);
+}
+
+.kk-cards-page .kk-bg-swatch.is-selected .kk-bg-name {
+  color: #111827;
+}
+
+@media (max-width: 820px) {
+  .kk-cards-page .eo-share-grid,
+  .kk-cards-page .eo-row {
+    grid-template-columns: 1fr;
+  }
+
+  .kk-cards-page .eo-copy-row,
+  .kk-cards-page .eo-msg-row {
+    flex-direction: column;
+  }
+
+  .kk-cards-page .eo-copy-row .eo-btn,
+  .kk-cards-page .eo-mod,
+  .kk-cards-page .eo-mod .eo-btn {
+    width: 100%;
+  }
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="eo-shell">
   <div class="eo-card-panel">

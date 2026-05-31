@@ -2,7 +2,117 @@
 {% load static %}
 {% block title %}{{ card.title }}{% endblock %}
 {% block content %}
-<div class="eo-wall eo-tpl--{{ card.template }} has-bg" id="wall"
+<style>
+/* Mobile overflow fix for the public/live card wall.
+   Keep cards/base.html as-is. This only fixes this page. */
+html,
+body {
+  min-height: 100%;
+}
+
+/* Scope everything to this page so create/detail/list are not affected. */
+.kk-live-wall-fix {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100svh;
+  min-height: 100dvh;
+  height: auto !important;
+  overflow-x: hidden;
+  overflow-y: visible;
+}
+
+/* When a custom/background layer is used, make it cover the whole mobile
+   viewport instead of ending early and showing the dark body below. */
+.kk-live-wall-fix.has-bg {
+  background: var(--bg);
+}
+.kk-live-wall-fix.has-bg > .kk-card-bg,
+.kk-live-wall-fix.has-bg > .kk-bg-scrim {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  min-height: 100vh;
+  min-height: 100svh;
+  min-height: 100dvh;
+  pointer-events: none;
+}
+
+/* Let the page naturally grow on phones. The old CSS makes the scroll area
+   live inside a fixed 100vh wall, which can expose a dark bottom area. */
+.kk-live-wall-fix .eo-wall-scroll {
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow-y: visible;
+  padding-bottom: max(96px, calc(80px + env(safe-area-inset-bottom)));
+}
+
+@media (max-width: 520px) {
+  .kk-live-wall-fix {
+    min-height: 100vh;
+    min-height: 100svh;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  .kk-live-wall-fix .eo-wall-head {
+    padding: 22px 14px 10px;
+    max-width: 100%;
+  }
+
+  .kk-live-wall-fix .eo-photo-wrap {
+    margin-bottom: 24px;
+  }
+
+  .kk-live-wall-fix .eo-wall-title {
+    font-size: clamp(32px, 10vw, 44px);
+    line-height: 1.05;
+    overflow-wrap: anywhere;
+  }
+
+  .kk-live-wall-fix .eo-wall-note {
+    font-size: clamp(18px, 5vw, 22px);
+    overflow-wrap: anywhere;
+  }
+
+  .kk-live-wall-fix .eo-emoji-bar {
+    max-width: calc(100vw - 28px);
+  }
+
+  .kk-live-wall-fix .eo-wall-actions {
+    justify-content: center;
+  }
+
+  .kk-live-wall-fix .eo-wall-actions .eo-btn {
+    width: 100%;
+    max-width: 320px;
+  }
+
+  .kk-live-wall-fix .eo-wall-scroll {
+    width: 100%;
+    padding: 8px 14px calc(120px + env(safe-area-inset-bottom));
+    overflow: visible;
+  }
+
+  .kk-live-wall-fix .eo-wall-grid {
+    column-count: 1;
+    column-gap: 0;
+    max-width: 100%;
+  }
+
+  .kk-live-wall-fix .eo-msg {
+    max-width: 100%;
+    margin-bottom: 14px;
+  }
+
+  .kk-live-wall-fix .eo-msg .eo-msg-body {
+    font-size: 22px;
+  }
+}
+</style>
+
+<div class="eo-wall eo-tpl--{{ card.template }} has-bg kk-live-wall-fix" id="wall"
      data-feed="{% url 'cards:feed' card.token %}"
      data-react="{% url 'cards:react' card.token %}"
      data-closed="{{ card.is_closed|yesno:'1,0' }}"
@@ -17,7 +127,6 @@
       {% else %}
         <div class="eo-wall-photo eo-wall-photo--ph">{{ card.template_config.motif }}</div>
       {% endif %}
-<!--      {# Emoji pile — taps land here and cluster like a pebble base. #}-->
       <div class="eo-emoji-pile" id="emojiPile" aria-hidden="true"></div>
     </div>
 
@@ -25,9 +134,6 @@
     <h1 class="eo-wall-title">{{ card.title }}</h1>
     {% if card.intro_note %}<p class="eo-wall-note">{{ card.intro_note }}</p>{% endif %}
 
-<!--    {# Emoji reaction bar. Anyone can tap while the card is open. The organiser-->
-<!--       also sees a running total beside each emoji, and keeps the bar (read-only)-->
-<!--       after the card closes so they can still see the final tally. #}-->
     {% if not card.is_closed or is_owner %}
       <div class="eo-emoji-bar{% if card.is_closed %} eo-emoji-bar--readonly{% endif %}"
            id="emojiBar">
@@ -47,14 +153,12 @@
       {% if not card.is_closed %}
         <a class="eo-btn eo-btn--primary" href="{% url 'cards:post' card.token %}">+ Add your message</a>
       {% endif %}
-<!--      {# Only the card's creator can download the PDF. #}-->
       {% if is_owner %}
         <a class="eo-btn" href="{% url 'cards:pdf' card.token %}">Download PDF</a>
       {% endif %}
     </div>
   </div>
 
-<!--  {# Scrollable message area so a busy card never overflows the viewport. #}-->
   <div class="eo-wall-scroll">
     <div class="eo-wall-grid" id="wallGrid"></div>
     <div class="eo-wall-empty" id="wallEmpty">Be the first to write something 💫</div>

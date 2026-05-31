@@ -151,17 +151,79 @@ class BoardSession(models.Model):
 
 class BoardGroup(models.Model):
     """An optional topic column. A board with zero groups renders flat."""
+
+    # Bootstrap-Icons keys allowed on a column header. Kept as a fixed set
+    # so the consumer can validate any value coming off the wire — an
+    # unknown icon would otherwise render an empty <i>. "none" hides it.
+    ICON_CHOICES = [
+        ("none", "No icon"),
+        ("exclamation-triangle", "Pain / warning"),
+        ("people", "People / community"),
+        ("lightbulb", "Ideas"),
+        ("shield-check", "Evidence"),
+        ("flag", "Actions / goals"),
+        ("star", "Highlights"),
+        ("rocket-takeoff", "Launch / bold"),
+        ("graph-up-arrow", "Impact / growth"),
+        ("clipboard-check", "Tasks / done"),
+        ("gem", "Value"),
+        ("truck", "Logistics"),
+        ("diagram-3", "Flow / chain"),
+        ("cash-coin", "Finance"),
+        ("bullseye", "Focus / priority"),
+        ("chat-dots", "Discussion"),
+        ("heart", "Care / wellbeing"),
+        ("gear", "Systems / ops"),
+    ]
+
+    # Named colour tokens. The hex is resolved client-side from this key so
+    # the same column reads the same on every projector, and so the value
+    # stored on the wire is short and themeable.
+    COLOR_CHOICES = [
+        ("slate", "Slate"),
+        ("rose", "Rose"),
+        ("amber", "Amber"),
+        ("green", "Green"),
+        ("sky", "Sky"),
+        ("violet", "Violet"),
+        ("orange", "Orange"),
+        ("teal", "Teal"),
+        ("indigo", "Indigo"),
+        ("pink", "Pink"),
+    ]
+
     session = models.ForeignKey(
         BoardSession, on_delete=models.CASCADE, related_name="groups",
     )
     name = models.CharField(max_length=60)
     position = models.PositiveSmallIntegerField(default=0)
 
+    # Per-column styling. Defaults keep older boards looking exactly as
+    # before ("none"/"slate" render as the plain neutral header). Both are
+    # set from the template definition at creation and editable live from
+    # the presenter stage.
+    icon = models.CharField(
+        max_length=30, choices=ICON_CHOICES, default="none", blank=True,
+    )
+    color = models.CharField(
+        max_length=12, choices=COLOR_CHOICES, default="slate",
+    )
+
     class Meta:
         ordering = ["position", "id"]
 
     def __str__(self):
         return self.name
+
+    def as_dict(self):
+        """Serialised form used in WebSocket payloads (id, name, style)."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "icon": self.icon or "none",
+            "color": self.color or "slate",
+            "position": self.position,
+        }
 
 
 class Note(models.Model):
@@ -326,3 +388,102 @@ class NoteEdit(models.Model):
 
     def __str__(self):
         return f"edit of note {self.note_id} at {self.created_at:%Y-%m-%d %H:%M}"
+
+
+class BoardCollaborator(models.Model):
+    """
+    A logged-in teammate invited to co-run a board flow.
+
+    Collaborators are distinct from anonymous participants: they map to a
+    real user account, so the stage can show their avatar/initials and let
+    them into the presenter-side instant-message channel. The board owner
+    is an implicit collaborator and need not have a row here.
+    """
+    ROLE_CHOICES = [
+        ("editor", "Editor — can present and moderate"),
+        ("viewer", "Viewer — can watch and chat"),
+    ]
+
+    # Attach to the flow when the board is part of one (so a collaborator
+    # follows every page), otherwise to a single standalone session.
+    flow = models.ForeignKey(
+        BoardFlow, on_delete=models.CASCADE,
+        related_name="collaborators", null=True, blank=True,
+    )
+    session = models.ForeignKey(
+        BoardSession, on_delete=models.CASCADE,
+        related_name="collaborators", null=True, blank=True,
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name="board_collaborations",
+    )
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default="editor")
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="board_invites_sent",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["flow", "user"],
+                name="uniq_flow_collaborator",
+                condition=models.Q(flow__isnull=False),
+            ),
+            models.UniqueConstraint(
+                fields=["session", "user"],
+                name="uniq_session_collaborator",
+                condition=models.Q(session__isnull=False),
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.user} on {self.flow_id or self.session_id}"
+
+
+class BoardMessage(models.Model):
+    """
+    One instant message in a board's collaborator chat.
+
+    This is the back-channel between the owner and invited collaborators
+    (not the public sticky wall). Messages are scoped to the flow when the
+    board belongs to one — so the conversation is continuous as the
+    presenter clicks Previous/Next through pages — and to the single
+    session otherwise. Persisted so the chat history survives a refresh or
+    a presenter rejoining mid-session.
+    """
+    flow = models.ForeignKey(
+        BoardFlow, on_delete=models.CASCADE,
+        related_name="messages", null=True, blank=True,
+    )
+    session = models.ForeignKey(
+        BoardSession, on_delete=models.CASCADE,
+        related_name="messages", null=True, blank=True,
+    )
+    # The author as a real user when available; falls back to the display
+    # name captured at send time so a deleted account still reads sensibly.
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="board_messages",
+    )
+    author_name = models.CharField(max_length=80, default="")
+    body = models.CharField(max_length=500)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self):
+        return f"{self.author_name}: {self.body[:30]}"
+
+    def as_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "author": self.author_name or "Someone",
+            "body": self.body,
+            "ts": self.created_at.isoformat() if self.created_at else None,
+        }

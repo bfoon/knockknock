@@ -9,11 +9,11 @@
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Patrick+Hand&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'css/app.css' %}?v=4">
-<link rel="stylesheet" href="{% static 'css/boardly.css' %}?v=7">
+<link rel="stylesheet" href="{% static 'css/boardly.css' %}?v=11">
 </head>
 <body>
 
-<div class="kk-stage kk-board-stage kk-board-template-{{ session.template_key|default:'custom' }}" id="stage"
+<div class="kk-stage kk-board-stage kk-board-template-{{ session.template_key|default:'custom' }} kk-board-style-{{ board_style|default:'custom' }}" id="stage"
      data-code="{{ session.code }}"
      data-kind="board"
      data-mode="{{ session.mode }}"
@@ -21,6 +21,11 @@
      data-flow-id="{{ session.flow_id|default:'' }}"
      data-page-number="{{ page_number }}"
      data-page-total="{{ page_total }}"
+     data-style="{{ board_style|default:'custom' }}"
+     data-me-id="{{ me.id|default:'0' }}"
+     data-can-chat="{% if me %}1{% else %}0{% endif %}"
+     data-can-edit="{% if can_edit_board %}1{% else %}0{% endif %}"
+     {% if board_accent %}style="--board-accent: {{ board_accent }};"{% endif %}
      data-column-reorder-url="{% if can_edit_board %}{% url 'boardly:columns_reorder' session.code %}{% endif %}">
 
 <!--  {# ── Top bar ────────────────────────────────────────────────────── #}-->
@@ -43,7 +48,14 @@
     </div>
 
     <div class="kk-board-title-wrap">
-      <span class="kk-board-title" title="{{ session.title }}">{{ session.title|truncatechars:30 }}</span>
+      <span class="kk-board-title{% if can_edit_board %} is-editable{% endif %}"
+            id="board-title-display"
+            title="{% if can_edit_board %}Click to rename this board{% else %}{{ session.title }}{% endif %}"
+            data-full-title="{{ session.title }}">{{ session.title|truncatechars:30 }}</span>
+      {% if can_edit_board %}
+        <button type="button" class="kk-board-title-edit" id="board-title-edit"
+                title="Rename board"><i class="bi bi-pencil"></i></button>
+      {% endif %}
       {% if session.flow_id %}
         <span class="kk-board-page-mini">{{ page_number }}/{{ page_total }} · {{ session.module_label|default:"PAGE" }}</span>
       {% endif %}
@@ -68,24 +80,111 @@
       <button class="kk-board-layout"           data-layout="scatter" title="Scattered sticky look"><i class="bi bi-shuffle"></i></button>
     </div>
 
-    <button class="kk-tool" id="btn-lock-columns" title="Lock columns — prevent moving notes between columns"><i class="bi bi-unlock"></i></button>
-    <button class="kk-tool" id="btn-moderate" title="Moderation mode"><i class="bi bi-shield-check"></i></button>
-    {% if can_edit_board %}
-      <button class="kk-tool" id="btn-background" title="Board background photo"><i class="bi bi-image"></i></button>
-    {% endif %}
+<!--    {# Tools menu — drawing tools (highlighter / pen / eraser). #}-->
+    <div class="kk-menu" data-menu="tools">
+      <button class="kk-tool kk-menu-trigger" id="menu-tools-btn" type="button"
+              aria-haspopup="true" aria-expanded="false" title="Drawing tools">
+        <i class="bi bi-pencil-square"></i>
+        <span class="kk-menu-label">Tools</span>
+        <i class="bi bi-chevron-down kk-menu-caret"></i>
+      </button>
+      <div class="kk-menu-panel" id="menu-tools-panel" role="menu" aria-label="Drawing tools">
+        <button class="kk-menu-item" id="btn-draw-hi" type="button" role="menuitem">
+          <i class="bi bi-highlighter"></i> <span>Highlighter</span>
+        </button>
+        <button class="kk-menu-item" id="btn-draw-pen" type="button" role="menuitem">
+          <i class="bi bi-pencil"></i> <span>Freehand pen</span>
+        </button>
+        <button class="kk-menu-item" id="btn-draw-clear" type="button" role="menuitem">
+          <i class="bi bi-eraser"></i> <span>Eraser</span>
+        </button>
+      </div>
+    </div>
 
-    <div class="kk-board-export-group" role="group" aria-label="Export board">
-      <button class="kk-tool kk-tool-export" id="btn-export-png" type="button" title="Export board as image (PNG)">
-        <i class="bi bi-image"></i>
+<!--    {# Options menu — lock columns → moderation → background → export. #}-->
+    <div class="kk-menu" data-menu="options">
+      <button class="kk-tool kk-menu-trigger" id="menu-options-btn" type="button"
+              aria-haspopup="true" aria-expanded="false" title="Board options">
+        <i class="bi bi-sliders"></i>
+        <span class="kk-menu-label">Options</span>
+        <i class="bi bi-chevron-down kk-menu-caret"></i>
       </button>
-      <button class="kk-tool kk-tool-export" id="btn-export-pdf" type="button" title="Export board as PDF">
-        <i class="bi bi-file-earmark-pdf"></i>
-      </button>
+      <div class="kk-menu-panel" id="menu-options-panel" role="menu" aria-label="Board options">
+        <button class="kk-menu-item" id="btn-lock-columns" type="button" role="menuitem"
+                title="Lock columns — prevent moving notes between columns">
+          <i class="bi bi-unlock"></i> <span>Lock columns</span>
+        </button>
+        <button class="kk-menu-item" id="btn-moderate" type="button" role="menuitem"
+                title="Moderation mode">
+          <i class="bi bi-shield-check"></i> <span>Moderation mode</span>
+        </button>
+        {% if can_edit_board %}
+          <button class="kk-menu-item" id="btn-background" type="button" role="menuitem"
+                  title="Board background photo">
+            <i class="bi bi-image"></i> <span>Background photo</span>
+          </button>
+        {% endif %}
+        <div class="kk-menu-sep" role="separator"></div>
+        <button class="kk-menu-item kk-tool-export" id="btn-export-png" type="button" role="menuitem"
+                title="Export board as image (PNG)">
+          <i class="bi bi-image"></i> <span>Export as PNG</span>
+        </button>
+        <button class="kk-menu-item kk-tool-export" id="btn-export-pdf" type="button" role="menuitem"
+                title="Export board as PDF">
+          <i class="bi bi-file-earmark-pdf"></i> <span>Export as PDF</span>
+        </button>
+
+        <div class="kk-menu-sep" role="separator"></div>
+
+<!--        {# Team chat — back-channel with collaborators. The unread badge
+            sits inline at the right of the row. #}-->
+        <button class="kk-menu-item kk-collab-chat-btn" id="btn-collab-chat" type="button" role="menuitem"
+                title="Team chat with collaborators">
+          <i class="bi bi-chat-dots"></i> <span>Team chat</span>
+          <span class="kk-chat-badge" id="chat-badge" style="display:none;">0</span>
+        </button>
+
+<!--        {# End / stop the session. JS shows this only while the board is
+            live, so it stays hidden until there's a session to end. #}-->
+        <button class="kk-menu-item is-danger" id="btn-stop" type="button" role="menuitem"
+                title="End this board session" style="display:none;">
+          <i class="bi bi-stop-fill"></i> <span>End session</span>
+        </button>
+      </div>
     </div>
 
     <button class="kk-tool" id="btn-fullscreen" title="Fullscreen"><i class="bi bi-arrows-fullscreen"></i></button>
 
-<!--    {# Open / close the board — the master control participants wait on. #}-->
+<!--    {# Collaborator avatar rail — owner first (starred), then invited
+        teammates. The live "online" pill reuses the participant count. #}-->
+    <div class="kk-collab-wrap">
+      <div class="kk-collab-rail" id="collab-rail" aria-label="Collaborators">
+        {% for c in collaborators %}
+          <span class="kk-collab{% if c.is_owner %} is-owner{% endif %}"
+                data-uid="{{ c.id }}"
+                style="--av: {{ c.color }};"
+                title="{{ c.name }}{% if c.is_owner %} · Owner{% endif %}">
+            {% if c.photo %}
+              <img src="{{ c.photo }}" alt="{{ c.name }}">
+            {% else %}
+              <span class="kk-collab-ini">{{ c.initials }}</span>
+            {% endif %}
+            <span class="kk-collab-dot" aria-hidden="true"></span>
+          </span>
+        {% endfor %}
+      </div>
+      <span class="kk-online-pill" title="People connected right now">
+        <i class="bi bi-broadcast"></i> <b id="stat-people-pill">0</b> online
+      </span>
+      {% if can_edit_board %}
+        <a class="kk-tool kk-collab-manage" href="{% url 'boardly:collaborators' session.code %}"
+           title="Manage collaborators">
+          <i class="bi bi-person-gear"></i>
+        </a>
+      {% endif %}
+    </div>
+
+<!--    {# Open / reopen the board — participants wait on this. #}-->
     <button class="kk-btn kk-btn-primary kk-board-power" id="btn-power"
             data-state="{{ session.state }}">
       <i class="bi bi-play-fill"></i> <span id="btn-power-label">Open board</span>
@@ -153,7 +252,7 @@
       <div class="kk-board-heading">
         <h1 class="kk-board-heading-title">
           <span class="kk-board-tick">≈</span>
-          {{ session.title|default:"IDEA BOARD" }}
+          <span id="board-heading-title-text">{{ session.title|default:"IDEA BOARD" }}</span>
           <span class="kk-board-tick">≈</span>
         </h1>
         <p class="kk-board-heading-sub" id="board-prompt-display">{{ session.prompt|default:"Ideas, insights & inspiration" }}</p>
@@ -366,8 +465,50 @@
   </form>
 </dialog>
 
+<!--{# ── Collaborator team-chat panel (slides in from the right) ─────────
+     Back-channel between the owner and invited collaborators — separate
+     from the public sticky wall. Guests see it read-only. #}-->
+<aside class="kk-collab-chat" id="collab-chat" aria-label="Team chat">
+  <header class="kk-chat-head">
+    <strong><i class="bi bi-chat-dots"></i> Team chat</strong>
+    <span class="kk-chat-sub">Private to collaborators</span>
+    <button type="button" class="kk-chat-x" id="chat-close" aria-label="Close chat">
+      <i class="bi bi-x-lg"></i>
+    </button>
+  </header>
+  <div class="kk-chat-log" id="chat-log">
+    <p class="kk-chat-empty">No messages yet.</p>
+  </div>
+  <div class="kk-chat-compose">
+    <input type="text" id="chat-input" class="form-control"
+           maxlength="500" placeholder="Message your collaborators…"
+           autocomplete="off">
+    <button type="button" class="kk-btn kk-btn-primary kk-chat-send" id="chat-send"
+            title="Send">
+      <i class="bi bi-send"></i>
+    </button>
+  </div>
+</aside>
+
+<!--{# ── Column style picker (icon + colour) — presenter live editing ──── #}-->
+<dialog id="col-style-modal" class="kk-style-modal">
+  <div class="kk-style-inner">
+    <header class="kk-style-head">
+      <strong><i class="bi bi-palette"></i> Column style</strong>
+      <button type="button" class="kk-style-x" id="col-style-close" aria-label="Close">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </header>
+    <label class="form-label">Colour</label>
+    <div class="kk-style-colors" id="col-style-colors" role="radiogroup" aria-label="Column colour"></div>
+    <label class="form-label mt-3">Icon</label>
+    <div class="kk-style-icons" id="col-style-icons" role="radiogroup" aria-label="Column icon"></div>
+    <p class="kk-style-hint text-secondary small">Changes apply live for everyone.</p>
+  </div>
+</dialog>
+
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<script src="{% static 'js/boardly_stage.js' %}?v=8"></script>
+<script src="{% static 'js/boardly_stage.js' %}?v=12"></script>
 </body>
 </html>

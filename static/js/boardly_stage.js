@@ -30,8 +30,15 @@
   const promptDisplay = document.getElementById("board-prompt-display");
   const fx = document.getElementById("board-fx");
 
+  const titleDisplay = document.getElementById("board-title-display");
+  const titleEditBtn = document.getElementById("board-title-edit");
+  const headingTitleText = document.getElementById("board-heading-title-text");
+  const qrCardTitle = document.getElementById("qr-card-title");
+  const CAN_EDIT = stage.dataset.canEdit === "1";
+
   const powerBtn = document.getElementById("btn-power");
   const powerLabel = document.getElementById("btn-power-label");
+  const stopBtn = document.getElementById("btn-stop");
 
   const layoutBtns = Array.from(document.querySelectorAll(".kk-board-layout"));
   const btnModerate = document.getElementById("btn-moderate");
@@ -64,6 +71,21 @@
   };
   const NOTE_FILLS = ["#fbcfe8", "#fde68a", "#bbf7d0", "#bfdbfe", "#ddd6fe", "#fed7aa"];
   const NOTE_DEEPS = ["#f5a8d0", "#f6cf4d", "#86e3a6", "#8fbef5", "#bcaff7", "#f9b878"];
+
+  // Column header styling — colour token → hex accent, and the icon set the
+  // restyle picker offers. Must mirror BoardGroup.COLOR_CHOICES /
+  // COLUMN_ICONS server-side.
+  const COLUMN_COLORS = {
+    slate: "#64748b", rose: "#f43f5e", amber: "#f59e0b", green: "#10b981",
+    sky: "#0ea5e9", violet: "#8b5cf6", orange: "#f97316", teal: "#14b8a6",
+    indigo: "#6366f1", pink: "#ec4899",
+  };
+  const COLUMN_ICON_LIST = [
+    "none", "exclamation-triangle", "people", "lightbulb", "shield-check",
+    "flag", "star", "rocket-takeoff", "graph-up-arrow", "clipboard-check",
+    "gem", "truck", "diagram-3", "cash-coin", "bullseye", "chat-dots",
+    "heart", "gear",
+  ];
 
   // ── state ──────────────────────────────────────────────────────────
   let boardState = stage.dataset.mode ? "lobby" : "lobby";
@@ -126,8 +148,12 @@
     switch (msg.type) {
       case "state":
         boardState = msg.state || "lobby";
-        groups = msg.groups || [];
+        groups = (msg.groups || []).map((g) => ({
+          id: g.id, name: g.name,
+          icon: g.icon || "none", color: g.color || "slate",
+        }));
         if (promptDisplay && msg.prompt) promptDisplay.textContent = msg.prompt;
+        if (msg.title) applyTitle(msg.title);
         notes.clear();
         (msg.notes || []).forEach((n) => notes.set(n.id, n));
         if (typeof msg.participants === "number") setPeople(msg.participants);
@@ -148,6 +174,10 @@
       case "board_state":
         boardState = msg.state || boardState;
         reflectPower();
+        break;
+
+      case "title_changed":
+        if (msg.title) applyTitle(msg.title);
         break;
 
       case "note_added":
@@ -277,8 +307,49 @@
 
       case "group_reordered": {
         if (Array.isArray(msg.groups)) {
-          groups = msg.groups.map((g) => ({ id: g.id, name: g.name }));
+          groups = msg.groups.map((g) => ({
+            id: g.id, name: g.name,
+            icon: g.icon || "none", color: g.color || "slate",
+          }));
           renderAll();
+        }
+        break;
+      }
+
+      case "group_restyled": {
+        // A column's icon and/or colour changed. Patch our cached group
+        // and re-render so the header chip + accent update everywhere.
+        if (msg.group) {
+          const g = groups.find((x) => x.id === msg.group.id);
+          if (g) {
+            g.icon = msg.group.icon || "none";
+            g.color = msg.group.color || "slate";
+            if (msg.group.name) g.name = msg.group.name;
+            renderAll();
+          }
+        }
+        break;
+      }
+
+      case "chat_history": {
+        // Sent to a collaborator on connect — seed the chat panel.
+        chatSeed(msg.messages || []);
+        break;
+      }
+
+      case "chat_message": {
+        chatAppend(msg.message, /*live=*/true);
+        break;
+      }
+
+      case "chat_rejected": {
+        chatNotice(msg.reason || "Message not sent.");
+        break;
+      }
+
+      case "collab_presence": {
+        if (msg.collaborator) {
+          setCollaboratorOnline(msg.collaborator, !!msg.online);
         }
         break;
       }
@@ -308,7 +379,11 @@
   }
 
   // ── stats ──────────────────────────────────────────────────────────
-  function setPeople(c) { if (statPeople) statPeople.textContent = String(c); }
+  function setPeople(c) {
+    if (statPeople) statPeople.textContent = String(c);
+    const pill = document.getElementById("stat-people-pill");
+    if (pill) pill.textContent = String(c);
+  }
   function setNotesCount() {
     if (statNotes) {
       const visible = [...notes.values()].filter((n) => !n.hidden).length;
@@ -317,22 +392,89 @@
   }
 
   // ── power button (open / close) ────────────────────────────────────
+  // ── board title (rename on the stage) ───────────────────────────────
+  // Updates the title everywhere it appears: the header chip, the big
+  // hand-drawn heading, the QR card, and the document title.
+  function applyTitle(title) {
+    const t = (title || "").trim();
+    if (!t) return;
+    if (titleDisplay) {
+      titleDisplay.textContent = t.length > 30 ? t.slice(0, 30) + "…" : t;
+      titleDisplay.dataset.fullTitle = t;
+      if (!CAN_EDIT) titleDisplay.title = t;
+    }
+    if (headingTitleText) headingTitleText.textContent = t;
+    if (qrCardTitle) qrCardTitle.textContent = t;
+    document.title = t + " · Boardly · Presenter";
+  }
+
+  // Inline rename: clicking the title (or the pencil) turns it into an
+  // input; Enter / blur commits, Escape cancels. Owner only.
+  function startTitleEdit() {
+    if (!CAN_EDIT || !titleDisplay) return;
+    if (titleDisplay.querySelector("input")) return;   // already editing
+    const current = titleDisplay.dataset.fullTitle || titleDisplay.textContent || "";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "kk-board-title-input";
+    input.maxLength = 140;
+    input.value = current;
+    titleDisplay.textContent = "";
+    titleDisplay.appendChild(input);
+    input.focus();
+    input.select();
+
+    let done = false;
+    const commit = (save) => {
+      if (done) return;
+      done = true;
+      const next = input.value.trim().slice(0, 140);
+      if (save && next && next !== current) {
+        send({ type: "set_title", title: next });
+        applyTitle(next);   // optimistic; broadcast confirms
+      } else {
+        applyTitle(current);
+      }
+    };
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); commit(true); }
+      else if (e.key === "Escape") { e.preventDefault(); commit(false); }
+    });
+    input.addEventListener("blur", () => commit(true));
+  }
+
+  function initTitleEdit() {
+    if (!CAN_EDIT) return;
+    if (titleDisplay) titleDisplay.addEventListener("click", startTitleEdit);
+    if (titleEditBtn) titleEditBtn.addEventListener("click", startTitleEdit);
+  }
+
   function reflectPower() {
     if (!powerBtn) return;
     powerBtn.dataset.state = boardState;
     stage.classList.toggle("is-ended", boardState === "ended");
 
+    const live = boardState === "open" || boardState === "running";
+
     const icon = powerBtn.querySelector("i");
-    if (boardState === "open" || boardState === "running") {
-      if (powerLabel) powerLabel.textContent = "Close board";
-      if (icon) icon.className = "bi bi-stop-fill";
+    if (live) {
+      // Board is live: the power button pauses it back to the lobby; the
+      // separate Stop button ends the session entirely.
+      if (powerLabel) powerLabel.textContent = "Pause board";
+      if (icon) icon.className = "bi bi-pause-fill";
     } else if (boardState === "ended") {
-      if (powerLabel) powerLabel.textContent = "Board closed";
-      if (icon) icon.className = "bi bi-check-circle";
+      // Ended is no longer a dead end — let the presenter reopen.
+      if (powerLabel) powerLabel.textContent = "Reopen board";
+      if (icon) icon.className = "bi bi-arrow-clockwise";
     } else {
       if (powerLabel) powerLabel.textContent = "Open board";
       if (icon) icon.className = "bi bi-play-fill";
     }
+
+    // The explicit Stop / End-session button is only shown while the
+    // board is actually live.
+    if (stopBtn) stopBtn.style.display = live ? "" : "none";
+
     renderEndedBadge();
   }
 
@@ -353,14 +495,25 @@
   }
 
   function togglePower() {
-    if (boardState === "ended") return;            // closed is terminal
-    const next = (boardState === "open" || boardState === "running") ? "ended" : "open";
-    if (next === "ended" &&
-        !confirm("Close the board? Participants can no longer post notes.")) {
+    // The power button: open the board, pause a live board back to the
+    // lobby, or reopen an ended/paused one. Ending is handled separately
+    // by the explicit Stop button so it's always a deliberate action.
+    const live = boardState === "open" || boardState === "running";
+    const next = live ? "lobby" : "open";
+    setBoardState(next);
+  }
+
+  function endSession() {
+    if (boardState === "ended") return;
+    if (!confirm("End this board session? Participants can no longer post notes.")) {
       return;
     }
+    setBoardState("ended");
+  }
+
+  function setBoardState(next) {
     send({ type: "set_state", state: next });
-    // Optimistic; the broadcast confirms.
+    // Optimistic; the broadcast confirms for every screen.
     boardState = next;
     reflectPower();
   }
@@ -570,6 +723,13 @@
     function buildColumn(gid, name, list) {
       const col = document.createElement("div");
       col.className = "kk-board-column";
+      // Look up this column's style (icon + colour token). The "Other"
+      // catch-all (gid null) stays neutral.
+      const meta = gid == null ? null : groups.find((g) => g.id === gid);
+      const colorKey = (meta && meta.color) || "slate";
+      const iconKey = (meta && meta.icon) || "none";
+      col.dataset.color = colorKey;
+      col.style.setProperty("--col-accent", COLUMN_COLORS[colorKey] || COLUMN_COLORS.slate);
       if (gid != null) {
         col.dataset.gid = String(gid);
         if (COLUMN_REORDER_URL) {
@@ -579,6 +739,15 @@
       }
       const head = document.createElement("div");
       head.className = "kk-board-column-head";
+
+      // Coloured icon chip in front of the name (hidden when icon = none).
+      const chip = document.createElement("span");
+      chip.className = "kk-col-chip";
+      if (iconKey && iconKey !== "none") {
+        chip.innerHTML = '<i class="bi bi-' + iconKey + '"></i>';
+      } else {
+        chip.classList.add("is-empty");
+      }
 
       const nameEl = document.createElement("span");
       nameEl.className = "kk-col-name";
@@ -590,11 +759,25 @@
 
       if (gid != null) {
         // Real column: clicking the name turns it into an input; the
-        // button beside it deletes the whole column.
+        // style button opens the icon/colour picker; the button beside it
+        // deletes the whole column.
         nameEl.classList.add("is-editable");
         nameEl.title = "Click to rename this column";
         nameEl.dataset.gid = String(gid);
         nameEl.tabIndex = 0;
+        // The chip doubles as the "restyle" trigger so presenters can
+        // recolour / re-icon a column in place.
+        chip.classList.add("kk-col-chip-btn");
+        chip.dataset.gid = String(gid);
+        chip.title = "Change this column's icon & colour";
+        chip.tabIndex = 0;
+
+        const style = document.createElement("button");
+        style.type = "button";
+        style.className = "kk-col-style";
+        style.dataset.gid = String(gid);
+        style.title = "Change icon & colour";
+        style.innerHTML = '<i class="bi bi-palette"></i>';
 
         const del = document.createElement("button");
         del.type = "button";
@@ -603,9 +786,9 @@
         del.title = "Delete this column";
         del.innerHTML = '<i class="bi bi-trash"></i>';
 
-        head.append(nameEl, count, del);
+        head.append(chip, nameEl, count, style, del);
       } else {
-        head.append(nameEl, count);
+        head.append(chip, nameEl, count);
       }
 
       const body = document.createElement("div");
@@ -1473,47 +1656,44 @@
   function injectToolbar() {
     const header = document.querySelector(".kk-board-header");
 
-    // Export buttons may be present directly in stage_board.html so they stay
-    // visible even when the injected toolbar is crowded. Reuse them instead
-    // of creating duplicate ids.
+    // The draw tools and export buttons now live inside the Tools /
+    // Options dropdown menus in stage_board.html. Reuse those existing
+    // elements by id rather than injecting duplicates into the flat bar.
     btnExportPng = document.getElementById("btn-export-png") || btnExportPng;
     btnExportPdf = document.getElementById("btn-export-pdf") || btnExportPdf;
+    btnHi = document.getElementById("btn-draw-hi") || btnHi;
+    btnPen = document.getElementById("btn-draw-pen") || btnPen;
+    btnEraseDraw = document.getElementById("btn-draw-clear") || btnEraseDraw;
 
     if (!header) return;
-    if (document.getElementById("btn-draw-hi")) {
-      btnHi = document.getElementById("btn-draw-hi");
-      btnPen = document.getElementById("btn-draw-pen");
-      btnEraseDraw = document.getElementById("btn-draw-clear");
+
+    // The per-participant limit control. Prefer dropping it into the
+    // Options menu (under the export items); fall back to the flat header
+    // only if that panel isn't present.
+    if (document.getElementById("limit-input")) {
+      limitInput = document.getElementById("limit-input");
       return;
     }
+    const optionsPanel = document.getElementById("menu-options-panel");
     const anchor = powerBtn || null;
 
-    const mk = (id, title, icon) => {
-      const existing = document.getElementById(id);
-      if (existing) return existing;
-      const b = document.createElement("button");
-      b.className = "kk-tool";
-      b.id = id;
-      b.type = "button";
-      b.title = title;
-      b.innerHTML = `<i class="bi ${icon}"></i>`;
-      header.insertBefore(b, anchor);
-      return b;
-    };
-
-    btnHi = mk("btn-draw-hi", "Highlighter", "bi-highlighter");
-    btnPen = mk("btn-draw-pen", "Freehand pen", "bi-pencil");
-    btnEraseDraw = mk("btn-draw-clear", "Clear drawing", "bi-eraser");
-
     const limitBox = document.createElement("span");
-    limitBox.className = "kk-limit-box";
+    limitBox.className = optionsPanel ? "kk-limit-box kk-limit-box--menu" : "kk-limit-box";
     limitBox.title = "Notes allowed per participant (0 = unlimited)";
     limitBox.innerHTML =
       '<i class="bi bi-person-lock"></i>' +
+      '<span class="kk-limit-cap">Notes / person</span>' +
       '<button type="button" data-step="-1">&minus;</button>' +
       '<input type="text" inputmode="numeric" id="limit-input" value="0">' +
       '<button type="button" data-step="1">+</button>';
-    header.insertBefore(limitBox, anchor);
+    if (optionsPanel) {
+      const sep = document.createElement("div");
+      sep.className = "kk-menu-sep";
+      sep.setAttribute("role", "separator");
+      optionsPanel.append(sep, limitBox);
+    } else {
+      header.insertBefore(limitBox, anchor);
+    }
     limitInput = limitBox.querySelector("#limit-input");
 
     limitBox.addEventListener("click", (e) => {
@@ -1525,9 +1705,6 @@
     limitInput.addEventListener("change", () => {
       changeLimit(parseInt(limitInput.value, 10) || 0);
     });
-
-    btnExportPng = btnExportPng || mk("btn-export-png", "Save board as image", "bi-image");
-    btnExportPdf = btnExportPdf || mk("btn-export-pdf", "Save board as PDF", "bi-file-pdf");
   }
 
   // ── per-participant limit ───────────────────────────────────────────
@@ -2206,12 +2383,354 @@
   }
 
   // ── wiring ─────────────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════════════
+  //  Column style picker — presenter restyles a column's icon + colour.
+  //  Opened from the palette button or the icon chip in a column header.
+  // ════════════════════════════════════════════════════════════════════
+  const colStyleModal = document.getElementById("col-style-modal");
+  const colStyleIcons = document.getElementById("col-style-icons");
+  const colStyleColors = document.getElementById("col-style-colors");
+  const colStyleClose = document.getElementById("col-style-close");
+  let stylingGid = null;
+  let stylePickIcon = "none";
+  let stylePickColor = "slate";
+
+  function buildStylePicker() {
+    if (colStyleIcons && !colStyleIcons.dataset.built) {
+      COLUMN_ICON_LIST.forEach((ic) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "kk-style-icon";
+        b.dataset.icon = ic;
+        b.title = ic === "none" ? "No icon" : ic;
+        b.innerHTML = ic === "none"
+          ? '<i class="bi bi-slash-circle"></i>'
+          : '<i class="bi bi-' + ic + '"></i>';
+        colStyleIcons.appendChild(b);
+      });
+      colStyleIcons.dataset.built = "1";
+    }
+    if (colStyleColors && !colStyleColors.dataset.built) {
+      Object.keys(COLUMN_COLORS).forEach((key) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "kk-style-color";
+        b.dataset.color = key;
+        b.title = key;
+        b.style.setProperty("--c", COLUMN_COLORS[key]);
+        colStyleColors.appendChild(b);
+      });
+      colStyleColors.dataset.built = "1";
+    }
+  }
+
+  function openStylePicker(gid) {
+    if (!colStyleModal) return;
+    const g = groups.find((x) => x.id === gid);
+    if (!g) return;
+    buildStylePicker();
+    stylingGid = gid;
+    stylePickIcon = g.icon || "none";
+    stylePickColor = g.color || "slate";
+    reflectStylePicks();
+    if (typeof colStyleModal.showModal === "function") colStyleModal.showModal();
+    else colStyleModal.setAttribute("open", "");
+  }
+
+  function closeStylePicker() {
+    stylingGid = null;
+    if (!colStyleModal) return;
+    if (typeof colStyleModal.close === "function" && colStyleModal.open) colStyleModal.close();
+    else colStyleModal.removeAttribute("open");
+  }
+
+  function reflectStylePicks() {
+    if (colStyleIcons) {
+      colStyleIcons.querySelectorAll(".kk-style-icon").forEach((b) =>
+        b.classList.toggle("is-active", b.dataset.icon === stylePickIcon));
+    }
+    if (colStyleColors) {
+      colStyleColors.querySelectorAll(".kk-style-color").forEach((b) =>
+        b.classList.toggle("is-active", b.dataset.color === stylePickColor));
+    }
+  }
+
+  function commitStyle() {
+    if (stylingGid == null) return;
+    send({ type: "set_group_style", id: stylingGid,
+           icon: stylePickIcon, color: stylePickColor });
+    // Optimistic local update so it feels instant.
+    const g = groups.find((x) => x.id === stylingGid);
+    if (g) { g.icon = stylePickIcon; g.color = stylePickColor; renderAll(); }
+  }
+
+  function initStylePicker() {
+    if (colStyleIcons) {
+      colStyleIcons.addEventListener("click", (e) => {
+        const b = e.target.closest(".kk-style-icon");
+        if (!b) return;
+        stylePickIcon = b.dataset.icon;
+        reflectStylePicks();
+        commitStyle();
+      });
+    }
+    if (colStyleColors) {
+      colStyleColors.addEventListener("click", (e) => {
+        const b = e.target.closest(".kk-style-color");
+        if (!b) return;
+        stylePickColor = b.dataset.color;
+        reflectStylePicks();
+        commitStyle();
+      });
+    }
+    if (colStyleClose) colStyleClose.addEventListener("click", closeStylePicker);
+    if (colStyleModal) {
+      colStyleModal.addEventListener("click", (e) => {
+        if (e.target === colStyleModal) closeStylePicker();
+      });
+      colStyleModal.addEventListener("cancel", (e) => { e.preventDefault(); closeStylePicker(); });
+    }
+    // Delegate: palette button OR icon chip in a column header opens it.
+    if (columnsWrap) {
+      columnsWrap.addEventListener("click", (e) => {
+        const trigger = e.target.closest(".kk-col-style, .kk-col-chip-btn");
+        if (trigger && trigger.dataset.gid) {
+          e.preventDefault();
+          e.stopPropagation();
+          openStylePicker(Number(trigger.dataset.gid));
+        }
+      });
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  //  Collaborators rail + instant messaging back-channel.
+  // ════════════════════════════════════════════════════════════════════
+  const collabRail = document.getElementById("collab-rail");
+  const chatPanel = document.getElementById("collab-chat");
+  const chatToggle = document.getElementById("btn-collab-chat");
+  const chatClose = document.getElementById("chat-close");
+  const chatLog = document.getElementById("chat-log");
+  const chatInput = document.getElementById("chat-input");
+  const chatSend = document.getElementById("chat-send");
+  const chatBadge = document.getElementById("chat-badge");
+  const ME_ID = Number(stage.dataset.meId || 0);
+  const CAN_CHAT = stage.dataset.canChat === "1";
+
+  let chatUnread = 0;
+  let chatOpen = false;
+  const seenMsgIds = new Set();
+
+  function avatarMarkup(av) {
+    if (!av) return "";
+    if (av.photo) {
+      return '<img src="' + escapeHtml(av.photo) + '" alt="' +
+             escapeHtml(av.name) + '">';
+    }
+    return '<span class="kk-avatar-ini">' + escapeHtml(av.initials || "?") + "</span>";
+  }
+
+  function setCollaboratorOnline(av, online) {
+    if (!collabRail || !av) return;
+    let el = collabRail.querySelector('[data-uid="' + av.id + '"]');
+    if (!el) {
+      // A collaborator we didn't render server-side (rare) — add them now.
+      el = document.createElement("span");
+      el.className = "kk-collab" + (av.is_owner ? " is-owner" : "");
+      el.dataset.uid = String(av.id);
+      el.style.setProperty("--av", av.color || "#6366f1");
+      el.title = av.name + (av.is_owner ? " · Owner" : "");
+      el.innerHTML = avatarMarkup(av) +
+        '<span class="kk-collab-dot" aria-hidden="true"></span>';
+      // Owners stay first.
+      if (av.is_owner) collabRail.prepend(el);
+      else collabRail.appendChild(el);
+    }
+    el.classList.toggle("is-online", online);
+  }
+
+  function fmtTime(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d)) return "";
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function renderMessage(m) {
+    if (!chatLog) return;
+    if (m.id && seenMsgIds.has(m.id)) return;
+    if (m.id) seenMsgIds.add(m.id);
+    const mine = m.user_id && ME_ID && Number(m.user_id) === ME_ID;
+    const row = document.createElement("div");
+    row.className = "kk-chat-msg" + (mine ? " is-mine" : "");
+    const av = m.avatar;
+    const avEl = document.createElement("span");
+    avEl.className = "kk-chat-av";
+    avEl.style.setProperty("--av", (av && av.color) || "#6366f1");
+    avEl.innerHTML = avatarMarkup(av || { initials: (m.author || "?")[0] });
+    const bubble = document.createElement("div");
+    bubble.className = "kk-chat-bubble";
+    bubble.innerHTML =
+      '<span class="kk-chat-who">' + escapeHtml(m.author || "Someone") +
+      (av && av.is_owner ? ' <i class="bi bi-star-fill" title="Owner"></i>' : "") +
+      '</span>' +
+      '<span class="kk-chat-text">' + escapeHtml(m.body || "") + "</span>" +
+      '<span class="kk-chat-time">' + fmtTime(m.ts) + "</span>";
+    if (mine) row.append(bubble, avEl);
+    else row.append(avEl, bubble);
+    chatLog.appendChild(row);
+    chatLog.scrollTop = chatLog.scrollHeight;
+  }
+
+  function chatSeed(list) {
+    if (!chatLog) return;
+    chatLog.innerHTML = "";
+    seenMsgIds.clear();
+    (list || []).forEach((m) => renderMessage(m));
+    if (!list || !list.length) {
+      chatLog.innerHTML =
+        '<p class="kk-chat-empty">No messages yet. Say hello to your team \u{1F44B}</p>';
+    }
+  }
+
+  function chatAppend(m, live) {
+    const empty = chatLog && chatLog.querySelector(".kk-chat-empty");
+    if (empty) empty.remove();
+    renderMessage(m);
+    if (live && !chatOpen && !(m.user_id && ME_ID && Number(m.user_id) === ME_ID)) {
+      chatUnread += 1;
+      reflectChatBadge();
+    }
+  }
+
+  function chatNotice(text) {
+    if (!chatLog) return;
+    const p = document.createElement("p");
+    p.className = "kk-chat-notice";
+    p.textContent = text;
+    chatLog.appendChild(p);
+    chatLog.scrollTop = chatLog.scrollHeight;
+  }
+
+  function reflectChatBadge() {
+    if (!chatBadge) return;
+    chatBadge.textContent = chatUnread > 9 ? "9+" : String(chatUnread);
+    chatBadge.style.display = chatUnread > 0 ? "" : "none";
+  }
+
+  function openChat() {
+    if (!chatPanel) return;
+    chatOpen = true;
+    chatPanel.classList.add("is-open");
+    chatUnread = 0;
+    reflectChatBadge();
+    if (chatInput) chatInput.focus();
+  }
+  function closeChat() {
+    chatOpen = false;
+    if (chatPanel) chatPanel.classList.remove("is-open");
+  }
+
+  function sendChat() {
+    if (!chatInput) return;
+    const body = chatInput.value.trim();
+    if (!body) return;
+    send({ type: "chat", body });
+    chatInput.value = "";
+    chatInput.focus();
+  }
+
+  function initCollab() {
+    // Mark already-rendered collaborators (from the server) so presence
+    // can toggle their dot; the current user shows as online immediately.
+    if (collabRail && ME_ID) {
+      const meEl = collabRail.querySelector('[data-uid="' + ME_ID + '"]');
+      if (meEl) meEl.classList.add("is-online");
+    }
+    if (chatToggle) chatToggle.addEventListener("click", () => {
+      chatOpen ? closeChat() : openChat();
+    });
+    if (chatClose) chatClose.addEventListener("click", closeChat);
+    if (chatSend) chatSend.addEventListener("click", sendChat);
+    if (chatInput) {
+      chatInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); }
+      });
+    }
+    // Guests (non-collaborators) can't post — soften the composer.
+    if (!CAN_CHAT && chatPanel) {
+      chatPanel.classList.add("is-readonly");
+      if (chatInput) {
+        chatInput.disabled = true;
+        chatInput.placeholder = "Only board collaborators can chat";
+      }
+      if (chatSend) chatSend.disabled = true;
+    }
+    reflectChatBadge();
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  //  Header dropdown menus — Tools (drawing) and Options (board controls).
+  //  Keeps the header compact: each menu is a trigger + a popover panel.
+  // ════════════════════════════════════════════════════════════════════
+  function initMenus() {
+    const menus = Array.from(document.querySelectorAll(".kk-menu"));
+    if (!menus.length) return;
+
+    function closeAll(except) {
+      menus.forEach((m) => {
+        if (m === except) return;
+        m.classList.remove("is-open");
+        const t = m.querySelector(".kk-menu-trigger");
+        if (t) t.setAttribute("aria-expanded", "false");
+      });
+    }
+
+    menus.forEach((menu) => {
+      const trigger = menu.querySelector(".kk-menu-trigger");
+      const panel = menu.querySelector(".kk-menu-panel");
+      if (!trigger || !panel) return;
+
+      trigger.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const willOpen = !menu.classList.contains("is-open");
+        closeAll(menu);
+        menu.classList.toggle("is-open", willOpen);
+        trigger.setAttribute("aria-expanded", willOpen ? "true" : "false");
+      });
+
+      // A click on a menu item runs its own handler (wired elsewhere); we
+      // just close the menu afterwards. The limit box steppers are an
+      // exception — they keep the menu open so the presenter can tap +/−
+      // repeatedly.
+      panel.addEventListener("click", (e) => {
+        if (e.target.closest(".kk-limit-box")) return;
+        if (e.target.closest(".kk-menu-item")) {
+          // Defer the close so the item's own click handler fires first.
+          setTimeout(() => {
+            menu.classList.remove("is-open");
+            trigger.setAttribute("aria-expanded", "false");
+          }, 0);
+        }
+      });
+    });
+
+    // Outside click / Escape closes any open menu.
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".kk-menu")) closeAll(null);
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeAll(null);
+    });
+  }
+
   function init() {
     layout = "grid";
     const active = layoutBtns.find((b) => b.classList.contains("is-active"));
     if (active) layout = active.dataset.layout;
 
     if (powerBtn) powerBtn.addEventListener("click", togglePower);
+    if (stopBtn) stopBtn.addEventListener("click", endSession);
 
     layoutBtns.forEach((b) => {
       b.addEventListener("click", () => {
@@ -2285,6 +2804,10 @@
     reflectPower();
     renderAddColumn();
     initTools();
+    initStylePicker();
+    initCollab();
+    initMenus();
+    initTitleEdit();
     connect();
 
     // Re-fit note text when the viewport changes — column widths and the

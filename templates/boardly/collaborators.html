@@ -1,0 +1,112 @@
+{% load static %}<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Collaborators · {{ session.title }} · Boardly</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://api.fontshare.com/v2/css?f[]=clash-display@600,700&f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'css/app.css' %}?v=4">
+<link rel="stylesheet" href="{% static 'css/boardly.css' %}?v=8">
+</head>
+<body class="kk-standard-page kk-board-create">
+
+<div class="kk-flyer-shell kk-main-narrow">
+  <nav class="kk-flyer-nav" aria-label="Boardly navigation">
+    <a class="kk-flyer-brand" href="{% url 'core:home' %}">
+      <span class="kk-logo-mark" aria-hidden="true"></span>
+      <span class="kk-flyer-brand-text">
+        <span class="kk-flyer-brand-name">knock<span class="dot">·</span>knock</span>
+        <span class="kk-flyer-brand-sub">Boardly collaborators</span>
+      </span>
+    </a>
+    <a href="{% url 'boardly:stage' session.code %}" class="kk-return-chip">
+      <i class="bi bi-arrow-left"></i> <span>Back to board</span>
+    </a>
+  </nav>
+
+  <section class="kk-flyer-card kk-flyer-hero-main mb-4">
+    <span class="kk-flyer-kicker"><i class="bi bi-people"></i> Team access</span>
+    <h1 class="kk-flyer-title">Invite <span class="kk-flyer-gradient">collaborators</span></h1>
+    <p class="kk-flyer-sub mb-0">
+      Collaborators can co-present and use the private team chat on
+      {% if is_flow %}every page of{% endif %}
+      <strong>{{ scope_label }}</strong>.
+      They’re separate from the people who scan in to post sticky notes.
+    </p>
+  </section>
+
+  {% if messages %}
+    <div class="mb-3">
+      {% for message in messages %}
+        <div class="alert alert-{{ message.tags|default:'info' }} py-2 px-3 mb-2">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <form method="post" action="{% url 'boardly:collaborator_add' session.code %}"
+        class="kk-card kk-collab-invite mb-4">
+    {% csrf_token %}
+    <label class="form-label" for="identifier">Add by username or email</label>
+    <div class="kk-collab-invite-row">
+      <input type="text" name="identifier" id="identifier" class="form-control"
+             placeholder="e.g. jane.doe or jane@example.org" required autofocus>
+      <select name="role" class="form-select kk-collab-role">
+        <option value="editor">Editor — present &amp; moderate</option>
+        <option value="viewer">Viewer — watch &amp; chat</option>
+      </select>
+      <button type="submit" class="kk-btn kk-btn-primary">
+        <i class="bi bi-person-plus"></i> Invite
+      </button>
+    </div>
+    <div class="form-text">
+      The person must already have a Knock-Knock account. They’ll see this
+      board’s avatars and team chat the next time they open it.
+    </div>
+  </form>
+
+  <div class="kk-card">
+    <h2 class="kk-collab-h2"><i class="bi bi-person-badge"></i> People on this board</h2>
+
+    <ul class="kk-collab-list">
+      <li class="kk-collab-list-item">
+        <span class="kk-collab-li-avatar is-owner" style="--av: {{ owner_avatar.color }};">
+          {% if owner_avatar.photo %}<img src="{{ owner_avatar.photo }}" alt="">{% else %}{{ owner_avatar.initials }}{% endif %}
+        </span>
+        <span class="kk-collab-li-meta">
+          <strong>{{ owner_avatar.name }}</strong>
+          <span class="kk-collab-li-role"><i class="bi bi-star-fill"></i> Owner</span>
+        </span>
+      </li>
+
+      {% for row in collaborators %}
+        <li class="kk-collab-list-item">
+          <span class="kk-collab-li-avatar" style="--av: {{ row.avatar.color }};">
+            {% if row.avatar.photo %}<img src="{{ row.avatar.photo }}" alt="">{% else %}{{ row.avatar.initials }}{% endif %}
+          </span>
+          <span class="kk-collab-li-meta">
+            <strong>{{ row.avatar.name }}</strong>
+            <span class="kk-collab-li-role">{{ row.role }}</span>
+          </span>
+          <form method="post"
+                action="{% url 'boardly:collaborator_remove' session.code row.obj.id %}"
+                class="kk-collab-li-remove"
+                onsubmit="return confirm('Remove {{ row.avatar.name|escapejs }} from this board?');">
+            {% csrf_token %}
+            <button type="submit" class="kk-btn kk-btn-ghost btn-sm" title="Remove collaborator">
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </form>
+        </li>
+      {% empty %}
+        <li class="kk-collab-empty text-secondary">
+          No collaborators yet — invite a teammate above.
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+
+</body>
+</html>

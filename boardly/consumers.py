@@ -28,6 +28,14 @@ Speaks JSON. Client → server messages:
                                                (group_id null = no column)
     {type:"add_group", name}                   presenter adds a topic column
     {type:"rename_group", id, name}            presenter renames a column
+    {type:"set_title", title}                  presenter renames the board
+    {type:"set_group_style", id, icon, color}  presenter restyles a column's
+                                               header (icon and/or colour;
+                                               omitted field left unchanged)
+    {type:"chat", body}                        collaborator instant message
+                                               (owner / invited teammates
+                                               only; back-channel, not the
+                                               public wall)
     {type:"delete_group", id}                  presenter deletes a column —
                                                its notes are deleted too
     {type:"set_column_lock", locked}           presenter locks/unlocks
@@ -60,6 +68,16 @@ Server → client messages:
     {type:"edit_rejected", reason}
     {type:"group_added", group} a new column {id, name}
     {type:"group_renamed", id, name}           a column was renamed
+    {type:"title_changed", title}              the board title changed
+    {type:"group_restyled", group}             a column's icon/colour changed
+                                               (group = full styled dict)
+    {type:"chat_history", messages}            sent to a collaborator on
+                                               connect — recent back-channel
+                                               messages, oldest first
+    {type:"chat_message", message}             a new collaborator message
+    {type:"chat_rejected", reason}             non-collaborator tried to chat
+    {type:"collab_presence", online,           a collaborator came online /
+           collaborator}                       went offline (avatar dict)
     {type:"group_removed", id, note_ids}       a column (and its notes)
                                                were deleted
     {type:"column_lock_changed", locked}       cross-column moves locked?
@@ -90,6 +108,21 @@ ALLOWED_ICONS = {
     "target", "rocket", "check", "none",
 }
 
+# Column header styling — validated server-side so a bad value off the
+# wire can't render an empty icon or an unknown colour token. Mirrors
+# BoardGroup.ICON_CHOICES / COLOR_CHOICES.
+COLUMN_ICONS = {
+    "none", "exclamation-triangle", "people", "lightbulb", "shield-check",
+    "flag", "star", "rocket-takeoff", "graph-up-arrow", "clipboard-check",
+    "gem", "truck", "diagram-3", "cash-coin", "bullseye", "chat-dots",
+    "heart", "gear",
+}
+COLUMN_COLORS = {
+    "slate", "rose", "amber", "green", "sky",
+    "violet", "orange", "teal", "indigo", "pink",
+}
+MAX_CHAT_LEN = 500
+
 
 class BoardConsumer(AsyncWebsocketConsumer):
     # ── lifecycle ────────────────────────────────────────────────────
@@ -98,6 +131,13 @@ class BoardConsumer(AsyncWebsocketConsumer):
         self.group = f"board_{self.code}"
         self.nick = None
         self.is_presenter = False
+
+        # Collaborator identity (owner or invited teammate). Resolved from
+        # the authenticated session user; stays None for anonymous guests.
+        self.user = self.scope.get("user")
+        self.is_authed = bool(self.user and getattr(self.user, "is_authenticated", False))
+        self.collab = None        # avatar dict once verified as a collaborator
+        self.announced = False     # whether we've added ourselves to the roster
 
         self.session = await self._get_session(self.code)
         if self.session is None:
@@ -110,12 +150,26 @@ class BoardConsumer(AsyncWebsocketConsumer):
         # Send a full snapshot so a (re)connecting client can rebuild.
         await self.send_json(await self._snapshot())
 
+        # If this connection belongs to a verified collaborator, announce
+        # presence to the room and send them the current roster + chat
+        # history. Guests get none of this — they only count as "online".
+        if self.is_authed:
+            self.collab = await self._verify_collaborator()
+            if self.collab:
+                await self._announce_presence(online=True)
+                await self.send_json({
+                    "type": "chat_history",
+                    "messages": await self._recent_messages(),
+                })
+
     async def disconnect(self, code):
         if getattr(self, "group", None):
             await self.channel_layer.group_discard(self.group, self.channel_name)
             if not self.is_presenter and self.nick:
                 await self._bump_participants(-1)
                 await self._broadcast_participants()
+            if getattr(self, "collab", None) and self.announced:
+                await self._announce_presence(online=False)
 
     # ── inbound ──────────────────────────────────────────────────────
     async def receive(self, text_data=None, bytes_data=None):
@@ -170,6 +224,21 @@ class BoardConsumer(AsyncWebsocketConsumer):
             # Only the presenter may rename a column.
             if self.is_presenter:
                 await self._handle_rename_group(data)
+
+        elif mtype == "set_title":
+            # Only the presenter may rename the board.
+            if self.is_presenter:
+                await self._handle_set_title(data)
+
+        elif mtype == "set_group_style":
+            # Only the presenter may restyle a column (icon / colour).
+            if self.is_presenter:
+                await self._handle_set_group_style(data)
+
+        elif mtype == "chat":
+            # Collaborator instant message. Only authenticated collaborators
+            # (owner or invited) may post; _handle_chat enforces this.
+            await self._handle_chat(data)
 
         elif mtype == "delete_group":
             # Only the presenter may delete a column.
@@ -435,12 +504,37 @@ class BoardConsumer(AsyncWebsocketConsumer):
         name = (data.get("name") or "").strip()[:60]
         if not name:
             return
-        group = await self._create_group(name)
+        icon = data.get("icon") or "none"
+        if icon not in COLUMN_ICONS:
+            icon = "none"
+        color = data.get("color") or "slate"
+        if color not in COLUMN_COLORS:
+            color = "slate"
+        group = await self._create_group(name, icon=icon, color=color)
         if group is None:
             return
         await self.channel_layer.group_send(self.group, {
             "type": "fanout",
             "payload": {"type": "group_added", "group": group},
+        })
+
+    # ── presenter: restyle a column (icon / colour) live ─────────────
+    async def _handle_set_group_style(self, data):
+        group_id = data.get("id")
+        icon = data.get("icon")
+        if icon is not None and icon not in COLUMN_ICONS:
+            icon = "none"
+        color = data.get("color")
+        if color is not None and color not in COLUMN_COLORS:
+            color = "slate"
+        if icon is None and color is None:
+            return
+        group = await self._set_group_style(group_id, icon, color)
+        if group is None:
+            return
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {"type": "group_restyled", "group": group},
         })
 
     # ── presenter: rename a column ───────────────────────────────────
@@ -457,6 +551,19 @@ class BoardConsumer(AsyncWebsocketConsumer):
             "payload": {"type": "group_renamed", "id": group_id, "name": name},
         })
 
+    # ── presenter: rename the board (title) ──────────────────────────
+    async def _handle_set_title(self, data):
+        title = (data.get("title") or "").strip()[:140]
+        if not title:
+            return
+        ok = await self._set_title(title)
+        if not ok:
+            return
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {"type": "title_changed", "title": title},
+        })
+
     # ── presenter: delete a column (and the notes inside it) ─────────
     async def _handle_delete_group(self, data):
         group_id = data.get("id")
@@ -471,6 +578,39 @@ class BoardConsumer(AsyncWebsocketConsumer):
                 "type": "group_removed",
                 "id": group_id,
                 "note_ids": note_ids,
+            },
+        })
+
+    # ── collaborator instant messaging ──────────────────────────────
+    async def _handle_chat(self, data):
+        # Only verified collaborators may post to the back-channel.
+        if not getattr(self, "collab", None):
+            await self.send_json({
+                "type": "chat_rejected",
+                "reason": "Only board collaborators can use team chat.",
+            })
+            return
+        body = (data.get("body") or "").strip()
+        if not body:
+            return
+        body = body[:MAX_CHAT_LEN]
+        msg = await self._save_message(body)
+        if msg is None:
+            return
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {"type": "chat_message", "message": msg},
+        })
+
+    async def _announce_presence(self, online):
+        """Tell the room a collaborator came online / went offline."""
+        self.announced = online
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {
+                "type": "collab_presence",
+                "online": bool(online),
+                "collaborator": self.collab,
             },
         })
 
@@ -590,9 +730,12 @@ class BoardConsumer(AsyncWebsocketConsumer):
             },
         })
 
-
+    # ── presenter: open / pause / end the board ──────────────────────
+    async def _handle_set_state(self, data):
         new_state = data.get("state")
-        if new_state not in {"open", "ended"}:
+        # "lobby" lets the presenter pause (stop accepting notes without
+        # ending), "open" (re)opens, "ended" closes the session.
+        if new_state not in {"lobby", "open", "ended"}:
             return
         ok = await self._set_state(new_state)
         if not ok:
@@ -642,6 +785,16 @@ class BoardConsumer(AsyncWebsocketConsumer):
             return False
         s.state = new_state
         s.save(update_fields=["state", "updated_at"])
+        return True
+
+    @sync_to_async
+    def _set_title(self, title):
+        from .models import BoardSession
+        s = BoardSession.objects.filter(code=self.code).first()
+        if not s:
+            return False
+        s.title = title
+        s.save(update_fields=["title", "updated_at"])
         return True
 
     @sync_to_async
@@ -783,11 +936,11 @@ class BoardConsumer(AsyncWebsocketConsumer):
             return {"type": "state", "state": "closed", "notes": []}
         notes = [n.as_dict() for n in
                  s.notes.all().prefetch_related("drawings").order_by("created_at")]
-        groups = [{"id": g.id, "name": g.name}
-                  for g in s.groups.all().order_by("position")]
+        groups = [g.as_dict() for g in s.groups.all().order_by("position")]
         return {
             "type": "state",
             "state": s.state,
+            "title": s.title,
             "prompt": s.prompt,
             "groups": groups,
             "notes": notes,
@@ -884,8 +1037,110 @@ class BoardConsumer(AsyncWebsocketConsumer):
         )
         return note.as_dict(), None
 
+    _AVATAR_PALETTE = [
+        "#6366f1", "#ec4899", "#f59e0b", "#10b981", "#0ea5e9",
+        "#8b5cf6", "#ef4444", "#14b8a6", "#f97316", "#3b82f6",
+    ]
+
+    def _avatar_dict(self, user, is_owner):
+        """Build an avatar payload (mirrors views._avatar_for)."""
+        full = (getattr(user, "get_full_name", lambda: "")() or "").strip()
+        name = full or getattr(user, "username", None) or "Someone"
+        parts = [p for p in name.split() if p]
+        if not parts:
+            initials = "?"
+        elif len(parts) == 1:
+            initials = parts[0][:2].upper()
+        else:
+            initials = (parts[0][0] + parts[-1][0]).upper()
+        photo = None
+        for attr in ("avatar_url", "photo_url", "profile_image_url", "logo_url"):
+            val = getattr(user, attr, None)
+            if val:
+                photo = str(val)
+                break
+        uid = getattr(user, "id", 0) or 0
+        return {
+            "id": uid,
+            "name": name,
+            "initials": initials,
+            "photo": photo,
+            "color": self._AVATAR_PALETTE[uid % len(self._AVATAR_PALETTE)],
+            "is_owner": bool(is_owner),
+        }
+
     @sync_to_async
-    def _create_group(self, name):
+    def _verify_collaborator(self):
+        """
+        Return this connection's avatar dict IF the logged-in user is a
+        collaborator on the board (owner or invited), else None. Scopes to
+        the flow when the board is part of one.
+        """
+        from .models import BoardCollaborator, BoardSession
+        user = self.user
+        if not (user and getattr(user, "is_authenticated", False)):
+            return None
+        s = BoardSession.objects.select_related("owner").filter(code=self.code).first()
+        if not s:
+            return None
+        if s.owner_id == user.id:
+            return self._avatar_dict(user, is_owner=True)
+        qs = BoardCollaborator.objects.filter(user_id=user.id)
+        if s.flow_id:
+            qs = qs.filter(flow_id=s.flow_id)
+        else:
+            qs = qs.filter(session_id=s.id)
+        if qs.exists():
+            return self._avatar_dict(user, is_owner=False)
+        return None
+
+    @sync_to_async
+    def _save_message(self, body):
+        """Persist a collaborator chat message and return its dict."""
+        from .models import BoardMessage, BoardSession
+        s = BoardSession.objects.filter(code=self.code).first()
+        if not s:
+            return None
+        author = (self.collab or {}).get("name", "Someone")
+        msg = BoardMessage.objects.create(
+            flow=s.flow if s.flow_id else None,
+            session=None if s.flow_id else s,
+            user=self.user if self.is_authed else None,
+            author_name=author[:80],
+            body=body,
+        )
+        d = msg.as_dict()
+        # Attach the author's avatar so every client can render it without
+        # a second lookup.
+        d["avatar"] = self.collab
+        return d
+
+    @sync_to_async
+    def _recent_messages(self, limit=80):
+        """Last N collaborator messages for this board, oldest first."""
+        from .models import BoardMessage, BoardSession
+        s = BoardSession.objects.filter(code=self.code).first()
+        if not s:
+            return []
+        qs = BoardMessage.objects.select_related("user")
+        if s.flow_id:
+            qs = qs.filter(flow_id=s.flow_id)
+        else:
+            qs = qs.filter(session_id=s.id)
+        rows = list(qs.order_by("-created_at")[:limit])
+        rows.reverse()
+        out = []
+        for m in rows:
+            d = m.as_dict()
+            if m.user_id:
+                d["avatar"] = self._avatar_dict(
+                    m.user, is_owner=(s.owner_id == m.user_id),
+                )
+            out.append(d)
+        return out
+
+    @sync_to_async
+    def _create_group(self, name, icon="none", color="slate"):
         """Add a topic column to this board, appended after existing ones."""
         from .models import BoardGroup, BoardSession
         s = BoardSession.objects.filter(code=self.code).first()
@@ -895,8 +1150,9 @@ class BoardConsumer(AsyncWebsocketConsumer):
         position = (last.position + 1) if last else 0
         g = BoardGroup.objects.create(
             session=s, name=name, position=position,
+            icon=icon or "none", color=color or "slate",
         )
-        return {"id": g.id, "name": g.name}
+        return g.as_dict()
 
     @sync_to_async
     def _rename_group(self, group_id, name):
@@ -910,6 +1166,30 @@ class BoardConsumer(AsyncWebsocketConsumer):
         g.name = name
         g.save(update_fields=["name"])
         return True
+
+    @sync_to_async
+    def _set_group_style(self, group_id, icon, color):
+        """
+        Set a column's icon and/or colour live. ``icon``/``color`` of None
+        means "leave unchanged". Returns the updated styled dict, or None
+        if the column doesn't belong to this board.
+        """
+        from .models import BoardGroup
+        g = BoardGroup.objects.filter(
+            id=group_id, session__code=self.code,
+        ).first()
+        if not g:
+            return None
+        fields = []
+        if icon is not None:
+            g.icon = icon
+            fields.append("icon")
+        if color is not None:
+            g.color = color
+            fields.append("color")
+        if fields:
+            g.save(update_fields=fields)
+        return g.as_dict()
 
     @sync_to_async
     def _delete_group(self, group_id):

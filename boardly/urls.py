@@ -50,6 +50,16 @@ urlpatterns = [
     # Delete a board (POST only) — extra "delete/" segment.
     path("<str:code>/delete/", views.board_delete, name="delete"),
 
+    # Collaborator management (owner only). These carry longer literal
+    # suffixes, so they precede the bare "<str:code>/" catch-all.
+    path("<str:code>/collaborators/", views.board_collaborators, name="collaborators"),
+    path("<str:code>/collaborators/add/", views.board_collaborator_add, name="collaborator_add"),
+    path(
+        "<str:code>/collaborators/<int:collab_id>/remove/",
+        views.board_collaborator_remove,
+        name="collaborator_remove",
+    ),
+
     # ── Catch-all last ───────────────────────────────────────────────
     # Participant view — this is the URL encoded in the QR code.
     path("<str:code>/", views.board_play, name="play"),

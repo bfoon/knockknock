@@ -20,6 +20,22 @@
   const CODE = root.dataset.code;
   const MODE = root.dataset.mode || "open";
 
+  // Persist the participant's nickname per board so a refresh doesn't make
+  // them type it again. Scoped by board code so different boards keep
+  // separate names. localStorage may be unavailable (private mode / file://)
+  // so every access is guarded.
+  const NICK_KEY = "boardly:nick:" + CODE;
+  function loadSavedNick() {
+    try { return (localStorage.getItem(NICK_KEY) || "").slice(0, 40); }
+    catch (e) { return ""; }
+  }
+  function saveNick(value) {
+    try {
+      if (value) localStorage.setItem(NICK_KEY, value);
+      else localStorage.removeItem(NICK_KEY);
+    } catch (e) { /* ignore — storage blocked */ }
+  }
+
   // ── element refs ───────────────────────────────────────────────────
   const steps = {
     nick: document.getElementById("step-nick"),
@@ -31,6 +47,10 @@
 
   const nickInput = document.getElementById("nick-input");
   const nickGo = document.getElementById("nick-go");
+  const padNickEl = document.getElementById("pad-nick");
+  const waitNickEl = document.getElementById("wait-nick");
+  const changeNickCompose = document.getElementById("change-nick-compose");
+  const changeNickWait = document.getElementById("change-nick-wait");
 
   const promptEl = document.getElementById("board-prompt");
   const myCountEl = document.getElementById("my-note-count");
@@ -61,7 +81,7 @@
   };
 
   // ── local UI state ─────────────────────────────────────────────────
-  let nick = "";
+  let nick = loadSavedNick();  // restored from a previous visit if present
   let joined = false;          // have we sent {type:"join"} yet?
   let boardState = "lobby";    // last known board state
   let selectedColor = 0;
@@ -82,6 +102,7 @@
   // Decide which step a participant should see, given board state and
   // whether they've entered a name yet.
   function syncStep() {
+    reflectNick();
     if (boardState === "ended") { showStep("ended"); return; }
     if (!nick) { showStep("nick"); return; }
     if (boardState === "open" || boardState === "running") {
@@ -92,6 +113,22 @@
       if (!joined) sendJoin();   // count us as present in the lobby too
       showStep("wait");
     }
+  }
+
+  // Show the current nickname in the pad/wait headers.
+  function reflectNick() {
+    if (padNickEl) padNickEl.textContent = nick || "you";
+    if (waitNickEl) waitNickEl.textContent = nick ? (", " + nick) : "";
+  }
+
+  // Clear the saved name and return to the nickname step so the
+  // participant can post under a different identity.
+  function changeNick() {
+    saveNick("");
+    nick = "";
+    joined = false;
+    if (nickInput) { nickInput.value = ""; nickInput.focus(); }
+    showStep("nick");
   }
 
   // ── toast ──────────────────────────────────────────────────────────
@@ -569,6 +606,7 @@
         const v = (nickInput && nickInput.value.trim()) || "";
         if (!v) { if (nickInput) nickInput.focus(); showToast("Enter a name to join.", true); return; }
         nick = v.slice(0, 40);
+        saveNick(nick);          // remember for next time / after refresh
         sendJoin(true);
         syncStep();
       });
@@ -620,8 +658,17 @@
     // Post.
     if (postBtn) postBtn.addEventListener("click", postNote);
 
+    // Change-name affordances on the wait + compose steps.
+    if (changeNickCompose) changeNickCompose.addEventListener("click", changeNick);
+    if (changeNickWait) changeNickWait.addEventListener("click", changeNick);
+
+    // If we already know this participant's name (saved from a previous
+    // visit), prefill the input and let syncStep skip the name prompt once
+    // the board state arrives. Otherwise we land on the nick step.
+    if (nick && nickInput) nickInput.value = nick;
+
     refreshPreview();
-    showStep("nick");
+    showStep(nick ? "wait" : "nick");
     connect();
   }
 

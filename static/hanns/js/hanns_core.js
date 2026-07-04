@@ -38,6 +38,17 @@ const ANIMS = {
   "pop":    {label:"Pop"},
   "blur":   {label:"Focus / unblur"},
   "reveal": {label:"Wipe reveal"},
+  // ── advanced entrances (v31) ──
+  "revealUp":  {label:"Wipe up"},
+  "bounce":    {label:"Bounce in"},
+  "elastic":   {label:"Elastic"},
+  "flipx":     {label:"Flip ⟷"},
+  "flipy":     {label:"Flip ↕"},
+  "spin":      {label:"Spin in"},
+  "skew":      {label:"Skew slide"},
+  "blurzoom":  {label:"Dream zoom"},
+  "typewriter":{label:"Typewriter"},
+  "float":     {label:"Float in"},
 };
 const TRANSITIONS = {
   none:"None", fade:"Fade", slide:"Slide", push:"Push",
@@ -478,6 +489,59 @@ const BACKGROUNDS = [
   {
     "name": "Wave Field 10",
     "css": "repeating-radial-gradient(ellipse at 20% 20%,rgba(255,255,255,.08) 0 2px,transparent 2px 22px),linear-gradient(140deg,#020617,#64748b,#f8fafc)"
+  },
+
+  /* ── v31 theme pack ── */
+  {
+    "name": "Aurora Borealis",
+    "css": "radial-gradient(70% 60% at 30% 0%,#34d399 0%,transparent 55%),radial-gradient(60% 70% at 75% 10%,#818cf8 0%,transparent 58%),radial-gradient(80% 60% at 50% 100%,#0ea5e9 0%,transparent 50%),linear-gradient(180deg,#020617,#0f172a)"
+  },
+  {
+    "name": "Blueprint",
+    "css": "linear-gradient(rgba(255,255,255,.14) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.14) 1px,transparent 1px),linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.06) 1px,transparent 1px),#1d4e89",
+    "size": "120px 120px,120px 120px,24px 24px,24px 24px,auto"
+  },
+  {
+    "name": "Terracotta Paper",
+    "css": "repeating-radial-gradient(circle at 80% 15%,rgba(120,53,15,.06) 0 1px,transparent 1px 26px),radial-gradient(70% 80% at 15% 15%,#fed7aa 0%,transparent 58%),linear-gradient(150deg,#fff7ed,#fdba74 130%)"
+  },
+  {
+    "name": "Midnight Gold",
+    "css": "radial-gradient(55% 65% at 82% 18%,#d8a23a 0%,transparent 52%),radial-gradient(40% 50% at 15% 85%,#78350f 0%,transparent 60%),linear-gradient(140deg,#0c0a09,#1c1917 70%,#292524)"
+  },
+  {
+    "name": "Candy Pop",
+    "css": "radial-gradient(50% 60% at 18% 20%,#f9a8d4 0%,transparent 55%),radial-gradient(55% 65% at 85% 30%,#a5f3fc 0%,transparent 55%),radial-gradient(60% 70% at 50% 100%,#fde68a 0%,transparent 55%),linear-gradient(135deg,#fdf2f8,#eff6ff)"
+  },
+  {
+    "name": "Forest Mist",
+    "css": "radial-gradient(70% 80% at 80% 0%,rgba(240,253,244,.5) 0%,transparent 55%),linear-gradient(165deg,#14532d,#166534 45%,#4d7c0f 90%,#a3b18a)"
+  },
+  {
+    "name": "Retro Sunset",
+    "css": "repeating-linear-gradient(0deg,rgba(2,6,23,.55) 0 3px,transparent 3px 14px),radial-gradient(65% 55% at 50% 62%,#f59e0b 0%,#ec4899 45%,transparent 72%),linear-gradient(180deg,#312e81,#831843)"
+  },
+  {
+    "name": "Ink Marble",
+    "css": "radial-gradient(40% 60% at 25% 30%,rgba(255,255,255,.16) 0%,transparent 60%),radial-gradient(50% 40% at 75% 65%,rgba(148,163,184,.28) 0%,transparent 55%),radial-gradient(35% 45% at 60% 20%,rgba(255,255,255,.10) 0%,transparent 60%),linear-gradient(150deg,#0f172a,#1e293b 60%,#334155)"
+  },
+  {
+    "name": "Cyber Magenta",
+    "css": "linear-gradient(rgba(236,72,153,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,.14) 1px,transparent 1px),radial-gradient(60% 75% at 80% 15%,#db2777 0%,transparent 55%),#0b0416",
+    "size": "30px 30px,30px 30px,auto,auto"
+  },
+  {
+    "name": "Soft Lilac Studio",
+    "css": "radial-gradient(65% 75% at 20% 10%,#e9d5ff 0%,transparent 58%),radial-gradient(60% 70% at 85% 85%,#c7d2fe 0%,transparent 58%),linear-gradient(135deg,#faf5ff,#eef2ff)"
+  },
+  {
+    "name": "Desert Dune",
+    "css": "radial-gradient(120% 60% at 50% 108%,#b45309 0%,#f59e0b 34%,transparent 62%),radial-gradient(70% 60% at 80% 0%,#fde68a 0%,transparent 55%),linear-gradient(180deg,#fffbeb,#fcd34d)"
+  },
+  {
+    "name": "Deep Reef",
+    "css": "radial-gradient(circle at 22% 82%,rgba(45,212,191,.35) 0 2px,transparent 3px),radial-gradient(circle at 68% 60%,rgba(125,211,252,.3) 0 2px,transparent 3px),radial-gradient(80% 90% at 50% 110%,#0e7490 0%,transparent 62%),linear-gradient(180deg,#020617,#083344)",
+    "size": "90px 90px,140px 140px,auto,auto"
   }
 ];
 
@@ -4294,7 +4358,89 @@ const DATA_TEMPLATES = [
   ]};}}
 ];
 
-const TEMPLATES = [...BASE_TEMPLATES, ...AUTO_TEMPLATES, ...DATA_TEMPLATES];
+/* ── v31 pro template pack — business/story layouts using the new anims ── */
+const PRO_TEMPLATES = [
+  {name:"Pro · Agenda", build(){return{bg:"linear-gradient(135deg,#0f172a,#111827 70%,#1e293b)",els:[
+    makeText({x:60,y:52,w:520,h:70,text:"Agenda",font:'"Fraunces",serif',size:62,weight:600,italic:true,color:"#f8fafc",anim:"typewriter"}),
+    ...[["01","Where we are","#38bdf8"],["02","What we learned","#f2c14e"],["03","Where we go next","#34d399"],["04","Decisions needed","#fb7185"]].flatMap((r,i)=>[
+      makeShape("rect",{x:60,y:150+i*88,w:840,h:70,fill:"rgba(255,255,255,.05)",radius:16,stroke:"rgba(255,255,255,.12)",strokeW:1,anim:"left",animDelay:.15+i*.12}),
+      makeText({x:84,y:166+i*88,w:80,h:44,text:r[0],font:'"Spline Sans Mono",monospace',size:30,weight:800,color:r[2],anim:"fade",animDelay:.25+i*.12}),
+      makeText({x:180,y:164+i*88,w:640,h:46,text:r[1],font:'"Archivo",sans-serif',size:27,weight:600,color:"#e2e8f0",anim:"fade",animDelay:.3+i*.12}),
+    ]),
+  ]};}},
+  {name:"Pro · Timeline", build(){return{bg:"linear-gradient(145deg,#fefce8,#fef3c7)",els:[
+    makeText({x:60,y:50,w:760,h:66,text:"The journey so far",font:'"Fraunces",serif',size:56,weight:700,color:"#78350f",anim:"rise"}),
+    makeLine({x:80,y:296,w:800,h:5,fill:"#b45309",anim:"reveal",animDelay:.2}),
+    ...[["2023","Founded","#d97706"],["2024","First pilot","#b45309"],["2025","Scale up","#92400e"],["2026","Nationwide","#78350f"]].flatMap((m,i)=>[
+      makeShape("ellipse",{x:118+i*212,y:280,w:36,h:36,fill:m[2],stroke:"#fffbeb",strokeW:5,anim:"pop",animDelay:.35+i*.15}),
+      makeText({x:76+i*212,y:216,w:120,h:40,text:m[0],font:'"Spline Sans Mono",monospace',size:23,weight:800,color:m[2],align:"center",anim:"drop",animDelay:.4+i*.15}),
+      makeText({x:66+i*212,y:334,w:140,h:64,text:m[1],font:'"Archivo",sans-serif',size:21,weight:600,color:"#451a03",align:"center",anim:"float",animDelay:.48+i*.15}),
+    ]),
+  ]};}},
+  {name:"Pro · Team grid", build(){return{bg:"linear-gradient(135deg,#faf5ff,#eef2ff)",els:[
+    makeText({x:60,y:46,w:700,h:64,text:"Meet the team",font:'"Fraunces",serif',size:56,weight:700,color:"#312e81",anim:"rise"}),
+    ...["Amina","Lamin","Fatou","Ousman"].flatMap((n,i)=>[
+      makeImage("",{x:78+i*216,y:150,w:170,h:170,radius:999,anim:"flipx",animDelay:.15+i*.13}),
+      makeText({x:66+i*216,y:338,w:194,h:38,text:n,font:'"Archivo",sans-serif',size:25,weight:800,color:"#1e1b4b",align:"center",anim:"fade",animDelay:.3+i*.13}),
+      makeText({x:66+i*216,y:376,w:194,h:34,text:"Role title",font:'"Inter",sans-serif',size:17,weight:500,color:"#6366f1",align:"center",anim:"fade",animDelay:.36+i*.13}),
+    ]),
+  ]};}},
+  {name:"Pro · KPI board", build(){return{bg:"linear-gradient(135deg,#020617,#0f172a 60%,#111827)",els:[
+    makeText({x:56,y:42,w:700,h:56,text:"This quarter at a glance",font:'"Space Grotesk","Archivo",sans-serif',size:44,weight:800,color:"#f8fafc",anim:"rise"}),
+    ...[["+38%","Revenue growth","#34d399"],["12.4k","New audience","#38bdf8"],["96%","Retention","#f2c14e"]].flatMap((k,i)=>[
+      makeShape("rect",{x:56+i*292,y:120,w:268,h:130,fill:"rgba(255,255,255,.05)",radius:20,stroke:"rgba(255,255,255,.12)",strokeW:1,anim:"bounce",animDelay:.12+i*.14}),
+      makeText({x:80+i*292,y:138,w:220,h:60,text:k[0],font:'"Archivo Expanded","Archivo",sans-serif',size:48,weight:800,color:k[2],anim:"pop",animDelay:.25+i*.14}),
+      makeText({x:80+i*292,y:200,w:220,h:34,text:k[1],font:'"Inter",sans-serif',size:18,weight:600,color:"#94a3b8",anim:"fade",animDelay:.34+i*.14}),
+    ]),
+    makeChart("area",{x:56,y:276,w:848,h:222,title:"Momentum",accent:"#38bdf8",chartThemeMode:"dark",anim:"float",animDelay:.55}),
+  ]};}},
+  {name:"Pro · Comparison", build(){return{bg:"linear-gradient(90deg,#0f172a 50%,#f6f1e7 50%)",els:[
+    makeText({x:60,y:70,w:360,h:110,text:"Before",font:'"Fraunces",serif',size:66,weight:600,italic:true,color:"#f8fafc",anim:"left"}),
+    makeText({x:64,y:190,w:352,h:220,text:"Manual reporting\nScattered files\nSlow feedback loops",font:'"Archivo",sans-serif',size:24,weight:500,color:"#cbd5e1",lh:1.8,anim:"fade",animDelay:.25}),
+    makeText({x:540,y:70,w:360,h:110,text:"After",font:'"Fraunces",serif',size:66,weight:600,italic:true,color:"#16140f",anim:"right"}),
+    makeText({x:544,y:190,w:352,h:220,text:"One live dashboard\nA single source of truth\nDecisions in minutes",font:'"Archivo",sans-serif',size:24,weight:600,color:"#3a352a",lh:1.8,anim:"fade",animDelay:.35}),
+    makeShape("ellipse",{x:432,y:222,w:96,h:96,fill:"#e8482b",stroke:"#ffffff",strokeW:4,anim:"spin",animDelay:.5}),
+    makeText({x:432,y:248,w:96,h:44,text:"VS",font:'"Archivo Expanded","Archivo",sans-serif',size:32,weight:800,color:"#ffffff",align:"center",anim:"fade",animDelay:.6}),
+  ]};}},
+  {name:"Pro · Roadmap", build(){return{bg:"linear-gradient(135deg,#ecfeff,#f0fdf4)",els:[
+    makeText({x:60,y:44,w:760,h:62,text:"Roadmap",font:'"Fraunces",serif',size:56,weight:700,color:"#064e3b",anim:"rise"}),
+    ...[["Q1 — Build","Ship the core studio and invite the first 20 teams.","#0891b2"],["Q2 — Learn","Run live sessions, measure engagement, fix friction.","#059669"],["Q3 — Grow","Open self-serve sign-ups and launch templates market.","#65a30d"]].flatMap((c,i)=>[
+      makeShape("rect",{x:56+i*296,y:130,w:272,h:330,fill:"#ffffff",radius:22,stroke:"rgba(6,78,59,.14)",strokeW:1,anim:"rise",animDelay:.12+i*.15}),
+      makeShape("rect",{x:56+i*296,y:130,w:272,h:10,fill:c[2],radius:6,anim:"reveal",animDelay:.2+i*.15}),
+      makeText({x:80+i*296,y:166,w:224,h:46,text:c[0],font:'"Archivo",sans-serif',size:26,weight:800,color:"#064e3b",anim:"fade",animDelay:.3+i*.15}),
+      makeText({x:80+i*296,y:222,w:224,h:200,text:c[1],font:'"Inter",sans-serif',size:19,weight:500,color:"#334155",lh:1.5,anim:"fade",animDelay:.38+i*.15}),
+    ]),
+  ]};}},
+  {name:"Pro · Pricing table", build(){return{bg:"linear-gradient(145deg,#f8fafc,#e2e8f0)",els:[
+    makeText({x:60,y:44,w:760,h:60,text:"Simple pricing",font:'"Plus Jakarta Sans","Archivo",sans-serif',size:52,weight:800,color:"#0f172a",anim:"rise"}),
+    makeTable({x:66,y:132,w:828,h:330,accent:"#7c3aed",theme:"clean",anim:"float",animDelay:.2,rows:5,cols:4,tableData:[
+      ["Plan","Starter","Team","Enterprise"],
+      ["Price / month","Free","$29","Custom"],
+      ["Decks","3","Unlimited","Unlimited"],
+      ["Live audience","25","250","Unlimited"],
+      ["Support","Community","Priority","Dedicated"],
+    ]}),
+  ]};}},
+  {name:"Pro · Gradient quote", build(){return{bg:"radial-gradient(70% 60% at 30% 0%,#34d399 0%,transparent 55%),radial-gradient(60% 70% at 75% 10%,#818cf8 0%,transparent 58%),linear-gradient(180deg,#020617,#0f172a)",els:[
+    makeText({x:110,y:140,w:740,h:220,text:"“Big ideas deserve\nbig stages.”",font:'"Fraunces",serif',size:84,weight:600,italic:true,color:"#f8fafc",lh:1.05,align:"center",anim:"blurzoom"}),
+    makeLine({x:410,y:392,w:140,h:4,fill:"#34d399",anim:"reveal",animDelay:.45}),
+    makeText({x:110,y:414,w:740,h:40,text:"YOUR NAME — FOUNDER",font:'"Spline Sans Mono",monospace',size:18,weight:700,color:"#94a3b8",ls:4,align:"center",anim:"fade",animDelay:.6}),
+  ]};}},
+  {name:"Pro · Feature icons", build(){return{bg:"linear-gradient(135deg,#fff7ed,#ffedd5)",els:[
+    makeText({x:60,y:46,w:800,h:62,text:"Why teams pick us",font:'"Fraunces",serif',size:54,weight:700,color:"#7c2d12",anim:"rise"}),
+    ...[["target","Focused","Every slide drives one clear point."],["rocket","Fast","From blank page to live deck in minutes."],["shield","Reliable","Presents anywhere, even offline."],["users","Together","Co-edit and react live with your audience."]].flatMap((f,i)=>[
+      makeObject("info_node",{x:70+i*220,y:140,w:180,h:230,nodeIcon:f[0],nodeTitle:f[1],nodeText:f[2],anim:"elastic",animDelay:.15+i*.14}),
+    ]),
+  ]};}},
+  {name:"Pro · Closing CTA", build(){return{bg:"linear-gradient(140deg,#0c0a09,#1c1917 70%,#292524)",els:[
+    makeShape("ellipse",{x:640,y:-140,w:480,h:480,fill:"rgba(216,162,58,.22)",anim:"zoom"}),
+    makeText({x:80,y:130,w:800,h:170,text:"Let's build it\ntogether.",font:'"Fraunces",serif',size:92,weight:600,italic:true,color:"#fbf8f1",lh:1,anim:"rise"}),
+    makeLink({x:84,y:352,w:340,h:74,label:"Start a project →",description:"yourbrand.com",url:"https://example.com",bg:"#d8a23a",accent:"#d8a23a",textColor:"#1c1917",radius:16,anim:"bounce",animDelay:.35}),
+    makeText({x:84,y:444,w:600,h:36,text:"hello@yourbrand.com · @yourbrand",font:'"Spline Sans Mono",monospace',size:18,weight:600,color:"#a8a29e",anim:"fade",animDelay:.55}),
+  ]};}},
+];
+
+const TEMPLATES = [...PRO_TEMPLATES, ...BASE_TEMPLATES, ...AUTO_TEMPLATES, ...DATA_TEMPLATES];
 
 /* ════════════════════════════════════════════════════════════════════
    DECK STATE
@@ -5171,6 +5317,25 @@ const NODE_ICONS = {
   dollar:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linecap="round"><path d="M58 40 q-16 -6 -16 6 q0 8 16 8 q16 0 16 8 q0 12 -16 6"/><path d="M50 32 v44"/></g>`,
   tap:`<g fill="#1f5e86"><rect x="40" y="40" width="30" height="12" rx="3"/><path d="M28 44 h14 v8 h-14 q-4 0 -4 -4 q0 -4 4 -4 Z"/><rect x="50" y="28" width="8" height="14" rx="2"/><rect x="44" y="24" width="20" height="6" rx="3"/><path d="M28 52 v6 h8 v-6 Z"/><path d="M32 62 q-5 8 0 12 q5 -4 0 -12 Z"/></g>`,
   chat:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linejoin="round"><path d="M28 38 h44 v26 h-30 l-10 9 v-9 h-4 Z"/><path d="M40 48 h20 M40 56 h12"/></g>`,
+  /* ── v31 icon pack ── */
+  target:`<g fill="none" stroke="#1f5e86" stroke-width="5"><circle cx="50" cy="52" r="22"/><circle cx="50" cy="52" r="12"/><circle cx="50" cy="52" r="3.5" fill="#1f5e86"/></g>`,
+  rocket:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M50 26 q14 10 10 34 l-10 10 -10 -10 q-4 -24 10 -34 Z"/><circle cx="50" cy="46" r="6"/><path d="M40 60 l-8 8 M60 60 l8 8 M50 70 v8"/></g>`,
+  shield:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linejoin="round"><path d="M50 26 l22 8 v18 q0 18 -22 26 q-22 -8 -22 -26 V34 Z"/><path d="M40 52 l7 7 l14 -16" stroke-linecap="round"/></g>`,
+  gear:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linecap="round"><circle cx="50" cy="52" r="10"/><path d="M50 30 v8 M50 66 v8 M28 52 h8 M64 52 h8 M35 37 l6 6 M59 61 l6 6 M65 37 l-6 6 M41 61 l-6 6"/></g>`,
+  globe:`<g fill="none" stroke="#1f5e86" stroke-width="5"><circle cx="50" cy="52" r="22"/><ellipse cx="50" cy="52" rx="10" ry="22"/><path d="M29 45 h42 M29 59 h42"/></g>`,
+  heart:`<g fill="#1f5e86"><path d="M50 74 q-24 -16 -24 -32 q0 -12 12 -12 q8 0 12 8 q4 -8 12 -8 q12 0 12 12 q0 16 -24 32 Z"/></g>`,
+  trophy:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linejoin="round"><path d="M38 30 h24 v14 a12 12 0 0 1 -24 0 Z"/><path d="M38 34 h-8 a8 8 0 0 0 8 12 M62 34 h8 a8 8 0 0 1 -8 12"/><path d="M50 56 v10 M40 72 h20 M44 66 h12"/></g>`,
+  book:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linejoin="round"><path d="M50 36 q-8 -6 -20 -6 v40 q12 0 20 6 q8 -6 20 -6 V30 q-12 0 -20 6 Z"/><path d="M50 36 v40"/></g>`,
+  leaf:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M32 68 q-4 -34 40 -38 q4 34 -28 38 q-6 0 -12 0 Z"/><path d="M34 66 q14 -16 30 -28"/></g>`,
+  flag:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linejoin="round"><path d="M34 78 V28"/><path d="M34 30 h34 l-8 10 l8 10 H34"/></g>`,
+  calendar:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linejoin="round"><rect x="30" y="34" width="40" height="38" rx="4"/><path d="M30 46 h40 M40 28 v10 M60 28 v10"/><path d="M40 56 h6 M54 56 h6 M40 64 h6" stroke-linecap="round"/></g>`,
+  pin:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linejoin="round"><path d="M50 76 q-18 -18 -18 -30 a18 18 0 0 1 36 0 q0 12 -18 30 Z"/><circle cx="50" cy="46" r="7"/></g>`,
+  cloud:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linejoin="round"><path d="M36 68 a12 12 0 0 1 0 -24 a16 16 0 0 1 30 -4 a11 11 0 0 1 2 28 Z"/></g>`,
+  lock:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linejoin="round"><rect x="34" y="48" width="32" height="26" rx="4"/><path d="M40 48 v-8 a10 10 0 0 1 20 0 v8"/><circle cx="50" cy="60" r="4" fill="#1f5e86"/></g>`,
+  wifi:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linecap="round"><path d="M30 48 q20 -16 40 0"/><path d="M37 57 q13 -10 26 0"/><path d="M44 66 q6 -5 12 0"/><circle cx="50" cy="74" r="3" fill="#1f5e86"/></g>`,
+  medal:`<g fill="none" stroke="#1f5e86" stroke-width="5" stroke-linejoin="round"><circle cx="50" cy="58" r="14"/><path d="M42 46 l-8 -18 h12 l4 8 l4 -8 h12 l-8 18"/><path d="M45 58 l4 4 l7 -8" stroke-linecap="round"/></g>`,
+  users:`<g fill="#1f5e86"><circle cx="41" cy="44" r="8"/><path d="M27 68 a14 14 0 0 1 28 0 Z"/><circle cx="62" cy="42" r="7" opacity=".65"/><path d="M55 66 a12 12 0 0 1 20 0 Z" opacity=".65"/></g>`,
+  bolt:`<g fill="#1f5e86"><path d="M54 26 L36 56 h12 l-4 24 l20 -32 H52 Z"/></g>`,
 };
 // Food icons (FOOD_ICONS) are merged into the node-icon set just below where
 // FOOD_ICONS is defined, so info_node can also carry an orange/bread/etc.
@@ -5857,11 +6022,46 @@ function animateIn(node,el){
     pop:[{opacity:0,transform:`scale(.3) rotate(${el.rot||0}deg)`},{opacity:1,transform:`scale(1.08) rotate(${el.rot||0}deg)`,offset:.7},{transform:`scale(1) rotate(${el.rot||0}deg)`,opacity:1}],
     blur:[{opacity:0,filter:"blur(14px)"},{opacity:1,filter:"blur(0)"}],
     reveal:[{opacity:0,clipPath:"inset(0 100% 0 0)"},{opacity:1,clipPath:"inset(0 0 0 0)"}],
+    // ── advanced entrances (v31) ──
+    revealUp:[{opacity:0,clipPath:"inset(100% 0 0 0)"},{opacity:1,clipPath:"inset(0 0 0 0)"}],
+    bounce:[
+      {opacity:0,transform:`translateY(-90px) rotate(${el.rot||0}deg)`},
+      {opacity:1,transform:`translateY(0) rotate(${el.rot||0}deg)`,offset:.42},
+      {transform:`translateY(-26px) rotate(${el.rot||0}deg)`,offset:.62},
+      {transform:`translateY(0) rotate(${el.rot||0}deg)`,offset:.78},
+      {transform:`translateY(-9px) rotate(${el.rot||0}deg)`,offset:.9},
+      {opacity:1,transform:`translateY(0) rotate(${el.rot||0}deg)`}],
+    elastic:[
+      {opacity:0,transform:`scale(.2) rotate(${el.rot||0}deg)`},
+      {opacity:1,transform:`scale(1.18) rotate(${el.rot||0}deg)`,offset:.5},
+      {transform:`scale(.92) rotate(${el.rot||0}deg)`,offset:.72},
+      {transform:`scale(1.05) rotate(${el.rot||0}deg)`,offset:.86},
+      {opacity:1,transform:`scale(1) rotate(${el.rot||0}deg)`}],
+    flipx:[{opacity:0,transform:`perspective(900px) rotateY(88deg) rotate(${el.rot||0}deg)`},
+           {opacity:1,transform:`perspective(900px) rotateY(0deg) rotate(${el.rot||0}deg)`}],
+    flipy:[{opacity:0,transform:`perspective(900px) rotateX(-88deg) rotate(${el.rot||0}deg)`},
+           {opacity:1,transform:`perspective(900px) rotateX(0deg) rotate(${el.rot||0}deg)`}],
+    spin:[{opacity:0,transform:`rotate(${(el.rot||0)-180}deg) scale(.4)`},
+          {opacity:1,transform:`rotate(${el.rot||0}deg) scale(1)`}],
+    skew:[{opacity:0,transform:`translateX(-90px) skewX(-18deg) rotate(${el.rot||0}deg)`},
+          {opacity:1,transform:`translateX(0) skewX(0) rotate(${el.rot||0}deg)`}],
+    blurzoom:[{opacity:0,filter:"blur(16px)",transform:`scale(1.35) rotate(${el.rot||0}deg)`},
+              {opacity:1,filter:"blur(0)",transform:`scale(1) rotate(${el.rot||0}deg)`}],
+    typewriter:[{opacity:1,clipPath:"inset(0 100% 0 0)"},{opacity:1,clipPath:"inset(0 0% 0 0)"}],
+    float:[{opacity:0,transform:`translateY(26px) rotate(${el.rot||0}deg)`,filter:"blur(6px)"},
+           {opacity:1,transform:`translateY(0) rotate(${el.rot||0}deg)`,filter:"blur(0)"}],
   };
   const frames=map[a]||map.fade;
+  const durMap={pop:720,bounce:950,elastic:980,spin:760,typewriter:900,blurzoom:820,float:760,flipx:680,flipy:680};
+  const easeMap={
+    pop:"cubic-bezier(.34,1.56,.64,1)", elastic:"cubic-bezier(.34,1.56,.64,1)",
+    bounce:"cubic-bezier(.22,1,.36,1)", typewriter:"steps(24,end)",
+  };
+  // el.animDur (seconds) lets imports/inspector override speed; el.animEase optional.
+  const duration=(Number(el.animDur)>0?Number(el.animDur)*1000:(durMap[a]||620));
+  const easing=el.animEase||easeMap[a]||"cubic-bezier(.22,1,.36,1)";
   node.style.opacity=0;
-  node.animate(frames,{duration:a==="pop"?720:620,delay:(el.animDelay||0)*1000,
-    easing:a==="pop"?"cubic-bezier(.34,1.56,.64,1)":"cubic-bezier(.22,1,.36,1)",fill:"both"});
+  node.animate(frames,{duration,delay:(el.animDelay||0)*1000,easing,fill:"both"});
 }
 
 /* Count a number up from 0 → target while the fill rises (present/preview).

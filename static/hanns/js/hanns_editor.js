@@ -1742,6 +1742,17 @@ const ANIM_ICONS = {
   pop:    `<svg viewBox="0 0 28 28" width="26" height="26"><circle cx="14" cy="14" r="5" fill="currentColor"/><line x1="14" y1="2" x2="14" y2="6" stroke="currentColor" stroke-width="2"/><line x1="14" y1="22" x2="14" y2="26" stroke="currentColor" stroke-width="2"/><line x1="2" y1="14" x2="6" y2="14" stroke="currentColor" stroke-width="2"/><line x1="22" y1="14" x2="26" y2="14" stroke="currentColor" stroke-width="2"/><line x1="5" y1="5" x2="8" y2="8" stroke="currentColor" stroke-width="2"/><line x1="20" y1="20" x2="23" y2="23" stroke="currentColor" stroke-width="2"/><line x1="23" y1="5" x2="20" y2="8" stroke="currentColor" stroke-width="2"/><line x1="5" y1="23" x2="8" y2="20" stroke="currentColor" stroke-width="2"/></svg>`,
   blur:   `<svg viewBox="0 0 28 28" width="26" height="26"><text x="14" y="19" text-anchor="middle" font-size="14" fill="currentColor" opacity="0.25" filter="url(#b)">A</text><text x="14" y="19" text-anchor="middle" font-size="14" fill="currentColor">A</text><defs><filter id="b"><feGaussianBlur stdDeviation="2"/></filter></defs></svg>`,
   reveal: `<svg viewBox="0 0 28 28" width="26" height="26"><rect x="5" y="7" width="18" height="14" rx="2" fill="currentColor" opacity="0.12"/><rect x="5" y="7" width="9" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><line x1="14" y1="7" x2="14" y2="21" stroke="currentColor" stroke-width="2"/></svg>`,
+  /* ── v31 advanced entrances ── */
+  revealUp:  `<svg viewBox="0 0 28 28" width="26" height="26"><rect x="5" y="7" width="18" height="14" rx="2" fill="currentColor" opacity="0.12"/><rect x="5" y="14" width="18" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><line x1="5" y1="14" x2="23" y2="14" stroke="currentColor" stroke-width="2"/></svg>`,
+  bounce:    `<svg viewBox="0 0 28 28" width="26" height="26"><circle cx="9" cy="8" r="4" fill="currentColor" opacity="0.2"/><circle cx="14" cy="16" r="4" fill="currentColor" opacity="0.45"/><circle cx="19" cy="21" r="4" fill="currentColor"/><path d="M6 25 h18" stroke="currentColor" stroke-width="1.6"/></svg>`,
+  elastic:   `<svg viewBox="0 0 28 28" width="26" height="26"><path d="M4 14 q3 -8 6 0 t6 0 t6 0" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="22" cy="14" r="3.4" fill="currentColor"/></svg>`,
+  flipx:     `<svg viewBox="0 0 28 28" width="26" height="26"><path d="M14 4 v20" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2 2"/><path d="M11 7 L4 10 v9 l7 3 Z" fill="currentColor" opacity="0.25"/><path d="M17 7 L24 10 v9 l-7 3 Z" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>`,
+  flipy:     `<svg viewBox="0 0 28 28" width="26" height="26"><path d="M4 14 h20" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2 2"/><path d="M7 11 L10 4 h9 l3 7 Z" fill="currentColor" opacity="0.25"/><path d="M7 17 L10 24 h9 l3 -7 Z" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>`,
+  spin:      `<svg viewBox="0 0 28 28" width="26" height="26"><path d="M14 5 a9 9 0 1 1 -9 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><polygon points="14,1 14,9 9,5" fill="currentColor"/></svg>`,
+  skew:      `<svg viewBox="0 0 28 28" width="26" height="26"><path d="M9 7 h14 l-4 14 H5 Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5 7 h8 l-4 14 H1 Z" fill="currentColor" opacity="0.18" transform="translate(1,0)"/></svg>`,
+  blurzoom:  `<svg viewBox="0 0 28 28" width="26" height="26"><circle cx="14" cy="14" r="10" fill="currentColor" opacity="0.12"/><circle cx="14" cy="14" r="6.5" fill="currentColor" opacity="0.3"/><circle cx="14" cy="14" r="3.5" fill="currentColor"/></svg>`,
+  typewriter:`<svg viewBox="0 0 28 28" width="26" height="26"><text x="4" y="18" font-size="11" font-family="monospace" fill="currentColor">ab</text><rect x="19" y="8" width="2.4" height="12" fill="currentColor"><animate attributeName="opacity" values="1;0;1" dur="1s" repeatCount="indefinite"/></rect></svg>`,
+  float:     `<svg viewBox="0 0 28 28" width="26" height="26"><ellipse cx="14" cy="22" rx="8" ry="2.4" fill="currentColor" opacity="0.2"/><rect x="8" y="6" width="12" height="10" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M14 20 v-2" stroke="currentColor" stroke-width="1.6"/></svg>`,
 };
 function animatePanel(el){
   const animCards=Object.entries(ANIMS).map(([k,v])=>`
@@ -1760,6 +1771,8 @@ function animatePanel(el){
     </div>
     <div class="group">
       ${field(`Delay ${(el.animDelay||0).toFixed(1)}s`,`<input type="range" id="f-delay" min="0" max="2" step="0.1" value="${el.animDelay||0}">`)}
+      ${field(`Speed ${(Number(el.animDur)>0?Number(el.animDur).toFixed(1)+"s":"auto")}`,`<input type="range" id="f-animdur" min="0" max="3" step="0.1" value="${Number(el.animDur)||0}">`)}
+      <div class="insp-empty" style="padding-top:.15rem">Speed 0 = automatic (each entrance has its own tuned duration).</div>
     </div>
     <div class="group">
       <button class="tbtn" id="f-preview" style="width:100%;justify-content:center;margin-bottom:.5rem">
@@ -1781,6 +1794,7 @@ function bindAnimatePanel(el){
     markDirty();
   }));
   bindRange("f-delay",v=>{el.animDelay=v;markDirty();},v=>v.toFixed(1)+"s","Delay");
+  bindRange("f-animdur",v=>{el.animDur=v>0?v:0;markDirty();},v=>v>0?v.toFixed(1)+"s":"auto","Speed");
   $("#f-preview")&&$("#f-preview").addEventListener("click",previewAnimations);
   $$(".anim-preset-btn[data-preset]",inspBody).forEach(b=>b.addEventListener("click",()=>{
     const p=ANIM_PRESETS.find(x=>x.key===b.dataset.preset);

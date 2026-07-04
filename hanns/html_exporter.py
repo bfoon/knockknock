@@ -106,11 +106,38 @@ _PLAYER_JS = """
         + 'Could not render this slide.</div>';
       if (window.console) console.error(e);
     }
+    playTransition(slide, lastDir);
     if (counter) counter.textContent = (idx + 1) + " / " + slides.length;
   }
 
-  function go(n) { idx += n; paint(); }
-  function goto(i) { idx = i; paint(); }
+  // Slide-to-slide transition, mirroring the live stage. The deck stores the
+  // INCOMING slide's transition ({fade|slide|push|zoom|flip|reveal|none}).
+  var lastDir = 1;
+  function playTransition(slide, dir) {
+    var t = (slide && slide.transition) || "fade";
+    if (t === "none" || !stage.animate) return;
+    var d = dir < 0 ? -1 : 1;
+    var frames = {
+      fade:  [{ opacity: 0 }, { opacity: 1 }],
+      slide: [{ opacity: 0, transform: "translateX(" + (60 * d) + "px)" },
+              { opacity: 1, transform: "translateX(0)" }],
+      push:  [{ transform: "translateX(" + (100 * d) + "%)" },
+              { transform: "translateX(0)" }],
+      zoom:  [{ opacity: 0, transform: "scale(.82)" },
+              { opacity: 1, transform: "scale(1)" }],
+      flip:  [{ opacity: 0, transform: "perspective(1400px) rotateY(" + (55 * d) + "deg)" },
+              { opacity: 1, transform: "perspective(1400px) rotateY(0deg)" }],
+      reveal:[{ clipPath: d > 0 ? "inset(0 100% 0 0)" : "inset(0 0 0 100%)" },
+              { clipPath: "inset(0 0 0 0)" }]
+    };
+    try {
+      stage.animate(frames[t] || frames.fade,
+        { duration: t === "push" ? 460 : 520, easing: "cubic-bezier(.22,1,.36,1)", fill: "both" });
+    } catch (e) { /* transitions are a bonus */ }
+  }
+
+  function go(n) { lastDir = n < 0 ? -1 : 1; idx += n; paint(); }
+  function goto(i) { lastDir = i >= idx ? 1 : -1; idx = i; paint(); }
 
   document.addEventListener("keydown", function (e) {
     if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") { go(1); e.preventDefault(); }

@@ -3,58 +3,131 @@ import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import '../database/app_database.dart';
+import '../models/submission_model.dart';
 import 'api_client.dart';
 
 class SyncService {
   final AppDatabase database;
   final ApiClient api;
 
-  SyncService(this.database, {ApiClient? api}) : api = api ?? ApiClient();
+  SyncService(
+    this.database, {
+    ApiClient? api,
+  }) : api = api ?? ApiClient();
 
   Future<int> syncAll() async {
-    final connectivity = await Connectivity().checkConnectivity();
-    if (connectivity.every((item) => item == ConnectivityResult.none)) {
+    final connectivityResults =
+        await Connectivity().checkConnectivity();
+
+    final hasConnection = connectivityResults.any(
+      (result) => result != ConnectivityResult.none,
+    );
+
+    if (!hasConnection) {
       return 0;
     }
 
-    final pending = await database.getPendingSubmissions();
-    final grouped = <String, List<dynamic>>{};
-    for (final submission in pending) {
-      grouped.putIfAbsent(submission.formCode, () => []).add(submission);
+    final List<LocalSubmission> pending =
+        await database.getPendingSubmissions();
+
+    final Map<String, List<LocalSubmission>> grouped =
+        <String, List<LocalSubmission>>{};
+
+    for (final LocalSubmission submission in pending) {
+      grouped
+          .putIfAbsent(
+            submission.formCode,
+            () => <LocalSubmission>[],
+          )
+          .add(submission);
     }
 
-    var synced = 0;
-    for (final entry in grouped.entries) {
-      final batch = entry.value.cast();
+    int synced = 0;
+
+    for (final MapEntry<String, List<LocalSubmission>> entry
+        in grouped.entries) {
+      final String formCode = entry.key;
+      final List<LocalSubmission> batch = entry.value;
+
       try {
-        final response = await api.syncBatch(entry.key, batch);
-        final results = (response['results'] as List? ?? []);
-        for (final item in results) {
-          final map = Map<String, dynamic>.from(item as Map);
-          final uuid = map['uuid']?.toString();
-          if (uuid == null) continue;
-          final result = map['result']?.toString();
-          if (result == 'created' || result == 'duplicate') {
-            await database.updateSubmissionSync(uuid, 'synced');
-            synced += 1;
+        final Map<String, dynamic> response =
+            await api.syncBatch(formCode, batch);
+
+        final List<dynamic> results =
+            response['results'] is List
+                ? response['results'] as List<dynamic>
+                : <dynamic>[];
+
+        final Set<String> processedUuids = <String>{};
+
+        for (final dynamic item in results) {
+          if (item is! Map) {
+            continue;
+          }
+
+          final Map<String, dynamic> resultMap =
+              Map<String, dynamic>.from(item);
+
+          final String? uuid =
+              resultMap['uuid']?.toString();
+
+          if (uuid == null || uuid.isEmpty) {
+            continue;
+          }
+
+          processedUuids.add(uuid);
+
+          final String result =
+              resultMap['result']?.toString() ?? '';
+
+          if (result == 'created' ||
+              result == 'duplicate' ||
+              result == 'updated') {
+            await database.updateSubmissionSync(
+              uuid,
+              'synced',
+            );
+
+            synced++;
           } else {
             await database.updateSubmissionSync(
               uuid,
               'failed',
-              error: map['error']?.toString() ?? 'Rejected by server',
+              error:
+                  resultMap['error']?.toString() ??
+                  resultMap['message']?.toString() ??
+                  'Submission was rejected by the server.',
             );
           }
         }
-      } catch (error) {
-        for (final submission in batch) {
+
+        for (final LocalSubmission submission in batch) {
+          if (!processedUuids.contains(submission.uuid)) {
+            await database.updateSubmissionSync(
+              submission.uuid,
+              'failed',
+              error:
+                  'The server did not return a sync result for this submission.',
+            );
+          }
+        }
+      } catch (error, stackTrace) {
+        for (final LocalSubmission submission in batch) {
           await database.updateSubmissionSync(
             submission.uuid,
             'failed',
             error: error.toString(),
           );
         }
+
+        // Visible in GitHub Actions and local debug logs.
+        print(
+          'Failed to sync form $formCode: $error\n'
+          '$stackTrace',
+        );
       }
     }
+
     return synced;
   }
 }

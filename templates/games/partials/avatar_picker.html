@@ -1,10 +1,46 @@
-{# Avatar picker — grouped by category.
-   Required context: `avatar_groups` (list of (label, [avatar_dict, ...]))
-   and optionally `selected_id`. Each tile previews the avatar's
-   idle animation so participants can preview the vibe before picking. #}
+{# Avatar picker — 3D edition.
+   Drop-in replacement for the old emoji-only picker. Same required context:
+     `avatar_groups`  (list of (label, [avatar_dict, ...]))
+     `selected_id`    (optional)
+   Backwards-compatible contract for existing JS:
+     • container is still #avatar-grid
+     • tiles are still .kk-avatar-tile with data-avatar-id and a .selected class
+   New:
+     • a live 3D stage previews the selected character
+       — drag to spin, pinch / scroll to zoom, tap the character for its move
+     • ◀ ▶ buttons + keyboard arrows step through avatars, Space plays the move
+     • fires `kk:avatar-selected` (detail: {id}) and syncs any
+       input[name="avatar_id"] found in the same <form>
+     • falls back to the plain emoji grid when WebGL / three.js is missing
+
+   Requires (once per page, BEFORE this partial's script runs):
+     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+     <script src="{% static 'js/kk3d.js' %}"></script>
+#}
 {% load static %}
 
-<div class="kk-avatar-picker" id="avatar-grid">
+<div class="kk-avatar-picker kk-avatar-picker-3d" id="avatar-grid" data-selected-id="{{ selected_id|default:'' }}">
+
+  {# ── 3D stage ─────────────────────────────────────────────── #}
+  <div class="kk-av3d-stage-wrap" id="kk-av3d-stage-wrap" hidden>
+    <button type="button" class="kk-av3d-arrow" id="kk-av3d-prev" aria-label="Previous avatar">‹</button>
+
+    <div class="kk-av3d-stage" id="kk-av3d-stage"
+         role="img" aria-label="3D avatar preview. Drag to rotate, tap to play the move.">
+      <div class="kk-av3d-hint">drag to spin · tap for a trick</div>
+    </div>
+
+    <button type="button" class="kk-av3d-arrow" id="kk-av3d-next" aria-label="Next avatar">›</button>
+  </div>
+
+  <div class="kk-av3d-meta" id="kk-av3d-meta" hidden>
+    <span class="kk-av3d-name" id="kk-av3d-name"></span>
+    <span class="kk-av3d-cat" id="kk-av3d-cat"></span>
+    <button type="button" class="kk-av3d-play" id="kk-av3d-play" aria-label="Play signature move">▶ move</button>
+    <button type="button" class="kk-av3d-play" id="kk-av3d-random" aria-label="Pick a random avatar">🎲 random</button>
+  </div>
+
+  {# ── tile grid (also the no-WebGL fallback) ──────────────── #}
   {% for label, avs in avatar_groups %}
     <div class="kk-avatar-picker-section">
       <h4>{{ label }}</h4>
@@ -12,6 +48,9 @@
         {% for a in avs %}
           <div class="kk-avatar-tile{% if selected_id == a.id %} selected{% endif %}"
                data-avatar-id="{{ a.id }}"
+               data-avatar-label="{{ a.label }}"
+               data-avatar-category="{{ label }}"
+               role="button" tabindex="0"
                title="{{ a.label }}">
             <span class="kk-anim-{{ a.anim }}" style="display:inline-block;">{{ a.emoji }}</span>
           </div>
@@ -20,3 +59,154 @@
     </div>
   {% endfor %}
 </div>
+
+<style>
+  .kk-avatar-picker-3d { --kk-av3d-accent: #22d3ee; }
+
+  .kk-av3d-stage-wrap {
+    display: flex; align-items: stretch; gap: .5rem;
+    margin-bottom: .35rem;
+  }
+  .kk-av3d-stage {
+    position: relative; flex: 1 1 auto;
+    height: clamp(200px, 34vh, 300px);
+    border-radius: 20px; overflow: hidden;
+    background:
+      radial-gradient(120% 90% at 50% 110%, rgba(34, 211, 238, .18), transparent 60%),
+      radial-gradient(90% 70% at 20% 0%, rgba(168, 85, 247, .22), transparent 55%),
+      linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+    border: 1px solid rgba(255,255,255,.1);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 12px 30px rgba(0,0,0,.35);
+  }
+  .kk-av3d-stage canvas { position: absolute; inset: 0; }
+  .kk-av3d-hint {
+    position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
+    font-size: .68rem; letter-spacing: .04em; color: rgba(226,232,240,.55);
+    background: rgba(2,6,23,.35); padding: .15rem .6rem; border-radius: 999px;
+    pointer-events: none; white-space: nowrap;
+  }
+  .kk-av3d-arrow {
+    flex: 0 0 40px; border-radius: 16px; font-size: 1.5rem; line-height: 1;
+    color: #e2e8f0; cursor: pointer;
+    background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1);
+    transition: background .15s ease, border-color .15s ease, transform .15s ease;
+  }
+  .kk-av3d-arrow:hover, .kk-av3d-arrow:focus-visible {
+    background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.5);
+    outline: none; transform: translateY(-1px);
+  }
+  .kk-av3d-meta {
+    display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+    margin-bottom: .9rem; min-height: 30px;
+  }
+  .kk-av3d-name { font-weight: 700; color: #f1f5f9; }
+  .kk-av3d-cat {
+    font-size: .7rem; text-transform: uppercase; letter-spacing: .08em;
+    color: #94a3b8; border: 1px solid rgba(255,255,255,.14);
+    padding: .12rem .5rem; border-radius: 999px;
+  }
+  .kk-av3d-play {
+    margin-left: auto; font-size: .74rem; cursor: pointer; color: #a5f3fc;
+    background: rgba(34,211,238,.08); border: 1px solid rgba(34,211,238,.25);
+    padding: .28rem .7rem; border-radius: 999px;
+    transition: background .15s ease, border-color .15s ease;
+  }
+  .kk-av3d-play + .kk-av3d-play { margin-left: 0; }
+  .kk-av3d-play:hover, .kk-av3d-play:focus-visible {
+    background: rgba(34,211,238,.2); border-color: rgba(34,211,238,.6); outline: none;
+  }
+  .kk-avatar-tile:focus-visible {
+    outline: 2px solid var(--kk-av3d-accent); outline-offset: 2px;
+  }
+</style>
+
+<script>
+(function () {
+  "use strict";
+  var root = document.getElementById("avatar-grid");
+  if (!root || root.dataset.kk3dInit) return;
+  root.dataset.kk3dInit = "1";
+
+  var tiles = Array.prototype.slice.call(root.querySelectorAll(".kk-avatar-tile"));
+  if (!tiles.length) return;
+  var ids = tiles.map(function (t) { return t.dataset.avatarId; });
+
+  var stageWrap = document.getElementById("kk-av3d-stage-wrap");
+  var stage     = document.getElementById("kk-av3d-stage");
+  var meta      = document.getElementById("kk-av3d-meta");
+  var nameEl    = document.getElementById("kk-av3d-name");
+  var catEl     = document.getElementById("kk-av3d-cat");
+
+  var selectedId = root.dataset.selectedId || ids[0];
+  if (ids.indexOf(selectedId) === -1) selectedId = ids[0];
+  var handle = null;
+
+  function tileFor(id) {
+    return tiles.filter(function (t) { return t.dataset.avatarId === id; })[0] || null;
+  }
+
+  function syncFormInput(id) {
+    var form = root.closest ? root.closest("form") : null;
+    var input = (form && form.querySelector('input[name="avatar_id"]')) ||
+                document.getElementById("kk-avatar-input");
+    if (input) input.value = id;
+  }
+
+  function select(id, opts) {
+    opts = opts || {};
+    selectedId = id;
+    tiles.forEach(function (t) { t.classList.toggle("selected", t.dataset.avatarId === id); });
+    var tile = tileFor(id);
+    if (nameEl && tile) nameEl.textContent = tile.dataset.avatarLabel || id;
+    if (catEl && tile) catEl.textContent = tile.dataset.avatarCategory || "";
+    if (handle) { handle.setAvatar(id); if (!opts.quiet) handle.playMove(); }
+    syncFormInput(id);
+    if (tile && opts.scroll) tile.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    root.dispatchEvent(new CustomEvent("kk:avatar-selected", { bubbles: true, detail: { id: id } }));
+  }
+
+  function step(dir) {
+    var i = ids.indexOf(selectedId);
+    select(ids[(i + dir + ids.length) % ids.length], { scroll: true });
+  }
+
+  /* ── tile interactions (work with or without WebGL) ── */
+  tiles.forEach(function (t) {
+    t.addEventListener("click", function () { select(t.dataset.avatarId); });
+    t.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(t.dataset.avatarId); }
+    });
+  });
+
+  /* ── 3D stage (progressive enhancement) ── */
+  if (window.KK3D && KK3D.hasWebGL && stage) {
+    try {
+      handle = KK3D.mountAvatar(stage, selectedId, { distance: 4.4 });
+    } catch (e) {
+      console.warn("[kk3d] avatar stage failed, falling back to emoji grid", e);
+      handle = null;
+    }
+  }
+  if (handle) {
+    stageWrap.hidden = false;
+    meta.hidden = false;
+    document.getElementById("kk-av3d-prev").addEventListener("click", function () { step(-1); });
+    document.getElementById("kk-av3d-next").addEventListener("click", function () { step(1); });
+    document.getElementById("kk-av3d-play").addEventListener("click", function () { handle.playMove(); });
+    document.getElementById("kk-av3d-random").addEventListener("click", function () {
+      var pick = ids[Math.floor(Math.random() * ids.length)];
+      if (pick === selectedId) pick = ids[(ids.indexOf(pick) + 1) % ids.length];
+      select(pick, { scroll: true });
+    });
+    /* keyboard controls while the picker has focus */
+    root.addEventListener("keydown", function (e) {
+      if (e.target.closest && e.target.closest("input, textarea, select")) return;
+      if (e.key === "ArrowLeft")  { e.preventDefault(); step(-1); }
+      if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
+      if (e.key === " " && e.target === root) { e.preventDefault(); handle.playMove(); }
+    });
+  }
+
+  select(selectedId, { quiet: true });
+})();
+</script>

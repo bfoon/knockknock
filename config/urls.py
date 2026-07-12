@@ -17,6 +17,7 @@ urlpatterns = [
     path("hanns/", include("hanns.urls", namespace="hanns")),
     path("quest_rpg/", include("quest_rpg.urls", namespace="quest_rpg")),
     path("cards/", include("cards.urls", namespace="cards")),
+    path("kura/", include("kura.urls", namespace="kura")),
     path("icebreakers/", include("icebreakers.urls", namespace="icebreakers")),
     path("", include("core.urls")),
 ]

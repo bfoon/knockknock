@@ -179,6 +179,17 @@
       </span>
     </button>
   </form>
+  <form method="post" action="{% url 'kura:create' %}" class="kk-action-tile-form">
+    {% csrf_token %}
+    <button type="submit" class="kk-action-tile kura">
+      <span class="kk-tile-icon">📋</span>
+      <h2>New Kura Survey</h2>
+      <p>The full survey lifecycle — advanced skip logic, offline mobile collection, data cleaning &amp; one-click Hanns result decks.</p>
+      <span class="kk-btn kk-btn-primary btn-sm">
+        Create survey <i class="bi bi-arrow-right"></i>
+      </span>
+    </button>
+  </form>
   <a href="{% url 'cards:create' %}" class="kk-action-tile cards">
     <span class="kk-tile-icon">💌</span>
     <h2>New Group Card</h2>
@@ -547,6 +558,62 @@
     {% endif %}
   </div>
 
+  <!-- ── Surveys (Kura) ──────────────────────────────────────── -->
+  <div class="col-lg-6 col-xl-3">
+    <h2 class="kk-section-title"><i class="bi bi-clipboard-data"></i> Recent surveys</h2>
+    {% for s in surveys %}
+      <div class="kk-list-item kk-list-item-row">
+        {# Open the builder — the working view of a survey. #}
+        <a href="{% url 'kura:builder' s.code %}" class="kk-list-item-main">
+          <span class="kk-q-index">{{ forloop.counter }}</span>
+          <div class="flex-grow-1">
+            <div class="kk-list-item-title">{{ s.title }}</div>
+            <div class="kk-list-item-meta">
+              {{ s.submissions.count }} response{{ s.submissions.count|pluralize }} ·
+              <span class="kk-status-mini kk-status-mini-{{ s.state }}">{{ s.get_state_display }}</span>
+            </div>
+          </div>
+          <i class="bi bi-arrow-right text-secondary"></i>
+        </a>
+        {# Jump straight into the data-cleaning workbench. #}
+        <a href="{% url 'kura:data' s.code %}"
+           class="kk-btn kk-btn-ghost btn-sm ms-2"
+           title="View & clean responses">
+          <i class="bi bi-table"></i> Data
+        </a>
+        {# Same inline POST delete pattern as the other columns. #}
+        <form method="post"
+              action="{% url 'kura:delete' s.code %}"
+              class="kk-row-delete-form ms-1"
+              onsubmit="return confirm('Delete “{{ s.title|escapejs }}” and all its responses? This cannot be undone.');">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{% url 'core:dashboard' %}">
+          <button type="submit"
+                  class="kk-row-delete"
+                  title="Delete survey"
+                  aria-label="Delete {{ s.title }}">
+            <i class="bi bi-trash3-fill"></i>
+          </button>
+        </form>
+      </div>
+    {% empty %}
+      <div class="kk-empty"><div class="em">📋</div><p>No surveys yet. Build your first questionnaire!</p></div>
+    {% endfor %}
+
+    {% if surveys_total > recent_limit %}
+      <a href="{% url 'kura:list' %}" class="kk-see-all">
+        See all surveys
+        <span class="kk-see-all-count">{{ surveys_total }}</span>
+        <i class="bi bi-arrow-right"></i>
+      </a>
+    {% elif surveys_total > 0 %}
+      <a href="{% url 'kura:list' %}" class="kk-see-all kk-see-all-muted">
+        See all
+        <i class="bi bi-arrow-right"></i>
+      </a>
+    {% endif %}
+  </div>
+
   <!-- ── Cards ───────────────────────────────────────────────── -->
   <div class="col-lg-6 col-xl-3">
     <h2 class="kk-section-title"><i class="bi bi-card-heading"></i> Recent cards</h2>
@@ -665,6 +732,27 @@
   pointer-events: none;
 }
 
+/* Kura creation tile — emerald/teal accent for the survey-lifecycle
+   studio. Like Hanns, its create view is POST-only, so the tile is a
+   <button> inside a form and needs the same chrome reset. */
+.kk-action-tile.kura {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background: linear-gradient(135deg, #0f2a1c, #14372a);
+  border-color: rgba(34, 197, 94, 0.32);
+}
+.kk-action-tile.kura::before {
+  content: ""; position: absolute; inset: 0;
+  background:
+    radial-gradient(400px 200px at 100% 0%, rgba(34, 197, 94, 0.22), transparent),
+    radial-gradient(260px 180px at 0% 100%, rgba(34, 211, 238, 0.15), transparent);
+  pointer-events: none;
+}
+
 /* Cards creation tile — rose/violet accent for the group-card theme,
    echoing the handwritten sticky-note look of the live wall. */
 .kk-action-tile.cards {
@@ -711,6 +799,10 @@
 .kk-status-mini-running { background: rgba(251, 113, 133, 0.15); color: #fb7185; }
 /* Hanns deck states: draft (neutral), live (reuses pink), ended (neutral). */
 .kk-status-mini-draft   { background: rgba(56, 189, 248, 0.13); color: #7dd3fc; }
+/* Kura survey states: collecting (green = actively taking data), paused
+   (amber, reuses the closed tint); draft/closed reuse the rules above. */
+.kk-status-mini-collecting { background: rgba(34, 197, 94, 0.15);  color: #4ade80; }
+.kk-status-mini-paused     { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
 
 /* Recent games row that contains both the edit link and a Results button. */
 .kk-list-item-game {

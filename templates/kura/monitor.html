@@ -1,0 +1,387 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live monitor · {{ survey.title }} · Kura</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900&family=Archivo:wght@400;500;600;700;800;900&family=Spline+Sans+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root{--line:rgba(255,255,255,.12);--muted:#b9c2e7;--dim:rgba(248,251,255,.45);
+    --orange:#ff8a1f;--pink:#ff3f98;--cyan:#22d3ee;--violet:#8b5cf6;--green:#22c55e;--red:#e8482b}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;color:#f8fbff;font-family:"Archivo",sans-serif;-webkit-font-smoothing:antialiased;
+    background:radial-gradient(900px 560px at 86% -8%,rgba(255,138,31,.2),transparent 60%),
+      radial-gradient(780px 520px at 5% 5%,rgba(139,92,246,.3),transparent 60%),
+      linear-gradient(135deg,#050616,#090b23 45%,#160a2c)}
+  .bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;
+    padding:.8rem 1.2rem;border-bottom:1px solid var(--line);background:rgba(6,7,24,.85);backdrop-filter:blur(16px)}
+  .mark{font-weight:900;font-size:1.1rem;text-decoration:none;
+    background:linear-gradient(110deg,#fff 8%,var(--orange) 40%,var(--pink) 70%,var(--cyan) 100%);
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .bar h1{flex:1;min-width:160px;margin:0;font-family:"Fraunces",serif;font-size:1.15rem;font-weight:600;color:#fff;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .live-pill{display:inline-flex;align-items:center;gap:.45rem;border:1px solid var(--line);border-radius:999px;
+    padding:.35rem .8rem;font:700 .62rem/1 "Spline Sans Mono",monospace;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--muted);background:rgba(255,255,255,.05)}
+  .live-dot{width:9px;height:9px;border-radius:50%;background:#64748b;transition:.2s}
+  .live-dot.on{background:var(--green);box-shadow:0 0 10px rgba(34,197,94,.9);animation:pulse 1.6s ease-in-out infinite}
+  .live-dot.poll{background:var(--orange);box-shadow:0 0 10px rgba(255,138,31,.8)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+  .btn{display:inline-flex;align-items:center;gap:.4rem;border:1px solid rgba(255,255,255,.16);color:var(--muted);
+    background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.04));
+    border-radius:10px;padding:.5rem .9rem;font-weight:700;font-size:.8rem;cursor:pointer;text-decoration:none}
+  .btn:hover{color:#fff}
+  .wrap{max-width:1360px;margin:0 auto;padding:1rem 1.2rem 4rem}
+  .stats{display:flex;gap:.8rem;flex-wrap:wrap;margin:.4rem 0 1rem}
+  .stat{flex:1;min-width:118px;border:1px solid var(--line);border-radius:14px;padding:.7rem 1rem;
+    background:linear-gradient(135deg,rgba(255,255,255,.09),rgba(255,255,255,.03))}
+  .stat b{display:block;font-size:1.55rem;font-weight:900;transition:.15s}
+  .stat b.bump{transform:scale(1.18);color:#fff}
+  .stat span{font-family:"Spline Sans Mono",monospace;font-size:.56rem;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+  .stat.web b{color:var(--cyan)}.stat.api b{color:var(--pink)}.stat.hr b{color:#86efac}.stat.gps b{color:#ffc38a}
+  .grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(300px,1fr);gap:1rem;align-items:start}
+  @media(max-width:960px){.grid{grid-template-columns:1fr}}
+  .panel{border:1px solid var(--line);border-radius:16px;overflow:hidden;
+    background:linear-gradient(135deg,rgba(255,255,255,.08),rgba(255,255,255,.03));backdrop-filter:blur(12px)}
+  .panel>h3{margin:0;padding:.75rem 1rem .55rem;display:flex;align-items:center;gap:.6rem;
+    font-family:"Spline Sans Mono",monospace;font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+  .panel>h3 .sp{flex:1}
+  .legend{display:flex;gap:.8rem;font-size:.6rem}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:.3rem}
+  #map{height:440px;background:#0b0d26}
+  .leaflet-container{font-family:"Archivo",sans-serif}
+  .leaflet-popup-content-wrapper,.leaflet-popup-tip{background:#11142e;color:#f8fbff;border:1px solid var(--line)}
+  /* live feed */
+  .feed{max-height:440px;overflow:auto;padding:.3rem .6rem .6rem}
+  .evt{display:flex;align-items:center;gap:.6rem;border:1px solid var(--line);border-radius:11px;
+    padding:.5rem .65rem;margin:.35rem 0;background:rgba(255,255,255,.03);font-size:.78rem}
+  .evt.new{animation:flash 1.4s ease-out}
+  @keyframes flash{0%{background:rgba(34,211,238,.25);border-color:var(--cyan)}100%{background:rgba(255,255,255,.03)}}
+  .evt .src{flex:0 0 auto;font:700 .54rem/1 "Spline Sans Mono",monospace;letter-spacing:.1em;text-transform:uppercase;
+    border:1px solid var(--line);border-radius:5px;padding:.2rem .42rem}
+  .evt .src.web{color:var(--cyan);border-color:rgba(34,211,238,.4)}
+  .evt .src.api{color:var(--pink);border-color:rgba(255,63,152,.4)}
+  .evt .src.sync{color:#c4b5fd;border-color:rgba(139,92,246,.4)}
+  .evt .who{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+  .evt .who small{display:block;font-weight:500;color:var(--dim);font-size:.66rem}
+  .evt .when{flex:0 0 auto;font-family:"Spline Sans Mono",monospace;font-size:.6rem;color:var(--dim)}
+  .evt .pin{flex:0 0 auto;cursor:pointer;font-size:.85rem;opacity:.75}
+  .evt .pin:hover{opacity:1}
+  .feed-empty{padding:1.4rem 1rem;text-align:center;color:var(--muted);font-size:.82rem}
+  /* devices + syncs */
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1rem;align-items:start}
+  @media(max-width:820px){.two{grid-template-columns:1fr}}
+  .dev{display:flex;align-items:center;gap:.65rem;border-top:1px solid rgba(255,255,255,.06);padding:.55rem 1rem;font-size:.8rem}
+  .dev .ic{flex:0 0 auto;font-size:1.05rem}
+  .dev .nm{flex:1;min-width:0;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dev .nm small{display:block;font-weight:500;color:var(--dim);font-size:.64rem}
+  .dev .cnt{flex:0 0 auto;font-family:"Spline Sans Mono",monospace;font-size:.66rem;color:var(--cyan)}
+  .dev .seen{flex:0 0 auto;font-family:"Spline Sans Mono",monospace;font-size:.6rem;color:var(--dim)}
+  .dev .acts{display:flex;gap:.3rem;flex:0 0 auto}
+  .dev .acts button{border:1px solid var(--line);border-radius:7px;padding:.28rem .5rem;background:rgba(255,255,255,.05);color:var(--muted);font-size:.65rem;font-weight:700;cursor:pointer}
+  .dev .acts button.allow{color:#86efac;border-color:rgba(34,197,94,.4)}
+  .dev .acts button.block{color:#f0a397;border-color:rgba(232,72,43,.4)}
+  .dev .acts button:disabled{opacity:.45;cursor:default}
+  .policy{display:flex;align-items:center;gap:.55rem;padding:.55rem 1rem;border-bottom:1px solid rgba(255,255,255,.06);font-size:.75rem;color:var(--muted)}
+  .policy select{margin-left:auto;background:#0b0d26;color:#fff;border:1px solid var(--line);border-radius:8px;padding:.4rem .55rem}
+  table{border-collapse:collapse;width:100%;font-size:.74rem}
+  th,td{border-top:1px solid rgba(255,255,255,.06);padding:.45rem .7rem;text-align:left;white-space:nowrap}
+  th{font-family:"Spline Sans Mono",monospace;font-size:.56rem;letter-spacing:.1em;text-transform:uppercase;color:var(--cyan);border-top:0}
+  td.ok{color:#86efac}td.dup{color:#ffc38a}td.rej{color:#f0a397}
+  .empty-inline{padding:.9rem 1rem;color:var(--muted);font-size:.78rem}
+</style>
+</head>
+<body>
+<div class="bar">
+  <a class="mark" href="{% url 'kura:list' %}">Kura<span style="-webkit-text-fill-color:var(--pink)">.</span></a>
+  <h1>{{ survey.title }} — live monitor</h1>
+  <span class="live-pill"><span class="live-dot" id="live-dot"></span><span id="live-label">Connecting…</span></span>
+  <a class="btn" href="{% url 'kura:live_map' survey.code %}">🗺 Full map</a>
+  <a class="btn" href="{% url 'kura:data' survey.code %}">Data</a>
+  <a class="btn" href="{% url 'kura:builder' survey.code %}">Builder</a>
+</div>
+
+<div class="wrap">
+  <div class="stats">
+    <div class="stat"><b id="s-total">–</b><span>Total responses</span></div>
+    <div class="stat hr"><b id="s-hour">–</b><span>Last hour</span></div>
+    <div class="stat"><b id="s-today">–</b><span>Today</span></div>
+    <div class="stat web"><b id="s-web">–</b><span>Web link</span></div>
+    <div class="stat api"><b id="s-api">–</b><span>Mobile app</span></div>
+    <div class="stat gps"><b id="s-gps">–</b><span>With GPS</span></div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h3>Where responses come from <span class="sp"></span>
+        <a href="{% url 'kura:live_map' survey.code %}" style="color:var(--cyan);text-decoration:none;font-size:.6rem" title="Open the full-screen live map">⛶ FULL SCREEN</a>
+        
+        <span class="legend">
+          <span><i style="background:var(--cyan)"></i>Web</span>
+          <span><i style="background:var(--pink)"></i>Mobile app</span>
+        </span>
+      </h3>
+      <div id="map"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Live feed <span class="sp"></span><span id="feed-count"></span></h3>
+      <div class="feed" id="feed">
+        <div class="feed-empty" id="feed-empty">Waiting for the first response…<br>
+          <small style="color:var(--dim)">Web submissions and phone syncs appear here the moment they land.</small></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="two">
+    <div class="panel">
+      <h3>Devices &amp; enumerators</h3>
+      <div class="policy">Default phone access
+        <select id="device-policy" aria-label="Default device access policy">
+          <option value="approval">Approve each device</option>
+          <option value="allow_all">Automatically allow all</option>
+          <option value="block_all">Block all</option>
+        </select>
+      </div>
+      <div id="devices"><div class="empty-inline">No devices registered yet — phones appear here after they register with the sync API.</div></div>
+    </div>
+    <div class="panel">
+      <h3>Sync history</h3>
+      <div style="overflow:auto;max-height:320px">
+        <table>
+          <thead><tr><th>When</th><th>Device</th><th>Enumerator</th><th>New</th><th>Dup</th><th>Rej</th></tr></thead>
+          <tbody id="syncs"><tr><td colspan="6" class="empty-inline">No syncs yet.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+window.__KURA_MON__ = {
+  code: "{{ survey.code }}",
+  feedUrl: "{{ feed_url }}",
+  accessUrl: "{% url 'kura:device_access_update' survey.code %}",
+  csrf: "{{ csrf_token }}",
+  wsUrl: (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/kura/{{ survey.code }}/monitor/"
+};
+</script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function(){
+"use strict";
+const CFG = window.__KURA_MON__;
+const $ = s=>document.querySelector(s);
+const esc = s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let lastSeen = null;        // ISO of the newest submission we've displayed
+const seen = new Set();     // submission ids already in the feed (WS + poll overlap guard)
+const totals = {total:0, web:0, api:0, with_gps:0, last_hour:0, today:0};
+
+/* ── map ── */
+const map = L.map("map", {zoomControl:true, attributionControl:true}).setView([13.44, -16.6], 8);
+L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+  {maxZoom:20, subdomains:"abcd", crossOrigin:true, attribution:"&copy; OpenStreetMap contributors &copy; CARTO"}).addTo(map);
+const markers = L.layerGroup().addTo(map);
+const points = [];
+function addPoint(sub, pan){
+  if(!sub.gps) return null;
+  const color = sub.source === "api" ? "#ff3f98" : "#22d3ee";
+  const m = L.circleMarker(sub.gps, {radius:7, color, weight:2, fillColor:color, fillOpacity:.55});
+  m.bindPopup(
+    "<b>"+esc(sub.device || (sub.source==="web" ? "Web respondent" : "Mobile app"))+"</b><br>"+
+    (sub.enumerator ? "Enumerator: "+esc(sub.enumerator)+"<br>" : "")+
+    "Source: "+esc(sub.source)+" · v"+esc(sub.version??"?")+"<br>"+
+    "Received: "+esc(fmtTime(sub.received_at))
+  );
+  m.addTo(markers);
+  points.push(sub.gps);
+  if(pan){ map.panTo(sub.gps); m.openPopup(); setTimeout(()=>m.closePopup(), 2600); }
+  return m;
+}
+function fitAll(){ if(points.length) map.fitBounds(points, {padding:[30,30], maxZoom:13}); }
+
+/* ── stats ── */
+function paintStats(){
+  const set=(id,v)=>{ const el=$(id); if(el.textContent!==String(v)){ el.textContent=v;
+    el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump"); } };
+  set("#s-total", totals.total); set("#s-hour", totals.last_hour); set("#s-today", totals.today);
+  set("#s-web", totals.web); set("#s-api", totals.api); set("#s-gps", totals.with_gps);
+}
+
+/* ── feed ── */
+function fmtTime(iso){
+  if(!iso) return "";
+  const d = new Date(iso), now = new Date();
+  const t = d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+  return d.toDateString() === now.toDateString() ? t : d.toLocaleDateString() + " " + t;
+}
+function feedRow(html, cls){
+  $("#feed-empty")?.remove();
+  const div = document.createElement("div");
+  div.className = "evt " + (cls||"");
+  div.innerHTML = html;
+  $("#feed").prepend(div);
+  const rows = $("#feed").children;
+  while(rows.length > 120) rows[rows.length-1].remove();
+  $("#feed-count").textContent = "showing " + Math.min(rows.length,120);
+}
+function addSubmission(sub, isLive){
+  if(seen.has(sub.id)) return;
+  seen.add(sub.id);
+  if(!lastSeen || sub.received_at > lastSeen) lastSeen = sub.received_at;
+  const who = sub.source === "api"
+    ? esc(sub.device || "Mobile device") +
+      "<small>"+esc(sub.enumerator || "")+(sub.platform ? " · "+esc(sub.platform):"")+"</small>"
+    : "Web respondent<small>public link"+(sub.status!=="complete" ? " · "+esc(sub.status):"")+"</small>";
+  const marker = addPoint(sub, isLive);
+  feedRow(
+    '<span class="src '+esc(sub.source)+'">'+(sub.source==="api"?"APP":"WEB")+'</span>'+
+    '<span class="who">'+who+'</span>'+
+    (sub.gps ? '<span class="pin" title="Show on map" data-lat="'+sub.gps[0]+'" data-lng="'+sub.gps[1]+'">📍</span>' : "")+
+    '<span class="when">'+esc(fmtTime(sub.received_at))+'</span>',
+    isLive ? "new" : "");
+  if(isLive){
+    totals.total++; totals.today++; totals.last_hour++;
+    totals[sub.source === "api" ? "api" : "web"]++;
+    if(sub.gps) totals.with_gps++;
+    paintStats();
+  }
+}
+function addSyncEvent(ev){
+  feedRow(
+    '<span class="src sync">SYNC</span>'+
+    '<span class="who">'+esc(ev.device)+' synced'+
+    '<small>'+esc(ev.enumerator||"")+' · '+ev.pushed+' new · '+ev.duplicates+' dup · '+ev.rejected+' rejected</small></span>'+
+    '<span class="when">'+esc(fmtTime(ev.at))+'</span>', "new");
+  prependSyncRow(ev);
+}
+function prependSyncRow(ev){
+  const tb = $("#syncs");
+  tb.querySelector(".empty-inline")?.closest("tr")?.remove();
+  const tr = document.createElement("tr");
+  tr.innerHTML = "<td>"+esc(fmtTime(ev.at))+"</td><td>"+esc(ev.device)+"</td><td>"+esc(ev.enumerator||"")+
+    '</td><td class="ok">'+ev.pushed+'</td><td class="dup">'+ev.duplicates+'</td><td class="rej">'+ev.rejected+"</td>";
+  tb.prepend(tr);
+}
+$("#feed").addEventListener("click", e=>{
+  const p = e.target.closest(".pin");
+  if(p){ map.setView([+p.dataset.lat, +p.dataset.lng], 14); }
+});
+
+/* ── devices panel ── */
+function effectiveLabel(d){
+  if(!d.active) return "Device disabled";
+  if(d.can_submit) return "Allowed to submit";
+  return "Blocked from submitting";
+}
+async function saveDeviceAccess(payload){
+  const r = await fetch(CFG.accessUrl, {
+    method:"POST", headers:{"Content-Type":"application/json","X-CSRFToken":CFG.csrf},
+    body:JSON.stringify(payload)
+  });
+  const j = await r.json();
+  if(!r.ok || !j.ok) throw new Error(j.error || "Could not update device access");
+  return j;
+}
+function paintDevices(devs, mode){
+  const host = $("#devices");
+  if(mode) $("#device-policy").value = mode;
+  if(!devs || !devs.length){
+    host.innerHTML = '<div class="empty-inline">No devices registered yet — phones appear here after registration.</div>';
+    return;
+  }
+  host.innerHTML = "";
+  devs.forEach(d=>{
+    const row = document.createElement("div");
+    row.className = "dev";
+    row.innerHTML =
+      '<span class="ic">'+(String(d.platform).toLowerCase().includes("ios")?"📱":"🤖")+'</span>'+
+      '<span class="nm">'+esc(d.name)+'<small>'+esc(d.enumerator)+(d.platform?" · "+esc(d.platform):"")+
+        ' · '+esc(effectiveLabel(d))+'</small></span>'+
+      '<span class="cnt">'+d.pushed+' pushed</span>'+
+      '<span class="seen">'+(d.last_seen ? "seen "+fmtTime(d.last_seen) : "never seen")+'</span>'+
+      '<span class="acts"><button class="allow" data-device="'+d.id+'" data-allow="1"'+(d.can_submit?' disabled':'')+'>Allow</button>'+
+      '<button class="block" data-device="'+d.id+'" data-allow="0"'+(!d.can_submit?' disabled':'')+'>Block</button></span>';
+    host.appendChild(row);
+  });
+}
+$("#devices").addEventListener("click", async e=>{
+  const b=e.target.closest("button[data-device]"); if(!b) return;
+  b.disabled=true;
+  try{
+    await saveDeviceAccess({device_id:+b.dataset.device, allow:b.dataset.allow==="1"});
+    const j=await fetch(CFG.feedUrl).then(r=>r.json());
+    paintDevices(j.devices, j.device_access_mode);
+  }catch(err){ alert(err.message); b.disabled=false; }
+});
+$("#device-policy").addEventListener("change", async e=>{
+  const old=e.target.dataset.old || "approval";
+  try{
+    await saveDeviceAccess({mode:e.target.value});
+    e.target.dataset.old=e.target.value;
+    const j=await fetch(CFG.feedUrl).then(r=>r.json());
+    paintDevices(j.devices, j.device_access_mode);
+  }catch(err){ alert(err.message); e.target.value=old; }
+});
+
+/* ── transport: WebSocket first, polling fallback ── */
+let sock = null, pollTimer = null, wsHealthy = false;
+function setLive(state, label){
+  const dot = $("#live-dot");
+  dot.classList.remove("on","poll");
+  if(state === "ws") dot.classList.add("on");
+  if(state === "poll") dot.classList.add("poll");
+  $("#live-label").textContent = label;
+}
+function startPolling(){
+  if(pollTimer) return;
+  setLive("poll", "Live · refreshing every 6s");
+  pollTimer = setInterval(async ()=>{
+    try{
+      const j = await fetch(CFG.feedUrl + "?since=" + encodeURIComponent(lastSeen || "")).then(r=>r.json());
+      (j.submissions || []).slice().reverse().forEach(s=>addSubmission(s, true));
+    }catch(e){ setLive("off", "Offline — retrying"); }
+  }, 6000);
+}
+function stopPolling(){ if(pollTimer){ clearInterval(pollTimer); pollTimer = null; } }
+function connectWS(){
+  try{ sock = new WebSocket(CFG.wsUrl); }catch(e){ startPolling(); return; }
+  const guard = setTimeout(()=>{ if(!wsHealthy) startPolling(); }, 4000);
+  sock.addEventListener("open", ()=>{});
+  sock.addEventListener("message", ev=>{
+    let m; try{ m = JSON.parse(ev.data); }catch(e){ return; }
+    if(m.type === "monitor_ok"){ wsHealthy = true; clearTimeout(guard); stopPolling(); setLive("ws", "Live · realtime"); }
+    else if(m.type === "submission" && m.sub){ addSubmission(m.sub, true); }
+    else if(m.type === "sync"){ addSyncEvent(m); }
+  });
+  sock.addEventListener("close", ()=>{ wsHealthy = false; startPolling(); setTimeout(connectWS, 8000); });
+  sock.addEventListener("error", ()=>{ try{ sock.close(); }catch(e){} });
+}
+
+/* ── boot: initial snapshot, then go live ── */
+(async function boot(){
+  try{
+    const j = await fetch(CFG.feedUrl).then(r=>r.json());
+    Object.assign(totals, j.totals || {});
+    paintStats();
+    (j.submissions || []).slice().reverse().forEach(s=>addSubmission(s, false));
+    fitAll();
+    paintDevices(j.devices, j.device_access_mode);
+    (j.syncs || []).slice().reverse().forEach(prependSyncRow);
+    lastSeen = j.now || lastSeen;
+  }catch(e){ setLive("off", "Could not load feed"); }
+  connectWS();
+  // Refresh the devices/sync panels occasionally regardless of transport.
+  setInterval(async ()=>{
+    try{
+      const j = await fetch(CFG.feedUrl).then(r=>r.json());
+      Object.assign(totals, j.totals || {}); paintStats(); paintDevices(j.devices, j.device_access_mode);
+    }catch(e){}
+  }, 60000);
+})();
+})();
+</script>
+</body>
+</html>

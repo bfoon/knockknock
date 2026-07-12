@@ -1,0 +1,41 @@
+{# Animated 3D scenery behind the live chart.
+   Usage — wrap it around (or place it inside) the element that holds the
+   live chart on the present screen:
+
+     <div class="kk-chart-shell" id="kk-chart-shell">
+       {% include "games/partials/_env_3d.html" with chart_background=quiz.chart_background %}
+       ... the chart / answer bars render above this ...
+     </div>
+
+   Requires (once per page):
+     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+     <script src="{% static 'js/kk3d.js' %}"></script>
+
+   The canvas is position:absolute, pointer-events:none and inserted as the
+   FIRST child of #kk-env-3d's parent-relative box, so it always sits behind
+   your chart content. Falls back silently (no canvas) without WebGL, and
+   renders a single static frame when the user prefers reduced motion.
+#}
+<div class="kk-env-3d" id="kk-env-3d" data-scene="{{ chart_background|default:'normal' }}"></div>
+
+<style>
+  .kk-env-3d { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; z-index: 0; }
+  .kk-env-3d ~ * { position: relative; z-index: 1; }
+</style>
+
+<script>
+(function () {
+  var el = document.getElementById("kk-env-3d");
+  if (!el || el.dataset.kk3dInit) return;
+  el.dataset.kk3dInit = "1";
+  if (!window.KK3D || !KK3D.hasWebGL) return;
+  try {
+    var handle = KK3D.mountEnvironment(el, el.dataset.scene || "normal");
+    /* Optional: expose for teardown when the presenter navigates between
+       questions in a SPA-ish way. */
+    window.kkEnv3d = handle;
+  } catch (e) {
+    console.warn("[kk3d] environment failed", e);
+  }
+})();
+</script>

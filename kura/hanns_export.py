@@ -1,0 +1,233 @@
+"""
+kura/hanns_export.py — turn survey results into a Hanns deck.
+
+build_results_deck(survey, owner) creates a real hanns.Deck with one slide
+per interesting question, using the same slide-JSON shape hanns/models.py
+documents ({bg, bgSize, bgFx, transition, els:[…]}), so the deck opens in
+the Hanns editor and presents live with reactions, phone controller, HTML
+export — the whole pipeline — for free.
+
+Element vocabulary
+──────────────────
+The exact element `type` strings must match what hanns_core.js renders.
+The constants below default to the common Hanns names ("text" and "chart");
+if your hanns_core.js uses different type names (e.g. "heading", "plot"),
+change ONLY these two constants and the key names in _text()/_chart().
+"""
+
+from __future__ import annotations
+
+import uuid
+from collections import Counter
+
+TEXT_TYPE = "text"
+CHART_TYPE = "chart"
+
+BG_TITLE = "linear-gradient(135deg,#050616,#090b23 52%,#160a2c)"
+BG_BODY = "#f6f1e7"
+INK = "#16140f"
+ACCENTS = ["#ff8a1f", "#ff3f98", "#22d3ee", "#8b5cf6", "#22c55e", "#e8482b"]
+
+
+def _eid():
+    return "el_" + uuid.uuid4().hex[:8]
+
+
+def _text(text, x, y, w, h, *, size=32, weight=700, color=INK,
+          align="left", font="Archivo", anim="fade"):
+    return {
+        "id": _eid(), "type": TEXT_TYPE,
+        "x": x, "y": y, "w": w, "h": h, "rot": 0,
+        "anim": anim, "animDelay": 0,
+        "text": str(text),
+        "fontFamily": font, "fontSize": size, "fontWeight": weight,
+        "color": color, "align": align, "lineHeight": 1.15,
+    }
+
+
+def _chart(kind, labels, values, x, y, w, h, *, color="#e8482b", title=""):
+    return {
+        "id": _eid(), "type": CHART_TYPE,
+        "x": x, "y": y, "w": w, "h": h, "rot": 0,
+        "anim": "rise", "animDelay": 120,
+        "chart": {
+            "kind": kind,               # bar | pie | line
+            "title": title,
+            "labels": [str(l) for l in labels],
+            "values": [float(v) for v in values],
+            "color": color,
+        },
+    }
+
+
+def _slide(els, *, bg=BG_BODY, transition="fade", notes=""):
+    return {
+        "bg": bg, "bgSize": None, "bgFx": "none",
+        "transition": transition, "els": els, "notes": notes,
+    }
+
+
+# ── stats over submissions ───────────────────────────────────────────
+
+def _clean_subs(survey):
+    return list(
+        survey.submissions.filter(status__in=["complete", "flagged"])
+        .only("answers", "duration_ms", "score")
+    )
+
+
+def _choice_counts(question, subs):
+    counts = Counter()
+    labels = {str(c.get("value")): c.get("label") or str(c.get("value"))
+              for c in (question.get("choices") or [])}
+    for s in subs:
+        v = s.answers.get(question["name"])
+        if v in (None, "", []):
+            continue
+        vals = v if isinstance(v, list) else [v]
+        for x in vals:
+            counts[labels.get(str(x), str(x))] += 1
+    return counts
+
+
+def _numeric_stats(question, subs):
+    vals = []
+    for s in subs:
+        try:
+            vals.append(float(s.answers.get(question["name"])))
+        except (TypeError, ValueError):
+            continue
+    if not vals:
+        return None
+    vals.sort()
+    n = len(vals)
+    return {
+        "n": n,
+        "mean": sum(vals) / n,
+        "median": vals[n // 2],
+        "min": vals[0],
+        "max": vals[-1],
+        "values": vals,
+    }
+
+
+def _histogram(vals, bins=8):
+    lo, hi = min(vals), max(vals)
+    if lo == hi:
+        return [f"{lo:g}"], [len(vals)]
+    width = (hi - lo) / bins
+    edges = [lo + i * width for i in range(bins + 1)]
+    counts = [0] * bins
+    for v in vals:
+        i = min(int((v - lo) / width), bins - 1)
+        counts[i] += 1
+    labels = [f"{edges[i]:g}–{edges[i+1]:g}" for i in range(bins)]
+    return labels, counts
+
+
+# ── deck assembly ────────────────────────────────────────────────────
+
+def build_results_deck(survey, owner):
+    """Create and return a hanns.Deck presenting this survey's results."""
+    from hanns.models import Deck, Slide  # local import: optional dependency
+
+    subs = _clean_subs(survey)
+    schema = (survey.current_version.schema if survey.current_version
+              else survey.draft_schema) or {}
+    questions = [q for q in (schema.get("questions") or [])
+                 if q.get("type") not in ("section", "photo", "audio",
+                                          "signature", "repeat")]
+
+    slides = []
+
+    # 1 · Title
+    slides.append(_slide([
+        _text("SURVEY RESULTS", 70, 110, 500, 40, size=16, weight=700,
+              color="#22d3ee", font="Spline Sans Mono"),
+        _text(survey.title, 70, 160, 820, 170, size=58, weight=800,
+              color="#f8fbff", font="Fraunces"),
+        _text(f"{len(subs)} responses · code {survey.code}",
+              70, 350, 700, 40, size=20, weight=600, color="#b9c2e7"),
+    ], bg=BG_TITLE, transition="zoom", notes="Auto-generated by Kura."))
+
+    # 2 · Overview numbers
+    durations = [s.duration_ms / 60000 for s in subs if s.duration_ms]
+    avg_min = (sum(durations) / len(durations)) if durations else 0
+    scores = [s.score for s in subs if s.score is not None]
+    stats_bits = [
+        ("Responses", f"{len(subs)}"),
+        ("Median time", f"{avg_min:.1f} min" if durations else "—"),
+        ("Avg score", f"{(sum(scores)/len(scores)):.1f}" if scores else "—"),
+    ]
+    els = [_text("At a glance", 70, 60, 600, 60, size=40, weight=800, font="Fraunces")]
+    for i, (label, value) in enumerate(stats_bits):
+        x = 70 + i * 290
+        els.append(_text(value, x, 190, 260, 90, size=56, weight=900,
+                         color=ACCENTS[i % len(ACCENTS)]))
+        els.append(_text(label.upper(), x, 285, 260, 30, size=14, weight=700,
+                         color="#6b6353", font="Spline Sans Mono"))
+    slides.append(_slide(els, transition="slide"))
+
+    # 3+ · One slide per question
+    for qi, q in enumerate(questions):
+        name, qtype = q.get("name"), q.get("type")
+        label = q.get("label") or name
+        accent = ACCENTS[qi % len(ACCENTS)]
+        header = [
+            _text(f"Q{qi+1}", 70, 48, 120, 30, size=14, weight=700,
+                  color=accent, font="Spline Sans Mono"),
+            _text(label, 70, 80, 820, 80, size=30, weight=800, font="Fraunces"),
+        ]
+
+        if qtype in ("select_one", "select_multiple", "likert", "rating", "rank"):
+            counts = _choice_counts(q, subs)
+            if not counts:
+                continue
+            top = counts.most_common(10)
+            kind = "pie" if (qtype == "select_one" and len(top) <= 5) else "bar"
+            slides.append(_slide(header + [
+                _chart(kind, [l for l, _ in top], [c for _, c in top],
+                       70, 180, 820, 320, color=accent, title=""),
+            ], transition="fade",
+                notes=f"n = {sum(counts.values())} answers."))
+
+        elif qtype in ("integer", "decimal", "calculate"):
+            st = _numeric_stats(q, subs)
+            if not st:
+                continue
+            labels, counts = _histogram(st["values"])
+            slides.append(_slide(header + [
+                _text(f"mean {st['mean']:.1f} · median {st['median']:g} · "
+                      f"range {st['min']:g}–{st['max']:g} · n {st['n']}",
+                      70, 158, 820, 26, size=15, weight=600, color="#6b6353",
+                      font="Spline Sans Mono"),
+                _chart("bar", labels, counts, 70, 195, 820, 305, color=accent),
+            ], transition="fade"))
+
+        elif qtype in ("text", "long_text"):
+            quotes = [str(s.answers.get(name)) for s in subs
+                      if s.answers.get(name)][:3]
+            if not quotes:
+                continue
+            els = list(header)
+            for i, quote in enumerate(quotes):
+                short = quote if len(quote) <= 140 else quote[:140] + "…"
+                els.append(_text(f"“{short}”", 90, 190 + i * 105, 780, 95,
+                                 size=20, weight=500, color="#2c281f",
+                                 font="Fraunces"))
+            slides.append(_slide(els, transition="fade",
+                                 notes="Sample of open-text answers."))
+
+    # Closing slide
+    slides.append(_slide([
+        _text("Thank you", 70, 200, 820, 120, size=64, weight=800,
+              color="#f8fbff", font="Fraunces", align="center"),
+        _text(f"Collected with Kura · presented with Hanns",
+              70, 340, 820, 30, size=15, weight=600, color="#b9c2e7",
+              align="center", font="Spline Sans Mono"),
+    ], bg=BG_TITLE, transition="zoom"))
+
+    deck = Deck.objects.create(owner=owner, title=f"{survey.title} — Results")
+    for pos, sdata in enumerate(slides):
+        Slide.objects.create(deck=deck, position=pos, data=sdata)
+    return deck

@@ -1,0 +1,301 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Live map · {{ survey.title }} · Kura</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;600&family=Archivo:wght@400;600;700;800;900&family=Spline+Sans+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root{--line:rgba(255,255,255,.14);--muted:#b9c2e7;--dim:rgba(248,251,255,.5);
+    --orange:#ff8a1f;--pink:#ff3f98;--cyan:#22d3ee;--violet:#8b5cf6;--green:#22c55e}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#050616;font-family:"Archivo",sans-serif;
+    color:#f8fbff;-webkit-font-smoothing:antialiased;overflow:hidden}
+  #map{position:fixed;inset:0;background:#0b0d26}
+  .leaflet-container{font-family:"Archivo",sans-serif;background:#0b0d26}
+  .leaflet-popup-content-wrapper,.leaflet-popup-tip{background:#11142e;color:#f8fbff;border:1px solid var(--line)}
+  .leaflet-control-zoom{border:1px solid var(--line)!important;border-radius:10px!important;overflow:hidden}
+  .leaflet-control-zoom a{background:rgba(10,12,35,.85)!important;color:#f8fbff!important;border-color:var(--line)!important}
+
+  .hud{position:fixed;z-index:1000;border:1px solid var(--line);border-radius:16px;
+    background:linear-gradient(135deg,rgba(10,12,35,.82),rgba(10,12,35,.66));
+    box-shadow:0 18px 48px rgba(0,0,0,.4);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+
+  /* top-left: identity + status */
+  .hud.brand{top:14px;left:14px;padding:.75rem 1rem .8rem;max-width:min(420px,calc(100vw - 28px))}
+  .mark{font-weight:900;font-size:.95rem;letter-spacing:-.02em;text-decoration:none;
+    background:linear-gradient(110deg,#fff 8%,var(--orange) 36%,var(--pink) 64%,var(--cyan) 95%);
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .brand h1{margin:.25rem 0 .3rem;font-family:"Fraunces",serif;font-weight:600;font-size:1.15rem;line-height:1.12;
+    color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .live-pill{display:inline-flex;align-items:center;gap:.45rem;
+    font:700 .58rem/1 "Spline Sans Mono",monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .live-dot{width:9px;height:9px;border-radius:50%;background:#64748b;transition:.2s}
+  .live-dot.on{background:var(--green);box-shadow:0 0 10px rgba(34,197,94,.9);animation:pulse 1.6s ease-in-out infinite}
+  .live-dot.poll{background:var(--orange);box-shadow:0 0 10px rgba(255,138,31,.8)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+
+  /* top-right: counters */
+  .hud.stats{top:14px;right:14px;display:flex;gap:1rem;padding:.7rem 1rem}
+  .stat{text-align:right;min-width:64px}
+  .stat b{display:block;font-size:1.5rem;font-weight:900;line-height:1;transition:transform .15s}
+  .stat b.bump{transform:scale(1.2);color:#fff}
+  .stat span{font-family:"Spline Sans Mono",monospace;font-size:.52rem;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--dim)}
+  .stat.web b{color:var(--cyan)}.stat.api b{color:var(--pink)}.stat.hr b{color:#86efac}
+
+  /* bottom-left: ticker */
+  .hud.ticker{bottom:14px;left:14px;width:min(380px,calc(100vw - 28px));padding:.55rem .6rem;max-height:34vh;overflow:hidden}
+  .tick{display:flex;align-items:center;gap:.55rem;padding:.4rem .5rem;border:1px solid var(--line);
+    border-radius:10px;background:rgba(255,255,255,.035);font-size:.76rem;margin:.28rem 0}
+  .tick.new{animation:flash 1.6s ease-out}
+  @keyframes flash{0%{background:rgba(34,211,238,.28);border-color:var(--cyan)}100%{background:rgba(255,255,255,.035)}}
+  .tick .src{flex:0 0 auto;font:700 .52rem/1 "Spline Sans Mono",monospace;letter-spacing:.1em;
+    border:1px solid var(--line);border-radius:5px;padding:.18rem .4rem;text-transform:uppercase}
+  .tick .src.web{color:var(--cyan);border-color:rgba(34,211,238,.4)}
+  .tick .src.api{color:var(--pink);border-color:rgba(255,63,152,.4)}
+  .tick .src.sync{color:#c4b5fd;border-color:rgba(139,92,246,.4)}
+  .tick .who{flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tick .when{flex:0 0 auto;font-family:"Spline Sans Mono",monospace;font-size:.58rem;color:var(--dim)}
+  .ticker-empty{padding:.6rem .5rem;color:var(--muted);font-size:.78rem}
+
+  /* bottom-right: controls */
+  .hud.controls{bottom:14px;right:14px;display:flex;gap:.45rem;padding:.5rem}
+  .cbtn{border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.05);color:var(--muted);
+    padding:.5rem .75rem;font-weight:700;font-size:.76rem;cursor:pointer;white-space:nowrap;text-decoration:none;
+    display:inline-flex;align-items:center;gap:.35rem}
+  .cbtn:hover{color:#fff;border-color:rgba(255,255,255,.3)}
+  .cbtn.on{color:#fff;border-color:var(--cyan);background:rgba(34,211,238,.14)}
+  .legend{position:fixed;z-index:1000;bottom:78px;right:14px;display:flex;gap:.8rem;
+    font:600 .62rem/1 "Spline Sans Mono",monospace;color:var(--muted);
+    padding:.45rem .7rem;border:1px solid var(--line);border-radius:999px;
+    background:rgba(10,12,35,.75);backdrop-filter:blur(10px)}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:.32rem;vertical-align:-1px}
+
+  /* arrival ripple */
+  .ripple{position:relative;width:18px;height:18px;pointer-events:none}
+  .ripple::before,.ripple::after{content:"";position:absolute;inset:0;border-radius:50%;
+    border:2px solid var(--rc,#22d3ee);animation:rip 1.6s ease-out forwards}
+  .ripple::after{animation-delay:.35s}
+  @keyframes rip{0%{transform:scale(.4);opacity:1}100%{transform:scale(4.2);opacity:0}}
+
+  @media(max-width:720px){
+    .hud.stats{top:auto;bottom:78px;left:14px;right:auto}
+    .legend{display:none}
+    .hud.ticker{bottom:calc(14px + 120px)}
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="hud brand">
+  <a class="mark" href="{% url 'kura:monitor' survey.code %}">Kura<span style="-webkit-text-fill-color:var(--pink)">.</span> live map</a>
+  <h1 title="{{ survey.title|escape }}">{{ survey.title }}</h1>
+  <span class="live-pill"><span class="live-dot" id="live-dot"></span><span id="live-label">Connecting…</span></span>
+</div>
+
+<div class="hud stats">
+  <div class="stat"><b id="s-total">–</b><span>Responses</span></div>
+  <div class="stat hr"><b id="s-hour">–</b><span>Last hour</span></div>
+  <div class="stat web"><b id="s-web">–</b><span>Web</span></div>
+  <div class="stat api"><b id="s-api">–</b><span>App</span></div>
+</div>
+
+<div class="hud ticker" id="ticker">
+  <div class="ticker-empty" id="ticker-empty">Waiting for responses… new arrivals ripple on the map and appear here.</div>
+</div>
+
+<span class="legend"><span><i style="background:var(--cyan)"></i>Web</span><span><i style="background:var(--pink)"></i>Mobile app</span></span>
+
+<div class="hud controls">
+  <button class="cbtn on" id="b-follow" type="button" title="Pan to new arrivals (P)">🎯 Follow</button>
+  <button class="cbtn" id="b-heat" type="button" title="Heatmap (H)">🔥 Heat</button>
+  <button class="cbtn" id="b-fit" type="button" title="Fit all points">⤢ Fit</button>
+  <button class="cbtn" id="b-full" type="button" title="Fullscreen (F)">⛶</button>
+  <a class="cbtn" href="{% url 'kura:monitor' survey.code %}" title="Back to the monitor">✕</a>
+</div>
+
+<script>
+window.__KURA_MAP__ = {
+  code: "{{ survey.code }}",
+  feedUrl: "{{ feed_url }}",
+  wsUrl: (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/kura/{{ survey.code }}/monitor/"
+};
+</script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script>
+(function(){
+"use strict";
+const CFG = window.__KURA_MAP__;
+const $ = s=>document.querySelector(s);
+const esc = s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let lastSeen = null;
+const seen = new Set();
+const totals = {total:0, web:0, api:0, last_hour:0};
+let follow = true, heatOn = false;
+
+/* ── map (dark CARTO tiles; OSM fallback if the CDN is blocked) ── */
+const map = L.map("map", {zoomControl:true, worldCopyJump:true}).setView([13.44, -16.6], 8);
+const dark = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+  {maxZoom:20, subdomains:"abcd", crossOrigin:true, attribution:'&copy; OpenStreetMap contributors &copy; CARTO'});
+dark.on("tileerror", function once(){
+  dark.off("tileerror", once);
+  map.removeLayer(dark);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+    {maxZoom:20, subdomains:"abcd", crossOrigin:true, attribution:"&copy; OpenStreetMap contributors &copy; CARTO"}).addTo(map);
+});
+dark.addTo(map);
+
+const pointLayer = L.layerGroup().addTo(map);
+const heat = (window.L && L.heatLayer)
+  ? L.heatLayer([], {radius:26, blur:18, maxZoom:12,
+      gradient:{0.2:"#22d3ee",0.5:"#8b5cf6",0.8:"#ff3f98",1:"#ff8a1f"}})
+  : null;
+const points = [];
+
+function fmtTime(iso){
+  if(!iso) return "";
+  const d = new Date(iso), now = new Date();
+  const t = d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+  return d.toDateString() === now.toDateString() ? t : d.toLocaleDateString() + " " + t;
+}
+
+function ripple(latlng, color){
+  const icon = L.divIcon({className:"", html:'<div class="ripple" style="--rc:'+color+'"></div>',
+    iconSize:[18,18], iconAnchor:[9,9]});
+  const m = L.marker(latlng, {icon, interactive:false}).addTo(map);
+  setTimeout(()=>map.removeLayer(m), 2200);
+}
+
+function addPoint(sub, isLive){
+  if(!sub.gps) return;
+  const color = sub.source === "api" ? "#ff3f98" : "#22d3ee";
+  const m = L.circleMarker(sub.gps, {radius:6.5, color, weight:2, fillColor:color, fillOpacity:.55});
+  m.bindPopup(
+    "<b>"+esc(sub.device || (sub.source==="web" ? "Web respondent" : "Mobile app"))+"</b><br>"+
+    (sub.enumerator ? "Enumerator: "+esc(sub.enumerator)+"<br>" : "")+
+    "Source: "+esc(sub.source)+" · v"+esc(sub.version??"?")+"<br>"+
+    "Received: "+esc(fmtTime(sub.received_at)));
+  m.addTo(pointLayer);
+  points.push(sub.gps);
+  if(heat) heat.setLatLngs(points);
+  if(isLive){
+    ripple(sub.gps, color);
+    if(follow) map.panTo(sub.gps);
+  }
+}
+
+/* ── HUD ── */
+function paintStats(){
+  const set=(id,v)=>{ const el=$(id); if(el.textContent!==String(v)){ el.textContent=v;
+    el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump"); } };
+  set("#s-total", totals.total); set("#s-hour", totals.last_hour);
+  set("#s-web", totals.web); set("#s-api", totals.api);
+}
+function tick(html, cls){
+  $("#ticker-empty")?.remove();
+  const div = document.createElement("div");
+  div.className = "tick " + (cls||"");
+  div.innerHTML = html;
+  const host = $("#ticker");
+  host.prepend(div);
+  while(host.children.length > 6) host.lastChild.remove();
+}
+function addSubmission(sub, isLive){
+  if(seen.has(sub.id)) return;
+  seen.add(sub.id);
+  if(!lastSeen || sub.received_at > lastSeen) lastSeen = sub.received_at;
+  addPoint(sub, isLive);
+  if(isLive){
+    totals.total++; totals.last_hour++;
+    totals[sub.source === "api" ? "api" : "web"]++;
+    paintStats();
+    const who = sub.source === "api"
+      ? esc(sub.device || "Mobile device") + (sub.enumerator ? " · "+esc(sub.enumerator) : "")
+      : "Web respondent";
+    tick('<span class="src '+esc(sub.source)+'">'+(sub.source==="api"?"APP":"WEB")+'</span>'+
+         '<span class="who">'+who+(sub.gps?"":" · no GPS")+'</span>'+
+         '<span class="when">'+esc(fmtTime(sub.received_at))+'</span>', "new");
+  }
+}
+function addSync(ev){
+  tick('<span class="src sync">SYNC</span>'+
+       '<span class="who">'+esc(ev.device)+' · '+ev.pushed+' new, '+ev.duplicates+' dup</span>'+
+       '<span class="when">'+esc(fmtTime(ev.at))+'</span>', "new");
+}
+
+/* ── controls ── */
+function fitAll(){ if(points.length) map.fitBounds(points, {padding:[60,60], maxZoom:13}); }
+function toggleHeat(){
+  if(!heat) return;
+  heatOn = !heatOn;
+  $("#b-heat").classList.toggle("on", heatOn);
+  if(heatOn){ heat.addTo(map); map.removeLayer(pointLayer); }
+  else { map.removeLayer(heat); pointLayer.addTo(map); }
+}
+function toggleFollow(){ follow = !follow; $("#b-follow").classList.toggle("on", follow); }
+function toggleFull(){
+  if(document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+}
+$("#b-heat").addEventListener("click", toggleHeat);
+$("#b-follow").addEventListener("click", toggleFollow);
+$("#b-fit").addEventListener("click", fitAll);
+$("#b-full").addEventListener("click", toggleFull);
+document.addEventListener("keydown", e=>{
+  if(e.key==="f"||e.key==="F") toggleFull();
+  else if(e.key==="h"||e.key==="H") toggleHeat();
+  else if(e.key==="p"||e.key==="P") toggleFollow();
+});
+
+/* ── transport: WS first, polling fallback (same endpoints as the monitor) ── */
+let sock=null, pollTimer=null, wsHealthy=false;
+function setLive(state,label){
+  const dot=$("#live-dot"); dot.classList.remove("on","poll");
+  if(state==="ws") dot.classList.add("on");
+  if(state==="poll") dot.classList.add("poll");
+  $("#live-label").textContent=label;
+}
+function startPolling(){
+  if(pollTimer) return;
+  setLive("poll","Live · refreshing every 6s");
+  pollTimer=setInterval(async()=>{
+    try{
+      const j=await fetch(CFG.feedUrl+"?since="+encodeURIComponent(lastSeen||"")).then(r=>r.json());
+      (j.submissions||[]).slice().reverse().forEach(s=>addSubmission(s,true));
+    }catch(e){ setLive("off","Offline — retrying"); }
+  },6000);
+}
+function stopPolling(){ if(pollTimer){ clearInterval(pollTimer); pollTimer=null; } }
+function connectWS(){
+  try{ sock=new WebSocket(CFG.wsUrl); }catch(e){ startPolling(); return; }
+  const guard=setTimeout(()=>{ if(!wsHealthy) startPolling(); },4000);
+  sock.addEventListener("message",ev=>{
+    let m; try{ m=JSON.parse(ev.data); }catch(e){ return; }
+    if(m.type==="monitor_ok"){ wsHealthy=true; clearTimeout(guard); stopPolling(); setLive("ws","Live · realtime"); }
+    else if(m.type==="submission"&&m.sub){ addSubmission(m.sub,true); }
+    else if(m.type==="sync"){ addSync(m); }
+  });
+  sock.addEventListener("close",()=>{ wsHealthy=false; startPolling(); setTimeout(connectWS,8000); });
+  sock.addEventListener("error",()=>{ try{sock.close();}catch(e){} });
+}
+
+/* ── boot ── */
+(async function boot(){
+  try{
+    const j=await fetch(CFG.feedUrl).then(r=>r.json());
+    Object.assign(totals, j.totals||{}); paintStats();
+    (j.submissions||[]).slice().reverse().forEach(s=>addSubmission(s,false));
+    fitAll();
+    lastSeen=j.now||lastSeen;
+  }catch(e){ setLive("off","Could not load feed"); }
+  connectWS();
+})();
+})();
+</script>
+</body>
+</html>

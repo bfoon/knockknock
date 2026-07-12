@@ -1,0 +1,1356 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Build · {{ survey.title }} · Kura</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900&family=Archivo:wght@400;500;600;700;800;900&family=Spline+Sans+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIINfQ3ynhxxa7p1MZ7VQ1R+QpQbMZ2N5A="
+      crossorigin="">
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
+<style>
+  :root{--line:rgba(255,255,255,.12);--muted:#b9c2e7;--dim:rgba(248,251,255,.45);
+    --orange:#ff8a1f;--pink:#ff3f98;--cyan:#22d3ee;--violet:#8b5cf6;--green:#22c55e;--red:#e8482b;
+    --panel:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.035))}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;color:#f8fbff;font-family:"Archivo",sans-serif;-webkit-font-smoothing:antialiased;
+    background:radial-gradient(900px 560px at 86% -8%,rgba(255,138,31,.2),transparent 60%),
+      radial-gradient(780px 520px at 5% 5%,rgba(139,92,246,.3),transparent 60%),
+      linear-gradient(135deg,#050616,#090b23 45%,#160a2c)}
+  .bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;
+    padding:.8rem 1.2rem;border-bottom:1px solid var(--line);
+    background:rgba(6,7,24,.82);backdrop-filter:blur(16px)}
+  .mark{font-weight:900;font-size:1.1rem;letter-spacing:-.02em;text-decoration:none;
+    background:linear-gradient(110deg,#fff 8%,var(--orange) 40%,var(--pink) 70%,var(--cyan) 100%);
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  #title-input{flex:1;min-width:180px;background:transparent;border:0;border-bottom:1px dashed transparent;
+    color:#fff;font-family:"Fraunces",serif;font-size:1.25rem;font-weight:600;padding:.2rem 0;outline:none}
+  #title-input:focus{border-bottom-color:var(--cyan)}
+  .save-state{font-family:"Spline Sans Mono",monospace;font-size:.62rem;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--dim)}
+  .btn{display:inline-flex;align-items:center;gap:.4rem;border:1px solid rgba(255,255,255,.16);color:#fff;
+    background:linear-gradient(135deg,var(--orange),var(--pink),var(--violet));
+    border-radius:10px;padding:.55rem .95rem;font-weight:700;font-size:.84rem;cursor:pointer;text-decoration:none}
+  .btn:hover{filter:brightness(1.08)}
+  .btn.ghost{background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.04));color:var(--muted)}
+  .btn.ghost:hover{color:#fff}
+  .layout{display:grid;grid-template-columns:220px minmax(0,1fr) 360px;gap:1rem;
+    max-width:1400px;margin:0 auto;padding:1.1rem 1.2rem 4rem;align-items:start}
+  .panel{border:1px solid var(--line);border-radius:16px;background:var(--panel);
+    box-shadow:0 20px 60px rgba(0,0,0,.3);backdrop-filter:blur(14px)}
+  .panel h3{margin:0;padding:.8rem 1rem .55rem;font-family:"Spline Sans Mono",monospace;font-size:.62rem;
+    letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+  .leftcol{position:sticky;top:70px;max-height:calc(100vh - 90px);overflow:auto;display:flex;flex-direction:column;gap:1rem}
+  .ptype{display:flex;align-items:center;gap:.5rem;width:calc(100% - 1.2rem);margin:.18rem .6rem;
+    border:1px solid var(--line);border-radius:9px;padding:.42rem .55rem;background:rgba(255,255,255,.03);
+    color:var(--muted);font-size:.76rem;font-weight:600;cursor:pointer;text-align:left}
+  .ptype:hover{color:#fff;border-color:rgba(255,255,255,.28);background:rgba(255,255,255,.07)}
+  .ptype .ico{width:20px;text-align:center;flex:0 0 auto}
+  .ptype.hot{border-color:rgba(139,92,246,.5);color:#d8ccff}
+  /* zones panel */
+  .zone{border:1px solid var(--line);border-radius:10px;margin:.35rem .6rem;padding:.5rem .55rem}
+  .zone .zrow{display:flex;gap:.35rem;align-items:center;margin-bottom:.32rem}
+  .zone input,.zone select,.zone textarea{background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:7px;
+    color:#fff;padding:.32rem .4rem;font-size:.7rem;outline:none;min-width:0;font-family:"Spline Sans Mono",monospace}
+  .zone select option{background:#0b0d26}
+  .zone .zid{font-family:"Spline Sans Mono",monospace;font-size:.58rem;color:var(--cyan);flex:0 0 auto}
+  .zone textarea{width:100%;min-height:44px;resize:vertical}
+  /* canvas */
+  .qcard{border:1px solid var(--line);border-radius:13px;margin:.7rem .9rem;padding:.75rem .9rem;
+    background:rgba(255,255,255,.035);cursor:pointer;transition:.12s}
+  .qcard:hover{border-color:rgba(255,255,255,.24)}
+  .qcard.sel{border-color:var(--cyan);box-shadow:0 0 0 1px var(--cyan),0 10px 30px rgba(34,211,238,.12)}
+  .qhead{display:flex;align-items:center;gap:.5rem}
+  .qbadge{font-family:"Spline Sans Mono",monospace;font-size:.56rem;letter-spacing:.1em;text-transform:uppercase;
+    border:1px solid var(--line);border-radius:6px;padding:.16rem .42rem;color:var(--cyan);flex:0 0 auto}
+  .qbadge.rep{color:#d8ccff;border-color:rgba(139,92,246,.5)}
+  .qlabel{flex:1;min-width:0;font-weight:600;font-size:.92rem;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .qlabel .req{color:var(--pink)}
+  .qtools{display:flex;gap:.25rem;flex:0 0 auto}
+  .qtools button{border:1px solid var(--line);background:transparent;color:var(--dim);border-radius:7px;
+    width:26px;height:26px;cursor:pointer;font-size:.78rem;line-height:1}
+  .qtools button:hover{color:#fff;border-color:rgba(255,255,255,.3)}
+  .qmeta{margin-top:.35rem;display:flex;gap:.55rem;flex-wrap:wrap;font-family:"Spline Sans Mono",monospace;
+    font-size:.6rem;color:var(--dim)}
+  .qmeta .tag{border:1px solid var(--line);border-radius:5px;padding:.12rem .38rem}
+  .qmeta .tag.logic{color:#ffc38a;border-color:rgba(255,138,31,.4)}
+  .qmeta .tag.calc{color:#a5f3fc;border-color:rgba(34,211,238,.4)}
+  .qmeta .tag.geo{color:#86efac;border-color:rgba(34,197,94,.4)}
+  .qmeta .tag.casc{color:#d8ccff;border-color:rgba(139,92,246,.45)}
+  .children{margin:.55rem 0 0 .6rem;border-left:2px solid rgba(139,92,246,.35);padding-left:.6rem}
+  .childrow{display:flex;align-items:center;gap:.45rem;border:1px solid var(--line);border-radius:10px;
+    padding:.42rem .55rem;margin:.32rem 0;background:rgba(255,255,255,.025);cursor:pointer}
+  .childrow.sel{border-color:var(--cyan);box-shadow:0 0 0 1px var(--cyan)}
+  .childrow .qbadge{font-size:.5rem}
+  .childrow .qlabel{font-size:.8rem;font-weight:500}
+  .addchild{display:block;width:100%;margin:.35rem 0 .1rem;background:transparent;border:1px dashed rgba(139,92,246,.4);
+    color:#c9b8ff;border-radius:9px;padding:.35rem;font-size:.72rem;font-weight:600;cursor:pointer}
+  .addchild:hover{border-color:rgba(139,92,246,.8);color:#fff}
+  .canvas-empty{margin:2.2rem 1rem;text-align:center;color:var(--muted);font-size:.9rem}
+  /* inspector */
+  .inspector{position:sticky;top:70px;max-height:calc(100vh - 90px);overflow:auto;padding-bottom:1rem}
+  .field{padding:.45rem 1rem}
+  .field label{display:block;font-family:"Spline Sans Mono",monospace;font-size:.58rem;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--dim);margin-bottom:.28rem}
+  .field input[type=text],.field input[type=number],.field textarea,.field select{
+    width:100%;background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:9px;color:#fff;
+    padding:.5rem .6rem;font-family:"Archivo",sans-serif;font-size:.84rem;outline:none}
+  .field textarea{resize:vertical;min-height:56px}
+  .field input:focus,.field textarea:focus,.field select:focus{border-color:var(--cyan)}
+  .field select option{background:#0b0d26}
+  .check{display:flex;align-items:center;gap:.5rem;color:var(--muted);font-size:.82rem;font-weight:600;cursor:pointer}
+  .check input{accent-color:var(--pink)}
+  .divider{margin:.7rem 1rem .2rem;border-top:1px solid var(--line);padding-top:.5rem;
+    font-family:"Spline Sans Mono",monospace;font-size:.58rem;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan)}
+  .divider.geo{color:#86efac}.divider.casc{color:#d8ccff}.divider.rep{color:#d8ccff}
+  .choice-row,.rule-row{display:flex;gap:.35rem;align-items:center;margin-bottom:.35rem}
+  .choice-row input{flex:1;min-width:0}
+  .choice-row input.small{flex:0 0 74px}
+  .rule-row select,.rule-row input,.choice-row input,.choice-row select{min-width:0;background:rgba(0,0,0,.3);
+    border:1px solid var(--line);border-radius:8px;color:#fff;padding:.4rem .45rem;font-size:.76rem;outline:none}
+  .rule-row select{flex:1.1}.rule-row input{flex:1}
+  .rule-row select option,.choice-row select option{background:#0b0d26}
+  .mini{border:1px solid var(--line);background:transparent;color:var(--dim);border-radius:7px;
+    width:26px;height:30px;cursor:pointer;flex:0 0 auto}
+  .mini:hover{color:#fff}
+  .addline{margin:.15rem 1rem .5rem;background:transparent;border:1px dashed var(--line);color:var(--muted);
+    border-radius:9px;padding:.42rem;width:calc(100% - 2rem);font-size:.76rem;font-weight:600;cursor:pointer}
+  .addline:hover{color:#fff;border-color:rgba(255,255,255,.3)}
+  .hint-text{padding:0 1rem .4rem;color:var(--dim);font-size:.68rem;line-height:1.45}
+  .insp-empty{padding:2rem 1rem;text-align:center;color:var(--muted);font-size:.85rem}
+  .zchecks{display:flex;flex-wrap:wrap;gap:.4rem;padding:0 1rem .3rem}
+  .zchecks label{display:inline-flex;align-items:center;gap:.35rem;border:1px solid var(--line);border-radius:8px;
+    padding:.3rem .55rem;font-size:.72rem;color:var(--muted);cursor:pointer}
+  .zchecks label.on{border-color:var(--green);color:#86efac}
+  .zchecks input{accent-color:var(--green)}
+  code{font-family:"Spline Sans Mono",monospace;color:#a5f3fc;font-size:.66rem}
+
+  /* large geofence editor */
+  .zone-map-btn{border:1px solid rgba(34,211,238,.38);background:rgba(34,211,238,.08);
+    color:#a5f3fc;border-radius:7px;height:30px;padding:0 .5rem;cursor:pointer;font-size:.68rem;
+    font-weight:700;white-space:nowrap}
+  .zone-map-btn:hover{background:rgba(34,211,238,.16);border-color:var(--cyan);color:#fff}
+  .geo-modal{position:fixed;inset:0;z-index:1000;display:none;background:rgba(2,3,15,.82);
+    backdrop-filter:blur(12px);padding:1rem}
+  .geo-modal.open{display:flex}
+  .geo-dialog{width:min(1500px,100%);height:calc(100vh - 2rem);margin:auto;display:flex;
+    flex-direction:column;border:1px solid rgba(255,255,255,.18);border-radius:18px;overflow:hidden;
+    background:#090b23;box-shadow:0 30px 100px rgba(0,0,0,.65)}
+  .geo-head{display:flex;align-items:center;gap:.7rem;padding:.75rem 1rem;border-bottom:1px solid var(--line);
+    background:linear-gradient(135deg,rgba(139,92,246,.18),rgba(34,211,238,.08))}
+  .geo-head h2{margin:0;font-family:"Fraunces",serif;font-size:1.15rem}
+  .geo-head .spacer{flex:1}
+  .geo-head select,.geo-head input{background:rgba(0,0,0,.32);border:1px solid var(--line);
+    border-radius:9px;color:#fff;padding:.48rem .6rem;outline:none}
+  .geo-head select option{background:#0b0d26}
+  .geo-main{display:grid;grid-template-columns:minmax(0,1fr) 310px;min-height:0;flex:1}
+  #geo-big-map{width:100%;height:100%;min-height:520px;background:#11152f}
+  .geo-side{overflow:auto;border-left:1px solid var(--line);padding:.85rem;background:rgba(255,255,255,.025)}
+  .geo-side h4{margin:.15rem 0 .5rem;font-family:"Spline Sans Mono",monospace;font-size:.65rem;
+    text-transform:uppercase;letter-spacing:.12em;color:var(--cyan)}
+  .geo-side p{font-size:.76rem;color:var(--muted);line-height:1.5;margin:.35rem 0 .8rem}
+  .geo-summary{border:1px solid var(--line);border-radius:10px;padding:.65rem;margin:.6rem 0;
+    font-family:"Spline Sans Mono",monospace;font-size:.66rem;color:var(--muted);line-height:1.55}
+  .geo-actions{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem}
+  .geo-actions .btn{flex:1;justify-content:center;min-width:110px}
+  .geo-close{border:1px solid var(--line);background:rgba(255,255,255,.06);color:#fff;
+    border-radius:9px;width:36px;height:36px;cursor:pointer;font-size:1.1rem}
+  .geo-close:hover{background:rgba(232,72,43,.25);border-color:var(--red)}
+  .leaflet-container{font-family:"Archivo",sans-serif}
+  .leaflet-bar a{color:#111}
+  @media(max-width:850px){
+    .geo-modal{padding:0}
+    .geo-dialog{height:100vh;border-radius:0}
+    .geo-main{grid-template-columns:1fr;grid-template-rows:minmax(420px,1fr) auto}
+    .geo-side{border-left:0;border-top:1px solid var(--line);max-height:34vh}
+    .geo-head{flex-wrap:wrap}
+  }
+  @media(max-width:1080px){.layout{grid-template-columns:1fr}.leftcol,.inspector{position:static;max-height:none}}
+</style>
+</head>
+<body>
+<div class="bar">
+  <a class="mark" href="{% url 'kura:list' %}">Kura<span style="-webkit-text-fill-color:var(--pink)">.</span></a>
+  <input id="title-input" value="{{ survey.title }}" maxlength="140" aria-label="Survey title">
+  <span class="save-state" id="save-state">saved</span>
+  <a class="btn ghost" href="{% url 'kura:data' survey.code %}">Data</a>
+  <a class="btn ghost" href="{% url 'kura:monitor' survey.code %}">Live</a>
+  <a class="btn ghost" href="{% url 'kura:preview' survey.code %}" target="_blank" rel="noopener" title="Live preview of the DRAFT — no publish needed">Preview</a>
+  <button class="btn" id="publish-btn" type="button">Publish v<span id="next-v">?</span></button>
+</div>
+
+<div class="layout">
+  <aside class="leftcol">
+    <div class="panel">
+      <h3>Add question</h3>
+      <div id="palette"></div>
+    </div>
+    <div class="panel">
+      <h3>Geofence zones</h3>
+      <div id="zones"></div>
+      <button class="addline" id="add-zone" type="button" style="width:calc(100% - 1.2rem);margin:.15rem .6rem .6rem">+ Add zone</button>
+      <button class="addline" id="open-zone-map" type="button"
+              style="width:calc(100% - 1.2rem);margin:-.25rem .6rem .6rem;border-color:rgba(34,211,238,.45);color:#a5f3fc">
+        🗺 Open large map editor
+      </button>
+      <div class="hint-text">Zones are named areas (circle or polygon). Use them to show questions only inside/outside an area, or to limit which cascading options appear at the respondent's location.</div>
+    </div>
+    <div class="panel">
+      <h3>Lookup datasets</h3>
+      <div id="lookups"></div>
+      <div style="padding:.2rem .6rem .6rem">
+        <input type="file" id="lk-file" accept=".csv,text/csv" style="display:none">
+        <button class="addline" id="lk-upload" type="button" style="width:100%;margin:0">+ Upload CSV</button>
+      </div>
+      <div class="hint-text">Preloaded records for follow-ups: link a <b>barcode / QR</b> question to a dataset and enumerators scan (or type) a code to pull the matching record and auto-fill answers. First CSV column is the match key by default. Re-uploading the same name replaces the data.</div>
+    </div>
+  </aside>
+
+  <main class="panel" style="min-height:60vh">
+    <h3>Questionnaire · <span id="qcount">0</span> items · code {{ survey.code }}</h3>
+    <div id="canvas"></div>
+    <div class="canvas-empty" id="canvas-empty">Pick a question type on the left to start building.</div>
+  </main>
+
+  <aside class="panel inspector" id="inspector">
+    <h3>Question settings</h3>
+    <div class="insp-empty" id="insp-empty">Select a question (or a repeat-group child) to edit its label, logic, geofence, cascading and validation.</div>
+    <div id="insp-body" hidden></div>
+  </aside>
+</div>
+
+<div class="geo-modal" id="geo-modal" aria-hidden="true">
+  <div class="geo-dialog" role="dialog" aria-modal="true" aria-labelledby="geo-modal-title">
+    <div class="geo-head">
+      <h2 id="geo-modal-title">Geofence map editor</h2>
+      <label for="geo-zone-select" style="font-size:.72rem;color:var(--muted)">Zone</label>
+      <select id="geo-zone-select"></select>
+      <input id="geo-zone-name" type="text" maxlength="100" placeholder="Zone name">
+      <span class="spacer"></span>
+      <button class="geo-close" id="geo-close" type="button" aria-label="Close map">×</button>
+    </div>
+    <div class="geo-main">
+      <div id="geo-big-map"></div>
+      <aside class="geo-side">
+        <h4>Draw or edit the selected zone</h4>
+        <p>
+          Use the polygon or circle tool on the map. Drawing a new shape replaces the
+          selected zone's current geometry. Use the edit tool to drag points, move a
+          circle, or resize its radius.
+        </p>
+        <div class="geo-summary" id="geo-summary">Select or create a zone.</div>
+        <p>
+          The map automatically saves coordinates into the survey builder. Click
+          <b>Done</b> when you finish, then publish the form when ready.
+        </p>
+        <div class="geo-actions">
+          <button class="btn ghost" id="geo-new-zone" type="button">+ New zone</button>
+          <button class="btn ghost" id="geo-fit-all" type="button">Fit all</button>
+          <button class="btn" id="geo-done" type="button">Done</button>
+        </div>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+
+<script>
+window.__KURA__ = {
+  survey: {{ survey_json|safe }},
+  lookups: {{ lookups_json|default:"[]"|safe }},
+  lookupUploadUrl: "{% url 'kura:lookups_upload' survey.code %}",
+  saveUrl: "{% url 'kura:builder_save' survey.code %}",
+  publishUrl: "{% url 'kura:publish' survey.code %}",
+  collectUrl: "{{ collect_url|escapejs }}",
+  csrftoken: "{{ csrf_token }}"
+};
+</script>
+<script>
+(function(){
+"use strict";
+const CFG = window.__KURA__;
+const S = CFG.survey || {};
+const schema = S.schema && typeof S.schema === "object" ? S.schema : {};
+schema.questions = Array.isArray(schema.questions) ? schema.questions : [];
+schema.settings = schema.settings || {};
+schema.zones = Array.isArray(schema.zones) ? schema.zones : [];
+const LOOKUPS = Array.isArray(CFG.lookups) ? CFG.lookups : [];
+let sel = null;                 // {i, ci|null}
+let dirty = false, saveTimer = null;
+
+const TYPES = [
+  ["section","§","Section / note"],["text","Aa","Short text"],["long_text","¶","Paragraph"],
+  ["integer","#","Whole number"],["decimal","#.#","Decimal"],["select_one","◉","Choose one"],
+  ["select_multiple","☑","Choose many"],["rank","⇅","Rank options"],["likert","⚖","Likert scale"],
+  ["rating","★","Rating"],["date","📅","Date"],["time","🕐","Time"],["datetime","🗓","Date & time"],
+  ["gps","📍","GPS location"],["photo","📷","Photo"],["barcode","▮▯","Barcode / QR"],
+  ["calculate","ƒ","Calculated (hidden)"],["repeat","⟳","Repeat group"]
+];
+const CHOICE_TYPES = ["select_one","select_multiple","rank","likert"];
+const CMPS = [["eq","="],["ne","≠"],["gt",">"],["gte","≥"],["lt","<"],["lte","≤"],
+  ["contains","contains"],["not_contains","doesn't contain"],["selected","has selected"],
+  ["not_selected","hasn't selected"],["answered","is answered"],["not_answered","is blank"],
+  ["between","between (a,b)"],["matches","matches regex"]];
+
+const $ = s=>document.querySelector(s);
+const esc = s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+/* ── selection helpers ── */
+function curQ(){
+  if(!sel) return null;
+  const top = schema.questions[sel.i];
+  if(!top) return null;
+  return sel.ci==null ? top : (top.children||[])[sel.ci] || null;
+}
+function allNames(){
+  const out=[];
+  schema.questions.forEach(q=>{
+    if(q.name) out.push(q.name);
+    (q.children||[]).forEach(c=>{ if(c.name) out.push(c.name); });
+  });
+  return out;
+}
+function slug(text){
+  let base = String(text||"q").toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,30)||"q";
+  if(/^\d/.test(base)) base = "q_"+base;
+  const names = new Set(allNames());
+  let name = base, n = 2;
+  while(names.has(name)) name = base+"_"+(n++);
+  return name;
+}
+/* earlier questions usable in logic / cascade for the current selection */
+function earlierQuestions(){
+  if(!sel) return [];
+  const out=[];
+  for(let i=0;i<sel.i;i++){
+    const q=schema.questions[i];
+    if(q.type!=="section"&&q.type!=="repeat") out.push(q);
+  }
+  if(sel.ci!=null){
+    const kids=schema.questions[sel.i].children||[];
+    for(let c=0;c<sel.ci;c++) if(kids[c].type!=="section") out.push(kids[c]);
+  }
+  return out;
+}
+
+/* ── mutations ── */
+function newQuestion(type){
+  const label = TYPES.find(t=>t[0]===type)[2];
+  const q = {name:slug(type==="calculate"?"calc":type), type,
+    label:type==="section"?"New section":(type==="repeat"?"New repeat group":"New "+label.toLowerCase()+" question"),
+    hint:"", required:false, relevant:null, validate:{}, appearance:"default"};
+  if(CHOICE_TYPES.includes(type)){
+    q.choices = type==="likert"
+      ? [["1","Strongly disagree"],["2","Disagree"],["3","Neutral"],["4","Agree"],["5","Strongly agree"]].map(([v,l])=>({value:v,label:l}))
+      : [{value:"option_1",label:"Option 1"},{value:"option_2",label:"Option 2"}];
+    q.shuffle_choices = false;
+  }
+  if(type==="calculate") q.calc = "";
+  if(type==="repeat"){ q.children=[]; q.repeat={min:null,max:null,item_label:"Item ${index}"}; }
+  return q;
+}
+function retype(q, type){
+  q.type = type;
+  if(CHOICE_TYPES.includes(type) && !Array.isArray(q.choices))
+    q.choices=[{value:"option_1",label:"Option 1"},{value:"option_2",label:"Option 2"}];
+  if(!CHOICE_TYPES.includes(type)){ delete q.choices; delete q.cascade; delete q.score; delete q.shuffle_choices; }
+  if(type==="calculate" && q.calc==null) q.calc="";
+  if(type!=="calculate") delete q.calc;
+  if(type==="repeat"){ q.children=q.children||[]; q.repeat=q.repeat||{min:null,max:null,item_label:"Item ${index}"}; }
+  if(type!=="repeat"){ delete q.children; delete q.repeat; }
+}
+function addQuestion(type){
+  schema.questions.push(newQuestion(type));
+  sel = {i: schema.questions.length-1, ci: null};
+  markDirty(); renderAll();
+}
+function addChild(i){
+  const rep = schema.questions[i];
+  rep.children = rep.children||[];
+  rep.children.push(newQuestion("text"));
+  sel = {i, ci: rep.children.length-1};
+  markDirty(); renderAll();
+}
+function listAt(i, ci){ return ci==null ? schema.questions : (schema.questions[i].children||[]); }
+function move(i, ci, d){
+  const list = listAt(i, ci);
+  const idx = ci==null ? i : ci;
+  const j = idx+d;
+  if(j<0||j>=list.length) return;
+  [list[idx],list[j]]=[list[j],list[idx]];
+  if(sel && sel.i===i && (sel.ci??null)===(ci==null?null:idx)) sel = ci==null?{i:j,ci:null}:{i,ci:j};
+  else if(sel && sel.i===i && ci!=null && sel.ci===j) sel = {i,ci:idx};
+  else if(sel && ci==null && sel.i===j) sel = {i:idx,ci:sel.ci};
+  markDirty(); renderAll();
+}
+function dup(i, ci){
+  const list = listAt(i, ci);
+  const idx = ci==null ? i : ci;
+  const c = JSON.parse(JSON.stringify(list[idx]));
+  c.name = slug(c.name); c.label = (c.label||"")+" (copy)";
+  (c.children||[]).forEach(ch=>{ ch.name = slug(ch.name); });
+  list.splice(idx+1,0,c);
+  sel = ci==null?{i:idx+1,ci:null}:{i,ci:idx+1};
+  markDirty(); renderAll();
+}
+function del(i, ci){
+  if(!confirm("Delete this "+(ci==null?"question":"child question")+"?")) return;
+  const list = listAt(i, ci);
+  list.splice(ci==null?i:ci,1);
+  sel = null;
+  markDirty(); renderAll();
+}
+
+/* ── large geofence map editor ── */
+let geoMap = null;
+let geoEditable = null;
+let geoOtherLayers = null;
+let geoSelectedIndex = null;
+let geoRenderTimer = null;
+let geoDrawControl = null;
+
+/* End any in-progress draw/edit/delete mode. Called before the editable
+   layer group is rebuilt (zone switch, modal close) so leaflet-draw never
+   holds handles to layers that are about to be thrown away. */
+function stopGeoEditing(){
+  if(!geoDrawControl) return;
+  try{
+    const tb = geoDrawControl._toolbars || {};
+    Object.values(tb).forEach(bar=>{
+      const modes = bar && bar._modes ? Object.values(bar._modes) : [];
+      modes.forEach(m=>{
+        if(m && m.handler && m.handler.enabled && m.handler.enabled()) m.handler.disable();
+      });
+    });
+  }catch(e){ /* editor state cleanup is best-effort */ }
+}
+
+/* HOTFIX — leaflet-draw 1.0.4 circle resize (Leaflet.draw #945 / #967 / #1013).
+   The stock L.Edit.Circle._resize assigns `radius` without declaring it
+   (an implicit global that throws under strict mode / bundlers) and reads
+   the misspelled `this._map.editTooltip`, so the km readout never shows
+   while resizing. Replaced with a corrected implementation. */
+if(window.L && L.Edit && L.Edit.Circle){
+  L.Edit.Circle.prototype._resize = function(latlng){
+    const moveLatLng = this._moveMarker.getLatLng();
+    const radius = this._map.distance(moveLatLng, latlng);
+    this._shape.setRadius(radius);
+    if(this._map._editTooltip){
+      this._map._editTooltip.updateContent({
+        text: L.drawLocal.edit.handlers.edit.tooltip.subtext + "<br />" +
+              L.drawLocal.edit.handlers.edit.tooltip.text,
+        subtext: L.drawLocal.draw.handlers.circle.radius + ": " +
+                 L.GeometryUtil.readableDistance(radius, true, this.options.feet, this.options.nautic)
+      });
+    }
+    this._map.fire(L.Draw.Event.EDITRESIZE, {layer: this._shape});
+  };
+}
+
+function zoneHasGeometry(z){
+  if(!z) return false;
+  if(z.kind === "polygon")
+    return Array.isArray(z.points) && z.points.length >= 3;
+  return Number.isFinite(Number(z.lat)) && Number.isFinite(Number(z.lng))
+    && Number.isFinite(Number(z.radius_km)) && Number(z.radius_km) > 0;
+}
+
+function zoneToLayer(z, editable){
+  if(!zoneHasGeometry(z)) return null;
+  const style = editable
+    ? {color:"#22d3ee",weight:4,fillOpacity:.2}
+    : {color:"#8b5cf6",weight:2,fillOpacity:.09,dashArray:"6 5"};
+
+  if(z.kind === "polygon"){
+    return L.polygon(
+      z.points.map(p=>[Number(p[0]),Number(p[1])]),
+      style
+    );
+  }
+  return L.circle(
+    [Number(z.lat),Number(z.lng)],
+    {...style,radius:Number(z.radius_km)*1000}
+  );
+}
+
+function updateGeoSummary(){
+  const box = $("#geo-summary");
+  const z = schema.zones[geoSelectedIndex];
+  if(!z){ box.textContent = "Select or create a zone."; return; }
+
+  if(z.kind === "polygon"){
+    const count = Array.isArray(z.points) ? z.points.length : 0;
+    box.innerHTML = "<b>"+esc(z.name||z.id)+"</b><br>Type: polygon<br>Points: "+count;
+  }else{
+    box.innerHTML = "<b>"+esc(z.name||z.id)+"</b><br>Type: circle<br>Centre: "+
+      (z.lat==null?"—":Number(z.lat).toFixed(6))+", "+
+      (z.lng==null?"—":Number(z.lng).toFixed(6))+
+      "<br>Radius: "+(z.radius_km==null?"—":Number(z.radius_km).toFixed(2)+" km");
+  }
+}
+
+function refreshGeoZoneSelect(){
+  const select = $("#geo-zone-select");
+  select.innerHTML = schema.zones.map((z,i)=>
+    '<option value="'+i+'"'+(i===geoSelectedIndex?" selected":"")+'>'+
+    esc(z.name||z.id)+" · "+esc(z.kind||"circle")+"</option>"
+  ).join("");
+  $("#geo-zone-name").value =
+    schema.zones[geoSelectedIndex] ? (schema.zones[geoSelectedIndex].name||"") : "";
+}
+
+function fitGeoMap(all=false){
+  if(!geoMap) return;
+  const layers = [];
+  if(all){
+    geoOtherLayers.eachLayer(l=>layers.push(l));
+    geoEditable.eachLayer(l=>layers.push(l));
+  }else{
+    geoEditable.eachLayer(l=>layers.push(l));
+  }
+  if(layers.length){
+    const group = L.featureGroup(layers);
+    const bounds = group.getBounds();
+    if(bounds.isValid()) geoMap.fitBounds(bounds.pad(.18),{maxZoom:15});
+  }else{
+    geoMap.setView([13.4549,-16.5790],9);
+  }
+}
+
+function renderGeoMap(fit=true){
+  if(!geoMap) return;
+  geoEditable.clearLayers();
+  geoOtherLayers.clearLayers();
+
+  schema.zones.forEach((z,i)=>{
+    const layer = zoneToLayer(z,i===geoSelectedIndex);
+    if(!layer) return;
+    layer.bindTooltip(z.name||z.id,{sticky:true});
+    if(i===geoSelectedIndex) geoEditable.addLayer(layer);
+    else geoOtherLayers.addLayer(layer);
+  });
+
+  refreshGeoZoneSelect();
+  updateGeoSummary();
+  if(fit) fitGeoMap(false);
+}
+
+function saveLayerToSelected(layer, light=false){
+  const z = schema.zones[geoSelectedIndex];
+  if(!z) return;
+
+  if(layer instanceof L.Circle){
+    const c = layer.getLatLng();
+    z.kind = "circle";
+    z.lat = Number(c.lat.toFixed(7));
+    z.lng = Number(c.lng.toFixed(7));
+    z.radius_km = Number((layer.getRadius()/1000).toFixed(4));
+    delete z.points;
+  }else if(layer instanceof L.Polygon){
+    const rings = layer.getLatLngs();
+    const ring = Array.isArray(rings[0]) ? rings[0] : rings;
+    z.kind = "polygon";
+    z.points = ring.map(p=>[
+      Number(p.lat.toFixed(7)),
+      Number(p.lng.toFixed(7))
+    ]);
+    delete z.lat; delete z.lng; delete z.radius_km;
+  }
+
+  markDirty();
+  updateGeoSummary();
+
+  if(light){
+    // Called on every drag frame while the user moves/resizes a shape —
+    // defer the heavy panel re-renders until the drag settles.
+    clearTimeout(geoRenderTimer);
+    geoRenderTimer = setTimeout(()=>{
+      geoRenderTimer = null;
+      renderZones(); renderInspector(); refreshGeoZoneSelect();
+    },250);
+  }else{
+    clearTimeout(geoRenderTimer); geoRenderTimer = null;
+    renderZones();
+    renderInspector();
+    refreshGeoZoneSelect();
+  }
+}
+
+function initialiseGeoMap(){
+  if(geoMap) return;
+
+  geoMap = L.map("geo-big-map",{zoomControl:true}).setView([13.4549,-16.5790],9);
+  L.tileLayer(
+    "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+    {
+      subdomains:"abcd",
+      maxZoom:20,
+      attribution:"&copy; OpenStreetMap contributors &copy; CARTO"
+    }
+  ).addTo(geoMap);
+
+  geoOtherLayers = L.featureGroup().addTo(geoMap);
+  geoEditable = L.featureGroup().addTo(geoMap);
+
+  geoDrawControl = new L.Control.Draw({
+    position:"topleft",
+    draw:{
+      polygon:{
+        allowIntersection:false,
+        showArea:true,
+        shapeOptions:{color:"#22d3ee",weight:4,fillOpacity:.2}
+      },
+      circle:{
+        shapeOptions:{color:"#22d3ee",weight:4,fillOpacity:.2}
+      },
+      rectangle:false,
+      polyline:false,
+      marker:false,
+      circlemarker:false
+    },
+    edit:{
+      featureGroup:geoEditable,
+      edit:true,
+      remove:true
+    }
+  });
+  geoMap.addControl(geoDrawControl);
+
+  geoMap.on(L.Draw.Event.CREATED,e=>{
+    if(geoSelectedIndex==null){
+      createZoneForMap();
+    }
+    geoEditable.clearLayers();
+    geoEditable.addLayer(e.layer);
+    saveLayerToSelected(e.layer);
+  });
+
+  geoMap.on(L.Draw.Event.EDITED,e=>{
+    e.layers.eachLayer(layer=>saveLayerToSelected(layer));
+  });
+
+  // FIX for "resized zone snaps back / won't enlarge": leaflet-draw only
+  // fires EDITED when the tiny toolbar "Save" link is clicked. If the user
+  // enlarged a circle (or dragged polygon points) and then hit Done, closed
+  // the modal, or switched zone, the edit was never written to the schema
+  // and the next render rebuilt the old, smaller shape. Saving on the live
+  // edit events makes the promised autosave real, whatever the user clicks.
+  geoMap.on(L.Draw.Event.EDITRESIZE,e=>saveLayerToSelected(e.layer,true));
+  geoMap.on(L.Draw.Event.EDITMOVE,  e=>saveLayerToSelected(e.layer,true));
+  geoMap.on(L.Draw.Event.EDITVERTEX,e=>{
+    if(e.poly) saveLayerToSelected(e.poly,true);
+  });
+
+  // When edit mode ends (Save, Cancel, or toggling the tool off), rebuild
+  // the layers from the schema so the display always matches what was
+  // saved — this also clears leaflet-draw's leftover edit handles.
+  geoMap.on(L.Draw.Event.EDITSTOP,()=>renderGeoMap(false));
+
+  geoMap.on(L.Draw.Event.DELETED,()=>{
+    const z = schema.zones[geoSelectedIndex];
+    if(!z) return;
+    if(z.kind==="polygon") z.points=[];
+    else { z.lat=null; z.lng=null; }
+    markDirty();
+    renderZones();
+    renderInspector();
+    updateGeoSummary();
+  });
+}
+
+function createZoneForMap(){
+  let n=1;
+  const ids=new Set(schema.zones.map(z=>z.id));
+  while(ids.has("z"+n)) n++;
+  schema.zones.push({
+    id:"z"+n,
+    name:"Zone "+n,
+    kind:"circle",
+    lat:null,
+    lng:null,
+    radius_km:10
+  });
+  geoSelectedIndex=schema.zones.length-1;
+  markDirty();
+  renderZones();
+  renderInspector();
+  refreshGeoZoneSelect();
+  return geoSelectedIndex;
+}
+
+function openGeoMap(index=null){
+  if(!schema.zones.length) createZoneForMap();
+  geoSelectedIndex =
+    index!=null && schema.zones[index] ? Number(index) :
+    (geoSelectedIndex!=null && schema.zones[geoSelectedIndex] ? geoSelectedIndex : 0);
+
+  const modal=$("#geo-modal");
+  modal.classList.add("open");
+  modal.setAttribute("aria-hidden","false");
+  document.body.style.overflow="hidden";
+
+  initialiseGeoMap();
+  setTimeout(()=>{
+    geoMap.invalidateSize();
+    renderGeoMap(true);
+  },80);
+}
+
+function closeGeoMap(){
+  stopGeoEditing();               // flush leaflet-draw state; edits are already saved live
+  $("#geo-modal").classList.remove("open");
+  $("#geo-modal").setAttribute("aria-hidden","true");
+  document.body.style.overflow="";
+  renderZones();
+  renderInspector();
+}
+
+$("#open-zone-map").addEventListener("click",()=>openGeoMap());
+$("#geo-close").addEventListener("click",closeGeoMap);
+$("#geo-done").addEventListener("click",closeGeoMap);
+$("#geo-modal").addEventListener("click",e=>{
+  if(e.target.id==="geo-modal") closeGeoMap();
+});
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape" && $("#geo-modal").classList.contains("open")) closeGeoMap();
+});
+$("#geo-zone-select").addEventListener("change",e=>{
+  stopGeoEditing();               // don't leave edit handles on layers we're about to rebuild
+  geoSelectedIndex=Number(e.target.value);
+  renderGeoMap(true);
+});
+$("#geo-zone-name").addEventListener("input",e=>{
+  const z=schema.zones[geoSelectedIndex];
+  if(!z) return;
+  z.name=e.target.value;
+  markDirty();
+  renderZones();
+  updateGeoSummary();
+});
+$("#geo-new-zone").addEventListener("click",()=>{
+  stopGeoEditing();
+  createZoneForMap();
+  renderGeoMap(false);
+});
+$("#geo-fit-all").addEventListener("click",()=>fitGeoMap(true));
+
+/* ── zones panel ── */
+function renderZones(){
+  const host = $("#zones"); host.innerHTML = "";
+  schema.zones.forEach((z,zi)=>{
+    const div = document.createElement("div");
+    div.className = "zone";
+    let geo = "";
+    if(z.kind==="polygon"){
+      geo = '<textarea data-zpts="'+zi+'" placeholder="[[13.5,-16.7],[13.6,-16.4],[13.4,-16.3]]">'+
+            esc(JSON.stringify(z.points||[]))+'</textarea>';
+    } else {
+      geo = '<div class="zrow">'+
+        '<input type="number" step="any" data-zlat="'+zi+'" value="'+esc(z.lat??"")+'" placeholder="lat">'+
+        '<input type="number" step="any" data-zlng="'+zi+'" value="'+esc(z.lng??"")+'" placeholder="lng">'+
+        '<input type="number" step="any" data-zrad="'+zi+'" value="'+esc(z.radius_km??"")+'" placeholder="km" style="max-width:56px">'+
+        '</div>';
+    }
+    div.innerHTML =
+      '<div class="zrow"><span class="zid">'+esc(z.id)+'</span>'+
+      '<input type="text" data-zn="'+zi+'" value="'+esc(z.name||"")+'" placeholder="Zone name" style="flex:1">'+
+      '<select data-zk="'+zi+'"><option value="circle"'+(z.kind!=="polygon"?" selected":"")+'>circle</option>'+
+      '<option value="polygon"'+(z.kind==="polygon"?" selected":"")+'>polygon</option></select>'+
+      '<button class="zone-map-btn" type="button" data-zmap="'+zi+'" title="Open this zone on the large map">Map</button>'+
+      '<button class="mini" data-zdel="'+zi+'">✕</button></div>'+geo;
+    host.appendChild(div);
+  });
+}
+$("#add-zone").addEventListener("click",()=>{
+  let n=1; const ids=new Set(schema.zones.map(z=>z.id));
+  while(ids.has("z"+n)) n++;
+  schema.zones.push({id:"z"+n,name:"Zone "+n,kind:"circle",lat:null,lng:null,radius_km:10});
+  markDirty(); renderZones(); renderInspector();
+});
+$("#zones").addEventListener("input",e=>{
+  const t=e.target, z=zi=>schema.zones[+zi];
+  if(t.dataset.zn!=null) z(t.dataset.zn).name=t.value;
+  else if(t.dataset.zlat!=null) z(t.dataset.zlat).lat=t.value===""?null:Number(t.value);
+  else if(t.dataset.zlng!=null) z(t.dataset.zlng).lng=t.value===""?null:Number(t.value);
+  else if(t.dataset.zrad!=null) z(t.dataset.zrad).radius_km=t.value===""?null:Number(t.value);
+  else if(t.dataset.zpts!=null){
+    try{ const pts=JSON.parse(t.value||"[]"); if(Array.isArray(pts)){ z(t.dataset.zpts).points=pts; t.style.borderColor=""; } }
+    catch(err){ t.style.borderColor="var(--red)"; return; }
+  } else return;
+  markDirty();
+});
+$("#zones").addEventListener("change",e=>{
+  const t=e.target;
+  if(t.dataset.zk!=null){
+    const z=schema.zones[+t.dataset.zk];
+    z.kind=t.value;
+    if(z.kind==="polygon"&&!z.points) z.points=[];
+    markDirty(); renderZones();
+  }
+});
+$("#zones").addEventListener("click",e=>{
+  if(e.target.dataset.zmap!=null){
+    openGeoMap(+e.target.dataset.zmap);
+    return;
+  }
+  if(e.target.dataset.zdel!=null){
+    const z=schema.zones[+e.target.dataset.zdel];
+    if(confirm("Delete zone “"+(z.name||z.id)+"”? Questions referencing it will ignore it.")){
+      schema.zones.splice(+e.target.dataset.zdel,1);
+      markDirty(); renderZones(); renderInspector(); renderCanvas();
+    }
+  }
+});
+
+/* ── lookup datasets panel ── */
+function renderLookups(){
+  const host = $("#lookups"); if(!host) return;
+  host.innerHTML = "";
+  LOOKUPS.forEach((d,di)=>{
+    const div = document.createElement("div");
+    div.className = "zone";
+    div.innerHTML = '<div class="zrow"><span class="zid">#'+esc(d.id)+'</span>'+
+      '<span style="flex:1;font-size:.74rem;font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(d.name)+'</span>'+
+      '<button class="mini" data-lkdel="'+di+'">✕</button></div>'+
+      '<div style="font-family:\'Spline Sans Mono\',monospace;font-size:.6rem;color:var(--dim)">'+
+      esc(d.rows)+' rows · key: <span style="color:var(--cyan)">'+esc(d.key_column)+'</span></div>';
+    host.appendChild(div);
+  });
+  if(!LOOKUPS.length)
+    host.innerHTML = '<div class="hint-text" style="padding-top:.2rem">No datasets yet.</div>';
+}
+$("#lk-upload").addEventListener("click",()=>$("#lk-file").click());
+$("#lk-file").addEventListener("change",async e=>{
+  const f = e.target.files[0];
+  if(!f) return;
+  const name = prompt("Dataset name:", f.name.replace(/\.csv$/i,"")) ;
+  if(name===null){ e.target.value=""; return; }
+  const btn = $("#lk-upload"); btn.textContent = "Uploading…"; btn.disabled = true;
+  try{
+    const fd = new FormData();
+    fd.append("file", f);
+    fd.append("name", name || f.name);
+    const j = await fetch(CFG.lookupUploadUrl,{method:"POST",
+      headers:{"X-CSRFToken":CFG.csrftoken}, body:fd}).then(r=>r.json());
+    if(j.ok){
+      const i = LOOKUPS.findIndex(d=>d.name===j.dataset.name);
+      if(i>=0) LOOKUPS[i]=j.dataset; else LOOKUPS.push(j.dataset);
+      renderLookups(); renderInspector();
+    } else alert(j.error||"Upload failed.");
+  }catch(err){ alert("Upload failed — are you online?"); }
+  btn.textContent = "+ Upload CSV"; btn.disabled = false; e.target.value = "";
+});
+$("#lookups").addEventListener("click",async e=>{
+  if(e.target.dataset.lkdel==null) return;
+  const d = LOOKUPS[+e.target.dataset.lkdel];
+  if(!confirm("Delete dataset “"+d.name+"”? Questions linked to it will stop finding records.")) return;
+  try{
+    const j = await fetch(CFG.lookupUploadUrl.replace(/upload\/$/, d.id+"/delete/"),
+      {method:"POST",headers:{"X-CSRFToken":CFG.csrftoken}}).then(r=>r.json());
+    if(j.ok){ LOOKUPS.splice(+e.target.dataset.lkdel,1); renderLookups(); renderInspector(); }
+  }catch(err){ alert("Delete failed."); }
+});
+
+/* ── canvas ── */
+function metaTags(q){
+  const tags=[];
+  if(q.relevant && (q.relevant.rules||[]).length) tags.push('<span class="tag logic">skip logic</span>');
+  if(q.geofence && (q.geofence.zones||[]).length)
+    tags.push('<span class="tag geo">geo '+esc(q.geofence.mode||"inside")+'</span>');
+  if(q.cascade && q.cascade.parent) tags.push('<span class="tag casc">⇢ '+esc(q.cascade.parent)+'</span>');
+  if((q.choices||[]).some(c=>(c.zones||[]).length)) tags.push('<span class="tag geo">geo choices</span>');
+  if(q.lookup && q.lookup.dataset) tags.push('<span class="tag casc">🔎 lookup</span>');
+  if(q.calc) tags.push('<span class="tag calc">ƒ '+esc(q.calc)+'</span>');
+  if(q.score && Object.keys(q.score).length) tags.push('<span class="tag">scored</span>');
+  if((q.choices||[]).length) tags.push('<span class="tag">'+q.choices.length+' choices</span>');
+  return tags.join("");
+}
+function renderCanvas(){
+  const host = $("#canvas"); host.innerHTML = "";
+  $("#canvas-empty").hidden = schema.questions.length>0;
+  $("#qcount").textContent = schema.questions.length;
+  schema.questions.forEach((q,i)=>{
+    const isSel = sel && sel.i===i && sel.ci==null;
+    const card = document.createElement("div");
+    card.className = "qcard"+(isSel?" sel":"");
+    card.dataset.i = i;
+    let inner =
+      '<div class="qhead"><span class="qbadge'+(q.type==="repeat"?" rep":"")+'">'+esc(q.type)+'</span>'+
+      '<span class="qlabel">'+esc(q.label||q.name)+(q.required?' <span class="req">*</span>':'')+'</span>'+
+      '<span class="qtools">'+
+        '<button title="Move up" data-act="up">↑</button><button title="Move down" data-act="down">↓</button>'+
+        '<button title="Duplicate" data-act="dup">⧉</button><button title="Delete" data-act="del">✕</button>'+
+      '</span></div>'+
+      '<div class="qmeta"><span class="tag">'+esc(q.name)+'</span>'+metaTags(q)+'</div>';
+    if(q.type==="repeat"){
+      inner += '<div class="children">';
+      (q.children||[]).forEach((ch,ci)=>{
+        const cs = sel && sel.i===i && sel.ci===ci;
+        inner += '<div class="childrow'+(cs?" sel":"")+'" data-i="'+i+'" data-ci="'+ci+'">'+
+          '<span class="qbadge">'+esc(ch.type)+'</span>'+
+          '<span class="qlabel">'+esc(ch.label||ch.name)+(ch.required?' <span class="req">*</span>':'')+'</span>'+
+          '<span class="qtools">'+
+            '<button data-act="up">↑</button><button data-act="down">↓</button>'+
+            '<button data-act="dup">⧉</button><button data-act="del">✕</button>'+
+          '</span></div>';
+      });
+      inner += '<button class="addchild" data-addchild="'+i+'" type="button">+ Add child question</button></div>';
+    }
+    card.innerHTML = inner;
+    host.appendChild(card);
+  });
+}
+$("#canvas").addEventListener("click", e=>{
+  const t = e.target;
+  if(t.dataset.addchild!=null){ addChild(+t.dataset.addchild); e.stopPropagation(); return; }
+  const childRow = t.closest(".childrow");
+  const card = t.closest(".qcard");
+  const act = t.dataset && t.dataset.act;
+  if(childRow){
+    const i=+childRow.dataset.i, ci=+childRow.dataset.ci;
+    if(act==="up") move(i,ci,-1); else if(act==="down") move(i,ci,1);
+    else if(act==="dup") dup(i,ci); else if(act==="del") del(i,ci);
+    else { sel={i,ci}; renderAll(); }
+    e.stopPropagation(); return;
+  }
+  if(card){
+    const i=+card.dataset.i;
+    if(act==="up") move(i,null,-1); else if(act==="down") move(i,null,1);
+    else if(act==="dup") dup(i,null); else if(act==="del") del(i,null);
+    else { sel={i,ci:null}; renderAll(); }
+  }
+});
+
+/* ── inspector ── */
+function field(label, inner){ return '<div class="field"><label>'+label+'</label>'+inner+'</div>'; }
+
+function renderInspector(){
+  const body = $("#insp-body"), empty = $("#insp-empty");
+  const q = curQ();
+  if(!q){ body.hidden=true; empty.hidden=false; return; }
+  empty.hidden = true; body.hidden = false;
+  const isChild = sel.ci!=null;
+
+  let html = "";
+  const typeOpts = TYPES.filter(([t])=>!(isChild&&t==="repeat"))
+    .map(([t,ico,l])=>'<option value="'+t+'"'+(t===q.type?" selected":"")+'>'+ico+" "+l+'</option>').join("");
+  html += field("Type", '<select data-qtype>'+typeOpts+'</select>');
+  html += field("Label — supports ${piping}"+(isChild?" (and ${index})":""),
+    '<textarea data-k="label">'+esc(q.label)+'</textarea>');
+  html += field("Machine name (column in data)", '<input type="text" data-k="name" value="'+esc(q.name)+'">');
+  if(q.type!=="section" && q.type!=="calculate"){
+    html += field("Hint", '<input type="text" data-k="hint" value="'+esc(q.hint||"")+'">');
+    html += '<div class="field"><label class="check"><input type="checkbox" data-k="required" '+(q.required?"checked":"")+'> Required</label></div>';
+  }
+
+  /* repeat settings */
+  if(q.type==="repeat"){
+    const rp = q.repeat||{};
+    html += '<div class="divider rep">Repeat group</div>'+
+      '<div class="field" style="display:flex;gap:.5rem"><span style="flex:1"><label>Min items</label>'+
+      '<input type="number" min="0" data-rep="min" value="'+esc(rp.min??"")+'"></span>'+
+      '<span style="flex:1"><label>Max items</label>'+
+      '<input type="number" min="1" data-rep="max" value="'+esc(rp.max??"")+'"></span></div>'+
+      field("Item label — ${index} = item number, or pipe a child like ${mname}",
+        '<input type="text" data-rep="item_label" value="'+esc(rp.item_label||"Item ${index}")+'">')+
+      field("Exact count expression — items auto-added/removed to match",
+        '<input type="text" data-rep="count_expr" value="'+esc(rp.count_expr||"")+'" placeholder="hh_size">')+
+      '<div class="field" style="display:flex;gap:.5rem"><span style="flex:1"><label>Min expression</label>'+
+      '<input type="text" data-rep="min_expr" value="'+esc(rp.min_expr||"")+'" placeholder="1"></span>'+
+      '<span style="flex:1"><label>Max expression</label>'+
+      '<input type="text" data-rep="max_expr" value="'+esc(rp.max_expr||"")+'" placeholder="plots * 2"></span></div>'+
+      '<div class="hint-text">Expressions can use any earlier answer or calc — e.g. count = <code>hh_size</code> gives one card per household member and hides the add/remove buttons. Expression bounds combine with the static min/max above (the stricter wins).</div>'+
+      '<div class="hint-text">Add child questions on the card in the middle column, then click a child to edit it here. Children support their own skip logic (they see the current item first, then the rest of the form), validation, cascading, geofencing, scoring and per-item <code>calculate</code> fields.</div>';
+  }
+
+  if(CHOICE_TYPES.includes(q.type)){
+    /* cascade config */
+    const parents = earlierQuestions().filter(p=>CHOICE_TYPES.includes(p.type));
+    const casc = (q.cascade&&q.cascade.parent)||"";
+    html += '<div class="divider casc">Cascading</div>'+
+      field("Filter choices by an earlier answer",
+        '<select data-casc><option value="">— no cascade —</option>'+
+        parents.map(p=>'<option value="'+esc(p.name)+'"'+(p.name===casc?" selected":"")+'>'+esc(p.name)+'</option>').join("")+
+        '</select>')+
+      (casc?'<div class="hint-text">Each choice below has a <b>parent</b> box — set it to the value of <code>'+esc(casc)+'</code> that should reveal it.</div>':'');
+    /* choices */
+    html += '<div class="divider">Choices'+(schema.zones.length?' <span style="color:var(--dim)">· zones = comma-sep ids to geo-limit a choice</span>':'')+'</div>'+
+      '<div style="padding:0 1rem" id="choices"></div>'+
+      '<button class="addline" data-add="choice">+ Add choice</button>'+
+      '<div class="field"><label class="check"><input type="checkbox" data-k="shuffle_choices" '+(q.shuffle_choices?"checked":"")+'> Shuffle choice order per respondent</label></div>';
+    if(schema.zones.length && !casc){
+      html += field("When location is unknown, zone-limited choices are",
+        '<select data-gcf><option value="all"'+((q.geo_choice_fallback||"all")==="all"?" selected":"")+'>shown (default)</option>'+
+        '<option value="none"'+(q.geo_choice_fallback==="none"?" selected":"")+'>hidden until GPS</option></select>');
+    } else if(schema.zones.length){
+      html += field("When location is unknown, zone-limited choices are",
+        '<select data-gcf><option value="all"'+((q.geo_choice_fallback||"all")==="all"?" selected":"")+'>shown (default)</option>'+
+        '<option value="none"'+(q.geo_choice_fallback==="none"?" selected":"")+'>hidden until GPS</option></select>');
+    }
+    html += '<div class="divider">Scoring (optional)</div>'+
+      '<div class="hint-text">Points added to the response score when a choice is selected.</div>'+
+      '<div style="padding:0 1rem" id="scores"></div>';
+  }
+
+  if(q.type==="barcode"){
+    const lk = q.lookup||{};
+    html += '<div class="divider casc">Scan &amp; lookup</div>'+
+      '<div class="hint-text">Respondents get a 📷 Scan button (camera QR/barcode reader). Link a dataset to also search preloaded records by the scanned code — ideal for follow-up rounds.</div>'+
+      field("Search a lookup dataset",
+        '<select data-lkds><option value="">— save the scan only —</option>'+
+        LOOKUPS.map(d=>'<option value="'+esc(d.id)+'"'+(String(lk.dataset)===String(d.id)?" selected":"")+'>'+
+          esc(d.name)+' ('+esc(d.rows)+' rows, key: '+esc(d.key_column)+')</option>').join("")+
+        '</select>');
+    if(lk.dataset){
+      const ds = LOOKUPS.find(d=>String(d.id)===String(lk.dataset));
+      html += '<div class="hint-text">Matched by <code>'+esc(ds?ds.key_column:"?")+'</code>. The matched record shows under the question; map columns below to auto-fill other answers.</div>'+
+        '<div style="padding:0 1rem" id="lk-fills"></div>'+
+        '<button class="addline" data-add="lkfill">+ Auto-fill an answer from a column</button>';
+    }
+  }
+  if(q.type==="calculate"){
+    html += '<div class="divider">Calculation</div>'+
+      field("Expression", '<input type="text" data-k="calc" value="'+esc(q.calc||"")+'" placeholder="weight / ((height/100)^2)">')+
+      '<div class="field"><label class="check"><input type="checkbox" data-k="visible" '+(q.visible?"checked":"")+'> Show the result live on the form (read-only)</label></div>'+
+      '<div class="hint-text">Question names are variables'+(isChild?' — inside a repeat, sibling answers win over outer ones and the calc runs per item':'')+'. Functions: <code>abs min max round int sqrt pow coalesce if_ count</code>; boolean <code>and or not</code>; repeat aggregates <code>sum_of(group,"col") avg_of min_of max_of count_if(group,"col","lt",18)</code>. Calc names pipe into any label/hint via <code>${name}</code>, drive skip logic, validation bounds, constraints and repeat counts.</div>';
+  }
+
+  if(["integer","decimal","rating","select_multiple","rank"].includes(q.type)){
+    const v = q.validate||{};
+    html += '<div class="divider">Validation</div>'+
+      '<div class="field" style="display:flex;gap:.5rem"><span style="flex:1"><label>Min</label><input type="number" data-v="min" value="'+esc(v.min??"")+'"></span>'+
+      '<span style="flex:1"><label>Max</label><input type="number" data-v="max" value="'+esc(v.max??"")+'"></span></div>';
+    if(["integer","decimal","rating"].includes(q.type)){
+      html += '<div class="field" style="display:flex;gap:.5rem"><span style="flex:1"><label>Min expression</label>'+
+        '<input type="text" data-v="min_expr" value="'+esc(v.min_expr||"")+'" placeholder="other_q"></span>'+
+        '<span style="flex:1"><label>Max expression</label>'+
+        '<input type="text" data-v="max_expr" value="'+esc(v.max_expr||"")+'" placeholder="hh_size"></span></div>';
+    }
+    html += field("Error message", '<input type="text" data-v="message" value="'+esc(v.message||"")+'">');
+  }
+  if(["text","long_text","barcode"].includes(q.type)){
+    const v = q.validate||{};
+    html += '<div class="divider">Validation</div>'+
+      field("Regex pattern", '<input type="text" data-v="regex" value="'+esc(v.regex||"")+'" placeholder="^[237]\\d{6}$">')+
+      field("Error message", '<input type="text" data-v="message" value="'+esc(v.message||"")+'">');
+  }
+
+  /* advanced constraint + soft warning */
+  if(q.type!=="section" && q.type!=="calculate" && q.type!=="repeat"){
+    const v = q.validate||{};
+    html += '<div class="divider">Advanced constraint</div>'+
+      field("Must be true (blocks submission) — <code>value</code> = this answer",
+        '<input type="text" data-v="expr" value="'+esc(v.expr||"")+'" placeholder="value <= hh_size * 5000">')+
+      field("Warn when this is false (never blocks)",
+        '<input type="text" data-v="warn_expr" value="'+esc(v.warn_expr||"")+'" placeholder="value < avg_of(members, \'age\') * 3">')+
+      field("Warning message",
+        '<input type="text" data-v="warn_message" value="'+esc(v.warn_message||"")+'" placeholder="That looks unusually high — please confirm.">')+
+      '<div class="hint-text">Both expressions see every earlier answer, calc and repeat aggregate. Warnings appear in amber as the respondent types — great for plausibility checks that shouldn\'t hard-block.</div>';
+  }
+
+  /* geofence */
+  if(q.type!=="section"){
+    const gf = q.geofence||{};
+    const active = (gf.zones||[]).length>0;
+    html += '<div class="divider geo">Geofence — show this question only…</div>';
+    if(!schema.zones.length){
+      html += '<div class="hint-text">Define zones in the left column first, then pick them here.</div>';
+    } else {
+      html += field("Mode",
+        '<select data-gf="mode"><option value=""'+(!active?" selected":"")+'>— no geofence —</option>'+
+        '<option value="inside"'+(active&&(gf.mode||"inside")==="inside"?" selected":"")+'>inside the selected zones</option>'+
+        '<option value="outside"'+(active&&gf.mode==="outside"?" selected":"")+'>outside the selected zones</option></select>');
+      html += '<div class="zchecks" id="gf-zones">'+
+        schema.zones.map(z=>{
+          const on = (gf.zones||[]).includes(z.id);
+          return '<label class="'+(on?"on":"")+'"><input type="checkbox" data-gfz="'+esc(z.id)+'" '+(on?"checked":"")+'>'+esc(z.name||z.id)+'</label>';
+        }).join("")+'</div>';
+      html += field("If location is unavailable",
+        '<select data-gf="fallback"><option value="show"'+((gf.fallback||"show")==="show"?" selected":"")+'>show the question</option>'+
+        '<option value="hide"'+(gf.fallback==="hide"?" selected":"")+'>hide the question</option></select>');
+    }
+  }
+
+  /* skip logic */
+  if(q.type!=="section"){
+    html += '<div class="divider">Skip logic — show this question when…</div>'+
+      '<div class="field"><label>Combine rules with</label><select data-relop><option value="and"'+((q.relevant&&q.relevant.op)!=="or"?" selected":"")+'>ALL must match (AND)</option><option value="or"'+((q.relevant&&q.relevant.op)==="or"?" selected":"")+'>ANY may match (OR)</option></select></div>'+
+      '<div style="padding:0 1rem" id="rules"></div>'+
+      '<button class="addline" data-add="rule">+ Add condition</button>'+
+      '<div class="hint-text">No conditions = always shown (geofence still applies).'+(isChild?' Children can reference siblings in the same item or any earlier top-level question.':'')+' Deeper AND/OR nesting is supported in the JSON.</div>';
+  }
+
+  body.innerHTML = html;
+
+  /* choices + scores */
+  if(CHOICE_TYPES.includes(q.type)){
+    const chost = body.querySelector("#choices");
+    const casc = (q.cascade&&q.cascade.parent)||"";
+    (q.choices||[]).forEach((c,ci)=>{
+      const row = document.createElement("div");
+      row.className = "choice-row";
+      row.innerHTML = '<input type="text" value="'+esc(c.label)+'" data-cl="'+ci+'" placeholder="Label">'+
+        '<input type="text" class="small" value="'+esc(c.value)+'" data-cv="'+ci+'" placeholder="value">'+
+        (casc?'<input type="text" class="small" value="'+esc(c.parent??"")+'" data-cp="'+ci+'" placeholder="parent" title="Value of '+esc(casc)+' that reveals this choice">':'')+
+        (schema.zones.length?'<input type="text" class="small" value="'+esc((c.zones||[]).join(","))+'" data-cz="'+ci+'" placeholder="zones" title="Comma-separated zone ids; blank = everywhere">':'')+
+        '<button class="mini" data-cx="'+ci+'">✕</button>';
+      chost.appendChild(row);
+    });
+    const shost = body.querySelector("#scores");
+    (q.choices||[]).forEach(c=>{
+      const row = document.createElement("div");
+      row.className = "choice-row";
+      const pts = (q.score||{})[c.value];
+      row.innerHTML = '<span style="flex:1;font-size:.78rem;color:var(--muted)">'+esc(c.label)+'</span>'+
+        '<input type="number" step="any" style="max-width:88px" data-sc="'+esc(c.value)+'" value="'+esc(pts??"")+'" placeholder="pts">';
+      shost.appendChild(row);
+    });
+  }
+
+  /* lookup fill mappings */
+  const fhost = body.querySelector("#lk-fills");
+  if(fhost && q.lookup && q.lookup.dataset){
+    const ds = LOOKUPS.find(d=>String(d.id)===String(q.lookup.dataset));
+    const cols = ds ? ds.columns : [];
+    const targets = [];
+    schema.questions.forEach(tq=>{
+      if(tq.name && tq.name!==q.name && !["section","repeat","calculate"].includes(tq.type)) targets.push(tq.name);
+      (tq.children||[]).forEach(c=>{ if(c.name && c.name!==q.name && c.type!=="section" && c.type!=="calculate") targets.push(c.name); });
+    });
+    (q.lookup.fill||[]).forEach((mmap,fi)=>{
+      const row = document.createElement("div");
+      row.className = "rule-row";
+      row.innerHTML =
+        '<select data-lkft="'+fi+'"><option value="">answer…</option>'+
+          targets.map(n=>'<option value="'+esc(n)+'"'+(n===mmap.target?" selected":"")+'>'+esc(n)+'</option>').join("")+'</select>'+
+        '<span style="color:var(--dim);font-size:.7rem">←</span>'+
+        '<select data-lkfc="'+fi+'"><option value="">column…</option>'+
+          cols.map(cn=>'<option value="'+esc(cn)+'"'+(cn===mmap.column?" selected":"")+'>'+esc(cn)+'</option>').join("")+'</select>'+
+        '<button class="mini" data-lkfx="'+fi+'">✕</button>';
+      fhost.appendChild(row);
+    });
+  }
+
+  /* logic rules */
+  const rhost = body.querySelector("#rules");
+  if(rhost){
+    const rules = (q.relevant&&q.relevant.rules)||[];
+    const earlier = earlierQuestions();
+    rules.forEach((r,ri)=>{
+      const row = document.createElement("div");
+      row.className = "rule-row";
+      const opts = earlier.map(p=>'<option value="'+esc(p.name)+'"'+(p.name===r.q?" selected":"")+'>'+esc(p.name)+'</option>').join("")
+        + (earlier.some(p=>p.name===r.q)?"":(r.q?'<option value="'+esc(r.q)+'" selected>'+esc(r.q)+'</option>':""));
+      row.innerHTML =
+        '<select data-rq="'+ri+'">'+opts+'</select>'+
+        '<select data-rc="'+ri+'">'+CMPS.map(([v,l])=>'<option value="'+v+'"'+(v===r.cmp?" selected":"")+'>'+l+'</option>').join("")+'</select>'+
+        '<input type="text" data-rv="'+ri+'" value="'+esc(Array.isArray(r.value)?r.value.join(","):(r.value??""))+'" placeholder="value">'+
+        '<button class="mini" data-rx="'+ri+'">✕</button>';
+      rhost.appendChild(row);
+    });
+  }
+}
+
+/* Wire the inspector ONCE at boot; handlers look up curQ() live. */
+function wireInspectorOnce(){
+  const body = $("#insp-body");
+  body.addEventListener("input", e=>{
+    const q = curQ();
+    if(!q) return;
+    const t = e.target;
+    if(t.dataset.k!==undefined && t.dataset.k){
+      let val = t.type==="checkbox" ? t.checked : t.value;
+      if(t.dataset.k==="name"){
+        val = String(val).toLowerCase().replace(/[^a-z0-9_]+/g,"_");
+        t.value = val;
+        const clash = allNames().filter(n=>n===val).length > (q.name===val?1:0);
+        if(!val || clash){ t.style.borderColor="var(--red)"; return; }
+        t.style.borderColor="";
+      }
+      q[t.dataset.k] = val; markDirty(); renderCanvas(); return;
+    }
+    if(t.dataset.v!==undefined){
+      q.validate = q.validate||{};
+      const v = t.value===""?null:(t.type==="number"?Number(t.value):t.value);
+      if(v===null) delete q.validate[t.dataset.v]; else q.validate[t.dataset.v]=v;
+      markDirty(); return;
+    }
+    if(t.dataset.rep!==undefined){
+      q.repeat = q.repeat||{};
+      const key = t.dataset.rep;
+      q.repeat[key] = t.type==="number" ? (t.value===""?null:Number(t.value)) : t.value;
+      markDirty(); renderCanvas(); return;
+    }
+    if(t.dataset.cl!==undefined){ q.choices[+t.dataset.cl].label=t.value; markDirty(); renderCanvas(); return; }
+    if(t.dataset.cv!==undefined){ q.choices[+t.dataset.cv].value=t.value; markDirty(); return; }
+    if(t.dataset.cp!==undefined){
+      const c=q.choices[+t.dataset.cp];
+      if(t.value==="") delete c.parent; else c.parent=t.value;
+      markDirty(); return;
+    }
+    if(t.dataset.cz!==undefined){
+      const c=q.choices[+t.dataset.cz];
+      const ids=t.value.split(",").map(s=>s.trim()).filter(Boolean);
+      if(ids.length) c.zones=ids; else delete c.zones;
+      markDirty(); renderCanvas(); return;
+    }
+    if(t.dataset.sc!==undefined){
+      q.score = q.score||{};
+      if(t.value==="") delete q.score[t.dataset.sc]; else q.score[t.dataset.sc]=Number(t.value);
+      if(!Object.keys(q.score).length) delete q.score;
+      markDirty(); renderCanvas(); return;
+    }
+    if(t.dataset.rq!==undefined||t.dataset.rc!==undefined||t.dataset.rv!==undefined){
+      const ri = +(t.dataset.rq??t.dataset.rc??t.dataset.rv);
+      const r = q.relevant.rules[ri];
+      if(t.dataset.rq!==undefined) r.q=t.value;
+      if(t.dataset.rc!==undefined) r.cmp=t.value;
+      if(t.dataset.rv!==undefined){
+        r.value = (r.cmp==="between"||r.cmp==="in"||r.cmp==="not_in")
+          ? t.value.split(",").map(s=>s.trim()) : t.value;
+      }
+      markDirty(); renderCanvas(); return;
+    }
+  });
+  body.addEventListener("change", e=>{
+    const q = curQ();
+    if(!q) return;
+    const t = e.target;
+    if(t.dataset.qtype!==undefined){ retype(q, t.value); markDirty(); renderAll(); return; }
+    if(t.dataset.relop!==undefined){
+      q.relevant = q.relevant||{op:"and",rules:[]};
+      q.relevant.op = t.value; markDirty(); return;
+    }
+    if(t.dataset.lkds!==undefined){
+      if(t.value) q.lookup = {dataset: Number(t.value), fill: (q.lookup&&q.lookup.fill)||[]};
+      else delete q.lookup;
+      markDirty(); renderInspector(); renderCanvas(); return;
+    }
+    if(t.dataset.lkft!==undefined||t.dataset.lkfc!==undefined){
+      const fi = +(t.dataset.lkft??t.dataset.lkfc);
+      const mmap = q.lookup.fill[fi];
+      if(t.dataset.lkft!==undefined) mmap.target = t.value;
+      else mmap.column = t.value;
+      markDirty(); return;
+    }
+    if(t.dataset.casc!==undefined){
+      if(t.value) q.cascade = {parent: t.value};
+      else delete q.cascade;
+      markDirty(); renderInspector(); renderCanvas(); return;
+    }
+    if(t.dataset.gcf!==undefined){
+      if(t.value==="none") q.geo_choice_fallback="none"; else delete q.geo_choice_fallback;
+      markDirty(); return;
+    }
+    if(t.dataset.gf==="mode"){
+      if(!t.value){ delete q.geofence; }
+      else { q.geofence = q.geofence||{zones:[]}; q.geofence.mode = t.value; }
+      markDirty(); renderInspector(); renderCanvas(); return;
+    }
+    if(t.dataset.gf==="fallback"){
+      q.geofence = q.geofence||{zones:[],mode:"inside"};
+      q.geofence.fallback = t.value; markDirty(); return;
+    }
+    if(t.dataset.gfz!==undefined){
+      q.geofence = q.geofence||{mode:"inside",zones:[]};
+      const set = new Set(q.geofence.zones||[]);
+      t.checked ? set.add(t.dataset.gfz) : set.delete(t.dataset.gfz);
+      q.geofence.zones = [...set];
+      if(!q.geofence.zones.length && !$("#insp-body [data-gf=mode]")?.value) delete q.geofence;
+      t.closest("label").classList.toggle("on", t.checked);
+      markDirty(); renderCanvas(); return;
+    }
+  });
+  body.addEventListener("click", e=>{
+    const q = curQ();
+    if(!q) return;
+    const t = e.target;
+    if(t.dataset.add==="choice"){
+      q.choices = q.choices||[];
+      q.choices.push({value:"option_"+(q.choices.length+1),label:"Option "+(q.choices.length+1)});
+      markDirty(); renderInspector(); renderCanvas(); return;
+    }
+    if(t.dataset.add==="lkfill"){
+      q.lookup.fill = q.lookup.fill||[];
+      q.lookup.fill.push({target:"",column:""});
+      markDirty(); renderInspector(); return;
+    }
+    if(t.dataset.lkfx!==undefined){
+      q.lookup.fill.splice(+t.dataset.lkfx,1);
+      markDirty(); renderInspector(); return;
+    }
+    if(t.dataset.add==="rule"){
+      const earlier = earlierQuestions();
+      if(!earlier.length){ alert("Add a question BEFORE this one (or an earlier sibling in the repeat) for it to depend on."); return; }
+      q.relevant = q.relevant||{op:"and",rules:[]};
+      q.relevant.rules.push({q:earlier[0].name,cmp:"eq",value:""});
+      markDirty(); renderInspector(); renderCanvas(); return;
+    }
+    if(t.dataset.cx!==undefined){ q.choices.splice(+t.dataset.cx,1); markDirty(); renderInspector(); renderCanvas(); return; }
+    if(t.dataset.rx!==undefined){
+      q.relevant.rules.splice(+t.dataset.rx,1);
+      if(!q.relevant.rules.length) q.relevant=null;
+      markDirty(); renderInspector(); renderCanvas(); return;
+    }
+  });
+}
+
+/* ── persistence ── */
+function markDirty(){
+  dirty = true;
+  $("#save-state").textContent = "unsaved…";
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(save, 900);
+}
+async function save(){
+  if(!dirty) return;
+  dirty = false;
+  $("#save-state").textContent = "saving";
+  try{
+    const res = await fetch(CFG.saveUrl,{method:"POST",
+      headers:{"Content-Type":"application/json","X-CSRFToken":CFG.csrftoken},
+      body:JSON.stringify({title:$("#title-input").value, schema})});
+    const j = await res.json();
+    $("#save-state").textContent = j.ok ? "saved" : ("error: "+(j.error||res.status));
+    if(!j.ok) dirty = true;
+  }catch(e){ $("#save-state").textContent = "offline — retrying"; dirty = true; setTimeout(save, 4000); }
+}
+async function publish(){
+  await save();
+  const res = await fetch(CFG.publishUrl,{method:"POST",headers:{"X-CSRFToken":CFG.csrftoken}});
+  const j = await res.json();
+  if(j.ok){
+    $("#next-v").textContent = j.version+1;
+    alert("Published v"+j.version+". The survey is now collecting.\n\nShare link:\n"+CFG.collectUrl);
+  } else alert(j.error||"Publish failed.");
+}
+
+function renderAll(){ renderCanvas(); renderInspector(); }
+
+/* boot */
+const pal = $("#palette");
+TYPES.forEach(([type,ico,label])=>{
+  const b = document.createElement("button");
+  b.className = "ptype"+(type==="repeat"?" hot":""); b.type = "button";
+  b.innerHTML = '<span class="ico">'+ico+'</span>'+label;
+  b.addEventListener("click",()=>addQuestion(type));
+  pal.appendChild(b);
+});
+wireInspectorOnce();
+$("#title-input").addEventListener("input", markDirty);
+$("#publish-btn").addEventListener("click", publish);
+$("#next-v").textContent = (S.version||0)+1;
+window.addEventListener("beforeunload", e=>{ if(dirty){ e.preventDefault(); e.returnValue=""; } });
+renderZones();
+renderLookups();
+renderAll();
+})();
+</script>
+</body>
+</html>

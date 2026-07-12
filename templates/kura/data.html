@@ -1,0 +1,287 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data · {{ survey.title }} · Kura</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900&family=Archivo:wght@400;500;600;700;800;900&family=Spline+Sans+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--line:rgba(255,255,255,.12);--muted:#b9c2e7;--dim:rgba(248,251,255,.45);
+    --orange:#ff8a1f;--pink:#ff3f98;--cyan:#22d3ee;--violet:#8b5cf6;--green:#22c55e;--red:#e8482b}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;color:#f8fbff;font-family:"Archivo",sans-serif;-webkit-font-smoothing:antialiased;
+    background:radial-gradient(900px 560px at 86% -8%,rgba(255,138,31,.2),transparent 60%),
+      radial-gradient(780px 520px at 5% 5%,rgba(139,92,246,.3),transparent 60%),
+      linear-gradient(135deg,#050616,#090b23 45%,#160a2c)}
+  .bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;
+    padding:.8rem 1.2rem;border-bottom:1px solid var(--line);background:rgba(6,7,24,.85);backdrop-filter:blur(16px)}
+  .mark{font-weight:900;font-size:1.1rem;text-decoration:none;
+    background:linear-gradient(110deg,#fff 8%,var(--orange) 40%,var(--pink) 70%,var(--cyan) 100%);
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .bar h1{flex:1;min-width:160px;margin:0;font-family:"Fraunces",serif;font-size:1.15rem;font-weight:600;color:#fff;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .btn{display:inline-flex;align-items:center;gap:.4rem;border:1px solid rgba(255,255,255,.16);color:#fff;
+    background:linear-gradient(135deg,var(--orange),var(--pink),var(--violet));
+    border-radius:10px;padding:.5rem .9rem;font-weight:700;font-size:.8rem;cursor:pointer;text-decoration:none}
+  .btn:hover{filter:brightness(1.08)}
+  .btn.ghost{background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.04));color:var(--muted)}
+  .btn.ghost:hover{color:#fff}
+  .wrap{max-width:1360px;margin:0 auto;padding:1rem 1.2rem 4rem}
+  .stats{display:flex;gap:.8rem;flex-wrap:wrap;margin:.4rem 0 1rem}
+  .stat{border:1px solid var(--line);border-radius:14px;padding:.7rem 1rem;min-width:120px;
+    background:linear-gradient(135deg,rgba(255,255,255,.09),rgba(255,255,255,.03))}
+  .stat b{display:block;font-size:1.5rem;font-weight:900}
+  .stat span{font-family:"Spline Sans Mono",monospace;font-size:.58rem;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+  .stat.ok b{color:#86efac}.stat.fl b{color:#ffc38a}.stat.ex b{color:#f0a397}
+  .panel{border:1px solid var(--line);border-radius:16px;margin-bottom:1rem;overflow:hidden;
+    background:linear-gradient(135deg,rgba(255,255,255,.08),rgba(255,255,255,.03));backdrop-filter:blur(12px)}
+  .panel>h3{margin:0;padding:.75rem 1rem .5rem;display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;
+    font-family:"Spline Sans Mono",monospace;font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+  .panel>h3 .sp{flex:1}
+  .tblwrap{overflow:auto;max-height:60vh}
+  table{border-collapse:collapse;width:100%;font-size:.78rem}
+  th,td{border-bottom:1px solid rgba(255,255,255,.07);padding:.45rem .6rem;text-align:left;white-space:nowrap;
+    max-width:220px;overflow:hidden;text-overflow:ellipsis}
+  th{position:sticky;top:0;background:#0b0d26;font-family:"Spline Sans Mono",monospace;font-size:.58rem;
+    letter-spacing:.1em;text-transform:uppercase;color:var(--cyan);z-index:2}
+  tr:hover td{background:rgba(255,255,255,.04)}
+  td.editable{cursor:pointer}
+  td.editable:hover{outline:1px dashed var(--cyan);outline-offset:-1px}
+  tr.flagged td:first-child{border-left:3px solid var(--orange)}
+  tr.excluded td{opacity:.4;text-decoration:line-through}
+  tr.partial td:first-child{border-left:3px solid var(--violet)}
+  .st{font-family:"Spline Sans Mono",monospace;font-size:.56rem;letter-spacing:.1em;text-transform:uppercase;
+    border:1px solid var(--line);border-radius:5px;padding:.14rem .4rem}
+  .st.complete{color:#86efac;border-color:rgba(34,197,94,.4)}
+  .st.flagged{color:#ffc38a;border-color:rgba(255,138,31,.4)}
+  .st.excluded{color:#f0a397;border-color:rgba(232,72,43,.4)}
+  .st.partial{color:#c4b5fd;border-color:rgba(139,92,246,.4)}
+  .flagdot{cursor:help;color:var(--orange)}
+  select.rowst{background:rgba(0,0,0,.35);border:1px solid var(--line);border-radius:7px;color:#fff;
+    font-size:.68rem;padding:.2rem .3rem}
+  select.rowst option{background:#0b0d26}
+  /* rules */
+  .rule{display:grid;grid-template-columns:auto 1.2fr 1fr 1fr 2.2fr auto;gap:.5rem;align-items:center;
+    padding:.5rem 1rem;border-top:1px solid rgba(255,255,255,.06)}
+  .rule input[type=text],.rule select,.rule textarea{background:rgba(0,0,0,.32);border:1px solid var(--line);
+    border-radius:8px;color:#fff;padding:.4rem .5rem;font-size:.76rem;outline:none;width:100%;
+    font-family:"Spline Sans Mono",monospace}
+  .rule select option{background:#0b0d26}
+  .rule .mini{border:1px solid var(--line);background:transparent;color:var(--dim);border-radius:7px;
+    width:28px;height:30px;cursor:pointer}
+  .rule .mini:hover{color:#fff}
+  .rule input[type=checkbox]{accent-color:var(--pink)}
+  .addline{margin:.6rem 1rem .9rem;background:transparent;border:1px dashed var(--line);color:var(--muted);
+    border-radius:9px;padding:.45rem 1rem;font-size:.78rem;font-weight:600;cursor:pointer}
+  .addline:hover{color:#fff;border-color:rgba(255,255,255,.3)}
+  .note{padding:0 1rem .8rem;color:var(--dim);font-size:.7rem;line-height:1.5}
+  code{font-family:"Spline Sans Mono",monospace;color:#a5f3fc;font-size:.66rem}
+  #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:50;
+    background:rgba(20,18,30,.92);border:1px solid var(--line);border-radius:12px;padding:.7rem 1.1rem;
+    font-size:.82rem;font-weight:600;display:none;backdrop-filter:blur(10px)}
+</style>
+</head>
+<body>
+<div class="bar">
+  <a class="mark" href="{% url 'kura:list' %}">Kura<span style="-webkit-text-fill-color:var(--pink)">.</span></a>
+  <h1>{{ survey.title }} — data</h1>
+  <a class="btn ghost" href="{% url 'kura:builder' survey.code %}">Builder</a>
+  <a class="btn ghost" href="{% url 'kura:monitor' survey.code %}">📡 Live monitor</a>
+  <a class="btn ghost" href="{% url 'kura:live_map' survey.code %}">🗺 Live map</a>
+  <a class="btn ghost" href="{% url 'kura:export_csv' survey.code %}">Export CSV</a>
+  <button class="btn ghost" id="run-clean" type="button">🧹 Run cleaning</button>
+  <button class="btn" id="to-hanns" type="button">✨ Create Hanns deck</button>
+</div>
+
+<div class="wrap">
+  <div class="stats" id="stats"></div>
+
+  <div class="panel">
+    <h3>Cleaning rules <span class="sp"></span>
+      <button class="btn ghost" id="save-rules" type="button" style="padding:.35rem .7rem">Save rules</button>
+    </h3>
+    <div id="rules"></div>
+    <button class="addline" id="add-rule" type="button">+ Add rule</button>
+    <div class="note">
+      Config is JSON per rule kind — examples:
+      duplicate <code>{"fields":["phone"]}</code> ·
+      outlier <code>{"field":"income","method":"iqr","k":1.5}</code> ·
+      speeder <code>{"min_seconds":60}</code> ·
+      straightliner <code>{"fields":["s1","s2","s3"],"min_distinct":2}</code> ·
+      geofence <code>{"lat":13.45,"lng":-16.57,"radius_km":50}</code> ·
+      missing <code>{"fields":["consent"]}</code> ·
+      logic <code>{"condition":{"op":"and","rules":[{"q":"age","cmp":"lt","value":10}]},"detail":"implausible age"}</code> ·
+      recode <code>{"field":"region","trim":true,"map":{"bnjl":"Banjul"}}</code>.
+      Rules only <b>flag</b> by default; every recode and manual cell edit is stored in the audit trail with its old value.
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>Responses <span class="sp"></span><span id="rowcount"></span></h3>
+    <div class="tblwrap"><table id="grid"><thead></thead><tbody></tbody></table></div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+window.__KURA_DATA__ = {
+  schema: {{ schema_json|safe }},
+  rules: {{ rules_json|safe }},
+  urls: {
+    rows: "{% url 'kura:data_rows' survey.code %}",
+    edit: "{% url 'kura:edit_answer' survey.code %}",
+    status: "{% url 'kura:row_status' survey.code %}",
+    rules: "{% url 'kura:rules_save' survey.code %}",
+    clean: "{% url 'kura:run_cleaning' survey.code %}",
+    hanns: "{% url 'kura:export_hanns' survey.code %}"
+  },
+  csrftoken: "{{ csrf_token }}"
+};
+</script>
+<script>
+(function(){
+"use strict";
+const CFG=window.__KURA_DATA__;
+const KINDS=["duplicate","outlier","speeder","straightliner","geofence","missing","logic","recode"];
+const ACTIONS=["flag","exclude","recode"];
+let rules=Array.isArray(CFG.rules)?CFG.rules:[];
+let rows=[];
+const names=((CFG.schema&&CFG.schema.questions)||[])
+  .filter(q=>q.name&&q.type!=="section").map(q=>q.name);
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.style.display="block";
+  clearTimeout(t._h); t._h=setTimeout(()=>t.style.display="none",2600); }
+async function post(url,body){
+  const res=await fetch(url,{method:"POST",
+    headers:{"Content-Type":"application/json","X-CSRFToken":CFG.csrftoken},
+    body:JSON.stringify(body||{})});
+  return res.json();
+}
+
+/* ── stats + grid ── */
+function renderStats(){
+  const by=s=>rows.filter(r=>r.status===s).length;
+  $("#stats").innerHTML=
+    '<div class="stat"><b>'+rows.length+'</b><span>Total</span></div>'+
+    '<div class="stat ok"><b>'+by("complete")+'</b><span>Complete</span></div>'+
+    '<div class="stat fl"><b>'+by("flagged")+'</b><span>Flagged</span></div>'+
+    '<div class="stat"><b>'+by("partial")+'</b><span>Partial</span></div>'+
+    '<div class="stat ex"><b>'+by("excluded")+'</b><span>Excluded</span></div>';
+}
+function cellText(v){
+  if(v==null||v==="") return "";
+  return Array.isArray(v)?v.join(" | "):String(v);
+}
+function renderGrid(){
+  const thead=$("#grid thead"),tbody=$("#grid tbody");
+  thead.innerHTML="<tr><th>⚑</th><th>status</th><th>src</th><th>v</th><th>received</th><th>dur s</th><th>score</th>"+
+    names.map(n=>"<th>"+esc(n)+"</th>").join("")+"</tr>";
+  tbody.innerHTML="";
+  rows.forEach(r=>{
+    const tr=document.createElement("tr");
+    tr.className=r.status;
+    const flags=(r.flags||[]).map(f=>f.rule+(f.field?" ["+f.field+"]":"")+": "+f.detail).join("\n");
+    let html='<td>'+(r.flags&&r.flags.length?'<span class="flagdot" title="'+esc(flags)+'">⚑'+r.flags.length+'</span>':'')+'</td>'+
+      '<td><select class="rowst" data-id="'+r.id+'">'+
+        ["complete","partial","flagged","excluded"].map(s=>'<option'+(s===r.status?" selected":"")+'>'+s+'</option>').join("")+
+      '</select></td>'+
+      '<td>'+esc(r.source)+'</td><td>'+esc(r.version??"")+'</td>'+
+      '<td title="'+esc(r.received_at)+'">'+esc((r.received_at||"").slice(0,16).replace("T"," "))+'</td>'+
+      '<td>'+(r.duration_ms?Math.round(r.duration_ms/1000):"")+'</td>'+
+      '<td>'+(r.score??"")+'</td>';
+    names.forEach(n=>{
+      const merged=Object.assign({},r.answers,r.calculations);
+      html+='<td class="editable" data-id="'+r.id+'" data-f="'+esc(n)+'" title="Click to edit">'+esc(cellText(merged[n]))+'</td>';
+    });
+    tr.innerHTML=html;
+    tbody.appendChild(tr);
+  });
+  $("#rowcount").textContent=rows.length+" rows";
+  renderStats();
+}
+async function load(){
+  const j=await fetch(CFG.urls.rows).then(r=>r.json());
+  rows=j.rows||[]; renderGrid();
+}
+
+document.addEventListener("click",async e=>{
+  const td=e.target.closest("td.editable");
+  if(td){
+    const cur=td.textContent;
+    const val=prompt("Edit "+td.dataset.f+" (use a|b|c for multi-select):",cur);
+    if(val===null||val===cur) return;
+    const reason=prompt("Reason for this edit (stored in audit trail):","data cleaning")||"data cleaning";
+    const parsed=val.includes("|")?val.split("|").map(s=>s.trim()):(val===""?null:(isNaN(Number(val))||val.trim()===""?val:Number(val)));
+    const j=await post(CFG.urls.edit,{id:+td.dataset.id,field:td.dataset.f,value:parsed,reason});
+    if(j.ok){ td.textContent=val; toast("Saved — old value kept in audit trail."); } else toast(j.error||"Edit failed");
+  }
+});
+document.addEventListener("change",async e=>{
+  if(e.target.classList.contains("rowst")){
+    const j=await post(CFG.urls.status,{id:+e.target.dataset.id,status:e.target.value});
+    if(j.ok){ toast("Status updated"); load(); } else toast(j.error||"Failed");
+  }
+});
+
+/* ── rules editor ── */
+function renderRules(){
+  const host=$("#rules"); host.innerHTML="";
+  rules.forEach((r,i)=>{
+    const div=document.createElement("div");
+    div.className="rule";
+    div.innerHTML=
+      '<input type="checkbox" data-en="'+i+'" '+(r.enabled!==false?"checked":"")+' title="Enabled">'+
+      '<input type="text" data-nm="'+i+'" value="'+esc(r.name||"")+'" placeholder="Rule name">'+
+      '<select data-kd="'+i+'">'+KINDS.map(k=>'<option'+(k===r.kind?" selected":"")+'>'+k+'</option>').join("")+'</select>'+
+      '<select data-ac="'+i+'">'+ACTIONS.map(a=>'<option'+(a===r.action?" selected":"")+'>'+a+'</option>').join("")+'</select>'+
+      '<input type="text" data-cfg="'+i+'" value="'+esc(JSON.stringify(r.config||{}))+'" placeholder=\'{"field":"…"}\'>'+
+      '<button class="mini" data-del="'+i+'">✕</button>';
+    host.appendChild(div);
+  });
+}
+document.addEventListener("input",e=>{
+  const t=e.target;
+  if(t.dataset.nm!=null) rules[+t.dataset.nm].name=t.value;
+  if(t.dataset.en!=null) rules[+t.dataset.en].enabled=t.checked;
+  if(t.dataset.kd!=null) rules[+t.dataset.kd].kind=t.value;
+  if(t.dataset.ac!=null) rules[+t.dataset.ac].action=t.value;
+  if(t.dataset.cfg!=null){
+    try{ rules[+t.dataset.cfg].config=JSON.parse(t.value||"{}"); t.style.borderColor=""; }
+    catch(err){ t.style.borderColor="var(--red)"; }
+  }
+});
+document.addEventListener("click",e=>{
+  if(e.target.dataset.del!=null){ rules.splice(+e.target.dataset.del,1); renderRules(); }
+});
+$("#add-rule").addEventListener("click",()=>{
+  rules.push({name:"New rule",kind:"logic",action:"flag",config:{},enabled:true}); renderRules();
+});
+$("#save-rules").addEventListener("click",async()=>{
+  const j=await post(CFG.urls.rules,{rules});
+  if(j.ok){ toast("Rules saved"); j.ids.forEach((id,i)=>rules[i].id=id); } else toast(j.error||"Save failed");
+});
+$("#run-clean").addEventListener("click",async()=>{
+  const j=await post(CFG.urls.rules,{rules});      // save first so the run uses latest configs
+  if(!j.ok){ toast(j.error||"Fix rule configs first"); return; }
+  j.ids.forEach((id,i)=>rules[i].id=id);
+  const r=await post(CFG.urls.clean,{});
+  if(r.ok){
+    toast(r.summary.map(s=>s.rule+": "+(s.hits??s.changed??0)).join(" · ")||"No rules ran");
+    load();
+  } else toast(r.error||"Cleaning failed");
+});
+$("#to-hanns").addEventListener("click",async()=>{
+  toast("Building your results deck…");
+  const j=await post(CFG.urls.hanns,{});
+  if(j.ok) location.href=j.edit_url;
+  else toast(j.error||"Could not build the deck");
+});
+
+renderRules();
+load();
+})();
+</script>
+</body>
+</html>

@@ -42,6 +42,7 @@
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'games:list' %}">Game</a>
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'boardly:create' %}">Boardly</a>
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'hanns:list' %}">Hanns</a>
+    <a class="kk-nav-link d-none d-md-inline" href="{% url 'kura:list' %}">Kura</a>
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'attendance:event_list' %}">Attendance</a>
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'cards:my_cards' %}">Cards</a>
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'accounts:profile' %}"><i class="bi bi-person-circle"></i></a>
@@ -113,6 +114,9 @@
       </a>
       <a class="kk-drawer-link" href="{% url 'hanns:list' %}">
         <i class="bi bi-easel2"></i> Hanns
+      </a>
+      <a class="kk-drawer-link" href="{% url 'kura:list' %}">
+        <i class="bi bi-clipboard-data"></i> Kura
       </a>
       <a class="kk-drawer-link" href="{% url 'attendance:event_list' %}">
         <i class="bi bi-calendar-event"></i> Attendance

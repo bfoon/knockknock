@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "hanns",
     "quest_rpg",
     "cards",
+    "kura",
     "icebreakers.apps.IcebreakersConfig",
 ]
 

@@ -1,0 +1,827 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{{ survey.title }} · Kura</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900&family=Archivo:wght@400;500;600;700;800;900&family=Spline+Sans+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--line:rgba(255,255,255,.12);--muted:#b9c2e7;--dim:rgba(248,251,255,.45);
+    --orange:#ff8a1f;--pink:#ff3f98;--cyan:#22d3ee;--violet:#8b5cf6;--green:#22c55e;--red:#e8482b}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;min-height:100vh;color:#f8fbff;font-family:"Archivo",sans-serif;-webkit-font-smoothing:antialiased;
+    background:radial-gradient(820px 460px at 86% -12%,rgba(255,138,31,.22),transparent 60%),
+      radial-gradient(740px 480px at -6% 2%,rgba(139,92,246,.32),transparent 58%),
+      linear-gradient(135deg,#050616,#090b23 52%,#160a2c)}
+  .wrap{max-width:680px;margin:0 auto;padding:1.4rem 1rem 5rem}
+  .head{border:1px solid var(--line);border-radius:22px;padding:1.2rem 1.3rem;margin-bottom:1rem;
+    background:linear-gradient(135deg,rgba(255,255,255,.12),rgba(255,255,255,.045));
+    box-shadow:0 18px 48px rgba(0,0,0,.26);backdrop-filter:blur(12px)}
+  .mark{font-weight:900;font-size:.95rem;letter-spacing:-.02em;
+    background:linear-gradient(110deg,#fff 8%,var(--orange) 36%,var(--pink) 64%,var(--cyan) 95%);
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .head h1{margin:.35rem 0 .3rem;font-family:"Fraunces",serif;font-weight:600;font-size:1.6rem;line-height:1.12;color:#fff}
+  .head p{margin:0;color:var(--muted);font-size:.86rem;line-height:1.4}
+  .progress{height:5px;border-radius:999px;background:rgba(255,255,255,.09);margin-top:.9rem;overflow:hidden}
+  .progress i{display:block;height:100%;width:0;border-radius:999px;transition:width .25s;
+    background:linear-gradient(90deg,var(--orange),var(--pink),var(--cyan))}
+  .q{border:1px solid var(--line);border-radius:18px;padding:1rem 1.1rem;margin-bottom:.85rem;
+    background:linear-gradient(135deg,rgba(255,255,255,.09),rgba(255,255,255,.03));backdrop-filter:blur(10px)}
+  .q.err{border-color:rgba(232,72,43,.65)}
+  .q.section{background:transparent;border:0;padding:.6rem .2rem 0}
+  .q.section .lbl{font-family:"Fraunces",serif;font-size:1.25rem;color:var(--cyan)}
+  .lbl{font-weight:700;font-size:.98rem;line-height:1.35;color:#fff}
+  .lbl .req{color:var(--pink)}
+  .hint{margin:.3rem 0 0;color:var(--dim);font-size:.76rem}
+  .errmsg{margin:.45rem 0 0;color:#ffb4a4;font-size:.78rem;font-weight:600}
+  .in{margin-top:.65rem}
+  input[type=text],input[type=number],input[type=date],input[type=time],input[type=datetime-local],textarea{
+    width:100%;background:rgba(0,0,0,.32);border:1px solid var(--line);border-radius:11px;color:#fff;
+    padding:.7rem .75rem;font-family:"Archivo",sans-serif;font-size:.95rem;outline:none}
+  textarea{resize:vertical;min-height:86px}
+  input:focus,textarea:focus{border-color:var(--cyan)}
+  .opt{display:flex;align-items:center;gap:.6rem;border:1px solid var(--line);border-radius:12px;
+    padding:.62rem .7rem;margin-bottom:.45rem;cursor:pointer;font-size:.9rem;font-weight:600;color:var(--muted);
+    background:rgba(255,255,255,.03);transition:.1s}
+  .opt:hover{border-color:rgba(255,255,255,.28)}
+  .opt.on{border-color:var(--pink);color:#fff;background:linear-gradient(135deg,rgba(255,138,31,.18),rgba(255,63,152,.14))}
+  .opt input{accent-color:var(--pink);flex:0 0 auto}
+  .stars{display:flex;gap:.35rem;font-size:1.7rem}
+  .stars span{cursor:pointer;color:rgba(255,255,255,.22);transition:.1s}
+  .stars span.on{color:var(--orange);text-shadow:0 0 14px rgba(255,138,31,.5)}
+  .rankrow{display:flex;align-items:center;gap:.55rem;border:1px solid var(--line);border-radius:12px;
+    padding:.55rem .7rem;margin-bottom:.4rem;background:rgba(255,255,255,.03);font-size:.9rem;font-weight:600}
+  .rankrow .num{font-family:"Spline Sans Mono",monospace;color:var(--cyan);flex:0 0 auto;width:1.4rem}
+  .rankrow .mv{margin-left:auto;display:flex;gap:.25rem}
+  .rankrow button{border:1px solid var(--line);background:transparent;color:var(--dim);border-radius:7px;
+    width:28px;height:28px;cursor:pointer}
+  .gpsbtn,.submit{display:inline-flex;align-items:center;gap:.5rem;border:1px solid rgba(255,255,255,.16);
+    color:#fff;border-radius:12px;padding:.7rem 1.1rem;font-weight:700;font-size:.92rem;cursor:pointer;
+    background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.04))}
+  .submit{width:100%;justify-content:center;padding:.95rem;font-size:1rem;
+    background:linear-gradient(135deg,var(--orange),var(--pink),var(--violet))}
+  .submit:disabled{opacity:.5;cursor:default}
+  .done{border:1px solid rgba(34,197,94,.4);border-radius:22px;padding:2.4rem 1.4rem;text-align:center;
+    background:rgba(34,197,94,.08)}
+  .done h2{font-family:"Fraunces",serif;margin:0 0 .4rem;color:#86efac}
+  .closed{border:1px dashed var(--line);border-radius:22px;padding:2.4rem 1.4rem;text-align:center;color:var(--muted)}
+  footer{margin-top:1.4rem;text-align:center;color:var(--dim);
+    font:700 .6rem/1 "Spline Sans Mono",monospace;letter-spacing:.06em}
+
+  .rep-item{border:1px solid var(--line);border-radius:14px;padding:.75rem .8rem .2rem;margin:.55rem 0;
+    background:rgba(255,255,255,.03);position:relative}
+  .rep-head{display:flex;align-items:center;gap:.6rem;margin-bottom:.5rem}
+  .rep-head b{flex:1;font-size:.82rem;color:var(--cyan);font-family:"Spline Sans Mono",monospace;
+    letter-spacing:.08em;text-transform:uppercase}
+  .rep-del{border:1px solid rgba(232,72,43,.4);background:transparent;color:#f0a397;border-radius:8px;
+    padding:.3rem .6rem;font-size:.72rem;font-weight:700;cursor:pointer}
+  .rep-del:hover{background:rgba(232,72,43,.18)}
+  .rep-add{width:100%;border:1px dashed var(--line);background:transparent;color:var(--muted);
+    border-radius:12px;padding:.65rem;font-weight:700;font-size:.85rem;cursor:pointer;margin-top:.3rem}
+  .rep-add:hover{color:#fff;border-color:rgba(255,255,255,.35)}
+  .subq{margin:.7rem 0 .9rem}
+  .subq .lbl{font-size:.88rem}
+  .geo-note{display:flex;align-items:center;gap:.5rem;border:1px solid rgba(34,211,238,.35);
+    border-radius:12px;padding:.55rem .75rem;margin-bottom:.85rem;font-size:.78rem;color:var(--muted);
+    background:rgba(34,211,238,.07)}
+  .geo-note button{border:1px solid var(--line);background:rgba(255,255,255,.06);color:#fff;
+    border-radius:8px;padding:.35rem .6rem;font-size:.72rem;font-weight:700;cursor:pointer;margin-left:auto;white-space:nowrap}
+
+  .preview-band{display:flex;align-items:center;gap:.5rem;border:1px dashed rgba(255,138,31,.6);
+    border-radius:12px;padding:.5rem .75rem;margin-bottom:.85rem;font-size:.72rem;color:#ffc38a;
+    background:rgba(255,138,31,.08);font-family:"Spline Sans Mono",monospace;letter-spacing:.04em}
+  .preview-band b{color:#fff}
+  .pv-dot{width:8px;height:8px;border-radius:50%;background:var(--orange);
+    box-shadow:0 0 8px rgba(255,138,31,.9);animation:pvp 1.4s ease-in-out infinite;flex:0 0 auto}
+  @keyframes pvp{0%,100%{opacity:1}50%{opacity:.35}}
+  .preview-band button{margin-left:auto;border:1px solid rgba(255,138,31,.5);background:transparent;
+    color:#ffc38a;border-radius:8px;padding:.28rem .55rem;font-size:.68rem;font-weight:700;cursor:pointer;white-space:nowrap}
+  .preview-band button:hover{color:#fff;border-color:var(--orange)}
+  .scanrow{display:flex;gap:.45rem;align-items:stretch}
+  .scanrow input{flex:1;min-width:0}
+  .scanbtn{border:1px solid rgba(34,211,238,.45);background:rgba(34,211,238,.1);color:#a5f3fc;
+    border-radius:12px;padding:0 .8rem;font-weight:700;font-size:.8rem;cursor:pointer;white-space:nowrap}
+  .scanbtn:hover{color:#fff;border-color:var(--cyan)}
+  .scan-modal{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;
+    background:rgba(3,4,14,.82);backdrop-filter:blur(6px)}
+  .scan-box{width:min(440px,92vw);border:1px solid var(--line);border-radius:18px;overflow:hidden;
+    background:#0b0d26;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+  .scan-box header{display:flex;align-items:center;gap:.6rem;padding:.7rem .9rem;border-bottom:1px solid var(--line)}
+  .scan-box header b{flex:1;font-size:.85rem}
+  .scan-box header button{border:1px solid var(--line);background:transparent;color:var(--muted);
+    border-radius:8px;padding:.3rem .6rem;cursor:pointer;font-weight:700}
+  #qr-reader{width:100%}
+  #qr-reader video{width:100%!important;border-radius:0}
+  .scan-hint{padding:.55rem .9rem .8rem;font-size:.72rem;color:var(--muted)}
+  .lookup-card{border:1px solid rgba(139,92,246,.45);border-radius:12px;background:rgba(139,92,246,.08);
+    margin-top:.55rem;padding:.6rem .7rem;font-size:.78rem}
+  .lookup-card.miss{border-color:rgba(232,72,43,.45);background:rgba(232,72,43,.08);color:#f0a397}
+  .lookup-card table{width:100%;border-collapse:collapse}
+  .lookup-card td{padding:.18rem .3rem;vertical-align:top}
+  .lookup-card td.k{color:var(--dim);font-family:"Spline Sans Mono",monospace;font-size:.64rem;
+    text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+  .lookup-card .filled{margin-top:.35rem;color:#c9b8ff;font-size:.68rem}
+
+  .warnmsg{margin:.45rem 0 0;color:#ffc38a;font-size:.78rem;border-left:3px solid var(--orange);
+    padding-left:.55rem}
+  .q.calc-live{border-color:rgba(34,211,238,.35);background:rgba(34,211,238,.05)}
+  .calc-out{font-family:"Spline Sans Mono",monospace;font-size:1.35rem;font-weight:700;color:var(--cyan);
+    padding:.2rem 0 .1rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <span class="mark">Kura<span style="-webkit-text-fill-color:var(--pink)">.</span></span>
+    <h1>{{ survey.title }}</h1>
+    {% if survey.description %}<p>{{ survey.description }}</p>{% endif %}
+    <div class="progress"><i id="prog"></i></div>
+  </div>
+
+  {% if open %}
+  {% if preview %}
+  <div class="preview-band">
+    <span class="pv-dot"></span> PREVIEW · live draft — edits in the builder appear here on refocus; responses validate but are <b>not stored</b>
+    <button type="button" id="pv-refresh">↻ Refresh</button>
+  </div>
+  {% endif %}
+  <div class="geo-note" id="geo-note" hidden>
+    📍 <span id="geo-note-text">Some questions and options in this survey depend on your location.</span>
+    <button type="button" id="geo-note-btn">Share location</button>
+  </div>
+  <form id="run" novalidate></form>
+  <button class="submit" id="submit-btn" type="button">Submit response</button>
+  <div class="done" id="done" hidden>
+    <h2>Response recorded — thank you.</h2>
+    <p style="color:var(--muted);margin:0">You can close this page now.</p>
+  </div>
+  {% else %}
+  <div class="closed">This survey is not accepting responses right now.</div>
+  {% endif %}
+
+  <footer>Powered by Kura · Knock-Knock</footer>
+</div>
+
+{% if open %}
+<script>window.__KURA_RUN__ = {
+  payload: {{ payload|safe }},
+  preview: {{ preview|yesno:"true,false" }},
+  submitUrl: "{% url 'kura:collect_submit' survey.code %}{% if preview %}?preview=1{% endif %}",
+  schemaUrl: "{% url 'kura:preview_schema' survey.code %}",
+  lookupUrl: "{% url 'kura:lookup_query' survey.code %}",
+  csrftoken: "{{ csrf_token }}"
+};</script>
+<script>
+(function(){
+"use strict";
+/* ── the JS twin of kura/logic.py v2 — keep semantics in lock-step ── */
+function num(v){ const n=parseFloat(v); return isNaN(n)?null:n; }
+function evalRule(r,a){
+  const have=a[r.q], want=r.value, c=r.cmp||"eq";
+  const empty=v=>v==null||v===""||(Array.isArray(v)&&!v.length);
+  if(c==="answered") return !empty(have);
+  if(c==="not_answered") return empty(have);
+  if(c==="selected"||c==="not_selected"){
+    const sel=Array.isArray(have)?have:(empty(have)?[]:[have]);
+    const hit=sel.map(String).includes(String(want));
+    return c==="selected"?hit:!hit;
+  }
+  if(c==="in"||c==="not_in"){
+    const opts=(Array.isArray(want)?want:[want]).map(String);
+    const hit=opts.includes(String(have));
+    return c==="in"?hit:!hit;
+  }
+  if(c==="contains") return want!=null&&have!=null&&String(have).toLowerCase().includes(String(want).toLowerCase());
+  if(c==="not_contains") return !(want!=null&&have!=null&&String(have).toLowerCase().includes(String(want).toLowerCase()));
+  if(c==="matches"){ try{return new RegExp(String(want)).test(String(have??""));}catch(e){return false;} }
+  if(c==="between"){
+    const n=num(have); if(n==null||!Array.isArray(want)||want.length!==2) return false;
+    const lo=num(want[0]),hi=num(want[1]); return lo!=null&&hi!=null&&n>=lo&&n<=hi;
+  }
+  if(["gt","gte","lt","lte"].includes(c)){
+    const x=num(have),y=num(want); if(x==null||y==null) return false;
+    return c==="gt"?x>y:c==="gte"?x>=y:c==="lt"?x<y:x<=y;
+  }
+  const x=num(have),y=num(want);
+  const hit=(x!=null&&y!=null)?x===y:(have!=null?String(have)===String(want):(want==null||want===""));
+  return c==="eq"?hit:!hit;
+}
+function evalCond(cond,a){
+  if(!cond) return true;
+  if(cond.rules){
+    const rs=cond.rules||[]; if(!rs.length) return true;
+    return cond.op==="or"?rs.some(r=>evalCond(r,a)):rs.every(r=>evalCond(r,a));
+  }
+  return evalRule(cond,a);
+}
+function calcExpr(expr,a){
+  if(!expr) return null;
+  const src=String(expr)
+    .replace(/\band\b/g,"&&").replace(/\bor\b/g,"||").replace(/\bnot\b/g,"!")
+    .replace(/\^/g,"**");
+  const KW=["abs","min","max","round","int","sqrt","pow","coalesce","if_","count",
+    "sum_of","avg_of","min_of","max_of","count_if","Math","value"];
+  const stripped=src.replace(/(["'])(?:\\.|(?!\1).)*\1/g,"");  // ignore names in string literals
+  const names=[...new Set((stripped.match(/[A-Za-z_][A-Za-z0-9_]*/g)||[]))]
+    .filter(n=>!KW.includes(n));
+  const numsOf=(items,col)=>Array.isArray(items)
+    ? items.filter(i=>i&&typeof i==="object").map(i=>num(i[col])).filter(v=>v!=null) : [];
+  const env={abs:Math.abs,min:Math.min,max:Math.max,round:Math.round,sqrt:Math.sqrt,pow:Math.pow,
+    int:v=>Math.trunc(Number(v)||0),
+    coalesce:(...xs)=>xs.find(x=>x!=null&&x!==""&&!(Array.isArray(x)&&!x.length))??0,
+    if_:(c,x,y)=>c?x:y,
+    count:v=>Array.isArray(v)?v.length:(v==null||v===""?0:1),
+    sum_of:(it,c)=>numsOf(it,c).reduce((s,v)=>s+v,0),
+    avg_of:(it,c)=>{const v=numsOf(it,c);return v.length?v.reduce((s,x)=>s+x,0)/v.length:0;},
+    min_of:(it,c)=>{const v=numsOf(it,c);return v.length?Math.min(...v):0;},
+    max_of:(it,c)=>{const v=numsOf(it,c);return v.length?Math.max(...v):0;},
+    count_if:(it,c,cmp,ref)=>numsOf(it,c).filter(v=>{const r=num(ref);if(r==null)return false;
+      return cmp==="eq"?v===r:cmp==="ne"?v!==r:cmp==="gt"?v>r:cmp==="gte"?v>=r:cmp==="lt"?v<r:cmp==="lte"?v<=r:false;}).length,
+    value:a.value!==undefined?(Array.isArray(a.value)?a.value:(num(a.value)??a.value)):0};
+  names.forEach(n=>{ const raw=a[n]; env[n]=Array.isArray(raw)?raw:(num(raw)??0); });
+  try{
+    const fn=new Function(...Object.keys(env),"return ("+src+");");
+    const out=fn(...Object.values(env));
+    return typeof out==="number"&&isFinite(out)?Math.round(out*1e6)/1e6:out;
+  }catch(e){ return null; }
+}
+function exprNumber(expr,ctx){
+  if(expr==null||String(expr).trim()==="") return null;
+  const out=calcExpr(expr,ctx);
+  return typeof out==="boolean"?(out?1:0):num(out);
+}
+function exprHolds(expr,ctx){
+  if(expr==null||String(expr).trim()==="") return true;
+  const out=calcExpr(expr,ctx);
+  return out==null?true:!!out;
+}
+function pipeText(t,a){
+  return String(t||"").replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g,(_,n)=>{
+    const v=a[n]; if(v==null||v==="") return "";
+    return Array.isArray(v)?v.join(", "):String(v);
+  });
+}
+/* geofencing */
+function havKm(a1,o1,a2,o2){
+  const R=6371,p1=a1*Math.PI/180,p2=a2*Math.PI/180,
+        dp=(a2-a1)*Math.PI/180,dl=(o2-o1)*Math.PI/180;
+  const h=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+function inPoly(lat,lng,pts){
+  if(!pts||pts.length<3) return false;
+  let ins=false;
+  for(let i=0,j=pts.length-1;i<pts.length;j=i++){
+    const yi=+pts[i][0],xi=+pts[i][1],yj=+pts[j][0],xj=+pts[j][1];
+    if(((yi>lat)!==(yj>lat))&&(lng<(xj-xi)*(lat-yi)/((yj-yi)||1e-12)+xi)) ins=!ins;
+  }
+  return ins;
+}
+function inZone(lat,lng,z){
+  if(!z) return false;
+  if(z.kind==="polygon") return inPoly(lat,lng,z.points||[]);
+  try{ return havKm(lat,lng,+z.lat,+z.lng)<=+(z.radius_km||1); }catch(e){ return false; }
+}
+function gpsInAny(g,ids){ return !!g&&(ids||[]).some(id=>inZone(g[0],g[1],ZONES[String(id)])); }
+function geoRelevant(q){
+  const gf=q.geofence||{}; const ids=gf.zones||[];
+  if(!ids.length) return true;
+  if(!gps) return (gf.fallback||"show")!=="hide";
+  const inside=gpsInAny(gps,ids);
+  return (gf.mode||"inside")==="inside"?inside:!inside;
+}
+function allowedChoices(q,ctx){
+  if(!q.choices) return null;
+  const pn=(q.cascade&&q.cascade.parent)||"";
+  const pv=pn?ctx[pn]:null;
+  return q.choices.filter(c=>{
+    if(pn){
+      if(pv==null||pv===""||(Array.isArray(pv)&&!pv.length)) return false;
+      if(String(c.parent)!==String(pv)) return false;
+    }
+    const cz=c.zones||[];
+    if(cz.length){
+      if(!gps) return (q.geo_choice_fallback||"all")!=="none";
+      if(!gpsInAny(gps,cz)) return false;
+    }
+    return true;
+  });
+}
+
+/* ── runner ── */
+const CFG=window.__KURA_RUN__;
+const P=CFG.payload||{};
+const Q=(P.schema&&P.schema.questions)||[];
+const ZONES={}; ((P.schema&&P.schema.zones)||[]).forEach(z=>{ if(z.id!=null) ZONES[String(z.id)]=z; });
+const answers={};
+const errors={};
+const startedAt=new Date();
+const clientUuid=(crypto.randomUUID?crypto.randomUUID():
+  "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c==="x"?r:(r&3|8)).toString(16);}));
+let gps=null;
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const form=$("#run");
+const shuffled={};
+function order(q,list){
+  const src=list||q.choices||[];
+  if(!q.shuffle_choices) return src;
+  const key=q.name;
+  if(!shuffled[key]){
+    shuffled[key]=[...(q.choices||[])];
+    for(let i=shuffled[key].length-1;i>0;i--){const j=Math.random()*(i+1)|0;
+      [shuffled[key][i],shuffled[key][j]]=[shuffled[key][j],shuffled[key][i]];}
+  }
+  const rank=new Map(shuffled[key].map((c,i)=>[String(c.value),i]));
+  return [...src].sort((a,b)=>rank.get(String(a.value))-rank.get(String(b.value)));
+}
+
+/* does the form use geo features at all? */
+const usesGeo = !!Object.keys(ZONES).length && Q.some(function scan(q){
+  if(q.geofence&&(q.geofence.zones||[]).length) return true;
+  if((q.choices||[]).some(c=>(c.zones||[]).length)) return true;
+  if(q.type==="repeat") return (q.children||[]).some(scan);
+  return false;
+});
+
+function context(){
+  const ctx=Object.assign({},answers);
+  Q.forEach(q=>{ if(q.type==="calculate") ctx[q.name]=calcExpr(q.calc,ctx); });
+  return ctx;
+}
+function itemContext(q,item,ctx){
+  const ic=Object.assign({},ctx,item);
+  (q.children||[]).forEach(ch=>{ if(ch.type==="calculate") ic[ch.name]=calcExpr(ch.calc,ic); });
+  return ic;
+}
+
+function inputHtml(q, v, ns, ctx){
+  // ns = "" for top level, or "r|group|idx|" prefix for repeat children
+  const dq=ns+q.name;
+  switch(q.type){
+    case "text": return '<input type="text" data-q="'+esc(dq)+'" value="'+esc(v||"")+'">';
+    case "barcode":{
+      const hasLk = q.lookup && q.lookup.dataset;
+      return '<div class="scanrow">'+
+        '<input type="text" data-q="'+esc(dq)+'" value="'+esc(v||"")+'" placeholder="Scan or type a code">'+
+        '<button type="button" class="scanbtn" data-scan="'+esc(dq)+'">📷 Scan</button>'+
+        (hasLk?'<button type="button" class="scanbtn" data-find="'+esc(dq)+'">🔎 Find</button>':'')+
+        '</div>'+(lookupCards[dq]||"");
+    }
+    case "long_text": return '<textarea data-q="'+esc(dq)+'">'+esc(v||"")+'</textarea>';
+    case "integer": return '<input type="number" step="1" data-q="'+esc(dq)+'" value="'+esc(v??"")+'">';
+    case "decimal": return '<input type="number" step="any" data-q="'+esc(dq)+'" value="'+esc(v??"")+'">';
+    case "date": return '<input type="date" data-q="'+esc(dq)+'" value="'+esc(v||"")+'">';
+    case "time": return '<input type="time" data-q="'+esc(dq)+'" value="'+esc(v||"")+'">';
+    case "datetime": return '<input type="datetime-local" data-q="'+esc(dq)+'" value="'+esc(v||"")+'">';
+    case "select_one": case "likert":{
+      const opts=order(q,allowedChoices(q,ctx)||[]);
+      if(!opts.length) return '<p class="hint">'+((q.cascade&&q.cascade.parent)?"Answer “"+esc(q.cascade.parent)+"” first.":"No options available at your location.")+'</p>';
+      return opts.map(c=>'<label class="opt'+(String(v)===String(c.value)?" on":"")+'">'+
+        '<input type="radio" name="r_'+esc(dq)+'" data-q="'+esc(dq)+'" value="'+esc(c.value)+'"'+
+        (String(v)===String(c.value)?" checked":"")+'>'+esc(c.label)+'</label>').join("");
+    }
+    case "select_multiple":{
+      const sel=Array.isArray(v)?v.map(String):[];
+      const opts=order(q,allowedChoices(q,ctx)||[]);
+      if(!opts.length) return '<p class="hint">'+((q.cascade&&q.cascade.parent)?"Answer “"+esc(q.cascade.parent)+"” first.":"No options available at your location.")+'</p>';
+      return opts.map(c=>'<label class="opt'+(sel.includes(String(c.value))?" on":"")+'">'+
+        '<input type="checkbox" data-qm="'+esc(dq)+'" value="'+esc(c.value)+'"'+
+        (sel.includes(String(c.value))?" checked":"")+'>'+esc(c.label)+'</label>').join("");
+    }
+    case "rank":{
+      const opts=(allowedChoices(q,ctx)||[]);
+      const allowedVals=opts.map(c=>String(c.value));
+      let cur=Array.isArray(v)&&v.length?v.filter(x=>allowedVals.includes(String(x))):allowedVals;
+      setPath(dq,cur);
+      const lbl=x=>{const c=opts.find(c=>String(c.value)===String(x));return c?c.label:x;};
+      return cur.map((val,i)=>'<div class="rankrow"><span class="num">'+(i+1)+'</span>'+esc(lbl(val))+
+        '<span class="mv"><button type="button" data-rku="'+esc(dq)+'" data-i="'+i+'">↑</button>'+
+        '<button type="button" data-rkd="'+esc(dq)+'" data-i="'+i+'">↓</button></span></div>').join("");
+    }
+    case "rating":{
+      const maxStars=(q.validate&&q.validate.max)||5, cur=Number(v)||0;
+      let s='<div class="stars">';
+      for(let i=1;i<=maxStars;i++) s+='<span data-star="'+esc(dq)+'" data-n="'+i+'" class="'+(i<=cur?"on":"")+'">★</span>';
+      return s+"</div>";
+    }
+    case "gps":
+      return '<button type="button" class="gpsbtn" data-gps="'+esc(dq)+'">📍 '+(v?("Captured: "+esc(v)):"Capture my location")+'</button>';
+    case "photo": case "audio": case "signature":
+      return '<p class="hint">Captured in the mobile app; on the web enter a file reference:</p>'+
+        '<input type="text" data-q="'+esc(dq)+'" value="'+esc(v||"")+'" placeholder="reference / URL">';
+    default: return "";
+  }
+}
+
+/* path helpers: "name" or "r|group|idx|child" */
+function getPath(p){
+  if(!p.startsWith("r|")) return answers[p];
+  const [,g,i,c]=p.split("|");
+  return ((answers[g]||[])[+i]||{})[c];
+}
+function setPath(p,val){
+  if(!p.startsWith("r|")){ answers[p]=val; return; }
+  const [,g,i,c]=p.split("|");
+  answers[g]=answers[g]||[];
+  answers[g][+i]=answers[g][+i]||{};
+  answers[g][+i][c]=val;
+}
+
+function questionHtml(q, ctx, ns, v, errKey){
+  const err=errors[errKey];
+  // live soft warning: evaluate as the respondent types
+  const vv=q.validate||{};
+  if(vv.warn_expr&&!(v==null||v===""||(Array.isArray(v)&&!v.length))){
+    const ctx2=Object.assign({},ctx,{value:v}); if(q.name) ctx2[q.name]=v;
+    if(!exprHolds(vv.warn_expr,ctx2)) warns[errKey]=vv.warn_message||"Please double-check this answer.";
+    else delete warns[errKey];
+  }
+  return '<div class="lbl">'+esc(pipeText(q.label,ctx))+(q.required?' <span class="req">*</span>':'')+'</div>'+
+    (q.hint?'<p class="hint">'+esc(pipeText(q.hint,ctx))+'</p>':'')+
+    '<div class="in">'+inputHtml(q,v,ns,ctx)+'</div>'+
+    (err?'<p class="errmsg">'+esc(err)+'</p>':'')+
+    (!err&&warns[errKey]?'<p class="warnmsg">⚠ '+esc(warns[errKey])+'</p>':'');
+}
+
+function repeatBounds(rp,ctx){
+  const exact0=exprNumber(rp.count_expr,ctx);
+  const exact=exact0==null?null:Math.max(0,Math.min(Math.trunc(exact0),500));
+  let lo=num(rp.min); const dlo=exprNumber(rp.min_expr,ctx);
+  if(dlo!=null) lo=lo==null?dlo:Math.max(lo,dlo);
+  let hi=num(rp.max); const dhi=exprNumber(rp.max_expr,ctx);
+  if(dhi!=null) hi=hi==null?dhi:Math.min(hi,dhi);
+  return {exact,lo,hi};
+}
+function repeatHtml(q,ctx){
+  const items=Array.isArray(answers[q.name])?answers[q.name]:(answers[q.name]=[]);
+  const rp=q.repeat||{};
+  const B=repeatBounds(rp,ctx);
+  if(B.exact!=null){                 // auto-size to the calculated count
+    while(items.length<B.exact) items.push({});
+    if(items.length>B.exact) items.length=B.exact;
+  }
+  let html="";
+  items.forEach((item,idx)=>{
+    const ic=itemContext(q,item||{},ctx);
+    const label=pipeText((rp.item_label||"Item ${index}").replace(/\$\{index\}/g,String(idx+1)),ic);
+    let inner="";
+    (q.children||[]).forEach(ch=>{
+      if(ch.type==="section"){ inner+='<div class="lbl" style="color:var(--cyan)">'+esc(pipeText(ch.label,ic))+'</div>'; return; }
+      if(ch.type==="calculate") return;
+      if(!evalCond(ch.relevant,ic)||!geoRelevant(ch)) return;
+      const ns="r|"+q.name+"|"+idx+"|";
+      inner+='<div class="subq">'+questionHtml(ch,ic,ns,(item||{})[ch.name],q.name+"."+idx+"."+ch.name)+'</div>';
+    });
+    html+='<div class="rep-item"><div class="rep-head"><b>'+esc(label)+'</b>'+
+      (B.exact==null?'<button type="button" class="rep-del" data-repdel="'+esc(q.name)+'" data-i="'+idx+'">✕ Remove</button>':'')+
+      '</div>'+inner+'</div>';
+  });
+  if(B.exact!=null){
+    html+='<p class="hint">'+B.exact+' item(s), set by the form ('+esc(rp.count_expr)+').'+
+      (B.exact===0?' Answer the controlling question above to add items.':'')+'</p>';
+  } else {
+    const canAdd=B.hi==null||items.length<B.hi;
+    html+=canAdd?'<button type="button" class="rep-add" data-repadd="'+esc(q.name)+'">+ '+esc(rp.add_label||"Add "+(q.item_noun||"item"))+'</button>':"";
+    if(B.lo!=null||B.hi!=null)
+      html+='<p class="hint">'+(B.lo!=null?("Minimum "+B.lo):"")+(B.lo!=null&&B.hi!=null?", ":"")+
+        (B.hi!=null?("maximum "+B.hi):"")+'.</p>';
+  }
+  return html;
+}
+
+function render(){
+  const ctx=context();
+  const scrollY=window.scrollY;
+  form.innerHTML="";
+  let answered=0, visible=0;
+  Q.forEach(q=>{
+    if(q.type==="calculate"){
+      if(!q.visible) return;
+      if(!evalCond(q.relevant,ctx)||!geoRelevant(q)) return;
+      const out=ctx[q.name];
+      const div=document.createElement("div");
+      div.className="q calc-live";
+      div.innerHTML='<div class="lbl">'+esc(pipeText(q.label,ctx))+'</div>'+
+        '<div class="calc-out">'+(out==null?"—":esc(typeof out==="number"?(Math.round(out*100)/100):out))+'</div>'+
+        (q.hint?'<p class="hint">'+esc(pipeText(q.hint,ctx))+'</p>':'');
+      form.appendChild(div);
+      return;
+    }
+    if(!evalCond(q.relevant,ctx)||!geoRelevant(q)){ delete errors[q.name]; return; }
+    const div=document.createElement("div");
+    if(q.type==="section"){
+      div.className="q section";
+      div.innerHTML='<div class="lbl">'+esc(pipeText(q.label,ctx))+'</div>'+
+        (q.hint?'<p class="hint">'+esc(pipeText(q.hint,ctx))+'</p>':'');
+      form.appendChild(div); return;
+    }
+    visible++;
+    const v=answers[q.name];
+    if(!(v==null||v===""||(Array.isArray(v)&&!v.length))) answered++;
+    div.className="q"+(errors[q.name]?" err":"");
+    if(q.type==="repeat"){
+      div.innerHTML='<div class="lbl">'+esc(pipeText(q.label,ctx))+(q.required?' <span class="req">*</span>':'')+'</div>'+
+        (q.hint?'<p class="hint">'+esc(pipeText(q.hint,ctx))+'</p>':'')+
+        repeatHtml(q,ctx)+
+        (errors[q.name]?'<p class="errmsg">'+esc(errors[q.name])+'</p>':'');
+    } else {
+      div.innerHTML=questionHtml(q,ctx,"",v,q.name);
+    }
+    form.appendChild(div);
+  });
+  $("#prog").style.width=(visible?Math.round(answered/visible*100):0)+"%";
+  window.scrollTo(0,scrollY);
+}
+
+/* geo banner + auto-capture */
+function captureGps(silent){
+  if(!navigator.geolocation){ if(!silent) alert("Location is not available in this browser."); return; }
+  navigator.geolocation.getCurrentPosition(p=>{
+    gps=[p.coords.latitude,p.coords.longitude];
+    const n=$("#geo-note");
+    if(n){ $("#geo-note-text").textContent="Location captured — showing the questions and options for your area.";
+           $("#geo-note-btn").hidden=true; }
+    render();
+  },()=>{ if(!silent){ const n=$("#geo-note-text"); if(n) n.textContent="Could not get your location — tap Share location to retry."; } },
+  {enableHighAccuracy:true,timeout:15000});
+}
+if(usesGeo){
+  const n=$("#geo-note"); if(n) n.hidden=false;
+  $("#geo-note-btn").addEventListener("click",()=>captureGps(false));
+  captureGps(true);
+}
+
+/* ── lookup cards keyed by input path ── */
+const lookupCards = {};
+const warns = {};   // soft warnings: shown in amber, never block submit
+
+function findQuestion(path){
+  // returns [questionDef, nsPrefix] for "name" or "r|group|idx|child"
+  if(!path.startsWith("r|")){
+    return [Q.find(x=>x.name===path)||null, ""];
+  }
+  const [,g,i,c]=path.split("|");
+  const grp=Q.find(x=>x.name===g);
+  const ch=grp&&(grp.children||[]).find(x=>x.name===c);
+  return [ch||null, "r|"+g+"|"+i+"|"];
+}
+
+async function runLookup(path){
+  const [q, ns]=findQuestion(path);
+  if(!q||!q.lookup||!q.lookup.dataset) return;
+  const val=getPath(path);
+  if(val==null||val===""){ delete lookupCards[path]; render(); return; }
+  lookupCards[path]='<div class="lookup-card">Searching…</div>'; render();
+  try{
+    const j=await fetch(CFG.lookupUrl+"?ds="+encodeURIComponent(q.lookup.dataset)+
+                        "&q="+encodeURIComponent(val)).then(r=>r.json());
+    if(!j.ok){ lookupCards[path]='<div class="lookup-card miss">Lookup unavailable: '+esc(j.error||"error")+'</div>'; render(); return; }
+    if(!j.found){ lookupCards[path]='<div class="lookup-card miss">No record matches “'+esc(val)+'”.</div>'; render(); return; }
+    const cols=(j.columns||[]).slice(0,8);
+    let rowsHtml=cols.map(cn=>'<tr><td class="k">'+esc(cn)+'</td><td>'+esc(j.row[cn]??"")+'</td></tr>').join("");
+    // auto-fill mapped answers
+    const filled=[];
+    (q.lookup.fill||[]).forEach(m=>{
+      if(!m||!m.target||!m.column) return;
+      const cv=j.row[m.column];
+      if(cv==null) return;
+      const siblings=ns?(Q.find(x=>"r|"+x.name+"|"===ns.slice(0,ns.indexOf("|",2)+1))||{}):null;
+      // sibling in the same repeat item, else top-level answer
+      let tPath=m.target;
+      if(ns){
+        const [,g]=path.split("|");
+        const grp=Q.find(x=>x.name===g);
+        if(grp&&(grp.children||[]).some(ch=>ch.name===m.target)) tPath=ns+m.target;
+      }
+      const [tq]=findQuestion(tPath);
+      const numeric=tq&&["integer","decimal","rating"].includes(tq.type);
+      setPath(tPath, numeric?(num(cv)??cv):cv);
+      filled.push(m.target);
+    });
+    lookupCards[path]='<div class="lookup-card"><table>'+rowsHtml+'</table>'+
+      (filled.length?'<div class="filled">↳ filled: '+esc(filled.join(", "))+'</div>':'')+'</div>';
+    render();
+  }catch(e){
+    lookupCards[path]='<div class="lookup-card miss">Lookup failed — check your connection.</div>'; render();
+  }
+}
+
+/* ── camera scanning (html5-qrcode, loaded on demand) ── */
+let scannerLibPromise=null, activeScanner=null;
+function loadScannerLib(){
+  if(window.Html5Qrcode) return Promise.resolve();
+  if(scannerLibPromise) return scannerLibPromise;
+  scannerLibPromise=new Promise((res,rej)=>{
+    const s=document.createElement("script");
+    s.src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
+    s.onload=res; s.onerror=()=>rej(new Error("load"));
+    document.head.appendChild(s);
+  });
+  return scannerLibPromise;
+}
+function closeScanner(){
+  const m=document.getElementById("scan-modal");
+  const stop=activeScanner?activeScanner.stop().catch(()=>{}):Promise.resolve();
+  stop.finally(()=>{ activeScanner=null; if(m) m.remove(); });
+}
+async function openScanner(path){
+  if(!window.isSecureContext){
+    alert("Camera scanning needs a secure (https) connection — you can type the code instead.");
+    return;
+  }
+  const modal=document.createElement("div");
+  modal.className="scan-modal"; modal.id="scan-modal";
+  modal.innerHTML='<div class="scan-box"><header><b>📷 Point the camera at the code</b>'+
+    '<button type="button" id="scan-close">✕ Close</button></header>'+
+    '<div id="qr-reader"></div>'+
+    '<div class="scan-hint">QR, EAN, Code-128 and most common barcodes are recognised automatically.</div></div>';
+  document.body.appendChild(modal);
+  modal.querySelector("#scan-close").addEventListener("click",closeScanner);
+  modal.addEventListener("click",e=>{ if(e.target===modal) closeScanner(); });
+  try{
+    await loadScannerLib();
+    activeScanner=new Html5Qrcode("qr-reader");
+    await activeScanner.start({facingMode:"environment"},
+      {fps:10, qrbox:{width:230,height:230}},
+      (text)=>{
+        setPath(path, text);
+        closeScanner();
+        render();
+        runLookup(path);   // no-op unless a lookup is linked
+      },
+      ()=>{});
+  }catch(e){
+    closeScanner();
+    alert("Could not start the camera ("+(e&&e.message||e)+"). You can type the code instead.");
+  }
+}
+
+/* ── preview: live-refresh the draft schema ── */
+async function refreshDraft(){
+  try{
+    const j=await fetch(CFG.schemaUrl).then(r=>r.json());
+    if(j.ok&&j.schema){
+      Q.length=0; (j.schema.questions||[]).forEach(q=>Q.push(q));
+      for(const k of Object.keys(ZONES)) delete ZONES[k];
+      (j.schema.zones||[]).forEach(z=>{ if(z.id!=null) ZONES[String(z.id)]=z; });
+      render();
+    }
+  }catch(e){}
+}
+if(CFG.preview){
+  document.addEventListener("visibilitychange",()=>{ if(!document.hidden) refreshDraft(); });
+  window.addEventListener("focus",refreshDraft);
+  const rb=document.getElementById("pv-refresh");
+  if(rb) rb.addEventListener("click",refreshDraft);
+}
+
+/* events */
+form.addEventListener("input",e=>{
+  const t=e.target;
+  if(t.dataset.q){
+    if(lookupCards[t.dataset.q]) delete lookupCards[t.dataset.q];
+    setPath(t.dataset.q, t.value===""?null:(t.type==="number"?Number(t.value):t.value));
+    delete errors[t.dataset.q.startsWith("r|")?t.dataset.q.split("|").slice(1).join("."):t.dataset.q];
+  }
+  if(t.dataset.qm){
+    const cur=new Set(((getPath(t.dataset.qm))||[]).map(String));
+    t.checked?cur.add(t.value):cur.delete(t.value);
+    setPath(t.dataset.qm,[...cur]);
+  }
+  if(t.type==="radio"||t.type==="checkbox") render();
+});
+form.addEventListener("focusout",()=>render());
+form.addEventListener("click",e=>{
+  const t=e.target;
+  if(t.dataset.star){ setPath(t.dataset.star,Number(t.dataset.n)); render(); }
+  if(t.dataset.rku!=null||t.dataset.rkd!=null){
+    const p=t.dataset.rku||t.dataset.rkd,i=+t.dataset.i,d=t.dataset.rku?-1:1,arr=getPath(p);
+    const j=i+d; if(j<0||j>=arr.length) return;
+    [arr[i],arr[j]]=[arr[j],arr[i]]; render();
+  }
+  if(t.dataset.gps){
+    if(!navigator.geolocation){ alert("Location is not available in this browser."); return; }
+    t.textContent="📍 Locating…";
+    navigator.geolocation.getCurrentPosition(p=>{
+      gps=[p.coords.latitude,p.coords.longitude];
+      setPath(t.dataset.gps,p.coords.latitude.toFixed(6)+","+p.coords.longitude.toFixed(6));
+      render();
+    },()=>{ t.textContent="📍 Could not get location — tap to retry"; },{enableHighAccuracy:true,timeout:12000});
+  }
+  if(t.dataset.scan){ openScanner(t.dataset.scan); return; }
+  if(t.dataset.find){ runLookup(t.dataset.find); return; }
+  if(t.dataset.repadd){ (answers[t.dataset.repadd]=answers[t.dataset.repadd]||[]).push({}); render(); }
+  if(t.dataset.repdel!=null){
+    const g=t.dataset.repdel;
+    if(confirm("Remove this item?")){ answers[g].splice(+t.dataset.i,1); render(); }
+  }
+});
+
+/* validation (client mirror; the server re-checks everything) */
+function checkOne(q,val,ctx,errs,key){
+  const vv=q.validate||{};
+  const ctx2=Object.assign({},ctx,{value:val}); if(q.name) ctx2[q.name]=val;
+  delete warns[key];
+  if(["integer","decimal","rating"].includes(q.type)){
+    const n=num(val);
+    if(n==null){ errs[key]="Enter a number."; return; }
+    if(q.type==="integer"&&n!==Math.trunc(n)){ errs[key]="Enter a whole number."; return; }
+    let lo=num(vv.min); const dlo=exprNumber(vv.min_expr,ctx);
+    if(dlo!=null) lo=lo==null?dlo:Math.max(lo,dlo);
+    let hi=num(vv.max); const dhi=exprNumber(vv.max_expr,ctx);
+    if(dhi!=null) hi=hi==null?dhi:Math.min(hi,dhi);
+    if(lo!=null&&n<lo){ errs[key]=vv.message||("Must be at least "+lo+"."); return; }
+    if(hi!=null&&n>hi){ errs[key]=vv.message||("Must be at most "+hi+"."); return; }
+  }
+  if(["text","long_text","barcode"].includes(q.type)&&vv.regex){
+    try{ if(!new RegExp(vv.regex).test(String(val))){ errs[key]=vv.message||"Answer format is not valid."; return; } }catch(e){}
+  }
+  if(["select_one","likert"].includes(q.type)){
+    const al=(allowedChoices(q,ctx)||[]).map(c=>String(c.value));
+    if(!al.includes(String(val))){ errs[key]="Choose one of the options available to you."; return; }
+  }
+  if(["select_multiple","rank"].includes(q.type)){
+    const vals=Array.isArray(val)?val:[val];
+    const al=(allowedChoices(q,ctx)||[]).map(c=>String(c.value));
+    if(vals.some(x=>!al.includes(String(x)))){ errs[key]="One of the selected options is not available to you."; return; }
+    if(vv.min!=null&&vals.length<vv.min){ errs[key]=vv.message||("Select at least "+vv.min+"."); return; }
+    if(vv.max!=null&&vals.length>vv.max){ errs[key]=vv.message||("Select at most "+vv.max+"."); return; }
+  }
+  if(vv.expr&&!exprHolds(vv.expr,ctx2)){
+    errs[key]=vv.message||"This answer fails the form's constraint."; return;
+  }
+  if(vv.warn_expr&&!exprHolds(vv.warn_expr,ctx2)){
+    warns[key]=vv.warn_message||"Please double-check this answer.";
+  }
+}
+function validate(){
+  const ctx=context();
+  Object.keys(errors).forEach(k=>delete errors[k]);
+  Q.forEach(q=>{
+    if(q.type==="section"||q.type==="calculate") return;
+    if(!evalCond(q.relevant,ctx)||!geoRelevant(q)) return;
+    const v=answers[q.name];
+    const empty=v==null||v===""||(Array.isArray(v)&&!v.length);
+    if(q.type==="repeat"){
+      const items=Array.isArray(v)?v:[];
+      const rp=q.repeat||{};
+      const B=repeatBounds(rp,ctx);
+      if(B.exact!=null&&items.length!==B.exact){ errors[q.name]="Exactly "+B.exact+" item(s) required."; return; }
+      if(B.exact==null&&B.lo!=null&&items.length<B.lo){ errors[q.name]="Add at least "+B.lo+" item(s)."; return; }
+      if(B.exact==null&&B.hi!=null&&items.length>B.hi){ errors[q.name]="No more than "+B.hi+" item(s) allowed."; return; }
+      if(q.required&&!items.length){ errors[q.name]="Add at least one item."; return; }
+      items.forEach((item,idx)=>{
+        const ic=itemContext(q,item||{},ctx);
+        (q.children||[]).forEach(ch=>{
+          if(ch.type==="section"||ch.type==="calculate") return;
+          if(!evalCond(ch.relevant,ic)||!geoRelevant(ch)) return;
+          const cv=(item||{})[ch.name];
+          const cempty=cv==null||cv===""||(Array.isArray(cv)&&!cv.length);
+          const key=q.name+"."+idx+"."+ch.name;
+          if(ch.required&&cempty){ errors[key]=(ch.validate||{}).message||"This answer is required."; return; }
+          if(cempty) return;
+          checkOne(ch,cv,ic,errors,key);
+        });
+      });
+      return;
+    }
+    if(q.required&&empty){ errors[q.name]=(q.validate||{}).message||"This answer is required."; return; }
+    if(empty) return;
+    checkOne(q,v,ctx,errors,q.name);
+  });
+  return !Object.keys(errors).length;
+}
+
+async function submit(){
+  if(!validate()){ render(); document.querySelector(".q.err,.errmsg")?.scrollIntoView({behavior:"smooth",block:"center"}); return; }
+  const btn=$("#submit-btn"); btn.disabled=true; btn.textContent="Sending…";
+  try{
+    const res=await fetch(CFG.submitUrl,{method:"POST",
+      headers:{"Content-Type":"application/json","X-CSRFToken":CFG.csrftoken},
+      body:JSON.stringify({uuid:clientUuid,answers,gps,
+        started_at:startedAt.toISOString(),duration_ms:Date.now()-startedAt.getTime()})});
+    const j=await res.json();
+    if(j.ok&&j.preview){
+      btn.disabled=false; btn.textContent="Submit response";
+      const d=$("#done");
+      d.hidden=false;
+      d.innerHTML="<h2>✓ Preview response is valid</h2><p>Skip logic, geofencing, cascades and validation all passed. Nothing was stored — publish when you're ready to collect for real.</p>";
+      d.scrollIntoView({behavior:"smooth",block:"center"});
+      setTimeout(()=>{ d.hidden=true; }, 6000);
+      return;
+    }
+    if(j.ok){ form.hidden=true; btn.hidden=true; const gn=$("#geo-note"); if(gn) gn.hidden=true;
+      $("#done").hidden=false; window.scrollTo({top:0,behavior:"smooth"}); }
+    else if(j.errors){ Object.assign(errors,j.errors); render(); btn.disabled=false; btn.textContent="Submit response"; }
+    else { alert(j.error||"Could not submit."); btn.disabled=false; btn.textContent="Submit response"; }
+  }catch(e){ alert("You appear to be offline — your answers are still on this page; try again when connected."); btn.disabled=false; btn.textContent="Submit response"; }
+}
+$("#submit-btn").addEventListener("click",submit);
+render();
+})();
+</script>
+{% endif %}
+</body>
+</html>

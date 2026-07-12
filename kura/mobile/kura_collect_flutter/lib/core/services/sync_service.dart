@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import '../database/app_database.dart';
@@ -7,23 +5,24 @@ import '../models/submission_model.dart';
 import 'api_client.dart';
 
 class SyncService {
+  SyncService({
+    required this.database,
+    required this.api,
+  });
+
   final AppDatabase database;
   final ApiClient api;
 
-  SyncService(
-    this.database, {
-    ApiClient? api,
-  }) : api = api ?? ApiClient();
-
   Future<int> syncAll() async {
-    final connectivityResults =
+    final List<ConnectivityResult> connectivity =
         await Connectivity().checkConnectivity();
 
-    final hasConnection = connectivityResults.any(
-      (result) => result != ConnectivityResult.none,
+    final bool isOnline = connectivity.any(
+      (ConnectivityResult result) =>
+          result != ConnectivityResult.none,
     );
 
-    if (!hasConnection) {
+    if (!isOnline) {
       return 0;
     }
 
@@ -42,7 +41,7 @@ class SyncService {
           .add(submission);
     }
 
-    int synced = 0;
+    int syncedCount = 0;
 
     for (final MapEntry<String, List<LocalSubmission>> entry
         in grouped.entries) {
@@ -53,61 +52,66 @@ class SyncService {
         final Map<String, dynamic> response =
             await api.syncBatch(formCode, batch);
 
-        final List<dynamic> results =
-            response['results'] is List
-                ? response['results'] as List<dynamic>
-                : <dynamic>[];
+        final dynamic responseResults = response['results'];
 
-        final Set<String> processedUuids = <String>{};
+        final List<dynamic> results = responseResults is List
+            ? responseResults
+            : <dynamic>[];
+
+        final Set<String> returnedUuids = <String>{};
 
         for (final dynamic item in results) {
           if (item is! Map) {
             continue;
           }
 
-          final Map<String, dynamic> resultMap =
+          final Map<String, dynamic> result =
               Map<String, dynamic>.from(item);
 
-          final String? uuid =
-              resultMap['uuid']?.toString();
+          final String uuid =
+              result['uuid']?.toString() ?? '';
 
-          if (uuid == null || uuid.isEmpty) {
+          if (uuid.isEmpty) {
             continue;
           }
 
-          processedUuids.add(uuid);
+          returnedUuids.add(uuid);
 
-          final String result =
-              resultMap['result']?.toString() ?? '';
+          final String status =
+              result['result']?.toString() ??
+              result['status']?.toString() ??
+              '';
 
-          if (result == 'created' ||
-              result == 'duplicate' ||
-              result == 'updated') {
+          if (status == 'created' ||
+              status == 'updated' ||
+              status == 'duplicate' ||
+              status == 'synced' ||
+              status == 'success') {
             await database.updateSubmissionSync(
               uuid,
               'synced',
             );
 
-            synced++;
+            syncedCount++;
           } else {
             await database.updateSubmissionSync(
               uuid,
               'failed',
               error:
-                  resultMap['error']?.toString() ??
-                  resultMap['message']?.toString() ??
-                  'Submission was rejected by the server.',
+                  result['error']?.toString() ??
+                  result['message']?.toString() ??
+                  'The server rejected this submission.',
             );
           }
         }
 
         for (final LocalSubmission submission in batch) {
-          if (!processedUuids.contains(submission.uuid)) {
+          if (!returnedUuids.contains(submission.uuid)) {
             await database.updateSubmissionSync(
               submission.uuid,
               'failed',
               error:
-                  'The server did not return a sync result for this submission.',
+                  'No result was returned by the server for this submission.',
             );
           }
         }
@@ -120,14 +124,12 @@ class SyncService {
           );
         }
 
-        // Visible in GitHub Actions and local debug logs.
         print(
-          'Failed to sync form $formCode: $error\n'
-          '$stackTrace',
+          'Failed to sync form $formCode: $error\n$stackTrace',
         );
       }
     }
 
-    return synced;
+    return syncedCount;
   }
 }

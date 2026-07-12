@@ -25,7 +25,7 @@ every longer-suffixed route must precede the bare <str:code>/ catch-all.
 
 from django.urls import path
 
-from . import api, views
+from . import api, views, studio_views
 
 app_name = "kura"
 
@@ -36,6 +36,7 @@ urlpatterns = [
 
     # Mobile sync API (token auth — see kura/api.py docstring)
     path("api/devices/register/", api.device_register, name="api_device_register"),
+    path("api/forms/access/", api.form_access, name="api_form_access"),
     path("api/forms/", api.forms_manifest, name="api_forms"),
     path("api/forms/<str:code>/", api.form_detail, name="api_form_detail"),
     path("api/forms/<str:code>/sync/", api.form_sync, name="api_form_sync"),
@@ -49,6 +50,13 @@ urlpatterns = [
     path("<str:code>/delete/", views.survey_delete, name="delete"),
 
     path("<str:code>/data/", views.data, name="data"),
+    path("<str:code>/studio/", studio_views.studio, name="studio"),
+    path("<str:code>/studio/bootstrap/", studio_views.studio_bootstrap, name="studio_bootstrap"),
+    path("<str:code>/studio/pipeline/save/", studio_views.pipeline_save, name="pipeline_save"),
+    path("<str:code>/studio/pipeline/<int:pipeline_id>/run/", studio_views.pipeline_run, name="pipeline_run"),
+    path("<str:code>/studio/run/<int:run_id>/rows/", studio_views.run_rows, name="run_rows"),
+    path("<str:code>/studio/run/<int:run_id>/dashboard/", studio_views.run_dashboard, name="run_dashboard"),
+    path("<str:code>/studio/run/<int:run_id>/export/<str:fmt>/", studio_views.run_export, name="run_export"),
     path("<str:code>/monitor/", views.monitor, name="monitor"),
     path("<str:code>/monitor/device-access/", views.device_access_update, name="device_access_update"),
     path("<str:code>/monitor/feed/", views.monitor_feed, name="monitor_feed"),

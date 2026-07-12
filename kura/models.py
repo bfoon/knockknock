@@ -501,3 +501,233 @@ class LookupDataset(models.Model):
 
     def __str__(self):
         return f"{self.name} ({len(self.rows or [])} rows)"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Visual cleaning pipeline, immutable result snapshots and analytics
+# ─────────────────────────────────────────────────────────────────────
+
+class CleaningPipeline(models.Model):
+    """An ordered, reusable and non-destructive data-cleaning workflow."""
+
+    survey = models.ForeignKey(
+        Survey,
+        on_delete=models.CASCADE,
+        related_name="pipelines",
+    )
+    name = models.CharField(max_length=140, default="Main cleaning pipeline")
+    description = models.TextField(blank=True, default="")
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="kura_cleaning_pipelines",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-id"]
+
+    def __str__(self):
+        return f"{self.survey.code} · {self.name}"
+
+
+class PipelineStep(models.Model):
+    OPERATION_CHOICES = [
+        ("fill_missing", "Fill missing values"),
+        ("filter_rows", "Filter rows"),
+        ("drop_rows", "Drop selected rows"),
+        ("drop_columns", "Drop columns"),
+        ("keep_columns", "Keep selected columns"),
+        ("rename_column", "Rename column"),
+        ("recode", "Recode values"),
+        ("replace", "Find and replace"),
+        ("deduplicate", "Remove duplicates"),
+        ("cast_type", "Change data type"),
+        ("trim_text", "Trim text"),
+        ("case_text", "Change text case"),
+        ("calculate", "Calculated column"),
+        ("outlier", "Outlier handling"),
+        ("winsorize", "Winsorize"),
+        ("scale", "Scale / normalize"),
+        ("encode", "Encode categories"),
+        ("sample", "Sample or subset"),
+        ("regression_impute", "Regression imputation"),
+    ]
+
+    pipeline = models.ForeignKey(
+        CleaningPipeline,
+        on_delete=models.CASCADE,
+        related_name="steps",
+    )
+    order = models.PositiveIntegerField(default=0)
+    operation = models.CharField(max_length=40, choices=OPERATION_CHOICES)
+    name = models.CharField(max_length=140, default="Cleaning step")
+    config = models.JSONField(default=dict)
+    enabled = models.BooleanField(default=True)
+    stop_on_error = models.BooleanField(default=True)
+    note = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["order", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["pipeline", "order"],
+                name="unique_kura_pipeline_step_order",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.pipeline.name} #{self.order}: {self.name}"
+
+
+class CleaningRun(models.Model):
+    STATUS_CHOICES = [
+        ("queued", "Queued"),
+        ("running", "Running"),
+        ("complete", "Complete"),
+        ("failed", "Failed"),
+    ]
+
+    pipeline = models.ForeignKey(
+        CleaningPipeline,
+        on_delete=models.CASCADE,
+        related_name="runs",
+    )
+    label = models.CharField(max_length=140, blank=True, default="")
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="queued")
+    source_count = models.PositiveIntegerField(default=0)
+    result_count = models.PositiveIntegerField(default=0)
+    excluded_count = models.PositiveIntegerField(default=0)
+    column_count = models.PositiveIntegerField(default=0)
+    summary = models.JSONField(default=dict)
+    schema = models.JSONField(default=list)
+    error = models.TextField(blank=True, default="")
+    started_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    run_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="kura_cleaning_runs",
+    )
+
+    class Meta:
+        ordering = ["-started_at", "-id"]
+
+    def __str__(self):
+        return f"{self.pipeline} · run {self.pk} · {self.status}"
+
+
+class CleanedRecord(models.Model):
+    run = models.ForeignKey(
+        CleaningRun,
+        on_delete=models.CASCADE,
+        related_name="records",
+    )
+    source_submission = models.ForeignKey(
+        Submission,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="cleaned_versions",
+    )
+    row_number = models.PositiveIntegerField()
+    data = models.JSONField(default=dict)
+    excluded = models.BooleanField(default=False)
+    exclusion_reason = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["row_number", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["run", "row_number"],
+                name="unique_kura_cleaned_run_row",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Run {self.run_id} row {self.row_number}"
+
+
+class CleaningChange(models.Model):
+    CHANGE_TYPES = [
+        ("impute", "Imputed value"),
+        ("recode", "Recoded value"),
+        ("replace", "Replaced value"),
+        ("drop_row", "Dropped row"),
+        ("drop_column", "Dropped column"),
+        ("rename", "Renamed column"),
+        ("cast", "Changed type"),
+        ("outlier", "Outlier treatment"),
+        ("calculate", "Calculated value"),
+        ("encode", "Encoded value"),
+        ("other", "Other"),
+    ]
+
+    run = models.ForeignKey(
+        CleaningRun,
+        on_delete=models.CASCADE,
+        related_name="changes",
+    )
+    step = models.ForeignKey(
+        PipelineStep,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="changes",
+    )
+    source_submission = models.ForeignKey(
+        Submission,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="pipeline_changes",
+    )
+    row_number = models.PositiveIntegerField(null=True, blank=True)
+    field = models.CharField(max_length=100, blank=True, default="")
+    change_type = models.CharField(max_length=24, choices=CHANGE_TYPES, default="other")
+    old_value = models.JSONField(null=True, blank=True)
+    new_value = models.JSONField(null=True, blank=True)
+    detail = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["id"]
+
+    def __str__(self):
+        return f"Run {self.run_id} · {self.change_type} · {self.field}"
+
+
+class AnalysisDashboard(models.Model):
+    """Saved dashboard definition and cached analysis result for a cleaning run."""
+
+    run = models.ForeignKey(
+        CleaningRun,
+        on_delete=models.CASCADE,
+        related_name="dashboards",
+    )
+    name = models.CharField(max_length=140, default="Main dashboard")
+    definition = models.JSONField(default=dict)
+    cached_result = models.JSONField(default=dict)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="kura_dashboards",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-id"]
+
+    def __str__(self):
+        return f"{self.run} · {self.name}"

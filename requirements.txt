@@ -9,7 +9,6 @@ qrcode[pil]==7.4.2
 Pillow==10.4.0
 whitenoise==6.7.0
 gunicorn==22.0.0
-matplotlib
 python-docx
 openpyxl
 reportlab
@@ -17,3 +16,11 @@ playwright
 chromium
 python-pptx
 weasyprint
+numpy==2.2.6
+pandas==2.2.3
+scipy==1.15.3
+scikit-learn==1.6.1
+matplotlib==3.10.3
+openpyxl==3.1.5
+python-docx==1.1.2
+reportlab==4.4.1

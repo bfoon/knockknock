@@ -85,6 +85,14 @@ class AppDatabase {
     );
   }
 
+  Future<void> deleteSubmission(String uuid) async {
+    await db.delete(
+      'submissions',
+      where: 'uuid = ?',
+      whereArgs: [uuid],
+    );
+  }
+
   Future<List<LocalSubmission>> getSubmissions({String? formCode}) async {
     final rows = await db.query(
       'submissions',

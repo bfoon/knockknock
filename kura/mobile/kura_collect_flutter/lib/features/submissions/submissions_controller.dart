@@ -31,6 +31,11 @@ class SubmissionsController extends ChangeNotifier {
     await load();
   }
 
+  Future<void> delete(String uuid) async {
+    await database.deleteSubmission(uuid);
+    await load();
+  }
+
   Future<int> sync() async {
     if (syncing) {
       return 0;

@@ -24,4 +24,4 @@ matplotlib==3.10.3
 openpyxl==3.1.5
 python-docx==1.1.2
 reportlab==4.4.1
-segno
+segno>=1.6

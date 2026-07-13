@@ -13,22 +13,42 @@ import 'features/submissions/submissions_controller.dart';
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     WidgetsFlutterBinding.ensureInitialized();
+
     final database = AppDatabase();
-    await database.initialize();
-    final sync = SyncService(database);
-    await sync.syncAll();
-    return true;
+
+    try {
+      await database.initialize();
+
+      final syncService = SyncService(
+        database: database,
+      );
+
+      await syncService.syncAll();
+
+      return true;
+    } catch (error, stackTrace) {
+      debugPrint('Background sync failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+
+      return false;
+    }
   });
 }
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Workmanager().initialize(callbackDispatcher);
+
+  await Workmanager().initialize(
+    callbackDispatcher,
+  );
+
   await Workmanager().registerPeriodicTask(
     'kura-auto-sync',
     'kura-auto-sync',
     frequency: const Duration(minutes: 15),
-    constraints: Constraints(networkType: NetworkType.connected),
+    constraints: Constraints(
+      networkType: NetworkType.connected,
+    ),
     existingWorkPolicy: ExistingWorkPolicy.keep,
   );
 
@@ -38,10 +58,18 @@ Future<void> main() async {
   runApp(
     MultiProvider(
       providers: [
-        Provider.value(value: database),
-        ChangeNotifierProvider(create: (_) => AuthController(database)..restoreSession()),
-        ChangeNotifierProvider(create: (_) => FormsController(database)),
-        ChangeNotifierProvider(create: (_) => SubmissionsController(database)),
+        Provider<AppDatabase>.value(
+          value: database,
+        ),
+        ChangeNotifierProvider<AuthController>(
+          create: (_) => AuthController(database)..restoreSession(),
+        ),
+        ChangeNotifierProvider<FormsController>(
+          create: (_) => FormsController(database),
+        ),
+        ChangeNotifierProvider<SubmissionsController>(
+          create: (_) => SubmissionsController(database)..load(),
+        ),
       ],
       child: const KuraCollectApp(),
     ),

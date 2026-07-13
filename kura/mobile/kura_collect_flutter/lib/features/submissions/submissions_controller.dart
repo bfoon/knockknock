@@ -5,17 +5,25 @@ import '../../core/models/submission_model.dart';
 import '../../core/services/sync_service.dart';
 
 class SubmissionsController extends ChangeNotifier {
+  SubmissionsController(this.database);
+
   final AppDatabase database;
-  List<LocalSubmission> submissions = [];
+
+  List<LocalSubmission> submissions = <LocalSubmission>[];
+
   bool syncing = false;
   int pending = 0;
 
-  SubmissionsController(this.database);
-
   Future<void> load() async {
-    submissions = await database.getSubmissions();
-    pending = await database.countPending();
-    notifyListeners();
+    try {
+      submissions = await database.getSubmissions();
+      pending = await database.countPending();
+    } catch (error, stackTrace) {
+      debugPrint('Failed to load submissions: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    } finally {
+      notifyListeners();
+    }
   }
 
   Future<void> save(LocalSubmission submission) async {
@@ -24,11 +32,31 @@ class SubmissionsController extends ChangeNotifier {
   }
 
   Future<int> sync() async {
+    if (syncing) {
+      return 0;
+    }
+
     syncing = true;
     notifyListeners();
-    final count = await SyncService(database).syncAll();
-    syncing = false;
-    await load();
-    return count;
+
+    try {
+      final syncService = SyncService(
+        database: database,
+      );
+
+      final count = await syncService.syncAll();
+
+      await load();
+
+      return count;
+    } catch (error, stackTrace) {
+      debugPrint('Submission sync failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+
+      rethrow;
+    } finally {
+      syncing = false;
+      notifyListeners();
+    }
   }
 }

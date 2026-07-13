@@ -22,7 +22,12 @@ import '../submissions/submissions_controller.dart';
 class FormRunnerScreen extends StatefulWidget {
   final KuraForm form;
 
-  const FormRunnerScreen({super.key, required this.form});
+  /// When set, the runner resumes this draft: answers are pre-filled and
+  /// saving (draft or submit) updates the same record instead of creating
+  /// a new one.
+  final LocalSubmission? draft;
+
+  const FormRunnerScreen({super.key, required this.form, this.draft});
 
   @override
   State<FormRunnerScreen> createState() => _FormRunnerScreenState();
@@ -91,6 +96,8 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
   final Map<String, TextEditingController> textControllers = {};
   final PageController _pager = PageController();
   late final DateTime startedAt;
+  late final String _submissionUuid;
+  bool _dirty = false; // true once anything changed since open/last save
   int pageIndex = 0;
   String? inlineError; // shown inside the current question card
 
@@ -115,7 +122,15 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
   @override
   void initState() {
     super.initState();
-    startedAt = DateTime.now();
+    final draft = widget.draft;
+    if (draft != null) {
+      answers.addAll(draft.answers);
+      startedAt = draft.startedAt;
+      _submissionUuid = draft.uuid; // saving updates the same record
+    } else {
+      startedAt = DateTime.now();
+      _submissionUuid = const Uuid().v4();
+    }
   }
 
   @override
@@ -138,7 +153,7 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
     final onReview = pageIndex >= total;
 
     return PopScope(
-      canPop: answers.isEmpty,
+      canPop: !_dirty,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _confirmExit();
       },
@@ -213,6 +228,7 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
                             onChanged: (value) {
                               setState(() {
                                 answers[q['name'].toString()] = value;
+                                _dirty = true;
                                 inlineError = null;
                               });
                             },
@@ -481,7 +497,7 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
     } catch (_) {}
 
     final submission = LocalSubmission(
-      uuid: const Uuid().v4(),
+      uuid: _submissionUuid,
       formCode: widget.form.code,
       version: widget.form.version,
       answers: Map<String, dynamic>.from(answers),
@@ -490,8 +506,8 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
       startedAt: startedAt,
       submittedAt: status == 'draft' ? null : now,
       durationMs: now.difference(startedAt).inMilliseconds,
-      gpsLat: position?.latitude,
-      gpsLng: position?.longitude,
+      gpsLat: position?.latitude ?? widget.draft?.gpsLat,
+      gpsLng: position?.longitude ?? widget.draft?.gpsLng,
     );
 
     if (!mounted) return;

@@ -25,12 +25,16 @@
     background:linear-gradient(135deg,var(--orange),var(--pink),var(--violet));
     border-radius:10px;padding:.5rem .9rem;font-weight:700;font-size:.8rem;cursor:pointer;text-decoration:none}
   .btn:hover{filter:brightness(1.08)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
   .btn.ghost{background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.04));color:var(--muted)}
   .btn.ghost:hover{color:#fff}
+  .btn.danger{background:linear-gradient(135deg,#7a1f12,var(--red));color:#fff}
   .wrap{max-width:1360px;margin:0 auto;padding:1rem 1.2rem 4rem}
   .stats{display:flex;gap:.8rem;flex-wrap:wrap;margin:.4rem 0 1rem}
-  .stat{border:1px solid var(--line);border-radius:14px;padding:.7rem 1rem;min-width:120px;
-    background:linear-gradient(135deg,rgba(255,255,255,.09),rgba(255,255,255,.03))}
+  .stat{border:1px solid var(--line);border-radius:14px;padding:.7rem 1rem;min-width:120px;cursor:pointer;
+    background:linear-gradient(135deg,rgba(255,255,255,.09),rgba(255,255,255,.03));transition:border-color .15s}
+  .stat:hover{border-color:rgba(255,255,255,.32)}
+  .stat.active{border-color:var(--cyan);box-shadow:0 0 0 1px var(--cyan)}
   .stat b{display:block;font-size:1.5rem;font-weight:900}
   .stat span{font-family:"Spline Sans Mono",monospace;font-size:.58rem;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
   .stat.ok b{color:#86efac}.stat.fl b{color:#ffc38a}.stat.ex b{color:#f0a397}
@@ -39,6 +43,17 @@
   .panel>h3{margin:0;padding:.75rem 1rem .5rem;display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;
     font-family:"Spline Sans Mono",monospace;font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
   .panel>h3 .sp{flex:1}
+  /* filter bar */
+  .filters{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;padding:.7rem 1rem;border-bottom:1px solid rgba(255,255,255,.07)}
+  .filters input[type=text],.filters select{background:rgba(0,0,0,.32);border:1px solid var(--line);border-radius:9px;
+    color:#fff;padding:.45rem .6rem;font-size:.78rem;outline:none;font-family:"Spline Sans Mono",monospace}
+  .filters input[type=text]{min-width:180px}
+  .filters .chk{display:inline-flex;align-items:center;gap:.35rem;font-size:.76rem;color:var(--muted);cursor:pointer;user-select:none}
+  .filters .chk input{accent-color:var(--orange)}
+  .filters .colf{display:flex;gap:.35rem;align-items:center}
+  .filters .clear{border:1px solid var(--line);background:transparent;color:var(--dim);border-radius:8px;padding:.4rem .6rem;
+    font-size:.72rem;cursor:pointer}
+  .filters .clear:hover{color:#fff}
   .tblwrap{overflow:auto;max-height:60vh}
   table{border-collapse:collapse;width:100%;font-size:.78rem}
   th,td{border-bottom:1px solid rgba(255,255,255,.07);padding:.45rem .6rem;text-align:left;white-space:nowrap;
@@ -61,6 +76,16 @@
   select.rowst{background:rgba(0,0,0,.35);border:1px solid var(--line);border-radius:7px;color:#fff;
     font-size:.68rem;padding:.2rem .3rem}
   select.rowst option{background:#0b0d26}
+  /* saved pipelines */
+  .pipes{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:.7rem;padding:.8rem 1rem}
+  .pipe{border:1px solid var(--line);border-radius:12px;padding:.7rem .8rem;background:rgba(255,255,255,.04);
+    display:flex;flex-direction:column;gap:.4rem}
+  .pipe.active{border-color:var(--cyan)}
+  .pipe b{font-size:.86rem}
+  .pipe .pmeta{font-family:"Spline Sans Mono",monospace;font-size:.6rem;color:var(--dim);letter-spacing:.06em}
+  .pipe .pacts{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.2rem}
+  .pipe .tag{font-family:"Spline Sans Mono",monospace;font-size:.54rem;letter-spacing:.08em;text-transform:uppercase;
+    border:1px solid rgba(34,211,238,.4);color:var(--cyan);border-radius:999px;padding:.1rem .45rem;align-self:flex-start}
   /* rules */
   .rule{display:grid;grid-template-columns:auto 1.2fr 1fr 1fr 2.2fr auto;gap:.5rem;align-items:center;
     padding:.5rem 1rem;border-top:1px solid rgba(255,255,255,.06)}
@@ -92,9 +117,12 @@
   .legacy-label{display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.14);
     border-radius:999px;padding:.2rem .48rem;margin-bottom:.5rem;color:var(--dim);
     font-family:"Spline Sans Mono",monospace;font-size:.54rem;letter-spacing:.11em;text-transform:uppercase}
+  .danger-zone{border-color:rgba(232,72,43,.4)}
+  .danger-zone>h3{color:#f0a397}
   @media(max-width:720px){
     .studio-launch{grid-template-columns:1fr}
     .studio-launch .studio-btn{justify-content:center;width:100%}
+    .rule{grid-template-columns:1fr 1fr}
   }
 </style>
 </head>
@@ -106,21 +134,21 @@
   <a class="btn ghost" href="{% url 'kura:monitor' survey.code %}">📡 Live monitor</a>
   <a class="btn ghost" href="{% url 'kura:live_map' survey.code %}">🗺 Live map</a>
   <a class="btn" href="{% url 'kura:studio' survey.code %}">📊 Open Data Studio</a>
-  <a class="btn ghost" href="{% url 'kura:export_csv' survey.code %}">Export CSV</a>
-  <button class="btn ghost" id="run-clean" type="button">🧹 Run cleaning</button>
+  <button class="btn ghost" id="export-menu" type="button">⬇ Export CSV</button>
+  <button class="btn ghost" id="run-clean" type="button">🧹 Run rules</button>
   <button class="btn" id="to-hanns" type="button">✨ Create Hanns deck</button>
 </div>
 
 <div class="wrap">
   <section class="studio-launch" aria-label="Open the new Kura Data Studio">
     <div>
-      <span class="legacy-label">New analysis workspace available</span>
-      <h2>Build, run and analyse a non-destructive cleaning pipeline</h2>
+      <span class="legacy-label">Advanced cleaning lives in the Studio</span>
+      <h2>Build a visual, reusable cleaning pipeline</h2>
       <p>
-        Open Data Studio to drag and reorder cleaning steps, compare raw and cleaned
-        datasets side by side, analyse correlations and regression models, create maps
-        and charts, and export Word, Excel, PDF, HTML or CSV reports. This classic page
-        remains available for direct response review and legacy cleaning rules.
+        Open Data Studio to drag and connect cleaning steps on a flow canvas, reorder them,
+        run them non-destructively, and compare raw and cleaned data side by side. Pipelines
+        you save there appear below so you can run them straight from this page. This page
+        stays your quick workbench for reviewing, filtering and editing individual responses.
       </p>
     </div>
     <a class="btn studio-btn" href="{% url 'kura:studio' survey.code %}">
@@ -130,8 +158,20 @@
 
   <div class="stats" id="stats"></div>
 
+  <!-- saved cleaning pipelines (basic + advanced) -->
   <div class="panel">
-    <h3>Classic cleaning rules <span class="sp"></span>
+    <h3>Cleaning pipelines <span class="sp"></span>
+      <a class="btn ghost" href="{% url 'kura:studio' survey.code %}" style="padding:.35rem .7rem">Build in Studio</a>
+    </h3>
+    <div class="pipes" id="pipes"></div>
+    <div class="note" id="pipes-empty" style="display:none">
+      No saved pipelines yet. Open the Studio to build one visually — or use the quick
+      flag rules below for lightweight checks.
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>Quick flag rules <span class="sp"></span>
       <button class="btn ghost" id="save-rules" type="button" style="padding:.35rem .7rem">Save rules</button>
     </h3>
     <div id="rules"></div>
@@ -152,7 +192,36 @@
 
   <div class="panel">
     <h3>Responses <span class="sp"></span><span id="rowcount"></span></h3>
+    <div class="filters">
+      <input type="text" id="f-search" placeholder="Search all answers…" autocomplete="off">
+      <select id="f-status">
+        <option value="">All statuses</option>
+        <option value="complete">Complete</option>
+        <option value="flagged">Flagged</option>
+        <option value="partial">Partial</option>
+        <option value="excluded">Excluded</option>
+      </select>
+      <label class="chk"><input type="checkbox" id="f-flagged"> ⚑ Flagged only</label>
+      <div class="colf">
+        <select id="f-col"><option value="">Filter a column…</option></select>
+        <input type="text" id="f-colval" placeholder="contains…" autocomplete="off">
+      </div>
+      <button class="clear" id="f-clear" type="button">Clear filters</button>
+    </div>
     <div class="tblwrap"><table id="grid"><thead></thead><tbody></tbody></table></div>
+  </div>
+
+  <!-- danger zone: start fresh -->
+  <div class="panel danger-zone">
+    <h3>Delete all responses <span class="sp"></span></h3>
+    <div class="note" style="padding:.2rem 1rem .2rem">
+      Permanently deletes every submission, cleaning run and sync log for this survey so the
+      form starts fresh. Your questions, published versions, cleaning rules, saved pipelines
+      and lookup datasets are kept. This can't be undone.
+    </div>
+    <div style="padding:.6rem 1rem 1rem">
+      <button class="btn danger" id="purge-btn" type="button">🗑 Delete all responses…</button>
+    </div>
   </div>
 </div>
 <div id="toast"></div>
@@ -160,13 +229,19 @@
 <script>
 window.__KURA_DATA__ = {
   schema: {{ schema_json|safe }},
+  columns: {{ columns_json|safe }},
+  pipelines: {{ pipelines_json|safe }},
   rules: {{ rules_json|safe }},
+  code: "{{ survey.code }}",
+  studioBase: "{% url 'kura:studio' survey.code %}",
   urls: {
     rows: "{% url 'kura:data_rows' survey.code %}",
     edit: "{% url 'kura:edit_answer' survey.code %}",
     status: "{% url 'kura:row_status' survey.code %}",
     rules: "{% url 'kura:rules_save' survey.code %}",
     clean: "{% url 'kura:run_cleaning' survey.code %}",
+    purge: "{% url 'kura:data_purge' survey.code %}",
+    exportCsv: "{% url 'kura:export_csv' survey.code %}",
     hanns: "{% url 'kura:export_hanns' survey.code %}"
   },
   csrftoken: "{{ csrf_token }}"
@@ -179,9 +254,12 @@ const CFG=window.__KURA_DATA__;
 const KINDS=["duplicate","outlier","speeder","straightliner","geofence","missing","logic","recode"];
 const ACTIONS=["flag","exclude","recode"];
 let rules=Array.isArray(CFG.rules)?CFG.rules:[];
+let pipelines=Array.isArray(CFG.pipelines)?CFG.pipelines:[];
 let rows=[];
-const names=((CFG.schema&&CFG.schema.questions)||[])
-  .filter(q=>q.name&&q.type!=="section").map(q=>q.name);
+const names=(CFG.columns&&CFG.columns.length?CFG.columns
+  :((CFG.schema&&CFG.schema.questions)||[]).filter(q=>q.name&&q.type!=="section").map(q=>q.name));
+// live filter state
+const filters={search:"",status:"",flagged:false,col:"",colval:""};
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function toast(msg){ const t=$("#toast"); t.textContent=msg; t.style.display="block";
@@ -193,26 +271,85 @@ async function post(url,body){
   return res.json();
 }
 
-/* ── stats + grid ── */
+/* ── saved pipelines ── */
+function renderPipes(){
+  const host=$("#pipes"); host.innerHTML="";
+  $("#pipes-empty").style.display=pipelines.length?"none":"block";
+  pipelines.forEach(p=>{
+    const div=document.createElement("div");
+    div.className="pipe"+(p.is_active?" active":"");
+    const run=p.latest_run;
+    div.innerHTML=
+      (p.is_active?'<span class="tag">Active</span>':'')+
+      '<b>'+esc(p.name)+'</b>'+
+      '<div class="pmeta">'+(p.step_count||0)+' step'+(p.step_count===1?'':'s')+
+        (run?' · last run '+run.result_count+' rows':' · not run yet')+'</div>'+
+      '<div class="pacts">'+
+        '<button class="btn ghost" data-run="'+p.id+'" style="padding:.35rem .6rem">▶ Run</button>'+
+        '<a class="btn ghost" href="'+CFG.studioBase+'?pipeline='+p.id+'" style="padding:.35rem .6rem">Edit</a>'+
+        (run?'<a class="btn ghost" href="'+CFG.studioBase+'?run='+run.id+'" style="padding:.35rem .6rem">⬇ Clean data</a>':'')+
+      '</div>';
+    host.appendChild(div);
+  });
+}
+$("#pipes").addEventListener("click",async e=>{
+  const btn=e.target.closest("[data-run]"); if(!btn) return;
+  const id=+btn.dataset.run; btn.disabled=true; btn.textContent="Running…";
+  try{
+    const j=await post(CFG.studioBase+"pipeline/"+id+"/run/",{label:"Run from data page"});
+    if(j.ok){
+      toast("Pipeline complete: "+j.result_count+" rows. Opening clean data…");
+      location.href=CFG.studioBase+"?run="+j.run_id;
+    } else { toast(j.error||"Pipeline run failed"); btn.disabled=false; btn.textContent="▶ Run"; }
+  }catch(err){ toast("Pipeline run failed"); btn.disabled=false; btn.textContent="▶ Run"; }
+});
+
+/* ── stats + grid with filtering ── */
 function renderStats(){
   const by=s=>rows.filter(r=>r.status===s).length;
+  const cell=(cls,val,label,key)=>
+    '<div class="stat '+cls+(filters.status===key?' active':'')+'" data-status="'+key+'"><b>'+val+
+    '</b><span>'+label+'</span></div>';
   $("#stats").innerHTML=
-    '<div class="stat"><b>'+rows.length+'</b><span>Total</span></div>'+
-    '<div class="stat ok"><b>'+by("complete")+'</b><span>Complete</span></div>'+
-    '<div class="stat fl"><b>'+by("flagged")+'</b><span>Flagged</span></div>'+
-    '<div class="stat"><b>'+by("partial")+'</b><span>Partial</span></div>'+
-    '<div class="stat ex"><b>'+by("excluded")+'</b><span>Excluded</span></div>';
+    cell('',rows.length,'Total','')+
+    cell('ok',by("complete"),'Complete','complete')+
+    cell('fl',by("flagged"),'Flagged','flagged')+
+    cell('',by("partial"),'Partial','partial')+
+    cell('ex',by("excluded"),'Excluded','excluded');
 }
+$("#stats").addEventListener("click",e=>{
+  const s=e.target.closest(".stat"); if(!s) return;
+  filters.status=filters.status===s.dataset.status?"":s.dataset.status;
+  $("#f-status").value=filters.status;
+  renderGrid();
+});
 function cellText(v){
   if(v==null||v==="") return "";
-  return Array.isArray(v)?v.join(" | "):String(v);
+  return Array.isArray(v)?v.join(" | "):typeof v==="object"?JSON.stringify(v):String(v);
+}
+function matchesFilters(r){
+  if(filters.status && r.status!==filters.status) return false;
+  if(filters.flagged && !(r.flags&&r.flags.length)) return false;
+  const merged=Object.assign({},r.answers,r.calculations);
+  if(filters.col && filters.colval){
+    const hay=cellText(merged[filters.col]).toLowerCase();
+    if(!hay.includes(filters.colval.toLowerCase())) return false;
+  }
+  if(filters.search){
+    const q=filters.search.toLowerCase();
+    const hay=names.map(n=>cellText(merged[n])).join(" ").toLowerCase()+" "+
+      (r.flags||[]).map(f=>f.detail+" "+f.rule).join(" ").toLowerCase();
+    if(!hay.includes(q)) return false;
+  }
+  return true;
 }
 function renderGrid(){
   const thead=$("#grid thead"),tbody=$("#grid tbody");
   thead.innerHTML="<tr><th>⚑</th><th>status</th><th>src</th><th>v</th><th>received</th><th>dur s</th><th>score</th>"+
     names.map(n=>"<th>"+esc(n)+"</th>").join("")+"</tr>";
   tbody.innerHTML="";
-  rows.forEach(r=>{
+  const shown=rows.filter(matchesFilters);
+  shown.forEach(r=>{
     const tr=document.createElement("tr");
     tr.className=r.status;
     const flags=(r.flags||[]).map(f=>f.rule+(f.field?" ["+f.field+"]":"")+": "+f.detail).join("\n");
@@ -231,7 +368,8 @@ function renderGrid(){
     tr.innerHTML=html;
     tbody.appendChild(tr);
   });
-  $("#rowcount").textContent=rows.length+" rows";
+  const filtered=shown.length!==rows.length;
+  $("#rowcount").textContent=filtered?(shown.length+" of "+rows.length+" rows"):(rows.length+" rows");
   renderStats();
 }
 async function load(){
@@ -239,6 +377,28 @@ async function load(){
   rows=j.rows||[]; renderGrid();
 }
 
+/* filter controls */
+function debounce(fn,ms){let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms)}}
+$("#f-search").addEventListener("input",debounce(e=>{filters.search=e.target.value.trim();renderGrid();},150));
+$("#f-status").addEventListener("change",e=>{filters.status=e.target.value;renderGrid();});
+$("#f-flagged").addEventListener("change",e=>{filters.flagged=e.target.checked;renderGrid();});
+$("#f-col").addEventListener("change",e=>{filters.col=e.target.value;renderGrid();});
+$("#f-colval").addEventListener("input",debounce(e=>{filters.colval=e.target.value.trim();renderGrid();},150));
+$("#f-clear").addEventListener("click",()=>{
+  filters.search=filters.status=filters.col=filters.colval="";filters.flagged=false;
+  $("#f-search").value="";$("#f-status").value="";$("#f-flagged").checked=false;
+  $("#f-col").value="";$("#f-colval").value="";renderGrid();
+});
+$("#f-col").innerHTML='<option value="">Filter a column…</option>'+names.map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join("");
+
+/* CSV export honours the flagged/status view */
+$("#export-menu").addEventListener("click",()=>{
+  const params=new URLSearchParams();
+  if(filters.status==="excluded"||!filters.status) params.set("all","1");
+  location.href=CFG.urls.exportCsv+(params.toString()?"?"+params:"");
+});
+
+/* cell edit + status change */
 document.addEventListener("click",async e=>{
   const td=e.target.closest("td.editable");
   if(td){
@@ -248,7 +408,7 @@ document.addEventListener("click",async e=>{
     const reason=prompt("Reason for this edit (stored in audit trail):","data cleaning")||"data cleaning";
     const parsed=val.includes("|")?val.split("|").map(s=>s.trim()):(val===""?null:(isNaN(Number(val))||val.trim()===""?val:Number(val)));
     const j=await post(CFG.urls.edit,{id:+td.dataset.id,field:td.dataset.f,value:parsed,reason});
-    if(j.ok){ td.textContent=val; toast("Saved — old value kept in audit trail."); } else toast(j.error||"Edit failed");
+    if(j.ok){ td.textContent=val; toast("Saved — old value kept in audit trail."); load(); } else toast(j.error||"Edit failed");
   }
 });
 document.addEventListener("change",async e=>{
@@ -286,7 +446,7 @@ document.addEventListener("input",e=>{
   }
 });
 document.addEventListener("click",e=>{
-  if(e.target.dataset.del!=null){ rules.splice(+e.target.dataset.del,1); renderRules(); }
+  if(e.target.dataset.del!=null && e.target.classList.contains("mini")){ rules.splice(+e.target.dataset.del,1); renderRules(); }
 });
 $("#add-rule").addEventListener("click",()=>{
   rules.push({name:"New rule",kind:"logic",action:"flag",config:{},enabled:true}); renderRules();
@@ -312,6 +472,22 @@ $("#to-hanns").addEventListener("click",async()=>{
   else toast(j.error||"Could not build the deck");
 });
 
+/* ── purge / start fresh ── */
+$("#purge-btn").addEventListener("click",async()=>{
+  const total=rows.length;
+  if(!confirm("Delete ALL "+total+" response"+(total===1?"":"s")+" for this survey?\n\n"+
+    "This also removes cleaning runs and sync logs. Questions, rules, saved pipelines and "+
+    "lookups are kept. This cannot be undone.")) return;
+  const typed=prompt("Type the survey code "+CFG.code+" to confirm permanent deletion:","");
+  if(typed===null) return;
+  const j=await post(CFG.urls.purge,{confirm:typed});
+  if(j.ok){
+    toast("Deleted "+j.deleted.submissions+" responses. The form is fresh.");
+    load();
+  } else toast(j.error||"Could not delete responses");
+});
+
+renderPipes();
 renderRules();
 load();
 })();

@@ -296,12 +296,43 @@ def collect_submit(request, code):
 
 @login_required
 def data(request, code):
+    from .models import CleaningRun  # lazy: avoids widening the module import block
+
     survey = _own(request, code)
     schema = (survey.current_version.schema if survey.current_version
               else survey.draft_schema) or {}
+
+    # Saved cleaning pipelines (basic ones made here or advanced ones from
+    # the studio) so the classic data page can list, run and reuse them.
+    latest_runs = {}
+    for r in (CleaningRun.objects
+              .filter(pipeline__survey=survey, status="complete")
+              .order_by("pipeline_id", "-completed_at", "-id")):
+        latest_runs.setdefault(r.pipeline_id, r)
+    pipelines = [{
+        "id": p.id,
+        "name": p.name,
+        "description": p.description,
+        "is_active": p.is_active,
+        "step_count": p.steps.count(),
+        "updated_at": p.updated_at.isoformat(),
+        "latest_run": ({
+            "id": latest_runs[p.id].id,
+            "result_count": latest_runs[p.id].result_count,
+            "column_count": latest_runs[p.id].column_count,
+            "completed_at": (latest_runs[p.id].completed_at.isoformat()
+                             if latest_runs[p.id].completed_at else None),
+        } if p.id in latest_runs else None),
+    } for p in survey.pipelines.all()]
+
+    columns = [q["name"] for q in schema.get("questions", [])
+               if q.get("name") and q.get("type") != "section"]
+
     return render(request, "kura/data.html", {
         "survey": survey,
         "schema_json": json.dumps(schema),
+        "columns_json": json.dumps(columns),
+        "pipelines_json": json.dumps(pipelines),
         "rules_json": json.dumps([
             {"id": r.id, "name": r.name, "kind": r.kind, "action": r.action,
              "config": r.config, "enabled": r.enabled}
@@ -388,6 +419,51 @@ def run_cleaning(request, code):
     survey = _own(request, code)
     summary = run_rules(survey, user=request.user)
     return JsonResponse({"ok": True, "summary": summary})
+
+
+@login_required
+@require_POST
+def data_purge(request, code):
+    """Delete every submission (and derived data) so the form starts fresh.
+
+    Destructive and irreversible, so it demands the survey code typed back
+    as confirmation: POST JSON {"confirm": "<CODE>"}.
+
+    Removed:  submissions (flags + answer edits cascade), cleaning RUNS
+              (cleaned records + change logs cascade), sync logs.
+    Kept:     the form itself, published versions, cleaning rules, saved
+              cleaning PIPELINES (they are reusable definitions), lookup
+              datasets and device registrations/access decisions.
+    """
+    from django.db import transaction
+
+    from .models import CleaningRun
+
+    survey = _own(request, code)
+    data = _body(request) or {}
+    confirm = str(data.get("confirm") or "").strip().upper()
+    if confirm != survey.code:
+        return JsonResponse({
+            "ok": False,
+            "error": "Type the survey code to confirm deletion.",
+        }, status=400)
+
+    with transaction.atomic():
+        sub_count = survey.submissions.count()
+        run_count = CleaningRun.objects.filter(pipeline__survey=survey).count()
+        # Flags, edits, cleaned records and change logs all cascade.
+        survey.submissions.all().delete()
+        CleaningRun.objects.filter(pipeline__survey=survey).delete()
+        sync_count, _ = SyncLog.objects.filter(survey=survey).delete()
+
+    return JsonResponse({
+        "ok": True,
+        "deleted": {
+            "submissions": sub_count,
+            "cleaning_runs": run_count,
+            "sync_logs": sync_count,
+        },
+    })
 
 
 @login_required

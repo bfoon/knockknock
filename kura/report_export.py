@@ -17,6 +17,60 @@ def _filename(run, ext):
     return f"{code}_cleaning_run_{run.id}.{ext}"
 
 
+def export_clean_csv(run):
+    """Just the cleaned dataset as CSV — no report, no audit sheets."""
+    import csv
+
+    df = run_dataframe(run)
+    out = io.StringIO()
+    writer = csv.writer(out)
+    columns = list(df.columns)
+    writer.writerow(columns)
+    for _, row in df.iterrows():
+        values = []
+        for c in columns:
+            v = row[c]
+            if isinstance(v, (list, dict)):
+                values.append(json.dumps(v, ensure_ascii=False))
+            elif v is None or (isinstance(v, float) and v != v):  # NaN check
+                values.append("")
+            else:
+                values.append(v)
+        writer.writerow(values)
+    response = HttpResponse(
+        out.getvalue().encode("utf-8-sig"),
+        content_type="text/csv; charset=utf-8",
+    )
+    response["Content-Disposition"] = (
+        f'attachment; filename="{run.pipeline.survey.code}_clean_data_run_{run.id}.csv"'
+    )
+    return response
+
+
+def export_clean_excel(run):
+    """Just the cleaned dataset as a single-sheet Excel workbook."""
+    import pandas as pd
+
+    df = run_dataframe(run)
+    # Excel can't store lists/dicts — serialize them so nothing is lost.
+    for c in df.columns:
+        df[c] = df[c].apply(
+            lambda v: json.dumps(v, ensure_ascii=False)
+            if isinstance(v, (list, dict)) else v
+        )
+    out = io.BytesIO()
+    with pd.ExcelWriter(out, engine="openpyxl") as writer:
+        df.to_excel(writer, sheet_name="Clean Data", index=False)
+    response = HttpResponse(
+        out.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = (
+        f'attachment; filename="{run.pipeline.survey.code}_clean_data_run_{run.id}.xlsx"'
+    )
+    return response
+
+
 def export_excel(run):
     import pandas as pd
 

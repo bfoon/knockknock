@@ -18,7 +18,14 @@ from .models import (
     Survey,
 )
 from .pipeline_engine import PipelineExecutor
-from .report_export import export_excel, export_html, export_pdf, export_word
+from .report_export import (
+    export_clean_csv,
+    export_clean_excel,
+    export_excel,
+    export_html,
+    export_pdf,
+    export_word,
+)
 
 
 def _own(request, code):
@@ -35,13 +42,24 @@ def _json(request):
         return None
 
 
-def _pipeline_payload(pipeline):
-    return {
+def _pipeline_payload(pipeline, with_steps=True):
+    latest = pipeline.runs.filter(status="complete").order_by("-completed_at", "-id").first()
+    payload = {
         "id": pipeline.id,
         "name": pipeline.name,
         "description": pipeline.description,
         "is_active": pipeline.is_active,
-        "steps": [
+        "step_count": pipeline.steps.count(),
+        "updated_at": pipeline.updated_at.isoformat(),
+        "latest_run": {
+            "id": latest.id,
+            "result_count": latest.result_count,
+            "column_count": latest.column_count,
+            "completed_at": latest.completed_at.isoformat() if latest.completed_at else None,
+        } if latest else None,
+    }
+    if with_steps:
+        payload["steps"] = [
             {
                 "id": s.id,
                 "order": s.order,
@@ -53,14 +71,24 @@ def _pipeline_payload(pipeline):
                 "note": s.note,
             }
             for s in pipeline.steps.order_by("order", "id")
-        ],
-    }
+        ]
+    return payload
 
 
 @login_required
 def studio(request, code):
     survey = _own(request, code)
-    pipeline = survey.pipelines.order_by("-is_active", "-updated_at").first()
+    pipeline = None
+    # ?pipeline=<id> lets the data page (and bookmarks) open a specific
+    # saved pipeline directly in the studio.
+    requested = request.GET.get("pipeline")
+    if requested:
+        try:
+            pipeline = survey.pipelines.filter(id=int(requested)).first()
+        except (TypeError, ValueError):
+            pipeline = None
+    if pipeline is None:
+        pipeline = survey.pipelines.order_by("-is_active", "-updated_at").first()
     if pipeline is None:
         pipeline = CleaningPipeline.objects.create(
             survey=survey,
@@ -98,6 +126,7 @@ def studio_bootstrap(request, code):
         {
             "id": r.id,
             "pipeline_id": r.pipeline_id,
+            "pipeline_name": r.pipeline.name,
             "label": r.label,
             "status": r.status,
             "source_count": r.source_count,
@@ -120,6 +149,20 @@ def studio_bootstrap(request, code):
         "pipelines": pipelines,
         "runs": runs,
         "raw_rows": raw_rows,
+    })
+
+
+@login_required
+@require_GET
+def pipeline_list(request, code):
+    """Lightweight pipeline listing for the classic data page."""
+    survey = _own(request, code)
+    return JsonResponse({
+        "ok": True,
+        "pipelines": [
+            _pipeline_payload(p, with_steps=False)
+            for p in survey.pipelines.all()
+        ],
     })
 
 
@@ -171,6 +214,46 @@ def pipeline_save(request, code):
 
     pipeline.refresh_from_db()
     return JsonResponse({"ok": True, "pipeline": _pipeline_payload(pipeline)})
+
+
+@login_required
+@require_POST
+def pipeline_duplicate(request, code, pipeline_id):
+    """Clone a saved pipeline (steps included) so it can be adapted safely."""
+    survey = _own(request, code)
+    source = get_object_or_404(CleaningPipeline, id=pipeline_id, survey=survey)
+    with transaction.atomic():
+        clone = CleaningPipeline.objects.create(
+            survey=survey,
+            name=f"{source.name} (copy)"[:140],
+            description=source.description,
+            is_active=False,
+            created_by=request.user,
+        )
+        PipelineStep.objects.bulk_create([
+            PipelineStep(
+                pipeline=clone,
+                order=s.order,
+                operation=s.operation,
+                name=s.name,
+                config=s.config,
+                enabled=s.enabled,
+                stop_on_error=s.stop_on_error,
+                note=s.note,
+            )
+            for s in source.steps.order_by("order", "id")
+        ])
+    return JsonResponse({"ok": True, "pipeline": _pipeline_payload(clone)})
+
+
+@login_required
+@require_POST
+def pipeline_delete(request, code, pipeline_id):
+    """Delete a saved pipeline and its runs (raw submissions are untouched)."""
+    survey = _own(request, code)
+    pipeline = get_object_or_404(CleaningPipeline, id=pipeline_id, survey=survey)
+    pipeline.delete()
+    return JsonResponse({"ok": True})
 
 
 @login_required
@@ -262,10 +345,14 @@ def run_export(request, code, run_id, fmt):
     survey = _own(request, code)
     run = get_object_or_404(CleaningRun, id=run_id, pipeline__survey=survey, status="complete")
     exporters = {
+        # Full report exports (steps, stats, audit trail)
         "xlsx": export_excel,
         "docx": export_word,
         "pdf": export_pdf,
         "html": export_html,
+        # Clean-data-only downloads
+        "csv": export_clean_csv,
+        "data-xlsx": export_clean_excel,
     }
     exporter = exporters.get(fmt)
     if exporter is None:

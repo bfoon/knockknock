@@ -26,12 +26,10 @@ void callbackDispatcher() {
       );
 
       await syncService.syncAll();
-
       return true;
     } catch (error, stackTrace) {
       debugPrint('Background synchronization failed: $error');
       debugPrintStack(stackTrace: stackTrace);
-
       return false;
     }
   });
@@ -40,9 +38,7 @@ void callbackDispatcher() {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Workmanager().initialize(
-    callbackDispatcher,
-  );
+  await Workmanager().initialize(callbackDispatcher);
 
   await Workmanager().registerPeriodicTask(
     'kura-auto-sync',

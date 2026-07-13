@@ -11,20 +11,13 @@ class SubmissionsController extends ChangeNotifier {
   final AppDatabase database;
 
   List<LocalSubmission> submissions = <LocalSubmission>[];
-
   bool syncing = false;
   int pending = 0;
 
   Future<void> load() async {
-    try {
-      submissions = await database.getSubmissions();
-      pending = await database.countPending();
-    } catch (error, stackTrace) {
-      debugPrint('Failed to load submissions: $error');
-      debugPrintStack(stackTrace: stackTrace);
-    } finally {
-      notifyListeners();
-    }
+    submissions = await database.getSubmissions();
+    pending = await database.countPending();
+    notifyListeners();
   }
 
   Future<void> save(LocalSubmission submission) async {
@@ -47,14 +40,12 @@ class SubmissionsController extends ChangeNotifier {
       );
 
       final count = await syncService.syncAll();
-
       await load();
 
       return count;
     } catch (error, stackTrace) {
       debugPrint('Submission synchronization failed: $error');
       debugPrintStack(stackTrace: stackTrace);
-
       rethrow;
     } finally {
       syncing = false;

@@ -4,6 +4,7 @@ import 'package:workmanager/workmanager.dart';
 
 import 'app.dart';
 import 'core/database/app_database.dart';
+import 'core/services/api_service.dart';
 import 'core/services/sync_service.dart';
 import 'features/auth/auth_controller.dart';
 import 'features/forms/forms_controller.dart';
@@ -21,13 +22,14 @@ void callbackDispatcher() {
 
       final syncService = SyncService(
         database: database,
+        api: ApiService.instance,
       );
 
       await syncService.syncAll();
 
       return true;
     } catch (error, stackTrace) {
-      debugPrint('Background sync failed: $error');
+      debugPrint('Background synchronization failed: $error');
       debugPrintStack(stackTrace: stackTrace);
 
       return false;

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/database/app_database.dart';
 import '../../core/models/submission_model.dart';
+import '../../core/services/api_service.dart';
 import '../../core/services/sync_service.dart';
 
 class SubmissionsController extends ChangeNotifier {
@@ -42,6 +43,7 @@ class SubmissionsController extends ChangeNotifier {
     try {
       final syncService = SyncService(
         database: database,
+        api: ApiService.instance,
       );
 
       final count = await syncService.syncAll();
@@ -50,7 +52,7 @@ class SubmissionsController extends ChangeNotifier {
 
       return count;
     } catch (error, stackTrace) {
-      debugPrint('Submission sync failed: $error');
+      debugPrint('Submission synchronization failed: $error');
       debugPrintStack(stackTrace: stackTrace);
 
       rethrow;

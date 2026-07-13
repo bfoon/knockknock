@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/database/app_database.dart';
 import '../../core/models/submission_model.dart';
-import '../../core/services/api_service.dart';
+import '../../core/services/api_client.dart';
 import '../../core/services/sync_service.dart';
 
 class SubmissionsController extends ChangeNotifier {
@@ -15,9 +15,15 @@ class SubmissionsController extends ChangeNotifier {
   int pending = 0;
 
   Future<void> load() async {
-    submissions = await database.getSubmissions();
-    pending = await database.countPending();
-    notifyListeners();
+    try {
+      submissions = await database.getSubmissions();
+      pending = await database.countPending();
+    } catch (error, stackTrace) {
+      debugPrint('Failed to load submissions: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    } finally {
+      notifyListeners();
+    }
   }
 
   Future<void> save(LocalSubmission submission) async {
@@ -36,16 +42,18 @@ class SubmissionsController extends ChangeNotifier {
     try {
       final syncService = SyncService(
         database: database,
-        api: ApiService.instance,
+        api: ApiClient(),
       );
 
       final count = await syncService.syncAll();
+
       await load();
 
       return count;
     } catch (error, stackTrace) {
       debugPrint('Submission synchronization failed: $error');
       debugPrintStack(stackTrace: stackTrace);
+
       rethrow;
     } finally {
       syncing = false;

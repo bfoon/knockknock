@@ -4,7 +4,7 @@ import 'package:workmanager/workmanager.dart';
 
 import 'app.dart';
 import 'core/database/app_database.dart';
-import 'core/services/api_service.dart';
+import 'core/services/api_client.dart';
 import 'core/services/sync_service.dart';
 import 'features/auth/auth_controller.dart';
 import 'features/forms/forms_controller.dart';
@@ -22,14 +22,16 @@ void callbackDispatcher() {
 
       final syncService = SyncService(
         database: database,
-        api: ApiService.instance,
+        api: ApiClient(),
       );
 
       await syncService.syncAll();
+
       return true;
     } catch (error, stackTrace) {
       debugPrint('Background synchronization failed: $error');
       debugPrintStack(stackTrace: stackTrace);
+
       return false;
     }
   });
@@ -38,7 +40,9 @@ void callbackDispatcher() {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Workmanager().initialize(callbackDispatcher);
+  await Workmanager().initialize(
+    callbackDispatcher,
+  );
 
   await Workmanager().registerPeriodicTask(
     'kura-auto-sync',

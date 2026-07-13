@@ -8,11 +8,8 @@ on:
       - master
       - main
     paths:
-      - "**/*.dart"
-      - "**/pubspec.yaml"
-      - "**/pubspec.lock"
-      - "**/android/**"
-      - ".github/workflows/build-kura-android.yml"
+      - "kura/mobile/kura_collect_flutter/**"
+      - ".github/workflows/build-android.yml"
 
 permissions:
   contents: read
@@ -21,15 +18,48 @@ concurrency:
   group: kura-android-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  FLUTTER_PROJECT: kura/mobile/kura_collect_flutter
+  KURA_BASE_URL: https://nokknock.app
+
 jobs:
   build-android:
     name: Build Android APK and AAB
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Show commit and repository
+        shell: bash
+        run: |
+          set -e
+
+          echo "Commit being built:"
+          git rev-parse HEAD
+
+          echo
+          echo "Branch:"
+          git branch --show-current || true
+
+          echo
+          echo "Flutter project:"
+          echo "$FLUTTER_PROJECT"
+
+          if [ ! -d "$FLUTTER_PROJECT" ]; then
+            echo "::error::Flutter project directory does not exist: $FLUTTER_PROJECT"
+            find . -maxdepth 5 -name pubspec.yaml -print
+            exit 1
+          fi
+
+          if [ ! -f "$FLUTTER_PROJECT/pubspec.yaml" ]; then
+            echo "::error::pubspec.yaml was not found in $FLUTTER_PROJECT"
+            exit 1
+          fi
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -49,154 +79,196 @@ jobs:
           flutter --version
           dart --version
 
-      - name: Find Flutter project
-        id: find_flutter
+      - name: Verify Flutter project structure
+        working-directory: kura/mobile/kura_collect_flutter
         shell: bash
         run: |
           set -e
 
-          echo "Repository root:"
+          echo "Current working directory:"
           pwd
 
           echo
-          echo "Searching for Flutter projects..."
-
-          mapfile -t PUBSPEC_FILES < <(
-            find "$GITHUB_WORKSPACE" \
-              -type f \
-              -name pubspec.yaml \
-              -not -path "*/.pub-cache/*" \
-              -not -path "*/build/*"
-          )
-
-          if [ "${#PUBSPEC_FILES[@]}" -eq 0 ]; then
-            echo "::error::No pubspec.yaml file was found in the repository."
-            echo "Repository contents:"
-            find "$GITHUB_WORKSPACE" -maxdepth 4 -type f | sort
-            exit 1
-          fi
-
-          echo "Found pubspec files:"
-          printf '%s\n' "${PUBSPEC_FILES[@]}"
-
-          FLUTTER_DIR=""
-
-          # Prefer the expected Kura app directory when it exists.
-          for PUBSPEC in "${PUBSPEC_FILES[@]}"; do
-            DIR="$(dirname "$PUBSPEC")"
-
-            if [ -f "$DIR/android/app/build.gradle" ] || \
-               [ -f "$DIR/android/app/build.gradle.kts" ]; then
-
-              case "$DIR" in
-                *kura_collect_flutter*|*kura_collect*|*kura*)
-                  FLUTTER_DIR="$DIR"
-                  break
-                  ;;
-              esac
-            fi
-          done
-
-          # Otherwise use the first valid Flutter Android project.
-          if [ -z "$FLUTTER_DIR" ]; then
-            for PUBSPEC in "${PUBSPEC_FILES[@]}"; do
-              DIR="$(dirname "$PUBSPEC")"
-
-              if [ -d "$DIR/lib" ] && \
-                 [ -d "$DIR/android" ] && \
-                 { [ -f "$DIR/android/app/build.gradle" ] || \
-                   [ -f "$DIR/android/app/build.gradle.kts" ]; }; then
-                FLUTTER_DIR="$DIR"
-                break
-              fi
-            done
-          fi
-
-          if [ -z "$FLUTTER_DIR" ]; then
-            echo "::error::A pubspec.yaml file was found, but no valid Flutter Android project was detected."
-            echo
-            echo "Expected files:"
-            echo "  pubspec.yaml"
-            echo "  lib/"
-            echo "  android/"
-            echo "  android/app/build.gradle or build.gradle.kts"
-            exit 1
-          fi
-
-          RELATIVE_DIR="${FLUTTER_DIR#"$GITHUB_WORKSPACE"/}"
-
-          echo
-          echo "Flutter project found at:"
-          echo "$RELATIVE_DIR"
-
-          echo "flutter_dir=$FLUTTER_DIR" >> "$GITHUB_OUTPUT"
-          echo "flutter_relative_dir=$RELATIVE_DIR" >> "$GITHUB_OUTPUT"
-
-      - name: Display Flutter project structure
-        working-directory: ${{ steps.find_flutter.outputs.flutter_dir }}
-        run: |
-          echo "Working directory:"
-          pwd
-
-          echo
-          echo "Project contents:"
+          echo "Project files:"
           ls -la
 
           echo
-          echo "Android directory:"
-          find android -maxdepth 3 -type f | sort | head -200
+          echo "Android files:"
+          find android -maxdepth 4 -type f | sort
 
-      - name: Configure production domain
-        working-directory: ${{ steps.find_flutter.outputs.flutter_dir }}
+          test -f pubspec.yaml
+          test -d lib
+          test -d android
+          test -d android/app
+          test -f android/settings.gradle
+
+      - name: Verify sync service type fix
+        working-directory: kura/mobile/kura_collect_flutter
         shell: bash
         run: |
-          echo "Production domain: https://nokknock.app"
+          set -e
 
-          # This does not modify source files. It exposes the domain during
-          # compilation for code that reads it with String.fromEnvironment.
-          echo "KURA_BASE_URL=https://nokknock.app" >> "$GITHUB_ENV"
+          FILE="lib/core/services/sync_service.dart"
+
+          if [ ! -f "$FILE" ]; then
+            echo "::error::$FILE does not exist."
+            exit 1
+          fi
+
+          echo "Relevant sync service lines:"
+          grep -nE "grouped|syncBatch|List<LocalSubmission>|List<dynamic>" \
+            "$FILE" || true
+
+          if ! grep -qE \
+            "Map<String,[[:space:]]*List<LocalSubmission>>[[:space:]]+grouped" \
+            "$FILE"; then
+            echo "::error::The grouped submissions map is not typed as Map<String, List<LocalSubmission>>."
+            echo
+            echo "Required Dart declaration:"
+            echo "final Map<String, List<LocalSubmission>> grouped ="
+            echo "    <String, List<LocalSubmission>>{};"
+            exit 1
+          fi
+
+          if grep -qE \
+            "Map<String,[[:space:]]*List<dynamic>>[[:space:]]+grouped|<String,[[:space:]]*List<dynamic>>" \
+            "$FILE"; then
+            echo "::error::The sync service still declares grouped submissions as List<dynamic>."
+            exit 1
+          fi
+
+          echo "Sync service type declaration is correct."
+
+      - name: Verify Android Gradle Plugin
+        working-directory: kura/mobile/kura_collect_flutter
+        shell: bash
+        run: |
+          set -e
+
+          echo "android/settings.gradle:"
+          cat android/settings.gradle
+
+          echo
+          echo "Searching for Android Gradle Plugin 8.7.3:"
+
+          if grep -RIn \
+            --exclude-dir=.gradle \
+            --exclude-dir=build \
+            --exclude="*.backup" \
+            --exclude="*.bak" \
+            "8\.7\.3" \
+            android; then
+            echo "::error::Android Gradle Plugin 8.7.3 still exists in the committed Android project."
+            exit 1
+          fi
+
+          if ! grep -q \
+            'id "com.android.application" version "8.11.1" apply false' \
+            android/settings.gradle; then
+            echo "::error::AGP 8.11.1 was not found in android/settings.gradle."
+            exit 1
+          fi
+
+          if ! grep -q \
+            'id "org.jetbrains.kotlin.android" version "2.2.20" apply false' \
+            android/settings.gradle; then
+            echo "::error::Kotlin plugin 2.2.20 was not found in android/settings.gradle."
+            exit 1
+          fi
+
+          echo "Android plugin versions are correct."
+
+      - name: Verify Gradle wrapper
+        working-directory: kura/mobile/kura_collect_flutter
+        shell: bash
+        run: |
+          set -e
+
+          WRAPPER_FILE="android/gradle/wrapper/gradle-wrapper.properties"
+
+          if [ ! -f "$WRAPPER_FILE" ]; then
+            echo "::error::$WRAPPER_FILE is missing."
+            echo "Commit the Gradle wrapper files before building."
+            exit 1
+          fi
+
+          if [ ! -f "android/gradle/wrapper/gradle-wrapper.jar" ]; then
+            echo "::error::android/gradle/wrapper/gradle-wrapper.jar is missing."
+            exit 1
+          fi
+
+          if [ ! -f "android/gradlew" ]; then
+            echo "::error::android/gradlew is missing."
+            exit 1
+          fi
+
+          echo "Gradle wrapper configuration:"
+          cat "$WRAPPER_FILE"
+
+          if ! grep -q \
+            "gradle-8\.13-" \
+            "$WRAPPER_FILE"; then
+            echo "::error::The Gradle wrapper is not configured for Gradle 8.13."
+            exit 1
+          fi
+
+          chmod +x android/gradlew
+
+      - name: Clear project build caches
+        working-directory: kura/mobile/kura_collect_flutter
+        shell: bash
+        run: |
+          rm -rf build
+          rm -rf .dart_tool
+          rm -rf android/.gradle
+          rm -rf android/app/build
 
       - name: Get Flutter dependencies
-        working-directory: ${{ steps.find_flutter.outputs.flutter_dir }}
+        working-directory: kura/mobile/kura_collect_flutter
         run: flutter pub get
 
-      - name: Check Flutter project
-        working-directory: ${{ steps.find_flutter.outputs.flutter_dir }}
-        run: flutter doctor -v
-
-      - name: Run code analysis
-        working-directory: ${{ steps.find_flutter.outputs.flutter_dir }}
+      - name: Run Flutter analysis
+        working-directory: kura/mobile/kura_collect_flutter
         continue-on-error: true
         run: flutter analyze
 
-      - name: Run tests
-        working-directory: ${{ steps.find_flutter.outputs.flutter_dir }}
-        continue-on-error: true
+      - name: Run Flutter tests
+        working-directory: kura/mobile/kura_collect_flutter
+        shell: bash
         run: |
           if [ -d test ] && find test -type f -name "*_test.dart" | grep -q .; then
             flutter test
           else
-            echo "No Flutter tests found. Skipping tests."
+            echo "No Flutter tests were found."
           fi
 
+      - name: Show resolved Gradle version
+        working-directory: kura/mobile/kura_collect_flutter/android
+        shell: bash
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --version
+
       - name: Build release APK
-        working-directory: ${{ steps.find_flutter.outputs.flutter_dir }}
+        working-directory: kura/mobile/kura_collect_flutter
         run: |
           flutter build apk \
             --release \
             --dart-define=KURA_BASE_URL=https://nokknock.app
 
       - name: Build release Android App Bundle
-        working-directory: ${{ steps.find_flutter.outputs.flutter_dir }}
+        working-directory: kura/mobile/kura_collect_flutter
         run: |
           flutter build appbundle \
             --release \
             --dart-define=KURA_BASE_URL=https://nokknock.app
 
-      - name: Verify build files
-        working-directory: ${{ steps.find_flutter.outputs.flutter_dir }}
+      - name: Verify generated files
+        working-directory: kura/mobile/kura_collect_flutter
         shell: bash
         run: |
+          set -e
+
           APK_PATH="build/app/outputs/flutter-apk/app-release.apk"
           AAB_PATH="build/app/outputs/bundle/release/app-release.aab"
 
@@ -210,14 +282,15 @@ jobs:
             exit 1
           fi
 
-          echo "Build files created successfully:"
           ls -lh "$APK_PATH"
           ls -lh "$AAB_PATH"
 
-      - name: Prepare release files
-        working-directory: ${{ steps.find_flutter.outputs.flutter_dir }}
+      - name: Prepare artifacts
+        working-directory: kura/mobile/kura_collect_flutter
         shell: bash
         run: |
+          set -e
+
           mkdir -p github-artifacts
 
           cp \
@@ -228,11 +301,13 @@ jobs:
             build/app/outputs/bundle/release/app-release.aab \
             github-artifacts/kura-collect-release.aab
 
-          echo "Commit: $GITHUB_SHA" > github-artifacts/build-information.txt
-          echo "Branch: $GITHUB_REF_NAME" >> github-artifacts/build-information.txt
-          echo "Domain: https://nokknock.app" >> github-artifacts/build-information.txt
-          echo "Flutter project: ${{ steps.find_flutter.outputs.flutter_relative_dir }}" \
-            >> github-artifacts/build-information.txt
+          {
+            echo "Commit: $GITHUB_SHA"
+            echo "Branch: $GITHUB_REF_NAME"
+            echo "Domain: $KURA_BASE_URL"
+            echo "Flutter project: $FLUTTER_PROJECT"
+            echo "Built: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          } > github-artifacts/build-information.txt
 
           sha256sum \
             github-artifacts/kura-collect-release.apk \
@@ -246,9 +321,9 @@ jobs:
         with:
           name: kura-collect-apk
           path: |
-            ${{ steps.find_flutter.outputs.flutter_dir }}/github-artifacts/kura-collect-release.apk
-            ${{ steps.find_flutter.outputs.flutter_dir }}/github-artifacts/SHA256SUMS.txt
-            ${{ steps.find_flutter.outputs.flutter_dir }}/github-artifacts/build-information.txt
+            kura/mobile/kura_collect_flutter/github-artifacts/kura-collect-release.apk
+            kura/mobile/kura_collect_flutter/github-artifacts/SHA256SUMS.txt
+            kura/mobile/kura_collect_flutter/github-artifacts/build-information.txt
           if-no-files-found: error
           retention-days: 30
 
@@ -257,8 +332,8 @@ jobs:
         with:
           name: kura-collect-aab
           path: |
-            ${{ steps.find_flutter.outputs.flutter_dir }}/github-artifacts/kura-collect-release.aab
-            ${{ steps.find_flutter.outputs.flutter_dir }}/github-artifacts/SHA256SUMS.txt
-            ${{ steps.find_flutter.outputs.flutter_dir }}/github-artifacts/build-information.txt
+            kura/mobile/kura_collect_flutter/github-artifacts/kura-collect-release.aab
+            kura/mobile/kura_collect_flutter/github-artifacts/SHA256SUMS.txt
+            kura/mobile/kura_collect_flutter/github-artifacts/build-information.txt
           if-no-files-found: error
           retention-days: 30

@@ -9,6 +9,7 @@ Mobile devices use kura/api.py instead of these views.
 from __future__ import annotations
 
 import csv
+import io
 import json
 from datetime import timedelta
 
@@ -429,14 +430,80 @@ def export_csv(request, code):
     return response
 
 
+# ── share QR codes ───────────────────────────────────────────────────
+
+def _share_links(request, survey):
+    """The two things a survey QR can encode.
+
+    web → the public runner URL: scan with any phone camera, the form
+          opens in the browser (scan & collect).
+    app → a kura:// deep link carrying host + code: scan from inside
+          Kura Collect's scanner, the app calls the sync API, downloads
+          the form and collects offline (scan & download form & collect).
+    """
+    return {
+        "web": request.build_absolute_uri(f"/kura/{survey.code}/"),
+        "app": f"kura://form?host={request.get_host()}&code={survey.code}",
+    }
+
+
+@login_required
+@require_GET
+def qr_code(request, code):
+    """PNG QR code for the survey (owner-only).
+
+    GET params:
+        variant=web|app   what to encode (default: web — see _share_links)
+        download=1        serve as an attachment instead of inline
+        scale=4..40       pixels per QR module (default 12 ≈ 600 px,
+                          crisp enough for an A4 poster)
+    """
+    try:
+        import segno  # pure-Python, no Pillow needed: pip install segno
+    except ImportError:
+        return JsonResponse(
+            {"ok": False,
+             "error": "QR support is not installed — run: pip install segno"},
+            status=500)
+
+    survey = _own(request, code)
+    links = _share_links(request, survey)
+    variant = request.GET.get("variant") or "web"
+    if variant not in links:
+        variant = "web"
+
+    try:
+        scale = min(40, max(4, int(request.GET.get("scale", 12))))
+    except (TypeError, ValueError):
+        scale = 12
+
+    buf = io.BytesIO()
+    # error="q" (~25 % recovery) survives print smudges and phone glare.
+    segno.make(links[variant], error="q").save(
+        buf, kind="png", scale=scale, border=2,
+        dark="#0b0d26", light="#ffffff")
+
+    response = HttpResponse(buf.getvalue(), content_type="image/png")
+    if request.GET.get("download"):
+        response["Content-Disposition"] = (
+            f'attachment; filename="{survey.code}_qr_{variant}.png"')
+    else:
+        response["Content-Disposition"] = (
+            f'inline; filename="{survey.code}_qr_{variant}.png"')
+    return response
+
+
 # ── live monitor (where is data coming from?) ────────────────────────
 
 @login_required
 def monitor(request, code):
     survey = _own(request, code)
+    links = _share_links(request, survey)
     return render(request, "kura/monitor.html", {
         "survey": survey,
         "feed_url": f"/kura/{survey.code}/monitor/feed/",
+        "collect_url": links["web"],
+        "app_link": links["app"],
     })
 
 

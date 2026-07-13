@@ -91,6 +91,35 @@
   th{font-family:"Spline Sans Mono",monospace;font-size:.56rem;letter-spacing:.1em;text-transform:uppercase;color:var(--cyan);border-top:0}
   td.ok{color:#86efac}td.dup{color:#ffc38a}td.rej{color:#f0a397}
   .empty-inline{padding:.9rem 1rem;color:var(--muted);font-size:.78rem}
+  /* QR share modal */
+  .qr-back{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;
+    padding:1rem;background:rgba(3,4,14,.72);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+  .qr-back[hidden]{display:none}
+  .qr-modal{width:min(880px,100%);max-height:calc(100vh - 2rem);overflow:auto;border:1px solid var(--line);
+    border-radius:20px;padding:1.1rem 1.2rem 1.3rem;
+    background:linear-gradient(135deg,rgba(14,16,42,.97),rgba(10,12,35,.97));box-shadow:0 26px 70px rgba(0,0,0,.55)}
+  .qr-modal>header{display:flex;align-items:center;gap:.7rem;margin-bottom:.9rem}
+  .qr-modal h2{flex:1;margin:0;font-family:"Fraunces",serif;font-weight:600;font-size:1.2rem;color:#fff;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .qr-x{border:1px solid var(--line);border-radius:9px;background:rgba(255,255,255,.05);color:var(--muted);
+    font-size:.95rem;line-height:1;padding:.45rem .6rem;cursor:pointer}
+  .qr-x:hover{color:#fff}
+  .qr-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+  @media(max-width:760px){.qr-grid{grid-template-columns:1fr}}
+  .qr-card{border:1px solid var(--line);border-radius:16px;padding:1rem;text-align:center;
+    background:linear-gradient(135deg,rgba(255,255,255,.06),rgba(255,255,255,.02))}
+  .qr-card h4{margin:0 0 .2rem;font-size:.92rem;font-weight:800}
+  .qr-card h4 .tag{display:inline-block;vertical-align:2px;margin-left:.4rem;font:700 .5rem/1 "Spline Sans Mono",monospace;
+    letter-spacing:.1em;text-transform:uppercase;border:1px solid var(--line);border-radius:5px;padding:.2rem .4rem}
+  .qr-card.web h4 .tag{color:var(--cyan);border-color:rgba(34,211,238,.4)}
+  .qr-card.app h4 .tag{color:var(--pink);border-color:rgba(255,63,152,.4)}
+  .qr-card p{margin:.15rem 0 .8rem;color:var(--muted);font-size:.72rem;line-height:1.45}
+  .qr-card img{width:min(240px,80%);aspect-ratio:1;border-radius:14px;background:#fff;padding:8px;display:block;margin:0 auto}
+  .qr-card code{display:block;margin:.75rem auto .6rem;max-width:100%;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;font:500 .64rem/1.3 "Spline Sans Mono",monospace;color:var(--dim);
+    border:1px solid var(--line);border-radius:8px;padding:.4rem .55rem;background:rgba(255,255,255,.03)}
+  .qr-acts{display:flex;gap:.45rem;justify-content:center;flex-wrap:wrap}
+  .qr-acts .btn{font-size:.72rem;padding:.42rem .7rem}
 </style>
 </head>
 <body>
@@ -98,6 +127,7 @@
   <a class="mark" href="{% url 'kura:list' %}">Kura<span style="-webkit-text-fill-color:var(--pink)">.</span></a>
   <h1>{{ survey.title }} — live monitor</h1>
   <span class="live-pill"><span class="live-dot" id="live-dot"></span><span id="live-label">Connecting…</span></span>
+  <button class="btn" id="b-qr" type="button" title="Share QR codes for this form">▦ QR codes</button>
   <a class="btn" href="{% url 'kura:live_map' survey.code %}">🗺 Full map</a>
   <a class="btn" href="{% url 'kura:data' survey.code %}">Data</a>
   <a class="btn" href="{% url 'kura:builder' survey.code %}">Builder</a>
@@ -117,7 +147,7 @@
     <div class="panel">
       <h3>Where responses come from <span class="sp"></span>
         <a href="{% url 'kura:live_map' survey.code %}" style="color:var(--cyan);text-decoration:none;font-size:.6rem" title="Open the full-screen live map">⛶ FULL SCREEN</a>
-        
+
         <span class="legend">
           <span><i style="background:var(--cyan)"></i>Web</span>
           <span><i style="background:var(--pink)"></i>Mobile app</span>
@@ -154,6 +184,41 @@
           <thead><tr><th>When</th><th>Device</th><th>Enumerator</th><th>New</th><th>Dup</th><th>Rej</th></tr></thead>
           <tbody id="syncs"><tr><td colspan="6" class="empty-inline">No syncs yet.</td></tr></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="qr-back" id="qr-back" hidden>
+  <div class="qr-modal" role="dialog" aria-modal="true" aria-labelledby="qr-title">
+    <header>
+      <h2 id="qr-title">Share “{{ survey.title }}” · {{ survey.code }}</h2>
+      <button class="qr-x" id="qr-close" type="button" aria-label="Close">✕</button>
+    </header>
+    <div class="qr-grid">
+      <div class="qr-card web">
+        <h4>Scan &amp; collect <span class="tag">Web</span></h4>
+        <p>Respondents scan with any phone camera — the form opens in the
+          browser and they answer on the spot. Print it on posters or flyers.</p>
+        <img src="{% url 'kura:qr' survey.code %}?variant=web" alt="QR code — open the web form" loading="lazy">
+        <code id="qr-web-link" title="{{ collect_url }}">{{ collect_url }}</code>
+        <div class="qr-acts">
+          <button class="btn" type="button" data-copy="qr-web-link">⧉ Copy link</button>
+          <a class="btn" href="{% url 'kura:qr' survey.code %}?variant=web" target="_blank" rel="noopener">⤢ Full size</a>
+          <a class="btn" href="{% url 'kura:qr' survey.code %}?variant=web&download=1&scale=20">⬇ Download PNG</a>
+        </div>
+      </div>
+      <div class="qr-card app">
+        <h4>Scan &amp; download form <span class="tag">Kura Collect</span></h4>
+        <p>Enumerators scan from inside the Kura Collect app — it downloads
+          the form to the phone and collects offline, syncing when online.</p>
+        <img src="{% url 'kura:qr' survey.code %}?variant=app" alt="QR code — download the form in Kura Collect" loading="lazy">
+        <code id="qr-app-link" title="{{ app_link }}">{{ app_link }}</code>
+        <div class="qr-acts">
+          <button class="btn" type="button" data-copy="qr-app-link">⧉ Copy link</button>
+          <a class="btn" href="{% url 'kura:qr' survey.code %}?variant=app" target="_blank" rel="noopener">⤢ Full size</a>
+          <a class="btn" href="{% url 'kura:qr' survey.code %}?variant=app&download=1&scale=20">⬇ Download PNG</a>
+        </div>
       </div>
     </div>
   </div>
@@ -268,6 +333,28 @@ function prependSyncRow(ev){
 $("#feed").addEventListener("click", e=>{
   const p = e.target.closest(".pin");
   if(p){ map.setView([+p.dataset.lat, +p.dataset.lng], 14); }
+});
+
+/* ── QR share modal ── */
+const qrBack = $("#qr-back");
+function openQR(){ qrBack.hidden = false; document.body.style.overflow = "hidden"; }
+function closeQR(){ qrBack.hidden = true; document.body.style.overflow = ""; }
+$("#b-qr").addEventListener("click", openQR);
+$("#qr-close").addEventListener("click", closeQR);
+qrBack.addEventListener("click", e=>{ if(e.target === qrBack) closeQR(); });
+document.addEventListener("keydown", e=>{ if(e.key === "Escape" && !qrBack.hidden) closeQR(); });
+qrBack.addEventListener("click", async e=>{
+  const b = e.target.closest("button[data-copy]");
+  if(!b) return;
+  const text = document.getElementById(b.dataset.copy)?.textContent.trim() || "";
+  try{
+    await navigator.clipboard.writeText(text);
+    const old = b.textContent; b.textContent = "✓ Copied";
+    setTimeout(()=>{ b.textContent = old; }, 1400);
+  }catch(err){
+    // Clipboard API needs HTTPS/localhost — fall back to a prompt.
+    window.prompt("Copy the link:", text);
+  }
 });
 
 /* ── devices panel ── */

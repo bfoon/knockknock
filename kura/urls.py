@@ -15,6 +15,7 @@ Resulting URLs:
     /kura/<code>/state/             → set_state (POST)
     /kura/<code>/data/              → data workbench (clean/export)
     /kura/<code>/data/*             → workbench JSON endpoints
+    /kura/<code>/qr.png             → share QR PNG (?variant=web|app, ?download=1)
     /kura/<code>/present-export/    → build a Hanns results deck (POST)
     /kura/<code>/submit/            → web runner submit (POST, public)
     /kura/<code>/                   → collect   (public runner — the QR URL)
@@ -60,6 +61,7 @@ urlpatterns = [
     path("<str:code>/monitor/", views.monitor, name="monitor"),
     path("<str:code>/monitor/device-access/", views.device_access_update, name="device_access_update"),
     path("<str:code>/monitor/feed/", views.monitor_feed, name="monitor_feed"),
+    path("<str:code>/qr.png", views.qr_code, name="qr"),
     path("<str:code>/map/", views.live_map, name="live_map"),
     path("<str:code>/data/rows/", views.data_rows, name="data_rows"),
     path("<str:code>/data/edit/", views.edit_answer, name="edit_answer"),

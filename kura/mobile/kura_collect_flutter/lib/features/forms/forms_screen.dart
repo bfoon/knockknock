@@ -16,7 +16,11 @@ class _FormsScreenState extends State<FormsScreen> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(() => context.read<FormsController>().loadLocal());
+    Future.microtask(() async {
+      final controller = context.read<FormsController>();
+      await controller.loadLocal();
+      await controller.refresh();
+    });
   }
 
   @override
@@ -59,15 +63,18 @@ class _FormsScreenState extends State<FormsScreen> {
                 itemBuilder: (context, index) {
                   final form = controller.forms[index];
                   final ready = form.allowed && form.schema != null;
+                  final needsDownload = form.allowed && form.schema == null;
                   return Card(
                     child: ListTile(
                       contentPadding: const EdgeInsets.all(16),
                       leading: CircleAvatar(
                         child: Icon(ready
                             ? Icons.assignment_turned_in_rounded
-                            : form.accessStatus == 'pending'
-                                ? Icons.hourglass_top_rounded
-                                : Icons.block_rounded),
+                            : needsDownload
+                                ? Icons.download_rounded
+                                : form.accessStatus == 'pending'
+                                    ? Icons.hourglass_top_rounded
+                                    : Icons.block_rounded),
                       ),
                       title: Text(form.title,
                           style: const TextStyle(fontWeight: FontWeight.w800)),
@@ -76,9 +83,11 @@ class _FormsScreenState extends State<FormsScreen> {
                         child: Text(
                           ready
                               ? 'Version ${form.version} · Ready offline'
-                              : form.accessStatus == 'pending'
-                                  ? 'Waiting for approval'
-                                  : 'Access blocked',
+                              : needsDownload
+                                  ? 'Version ${form.version} · Tap to download update'
+                                  : form.accessStatus == 'pending'
+                                      ? 'Waiting for approval'
+                                      : 'Access blocked',
                         ),
                       ),
                       trailing: const Icon(Icons.chevron_right_rounded),

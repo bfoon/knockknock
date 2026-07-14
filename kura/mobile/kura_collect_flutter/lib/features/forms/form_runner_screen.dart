@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -102,6 +103,16 @@ String _normalizeType(dynamic raw) {
   return aliases[t] ?? t;
 }
 
+Map<String, dynamic> _validationMap(Map<String, dynamic> question) =>
+    question['validate'] is Map
+        ? Map<String, dynamic>.from(question['validate'] as Map)
+        : <String, dynamic>{};
+
+dynamic _questionSetting(Map<String, dynamic> question, String key) {
+  final validation = _validationMap(question);
+  return validation.containsKey(key) ? validation[key] : question[key];
+}
+
 // ── Kobo/ODK-style logic evaluation ───────────────────────────────────
 //
 // Evaluates the logic the schema attaches to a question. Works for both
@@ -150,6 +161,18 @@ class LogicEvaluator {
     if (spec is List) return spec.every(call);
     if (spec is Map) {
       final rule = Map<String, dynamic>.from(spec);
+
+      // Kura builder/server format:
+      // {"op":"and"|"or", "rules":[rule, nestedGroup, ...]}
+      // This must be checked before treating the map as a leaf rule.
+      if (rule['rules'] is List) {
+        final rules = (rule['rules'] as List);
+        if (rules.isEmpty) return true;
+        final op = (rule['op'] ?? 'and').toString().toLowerCase();
+        return op == 'or' ? rules.any(call) : rules.every(call);
+      }
+
+      // Older/mobile-compatible group formats.
       if (rule['all'] is List) return (rule['all'] as List).every(call);
       if (rule['any'] is List) return (rule['any'] as List).any(call);
       if (rule.containsKey('not')) return !call(rule['not']);
@@ -160,10 +183,62 @@ class LogicEvaluator {
 
   bool _legacyRule(Map<String, dynamic> rule) {
     final field = (rule['q'] ?? rule['field'])?.toString();
-    final cmp = (rule['cmp'] ?? rule['op'] ?? 'eq').toString();
+    final cmp = (rule['cmp'] ?? rule['op'] ?? 'eq')
+        .toString()
+        .trim()
+        .toLowerCase();
     final expected = rule['value'];
     final current = field == null ? dot : answers[field];
+
     switch (cmp) {
+      case 'answered':
+      case 'not_empty':
+        return _hasValue(current);
+      case 'not_answered':
+      case 'empty':
+        return !_hasValue(current);
+
+      case 'selected':
+      case 'not_selected':
+        final selected = current is List
+            ? current.map((e) => e.toString()).toList()
+            : (_hasValue(current) ? <String>[current.toString()] : <String>[]);
+        final hit = selected.contains(expected?.toString() ?? '');
+        return cmp == 'selected' ? hit : !hit;
+
+      case 'in':
+      case 'not_in':
+        final options = expected is List ? expected : <dynamic>[expected];
+        final hit = options
+            .map((e) => e?.toString() ?? '')
+            .contains(current?.toString() ?? '');
+        return cmp == 'in' ? hit : !hit;
+
+      case 'contains':
+      case 'not_contains':
+        final hit = expected != null &&
+            current != null &&
+            current
+                .toString()
+                .toLowerCase()
+                .contains(expected.toString().toLowerCase());
+        return cmp == 'contains' ? hit : !hit;
+
+      case 'matches':
+        try {
+          return RegExp(expected?.toString() ?? '')
+              .hasMatch(current?.toString() ?? '');
+        } catch (_) {
+          return false;
+        }
+
+      case 'between':
+        if (expected is! List || expected.length != 2) return false;
+        final n = double.tryParse(current?.toString() ?? '');
+        final lo = double.tryParse(expected[0]?.toString() ?? '');
+        final hi = double.tryParse(expected[1]?.toString() ?? '');
+        return n != null && lo != null && hi != null && n >= lo && n <= hi;
+
       case 'eq':
         return _looseEq(current, expected);
       case 'ne':
@@ -177,19 +252,9 @@ class LogicEvaluator {
         return _numOf(current) < _numOf(expected);
       case 'lte':
         return _numOf(current) <= _numOf(expected);
-      case 'contains':
-      case 'selected':
-        if (current is List) {
-          return current
-              .map((e) => e.toString())
-              .contains(expected.toString());
-        }
-        return current?.toString().contains(expected.toString()) ?? false;
-      case 'empty':
-        return !_hasValue(current);
-      case 'not_empty':
-        return _hasValue(current);
       default:
+        // Invalid/malformed rules fail open, so field collection is not
+        // blocked by a bad form definition.
         return true;
     }
   }
@@ -217,6 +282,31 @@ bool _looseEq(dynamic a, dynamic b) {
   final nb = double.tryParse(b?.toString() ?? '');
   if (na != null && nb != null) return na == nb;
   return (a ?? '').toString() == (b ?? '').toString();
+}
+
+double _pow10(int exponent) => math.pow(10, exponent).toDouble();
+double _pow(double base, double exponent) =>
+    math.pow(base, exponent).toDouble();
+double _sqrt(double value) => math.sqrt(value);
+
+dynamic _expressionValue(dynamic spec, Map<String, dynamic> answers,
+    {dynamic dot}) {
+  if (spec == null) return null;
+  if (spec is num || spec is bool) return spec;
+  final source = spec.toString().trim();
+  if (source.isEmpty) return null;
+  try {
+    return _ExprParser(source, answers, dot).parse();
+  } catch (_) {
+    return null;
+  }
+}
+
+double? _expressionNumber(dynamic spec, Map<String, dynamic> answers,
+    {dynamic dot}) {
+  final value = _expressionValue(spec, answers, dot: dot);
+  if (value is bool) return value ? 1.0 : 0.0;
+  return double.tryParse(value?.toString() ?? '');
 }
 
 /// Minimal recursive-descent parser for XLSForm/XPath-ish expressions.
@@ -390,8 +480,15 @@ class _ExprParser {
           return false;
         case 'null':
           return null;
+        case 'value':
+          return dot;
       }
-      throw FormatException('Unknown token "$name"');
+
+      // Kura's server-side validate.expr/min_expr/max_expr syntax uses
+      // bare field names (for example: age >= minimum_age), while XLSForm
+      // relevance commonly uses ${age}. Support both syntaxes.
+      if (answers.containsKey(name)) return answers[name];
+      return null;
     }
 
     throw FormatException('Unexpected character "$c"');
@@ -425,14 +522,40 @@ class _ExprParser {
           return true;
         }
       case 'coalesce':
-        return _hasValue(arg(0)) ? arg(0) : arg(1);
+        for (final value in args) {
+          if (_hasValue(value)) return value;
+        }
+        return 0.0;
       case 'number':
+      case 'float':
         return _numOf(arg(0));
+      case 'int':
+        return _numOf(arg(0)).truncateToDouble();
       case 'string':
         return (arg(0) ?? '').toString();
       case 'boolean':
       case 'boolean-from-string':
         return _truthy(arg(0));
+      case 'abs':
+        return _numOf(arg(0)).abs();
+      case 'min':
+        return args.map(_numOf).reduce((a, b) => a < b ? a : b);
+      case 'max':
+        return args.map(_numOf).reduce((a, b) => a > b ? a : b);
+      case 'round':
+        final digits = args.length > 1 ? _numOf(arg(1)).toInt() : 0;
+        final factor = digits <= 0 ? 1.0 : _pow10(digits);
+        return (_numOf(arg(0)) * factor).roundToDouble() / factor;
+      case 'pow':
+        return _pow(_numOf(arg(0)), _numOf(arg(1)));
+      case 'sqrt':
+        return _sqrt(_numOf(arg(0)));
+      case 'count':
+        final value = arg(0);
+        if (value is List) return value.length.toDouble();
+        return _hasValue(value) ? 1.0 : 0.0;
+      case 'if_':
+        return _truthy(arg(0)) ? arg(1) : arg(2);
       case 'today':
         return DateFormat('yyyy-MM-dd').format(DateTime.now());
       case 'true':
@@ -635,18 +758,20 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
                             onJump: _jumpTo,
                           );
                         }
-                        final q = visible[index];
+                        final sourceQuestion = visible[index];
+                        final displayQuestion =
+                            _questionForDisplay(sourceQuestion);
                         return SingleChildScrollView(
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                           child: _QuestionCard(
-                            key: ValueKey('q-${q['name']}'),
-                            question: q,
-                            value: answers[q['name'].toString()],
-                            controller: _controllerFor(q),
+                            key: ValueKey('q-${sourceQuestion['name']}'),
+                            question: displayQuestion,
+                            value: answers[sourceQuestion['name'].toString()],
+                            controller: _controllerFor(sourceQuestion),
                             error: index == pageIndex ? inlineError : null,
                             onChanged: (value) {
                               setState(() {
-                                answers[q['name'].toString()] = value;
+                                answers[sourceQuestion['name'].toString()] = value;
                                 _dirty = true;
                                 inlineError = null;
                               });
@@ -826,6 +951,62 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
       value != '' &&
       !(value is List && value.isEmpty);
 
+  List<dynamic>? _rawChoices(Map<String, dynamic> question) {
+    final raw = question['choices'] ?? question['options'];
+    return raw is List ? raw : null;
+  }
+
+  Set<String>? _allowedChoiceValues(Map<String, dynamic> question) {
+    final raw = _rawChoices(question);
+    if (raw == null) return null;
+
+    final cascade = question['cascade'] is Map
+        ? Map<String, dynamic>.from(question['cascade'] as Map)
+        : <String, dynamic>{};
+    final parentName =
+        (cascade['parent'] ?? question['cascade_parent'] ?? '')
+            .toString()
+            .trim();
+    final parentValue = parentName.isEmpty ? null : answers[parentName];
+
+    final allowed = <String>{};
+    for (final item in raw) {
+      if (item is Map) {
+        final choice = Map<String, dynamic>.from(item);
+        if (parentName.isNotEmpty) {
+          if (!_hasAnswer(parentValue)) continue;
+          if ((choice['parent'] ?? '').toString() != parentValue.toString()) {
+            continue;
+          }
+        }
+        allowed.add((choice['value'] ?? choice['name'] ?? choice['label'])
+            .toString());
+      } else if (parentName.isEmpty) {
+        allowed.add(item.toString());
+      }
+    }
+    return allowed;
+  }
+
+  Map<String, dynamic> _questionForDisplay(
+      Map<String, dynamic> question) {
+    final allowed = _allowedChoiceValues(question);
+    if (allowed == null) return question;
+
+    final raw = _rawChoices(question)!;
+    final filtered = raw.where((item) {
+      if (item is Map) {
+        final choice = Map<String, dynamic>.from(item);
+        final value =
+            (choice['value'] ?? choice['name'] ?? choice['label']).toString();
+        return allowed.contains(value);
+      }
+      return allowed.contains(item.toString());
+    }).toList();
+
+    return Map<String, dynamic>.from(question)..['choices'] = filtered;
+  }
+
   /// null → valid; otherwise the message to show. Kobo-style checks:
   /// required (+ required_message), built-in type validation, min/max,
   /// min_length/max_length, regex pattern, min/max selected choices,
@@ -833,100 +1014,169 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
   /// '.' is the current answer (+ constraint_message).
   String? _errorFor(Map<String, dynamic> question) {
     final type = _normalizeType(question['type']);
-    if (type == 'note') return null;
-    final value = answers[question['name'].toString()];
+    if (type == 'note' || type == 'calculate') return null;
+
+    final name = question['name'].toString();
+    final value = answers[name];
+    final validation = _validationMap(question);
+
+    dynamic setting(String key, [dynamic legacy]) {
+      if (validation.containsKey(key)) return validation[key];
+      if (legacy != null) return legacy;
+      return question[key];
+    }
 
     String msg(dynamic custom, String fallback) {
       final s = custom?.toString().trim();
       return (s == null || s.isEmpty) ? fallback : s;
     }
 
+    final validationMessage = validation['message'] ??
+        question['constraint_message'] ??
+        question['required_message'];
+
     if (question['required'] == true && !_hasAnswer(value)) {
-      return msg(question['required_message'], 'This question is required.');
+      return msg(question['required_message'] ?? validation['message'],
+          'This question is required.');
     }
     if (!_hasAnswer(value)) return null;
 
     if (type == 'email' &&
-        !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value.toString())) {
+        !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+            .hasMatch(value.toString())) {
       return 'Enter a valid email address.';
     }
 
-    if (type == 'integer' || type == 'decimal') {
+    // Kura stores validation under question.validate. Keep top-level
+    // fallbacks so older downloaded forms continue to work.
+    if (const {'integer', 'decimal', 'rating', 'scale'}.contains(type)) {
       final n = double.tryParse(value.toString());
       if (n == null) return 'Enter a valid number.';
       if (type == 'integer' && n != n.roundToDouble()) {
         return 'Enter a whole number.';
       }
-      final min = double.tryParse(question['min']?.toString() ?? '');
-      final max = double.tryParse(question['max']?.toString() ?? '');
-      if (min != null && n < min) return 'Must be at least ${question['min']}.';
-      if (max != null && n > max) return 'Must be at most ${question['max']}.';
+
+      double? min = double.tryParse(setting('min')?.toString() ?? '');
+      double? max = double.tryParse(setting('max')?.toString() ?? '');
+      final dynamicMin =
+          _expressionNumber(validation['min_expr'], answers, dot: value);
+      final dynamicMax =
+          _expressionNumber(validation['max_expr'], answers, dot: value);
+      if (dynamicMin != null) {
+        min = min == null ? dynamicMin : math.max(min, dynamicMin).toDouble();
+      }
+      if (dynamicMax != null) {
+        max = max == null ? dynamicMax : math.min(max, dynamicMax).toDouble();
+      }
+
+      if (min != null && n < min) {
+        return msg(validationMessage, 'Must be at least ${_displayNumber(min)}.');
+      }
+      if (max != null && n > max) {
+        return msg(validationMessage, 'Must be at most ${_displayNumber(max)}.');
+      }
     }
 
     // Text-like answers: length limits and regex pattern.
     if (const {'text', 'textarea', 'phone', 'email', 'barcode'}
         .contains(type)) {
-      final s = value.toString();
-      final minLen = int.tryParse(question['min_length']?.toString() ?? '');
-      final maxLen = int.tryParse(question['max_length']?.toString() ?? '');
-      if (minLen != null && s.length < minLen) {
-        return 'Must be at least $minLen characters.';
+      final text = value.toString();
+      final minLen = int.tryParse(
+          (validation['min_length'] ?? question['min_length'])
+                  ?.toString() ??
+              '');
+      final maxLen = int.tryParse(
+          (validation['max_length'] ?? question['max_length'])
+                  ?.toString() ??
+              '');
+      if (minLen != null && text.length < minLen) {
+        return msg(validationMessage, 'Must be at least $minLen characters.');
       }
-      if (maxLen != null && s.length > maxLen) {
-        return 'Must be at most $maxLen characters.';
+      if (maxLen != null && text.length > maxLen) {
+        return msg(validationMessage, 'Must be at most $maxLen characters.');
       }
-      final pattern = (question['pattern'] ?? question['regex'])?.toString();
+
+      final pattern = (validation['regex'] ??
+              question['pattern'] ??
+              question['regex'])
+          ?.toString();
       if (pattern != null && pattern.isNotEmpty) {
         try {
-          if (!RegExp(pattern).hasMatch(s)) {
-            return msg(question['constraint_message'],
+          if (!RegExp(pattern).hasMatch(text)) {
+            return msg(validationMessage,
                 'The answer is not in the expected format.');
           }
         } catch (_) {
-          // A broken pattern in the schema must not block collection.
+          // Broken form regexes fail open, matching server behaviour.
         }
       }
     }
 
-    // Choice-count limits for select_many.
-    if (type == 'select_many' && value is List) {
-      final minSel =
-          int.tryParse(question['min_selected']?.toString() ?? '');
-      final maxSel =
-          int.tryParse(question['max_selected']?.toString() ?? '');
-      if (minSel != null && value.length < minSel) {
-        return 'Select at least $minSel option${minSel == 1 ? '' : 's'}.';
+    // Enforce cascading choice conditions on-device as well as on the
+    // server, so changing a parent cannot leave an invalid child choice.
+    if (const {'select_one', 'select_many', 'likert', 'rank'}.contains(type)) {
+      final allowed = _allowedChoiceValues(question);
+      if (allowed != null) {
+        final selected = value is List ? value : <dynamic>[value];
+        if (selected.any((item) => !allowed.contains(item.toString()))) {
+          return 'Choose only an option currently available for this answer.';
+        }
       }
-      if (maxSel != null && value.length > maxSel) {
-        return 'Select at most $maxSel option${maxSel == 1 ? '' : 's'}.';
+    }
+
+    // Select counts are validate.min/max in the server schema.
+    if (type == 'select_many' && value is List) {
+      final minSelected = int.tryParse((validation['min'] ??
+                  question['min_selected'])
+              ?.toString() ??
+          '');
+      final maxSelected = int.tryParse((validation['max'] ??
+                  question['max_selected'])
+              ?.toString() ??
+          '');
+      if (minSelected != null && value.length < minSelected) {
+        return msg(validationMessage,
+            'Select at least $minSelected option${minSelected == 1 ? '' : 's'}.');
+      }
+      if (maxSelected != null && value.length > maxSelected) {
+        return msg(validationMessage,
+            'Select at most $maxSelected option${maxSelected == 1 ? '' : 's'}.');
       }
     }
 
     // ISO dates compare correctly as strings (yyyy-MM-dd).
     if (const {'date', 'datetime'}.contains(type)) {
-      final min = question['min']?.toString();
-      final max = question['max']?.toString();
-      final s = value.toString();
-      if (min != null && min.isNotEmpty && s.compareTo(min) < 0) {
-        return 'Must be on or after $min.';
+      final min = setting('min')?.toString();
+      final max = setting('max')?.toString();
+      final text = value.toString();
+      if (min != null && min.isNotEmpty && text.compareTo(min) < 0) {
+        return msg(validationMessage, 'Must be on or after $min.');
       }
-      if (max != null && max.isNotEmpty && s.compareTo(max) > 0) {
-        return 'Must be on or before $max.';
+      if (max != null && max.isNotEmpty && text.compareTo(max) > 0) {
+        return msg(validationMessage, 'Must be on or before $max.');
       }
     }
 
-    // Free-form constraint expression, Kobo's `constraint` column:
-    //   ". >= 0 and . <= 120"  or  "${end} > ${start}"
-    final constraint = question['constraint'] ?? question['validate_if'];
+    // Server schema: validate.expr. Legacy/XLSForm schema: constraint.
+    // The parser supports both bare names (`age >= 18`) and `${age}`.
+    final constraint = validation['expr'] ??
+        question['constraint'] ??
+        question['validate_if'];
     if (constraint != null) {
-      final ok = LogicEvaluator(answers, dot: value)(constraint);
+      final context = Map<String, dynamic>.from(answers)
+        ..['value'] = value
+        ..[name] = value;
+      final ok = LogicEvaluator(context, dot: value)(constraint);
       if (!ok) {
-        return msg(question['constraint_message'],
+        return msg(validationMessage,
             'The answer does not meet the condition for this question.');
       }
     }
     return null;
   }
+
+  String _displayNumber(double value) =>
+      value == value.roundToDouble() ? value.toInt().toString() : value.toString();
 
   /// Visible questions, computed in document order with cascading
   /// relevance (Kobo behaviour): a hidden question's answer is invisible
@@ -1262,7 +1512,8 @@ class _QuestionCardState extends State<_QuestionCard> {
         );
 
       case 'rating':
-        final max = int.tryParse(q['max']?.toString() ?? '') ?? 5;
+        final max =
+            int.tryParse(_questionSetting(q, 'max')?.toString() ?? '') ?? 5;
         final current = int.tryParse(widget.value?.toString() ?? '') ?? 0;
         return Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1282,8 +1533,10 @@ class _QuestionCardState extends State<_QuestionCard> {
         );
 
       case 'scale':
-        final min = double.tryParse(q['min']?.toString() ?? '') ?? 0;
-        final max = double.tryParse(q['max']?.toString() ?? '') ?? 10;
+        final min =
+            double.tryParse(_questionSetting(q, 'min')?.toString() ?? '') ?? 0;
+        final max =
+            double.tryParse(_questionSetting(q, 'max')?.toString() ?? '') ?? 10;
         final current =
             (double.tryParse(widget.value?.toString() ?? '') ?? min)
                 .clamp(min, max);

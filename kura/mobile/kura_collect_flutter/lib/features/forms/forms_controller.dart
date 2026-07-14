@@ -27,6 +27,39 @@ class FormsController extends ChangeNotifier {
       final remote = await _api.fetchManifest();
       for (final form in remote) {
         final local = await database.getForm(form.code);
+
+        // A manifest contains metadata only. Always refresh the full schema
+        // for approved forms while the phone is online; otherwise an older
+        // schema can remain cached under a newer version/hash and newly
+        // published skip logic will never reach the runner.
+        if (form.allowed) {
+          try {
+            final downloaded = await _api.downloadForm(form.code);
+            await database.upsertForm(
+              KuraForm(
+                code: downloaded.code,
+                title: downloaded.title,
+                description: downloaded.description,
+                version: downloaded.version,
+                schemaHash: downloaded.schemaHash,
+                accessStatus: downloaded.accessStatus,
+                allowed: downloaded.allowed,
+                isOpen: downloaded.isOpen,
+                schema: downloaded.schema,
+                downloadedAt: DateTime.now(),
+              ),
+            );
+            continue;
+          } catch (_) {
+            // Keep a genuinely current offline copy when the individual
+            // download fails after the manifest request succeeded.
+          }
+        }
+
+        final schemaIsCurrent = local != null &&
+            local.version == form.version &&
+            local.schemaHash == form.schemaHash;
+
         await database.upsertForm(
           KuraForm(
             code: form.code,
@@ -37,8 +70,8 @@ class FormsController extends ChangeNotifier {
             accessStatus: form.accessStatus,
             allowed: form.allowed,
             isOpen: form.isOpen,
-            schema: local?.schema,
-            downloadedAt: local?.downloadedAt,
+            schema: schemaIsCurrent ? local.schema : null,
+            downloadedAt: schemaIsCurrent ? local.downloadedAt : null,
           ),
         );
       }

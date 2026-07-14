@@ -19,6 +19,17 @@ import '../submissions/submissions_controller.dart';
 /// page before submitting. Every question type the Kura builder can emit
 /// is normalised through [_normalizeType] so nothing falls back to a bare
 /// text field by accident.
+///
+/// Skip logic and constraints work like KoboToolbox (see [LogicEvaluator]):
+///  • Visibility: `relevant` / `show_if` / `skip_logic` / `condition` /
+///    `visible_if` on a question — or on a section, which then gates every
+///    question inside it (group relevance). Relevance cascades: a hidden
+///    question's answer is invisible to conditions of later questions.
+///  • Constraints: `constraint` (+ `constraint_message`) with `.` as the
+///    current answer, plus min/max, min_length/max_length, pattern/regex,
+///    min_selected/max_selected, and `required_message`.
+///  • Non-relevant answers are kept in drafts but stripped from completed
+///    submissions, exactly like Kobo.
 class FormRunnerScreen extends StatefulWidget {
   final KuraForm form;
 
@@ -91,6 +102,390 @@ String _normalizeType(dynamic raw) {
   return aliases[t] ?? t;
 }
 
+// ── Kobo/ODK-style logic evaluation ───────────────────────────────────
+//
+// Evaluates the logic the schema attaches to a question. Works for both
+// visibility (skip logic) and constraints, and accepts three shapes:
+//
+//   String – an XLSForm expression, exactly like KoboToolbox:
+//              "${age} >= 18 and selected(${languages}, 'en')"
+//            In constraints, '.' refers to the current answer:
+//              ". >= 0 and . <= 120"
+//            Supported: = != > >= < <=, and/or, + - * div mod,
+//            parentheses, and the functions not(), selected(),
+//            count-selected(), string-length(), regex(), coalesce(),
+//            number(), string(), boolean(), today(), true(), false().
+//
+//   Map    – the legacy rule {q, cmp, value} with cmp in eq/ne/gt/gte/
+//            lt/lte/contains/empty/not_empty, plus combinators
+//            {all: [rules]}, {any: [rules]}, {not: rule}.
+//
+//   List   – a list of any of the above, combined with AND.
+//
+// Malformed logic must never block data collection in the field, so any
+// evaluation error makes the condition pass (question stays visible,
+// constraint is treated as satisfied).
+class LogicEvaluator {
+  LogicEvaluator(this.answers, {this.dot});
+
+  /// Answers visible to the expression (hidden questions excluded).
+  final Map<String, dynamic> answers;
+
+  /// The value of '.' — the current question's answer (constraints only).
+  final dynamic dot;
+
+  bool call(dynamic spec) {
+    if (spec == null) return true;
+    if (spec is bool) return spec;
+    if (spec is num) return spec != 0;
+    if (spec is String) {
+      final source = spec.trim();
+      if (source.isEmpty) return true;
+      try {
+        return _truthy(_ExprParser(source, answers, dot).parse());
+      } catch (_) {
+        return true;
+      }
+    }
+    if (spec is List) return spec.every(call);
+    if (spec is Map) {
+      final rule = Map<String, dynamic>.from(spec);
+      if (rule['all'] is List) return (rule['all'] as List).every(call);
+      if (rule['any'] is List) return (rule['any'] as List).any(call);
+      if (rule.containsKey('not')) return !call(rule['not']);
+      return _legacyRule(rule);
+    }
+    return true;
+  }
+
+  bool _legacyRule(Map<String, dynamic> rule) {
+    final field = (rule['q'] ?? rule['field'])?.toString();
+    final cmp = (rule['cmp'] ?? rule['op'] ?? 'eq').toString();
+    final expected = rule['value'];
+    final current = field == null ? dot : answers[field];
+    switch (cmp) {
+      case 'eq':
+        return _looseEq(current, expected);
+      case 'ne':
+      case 'neq':
+        return !_looseEq(current, expected);
+      case 'gt':
+        return _numOf(current) > _numOf(expected);
+      case 'gte':
+        return _numOf(current) >= _numOf(expected);
+      case 'lt':
+        return _numOf(current) < _numOf(expected);
+      case 'lte':
+        return _numOf(current) <= _numOf(expected);
+      case 'contains':
+      case 'selected':
+        if (current is List) {
+          return current
+              .map((e) => e.toString())
+              .contains(expected.toString());
+        }
+        return current?.toString().contains(expected.toString()) ?? false;
+      case 'empty':
+        return !_hasValue(current);
+      case 'not_empty':
+        return _hasValue(current);
+      default:
+        return true;
+    }
+  }
+}
+
+bool _truthy(dynamic v) {
+  if (v == null) return false;
+  if (v is bool) return v;
+  if (v is num) return v != 0;
+  if (v is List) return v.isNotEmpty;
+  return v.toString().isNotEmpty;
+}
+
+bool _hasValue(dynamic v) =>
+    v != null && v != '' && !(v is List && v.isEmpty);
+
+/// NaN for non-numeric input, so `'' > 5` is simply false instead of
+/// silently treating blanks as zero.
+double _numOf(dynamic v) => double.tryParse(v?.toString() ?? '') ?? double.nan;
+
+/// Numeric when both sides parse as numbers (so int 18 == "18.0"),
+/// string comparison otherwise. null and '' are considered equal.
+bool _looseEq(dynamic a, dynamic b) {
+  final na = double.tryParse(a?.toString() ?? '');
+  final nb = double.tryParse(b?.toString() ?? '');
+  if (na != null && nb != null) return na == nb;
+  return (a ?? '').toString() == (b ?? '').toString();
+}
+
+/// Minimal recursive-descent parser for XLSForm/XPath-ish expressions.
+/// Precedence (low → high): or, and, comparison, + -, * div mod, unary -.
+class _ExprParser {
+  _ExprParser(this.source, this.answers, this.dot);
+
+  final String source;
+  final Map<String, dynamic> answers;
+  final dynamic dot;
+  int _pos = 0;
+
+  dynamic parse() {
+    final value = _or();
+    _ws();
+    if (_pos < source.length) {
+      throw FormatException('Unexpected input at $_pos');
+    }
+    return value;
+  }
+
+  dynamic _or() {
+    var left = _and();
+    while (_keyword('or')) {
+      final l = _truthy(left);
+      final r = _truthy(_and());
+      left = l || r;
+    }
+    return left;
+  }
+
+  dynamic _and() {
+    var left = _comparison();
+    while (_keyword('and')) {
+      final l = _truthy(left);
+      final r = _truthy(_comparison());
+      left = l && r;
+    }
+    return left;
+  }
+
+  dynamic _comparison() {
+    final left = _additive();
+    _ws();
+    for (final op in const ['!=', '>=', '<=', '==', '=', '>', '<']) {
+      if (_match(op)) {
+        final right = _additive();
+        switch (op) {
+          case '=':
+          case '==':
+            return _looseEq(left, right);
+          case '!=':
+            return !_looseEq(left, right);
+          case '>':
+            return _numOf(left) > _numOf(right);
+          case '>=':
+            return _numOf(left) >= _numOf(right);
+          case '<':
+            return _numOf(left) < _numOf(right);
+          case '<=':
+            return _numOf(left) <= _numOf(right);
+        }
+      }
+    }
+    return left;
+  }
+
+  dynamic _additive() {
+    var left = _multiplicative();
+    while (true) {
+      _ws();
+      if (_match('+')) {
+        left = _numOf(left) + _numOf(_multiplicative());
+      } else if (_match('-')) {
+        left = _numOf(left) - _numOf(_multiplicative());
+      } else {
+        break;
+      }
+    }
+    return left;
+  }
+
+  dynamic _multiplicative() {
+    var left = _unary();
+    while (true) {
+      _ws();
+      if (_match('*')) {
+        left = _numOf(left) * _numOf(_unary());
+      } else if (_keyword('div')) {
+        left = _numOf(left) / _numOf(_unary());
+      } else if (_keyword('mod')) {
+        left = _numOf(left) % _numOf(_unary());
+      } else {
+        break;
+      }
+    }
+    return left;
+  }
+
+  dynamic _unary() {
+    _ws();
+    if (_match('-')) return -_numOf(_unary());
+    return _primary();
+  }
+
+  dynamic _primary() {
+    _ws();
+    if (_pos >= source.length) throw const FormatException('Unexpected end');
+    final c = source[_pos];
+
+    if (c == '(') {
+      _pos++;
+      final value = _or();
+      _expect(')');
+      return value;
+    }
+
+    if (c == "'" || c == '"') return _stringLiteral(c);
+
+    // ${field_name}
+    if (c == r'$' && _pos + 1 < source.length && source[_pos + 1] == '{') {
+      _pos += 2;
+      final end = source.indexOf('}', _pos);
+      if (end < 0) throw const FormatException(r'Unclosed ${…}');
+      final name = source.substring(_pos, end).trim();
+      _pos = end + 1;
+      return answers[name];
+    }
+
+    // Number literal (before the lone-dot check).
+    final numMatch =
+        RegExp(r'\d+(\.\d+)?').matchAsPrefix(source, _pos);
+    if (numMatch != null) {
+      _pos = numMatch.end;
+      return double.parse(numMatch.group(0)!);
+    }
+
+    // '.' — the current answer (constraint expressions).
+    if (c == '.') {
+      _pos++;
+      return dot;
+    }
+
+    // Identifier: keyword literal or function call. Hyphens allowed so
+    // XPath names like string-length and count-selected tokenize whole.
+    final idMatch = RegExp(r'[A-Za-z_][A-Za-z0-9_]*(?:-[A-Za-z][A-Za-z0-9_]*)*')
+        .matchAsPrefix(source, _pos);
+    if (idMatch != null) {
+      final name = idMatch.group(0)!;
+      _pos = idMatch.end;
+      _ws();
+      if (_pos < source.length && source[_pos] == '(') {
+        _pos++;
+        final args = <dynamic>[];
+        _ws();
+        if (_pos < source.length && source[_pos] != ')') {
+          args.add(_or());
+          _ws();
+          while (_match(',')) {
+            args.add(_or());
+            _ws();
+          }
+        }
+        _expect(')');
+        return _function(name, args);
+      }
+      switch (name) {
+        case 'true':
+          return true;
+        case 'false':
+          return false;
+        case 'null':
+          return null;
+      }
+      throw FormatException('Unknown token "$name"');
+    }
+
+    throw FormatException('Unexpected character "$c"');
+  }
+
+  dynamic _function(String name, List<dynamic> args) {
+    dynamic arg(int i) => i < args.length ? args[i] : null;
+    switch (name) {
+      case 'not':
+        return !_truthy(arg(0));
+      case 'selected':
+        final haystack = arg(0);
+        final needle = (arg(1) ?? '').toString();
+        if (haystack is List) {
+          return haystack.map((e) => e.toString()).contains(needle);
+        }
+        final s = (haystack ?? '').toString().trim();
+        return s.split(RegExp(r'\s+')).contains(needle);
+      case 'count-selected':
+        final v = arg(0);
+        if (v is List) return v.length.toDouble();
+        final s = (v ?? '').toString().trim();
+        return s.isEmpty ? 0.0 : s.split(RegExp(r'\s+')).length.toDouble();
+      case 'string-length':
+        return (arg(0) ?? '').toString().length.toDouble();
+      case 'regex':
+        try {
+          return RegExp((arg(1) ?? '').toString())
+              .hasMatch((arg(0) ?? '').toString());
+        } catch (_) {
+          return true;
+        }
+      case 'coalesce':
+        return _hasValue(arg(0)) ? arg(0) : arg(1);
+      case 'number':
+        return _numOf(arg(0));
+      case 'string':
+        return (arg(0) ?? '').toString();
+      case 'boolean':
+      case 'boolean-from-string':
+        return _truthy(arg(0));
+      case 'today':
+        return DateFormat('yyyy-MM-dd').format(DateTime.now());
+      case 'true':
+        return true;
+      case 'false':
+        return false;
+      default:
+        throw FormatException('Unknown function "$name"');
+    }
+  }
+
+  // ── lexing helpers ──────────────────────────────────────────────────
+
+  void _ws() {
+    while (_pos < source.length && source[_pos].trim().isEmpty) {
+      _pos++;
+    }
+  }
+
+  bool _match(String token) {
+    _ws();
+    if (!source.startsWith(token, _pos)) return false;
+    _pos += token.length;
+    return true;
+  }
+
+  /// Matches a whole word (and/or/div/mod) — never part of an identifier.
+  bool _keyword(String word) {
+    _ws();
+    if (!source.startsWith(word, _pos)) return false;
+    final end = _pos + word.length;
+    if (end < source.length &&
+        RegExp(r'[A-Za-z0-9_\-]').hasMatch(source[end])) {
+      return false;
+    }
+    _pos = end;
+    return true;
+  }
+
+  void _expect(String token) {
+    if (!_match(token)) throw FormatException('Expected "$token"');
+  }
+
+  String _stringLiteral(String quote) {
+    _pos++; // opening quote
+    final end = source.indexOf(quote, _pos);
+    if (end < 0) throw const FormatException('Unclosed string literal');
+    final value = source.substring(_pos, end);
+    _pos = end + 1;
+    return value;
+  }
+}
+
 class _FormRunnerScreenState extends State<FormRunnerScreen> {
   final Map<String, dynamic> answers = {};
   final Map<String, TextEditingController> textControllers = {};
@@ -107,17 +502,32 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
     final raw = widget.form.schema?['questions'] as List? ?? [];
     final result = <Map<String, dynamic>>[];
     String group = '';
+    dynamic groupCondition;
     for (final item in raw.whereType<Map>()) {
       final q = Map<String, dynamic>.from(item);
       if (_normalizeType(q['type']) == 'section') {
         group = (q['label'] ?? q['name'] ?? '').toString();
+        // A condition on the section hides every question inside it,
+        // exactly like group relevance in KoboToolbox.
+        groupCondition = _conditionOf(q);
         continue;
       }
       q['_group'] = group;
+      if (groupCondition != null) q['_group_relevant'] = groupCondition;
       result.add(q);
     }
     return result;
   }
+
+  /// The skip-logic spec of a question/section, whichever key the
+  /// builder used.
+  static dynamic _conditionOf(Map<String, dynamic> q) =>
+      q['relevant'] ??
+      q['show_if'] ??
+      q['skip_logic'] ??
+      q['skipLogic'] ??
+      q['condition'] ??
+      q['visible_if'];
 
   @override
   void initState() {
@@ -146,11 +556,20 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final visible = questions.where(_isVisible).toList();
+    final visible = _visibleQuestions;
     final total = visible.length;
     // Pages: one per visible question + the review page at the end.
     final pageCount = total == 0 ? 0 : total + 1;
-    final onReview = pageIndex >= total;
+
+    // Answering a question can hide later ones; if the page we were on
+    // no longer exists, snap back to the last valid page.
+    if (pageCount > 0 && pageIndex >= pageCount) {
+      pageIndex = pageCount - 1;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _pager.hasClients) _pager.jumpToPage(pageIndex);
+      });
+    }
+    final onReview = total > 0 && pageIndex >= total;
 
     return PopScope(
       canPop: !_dirty,
@@ -407,14 +826,23 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
       value != '' &&
       !(value is List && value.isEmpty);
 
-  /// null → valid; otherwise the message to show. Checks required,
-  /// email shape, and numeric min/max from the schema.
+  /// null → valid; otherwise the message to show. Kobo-style checks:
+  /// required (+ required_message), built-in type validation, min/max,
+  /// min_length/max_length, regex pattern, min/max selected choices,
+  /// date bounds, and finally a free-form `constraint` expression where
+  /// '.' is the current answer (+ constraint_message).
   String? _errorFor(Map<String, dynamic> question) {
     final type = _normalizeType(question['type']);
     if (type == 'note') return null;
     final value = answers[question['name'].toString()];
+
+    String msg(dynamic custom, String fallback) {
+      final s = custom?.toString().trim();
+      return (s == null || s.isEmpty) ? fallback : s;
+    }
+
     if (question['required'] == true && !_hasAnswer(value)) {
-      return 'This question is required.';
+      return msg(question['required_message'], 'This question is required.');
     }
     if (!_hasAnswer(value)) return null;
 
@@ -422,49 +850,104 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
         !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value.toString())) {
       return 'Enter a valid email address.';
     }
+
     if (type == 'integer' || type == 'decimal') {
       final n = double.tryParse(value.toString());
       if (n == null) return 'Enter a valid number.';
+      if (type == 'integer' && n != n.roundToDouble()) {
+        return 'Enter a whole number.';
+      }
       final min = double.tryParse(question['min']?.toString() ?? '');
       final max = double.tryParse(question['max']?.toString() ?? '');
       if (min != null && n < min) return 'Must be at least ${question['min']}.';
       if (max != null && n > max) return 'Must be at most ${question['max']}.';
     }
+
+    // Text-like answers: length limits and regex pattern.
+    if (const {'text', 'textarea', 'phone', 'email', 'barcode'}
+        .contains(type)) {
+      final s = value.toString();
+      final minLen = int.tryParse(question['min_length']?.toString() ?? '');
+      final maxLen = int.tryParse(question['max_length']?.toString() ?? '');
+      if (minLen != null && s.length < minLen) {
+        return 'Must be at least $minLen characters.';
+      }
+      if (maxLen != null && s.length > maxLen) {
+        return 'Must be at most $maxLen characters.';
+      }
+      final pattern = (question['pattern'] ?? question['regex'])?.toString();
+      if (pattern != null && pattern.isNotEmpty) {
+        try {
+          if (!RegExp(pattern).hasMatch(s)) {
+            return msg(question['constraint_message'],
+                'The answer is not in the expected format.');
+          }
+        } catch (_) {
+          // A broken pattern in the schema must not block collection.
+        }
+      }
+    }
+
+    // Choice-count limits for select_many.
+    if (type == 'select_many' && value is List) {
+      final minSel =
+          int.tryParse(question['min_selected']?.toString() ?? '');
+      final maxSel =
+          int.tryParse(question['max_selected']?.toString() ?? '');
+      if (minSel != null && value.length < minSel) {
+        return 'Select at least $minSel option${minSel == 1 ? '' : 's'}.';
+      }
+      if (maxSel != null && value.length > maxSel) {
+        return 'Select at most $maxSel option${maxSel == 1 ? '' : 's'}.';
+      }
+    }
+
+    // ISO dates compare correctly as strings (yyyy-MM-dd).
+    if (const {'date', 'datetime'}.contains(type)) {
+      final min = question['min']?.toString();
+      final max = question['max']?.toString();
+      final s = value.toString();
+      if (min != null && min.isNotEmpty && s.compareTo(min) < 0) {
+        return 'Must be on or after $min.';
+      }
+      if (max != null && max.isNotEmpty && s.compareTo(max) > 0) {
+        return 'Must be on or before $max.';
+      }
+    }
+
+    // Free-form constraint expression, Kobo's `constraint` column:
+    //   ". >= 0 and . <= 120"  or  "${end} > ${start}"
+    final constraint = question['constraint'] ?? question['validate_if'];
+    if (constraint != null) {
+      final ok = LogicEvaluator(answers, dot: value)(constraint);
+      if (!ok) {
+        return msg(question['constraint_message'],
+            'The answer does not meet the condition for this question.');
+      }
+    }
     return null;
   }
 
-  bool _isVisible(Map<String, dynamic> question) {
-    final condition = question['show_if'];
-    if (condition is! Map) return true;
-    final rule = Map<String, dynamic>.from(condition);
-    final field = rule['q']?.toString();
-    final cmp = rule['cmp']?.toString() ?? 'eq';
-    final expected = rule['value'];
-    final current = answers[field];
-    switch (cmp) {
-      case 'eq':
-        return current?.toString() == expected?.toString();
-      case 'ne':
-        return current?.toString() != expected?.toString();
-      case 'gt':
-        return _num(current) > _num(expected);
-      case 'gte':
-        return _num(current) >= _num(expected);
-      case 'lt':
-        return _num(current) < _num(expected);
-      case 'lte':
-        return _num(current) <= _num(expected);
-      case 'contains':
-        return current is List
-            ? current.map((e) => e.toString()).contains(expected.toString())
-            : current.toString().contains(expected.toString());
-      default:
-        return true;
+  /// Visible questions, computed in document order with cascading
+  /// relevance (Kobo behaviour): a hidden question's answer is invisible
+  /// to the conditions of every question after it, so hiding a parent
+  /// automatically hides children that depend on it — even though the
+  /// stale answer is still kept in [answers] in case it becomes visible
+  /// again.
+  List<Map<String, dynamic>> get _visibleQuestions {
+    final effective = <String, dynamic>{};
+    final result = <Map<String, dynamic>>[];
+    for (final q in questions) {
+      final evaluator = LogicEvaluator(effective);
+      final visible = evaluator(q['_group_relevant']) &&
+          evaluator(_conditionOf(q));
+      if (!visible) continue;
+      result.add(q);
+      final name = q['name'].toString();
+      if (answers.containsKey(name)) effective[name] = answers[name];
     }
+    return result;
   }
-
-  double _num(dynamic value) =>
-      double.tryParse(value?.toString() ?? '') ?? 0;
 
   // ── save / submit ───────────────────────────────────────────────────
 
@@ -496,11 +979,21 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
       }
     } catch (_) {}
 
+    // Drafts keep everything (so re-showing a question restores its old
+    // answer), but a completed submission only includes answers to
+    // questions that are relevant at submit time — Kobo behaviour.
+    final payload = Map<String, dynamic>.from(answers);
+    if (status != 'draft') {
+      final relevantNames =
+          _visibleQuestions.map((q) => q['name'].toString()).toSet();
+      payload.removeWhere((name, _) => !relevantNames.contains(name));
+    }
+
     final submission = LocalSubmission(
       uuid: _submissionUuid,
       formCode: widget.form.code,
       version: widget.form.version,
-      answers: Map<String, dynamic>.from(answers),
+      answers: payload,
       status: status,
       syncStatus: status == 'draft' ? 'draft' : 'pending',
       startedAt: startedAt,

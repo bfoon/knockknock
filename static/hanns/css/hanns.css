@@ -1453,3 +1453,154 @@ body.hanns-options-open .drawer{
 .drop-badge-num{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;
   font-family:var(--font-x);font-weight:800;font-size:var(--num-size,32cqw);letter-spacing:-.02em}
 .object-num-fixed .drop-badge-num{font-size:var(--num-size)!important}
+
+/* ════════════════════════════════════════════════════════════════════
+   HANNS ACTORS — single-character 2D farm objects (farmer, cow, goat,
+   chicken, plant, tree, seed, water_tank, sun_rain). One SVG rig per
+   object; named parts animate per data-action / data-mood. Motion is
+   opt-out via .object-static (respects the existing Animation: Off seg).
+   ──────────────────────────────────────────────────────────────────── */
+.actor{width:100%;height:100%;display:grid;place-items:center;container-type:size}
+.actor-svg{width:92%;height:92%;display:block;overflow:visible;
+  filter:drop-shadow(0 10px 18px rgba(0,0,0,.22))}
+.actor .ac-shadow{fill:rgba(0,0,0,.16)}
+/* group transforms need a sane origin */
+.actor-svg *{transform-box:fill-box}
+.ac-root,.ac-head,.ac-legs,.ac-arm,.ac-canopy,.ac-sprout,.ac-tail,
+.ac-sun,.ac-cloud,.ac-rays,.ac-face{transform-box:view-box;transform-origin:center}
+
+/* ── IDLE loops (gentle life so a character never looks frozen) ─────── */
+.actor[data-action="idle"] .ac-root{animation:acBreathe 3.4s ease-in-out infinite}
+.actor-farmer[data-action="idle"] .ac-head{animation:acHeadSway 4s ease-in-out infinite}
+.actor-cow[data-action="idle"] .ac-tail,
+.actor-goat[data-action="idle"] .ac-tail{animation:acTailFlick 2.6s ease-in-out infinite}
+.actor-chicken[data-action="idle"] .ac-head{animation:acPeckLoop 2.8s ease-in-out infinite}
+.actor-tree[data-action="idle"] .ac-canopy{animation:acRustle 4.2s ease-in-out infinite}
+.actor-plant[data-action="idle"] .ac-sprout{animation:acSway 4s ease-in-out infinite}
+.actor-sun_rain .ac-cloud{display:none}
+.actor-sun_rain[data-action="idle"] .ac-rays{animation:acSpin 22s linear infinite;transform-origin:50px 40px}
+.actor-sun_rain[data-action="idle"] .ac-sun-core{animation:acPulse 3s ease-in-out infinite}
+
+/* ── GROW (plant / tree / seed) — level sets the resting height via --fill,
+      the grow action replays the rise from 0. ───────────────────────── */
+.actor-plant .ac-sprout,
+.actor-seed  .ac-sprout{transform-origin:50px 74px;transform:scaleY(calc(.35 + .65*var(--fill,1)))}
+.actor-tree  .ac-canopy{transform-origin:50px 58px;transform:scale(calc(.5 + .5*var(--fill,1)))}
+.actor[data-action="grow"] .ac-sprout{animation:acGrow 1.3s cubic-bezier(.22,1,.36,1) both}
+.actor-tree[data-action="grow"] .ac-canopy{animation:acGrowCanopy 1.3s cubic-bezier(.22,1,.36,1) both}
+.actor-seed[data-action="grow"] .ac-seed{animation:acSeedSplit 1.3s ease both}
+
+/* ── WATER TANK fill/empty via --fill (water top rides the level) ────── */
+.actor-water_tank .ac-water{transform-origin:50px 82px;transform:scaleY(var(--fill,.6))}
+.actor-water_tank .ac-water-top{transform-origin:50px 82px;
+  transform:translateY(calc((1 - var(--fill,.6)) * -54px))}
+.actor-water_tank[data-action="idle"] .ac-water-top{animation:acRipple 3s ease-in-out infinite}
+.actor-water_tank[data-action="fill"] .ac-water{animation:acFill 1.4s cubic-bezier(.22,1,.36,1) both}
+.actor-water_tank[data-action="fill"] .ac-water-top{animation:acFillTop 1.4s cubic-bezier(.22,1,.36,1) both}
+.actor-water_tank[data-action="empty"] .ac-water{animation:acEmpty 1.4s ease both}
+.actor-water_tank[data-action="empty"] .ac-water-top{animation:acEmptyTop 1.4s ease both}
+
+/* ── RUN (cow / goat) — body bobs, legs cycle, whole actor leans ────── */
+.actor[data-action="run"] .ac-root{animation:acRunBob .5s ease-in-out infinite}
+.actor[data-action="run"] .ac-leg-1,.actor[data-action="run"] .ac-leg-3{animation:acStride .5s ease-in-out infinite}
+.actor[data-action="run"] .ac-leg-2,.actor[data-action="run"] .ac-leg-4{animation:acStride .5s ease-in-out infinite reverse}
+.actor[data-action="run"] .ac-legs .ac-leg-l{animation:acStride .5s ease-in-out infinite}
+.actor[data-action="run"] .ac-legs .ac-leg-r{animation:acStride .5s ease-in-out infinite reverse}
+
+/* ── WAVE (farmer) — right arm swings from the shoulder ─────────────── */
+.actor-farmer .ac-arm-r{transform-origin:66px 48px}
+.actor-farmer[data-action="wave"] .ac-arm-r{animation:acWave .8s ease-in-out infinite}
+.actor-farmer[data-action="wave"] .ac-head{animation:acHeadSway 1.4s ease-in-out infinite}
+
+/* ── PECK (chicken) — head dips to the ground ──────────────────────── */
+.actor-chicken[data-action="peck"] .ac-head{animation:acPeck .55s ease-in-out infinite}
+
+/* ── SHAKE (all) — quick left/right shudder ────────────────────────── */
+.actor[data-action="shake"] .ac-root{animation:acShake .5s ease-in-out infinite}
+
+/* ── JUMP (all) — hop up and land ──────────────────────────────────── */
+.actor[data-action="jump"] .ac-root{animation:acJump .9s cubic-bezier(.3,1.4,.5,1) infinite}
+.actor[data-action="jump"] .ac-shadow{animation:acJumpShadow .9s ease-in-out infinite}
+
+/* ── SUN / RAIN toggle ─────────────────────────────────────────────── */
+.actor-sun_rain[data-action="shine"] .ac-cloud{display:none}
+.actor-sun_rain[data-action="shine"] .ac-sun{display:block}
+.actor-sun_rain[data-action="shine"] .ac-rays{animation:acSpin 10s linear infinite;transform-origin:50px 40px}
+.actor-sun_rain[data-action="shine"] .ac-sun-core{animation:acPulse 1.6s ease-in-out infinite}
+.actor-sun_rain[data-action="rain"] .ac-sun{display:none}
+.actor-sun_rain[data-action="rain"] .ac-cloud{display:block}
+.actor-sun_rain[data-action="rain"] .ac-drop{animation:acRain 1s linear infinite}
+.actor-sun_rain[data-action="rain"] .d2{animation-delay:.33s}
+.actor-sun_rain[data-action="rain"] .d3{animation-delay:.66s}
+
+/* ── MOOD (face swap). Default show neutral; happy/sad reveal the right
+      mouth and lift/drop the eyes a touch. ───────────────────────────── */
+.actor .ac-mouth{opacity:0}
+.actor .ac-mouth-neutral{opacity:1}
+.actor[data-mood="happy"] .ac-mouth-neutral{opacity:0}
+.actor[data-mood="happy"] .ac-mouth-happy{opacity:1}
+.actor[data-mood="happy"] .ac-eye{transform:translateY(-.5px) scale(1.05)}
+.actor[data-mood="sad"] .ac-mouth-neutral{opacity:0}
+.actor[data-mood="sad"] .ac-mouth-sad{opacity:1}
+.actor[data-mood="sad"] .ac-eye{transform:translateY(.6px) scaleY(.8)}
+.actor[data-mood="happy"] .ac-root{animation:acHappyBounce 1.8s ease-in-out infinite}
+
+/* one-shot trigger: while data-playing is set, actions run once (the
+   infinite loops above still apply via data-action, but click/controller
+   uses playActorOnce which restores idle afterwards). */
+.actor[data-playing="1"]{will-change:transform}
+
+/* clickable on the live stage */
+.present .actor{cursor:pointer}
+
+/* Animation: Off — freeze everything (matches .object-static opt-out). */
+.object-static .actor *{animation:none!important}
+
+/* ── keyframes ─────────────────────────────────────────────────────── */
+@keyframes acBreathe{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-1.5px) scale(1.012)}}
+@keyframes acHeadSway{0%,100%{transform:rotate(-3deg)}50%{transform:rotate(3deg)}}
+@keyframes acHappyBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+@keyframes acTailFlick{0%,100%{transform:rotate(0)}30%{transform:rotate(-14deg)}60%{transform:rotate(10deg)}}
+@keyframes acRustle{0%,100%{transform:rotate(-1.6deg)}50%{transform:rotate(1.6deg)}}
+@keyframes acSway{0%,100%{transform:rotate(-3deg) scaleY(calc(.35 + .65*var(--fill,1)))}50%{transform:rotate(3deg) scaleY(calc(.35 + .65*var(--fill,1)))}}
+@keyframes acSpin{to{transform:rotate(360deg)}}
+@keyframes acPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+@keyframes acPeckLoop{0%,70%,100%{transform:translateY(0) rotate(0)}80%{transform:translateY(6px) rotate(6deg)}}
+@keyframes acPeck{0%,100%{transform:translateY(0) rotate(0)}45%{transform:translateY(9px) rotate(8deg)}}
+@keyframes acGrow{from{transform:scaleY(0)}to{transform:scaleY(calc(.35 + .65*var(--fill,1)))}}
+@keyframes acGrowCanopy{from{transform:scale(0)}to{transform:scale(calc(.5 + .5*var(--fill,1)))}}
+@keyframes acSeedSplit{0%{transform:scale(1)}55%{transform:scale(1.12) rotate(-4deg)}100%{transform:scale(1)}}
+@keyframes acRipple{0%,100%{transform:translateY(calc((1 - var(--fill,.6)) * -54px)) scaleX(1)}50%{transform:translateY(calc((1 - var(--fill,.6)) * -54px)) scaleX(1.04)}}
+@keyframes acFill{from{transform:scaleY(0)}to{transform:scaleY(var(--fill,.6))}}
+@keyframes acFillTop{from{transform:translateY(0)}to{transform:translateY(calc((1 - var(--fill,.6)) * -54px))}}
+@keyframes acEmpty{from{transform:scaleY(var(--fill,.6))}to{transform:scaleY(.02)}}
+@keyframes acEmptyTop{from{transform:translateY(calc((1 - var(--fill,.6)) * -54px))}to{transform:translateY(0)}}
+@keyframes acRunBob{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-5px) rotate(1deg)}}
+@keyframes acStride{0%,100%{transform:translateY(0) rotate(-14deg)}50%{transform:translateY(0) rotate(14deg)}}
+@keyframes acWave{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(-46deg)}}
+@keyframes acShake{0%,100%{transform:translateX(0) rotate(0)}25%{transform:translateX(-3px) rotate(-3deg)}75%{transform:translateX(3px) rotate(3deg)}}
+@keyframes acJump{0%,100%{transform:translateY(0)}40%{transform:translateY(-22px)}55%{transform:translateY(-22px)}}
+@keyframes acJumpShadow{0%,100%{transform:scaleX(1);opacity:.16}45%{transform:scaleX(.7);opacity:.08}}
+@keyframes acRain{0%{transform:translateY(-4px);opacity:0}20%{opacity:1}100%{transform:translateY(16px);opacity:0}}
+
+/* Actor action picker can hold several buttons — allow wrapping. */
+.seg.seg-wrap{flex-wrap:wrap;gap:4px}
+.seg.seg-wrap button{flex:1 1 auto;min-width:60px}
+
+
+/* ── Teleprompter object (presenter-only speech script) ──────────────
+   Editor: a labelled placeholder card. Live/audience: invisible. */
+.teleprompter-obj{width:100%;height:100%;display:flex;flex-direction:column;gap:6px;
+  border-radius:16px;padding:12px 14px;overflow:hidden;
+  background:linear-gradient(160deg,rgba(109,92,255,.16),rgba(109,92,255,.04));
+  border:1.5px dashed rgba(109,92,255,.55);color:#2a2440;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.3)}
+.teleprompter-live{background:none!important;border:0!important;box-shadow:none!important;
+  padding:0!important;pointer-events:none}
+.tp-ph-head{display:flex;align-items:center;gap:8px;font-weight:800;font-size:15px;color:#4a3fb0}
+.tp-ph-ic{font-size:18px}
+.tp-ph-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tp-ph-body{flex:1;font-size:12.5px;line-height:1.4;color:#5b5470;overflow:hidden;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+.tp-ph-foot{font-family:var(--font-mono,monospace);font-size:10px;letter-spacing:.03em;
+  text-transform:uppercase;color:#8177b8;border-top:1px solid rgba(109,92,255,.2);padding-top:5px}

@@ -6,7 +6,7 @@
 <title>Controller · {{ deck.title }} · Hanns</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800;900&family=Spline+Sans+Mono:wght@500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=11">
+<link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=46">
 
 <style>
   .phone-card h1,
@@ -16,6 +16,33 @@
     overflow:hidden;
     text-overflow:ellipsis;
   }
+
+  /* ── Teleprompter (presenter-only, on this phone) ──────────────── */
+  .phone-teleprompter{margin-top:14px;background:#12101c;border:1px solid #2c2745;
+    border-radius:18px;padding:14px;box-shadow:0 18px 50px rgba(0,0,0,.5)}
+  .tp-head{display:flex;align-items:center;justify-content:space-between;
+    color:#cfc8f5;font-weight:800;font-size:14px;margin-bottom:10px}
+  .tp-head #tp-progress{font-family:"Spline Sans Mono",monospace;font-size:12px;color:#8f86c9}
+  .tp-viewport{position:relative;height:46vh;min-height:240px;overflow:hidden;border-radius:14px;
+    background:#0a0812;border:1px solid #241f3a;
+    -webkit-mask-image:linear-gradient(180deg,transparent,#000 14%,#000 84%,transparent);
+    mask-image:linear-gradient(180deg,transparent,#000 14%,#000 84%,transparent)}
+  .tp-track{position:absolute;left:0;right:0;top:0;padding:50% 18px;
+    color:#f4f1ff;font-family:Archivo,system-ui,sans-serif;font-weight:600;
+    font-size:var(--tp-font,28px);line-height:1.5;white-space:pre-wrap;
+    will-change:transform;transform:translateY(0)}
+  .tp-readline{position:absolute;left:0;right:0;top:50%;height:2px;
+    background:linear-gradient(90deg,transparent,rgba(109,92,255,.7),transparent);pointer-events:none}
+  .tp-controls{display:flex;gap:8px;margin-top:12px}
+  .tp-btn{flex:1;background:#221d38;color:#e7e2ff;border:1px solid #37305a;border-radius:12px;
+    padding:12px;font-weight:800;font-size:15px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .tp-btn:active{transform:scale(.97)}
+  .tp-btn-primary{background:linear-gradient(135deg,#6d5cff,#8b52ff);border-color:#7d6bff;color:#fff}
+  .tp-btn-primary.playing{background:linear-gradient(135deg,#e8482b,#f5673c);border-color:#f5673c}
+  .tp-sliders{margin-top:12px;display:flex;flex-direction:column;gap:12px}
+  .tp-slider{display:flex;flex-direction:column;gap:6px;color:#bfb8e8;font-size:12.5px;font-weight:700}
+  .tp-slider b{color:#fff;font-family:"Spline Sans Mono",monospace}
+  .tp-slider input[type=range]{width:100%;accent-color:#6d5cff;height:26px}
 </style>
 </head>
 <body class="phone-control">
@@ -38,7 +65,33 @@
     <div class="phone-secondary-actions" id="phone-secondary-actions" hidden>
       <button class="phone-btn" id="toggle-preview" type="button">Show slide preview</button>
       <button class="phone-btn" id="toggle-notes" type="button">Show presenter notes</button>
+      <button class="phone-btn" id="toggle-teleprompter" type="button" hidden>Show teleprompter</button>
     </div>
+
+    <section class="phone-teleprompter" id="teleprompter" hidden>
+      <div class="tp-head">
+        <strong>🎤 Teleprompter</strong>
+        <span id="tp-progress">0%</span>
+      </div>
+      <div class="tp-viewport" id="tp-viewport">
+        <div class="tp-track" id="tp-track"></div>
+        <div class="tp-readline" aria-hidden="true"></div>
+      </div>
+      <div class="tp-controls">
+        <button class="tp-btn tp-btn-primary" id="tp-playpause" type="button">▶ Play</button>
+        <button class="tp-btn" id="tp-restart" type="button">↺ Top</button>
+      </div>
+      <div class="tp-sliders">
+        <label class="tp-slider">
+          <span>Speed <b id="tp-speed-val">1.0×</b></span>
+          <input type="range" id="tp-speed" min="10" max="300" value="100" step="5">
+        </label>
+        <label class="tp-slider">
+          <span>Font <b id="tp-font-val">28px</b></span>
+          <input type="range" id="tp-font" min="18" max="64" value="28" step="1">
+        </label>
+      </div>
+    </section>
 
     <section class="phone-preview-wrap" id="phone-preview-wrap" hidden>
       <div class="phone-preview-head">
@@ -59,7 +112,8 @@ window.__HANNS_CONTROL__ = {
   wsUrl: (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/hanns/{{ deck.code }}/"
 };
 </script>
-<script src="{% static 'hanns/js/hanns_core.js' %}?v=11"></script>
+<script src="{% static 'hanns/js/hanns_actors.js' %}?v=1"></script>
+<script src="{% static 'hanns/js/hanns_core.js' %}?v=46"></script>
 
 <script>
 (function(){
@@ -86,6 +140,21 @@ let connected=false;
 let previewVisible=false;
 let notesVisible=false;
 
+// ── teleprompter state (presenter-only, runs locally on this phone) ──
+let tpVisible=false;
+let tpScript="";
+let tpPlaying=false;
+let tpSpeed=1.0;          // multiplier from the speed slider (0.1–3.0)
+let tpOffset=0;           // current scroll offset in px
+let tpRAF=null;
+let tpLast=0;
+
+function scriptForSlide(s){
+  const els=(s&&Array.isArray(s.els))?s.els:[];
+  const tp=els.find(e=>e && e.type==="object" && e.objectType==="teleprompter" && String(e.script||"").trim());
+  return tp?String(tp.script):"";
+}
+
 function params(){return new URLSearchParams(location.search)}
 function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
 function setStatus(t){const el=$("#status"); if(el) el.textContent=t;}
@@ -97,9 +166,10 @@ function mergeSlide(index, slide){
   D.slides[index]=Object.assign({},D.slides[index]||{},slide);
 }
 function updateButtons(){
-  const pv=$("#toggle-preview"), nt=$("#toggle-notes");
+  const pv=$("#toggle-preview"), nt=$("#toggle-notes"), tp=$("#toggle-teleprompter");
   if(pv) pv.textContent=previewVisible?"Hide slide preview":"Show slide preview";
   if(nt) nt.textContent=notesVisible?"Hide presenter notes":"Show presenter notes";
+  if(tp) tp.textContent=tpVisible?"Hide teleprompter":"Show teleprompter";
 }
 function render(){
   const s=currentSlide();
@@ -109,6 +179,7 @@ function render(){
   const notes=$("#notes");
   if(notes) notes.textContent=(s.notes&&String(s.notes).trim())?s.notes:"No presenter notes for this slide.";
   renderPreview();
+  refreshTeleprompter();
   updateButtons();
 }
 function fitPreview(){
@@ -187,11 +258,93 @@ function go(n){
   send({type:"goto",index:i});
 }
 
+// ── teleprompter engine ────────────────────────────────────────────
+function refreshTeleprompter(){
+  const next=scriptForSlide(currentSlide());
+  const toggle=$("#toggle-teleprompter");
+  const hasScript=!!next.trim();
+  if(toggle) toggle.hidden=!hasScript;
+  if(next!==tpScript){
+    tpScript=next;
+    const track=$("#tp-track");
+    if(track) track.textContent=tpScript;
+    tpResetScroll();
+  }
+  if(!hasScript && tpVisible){
+    tpVisible=false;
+    const sec=$("#teleprompter"); if(sec) sec.hidden=true;
+    tpStop();
+  }
+}
+function tpViewportH(){const v=$("#tp-viewport");return v?v.clientHeight:300;}
+function tpTrackH(){const t=$("#tp-track");return t?t.scrollHeight:0;}
+function tpMaxOffset(){
+  // scroll until the last line reaches the read line (viewport middle)
+  return Math.max(0, tpTrackH() - tpViewportH()*0.5);
+}
+function tpApply(){
+  const t=$("#tp-track");
+  if(t) t.style.transform=`translateY(${-tpOffset}px)`;
+  const max=tpMaxOffset()||1;
+  const pct=Math.min(100,Math.round((tpOffset/max)*100));
+  const p=$("#tp-progress"); if(p) p.textContent=pct+"%";
+}
+function tpResetScroll(){
+  tpOffset=0; tpApply();
+}
+function tpTick(now){
+  if(!tpPlaying){tpRAF=null;return;}
+  if(!tpLast) tpLast=now;
+  const dt=(now-tpLast)/1000; tpLast=now;
+  // base pace: 40 px/sec at 1.0×, scaled by the speed multiplier
+  tpOffset += 40*tpSpeed*dt;
+  const max=tpMaxOffset();
+  if(tpOffset>=max){ tpOffset=max; tpApply(); tpPause(); return; }
+  tpApply();
+  tpRAF=requestAnimationFrame(tpTick);
+}
+function tpPlay(){
+  if(!tpScript.trim())return;
+  tpPlaying=true; tpLast=0;
+  const b=$("#tp-playpause"); if(b){b.textContent="⏸ Pause"; b.classList.add("playing");}
+  if(!tpRAF) tpRAF=requestAnimationFrame(tpTick);
+}
+function tpPause(){
+  tpPlaying=false;
+  const b=$("#tp-playpause"); if(b){b.textContent="▶ Play"; b.classList.remove("playing");}
+  if(tpRAF){cancelAnimationFrame(tpRAF); tpRAF=null;}
+}
+function tpStop(){ tpPause(); }
+function tpTogglePlay(){ tpPlaying?tpPause():tpPlay(); }
+function tpSetSpeed(v){
+  tpSpeed=clamp(Number(v)/100,0.1,3);
+  const el=$("#tp-speed-val"); if(el) el.textContent=tpSpeed.toFixed(1)+"×";
+}
+function tpSetFont(v){
+  const px=clamp(Number(v)||28,18,64);
+  const track=$("#tp-track"); if(track) track.style.setProperty("--tp-font",px+"px");
+  const el=$("#tp-font-val"); if(el) el.textContent=px+"px";
+  tpApply();
+}
+function toggleTeleprompter(){
+  if(!tpScript.trim())return;
+  tpVisible=!tpVisible;
+  const sec=$("#teleprompter"); if(sec) sec.hidden=!tpVisible;
+  if(tpVisible){ tpApply(); }
+  else { tpPause(); }
+  updateButtons();
+}
+
 $("#connect").addEventListener("click",connect);
 $("#prev").addEventListener("click",()=>go(i-1));
 $("#next").addEventListener("click",()=>go(i+1));
 $("#toggle-notes").addEventListener("click",()=>{notesVisible=!notesVisible;$("#notes").hidden=!notesVisible;updateButtons();});
 $("#toggle-preview").addEventListener("click",()=>{previewVisible=!previewVisible;$("#phone-preview-wrap").hidden=!previewVisible;renderPreview();updateButtons();});
+$("#toggle-teleprompter").addEventListener("click",toggleTeleprompter);
+$("#tp-playpause").addEventListener("click",tpTogglePlay);
+$("#tp-restart").addEventListener("click",()=>{tpResetScroll();});
+$("#tp-speed").addEventListener("input",e=>tpSetSpeed(e.target.value));
+$("#tp-font").addEventListener("input",e=>tpSetFont(e.target.value));
 $("#phone-preview-stage").addEventListener("click",pointerFromTap);
 window.addEventListener("resize",fitPreview);
 const qp=params().get("pin");

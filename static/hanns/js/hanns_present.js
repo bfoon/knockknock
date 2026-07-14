@@ -182,6 +182,28 @@ document.addEventListener("fullscreenchange",()=>{updateFullscreenButton();fit()
 
 const Live={sock:null,retry:0,start(){if(!CFG.wsUrl)return;try{this.sock=new WebSocket(CFG.wsUrl);}catch(e){return;}this.sock.addEventListener("open",()=>{this.retry=0;this.send({type:"presenter_hello"});keepScreenAwake("websocket-open");});this.sock.addEventListener("message",ev=>{let m;try{m=JSON.parse(ev.data);}catch(e){return;}if(m.type==="reaction"){spawnEmoji(m.emoji);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);else incrementReactionCount(m.emoji);}else if(m.type==="participants")setCount(m.count);else if(m.type==="state"){if(typeof m.count==="number")setCount(m.count);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);}else if(m.type==="goto"&&typeof m.index==="number"){keepScreenAwake("phone-controller");if(m.index!==i){suppressBroadcast=true;show(m.index,false);suppressBroadcast=false;}}else if(m.type==="pointer"){showPointer(m.x,m.y);}});this.sock.addEventListener("close",()=>{if(this.retry++>6)return;setTimeout(()=>this.start(),Math.min(800*this.retry,5000));});},send(o){if(this.sock&&this.sock.readyState===1)this.sock.send(JSON.stringify(o));},goto(idx){this.send({type:"goto",index:idx});},stop(){if(this.sock){try{this.sock.close();}catch(e){}}this.sock=null;}};
 function setCount(n){const el=$("#aud-count");if(el)el.textContent=n;}
+
+/* Click an actor on the live stage to play its action once. If a phone
+   controller / audience trigger arrives over the socket (Pass 2), the same
+   playActorOnce path is reused. */
+function actorActionFor(node){
+  const AC=window.HannsActors;if(!AC)return "idle";
+  const kind=node.dataset.kind;
+  const acts=(AC.ACTOR_ACTIONS[kind]||["idle"]);
+  const chosen=node.dataset.action && node.dataset.action!=="idle"
+    ? node.dataset.action
+    : (acts.filter(a=>a!=="idle")[0]||"idle");
+  return chosen;
+}
+function wireActorClicks(){
+  if(!pCanvas)return;
+  pCanvas.addEventListener("click",(ev)=>{
+    const node=ev.target.closest && ev.target.closest(".actor");
+    if(!node)return;
+    const AC=window.HannsActors;if(!AC)return;
+    AC.playActorOnce(node, actorActionFor(node), 1500);
+  });
+}
 function makeQR(box,text,size=180){if(!box||typeof QRCode==="undefined"||!text)return;box.innerHTML="";new QRCode(box,{text:text,width:size,height:size,colorDark:"#111827",colorLight:"#ffffff",correctLevel:QRCode.CorrectLevel.H});}
 function drawQRs(){makeQR($("#present-qr"),CFG.joinUrl,84);makeQR($("#qr-modal-code"),CFG.joinUrl,220);makeQR($("#controller-modal-qr"),CFG.controlUrl+(CFG.controlPin?`?pin=${encodeURIComponent(CFG.controlPin)}`:""),220);}
 function openModal(id){const m=$(id);if(m)m.classList.add("on");keepScreenAwake("modal-open");}
@@ -215,7 +237,7 @@ function init(){
   const cTitle=$("#controller-modal-title");if(cTitle)cTitle.textContent=DECK.title||"Hanns presentation";
   const cPin=$("#controller-pin");if(cPin)cPin.textContent=CFG.controlPin||"----";
   const cUrl=$("#controller-url");if(cUrl)cUrl.textContent=(CFG.controlUrl||"").replace(/^https?:\/\//,"");
-  drawQRs();ensureControllerQrFallback();renderReactionCounts(CFG.reactionCounts || DECK.reaction_counts || {});fit();show(i,false);Live.start();keepScreenAwake("presentation-start");
+  drawQRs();ensureControllerQrFallback();renderReactionCounts(CFG.reactionCounts || DECK.reaction_counts || {});fit();show(i,false);wireActorClicks();Live.start();keepScreenAwake("presentation-start");
   $("#pp-prev")?.addEventListener("click",()=>show(i-1));
   $("#pp-next")?.addEventListener("click",()=>show(i+1));
   $("#present-exit")?.addEventListener("click",endPresent);

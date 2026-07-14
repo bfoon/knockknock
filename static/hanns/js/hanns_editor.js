@@ -423,6 +423,39 @@ function applyTemplate(tpl){
   closeDrawers();toast(`Applied “${tpl.name}”`);
 }
 
+/* ── B-roll: convert the current slide into a full-bleed looping video slide.
+   Keeps the slide's first text line as a lower-third caption and reuses any
+   video URL already on the slide, so nothing important is lost. ── */
+function convertSlideToBroll(){
+  const s=curSlide(); if(!s)return;
+  const firstText=(s.els||[]).find(e=>e.type==="text"&&String(e.text||"").trim());
+  const caption=firstText?String(firstText.text).split("\n")[0].trim():"";
+  const existingVideo=(s.els||[]).find(e=>e.type==="video"&&String(e.src||"").trim());
+  s.bg="#000"; s.bgSize=null; s.bgFx="none"; if(!s.transition)s.transition="fade";
+  s.els=[
+    makeVideo({x:0,y:0,w:W,h:H,radius:0,
+      src:existingVideo?existingVideo.src:"",
+      poster:existingVideo?(existingVideo.poster||""):"",
+      autoplay:true,muted:true,controls:false,loop:true,fit:"cover",
+      anim:"fade",animDelay:0,title:"B-roll video"})
+  ];
+  if(caption){
+    s.els.push(makeShape("rect",{x:0,y:448,w:W,h:92,fill:"rgba(0,0,0,.45)",radius:0,anim:"fade",animDelay:.25}));
+    s.els.push(makeText({x:60,y:468,w:W-120,h:52,text:caption,size:26,weight:700,color:"#ffffff",font:'"Archivo",sans-serif',anim:"left",animDelay:.4}));
+  }
+  Deck.sel=s.els[0].id; renderAll(); markDirty(); closeDrawers();
+  toast(existingVideo?"Slide converted to B-roll":"B-roll slide ready — paste a video URL in the inspector");
+}
+function injectBrollButton(){
+  const anchor=$("#btn-templates"); if(!anchor||$("#btn-broll"))return;
+  const b=document.createElement("button");
+  b.type="button"; b.id="btn-broll"; b.className=anchor.className||"";
+  b.textContent="🎬 B-roll";
+  b.title="Convert this slide into a full-bleed looping B-roll video";
+  anchor.insertAdjacentElement("afterend",b);
+  b.addEventListener("click",convertSlideToBroll);
+}
+
 /* ── multi-select + bind/unbind ─────────────────────────────────── */
 function topLevelEls(){return Array.from(canvas.children).filter(n=>n.classList&&n.classList.contains("el"));}
 function currentElements(){const s=curSlide();return s&&Array.isArray(s.els)?s.els:[];}
@@ -1211,6 +1244,7 @@ function elementPanel(el){
       ${field("Controls",`<div class="seg" id="f-videocontrols"><button data-on="1" class="${el.controls!==false?"active":""}">On</button><button data-on="0" class="${el.controls===false?"active":""}">Off</button></div>`)}
       ${field("Autoplay",`<div class="seg" id="f-videoautoplay"><button data-on="1" class="${el.autoplay?"active":""}">On</button><button data-on="0" class="${!el.autoplay?"active":""}">Off</button></div>`)}
       ${field("Muted",`<div class="seg" id="f-videomuted"><button data-on="1" class="${el.muted?"active":""}">On</button><button data-on="0" class="${!el.muted?"active":""}">Off</button></div>`)}
+      ${field("Loop (B-roll)",`<div class="seg" id="f-videoloop"><button data-on="1" class="${el.loop?"active":""}">On</button><button data-on="0" class="${!el.loop?"active":""}">Off</button></div>`)}
       ${field("Corner radius "+(el.radius||18),`<input type="range" id="f-videoradius" min="0" max="80" value="${el.radius||18}">`)}
       <div class="insp-empty" style="padding-top:.2rem">For YouTube/Vimeo, use an embed URL. For direct video, paste an MP4/WebM URL.</div>
     </div>`;
@@ -1322,14 +1356,47 @@ Affected Area 1,-16.52,13.39,45,#e8482b,#ffffff">${escapeTA(areasToText(el))}</t
 
   if(el.type==="object"){
     const def=(OBJECTS||[]).find(o=>o.kind===el.objectType)||OBJECTS[0];
+    // ── Teleprompter: presenter-only speech script. Dedicated panel. ──
+    if(el.objectType==="teleprompter"){
+      const script=el.script!=null?String(el.script):"";
+      const words=script.trim()?script.trim().split(/\s+/).length:0;
+      const mins=words?Math.max(1,Math.round(words/130)):0;
+      h+=`<div class="group"><span class="glabel">🎤 Teleprompter script (presenter-only)</span>
+        ${field("Object type",`<select id="f-objtype">${OBJECTS.map(o=>`<option value="${o.kind}" ${el.objectType===o.kind?"selected":""}>${o.icon} ${o.label}</option>`).join("")}</select>`)}
+        ${field("Label",`<input type="text" id="f-objlabel" value="${(el.label||def.label).replace(/"/g,"&quot;")}">`)}
+        <div class="field"><label>Your speech / script</label>
+          <textarea id="f-tp-script" rows="12" placeholder="Paste your whole speech here. It scrolls on your phone controller while you present — the audience never sees it.">${escapeTA(script)}</textarea></div>
+        <div class="insp-empty" style="padding-top:.2rem;font-size:.78em">
+          <b id="f-tp-stats">${words?words+" words · ~"+mins+" min read":"No script yet"}</b><br>
+          Invisible to the audience. On the phone controller you'll get scroll speed, play/pause, restart, and font-size controls. Tip: add one teleprompter object per slide, or put your whole talk on a single slide.
+        </div>
+      </div>`;
+    } else {
     const isSdg = el.objectType==="sdg_wheel"||el.objectType==="sdg_tiles"||el.objectType==="sdg";
+    const AC = window.HannsActors || null;
+    const isActor = !!(AC && AC.isActor(el.objectType));
+    const actorHasMood  = isActor && AC.ACTOR_HAS_MOOD.has(el.objectType);
+    const actorHasLevel = isActor && AC.ACTOR_HAS_LEVEL.has(el.objectType);
+    const actorActions  = isActor ? (AC.ACTOR_ACTIONS[el.objectType]||["idle"]) : [];
+    const curAction = el.action || "idle";
+    const curMood   = el.mood || "neutral";
     h+=`<div class="group"><span class="glabel">Object / data visual</span>
       ${field("Object type",`<select id="f-objtype">${OBJECTS.map(o=>`<option value="${o.kind}" ${el.objectType===o.kind?"selected":""}>${o.icon} ${o.label}</option>`).join("")}</select>`)}
       ${isSdg ? "" : field("Label",`<input type="text" id="f-objlabel" value="${(el.label||def.label).replace(/"/g,"&quot;")}">`)}
-      ${isSdg ? "" : field("Amount / count",`<input type="number" id="f-count" min="1" max="10000" value="${el.count||1}">`)}
-      ${isSdg ? "" : field("Level "+(el.level||0)+"%",`<input type="range" id="f-level" min="0" max="100" value="${el.level||0}">`)}
-      ${isSdg ? "" : field("Accent colour",`<input type="color" id="f-accent" value="${el.accent||def.accent||"#4cc9f0"}">`)}
-      ${isSdg ? "" : field("Show number / count",`<div class="seg" id="f-showval"><button data-v="1" class="${((el.showValue!==undefined)?el.showValue!==false:(el.showCount!==false))?"active":""}">Show</button><button data-v="0" class="${((el.showValue!==undefined)?el.showValue===false:(el.showCount===false))?"active":""}">Hide</button></div>`)}
+      ${(isSdg||isActor) ? "" : field("Amount / count",`<input type="number" id="f-count" min="1" max="10000" value="${el.count||1}">`)}
+      ${isActor ? `<div class="field"><label>Action (looping)</label>
+        <div class="seg seg-wrap" id="f-actoraction">${actorActions.map(act=>`<button data-act="${act}" class="${curAction===act?"active":""}">${act.charAt(0).toUpperCase()+act.slice(1)}</button>`).join("")}</div></div>` : ""}
+      ${actorHasMood ? `<div class="field"><label>Mood (face)</label>
+        <div class="seg" id="f-actormood">
+          <button data-mood="happy" class="${curMood==="happy"?"active":""}">🙂 Happy</button>
+          <button data-mood="neutral" class="${curMood==="neutral"?"active":""}">😐 Neutral</button>
+          <button data-mood="sad" class="${curMood==="sad"?"active":""}">🙁 Sad</button>
+        </div></div>` : ""}
+      ${isActor ? `<div class="field"><button class="tbtn" id="f-actorplay" type="button" style="width:100%;justify-content:center">▶ Play action once</button>
+        <div class="insp-empty" style="font-size:.7em;padding-top:.3rem">On the live stage, click the character to play its action. ${actorHasLevel?"Level below sets growth / fill.":""}</div></div>` : ""}
+      ${(isSdg||(isActor&&!actorHasLevel)) ? "" : field((actorHasLevel?(el.objectType==="water_tank"?"Fill ":"Growth ")+(el.level||0)+"%":"Level "+(el.level||0)+"%"),`<input type="range" id="f-level" min="0" max="100" value="${el.level||0}">`)}
+      ${isSdg ? "" : field(isActor?"Tint colour":"Accent colour",`<input type="color" id="f-accent" value="${el.accent||def.accent||"#4cc9f0"}">`)}
+      ${(isSdg||isActor) ? "" : field("Show number / count",`<div class="seg" id="f-showval"><button data-v="1" class="${((el.showValue!==undefined)?el.showValue!==false:(el.showCount!==false))?"active":""}">Show</button><button data-v="0" class="${((el.showValue!==undefined)?el.showValue===false:(el.showCount===false))?"active":""}">Hide</button></div>`)}
       ${isSdg ? "" : field("Show label",`<div class="seg" id="f-showlbl"><button data-l="1" class="${((el.showLabel!==undefined)?el.showLabel!==false:(el.showCount!==false))?"active":""}">Show</button><button data-l="0" class="${((el.showLabel!==undefined)?el.showLabel===false:(el.showCount===false))?"active":""}">Hide</button></div>`)}
       ${field("Container box",`<div class="seg" id="f-objbox"><button data-box="show" class="${!el.hideContainer?"active":""}">Show box</button><button data-box="hide" class="${el.hideContainer?"active":""}">Hide box</button></div>`)}
       ${(def.fill||el.objectType==="water_glass"||el.objectType==="sand_glass") ? `
@@ -1342,7 +1409,7 @@ Affected Area 1,-16.52,13.39,45,#e8482b,#ffffff">${escapeTA(areasToText(el))}</t
         <button data-nummode="countup" class="${el.numberMode==="countup"?"active":""}">Count up</button></div>`)}
       ` : ""}
       ${field("Object size "+Math.round((el.objScale||1)*100)+"%",`<input type="range" id="f-objscale" min="40" max="400" step="5" value="${Math.round((el.objScale||1)*100)}">`)}
-      ${(!isSdg && ((el.showValue!==undefined)?el.showValue!==false:(el.showCount!==false))) ? `
+      ${(!isSdg && !isActor && ((el.showValue!==undefined)?el.showValue!==false:(el.showCount!==false))) ? `
       ${field("Count colour",`<span style="display:flex;gap:.4rem;align-items:center"><input type="color" id="f-numcolor" value="${el.numberColor||(el.objectType==="gauge"?"#ffffff":"#0e1116")}"><button class="chip" id="f-numcolor-auto" type="button" title="Reset to default">Auto</button></span>`)}
       ${field("Count size "+(Number(el.numberSize)>0?Number(el.numberSize)+"px":"(auto)"),`<input type="range" id="f-numsize" min="0" max="120" step="1" value="${Number(el.numberSize)||0}"> <span class="insp-empty" style="font-size:.7em">0 = auto</span>`)}
       ` : ""}
@@ -1388,6 +1455,7 @@ Affected Area 1,-16.52,13.39,45,#e8482b,#ffffff">${escapeTA(areasToText(el))}</t
       ${field("Animation",`<div class="seg" id="f-objanim"><button data-objanim="on" class="${el.objAnim!==false?"active":""}">On</button><button data-objanim="off" class="${el.objAnim===false?"active":""}">Off</button></div>`)}
       <div class="insp-empty" style="padding-top:.2rem">${def.help||"Animated visual object"}</div>
     </div>`;
+    }
   }
   if(el.type==="group"){
     h+=`<div class="group"><span class="glabel">Bound group</span>
@@ -1439,6 +1507,7 @@ function bindElementPanel(el){
     seg("f-videocontrols","on",v=>{el.controls=v==="1";renderCanvas();markDirty();});
     seg("f-videoautoplay","on",v=>{el.autoplay=v==="1";renderCanvas();markDirty();});
     seg("f-videomuted","on",v=>{el.muted=v==="1";renderCanvas();markDirty();});
+    seg("f-videoloop","on",v=>{el.loop=v==="1";renderCanvas();markDirty();});
     bindRange("f-videoradius",v=>{el.radius=v;renderCanvas();markDirty();},v=>v,"Corner radius");
   }
   if(el.type==="link"){
@@ -1518,10 +1587,37 @@ function bindElementPanel(el){
       const d=(OBJECTS||[]).find(o=>o.kind===type.value)||OBJECTS[0];
       el.objectType=d.kind;el.label=d.label;el.icon=d.icon;el.count=d.count;el.level=d.level||0;el.accent=d.accent||el.accent;
       el.numberPos=d.fill?"onfill":"below";
+      const AC=window.HannsActors;
+      if(AC && AC.isActor(d.kind)){
+        el.action=el.action||"idle";
+        if(AC.ACTOR_HAS_MOOD.has(d.kind)) el.mood=el.mood||"neutral";
+      }
+      if(d.kind==="teleprompter" && el.script==null) el.script="";
       el.w=d.w||el.w;el.h=d.h||el.h;renderAll();markDirty();
     });
     const lab=$("#f-objlabel");lab&&lab.addEventListener("input",()=>{el.label=lab.value;renderCanvas();markDirty();});
+    // ── teleprompter script field ──
+    const tp=$("#f-tp-script");
+    if(tp){
+      tp.addEventListener("input",()=>{
+        el.script=tp.value;
+        const t=tp.value.trim();
+        const words=t?t.split(/\s+/).length:0;
+        const mins=words?Math.max(1,Math.round(words/130)):0;
+        const stats=$("#f-tp-stats");
+        if(stats)stats.textContent=words?words+" words · ~"+mins+" min read":"No script yet";
+        renderCanvas();markDirty();
+      });
+    }
     const count=$("#f-count");count&&count.addEventListener("input",()=>{el.count=Math.max(1,Number(count.value)||1);renderCanvas();markDirty();});
+    // ── actor controls ──
+    seg("f-actoraction","act",v=>{el.action=v;renderCanvas();markDirty();});
+    seg("f-actormood","mood",v=>{el.mood=v;renderCanvas();markDirty();});
+    const play=$("#f-actorplay");play&&play.addEventListener("click",()=>{
+      const AC=window.HannsActors;if(!AC)return;
+      const node=document.querySelector(`.el[data-id="${el.id}"] .actor`);
+      if(node)AC.playActorOnce(node, el.action && el.action!=="idle" ? el.action : (AC.ACTOR_ACTIONS[el.objectType]||["idle"]).filter(a=>a!=="idle")[0]||"idle", 1500);
+    });
     bindRange("f-level",v=>{el.level=v;renderCanvas();markDirty();},v=>v+"%","Level");
     const acc=$("#f-accent");acc&&acc.addEventListener("input",()=>{el.accent=acc.value;renderCanvas();markDirty();});
     seg("f-showval","v",v=>{el.showValue=v==="1";renderCanvas();markDirty();});
@@ -2422,6 +2518,7 @@ function init(){
   $("#rail-shape")?.addEventListener("click",()=>{const open=$("#drawer-shape").classList.contains("open");open?closeDrawers():openDrawer("shape");});
   $$("[data-close-drawer]").forEach(b=>b.addEventListener("click",closeDrawers));
   $("#btn-templates")?.addEventListener("click",()=>openDrawer("tpl"));
+  injectBrollButton();
   $("#btn-objects")?.addEventListener("click",()=>openDrawer("obj"));
   $("#btn-shapes")?.addEventListener("click",()=>openDrawer("shape"));
   $("#btn-invite")?.addEventListener("click",openInviteModal);

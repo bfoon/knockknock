@@ -886,36 +886,231 @@ const OBJECTS = [
   },
   {
     "kind": "tree",
-    "label": "Trees",
+    "label": "Tree",
     "icon": "🌳",
-    "count": 8,
+    "count": 1,
+    "level": 100,
+    "w": 260,
+    "h": 300,
+    "accent": "#3f8f4f",
+    "actor": true,
+    "help": "Single animated tree — grows, rustles, shakes (Level = canopy size)"
+  },
+  {
+    "kind": "pig",
+    "label": "Pig",
+    "icon": "🐷",
+    "count": 1,
     "level": 0,
-    "w": 400,
-    "h": 260,
-    "accent": "#2f6f4f",
-    "help": "Tree/orchard count"
+    "w": 230,
+    "h": 210,
+    "accent": "#f3b5c2",
+    "actor": true,
+    "help": "Single animated pig — runs, jumps, shakes; smile/sad mood"
+  },
+  {
+    "kind": "sheep",
+    "label": "Sheep",
+    "icon": "🐑",
+    "count": 1,
+    "level": 0,
+    "w": 230,
+    "h": 210,
+    "accent": "#f2ede3",
+    "actor": true,
+    "help": "Single animated sheep — runs, jumps, shakes; smile/sad mood"
+  },
+  {
+    "kind": "dog",
+    "label": "Dog",
+    "icon": "🐶",
+    "count": 1,
+    "level": 0,
+    "w": 230,
+    "h": 210,
+    "accent": "#caa06a",
+    "actor": true,
+    "help": "Single animated dog — runs, wags tail, jumps; smile/sad mood"
+  },
+  {
+    "kind": "bee",
+    "label": "Bee",
+    "icon": "🐝",
+    "count": 1,
+    "level": 0,
+    "w": 200,
+    "h": 190,
+    "accent": "#f6c445",
+    "actor": true,
+    "help": "Single animated bee — hovers, flies loops, wings flutter"
+  },
+  {
+    "kind": "butterfly",
+    "label": "Butterfly",
+    "icon": "🦋",
+    "count": 1,
+    "level": 0,
+    "w": 210,
+    "h": 200,
+    "accent": "#a78bfa",
+    "actor": true,
+    "help": "Single animated butterfly — flutters in place or flies loops"
+  },
+  {
+    "kind": "fish",
+    "label": "Fish",
+    "icon": "🐟",
+    "count": 1,
+    "level": 0,
+    "w": 220,
+    "h": 190,
+    "accent": "#4aa8d6",
+    "actor": true,
+    "help": "Single animated fish — sways, swims, leaps; blows bubbles"
+  },
+  {
+    "kind": "windmill",
+    "label": "Windmill",
+    "icon": "🌬️",
+    "count": 1,
+    "level": 0,
+    "w": 220,
+    "h": 250,
+    "accent": "#93a8b8",
+    "actor": true,
+    "help": "Single animated windmill — blades turn slowly, spin fast on action"
+  },
+  {
+    "kind": "rocket",
+    "label": "Rocket",
+    "icon": "🚀",
+    "count": 1,
+    "level": 0,
+    "w": 210,
+    "h": 250,
+    "accent": "#e8482b",
+    "actor": true,
+    "help": "Single animated rocket — hovers with flickering flame, launches"
+  },
+  {
+    "kind": "lightbulb",
+    "label": "Idea bulb",
+    "icon": "💡",
+    "count": 1,
+    "level": 0,
+    "w": 200,
+    "h": 230,
+    "accent": "#f6b73c",
+    "actor": true,
+    "help": "Single animated lightbulb — soft glow, flashes for the big idea"
+  },
+  {
+    "kind": "trophy",
+    "label": "Trophy",
+    "icon": "🏆",
+    "count": 1,
+    "level": 0,
+    "w": 210,
+    "h": 230,
+    "accent": "#eab308",
+    "actor": true,
+    "help": "Single animated trophy — gleams, sparkles and rocks on shine"
   },
   {
     "kind": "farmer",
-    "label": "Farmers",
+    "label": "Farmer",
     "icon": "🧑🏾‍🌾",
-    "count": 4,
+    "count": 1,
     "level": 0,
-    "w": 360,
-    "h": 230,
-    "accent": "#8c6d3f",
-    "help": "Farmer/worker count"
+    "w": 240,
+    "h": 300,
+    "accent": "#c98a52",
+    "actor": true,
+    "help": "Single animated farmer — waves, jumps, shakes; smile/sad mood"
   },
   {
-    "kind": "animals",
-    "label": "Animals",
-    "icon": "🐄",
-    "count": 9,
+    "kind": "goat",
+    "label": "Goat",
+    "icon": "🐐",
+    "count": 1,
     "level": 0,
-    "w": 400,
-    "h": 250,
-    "accent": "#ffffff",
-    "help": "Animal count"
+    "w": 300,
+    "h": 260,
+    "accent": "#e9e4da",
+    "actor": true,
+    "help": "Single animated goat — runs, jumps, shakes; smile/sad mood"
+  },
+  {
+    "kind": "chicken",
+    "label": "Chicken",
+    "icon": "🐓",
+    "count": 1,
+    "level": 0,
+    "w": 240,
+    "h": 260,
+    "accent": "#f6efe2",
+    "actor": true,
+    "help": "Single animated chicken — pecks, jumps, shakes"
+  },
+  {
+    "kind": "plant",
+    "label": "Plant",
+    "icon": "🌱",
+    "count": 1,
+    "level": 100,
+    "w": 240,
+    "h": 300,
+    "accent": "#5aa843",
+    "actor": true,
+    "help": "Single potted plant — grows and sways (Level = growth height)"
+  },
+  {
+    "kind": "seed",
+    "label": "Seed",
+    "icon": "🌾",
+    "count": 1,
+    "level": 100,
+    "w": 220,
+    "h": 260,
+    "accent": "#8a6d3f",
+    "actor": true,
+    "help": "Single seed — sprouts (grow), hops, shakes (Level = sprout height)"
+  },
+  {
+    "kind": "water_tank",
+    "label": "Water tank",
+    "icon": "🛢️",
+    "count": 1,
+    "level": 60,
+    "w": 240,
+    "h": 300,
+    "accent": "#3fa9d8",
+    "actor": true,
+    "help": "Single water tank — fills and empties to a Level %"
+  },
+  {
+    "kind": "sun_rain",
+    "label": "Sun / rain",
+    "icon": "☀️",
+    "count": 1,
+    "level": 0,
+    "w": 260,
+    "h": 260,
+    "accent": "#f6b73c",
+    "actor": true,
+    "help": "Weather actor — toggle between shining sun and rain cloud"
+  },
+  {
+    "kind": "teleprompter",
+    "label": "Teleprompter script",
+    "icon": "🎤",
+    "count": 1,
+    "level": 0,
+    "w": 300,
+    "h": 120,
+    "accent": "#6d5cff",
+    "presenterOnly": true,
+    "help": "Presenter-only speech script. Invisible to the audience; scrolls on the phone controller with speed/play/font controls."
   },
   {
     "kind": "bugs",
@@ -1700,14 +1895,15 @@ const OBJECTS = [
   },
   {
     "kind": "cow",
-    "label": "Cows",
+    "label": "Cow",
     "icon": "🐄",
-    "count": 8,
+    "count": 1,
     "level": 0,
-    "w": 360,
-    "h": 230,
-    "accent": "#78716c",
-    "help": "Animated cows quantity object"
+    "w": 340,
+    "h": 260,
+    "accent": "#f4f1ec",
+    "actor": true,
+    "help": "Single animated cow — runs, jumps, shakes, tail flick; smile/sad mood"
   },
   {
     "kind": "factory",
@@ -2976,7 +3172,7 @@ const SHAPES = [
   }
 ];
 function shapeDef(kind){return SHAPES.find(s=>s.kind===kind)||SHAPES[0];}
-function objectDef(kind){if(kind==="sdg")kind="sdg_wheel";return OBJECTS.find(o=>o.kind===kind)||OBJECTS[0];}
+function objectDef(kind){if(kind==="sdg")kind="sdg_wheel";if(kind==="animals")kind="cow";return OBJECTS.find(o=>o.kind===kind)||OBJECTS[0];}
 
 /* ════════════════════════════════════════════════════════════════════
    ELEMENT FACTORIES — every element is a plain data object.
@@ -3010,7 +3206,7 @@ function makeImage(src,over={}){
 function makeVideo(over={}){
   return elBase("video",Object.assign({
     x:160,y:120,w:640,h:360,src:"",poster:"",title:"Video",radius:18,
-    autoplay:false,muted:false,controls:true,fit:"cover",anim:"rise",animDelay:0
+    autoplay:false,muted:false,controls:true,loop:false,fit:"cover",anim:"rise",animDelay:0
   },over));
 }
 function makeLink(over={}){
@@ -3965,7 +4161,20 @@ function T_pieIconRow(){
   ]};
 }
 
+/* ── B-roll templates: full-bleed looping video (autoplay, muted, no controls).
+   Paste an MP4/WebM URL — or a YouTube embed URL — in the inspector. ── */
+function T_brollFull(){return{bg:"#000",els:[
+  makeVideo({x:0,y:0,w:W,h:H,radius:0,src:"",autoplay:true,muted:true,controls:false,loop:true,fit:"cover",anim:"fade",animDelay:0,title:"B-roll video"}),
+]};}
+function T_brollLowerThird(){return{bg:"#000",els:[
+  makeVideo({x:0,y:0,w:W,h:H,radius:0,src:"",autoplay:true,muted:true,controls:false,loop:true,fit:"cover",anim:"fade",animDelay:0,title:"B-roll video"}),
+  makeShape("rect",{x:0,y:448,w:W,h:92,fill:"rgba(0,0,0,.45)",radius:0,anim:"fade",animDelay:.25}),
+  makeText({x:60,y:468,w:840,h:52,text:"Lower-third caption",size:26,weight:700,color:"#ffffff",font:'"Archivo",sans-serif',anim:"left",animDelay:.4}),
+]};}
+
 const BASE_TEMPLATES = [
+  {name:"B-roll · Full video",   build:T_brollFull},
+  {name:"B-roll · Lower third",  build:T_brollLowerThird},
   {name:"Infographic · Animal bars",   build:T_animalsBars},
   {name:"Infographic · Our Profit",    build:T_ourProfit},
   {name:"Infographic · Beer (blue)",   build:T_beerInfographic},
@@ -4530,7 +4739,14 @@ function renderElement(el,{live=false}={}){
   } else if(el.type==="map"){
     inner.appendChild(renderMap(el));
   } else if(el.type==="object"){
-    inner.appendChild(renderObject(el));
+    if(el.objectType==="teleprompter"){
+      // Presenter-only: the speech lives in el.script and is read on the phone
+      // controller. On the audience/live stage it renders nothing; in the
+      // editor it shows a labelled placeholder so it can be selected & moved.
+      inner.appendChild(renderTeleprompter(el,{live}));
+    } else {
+      inner.appendChild(renderObject(el));
+    }
   } else if(el.type==="creative_shape"){
     inner.appendChild(renderCreativeShape(el));
   } else if(el.type==="group"){
@@ -4909,7 +5125,7 @@ function renderVideo(el,{live=false}={}){
     const frame=document.createElement("iframe");frame.className="video-box";frame.src=embed;frame.allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";frame.allowFullscreen=true;frame.style.borderRadius=(el.radius||18)+"px";frame.style.border="0";return frame;
   }
   const box=document.createElement(live&&src?"video":"div");box.className="video-box"+(src?"":" video-empty");box.style.borderRadius=(el.radius||18)+"px";
-  if(live&&src){box.src=src;box.controls=el.controls!==false;box.autoplay=!!el.autoplay;box.muted=!!el.muted;box.poster=el.poster||"";box.style.objectFit=el.fit||"cover";}
+  if(live&&src){box.src=src;box.controls=el.controls!==false;box.autoplay=!!el.autoplay;box.muted=!!el.muted;box.loop=!!el.loop;box.playsInline=true;box.setAttribute("playsinline","");box.poster=el.poster||"";box.style.objectFit=el.fit||"cover";}
   else {box.innerHTML=`<div class="video-play">▶</div><div><b>${escHTML(el.title||"Video")}</b><span>${escHTML(src||"Paste a video link in the inspector")}</span></div>`;}
   return box;
 }
@@ -5923,7 +6139,30 @@ function renderGauge(el,showValue=true){
     (showValue ? `<div class="gauge-num"><b${countAttr}>${lvl}%</b></div>` : "");
   return wrap;
 }
+function renderTeleprompter(el,{live=false}={}){
+  const box=document.createElement("div");
+  box.className="teleprompter-obj"+(live?" teleprompter-live":"");
+  if(live){
+    // Audience never sees the script. Render an empty, zero-visual node.
+    box.setAttribute("aria-hidden","true");
+    return box;
+  }
+  // Editor placeholder: a labelled card the presenter can select & move.
+  const script=(el.script||"").trim();
+  const words=script?script.split(/\s+/).length:0;
+  // ~130 wpm reading pace estimate for the presenter's convenience
+  const mins=words?Math.max(1,Math.round(words/130)):0;
+  box.innerHTML=
+    `<div class="tp-ph-head"><span class="tp-ph-ic">🎤</span>`+
+    `<span class="tp-ph-title">${escHTML(el.label||"Teleprompter script")}</span></div>`+
+    `<div class="tp-ph-body">${script?escHTML(script.slice(0,140))+(script.length>140?"…":""):"Paste your speech in the inspector →"}</div>`+
+    `<div class="tp-ph-foot">Presenter-only · ${words?words+" words · ~"+mins+" min":"no script yet"} · hidden from audience</div>`;
+  return box;
+}
+
 function renderObject(el){
+  // Legacy migration: the old emoji-count "animals" object became the cow actor.
+  if(el.objectType==="animals") el.objectType="cow";
   const d=objectDef(el.objectType);
   const fill=isFillKind(el.objectType);
   const lvl=clamp(Number(el.level)||0,0,100);
@@ -5969,9 +6208,21 @@ function renderObject(el){
   else if(el.objectType==="radial_bars") art=renderRadialBars(el);
   else if(el.objectType==="teardrop_badge") art=renderTeardropBadge(el);
   else if(d.shape && VESSEL_PATHS[d.shape]) art=renderVessel(el,d.shape);
+  else if(window.HannsActors && window.HannsActors.isActor(el.objectType)) art=window.HannsActors.renderActor(el);
   else art=renderCountGrid(el);
   art.classList.add("object-art");
   box.appendChild(art);
+
+  // Actors are a single character, not a countable stack — no number badge.
+  // They keep an optional label caption below (respecting Show label).
+  if(window.HannsActors && window.HannsActors.isActor(el.objectType)){
+    const showActorLabel = (el.showLabel!==undefined) ? el.showLabel!==false : (el.showCount!==false);
+    const actorLabel = el.label || d.label;
+    if(showActorLabel && actorLabel){
+      const cap=document.createElement("div");cap.className="object-caption";cap.textContent=actorLabel;box.appendChild(cap);
+    }
+    return box;
+  }
 
   // SDG composites carry their own captions/labels — skip the generic badge.
   if(el.objectType==="sdg_wheel" || el.objectType==="sdg_tiles" || el.objectType==="sdg"

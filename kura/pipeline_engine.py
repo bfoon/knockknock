@@ -489,6 +489,92 @@ class PipelineExecutor:
             dummies = pd.get_dummies(df[field], prefix=field, dummy_na=bool(cfg.get("include_missing")))
             return pd.concat([df, dummies.astype(int)], axis=1)
 
+        if op in {"make_id", "concat_columns"}:
+            # Build a new column by combining other columns / cells.
+            #   make_id       → a stable ID (uuid5 or short hash) per row
+            #   concat_columns→ a plain joined string
+            import hashlib
+            import uuid as _uuid
+
+            new_name = str(cfg.get("new_field") or ("row_id" if op == "make_id" else "combined")).strip()
+            fields = [c for c in (cfg.get("fields") or []) if c in df.columns]
+            if not fields:
+                raise PipelineExecutionError("Choose at least one column to combine.")
+            sep = str(cfg.get("separator", "-"))
+            include_missing = bool(cfg.get("include_missing", False))
+
+            def _combine(row):
+                parts = []
+                for c in fields:
+                    v = row[c]
+                    if v is None or (isinstance(v, float) and pd.isna(v)) or str(v).strip() == "":
+                        if not include_missing:
+                            continue
+                        v = ""
+                    parts.append(str(v).strip())
+                return sep.join(parts)
+
+            combined = df.apply(_combine, axis=1)
+
+            if op == "concat_columns":
+                df[new_name] = combined
+            else:
+                mode = cfg.get("id_mode", "uuid5")   # uuid5 | hash | sequence
+                if mode == "sequence":
+                    prefix = str(cfg.get("prefix", ""))
+                    pad = int(cfg.get("pad", 4))
+                    df[new_name] = [f"{prefix}{str(i + 1).zfill(pad)}" for i in range(len(df))]
+                elif mode == "hash":
+                    length = int(cfg.get("length", 12))
+                    df[new_name] = combined.apply(
+                        lambda s: hashlib.sha256(s.encode("utf-8")).hexdigest()[:length]
+                    )
+                else:  # uuid5 — deterministic: same inputs → same UUID
+                    namespace = _uuid.NAMESPACE_URL
+                    df[new_name] = combined.apply(
+                        lambda s: str(_uuid.uuid5(namespace, s))
+                    )
+                # Optional: warn (in the change log) about duplicate IDs.
+                if bool(cfg.get("check_unique", True)):
+                    dup = df[new_name].duplicated(keep=False)
+                    for idx in df.index[dup]:
+                        self.record_change(step, df.loc[idx], new_name, None, df.at[idx, new_name],
+                                           "other", "Duplicate ID from these columns.")
+
+            for idx in df.index:
+                self.record_change(step, df.loc[idx], new_name, None, df.at[idx, new_name],
+                                   "calculate", f"Combined from: {', '.join(fields)}")
+            return df
+
+        if op == "extract_datetime":
+            # Turn a date/time column into parts for time-series analysis.
+            field = cfg.get("field")
+            if field not in df.columns:
+                raise PipelineExecutionError(f"Column '{field}' does not exist.")
+            parsed = pd.to_datetime(df[field], errors="coerce",
+                                    dayfirst=bool(cfg.get("dayfirst", False)))
+            parts = cfg.get("parts") or ["year", "month", "day"]
+            prefix = str(cfg.get("prefix") or field)
+            extractors = {
+                "year": lambda s: s.dt.year,
+                "quarter": lambda s: s.dt.quarter,
+                "month": lambda s: s.dt.month,
+                "month_name": lambda s: s.dt.month_name(),
+                "week": lambda s: s.dt.isocalendar().week.astype("Int64"),
+                "day": lambda s: s.dt.day,
+                "weekday": lambda s: s.dt.day_name(),
+                "hour": lambda s: s.dt.hour,
+                "date": lambda s: s.dt.date.astype(str),
+                "yearmonth": lambda s: s.dt.to_period("M").astype(str),
+            }
+            for part in parts:
+                fn = extractors.get(part)
+                if fn is None:
+                    continue
+                new_name = f"{prefix}_{part}"
+                df[new_name] = fn(parsed)
+            return df
+
         if op == "sample":
             method = cfg.get("method", "random")
             n = int(cfg.get("n") or 0)

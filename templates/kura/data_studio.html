@@ -49,10 +49,42 @@
 .node .port.out{right:-6px;border-color:var(--pink)}
 .config label{display:block;font-size:.67rem;color:var(--muted);margin:.55rem 0 .2rem}.config input,.config select,.config textarea{width:100%;background:#080a20;border:1px solid var(--line);color:#fff;border-radius:7px;padding:.45rem}.config textarea{min-height:70px;font-family:"Spline Sans Mono";font-size:.68rem}
 .orderbtns{display:flex;gap:.4rem;margin-top:.6rem}
+.recode-list{max-height:280px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:.4rem;margin-top:.3rem}
+.recode-row{display:grid;grid-template-columns:1fr auto 1fr;gap:.4rem;align-items:center;margin-bottom:.3rem}
+.recode-from{font-size:.72rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:.25rem .3rem;background:rgba(255,255,255,.04);border-radius:5px}
+.recode-arrow{color:var(--cyan);font-size:.8rem}
+.recode-to{padding:.3rem .4rem !important}
+.checklist{display:flex;flex-wrap:wrap;gap:.3rem .8rem;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:.5rem;margin-top:.3rem}
+.checklist label.inline{display:inline-flex;flex-direction:row;align-items:center;gap:.3rem;margin:0;font-size:.72rem;color:#dfe4fb}
+.checklist input{accent-color:var(--pink)}
 .split{display:grid;grid-template-columns:1fr 1fr;gap:1rem}.tablewrap{overflow:auto;max-height:65vh}table{border-collapse:collapse;width:100%;font-size:.73rem}th,td{padding:.42rem .55rem;border-bottom:1px solid rgba(255,255,255,.07);white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis}th{position:sticky;top:0;background:#0b0d26;color:var(--cyan);z-index:2}.changed{background:rgba(255,138,31,.18);outline:1px solid rgba(255,138,31,.45)}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.75rem}.card{padding:.85rem;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.04)}.card b{font-size:1.6rem}.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:1rem;margin-top:1rem}.chartbox{height:340px;padding:.8rem;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.04)}#map{height:420px;border-radius:12px}
 .row{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}.spacer{flex:1}.muted{color:var(--muted);font-size:.75rem}.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);display:none;background:#171a3e;border:1px solid var(--line);border-radius:10px;padding:.7rem 1rem;z-index:100}
 @media(max-width:1050px){.grid{grid-template-columns:220px 1fr}.grid>.panel:last-child{grid-column:1/-1}.split{grid-template-columns:1fr}}@media(max-width:700px){.grid{grid-template-columns:1fr}.charts{grid-template-columns:1fr}}
+/* dashboard subtabs */
+.subtabs{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1rem}
+.subtab{background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--muted);border-radius:10px;padding:.5rem .8rem;cursor:pointer;font-size:.82rem;font-weight:600}
+.subtab.active{color:#fff;border-color:var(--violet);background:rgba(139,92,246,.16)}
+.subpage{display:none}.subpage.active{display:block}
+.chart-builder{display:flex;gap:.7rem;flex-wrap:wrap;align-items:flex-end}
+.chart-builder label{display:flex;flex-direction:column;gap:.25rem;font-size:.68rem;color:var(--muted)}
+.chart-builder select,.chart-builder input{background:#080a20;border:1px solid var(--line);color:#fff;border-radius:8px;padding:.45rem .5rem;font-size:.8rem}
+.chart-builder .chk{flex-direction:row;align-items:center;gap:.4rem}
+.chartbox.big{height:440px}
+.saved-chart{position:relative}
+.saved-chart .rm{position:absolute;top:6px;right:8px;background:rgba(0,0,0,.4);border:1px solid var(--line);color:var(--muted);border-radius:6px;cursor:pointer;font-size:.7rem;padding:.1rem .4rem;z-index:3}
+.saved-chart .rm:hover{color:var(--red)}
+/* correlation heatmap */
+.heat{border-collapse:collapse;font-size:.72rem}
+.heat th,.heat td{padding:.4rem .55rem;text-align:center;border:1px solid rgba(255,255,255,.06)}
+.heat th{color:var(--cyan);font-family:"Spline Sans Mono";position:sticky;background:#0b0d26}
+.heat td.diag{opacity:.5}
+.heat td b{color:#fff}
+/* timeline player */
+.player{margin-top:1rem;padding:1rem;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.04)}
+.player-controls{display:flex;align-items:center;gap:.8rem}
+.player-time{font-family:"Spline Sans Mono";font-size:.8rem;color:var(--cyan);min-width:120px;text-align:right}
+input[type=range]{accent-color:var(--pink)}
 </style>
 </head>
 <body>
@@ -124,13 +156,125 @@
 </div></section>
 
 <section class="page" id="page-dashboard">
-<div class="panel"><h3>Analysis controls</h3><div class="body row">
-<label>Dependent <select id="dependent"></select></label>
-<label>Independent <select id="independent" multiple size="4"></select></label>
-<button class="btn" id="analyseBtn">Analyse</button></div></div>
-<div class="cards" id="overview" style="margin-top:1rem"></div>
-<div class="charts"><div class="chartbox"><canvas id="histChart"></canvas></div><div class="chartbox"><canvas id="catChart"></canvas></div><div class="chartbox"><canvas id="corrChart"></canvas></div><div class="chartbox"><canvas id="regChart"></canvas></div></div>
-<div class="panel" style="margin-top:1rem"><h3>Map</h3><div id="map"></div></div>
+  <div class="row" style="margin-bottom:.8rem">
+    <select id="dashRun"></select>
+    <button class="btn ghost" id="dashLoad">Use this run</button>
+    <span class="muted" id="dashRunInfo"></span>
+  </div>
+  <div class="subtabs" id="dashSubtabs">
+    <button class="subtab active" data-sub="summary">📋 Summary</button>
+    <button class="subtab" data-sub="charts">📊 Custom charts</button>
+    <button class="subtab" data-sub="correlation">🔗 Correlation</button>
+    <button class="subtab" data-sub="timeseries">📈 Time series</button>
+    <button class="subtab" data-sub="timeline">⏱ Historical playback</button>
+    <button class="subtab" data-sub="regression">🧮 Regression</button>
+  </div>
+
+  <!-- Summary -->
+  <div class="subpage active" id="sub-summary">
+    <div class="cards" id="overview"></div>
+    <div class="panel" style="margin-top:1rem"><h3>Every column at a glance</h3>
+      <div class="tablewrap"><table id="summaryTable"></table></div>
+    </div>
+  </div>
+
+  <!-- Custom charts -->
+  <div class="subpage" id="sub-charts">
+    <div class="panel"><h3>Build a chart</h3><div class="body">
+      <div class="chart-builder">
+        <label>Chart type
+          <select id="cbType">
+            <option value="bar">Bar</option><option value="line">Line</option>
+            <option value="pie">Pie / doughnut</option><option value="histogram">Histogram</option>
+            <option value="scatter">Scatter</option><option value="box">Box plot</option>
+          </select></label>
+        <label id="cbXwrap">X / category <select id="cbX"></select></label>
+        <label id="cbYwrap">Y / measure <select id="cbY"><option value="">(count rows)</option></select></label>
+        <label id="cbAggwrap">Summarize <select id="cbAgg">
+          <option value="count">Count</option><option value="sum">Sum</option>
+          <option value="mean">Average</option><option value="median">Median</option>
+          <option value="min">Min</option><option value="max">Max</option></select></label>
+        <label id="cbGroupwrap">Split by (optional) <select id="cbGroup"><option value="">(none)</option></select></label>
+        <label id="cbBinswrap" style="display:none">Bins <input type="number" id="cbBins" value="10" min="3" max="60"></label>
+        <label id="cbSortwrap">Sort <select id="cbSort">
+          <option value="">Default</option><option value="value">By value</option><option value="label">By label</option></select></label>
+        <button class="btn" id="cbBuild">Build chart</button>
+        <button class="btn ghost" id="cbAdd">＋ Add to board</button>
+      </div>
+    </div></div>
+    <div class="chartbox big" style="margin-top:1rem"><canvas id="cbCanvas"></canvas></div>
+    <div class="panel" style="margin-top:1rem"><h3>Saved charts <span class="sp" style="flex:1"></span></h3>
+      <div class="charts" id="chartBoard"></div>
+    </div>
+  </div>
+
+  <!-- Correlation -->
+  <div class="subpage" id="sub-correlation">
+    <div class="panel"><h3>Correlation between numeric columns</h3><div class="body">
+      <p class="muted">Pearson correlation. Values near +1 move together, near −1 move oppositely, near 0 are unrelated.</p>
+    </div></div>
+    <div class="chartbox big" style="margin-top:1rem"><div id="corrHeat" style="overflow:auto"></div></div>
+    <div class="chartbox" style="margin-top:1rem"><canvas id="corrScatter"></canvas></div>
+  </div>
+
+  <!-- Time series -->
+  <div class="subpage" id="sub-timeseries">
+    <div class="panel"><h3>Trends over time</h3><div class="body">
+      <div class="chart-builder">
+        <label>Date column <select id="tsDate"></select></label>
+        <label>Bucket <select id="tsFreq">
+          <option value="D">Day</option><option value="W" selected>Week</option>
+          <option value="M">Month</option><option value="Q">Quarter</option><option value="Y">Year</option></select></label>
+        <label>Measure <select id="tsY"><option value="">(count rows)</option></select></label>
+        <label>Summarize <select id="tsAgg">
+          <option value="count">Count</option><option value="sum">Sum</option><option value="mean">Average</option></select></label>
+        <label>Split by <select id="tsGroup"><option value="">(none)</option></select></label>
+        <label>Moving avg <input type="number" id="tsRolling" value="0" min="0" max="30" style="width:70px"></label>
+        <label class="chk"><input type="checkbox" id="tsCumulative"> Cumulative</label>
+        <button class="btn" id="tsBuild">Plot</button>
+      </div>
+    </div></div>
+    <div class="chartbox big" style="margin-top:1rem"><canvas id="tsCanvas"></canvas></div>
+  </div>
+
+  <!-- Historical playback -->
+  <div class="subpage" id="sub-timeline">
+    <div class="panel"><h3>Replay how the data came in</h3><div class="body">
+      <div class="chart-builder">
+        <label>Date column <select id="tlDate"></select></label>
+        <label>Bucket <select id="tlFreq">
+          <option value="D" selected>Day</option><option value="W">Week</option>
+          <option value="M">Month</option></select></label>
+        <label>Break down by <select id="tlBreak"><option value="">(none)</option></select></label>
+        <button class="btn" id="tlBuild">Load playback</button>
+      </div>
+      <div class="player" id="tlPlayer" style="display:none">
+        <div class="player-controls">
+          <button class="btn" id="tlPlay">▶ Play</button>
+          <input type="range" id="tlScrub" min="0" max="0" value="0" style="flex:1">
+          <span class="player-time" id="tlTime">—</span>
+        </div>
+        <div class="cards" id="tlStats" style="margin-top:.8rem"></div>
+      </div>
+    </div></div>
+    <div class="charts">
+      <div class="chartbox"><canvas id="tlBars"></canvas></div>
+      <div class="chartbox"><div id="tlMap" style="height:340px;border-radius:10px"></div></div>
+    </div>
+  </div>
+
+  <!-- Regression -->
+  <div class="subpage" id="sub-regression">
+    <div class="panel"><h3>Predict a column from others</h3><div class="body row">
+      <label>Predict (dependent) <select id="dependent"></select></label>
+      <label>Using (independent) <select id="independent" multiple size="5"></select></label>
+      <button class="btn" id="analyseBtn">Run regression</button></div>
+      <div class="body"><p class="muted" id="regMetric"></p></div>
+    </div>
+    <div class="chartbox big" style="margin-top:1rem"><canvas id="regChart"></canvas></div>
+  </div>
+
+  <div class="panel" style="margin-top:1rem"><h3>Response map</h3><div id="map"></div></div>
 </section>
 
 <section class="page" id="page-reports">
@@ -150,6 +294,11 @@ const STUDIO_BASE="{% url 'kura:studio' survey.code %}";
 const csrf=()=>document.cookie.split("; ").find(x=>x.startsWith("csrftoken="))?.split("=")[1]||"";
 let pipeline=structuredClone(initial), selected=null, bootstrap=null, currentRun=null, charts=[], map=null, mapLayer=null;
 let dirty=false, saveTimer=null, runTimer=null, saving=false;
+let columnValues={}, schemaChoices={};        // from bootstrap: friendly value pickers
+let dashRun=null;                              // run selected for the dashboard
+let cbChart=null, tsChart=null, regChartObj=null, corrScatterObj=null, tlBarsObj=null, tlMap=null, tlMapLayer=null;
+let savedCharts=[], savedChartObjs=[];         // custom chart board
+let timeline=null, tlFrame=0, tlTimer=null;    // historical playback
 const $=s=>document.querySelector(s), esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
 function toast(s){const t=$("#toast");t.textContent=s;t.style.display="block";clearTimeout(t._h);t._h=setTimeout(()=>t.style.display="none",2600)}
 function api(url,opt={}){return fetch(url,{...opt,headers:{"Content-Type":"application/json","X-CSRFToken":csrf(),...(opt.headers||{})}}).then(async r=>{const j=await r.json();if(!r.ok)throw Error(j.error||"Request failed");return j})}
@@ -157,10 +306,21 @@ function api(url,opt={}){return fetch(url,{...opt,headers:{"Content-Type":"appli
 /* ── palette ──────────────────────────────────────────────────────── */
 const categories={
 "Missing data":["fill_missing","regression_impute"],"Rows":["filter_rows","drop_rows","deduplicate","sample"],
-"Columns":["drop_columns","keep_columns","rename_column","cast_type","calculate"],"Values":["recode","replace","trim_text","case_text"],
+"Columns":["drop_columns","keep_columns","rename_column","cast_type","calculate"],
+"Generate & combine":["make_id","concat_columns","extract_datetime"],
+"Values":["recode","replace","trim_text","case_text"],
 "Outliers & advanced":["outlier","winsorize","scale","encode"]};
-function renderPalette(){let h="";for(const [g,ops] of Object.entries(categories)){h+=`<b class="muted">${g}</b>`;for(const op of ops){const x=operations.find(v=>v.value===op);h+=`<div class="block" draggable="true" data-op="${op}">${esc(x?.label||op)}</div>`}}$("#palette").innerHTML=h}
-function defaultConfig(op){return {fill_missing:{field:columns[0]||"",method:"median"},filter_rows:{field:columns[0]||"",operator:"eq",value:"",keep_matching:true},drop_columns:{columns:[]},keep_columns:{columns:[]},rename_column:{field:columns[0]||"",new_name:""},recode:{field:columns[0]||"",map:{}},replace:{field:columns[0]||"",map:{}},deduplicate:{fields:[],keep:"first"},cast_type:{field:columns[0]||"",type:"text"},trim_text:{field:columns[0]||""},case_text:{field:columns[0]||"",mode:"title"},calculate:{new_field:"calculated",expression:""},outlier:{field:columns[0]||"",method:"iqr",k:1.5,action:"cap"},winsorize:{field:columns[0]||"",method:"iqr",k:1.5},scale:{field:columns[0]||"",method:"standard"},encode:{field:columns[0]||"",method:"onehot"},sample:{method:"random",n:100,seed:42},regression_impute:{target:columns[0]||"",predictors:[]},drop_rows:{submission_ids:[]}}[op]||{}}
+const OP_HELP={
+  make_id:"Create a unique ID for each row by combining columns (e.g. name + phone → one code).",
+  concat_columns:"Join several columns into one new text column.",
+  extract_datetime:"Split a date column into year, month, day… for time-series analysis.",
+  recode:"Replace specific values with cleaner ones — pick a value, type its replacement.",
+  fill_missing:"Fill blank cells using the average, most common value, or a fixed value.",
+  filter_rows:"Keep or remove rows that match a condition.",
+  deduplicate:"Remove repeated rows.",
+  calculate:"Make a new number column from a formula, e.g. price * quantity."};
+function renderPalette(){let h="";for(const [g,ops] of Object.entries(categories)){h+=`<b class="muted">${g}</b>`;for(const op of ops){const x=operations.find(v=>v.value===op);h+=`<div class="block" draggable="true" data-op="${op}" title="${esc(OP_HELP[op]||"")}">${esc(x?.label||op)}</div>`}}$("#palette").innerHTML=h}
+function defaultConfig(op){return {fill_missing:{field:columns[0]||"",method:"median"},filter_rows:{field:columns[0]||"",operator:"eq",value:"",keep_matching:true},drop_columns:{columns:[]},keep_columns:{columns:[]},rename_column:{field:columns[0]||"",new_name:""},recode:{field:columns[0]||"",map:{}},replace:{field:columns[0]||"",map:{}},deduplicate:{fields:[],keep:"first"},cast_type:{field:columns[0]||"",type:"text"},trim_text:{field:columns[0]||""},case_text:{field:columns[0]||"",mode:"title"},calculate:{new_field:"calculated",expression:""},outlier:{field:columns[0]||"",method:"iqr",k:1.5,action:"cap"},winsorize:{field:columns[0]||"",method:"iqr",k:1.5},scale:{field:columns[0]||"",method:"standard"},encode:{field:columns[0]||"",method:"onehot"},sample:{method:"random",n:100,seed:42},regression_impute:{target:columns[0]||"",predictors:[]},drop_rows:{submission_ids:[]},make_id:{new_field:"row_id",fields:[],id_mode:"uuid5",separator:"-",check_unique:true},concat_columns:{new_field:"combined",fields:[],separator:" "},extract_datetime:{field:columns[0]||"",parts:["year","month","yearmonth"],dayfirst:false}}[op]||{}}
 
 /* ── node flow canvas ─────────────────────────────────────────────── */
 const NODE_W=196, NODE_H=64, TERM_W=170;
@@ -274,15 +434,81 @@ function addStep(op,pos){const x=operations.find(v=>v.value===op);
 
 /* ── step config panel ────────────────────────────────────────────── */
 function colSelect(value,multiple=false){return `<select data-key="field"${multiple?" multiple size=6":""}>${columns.map(c=>`<option ${multiple?(value||[]).includes(c):value===c?"selected":""}>${esc(c)}</option>`).join("")}</select>`}
+/* distinct values known for a column (from bootstrap), with schema labels */
+function valuesFor(col){
+  const raw=(columnValues[col]||[]).map(x=>x.value);
+  const labelled=(schemaChoices[col]||[]).map(c=>c.value);
+  return [...new Set([...labelled,...raw])];
+}
+function labelFor(col,val){
+  const c=(schemaChoices[col]||[]).find(x=>x.value===String(val));
+  return c?`${c.label} (${val})`:String(val);
+}
+/* value input: dropdown of real values if we know them, else free text */
+function valueInput(col,value,key){
+  const opts=valuesFor(col);
+  if(opts.length&&opts.length<=60){
+    return `<select data-key="${key}"><option value="">— choose —</option>${opts.map(v=>`<option value="${esc(v)}" ${String(value)===String(v)?"selected":""}>${esc(labelFor(col,v))}</option>`).join("")}</select>`;
+  }
+  return `<input data-key="${key}" list="dl_${key}" value="${esc(value??"")}"><datalist id="dl_${key}">${opts.slice(0,40).map(v=>`<option value="${esc(v)}">`).join("")}</datalist>`;
+}
+/* multi-column ordered picker (checkbox list preserves click order) */
+function multiField(selected){
+  selected=selected||[];
+  return `<div class="checklist" data-multi="fields">${columns.map(c=>`<label class="inline"><input type="checkbox" data-col="${esc(c)}" ${selected.includes(c)?"checked":""}> ${esc(c)}</label>`).join("")}</div>`;
+}
+/* recode builder: lists the column's actual values, new value beside each */
+function recodeBuilder(step,c){
+  const col=c.field, vals=valuesFor(col), map=c.map||{};
+  if(!col) return `<p class="muted" style="margin:.4rem 0">Pick a column first.</p>`;
+  if(!vals.length) return `<p class="muted" style="margin:.4rem 0">No recorded values for this column yet.</p>`;
+  let rows=vals.slice(0,80).map(v=>`
+    <div class="recode-row">
+      <span class="recode-from" title="${esc(v)}">${esc(labelFor(col,v))}</span>
+      <span class="recode-arrow">→</span>
+      <input class="recode-to" data-recode="${esc(v)}" placeholder="keep as is" value="${esc(map[v]??"")}">
+    </div>`).join("");
+  return `<label>Change values <span class="muted">(leave blank to keep)</span></label>
+    <div class="recode-list">${rows}</div>`;
+}
 function renderConfig(){const s=pipeline.steps[selected];if(!s){$("#config").innerHTML='<p class="muted">Select a node to configure it.</p>';return}const c=s.config||{};let h=`<label>Step name</label><input data-main="name" value="${esc(s.name)}"><label><input type="checkbox" data-main="enabled" ${s.enabled?"checked":""}> Enabled</label><label><input type="checkbox" data-main="stop_on_error" ${s.stop_on_error?"checked":""}> Stop pipeline on error</label>`;
-if(["fill_missing","recode","replace","cast_type","trim_text","case_text","outlier","winsorize","scale","encode"].includes(s.operation))h+=`<label>Column</label>${colSelect(c.field)}`;
+if(["fill_missing","cast_type","trim_text","case_text","outlier","winsorize","scale","encode"].includes(s.operation))h+=`<label>Column</label>${colSelect(c.field)}`;
 if(s.operation==="fill_missing")h+=`<label>Method</label><select data-key="method">${["mean","median","mode","constant","forward","backward"].map(v=>`<option ${c.method===v?"selected":""}>${v}</option>`)}</select><label>Constant value</label><input data-key="value" value="${esc(c.value||"")}">`;
 if(s.operation==="regression_impute")h+=`<label>Target</label>${colSelect(c.target)}<label>Predictors (Ctrl/Cmd select)</label><select data-key="predictors" multiple size="8">${columns.map(x=>`<option ${(c.predictors||[]).includes(x)?"selected":""}>${esc(x)}</option>`)}</select>`;
-if(s.operation==="filter_rows")h+=`<label>Column</label>${colSelect(c.field)}<label>Operator</label><select data-key="operator">${["eq","ne","gt","gte","lt","lte","contains","not_contains","answered","not_answered","in","not_in","between","regex"].map(v=>`<option ${c.operator===v?"selected":""}>${v}</option>`)}</select><label>Value</label><input data-key="value" value="${esc(c.value||"")}">`;
+if(s.operation==="filter_rows"){
+  const ops=[["eq","is equal to"],["ne","is not equal to"],["gt","is greater than"],["gte","is ≥"],["lt","is less than"],["lte","is ≤"],["contains","contains"],["not_contains","does not contain"],["answered","is answered"],["not_answered","is blank"],["in","is one of"],["not_in","is not one of"],["between","is between"],["regex","matches pattern"]];
+  h+=`<label>Column</label>${colSelect(c.field)}<label>Condition</label><select data-key="operator">${ops.map(([v,lbl])=>`<option value="${v}" ${c.operator===v?"selected":""}>${lbl}</option>`).join("")}</select>`;
+  if(!["answered","not_answered"].includes(c.operator)){
+    h+=`<label>Value</label>${valueInput(c.field,c.value,"value")}`;
+  }
+  h+=`<label><input type="checkbox" data-key="keep_matching" ${c.keep_matching!==false?"checked":""}> Keep matching rows (uncheck to remove them)</label>`;
+}
 if(["drop_columns","keep_columns"].includes(s.operation))h+=`<label>Columns</label><select data-key="columns" multiple size="10">${columns.map(x=>`<option ${(c.columns||[]).includes(x)?"selected":""}>${esc(x)}</option>`)}</select>`;
 if(s.operation==="deduplicate")h+=`<label>Duplicate key columns</label><select data-key="fields" multiple size="8">${columns.map(x=>`<option ${(c.fields||[]).includes(x)?"selected":""}>${esc(x)}</option>`)}</select>`;
 if(s.operation==="rename_column")h+=`<label>Column</label>${colSelect(c.field)}<label>New name</label><input data-key="new_name" value="${esc(c.new_name||"")}">`;
-if(["recode","replace"].includes(s.operation))h+=`<label>Mapping JSON</label><textarea data-key="map">${esc(JSON.stringify(c.map||{},null,2))}</textarea><label><input type="checkbox" data-key="trim" ${c.trim?"checked":""}> Trim text</label>`;
+if(["recode","replace"].includes(s.operation)){
+  h+=`<label>Column</label>${colSelect(c.field)}`+recodeBuilder(s,c);
+  h+=`<label><input type="checkbox" data-key="trim" ${c.trim?"checked":""}> Also trim spaces</label>`;
+}
+if(s.operation==="concat_columns"){
+  h+=`<label>New column name</label><input data-key="new_field" value="${esc(c.new_field||"combined")}">`
+   +`<label>Columns to join (in order)</label>${multiField(c.fields)}`
+   +`<label>Separator between values</label><input data-key="separator" value="${esc(c.separator??" ")}">`;
+}
+if(s.operation==="make_id"){
+  h+=`<label>New ID column name</label><input data-key="new_field" value="${esc(c.new_field||"row_id")}">`
+   +`<label>Combine these columns</label>${multiField(c.fields)}`
+   +`<label>ID style</label><select data-key="id_mode">${[["uuid5","Stable UUID (same inputs → same ID)"],["hash","Short hash code"],["sequence","Running number (GM0001…)"]].map(([v,l])=>`<option value="${v}" ${c.id_mode===v?"selected":""}>${l}</option>`).join("")}</select>`;
+  if(c.id_mode==="sequence")h+=`<label>Prefix</label><input data-key="prefix" value="${esc(c.prefix||"")}"><label>Digits</label><input type="number" data-key="pad" value="${c.pad||4}" min="1" max="10">`;
+  if(c.id_mode==="hash")h+=`<label>Length</label><input type="number" data-key="length" value="${c.length||12}" min="6" max="40">`;
+  h+=`<label>Join values with</label><input data-key="separator" value="${esc(c.separator??"-")}">`
+   +`<label><input type="checkbox" data-key="check_unique" ${c.check_unique!==false?"checked":""}> Warn about duplicate IDs in the audit log</label>`;
+}
+if(s.operation==="extract_datetime"){
+  const parts=[["year","Year"],["quarter","Quarter"],["month","Month #"],["month_name","Month name"],["week","Week #"],["day","Day"],["weekday","Weekday"],["hour","Hour"],["date","Date only"],["yearmonth","Year-Month"]];
+  h+=`<label>Date column</label>${colSelect(c.field)}<label>Extract</label><div class="checklist" data-key="parts">${parts.map(([v,l])=>`<label class="inline"><input type="checkbox" data-part="${v}" ${(c.parts||[]).includes(v)?"checked":""}> ${l}</label>`).join("")}</div>`
+   +`<label><input type="checkbox" data-key="dayfirst" ${c.dayfirst?"checked":""}> Day comes first (e.g. 05/03 = 5 March)</label>`;
+}
 if(s.operation==="cast_type")h+=`<label>Target type</label><select data-key="type">${["text","integer","decimal","date","boolean"].map(v=>`<option ${c.type===v?"selected":""}>${v}</option>`)}</select>`;
 if(s.operation==="case_text")h+=`<label>Case</label><select data-key="mode">${["lower","upper","title"].map(v=>`<option ${c.mode===v?"selected":""}>${v}</option>`)}</select>`;
 if(s.operation==="calculate")h+=`<label>New field</label><input data-key="new_field" value="${esc(c.new_field||"")}"><label>Expression</label><input data-key="expression" value="${esc(c.expression||"")}">`;
@@ -301,7 +527,41 @@ $("#stepLater")?.addEventListener("click",()=>moveStep(1));
 }
 function moveStep(d){const i=selected,j=i+d;if(j<0||j>=pipeline.steps.length)return;
   const [x]=pipeline.steps.splice(i,1);pipeline.steps.splice(j,0,x);selected=j;markDirty();renderFlow();renderConfig()}
-$("#config").addEventListener("input",e=>{const s=pipeline.steps[selected];if(!s)return;const main=e.target.dataset.main,key=e.target.dataset.key;let v=e.target.type==="checkbox"?e.target.checked:e.target.multiple?[...e.target.selectedOptions].map(o=>o.value):e.target.value;if(key==="map"){try{v=JSON.parse(v)}catch{return}}if(["n","k"].includes(key))v=Number(v);if(main)s[main]=v;if(key)s.config[key]=v;markDirty();renderFlow()});
+$("#config").addEventListener("input",e=>{
+  const s=pipeline.steps[selected];if(!s)return;
+  const t=e.target, main=t.dataset.main, key=t.dataset.key;
+  // recode row → build map object
+  if(t.dataset.recode!=null){
+    const map={...(s.config.map||{})}, from=t.dataset.recode, to=t.value;
+    if(to==="") delete map[from]; else map[from]=to;
+    s.config.map=map; markDirty(); renderFlow(); return;
+  }
+  // multi-column ordered checklist
+  const multiWrap=t.closest("[data-multi]");
+  if(multiWrap&&t.dataset.col!=null){
+    const cur=[...(s.config.fields||[])];
+    if(t.checked){ if(!cur.includes(t.dataset.col)) cur.push(t.dataset.col); }
+    else { const i=cur.indexOf(t.dataset.col); if(i>=0) cur.splice(i,1); }
+    s.config.fields=cur; markDirty(); renderFlow(); return;
+  }
+  // datetime parts checklist
+  const partWrap=t.closest('[data-key="parts"]');
+  if(partWrap&&t.dataset.part!=null){
+    const cur=[...(s.config.parts||[])];
+    if(t.checked){ if(!cur.includes(t.dataset.part)) cur.push(t.dataset.part); }
+    else { const i=cur.indexOf(t.dataset.part); if(i>=0) cur.splice(i,1); }
+    s.config.parts=cur; markDirty(); renderFlow(); return;
+  }
+  let v=t.type==="checkbox"?t.checked:t.multiple?[...t.selectedOptions].map(o=>o.value):t.value;
+  if(["n","k","pad","length","bins","rolling"].includes(key))v=Number(v);
+  if(main)s[main]=v;
+  if(key)s.config[key]=v;
+  // re-render the settings panel when the chosen column changes so the
+  // value pickers / recode list refresh to that column's real values.
+  const needsRerender=(key==="field"||key==="operator"||key==="id_mode");
+  markDirty(); renderFlow();
+  if(needsRerender) renderConfig();
+});
 
 /* ── autosave / save / run ────────────────────────────────────────── */
 function markDirty(){dirty=true;setSaveState("dirty","Unsaved changes…");
@@ -402,18 +662,225 @@ $("#autoBuild").onclick=()=>{
   autoLayout();toast(`${proposed.length} steps added`)};
 $("#layoutBtn").onclick=autoLayout;
 
-/* ── results / dashboard / reports ────────────────────────────────── */
-async function boot(render=true){bootstrap=await api(`{% url 'kura:studio_bootstrap' survey.code %}`);if(render)renderRaw();renderRuns();refreshPipeSelect()}
+/* ── results / reports ────────────────────────────────────────────── */
+async function boot(render=true){
+  bootstrap=await api(`{% url 'kura:studio_bootstrap' survey.code %}`);
+  columnValues=bootstrap.column_values||{}; schemaChoices=bootstrap.schema_choices||{};
+  if(render)renderRaw();
+  renderRuns();refreshPipeSelect();renderConfig();
+}
 function renderTable(el,rows,changeMap={}){if(!rows.length){el.innerHTML="<tr><td>No rows</td></tr>";return}const data=rows.map(r=>r.data||r.answers||{}),cols=[...new Set(data.flatMap(Object.keys))];el.innerHTML=`<thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${data.map((r,i)=>`<tr>${cols.map(c=>{const key=`${rows[i].row_number||i+1}:${c}`;return `<td class="${changeMap[key]?"changed":""}" title="${esc(changeMap[key]?.map(x=>x.detail).join("; ")||"")}">${esc(Array.isArray(r[c])?r[c].join(", "):typeof r[c]==="object"&&r[c]!==null?JSON.stringify(r[c]):r[c]??"")}</td>`}).join("")}</tr>`).join("")}</tbody>`}
 function renderRaw(){renderTable($("#rawTable"),bootstrap.raw_rows)}
-function renderRuns(){$("#runSelect").innerHTML=bootstrap.runs.map(r=>`<option value="${r.id}">Run #${r.id} · ${esc(r.pipeline_name||"")} · ${esc(r.label||r.status)} · ${r.result_count} rows</option>`).join("");if(!currentRun&&bootstrap.runs[0])currentRun=bootstrap.runs[0].id}
-async function loadRun(){currentRun=+$("#runSelect").value;if(!currentRun)return;const j=await api(`${STUDIO_BASE}run/${currentRun}/rows/`);renderTable($("#cleanTable"),j.rows,j.changes);$("#runSummary").textContent=`${j.run.result_count} rows · ${j.run.column_count} columns · ${j.run.summary.changes||0} changes`;const cols=j.rows[0]?Object.keys(j.rows[0].data):[];for(const id of ["dependent","independent"])$("#"+id).innerHTML=cols.map(c=>`<option>${esc(c)}</option>`).join("")}
-async function analyse(){if(!currentRun)return toast("Run and load a pipeline first");const dependent=$("#dependent").value,independent=[...$("#independent").selectedOptions].map(o=>o.value);const j=await api(`${STUDIO_BASE}run/${currentRun}/dashboard/`,{method:"POST",body:JSON.stringify({dependent,independent})});renderDashboard(j.dashboard)}
-function renderDashboard(d){charts.forEach(c=>c.destroy());charts=[];$("#overview").innerHTML=[["Rows",d.overview.rows],["Columns",d.overview.columns],["Missing %",d.overview.missing_percent],["Duplicates",d.overview.duplicates]].map(x=>`<div class="card"><b>${x[1]??0}</b><div class="muted">${x[0]}</div></div>`).join("");const n=Object.keys(d.numeric)[0],cat=Object.keys(d.categorical)[0];if(n){const h=d.numeric[n].histogram;charts.push(new Chart($("#histChart"),{type:"bar",data:{labels:h.edges.slice(0,-1),datasets:[{label:`${n} histogram`,data:h.counts}]}}))}if(cat){const c=d.categorical[cat];charts.push(new Chart($("#catChart"),{type:"doughnut",data:{labels:c.labels,datasets:[{label:cat,data:c.values}]}}))}const cc=d.correlation;if(cc.columns.length){charts.push(new Chart($("#corrChart"),{type:"bar",data:{labels:cc.columns,datasets:cc.columns.map((name,i)=>({label:name,data:cc.matrix[i]}))},options:{scales:{y:{min:-1,max:1}}}}))}if(d.regression?.ok){charts.push(new Chart($("#regChart"),{type:"scatter",data:{datasets:[{label:"Actual vs predicted",data:d.regression.actual.map((x,i)=>({x,y:d.regression.predicted[i]}))}]}}))}if(!map){map=L.map("map").setView([13.45,-16.58],8);L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",{subdomains:"abcd",maxZoom:20,attribution:"© OpenStreetMap © CARTO"}).addTo(map)}if(mapLayer)map.removeLayer(mapLayer);mapLayer=L.featureGroup(d.maps.map(p=>L.circleMarker([p.lat,p.lng],{radius:5}))).addTo(map);if(d.maps.length)map.fitBounds(mapLayer.getBounds().pad(.1))}
-document.querySelector(".tabs").addEventListener("click",e=>{if(!e.target.dataset.tab)return;document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===e.target));document.querySelectorAll(".page").forEach(x=>x.classList.toggle("active",x.id===`page-${e.target.dataset.tab}`));if(e.target.dataset.tab==="dashboard"&&map)setTimeout(()=>map.invalidateSize(),100)});
+function completeRuns(){return (bootstrap?.runs||[]).filter(r=>r.status==="complete")}
+function renderRuns(){
+  const opts=r=>`<option value="${r.id}">Run #${r.id} · ${esc(r.pipeline_name||"")} · ${esc(r.label||r.status)} · ${r.result_count} rows</option>`;
+  $("#runSelect").innerHTML=bootstrap.runs.map(opts).join("");
+  $("#dashRun").innerHTML=completeRuns().map(opts).join("")||`<option value="">No completed runs yet</option>`;
+  if(!currentRun&&bootstrap.runs[0])currentRun=bootstrap.runs[0].id;
+  if(!dashRun&&completeRuns()[0])dashRun=completeRuns()[0].id;
+  if(dashRun)$("#dashRun").value=dashRun;
+}
+async function loadRun(){currentRun=+$("#runSelect").value;if(!currentRun)return;const j=await api(`${STUDIO_BASE}run/${currentRun}/rows/`);renderTable($("#cleanTable"),j.rows,j.changes);$("#runSummary").textContent=`${j.run.result_count} rows · ${j.run.column_count} columns · ${j.run.summary.changes||0} changes`}
+
+/* ── dashboard: run selection + column lists ──────────────────────── */
+let dashCols=[], dashNumericCols=[];
+async function useDashRun(){
+  dashRun=+$("#dashRun").value; if(!dashRun)return toast("No completed run to analyse");
+  const info=completeRuns().find(r=>r.id===dashRun);
+  $("#dashRunInfo").textContent=info?`${info.result_count} rows · ${info.column_count} columns`:"";
+  // fetch summary → gives us columns + kinds, and fills the Summary tab
+  const j=await api(`${STUDIO_BASE}run/${dashRun}/summary/`);
+  const sum=j.summary; dashCols=sum.fields.map(f=>f.name);
+  dashNumericCols=sum.fields.filter(f=>f.kind==="numeric").map(f=>f.name);
+  renderSummary(sum);
+  fillDashSelects();
+  // preselect a likely date column
+  const dateGuess=dashCols.find(c=>/date|time|_at|day|month|received|created/i.test(c));
+  if(dateGuess){$("#tsDate").value=dateGuess;$("#tlDate").value=dateGuess;}
+}
+function opt(list,sel){return list.map(c=>`<option value="${esc(c)}" ${c===sel?"selected":""}>${esc(c)}</option>`).join("")}
+function fillDashSelects(){
+  $("#cbX").innerHTML=opt(dashCols);
+  $("#cbY").innerHTML=`<option value="">(count rows)</option>`+opt(dashNumericCols);
+  $("#cbGroup").innerHTML=`<option value="">(none)</option>`+opt(dashCols);
+  $("#tsDate").innerHTML=opt(dashCols); $("#tsY").innerHTML=`<option value="">(count rows)</option>`+opt(dashNumericCols);
+  $("#tsGroup").innerHTML=`<option value="">(none)</option>`+opt(dashCols);
+  $("#tlDate").innerHTML=opt(dashCols); $("#tlBreak").innerHTML=`<option value="">(none)</option>`+opt(dashCols);
+  $("#dependent").innerHTML=opt(dashCols); $("#independent").innerHTML=opt(dashCols);
+}
+
+/* ── Summary tab ──────────────────────────────────────────────────── */
+function renderSummary(sum){
+  const missTotal=sum.fields.reduce((a,f)=>a+f.missing,0);
+  const cells=sum.rows*sum.columns||1;
+  $("#overview").innerHTML=[["Rows",sum.rows],["Columns",sum.columns],["Missing %",Math.round(missTotal*100/cells)],["Numeric cols",sum.fields.filter(f=>f.kind==="numeric").length]]
+    .map(x=>`<div class="card"><b>${x[1]}</b><div class="muted">${x[0]}</div></div>`).join("");
+  $("#summaryTable").innerHTML=`<thead><tr><th>Column</th><th>Type</th><th>Missing</th><th>Unique</th><th>Summary</th></tr></thead><tbody>`+
+    sum.fields.map(f=>{
+      const detail=f.kind==="numeric"
+        ? `min ${f.min} · mean ${f.mean} · median ${f.median} · max ${f.max}`
+        : (f.top_values||[]).map(t=>`${esc(t.value)} (${t.count})`).join(", ");
+      return `<tr><td>${esc(f.name)}</td><td>${f.kind}</td><td>${f.missing} (${f.missing_percent}%)</td><td>${f.unique}</td><td title="${esc(detail)}">${esc(detail)}</td></tr>`;
+    }).join("")+`</tbody>`;
+}
+
+/* ── Custom charts ────────────────────────────────────────────────── */
+function chartSpec(){return {chart:$("#cbType").value,x:$("#cbX").value,y:$("#cbY").value,agg:$("#cbAgg").value,group_by:$("#cbGroup").value,bins:+$("#cbBins").value,sort:$("#cbSort").value};}
+function updateChartBuilderVisibility(){
+  const t=$("#cbType").value;
+  $("#cbYwrap").style.display=["scatter","box"].includes(t)?"":( t==="histogram"?"none":"");
+  $("#cbAggwrap").style.display=["scatter","histogram","box"].includes(t)?"none":"";
+  $("#cbGroupwrap").style.display=["bar","line"].includes(t)?"":"none";
+  $("#cbBinswrap").style.display=t==="histogram"?"":"none";
+  $("#cbSortwrap").style.display=["bar","line","pie"].includes(t)?"":"none";
+  if(t==="scatter"){$("#cbY").innerHTML=opt(dashNumericCols);$("#cbX").innerHTML=opt(dashNumericCols);}
+  else{$("#cbX").innerHTML=opt(dashCols);$("#cbY").innerHTML=`<option value="">(count rows)</option>`+opt(dashNumericCols);}
+}
+function drawChart(canvasId,res,existing){
+  if(existing)existing.destroy();
+  const ctx=$(canvasId);
+  if(!res.ok){toast(res.error||"Chart failed");return null}
+  if(res.chart==="box"){ // render box as a floating-bar chart (min..max) + median points
+    const labels=res.boxes.map(b=>b.label);
+    return new Chart(ctx,{type:"bar",data:{labels,datasets:[
+      {label:"IQR (Q1–Q3)",data:res.boxes.map(b=>[b.q1,b.q3]),backgroundColor:"rgba(139,92,246,.5)"},
+      {label:"median",type:"scatter",data:res.boxes.map((b,i)=>({x:i,y:b.median})),backgroundColor:"#ff3f98"}
+    ]},options:{plugins:{title:{display:true,text:res.title,color:"#fff"}},scales:{y:{ticks:{color:"#aeb7dc"}},x:{ticks:{color:"#aeb7dc"}}}}});
+  }
+  if(res.chart==="scatter"){
+    return new Chart(ctx,{type:"scatter",data:{datasets:[{label:res.title,data:res.series[0].data,backgroundColor:"#22d3ee"}]},
+      options:{plugins:{title:{display:true,text:res.title,color:"#fff"}},scales:{x:{ticks:{color:"#aeb7dc"}},y:{ticks:{color:"#aeb7dc"}}}}});
+  }
+  const palette=["#e8482b","#22c55e","#38bdf8","#f59e0b","#a855f7","#ff3f98","#14b8a6","#eab308"];
+  const type=res.chart==="pie"?"doughnut":res.chart;
+  const datasets=res.series.map((s,i)=>({label:s.name,data:s.data,
+    backgroundColor:res.chart==="pie"?res.labels.map((_,j)=>palette[j%palette.length]):palette[i%palette.length],
+    borderColor:palette[i%palette.length],fill:res.chart!=="line",tension:.25,
+    borderDash:s.dashed?[6,4]:[]}));
+  return new Chart(ctx,{type,data:{labels:res.labels,datasets},
+    options:{plugins:{title:{display:true,text:res.title,color:"#fff"},legend:{labels:{color:"#dfe4fb"}}},
+      scales:res.chart==="pie"?{}:{x:{ticks:{color:"#aeb7dc"}},y:{ticks:{color:"#aeb7dc"}}}}});
+}
+async function buildChart(){
+  if(!dashRun)return toast("Select a completed run first");
+  const res=await api(`${STUDIO_BASE}run/${dashRun}/chart/`,{method:"POST",body:JSON.stringify(chartSpec())});
+  cbChart=drawChart("#cbCanvas",res,cbChart);
+}
+async function addChartToBoard(){
+  if(!dashRun)return toast("Select a run first");
+  const spec=chartSpec();
+  const res=await api(`${STUDIO_BASE}run/${dashRun}/chart/`,{method:"POST",body:JSON.stringify(spec)});
+  if(!res.ok)return toast(res.error||"Chart failed");
+  savedCharts.push({spec,res}); renderChartBoard();
+}
+function renderChartBoard(){
+  savedChartObjs.forEach(c=>c&&c.destroy()); savedChartObjs=[];
+  $("#chartBoard").innerHTML=savedCharts.map((_,i)=>`<div class="chartbox saved-chart"><button class="rm" data-rm="${i}">✕</button><canvas id="saved_${i}"></canvas></div>`).join("");
+  savedCharts.forEach((c,i)=>savedChartObjs[i]=drawChart(`#saved_${i}`,c.res,null));
+}
+$("#chartBoard").addEventListener("click",e=>{if(e.target.dataset.rm!=null){savedCharts.splice(+e.target.dataset.rm,1);renderChartBoard();}});
+
+/* ── Correlation ──────────────────────────────────────────────────── */
+async function loadCorrelation(){
+  if(!dashRun)return;
+  const j=await api(`${STUDIO_BASE}run/${dashRun}/dashboard/`,{method:"POST",body:JSON.stringify({})});
+  const cc=j.dashboard.correlation;
+  if(!cc.columns.length){$("#corrHeat").innerHTML='<p class="muted">Need at least two numeric columns.</p>';return}
+  const color=v=>{if(v==null)return"transparent";const r=v>0?232:56,g=v>0?72:189,b=v>0?43:248;return `rgba(${r},${g},${b},${Math.min(.85,Math.abs(v))})`;};
+  let html=`<table class="heat"><thead><tr><th></th>${cc.columns.map(c=>`<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>`;
+  cc.columns.forEach((r,i)=>{html+=`<tr><th>${esc(r)}</th>`+cc.columns.map((_,j)=>{const v=cc.matrix[i][j];return `<td class="${i===j?"diag":""}" style="background:${color(v)}"><b>${v==null?"–":v.toFixed(2)}</b></td>`}).join("")+`</tr>`;});
+  $("#corrHeat").innerHTML=html+`</tbody></table>`;
+  // strongest off-diagonal pair → scatter
+  let best=null;
+  cc.columns.forEach((r,i)=>cc.columns.forEach((cc2,j)=>{if(i<j){const v=Math.abs(cc.matrix[i][j]??0);if(!best||v>best.v)best={v,x:cc.columns[i],y:cc.columns[j]};}}));
+  if(best&&best.x&&best.y){const res=await api(`${STUDIO_BASE}run/${dashRun}/chart/`,{method:"POST",body:JSON.stringify({chart:"scatter",x:best.x,y:best.y})});corrScatterObj=drawChart("#corrScatter",res,corrScatterObj);}
+}
+
+/* ── Time series ──────────────────────────────────────────────────── */
+async function buildTimeSeries(){
+  if(!dashRun)return toast("Select a run first");
+  const spec={date:$("#tsDate").value,freq:$("#tsFreq").value,y:$("#tsY").value,agg:$("#tsAgg").value,group_by:$("#tsGroup").value,rolling:+$("#tsRolling").value,cumulative:$("#tsCumulative").checked};
+  const res=await api(`${STUDIO_BASE}run/${dashRun}/timeseries/`,{method:"POST",body:JSON.stringify(spec)});
+  if(!res.ok)return toast(res.error);
+  tsChart=drawChart("#tsCanvas",{chart:"line",title:res.title,labels:res.labels,series:res.series},tsChart);
+}
+
+/* ── Historical playback ──────────────────────────────────────────── */
+async function loadTimeline(){
+  if(!dashRun)return toast("Select a run first");
+  const spec={date:$("#tlDate").value,freq:$("#tlFreq").value,breakdown:$("#tlBreak").value};
+  const res=await api(`${STUDIO_BASE}run/${dashRun}/timeline/`,{method:"POST",body:JSON.stringify(spec)});
+  if(!res.ok)return toast(res.error);
+  timeline=res; tlFrame=0;
+  $("#tlPlayer").style.display="block";
+  $("#tlScrub").max=res.frames.length-1; $("#tlScrub").value=0;
+  if(!tlMap){tlMap=L.map("tlMap").setView([13.45,-16.58],8);L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",{subdomains:"abcd",maxZoom:20,attribution:"© OSM © CARTO"}).addTo(tlMap);}
+  setTimeout(()=>tlMap.invalidateSize(),120);
+  showFrame(0);
+}
+function showFrame(i){
+  if(!timeline)return; tlFrame=Math.max(0,Math.min(i,timeline.frames.length-1));
+  const f=timeline.frames[tlFrame];
+  $("#tlScrub").value=tlFrame; $("#tlTime").textContent=new Date(f.t).toLocaleDateString();
+  $("#tlStats").innerHTML=[["This bucket",f.bucket_rows],["Total so far",f.rows_so_far],["Value",f.cumulative]]
+    .map(x=>`<div class="card"><b>${x[1]}</b><div class="muted">${x[0]}</div></div>`).join("");
+  const bd=f.breakdown||{}; const labels=Object.keys(bd), data=Object.values(bd);
+  tlBarsObj=drawChart("#tlBars",{chart:"bar",title:"Cumulative breakdown",labels,series:[{name:"count",data}]},tlBarsObj);
+  // map points up to this frame
+  if(timeline.has_gps){
+    if(tlMapLayer)tlMap.removeLayer(tlMapLayer);
+    const pts=timeline.points.slice(0,f.points_so_far);
+    tlMapLayer=L.featureGroup(pts.map(p=>L.circleMarker([p.lat,p.lng],{radius:4,color:"#ff3f98",weight:1}))).addTo(tlMap);
+    if(pts.length&&tlFrame===timeline.frames.length-1)tlMap.fitBounds(tlMapLayer.getBounds().pad(.1));
+  }
+}
+function playPause(){
+  if(tlTimer){clearInterval(tlTimer);tlTimer=null;$("#tlPlay").textContent="▶ Play";return}
+  $("#tlPlay").textContent="⏸ Pause";
+  tlTimer=setInterval(()=>{
+    if(tlFrame>=timeline.frames.length-1){clearInterval(tlTimer);tlTimer=null;$("#tlPlay").textContent="▶ Play";return}
+    showFrame(tlFrame+1);
+  },700);
+}
+
+/* ── Regression ───────────────────────────────────────────────────── */
+async function analyse(){
+  if(!dashRun)return toast("Select a completed run first");
+  const dependent=$("#dependent").value,independent=[...$("#independent").selectedOptions].map(o=>o.value);
+  const j=await api(`${STUDIO_BASE}run/${dashRun}/dashboard/`,{method:"POST",body:JSON.stringify({dependent,independent})});
+  const d=j.dashboard;
+  if(d.regression?.ok){
+    $("#regMetric").textContent=`${d.regression.kind} model · n=${d.regression.n} · `+(d.regression.metric.r2!=null?`R²=${d.regression.metric.r2.toFixed(3)}`:`accuracy=${(d.regression.metric.accuracy*100).toFixed(1)}%`);
+    regChartObj=drawChart("#regChart",{chart:"scatter",title:"Actual vs predicted",series:[{name:"actual vs predicted",data:d.regression.actual.map((x,i)=>({x,y:d.regression.predicted[i]}))}]},regChartObj);
+  }else{$("#regMetric").textContent=d.regression?.error||"Choose a dependent and independent variables.";}
+  // response map (all points)
+  if(!map){map=L.map("map").setView([13.45,-16.58],8);L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",{subdomains:"abcd",maxZoom:20,attribution:"© OSM © CARTO"}).addTo(map);}
+  if(mapLayer)map.removeLayer(mapLayer);
+  mapLayer=L.featureGroup((d.maps||[]).map(p=>L.circleMarker([p.lat,p.lng],{radius:5}))).addTo(map);
+  if((d.maps||[]).length)map.fitBounds(mapLayer.getBounds().pad(.1));
+}
+
+/* ── tab + subtab wiring ──────────────────────────────────────────── */
+document.querySelector(".tabs").addEventListener("click",e=>{if(!e.target.dataset.tab)return;document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===e.target));document.querySelectorAll(".page").forEach(x=>x.classList.toggle("active",x.id===`page-${e.target.dataset.tab}`));if(e.target.dataset.tab==="dashboard"){if(dashRun&&!dashCols.length)useDashRun();if(map)setTimeout(()=>map.invalidateSize(),120);}});
+$("#dashSubtabs").addEventListener("click",e=>{if(!e.target.dataset.sub)return;
+  document.querySelectorAll(".subtab").forEach(x=>x.classList.toggle("active",x===e.target));
+  document.querySelectorAll(".subpage").forEach(x=>x.classList.toggle("active",x.id===`sub-${e.target.dataset.sub}`));
+  const sub=e.target.dataset.sub;
+  if(sub==="correlation")loadCorrelation();
+  if(sub==="charts")updateChartBuilderVisibility();
+  if(sub==="timeline"&&tlMap)setTimeout(()=>tlMap.invalidateSize(),120);
+});
+$("#dashLoad").onclick=useDashRun;
+$("#cbType").onchange=updateChartBuilderVisibility;
+$("#cbBuild").onclick=buildChart; $("#cbAdd").onclick=addChartToBoard;
+$("#tsBuild").onclick=buildTimeSeries;
+$("#tlBuild").onclick=loadTimeline; $("#tlPlay").onclick=playPause;
+$("#tlScrub").addEventListener("input",e=>{if(tlTimer){clearInterval(tlTimer);tlTimer=null;$("#tlPlay").textContent="▶ Play";}showFrame(+e.target.value);});
+$("#analyseBtn").onclick=analyse;
+
 $("#saveBtn").onclick=()=>save(false);
 $("#runBtn").onclick=runPipeline;
-$("#loadRun").onclick=loadRun;$("#analyseBtn").onclick=analyse;
+$("#loadRun").onclick=loadRun;
 document.querySelectorAll("[data-export]").forEach(b=>b.onclick=()=>{if(!currentRun)return toast("Run the pipeline and select a run first");location.href=`${STUDIO_BASE}run/${currentRun}/export/${b.dataset.export}/`});
 $("#pipelineName").addEventListener("input",markDirty);
 $("#pipeActive").addEventListener("change",markDirty);
@@ -422,8 +889,8 @@ $("#autoRun").addEventListener("change",e=>localStorage.setItem("kuraAutoRun",e.
 
 renderPalette();ensureLayout();renderFlow();renderConfig();setSaveState("saved","Loaded");
 boot().then(()=>{renderFlow();
-  // Deep link from the classic data page: /studio/?run=<id> preselects a run.
   const wanted=new URLSearchParams(location.search).get("run");
-  if(wanted&&bootstrap.runs.some(r=>r.id===+wanted)){currentRun=+wanted;$("#runSelect").value=wanted;loadRun()}
+  if(wanted&&bootstrap.runs.some(r=>r.id===+wanted)){currentRun=+wanted;$("#runSelect").value=wanted;loadRun();
+    if(completeRuns().some(r=>r.id===+wanted)){dashRun=+wanted;$("#dashRun").value=wanted;}}
 });
 </script></body></html>

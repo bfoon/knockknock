@@ -27,6 +27,22 @@ from .report_export import (
     export_word,
 )
 
+# Operations the pipeline engine supports that may not yet be listed in the
+# model's OPERATION_CHOICES (no migration needed to use them). Merged with the
+# model choices when validating and when listing operations for the studio UI.
+EXTRA_OPERATIONS = [
+    ("make_id", "Generate ID from columns"),
+    ("concat_columns", "Combine columns into text"),
+    ("extract_datetime", "Extract date/time parts"),
+]
+
+
+def _all_operations():
+    seen = {}
+    for value, label in list(PipelineStep.OPERATION_CHOICES) + EXTRA_OPERATIONS:
+        seen.setdefault(value, label)
+    return list(seen.items())
+
 
 def _own(request, code):
     survey = get_object_or_404(Survey, code=code.upper())
@@ -109,7 +125,7 @@ def studio(request, code):
         "columns_json": json.dumps(columns),
         "operations_json": json.dumps([
             {"value": value, "label": label}
-            for value, label in PipelineStep.OPERATION_CHOICES
+            for value, label in _all_operations()
         ]),
     })
 
@@ -144,11 +160,49 @@ def studio_bootstrap(request, code):
         s.as_dict()
         for s in survey.submissions.select_related("form_version", "device")[:500]
     ]
+
+    # For the friendly (no-JSON) step editors: the distinct values actually
+    # present in each column, plus any labelled choices from the form schema.
+    schema = (
+        survey.current_version.schema
+        if survey.current_version else survey.draft_schema
+    ) or {}
+    schema_choices = {}
+    for q in schema.get("questions", []):
+        name = q.get("name")
+        if name and q.get("choices"):
+            schema_choices[name] = [
+                {"value": str(c.get("value")), "label": c.get("label") or str(c.get("value"))}
+                for c in q["choices"]
+            ]
+
+    column_values = {}
+    for row in raw_rows:
+        merged = {}
+        merged.update(row.get("answers") or {})
+        merged.update(row.get("calculations") or {})
+        for key, value in merged.items():
+            if value in (None, "", []):
+                continue
+            bucket = column_values.setdefault(key, {})
+            for v in (value if isinstance(value, list) else [value]):
+                sv = str(v)
+                if len(sv) <= 120:
+                    bucket[sv] = bucket.get(sv, 0) + 1
+    # cap to the 100 most common distinct values per column
+    column_values = {
+        col: [{"value": v, "count": n}
+              for v, n in sorted(vals.items(), key=lambda kv: -kv[1])[:100]]
+        for col, vals in column_values.items()
+    }
+
     return JsonResponse({
         "ok": True,
         "pipelines": pipelines,
         "runs": runs,
         "raw_rows": raw_rows,
+        "column_values": column_values,
+        "schema_choices": schema_choices,
     })
 
 
@@ -189,7 +243,7 @@ def pipeline_save(request, code):
     if not isinstance(steps, list):
         return JsonResponse({"ok": False, "error": "steps must be a list."}, status=400)
 
-    valid_ops = dict(PipelineStep.OPERATION_CHOICES)
+    valid_ops = dict(_all_operations())
     with transaction.atomic():
         pipeline.steps.all().delete()
         objects = []
@@ -337,6 +391,49 @@ def run_dashboard(request, code, run_id):
         "ok": True,
         "dashboard": dashboard_payload(run, dependent, independent),
     })
+
+
+@login_required
+@require_GET
+def run_summary(request, code, run_id):
+    """Friendly per-column dataset summary."""
+    survey = _own(request, code)
+    run = get_object_or_404(CleaningRun, id=run_id, pipeline__survey=survey, status="complete")
+    from .analytics import column_profile
+    return JsonResponse({"ok": True, "summary": column_profile(run)})
+
+
+@login_required
+@require_POST
+def run_chart(request, code, run_id):
+    """Build one user-configured chart from a completed run."""
+    survey = _own(request, code)
+    run = get_object_or_404(CleaningRun, id=run_id, pipeline__survey=survey, status="complete")
+    spec = _json(request) or {}
+    from .analytics import custom_chart
+    return JsonResponse(custom_chart(run, spec))
+
+
+@login_required
+@require_POST
+def run_timeseries(request, code, run_id):
+    """Aggregate a measure over time (with optional rolling average / grouping)."""
+    survey = _own(request, code)
+    run = get_object_or_404(CleaningRun, id=run_id, pipeline__survey=survey, status="complete")
+    spec = _json(request) or {}
+    from .analytics import time_series
+    return JsonResponse(time_series(run, spec))
+
+
+@login_required
+@require_POST
+def run_timeline(request, code, run_id):
+    """Cumulative frames for the historical playback scrubber."""
+    survey = _own(request, code)
+    run = get_object_or_404(CleaningRun, id=run_id, pipeline__survey=survey, status="complete")
+    spec = _json(request) or {}
+    from .analytics import timeline_frames
+    return JsonResponse(timeline_frames(run, spec))
 
 
 @login_required

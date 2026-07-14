@@ -825,16 +825,41 @@ def monitor_feed(request, code):
 @require_POST
 def export_hanns(request, code):
     survey = _own(request, code)
+
+    if not survey.submissions.filter(status__in=["complete", "flagged"]).exists():
+        return JsonResponse({
+            "ok": False,
+            "error": "There are no complete responses to present yet.",
+        }, status=400)
+
     try:
         from .hanns_export import build_results_deck
-        deck = build_results_deck(survey, request.user)
     except ImportError:
         return JsonResponse({"ok": False, "error": "The Hanns app is not installed."}, status=500)
+
+    try:
+        deck = build_results_deck(survey, request.user)
+    except Exception as exc:  # surface the real reason instead of a bare 500
+        import logging
+        logging.getLogger("kura").exception("Hanns export failed for %s", survey.code)
+        return JsonResponse({
+            "ok": False,
+            "error": f"Could not build the results deck: {exc}",
+        }, status=500)
+
+    try:
+        from django.urls import reverse
+        edit_url = reverse("hanns:edit", args=[deck.code])
+        present_url = reverse("hanns:present", args=[deck.code])
+    except Exception:
+        edit_url = f"/hanns/{deck.code}/edit/"
+        present_url = f"/hanns/{deck.code}/present/"
+
     return JsonResponse({
         "ok": True,
         "deck_code": deck.code,
-        "edit_url": f"/hanns/{deck.code}/edit/",
-        "present_url": f"/hanns/{deck.code}/present/",
+        "edit_url": edit_url,
+        "present_url": present_url,
     })
 
 

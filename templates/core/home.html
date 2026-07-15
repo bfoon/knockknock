@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% load static %}
+{% get_media_prefix as MEDIA_URL %}
 {% block title %}Knock-Knock — Live polls & quiz games{% endblock %}
 
 {% block content %}
@@ -20,6 +22,31 @@
     Or <a href="{% url 'subscriptions:choose' 'free' %}" class="text-light">start free</a>
     — 5 mentis or games, no card.
   </p>
+
+  {# Kura mobile app download card. #}
+  {# APK: media/apps/kura-collect-release.apk #}
+  {# Image: static/images/kura-app-icon.png #}
+  <a
+    class="kk-kura-download"
+    href="{{ MEDIA_URL }}apps/kura-collect-release.apk"
+    download="Kura-Collect.apk"
+    aria-label="Download the Kura Collect Android app"
+  >
+    <span class="kk-kura-download-image">
+      <img
+        src="{% static 'images/kura-app-icon.png' %}"
+        alt="Kura Collect app icon"
+      >
+    </span>
+    <span class="kk-kura-download-copy">
+      <span class="kk-kura-download-eyebrow">KURA COLLECT FOR ANDROID</span>
+      <strong>Download the Kura app</strong>
+      <span>Collect form submissions, locations and field data from your phone.</span>
+    </span>
+    <span class="kk-kura-download-icon" aria-hidden="true">
+      <i class="bi bi-download"></i>
+    </span>
+  </a>
 </section>
 
 <section class="kk-feature-grid">
@@ -98,6 +125,100 @@
 {% endif %}
 
 <style>
+.kk-kura-download {
+  width: min(100%, 640px);
+  margin: 2rem auto 0;
+  padding: .9rem 1rem;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 1rem;
+  color: #fff;
+  text-align: left;
+  text-decoration: none;
+  background: linear-gradient(135deg, rgba(124, 58, 237, .22), rgba(14, 165, 233, .13));
+  border: 1px solid rgba(167, 139, 250, .38);
+  border-radius: 18px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .18);
+  transition: transform .18s ease, border-color .18s ease, background .18s ease;
+}
+.kk-kura-download:hover {
+  color: #fff;
+  transform: translateY(-3px);
+  border-color: rgba(167, 139, 250, .78);
+  background: linear-gradient(135deg, rgba(124, 58, 237, .32), rgba(14, 165, 233, .2));
+}
+.kk-kura-download:focus-visible {
+  outline: 3px solid rgba(167, 139, 250, .75);
+  outline-offset: 4px;
+}
+.kk-kura-download-image {
+  width: 64px;
+  height: 64px;
+  padding: 6px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .22);
+}
+.kk-kura-download-image img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  border-radius: 11px;
+}
+.kk-kura-download-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .18rem;
+}
+.kk-kura-download-copy strong {
+  font-size: 1.08rem;
+  line-height: 1.25;
+}
+.kk-kura-download-copy > span:last-child {
+  color: rgba(255, 255, 255, .68);
+  font-size: .86rem;
+  line-height: 1.4;
+}
+.kk-kura-download-eyebrow {
+  color: #c4b5fd;
+  font-size: .68rem;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+.kk-kura-download-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #7c3aed;
+  font-size: 1.25rem;
+  box-shadow: 0 8px 22px rgba(124, 58, 237, .35);
+}
+@media (max-width: 575.98px) {
+  .kk-kura-download {
+    grid-template-columns: 54px minmax(0, 1fr) 40px;
+    gap: .75rem;
+    padding: .8rem;
+  }
+  .kk-kura-download-image {
+    width: 54px;
+    height: 54px;
+    border-radius: 14px;
+  }
+  .kk-kura-download-copy > span:last-child { display: none; }
+  .kk-kura-download-icon {
+    width: 38px;
+    height: 38px;
+    font-size: 1.05rem;
+  }
+}
 .kk-venue-ads {
   margin-top: 4rem;
   padding-top: 3rem;

@@ -1604,3 +1604,116 @@ body.hanns-options-open .drawer{
   display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
 .tp-ph-foot{font-family:var(--font-mono,monospace);font-size:10px;letter-spacing:.03em;
   text-transform:uppercase;color:#8177b8;border-top:1px solid rgba(109,92,255,.2);padding-top:5px}
+
+
+/* ════════════════════════════════════════════════════════════════════
+   HANNS GALLERY — projected photo slideshow (one slide element, many
+   photos). One frame style for the whole gallery; per-photo captions;
+   auto-advancing carousel in live view. Frames: none, border, shadow,
+   polaroid, film, card, gold, tape.
+   ──────────────────────────────────────────────────────────────────── */
+.gallery-box{width:100%;height:100%;position:relative;display:grid;place-items:center;
+  container-type:size;border-radius:14px;overflow:hidden;
+  background:var(--gallery-bg,transparent)}
+.gallery-stage{position:absolute;inset:0;display:grid;place-items:center}
+.gallery-card{position:absolute;width:86%;height:86%;display:flex;flex-direction:column;
+  align-items:center;justify-content:center}
+.gallery-active{z-index:2}
+.gallery-media{width:100%;height:100%;background-position:center;background-repeat:no-repeat;
+  border-radius:8px}
+.gallery-caption{position:absolute;left:6%;right:6%;bottom:5%;z-index:3;text-align:center;
+  font-family:var(--font-body,Inter,system-ui,sans-serif);font-weight:600;
+  font-size:clamp(13px,3.4cqw,26px);line-height:1.25;color:#fff;
+  background:rgba(12,10,16,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  padding:.5em .8em;border-radius:10px;box-shadow:0 8px 22px rgba(0,0,0,.3)}
+.gallery-empty{background:rgba(120,110,150,.08);border:1.5px dashed rgba(120,110,150,.5)}
+.gallery-empty-msg{text-align:center;color:#8a82ab;font-weight:700;font-size:clamp(14px,4cqw,22px);line-height:1.5}
+.gallery-badge{position:absolute;left:12px;bottom:12px;z-index:5;
+  background:rgba(10,10,16,.6);color:#fff;border:1px solid rgba(255,255,255,.18);
+  border-radius:999px;padding:.34rem .7rem;font-family:var(--font-mono,monospace);
+  font-size:11px;letter-spacing:.03em;backdrop-filter:blur(6px)}
+
+/* ── FRAME STYLES (applied to .gallery-card) ─────────────────────────
+   Each frame shapes the card padding/background/shadow; .gallery-media
+   holds the photo. Captions sit over the photo for most frames, but
+   polaroid/card push the caption into the frame's bottom margin. */
+
+/* none — bare photo, subtle rounding */
+.gframe-none .gallery-card{padding:0}
+.gframe-none .gallery-media{border-radius:10px;box-shadow:0 14px 40px rgba(0,0,0,.28)}
+
+/* border — thin crisp keyline */
+.gframe-border .gallery-card{padding:0}
+.gframe-border .gallery-media{border-radius:6px;box-shadow:0 0 0 4px #fff,0 0 0 5px rgba(0,0,0,.12),0 16px 40px rgba(0,0,0,.28)}
+
+/* shadow — floating soft-shadow card */
+.gframe-shadow .gallery-media{border-radius:14px;box-shadow:0 30px 60px -12px rgba(0,0,0,.55),0 8px 20px rgba(0,0,0,.3)}
+
+/* polaroid — white card, thick bottom margin, caption in the margin */
+.gframe-polaroid .gallery-card{background:#fffdf8;padding:3.5% 3.5% 14%;border-radius:4px;
+  box-shadow:0 22px 50px rgba(0,0,0,.34);transform:rotate(-1.4deg)}
+.gframe-polaroid .gallery-media{border-radius:2px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.06)}
+.gframe-polaroid .gallery-caption{background:none;backdrop-filter:none;box-shadow:none;color:#2a2620;
+  bottom:3.5%;left:6%;right:6%;font-family:"Caveat","Spline Sans Mono",cursive,sans-serif;
+  font-weight:700;font-size:clamp(15px,4.2cqw,30px)}
+
+/* film — black film-strip border with sprocket holes top & bottom */
+.gframe-film .gallery-card{background:#111;padding:9% 4%;border-radius:6px;
+  box-shadow:0 22px 50px rgba(0,0,0,.45)}
+.gframe-film .gallery-media{border-radius:2px}
+.gframe-film .gallery-card::before,
+.gframe-film .gallery-card::after{content:"";position:absolute;left:4%;right:4%;height:5.5%;
+  background:repeating-linear-gradient(90deg,transparent 0 2.5%,#111 2.5% 3%,#fff 3% 6%,#111 6% 6.5%,transparent 6.5% 9%);
+  background-size:9% 100%;
+  -webkit-mask:repeating-linear-gradient(90deg,#000 0 3%,transparent 3% 9%);
+  mask:repeating-linear-gradient(90deg,#000 0 3%,transparent 3% 9%);
+  background:#111}
+.gframe-film .gallery-card::before{top:2%}
+.gframe-film .gallery-card::after{bottom:2%}
+.gframe-film .gallery-card::before{background-image:radial-gradient(circle,#fff 32%,transparent 34%);background-size:7% 100%;background-repeat:repeat-x}
+.gframe-film .gallery-card::after {background-image:radial-gradient(circle,#fff 32%,transparent 34%);background-size:7% 100%;background-repeat:repeat-x}
+.gframe-film .gallery-caption{color:#fff;bottom:auto;top:2.4%;background:none;backdrop-filter:none;box-shadow:none;
+  font-family:var(--font-mono,monospace);font-size:clamp(11px,2.8cqw,18px);letter-spacing:.08em;text-transform:uppercase}
+
+/* card — rounded white card with caption bar below the photo */
+.gframe-card .gallery-card{background:#fff;padding:3%;border-radius:18px;
+  box-shadow:0 26px 60px rgba(0,0,0,.3)}
+.gframe-card .gallery-media{border-radius:12px;height:82%}
+.gframe-card .gallery-caption{position:static;margin-top:3%;color:#1c2430;background:none;
+  backdrop-filter:none;box-shadow:none;font-weight:700;font-size:clamp(13px,3.4cqw,24px)}
+
+/* gold — ornate warm double border */
+.gframe-gold .gallery-card{padding:4.5%;border-radius:6px;
+  background:linear-gradient(135deg,#caa24a,#f4e2a1 45%,#b8862f);
+  box-shadow:0 24px 55px rgba(70,50,10,.45),inset 0 0 0 2px rgba(255,255,255,.5)}
+.gframe-gold .gallery-media{border-radius:3px;box-shadow:0 0 0 3px #7a5a1e,inset 0 0 0 1px rgba(0,0,0,.2)}
+.gframe-gold .gallery-caption{color:#fff8e6;background:rgba(60,42,12,.72);border:1px solid rgba(255,240,200,.4)}
+
+/* tape — photo held by translucent tape at two corners */
+.gframe-tape .gallery-card{background:#fdfcf9;padding:2.5%;border-radius:2px;
+  box-shadow:0 18px 44px rgba(0,0,0,.28);transform:rotate(1deg)}
+.gframe-tape .gallery-media{border-radius:1px}
+.gframe-tape .gallery-card::before,
+.gframe-tape .gallery-card::after{content:"";position:absolute;width:22%;height:9%;top:-3%;
+  background:rgba(220,210,150,.55);box-shadow:0 2px 6px rgba(0,0,0,.15);z-index:4}
+.gframe-tape .gallery-card::before{left:6%;transform:rotate(-24deg)}
+.gframe-tape .gallery-card::after{right:6%;transform:rotate(22deg)}
+
+/* editor placeholder cards should not spin/rotate distractingly — keep the
+   character but tone down for the static editor preview */
+.el.gallery .gallery-card{will-change:transform,opacity}
+
+/* Gallery inspector — photo list rows */
+.gal-list{display:flex;flex-direction:column;gap:8px;margin:10px 0 6px;max-height:300px;overflow-y:auto}
+.gal-row{display:flex;gap:8px;align-items:center;background:rgba(0,0,0,.04);border-radius:10px;padding:6px}
+.gal-thumb{width:46px;height:46px;flex:0 0 auto;border-radius:7px;background:#ddd center/cover no-repeat;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)}
+.gal-row-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+.gal-cap{width:100%;font-size:12.5px;padding:5px 7px;border:1px solid rgba(0,0,0,.15);border-radius:7px;background:#fff}
+.gal-row-btns{display:flex;gap:4px}
+.gal-mini{width:28px;height:26px;border:1px solid rgba(0,0,0,.15);background:#fff;border-radius:6px;
+  cursor:pointer;font-size:13px;line-height:1;display:grid;place-items:center;color:#333}
+.gal-mini:disabled{opacity:.35;cursor:default}
+.gal-mini:hover:not(:disabled){background:#f2f2f5}
+.gal-del{color:#c0392b}
+.gal-del:hover{background:#fdecea;border-color:#e6b0aa}

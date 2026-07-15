@@ -897,126 +897,6 @@ const OBJECTS = [
     "help": "Single animated tree — grows, rustles, shakes (Level = canopy size)"
   },
   {
-    "kind": "pig",
-    "label": "Pig",
-    "icon": "🐷",
-    "count": 1,
-    "level": 0,
-    "w": 230,
-    "h": 210,
-    "accent": "#f3b5c2",
-    "actor": true,
-    "help": "Single animated pig — runs, jumps, shakes; smile/sad mood"
-  },
-  {
-    "kind": "sheep",
-    "label": "Sheep",
-    "icon": "🐑",
-    "count": 1,
-    "level": 0,
-    "w": 230,
-    "h": 210,
-    "accent": "#f2ede3",
-    "actor": true,
-    "help": "Single animated sheep — runs, jumps, shakes; smile/sad mood"
-  },
-  {
-    "kind": "dog",
-    "label": "Dog",
-    "icon": "🐶",
-    "count": 1,
-    "level": 0,
-    "w": 230,
-    "h": 210,
-    "accent": "#caa06a",
-    "actor": true,
-    "help": "Single animated dog — runs, wags tail, jumps; smile/sad mood"
-  },
-  {
-    "kind": "bee",
-    "label": "Bee",
-    "icon": "🐝",
-    "count": 1,
-    "level": 0,
-    "w": 200,
-    "h": 190,
-    "accent": "#f6c445",
-    "actor": true,
-    "help": "Single animated bee — hovers, flies loops, wings flutter"
-  },
-  {
-    "kind": "butterfly",
-    "label": "Butterfly",
-    "icon": "🦋",
-    "count": 1,
-    "level": 0,
-    "w": 210,
-    "h": 200,
-    "accent": "#a78bfa",
-    "actor": true,
-    "help": "Single animated butterfly — flutters in place or flies loops"
-  },
-  {
-    "kind": "fish",
-    "label": "Fish",
-    "icon": "🐟",
-    "count": 1,
-    "level": 0,
-    "w": 220,
-    "h": 190,
-    "accent": "#4aa8d6",
-    "actor": true,
-    "help": "Single animated fish — sways, swims, leaps; blows bubbles"
-  },
-  {
-    "kind": "windmill",
-    "label": "Windmill",
-    "icon": "🌬️",
-    "count": 1,
-    "level": 0,
-    "w": 220,
-    "h": 250,
-    "accent": "#93a8b8",
-    "actor": true,
-    "help": "Single animated windmill — blades turn slowly, spin fast on action"
-  },
-  {
-    "kind": "rocket",
-    "label": "Rocket",
-    "icon": "🚀",
-    "count": 1,
-    "level": 0,
-    "w": 210,
-    "h": 250,
-    "accent": "#e8482b",
-    "actor": true,
-    "help": "Single animated rocket — hovers with flickering flame, launches"
-  },
-  {
-    "kind": "lightbulb",
-    "label": "Idea bulb",
-    "icon": "💡",
-    "count": 1,
-    "level": 0,
-    "w": 200,
-    "h": 230,
-    "accent": "#f6b73c",
-    "actor": true,
-    "help": "Single animated lightbulb — soft glow, flashes for the big idea"
-  },
-  {
-    "kind": "trophy",
-    "label": "Trophy",
-    "icon": "🏆",
-    "count": 1,
-    "level": 0,
-    "w": 210,
-    "h": 230,
-    "accent": "#eab308",
-    "actor": true,
-    "help": "Single animated trophy — gleams, sparkles and rocks on shine"
-  },
-  {
     "kind": "farmer",
     "label": "Farmer",
     "icon": "🧑🏾‍🌾",
@@ -3203,10 +3083,24 @@ function makeLine(over={}){
 function makeImage(src,over={}){
   return elBase("image",Object.assign({w:360,h:240,src:src||"",fit:"cover",radius:12},over));
 }
+function makeGallery(over={}){
+  return elBase("gallery",Object.assign({
+    x:180,y:90,w:600,h:400,
+    photos:[],                 // [{src, caption}]
+    frame:"polaroid",          // none|border|shadow|polaroid|film|card|gold|tape
+    fit:"cover",
+    galleryAnim:"fade",        // per-photo in/out style: fade|zoom|slide|rise|flip|reveal
+    stagger:1,                 // in/out speed multiplier (0.25–4)
+    holdMs:2600,               // how long each photo holds
+    galleryLoop:true,          // loop back to the first photo
+    galleryBg:"",              // optional backdrop behind photos
+    anim:"zoom",animDelay:0    // whole-block entry (reuses the 21 animateIn set)
+  },over));
+}
 function makeVideo(over={}){
   return elBase("video",Object.assign({
     x:160,y:120,w:640,h:360,src:"",poster:"",title:"Video",radius:18,
-    autoplay:false,muted:false,controls:true,loop:false,fit:"cover",anim:"rise",animDelay:0
+    autoplay:false,muted:false,controls:true,fit:"cover",anim:"rise",animDelay:0
   },over));
 }
 function makeLink(over={}){
@@ -4161,20 +4055,7 @@ function T_pieIconRow(){
   ]};
 }
 
-/* ── B-roll templates: full-bleed looping video (autoplay, muted, no controls).
-   Paste an MP4/WebM URL — or a YouTube embed URL — in the inspector. ── */
-function T_brollFull(){return{bg:"#000",els:[
-  makeVideo({x:0,y:0,w:W,h:H,radius:0,src:"",autoplay:true,muted:true,controls:false,loop:true,fit:"cover",anim:"fade",animDelay:0,title:"B-roll video"}),
-]};}
-function T_brollLowerThird(){return{bg:"#000",els:[
-  makeVideo({x:0,y:0,w:W,h:H,radius:0,src:"",autoplay:true,muted:true,controls:false,loop:true,fit:"cover",anim:"fade",animDelay:0,title:"B-roll video"}),
-  makeShape("rect",{x:0,y:448,w:W,h:92,fill:"rgba(0,0,0,.45)",radius:0,anim:"fade",animDelay:.25}),
-  makeText({x:60,y:468,w:840,h:52,text:"Lower-third caption",size:26,weight:700,color:"#ffffff",font:'"Archivo",sans-serif',anim:"left",animDelay:.4}),
-]};}
-
 const BASE_TEMPLATES = [
-  {name:"B-roll · Full video",   build:T_brollFull},
-  {name:"B-roll · Lower third",  build:T_brollLowerThird},
   {name:"Infographic · Animal bars",   build:T_animalsBars},
   {name:"Infographic · Our Profit",    build:T_ourProfit},
   {name:"Infographic · Beer (blue)",   build:T_beerInfographic},
@@ -4730,6 +4611,8 @@ function renderElement(el,{live=false}={}){
     inner.appendChild(im);
   } else if(el.type==="video"){
     inner.appendChild(renderVideo(el,{live}));
+  } else if(el.type==="gallery"){
+    inner.appendChild(renderGallery(el,{live}));
   } else if(el.type==="link"){
     inner.appendChild(renderLink(el,{live}));
   } else if(el.type==="table"){
@@ -5116,6 +4999,107 @@ function fmtVal(v,el){
   if(el&&(el.valueSuffix||el.unit))s=s+(el.valueSuffix||el.unit);
   return s;
 }
+
+/* ─── GALLERY ─────────────────────────────────────────────────────────
+   A projected photo slideshow living inside ONE slide element. Photos are
+   stored as el.photos=[{src,caption}], with a single frame style for the
+   whole gallery (el.frame) and its own entry/exit + per-photo stagger.
+
+   Editor (live:false): shows the first photo framed, plus a small
+   "N photos" badge so the presenter can see & position the block.
+
+   Live (live:true): auto-advances — each photo flies IN, HOLDS, flies OUT,
+   then the next. Timing from el.holdMs (hold) and el.stagger (in/out speed).
+   The loop is self-cleaning: each frame checks node.isConnected and stops
+   when the slide changes, matching the Plotly-map pattern elsewhere. */
+const GALLERY_FRAMES = ["none","border","shadow","polaroid","film","card","gold","tape"];
+const GALLERY_ANIMS = {
+  fade:  {in:[{opacity:0},{opacity:1}], out:[{opacity:1},{opacity:0}]},
+  zoom:  {in:[{opacity:0,transform:"scale(.82)"},{opacity:1,transform:"scale(1)"}], out:[{opacity:1,transform:"scale(1)"},{opacity:0,transform:"scale(1.12)"}]},
+  slide: {in:[{opacity:0,transform:"translateX(60px)"},{opacity:1,transform:"translateX(0)"}], out:[{opacity:1,transform:"translateX(0)"},{opacity:0,transform:"translateX(-60px)"}]},
+  rise:  {in:[{opacity:0,transform:"translateY(48px)"},{opacity:1,transform:"translateY(0)"}], out:[{opacity:1,transform:"translateY(0)"},{opacity:0,transform:"translateY(-48px)"}]},
+  flip:  {in:[{opacity:0,transform:"perspective(1000px) rotateY(70deg)"},{opacity:1,transform:"perspective(1000px) rotateY(0)"}], out:[{opacity:1,transform:"perspective(1000px) rotateY(0)"},{opacity:0,transform:"perspective(1000px) rotateY(-70deg)"}]},
+  reveal:{in:[{clipPath:"inset(0 100% 0 0)"},{clipPath:"inset(0 0 0 0)"}], out:[{clipPath:"inset(0 0 0 0)"},{clipPath:"inset(0 0 0 100%)"}]},
+};
+function galleryPhotos(el){
+  const arr=Array.isArray(el.photos)?el.photos:[];
+  return arr.filter(p=>p && String(p.src||"").trim());
+}
+function buildGalleryCard(el, photo){
+  const frame=GALLERY_FRAMES.includes(el.frame)?el.frame:"none";
+  const card=document.createElement("div");
+  card.className="gallery-card gframe-"+frame;
+  const media=document.createElement("div");
+  media.className="gallery-media";
+  media.style.backgroundImage=`url("${photo.src}")`;
+  media.style.backgroundSize=(el.fit||"cover");
+  card.appendChild(media);
+  const cap=String(photo.caption||"").trim();
+  if(cap){
+    const c=document.createElement("div");c.className="gallery-caption";c.textContent=cap;
+    card.appendChild(c);
+  }
+  return card;
+}
+function renderGallery(el,{live=false}={}){
+  const box=document.createElement("div");
+  box.className="gallery-box gframe-"+(GALLERY_FRAMES.includes(el.frame)?el.frame:"none");
+  if(el.galleryBg) box.style.setProperty("--gallery-bg", el.galleryBg);
+  const photos=galleryPhotos(el);
+
+  if(!photos.length){
+    box.classList.add("gallery-empty");
+    box.innerHTML=`<div class="gallery-empty-msg">🖼️<br>Add photos in the inspector</div>`;
+    return box;
+  }
+
+  const stage=document.createElement("div");stage.className="gallery-stage";
+  box.appendChild(stage);
+
+  if(!live){
+    stage.appendChild(buildGalleryCard(el, photos[0]));
+    const badge=document.createElement("div");badge.className="gallery-badge";
+    badge.textContent=`▦ ${photos.length} photo${photos.length>1?"s":""} · slideshow`;
+    box.appendChild(badge);
+    return box;
+  }
+
+  // Live: auto-advance carousel — fly in, hold, fly out, next.
+  const speed=clamp(Number(el.stagger)||1, 0.25, 4);
+  const holdMs=clamp(Number(el.holdMs)||2600, 600, 20000);
+  const inMs=Math.round(620/speed), outMs=Math.round(520/speed);
+  const anim=GALLERY_ANIMS[el.galleryAnim]||GALLERY_ANIMS.fade;
+  const loop=el.galleryLoop!==false;
+  let current=null, stopped=false;
+
+  function showAt(n){
+    if(stopped || !stage.isConnected){stopped=true;return;}
+    const card=buildGalleryCard(el, photos[n]);
+    card.classList.add("gallery-active");
+    stage.appendChild(card);
+    current=card;
+    try{ card.animate(anim.in,{duration:inMs,easing:"cubic-bezier(.22,1,.36,1)",fill:"both"}); }catch(e){}
+    setTimeout(()=>{
+      if(stopped || !stage.isConnected){stopped=true;return;}
+      // single photo: just hold forever, no exit
+      if(photos.length<2){ return; }
+      let a;
+      try{ a=card.animate(anim.out,{duration:outMs,easing:"cubic-bezier(.4,0,.2,1)",fill:"both"}); }catch(e){}
+      const advance=()=>{
+        if(stopped || !stage.isConnected){stopped=true;return;}
+        card.remove(); if(current===card)current=null;
+        const next=n+1;
+        if(next<photos.length) showAt(next);
+        else if(loop) showAt(0);
+      };
+      if(a && a.finished && a.finished.then) a.finished.then(advance).catch(advance);
+      else setTimeout(advance, outMs);
+    }, inMs + holdMs);
+  }
+  showAt(0);
+  return box;
+}
+
 function renderVideo(el,{live=false}={}){
   const src=String(el.src||"").trim();
   const isEmbed=/youtube\.com\/embed|player\.vimeo\.com|youtu\.be|youtube\.com\/watch/.test(src);
@@ -5125,7 +5109,7 @@ function renderVideo(el,{live=false}={}){
     const frame=document.createElement("iframe");frame.className="video-box";frame.src=embed;frame.allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";frame.allowFullscreen=true;frame.style.borderRadius=(el.radius||18)+"px";frame.style.border="0";return frame;
   }
   const box=document.createElement(live&&src?"video":"div");box.className="video-box"+(src?"":" video-empty");box.style.borderRadius=(el.radius||18)+"px";
-  if(live&&src){box.src=src;box.controls=el.controls!==false;box.autoplay=!!el.autoplay;box.muted=!!el.muted;box.loop=!!el.loop;box.playsInline=true;box.setAttribute("playsinline","");box.poster=el.poster||"";box.style.objectFit=el.fit||"cover";}
+  if(live&&src){box.src=src;box.controls=el.controls!==false;box.autoplay=!!el.autoplay;box.muted=!!el.muted;box.poster=el.poster||"";box.style.objectFit=el.fit||"cover";}
   else {box.innerHTML=`<div class="video-play">▶</div><div><b>${escHTML(el.title||"Video")}</b><span>${escHTML(src||"Paste a video link in the inspector")}</span></div>`;}
   return box;
 }
@@ -6155,7 +6139,7 @@ function renderTeleprompter(el,{live=false}={}){
   box.innerHTML=
     `<div class="tp-ph-head"><span class="tp-ph-ic">🎤</span>`+
     `<span class="tp-ph-title">${escHTML(el.label||"Teleprompter script")}</span></div>`+
-    `<div class="tp-ph-body">${script?escHTML(script.slice(0,140))+(script.length>140?"…":""):"Paste your speech in the inspector →"}</div>`+
+    `<div class="tp-ph-body">${script?escHTML(script.slice(0,140))+(script.length>140?"…":""):"Click here, then paste your speech in the inspector →"}</div>`+
     `<div class="tp-ph-foot">Presenter-only · ${words?words+" words · ~"+mins+" min":"no script yet"} · hidden from audience</div>`;
   return box;
 }
@@ -6365,6 +6349,6 @@ function paintSlide(container,slide,{live=false}={}){
 
 window.Hanns = {Deck,TEMPLATES,BACKGROUNDS,BG_FX,ANIMS,TRANSITIONS,PALETTE,FONTS,OBJECTS,SHAPES,
   newSlide,curSlide,selEl,paintSlide,renderElement,
-  makeText,makeShape,makeLine,makeImage,makeVideo,makeLink,makeObject,makeCreativeShape,makeTable,makeChart,makeMap,W,H,$,$$,uid,clamp,genCode};
+  makeText,makeShape,makeLine,makeImage,makeVideo,makeLink,makeObject,makeCreativeShape,makeTable,makeChart,makeMap,makeGallery,W,H,$,$$,uid,clamp,genCode};
 
 })();

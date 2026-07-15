@@ -6,7 +6,7 @@
 <title>Controller · {{ deck.title }} · Hanns</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800;900&family=Spline+Sans+Mono:wght@500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=46">
+<link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=49">
 
 <style>
   .phone-card h1,
@@ -43,6 +43,54 @@
   .tp-slider{display:flex;flex-direction:column;gap:6px;color:#bfb8e8;font-size:12.5px;font-weight:700}
   .tp-slider b{color:#fff;font-family:"Spline Sans Mono",monospace}
   .tp-slider input[type=range]{width:100%;accent-color:#6d5cff;height:26px}
+
+  /* ── header right cluster + icon buttons ──────────────────────── */
+  .tp-head-right{display:flex;align-items:center;gap:8px}
+  .tp-icon{width:32px;height:32px;display:grid;place-items:center;background:#221d38;
+    color:#cfc8f5;border:1px solid #37305a;border-radius:9px;font-size:14px;cursor:pointer;
+    -webkit-tap-highlight-color:transparent;line-height:1;padding:0}
+  .tp-icon:active{transform:scale(.94)}
+
+  /* ── collapsible control panel ────────────────────────────────── */
+  .tp-panel[hidden]{display:none}
+
+  /* floating "show controls" pill — only when controls are hidden */
+  .tp-show-ctl{position:absolute;right:14px;bottom:14px;z-index:12;
+    background:rgba(34,29,56,.9);color:#e7e2ff;border:1px solid #4a3f77;border-radius:999px;
+    padding:10px 15px;font-weight:800;font-size:13px;cursor:pointer;
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    box-shadow:0 10px 30px rgba(0,0,0,.5);-webkit-tap-highlight-color:transparent}
+  .tp-show-ctl[hidden]{display:none}
+  .phone-teleprompter{position:relative}
+
+  /* ── FULL SCREEN teleprompter ─────────────────────────────────────
+     The section itself goes fullscreen; the script fills the device and
+     the controls collapse to an overlay you can toggle. Uses :fullscreen
+     when the API is available, and a .tp-fs class fallback (fixed inset:0)
+     for iOS Safari, which does not support requestFullscreen on divs. */
+  .phone-teleprompter:fullscreen,
+  .phone-teleprompter.tp-fs{
+    position:fixed;inset:0;z-index:9999;margin:0;border:0;border-radius:0;
+    padding:calc(env(safe-area-inset-top,0px) + 10px) 12px calc(env(safe-area-inset-bottom,0px) + 12px);
+    background:#0a0812;display:flex;flex-direction:column}
+  .phone-teleprompter:fullscreen .tp-viewport,
+  .phone-teleprompter.tp-fs .tp-viewport{flex:1;height:auto;min-height:0;border-radius:12px}
+  .phone-teleprompter:fullscreen .tp-head,
+  .phone-teleprompter.tp-fs .tp-head{flex:0 0 auto}
+  /* in fullscreen the panel floats over the script instead of pushing it */
+  .phone-teleprompter:fullscreen .tp-panel,
+  .phone-teleprompter.tp-fs .tp-panel{
+    position:absolute;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);
+    z-index:11;background:rgba(18,16,28,.94);border:1px solid #2c2745;border-radius:16px;
+    padding:12px;box-shadow:0 -10px 40px rgba(0,0,0,.6);
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);margin:0}
+  .phone-teleprompter:fullscreen .tp-controls,
+  .phone-teleprompter.tp-fs .tp-controls{margin-top:0}
+  /* bigger text by default on a fullscreen phone */
+  .phone-teleprompter:fullscreen .tp-track,
+  .phone-teleprompter.tp-fs .tp-track{font-size:var(--tp-font,34px)}
+  /* when the page body is holding a fallback-fullscreen prompter, lock scroll */
+  body.tp-fs-lock{overflow:hidden}
 </style>
 </head>
 <body class="phone-control">
@@ -71,26 +119,33 @@
     <section class="phone-teleprompter" id="teleprompter" hidden>
       <div class="tp-head">
         <strong>🎤 Teleprompter</strong>
-        <span id="tp-progress">0%</span>
+        <span class="tp-head-right">
+          <span id="tp-progress">0%</span>
+          <button class="tp-icon" id="tp-hidectl" type="button" title="Hide controls">▾</button>
+          <button class="tp-icon" id="tp-full" type="button" title="Full screen">⛶</button>
+        </span>
       </div>
       <div class="tp-viewport" id="tp-viewport">
         <div class="tp-track" id="tp-track"></div>
         <div class="tp-readline" aria-hidden="true"></div>
       </div>
-      <div class="tp-controls">
-        <button class="tp-btn tp-btn-primary" id="tp-playpause" type="button">▶ Play</button>
-        <button class="tp-btn" id="tp-restart" type="button">↺ Top</button>
+      <div class="tp-panel" id="tp-panel">
+        <div class="tp-controls">
+          <button class="tp-btn tp-btn-primary" id="tp-playpause" type="button">▶ Play</button>
+          <button class="tp-btn" id="tp-restart" type="button">↺ Top</button>
+        </div>
+        <div class="tp-sliders">
+          <label class="tp-slider">
+            <span>Speed <b id="tp-speed-val">1.0×</b></span>
+            <input type="range" id="tp-speed" min="10" max="300" value="100" step="5">
+          </label>
+          <label class="tp-slider">
+            <span>Font <b id="tp-font-val">28px</b></span>
+            <input type="range" id="tp-font" min="18" max="64" value="28" step="1">
+          </label>
+        </div>
       </div>
-      <div class="tp-sliders">
-        <label class="tp-slider">
-          <span>Speed <b id="tp-speed-val">1.0×</b></span>
-          <input type="range" id="tp-speed" min="10" max="300" value="100" step="5">
-        </label>
-        <label class="tp-slider">
-          <span>Font <b id="tp-font-val">28px</b></span>
-          <input type="range" id="tp-font" min="18" max="64" value="28" step="1">
-        </label>
-      </div>
+      <button class="tp-show-ctl" id="tp-showctl" type="button" hidden>⚙ Controls</button>
     </section>
 
     <section class="phone-preview-wrap" id="phone-preview-wrap" hidden>
@@ -113,7 +168,7 @@ window.__HANNS_CONTROL__ = {
 };
 </script>
 <script src="{% static 'hanns/js/hanns_actors.js' %}?v=1"></script>
-<script src="{% static 'hanns/js/hanns_core.js' %}?v=46"></script>
+<script src="{% static 'hanns/js/hanns_core.js' %}?v=49"></script>
 
 <script>
 (function(){
@@ -283,11 +338,15 @@ function tpMaxOffset(){
   return Math.max(0, tpTrackH() - tpViewportH()*0.5);
 }
 function tpApply(){
+  const max=tpMaxOffset();
+  // Layout can change under us (fullscreen, rotate, font size) — keep the
+  // offset inside the new bounds so progress never reads past 100%.
+  if(tpOffset>max) tpOffset=max;
+  if(tpOffset<0) tpOffset=0;
   const t=$("#tp-track");
   if(t) t.style.transform=`translateY(${-tpOffset}px)`;
-  const max=tpMaxOffset()||1;
-  const pct=Math.min(100,Math.round((tpOffset/max)*100));
-  const p=$("#tp-progress"); if(p) p.textContent=pct+"%";
+  const p=$("#tp-progress");
+  if(p) p.textContent=Math.min(100,Math.round((tpOffset/(max||1))*100))+"%";
 }
 function tpResetScroll(){
   tpOffset=0; tpApply();
@@ -331,8 +390,88 @@ function toggleTeleprompter(){
   tpVisible=!tpVisible;
   const sec=$("#teleprompter"); if(sec) sec.hidden=!tpVisible;
   if(tpVisible){ tpApply(); }
-  else { tpPause(); }
+  else { tpPause(); tpExitFullscreen(); }
   updateButtons();
+}
+
+// ── fullscreen + controls visibility ───────────────────────────────
+let tpCtlHidden=false;
+let tpWakeLock=null;
+
+async function tpKeepAwake(){
+  // Presenter is reading — don't let the phone sleep mid-speech.
+  try{
+    if("wakeLock" in navigator && !tpWakeLock && document.visibilityState==="visible"){
+      tpWakeLock=await navigator.wakeLock.request("screen");
+      tpWakeLock.addEventListener("release",()=>{tpWakeLock=null;});
+    }
+  }catch(e){/* blocked or unsupported — not fatal */}
+}
+async function tpReleaseAwake(){
+  try{ if(tpWakeLock){await tpWakeLock.release();tpWakeLock=null;} }catch(e){}
+}
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="visible" && tpIsFullscreen()) tpKeepAwake();
+});
+
+function tpIsFullscreen(){
+  const sec=$("#teleprompter");
+  return !!(document.fullscreenElement===sec || (sec&&sec.classList.contains("tp-fs")));
+}
+function tpSyncFsButton(){
+  const b=$("#tp-full");
+  if(b){
+    const on=tpIsFullscreen();
+    b.textContent=on?"✕":"⛶";
+    b.title=on?"Exit full screen":"Full screen";
+  }
+  // re-measure: viewport height changed, so max scroll changed
+  tpApply();
+}
+async function tpEnterFullscreen(){
+  const sec=$("#teleprompter");
+  if(!sec)return;
+  tpKeepAwake();
+  // Prefer the real Fullscreen API; fall back to a fixed-inset class for
+  // iOS Safari, which does not support requestFullscreen on elements.
+  if(sec.requestFullscreen){
+    try{ await sec.requestFullscreen({navigationUI:"hide"}); }
+    catch(e){ sec.classList.add("tp-fs"); document.body.classList.add("tp-fs-lock"); }
+  }else{
+    sec.classList.add("tp-fs");
+    document.body.classList.add("tp-fs-lock");
+  }
+  tpSyncFsButton();
+}
+async function tpExitFullscreen(){
+  const sec=$("#teleprompter");
+  tpReleaseAwake();
+  if(document.fullscreenElement && document.exitFullscreen){
+    try{ await document.exitFullscreen(); }catch(e){}
+  }
+  if(sec) sec.classList.remove("tp-fs");
+  document.body.classList.remove("tp-fs-lock");
+  tpSyncFsButton();
+}
+function tpToggleFullscreen(){ tpIsFullscreen()?tpExitFullscreen():tpEnterFullscreen(); }
+document.addEventListener("fullscreenchange",()=>{
+  // Covers the user leaving fullscreen via the OS/browser gesture.
+  if(!document.fullscreenElement){
+    const sec=$("#teleprompter");
+    if(sec) sec.classList.remove("tp-fs");
+    document.body.classList.remove("tp-fs-lock");
+    tpReleaseAwake();
+  }
+  tpSyncFsButton();
+});
+
+function tpSetControls(hidden){
+  tpCtlHidden=hidden;
+  const panel=$("#tp-panel"), pill=$("#tp-showctl"), hideBtn=$("#tp-hidectl");
+  if(panel) panel.hidden=hidden;
+  if(pill)  pill.hidden=!hidden;
+  if(hideBtn){hideBtn.textContent=hidden?"▴":"▾";hideBtn.title=hidden?"Show controls":"Hide controls";}
+  tpApply();
 }
 
 $("#connect").addEventListener("click",connect);
@@ -345,6 +484,13 @@ $("#tp-playpause").addEventListener("click",tpTogglePlay);
 $("#tp-restart").addEventListener("click",()=>{tpResetScroll();});
 $("#tp-speed").addEventListener("input",e=>tpSetSpeed(e.target.value));
 $("#tp-font").addEventListener("input",e=>tpSetFont(e.target.value));
+$("#tp-full").addEventListener("click",tpToggleFullscreen);
+$("#tp-hidectl").addEventListener("click",()=>tpSetControls(!tpCtlHidden));
+$("#tp-showctl").addEventListener("click",()=>tpSetControls(false));
+// Going fullscreen / rotating changes the viewport height, which changes the
+// max scroll offset — re-measure so progress and the end-stop stay correct.
+window.addEventListener("resize",()=>{ if(tpVisible) tpApply(); });
+window.addEventListener("orientationchange",()=>{ setTimeout(()=>{ if(tpVisible) tpApply(); },250); });
 $("#phone-preview-stage").addEventListener("click",pointerFromTap);
 window.addEventListener("resize",fitPreview);
 const qp=params().get("pin");

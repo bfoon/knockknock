@@ -6,7 +6,7 @@
 const Hx = window.Hanns;
 const {Deck,TEMPLATES,BACKGROUNDS,BG_FX,ANIMS,TRANSITIONS,PALETTE,FONTS,OBJECTS,SHAPES,
   newSlide,curSlide,selEl,paintSlide,renderElement,
-  makeText,makeShape,makeLine,makeImage,makeVideo,makeLink,makeObject,makeCreativeShape,makeTable,makeChart,makeMap,W,H,$,$$,uid,clamp,genCode}=Hx;
+  makeText,makeShape,makeLine,makeImage,makeVideo,makeLink,makeObject,makeCreativeShape,makeTable,makeChart,makeMap,makeGallery,W,H,$,$$,uid,clamp,genCode}=Hx;
 
 const canvas   = $("#canvas");
 const wrap     = $("#canvas-wrap");
@@ -423,39 +423,6 @@ function applyTemplate(tpl){
   closeDrawers();toast(`Applied “${tpl.name}”`);
 }
 
-/* ── B-roll: convert the current slide into a full-bleed looping video slide.
-   Keeps the slide's first text line as a lower-third caption and reuses any
-   video URL already on the slide, so nothing important is lost. ── */
-function convertSlideToBroll(){
-  const s=curSlide(); if(!s)return;
-  const firstText=(s.els||[]).find(e=>e.type==="text"&&String(e.text||"").trim());
-  const caption=firstText?String(firstText.text).split("\n")[0].trim():"";
-  const existingVideo=(s.els||[]).find(e=>e.type==="video"&&String(e.src||"").trim());
-  s.bg="#000"; s.bgSize=null; s.bgFx="none"; if(!s.transition)s.transition="fade";
-  s.els=[
-    makeVideo({x:0,y:0,w:W,h:H,radius:0,
-      src:existingVideo?existingVideo.src:"",
-      poster:existingVideo?(existingVideo.poster||""):"",
-      autoplay:true,muted:true,controls:false,loop:true,fit:"cover",
-      anim:"fade",animDelay:0,title:"B-roll video"})
-  ];
-  if(caption){
-    s.els.push(makeShape("rect",{x:0,y:448,w:W,h:92,fill:"rgba(0,0,0,.45)",radius:0,anim:"fade",animDelay:.25}));
-    s.els.push(makeText({x:60,y:468,w:W-120,h:52,text:caption,size:26,weight:700,color:"#ffffff",font:'"Archivo",sans-serif',anim:"left",animDelay:.4}));
-  }
-  Deck.sel=s.els[0].id; renderAll(); markDirty(); closeDrawers();
-  toast(existingVideo?"Slide converted to B-roll":"B-roll slide ready — paste a video URL in the inspector");
-}
-function injectBrollButton(){
-  const anchor=$("#btn-templates"); if(!anchor||$("#btn-broll"))return;
-  const b=document.createElement("button");
-  b.type="button"; b.id="btn-broll"; b.className=anchor.className||"";
-  b.textContent="🎬 B-roll";
-  b.title="Convert this slide into a full-bleed looping B-roll video";
-  anchor.insertAdjacentElement("afterend",b);
-  b.addEventListener("click",convertSlideToBroll);
-}
-
 /* ── multi-select + bind/unbind ─────────────────────────────────── */
 function topLevelEls(){return Array.from(canvas.children).filter(n=>n.classList&&n.classList.contains("el"));}
 function currentElements(){const s=curSlide();return s&&Array.isArray(s.els)?s.els:[];}
@@ -556,6 +523,8 @@ function addElement(kind){
   else if(kind==="line") el=makeLine({x:cx,y:H/2});
   else if(kind==="image"){el=makeImage("",{x:cx,y:cy});}
   else if(kind==="video"){el=makeVideo({x:W/2-320,y:H/2-180});}
+  else if(kind==="gallery"){el=makeGallery({x:W/2-300,y:H/2-200});}
+  else if(kind==="teleprompter"){el=makeObject("teleprompter",{x:W-330,y:H-160,script:""});}
   else if(kind==="link"){el=makeLink({x:W/2-260,y:H/2-60});}
   else if(kind==="object"){el=makeObject("water_glass",{x:W/2-115,y:H/2-150});}
   else if(kind==="table"){el=makeTable({x:W/2-310,y:H/2-145});}
@@ -566,6 +535,14 @@ function addElement(kind){
   if(!el)return;
   s.els.push(el);multiSel.clear();Deck.sel=el.id;renderAll();markDirty();
   if(kind==="image")pickImageFor(el.id);
+  if(kind==="gallery")pickGalleryPhotos(el.id);
+  if(kind==="teleprompter"){
+    // Jump straight into the script box so the presenter can start typing/pasting.
+    setTimeout(()=>{
+      const ta=$("#f-tp-script");
+      if(ta){ta.focus();ta.scrollIntoView({block:"center",behavior:"smooth"});}
+    },60);
+  }
 }
 function addObject(kind){
   const d=(OBJECTS||[]).find(o=>o.kind===kind);
@@ -600,6 +577,23 @@ function moveElementLayer(action){
 /* image picker + universal image import */
 let pendingImgId=null;
 function pickImageFor(id){pendingImgId=id;$("#img-input").click();}
+// Gallery: multi-select photos appended to el.photos
+let pendingGalleryId=null;
+function pickGalleryPhotos(id){pendingGalleryId=id;const inp=$("#gallery-input");if(inp){inp.value="";inp.click();}}
+async function addGalleryPhotos(galleryId, files){
+  const el=curSlide().els.find(x=>x.id===galleryId);
+  if(!el)return;
+  if(!Array.isArray(el.photos))el.photos=[];
+  let added=0;
+  for(const file of files){
+    try{
+      const src=await fileToDataURL(file);
+      el.photos.push({src, caption:""});
+      added++;
+    }catch(err){ toast("Couldn't add "+(file.name||"a photo")); }
+  }
+  if(added){renderAll();markDirty();toast(added+" photo"+(added>1?"s":"")+" added");}
+}
 function isImageFile(file){return !!file && ((file.type||"").startsWith("image/") || /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(file.name||""));}
 async function uploadImageBlob(blob,name="image.png"){
   if(!SRV.imageUploadUrl)throw new Error("Image upload URL is missing");
@@ -774,6 +768,15 @@ $("#img-input").addEventListener("change",async e=>{
   }
   pendingImgId=null;e.target.value="";
 });
+
+const galleryInput=$("#gallery-input");
+if(galleryInput){
+  galleryInput.addEventListener("change",async e=>{
+    const files=[...(e.target.files||[])].filter(isImageFile);
+    const gid=pendingGalleryId;pendingGalleryId=null;e.target.value="";
+    if(gid && files.length)await addGalleryPhotos(gid, files);
+  });
+}
 
 $("#data-input")&&$("#data-input").addEventListener("change",e=>{
   const f=e.target.files[0];
@@ -1244,9 +1247,37 @@ function elementPanel(el){
       ${field("Controls",`<div class="seg" id="f-videocontrols"><button data-on="1" class="${el.controls!==false?"active":""}">On</button><button data-on="0" class="${el.controls===false?"active":""}">Off</button></div>`)}
       ${field("Autoplay",`<div class="seg" id="f-videoautoplay"><button data-on="1" class="${el.autoplay?"active":""}">On</button><button data-on="0" class="${!el.autoplay?"active":""}">Off</button></div>`)}
       ${field("Muted",`<div class="seg" id="f-videomuted"><button data-on="1" class="${el.muted?"active":""}">On</button><button data-on="0" class="${!el.muted?"active":""}">Off</button></div>`)}
-      ${field("Loop (B-roll)",`<div class="seg" id="f-videoloop"><button data-on="1" class="${el.loop?"active":""}">On</button><button data-on="0" class="${!el.loop?"active":""}">Off</button></div>`)}
       ${field("Corner radius "+(el.radius||18),`<input type="range" id="f-videoradius" min="0" max="80" value="${el.radius||18}">`)}
       <div class="insp-empty" style="padding-top:.2rem">For YouTube/Vimeo, use an embed URL. For direct video, paste an MP4/WebM URL.</div>
+    </div>`;
+  }
+  if(el.type==="gallery"){
+    const photos=Array.isArray(el.photos)?el.photos:[];
+    const frames=[["none","None"],["border","Border"],["shadow","Shadow"],["polaroid","Polaroid"],["film","Film strip"],["card","Card"],["gold","Gold"],["tape","Tape"]];
+    const anims=[["fade","Fade"],["zoom","Zoom"],["slide","Slide"],["rise","Rise"],["flip","Flip"],["reveal","Reveal"]];
+    const photoRows=photos.map((p,idx)=>`
+      <div class="gal-row" data-gal-idx="${idx}">
+        <div class="gal-thumb" style="background-image:url('${escapeAttr(p.src||"")}')"></div>
+        <div class="gal-row-main">
+          <input type="text" class="gal-cap" data-gal-idx="${idx}" placeholder="Caption (optional)" value="${escapeAttr(p.caption||"")}">
+          <div class="gal-row-btns">
+            <button class="gal-mini" data-gal-up="${idx}" type="button" title="Move up" ${idx===0?"disabled":""}>↑</button>
+            <button class="gal-mini" data-gal-down="${idx}" type="button" title="Move down" ${idx===photos.length-1?"disabled":""}>↓</button>
+            <button class="gal-mini gal-del" data-gal-del="${idx}" type="button" title="Remove">✕</button>
+          </div>
+        </div>
+      </div>`).join("");
+    h+=`<div class="group"><span class="glabel">🖼️ Photo gallery (projected slideshow)</span>
+      <button class="tbtn primary" id="f-gal-add" type="button" style="width:100%;justify-content:center">＋ Add photos</button>
+      <div class="gal-list" id="f-gal-list">${photoRows||'<div class="insp-empty" style="padding:.4rem 0">No photos yet — tap “Add photos”.</div>'}</div>
+      ${field("Frame style",`<select id="f-gal-frame">${frames.map(([v,l])=>`<option value="${v}" ${(el.frame||"polaroid")===v?"selected":""}>${l}</option>`).join("")}</select>`)}
+      ${field("Photo fit",`<div class="seg" id="f-gal-fit"><button data-fit="cover" class="${(el.fit||"cover")==="cover"?"active":""}">Fill</button><button data-fit="contain" class="${el.fit==="contain"?"active":""}">Fit whole</button></div>`)}
+      ${field("Per-photo animation",`<select id="f-gal-anim">${anims.map(([v,l])=>`<option value="${v}" ${(el.galleryAnim||"fade")===v?"selected":""}>${l}</option>`).join("")}</select>`)}
+      ${field("Hold per photo "+((el.holdMs||2600)/1000).toFixed(1)+"s",`<input type="range" id="f-gal-hold" min="600" max="8000" step="100" value="${el.holdMs||2600}">`)}
+      ${field("Transition speed "+(Number(el.stagger)||1).toFixed(2)+"×",`<input type="range" id="f-gal-speed" min="25" max="400" step="5" value="${Math.round((Number(el.stagger)||1)*100)}">`)}
+      ${field("Loop",`<div class="seg" id="f-gal-loop"><button data-on="1" class="${el.galleryLoop!==false?"active":""}">On</button><button data-on="0" class="${el.galleryLoop===false?"active":""}">Off</button></div>`)}
+      ${field("Backdrop",`<span style="display:flex;gap:.4rem;align-items:center"><input type="color" id="f-gal-bg" value="${el.galleryBg||"#000000"}"><button class="chip" id="f-gal-bg-clear" type="button" title="No backdrop">Clear</button></span>`)}
+      <div class="insp-empty" style="padding-top:.2rem;font-size:.78em">Projected for the audience. Photos auto-advance one at a time (fly in → hold → fly out). The whole block also uses its own entrance under the <b>Animate</b> tab. ${photos.length} photo${photos.length===1?"":"s"}.</div>
     </div>`;
   }
   if(el.type==="link"){
@@ -1507,8 +1538,37 @@ function bindElementPanel(el){
     seg("f-videocontrols","on",v=>{el.controls=v==="1";renderCanvas();markDirty();});
     seg("f-videoautoplay","on",v=>{el.autoplay=v==="1";renderCanvas();markDirty();});
     seg("f-videomuted","on",v=>{el.muted=v==="1";renderCanvas();markDirty();});
-    seg("f-videoloop","on",v=>{el.loop=v==="1";renderCanvas();markDirty();});
     bindRange("f-videoradius",v=>{el.radius=v;renderCanvas();markDirty();},v=>v,"Corner radius");
+  }
+  if(el.type==="gallery"){
+    if(!Array.isArray(el.photos))el.photos=[];
+    $("#f-gal-add")&&$("#f-gal-add").addEventListener("click",()=>pickGalleryPhotos(el.id));
+    // caption edits
+    $$(".gal-cap").forEach(inp=>inp.addEventListener("input",()=>{
+      const idx=Number(inp.dataset.galIdx);
+      if(el.photos[idx]){el.photos[idx].caption=inp.value;renderCanvas();markDirty();}
+    }));
+    // reorder + delete
+    $$("[data-gal-up]").forEach(b=>b.addEventListener("click",()=>{
+      const idx=Number(b.dataset.galUp);
+      if(idx>0){const t=el.photos[idx-1];el.photos[idx-1]=el.photos[idx];el.photos[idx]=t;renderAll();markDirty();}
+    }));
+    $$("[data-gal-down]").forEach(b=>b.addEventListener("click",()=>{
+      const idx=Number(b.dataset.galDown);
+      if(idx<el.photos.length-1){const t=el.photos[idx+1];el.photos[idx+1]=el.photos[idx];el.photos[idx]=t;renderAll();markDirty();}
+    }));
+    $$("[data-gal-del]").forEach(b=>b.addEventListener("click",()=>{
+      const idx=Number(b.dataset.galDel);
+      el.photos.splice(idx,1);renderAll();markDirty();
+    }));
+    const gf=$("#f-gal-frame");gf&&gf.addEventListener("change",()=>{el.frame=gf.value;renderCanvas();markDirty();});
+    seg("f-gal-fit","fit",v=>{el.fit=v;renderCanvas();markDirty();});
+    const ga=$("#f-gal-anim");ga&&ga.addEventListener("change",()=>{el.galleryAnim=ga.value;renderCanvas();markDirty();});
+    bindRange("f-gal-hold",v=>{el.holdMs=v;renderCanvas();markDirty();},v=>(v/1000).toFixed(1)+"s","Hold per photo");
+    bindRange("f-gal-speed",v=>{el.stagger=v/100;renderCanvas();markDirty();},v=>(v/100).toFixed(2)+"×","Transition speed");
+    seg("f-gal-loop","on",v=>{el.galleryLoop=v==="1";renderCanvas();markDirty();});
+    const gbg=$("#f-gal-bg");gbg&&gbg.addEventListener("input",()=>{el.galleryBg=gbg.value;renderCanvas();markDirty();});
+    const gbgc=$("#f-gal-bg-clear");gbgc&&gbgc.addEventListener("click",()=>{el.galleryBg="";renderInspector();renderCanvas();markDirty();});
   }
   if(el.type==="link"){
     const ll=$("#f-linklabel");ll&&ll.addEventListener("input",()=>{el.label=ll.value;renderCanvas();markDirty();});
@@ -2518,7 +2578,6 @@ function init(){
   $("#rail-shape")?.addEventListener("click",()=>{const open=$("#drawer-shape").classList.contains("open");open?closeDrawers():openDrawer("shape");});
   $$("[data-close-drawer]").forEach(b=>b.addEventListener("click",closeDrawers));
   $("#btn-templates")?.addEventListener("click",()=>openDrawer("tpl"));
-  injectBrollButton();
   $("#btn-objects")?.addEventListener("click",()=>openDrawer("obj"));
   $("#btn-shapes")?.addEventListener("click",()=>openDrawer("shape"));
   $("#btn-invite")?.addEventListener("click",openInviteModal);
@@ -2780,6 +2839,7 @@ function paint(s,live){cv.innerHTML="";cv.style.background=s.bg;if(s.bgSize)cv.s
   else if(el.type==="table"){var tb=document.createElement("div");tb.className="dataMini";tb.style.setProperty("--accent",el.accent||"#1d4e89");var h="<table>";(el.tableData||[]).forEach(function(r,ri){h+="<tr>";(r||[]).forEach(function(c){h+=(ri===0&&el.header!==false?"<th>":"<td>")+String(c).replace(/[<>&]/g,function(x){return {"<":"&lt;",">":"&gt;","&":"&amp;"}[x]})+(ri===0&&el.header!==false?"</th>":"</td>")});h+="</tr>"});tb.innerHTML=h+"</table>";inr.appendChild(tb);}
   else if(el.type==="chart"){var ch=document.createElement("div");ch.className="dataMini chartMini";ch.style.setProperty("--accent",el.accent||"#e8482b");var cd=el.chartData||[];var m=Math.max(1);cd.forEach(function(d){m=Math.max(m,Number(d.value)||0)});var h2="<h3>"+(el.title||"Chart")+"</h3>";cd.forEach(function(d){var v=Number(d.value)||0;h2+="<div style='font-weight:700;margin-top:8px'>"+(d.label||"")+" <span style='float:right'>"+v+"</span></div><div class='barMini' style='width:"+(v/m*92+4)+"%'></div>"});ch.innerHTML=h2;inr.appendChild(ch);}
   else if(el.type==="map"){var mp=document.createElement("div");mp.className="dataMini mapMini";mp.style.setProperty("--accent",el.accent||"#2f6f4f");var mh="<h3>"+(el.title||"Map")+"</h3>";(el.pins||[]).forEach(function(pin){mh+="<span class='pinMini'>"+(pin.label||"Pin")+(pin.value?" · "+pin.value:"")+"</span>"});mp.innerHTML=mh;inr.appendChild(mp);}
+  else if(el.type==="gallery"){var gm=document.createElement("div");gm.className="imgbox";var gp=(Array.isArray(el.photos)?el.photos:[]).filter(function(p){return p&&p.src;});if(gp.length){gm.style.backgroundImage='url("'+gp[0].src+'")';gm.style.backgroundSize=el.fit||"cover";}gm.style.borderRadius="6px";inr.appendChild(gm);}
   else if(el.type==="object"){var ob=document.createElement("div");ob.className="objectMini";var ic=el.icon||"●";var n=Math.min(Number(el.count)||1,60);ob.textContent=Array(n).fill(ic).join(" ");inr.appendChild(ob);}
   n.appendChild(inr);cv.appendChild(n);
   if(live&&el.anim&&el.anim!=="none"){var f={fade:[{opacity:0},{opacity:1}],rise:[{opacity:0,transform:"translateY(40px) rotate("+(el.rot||0)+"deg)"},{opacity:1,transform:"translateY(0) rotate("+(el.rot||0)+"deg)"}],drop:[{opacity:0,transform:"translateY(-40px)"},{opacity:1,transform:"translateY(0)"}],left:[{opacity:0,transform:"translateX(-60px)"},{opacity:1,transform:"translateX(0)"}],right:[{opacity:0,transform:"translateX(60px)"},{opacity:1,transform:"translateX(0)"}],zoom:[{opacity:0,transform:"scale(.6)"},{opacity:1,transform:"scale(1)"}],pop:[{opacity:0,transform:"scale(.3)"},{opacity:1,transform:"scale(1)"}],blur:[{opacity:0,filter:"blur(14px)"},{opacity:1,filter:"blur(0)"}],reveal:[{opacity:0,clipPath:"inset(0 100% 0 0)"},{opacity:1,clipPath:"inset(0 0 0 0)"}]};

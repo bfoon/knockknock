@@ -27,10 +27,29 @@ import '../submissions/submissions_controller.dart';
 ///    question inside it (group relevance). Relevance cascades: a hidden
 ///    question's answer is invisible to conditions of later questions.
 ///  • Constraints: `constraint` (+ `constraint_message`) with `.` as the
-///    current answer, plus min/max, min_length/max_length, pattern/regex,
-///    min_selected/max_selected, and `required_message`.
+///    current answer, plus min/max, min_expr/max_expr, min_length/
+///    max_length, pattern/regex, min_selected/max_selected, and
+///    `required_message`. `warn_expr`/`warn_message` show a non-blocking
+///    amber warning, matching the web runner.
+///  • Calculated questions (`type: calculate`) are evaluated on-device in
+///    document order, exactly like the web runner's context(): their
+///    values feed later relevance, constraints, `${name}` piping and
+///    repeat `count_expr`. A calc with `visible: true` renders as a
+///    read-only result page; all others never get a page.
+///  • Repeat groups (`type: repeat`) render as one page holding a card
+///    per item, with add/remove controls (KoboCollect-style roster).
+///    Answer shape matches the server: answers[group] = [{child: value}].
+///    Child skip logic sees the current item's answers first, then the
+///    outer answers; child calcs are computed per item; bounds come from
+///    repeat.min/max, min_expr/max_expr, or count_expr (which auto-sizes
+///    the item list and hides add/remove). Errors read
+///    "Member 2 — Age: …", mirroring the server's group.idx.child keys.
+///  • `${name}` piping is applied to labels, hints and repeat item
+///    labels; repeat aggregates (sum_of, avg_of, min_of, max_of,
+///    count_if) are available in every expression.
 ///  • Non-relevant answers are kept in drafts but stripped from completed
-///    submissions, exactly like Kobo.
+///    submissions — including per-item irrelevant repeat children —
+///    exactly like Kobo and the server's validate_submission.
 class FormRunnerScreen extends StatefulWidget {
   final KuraForm form;
 
@@ -75,6 +94,9 @@ String _normalizeType(dynamic raw) {
     'multiselect': 'select_many',
     'checkbox': 'select_many',
     'checkboxes': 'select_many',
+    'rank': 'rank',
+    'ranking': 'rank',
+    'order': 'rank',
     'boolean': 'yesno',
     'yes_no': 'yesno',
     'yesno': 'yesno',
@@ -99,6 +121,14 @@ String _normalizeType(dynamic raw) {
     'lookup': 'barcode',
     'note': 'note',
     'info': 'note',
+    'calculate': 'calculate',
+    'calc': 'calculate',
+    'calculated': 'calculate',
+    'hidden': 'calculate',
+    'repeat': 'repeat',
+    'repeat_group': 'repeat',
+    'group_repeat': 'repeat',
+    'roster': 'repeat',
   };
   return aliases[t] ?? t;
 }
@@ -122,10 +152,12 @@ dynamic _questionSetting(Map<String, dynamic> question, String key) {
 //              "${age} >= 18 and selected(${languages}, 'en')"
 //            In constraints, '.' refers to the current answer:
 //              ". >= 0 and . <= 120"
-//            Supported: = != > >= < <=, and/or, + - * div mod,
+//            Supported: = != > >= < <=, and/or, + - * / % div mod ^ **,
 //            parentheses, and the functions not(), selected(),
 //            count-selected(), string-length(), regex(), coalesce(),
-//            number(), string(), boolean(), today(), true(), false().
+//            number(), string(), boolean(), today(), true(), false(),
+//            plus the repeat aggregates sum_of(), avg_of(), min_of(),
+//            max_of(), count_if().
 //
 //   Map    – the legacy rule {q, cmp, value} with cmp in eq/ne/gt/gte/
 //            lt/lte/contains/empty/not_empty, plus combinators
@@ -309,8 +341,11 @@ double? _expressionNumber(dynamic spec, Map<String, dynamic> answers,
   return double.tryParse(value?.toString() ?? '');
 }
 
-/// Minimal recursive-descent parser for XLSForm/XPath-ish expressions.
-/// Precedence (low → high): or, and, comparison, + -, * div mod, unary -.
+/// Minimal recursive-descent parser for XLSForm/XPath-ish expressions —
+/// also accepts the Python-flavoured operators the server's calc engine
+/// uses (`/`, `%`, `**`), so builder calc expressions evaluate
+/// identically on the phone. Precedence (low → high): or, and,
+/// comparison, + -, * / % div mod, unary -, ^/** (right-assoc).
 class _ExprParser {
   _ExprParser(this.source, this.answers, this.dot);
 
@@ -393,12 +428,23 @@ class _ExprParser {
     var left = _unary();
     while (true) {
       _ws();
+      // Division/modulo mirror the server: divide-by-zero yields 0, not
+      // Infinity, so a calc like `total / count(members)` stays sane on
+      // an empty roster.
       if (_match('*')) {
         left = _numOf(left) * _numOf(_unary());
+      } else if (_match('/')) {
+        final b = _numOf(_unary());
+        left = b == 0 ? 0.0 : _numOf(left) / b;
       } else if (_keyword('div')) {
-        left = _numOf(left) / _numOf(_unary());
+        final b = _numOf(_unary());
+        left = b == 0 ? 0.0 : _numOf(left) / b;
+      } else if (_match('%')) {
+        final b = _numOf(_unary());
+        left = b == 0 ? 0.0 : _numOf(left) % b;
       } else if (_keyword('mod')) {
-        left = _numOf(left) % _numOf(_unary());
+        final b = _numOf(_unary());
+        left = b == 0 ? 0.0 : _numOf(left) % b;
       } else {
         break;
       }
@@ -409,7 +455,18 @@ class _ExprParser {
   dynamic _unary() {
     _ws();
     if (_match('-')) return -_numOf(_unary());
-    return _primary();
+    return _power();
+  }
+
+  /// Exponentiation: `^` (builder syntax) or `**` (Python syntax the
+  /// server accepts). Right-associative, binds tighter than * and /.
+  dynamic _power() {
+    final base = _primary();
+    _ws();
+    if (_match('**') || _match('^')) {
+      return _pow(_numOf(base), _numOf(_unary()));
+    }
+    return base;
   }
 
   dynamic _primary() {
@@ -562,6 +619,62 @@ class _ExprParser {
         return true;
       case 'false':
         return false;
+
+      // ── repeat-group aggregates, mirroring kura/logic.py ────────────
+      // First arg is a repeat answer (a List of item Maps), second the
+      // child column name. Non-numeric / missing values are skipped,
+      // matching the server, so mixed rosters never explode.
+      case 'sum_of':
+      case 'avg_of':
+      case 'min_of':
+      case 'max_of':
+        final items = arg(0);
+        final col = (arg(1) ?? '').toString();
+        final values = <double>[];
+        if (items is List) {
+          for (final item in items) {
+            if (item is Map) {
+              final n = double.tryParse(item[col]?.toString() ?? '');
+              if (n != null) values.add(n);
+            }
+          }
+        }
+        if (name == 'sum_of') {
+          return values.fold<double>(0.0, (a, b) => a + b);
+        }
+        if (values.isEmpty) return 0.0;
+        switch (name) {
+          case 'avg_of':
+            return values.reduce((a, b) => a + b) / values.length;
+          case 'min_of':
+            return values.reduce((a, b) => a < b ? a : b);
+          default: // max_of
+            return values.reduce((a, b) => a > b ? a : b);
+        }
+      case 'count_if':
+        final items = arg(0);
+        final col = (arg(1) ?? '').toString();
+        final cmp = (arg(2) ?? 'eq').toString();
+        final ref = double.tryParse(arg(3)?.toString() ?? '');
+        if (items is! List || ref == null) return 0.0;
+        var hits = 0;
+        for (final item in items) {
+          if (item is! Map) continue;
+          final n = double.tryParse(item[col]?.toString() ?? '');
+          if (n == null) continue;
+          final ok = switch (cmp) {
+            'eq' => n == ref,
+            'ne' => n != ref,
+            'gt' => n > ref,
+            'gte' => n >= ref,
+            'lt' => n < ref,
+            'lte' => n <= ref,
+            _ => false,
+          };
+          if (ok) hits++;
+        }
+        return hits.toDouble();
+
       default:
         throw FormatException('Unknown function "$name"');
     }
@@ -609,6 +722,408 @@ class _ExprParser {
   }
 }
 
+// ── shared, context-aware helpers ─────────────────────────────────────
+// These take an explicit `ctx` (answers + calcs, possibly a repeat item
+// context) instead of reading the screen's answers map, so exactly the
+// same code validates top-level questions and repeat-group children.
+
+/// `${name}` piping in labels/hints/item labels, like the web runner's
+/// pipeText(): lists join with commas, whole-number doubles lose ".0".
+final RegExp _pipePattern = RegExp(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}');
+
+String _pipe(dynamic text, Map<String, dynamic> ctx) {
+  final s = text?.toString() ?? '';
+  if (s.isEmpty || !s.contains(r'${')) return s;
+  return s.replaceAllMapped(_pipePattern, (m) {
+    final v = ctx[m.group(1)];
+    if (v == null || v == '') return '';
+    if (v is List) return v.map((e) => e.toString()).join(', ');
+    final n = double.tryParse(v.toString());
+    if (n != null && n == n.roundToDouble() && v is! String) {
+      return n.toInt().toString();
+    }
+    return v.toString();
+  });
+}
+
+/// The skip-logic spec of a question/section, whichever key the
+/// builder used.
+dynamic _conditionOf(Map<String, dynamic> q) =>
+    q['relevant'] ??
+    q['show_if'] ??
+    q['skip_logic'] ??
+    q['skipLogic'] ??
+    q['condition'] ??
+    q['visible_if'];
+
+List<dynamic>? _rawChoicesOf(Map<String, dynamic> question) {
+  final raw = question['choices'] ?? question['options'];
+  return raw is List ? raw : null;
+}
+
+/// The choice values the respondent may legitimately pick right now,
+/// honouring cascading selects. Inside a repeat item, `ctx` contains the
+/// item's answers layered over the outer answers, so a cascade parent
+/// can be a sibling in the same item or a top-level question.
+Set<String>? _allowedChoiceValuesIn(
+    Map<String, dynamic> question, Map<String, dynamic> ctx) {
+  final raw = _rawChoicesOf(question);
+  if (raw == null) return null;
+
+  final cascade = question['cascade'] is Map
+      ? Map<String, dynamic>.from(question['cascade'] as Map)
+      : <String, dynamic>{};
+  final parentName = (cascade['parent'] ?? question['cascade_parent'] ?? '')
+      .toString()
+      .trim();
+  final parentValue = parentName.isEmpty ? null : ctx[parentName];
+
+  final allowed = <String>{};
+  for (final item in raw) {
+    if (item is Map) {
+      final choice = Map<String, dynamic>.from(item);
+      if (parentName.isNotEmpty) {
+        if (!_hasValue(parentValue)) continue;
+        if ((choice['parent'] ?? '').toString() != parentValue.toString()) {
+          continue;
+        }
+      }
+      allowed.add(
+          (choice['value'] ?? choice['name'] ?? choice['label']).toString());
+    } else if (parentName.isEmpty) {
+      allowed.add(item.toString());
+    }
+  }
+  return allowed;
+}
+
+/// A copy of the question with cascade-filtered choices, ready to render.
+Map<String, dynamic> _questionForDisplayIn(
+    Map<String, dynamic> question, Map<String, dynamic> ctx) {
+  final allowed = _allowedChoiceValuesIn(question, ctx);
+  if (allowed == null) return question;
+
+  final raw = _rawChoicesOf(question)!;
+  final filtered = raw.where((item) {
+    if (item is Map) {
+      final choice = Map<String, dynamic>.from(item);
+      final value =
+          (choice['value'] ?? choice['name'] ?? choice['label']).toString();
+      return allowed.contains(value);
+    }
+    return allowed.contains(item.toString());
+  }).toList();
+
+  return Map<String, dynamic>.from(question)..['choices'] = filtered;
+}
+
+String _displayNumber(double value) =>
+    value == value.roundToDouble() ? value.toInt().toString() : value.toString();
+
+// ── repeat groups ─────────────────────────────────────────────────────
+
+List<Map<String, dynamic>> _childrenOf(Map<String, dynamic> q) =>
+    (q['children'] as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+
+Map<String, dynamic> _repeatSpec(Map<String, dynamic> q) => q['repeat'] is Map
+    ? Map<String, dynamic>.from(q['repeat'] as Map)
+    : <String, dynamic>{};
+
+/// Bounds mirror the web runner's repeatBounds()/server logic:
+/// count_expr fixes the exact number of items (0–500, auto-sized);
+/// min/max plus min_expr/max_expr set static + dynamic limits.
+({int? exact, double? lo, double? hi}) _repeatBounds(
+    Map<String, dynamic> rp, Map<String, dynamic> ctx) {
+  final exactRaw = _expressionNumber(rp['count_expr'], ctx);
+  final exact = exactRaw == null ? null : exactRaw.truncate().clamp(0, 500);
+
+  double? lo = double.tryParse(rp['min']?.toString() ?? '');
+  final dynLo = _expressionNumber(rp['min_expr'], ctx);
+  if (dynLo != null) lo = lo == null ? dynLo : math.max(lo, dynLo);
+
+  double? hi = double.tryParse(rp['max']?.toString() ?? '');
+  final dynHi = _expressionNumber(rp['max_expr'], ctx);
+  if (dynHi != null) hi = hi == null ? dynHi : math.min(hi, dynHi);
+
+  return (exact: exact, lo: lo, hi: hi);
+}
+
+/// The item context the server and web runner use: the current item's
+/// answers layered over the outer answers, then per-item calcs, so a
+/// child's logic can depend on a sibling or on an outer question.
+Map<String, dynamic> _itemContext(Map<String, dynamic> q,
+    Map<String, dynamic> item, Map<String, dynamic> ctx) {
+  final ic = <String, dynamic>{...ctx, ...item};
+  for (final ch in _childrenOf(q)) {
+    if (_normalizeType(ch['type']) == 'calculate') {
+      final name = ch['name']?.toString();
+      if (name != null && name.isNotEmpty) {
+        ic[name] = _expressionValue(ch['calc'], ic);
+      }
+    }
+  }
+  return ic;
+}
+
+String _itemLabel(
+    Map<String, dynamic> rp, int index, Map<String, dynamic> ic) {
+  final template = (rp['item_label'] ?? r'Item ${index}').toString();
+  return _pipe(template.replaceAll(r'${index}', '${index + 1}'), ic);
+}
+
+List<Map<String, dynamic>> _itemsOf(dynamic value) {
+  if (value is List) {
+    return [
+      for (final item in value)
+        item is Map ? Map<String, dynamic>.from(item) : <String, dynamic>{}
+    ];
+  }
+  return <Map<String, dynamic>>[];
+}
+
+/// Validates a whole repeat group: bounds, required, then every child of
+/// every item with its per-item context. Returns the first problem as a
+/// human message ("Member 2 — Age: Must be at least 0."), mirroring the
+/// server's group.<index>.<child> error keys.
+String? _repeatError(Map<String, dynamic> q, dynamic value,
+    Map<String, dynamic> ctx) {
+  final items = _itemsOf(value);
+  final rp = _repeatSpec(q);
+  final bounds = _repeatBounds(rp, ctx);
+
+  if (bounds.exact != null && items.length != bounds.exact) {
+    return bounds.exact == 0
+        ? 'Answer the controlling question first — it sets how many items this group needs.'
+        : 'Exactly ${bounds.exact} item(s) required.';
+  }
+  if (bounds.exact == null &&
+      bounds.lo != null &&
+      items.length < bounds.lo!) {
+    return 'Add at least ${bounds.lo!.toInt()} item(s).';
+  }
+  if (bounds.exact == null &&
+      bounds.hi != null &&
+      items.length > bounds.hi!) {
+    return 'No more than ${bounds.hi!.toInt()} item(s) allowed.';
+  }
+  if (q['required'] == true && items.isEmpty) {
+    return 'Add at least one item.';
+  }
+
+  final children = _childrenOf(q);
+  for (var idx = 0; idx < items.length; idx++) {
+    final item = items[idx];
+    final ic = _itemContext(q, item, ctx);
+    final label = _itemLabel(rp, idx, ic);
+    for (final ch in children) {
+      final ctype = _normalizeType(ch['type']);
+      if (ctype == 'section' || ctype == 'note' || ctype == 'calculate') {
+        continue;
+      }
+      final cname = ch['name']?.toString();
+      if (cname == null || cname.isEmpty) continue;
+      if (!LogicEvaluator(ic)(_conditionOf(ch))) continue;
+
+      final cval = item[cname];
+      final chLabel = (ch['label'] ?? cname).toString();
+      if (ch['required'] == true && !_hasValue(cval)) {
+        final custom = _validationMap(ch)['message'] ?? ch['required_message'];
+        final text = custom?.toString().trim();
+        return '$label — $chLabel: '
+            '${(text == null || text.isEmpty) ? 'This answer is required.' : text}';
+      }
+      if (!_hasValue(cval)) continue;
+      final err = _errorForQuestion(ch, cval, ic);
+      if (err != null) return '$label — $chLabel: $err';
+    }
+  }
+  return null;
+}
+
+// ── validation ────────────────────────────────────────────────────────
+
+/// null → valid; otherwise the message to show. Kobo-style checks:
+/// required (+ required_message), built-in type validation, min/max,
+/// min_expr/max_expr, min_length/max_length, regex pattern, min/max
+/// selected choices, date bounds, cascading-choice enforcement, and
+/// finally a free-form `constraint` expression where '.' is the current
+/// answer (+ constraint_message). Repeat groups delegate to
+/// [_repeatError]. `ctx` is the answer context the question sees —
+/// top-level answers + calcs, or a repeat item context.
+String? _errorForQuestion(Map<String, dynamic> question, dynamic value,
+    Map<String, dynamic> ctx) {
+  final type = _normalizeType(question['type']);
+  if (type == 'note' || type == 'calculate' || type == 'section') return null;
+  if (type == 'repeat') return _repeatError(question, value, ctx);
+
+  final name = question['name'].toString();
+  final validation = _validationMap(question);
+
+  dynamic setting(String key) =>
+      validation.containsKey(key) ? validation[key] : question[key];
+
+  String msg(dynamic custom, String fallback) {
+    final s = custom?.toString().trim();
+    return (s == null || s.isEmpty) ? fallback : s;
+  }
+
+  final validationMessage = validation['message'] ??
+      question['constraint_message'] ??
+      question['required_message'];
+
+  if (question['required'] == true && !_hasValue(value)) {
+    return msg(question['required_message'] ?? validation['message'],
+        'This question is required.');
+  }
+  if (!_hasValue(value)) return null;
+
+  if (type == 'email' &&
+      !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value.toString())) {
+    return 'Enter a valid email address.';
+  }
+
+  // Kura stores validation under question.validate. Keep top-level
+  // fallbacks so older downloaded forms continue to work.
+  if (const {'integer', 'decimal', 'rating', 'scale'}.contains(type)) {
+    final n = double.tryParse(value.toString());
+    if (n == null) return 'Enter a valid number.';
+    if (type == 'integer' && n != n.roundToDouble()) {
+      return 'Enter a whole number.';
+    }
+
+    double? min = double.tryParse(setting('min')?.toString() ?? '');
+    double? max = double.tryParse(setting('max')?.toString() ?? '');
+    final dynamicMin =
+        _expressionNumber(validation['min_expr'], ctx, dot: value);
+    final dynamicMax =
+        _expressionNumber(validation['max_expr'], ctx, dot: value);
+    if (dynamicMin != null) {
+      min = min == null ? dynamicMin : math.max(min, dynamicMin).toDouble();
+    }
+    if (dynamicMax != null) {
+      max = max == null ? dynamicMax : math.min(max, dynamicMax).toDouble();
+    }
+
+    if (min != null && n < min) {
+      return msg(validationMessage, 'Must be at least ${_displayNumber(min)}.');
+    }
+    if (max != null && n > max) {
+      return msg(validationMessage, 'Must be at most ${_displayNumber(max)}.');
+    }
+  }
+
+  // Text-like answers: length limits and regex pattern.
+  if (const {'text', 'textarea', 'phone', 'email', 'barcode'}
+      .contains(type)) {
+    final text = value.toString();
+    final minLen = int.tryParse(
+        (validation['min_length'] ?? question['min_length'])?.toString() ??
+            '');
+    final maxLen = int.tryParse(
+        (validation['max_length'] ?? question['max_length'])?.toString() ??
+            '');
+    if (minLen != null && text.length < minLen) {
+      return msg(validationMessage, 'Must be at least $minLen characters.');
+    }
+    if (maxLen != null && text.length > maxLen) {
+      return msg(validationMessage, 'Must be at most $maxLen characters.');
+    }
+
+    final pattern =
+        (validation['regex'] ?? question['pattern'] ?? question['regex'])
+            ?.toString();
+    if (pattern != null && pattern.isNotEmpty) {
+      try {
+        if (!RegExp(pattern).hasMatch(text)) {
+          return msg(
+              validationMessage, 'The answer is not in the expected format.');
+        }
+      } catch (_) {
+        // Broken form regexes fail open, matching server behaviour.
+      }
+    }
+  }
+
+  // Enforce cascading choice conditions on-device as well as on the
+  // server, so changing a parent cannot leave an invalid child choice.
+  if (const {'select_one', 'select_many', 'likert', 'rank'}.contains(type)) {
+    final allowed = _allowedChoiceValuesIn(question, ctx);
+    if (allowed != null) {
+      final selected = value is List ? value : <dynamic>[value];
+      if (selected.any((item) => !allowed.contains(item.toString()))) {
+        return 'Choose only an option currently available for this answer.';
+      }
+    }
+  }
+
+  // Select counts are validate.min/max in the server schema.
+  if ((type == 'select_many' || type == 'rank') && value is List) {
+    final minSelected = int.tryParse(
+        (validation['min'] ?? question['min_selected'])?.toString() ?? '');
+    final maxSelected = int.tryParse(
+        (validation['max'] ?? question['max_selected'])?.toString() ?? '');
+    if (minSelected != null && value.length < minSelected) {
+      return msg(validationMessage,
+          'Select at least $minSelected option${minSelected == 1 ? '' : 's'}.');
+    }
+    if (maxSelected != null && value.length > maxSelected) {
+      return msg(validationMessage,
+          'Select at most $maxSelected option${maxSelected == 1 ? '' : 's'}.');
+    }
+  }
+
+  // ISO dates compare correctly as strings (yyyy-MM-dd).
+  if (const {'date', 'datetime'}.contains(type)) {
+    final min = setting('min')?.toString();
+    final max = setting('max')?.toString();
+    final text = value.toString();
+    if (min != null && min.isNotEmpty && text.compareTo(min) < 0) {
+      return msg(validationMessage, 'Must be on or after $min.');
+    }
+    if (max != null && max.isNotEmpty && text.compareTo(max) > 0) {
+      return msg(validationMessage, 'Must be on or before $max.');
+    }
+  }
+
+  // Server schema: validate.expr. Legacy/XLSForm schema: constraint.
+  // The parser supports both bare names (`age >= 18`) and `${age}`.
+  final constraint =
+      validation['expr'] ?? question['constraint'] ?? question['validate_if'];
+  if (constraint != null) {
+    final context = Map<String, dynamic>.from(ctx)
+      ..['value'] = value
+      ..[name] = value;
+    final ok = LogicEvaluator(context, dot: value)(constraint);
+    if (!ok) {
+      return msg(validationMessage,
+          'The answer does not meet the condition for this question.');
+    }
+  }
+  return null;
+}
+
+/// Soft warning (validate.warn_expr / warn_message) — shown in amber and
+/// never blocks, exactly like the web runner. null → no warning.
+String? _warnFor(Map<String, dynamic> question, dynamic value,
+    Map<String, dynamic> ctx) {
+  if (!_hasValue(value)) return null;
+  final validation = _validationMap(question);
+  final warn = validation['warn_expr'];
+  if (warn == null || warn.toString().trim().isEmpty) return null;
+  final name = question['name']?.toString();
+  final context = Map<String, dynamic>.from(ctx)..['value'] = value;
+  if (name != null && name.isNotEmpty) context[name] = value;
+  final ok = LogicEvaluator(context, dot: value)(warn);
+  if (ok) return null;
+  final custom = validation['warn_message']?.toString().trim();
+  return (custom == null || custom.isEmpty)
+      ? 'Please double-check this answer.'
+      : custom;
+}
+
 class _FormRunnerScreenState extends State<FormRunnerScreen> {
   final Map<String, dynamic> answers = {};
   final Map<String, TextEditingController> textControllers = {};
@@ -642,16 +1157,6 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
     return result;
   }
 
-  /// The skip-logic spec of a question/section, whichever key the
-  /// builder used.
-  static dynamic _conditionOf(Map<String, dynamic> q) =>
-      q['relevant'] ??
-      q['show_if'] ??
-      q['skip_logic'] ??
-      q['skipLogic'] ??
-      q['condition'] ??
-      q['visible_if'];
-
   @override
   void initState() {
     super.initState();
@@ -675,11 +1180,70 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
     super.dispose();
   }
 
+  /// Visible questions + the effective answer context, computed together
+  /// in document order (Kobo behaviour):
+  ///  • Calculated questions are evaluated into the context (so later
+  ///    relevance, constraints, piping and repeat count_expr can use
+  ///    them) but only get a page of their own when `visible: true`.
+  ///  • Relevance cascades: a hidden question's answer is invisible to
+  ///    the conditions of every question after it, so hiding a parent
+  ///    automatically hides children that depend on it — even though the
+  ///    stale answer is still kept in [answers] in case it becomes
+  ///    visible again.
+  ({List<Map<String, dynamic>> visible, Map<String, dynamic> ctx})
+      _computeVisible() {
+    final effective = <String, dynamic>{};
+    final result = <Map<String, dynamic>>[];
+    for (final q in questions) {
+      final evaluator = LogicEvaluator(effective);
+      final relevant =
+          evaluator(q['_group_relevant']) && evaluator(_conditionOf(q));
+      final type = _normalizeType(q['type']);
+
+      if (type == 'calculate') {
+        if (relevant) {
+          final name = q['name']?.toString();
+          if (name != null && name.isNotEmpty) {
+            effective[name] = _expressionValue(q['calc'], effective);
+          }
+          if (q['visible'] == true) result.add(q); // read-only result page
+        }
+        continue;
+      }
+
+      if (!relevant) continue;
+      result.add(q);
+      final name = q['name'].toString();
+      if (answers.containsKey(name)) effective[name] = answers[name];
+    }
+    return (visible: result, ctx: effective);
+  }
+
+  String? _pageError(Map<String, dynamic> q, Map<String, dynamic> ctx) =>
+      _errorForQuestion(q, answers[q['name']?.toString()], ctx);
+
+  /// The question as rendered: cascade-filtered choices, piped label and
+  /// hint, and (for visible calcs) the computed value to display.
+  Map<String, dynamic> _displayQuestion(
+      Map<String, dynamic> q, Map<String, dynamic> ctx) {
+    final display = Map<String, dynamic>.from(_questionForDisplayIn(q, ctx));
+    display['label'] = _pipe(display['label'] ?? display['name'], ctx);
+    if (display['hint'] != null) {
+      display['hint'] = _pipe(display['hint'], ctx);
+    }
+    if (_normalizeType(display['type']) == 'calculate') {
+      display['_calc_value'] = ctx[display['name']?.toString()];
+    }
+    return display;
+  }
+
   // ── build ──────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final visible = _visibleQuestions;
+    final computed = _computeVisible();
+    final visible = computed.visible;
+    final ctx = computed.ctx;
     final total = visible.length;
     // Pages: one per visible question + the review page at the end.
     final pageCount = total == 0 ? 0 : total + 1;
@@ -735,7 +1299,7 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
                         // Kobo behaviour: swiping back is always free;
                         // swiping forward re-validates the question left.
                         if (next > pageIndex && pageIndex < total) {
-                          final err = _errorFor(visible[pageIndex]);
+                          final err = _pageError(visible[pageIndex], ctx);
                           if (err != null) {
                             _pager.animateToPage(pageIndex,
                                 duration: const Duration(milliseconds: 200),
@@ -754,24 +1318,28 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
                           return _ReviewPage(
                             questions: visible,
                             answers: answers,
-                            errorFor: _errorFor,
+                            errorFor: (q) => _pageError(q, ctx),
                             onJump: _jumpTo,
                           );
                         }
                         final sourceQuestion = visible[index];
+                        final name = sourceQuestion['name'].toString();
                         final displayQuestion =
-                            _questionForDisplay(sourceQuestion);
+                            _displayQuestion(sourceQuestion, ctx);
                         return SingleChildScrollView(
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                           child: _QuestionCard(
-                            key: ValueKey('q-${sourceQuestion['name']}'),
+                            key: ValueKey('q-$name'),
                             question: displayQuestion,
-                            value: answers[sourceQuestion['name'].toString()],
+                            value: answers[name],
+                            ctx: ctx,
                             controller: _controllerFor(sourceQuestion),
                             error: index == pageIndex ? inlineError : null,
+                            warning:
+                                _warnFor(sourceQuestion, answers[name], ctx),
                             onChanged: (value) {
                               setState(() {
-                                answers[sourceQuestion['name'].toString()] = value;
+                                answers[name] = value;
                                 _dirty = true;
                                 inlineError = null;
                               });
@@ -781,7 +1349,7 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
                       },
                     ),
                   ),
-                  _navBar(visible, total, onReview),
+                  _navBar(visible, ctx, total, onReview),
                 ],
               ),
       ),
@@ -791,7 +1359,7 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
   Widget _counterBar(
       List<Map<String, dynamic>> visible, int total, bool onReview) {
     final answered = visible
-        .where((q) => _hasAnswer(answers[q['name'].toString()]))
+        .where((q) => _hasValue(answers[q['name']?.toString()]))
         .length;
     return InkWell(
       onTap: () => _openJumpSheet(visible),
@@ -817,8 +1385,8 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
     );
   }
 
-  Widget _navBar(
-      List<Map<String, dynamic>> visible, int total, bool onReview) {
+  Widget _navBar(List<Map<String, dynamic>> visible,
+      Map<String, dynamic> ctx, int total, bool onReview) {
     return SafeArea(
       top: false,
       child: Padding(
@@ -834,10 +1402,10 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
             FilledButton.icon(
               onPressed: () {
                 if (onReview) {
-                  _submit(visible);
+                  _submit(visible, ctx);
                   return;
                 }
-                final err = _errorFor(visible[pageIndex]);
+                final err = _pageError(visible[pageIndex], ctx);
                 if (err != null) {
                   setState(() => inlineError = err);
                   return;
@@ -874,7 +1442,7 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
         itemCount: visible.length,
         itemBuilder: (_, i) {
           final q = visible[i];
-          final done = _hasAnswer(answers[q['name'].toString()]);
+          final done = _hasValue(answers[q['name']?.toString()]);
           final required = q['required'] == true;
           return ListTile(
             leading: Icon(
@@ -889,7 +1457,7 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
             ),
             title: Text('${i + 1}. ${q['label'] ?? q['name']}',
                 maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: (q['_group'] as String).isEmpty
+            subtitle: (q['_group'] ?? '').toString().isEmpty
                 ? null
                 : Text(q['_group'].toString(),
                     maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -931,7 +1499,7 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
     }
   }
 
-  // ── controllers / validation / visibility ──────────────────────────
+  // ── controllers ─────────────────────────────────────────────────────
 
   TextEditingController? _controllerFor(Map<String, dynamic> question) {
     final type = _normalizeType(question['type']);
@@ -946,267 +1514,15 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
     );
   }
 
-  bool _hasAnswer(dynamic value) =>
-      value != null &&
-      value != '' &&
-      !(value is List && value.isEmpty);
-
-  List<dynamic>? _rawChoices(Map<String, dynamic> question) {
-    final raw = question['choices'] ?? question['options'];
-    return raw is List ? raw : null;
-  }
-
-  Set<String>? _allowedChoiceValues(Map<String, dynamic> question) {
-    final raw = _rawChoices(question);
-    if (raw == null) return null;
-
-    final cascade = question['cascade'] is Map
-        ? Map<String, dynamic>.from(question['cascade'] as Map)
-        : <String, dynamic>{};
-    final parentName =
-        (cascade['parent'] ?? question['cascade_parent'] ?? '')
-            .toString()
-            .trim();
-    final parentValue = parentName.isEmpty ? null : answers[parentName];
-
-    final allowed = <String>{};
-    for (final item in raw) {
-      if (item is Map) {
-        final choice = Map<String, dynamic>.from(item);
-        if (parentName.isNotEmpty) {
-          if (!_hasAnswer(parentValue)) continue;
-          if ((choice['parent'] ?? '').toString() != parentValue.toString()) {
-            continue;
-          }
-        }
-        allowed.add((choice['value'] ?? choice['name'] ?? choice['label'])
-            .toString());
-      } else if (parentName.isEmpty) {
-        allowed.add(item.toString());
-      }
-    }
-    return allowed;
-  }
-
-  Map<String, dynamic> _questionForDisplay(
-      Map<String, dynamic> question) {
-    final allowed = _allowedChoiceValues(question);
-    if (allowed == null) return question;
-
-    final raw = _rawChoices(question)!;
-    final filtered = raw.where((item) {
-      if (item is Map) {
-        final choice = Map<String, dynamic>.from(item);
-        final value =
-            (choice['value'] ?? choice['name'] ?? choice['label']).toString();
-        return allowed.contains(value);
-      }
-      return allowed.contains(item.toString());
-    }).toList();
-
-    return Map<String, dynamic>.from(question)..['choices'] = filtered;
-  }
-
-  /// null → valid; otherwise the message to show. Kobo-style checks:
-  /// required (+ required_message), built-in type validation, min/max,
-  /// min_length/max_length, regex pattern, min/max selected choices,
-  /// date bounds, and finally a free-form `constraint` expression where
-  /// '.' is the current answer (+ constraint_message).
-  String? _errorFor(Map<String, dynamic> question) {
-    final type = _normalizeType(question['type']);
-    if (type == 'note' || type == 'calculate') return null;
-
-    final name = question['name'].toString();
-    final value = answers[name];
-    final validation = _validationMap(question);
-
-    dynamic setting(String key, [dynamic legacy]) {
-      if (validation.containsKey(key)) return validation[key];
-      if (legacy != null) return legacy;
-      return question[key];
-    }
-
-    String msg(dynamic custom, String fallback) {
-      final s = custom?.toString().trim();
-      return (s == null || s.isEmpty) ? fallback : s;
-    }
-
-    final validationMessage = validation['message'] ??
-        question['constraint_message'] ??
-        question['required_message'];
-
-    if (question['required'] == true && !_hasAnswer(value)) {
-      return msg(question['required_message'] ?? validation['message'],
-          'This question is required.');
-    }
-    if (!_hasAnswer(value)) return null;
-
-    if (type == 'email' &&
-        !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
-            .hasMatch(value.toString())) {
-      return 'Enter a valid email address.';
-    }
-
-    // Kura stores validation under question.validate. Keep top-level
-    // fallbacks so older downloaded forms continue to work.
-    if (const {'integer', 'decimal', 'rating', 'scale'}.contains(type)) {
-      final n = double.tryParse(value.toString());
-      if (n == null) return 'Enter a valid number.';
-      if (type == 'integer' && n != n.roundToDouble()) {
-        return 'Enter a whole number.';
-      }
-
-      double? min = double.tryParse(setting('min')?.toString() ?? '');
-      double? max = double.tryParse(setting('max')?.toString() ?? '');
-      final dynamicMin =
-          _expressionNumber(validation['min_expr'], answers, dot: value);
-      final dynamicMax =
-          _expressionNumber(validation['max_expr'], answers, dot: value);
-      if (dynamicMin != null) {
-        min = min == null ? dynamicMin : math.max(min, dynamicMin).toDouble();
-      }
-      if (dynamicMax != null) {
-        max = max == null ? dynamicMax : math.min(max, dynamicMax).toDouble();
-      }
-
-      if (min != null && n < min) {
-        return msg(validationMessage, 'Must be at least ${_displayNumber(min)}.');
-      }
-      if (max != null && n > max) {
-        return msg(validationMessage, 'Must be at most ${_displayNumber(max)}.');
-      }
-    }
-
-    // Text-like answers: length limits and regex pattern.
-    if (const {'text', 'textarea', 'phone', 'email', 'barcode'}
-        .contains(type)) {
-      final text = value.toString();
-      final minLen = int.tryParse(
-          (validation['min_length'] ?? question['min_length'])
-                  ?.toString() ??
-              '');
-      final maxLen = int.tryParse(
-          (validation['max_length'] ?? question['max_length'])
-                  ?.toString() ??
-              '');
-      if (minLen != null && text.length < minLen) {
-        return msg(validationMessage, 'Must be at least $minLen characters.');
-      }
-      if (maxLen != null && text.length > maxLen) {
-        return msg(validationMessage, 'Must be at most $maxLen characters.');
-      }
-
-      final pattern = (validation['regex'] ??
-              question['pattern'] ??
-              question['regex'])
-          ?.toString();
-      if (pattern != null && pattern.isNotEmpty) {
-        try {
-          if (!RegExp(pattern).hasMatch(text)) {
-            return msg(validationMessage,
-                'The answer is not in the expected format.');
-          }
-        } catch (_) {
-          // Broken form regexes fail open, matching server behaviour.
-        }
-      }
-    }
-
-    // Enforce cascading choice conditions on-device as well as on the
-    // server, so changing a parent cannot leave an invalid child choice.
-    if (const {'select_one', 'select_many', 'likert', 'rank'}.contains(type)) {
-      final allowed = _allowedChoiceValues(question);
-      if (allowed != null) {
-        final selected = value is List ? value : <dynamic>[value];
-        if (selected.any((item) => !allowed.contains(item.toString()))) {
-          return 'Choose only an option currently available for this answer.';
-        }
-      }
-    }
-
-    // Select counts are validate.min/max in the server schema.
-    if (type == 'select_many' && value is List) {
-      final minSelected = int.tryParse((validation['min'] ??
-                  question['min_selected'])
-              ?.toString() ??
-          '');
-      final maxSelected = int.tryParse((validation['max'] ??
-                  question['max_selected'])
-              ?.toString() ??
-          '');
-      if (minSelected != null && value.length < minSelected) {
-        return msg(validationMessage,
-            'Select at least $minSelected option${minSelected == 1 ? '' : 's'}.');
-      }
-      if (maxSelected != null && value.length > maxSelected) {
-        return msg(validationMessage,
-            'Select at most $maxSelected option${maxSelected == 1 ? '' : 's'}.');
-      }
-    }
-
-    // ISO dates compare correctly as strings (yyyy-MM-dd).
-    if (const {'date', 'datetime'}.contains(type)) {
-      final min = setting('min')?.toString();
-      final max = setting('max')?.toString();
-      final text = value.toString();
-      if (min != null && min.isNotEmpty && text.compareTo(min) < 0) {
-        return msg(validationMessage, 'Must be on or after $min.');
-      }
-      if (max != null && max.isNotEmpty && text.compareTo(max) > 0) {
-        return msg(validationMessage, 'Must be on or before $max.');
-      }
-    }
-
-    // Server schema: validate.expr. Legacy/XLSForm schema: constraint.
-    // The parser supports both bare names (`age >= 18`) and `${age}`.
-    final constraint = validation['expr'] ??
-        question['constraint'] ??
-        question['validate_if'];
-    if (constraint != null) {
-      final context = Map<String, dynamic>.from(answers)
-        ..['value'] = value
-        ..[name] = value;
-      final ok = LogicEvaluator(context, dot: value)(constraint);
-      if (!ok) {
-        return msg(validationMessage,
-            'The answer does not meet the condition for this question.');
-      }
-    }
-    return null;
-  }
-
-  String _displayNumber(double value) =>
-      value == value.roundToDouble() ? value.toInt().toString() : value.toString();
-
-  /// Visible questions, computed in document order with cascading
-  /// relevance (Kobo behaviour): a hidden question's answer is invisible
-  /// to the conditions of every question after it, so hiding a parent
-  /// automatically hides children that depend on it — even though the
-  /// stale answer is still kept in [answers] in case it becomes visible
-  /// again.
-  List<Map<String, dynamic>> get _visibleQuestions {
-    final effective = <String, dynamic>{};
-    final result = <Map<String, dynamic>>[];
-    for (final q in questions) {
-      final evaluator = LogicEvaluator(effective);
-      final visible = evaluator(q['_group_relevant']) &&
-          evaluator(_conditionOf(q));
-      if (!visible) continue;
-      result.add(q);
-      final name = q['name'].toString();
-      if (answers.containsKey(name)) effective[name] = answers[name];
-    }
-    return result;
-  }
-
   // ── save / submit ───────────────────────────────────────────────────
 
-  void _submit(List<Map<String, dynamic>> visible) {
+  void _submit(List<Map<String, dynamic>> visible, Map<String, dynamic> ctx) {
     for (var i = 0; i < visible.length; i++) {
-      if (_errorFor(visible[i]) != null) {
+      if (_pageError(visible[i], ctx) != null) {
         _jumpTo(i);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Question ${i + 1} needs attention before submitting.')));
+            content:
+                Text('Question ${i + 1} needs attention before submitting.')));
         return;
       }
     }
@@ -1231,12 +1547,49 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
 
     // Drafts keep everything (so re-showing a question restores its old
     // answer), but a completed submission only includes answers to
-    // questions that are relevant at submit time — Kobo behaviour.
+    // questions that are relevant at submit time — Kobo behaviour. For
+    // repeat groups the same rule applies per item: children hidden by
+    // per-item skip logic are stripped, mirroring the server's
+    // validate_submission cleaning pass. Calculated values are never
+    // sent (the server recomputes and ignores client-sent calcs).
     final payload = Map<String, dynamic>.from(answers);
     if (status != 'draft') {
-      final relevantNames =
-          _visibleQuestions.map((q) => q['name'].toString()).toSet();
+      final computed = _computeVisible();
+      final relevantNames = computed.visible
+          .where((q) => _normalizeType(q['type']) != 'calculate')
+          .map((q) => q['name'].toString())
+          .toSet();
       payload.removeWhere((name, _) => !relevantNames.contains(name));
+
+      for (final q in computed.visible) {
+        if (_normalizeType(q['type']) != 'repeat') continue;
+        final name = q['name'].toString();
+        final raw = payload[name];
+        if (raw is! List) continue;
+        final children = _childrenOf(q);
+        final cleaned = <Map<String, dynamic>>[];
+        for (final rawItem in raw) {
+          final item = rawItem is Map
+              ? Map<String, dynamic>.from(rawItem)
+              : <String, dynamic>{};
+          final ic = _itemContext(q, item, computed.ctx);
+          final keep = <String, dynamic>{};
+          for (final ch in children) {
+            final ctype = _normalizeType(ch['type']);
+            if (ctype == 'section' ||
+                ctype == 'note' ||
+                ctype == 'calculate') {
+              continue;
+            }
+            final cname = ch['name']?.toString();
+            if (cname == null || cname.isEmpty) continue;
+            if (!LogicEvaluator(ic)(_conditionOf(ch))) continue;
+            if (item.containsKey(cname)) keep[cname] = item[cname];
+          }
+          cleaned.add(keep);
+        }
+        payload[name] = cleaned;
+      }
     }
 
     final submission = LocalSubmission(
@@ -1269,32 +1622,29 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
 
 // ── the question card ─────────────────────────────────────────────────
 
-class _QuestionCard extends StatefulWidget {
-  final Map<String, dynamic> question;
+class _QuestionCard extends StatelessWidget {
+  final Map<String, dynamic> question; // display copy (piped, filtered)
   final dynamic value;
+  final Map<String, dynamic> ctx;
   final ValueChanged<dynamic> onChanged;
   final TextEditingController? controller;
   final String? error;
+  final String? warning;
 
   const _QuestionCard({
     super.key,
     required this.question,
     required this.value,
+    required this.ctx,
     required this.onChanged,
     this.controller,
     this.error,
+    this.warning,
   });
 
   @override
-  State<_QuestionCard> createState() => _QuestionCardState();
-}
-
-class _QuestionCardState extends State<_QuestionCard> {
-  bool _busyGps = false;
-
-  @override
   Widget build(BuildContext context) {
-    final q = widget.question;
+    final q = question;
     final type = _normalizeType(q['type']);
     final label = (q['label'] ?? q['name'] ?? 'Question').toString();
     final hint = q['hint']?.toString();
@@ -1349,28 +1699,14 @@ class _QuestionCardState extends State<_QuestionCard> {
                       style: TextStyle(color: scheme.onSurfaceVariant)),
                 ],
                 const SizedBox(height: 20),
-                _field(type, q),
-                if (widget.error != null) ...[
+                _field(context, type, q),
+                if (error != null) ...[
                   const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: scheme.errorContainer,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.error_outline_rounded,
-                            size: 18, color: scheme.onErrorContainer),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(widget.error!,
-                              style:
-                                  TextStyle(color: scheme.onErrorContainer)),
-                        ),
-                      ],
-                    ),
-                  ),
+                  _MessageBox.error(error!),
+                ],
+                if (error == null && warning != null) ...[
+                  const SizedBox(height: 12),
+                  _MessageBox.warning(warning!),
                 ],
               ],
             ),
@@ -1380,7 +1716,166 @@ class _QuestionCardState extends State<_QuestionCard> {
     );
   }
 
-  // ── one widget per canonical type ───────────────────────────────────
+  Widget _field(BuildContext context, String type, Map<String, dynamic> q) {
+    switch (type) {
+      case 'note':
+        return const SizedBox.shrink();
+
+      case 'calculate':
+        // A calc with visible:true — read-only live result, like the web
+        // runner's calc-live card. Never blocks navigation.
+        final out = q['_calc_value'];
+        final text = out == null
+            ? '—'
+            : out is num
+                ? _displayNumber((out * 100).roundToDouble() / 100)
+                : out.toString();
+        return Container(
+          padding: const EdgeInsets.symmetric(vertical: 18),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Theme.of(context)
+                .colorScheme
+                .primaryContainer
+                .withOpacity(.35),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(text,
+              style: Theme.of(context)
+                  .textTheme
+                  .headlineMedium
+                  ?.copyWith(fontWeight: FontWeight.w900)),
+        );
+
+      case 'repeat':
+        return _RepeatField(
+          question: q,
+          value: value,
+          ctx: ctx,
+          showErrors: error != null,
+          onChanged: onChanged,
+        );
+
+      default:
+        return _AnswerField(
+          question: q,
+          value: value,
+          onChanged: onChanged,
+          controller: controller,
+        );
+    }
+  }
+}
+
+/// Small red/amber message strip used under fields.
+class _MessageBox extends StatelessWidget {
+  final String text;
+  final bool isError;
+
+  const _MessageBox.error(this.text) : isError = true;
+  const _MessageBox.warning(this.text) : isError = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final bg = isError ? scheme.errorContainer : const Color(0xFFFFF3D6);
+    final fg = isError ? scheme.onErrorContainer : const Color(0xFF7A5A00);
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(
+              isError
+                  ? Icons.error_outline_rounded
+                  : Icons.warning_amber_rounded,
+              size: 18,
+              color: fg),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, style: TextStyle(color: fg))),
+        ],
+      ),
+    );
+  }
+}
+
+// ── one input widget per canonical type ───────────────────────────────
+//
+// Shared by top-level question pages and repeat-group items. When a
+// [controller] is supplied (top-level text questions) a TextField is
+// used; otherwise text inputs are TextFormFields seeded from the current
+// value — repeat items key this widget so add/remove recreates fields
+// with the right initial text.
+
+class _AnswerField extends StatefulWidget {
+  final Map<String, dynamic> question;
+  final dynamic value;
+  final ValueChanged<dynamic> onChanged;
+  final TextEditingController? controller;
+
+  const _AnswerField({
+    super.key,
+    required this.question,
+    required this.value,
+    required this.onChanged,
+    this.controller,
+  });
+
+  @override
+  State<_AnswerField> createState() => _AnswerFieldState();
+}
+
+class _AnswerFieldState extends State<_AnswerField> {
+  bool _busyGps = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return _field(_normalizeType(widget.question['type']), widget.question);
+  }
+
+  /// TextField when a persistent controller is provided, TextFormField
+  /// (seeded from the value) otherwise — so repeat children keep their
+  /// text without the screen having to manage controllers per item.
+  Widget _textInput({
+    required String hint,
+    IconData? icon,
+    TextInputType? keyboardType,
+    List<TextInputFormatter>? formatters,
+    int minLines = 1,
+    int maxLines = 1,
+    TextCapitalization capitalization = TextCapitalization.none,
+    bool autocorrect = true,
+    required ValueChanged<String> onChanged,
+  }) {
+    final decoration = _decor(hint, prefixIcon: icon);
+    if (widget.controller != null) {
+      return TextField(
+        controller: widget.controller,
+        keyboardType: keyboardType,
+        inputFormatters: formatters,
+        minLines: minLines == 1 ? null : minLines,
+        maxLines: maxLines,
+        textCapitalization: capitalization,
+        autocorrect: autocorrect,
+        decoration: decoration,
+        onChanged: onChanged,
+      );
+    }
+    return TextFormField(
+      initialValue: widget.value?.toString() ?? '',
+      keyboardType: keyboardType,
+      inputFormatters: formatters,
+      minLines: minLines == 1 ? null : minLines,
+      maxLines: maxLines,
+      textCapitalization: capitalization,
+      autocorrect: autocorrect,
+      decoration: decoration,
+      onChanged: onChanged,
+    );
+  }
 
   Widget _field(String type, Map<String, dynamic> q) {
     switch (type) {
@@ -1388,60 +1883,52 @@ class _QuestionCardState extends State<_QuestionCard> {
         return const SizedBox.shrink();
 
       case 'integer':
-        return TextField(
-          controller: widget.controller,
-          keyboardType:
-              const TextInputType.numberWithOptions(signed: true),
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'^-?\d*')),
-          ],
-          decoration: _decor('Enter a whole number',
-              prefixIcon: Icons.numbers_rounded),
+        return _textInput(
+          hint: 'Enter a whole number',
+          icon: Icons.numbers_rounded,
+          keyboardType: const TextInputType.numberWithOptions(signed: true),
+          formatters: [FilteringTextInputFormatter.allow(RegExp(r'^-?\d*'))],
           onChanged: (value) => widget.onChanged(int.tryParse(value)),
         );
 
       case 'decimal':
-        return TextField(
-          controller: widget.controller,
+        return _textInput(
+          hint: 'Enter a number',
+          icon: Icons.numbers_rounded,
           keyboardType: const TextInputType.numberWithOptions(
               signed: true, decimal: true),
-          inputFormatters: [
+          formatters: [
             FilteringTextInputFormatter.allow(RegExp(r'^-?\d*\.?\d*')),
           ],
-          decoration:
-              _decor('Enter a number', prefixIcon: Icons.numbers_rounded),
           onChanged: (value) => widget.onChanged(double.tryParse(value)),
         );
 
       case 'phone':
-        return TextField(
-          controller: widget.controller,
+        return _textInput(
+          hint: 'Enter phone number',
+          icon: Icons.call_rounded,
           keyboardType: TextInputType.phone,
-          inputFormatters: [
+          formatters: [
             FilteringTextInputFormatter.allow(RegExp(r'^[+\d\s-]*')),
           ],
-          decoration:
-              _decor('Enter phone number', prefixIcon: Icons.call_rounded),
           onChanged: widget.onChanged,
         );
 
       case 'email':
-        return TextField(
-          controller: widget.controller,
+        return _textInput(
+          hint: 'name@example.com',
+          icon: Icons.alternate_email_rounded,
           keyboardType: TextInputType.emailAddress,
           autocorrect: false,
-          decoration: _decor('name@example.com',
-              prefixIcon: Icons.alternate_email_rounded),
           onChanged: widget.onChanged,
         );
 
       case 'textarea':
-        return TextField(
-          controller: widget.controller,
+        return _textInput(
+          hint: 'Enter response',
           minLines: 4,
           maxLines: 10,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: _decor('Enter response'),
+          capitalization: TextCapitalization.sentences,
           onChanged: widget.onChanged,
         );
 
@@ -1492,6 +1979,78 @@ class _QuestionCardState extends State<_QuestionCard> {
           }).toList(),
         );
 
+      case 'rank':
+        // Order the options with ↑/↓, exactly like the web runner. The
+        // default (unmoved) order still counts as an answer, so it is
+        // committed once the question is first shown.
+        final choices = _choices(q);
+        final allowedVals = choices.map((c) => c.$1).toList();
+        final current = <String>[];
+        if (widget.value is List) {
+          for (final v in (widget.value as List)) {
+            final s = v.toString();
+            if (allowedVals.contains(s) && !current.contains(s)) {
+              current.add(s);
+            }
+          }
+        }
+        for (final v in allowedVals) {
+          if (!current.contains(v)) current.add(v);
+        }
+        if (widget.value == null && allowedVals.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) widget.onChanged(List<String>.from(current));
+          });
+        }
+        String labelOf(String v) {
+          for (final c in choices) {
+            if (c.$1 == v) return c.$2;
+          }
+          return v;
+        }
+
+        return Column(
+          children: List.generate(current.length, (i) {
+            void move(int delta) {
+              final j = i + delta;
+              if (j < 0 || j >= current.length) return;
+              final next = List<String>.from(current);
+              final tmp = next[i];
+              next[i] = next[j];
+              next[j] = tmp;
+              widget.onChanged(next);
+            }
+
+            return _choiceTile(
+              selected: false,
+              child: ListTile(
+                dense: true,
+                leading: CircleAvatar(
+                    radius: 14,
+                    child: Text('${i + 1}',
+                        style: const TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w800))),
+                title: Text(labelOf(current[i])),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_upward_rounded, size: 20),
+                      onPressed: i == 0 ? null : () => move(-1),
+                    ),
+                    IconButton(
+                      icon:
+                          const Icon(Icons.arrow_downward_rounded, size: 20),
+                      onPressed:
+                          i == current.length - 1 ? null : () => move(1),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        );
+
       case 'yesno':
         final current = widget.value?.toString();
         return SegmentedButton<String>(
@@ -1536,7 +2095,8 @@ class _QuestionCardState extends State<_QuestionCard> {
         final min =
             double.tryParse(_questionSetting(q, 'min')?.toString() ?? '') ?? 0;
         final max =
-            double.tryParse(_questionSetting(q, 'max')?.toString() ?? '') ?? 10;
+            double.tryParse(_questionSetting(q, 'max')?.toString() ?? '') ??
+                10;
         final current =
             (double.tryParse(widget.value?.toString() ?? '') ?? min)
                 .clamp(min, max);
@@ -1772,10 +2332,9 @@ class _QuestionCardState extends State<_QuestionCard> {
         );
 
       default: // 'text' and anything unknown
-        return TextField(
-          controller: widget.controller,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: _decor('Enter response'),
+        return _textInput(
+          hint: 'Enter response',
+          capitalization: TextCapitalization.sentences,
           onChanged: widget.onChanged,
         );
     }
@@ -1933,6 +2492,339 @@ class _QuestionCardState extends State<_QuestionCard> {
   }
 }
 
+// ── repeat group field ────────────────────────────────────────────────
+//
+// KoboCollect-style roster on a single page: one card per item, each
+// rendering the group's children with the item's own context (sibling
+// answers shadow outer ones, per-item calcs are live). Add/remove
+// controls follow the bounds; a count_expr auto-sizes the list and hides
+// the controls, exactly like the web runner's repeatHtml().
+
+class _RepeatField extends StatelessWidget {
+  final Map<String, dynamic> question;
+  final dynamic value;
+
+  /// Outer answer context (top-level answers + calcs).
+  final Map<String, dynamic> ctx;
+
+  /// When true (the page was blocked by Next/swipe), per-child errors
+  /// are shown inline inside each item card.
+  final bool showErrors;
+  final ValueChanged<dynamic> onChanged;
+
+  const _RepeatField({
+    required this.question,
+    required this.value,
+    required this.ctx,
+    required this.showErrors,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final rp = _repeatSpec(question);
+    final bounds = _repeatBounds(rp, ctx);
+    var items = _itemsOf(value);
+
+    // count_expr fixes the item count: auto-size the stored answer to
+    // match (pad with empty items / truncate extras) and re-commit it.
+    if (bounds.exact != null && items.length != bounds.exact) {
+      items = List<Map<String, dynamic>>.from(items);
+      while (items.length < bounds.exact!) {
+        items.add(<String, dynamic>{});
+      }
+      if (items.length > bounds.exact!) {
+        items.removeRange(bounds.exact!, items.length);
+      }
+      final snapshot = [
+        for (final item in items) Map<String, dynamic>.from(item)
+      ];
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        onChanged(snapshot);
+      });
+    }
+
+    final scheme = Theme.of(context).colorScheme;
+    final children = _childrenOf(question);
+    final fixedCount = bounds.exact != null;
+    final canAdd = !fixedCount &&
+        (bounds.hi == null || items.length < bounds.hi!);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (items.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Theme.of(context).dividerColor),
+            ),
+            child: Text(
+              fixedCount
+                  ? 'Answer the controlling question (${rp['count_expr']}) to add items here.'
+                  : 'No items yet — tap the button below to add the first one.',
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            ),
+          ),
+        for (var idx = 0; idx < items.length; idx++)
+          _itemCard(context, items, idx, children, rp, fixedCount),
+        const SizedBox(height: 8),
+        if (canAdd)
+          OutlinedButton.icon(
+            icon: const Icon(Icons.add_rounded),
+            label: Text((rp['add_label'] ??
+                    'Add ${question['item_noun'] ?? 'item'}')
+                .toString()),
+            onPressed: () => onChanged([
+              for (final item in items) Map<String, dynamic>.from(item),
+              <String, dynamic>{},
+            ]),
+          ),
+        if (fixedCount)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              '${bounds.exact} item(s), set by the form (${rp['count_expr']}).',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          )
+        else if (bounds.lo != null || bounds.hi != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              [
+                if (bounds.lo != null) 'Minimum ${bounds.lo!.toInt()}',
+                if (bounds.hi != null) 'Maximum ${bounds.hi!.toInt()}',
+              ].join(', '),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _itemCard(
+    BuildContext context,
+    List<Map<String, dynamic>> items,
+    int idx,
+    List<Map<String, dynamic>> children,
+    Map<String, dynamic> rp,
+    bool fixedCount,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    final item = items[idx];
+    final ic = _itemContext(question, item, ctx);
+    final label = _itemLabel(rp, idx, ic);
+
+    final blocks = <Widget>[];
+    for (final ch in children) {
+      final ctype = _normalizeType(ch['type']);
+
+      if (ctype == 'calculate') continue;
+
+      if (ctype == 'section') {
+        blocks.add(Padding(
+          padding: const EdgeInsets.only(top: 12, bottom: 4),
+          child: Text(
+            _pipe(ch['label'] ?? ch['name'] ?? '', ic).toUpperCase(),
+            style: TextStyle(
+              color: scheme.primary,
+              fontWeight: FontWeight.w800,
+              fontSize: 11,
+              letterSpacing: 1.1,
+            ),
+          ),
+        ));
+        continue;
+      }
+
+      final relevant = LogicEvaluator(ic)(_conditionOf(ch));
+      if (!relevant) continue;
+
+      if (ctype == 'note') {
+        blocks.add(Container(
+          margin: const EdgeInsets.only(top: 10),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHighest.withOpacity(.5),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('🛈 ${_pipe(ch['label'] ?? '', ic)}',
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+              if ((ch['hint'] ?? '').toString().isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(_pipe(ch['hint'], ic),
+                      style: TextStyle(color: scheme.onSurfaceVariant)),
+                ),
+            ],
+          ),
+        ));
+        continue;
+      }
+
+      final cname = ch['name']?.toString();
+      if (cname == null || cname.isEmpty) continue;
+
+      final cval = item[cname];
+      final display = Map<String, dynamic>.from(_questionForDisplayIn(ch, ic));
+      final childLabel = _pipe(display['label'] ?? cname, ic);
+      final childHint = _pipe(display['hint'], ic);
+      final requiredChild = ch['required'] == true;
+
+      String? err;
+      if (showErrors) {
+        if (requiredChild && !_hasValue(cval)) {
+          final custom =
+              _validationMap(ch)['message'] ?? ch['required_message'];
+          final text = custom?.toString().trim();
+          err = (text == null || text.isEmpty)
+              ? 'This answer is required.'
+              : text;
+        } else if (_hasValue(cval)) {
+          err = _errorForQuestion(ch, cval, ic);
+        }
+      }
+      final warn = err == null ? _warnFor(ch, cval, ic) : null;
+
+      blocks.add(Padding(
+        padding: const EdgeInsets.only(top: 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text.rich(
+              TextSpan(
+                text: childLabel,
+                children: requiredChild
+                    ? [
+                        TextSpan(
+                            text: ' *',
+                            style: TextStyle(color: scheme.error))
+                      ]
+                    : [],
+              ),
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            if (childHint.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(childHint,
+                    style: TextStyle(
+                        color: scheme.onSurfaceVariant, fontSize: 13)),
+              ),
+            const SizedBox(height: 8),
+            _AnswerField(
+              // Keying on group/index/name/count recreates text fields
+              // with the right initial value when items shift after an
+              // add/remove — while typing keeps state (same key).
+              key: ValueKey(
+                  'r|${question['name']}|$idx|$cname|${items.length}'),
+              question: display,
+              value: cval,
+              onChanged: (v) => _setChild(items, idx, cname, v),
+            ),
+            if (err != null) ...[
+              const SizedBox(height: 8),
+              _MessageBox.error(err),
+            ],
+            if (err == null && warn != null) ...[
+              const SizedBox(height: 8),
+              _MessageBox.warning(warn),
+            ],
+          ],
+        ),
+      ));
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Theme.of(context).dividerColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
+            decoration: BoxDecoration(
+              color: scheme.secondaryContainer.withOpacity(.6),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(13)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(label,
+                      style: const TextStyle(fontWeight: FontWeight.w800)),
+                ),
+                if (!fixedCount)
+                  IconButton(
+                    tooltip: 'Remove this item',
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(Icons.close_rounded,
+                        size: 20, color: scheme.error),
+                    onPressed: () => _confirmRemove(context, items, idx),
+                  ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: blocks,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _setChild(
+      List<Map<String, dynamic>> items, int idx, String name, dynamic v) {
+    final next = [
+      for (final item in items) Map<String, dynamic>.from(item)
+    ];
+    next[idx][name] = v;
+    onChanged(next);
+  }
+
+  Future<void> _confirmRemove(
+      BuildContext context, List<Map<String, dynamic>> items, int idx) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Remove this item?'),
+        content: const Text('Its answers will be removed from this group.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor:
+                    Theme.of(dialogContext).colorScheme.error),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      final next = [
+        for (var i = 0; i < items.length; i++)
+          if (i != idx) Map<String, dynamic>.from(items[i])
+      ];
+      onChanged(next);
+    }
+  }
+}
+
 // ── review page ───────────────────────────────────────────────────────
 
 class _ReviewPage extends StatelessWidget {
@@ -1951,6 +2843,10 @@ class _ReviewPage extends StatelessWidget {
   String _summary(Map<String, dynamic> q, dynamic value) {
     if (value == null || value == '') return '—';
     final type = _normalizeType(q['type']);
+    if (type == 'repeat') {
+      final count = value is List ? value.length : 0;
+      return count == 0 ? '—' : '$count item${count == 1 ? '' : 's'}';
+    }
     if (type == 'gps' && value is Map) {
       return '${value['lat']}, ${value['lng']}';
     }
@@ -1981,7 +2877,8 @@ class _ReviewPage extends StatelessWidget {
         const SizedBox(height: 12),
         ...List.generate(questions.length, (i) {
           final q = questions[i];
-          if (_normalizeType(q['type']) == 'note') {
+          final type = _normalizeType(q['type']);
+          if (type == 'note' || type == 'calculate') {
             return const SizedBox.shrink();
           }
           final err = errorFor(q);

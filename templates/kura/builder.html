@@ -201,9 +201,9 @@
   <a class="mark" href="{% url 'kura:list' %}">Kura<span style="-webkit-text-fill-color:var(--pink)">.</span></a>
   <input id="title-input" value="{{ survey.title }}" maxlength="140" aria-label="Survey title">
   <span class="save-state" id="save-state">saved</span>
-  <button class="btn ghost" id="imp-btn" type="button" title="Import a questionnaire from a Kura JSON export">⇪ Import</button>
-  <button class="btn ghost" id="exp-btn" type="button" title="Download this questionnaire as JSON (re-importable)">⇩ Export</button>
-  <input type="file" id="imp-file" accept=".json,application/json" style="display:none">
+  <button class="btn ghost" id="imp-btn" type="button" title="Import a questionnaire from a Kura Form Excel file (.xlsx)">⇪ Import</button>
+  <button class="btn ghost" id="exp-btn" type="button" title="Download this questionnaire as a Kura Form Excel file — edit it in Excel and re-import">⇩ Export</button>
+  <input type="file" id="imp-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none">
   <a class="btn ghost" href="{% url 'kura:data' survey.code %}">Data</a>
   <a class="btn ghost" href="{% url 'kura:monitor' survey.code %}">Live</a>
   <a class="btn ghost" href="{% url 'kura:preview' survey.code %}" target="_blank" rel="noopener" title="Live preview of the DRAFT — no publish needed">Preview</a>
@@ -314,11 +314,14 @@
     <div class="sheet-body">
       <div class="imp-summary" id="imp-summary"></div>
       <div class="hint-text" style="padding:0">
-        <b style="color:#fff">Replace</b> throws away the current questions (zones, indicators and settings from the file are also adopted where present). <b style="color:#fff">Append</b> adds the imported questions after the existing ones — clashing machine names are renamed automatically and internal skip logic is rewired to the new names.
+        <b style="color:#fff">Replace</b> throws away the current questions and adopts the workbook's title and indicators. <b style="color:#fff">Append</b> adds the imported questions after the existing ones — clashing names are renamed automatically, indicators are merged by code, and your geofence zones, lookups and settings are kept either way.
       </div>
       <div class="imp-actions">
         <button class="btn" id="imp-replace" type="button">Replace questionnaire</button>
         <button class="btn ghost" id="imp-append" type="button">Append to end</button>
+      </div>
+      <div class="hint-text" style="padding:.7rem 0 0">
+        Not sure about the layout? <a href="#" id="imp-template" style="color:var(--cyan)">Download a blank Kura Form template</a> — it has a Read&nbsp;me sheet explaining every column.
       </div>
     </div>
   </div>
@@ -328,6 +331,7 @@
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
         crossorigin=""></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <script>
 window.__KURA__ = {
@@ -1062,31 +1066,505 @@ function insertQuestions(rawList){
   return cleaned.length;
 }
 
-function exportForm(){
-  const payload = {
-    kura_form: 1,
-    exported_at: new Date().toISOString(),
-    code: (CFG.survey&&CFG.survey.code)||"",
-    title: $("#title-input").value,
-    schema: schema
+/* ── Kura Form: human-friendly Excel import / export ─────────────────
+   One row per question in a "Questions" sheet with plain-English types
+   ("Choose one", "Whole number", …), inline choices ("yes = Yes"), and
+   readable logic ("consent = yes and age >= 18"). Long / cascading
+   choice lists live in a "Choices" sheet; indicators in "Indicators". */
+
+const FRIENDLY_TYPES = {
+  section:"Section header", note:"Note / disclaimer", text:"Short text",
+  long_text:"Paragraph", integer:"Whole number", decimal:"Decimal number",
+  select_one:"Choose one", select_multiple:"Choose many", rank:"Rank options",
+  likert:"Likert scale", rating:"Rating", date:"Date", time:"Time",
+  datetime:"Date & time", gps:"GPS location", photo:"Photo",
+  barcode:"Barcode / QR", calculate:"Calculated (hidden)", repeat:"Repeat group"
+};
+const TYPE_ALIASES = (function(){
+  const m = {};
+  Object.keys(FRIENDLY_TYPES).forEach(t=>{ m[t]=t; m[FRIENDLY_TYPES[t].toLowerCase()]=t; });
+  const add=(t,list)=>list.forEach(a=>m[a]=t);
+  add("note",["disclaimer","introduction","info","display","read only","message"]);
+  add("section",["section","heading","header","group header","section title"]);
+  add("text",["string","short answer","text"]);
+  add("long_text",["long text","textarea","comment","open text"]);
+  add("integer",["number","whole number","int"]);
+  add("decimal",["float","currency","number (decimal)"]);
+  add("select_one",["select one","single choice","radio","dropdown","choice","choose 1"]);
+  add("select_multiple",["select multiple","multiple choice","checkbox","checkboxes","multi select","multiselect","choose several"]);
+  add("rank",["ranking","rank options"]);
+  add("likert",["agreement scale","likert"]);
+  add("rating",["stars","star rating","score"]);
+  add("datetime",["date and time","date time"]);
+  add("gps",["location","geopoint","coordinates","gps point"]);
+  add("photo",["image","picture","camera"]);
+  add("barcode",["qr","qr code","scan","barcode"]);
+  add("calculate",["calculated","calculation","formula","hidden calculation"]);
+  add("repeat",["begin repeat","roster","group (repeat)","repeating group"]);
+  return m;
+})();
+const END_REPEAT = new Set(["end repeat","end group","end","end of repeat","end roster"]);
+// (CHOICE_TYPES is already declared near the top of this script)
+
+const CMP_TO_TEXT = {eq:"=", ne:"≠", gt:">", gte:">=", lt:"<", lte:"<=",
+  contains:"contains", not_contains:"doesn't contain", selected:"has selected",
+  not_selected:"hasn't selected", answered:"is answered", not_answered:"is blank",
+  between:"between", matches:"matches"};
+
+function showWhenText(rel){
+  if(!rel || !Array.isArray(rel.rules) || !rel.rules.length) return "";
+  if(rel.rules.some(r=>r && Array.isArray(r.rules)))
+    return "(complex logic — edit in the builder)";
+  const parts = rel.rules.map(r=>{
+    if(r.cmp==="answered") return r.q+" is answered";
+    if(r.cmp==="not_answered") return r.q+" is blank";
+    const v = Array.isArray(r.value)? r.value.join(", ") : (r.value==null?"":r.value);
+    return r.q+" "+(CMP_TO_TEXT[r.cmp]||"=")+" "+v;
+  });
+  return parts.join(rel.op==="or" ? " or " : " and ");
+}
+function parseRuleText(p){
+  let m;
+  if((m=p.match(/^([A-Za-z0-9_]+)\s+is\s+answered$/i)))
+    return {q:m[1], cmp:"answered", value:""};
+  if((m=p.match(/^([A-Za-z0-9_]+)\s+is\s+(blank|empty|not\s+answered)$/i)))
+    return {q:m[1], cmp:"not_answered", value:""};
+  if((m=p.match(/^([A-Za-z0-9_]+)\s+between\s+(.+)$/i)))
+    return {q:m[1], cmp:"between", value:m[2].split(/\s*(?:,|and)\s*/i).slice(0,2).join(",")};
+  if((m=p.match(/^([A-Za-z0-9_]+)\s+matches\s+(.+)$/i)))
+    return {q:m[1], cmp:"matches", value:m[2].trim()};
+  if((m=p.match(/^([A-Za-z0-9_]+)\s+hasn'?t\s+selected\s+(.+)$/i)))
+    return {q:m[1], cmp:"not_selected", value:m[2].trim()};
+  if((m=p.match(/^([A-Za-z0-9_]+)\s+has\s+selected\s+(.+)$/i)))
+    return {q:m[1], cmp:"selected", value:m[2].trim()};
+  if((m=p.match(/^([A-Za-z0-9_]+)\s+doesn'?t\s+contain\s+(.+)$/i)))
+    return {q:m[1], cmp:"not_contains", value:m[2].trim()};
+  if((m=p.match(/^([A-Za-z0-9_]+)\s+contains\s+(.+)$/i)))
+    return {q:m[1], cmp:"contains", value:m[2].trim()};
+  if((m=p.match(/^([A-Za-z0-9_]+)\s*(>=|<=|==|!=|≠|=|>|<)\s*(.+)$/))){
+    const cmp = {"=":"eq","==":"eq","!=":"ne","≠":"ne",">":"gt",">=":"gte","<":"lt","<=":"lte"}[m[2]];
+    return {q:m[1], cmp, value:m[3].trim().replace(/^["']|["']$/g,"")};
+  }
+  return null;
+}
+function parseShowWhen(text, warnings, where){
+  const s = String(text||"").trim();
+  if(!s || s.charAt(0)==="(") return null;
+  const useOr = / or /i.test(s) && !/ and /i.test(s);
+  const parts = s.split(useOr ? / or /i : / and /i);
+  const rules = [];
+  parts.forEach(p=>{
+    const r = parseRuleText(p.trim());
+    if(r) rules.push(r);
+    else if(warnings) warnings.push('Could not understand the condition "'+p.trim()+'"'+(where?" on "+where:"")+" — it was skipped.");
+  });
+  return rules.length ? {op:useOr?"or":"and", rules} : null;
+}
+
+function choicesCellText(q){
+  const cs = q.choices||[];
+  if(!cs.length) return "";
+  if(cs.some(c=>c.parent!=null && c.parent!=="") || cs.some(c=>Array.isArray(c.zones)&&c.zones.length))
+    return "(see the Choices sheet)";
+  return cs.map(c=>c.value+" = "+(c.label||c.value)).join("\n");
+}
+function parseChoicesCell(cell){
+  const s = String(cell||"").trim();
+  if(!s || s.charAt(0)==="(") return [];
+  const items = s.split(/\r?\n|;/).map(x=>x.trim()).filter(Boolean);
+  const used = new Set(); const out = [];
+  items.forEach((item,i)=>{
+    let value, label;
+    const eq = item.indexOf("=");
+    if(eq > 0){ value = item.slice(0,eq).trim(); label = item.slice(eq+1).trim(); }
+    else { label = item; value = sanitizeName(item) || ("option_"+(i+1)); }
+    let v = String(value)||("option_"+(i+1)); let n=2;
+    while(used.has(v)) v = value+"_"+(n++);
+    used.add(v);
+    out.push({value:v, label:label||v});
+  });
+  return out;
+}
+
+const KF_HEADERS = ["Type","Question","Name (data column)","Required","Choices",
+  "Hint / help","Show when","Filter choices by","Min","Max","Pattern (regex)",
+  "Must be true (rule)","Warn when false","Warning message","Error message",
+  "Calculation","Indicator"];
+
+function _indicatorLabel(id){
+  const d = (schema.indicators||[]).find(x=>String(x.id)===String(id));
+  return d ? (d.code||d.name||d.id) : "";
+}
+function _questionRow(q){
+  const v = q.validate||{};
+  return [
+    FRIENDLY_TYPES[q.type]||q.type,
+    q.label||"",
+    q.name||"",
+    q.required ? "Yes" : "",
+    CHOICE_TYPES.includes(q.type) ? choicesCellText(q) : "",
+    q.hint||"",
+    showWhenText(q.relevant),
+    (q.cascade && q.cascade.parent) || "",
+    q.type==="repeat" ? (q.repeat&&q.repeat.min!=null?q.repeat.min:"") : (v.min!=null?v.min:""),
+    q.type==="repeat" ? (q.repeat&&q.repeat.max!=null?q.repeat.max:"") : (v.max!=null?v.max:""),
+    v.regex||"",
+    v.expr||"",
+    v.warn_expr||"",
+    v.warn_message||"",
+    v.message||"",
+    q.type==="repeat" ? ((q.repeat&&q.repeat.count_expr)||"") : (q.calc||""),
+    q.indicator ? _indicatorLabel(q.indicator) : ""
+  ];
+}
+function buildWorkbook(title, description, questions, indicators){
+  const wb = XLSX.utils.book_new();
+
+  const readme = [
+    ["KURA FORM — fill this workbook, then Import it in the form builder."],
+    [""],
+    ["HOW IT WORKS"],
+    ["• Each row of the Questions sheet is one question, top to bottom."],
+    ["• Type: use plain names — Choose one, Choose many, Short text, Paragraph,"],
+    ["  Whole number, Decimal number, Rating, Likert scale, Rank options, Date,"],
+    ["  Time, Date & time, GPS location, Photo, Barcode / QR, Note / disclaimer,"],
+    ["  Section header, Calculated (hidden), Repeat group, End repeat."],
+    ["• Question: the wording respondents see. Name is the data column — leave it"],
+    ["  blank and Kura makes one from the question text."],
+    ["• Choices: one per line (Alt+Enter) or separated by ; — either just the label"],
+    ["  (Yes) or value = Label (y = Yes). Long or cascading lists go in the"],
+    ["  Choices sheet instead, one row per option, keyed by the question Name."],
+    ["• Show when: write conditions like  consent = yes  ·  age >= 18  ·"],
+    ["  district ≠ other  ·  symptoms has selected fever  ·  phone is answered."],
+    ["  Join several with and / or (one kind per cell)."],
+    ["• Min / Max, Pattern (regex), Must be true (rule), Warn when false +"],
+    ["  Warning message, Error message: optional answer checks."],
+    ["• Repeat group starts a repeating block (household members…); every row"],
+    ["  until End repeat belongs to it. Its Calculation cell may name a number"],
+    ["  question that sets how many times it repeats."],
+    ["• Note / disclaimer shows text only (introduction, consent script) — the"],
+    ["  Question cell is the heading, Hint / help is the body. No answer is stored."],
+    ["• Indicators sheet: your programme indicators (code, name, target); put the"],
+    ["  code in a question's Indicator cell to link them."],
+    [""],
+    ["Geofence zones, choice lookups, scoring and answer shuffling are managed"],
+    ["in the builder itself and are kept when you import with Append."]
+  ];
+  const wsR = XLSX.utils.aoa_to_sheet(readme);
+  wsR["!cols"] = [{wch:86}];
+  XLSX.utils.book_append_sheet(wb, wsR, "📖 Read me");
+
+  const wsF = XLSX.utils.aoa_to_sheet([
+    ["Title", title||""],
+    ["Description", description||""]
+  ]);
+  wsF["!cols"] = [{wch:14},{wch:70}];
+  XLSX.utils.book_append_sheet(wb, wsF, "Form");
+
+  const qRows = [KF_HEADERS];
+  const choiceRows = [["Question name","Value","Label","Parent value","Zones"]];
+  const flush = q=>{
+    qRows.push(_questionRow(q));
+    if(CHOICE_TYPES.includes(q.type) && choicesCellText(q)==="(see the Choices sheet)")
+      (q.choices||[]).forEach(c=>choiceRows.push([
+        q.name, c.value, c.label||"", c.parent!=null?c.parent:"",
+        Array.isArray(c.zones)?c.zones.join(","):""
+      ]));
   };
-  const blob = new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = ((CFG.survey&&CFG.survey.code)||"kura")+"_questionnaire.json";
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+  questions.forEach(q=>{
+    flush(q);
+    if(q.type==="repeat"){
+      (q.children||[]).forEach(flush);
+      qRows.push(["End repeat","","","","","","","","","","","","","","","",""]);
+    }
+  });
+  const wsQ = XLSX.utils.aoa_to_sheet(qRows);
+  wsQ["!cols"] = [{wch:18},{wch:46},{wch:18},{wch:9},{wch:30},{wch:32},{wch:28},
+    {wch:16},{wch:7},{wch:7},{wch:18},{wch:22},{wch:20},{wch:24},{wch:24},{wch:18},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, wsQ, "Questions");
+
+  if(choiceRows.length > 1){
+    const wsC = XLSX.utils.aoa_to_sheet(choiceRows);
+    wsC["!cols"] = [{wch:18},{wch:16},{wch:34},{wch:14},{wch:16}];
+    XLSX.utils.book_append_sheet(wb, wsC, "Choices");
+  }
+  if((indicators||[]).length){
+    const wsI = XLSX.utils.aoa_to_sheet(
+      [["Code","Name","Target"]].concat(indicators.map(d=>[d.code||"", d.name||"", d.target!=null?d.target:""]))
+    );
+    wsI["!cols"] = [{wch:14},{wch:44},{wch:10}];
+    XLSX.utils.book_append_sheet(wb, wsI, "Indicators");
+  }
+  return wb;
+}
+function exportForm(){
+  if(typeof XLSX==="undefined"){ alert("The spreadsheet library did not load — check your connection and reload the page."); return; }
+  const wb = buildWorkbook($("#title-input").value, "", schema.questions, schema.indicators);
+  XLSX.writeFile(wb, ((CFG.survey&&CFG.survey.code)||"kura")+"_kura_form.xlsx");
+}
+function downloadTemplate(){
+  if(typeof XLSX==="undefined"){ alert("The spreadsheet library did not load — check your connection and reload the page."); return; }
+  const sample = [
+    {name:"intro", type:"note", label:"About this survey",
+     hint:"Thank you for taking part. Your answers are confidential and you may stop at any time.",
+     required:false, relevant:null, validate:{}},
+    {name:"consent", type:"select_one", label:"Do you agree to participate?", hint:"",
+     required:true, relevant:null, validate:{message:"Consent is required before continuing."},
+     choices:[{value:"yes",label:"Yes, I agree"},{value:"no",label:"No"}]},
+    {name:"age", type:"integer", label:"How old are you?", hint:"In completed years", required:true,
+     relevant:{op:"and",rules:[{q:"consent",cmp:"eq",value:"yes"}]},
+     validate:{min:0,max:120,message:"Age must be between 0 and 120."}},
+    {name:"members", type:"repeat", label:"Household members", hint:"", required:false,
+     relevant:null, validate:{}, repeat:{min:null,max:null,item_label:"Item ${index}",count_expr:""},
+     children:[
+       {name:"mname", type:"text", label:"Member's name", hint:"", required:true, relevant:null, validate:{}}
+     ]}
+  ];
+  const inds = [{id:"ind1", code:"IND-1", name:"Example indicator", target:100}];
+  const wb = buildWorkbook("My survey", "", sample, inds);
+  XLSX.writeFile(wb, "kura_form_template.xlsx");
+}
+
+/* ── workbook parsing ── */
+const _normKey = s=>String(s||"").toLowerCase().replace(/[^a-z]/g,"");
+const KF_HEADER_MAP = {
+  type:"type",
+  question:"label", label:"label", questiontext:"label",
+  name:"name", namedatacolumn:"name", machinename:"name", datacolumn:"name", column:"name",
+  required:"required",
+  choices:"choices", options:"choices", answers:"choices",
+  hint:"hint", hinthelp:"hint", help:"hint", helptext:"hint",
+  showwhen:"show", relevant:"show", condition:"show", skiplogic:"show",
+  filterchoicesby:"cascade", cascade:"cascade", parentquestion:"cascade",
+  min:"min", minimum:"min", max:"max", maximum:"max",
+  pattern:"regex", patternregex:"regex", regex:"regex",
+  mustbetrue:"expr", mustbetruerule:"expr", rule:"expr", constraint:"expr",
+  warnwhenfalse:"warn_expr", warnwhen:"warn_expr", warningrule:"warn_expr",
+  warningmessage:"warn_message",
+  errormessage:"message", message:"message",
+  calculation:"calc", formula:"calc", calc:"calc",
+  indicator:"indicator", indicatorcode:"indicator"
+};
+function _findSheet(wb, want){
+  const key = wb.SheetNames.find(n=>_normKey(n)===want || _normKey(n).indexOf(want)!==-1);
+  return key ? wb.Sheets[key] : null;
+}
+function _headerIndex(rows, mustHave){
+  for(let i=0;i<Math.min(rows.length,10);i++){
+    const cols = {};
+    (rows[i]||[]).forEach((cell,ci)=>{
+      const mapped = KF_HEADER_MAP[_normKey(cell)];
+      if(mapped && cols[mapped]===undefined) cols[mapped]=ci;
+    });
+    if(mustHave.every(k=>cols[k]!==undefined)) return {row:i, cols};
+  }
+  return null;
+}
+function parseWorkbook(buf, filename){
+  if(typeof XLSX==="undefined"){ alert("The spreadsheet library did not load — check your connection and reload the page."); return; }
+  let wb;
+  try{ wb = XLSX.read(buf, {type:"array"}); }
+  catch(e){ alert("That file could not be read as an Excel workbook (.xlsx). Export a Kura Form or download the blank template to see the layout."); return; }
+
+  const wsQ = _findSheet(wb, "questions");
+  if(!wsQ){ alert('No "Questions" sheet found. A Kura Form workbook needs a sheet called Questions — download the blank template to see the layout.'); return; }
+  const rows = XLSX.utils.sheet_to_json(wsQ, {header:1, defval:""});
+  const head = _headerIndex(rows, ["type","label"]);
+  if(!head){ alert('The Questions sheet needs at least "Type" and "Question" column headings.'); return; }
+
+  const warnings = [];
+  const cell = (r,k)=>{ const ci=head.cols[k]; return ci===undefined ? "" : String(r[ci]!=null?r[ci]:"").trim(); };
+  const num = v=>{ const n=Number(v); return v!=="" && isFinite(n) ? n : null; };
+  const truthy = v=>/^(yes|y|true|1|required|✓|x)$/i.test(String(v).trim());
+
+  const questions = [];
+  let openRepeat = null;
+  for(let i=head.row+1;i<rows.length;i++){
+    const r = rows[i]||[];
+    const typeRaw = cell(r,"type"), label = cell(r,"label");
+    if(!typeRaw && !label) continue;
+    const tkey = String(typeRaw).toLowerCase().trim();
+    if(END_REPEAT.has(tkey)){ openRepeat = null; continue; }
+    let type = TYPE_ALIASES[tkey];
+    if(!type){
+      type = "text";
+      if(typeRaw) warnings.push('Unknown type "'+typeRaw+'" on row '+(i+1)+" — treated as Short text.");
+    }
+    const where = '"'+(label||("row "+(i+1)))+'"';
+    const q = {
+      name: sanitizeName(cell(r,"name") || label || type),
+      type, label: label || FRIENDLY_TYPES[type] || type,
+      hint: cell(r,"hint"),
+      required: type==="note"||type==="section" ? false : truthy(cell(r,"required")),
+      relevant: parseShowWhen(cell(r,"show"), warnings, where),
+      validate: {}
+    };
+    const v = q.validate;
+    if(type!=="repeat"){
+      const mn=num(cell(r,"min")), mx=num(cell(r,"max"));
+      if(mn!=null) v.min=mn;
+      if(mx!=null) v.max=mx;
+    }
+    ["regex","expr","warn_expr","warn_message","message"].forEach(k=>{
+      const val = cell(r,k); if(val) v[k]=val;
+    });
+    if(CHOICE_TYPES.includes(type)) q.choices = parseChoicesCell(cell(r,"choices"));
+    const casc = cell(r,"cascade");
+    if(casc) q.cascade = {parent: sanitizeName(casc)};
+    const calc = cell(r,"calc");
+    if(type==="calculate") q.calc = calc;
+    if(type==="repeat"){
+      q.children = [];
+      q.repeat = {min:num(cell(r,"min")), max:num(cell(r,"max")), item_label:"Item ${index}"};
+      if(calc) q.repeat.count_expr = calc;
+    }
+    const indRef = cell(r,"indicator");
+    if(indRef) q._indicator = indRef;
+
+    if(type==="repeat"){ questions.push(q); openRepeat = q; }
+    else if(openRepeat){
+      if(type==="section"){ questions.push(q); }  // sections close nothing, but live at top level
+      else openRepeat.children.push(q);
+    }
+    else questions.push(q);
+  }
+  if(!questions.length){ alert("No questions found in the Questions sheet."); return; }
+
+  // Choices sheet → questions with an empty / "(see the Choices sheet)" cell
+  const wsC = _findSheet(wb, "choices");
+  if(wsC){
+    const cRows = XLSX.utils.sheet_to_json(wsC, {header:1, defval:""});
+    let h=null;
+    for(let i=0;i<Math.min(cRows.length,5);i++){
+      const cols={};
+      (cRows[i]||[]).forEach((c,ci)=>{
+        const k=_normKey(c);
+        if((k==="question"||k==="questionname"||k==="name")&&cols.q===undefined) cols.q=ci;
+        else if(k==="value"&&cols.v===undefined) cols.v=ci;
+        else if(k==="label"&&cols.l===undefined) cols.l=ci;
+        else if((k==="parentvalue"||k==="parent")&&cols.p===undefined) cols.p=ci;
+        else if(k==="zones"&&cols.z===undefined) cols.z=ci;
+      });
+      if(cols.q!==undefined&&cols.v!==undefined){ h={row:i,cols}; break; }
+    }
+    if(h){
+      const byQ = {};
+      for(let i=h.row+1;i<cRows.length;i++){
+        const r=cRows[i]||[];
+        const qn=sanitizeName(String(r[h.cols.q]||"").trim());
+        const val=String(r[h.cols.v]!=null?r[h.cols.v]:"").trim();
+        if(!qn||!val) continue;
+        const c={value:val, label:String(h.cols.l!==undefined?(r[h.cols.l]||val):val).trim()||val};
+        const par=h.cols.p!==undefined?String(r[h.cols.p]||"").trim():"";
+        if(par) c.parent=par;
+        const zn=h.cols.z!==undefined?String(r[h.cols.z]||"").trim():"";
+        if(zn) c.zones=zn.split(",").map(x=>x.trim()).filter(Boolean);
+        (byQ[qn]=byQ[qn]||[]).push(c);
+      }
+      const fill=q=>{
+        if(CHOICE_TYPES.includes(q.type)&&(!q.choices||!q.choices.length)&&byQ[q.name])
+          q.choices=byQ[q.name];
+        (q.children||[]).forEach(fill);
+      };
+      questions.forEach(fill);
+    }
+  }
+  const missing=[];
+  const checkChoices=q=>{
+    if(CHOICE_TYPES.includes(q.type)&&(!q.choices||!q.choices.length)) missing.push(q.label||q.name);
+    (q.children||[]).forEach(checkChoices);
+  };
+  questions.forEach(checkChoices);
+  if(missing.length) warnings.push("No choices found for: "+missing.slice(0,4).join(", ")+(missing.length>4?" …":"")+". Add them in the builder or the Choices sheet.");
+
+  // Warn about conditions pointing at names that don't exist in this file
+  const known = new Set();
+  const collect=q=>{ known.add(q.name); (q.children||[]).forEach(collect); };
+  questions.forEach(collect);
+  const badRefs = new Set();
+  const scanRefs=q=>{
+    walkRules(q.relevant, r=>{ if(r.q && !known.has(r.q)) badRefs.add(r.q); });
+    (q.children||[]).forEach(scanRefs);
+  };
+  questions.forEach(scanRefs);
+  if(badRefs.size) warnings.push('"Show when" refers to question name(s) not in this file: '+
+    Array.from(badRefs).slice(0,4).join(", ")+(badRefs.size>4?" …":"")+
+    ". Check the Name (data column) cells match.");
+
+  // Indicators sheet + linking by code or name
+  let indicators=[];
+  const wsI=_findSheet(wb,"indicators");
+  if(wsI){
+    const iRows=XLSX.utils.sheet_to_json(wsI,{header:1,defval:""});
+    let h=null;
+    for(let i=0;i<Math.min(iRows.length,5);i++){
+      const cols={};
+      (iRows[i]||[]).forEach((c,ci)=>{
+        const k=_normKey(c);
+        if(k==="code"&&cols.c===undefined) cols.c=ci;
+        else if(k==="name"&&cols.n===undefined) cols.n=ci;
+        else if(k==="target"&&cols.t===undefined) cols.t=ci;
+      });
+      if(cols.c!==undefined||cols.n!==undefined){ h={row:i,cols}; break; }
+    }
+    if(h){
+      for(let i=h.row+1;i<iRows.length;i++){
+        const r=iRows[i]||[];
+        const code=h.cols.c!==undefined?String(r[h.cols.c]||"").trim():"";
+        const name=h.cols.n!==undefined?String(r[h.cols.n]||"").trim():"";
+        if(!code&&!name) continue;
+        const t=h.cols.t!==undefined?Number(r[h.cols.t]):NaN;
+        indicators.push({id:"ind"+(indicators.length+1), code, name:name||code,
+          target:isFinite(t)&&String(r[h.cols.t]).trim()!==""?t:null});
+      }
+    }
+  }
+  const indLookup={};
+  indicators.forEach(d=>{
+    if(d.code) indLookup[d.code.toLowerCase()]=d.id;
+    if(d.name) indLookup[d.name.toLowerCase()]=d.id;
+  });
+  const linkInd=q=>{
+    if(q._indicator){
+      const id=indLookup[q._indicator.toLowerCase()];
+      if(id) q.indicator=id;
+      else warnings.push('Indicator "'+q._indicator+'" on "'+(q.label||q.name)+'" is not in the Indicators sheet — link skipped.');
+      delete q._indicator;
+    }
+    (q.children||[]).forEach(linkInd);
+  };
+  questions.forEach(linkInd);
+
+  // Form sheet (title / description)
+  let title="", description="";
+  const wsF=_findSheet(wb,"form");
+  if(wsF){
+    XLSX.utils.sheet_to_json(wsF,{header:1,defval:""}).forEach(r=>{
+      const k=_normKey(r[0]);
+      if(k==="title") title=String(r[1]||"").trim();
+      else if(k==="description") description=String(r[1]||"").trim();
+    });
+  }
+
+  pendingImport = {src:{questions, indicators}, title, description, filename, warnings};
+  openImportModal();
 }
 
 let pendingImport = null;
+let importedDescription = null;
 function openImportModal(){
   const p = pendingImport; if(!p) return;
-  const inds = (p.src.indicators||[]).length, zs=(p.src.zones||[]).length;
-  $("#imp-summary").innerHTML =
-    "<b style='color:#fff'>"+esc(p.filename)+"</b><br>"+
+  const inds = (p.src.indicators||[]).length;
+  let html = "<b style='color:#fff'>"+esc(p.filename)+"</b><br>"+
     "Questions: "+p.src.questions.length+
-    (zs?" · Zones: "+zs:"")+(inds?" · Indicators: "+inds:"")+
+    (inds?" · Indicators: "+inds:"")+
     (p.title?"<br>Title in file: “"+esc(p.title)+"”":"");
+  if(p.warnings && p.warnings.length){
+    html += "<br><span style='color:#ffc38a'>⚠ "+
+      p.warnings.slice(0,4).map(esc).join("<br>⚠ ")+
+      (p.warnings.length>4?"<br>…and "+(p.warnings.length-4)+" more":"")+"</span>";
+  }
+  $("#imp-summary").innerHTML = html;
   $("#imp-modal").classList.add("open");
   $("#imp-modal").setAttribute("aria-hidden","false");
 }
@@ -1095,25 +1573,6 @@ function closeImportModal(){
   $("#imp-modal").setAttribute("aria-hidden","true");
   pendingImport = null;
 }
-function parseImport(text, filename){
-  let obj;
-  try{ obj = JSON.parse(text); }
-  catch(e){ alert("That file is not valid JSON."); return; }
-  let src = null, title = "";
-  if(obj && typeof obj==="object" && obj.schema && Array.isArray(obj.schema.questions)){
-    src = obj.schema; title = obj.title||"";           // Kura export
-  } else if(obj && Array.isArray(obj.questions)){
-    src = obj;                                          // bare schema
-  } else if(Array.isArray(obj)){
-    src = {questions: obj};                             // bare question list
-  }
-  if(!src || !src.questions.length){
-    alert("No questions found in this file. Expected a Kura questionnaire export (JSON with a “questions” list).");
-    return;
-  }
-  pendingImport = {src, title, filename};
-  openImportModal();
-}
 function doImport(mode){
   const p = pendingImport; if(!p) return;
   if(mode==="replace"){
@@ -1121,20 +1580,35 @@ function doImport(mode){
        !confirm("Replace the current "+schema.questions.length+" question(s)? This cannot be undone.")) return;
     schema.questions = [];
     schema.questions.push(...prepareQuestions(p.src.questions, new Set()));
-    if(p.src.settings && typeof p.src.settings==="object") schema.settings = p.src.settings;
-    if(Array.isArray(p.src.zones)) schema.zones = p.src.zones;
-    if(Array.isArray(p.src.indicators)) schema.indicators = p.src.indicators;
+    if(Array.isArray(p.src.indicators) && p.src.indicators.length) schema.indicators = p.src.indicators;
     if(p.title) $("#title-input").value = String(p.title).slice(0,140);
+    if(p.description) importedDescription = String(p.description).slice(0,500);
     sel = schema.questions.length ? {i:0,ci:null} : null;
-    markDirty(); renderZones(); renderIndicators(); renderAll();
+    markDirty(); renderIndicators(); renderAll();
   } else {
-    // merge zones / indicators by id, then append questions
-    const zids = new Set(schema.zones.map(z=>z.id));
-    (p.src.zones||[]).forEach(z=>{ if(z&&z.id&&!zids.has(z.id)){ schema.zones.push(z); zids.add(z.id); } });
     const iids = new Set(schema.indicators.map(d=>d.id));
-    (p.src.indicators||[]).forEach(d=>{ if(d&&d.id&&!iids.has(d.id)){ schema.indicators.push(d); iids.add(d.id); } });
+    const codes = new Set(schema.indicators.map(d=>(d.code||"").toLowerCase()).filter(Boolean));
+    (p.src.indicators||[]).forEach(d=>{
+      if(!d) return;
+      if(d.code && codes.has(d.code.toLowerCase())){
+        // Same code already exists — repoint imported links to the existing one.
+        const existing = schema.indicators.find(x=>(x.code||"").toLowerCase()===d.code.toLowerCase());
+        const remapAll = q=>{ if(String(q.indicator)===String(d.id)) q.indicator=existing.id; (q.children||[]).forEach(remapAll); };
+        p.src.questions.forEach(remapAll);
+        return;
+      }
+      let id=d.id, n=1;
+      while(iids.has(id)) id="ind"+(++n)+"_"+Math.floor(Math.random()*1e4);
+      if(id!==d.id){
+        const remapAll = q=>{ if(String(q.indicator)===String(d.id)) q.indicator=id; (q.children||[]).forEach(remapAll); };
+        p.src.questions.forEach(remapAll);
+        d.id=id;
+      }
+      schema.indicators.push(d); iids.add(d.id);
+      if(d.code) codes.add(d.code.toLowerCase());
+    });
     insertQuestions(p.src.questions);
-    renderZones(); renderIndicators();
+    renderIndicators();
   }
   closeImportModal();
 }
@@ -1144,15 +1618,16 @@ $("#imp-file").addEventListener("change", e=>{
   const f = e.target.files[0];
   if(!f) return;
   const reader = new FileReader();
-  reader.onload = ()=>parseImport(reader.result, f.name);
+  reader.onload = ()=>parseWorkbook(new Uint8Array(reader.result), f.name);
   reader.onerror = ()=>alert("Could not read the file.");
-  reader.readAsText(f);
+  reader.readAsArrayBuffer(f);
   e.target.value = "";
 });
 $("#imp-close").addEventListener("click", closeImportModal);
 $("#imp-replace").addEventListener("click", ()=>doImport("replace"));
 $("#imp-append").addEventListener("click", ()=>doImport("append"));
 $("#imp-modal").addEventListener("click", e=>{ if(e.target.id==="imp-modal") closeImportModal(); });
+$("#imp-template").addEventListener("click", e=>{ e.preventDefault(); downloadTemplate(); });
 
 /* ── quick-start templates ── */
 const BLOCK_TEMPLATES = [
@@ -1289,7 +1764,12 @@ function applyCheckTemplate(id){
 function renderTemplates(){
   const host = $("#tpl-body");
   const hasSel = !!curQ();
-  let html = '<div class="tpl-group">Question blocks — inserted at the end</div>';
+  let html = '<div class="tpl-group">Kura Form — build in Excel</div>'+
+    '<div class="tpl"><span class="tico">📗</span>'+
+    '<span class="tmain"><span class="tname">Blank Kura Form workbook</span>'+
+    '<div class="tdesc">An Excel file with a Read me sheet and example rows — draft the whole questionnaire in Excel (or share it with colleagues), then use ⇪ Import in the toolbar to bring it in.</div></span>'+
+    '<button class="btn ghost" data-ttemplate="1" type="button">Download</button></div>';
+  html += '<div class="tpl-group">Question blocks — inserted at the end</div>';
   BLOCK_TEMPLATES.forEach(t=>{
     html += '<div class="tpl"><span class="tico">'+t.ico+'</span>'+
       '<span class="tmain"><span class="tname">'+esc(t.name)+'</span>'+
@@ -1320,6 +1800,7 @@ $("#tpl-close").addEventListener("click", closeTemplates);
 $("#tpl-modal").addEventListener("click", e=>{
   if(e.target.id==="tpl-modal"){ closeTemplates(); return; }
   const t = e.target;
+  if(t.dataset.ttemplate){ downloadTemplate(); return; }
   if(t.dataset.tblock){
     const tpl = BLOCK_TEMPLATES.find(b=>b.id===t.dataset.tblock);
     if(tpl){ insertQuestions(tpl.questions); closeTemplates(); }
@@ -1812,10 +2293,13 @@ async function save(){
   dirty = false;
   $("#save-state").textContent = "saving";
   try{
+    const payload = {title:$("#title-input").value, schema};
+    if(importedDescription!=null){ payload.description = importedDescription; }
     const res = await fetch(CFG.saveUrl,{method:"POST",
       headers:{"Content-Type":"application/json","X-CSRFToken":CFG.csrftoken},
-      body:JSON.stringify({title:$("#title-input").value, schema})});
+      body:JSON.stringify(payload)});
     const j = await res.json();
+    if(j.ok) importedDescription = null;
     $("#save-state").textContent = j.ok ? "saved" : ("error: "+(j.error||res.status));
     if(!j.ok) dirty = true;
   }catch(e){ $("#save-state").textContent = "offline — retrying"; dirty = true; setTimeout(save, 4000); }

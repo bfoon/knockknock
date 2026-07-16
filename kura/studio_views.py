@@ -117,7 +117,7 @@ def studio(request, code):
     ) or {}
     columns = [
         q.get("name") for q in schema.get("questions", [])
-        if q.get("name") and q.get("type") != "section"
+        if q.get("name") and q.get("type") not in ("section", "note")
     ]
     return render(request, "kura/data_studio.html", {
         "survey": survey,

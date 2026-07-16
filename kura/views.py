@@ -326,7 +326,7 @@ def data(request, code):
     } for p in survey.pipelines.all()]
 
     columns = [q["name"] for q in schema.get("questions", [])
-               if q.get("name") and q.get("type") != "section"]
+               if q.get("name") and q.get("type") not in ("section", "note")]
 
     return render(request, "kura/data.html", {
         "survey": survey,
@@ -473,7 +473,7 @@ def export_csv(request, code):
     schema = (survey.current_version.schema if survey.current_version
               else survey.draft_schema) or {}
     names = [q["name"] for q in schema.get("questions", [])
-             if q.get("name") and q.get("type") != "section"]
+             if q.get("name") and q.get("type") not in ("section", "note")]
 
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="{survey.code}_data.csv"'

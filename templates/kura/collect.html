@@ -31,6 +31,10 @@
   .q.err{border-color:rgba(232,72,43,.65)}
   .q.section{background:transparent;border:0;padding:.6rem .2rem 0}
   .q.section .lbl{font-family:"Fraunces",serif;font-size:1.25rem;color:var(--cyan)}
+  .q.note{border-color:rgba(34,211,238,.35);
+    background:linear-gradient(135deg,rgba(34,211,238,.10),rgba(139,92,246,.07))}
+  .q.note .lbl{font-family:"Fraunces",serif;font-size:1.1rem;color:#a5f3fc}
+  .q.note .note-body{margin:.5rem 0 0;color:var(--muted);font-size:.88rem;line-height:1.55;white-space:pre-line}
   .lbl{font-weight:700;font-size:.98rem;line-height:1.35;color:#fff}
   .lbl .req{color:var(--pink)}
   .hint{margin:.3rem 0 0;color:var(--dim);font-size:.76rem}
@@ -469,6 +473,12 @@ function repeatHtml(q,ctx){
     let inner="";
     (q.children||[]).forEach(ch=>{
       if(ch.type==="section"){ inner+='<div class="lbl" style="color:var(--cyan)">'+esc(pipeText(ch.label,ic))+'</div>'; return; }
+      if(ch.type==="note"){
+        if(!evalCond(ch.relevant,ic)||!geoRelevant(ch)) return;
+        inner+='<div class="q note" style="margin:.5rem 0"><div class="lbl">🛈 '+esc(pipeText(ch.label,ic))+'</div>'+
+          (ch.hint?'<p class="note-body">'+esc(pipeText(ch.hint,ic))+'</p>':'')+'</div>';
+        return;
+      }
       if(ch.type==="calculate") return;
       if(!evalCond(ch.relevant,ic)||!geoRelevant(ch)) return;
       const ns="r|"+q.name+"|"+idx+"|";
@@ -515,6 +525,14 @@ function render(){
       div.className="q section";
       div.innerHTML='<div class="lbl">'+esc(pipeText(q.label,ctx))+'</div>'+
         (q.hint?'<p class="hint">'+esc(pipeText(q.hint,ctx))+'</p>':'');
+      form.appendChild(div); return;
+    }
+    if(q.type==="note"){
+      // Display-only: title + body, records no answer and never counts
+      // toward progress. Skip logic / geofence already applied above.
+      div.className="q note";
+      div.innerHTML='<div class="lbl">🛈 '+esc(pipeText(q.label,ctx))+'</div>'+
+        (q.hint?'<p class="note-body">'+esc(pipeText(q.hint,ctx))+'</p>':'');
       form.appendChild(div); return;
     }
     visible++;
@@ -760,7 +778,7 @@ function validate(){
   const ctx=context();
   Object.keys(errors).forEach(k=>delete errors[k]);
   Q.forEach(q=>{
-    if(q.type==="section"||q.type==="calculate") return;
+    if(q.type==="section"||q.type==="note"||q.type==="calculate") return;
     if(!evalCond(q.relevant,ctx)||!geoRelevant(q)) return;
     const v=answers[q.name];
     const empty=v==null||v===""||(Array.isArray(v)&&!v.length);
@@ -775,7 +793,7 @@ function validate(){
       items.forEach((item,idx)=>{
         const ic=itemContext(q,item||{},ctx);
         (q.children||[]).forEach(ch=>{
-          if(ch.type==="section"||ch.type==="calculate") return;
+          if(ch.type==="section"||ch.type==="note"||ch.type==="calculate") return;
           if(!evalCond(ch.relevant,ic)||!geoRelevant(ch)) return;
           const cv=(item||{})[ch.name];
           const cempty=cv==null||cv===""||(Array.isArray(cv)&&!cv.length);

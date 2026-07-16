@@ -246,8 +246,23 @@ const totals = {total:0, web:0, api:0, with_gps:0, last_hour:0, today:0};
 
 /* ── map ── */
 const map = L.map("map", {zoomControl:true, attributionControl:true}).setView([13.44, -16.6], 8);
-L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
-  {maxZoom:20, subdomains:"abcd", crossOrigin:true, attribution:"&copy; OpenStreetMap contributors &copy; CARTO"}).addTo(map);
+const _carto = s=>L.tileLayer("https://{s}.basemaps.cartocdn.com/"+s+"/{z}/{x}/{y}{r}.png",
+  {maxZoom:20, subdomains:"abcd", crossOrigin:true, attribution:"&copy; OpenStreetMap contributors &copy; CARTO"});
+const baseLayers = {
+  "🛣 Streets":   _carto("rastertiles/voyager"),
+  "🌕 Light":     _carto("light_all"),
+  "🌑 Dark":      _carto("dark_all"),
+  "🛰 Satellite": L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    {maxZoom:19, crossOrigin:true, attribution:"Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics"}),
+  "🗺 OSM":       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    {maxZoom:19, crossOrigin:true, attribution:"&copy; OpenStreetMap contributors"})
+};
+let monBase = "🛣 Streets";
+try{ monBase = localStorage.getItem("kura_monitor_base") || monBase; }catch(e){}
+(baseLayers[monBase] || baseLayers["🛣 Streets"]).addTo(map);
+L.control.layers(baseLayers, null, {position:"topright", collapsed:true}).addTo(map);
+map.on("baselayerchange", e=>{ try{ localStorage.setItem("kura_monitor_base", e.name); }catch(err){} });
 const markers = L.layerGroup().addTo(map);
 const points = [];
 function addPoint(sub, pan){

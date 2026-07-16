@@ -474,7 +474,7 @@ def validate_submission(schema: dict, answers: dict, gps=None):
     for q in questions:
         name = q.get("name")
         qtype = q.get("type")
-        if not name or qtype == "section":
+        if not name or qtype in ("section", "note"):
             continue
 
         if not (evaluate_condition(q.get("relevant"), ctx)
@@ -526,7 +526,7 @@ def validate_submission(schema: dict, answers: dict, gps=None):
                 clean_item = {}
                 for ch in children:
                     cname, ctype_ = ch.get("name"), ch.get("type")
-                    if not cname or ctype_ == "section":
+                    if not cname or ctype_ in ("section", "note"):
                         continue
                     if not (evaluate_condition(ch.get("relevant"), item_ctx)
                             and geo_relevant(ch, gps, zones)):

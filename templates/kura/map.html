@@ -68,6 +68,8 @@
     display:inline-flex;align-items:center;gap:.35rem}
   .cbtn:hover{color:#fff;border-color:rgba(255,255,255,.3)}
   .cbtn.on{color:#fff;border-color:var(--cyan);background:rgba(34,211,238,.14)}
+  select.cbtn{appearance:none;-webkit-appearance:none;outline:none;font-family:"Archivo",sans-serif}
+  select.cbtn option{background:#0b0d26;color:#f8fbff}
   .legend{position:fixed;z-index:1000;bottom:78px;right:14px;display:flex;gap:.8rem;
     font:600 .62rem/1 "Spline Sans Mono",monospace;color:var(--muted);
     padding:.45rem .7rem;border:1px solid var(--line);border-radius:999px;
@@ -111,6 +113,13 @@
 <span class="legend"><span><i style="background:var(--cyan)"></i>Web</span><span><i style="background:var(--pink)"></i>Mobile app</span></span>
 
 <div class="hud controls">
+  <select class="cbtn" id="b-base" title="Basemap (B cycles)" aria-label="Basemap style">
+    <option value="dark">🌑 Dark</option>
+    <option value="light">🌕 Light</option>
+    <option value="streets">🛣 Streets</option>
+    <option value="satellite">🛰 Satellite</option>
+    <option value="osm">🗺 OSM</option>
+  </select>
   <button class="cbtn on" id="b-follow" type="button" title="Pan to new arrivals (P)">🎯 Follow</button>
   <button class="cbtn" id="b-heat" type="button" title="Heatmap (H)">🔥 Heat</button>
   <button class="cbtn" id="b-fit" type="button" title="Fit all points">⤢ Fit</button>
@@ -138,17 +147,48 @@ const seen = new Set();
 const totals = {total:0, web:0, api:0, last_hour:0};
 let follow = true, heatOn = false;
 
-/* ── map (dark CARTO tiles; OSM fallback if the CDN is blocked) ── */
+/* ── map with switchable basemaps (Dark / Light / Streets / Satellite / OSM) ── */
 const map = L.map("map", {zoomControl:true, worldCopyJump:true}).setView([13.44, -16.6], 8);
-const dark = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-  {maxZoom:20, subdomains:"abcd", crossOrigin:true, attribution:'&copy; OpenStreetMap contributors &copy; CARTO'});
-dark.on("tileerror", function once(){
-  dark.off("tileerror", once);
-  map.removeLayer(dark);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
-    {maxZoom:20, subdomains:"abcd", crossOrigin:true, attribution:"&copy; OpenStreetMap contributors &copy; CARTO"}).addTo(map);
-});
-dark.addTo(map);
+
+const carto = (style)=>L.tileLayer(
+  "https://{s}.basemaps.cartocdn.com/"+style+"/{z}/{x}/{y}{r}.png",
+  {maxZoom:20, subdomains:"abcd", crossOrigin:true,
+   attribution:"&copy; OpenStreetMap contributors &copy; CARTO"});
+const BASEMAPS = {
+  dark:      {label:"🌑 Dark",      make:()=>carto("dark_all")},
+  light:     {label:"🌕 Light",     make:()=>carto("light_all")},
+  streets:   {label:"🛣 Streets",   make:()=>carto("rastertiles/voyager")},
+  satellite: {label:"🛰 Satellite", make:()=>L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    {maxZoom:19, crossOrigin:true,
+     attribution:"Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics"})},
+  osm:       {label:"🗺 OSM",       make:()=>L.tileLayer(
+    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    {maxZoom:19, crossOrigin:true, attribution:"&copy; OpenStreetMap contributors"})}
+};
+const BASE_ORDER = Object.keys(BASEMAPS);
+let baseKey = null, baseLayer = null;
+
+function setBasemap(key, isFallback){
+  if(!BASEMAPS[key] || key === baseKey) return;
+  if(baseLayer) map.removeLayer(baseLayer);
+  baseKey = key;
+  baseLayer = BASEMAPS[key].make();
+  // If this basemap's CDN is unreachable, fall back to OSM once.
+  if(!isFallback && key !== "osm"){
+    baseLayer.on("tileerror", function once(){
+      baseLayer.off("tileerror", once);
+      setBasemap("osm", true);
+    });
+  }
+  baseLayer.addTo(map).bringToBack();
+  try{ localStorage.setItem("kura_map_base", key); }catch(e){}
+  const sel = $("#b-base");
+  if(sel && sel.value !== key) sel.value = key;
+}
+let savedBase = "dark";
+try{ savedBase = localStorage.getItem("kura_map_base") || "dark"; }catch(e){}
+setBasemap(BASEMAPS[savedBase] ? savedBase : "dark");
 
 const pointLayer = L.layerGroup().addTo(map);
 const heat = (window.L && L.heatLayer)
@@ -246,10 +286,18 @@ $("#b-heat").addEventListener("click", toggleHeat);
 $("#b-follow").addEventListener("click", toggleFollow);
 $("#b-fit").addEventListener("click", fitAll);
 $("#b-full").addEventListener("click", toggleFull);
+$("#b-base").value = baseKey;
+$("#b-base").addEventListener("change", e=>setBasemap(e.target.value));
+function cycleBasemap(){
+  const i = BASE_ORDER.indexOf(baseKey);
+  setBasemap(BASE_ORDER[(i+1) % BASE_ORDER.length]);
+}
 document.addEventListener("keydown", e=>{
+  if(e.target && /^(input|select|textarea)$/i.test(e.target.tagName)) return;
   if(e.key==="f"||e.key==="F") toggleFull();
   else if(e.key==="h"||e.key==="H") toggleHeat();
   else if(e.key==="p"||e.key==="P") toggleFollow();
+  else if(e.key==="b"||e.key==="B") cycleBasemap();
 });
 
 /* ── transport: WS first, polling fallback (same endpoints as the monitor) ── */

@@ -57,6 +57,7 @@ from django.utils import timezone
 
 QUESTION_TYPES = [
     ("section", "Section header / note"),
+    ("note", "Note / disclaimer (display only, no answer)"),
     ("text", "Short text"),
     ("long_text", "Paragraph"),
     ("integer", "Whole number"),

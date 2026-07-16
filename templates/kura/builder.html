@@ -160,6 +160,32 @@
   .geo-close:hover{background:rgba(232,72,43,.25);border-color:var(--red)}
   .leaflet-container{font-family:"Archivo",sans-serif}
   .leaflet-bar a{color:#111}
+  /* generic sheet modals (templates, import) */
+  .sheet-modal{position:fixed;inset:0;z-index:1000;display:none;background:rgba(2,3,15,.82);
+    backdrop-filter:blur(12px);padding:1rem;overflow:auto}
+  .sheet-modal.open{display:flex}
+  .sheet-dialog{width:min(760px,100%);max-height:calc(100vh - 2rem);margin:auto;display:flex;
+    flex-direction:column;border:1px solid rgba(255,255,255,.18);border-radius:18px;overflow:hidden;
+    background:#090b23;box-shadow:0 30px 100px rgba(0,0,0,.65)}
+  .sheet-head{display:flex;align-items:center;gap:.7rem;padding:.75rem 1rem;border-bottom:1px solid var(--line);
+    background:linear-gradient(135deg,rgba(255,138,31,.16),rgba(255,63,152,.08))}
+  .sheet-head h2{margin:0;font-family:"Fraunces",serif;font-size:1.15rem;flex:1}
+  .sheet-body{overflow:auto;padding:.9rem 1rem 1.1rem}
+  .tpl-group{font-family:"Spline Sans Mono",monospace;font-size:.62rem;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--cyan);margin:1rem 0 .4rem}
+  .tpl-group:first-child{margin-top:0}
+  .tpl{display:flex;align-items:center;gap:.7rem;border:1px solid var(--line);border-radius:12px;
+    padding:.6rem .75rem;margin:.4rem 0;background:rgba(255,255,255,.03)}
+  .tpl .tico{font-size:1.15rem;flex:0 0 auto}
+  .tpl .tmain{flex:1;min-width:0}
+  .tpl .tname{font-weight:700;font-size:.86rem;color:#fff}
+  .tpl .tdesc{font-size:.72rem;color:var(--muted);line-height:1.4;margin-top:.15rem}
+  .tpl .btn{flex:0 0 auto;padding:.4rem .7rem;font-size:.74rem}
+  .tpl.disabled{opacity:.45}
+  .imp-summary{border:1px solid var(--line);border-radius:10px;padding:.7rem .8rem;margin:.6rem 0;
+    font-family:"Spline Sans Mono",monospace;font-size:.7rem;color:var(--muted);line-height:1.6}
+  .imp-actions{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.8rem}
+  .imp-actions .btn{flex:1;justify-content:center;min-width:150px}
   @media(max-width:850px){
     .geo-modal{padding:0}
     .geo-dialog{height:100vh;border-radius:0}
@@ -175,6 +201,9 @@
   <a class="mark" href="{% url 'kura:list' %}">Kura<span style="-webkit-text-fill-color:var(--pink)">.</span></a>
   <input id="title-input" value="{{ survey.title }}" maxlength="140" aria-label="Survey title">
   <span class="save-state" id="save-state">saved</span>
+  <button class="btn ghost" id="imp-btn" type="button" title="Import a questionnaire from a Kura JSON export">⇪ Import</button>
+  <button class="btn ghost" id="exp-btn" type="button" title="Download this questionnaire as JSON (re-importable)">⇩ Export</button>
+  <input type="file" id="imp-file" accept=".json,application/json" style="display:none">
   <a class="btn ghost" href="{% url 'kura:data' survey.code %}">Data</a>
   <a class="btn ghost" href="{% url 'kura:monitor' survey.code %}">Live</a>
   <a class="btn ghost" href="{% url 'kura:preview' survey.code %}" target="_blank" rel="noopener" title="Live preview of the DRAFT — no publish needed">Preview</a>
@@ -186,6 +215,17 @@
     <div class="panel">
       <h3>Add question</h3>
       <div id="palette"></div>
+    </div>
+    <div class="panel">
+      <h3>Quick start</h3>
+      <button class="addline" id="tpl-open" type="button" style="width:calc(100% - 1.2rem);margin:.15rem .6rem .35rem;border-color:rgba(255,138,31,.5);color:#ffc38a">✨ Browse templates</button>
+      <div class="hint-text">Ready-made question blocks (consent, demographics, roster…) and one-click logic, constraint &amp; warning presets for the selected question.</div>
+    </div>
+    <div class="panel">
+      <h3>Indicators</h3>
+      <div id="indicators"></div>
+      <button class="addline" id="add-indicator" type="button" style="width:calc(100% - 1.2rem);margin:.15rem .6rem .6rem">+ Add indicator</button>
+      <div class="hint-text">Programme / M&amp;E indicators this survey feeds. Link a question to an indicator in its settings (right column); the mapping is saved in the schema and travels into exports.</div>
     </div>
     <div class="panel">
       <h3>Geofence zones</h3>
@@ -255,6 +295,35 @@
   </div>
 </div>
 
+<div class="sheet-modal" id="tpl-modal" aria-hidden="true">
+  <div class="sheet-dialog" role="dialog" aria-modal="true" aria-labelledby="tpl-title">
+    <div class="sheet-head">
+      <h2 id="tpl-title">Quick-start templates</h2>
+      <button class="geo-close" id="tpl-close" type="button" aria-label="Close templates">×</button>
+    </div>
+    <div class="sheet-body" id="tpl-body"></div>
+  </div>
+</div>
+
+<div class="sheet-modal" id="imp-modal" aria-hidden="true">
+  <div class="sheet-dialog" role="dialog" aria-modal="true" aria-labelledby="imp-title" style="width:min(560px,100%)">
+    <div class="sheet-head">
+      <h2 id="imp-title">Import questionnaire</h2>
+      <button class="geo-close" id="imp-close" type="button" aria-label="Close import">×</button>
+    </div>
+    <div class="sheet-body">
+      <div class="imp-summary" id="imp-summary"></div>
+      <div class="hint-text" style="padding:0">
+        <b style="color:#fff">Replace</b> throws away the current questions (zones, indicators and settings from the file are also adopted where present). <b style="color:#fff">Append</b> adds the imported questions after the existing ones — clashing machine names are renamed automatically and internal skip logic is rewired to the new names.
+      </div>
+      <div class="imp-actions">
+        <button class="btn" id="imp-replace" type="button">Replace questionnaire</button>
+        <button class="btn ghost" id="imp-append" type="button">Append to end</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
         crossorigin=""></script>
@@ -280,12 +349,14 @@ const schema = S.schema && typeof S.schema === "object" ? S.schema : {};
 schema.questions = Array.isArray(schema.questions) ? schema.questions : [];
 schema.settings = schema.settings || {};
 schema.zones = Array.isArray(schema.zones) ? schema.zones : [];
+schema.indicators = Array.isArray(schema.indicators) ? schema.indicators : [];
 const LOOKUPS = Array.isArray(CFG.lookups) ? CFG.lookups : [];
 let sel = null;                 // {i, ci|null}
 let dirty = false, saveTimer = null;
 
 const TYPES = [
-  ["section","§","Section / note"],["text","Aa","Short text"],["long_text","¶","Paragraph"],
+  ["section","§","Section / note"],["note","🛈","Note / disclaimer"],
+  ["text","Aa","Short text"],["long_text","¶","Paragraph"],
   ["integer","#","Whole number"],["decimal","#.#","Decimal"],["select_one","◉","Choose one"],
   ["select_multiple","☑","Choose many"],["rank","⇅","Rank options"],["likert","⚖","Likert scale"],
   ["rating","★","Rating"],["date","📅","Date"],["time","🕐","Time"],["datetime","🗓","Date & time"],
@@ -330,11 +401,11 @@ function earlierQuestions(){
   const out=[];
   for(let i=0;i<sel.i;i++){
     const q=schema.questions[i];
-    if(q.type!=="section"&&q.type!=="repeat") out.push(q);
+    if(q.type!=="section"&&q.type!=="note"&&q.type!=="repeat") out.push(q);
   }
   if(sel.ci!=null){
     const kids=schema.questions[sel.i].children||[];
-    for(let c=0;c<sel.ci;c++) if(kids[c].type!=="section") out.push(kids[c]);
+    for(let c=0;c<sel.ci;c++) if(kids[c].type!=="section"&&kids[c].type!=="note") out.push(kids[c]);
   }
   return out;
 }
@@ -343,8 +414,12 @@ function earlierQuestions(){
 function newQuestion(type){
   const label = TYPES.find(t=>t[0]===type)[2];
   const q = {name:slug(type==="calculate"?"calc":type), type,
-    label:type==="section"?"New section":(type==="repeat"?"New repeat group":"New "+label.toLowerCase()+" question"),
-    hint:"", required:false, relevant:null, validate:{}, appearance:"default"};
+    label:type==="section"?"New section"
+      :(type==="repeat"?"New repeat group"
+      :(type==="note"?"Introduction / disclaimer"
+      :"New "+label.toLowerCase()+" question")),
+    hint:type==="note"?"Write the text to display here — it is shown to the respondent but records no answer.":"",
+    required:false, relevant:null, validate:{}, appearance:"default"};
   if(CHOICE_TYPES.includes(type)){
     q.choices = type==="likert"
       ? [["1","Strongly disagree"],["2","Disagree"],["3","Neutral"],["4","Agree"],["5","Strongly agree"]].map(([v,l])=>({value:v,label:l}))
@@ -364,6 +439,7 @@ function retype(q, type){
   if(type!=="calculate") delete q.calc;
   if(type==="repeat"){ q.children=q.children||[]; q.repeat=q.repeat||{min:null,max:null,item_label:"Item ${index}"}; }
   if(type!=="repeat"){ delete q.children; delete q.repeat; }
+  if(type==="note"||type==="section"){ q.required=false; q.validate={}; delete q.indicator; }
 }
 function addQuestion(type){
   schema.questions.push(newQuestion(type));
@@ -718,7 +794,10 @@ $("#geo-modal").addEventListener("click",e=>{
   if(e.target.id==="geo-modal") closeGeoMap();
 });
 document.addEventListener("keydown",e=>{
-  if(e.key==="Escape" && $("#geo-modal").classList.contains("open")) closeGeoMap();
+  if(e.key!=="Escape") return;
+  if($("#geo-modal").classList.contains("open")) closeGeoMap();
+  else if($("#tpl-modal") && $("#tpl-modal").classList.contains("open")) closeTemplates();
+  else if($("#imp-modal") && $("#imp-modal").classList.contains("open")) closeImportModal();
 });
 $("#geo-zone-select").addEventListener("change",e=>{
   stopGeoEditing();               // don't leave edit handles on layers we're about to rebuild
@@ -857,6 +936,398 @@ $("#lookups").addEventListener("click",async e=>{
   }catch(err){ alert("Delete failed."); }
 });
 
+/* ── indicators panel ── */
+function stripIndicatorRefs(id){
+  const walk = q=>{
+    if(String(q.indicator)===String(id)) delete q.indicator;
+    (q.children||[]).forEach(walk);
+  };
+  schema.questions.forEach(walk);
+}
+function renderIndicators(){
+  const host = $("#indicators"); if(!host) return;
+  host.innerHTML = "";
+  (schema.indicators||[]).forEach((d,di)=>{
+    const div = document.createElement("div");
+    div.className = "zone";
+    div.innerHTML =
+      '<div class="zrow"><span class="zid">'+esc(d.id)+'</span>'+
+      '<input type="text" data-indc="'+di+'" value="'+esc(d.code||"")+'" placeholder="code e.g. IND-1.2" style="flex:0 0 92px">'+
+      '<button class="mini" data-inddel="'+di+'">✕</button></div>'+
+      '<div class="zrow"><input type="text" data-indn="'+di+'" value="'+esc(d.name||"")+'" placeholder="Indicator name" style="flex:1"></div>'+
+      '<div class="zrow"><input type="number" step="any" data-indt="'+di+'" value="'+esc(d.target??"")+'" placeholder="target (optional)" style="flex:1" title="Numeric target for this indicator (optional)"></div>';
+    host.appendChild(div);
+  });
+  if(!(schema.indicators||[]).length)
+    host.innerHTML = '<div class="hint-text" style="padding-top:.2rem">No indicators yet.</div>';
+}
+$("#add-indicator").addEventListener("click",()=>{
+  let n=1; const ids=new Set(schema.indicators.map(d=>d.id));
+  while(ids.has("ind"+n)) n++;
+  schema.indicators.push({id:"ind"+n, code:"", name:"Indicator "+n, target:null});
+  markDirty(); renderIndicators(); renderInspector();
+});
+$("#indicators").addEventListener("input",e=>{
+  const t=e.target, d=i=>schema.indicators[+i];
+  if(t.dataset.indc!=null) d(t.dataset.indc).code=t.value;
+  else if(t.dataset.indn!=null) d(t.dataset.indn).name=t.value;
+  else if(t.dataset.indt!=null) d(t.dataset.indt).target=t.value===""?null:Number(t.value);
+  else return;
+  markDirty(); renderCanvas();
+});
+$("#indicators").addEventListener("click",e=>{
+  if(e.target.dataset.inddel==null) return;
+  const d=schema.indicators[+e.target.dataset.inddel];
+  if(!confirm("Delete indicator “"+(d.code||d.name||d.id)+"”? Questions linked to it will be unlinked.")) return;
+  stripIndicatorRefs(d.id);
+  schema.indicators.splice(+e.target.dataset.inddel,1);
+  markDirty(); renderIndicators(); renderInspector(); renderCanvas();
+});
+
+/* ── questionnaire import / export ── */
+const TYPE_IDS = new Set(TYPES.map(t=>t[0]));
+const EXTRA_TYPES = new Set(["matrix","audio","signature"]); // valid but not on the palette
+
+function sanitizeName(raw){
+  let s=String(raw||"").toLowerCase().replace(/[^a-z0-9_]+/g,"_").replace(/^_+|_+$/g,"").slice(0,30);
+  if(/^\d/.test(s)) s="q_"+s;
+  return s;
+}
+function uniquify(base, used){
+  base = sanitizeName(base)||"q";
+  let name=base, n=2;
+  while(used.has(name)) name=base+"_"+(n++);
+  used.add(name);
+  return name;
+}
+function walkRules(rel, fn){
+  if(!rel || !Array.isArray(rel.rules)) return;
+  rel.rules.forEach(r=>{
+    if(r && Array.isArray(r.rules)) walkRules(r, fn);
+    else if(r) fn(r);
+  });
+}
+function remapQuestion(q, map){
+  const get = n=>Object.prototype.hasOwnProperty.call(map,n)?map[n]:null;
+  const pipe = s=>typeof s==="string"
+    ? s.replace(/\$\{([A-Za-z0-9_]+)\}/g,(m,n)=>get(n)?"${"+get(n)+"}":m) : s;
+  const expr = s=>typeof s==="string"
+    ? s.replace(/\b([A-Za-z_][A-Za-z0-9_]*)\b/g, m=>get(m)||m) : s;
+  q.label = pipe(q.label); q.hint = pipe(q.hint);
+  if(q.calc!=null) q.calc = expr(q.calc);
+  if(q.validate) ["expr","warn_expr","min_expr","max_expr"].forEach(k=>{
+    if(q.validate[k]) q.validate[k]=expr(q.validate[k]);
+  });
+  if(q.repeat){
+    ["count_expr","min_expr","max_expr"].forEach(k=>{
+      if(q.repeat[k]) q.repeat[k]=expr(q.repeat[k]);
+    });
+    q.repeat.item_label = pipe(q.repeat.item_label);
+  }
+  walkRules(q.relevant, r=>{ const n=get(r.q); if(n) r.q=n; });
+  if(q.cascade){ const n=get(q.cascade.parent); if(n) q.cascade.parent=n; }
+  if(q.lookup && Array.isArray(q.lookup.fill))
+    q.lookup.fill.forEach(f=>{ const n=get(f.target); if(n) f.target=n; });
+}
+/* Clean a list of raw imported/template questions: valid types, unique
+   machine names, and internal references rewired to any renamed names. */
+function prepareQuestions(rawList, used){
+  const map = {};
+  const cleaned = [];
+  (rawList||[]).forEach(raw=>{
+    if(!raw || typeof raw!=="object") return;
+    const q = JSON.parse(JSON.stringify(raw));
+    if(!TYPE_IDS.has(q.type) && !EXTRA_TYPES.has(q.type)) q.type="text";
+    const old = q.name;
+    q.name = uniquify(q.name||q.type, used);
+    if(old && old!==q.name) map[old]=q.name;
+    if(Array.isArray(q.children)) q.children = q.children.filter(c=>c&&typeof c==="object");
+    (q.children||[]).forEach(ch=>{
+      if(!TYPE_IDS.has(ch.type) && !EXTRA_TYPES.has(ch.type)) ch.type="text";
+      const o = ch.name;
+      ch.name = uniquify(ch.name||ch.type, used);
+      if(o && o!==ch.name) map[o]=ch.name;
+    });
+    cleaned.push(q);
+  });
+  cleaned.forEach(q=>{ remapQuestion(q,map); (q.children||[]).forEach(c=>remapQuestion(c,map)); });
+  return cleaned;
+}
+function insertQuestions(rawList){
+  const cleaned = prepareQuestions(rawList, new Set(allNames()));
+  if(!cleaned.length) return 0;
+  schema.questions.push(...cleaned);
+  sel = {i: schema.questions.length - cleaned.length, ci: null};
+  markDirty(); renderAll();
+  return cleaned.length;
+}
+
+function exportForm(){
+  const payload = {
+    kura_form: 1,
+    exported_at: new Date().toISOString(),
+    code: (CFG.survey&&CFG.survey.code)||"",
+    title: $("#title-input").value,
+    schema: schema
+  };
+  const blob = new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = ((CFG.survey&&CFG.survey.code)||"kura")+"_questionnaire.json";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+}
+
+let pendingImport = null;
+function openImportModal(){
+  const p = pendingImport; if(!p) return;
+  const inds = (p.src.indicators||[]).length, zs=(p.src.zones||[]).length;
+  $("#imp-summary").innerHTML =
+    "<b style='color:#fff'>"+esc(p.filename)+"</b><br>"+
+    "Questions: "+p.src.questions.length+
+    (zs?" · Zones: "+zs:"")+(inds?" · Indicators: "+inds:"")+
+    (p.title?"<br>Title in file: “"+esc(p.title)+"”":"");
+  $("#imp-modal").classList.add("open");
+  $("#imp-modal").setAttribute("aria-hidden","false");
+}
+function closeImportModal(){
+  $("#imp-modal").classList.remove("open");
+  $("#imp-modal").setAttribute("aria-hidden","true");
+  pendingImport = null;
+}
+function parseImport(text, filename){
+  let obj;
+  try{ obj = JSON.parse(text); }
+  catch(e){ alert("That file is not valid JSON."); return; }
+  let src = null, title = "";
+  if(obj && typeof obj==="object" && obj.schema && Array.isArray(obj.schema.questions)){
+    src = obj.schema; title = obj.title||"";           // Kura export
+  } else if(obj && Array.isArray(obj.questions)){
+    src = obj;                                          // bare schema
+  } else if(Array.isArray(obj)){
+    src = {questions: obj};                             // bare question list
+  }
+  if(!src || !src.questions.length){
+    alert("No questions found in this file. Expected a Kura questionnaire export (JSON with a “questions” list).");
+    return;
+  }
+  pendingImport = {src, title, filename};
+  openImportModal();
+}
+function doImport(mode){
+  const p = pendingImport; if(!p) return;
+  if(mode==="replace"){
+    if(schema.questions.length &&
+       !confirm("Replace the current "+schema.questions.length+" question(s)? This cannot be undone.")) return;
+    schema.questions = [];
+    schema.questions.push(...prepareQuestions(p.src.questions, new Set()));
+    if(p.src.settings && typeof p.src.settings==="object") schema.settings = p.src.settings;
+    if(Array.isArray(p.src.zones)) schema.zones = p.src.zones;
+    if(Array.isArray(p.src.indicators)) schema.indicators = p.src.indicators;
+    if(p.title) $("#title-input").value = String(p.title).slice(0,140);
+    sel = schema.questions.length ? {i:0,ci:null} : null;
+    markDirty(); renderZones(); renderIndicators(); renderAll();
+  } else {
+    // merge zones / indicators by id, then append questions
+    const zids = new Set(schema.zones.map(z=>z.id));
+    (p.src.zones||[]).forEach(z=>{ if(z&&z.id&&!zids.has(z.id)){ schema.zones.push(z); zids.add(z.id); } });
+    const iids = new Set(schema.indicators.map(d=>d.id));
+    (p.src.indicators||[]).forEach(d=>{ if(d&&d.id&&!iids.has(d.id)){ schema.indicators.push(d); iids.add(d.id); } });
+    insertQuestions(p.src.questions);
+    renderZones(); renderIndicators();
+  }
+  closeImportModal();
+}
+$("#exp-btn").addEventListener("click", exportForm);
+$("#imp-btn").addEventListener("click", ()=>$("#imp-file").click());
+$("#imp-file").addEventListener("change", e=>{
+  const f = e.target.files[0];
+  if(!f) return;
+  const reader = new FileReader();
+  reader.onload = ()=>parseImport(reader.result, f.name);
+  reader.onerror = ()=>alert("Could not read the file.");
+  reader.readAsText(f);
+  e.target.value = "";
+});
+$("#imp-close").addEventListener("click", closeImportModal);
+$("#imp-replace").addEventListener("click", ()=>doImport("replace"));
+$("#imp-append").addEventListener("click", ()=>doImport("append"));
+$("#imp-modal").addEventListener("click", e=>{ if(e.target.id==="imp-modal") closeImportModal(); });
+
+/* ── quick-start templates ── */
+const BLOCK_TEMPLATES = [
+  {id:"intro_consent", ico:"📜", name:"Introduction & informed consent",
+   desc:"A display-only note (purpose, confidentiality, disclaimer) followed by a required yes/no consent question. Pair later questions with the “Show only if consented” preset.",
+   questions:[
+     {name:"intro", type:"note", label:"About this survey",
+      hint:"Thank you for taking part. Your answers are confidential, will only be used for research purposes, and you may stop at any time. The interview takes about 10 minutes.",
+      required:false, relevant:null, validate:{}},
+     {name:"consent", type:"select_one", label:"Do you agree to participate?", hint:"", required:true,
+      relevant:null, validate:{message:"Consent is required before continuing."},
+      choices:[{value:"yes",label:"Yes, I agree"},{value:"no",label:"No, I do not agree"}]},
+     {name:"no_consent_note", type:"note", label:"Thank you",
+      hint:"You chose not to participate. Please submit the form to end the interview — no further questions will be asked.",
+      required:false, validate:{},
+      relevant:{op:"and",rules:[{q:"consent",cmp:"eq",value:"no"}]}}
+   ]},
+  {id:"demographics", ico:"👤", name:"Basic demographics",
+   desc:"Age (0–120 constraint), sex, and education level — all gated on consent if a consent question exists before them.",
+   questions:[
+     {name:"age", type:"integer", label:"How old are you?", hint:"In completed years", required:true,
+      relevant:null, validate:{min:0,max:120,message:"Age must be between 0 and 120."}},
+     {name:"sex", type:"select_one", label:"Sex", hint:"", required:true, relevant:null, validate:{},
+      choices:[{value:"female",label:"Female"},{value:"male",label:"Male"},
+               {value:"other",label:"Other"},{value:"no_answer",label:"Prefer not to say"}]},
+     {name:"education", type:"select_one", label:"Highest level of education completed", hint:"", required:false,
+      relevant:null, validate:{},
+      choices:[{value:"none",label:"No formal education"},{value:"primary",label:"Primary"},
+               {value:"secondary",label:"Secondary"},{value:"tertiary",label:"Tertiary / university"}]}
+   ]},
+  {id:"contact", ico:"☎", name:"Contact details (validated)",
+   desc:"Phone number and email with regex validation and friendly error messages.",
+   questions:[
+     {name:"phone", type:"text", label:"Phone number", hint:"Digits only, e.g. 3012345", required:false,
+      relevant:null, validate:{regex:"^[0-9+][0-9 ]{6,14}$",message:"Enter a valid phone number (7–15 digits)."}},
+     {name:"email", type:"text", label:"Email address", hint:"", required:false,
+      relevant:null,
+      validate:{regex:"^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",message:"That doesn't look like a valid email address."}}
+   ]},
+  {id:"roster", ico:"⟳", name:"Household roster (repeat group)",
+   desc:"A household-size question driving a repeat group with one card per member: name, age (with plausibility warning) and sex.",
+   questions:[
+     {name:"hh_size", type:"integer", label:"How many people live in this household?", hint:"", required:true,
+      relevant:null, validate:{min:1,max:50,message:"Household size must be between 1 and 50."}},
+     {name:"members", type:"repeat", label:"Household members", hint:"", required:false, relevant:null, validate:{},
+      repeat:{min:null,max:null,item_label:"Member ${index}",count_expr:"hh_size"},
+      children:[
+        {name:"mname", type:"text", label:"Name of member ${index}", hint:"", required:true, relevant:null, validate:{}},
+        {name:"mage", type:"integer", label:"Age of ${mname}", hint:"", required:true,
+         relevant:null, validate:{min:0,max:120,message:"Age must be 0–120.",
+           warn_expr:"value < 110", warn_message:"Over 110 is very unusual — please double-check."}},
+        {name:"msex", type:"select_one", label:"Sex of ${mname}", hint:"", required:true, relevant:null, validate:{},
+         choices:[{value:"female",label:"Female"},{value:"male",label:"Male"}]}
+      ]}
+   ]},
+  {id:"satisfaction", ico:"⚖", name:"Satisfaction & NPS battery",
+   desc:"Three Likert items plus a 0–10 recommendation score, ready to present as charts.",
+   questions:[
+     {name:"sat_overall", type:"likert", label:"Overall, I am satisfied with the service.", hint:"", required:true,
+      relevant:null, validate:{},
+      choices:[["1","Strongly disagree"],["2","Disagree"],["3","Neutral"],["4","Agree"],["5","Strongly agree"]]
+        .map(p=>({value:p[0],label:p[1]}))},
+     {name:"sat_staff", type:"likert", label:"Staff were helpful and respectful.", hint:"", required:true,
+      relevant:null, validate:{},
+      choices:[["1","Strongly disagree"],["2","Disagree"],["3","Neutral"],["4","Agree"],["5","Strongly agree"]]
+        .map(p=>({value:p[0],label:p[1]}))},
+     {name:"sat_wait", type:"likert", label:"The waiting time was acceptable.", hint:"", required:true,
+      relevant:null, validate:{},
+      choices:[["1","Strongly disagree"],["2","Disagree"],["3","Neutral"],["4","Agree"],["5","Strongly agree"]]
+        .map(p=>({value:p[0],label:p[1]}))},
+     {name:"nps", type:"rating", label:"How likely are you to recommend us? (0–10)", hint:"", required:true,
+      relevant:null, validate:{min:0,max:10,message:"Pick a score from 0 to 10."}}
+   ]},
+  {id:"location_check", ico:"📍", name:"Location & photo verification",
+   desc:"Capture a GPS fix and a verification photo — useful with geofence zones and the GPS-outside-area cleaning rule.",
+   questions:[
+     {name:"location", type:"gps", label:"Capture the interview location", hint:"Stand outside for a better fix.",
+      required:true, relevant:null, validate:{}},
+     {name:"site_photo", type:"photo", label:"Photo of the interview site", hint:"", required:false,
+      relevant:null, validate:{}}
+   ]}
+];
+const CHECK_TEMPLATES = [
+  {id:"consent_gate", ico:"🔒", name:"Show only if consented",
+   desc:"Adds skip logic so the selected question only appears when an earlier consent question equals “yes”."},
+  {id:"age_range", ico:"🎂", name:"Age range constraint (0–120)",
+   desc:"Min 0 / max 120 with a clear error message — for number questions."},
+  {id:"phone_regex", ico:"☎", name:"Phone number pattern",
+   desc:"Regex validation for 7–15 digit phone numbers — for text questions."},
+  {id:"warn_high", ico:"⚠", name:"Plausibility warning (soft)",
+   desc:"Amber warning (never blocks) when the value looks unusually high. Edit the expression after applying."},
+  {id:"required_msg", ico:"✳", name:"Required with custom message",
+   desc:"Marks the question required and sets a friendly error message."}
+];
+function applyCheckTemplate(id){
+  const q = curQ();
+  if(!q){ alert("Select a question first (click it in the middle column), then apply the preset."); return false; }
+  if(q.type==="section"||q.type==="note"){
+    alert("Presets apply to answer questions — sections and notes don't record answers."); return false;
+  }
+  q.validate = q.validate||{};
+  if(id==="consent_gate"){
+    const earlier = earlierQuestions();
+    const consent = earlier.slice().reverse().find(p=>/consent/i.test(p.name)||/consent/i.test(p.label||""))
+                 || earlier.slice().reverse().find(p=>p.type==="select_one");
+    if(!consent){
+      alert("No earlier choose-one question found to act as the consent gate. Insert the “Introduction & informed consent” block above this question first.");
+      return false;
+    }
+    q.relevant = q.relevant||{op:"and",rules:[]};
+    q.relevant.rules.push({q:consent.name,cmp:"eq",value:"yes"});
+  } else if(id==="age_range"){
+    if(!["integer","decimal","rating"].includes(q.type)){
+      alert("The age range constraint applies to number questions — this is a “"+q.type+"” question."); return false;
+    }
+    q.validate.min=0; q.validate.max=120;
+    q.validate.message="Value must be between 0 and 120.";
+  } else if(id==="phone_regex"){
+    if(!["text","long_text","barcode"].includes(q.type)){
+      alert("The phone pattern applies to text questions — this is a “"+q.type+"” question."); return false;
+    }
+    q.validate.regex="^[0-9+][0-9 ]{6,14}$";
+    q.validate.message="Enter a valid phone number (7–15 digits).";
+  } else if(id==="warn_high"){
+    q.validate.warn_expr="value <= 100000";
+    q.validate.warn_message="That looks unusually high — please confirm before continuing.";
+  } else if(id==="required_msg"){
+    q.required=true;
+    q.validate.message="This answer is required to continue.";
+  }
+  markDirty(); renderAll();
+  return true;
+}
+function renderTemplates(){
+  const host = $("#tpl-body");
+  const hasSel = !!curQ();
+  let html = '<div class="tpl-group">Question blocks — inserted at the end</div>';
+  BLOCK_TEMPLATES.forEach(t=>{
+    html += '<div class="tpl"><span class="tico">'+t.ico+'</span>'+
+      '<span class="tmain"><span class="tname">'+esc(t.name)+'</span>'+
+      '<div class="tdesc">'+esc(t.desc)+'</div></span>'+
+      '<button class="btn" data-tblock="'+t.id+'" type="button">Insert</button></div>';
+  });
+  html += '<div class="tpl-group">Logic, constraints &amp; warnings — applied to the selected question</div>';
+  if(!hasSel) html += '<div class="hint-text" style="padding:0 0 .4rem">Select a question in the middle column to enable these.</div>';
+  CHECK_TEMPLATES.forEach(t=>{
+    html += '<div class="tpl'+(hasSel?'':' disabled')+'"><span class="tico">'+t.ico+'</span>'+
+      '<span class="tmain"><span class="tname">'+esc(t.name)+'</span>'+
+      '<div class="tdesc">'+esc(t.desc)+'</div></span>'+
+      '<button class="btn ghost" data-tcheck="'+t.id+'" type="button"'+(hasSel?'':' disabled')+'>Apply</button></div>';
+  });
+  host.innerHTML = html;
+}
+function openTemplates(){
+  renderTemplates();
+  $("#tpl-modal").classList.add("open");
+  $("#tpl-modal").setAttribute("aria-hidden","false");
+}
+function closeTemplates(){
+  $("#tpl-modal").classList.remove("open");
+  $("#tpl-modal").setAttribute("aria-hidden","true");
+}
+$("#tpl-open").addEventListener("click", openTemplates);
+$("#tpl-close").addEventListener("click", closeTemplates);
+$("#tpl-modal").addEventListener("click", e=>{
+  if(e.target.id==="tpl-modal"){ closeTemplates(); return; }
+  const t = e.target;
+  if(t.dataset.tblock){
+    const tpl = BLOCK_TEMPLATES.find(b=>b.id===t.dataset.tblock);
+    if(tpl){ insertQuestions(tpl.questions); closeTemplates(); }
+  } else if(t.dataset.tcheck){
+    if(applyCheckTemplate(t.dataset.tcheck)) closeTemplates();
+  }
+});
+
 /* ── canvas ── */
 function metaTags(q){
   const tags=[];
@@ -866,6 +1337,10 @@ function metaTags(q){
   if(q.cascade && q.cascade.parent) tags.push('<span class="tag casc">⇢ '+esc(q.cascade.parent)+'</span>');
   if((q.choices||[]).some(c=>(c.zones||[]).length)) tags.push('<span class="tag geo">geo choices</span>');
   if(q.lookup && q.lookup.dataset) tags.push('<span class="tag casc">🔎 lookup</span>');
+  if(q.indicator){
+    const ind = (schema.indicators||[]).find(d=>String(d.id)===String(q.indicator));
+    tags.push('<span class="tag geo">📊 '+esc(ind ? (ind.code||ind.name||ind.id) : q.indicator)+'</span>');
+  }
   if(q.calc) tags.push('<span class="tag calc">ƒ '+esc(q.calc)+'</span>');
   if(q.score && Object.keys(q.score).length) tags.push('<span class="tag">scored</span>');
   if((q.choices||[]).length) tags.push('<span class="tag">'+q.choices.length+' choices</span>');
@@ -944,7 +1419,11 @@ function renderInspector(){
   html += field("Label — supports ${piping}"+(isChild?" (and ${index})":""),
     '<textarea data-k="label">'+esc(q.label)+'</textarea>');
   html += field("Machine name (column in data)", '<input type="text" data-k="name" value="'+esc(q.name)+'">');
-  if(q.type!=="section" && q.type!=="calculate"){
+  if(q.type==="note"){
+    html += field("Body text — shown under the title (supports ${piping})",
+      '<textarea data-k="hint" style="min-height:96px">'+esc(q.hint||"")+'</textarea>');
+    html += '<div class="hint-text">A note is display-only: it renders on the form (introduction, consent script, disclaimer…) but never records an answer and never appears as a data column. Skip logic and geofencing below still control when it is shown.</div>';
+  } else if(q.type!=="section" && q.type!=="calculate"){
     html += field("Hint", '<input type="text" data-k="hint" value="'+esc(q.hint||"")+'">');
     html += '<div class="field"><label class="check"><input type="checkbox" data-k="required" '+(q.required?"checked":"")+'> Required</label></div>';
   }
@@ -1041,8 +1520,24 @@ function renderInspector(){
       field("Error message", '<input type="text" data-v="message" value="'+esc(v.message||"")+'">');
   }
 
+  /* indicator link */
+  if(!["section","note","repeat"].includes(q.type)){
+    const inds = schema.indicators||[];
+    html += '<div class="divider" style="color:#86efac">Indicator link</div>';
+    if(!inds.length){
+      html += '<div class="hint-text">Define programme indicators in the left column, then link this question to the indicator it measures. The link travels with the schema into exports and reports.</div>';
+    } else {
+      html += field("This question measures",
+        '<select data-ind><option value="">— not linked to an indicator —</option>'+
+        inds.map(d=>'<option value="'+esc(d.id)+'"'+(String(q.indicator)===String(d.id)?" selected":"")+'>'+
+          esc(d.code?d.code+" · ":"")+esc(d.name||d.id)+'</option>').join("")+
+        '</select>')+
+        '<div class="hint-text">Linked questions carry an indicator tag in the questionnaire and the mapping is stored in the form schema (<code>question.indicator</code> → <code>schema.indicators</code>), so downstream tools can aggregate results against targets.</div>';
+    }
+  }
+
   /* advanced constraint + soft warning */
-  if(q.type!=="section" && q.type!=="calculate" && q.type!=="repeat"){
+  if(!["section","note","calculate","repeat"].includes(q.type)){
     const v = q.validate||{};
     html += '<div class="divider">Advanced constraint</div>'+
       field("Must be true (blocks submission) — <code>value</code> = this answer",
@@ -1120,8 +1615,8 @@ function renderInspector(){
     const cols = ds ? ds.columns : [];
     const targets = [];
     schema.questions.forEach(tq=>{
-      if(tq.name && tq.name!==q.name && !["section","repeat","calculate"].includes(tq.type)) targets.push(tq.name);
-      (tq.children||[]).forEach(c=>{ if(c.name && c.name!==q.name && c.type!=="section" && c.type!=="calculate") targets.push(c.name); });
+      if(tq.name && tq.name!==q.name && !["section","note","repeat","calculate"].includes(tq.type)) targets.push(tq.name);
+      (tq.children||[]).forEach(c=>{ if(c.name && c.name!==q.name && !["section","note","calculate"].includes(c.type)) targets.push(c.name); });
     });
     (q.lookup.fill||[]).forEach((mmap,fi)=>{
       const row = document.createElement("div");
@@ -1239,6 +1734,10 @@ function wireInspectorOnce(){
       else mmap.column = t.value;
       markDirty(); return;
     }
+    if(t.dataset.ind!==undefined){
+      if(t.value) q.indicator = t.value; else delete q.indicator;
+      markDirty(); renderCanvas(); return;
+    }
     if(t.dataset.casc!==undefined){
       if(t.value) q.cascade = {parent: t.value};
       else delete q.cascade;
@@ -1348,6 +1847,7 @@ $("#publish-btn").addEventListener("click", publish);
 $("#next-v").textContent = (S.version||0)+1;
 window.addEventListener("beforeunload", e=>{ if(dirty){ e.preventDefault(); e.returnValue=""; } });
 renderZones();
+renderIndicators();
 renderLookups();
 renderAll();
 })();

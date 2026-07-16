@@ -162,7 +162,7 @@ def build_results_deck(survey, owner):
               else survey.draft_schema) or {}
     questions = [q for q in (schema.get("questions") or [])
                  if q.get("name") and q.get("type") not in (
-                     "section", "photo", "audio", "signature", "repeat")]
+                     "section", "note", "photo", "audio", "signature", "repeat")]
 
     slides = []
 

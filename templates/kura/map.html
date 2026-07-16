@@ -118,7 +118,7 @@
     <option value="light">🌕 Light</option>
     <option value="streets">🛣 Streets</option>
     <option value="satellite">🛰 Satellite</option>
-    <option value="osm">🗺 OSM</option>
+    <option value="terrain">🏔 Terrain</option>
   </select>
   <button class="cbtn on" id="b-follow" type="button" title="Pan to new arrivals (P)">🎯 Follow</button>
   <button class="cbtn" id="b-heat" type="button" title="Heatmap (H)">🔥 Heat</button>
@@ -162,23 +162,25 @@ const BASEMAPS = {
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
     {maxZoom:19, crossOrigin:true,
      attribution:"Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics"})},
-  osm:       {label:"🗺 OSM",       make:()=>L.tileLayer(
-    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    {maxZoom:19, crossOrigin:true, attribution:"&copy; OpenStreetMap contributors"})}
+  terrain:   {label:"🏔 Terrain",   make:()=>L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+    {maxZoom:19, crossOrigin:true,
+     attribution:"Tiles &copy; Esri — Source: Esri, HERE, Garmin, OpenStreetMap contributors"})}
 };
 const BASE_ORDER = Object.keys(BASEMAPS);
 let baseKey = null, baseLayer = null;
 
 function setBasemap(key, isFallback){
+  if(key==="osm") key = "streets";   // migrate old saved preference
   if(!BASEMAPS[key] || key === baseKey) return;
   if(baseLayer) map.removeLayer(baseLayer);
   baseKey = key;
   baseLayer = BASEMAPS[key].make();
-  // If this basemap's CDN is unreachable, fall back to OSM once.
-  if(!isFallback && key !== "osm"){
+  // If this basemap's CDN is unreachable, fall back to Streets once.
+  if(!isFallback && key !== "streets"){
     baseLayer.on("tileerror", function once(){
       baseLayer.off("tileerror", once);
-      setBasemap("osm", true);
+      setBasemap("streets", true);
     });
   }
   baseLayer.addTo(map).bringToBack();
@@ -188,6 +190,7 @@ function setBasemap(key, isFallback){
 }
 let savedBase = "dark";
 try{ savedBase = localStorage.getItem("kura_map_base") || "dark"; }catch(e){}
+if(savedBase==="osm") savedBase = "streets";
 setBasemap(BASEMAPS[savedBase] ? savedBase : "dark");
 
 const pointLayer = L.layerGroup().addTo(map);

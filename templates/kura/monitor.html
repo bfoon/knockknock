@@ -255,11 +255,13 @@ const baseLayers = {
   "🛰 Satellite": L.tileLayer(
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
     {maxZoom:19, crossOrigin:true, attribution:"Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics"}),
-  "🗺 OSM":       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    {maxZoom:19, crossOrigin:true, attribution:"&copy; OpenStreetMap contributors"})
+  "🏔 Terrain":   L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+    {maxZoom:19, crossOrigin:true, attribution:"Tiles &copy; Esri — Source: Esri, HERE, Garmin, OpenStreetMap contributors"})
 };
 let monBase = "🛣 Streets";
 try{ monBase = localStorage.getItem("kura_monitor_base") || monBase; }catch(e){}
+if(monBase==="🗺 OSM") monBase = "🛣 Streets";   // migrate: raw OSM tiles are referer-blocked
 (baseLayers[monBase] || baseLayers["🛣 Streets"]).addTo(map);
 L.control.layers(baseLayers, null, {position:"topright", collapsed:true}).addTo(map);
 map.on("baselayerchange", e=>{ try{ localStorage.setItem("kura_monitor_base", e.name); }catch(err){} });

@@ -231,23 +231,25 @@ class LogicEvaluator {
         return !_hasValue(current);
 
       case 'selected':
-      case 'not_selected':
+      case 'not_selected': {
         final selected = current is List
             ? current.map((e) => e.toString()).toList()
             : (_hasValue(current) ? <String>[current.toString()] : <String>[]);
         final hit = selected.contains(expected?.toString() ?? '');
         return cmp == 'selected' ? hit : !hit;
+      }
 
       case 'in':
-      case 'not_in':
+      case 'not_in': {
         final options = expected is List ? expected : <dynamic>[expected];
         final hit = options
             .map((e) => e?.toString() ?? '')
             .contains(current?.toString() ?? '');
         return cmp == 'in' ? hit : !hit;
+      }
 
       case 'contains':
-      case 'not_contains':
+      case 'not_contains': {
         final hit = expected != null &&
             current != null &&
             current
@@ -255,6 +257,7 @@ class LogicEvaluator {
                 .toLowerCase()
                 .contains(expected.toString().toLowerCase());
         return cmp == 'contains' ? hit : !hit;
+      }
 
       case 'matches':
         try {
@@ -556,7 +559,7 @@ class _ExprParser {
     switch (name) {
       case 'not':
         return !_truthy(arg(0));
-      case 'selected':
+      case 'selected': {
         final haystack = arg(0);
         final needle = (arg(1) ?? '').toString();
         if (haystack is List) {
@@ -564,11 +567,13 @@ class _ExprParser {
         }
         final s = (haystack ?? '').toString().trim();
         return s.split(RegExp(r'\s+')).contains(needle);
-      case 'count-selected':
+      }
+      case 'count-selected': {
         final v = arg(0);
         if (v is List) return v.length.toDouble();
         final s = (v ?? '').toString().trim();
         return s.isEmpty ? 0.0 : s.split(RegExp(r'\s+')).length.toDouble();
+      }
       case 'string-length':
         return (arg(0) ?? '').toString().length.toDouble();
       case 'regex':
@@ -627,7 +632,7 @@ class _ExprParser {
       case 'sum_of':
       case 'avg_of':
       case 'min_of':
-      case 'max_of':
+      case 'max_of': {
         final items = arg(0);
         final col = (arg(1) ?? '').toString();
         final values = <double>[];
@@ -651,7 +656,8 @@ class _ExprParser {
           default: // max_of
             return values.reduce((a, b) => a > b ? a : b);
         }
-      case 'count_if':
+      }
+      case 'count_if': {
         final items = arg(0);
         final col = (arg(1) ?? '').toString();
         final cmp = (arg(2) ?? 'eq').toString();
@@ -674,6 +680,7 @@ class _ExprParser {
           if (ok) hits++;
         }
         return hits.toDouble();
+      }
 
       default:
         throw FormatException('Unknown function "$name"');
@@ -838,7 +845,8 @@ Map<String, dynamic> _repeatSpec(Map<String, dynamic> q) => q['repeat'] is Map
 ({int? exact, double? lo, double? hi}) _repeatBounds(
     Map<String, dynamic> rp, Map<String, dynamic> ctx) {
   final exactRaw = _expressionNumber(rp['count_expr'], ctx);
-  final exact = exactRaw == null ? null : exactRaw.truncate().clamp(0, 500);
+  final exact =
+      exactRaw == null ? null : exactRaw.truncate().clamp(0, 500).toInt();
 
   double? lo = double.tryParse(rp['min']?.toString() ?? '');
   final dynLo = _expressionNumber(rp['min_expr'], ctx);
@@ -1879,10 +1887,11 @@ class _AnswerFieldState extends State<_AnswerField> {
 
   Widget _field(String type, Map<String, dynamic> q) {
     switch (type) {
-      case 'note':
+      case 'note': {
         return const SizedBox.shrink();
+      }
 
-      case 'integer':
+      case 'integer': {
         return _textInput(
           hint: 'Enter a whole number',
           icon: Icons.numbers_rounded,
@@ -1890,8 +1899,9 @@ class _AnswerFieldState extends State<_AnswerField> {
           formatters: [FilteringTextInputFormatter.allow(RegExp(r'^-?\d*'))],
           onChanged: (value) => widget.onChanged(int.tryParse(value)),
         );
+      }
 
-      case 'decimal':
+      case 'decimal': {
         return _textInput(
           hint: 'Enter a number',
           icon: Icons.numbers_rounded,
@@ -1902,8 +1912,9 @@ class _AnswerFieldState extends State<_AnswerField> {
           ],
           onChanged: (value) => widget.onChanged(double.tryParse(value)),
         );
+      }
 
-      case 'phone':
+      case 'phone': {
         return _textInput(
           hint: 'Enter phone number',
           icon: Icons.call_rounded,
@@ -1913,8 +1924,9 @@ class _AnswerFieldState extends State<_AnswerField> {
           ],
           onChanged: widget.onChanged,
         );
+      }
 
-      case 'email':
+      case 'email': {
         return _textInput(
           hint: 'name@example.com',
           icon: Icons.alternate_email_rounded,
@@ -1922,8 +1934,9 @@ class _AnswerFieldState extends State<_AnswerField> {
           autocorrect: false,
           onChanged: widget.onChanged,
         );
+      }
 
-      case 'textarea':
+      case 'textarea': {
         return _textInput(
           hint: 'Enter response',
           minLines: 4,
@@ -1931,8 +1944,9 @@ class _AnswerFieldState extends State<_AnswerField> {
           capitalization: TextCapitalization.sentences,
           onChanged: widget.onChanged,
         );
+      }
 
-      case 'select_one':
+      case 'select_one': {
         final current = widget.value?.toString();
         return Column(
           children: _choices(q).map((choice) {
@@ -1950,8 +1964,9 @@ class _AnswerFieldState extends State<_AnswerField> {
             );
           }).toList(),
         );
+      }
 
-      case 'select_many':
+      case 'select_many': {
         final selected = widget.value is List
             ? List<String>.from(
                 (widget.value as List).map((e) => e.toString()))
@@ -1978,8 +1993,9 @@ class _AnswerFieldState extends State<_AnswerField> {
             );
           }).toList(),
         );
+      }
 
-      case 'rank':
+      case 'rank': {
         // Order the options with ↑/↓, exactly like the web runner. The
         // default (unmoved) order still counts as an answer, so it is
         // committed once the question is first shown.
@@ -2050,8 +2066,9 @@ class _AnswerFieldState extends State<_AnswerField> {
             );
           }),
         );
+      }
 
-      case 'yesno':
+      case 'yesno': {
         final current = widget.value?.toString();
         return SegmentedButton<String>(
           segments: const [
@@ -2069,8 +2086,9 @@ class _AnswerFieldState extends State<_AnswerField> {
           onSelectionChanged: (set) =>
               widget.onChanged(set.isEmpty ? null : set.first),
         );
+      }
 
-      case 'rating':
+      case 'rating': {
         final max =
             int.tryParse(_questionSetting(q, 'max')?.toString() ?? '') ?? 5;
         final current = int.tryParse(widget.value?.toString() ?? '') ?? 0;
@@ -2090,8 +2108,9 @@ class _AnswerFieldState extends State<_AnswerField> {
             );
           }),
         );
+      }
 
-      case 'scale':
+      case 'scale': {
         final min =
             double.tryParse(_questionSetting(q, 'min')?.toString() ?? '') ?? 0;
         final max =
@@ -2126,8 +2145,9 @@ class _AnswerFieldState extends State<_AnswerField> {
             ),
           ],
         );
+      }
 
-      case 'likert':
+      case 'likert': {
         final choices = _choices(q).isNotEmpty
             ? _choices(q)
             : const [
@@ -2149,8 +2169,9 @@ class _AnswerFieldState extends State<_AnswerField> {
                   ))
               .toList(),
         );
+      }
 
-      case 'date':
+      case 'date': {
         return _pickerTile(
           icon: Icons.calendar_month_rounded,
           empty: 'Choose date',
@@ -2169,8 +2190,9 @@ class _AnswerFieldState extends State<_AnswerField> {
             }
           },
         );
+      }
 
-      case 'time':
+      case 'time': {
         return _pickerTile(
           icon: Icons.schedule_rounded,
           empty: 'Choose time',
@@ -2185,8 +2207,9 @@ class _AnswerFieldState extends State<_AnswerField> {
             }
           },
         );
+      }
 
-      case 'datetime':
+      case 'datetime': {
         return _pickerTile(
           icon: Icons.event_rounded,
           empty: 'Choose date & time',
@@ -2208,8 +2231,9 @@ class _AnswerFieldState extends State<_AnswerField> {
                 DateFormat('yyyy-MM-dd HH:mm').format(dt));
           },
         );
+      }
 
-      case 'gps':
+      case 'gps': {
         final value = widget.value;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2246,8 +2270,9 @@ class _AnswerFieldState extends State<_AnswerField> {
             ),
           ],
         );
+      }
 
-      case 'photo':
+      case 'photo': {
         final path = widget.value?.toString();
         final hasFile = path != null && File(path).existsSync();
         return Column(
@@ -2288,8 +2313,9 @@ class _AnswerFieldState extends State<_AnswerField> {
             ),
           ],
         );
+      }
 
-      case 'barcode':
+      case 'barcode': {
         final code = widget.value?.toString();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2319,8 +2345,9 @@ class _AnswerFieldState extends State<_AnswerField> {
             ),
           ],
         );
+      }
 
-      case 'signature':
+      case 'signature': {
         final captured = widget.value != null;
         return FilledButton.tonalIcon(
           icon: Icon(captured
@@ -2330,13 +2357,15 @@ class _AnswerFieldState extends State<_AnswerField> {
               Text(captured ? 'Signature captured — redo' : 'Capture signature'),
           onPressed: _captureSignature,
         );
+      }
 
-      default: // 'text' and anything unknown
+      default: { // 'text' and anything unknown
         return _textInput(
           hint: 'Enter response',
           capitalization: TextCapitalization.sentences,
           onChanged: widget.onChanged,
         );
+      }
     }
   }
 

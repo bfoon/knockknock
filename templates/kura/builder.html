@@ -62,6 +62,20 @@
     background:rgba(255,255,255,.035);cursor:pointer;transition:.12s}
   .qcard:hover{border-color:rgba(255,255,255,.24)}
   .qcard.sel{border-color:var(--cyan);box-shadow:0 0 0 1px var(--cyan),0 10px 30px rgba(34,211,238,.12)}
+  .drag-h{cursor:grab;color:var(--dim);font-size:.85rem;letter-spacing:-2px;flex:0 0 auto;
+    padding:.1rem .15rem;user-select:none;touch-action:none}
+  .drag-h:hover{color:#fff}
+  .qcard.dragging,.childrow.dragging{opacity:.4}
+  .qcard.drop-before{box-shadow:0 -4px 0 -1px var(--pink)}
+  .qcard.drop-after{box-shadow:0 5px 0 -1px var(--pink)}
+  .childrow.drop-before{box-shadow:0 -3px 0 -1px var(--pink)}
+  .childrow.drop-after{box-shadow:0 4px 0 -1px var(--pink)}
+  .choice-scroll{max-height:290px;overflow-y:auto;overscroll-behavior:contain;
+    scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.25) transparent}
+  .choice-scroll::-webkit-scrollbar{width:8px}
+  .choice-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:6px}
+  .choice-count{font-family:"Spline Sans Mono",monospace;font-size:.6rem;color:var(--dim);
+    padding:.15rem 1rem .3rem}
   .qhead{display:flex;align-items:center;gap:.5rem}
   .qbadge{font-family:"Spline Sans Mono",monospace;font-size:.56rem;letter-spacing:.1em;text-transform:uppercase;
     border:1px solid var(--line);border-radius:6px;padding:.16rem .42rem;color:var(--cyan);flex:0 0 auto}
@@ -205,6 +219,7 @@
   <button class="btn ghost" id="imp-btn" type="button" title="Import a questionnaire from a Kura Form Excel file (.xlsx)">⇪ Import</button>
   <button class="btn ghost" id="exp-btn" type="button" title="Download this questionnaire as a Kura Form Excel file — edit it in Excel and re-import">⇩ Export</button>
   <input type="file" id="imp-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none">
+  <input type="file" id="ch-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none">
   <a class="btn ghost" href="{% url 'kura:data' survey.code %}">Data</a>
   <a class="btn ghost" href="{% url 'kura:monitor' survey.code %}">Live</a>
   <a class="btn ghost" href="{% url 'kura:preview' survey.code %}" target="_blank" rel="noopener" title="Live preview of the DRAFT — no publish needed">Preview</a>
@@ -1630,6 +1645,133 @@ $("#imp-append").addEventListener("click", ()=>doImport("append"));
 $("#imp-modal").addEventListener("click", e=>{ if(e.target.id==="imp-modal") closeImportModal(); });
 $("#imp-template").addEventListener("click", e=>{ e.preventDefault(); downloadTemplate(); });
 
+/* ── per-question choices template (Excel) ──
+   For big or cascading option lists: download a small workbook with this
+   question's choices (Value / Label / Parent value / Zones), edit it in
+   Excel, and upload it back to replace the list in one go. */
+function downloadChoicesTemplate(q){
+  if(typeof XLSX==="undefined"){ alert("The spreadsheet library did not load — check your connection and reload the page."); return; }
+  const casc = (q.cascade && q.cascade.parent) || "";
+  const wb = XLSX.utils.book_new();
+  const how = [
+    ["CHOICES for “"+(q.label||q.name)+"”  (question name: "+q.name+")"],
+    [""],
+    ["Fill the Choices sheet — one row per option, top to bottom:"],
+    ["• Value — what is stored in your data (letters, numbers, _)."],
+    ["• Label — what respondents see."],
+    casc ? ["• Parent value — the answer of “"+casc+"” that reveals this option (cascading)."]
+         : ["• Parent value — only needed if you turn on cascading for this question."],
+    ["• Zones — optional comma-separated geofence zone ids; blank = shown everywhere."],
+    [""],
+    ["Then in the builder, select this question and press ⇪ Upload filled."],
+    ["Uploading REPLACES the current choice list for this question."],
+  ];
+  const wsH = XLSX.utils.aoa_to_sheet(how);
+  wsH["!cols"] = [{wch:84}];
+  XLSX.utils.book_append_sheet(wb, wsH, "How to");
+  const rows = [["Question name","Value","Label","Parent value","Zones"]];
+  const cs = q.choices||[];
+  if(cs.length){
+    cs.forEach(c=>rows.push([q.name, c.value, c.label||"",
+      c.parent!=null?c.parent:"", Array.isArray(c.zones)?c.zones.join(","):""]));
+  } else {
+    rows.push([q.name,"option_1","First option",casc?"(parent value)":"",""]);
+    rows.push([q.name,"option_2","Second option","",""]);
+    rows.push([q.name,"option_3","Third option","",""]);
+  }
+  const wsC = XLSX.utils.aoa_to_sheet(rows);
+  wsC["!cols"] = [{wch:18},{wch:16},{wch:36},{wch:14},{wch:16}];
+  XLSX.utils.book_append_sheet(wb, wsC, "Choices");
+  XLSX.writeFile(wb, ((CFG.survey&&CFG.survey.code)||"kura")+"_"+q.name+"_choices.xlsx");
+}
+function importChoicesWorkbook(buf, filename){
+  const q = curQ();
+  if(!q || !CHOICE_TYPES.includes(q.type)){
+    alert("Select a choose-one / choose-many / likert / rank question first, then upload its choices."); return;
+  }
+  if(typeof XLSX==="undefined"){ alert("The spreadsheet library did not load — check your connection and reload the page."); return; }
+  let wb;
+  try{ wb = XLSX.read(buf, {type:"array"}); }
+  catch(e){ alert("That file could not be read as an Excel workbook (.xlsx)."); return; }
+  // Find a sheet + header row containing Value and Label columns
+  let found = null;
+  for(const name of wb.SheetNames){
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], {header:1, defval:""});
+    for(let i=0;i<Math.min(rows.length,6);i++){
+      const cols = {};
+      (rows[i]||[]).forEach((cell,ci)=>{
+        const k = _normKey(cell);
+        if(k==="value" && cols.v===undefined) cols.v=ci;
+        else if(k==="label" && cols.l===undefined) cols.l=ci;
+        else if((k==="parentvalue"||k==="parent") && cols.p===undefined) cols.p=ci;
+        else if(k==="zones" && cols.z===undefined) cols.z=ci;
+        else if((k==="questionname"||k==="question"||k==="name") && cols.q===undefined) cols.q=ci;
+      });
+      if(cols.v!==undefined && cols.l!==undefined){ found={rows, head:i, cols}; break; }
+    }
+    if(found) break;
+  }
+  if(!found){ alert("No choices found — the workbook needs a sheet with Value and Label column headings (download the template to see the layout)."); return; }
+
+  const {rows, head, cols} = found;
+  const all = [];
+  for(let i=head+1;i<rows.length;i++){
+    const r = rows[i]||[];
+    const val = String(r[cols.v]!=null?r[cols.v]:"").trim();
+    if(!val) continue;
+    const item = {
+      value: val,
+      label: String(r[cols.l]!=null?r[cols.l]:"").trim() || val,
+      qn: cols.q!==undefined ? sanitizeName(String(r[cols.q]||"").trim()) : ""
+    };
+    const par = cols.p!==undefined ? String(r[cols.p]||"").trim() : "";
+    if(par && par.charAt(0)!=="(") item.parent = par;
+    const zn = cols.z!==undefined ? String(r[cols.z]||"").trim() : "";
+    if(zn) item.zones = zn.split(",").map(x=>x.trim()).filter(Boolean);
+    all.push(item);
+  }
+  // If the sheet is keyed by question name and has rows for this question,
+  // use only those; otherwise take every row.
+  let picked = all.filter(c=>c.qn===q.name);
+  if(!picked.length) picked = all;
+  if(!picked.length){ alert("The Choices sheet has no filled rows."); return; }
+
+  const used = new Set(); const choices = [];
+  picked.forEach(c=>{
+    let v = c.value, n = 2;
+    while(used.has(v)) v = c.value+"_"+(n++);
+    used.add(v);
+    const out = {value:v, label:c.label};
+    if(c.parent!=null) out.parent = c.parent;
+    if(c.zones) out.zones = c.zones;
+    choices.push(out);
+  });
+  const hadParents = choices.some(c=>c.parent!=null);
+  const existing = (q.choices||[]).length;
+  if(existing && !confirm("Replace the "+existing+" existing choice(s) of “"+(q.label||q.name)+"” with "+choices.length+" from "+filename+"?")) return;
+  q.choices = choices;
+  // keep scores only for values that still exist
+  if(q.score){
+    const keep = {};
+    choices.forEach(c=>{ if(q.score[c.value]!=null) keep[c.value]=q.score[c.value]; });
+    q.score = keep;
+  }
+  markDirty(); renderInspector(); renderCanvas();
+  let msg = choices.length+" choice(s) loaded.";
+  if(hadParents && !(q.cascade&&q.cascade.parent))
+    msg += " The file has Parent values — pick “Filter choices by an earlier answer” above to activate cascading.";
+  alert(msg);
+}
+$("#ch-file").addEventListener("change", e=>{
+  const f = e.target.files[0];
+  if(!f) return;
+  const reader = new FileReader();
+  reader.onload = ()=>importChoicesWorkbook(new Uint8Array(reader.result), f.name);
+  reader.onerror = ()=>alert("Could not read the file.");
+  reader.readAsArrayBuffer(f);
+  e.target.value = "";
+});
+
 /* ── quick-start templates ── */
 const BLOCK_TEMPLATES = [
   {id:"intro_consent", ico:"📜", name:"Introduction & informed consent",
@@ -1837,8 +1979,10 @@ function renderCanvas(){
     const card = document.createElement("div");
     card.className = "qcard"+(isSel?" sel":"");
     card.dataset.i = i;
+    card.draggable = true;
     let inner =
-      '<div class="qhead"><span class="qbadge'+(q.type==="repeat"?" rep":"")+'">'+esc(q.type)+'</span>'+
+      '<div class="qhead"><span class="drag-h" title="Drag to reorder">⋮⋮</span>'+
+      '<span class="qbadge'+(q.type==="repeat"?" rep":"")+'">'+esc(q.type)+'</span>'+
       '<span class="qlabel">'+esc(q.label||q.name)+(q.required?' <span class="req">*</span>':'')+'</span>'+
       '<span class="qtools">'+
         '<button title="Move up" data-act="up">↑</button><button title="Move down" data-act="down">↓</button>'+
@@ -1849,7 +1993,8 @@ function renderCanvas(){
       inner += '<div class="children">';
       (q.children||[]).forEach((ch,ci)=>{
         const cs = sel && sel.i===i && sel.ci===ci;
-        inner += '<div class="childrow'+(cs?" sel":"")+'" data-i="'+i+'" data-ci="'+ci+'">'+
+        inner += '<div class="childrow'+(cs?" sel":"")+'" data-i="'+i+'" data-ci="'+ci+'" draggable="true">'+
+          '<span class="drag-h" title="Drag to reorder">⋮⋮</span>'+
           '<span class="qbadge">'+esc(ch.type)+'</span>'+
           '<span class="qlabel">'+esc(ch.label||ch.name)+(ch.required?' <span class="req">*</span>':'')+'</span>'+
           '<span class="qtools">'+
@@ -1882,6 +2027,84 @@ $("#canvas").addEventListener("click", e=>{
     else if(act==="dup") dup(i,null); else if(act==="del") del(i,null);
     else { sel={i,ci:null}; renderAll(); }
   }
+});
+
+/* ── drag & drop reordering ──
+   Top-level cards reorder among themselves; children reorder inside
+   their own repeat. A pink snap line shows where the drop will land. */
+let dragSrc = null;
+function clearDropMarks(){
+  document.querySelectorAll(".drop-before,.drop-after")
+    .forEach(el=>el.classList.remove("drop-before","drop-after"));
+}
+function dropTargetFor(e){
+  // Children only snap to sibling rows in the same repeat.
+  if(dragSrc && dragSrc.ci!=null){
+    const row = e.target.closest(".childrow");
+    if(!row || +row.dataset.i!==dragSrc.i) return null;
+    return {el:row, i:+row.dataset.i, ci:+row.dataset.ci};
+  }
+  const card = e.target.closest(".qcard");
+  if(!card) return null;
+  return {el:card, i:+card.dataset.i, ci:null};
+}
+$("#canvas").addEventListener("dragstart", e=>{
+  const row = e.target.closest(".childrow");
+  const card = e.target.closest(".qcard");
+  if(row){ dragSrc = {i:+row.dataset.i, ci:+row.dataset.ci, el:row}; }
+  else if(card){ dragSrc = {i:+card.dataset.i, ci:null, el:card}; }
+  else return;
+  dragSrc.el.classList.add("dragging");
+  e.dataTransfer.effectAllowed = "move";
+  try{ e.dataTransfer.setData("text/plain","kura-q"); }catch(err){}
+});
+$("#canvas").addEventListener("dragover", e=>{
+  if(!dragSrc) return;
+  const t = dropTargetFor(e);
+  clearDropMarks();
+  if(!t) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "move";
+  const r = t.el.getBoundingClientRect();
+  t.el.classList.add(e.clientY < r.top + r.height/2 ? "drop-before" : "drop-after");
+});
+$("#canvas").addEventListener("dragleave", e=>{
+  if(e.target===$("#canvas")) clearDropMarks();
+});
+$("#canvas").addEventListener("drop", e=>{
+  if(!dragSrc) return;
+  const t = dropTargetFor(e);
+  clearDropMarks();
+  if(!t){ dragSrc=null; return; }
+  e.preventDefault();
+  const r = t.el.getBoundingClientRect();
+  const before = e.clientY < r.top + r.height/2;
+  if(dragSrc.ci!=null){
+    // reorder inside the same repeat
+    const kids = schema.questions[dragSrc.i].children||[];
+    let to = t.ci + (before?0:1);
+    const [moved] = kids.splice(dragSrc.ci,1);
+    if(dragSrc.ci < to) to--;
+    to = Math.max(0, Math.min(kids.length, to));
+    kids.splice(to,0,moved);
+    sel = {i:dragSrc.i, ci:to};
+  } else {
+    if(t.i!==dragSrc.i){
+      let to = t.i + (before?0:1);
+      const [moved] = schema.questions.splice(dragSrc.i,1);
+      if(dragSrc.i < to) to--;
+      to = Math.max(0, Math.min(schema.questions.length, to));
+      schema.questions.splice(to,0,moved);
+      sel = {i:to, ci:null};
+    }
+  }
+  dragSrc = null;
+  markDirty(); renderAll();
+});
+$("#canvas").addEventListener("dragend", ()=>{
+  clearDropMarks();
+  if(dragSrc && dragSrc.el) dragSrc.el.classList.remove("dragging");
+  dragSrc = null;
 });
 
 /* ── inspector ── */
@@ -1941,9 +2164,16 @@ function renderInspector(){
         '</select>')+
       (casc?'<div class="hint-text">Each choice below has a <b>parent</b> box — set it to the value of <code>'+esc(casc)+'</code> that should reveal it.</div>':'');
     /* choices */
+    const nCh = (q.choices||[]).length;
     html += '<div class="divider">Choices'+(schema.zones.length?' <span style="color:var(--dim)">· zones = comma-sep ids to geo-limit a choice</span>':'')+'</div>'+
-      '<div style="padding:0 1rem" id="choices"></div>'+
+      (nCh>8?'<div class="choice-count">'+nCh+' choices — scroll inside the list</div>':'')+
+      '<div class="choice-scroll" style="padding:0 1rem" id="choices"></div>'+
       '<button class="addline" data-add="choice">+ Add choice</button>'+
+      '<div style="display:flex;gap:.4rem;padding:.1rem .6rem .2rem">'+
+        '<button class="addline" data-chtpl="1" type="button" style="flex:1;margin:0;border-color:rgba(34,211,238,.4);color:#a5f3fc" title="Download an Excel template of this question\'s choices — fill the list (with Parent values for cascading) and upload it back">⇩ Choices template</button>'+
+        '<button class="addline" data-chup="1" type="button" style="flex:1;margin:0;border-color:rgba(34,211,238,.4);color:#a5f3fc" title="Upload a filled choices template (.xlsx) to replace this question\'s choices">⇪ Upload filled</button>'+
+      '</div>'+
+      (casc?'<div class="hint-text">Big cascading list? Download the template, fill Value / Label / <b>Parent value</b> (the answer of <code>'+esc(casc)+'</code> that reveals each option) in Excel, then upload it back.</div>':'')+
       '<div class="field"><label class="check"><input type="checkbox" data-k="shuffle_choices" '+(q.shuffle_choices?"checked":"")+'> Shuffle choice order per respondent</label></div>';
     if(schema.zones.length && !casc){
       html += field("When location is unknown, zone-limited choices are",
@@ -1956,7 +2186,7 @@ function renderInspector(){
     }
     html += '<div class="divider">Scoring (optional)</div>'+
       '<div class="hint-text">Points added to the response score when a choice is selected.</div>'+
-      '<div style="padding:0 1rem" id="scores"></div>';
+      '<div class="choice-scroll" style="padding:0 1rem" id="scores"></div>';
   }
 
   if(q.type==="barcode"){
@@ -2252,6 +2482,8 @@ function wireInspectorOnce(){
     const q = curQ();
     if(!q) return;
     const t = e.target;
+    if(t.dataset.chtpl!==undefined){ downloadChoicesTemplate(q); return; }
+    if(t.dataset.chup!==undefined){ $("#ch-file").click(); return; }
     if(t.dataset.add==="choice"){
       q.choices = q.choices||[];
       q.choices.push({value:"option_"+(q.choices.length+1),label:"Option "+(q.choices.length+1)});

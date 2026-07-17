@@ -129,6 +129,7 @@
 <body>
 <div class="bar">
   <a class="mark" href="{% url 'kura:list' %}">Kura<span style="-webkit-text-fill-color:var(--pink)">.</span></a>
+  <a class="btn ghost" href="{% url 'kura:list' %}" title="Back to all your surveys">← Surveys</a>
   <h1>{{ survey.title }} — classic data</h1>
   <a class="btn ghost" href="{% url 'kura:builder' survey.code %}">Builder</a>
   <a class="btn ghost" href="{% url 'kura:monitor' survey.code %}">📡 Live monitor</a>

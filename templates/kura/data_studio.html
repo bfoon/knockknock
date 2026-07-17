@@ -88,7 +88,8 @@ input[type=range]{accent-color:var(--pink)}
 </style>
 </head>
 <body>
-<div class="top"><div class="brand">Kura.</div><h1>{{ survey.title }} — Data Studio</h1>
+<div class="top"><a class="brand" href="{% url 'kura:list' %}" style="text-decoration:none;color:inherit">Kura.</a><h1>{{ survey.title }} — Data Studio</h1>
+<a class="btn ghost" href="{% url 'kura:list' %}" title="Back to all your surveys">← Surveys</a>
 <a class="btn ghost" href="{% url 'kura:builder' survey.code %}">Builder</a>
 <a class="btn ghost" href="{% url 'kura:data' survey.code %}">Classic data</a>
 <label class="switch" title="Automatically run the pipeline every time it is saved"><input type="checkbox" id="autoRun"> Auto-run</label>

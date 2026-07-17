@@ -69,6 +69,14 @@
     </div>
     <div style="display:flex;gap:.7rem;flex-wrap:wrap;justify-content:flex-end">
       <a class="btn secondary" href="{% url 'core:dashboard' %}">Main dashboard</a>
+      <a class="btn secondary" href="{% static 'kura/kura_form_sample.xlsx' %}" download
+         title="A fully worked example questionnaire in Excel — open it, adapt it, then Import it in the builder">
+        📗 Kura Form sample
+      </a>
+      <a class="btn secondary" href="{% static 'kura/kura-collect-release.apk' %}" download
+         title="Kura Collect for Android — install on enumerator phones for offline data collection">
+        📱 Phone app (APK)
+      </a>
       <form class="inline" method="post" action="{% url 'kura:create' %}">
         {% csrf_token %}
         <button class="btn" type="submit">

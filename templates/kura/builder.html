@@ -199,6 +199,7 @@
 <body>
 <div class="bar">
   <a class="mark" href="{% url 'kura:list' %}">Kura<span style="-webkit-text-fill-color:var(--pink)">.</span></a>
+  <a class="btn ghost" href="{% url 'kura:list' %}" title="Back to all your surveys">← Surveys</a>
   <input id="title-input" value="{{ survey.title }}" maxlength="140" aria-label="Survey title">
   <span class="save-state" id="save-state">saved</span>
   <button class="btn ghost" id="imp-btn" type="button" title="Import a questionnaire from a Kura Form Excel file (.xlsx)">⇪ Import</button>

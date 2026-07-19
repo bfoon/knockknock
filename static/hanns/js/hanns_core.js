@@ -5074,6 +5074,7 @@ function renderGallery(el,{live=false}={}){
 
   function showAt(n){
     if(stopped || !stage.isConnected){stopped=true;return;}
+    if(!photos[n])return;
     const card=buildGalleryCard(el, photos[n]);
     card.classList.add("gallery-active");
     stage.appendChild(card);
@@ -5096,7 +5097,22 @@ function renderGallery(el,{live=false}={}){
       else setTimeout(advance, outMs);
     }, inMs + holdMs);
   }
-  showAt(0);
+  // BOOT — renderGallery() runs BEFORE the caller appends the box to the
+  // slide, so stage.isConnected is false at this moment. The old code called
+  // showAt(0) synchronously; its isConnected guard set stopped=true and the
+  // carousel never started (gallery showed nothing in live/present mode).
+  // Instead, wait until the node is actually attached (a few frames is
+  // plenty; ~2s of retries covers slow first paints), THEN start.
+  let bootTries=0;
+  function bootGallery(){
+    if(stopped)return;
+    if(!stage.isConnected){
+      if(++bootTries<120){ requestAnimationFrame(bootGallery); return; }
+      stopped=true; return;   // never attached — give up quietly
+    }
+    showAt(0);
+  }
+  requestAnimationFrame(bootGallery);
   return box;
 }
 

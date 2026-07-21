@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}{% if is_edit %}Edit topic{% else %}New topic{% endif %} — Community — Knock-Knock{% endblock %}
+
+{% block content %}
+<section class="kk-topic-form-page">
+  <a class="kk-back-link" href="{% if is_edit %}{{ topic.get_absolute_url }}{% else %}{% url 'community:home' %}{% endif %}">
+    <i class="bi bi-arrow-left"></i> {% if is_edit %}Back to topic{% else %}Back to community{% endif %}
+  </a>
+
+  <div class="kk-card kk-topic-form-card">
+    <h1 class="mb-1">{% if is_edit %}Edit topic{% else %}Start a topic{% endif %}</h1>
+    <p class="kk-text-dim mb-4">
+      {% if is_edit %}
+        Update your post — it'll show as edited.
+      {% else %}
+        Questions, ideas, showcases — everything's welcome. Be kind, stay on topic.
+      {% endif %}
+    </p>
+
+    <form method="post" novalidate>
+      {% csrf_token %}
+      {% if form.non_field_errors %}
+        <div class="alert alert-danger">{{ form.non_field_errors.0 }}</div>
+      {% endif %}
+
+      <div class="mb-3">
+        <label class="form-label" for="{{ form.title.id_for_label }}">Title</label>
+        {{ form.title }}
+        {% if form.title.errors %}<div class="text-danger small mt-1">{{ form.title.errors.0 }}</div>{% endif %}
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label" for="{{ form.category.id_for_label }}">Category</label>
+        {{ form.category }}
+        {% if form.category.errors %}<div class="text-danger small mt-1">{{ form.category.errors.0 }}</div>{% endif %}
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label" for="{{ form.body.id_for_label }}">Details</label>
+        {{ form.body }}
+        {% if form.body.errors %}<div class="text-danger small mt-1">{{ form.body.errors.0 }}</div>{% endif %}
+      </div>
+
+      <div class="d-flex justify-content-end gap-2">
+        <a class="kk-btn kk-btn-ghost"
+           href="{% if is_edit %}{{ topic.get_absolute_url }}{% else %}{% url 'community:home' %}{% endif %}">
+          Cancel
+        </a>
+        <button type="submit" class="kk-btn kk-btn-primary">
+          <i class="bi bi-send"></i> {% if is_edit %}Save changes{% else %}Post topic{% endif %}
+        </button>
+      </div>
+    </form>
+  </div>
+</section>
+
+<style>
+.kk-topic-form-page { max-width: 680px; margin: 0 auto; }
+.kk-topic-form-card { padding: 1.6rem 1.7rem; }
+.kk-back-link {
+  display: inline-flex; align-items: center; gap: .4rem;
+  color: rgba(255,255,255,.6); text-decoration: none;
+  font-size: .9rem; margin-bottom: 1rem;
+}
+.kk-back-link:hover { color: #c4b5fd; }
+</style>
+{% endblock %}

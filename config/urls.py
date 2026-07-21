@@ -19,6 +19,7 @@ urlpatterns = [
     path("cards/", include("cards.urls", namespace="cards")),
     path("kura/", include("kura.urls", namespace="kura")),
     path("icebreakers/", include("icebreakers.urls", namespace="icebreakers")),
+    path("community/", include("community.urls")),
     path("", include("core.urls")),
 ]
 

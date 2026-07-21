@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}Community — Knock-Knock{% endblock %}
+
+{% block content %}
+<section class="kk-community">
+
+  <div class="kk-community-head">
+    <div>
+      <h1 class="mb-1">Community</h1>
+      <p class="kk-text-dim mb-0">
+        Ask questions, share what you built, and shape where Knock-Knock goes next.
+      </p>
+    </div>
+    <a class="kk-btn kk-btn-primary" href="{% url 'community:topic_create' %}">
+      <i class="bi bi-plus-lg"></i> New topic
+    </a>
+  </div>
+
+  {# ── Filters: category pills, sort, search ── #}
+  <div class="kk-community-toolbar">
+    <div class="kk-cat-pills">
+      <a class="kk-cat-pill {% if not active_category %}active{% endif %}"
+         href="?sort={{ sort }}{% if query %}&q={{ query|urlencode }}{% endif %}">All</a>
+      {% for value, label in categories %}
+      <a class="kk-cat-pill {% if active_category == value %}active{% endif %}"
+         href="?category={{ value }}&sort={{ sort }}{% if query %}&q={{ query|urlencode }}{% endif %}">
+        {{ label }}
+      </a>
+      {% endfor %}
+    </div>
+
+    <form method="get" class="kk-community-search">
+      {% if active_category %}<input type="hidden" name="category" value="{{ active_category }}">{% endif %}
+      <select name="sort" class="form-select form-select-sm" onchange="this.form.submit()">
+        <option value="new" {% if sort == 'new' %}selected{% endif %}>Newest</option>
+        <option value="top" {% if sort == 'top' %}selected{% endif %}>Most liked</option>
+        <option value="active" {% if sort == 'active' %}selected{% endif %}>Most comments</option>
+      </select>
+      <div class="kk-search-box">
+        <i class="bi bi-search"></i>
+        <input type="search" name="q" value="{{ query }}" class="form-control form-control-sm"
+               placeholder="Search topics…">
+      </div>
+    </form>
+  </div>
+
+  {# ── Topic feed ── #}
+  {% if topics %}
+  <div class="kk-topic-list">
+    {% for topic in topics %}
+    <article class="kk-topic-row {% if topic.is_pinned %}pinned{% endif %}">
+      <form method="post" action="{% url 'community:topic_like' topic.pk %}"
+            class="kk-like-col">
+        {% csrf_token %}
+        <button type="submit"
+                class="kk-like-btn {% if topic.pk in liked_ids %}liked{% endif %}"
+                aria-label="Like this topic">
+          <i class="bi {% if topic.pk in liked_ids %}bi-heart-fill{% else %}bi-heart{% endif %}"></i>
+          <span>{{ topic.like_count }}</span>
+        </button>
+      </form>
+
+      <div class="kk-topic-main">
+        <div class="kk-topic-meta">
+          {% if topic.is_pinned %}<span class="kk-badge kk-badge-pin"><i class="bi bi-pin-angle-fill"></i> Pinned</span>{% endif %}
+          <span class="kk-badge kk-badge-cat">{{ topic.get_category_display }}</span>
+          <span class="kk-text-dim">
+            {{ topic.author.username }} · {{ topic.created_at|timesince }} ago
+            {% if topic.edited_at %} · edited{% endif %}
+          </span>
+        </div>
+        <h3 class="kk-topic-title">
+          <a href="{{ topic.get_absolute_url }}">{{ topic.title }}</a>
+        </h3>
+        <p class="kk-topic-excerpt kk-text-dim">{{ topic.body|truncatechars:160 }}</p>
+      </div>
+
+      <a class="kk-topic-comments" href="{{ topic.get_absolute_url }}#comments"
+         aria-label="{{ topic.comment_count }} comments">
+        <i class="bi bi-chat-left-text"></i> {{ topic.comment_count }}
+      </a>
+    </article>
+    {% endfor %}
+  </div>
+
+  {# ── Pagination ── #}
+  {% if page.has_other_pages %}
+  <nav class="kk-pagination">
+    {% if page.has_previous %}
+      <a class="kk-btn kk-btn-ghost kk-btn-sm"
+         href="?page={{ page.previous_page_number }}&sort={{ sort }}{% if active_category %}&category={{ active_category }}{% endif %}{% if query %}&q={{ query|urlencode }}{% endif %}">
+        <i class="bi bi-chevron-left"></i> Previous
+      </a>
+    {% endif %}
+    <span class="kk-text-dim small">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+    {% if page.has_next %}
+      <a class="kk-btn kk-btn-ghost kk-btn-sm"
+         href="?page={{ page.next_page_number }}&sort={{ sort }}{% if active_category %}&category={{ active_category }}{% endif %}{% if query %}&q={{ query|urlencode }}{% endif %}">
+        Next <i class="bi bi-chevron-right"></i>
+      </a>
+    {% endif %}
+  </nav>
+  {% endif %}
+
+  {% else %}
+  <div class="kk-card kk-community-empty">
+    <div class="kk-feature-icon">💬</div>
+    {% if query or active_category %}
+      <h3>No topics match</h3>
+      <p class="kk-text-dim">Try a different search or category, or start the conversation yourself.</p>
+    {% else %}
+      <h3>Be the first to post</h3>
+      <p class="kk-text-dim">The community is brand new — kick things off with a question or an idea.</p>
+    {% endif %}
+    <a class="kk-btn kk-btn-primary" href="{% url 'community:topic_create' %}">
+      <i class="bi bi-plus-lg"></i> New topic
+    </a>
+  </div>
+  {% endif %}
+
+</section>
+
+<style>
+.kk-community { max-width: 860px; margin: 0 auto; }
+.kk-community-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap;
+}
+.kk-community-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap;
+}
+.kk-cat-pills { display: flex; gap: .4rem; flex-wrap: wrap; }
+.kk-cat-pill {
+  padding: .3rem .8rem; border-radius: 999px; font-size: .85rem;
+  color: rgba(255,255,255,.7); text-decoration: none;
+  border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.03);
+  transition: border-color .15s ease, background .15s ease, color .15s ease;
+}
+.kk-cat-pill:hover { color: #fff; border-color: rgba(167,139,250,.5); }
+.kk-cat-pill.active {
+  color: #fff; background: rgba(124,58,237,.28);
+  border-color: rgba(167,139,250,.7); font-weight: 600;
+}
+.kk-community-search { display: flex; gap: .5rem; align-items: center; }
+.kk-search-box { position: relative; }
+.kk-search-box .bi-search {
+  position: absolute; left: .6rem; top: 50%; transform: translateY(-50%);
+  color: rgba(255,255,255,.4); font-size: .8rem; pointer-events: none;
+}
+.kk-search-box input { padding-left: 1.9rem; min-width: 180px; }
+
+.kk-topic-list { display: flex; flex-direction: column; gap: .75rem; }
+.kk-topic-row {
+  display: grid; grid-template-columns: 56px minmax(0,1fr) auto;
+  align-items: start; gap: 1rem; padding: 1rem 1.1rem;
+  background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08);
+  border-radius: 16px;
+  transition: border-color .15s ease, background .15s ease;
+}
+.kk-topic-row:hover { border-color: rgba(124,58,237,.45); background: rgba(255,255,255,.055); }
+.kk-topic-row.pinned { border-color: rgba(167,139,250,.4); }
+
+.kk-like-col { margin: 0; }
+.kk-like-btn {
+  display: flex; flex-direction: column; align-items: center; gap: .1rem;
+  width: 100%; padding: .45rem .3rem; cursor: pointer;
+  background: rgba(255,255,255,.04); color: rgba(255,255,255,.65);
+  border: 1px solid rgba(255,255,255,.1); border-radius: 12px;
+  font-size: .85rem; line-height: 1;
+  transition: color .15s ease, border-color .15s ease;
+}
+.kk-like-btn:hover { color: #f472b6; border-color: rgba(244,114,182,.5); }
+.kk-like-btn.liked { color: #f472b6; border-color: rgba(244,114,182,.55); }
+.kk-like-btn i { font-size: 1rem; }
+
+.kk-topic-meta {
+  display: flex; align-items: center; gap: .5rem;
+  flex-wrap: wrap; font-size: .8rem; margin-bottom: .25rem;
+}
+.kk-badge {
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .12rem .55rem; border-radius: 999px; font-size: .72rem; font-weight: 700;
+}
+.kk-badge-cat { background: rgba(14,165,233,.16); color: #7dd3fc; }
+.kk-badge-pin { background: rgba(167,139,250,.2); color: #c4b5fd; }
+.kk-topic-title { margin: 0 0 .3rem; font-size: 1.12rem; line-height: 1.3; }
+.kk-topic-title a { color: #fff; text-decoration: none; }
+.kk-topic-title a:hover { color: #c4b5fd; }
+.kk-topic-excerpt { margin: 0; font-size: .9rem; }
+.kk-topic-comments {
+  align-self: center; display: inline-flex; align-items: center; gap: .4rem;
+  color: rgba(255,255,255,.6); text-decoration: none; font-size: .9rem;
+  white-space: nowrap;
+}
+.kk-topic-comments:hover { color: #c4b5fd; }
+
+.kk-pagination {
+  display: flex; align-items: center; justify-content: center;
+  gap: 1rem; margin-top: 1.5rem;
+}
+.kk-community-empty {
+  text-align: center; padding: 3rem 1.5rem;
+  display: flex; flex-direction: column; align-items: center; gap: .5rem;
+}
+@media (max-width: 575.98px) {
+  .kk-topic-row { grid-template-columns: 48px minmax(0,1fr); }
+  .kk-topic-comments { grid-column: 2; justify-self: start; }
+}
+</style>
+{% endblock %}

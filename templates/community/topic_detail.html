@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block title %}{{ topic.title }} — Community — Knock-Knock{% endblock %}
+
+{% block content %}
+<section class="kk-topic-page">
+
+  <a class="kk-back-link" href="{% url 'community:home' %}">
+    <i class="bi bi-arrow-left"></i> Back to community
+  </a>
+
+  <article class="kk-card kk-topic-detail">
+    <div class="kk-topic-meta">
+      {% if topic.is_pinned %}<span class="kk-badge kk-badge-pin"><i class="bi bi-pin-angle-fill"></i> Pinned</span>{% endif %}
+      <span class="kk-badge kk-badge-cat">{{ topic.get_category_display }}</span>
+      {% if topic.is_locked %}<span class="kk-badge kk-badge-lock"><i class="bi bi-lock-fill"></i> Locked</span>{% endif %}
+    </div>
+
+    <h1 class="kk-topic-detail-title">{{ topic.title }}</h1>
+    <p class="kk-text-dim small mb-3">
+      <i class="bi bi-person-circle"></i> {{ topic.author.username }}
+      · {{ topic.created_at|timesince }} ago
+      {% if topic.edited_at %} · edited {{ topic.edited_at|timesince }} ago{% endif %}
+    </p>
+
+    <div class="kk-topic-body">{{ topic.body|linebreaks }}</div>
+
+    <div class="kk-topic-actions">
+      <form method="post" action="{% url 'community:topic_like' topic.pk %}" class="d-inline">
+        {% csrf_token %}
+        <button type="submit" class="kk-like-inline {% if user_likes_topic %}liked{% endif %}">
+          <i class="bi {% if user_likes_topic %}bi-heart-fill{% else %}bi-heart{% endif %}"></i>
+          {{ topic.like_count }} like{{ topic.like_count|pluralize }}
+        </button>
+      </form>
+
+      {% if topic.author_id == request.user.id or request.user.is_staff %}
+      <a class="kk-btn kk-btn-ghost kk-btn-sm" href="{% url 'community:topic_edit' topic.pk %}">
+        <i class="bi bi-pencil"></i> Edit
+      </a>
+      <form method="post" action="{% url 'community:topic_delete' topic.pk %}" class="d-inline"
+            onsubmit="return confirm('Delete this topic? This can\'t be undone.');">
+        {% csrf_token %}
+        <button type="submit" class="kk-btn kk-btn-ghost kk-btn-sm kk-danger">
+          <i class="bi bi-trash"></i> Delete
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </article>
+
+  {# ── Comments ── #}
+  <div id="comments" class="kk-comments">
+    <h2 class="kk-comments-head">
+      {{ comments|length }} comment{{ comments|length|pluralize }}
+    </h2>
+
+    {% for comment in comments %}
+    <div class="kk-comment" id="comment-{{ comment.pk }}">
+      <div class="kk-comment-head">
+        <span class="kk-comment-author"><i class="bi bi-person-circle"></i> {{ comment.author.username }}</span>
+        <span class="kk-text-dim small">{{ comment.created_at|timesince }} ago</span>
+      </div>
+      <div class="kk-comment-body">{{ comment.body|linebreaks }}</div>
+      <div class="kk-comment-actions">
+        <form method="post" action="{% url 'community:comment_like' comment.pk %}" class="d-inline">
+          {% csrf_token %}
+          <button type="submit"
+                  class="kk-like-inline sm {% if comment.pk in liked_comment_ids %}liked{% endif %}">
+            <i class="bi {% if comment.pk in liked_comment_ids %}bi-heart-fill{% else %}bi-heart{% endif %}"></i>
+            {{ comment.like_count }}
+          </button>
+        </form>
+        {% if not topic.is_locked %}
+        <button type="button" class="kk-reply-btn"
+                data-parent="{{ comment.pk }}"
+                data-author="{{ comment.author.username }}">
+          <i class="bi bi-reply"></i> Reply
+        </button>
+        {% endif %}
+        {% if comment.author_id == request.user.id or request.user.is_staff %}
+        <form method="post" action="{% url 'community:comment_delete' comment.pk %}" class="d-inline"
+              onsubmit="return confirm('Delete this comment?');">
+          {% csrf_token %}
+          <button type="submit" class="kk-reply-btn kk-danger"><i class="bi bi-trash"></i> Delete</button>
+        </form>
+        {% endif %}
+      </div>
+
+      {# Replies (one level) #}
+      {% for reply in comment.replies.all %}
+      <div class="kk-comment kk-reply" id="comment-{{ reply.pk }}">
+        <div class="kk-comment-head">
+          <span class="kk-comment-author"><i class="bi bi-person-circle"></i> {{ reply.author.username }}</span>
+          <span class="kk-text-dim small">{{ reply.created_at|timesince }} ago</span>
+        </div>
+        <div class="kk-comment-body">{{ reply.body|linebreaks }}</div>
+        <div class="kk-comment-actions">
+          <form method="post" action="{% url 'community:comment_like' reply.pk %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit"
+                    class="kk-like-inline sm {% if reply.pk in liked_comment_ids %}liked{% endif %}">
+              <i class="bi {% if reply.pk in liked_comment_ids %}bi-heart-fill{% else %}bi-heart{% endif %}"></i>
+              {{ reply.like_count }}
+            </button>
+          </form>
+          {% if not topic.is_locked %}
+          <button type="button" class="kk-reply-btn"
+                  data-parent="{{ comment.pk }}"
+                  data-author="{{ reply.author.username }}">
+            <i class="bi bi-reply"></i> Reply
+          </button>
+          {% endif %}
+          {% if reply.author_id == request.user.id or request.user.is_staff %}
+          <form method="post" action="{% url 'community:comment_delete' reply.pk %}" class="d-inline"
+                onsubmit="return confirm('Delete this comment?');">
+            {% csrf_token %}
+            <button type="submit" class="kk-reply-btn kk-danger"><i class="bi bi-trash"></i> Delete</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% empty %}
+    <p class="kk-text-dim">No comments yet — say something first.</p>
+    {% endfor %}
+
+    {# ── Comment form ── #}
+    {% if topic.is_locked %}
+    <div class="kk-card kk-locked-note">
+      <i class="bi bi-lock-fill"></i> This topic is locked. New comments are turned off.
+    </div>
+    {% else %}
+    <form method="post" class="kk-card kk-comment-form" id="comment-form">
+      {% csrf_token %}
+      <div id="replying-note" class="kk-replying-note" hidden>
+        Replying to <strong id="replying-to"></strong>
+        <button type="button" id="cancel-reply" aria-label="Cancel reply">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+      {{ form.parent_id }}
+      {{ form.body }}
+      {% if form.body.errors %}<div class="text-danger small mt-1">{{ form.body.errors.0 }}</div>{% endif %}
+      <div class="mt-2 text-end">
+        <button type="submit" class="kk-btn kk-btn-primary">
+          <i class="bi bi-send"></i> Post comment
+        </button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+</section>
+
+<script>
+(function () {
+  var parentInput = document.getElementById("id_parent_id");
+  var note = document.getElementById("replying-note");
+  var noteName = document.getElementById("replying-to");
+  var form = document.getElementById("comment-form");
+  if (!form) return;
+
+  document.querySelectorAll(".kk-reply-btn[data-parent]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      parentInput.value = btn.dataset.parent;
+      noteName.textContent = btn.dataset.author;
+      note.hidden = false;
+      form.scrollIntoView({ behavior: "smooth", block: "center" });
+      form.querySelector("textarea").focus();
+    });
+  });
+
+  var cancel = document.getElementById("cancel-reply");
+  if (cancel) {
+    cancel.addEventListener("click", function () {
+      parentInput.value = "";
+      note.hidden = true;
+    });
+  }
+})();
+</script>
+
+<style>
+.kk-topic-page { max-width: 780px; margin: 0 auto; }
+.kk-back-link {
+  display: inline-flex; align-items: center; gap: .4rem;
+  color: rgba(255,255,255,.6); text-decoration: none;
+  font-size: .9rem; margin-bottom: 1rem;
+}
+.kk-back-link:hover { color: #c4b5fd; }
+.kk-topic-detail { padding: 1.5rem 1.6rem; }
+.kk-topic-detail-title { font-size: 1.6rem; margin: .5rem 0 .25rem; line-height: 1.25; }
+.kk-topic-body { line-height: 1.65; }
+.kk-topic-meta { display: flex; gap: .5rem; flex-wrap: wrap; }
+.kk-badge {
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .12rem .55rem; border-radius: 999px; font-size: .72rem; font-weight: 700;
+}
+.kk-badge-cat { background: rgba(14,165,233,.16); color: #7dd3fc; }
+.kk-badge-pin { background: rgba(167,139,250,.2); color: #c4b5fd; }
+.kk-badge-lock { background: rgba(248,113,113,.16); color: #fca5a5; }
+
+.kk-topic-actions {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  margin-top: 1.25rem; padding-top: 1rem;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+.kk-like-inline {
+  display: inline-flex; align-items: center; gap: .4rem; cursor: pointer;
+  padding: .35rem .8rem; border-radius: 999px; font-size: .88rem;
+  background: rgba(255,255,255,.05); color: rgba(255,255,255,.7);
+  border: 1px solid rgba(255,255,255,.12);
+  transition: color .15s ease, border-color .15s ease;
+}
+.kk-like-inline:hover, .kk-like-inline.liked { color: #f472b6; border-color: rgba(244,114,182,.55); }
+.kk-like-inline.sm { padding: .2rem .6rem; font-size: .8rem; }
+
+.kk-comments { margin-top: 2rem; }
+.kk-comments-head { font-size: 1.15rem; margin-bottom: 1rem; }
+.kk-comment {
+  padding: .9rem 1rem; margin-bottom: .75rem;
+  background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08);
+  border-radius: 14px;
+}
+.kk-comment:target { border-color: rgba(167,139,250,.7); }
+.kk-reply { margin: .6rem 0 0 1.75rem; background: rgba(255,255,255,.03); }
+.kk-comment-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: .5rem; margin-bottom: .35rem;
+}
+.kk-comment-author { font-weight: 600; font-size: .92rem; }
+.kk-comment-body { font-size: .95rem; line-height: 1.55; }
+.kk-comment-body p:last-child { margin-bottom: 0; }
+.kk-comment-actions { display: flex; align-items: center; gap: .6rem; margin-top: .5rem; }
+.kk-reply-btn {
+  display: inline-flex; align-items: center; gap: .3rem; cursor: pointer;
+  background: none; border: none; padding: 0;
+  color: rgba(255,255,255,.55); font-size: .8rem;
+}
+.kk-reply-btn:hover { color: #c4b5fd; }
+.kk-danger:hover { color: #fca5a5 !important; border-color: rgba(248,113,113,.5) !important; }
+
+.kk-comment-form { padding: 1rem 1.1rem; margin-top: 1.25rem; }
+.kk-replying-note {
+  display: flex; align-items: center; gap: .5rem;
+  font-size: .85rem; color: #c4b5fd; margin-bottom: .5rem;
+}
+.kk-replying-note button {
+  background: none; border: none; color: rgba(255,255,255,.6);
+  cursor: pointer; padding: 0 .25rem;
+}
+.kk-locked-note {
+  padding: .9rem 1.1rem; margin-top: 1.25rem;
+  color: #fca5a5; display: flex; align-items: center; gap: .5rem;
+}
+</style>
+{% endblock %}

@@ -1316,7 +1316,7 @@ function elementPanel(el){
       ${field("Title",`<input type="text" id="f-charttitle" value="${escapeAttr(el.title||"Chart")}">`)}
       ${field("Type",`<select id="f-chartkind">
         ${[
-          ["bar","Bar"],["horizontalBar","Horizontal bar"],["groupedBar","Grouped bar"],["stackedBar","Stacked bar"],["line","Line"],["spline","Smooth line"],["area","Area"],["pie","Pie"],["donut","Donut"],["scatter","Scatter"],["bubble","Bubble"],["radar","Radar"],["gauge","Gauge"],["progress","Progress"],["funnel","Funnel"],["waterfall","Waterfall"],["heatmap","Heatmap"],["treemap","Treemap"],["kpi","KPI card"]
+          ["bar","Bar"],["horizontalBar","Horizontal bar"],["groupedBar","Grouped bar"],["stackedBar","Stacked bar"],["lollipop","Lollipop"],["combo","Combo (bar + line)"],["pareto","Pareto (80/20)"],["line","Line"],["spline","Smooth line"],["area","Area"],["pie","Pie"],["donut","Donut"],["polarArea","Polar area"],["scatter","Scatter"],["bubble","Bubble"],["radar","Radar"],["pyramid","Pyramid"],["gauge","Gauge"],["progress","Progress"],["funnel","Funnel"],["waterfall","Waterfall"],["heatmap","Heatmap"],["treemap","Treemap"],["kpi","KPI card"]
         ].map(([k,l])=>`<option value="${k}" ${el.chartKind===k?"selected":""}>${l}</option>`).join("")}
       </select>`)}
       ${field("Render engine",`<select id="f-chartengine"><option value="svg" ${(el.renderEngine||"svg")==="svg"?"selected":""}>Classic SVG (fast)</option><option value="plotly" ${el.renderEngine==="plotly"?"selected":""}>Plotly rich interactive</option></select>`)}
@@ -1326,6 +1326,11 @@ function elementPanel(el){
     </div>
     <div class="group"><span class="glabel">Labels &amp; values</span>
       ${field("Show values",`<div class="seg" id="f-chartvalues"><button data-show="1" class="${el.showValues!==false?"active":""}">Show</button><button data-show="0" class="${el.showValues===false?"active":""}">Hide</button></div>`)}
+      ${field("Sort data",`<div class="seg" id="f-chartsort"><button data-sort="none" class="${!el.sortOrder||el.sortOrder==="none"?"active":""}">As entered</button><button data-sort="desc" class="${el.sortOrder==="desc"?"active":""}">High → low</button><button data-sort="asc" class="${el.sortOrder==="asc"?"active":""}">Low → high</button></div>`)}
+      <div class="row2">
+        ${field("Value colour",`<input type="color" id="f-chartvaluecolor" value="${el.valueColor||(el.chartThemeMode==="dark"?"#f8fafc":"#0f172a")}">`)}
+        ${field("Label colour",`<input type="color" id="f-chartlabelcolor" value="${el.labelColor||(el.chartThemeMode==="dark"?"#cbd5e1":"#475569")}">`)}
+      </div>
       ${field("Text size "+(el.labelSize||26),`<input type="range" id="f-chartlabelsize" min="14" max="60" value="${el.labelSize||26}">`)}
       <div class="row2">
         ${field("Prefix",`<input type="text" id="f-chartprefix" placeholder="$" value="${escapeAttr(el.valuePrefix||"")}">`)}
@@ -1338,6 +1343,7 @@ function elementPanel(el){
     </div>
     <div class="group"><span class="glabel">Appearance</span>
       ${field("Theme",`<div class="seg" id="f-charttheme"><button data-mode="light" class="${(el.chartThemeMode||"light")==="light"?"active":""}">Light</button><button data-mode="dark" class="${el.chartThemeMode==="dark"?"active":""}">Dark</button></div>`)}
+      ${field("Chart title",`<div class="seg" id="f-chartshowtitle"><button data-on="1" class="${el.showTitle!==false?"active":""}">Show</button><button data-on="0" class="${el.showTitle===false?"active":""}">Hide</button></div>`)}
       ${field("Gridlines",`<div class="seg" id="f-chartgrid"><button data-on="1" class="${el.gridLines!==false?"active":""}">On</button><button data-on="0" class="${el.gridLines===false?"active":""}">Off</button></div>`)}
       ${field("Axis numbers",`<div class="seg" id="f-chartaxis"><button data-on="1" class="${el.axisValues!==false?"active":""}">On</button><button data-on="0" class="${el.axisValues===false?"active":""}">Off</button></div>`)}
       ${field("Legend (grouped/stacked)",`<div class="seg" id="f-chartlegend"><button data-on="1" class="${el.showLegend?"active":""}">On</button><button data-on="0" class="${!el.showLegend?"active":""}">Off</button></div>`)}
@@ -1600,6 +1606,10 @@ function bindElementPanel(el){
     const data=$("#f-chartdata");data&&data.addEventListener("input",()=>{el.chartData=parseChartText(data.value);renderCanvas();markDirty();});
     $("#f-chartimport")&&$("#f-chartimport").addEventListener("click",()=>pickDataFileFor(el.id,"chart"));
     seg("f-chartvalues","show",v=>{el.showValues=v==="1";renderCanvas();markDirty();});
+    seg("f-chartsort","sort",v=>{el.sortOrder=v==="none"?null:v;renderCanvas();markDirty();});
+    seg("f-chartshowtitle","on",v=>{el.showTitle=v==="1";renderCanvas();markDirty();});
+    const vc=$("#f-chartvaluecolor");vc&&vc.addEventListener("input",()=>{el.valueColor=vc.value;renderCanvas();markDirty();});
+    const lc=$("#f-chartlabelcolor");lc&&lc.addEventListener("input",()=>{el.labelColor=lc.value;renderCanvas();markDirty();});
     bindRange("f-chartlabelsize",v=>{el.labelSize=v;renderCanvas();markDirty();},v=>v,"Text size");
     const pre=$("#f-chartprefix");pre&&pre.addEventListener("input",()=>{el.valuePrefix=pre.value;renderCanvas();markDirty();});
     const suf=$("#f-chartsuffix");suf&&suf.addEventListener("input",()=>{el.valueSuffix=suf.value;renderCanvas();markDirty();});

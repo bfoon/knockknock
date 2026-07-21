@@ -542,7 +542,23 @@ const BACKGROUNDS = [
     "name": "Deep Reef",
     "css": "radial-gradient(circle at 22% 82%,rgba(45,212,191,.35) 0 2px,transparent 3px),radial-gradient(circle at 68% 60%,rgba(125,211,252,.3) 0 2px,transparent 3px),radial-gradient(80% 90% at 50% 110%,#0e7490 0%,transparent 62%),linear-gradient(180deg,#020617,#083344)",
     "size": "90px 90px,140px 140px,auto,auto"
-  }
+  },
+
+  /* ── v50 professional pack ───────────────────────────────────── */
+  {"name":"Boardroom Slate","css":"radial-gradient(90% 100% at 50% -10%,rgba(148,163,184,.22) 0%,transparent 60%),linear-gradient(160deg,#1e293b,#0f172a 70%,#020617)"},
+  {"name":"Champagne Silk","css":"radial-gradient(70% 80% at 80% 0%,rgba(253,230,138,.55) 0%,transparent 55%),linear-gradient(150deg,#fffbeb,#fef3c7 55%,#fde68a)"},
+  {"name":"Emerald Executive","css":"radial-gradient(80% 90% at 15% 0%,rgba(52,211,153,.35) 0%,transparent 55%),linear-gradient(150deg,#022c22,#064e3b 60%,#065f46)"},
+  {"name":"Royal Indigo","css":"radial-gradient(70% 90% at 85% 10%,rgba(129,140,248,.4) 0%,transparent 58%),linear-gradient(145deg,#1e1b4b,#312e81 65%,#3730a3)"},
+  {"name":"Carbon Weave","css":"repeating-linear-gradient(45deg,rgba(255,255,255,.03) 0 2px,transparent 2px 8px),repeating-linear-gradient(-45deg,rgba(255,255,255,.03) 0 2px,transparent 2px 8px),linear-gradient(160deg,#111113,#1c1c1f)"},
+  {"name":"Soft Studio","css":"radial-gradient(80% 70% at 50% 0%,#ffffff 0%,transparent 65%),linear-gradient(180deg,#f8fafc,#e2e8f0)"},
+  {"name":"Blueprint","css":"linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(150deg,#0c4a6e,#075985)","size":"44px 44px,44px 44px,auto"},
+  {"name":"Terracotta Warm","css":"radial-gradient(70% 80% at 20% 10%,rgba(254,215,170,.6) 0%,transparent 55%),linear-gradient(150deg,#7c2d12,#9a3412 60%,#c2410c)"},
+  {"name":"Nordic Fog","css":"radial-gradient(80% 60% at 50% 100%,rgba(148,163,184,.35) 0%,transparent 60%),linear-gradient(180deg,#f1f5f9,#cbd5e1)"},
+  {"name":"Midnight Gold","css":"radial-gradient(60% 70% at 85% 0%,rgba(216,162,58,.4) 0%,transparent 55%),radial-gradient(50% 60% at 10% 100%,rgba(216,162,58,.18) 0%,transparent 55%),linear-gradient(160deg,#0c0a09,#1c1917)"},
+  {"name":"Sahara Dune","css":"radial-gradient(90% 60% at 50% 110%,#d97706 0%,transparent 62%),linear-gradient(170deg,#fef3c7,#fcd34d 70%,#f59e0b)"},
+  {"name":"Mint Boardpaper","css":"radial-gradient(70% 80% at 90% 0%,rgba(167,243,208,.7) 0%,transparent 55%),linear-gradient(160deg,#f0fdf4,#dcfce7)"},
+  {"name":"Ruby Noir","css":"radial-gradient(70% 80% at 20% 0%,rgba(244,63,94,.35) 0%,transparent 55%),linear-gradient(155deg,#1c0a10,#4c0519 65%,#881337)"},
+  {"name":"Steel Horizon","css":"linear-gradient(180deg,#334155 0%,#475569 45%,#94a3b8 100%)"}
 ];
 
 /* ── text style presets used in templates & the text tool ────────── */
@@ -3049,7 +3065,23 @@ const SHAPES = [
     "group": "Bursts",
     "d": "M 97.3 41.7 L 62.0 51.0 L 95.1 66.4 L 59.8 56.9 L 80.9 86.8 L 55.1 60.9 L 58.3 97.3 L 49.0 62.0 L 33.6 95.1 L 43.1 59.8 L 13.2 80.9 L 39.1 55.1 L 2.7 58.3 L 38.0 49.0 L 4.9 33.6 L 40.2 43.1 L 19.1 13.2 L 44.9 39.1 L 41.7 2.7 L 51.0 38.0 L 66.4 4.9 L 56.9 40.2 L 86.8 19.1 L 60.9 44.9 Z",
     "accent": "#0ea5e9"
-  }
+  },
+
+  /* ── v50 Symbols pack ───────────────────────────────────────── */
+  {"kind":"gear","label":"Gear","group":"Symbols","d":"M 88.0 51.5 L 97.7 55.6 L 96.2 63.0 L 85.7 63.2 L 84.5 65.9 L 75.8 77.9 L 79.7 87.7 L 73.5 91.9 L 65.9 84.5 L 63.2 85.7 L 48.5 88.0 L 44.4 97.7 L 37.0 96.2 L 36.8 85.7 L 34.1 84.5 L 22.1 75.8 L 12.3 79.7 L 8.1 73.5 L 15.5 65.9 L 14.3 63.2 L 12.0 48.5 L 2.3 44.4 L 3.8 37.0 L 14.3 36.8 L 15.5 34.1 L 24.2 22.1 L 20.3 12.3 L 26.5 8.1 L 34.1 15.5 L 36.8 14.3 L 51.5 12.0 L 55.6 2.3 L 63.0 3.8 L 63.2 14.3 L 65.9 15.5 L 77.9 24.2 L 87.7 20.3 L 91.9 26.5 L 84.5 34.1 L 85.7 36.8 Z M 66.0 50.0 L 65.5 45.9 L 63.9 42.0 L 61.3 38.7 L 58.0 36.1 L 54.1 34.5 L 50.0 34.0 L 45.9 34.5 L 42.0 36.1 L 38.7 38.7 L 36.1 42.0 L 34.5 45.9 L 34.0 50.0 L 34.5 54.1 L 36.1 58.0 L 38.7 61.3 L 42.0 63.9 L 45.9 65.5 L 50.0 66.0 L 54.1 65.5 L 58.0 63.9 L 61.3 61.3 L 63.9 58.0 L 65.5 54.1 Z","accent":"#64748b"},
+  {"kind":"crescent","label":"Crescent","group":"Symbols","d":"M 65 5 A 45 45 0 1 0 65 95 A 36 36 0 1 1 65 5 Z","accent":"#f2c14e"},
+  {"kind":"semi_circle","label":"Semi circle","group":"Symbols","d":"M 5 75 A 45 45 0 0 1 95 75 Z","accent":"#38bdf8"},
+  {"kind":"quarter_pie","label":"Quarter pie","group":"Symbols","d":"M 10 90 L 10 10 A 80 80 0 0 1 90 90 Z","accent":"#22c55e"},
+  {"kind":"cross_plus","label":"Plus cross","group":"Symbols","d":"M 35 5 L 65 5 L 65 35 L 95 35 L 95 65 L 65 65 L 65 95 L 35 95 L 35 65 L 5 65 L 5 35 L 35 35 Z","accent":"#e8482b"},
+  {"kind":"check_mark","label":"Check mark","group":"Symbols","d":"M 10 55 L 25 40 L 42 57 L 78 12 L 95 25 L 44 88 Z","accent":"#16a34a"},
+  {"kind":"x_mark","label":"X mark","group":"Symbols","d":"M 20 8 L 50 38 L 80 8 L 92 20 L 62 50 L 92 80 L 80 92 L 50 62 L 20 92 L 8 80 L 38 50 L 8 20 Z","accent":"#ef4444"},
+  {"kind":"capsule","label":"Capsule","group":"Symbols","d":"M 30 15 L 70 15 A 35 35 0 0 1 70 85 L 30 85 A 35 35 0 0 1 30 15 Z","accent":"#a855f7"},
+  {"kind":"frame_square","label":"Square frame","group":"Symbols","d":"M 5 5 L 95 5 L 95 95 L 5 95 Z M 25 25 L 25 75 L 75 75 L 75 25 Z","accent":"#0f172a"},
+  {"kind":"kite","label":"Kite","group":"Symbols","d":"M 50 4 L 88 40 L 50 96 L 12 40 Z","accent":"#f59e0b"},
+  {"kind":"arrow_up","label":"Arrow up","group":"Arrows Pro","d":"M 50 4 L 92 46 L 68 46 L 68 96 L 32 96 L 32 46 L 8 46 Z","accent":"#22c55e"},
+  {"kind":"arrow_down","label":"Arrow down","group":"Arrows Pro","d":"M 50 96 L 8 54 L 32 54 L 32 4 L 68 4 L 68 54 L 92 54 Z","accent":"#ef4444"},
+  {"kind":"double_arrow","label":"Double arrow","group":"Arrows Pro","d":"M 4 50 L 28 26 L 28 40 L 72 40 L 72 26 L 96 50 L 72 74 L 72 60 L 28 60 L 28 74 Z","accent":"#38bdf8"},
+  {"kind":"arrow_bend","label":"Bent arrow","group":"Arrows Pro","d":"M 12 88 L 12 40 A 28 28 0 0 1 40 12 L 62 12 L 62 0 L 96 22 L 62 44 L 62 32 L 42 32 A 10 10 0 0 0 32 42 L 32 88 Z","accent":"#a855f7"}
 ];
 function shapeDef(kind){return SHAPES.find(s=>s.kind===kind)||SHAPES[0];}
 function objectDef(kind){if(kind==="sdg")kind="sdg_wheel";if(kind==="animals")kind="cow";return OBJECTS.find(o=>o.kind===kind)||OBJECTS[0];}
@@ -4530,7 +4562,73 @@ const PRO_TEMPLATES = [
   ]};}},
 ];
 
-const TEMPLATES = [...PRO_TEMPLATES, ...BASE_TEMPLATES, ...AUTO_TEMPLATES, ...DATA_TEMPLATES];
+/* ── v50 executive pack — data-forward, professional layouts that show
+   off the new chart kinds (combo, pareto, lollipop, pyramid, polar area),
+   the new backgrounds, and the new symbol shapes. ─────────────────── */
+const EXEC_TEMPLATES = [
+  {name:"Exec · Minimal cover", build(){return{bg:"radial-gradient(90% 100% at 50% -10%,rgba(148,163,184,.22) 0%,transparent 60%),linear-gradient(160deg,#1e293b,#0f172a 70%,#020617)",els:[
+    makeShape("rect",{x:60,y:238,w:120,h:6,fill:"#38bdf8",radius:3,anim:"reveal"}),
+    makeText({x:58,y:132,w:840,h:100,text:"Company name",font:'"Space Grotesk",sans-serif',size:76,weight:800,color:"#f8fafc",anim:"rise"}),
+    makeText({x:60,y:262,w:760,h:60,text:"Board review · Strategy & performance",font:'"Inter",sans-serif',size:26,weight:500,color:"#94a3b8",anim:"fade",animDelay:.2}),
+    makeText({x:60,y:452,w:600,h:36,text:"PRESENTED BY YOUR NAME · Q3 2026",font:'"Spline Sans Mono",monospace',size:16,weight:700,ls:3,color:"#64748b",anim:"fade",animDelay:.4}),
+  ]};}},
+  {name:"Exec · Combo trend", build(){return{bg:"radial-gradient(80% 70% at 50% 0%,#ffffff 0%,transparent 65%),linear-gradient(180deg,#f8fafc,#e2e8f0)",els:[
+    makeText({x:56,y:44,w:760,h:58,text:"Revenue vs trend",font:'"Plus Jakarta Sans",sans-serif',size:48,weight:800,color:"#0f172a",anim:"rise"}),
+    makeText({x:58,y:106,w:680,h:38,text:"Bars show actuals, the line shows the rolling trend — values always visible.",font:'"Inter",sans-serif',size:19,weight:500,color:"#475569",anim:"fade",animDelay:.15}),
+    makeChart("combo",{x:56,y:158,w:848,h:328,title:"Monthly revenue",accent:"#2563eb",palette:["#2563eb","#22c55e","#38bdf8","#f59e0b","#a855f7","#ef4444"],valuePrefix:"$",anim:"float",animDelay:.25}),
+  ]};}},
+  {name:"Exec · Pareto insight", build(){return{bg:"linear-gradient(145deg,#f8fafc,#e2e8f0)",els:[
+    makeText({x:56,y:44,w:800,h:56,text:"Where the impact comes from",font:'"Fraunces",serif',size:46,weight:700,color:"#0f172a",anim:"rise"}),
+    makeChart("pareto",{x:56,y:120,w:560,h:366,title:"Pareto — 80/20",accent:"#e8482b",anim:"left",animDelay:.15}),
+    makeShape("rect",{x:648,y:132,w:256,h:340,fill:"#ffffff",radius:20,stroke:"rgba(15,23,42,.1)",strokeW:1,anim:"right",animDelay:.2}),
+    makeText({x:672,y:158,w:210,h:60,text:"80%",font:'"Archivo Expanded","Archivo",sans-serif',size:56,weight:800,color:"#e8482b",anim:"pop",animDelay:.35}),
+    makeText({x:672,y:232,w:210,h:200,text:"of the results come from the top few drivers. Focus effort where the curve climbs fastest.",font:'"Inter",sans-serif',size:19,weight:500,color:"#334155",lh:1.5,anim:"fade",animDelay:.45}),
+  ]};}},
+  {name:"Exec · Lollipop ranking", build(){return{bg:"radial-gradient(60% 70% at 85% 0%,rgba(216,162,58,.4) 0%,transparent 55%),radial-gradient(50% 60% at 10% 100%,rgba(216,162,58,.18) 0%,transparent 55%),linear-gradient(160deg,#0c0a09,#1c1917)",els:[
+    makeText({x:56,y:46,w:760,h:56,text:"Regional ranking",font:'"Fraunces",serif',size:50,weight:600,italic:true,color:"#fbf8f1",anim:"rise"}),
+    makeChart("lollipop",{x:56,y:130,w:848,h:352,title:"Score by region",accent:"#d8a23a",chartThemeMode:"dark",palette:["#d8a23a","#f2c14e","#fde68a","#a8a29e","#78716c","#57534e"],sortOrder:"desc",anim:"rise",animDelay:.2}),
+  ]};}},
+  {name:"Exec · Market pyramid", build(){return{bg:"radial-gradient(80% 90% at 15% 0%,rgba(52,211,153,.35) 0%,transparent 55%),linear-gradient(150deg,#022c22,#064e3b 60%,#065f46)",els:[
+    makeText({x:56,y:52,w:520,h:120,text:"Market layers",font:'"Fraunces",serif',size:58,weight:700,color:"#ecfdf5",lh:1.02,anim:"left"}),
+    makeText({x:60,y:180,w:400,h:120,text:"From total addressable market down to the customers we serve today.",font:'"Inter",sans-serif',size:21,weight:500,color:"#a7f3d0",lh:1.4,anim:"fade",animDelay:.2}),
+    makeChart("pyramid",{x:470,y:70,w:440,h:400,title:"TAM → SAM → SOM",accent:"#34d399",chartThemeMode:"dark",palette:["#34d399","#2dd4bf","#38bdf8","#818cf8","#a855f7","#f59e0b"],chartData:[{label:"TAM",value:100},{label:"SAM",value:62},{label:"SOM",value:30},{label:"Today",value:12}],anim:"right",animDelay:.25}),
+  ]};}},
+  {name:"Exec · Polar snapshot", build(){return{bg:"radial-gradient(70% 90% at 85% 10%,rgba(129,140,248,.4) 0%,transparent 58%),linear-gradient(145deg,#1e1b4b,#312e81 65%,#3730a3)",els:[
+    makeText({x:56,y:52,w:460,h:120,text:"Capability radar",font:'"Space Grotesk",sans-serif',size:52,weight:800,color:"#eef2ff",lh:1.05,anim:"rise"}),
+    makeText({x:60,y:180,w:380,h:130,text:"Every axis shows its value — a fast, honest snapshot of where we are strong.",font:'"Inter",sans-serif',size:20,weight:500,color:"#c7d2fe",lh:1.42,anim:"fade",animDelay:.2}),
+    makeChart("polarArea",{x:460,y:64,w:450,h:412,title:"Team strengths",accent:"#818cf8",chartThemeMode:"dark",palette:["#818cf8","#38bdf8","#34d399","#f2c14e","#fb7185","#a855f7"],chartData:[{label:"Product",value:82},{label:"Sales",value:64},{label:"Support",value:74},{label:"Brand",value:56},{label:"Ops",value:68}],anim:"pop",animDelay:.25}),
+  ]};}},
+  {name:"Exec · Stacked mix", build(){return{bg:"linear-gradient(160deg,#1e293b,#0f172a 70%,#020617)",els:[
+    makeText({x:56,y:44,w:800,h:56,text:"Portfolio mix by quarter",font:'"Plus Jakarta Sans",sans-serif',size:44,weight:800,color:"#f8fafc",anim:"rise"}),
+    makeChart("stackedBar",{x:56,y:118,w:848,h:368,title:"Segments (totals on top)",accent:"#38bdf8",chartThemeMode:"dark",showLegend:true,seriesNames:["Core","Growth","New bets"],chartData:[{label:"Q1",value:0,series:[42,20,8]},{label:"Q2",value:0,series:[46,26,12]},{label:"Q3",value:0,series:[50,30,18]},{label:"Q4",value:0,series:[54,36,22]}],anim:"rise",animDelay:.18}),
+  ]};}},
+  {name:"Exec · SWOT board", build(){return{bg:"radial-gradient(80% 60% at 50% 100%,rgba(148,163,184,.35) 0%,transparent 60%),linear-gradient(180deg,#f1f5f9,#cbd5e1)",els:[
+    makeText({x:56,y:36,w:700,h:54,text:"SWOT",font:'"Fraunces",serif',size:48,weight:700,color:"#0f172a",anim:"rise"}),
+    ...[["Strengths","#16a34a","What we do better than anyone.",56,104],["Weaknesses","#ef4444","Where we lose time or trust.",492,104],["Opportunities","#2563eb","Openings we can act on now.",56,306],["Threats","#f59e0b","Risks we must watch and plan for.",492,306]].flatMap((q,i)=>[
+      makeShape("rect",{x:q[3],y:q[4],w:412,h:186,fill:"#ffffff",radius:18,stroke:"rgba(15,23,42,.1)",strokeW:1,anim:"zoom",animDelay:.1+i*.1}),
+      makeShape("rect",{x:q[3],y:q[4],w:8,h:186,fill:q[1],radius:4,anim:"reveal",animDelay:.18+i*.1}),
+      makeText({x:q[3]+28,y:q[4]+18,w:360,h:40,text:q[0],font:'"Archivo",sans-serif',size:26,weight:800,color:q[1],anim:"fade",animDelay:.25+i*.1}),
+      makeText({x:q[3]+28,y:q[4]+64,w:360,h:104,text:q[2]+"\n• Point one\n• Point two",font:'"Inter",sans-serif',size:17,weight:500,color:"#334155",lh:1.45,anim:"fade",animDelay:.3+i*.1}),
+    ]),
+  ]};}},
+  {name:"Exec · Process flow", build(){return{bg:"linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(150deg,#0c4a6e,#075985)",bgSize:"44px 44px,44px 44px,auto",els:[
+    makeText({x:56,y:48,w:800,h:56,text:"How the work flows",font:'"Space Grotesk",sans-serif',size:46,weight:800,color:"#f0f9ff",anim:"rise"}),
+    ...[["1","Discover","#38bdf8"],["2","Design","#22d3ee"],["3","Build","#34d399"],["4","Launch","#f2c14e"]].flatMap((s,i)=>[
+      makeShape("rect",{x:56+i*228,y:170,w:180,h:180,fill:"rgba(255,255,255,.08)",radius:22,stroke:"rgba(255,255,255,.2)",strokeW:1,anim:"rise",animDelay:.12+i*.14}),
+      makeText({x:56+i*228,y:196,w:180,h:64,text:s[0],font:'"Archivo Expanded","Archivo",sans-serif',size:52,weight:800,color:s[2],align:"center",anim:"pop",animDelay:.22+i*.14}),
+      makeText({x:56+i*228,y:276,w:180,h:44,text:s[1],font:'"Archivo",sans-serif',size:24,weight:700,color:"#e0f2fe",align:"center",anim:"fade",animDelay:.3+i*.14}),
+      ...(i<3?[makeCreativeShape("double_arrow",{x:230+i*228,y:238,w:66,h:44,fill:"rgba(255,255,255,.55)",anim:"left",animDelay:.35+i*.14})]:[]),
+    ]),
+    makeText({x:56,y:406,w:848,h:60,text:"Each stage hands off cleanly to the next — no work is lost between steps.",font:'"Inter",sans-serif',size:20,weight:500,color:"#bae6fd",align:"center",anim:"fade",animDelay:.8}),
+  ]};}},
+  {name:"Exec · Quote + stat", build(){return{bg:"radial-gradient(70% 80% at 20% 0%,rgba(244,63,94,.35) 0%,transparent 55%),linear-gradient(155deg,#1c0a10,#4c0519 65%,#881337)",els:[
+    makeText({x:70,y:110,w:540,h:240,text:"“The numbers\ntell the story.”",font:'"Fraunces",serif',size:70,weight:600,italic:true,color:"#fff1f2",lh:1.05,anim:"blur"}),
+    makeText({x:74,y:380,w:420,h:36,text:"— HEAD OF STRATEGY",font:'"Spline Sans Mono",monospace',size:16,weight:700,ls:3,color:"#fda4af",anim:"fade",animDelay:.35}),
+    makeChart("gauge",{x:610,y:120,w:300,h:300,title:"Target reached",accent:"#fb7185",chartThemeMode:"dark",chartData:[{label:"Progress",value:87}],anim:"pop",animDelay:.3}),
+  ]};}},
+];
+
+const TEMPLATES = [...EXEC_TEMPLATES, ...PRO_TEMPLATES, ...BASE_TEMPLATES, ...AUTO_TEMPLATES, ...DATA_TEMPLATES];
 
 /* ════════════════════════════════════════════════════════════════════
    DECK STATE
@@ -4693,7 +4791,10 @@ function renderTable(el){
   box.appendChild(table);return box;
 }
 function chartData(el){
-  const d=Array.isArray(el.chartData)&&el.chartData.length?el.chartData:[{label:"A",value:10,series:[10,7,4]},{label:"B",value:20,series:[20,12,8]},{label:"C",value:15,series:[15,10,5]}];
+  let d=Array.isArray(el.chartData)&&el.chartData.length?el.chartData:[{label:"A",value:10,series:[10,7,4]},{label:"B",value:20,series:[20,12,8]},{label:"C",value:15,series:[15,10,5]}];
+  if(el.sortOrder==="asc"||el.sortOrder==="desc"){
+    d=d.slice().sort((a,b)=>el.sortOrder==="asc"?(Number(a.value)||0)-(Number(b.value)||0):(Number(b.value)||0)-(Number(a.value)||0));
+  }
   return d.map((r,i)=>({
     label:String(r.label??("Item "+(i+1))),
     value:Number(r.value)||0,
@@ -4733,7 +4834,34 @@ function plotlyChartSpec(el){
     traces=[{type:"pie", labels, values:vals, hole:kind==="donut"?.48:0, marker:{colors:pal}, textinfo:el.showValues===false?"label":"label+percent", hovertemplate:"%{label}: %{value}<extra></extra>"}];
     Object.assign(layout,{margin:{l:20,r:20,t:56,b:20}, showlegend:true});
   } else if(kind==="line" || kind==="spline" || kind==="area"){
-    traces=[{type:"scatter", mode:"lines+markers", x:labels, y:vals, fill:kind==="area"?"tozeroy":"none", line:{color:pal[0], width:4, shape:kind==="spline"?"spline":"linear"}, marker:{size:9, color:pal[0]}, hovertemplate:"%{x}: %{y}<extra></extra>"}];
+    const showV = el.showValues!==false;
+    traces=[{type:"scatter", mode:showV?"lines+markers+text":"lines+markers", x:labels, y:vals, text:showV?vals.map(vFmt):undefined, textposition:"top center", textfont:{size:Math.max(11,Number(el.labelSize||20)*0.55)}, fill:kind==="area"?"tozeroy":"none", line:{color:pal[0], width:4, shape:kind==="spline"?"spline":"linear"}, marker:{size:9, color:pal[0]}, hovertemplate:"%{x}: %{y}<extra></extra>"}];
+  } else if(kind==="lollipop"){
+    traces=[
+      {type:"bar", x:labels, y:vals, width:0.06, marker:{color:pal[0]}, hoverinfo:"skip", showlegend:false},
+      {type:"scatter", mode:el.showValues===false?"markers":"markers+text", x:labels, y:vals, text:vals.map(vFmt), textposition:"top center", marker:{size:16, color:pal}, hovertemplate:"%{x}: %{y}<extra></extra>", showlegend:false}
+    ];
+  } else if(kind==="pareto"){
+    const total=Math.max(1,vals.reduce((a,b)=>a+b,0));let run=0;const cum=vals.map(v=>{run+=v;return Math.round(run/total*100);});
+    traces=[
+      {type:"bar", x:labels, y:vals, marker:{color:pal}, text:el.showValues===false?undefined:vals.map(vFmt), textposition:"auto", name:"Value"},
+      {type:"scatter", mode:"lines+markers+text", x:labels, y:cum, yaxis:"y2", text:cum.map(c=>c+"%"), textposition:"top center", line:{color:pal[3]||"#f59e0b", width:3}, marker:{size:8}, name:"Cumulative %"}
+    ];
+    layout.yaxis2={overlaying:"y", side:"right", range:[0,110], showgrid:false, ticksuffix:"%"};
+    layout.showlegend=true;
+  } else if(kind==="combo"){
+    const lineVals=data.map((d,i)=>{if(d.series&&d.series.length)return Number(d.series[0])||0;const a=vals[Math.max(0,i-1)],b=vals[i],c=vals[Math.min(vals.length-1,i+1)];return Math.round((a+b+c)/3);});
+    traces=[
+      {type:"bar", x:labels, y:vals, marker:{color:pal[0]}, text:el.showValues===false?undefined:vals.map(vFmt), textposition:"auto", name:(el.seriesNames&&el.seriesNames[0])||"Value"},
+      {type:"scatter", mode:"lines+markers", x:labels, y:lineVals, line:{color:pal[1]||"#22c55e", width:3}, marker:{size:8}, name:(el.seriesNames&&el.seriesNames[1])||"Trend"}
+    ];
+    layout.showlegend=true;
+  } else if(kind==="pyramid"){
+    traces=[{type:"funnelarea", text:labels, values:vals, marker:{colors:pal}, textinfo:el.showValues===false?"text":"text+value"}];
+    Object.assign(layout,{margin:{l:20,r:20,t:58,b:20}, showlegend:false});
+  } else if(kind==="polarArea"){
+    traces=[{type:"barpolar", r:vals, theta:labels, marker:{color:pal.slice(0,Math.max(1,vals.length))}, hovertemplate:"%{theta}: %{r}<extra></extra>"}];
+    Object.assign(layout,{polar:{bgcolor:"rgba(0,0,0,0)", radialaxis:{visible:true, gridcolor:"rgba(148,163,184,.3)"}}, showlegend:false, margin:{l:38,r:38,t:58,b:34}});
   } else if(kind==="scatter" || kind==="bubble"){
     traces=[{type:"scatter", mode:"markers+text", x:data.map(d=>d.x), y:data.map(d=>d.y), text:labels, textposition:"top center", marker:{color:pal[0], size:kind==="bubble"?data.map(d=>Math.max(14, Math.min(64, d.size))):14, opacity:.82, line:{color:"rgba(255,255,255,.72)", width:1.5}}, hovertemplate:"%{text}<br>x=%{x}<br>y=%{y}<extra></extra>"}];
   } else if(kind==="horizontalBar"){
@@ -4903,11 +5031,11 @@ function renderChart(el){
   // margins scale a little with label size so big labels don't clip
   const left=Math.max(70,fs*2.6), right=44, top=30, bottom=Math.max(64,fs*2.4);
   const cw=VW-left-right, ch=VH-top-bottom;
-  const axed=!["pie","donut","radar","gauge","treemap","funnel","kpi","progress","heatmap"].includes(kind);
+  const axed=!["pie","donut","radar","gauge","treemap","funnel","kpi","progress","heatmap","polarArea","pyramid"].includes(kind);
   if(el.gridLines!==false && axed){
     const grid=svg("g",{class:"chart-grid"});
     for(let i=0;i<=4;i++){let y=top+ch*i/4;grid.appendChild(svg("line",{x1:left,y1:y,x2:VW-right,y2:y}));
-      if(el.axisValues!==false)grid.appendChild(svgText(left-12,y+fs*0.34,Math.round(max*(1-i/4)),{class:"chart-axis-val",textAnchor:"end"}));}
+      if(el.axisValues!==false)grid.appendChild(svgText(left-12,y+fs*0.34,fmtAxis(max*(1-i/4)),{class:"chart-axis-val",textAnchor:"end"}));}
     S.appendChild(grid);
   }
   if(axed){
@@ -4928,23 +5056,49 @@ function renderChart(el){
     S.appendChild(svg("path",{class:"chart-line",d:path}));
     pts.forEach((p,i)=>{S.appendChild(svg("circle",{class:"chart-dot",cx:p[0],cy:p[1],r:Math.max(6,fs*0.32)}));
       S.appendChild(svgText(p[0],top+ch+fs*1.5,p[2].label,{class:"chart-label",textAnchor:"middle"}));
-      if(showVals)S.appendChild(svgText(p[0],p[1]-fs*0.7,fmtVal(p[2].value,el),{class:"chart-value",textAnchor:"middle"}));});
+      if(showVals){
+        const vy=(p[1]-fs*0.7 < top+fs*0.9) ? p[1]+fs*1.35 : p[1]-fs*0.7;   // flip below the dot when it would clip the top
+        const vx=clamp(p[0], left+fs*1.2, VW-right-fs*1.2);
+        S.appendChild(svgText(vx,vy,fmtVal(p[2].value,el),{class:"chart-value",textAnchor:"middle"}));
+      }});
   } else if(kind==="scatter"||kind==="bubble"){
     const xs=data.map(d=>d.x), ys=data.map(d=>d.y);const xmin=Math.min(...xs),xmax=Math.max(...xs,xmin+1);const ymin=0,ymax=Math.max(1,...ys)*1.15;
     data.forEach((d,i)=>{const x=left+((d.x-xmin)/(xmax-xmin))*cw;const y=top+ch-((d.y-ymin)/(ymax-ymin))*ch;const r=kind==="bubble"?Math.max(8,Math.min(40,d.size)):Math.max(8,fs*0.5);
-      S.appendChild(svg("circle",{class:kind==="bubble"?"chart-bubble":"chart-scatter",cx:x,cy:y,r:r,style:`--i:${i}`}));S.appendChild(svgText(x,y-r-fs*0.4,d.label,{class:"chart-label",textAnchor:"middle"}));});
+      S.appendChild(svg("circle",{class:kind==="bubble"?"chart-bubble":"chart-scatter",cx:x,cy:y,r:r,style:`--i:${i}`}));
+      const lx=clamp(x,left+fs*1.4,VW-right-fs*1.4), ly=Math.max(top+fs*0.9,y-r-fs*0.4);
+      S.appendChild(svgText(lx,ly,d.label,{class:"chart-label",textAnchor:"middle"}));
+      if(showVals)S.appendChild(svgText(lx,Math.min(top+ch-fs*0.3,y+r+fs*1.05),fmtVal(d.y,el),{class:"chart-value-sm",textAnchor:"middle"}));});
   } else if(kind==="horizontalBar"){
     const gap=Math.max(12,ch*0.04);const bh=(ch-gap*(data.length+1))/Math.max(1,data.length);
     data.forEach((d,i)=>{const w=(d.value/max)*cw;const x=left;const y=top+gap+i*(bh+gap);S.appendChild(svg("rect",{class:"chart-bar hbar",x,y,width:w,height:bh,rx:Math.min(12,bh*0.3),style:`--i:${i}`}));S.appendChild(svgText(left-12,y+bh*.5+fs*0.34,d.label,{class:"chart-label",textAnchor:"end"}));if(showVals)S.appendChild(svgText(x+w+12,y+bh*.5+fs*0.34,fmtVal(d.value,el),{class:"chart-value"}));});
   } else if(kind==="groupedBar"||kind==="stackedBar"){
     const gap=Math.max(16,cw*0.03);const bw=(cw-gap*(data.length+1))/Math.max(1,data.length);
     data.forEach((d,i)=>{const sv=(d.series&&d.series.length?d.series:[d.value,Math.round(d.value*.65),Math.round(d.value*.35)]).slice(0,6);const x0=left+gap+i*(bw+gap);
-      if(kind==="stackedBar"){let y=top+ch;sv.forEach((v,j)=>{const h=(v/max)*ch;y-=h;S.appendChild(svg("rect",{class:"chart-bar",x:x0,y,width:bw,height:h,rx:j===0?10:3,style:`--i:${j}`}));});}
-      else {const sub=bw/sv.length;sv.forEach((v,j)=>{const h=(v/max)*ch;S.appendChild(svg("rect",{class:"chart-bar",x:x0+j*sub+2,y:top+ch-h,width:Math.max(3,sub-4),height:h,rx:6,style:`--i:${j}`}));});}
+      if(kind==="stackedBar"){
+        let y=top+ch;
+        sv.forEach((v,j)=>{const h=(v/max)*ch;y-=h;S.appendChild(svg("rect",{class:"chart-bar",x:x0,y,width:bw,height:h,rx:j===0?10:3,style:`--i:${j}`}));
+          // segment value inside its own block, when the block is tall enough
+          if(showVals && h>fs*1.4)S.appendChild(svgText(x0+bw/2,y+h/2+fs*0.34,fmtVal(v,el),{class:"chart-value-sm chart-value-in",textAnchor:"middle"}));});
+        // stack total on top
+        if(showVals)S.appendChild(svgText(x0+bw/2,Math.max(top+fs*0.9,y-fs*0.45),fmtVal(sv.reduce((a,b)=>a+(Number(b)||0),0),el),{class:"chart-value",textAnchor:"middle"}));
+      } else {
+        const sub=bw/sv.length;
+        sv.forEach((v,j)=>{const h=(v/max)*ch;const bx=x0+j*sub+2,bwid=Math.max(3,sub-4),by=top+ch-h;
+          S.appendChild(svg("rect",{class:"chart-bar",x:bx,y:by,width:bwid,height:h,rx:6,style:`--i:${j}`}));
+          if(showVals){
+            const inside=by-fs*0.5 < top+fs*0.9;
+            S.appendChild(svgText(bx+bwid/2,inside?by+fs*1.05:by-fs*0.45,fmtVal(v,el),{class:"chart-value-sm"+(inside?" chart-value-in":""),textAnchor:"middle"}));
+          }});
+      }
       S.appendChild(svgText(x0+bw/2,top+ch+fs*1.5,d.label,{class:"chart-label",textAnchor:"middle"}));});
   } else if(kind==="radar"){
     const cx=VW/2,cy=VH*0.52,r=Math.min(cw,ch)*0.42,n=data.length||1;for(let ring=1;ring<=4;ring++){const pts=data.map((d,i)=>polar(cx,cy,r*ring/4,-Math.PI/2+i*2*Math.PI/n).join(",")).join(" ");S.appendChild(svg("polygon",{class:"radar-ring",points:pts}));}
-    const poly=data.map((d,i)=>polar(cx,cy,(d.value/max)*r,-Math.PI/2+i*2*Math.PI/n).join(",")).join(" ");S.appendChild(svg("polygon",{class:"radar-fill",points:poly}));data.forEach((d,i)=>{const [x,y]=polar(cx,cy,r+fs*1.5,-Math.PI/2+i*2*Math.PI/n);S.appendChild(svgText(x,y,d.label,{class:"chart-label",textAnchor:"middle"}));});
+    const poly=data.map((d,i)=>polar(cx,cy,(d.value/max)*r,-Math.PI/2+i*2*Math.PI/n).join(",")).join(" ");S.appendChild(svg("polygon",{class:"radar-fill",points:poly}));
+    data.forEach((d,i)=>{const a=-Math.PI/2+i*2*Math.PI/n;const [x,y]=polar(cx,cy,r+fs*1.5,a);
+      S.appendChild(svgText(clamp(x,fs*1.4,VW-fs*1.4),clamp(y,fs*0.9,VH-fs*0.4),d.label,{class:"chart-label",textAnchor:"middle"}));
+      const [vx,vy]=polar(cx,cy,(d.value/max)*r,a);
+      S.appendChild(svg("circle",{class:"chart-dot",cx:vx,cy:vy,r:Math.max(5,fs*0.26)}));
+      if(showVals)S.appendChild(svgText(vx,vy-fs*0.6,fmtVal(d.value,el),{class:"chart-value-sm",textAnchor:"middle"}));});
   } else if(kind==="gauge"||kind==="progress"){
     const v=vals[0]||0;const pct=Math.max(0,Math.min(v/(Number(el.max)||100),1));
     if(kind==="gauge"){const cx=VW/2,cy=VH*0.66,r=Math.min(cw,ch)*0.5;S.appendChild(svg("path",{class:"gauge-bg",d:`M ${cx-r} ${cy} A ${r} ${r} 0 0 1 ${cx+r} ${cy}`}));const [ex,ey]=polar(cx,cy,r,Math.PI*(1-pct));S.appendChild(svg("path",{class:"gauge-fill",d:`M ${cx-r} ${cy} A ${r} ${r} 0 ${pct>.5?1:0} 1 ${ex} ${ey}`}));S.appendChild(svgText(cx,cy-fs*0.6,fmtVal(v,el)+(el.unit?"":"%"),{class:"gauge-value",textAnchor:"middle"}));}
@@ -4953,22 +5107,85 @@ function renderChart(el){
     const total=Math.max(1,vals[0]||max);const fw=cw;data.forEach((d,i)=>{const topW=fw*(d.value/total),botW=fw*((data[i+1]?.value||d.value*.85)/total);const y=top+i*(ch/data.length);const h=ch/data.length-6;S.appendChild(svg("path",{class:"funnel-step",d:`M ${VW/2-topW/2} ${y} L ${VW/2+topW/2} ${y} L ${VW/2+botW/2} ${y+h} L ${VW/2-botW/2} ${y+h} Z`,style:`--i:${i}`}));S.appendChild(svgText(VW/2,y+h*.6,d.label+" · "+fmtVal(d.value,el),{class:"chart-value",textAnchor:"middle"}));});
   } else if(kind==="waterfall"){
     let base=0;const gap=Math.max(16,cw*0.03),bw=(cw-gap*(data.length+1))/Math.max(1,data.length);const absMax=Math.max(1,Math.abs(data.reduce((a,d)=>a+d.value,0)),...data.map(d=>Math.abs(d.value)))*1.4;const zero=top+ch*.65;
-    data.forEach((d,i)=>{const x=left+gap+i*(bw+gap);const y0=zero-(base/absMax)*ch*.8;base+=d.value;const y1=zero-(base/absMax)*ch*.8;S.appendChild(svg("rect",{class:"chart-bar",x,y:Math.min(y0,y1),width:bw,height:Math.max(4,Math.abs(y1-y0)),rx:8,style:`--i:${d.value>=0?1:5}`}));S.appendChild(svgText(x+bw/2,top+ch+fs*1.5,d.label,{class:"chart-label",textAnchor:"middle"}));});
+    data.forEach((d,i)=>{const x=left+gap+i*(bw+gap);const y0=zero-(base/absMax)*ch*.8;base+=d.value;const y1=zero-(base/absMax)*ch*.8;S.appendChild(svg("rect",{class:"chart-bar",x,y:Math.min(y0,y1),width:bw,height:Math.max(4,Math.abs(y1-y0)),rx:8,style:`--i:${d.value>=0?1:5}`}));S.appendChild(svgText(x+bw/2,top+ch+fs*1.5,d.label,{class:"chart-label",textAnchor:"middle"}));
+      if(showVals){
+        const vy=Math.max(top+fs*0.9,Math.min(y0,y1)-fs*0.45);
+        S.appendChild(svgText(x+bw/2,vy,(d.value>=0?"+":"")+fmtVal(d.value,el),{class:"chart-value-sm",textAnchor:"middle"}));
+        if(i===data.length-1)S.appendChild(svgText(x+bw/2,Math.min(top+ch-fs*0.4,Math.max(y0,y1)+fs*1.2),"= "+fmtVal(base,el),{class:"chart-value",textAnchor:"middle"}));
+      }});
   } else if(kind==="heatmap"){
     const cols=Math.ceil(Math.sqrt(data.length)),cell=Math.min(cw,ch)/Math.max(2,cols);const ox=(VW-cols*cell)/2;data.forEach((d,i)=>{const x=ox+(i%cols)*cell,y=top+10+Math.floor(i/cols)*cell;S.appendChild(svg("rect",{class:"heat-cell",x,y,width:cell-8,height:cell-8,rx:12,opacity:Math.max(.25,d.value/max),style:`--i:${i}`}));S.appendChild(svgText(x+cell/2-4,y+cell/2,d.label,{class:"heat-label",textAnchor:"middle"}));if(showVals)S.appendChild(svgText(x+cell/2-4,y+cell/2+fs*0.9,fmtVal(d.value,el),{class:"heat-val",textAnchor:"middle"}));});
   } else if(kind==="treemap"){
     const total=Math.max(1,vals.reduce((a,b)=>a+b,0));let x=left,y=top+10;const rowH=Math.max(80,ch/Math.max(2,Math.ceil(data.length/3)));data.forEach((d,i)=>{const w=Math.max(110,(d.value/total)*cw*1.6);if(x+w>VW-right){x=left;y+=rowH+10;}S.appendChild(svg("rect",{class:"tree-box",x,y,width:Math.min(w,VW-right-left),height:rowH,rx:18,style:`--i:${i}`}));S.appendChild(svgText(x+16,y+fs*1.4,d.label,{class:"tree-label"}));S.appendChild(svgText(x+16,y+fs*2.6,fmtVal(d.value,el),{class:"tree-value"}));x+=w+12;});
   } else if(kind==="kpi"){
     const d=data[0]||{label:"Metric",value:0};S.appendChild(svgText(VW/2,VH*0.42,fmtVal(d.value,el),{class:"kpi-value",textAnchor:"middle"}));S.appendChild(svgText(VW/2,VH*0.58,d.label,{class:"kpi-label",textAnchor:"middle"}));S.appendChild(svg("rect",{class:"kpi-line",x:VW/2-145,y:VH*0.64,width:290,height:8,rx:4}));
+  } else if(kind==="lollipop"){
+    data.forEach((d,i)=>{const x=left+(data.length===1?cw/2:(i+0.5)*cw/data.length);const y=top+ch-(d.value/max)*ch;const r=Math.max(9,fs*0.42);
+      S.appendChild(svg("line",{class:"lolli-stem",x1:x,y1:top+ch,x2:x,y2:y+r,style:`--i:${i%6}`}));
+      S.appendChild(svg("circle",{class:"lolli-dot",cx:x,cy:y,r,style:`--i:${i%6}`}));
+      S.appendChild(svgText(x,top+ch+fs*1.5,d.label,{class:"chart-label",textAnchor:"middle"}));
+      if(showVals)S.appendChild(svgText(x,Math.max(top+fs*0.9,y-r-fs*0.5),fmtVal(d.value,el),{class:"chart-value",textAnchor:"middle"}));});
+  } else if(kind==="pareto"){
+    const gap=Math.max(16,cw*0.03);const bw=(cw-gap*(data.length+1))/Math.max(1,data.length);
+    const total=Math.max(1,vals.reduce((a,b)=>a+b,0));let run=0;const cum=[];
+    data.forEach((d,i)=>{const h=(d.value/max)*ch;const x=left+gap+i*(bw+gap);const y=top+ch-h;run+=d.value;cum.push([x+bw/2,top+ch-(run/total)*ch,run/total]);
+      S.appendChild(svg("rect",{class:"chart-bar",x,y,width:bw,height:h,rx:Math.min(10,bw*0.18),style:`--i:${i%6}`}));
+      S.appendChild(svgText(x+bw/2,top+ch+fs*1.5,d.label,{class:"chart-label",textAnchor:"middle"}));
+      if(showVals){const inside=y-fs*0.55<top+fs*0.9;S.appendChild(svgText(x+bw/2,inside?y+fs*1.05:y-fs*0.55,fmtVal(d.value,el),{class:"chart-value-sm"+(inside?" chart-value-in":""),textAnchor:"middle"}));}});
+    S.appendChild(svg("path",{class:"pareto-line",d:cum.map((p,i)=>(i?"L":"M")+p[0]+" "+p[1]).join(" ")}));
+    cum.forEach(p=>{S.appendChild(svg("circle",{class:"pareto-dot",cx:p[0],cy:p[1],r:Math.max(6,fs*0.3)}));
+      if(showVals)S.appendChild(svgText(p[0],Math.max(top+fs*0.9,p[1]-fs*0.55),Math.round(p[2]*100)+"%",{class:"pareto-val",textAnchor:"middle"}));});
+  } else if(kind==="combo"){
+    // bars from value; overlay line from series[0] when present, else a 3-point moving average
+    const gap=Math.max(16,cw*0.03);const bw=(cw-gap*(data.length+1))/Math.max(1,data.length);
+    const lineVals=data.map((d,i)=>{if(d.series&&d.series.length)return Number(d.series[0])||0;
+      const a=vals[Math.max(0,i-1)],b=vals[i],c=vals[Math.min(vals.length-1,i+1)];return Math.round((a+b+c)/3);});
+    const lmax=Math.max(max,...lineVals)*1.02;
+    const pts=[];
+    data.forEach((d,i)=>{const h=(d.value/max)*ch;const x=left+gap+i*(bw+gap);const y=top+ch-h;pts.push([x+bw/2,top+ch-(lineVals[i]/lmax)*ch,lineVals[i]]);
+      S.appendChild(svg("rect",{class:"chart-bar",x,y,width:bw,height:h,rx:Math.min(10,bw*0.18),style:`--i:0`}));
+      S.appendChild(svgText(x+bw/2,top+ch+fs*1.5,d.label,{class:"chart-label",textAnchor:"middle"}));
+      if(showVals){const inside=y-fs*0.55<top+fs*0.9;S.appendChild(svgText(x+bw/2,inside?y+fs*1.05:y-fs*0.55,fmtVal(d.value,el),{class:"chart-value-sm"+(inside?" chart-value-in":""),textAnchor:"middle"}));}});
+    S.appendChild(svg("path",{class:"combo-line",d:pts.map((p,i)=>(i?"L":"M")+p[0]+" "+p[1]).join(" ")}));
+    pts.forEach(p=>{S.appendChild(svg("circle",{class:"combo-dot",cx:p[0],cy:p[1],r:Math.max(6,fs*0.3)}));
+      if(showVals)S.appendChild(svgText(p[0],Math.max(top+fs*0.9,p[1]-fs*0.55),fmtVal(p[2],el),{class:"combo-val",textAnchor:"middle"}));});
+  } else if(kind==="pyramid"){
+    const maxV=Math.max(1,...vals);const rowH=ch/Math.max(1,data.length)-6;
+    data.forEach((d,i)=>{const w2=cw*0.92*(d.value/maxV)/2;const y=top+i*(ch/Math.max(1,data.length));const nw=data[i+1]?cw*0.92*((data[i+1].value)/maxV)/2:w2*0.55;
+      S.appendChild(svg("path",{class:"funnel-step",d:`M ${VW/2-w2} ${y} L ${VW/2+w2} ${y} L ${VW/2+nw} ${y+rowH} L ${VW/2-nw} ${y+rowH} Z`,style:`--i:${i%6}`}));
+      S.appendChild(svgText(VW/2,y+rowH*0.6,d.label+(showVals?" · "+fmtVal(d.value,el):""),{class:"chart-value pyr-val",textAnchor:"middle"}));});
+  } else if(kind==="polarArea"){
+    const cx=VW/2,cy=VH*0.52,R=Math.min(cw,ch)*0.46,n=Math.max(1,data.length);
+    for(let ring=1;ring<=4;ring++)S.appendChild(svg("circle",{class:"radar-ring",cx,cy,r:R*ring/4,fill:"none"}));
+    data.forEach((d,i)=>{const a0=-Math.PI/2+i*2*Math.PI/n,a1=-Math.PI/2+(i+1)*2*Math.PI/n;const r=(d.value/max)*R;
+      const [x0,y0]=polar(cx,cy,r,a0),[x1,y1]=polar(cx,cy,r,a1);
+      S.appendChild(svg("path",{class:"pie-slice",d:`M ${cx} ${cy} L ${x0} ${y0} A ${r} ${r} 0 ${a1-a0>Math.PI?1:0} 1 ${x1} ${y1} Z`,style:`--i:${i%6}`}));
+      const mid=(a0+a1)/2;const [lx,ly]=polar(cx,cy,R+fs*1.2,mid);
+      S.appendChild(svgText(clamp(lx,fs*1.4,VW-fs*1.4),clamp(ly,fs*0.9,VH-fs*0.4),d.label,{class:"chart-label",textAnchor:"middle"}));
+      if(showVals){const [vx,vy]=polar(cx,cy,Math.max(r*0.62,fs*1.3),mid);S.appendChild(svgText(vx,vy,fmtVal(d.value,el),{class:"chart-value pie-val",textAnchor:"middle"}));}});
   } else {
-    const gap=Math.max(16,cw*0.03);const bw=(cw-gap*(data.length+1))/Math.max(1,data.length);data.forEach((d,i)=>{const h=(d.value/max)*ch;const x=left+gap+i*(bw+gap);const y=top+ch-h;S.appendChild(svg("rect",{class:"chart-bar",x,y,width:bw,height:h,rx:Math.min(12,bw*0.18),style:`--i:${i}`}));S.appendChild(svgText(x+bw/2,top+ch+fs*1.5,d.label,{class:"chart-label",textAnchor:"middle"}));if(showVals)S.appendChild(svgText(x+bw/2,y-fs*0.55,fmtVal(d.value,el),{class:"chart-value",textAnchor:"middle"}));});
+    const gap=Math.max(16,cw*0.03);const bw=(cw-gap*(data.length+1))/Math.max(1,data.length);data.forEach((d,i)=>{const h=(d.value/max)*ch;const x=left+gap+i*(bw+gap);const y=top+ch-h;S.appendChild(svg("rect",{class:"chart-bar",x,y,width:bw,height:h,rx:Math.min(12,bw*0.18),style:`--i:${i}`}));S.appendChild(svgText(x+bw/2,top+ch+fs*1.5,d.label,{class:"chart-label",textAnchor:"middle"}));
+      if(showVals){
+        const inside=y-fs*0.55 < top+fs*0.9;                      // bar reaches the top → put the value inside it
+        S.appendChild(svgText(x+bw/2,inside?y+fs*1.15:y-fs*0.55,fmtVal(d.value,el),{class:"chart-value"+(inside?" chart-value-in":""),textAnchor:"middle"}));
+      }});
   }
   // optional legend for multi-series charts
   if(el.showLegend && ["groupedBar","stackedBar"].includes(kind)){
     const names=(Array.isArray(el.seriesNames)&&el.seriesNames.length)?el.seriesNames:["Series 1","Series 2","Series 3"];
     names.slice(0,6).forEach((nm,j)=>{const lx=left+j*(cw/Math.min(names.length,6));S.appendChild(svg("rect",{class:"legend-sw",x:lx,y:6,width:fs*0.8,height:fs*0.8,rx:4,style:`--i:${j}`}));S.appendChild(svgText(lx+fs,6+fs*0.7,nm,{class:"legend-lbl"}));});
   }
+  // Custom colour overrides win over the theme (inline style beats CSS class fill).
+  if(el.valueColor)S.querySelectorAll(".chart-value,.chart-value-sm,.gauge-value,.kpi-value,.heat-val,.tree-value,.pareto-val,.combo-val").forEach(n=>{if(!n.classList.contains("chart-value-in"))n.style.fill=el.valueColor;});
+  if(el.labelColor)S.querySelectorAll(".chart-label,.chart-axis-val,.legend-lbl,.kpi-label,.heat-label,.tree-label").forEach(n=>{n.style.fill=el.labelColor;});
   wrap.appendChild(S);box.appendChild(wrap);return box;
+}
+/* Compact axis tick formatting: 1.2k / 3.4M instead of long numbers. */
+function fmtAxis(v){
+  const n=Number(v)||0, a=Math.abs(n);
+  if(a>=1e6)return (n/1e6).toFixed(a>=1e7?0:1).replace(/\.0$/,"")+"M";
+  if(a>=1e3)return (n/1e3).toFixed(a>=1e4?0:1).replace(/\.0$/,"")+"k";
+  return String(Math.round(n));
 }
 /* Catmull-Rom → cubic Bézier for smooth-line charts. */
 function smoothPath(pts){

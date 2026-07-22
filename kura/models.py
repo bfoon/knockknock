@@ -504,6 +504,36 @@ class LookupDataset(models.Model):
         return f"{self.name} ({len(self.rows or [])} rows)"
 
 
+class UploadedDataset(models.Model):
+    """An external CSV/Excel file uploaded into the Data Studio.
+
+    Lets the studio clean *any* tabular data — not just survey
+    submissions. Rows live in a JSON column (same pattern as
+    LookupDataset — fine into the tens of thousands); a pipeline can
+    point at one of these instead of the survey's submissions and every
+    downstream feature (runs, dashboard, exports) works unchanged.
+    """
+
+    survey = models.ForeignKey(Survey, on_delete=models.CASCADE,
+                               related_name="datasets")
+    name = models.CharField(max_length=140)
+    original_filename = models.CharField(max_length=200, blank=True, default="")
+    columns = models.JSONField(default=list)   # ordered column names
+    rows = models.JSONField(default=list)      # [{col: value, …}, …]
+    row_count = models.PositiveIntegerField(default=0)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="kura_uploaded_datasets",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.survey.code} · {self.name} ({self.row_count} rows)"
+
+
 # ─────────────────────────────────────────────────────────────────────
 # Visual cleaning pipeline, immutable result snapshots and analytics
 # ─────────────────────────────────────────────────────────────────────
@@ -519,6 +549,19 @@ class CleaningPipeline(models.Model):
     name = models.CharField(max_length=140, default="Main cleaning pipeline")
     description = models.TextField(blank=True, default="")
     is_active = models.BooleanField(default=True)
+
+    # What this pipeline consumes: live survey submissions (default) or
+    # one uploaded CSV/Excel dataset.
+    SOURCE_CHOICES = [
+        ("submissions", "Survey submissions"),
+        ("dataset", "Uploaded file"),
+    ]
+    source = models.CharField(max_length=12, choices=SOURCE_CHOICES,
+                              default="submissions")
+    source_dataset = models.ForeignKey(
+        "UploadedDataset", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="pipelines",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

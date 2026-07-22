@@ -71,9 +71,6 @@
 .chart-builder select,.chart-builder input{background:#080a20;border:1px solid var(--line);color:#fff;border-radius:8px;padding:.45rem .5rem;font-size:.8rem}
 .chart-builder .chk{flex-direction:row;align-items:center;gap:.4rem}
 .chartbox.big{height:440px}
-.saved-chart{position:relative}
-.saved-chart .rm{position:absolute;top:6px;right:8px;background:rgba(0,0,0,.4);border:1px solid var(--line);color:var(--muted);border-radius:6px;cursor:pointer;font-size:.7rem;padding:.1rem .4rem;z-index:3}
-.saved-chart .rm:hover{color:var(--red)}
 /* correlation heatmap */
 .heat{border-collapse:collapse;font-size:.72rem}
 .heat th,.heat td{padding:.4rem .55rem;text-align:center;border:1px solid rgba(255,255,255,.06)}
@@ -85,6 +82,36 @@
 .player-controls{display:flex;align-items:center;gap:.8rem}
 .player-time{font-family:"Spline Sans Mono";font-size:.8rem;color:var(--cyan);min-width:120px;text-align:right}
 input[type=range]{accent-color:var(--pink)}
+/* repeat-group count chips + child viewer modal */
+.repchip{border:1px solid rgba(34,211,238,.5);background:rgba(34,211,238,.12);color:var(--cyan);border-radius:999px;padding:.14rem .55rem;font:600 .68rem Archivo;cursor:pointer;white-space:nowrap}
+.repchip:hover{background:rgba(34,211,238,.25)}
+.repchip.empty{opacity:.5;cursor:default;border-style:dashed}
+.kmodal{position:fixed;inset:0;background:rgba(4,5,18,.74);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:200;padding:1rem}
+.kmodal.open{display:flex}
+.kmodal-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;max-width:min(1100px,96vw);width:100%;max-height:86vh;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.55)}
+.kmodal-head{display:flex;align-items:center;gap:.6rem;padding:.7rem .9rem;border-bottom:1px solid var(--line)}
+.kmodal-head b{font:600 .95rem Fraunces}
+.kmodal-sub{font:500 .66rem "Spline Sans Mono";color:var(--muted)}
+.kmodal .tablewrap{max-height:64vh;padding:.4rem .6rem .8rem}
+/* dashboard board cards */
+.bcard{position:relative;display:flex;flex-direction:column;height:360px}
+.bcard.wide{grid-column:span 2}
+@media(max-width:900px){.bcard.wide{grid-column:auto}}
+.bhead{display:flex;align-items:center;gap:.3rem;margin-bottom:.35rem}
+.bhead b{flex:1;font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bhead button{background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--muted);border-radius:6px;cursor:pointer;font-size:.66rem;padding:.12rem .38rem}
+.bhead button:hover{color:#fff;border-color:var(--cyan)}
+.bbody{flex:1;position:relative;min-height:0}
+.bbody canvas{max-height:100%}
+.bmap{position:absolute;inset:0;border-radius:10px}
+.kpiv{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.3rem}
+.kpiv b{font:800 2.6rem Fraunces;background:linear-gradient(135deg,var(--cyan),var(--violet),var(--pink));-webkit-background-clip:text;background-clip:text;color:transparent}
+.kpiv span{color:var(--muted);font-size:.78rem;text-align:center}
+.boardbar{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+.boardbar select,.boardbar input{background:#080a20;border:1px solid var(--line);color:#fff;border-radius:8px;padding:.42rem .5rem;font-size:.78rem}
+.boardstate{font:500 .64rem "Spline Sans Mono";color:var(--muted)}
+.boardstate.dirty{color:var(--orange)}
+.mapnote{font:500 .64rem "Spline Sans Mono";color:var(--muted);text-transform:none;letter-spacing:0}
 </style>
 </head>
 <body>
@@ -117,6 +144,10 @@ input[type=range]{accent-color:var(--pink)}
     <span class="savestate" id="saveState">—</span>
   </div>
   <div class="pipebar">
+    <select id="srcSelect" title="What this pipeline cleans: survey submissions or an uploaded file"></select>
+    <button class="btn small ghost" id="uploadBtn" title="Upload a CSV or Excel file to clean in this studio">⬆ Upload CSV/Excel</button>
+    <input type="file" id="fileInput" hidden accept=".csv,.xlsx,.xls,.xlsm">
+    <button class="btn small ghost" id="delDataset" title="Delete the selected uploaded file">🗑 File</button>
     <input id="pipelineName" style="flex:1;min-width:150px" placeholder="Pipeline name" value="">
     <label class="switch"><input type="checkbox" id="pipeActive"> Active</label>
     <button class="btn small" id="saveBtn">Save now</button>
@@ -150,6 +181,7 @@ input[type=range]{accent-color:var(--pink)}
   <span class="spacer"></span>
   <button class="btn ghost" data-export="csv">⬇ Clean data CSV</button>
   <button class="btn ghost" data-export="data-xlsx">⬇ Clean data Excel</button>
+  <button class="btn ghost" data-export="data-docx">⬇ Clean data Word</button>
 </div>
 <div class="split">
 <div class="panel"><h3>Original dataset</h3><div class="tablewrap"><table id="rawTable"></table></div></div>
@@ -165,6 +197,7 @@ input[type=range]{accent-color:var(--pink)}
   <div class="subtabs" id="dashSubtabs">
     <button class="subtab active" data-sub="summary">📋 Summary</button>
     <button class="subtab" data-sub="charts">📊 Custom charts</button>
+    <button class="subtab" data-sub="board">📌 My board</button>
     <button class="subtab" data-sub="correlation">🔗 Correlation</button>
     <button class="subtab" data-sub="timeseries">📈 Time series</button>
     <button class="subtab" data-sub="timeline">⏱ Historical playback</button>
@@ -204,9 +237,29 @@ input[type=range]{accent-color:var(--pink)}
       </div>
     </div></div>
     <div class="chartbox big" style="margin-top:1rem"><canvas id="cbCanvas"></canvas></div>
-    <div class="panel" style="margin-top:1rem"><h3>Saved charts <span class="sp" style="flex:1"></span></h3>
-      <div class="charts" id="chartBoard"></div>
-    </div>
+    <p class="muted" style="margin-top:.6rem">Build a chart, then “＋ Add to board” pins it to <b>📌 My board</b> — your own saved dashboard for this run.</p>
+  </div>
+
+  <!-- My board: the customizable, persistent dashboard -->
+  <div class="subpage" id="sub-board">
+    <div class="panel"><h3>Your dashboard, your layout</h3><div class="body">
+      <div class="boardbar">
+        <span class="muted">Add:</span>
+        <select id="kpiCol" title="Column for the number card"></select>
+        <select id="kpiAgg" title="How to summarize it">
+          <option value="count">Count</option><option value="sum">Sum</option>
+          <option value="mean">Average</option><option value="median">Median</option>
+          <option value="min">Min</option><option value="max">Max</option>
+        </select>
+        <button class="btn small ghost" id="addKpi">＋ Number card</button>
+        <button class="btn small ghost" id="addMap">＋ Map card</button>
+        <span class="spacer"></span>
+        <span class="boardstate" id="boardState">—</span>
+        <button class="btn small" id="saveBoard">💾 Save board</button>
+      </div>
+      <p class="muted" style="margin:.6rem 0 0">Every card can be renamed ✎, resized ⇔ (normal / wide), reordered ◀ ▶ and removed ✕. Charts come from the Custom charts builder. The board is saved on the server, so it is exactly how you left it next time.</p>
+    </div></div>
+    <div class="charts" id="boardGrid" style="margin-top:1rem"></div>
   </div>
 
   <!-- Correlation -->
@@ -260,7 +313,7 @@ input[type=range]{accent-color:var(--pink)}
     </div></div>
     <div class="charts">
       <div class="chartbox"><canvas id="tlBars"></canvas></div>
-      <div class="chartbox"><div id="tlMap" style="height:340px;border-radius:10px"></div></div>
+      <div class="chartbox" id="tlMapBox"><div id="tlMap" style="height:340px;border-radius:10px"></div></div>
     </div>
   </div>
 
@@ -275,13 +328,13 @@ input[type=range]{accent-color:var(--pink)}
     <div class="chartbox big" style="margin-top:1rem"><canvas id="regChart"></canvas></div>
   </div>
 
-  <div class="panel" style="margin-top:1rem"><h3>Response map</h3><div id="map"></div></div>
+  <div class="panel" style="margin-top:1rem;display:none" id="mapPanel"><h3>Response map <span class="sp"></span><span class="mapnote" id="mapSource"></span></h3><div id="map"></div></div>
 </section>
 
 <section class="page" id="page-reports">
 <div class="panel"><h3>Clean data</h3><div class="body">
-<p class="muted">Download only the cleaned dataset from the selected run — ready for Excel, SPSS, Stata or R.</p>
-<div class="row"><button class="btn" data-export="csv">CSV</button><button class="btn" data-export="data-xlsx">Excel</button></div>
+<p class="muted">Download only the cleaned dataset from the selected run — ready for Excel, SPSS, Stata, R or Word. Repeat-group answers export as item counts in Word.</p>
+<div class="row"><button class="btn" data-export="csv">CSV</button><button class="btn" data-export="data-xlsx">Excel</button><button class="btn" data-export="data-docx">Word</button></div>
 </div></div>
 <div class="panel" style="margin-top:1rem"><h3>Detailed report</h3><div class="body">
 <p class="muted">Full report from the selected completed cleaning run — pipeline steps, summary statistics and the audit trail.</p>
@@ -289,16 +342,34 @@ input[type=range]{accent-color:var(--pink)}
 </div></div></section>
 <div class="toast" id="toast"></div>
 
+<!-- Repeat-group child viewer: opened by the "N items" chips in any table -->
+<div class="kmodal" id="repModal">
+  <div class="kmodal-card">
+    <div class="kmodal-head">
+      <div><b id="repTitle">Items</b><div class="kmodal-sub" id="repSub"></div></div>
+      <span class="spacer"></span>
+      <button class="btn small ghost" id="repClose">✕ Close</button>
+    </div>
+    <div class="tablewrap"><table id="repTable"></table></div>
+  </div>
+</div>
+
 <script>
-const CODE="{{ survey.code }}", initial={{ pipeline_json|safe }}, columns={{ columns_json|safe }}, operations={{ operations_json|safe }};
+const CODE="{{ survey.code }}", initial={{ pipeline_json|safe }}, operations={{ operations_json|safe }};
+let columns={{ columns_json|safe }};
 const STUDIO_BASE="{% url 'kura:studio' survey.code %}";
 const csrf=()=>document.cookie.split("; ").find(x=>x.startsWith("csrftoken="))?.split("=")[1]||"";
 let pipeline=structuredClone(initial), selected=null, bootstrap=null, currentRun=null, charts=[], map=null, mapLayer=null;
 let dirty=false, saveTimer=null, runTimer=null, saving=false;
 let columnValues={}, schemaChoices={};        // from bootstrap: friendly value pickers
+let surveyColumns=columns.slice();             // the form's own columns (source = submissions)
+let surveyColumnValues={}, surveySchemaChoices={};
+let datasets=[], datasetCache={};              // uploaded CSV/Excel sources
 let dashRun=null;                              // run selected for the dashboard
+let dashPayload=null;                          // cached dashboard payload (maps, map_source, …)
 let cbChart=null, tsChart=null, regChartObj=null, corrScatterObj=null, tlBarsObj=null, tlMap=null, tlMapLayer=null;
-let savedCharts=[], savedChartObjs=[];         // custom chart board
+let board=[], boardObjs=[], boardDirty=false;   // "My board": persistent custom dashboard
+let repStore=[];                                // repeat-group cells → child viewer
 let timeline=null, tlFrame=0, tlTimer=null;    // historical playback
 const $=s=>document.querySelector(s), esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
 function toast(s){const t=$("#toast");t.textContent=s;t.style.display="block";clearTimeout(t._h);t._h=setTimeout(()=>t.style.display="none",2600)}
@@ -347,9 +418,15 @@ function renderFlow(){
     const last=pipeline.steps[pipeline.steps.length-1];const u=ui(last);
     return {x:Math.max(ui(best).x,u.x)+NODE_W+70,y:u.y}})();
   // Nodes
-  let h=`<div class="node terminal" style="left:${src.x}px;top:${src.y}px">
-    <div class="head"><span class="badge" style="background:rgba(34,197,94,.16);color:var(--green)">⇥</span><b>Raw submissions</b></div>
-    <div class="meta"><span>${bootstrap?bootstrap.raw_rows.length+(bootstrap.raw_rows.length===500?"+":""):"…"} rows</span><span>source</span></div>
+  const usingDs=pipeline.source==="dataset"&&pipeline.source_dataset_id;
+  const ds=usingDs?datasets.find(d=>d.id===pipeline.source_dataset_id):null;
+  const srcTitle=usingDs?(ds?ds.name:"Uploaded file"):"Raw submissions";
+  const srcMeta=usingDs
+    ?`${ds?ds.row_count:"…"} rows`
+    :`${bootstrap?bootstrap.raw_rows.length+(bootstrap.raw_rows.length===500?"+":""):"…"} rows`;
+  let h=`<div class="node terminal" style="left:${src.x}px;top:${src.y}px" title="${usingDs?"This pipeline cleans the uploaded file":"This pipeline cleans the survey's own submissions"}">
+    <div class="head"><span class="badge" style="background:rgba(34,197,94,.16);color:var(--green)">${usingDs?"📄":"⇥"}</span><b>${esc(srcTitle)}</b></div>
+    <div class="meta"><span>${srcMeta}</span><span>${usingDs?"uploaded file":"source"}</span></div>
     <span class="port out"></span></div>`;
   h+=pipeline.steps.map((s,i)=>{const u=ui(s);return `
     <div class="node ${s.enabled?"":"disabled"} ${selected===i?"selected":""}" data-i="${i}" style="left:${u.x}px;top:${u.y}px">
@@ -609,23 +686,24 @@ async function switchPipeline(id){
   const p=(bootstrap?.pipelines||[]).find(x=>x.id===+id);
   if(!p)return;
   pipeline=structuredClone(p);selected=null;dirty=false;
-  setSaveState("saved","Loaded");ensureLayout();renderFlow();renderConfig();
+  setSaveState("saved","Loaded");ensureLayout();await applySource();renderConfig();
 }
 $("#pipeSelect").addEventListener("change",e=>switchPipeline(e.target.value));
 $("#newPipe").onclick=async()=>{
   clearTimeout(saveTimer);if(dirty)await save(false);
   const name=prompt("Name for the new pipeline:","New cleaning pipeline");
   if(name===null)return;
-  pipeline={id:null,name:name||"New cleaning pipeline",description:"",is_active:false,steps:[]};
+  pipeline={id:null,name:name||"New cleaning pipeline",description:"",is_active:false,steps:[],
+    source:pipeline.source||"submissions",source_dataset_id:pipeline.source_dataset_id||null};
   selected=null;await save(false);await boot(false);
-  ensureLayout();renderFlow();renderConfig()};
+  ensureLayout();await applySource();renderConfig()};
 $("#dupPipe").onclick=async()=>{
   if(!pipeline.id)return toast("Save the pipeline first");
   clearTimeout(saveTimer);if(dirty)await save(false);
   const j=await api(`${STUDIO_BASE}pipeline/${pipeline.id}/duplicate/`,{method:"POST",body:"{}"});
   toast("Pipeline duplicated");
   await boot(false);pipeline=structuredClone(j.pipeline);selected=null;dirty=false;
-  ensureLayout();renderFlow();renderConfig();refreshPipeSelect()};
+  ensureLayout();await applySource();renderConfig();refreshPipeSelect()};
 $("#delPipe").onclick=async()=>{
   if(!pipeline.id)return;
   if(!confirm(`Delete pipeline “${pipeline.name}” and its runs? Raw submissions are not touched.`))return;
@@ -635,12 +713,83 @@ $("#delPipe").onclick=async()=>{
   const next=bootstrap.pipelines[0];
   if(next){pipeline=structuredClone(next)}
   else{pipeline={id:null,name:"Main cleaning pipeline",description:"",is_active:true,steps:[]};await save(false);await boot(false)}
-  selected=null;dirty=false;ensureLayout();renderFlow();renderConfig();refreshPipeSelect()};
+  selected=null;dirty=false;ensureLayout();renderFlow();renderConfig();refreshPipeSelect();await applySource()};
+
+/* ── data source: survey submissions OR an uploaded CSV/Excel ────────── */
+function refreshSrcSelect(){
+  $("#srcSelect").innerHTML=`<option value="">⇥ Survey submissions</option>`+
+    datasets.map(d=>`<option value="${d.id}">📄 ${esc(d.name)} · ${d.row_count} rows</option>`).join("");
+  $("#srcSelect").value=pipeline.source==="dataset"&&pipeline.source_dataset_id?String(pipeline.source_dataset_id):"";
+  $("#delDataset").style.display=$("#srcSelect").value?"":"none";
+}
+async function datasetDetail(id){
+  if(datasetCache[id])return datasetCache[id];
+  try{
+    const j=await api(`${STUDIO_BASE}dataset/${id}/`);
+    datasetCache[id]=j.dataset;return j.dataset;
+  }catch(err){toast(err.message);return null}
+}
+/* Swap the working column list + value pickers to match the source, and
+   refresh everything that depends on them. */
+async function applySource(render=true){
+  if(pipeline.source==="dataset"&&pipeline.source_dataset_id){
+    const det=await datasetDetail(pipeline.source_dataset_id);
+    if(det){columns=det.columns.slice();columnValues=det.column_values||{};schemaChoices={};}
+    else{pipeline.source="submissions";pipeline.source_dataset_id=null;}
+  }
+  if(pipeline.source!=="dataset"){
+    columns=surveyColumns.slice();columnValues=surveyColumnValues;schemaChoices=surveySchemaChoices;
+  }
+  refreshSrcSelect();
+  if(render)renderRaw();
+  renderFlow();
+  if(selected!=null)renderConfig();
+}
+$("#srcSelect").addEventListener("change",async e=>{
+  const v=e.target.value;
+  pipeline.source=v?"dataset":"submissions";
+  pipeline.source_dataset_id=v?+v:null;
+  markDirty();
+  await applySource();
+  toast(v?"Pipeline now cleans the uploaded file":"Pipeline now cleans the survey submissions");
+});
+$("#uploadBtn").onclick=()=>$("#fileInput").click();
+$("#fileInput").addEventListener("change",async e=>{
+  const f=e.target.files[0]; e.target.value="";
+  if(!f)return;
+  toast(`Uploading ${f.name}…`);
+  const fd=new FormData(); fd.append("file",f);
+  let j;
+  try{
+    const r=await fetch(`${STUDIO_BASE}datasets/upload/`,{method:"POST",headers:{"X-CSRFToken":csrf()},body:fd});
+    j=await r.json();
+    if(!r.ok||!j.ok)throw Error(j.error||"Upload failed");
+  }catch(err){return toast(err.message)}
+  datasets.unshift(j.dataset); datasetCache[j.dataset.id]=j.dataset;
+  pipeline.source="dataset"; pipeline.source_dataset_id=j.dataset.id;
+  markDirty();
+  await applySource();
+  toast(`${j.dataset.name}: ${j.dataset.row_count} rows · ${j.dataset.columns.length} columns ready to clean`);
+});
+$("#delDataset").onclick=async()=>{
+  const id=+$("#srcSelect").value; if(!id)return;
+  const d=datasets.find(x=>x.id===id); if(!d)return;
+  if(!confirm(`Delete the uploaded file “${d.name}”? Pipelines using it will switch back to survey submissions. Cleaning runs already produced from it are kept.`))return;
+  try{await api(`${STUDIO_BASE}dataset/${id}/delete/`,{method:"POST",body:"{}"})}
+  catch(err){return toast(err.message)}
+  datasets=datasets.filter(x=>x.id!==id); delete datasetCache[id];
+  if(pipeline.source_dataset_id===id){pipeline.source="submissions";pipeline.source_dataset_id=null;markDirty();}
+  await applySource();
+  toast("Uploaded file deleted");
+};
 
 /* ── auto-build: propose steps by inspecting the raw data ─────────── */
 $("#autoBuild").onclick=()=>{
-  if(!bootstrap?.raw_rows?.length)return toast("No submissions to analyse yet");
-  const rows=bootstrap.raw_rows.map(r=>Object.assign({},r.answers,r.calculations));
+  const usingDs=pipeline.source==="dataset"&&pipeline.source_dataset_id;
+  const rows=usingDs
+    ?((datasetCache[pipeline.source_dataset_id]?.rows)||[]).map(r=>({...r}))
+    :(bootstrap?.raw_rows||[]).map(r=>Object.assign({},r.answers,r.calculations));
+  if(!rows.length)return toast(usingDs?"The uploaded file has no rows to analyse":"No submissions to analyse yet");
   const proposed=[];
   const seen=new Set();let dups=0;
   for(const r of rows){const k=JSON.stringify(Object.entries(r).sort());if(seen.has(k))dups++;else seen.add(k)}
@@ -666,12 +815,51 @@ $("#layoutBtn").onclick=autoLayout;
 /* ── results / reports ────────────────────────────────────────────── */
 async function boot(render=true){
   bootstrap=await api(`{% url 'kura:studio_bootstrap' survey.code %}`);
-  columnValues=bootstrap.column_values||{}; schemaChoices=bootstrap.schema_choices||{};
-  if(render)renderRaw();
+  surveyColumnValues=bootstrap.column_values||{}; surveySchemaChoices=bootstrap.schema_choices||{};
+  datasets=bootstrap.datasets||[];
+  refreshSrcSelect();
+  await applySource(render);
   renderRuns();refreshPipeSelect();renderConfig();
 }
-function renderTable(el,rows,changeMap={}){if(!rows.length){el.innerHTML="<tr><td>No rows</td></tr>";return}const data=rows.map(r=>r.data||r.answers||{}),cols=[...new Set(data.flatMap(Object.keys))];el.innerHTML=`<thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${data.map((r,i)=>`<tr>${cols.map(c=>{const key=`${rows[i].row_number||i+1}:${c}`;return `<td class="${changeMap[key]?"changed":""}" title="${esc(changeMap[key]?.map(x=>x.detail).join("; ")||"")}">${esc(Array.isArray(r[c])?r[c].join(", "):typeof r[c]==="object"&&r[c]!==null?JSON.stringify(r[c]):r[c]??"")}</td>`}).join("")}</tr>`).join("")}</tbody>`}
-function renderRaw(){renderTable($("#rawTable"),bootstrap.raw_rows)}
+/* one cell → HTML. Repeat-group answers (lists of objects) become a
+   clickable "N items" chip that opens the child-rows viewer. */
+function isRepeatVal(v){return Array.isArray(v)&&v.length>0&&typeof v[0]==="object"&&v[0]!==null&&!Array.isArray(v[0])}
+function cellHTML(v,col){
+  if(isRepeatVal(v)){
+    const id=repStore.push({col,items:v})-1;
+    return `<button class="repchip" data-rep="${id}" title="Click to open the ${v.length} item(s) recorded inside “${esc(col)}”">▦ ${v.length} item${v.length>1?"s":""}</button>`;
+  }
+  if(Array.isArray(v))return v.length?esc(v.join(", ")):`<span class="repchip empty">0 items</span>`;
+  if(typeof v==="object"&&v!==null)return esc(JSON.stringify(v));
+  return esc(v??"");
+}
+function renderTable(el,rows,changeMap={}){if(!rows.length){el.innerHTML="<tr><td>No rows</td></tr>";return}const data=rows.map(r=>r.data||r.answers||r||{}),cols=[...new Set(data.flatMap(Object.keys))];el.innerHTML=`<thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${data.map((r,i)=>`<tr>${cols.map(c=>{const key=`${rows[i].row_number||i+1}:${c}`;return `<td class="${changeMap[key]?"changed":""}" title="${esc(changeMap[key]?.map(x=>x.detail).join("; ")||"")}">${cellHTML(r[c],c)}</td>`}).join("")}</tr>`).join("")}</tbody>`}
+function renderRaw(){
+  if(pipeline.source==="dataset"&&pipeline.source_dataset_id){
+    const det=datasetCache[pipeline.source_dataset_id];
+    renderTable($("#rawTable"),det?det.rows:[]);
+  }else{
+    renderTable($("#rawTable"),bootstrap?bootstrap.raw_rows:[]);
+  }
+}
+
+/* repeat-group child viewer */
+function openRepeat(id){
+  const entry=repStore[id]; if(!entry)return;
+  const kids=entry.items, cols=[...new Set(kids.flatMap(k=>Object.keys(k||{})))];
+  $("#repTitle").textContent=entry.col;
+  $("#repSub").textContent=`${kids.length} item${kids.length>1?"s":""} recorded in this repeat group`;
+  $("#repTable").innerHTML=`<thead><tr><th>#</th>${cols.map(c=>`<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>`+
+    kids.map((k,i)=>`<tr><td>${i+1}</td>${cols.map(c=>{const v=(k||{})[c];
+      return `<td>${Array.isArray(v)?esc(v.join(", ")):typeof v==="object"&&v!==null?esc(JSON.stringify(v)):esc(v??"")}</td>`}).join("")}</tr>`).join("")+`</tbody>`;
+  $("#repModal").classList.add("open");
+}
+document.addEventListener("click",e=>{
+  const chip=e.target.closest(".repchip[data-rep]");
+  if(chip){openRepeat(+chip.dataset.rep);return}
+  if(e.target.id==="repClose"||e.target.id==="repModal")$("#repModal").classList.remove("open");
+});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")$("#repModal").classList.remove("open")});
 function completeRuns(){return (bootstrap?.runs||[]).filter(r=>r.status==="complete")}
 function renderRuns(){
   const opts=r=>`<option value="${r.id}">Run #${r.id} · ${esc(r.pipeline_name||"")} · ${esc(r.label||r.status)} · ${r.result_count} rows</option>`;
@@ -684,20 +872,56 @@ function renderRuns(){
 async function loadRun(){currentRun=+$("#runSelect").value;if(!currentRun)return;const j=await api(`${STUDIO_BASE}run/${currentRun}/rows/`);renderTable($("#cleanTable"),j.rows,j.changes);$("#runSummary").textContent=`${j.run.result_count} rows · ${j.run.column_count} columns · ${j.run.summary.changes||0} changes`}
 
 /* ── dashboard: run selection + column lists ──────────────────────── */
-let dashCols=[], dashNumericCols=[];
+let dashCols=[], dashNumericCols=[], dashSummary=null;
 async function useDashRun(){
   dashRun=+$("#dashRun").value; if(!dashRun)return toast("No completed run to analyse");
   const info=completeRuns().find(r=>r.id===dashRun);
   $("#dashRunInfo").textContent=info?`${info.result_count} rows · ${info.column_count} columns`:"";
   // fetch summary → gives us columns + kinds, and fills the Summary tab
   const j=await api(`${STUDIO_BASE}run/${dashRun}/summary/`);
-  const sum=j.summary; dashCols=sum.fields.map(f=>f.name);
+  const sum=j.summary; dashSummary=sum; dashCols=sum.fields.map(f=>f.name);
   dashNumericCols=sum.fields.filter(f=>f.kind==="numeric").map(f=>f.name);
   renderSummary(sum);
   fillDashSelects();
+  // number cards can summarize numeric columns, repeat-group counts, or count anything
+  $("#kpiCol").innerHTML=opt(sum.fields.filter(f=>f.kind!=="categorical").map(f=>f.name).concat(
+    sum.fields.filter(f=>f.kind==="categorical").map(f=>f.name)));
   // preselect a likely date column
   const dateGuess=dashCols.find(c=>/date|time|_at|day|month|received|created/i.test(c));
   if(dateGuess){$("#tsDate").value=dateGuess;$("#tlDate").value=dateGuess;}
+  // one dashboard payload fetch → response map with geo priority + board map cards
+  try{
+    const d=await api(`${STUDIO_BASE}run/${dashRun}/dashboard/`,{method:"POST",body:JSON.stringify({})});
+    dashPayload=d.dashboard;
+  }catch(err){dashPayload=null;}
+  updateMainMap();
+  await loadBoard();
+}
+
+/* Response map, honouring the priority rule:
+   GPS question → coordinates in the data → device location at collection
+   → no location at all: the panel stays hidden. */
+function mapSourceText(srcInfo){
+  if(!srcInfo)return "";
+  if(srcInfo.kind==="question")return `📍 Location from the form's GPS question “${srcInfo.label}”`;
+  if(srcInfo.kind==="device")return "📍 Default device location captured during collection";
+  return `📍 Coordinates from ${srcInfo.label||"data columns"}`;
+}
+function updateMainMap(){
+  const pts=dashPayload?.maps||[];
+  const panel=$("#mapPanel");
+  if(!pts.length){
+    panel.style.display="none";
+    if(map&&mapLayer){map.removeLayer(mapLayer);mapLayer=null;}
+    return;
+  }
+  panel.style.display="";
+  $("#mapSource").textContent=mapSourceText(dashPayload.map_source);
+  if(!map){map=L.map("map").setView([13.45,-16.58],8);L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",{subdomains:"abcd",maxZoom:20,attribution:"© OSM © CARTO"}).addTo(map);}
+  setTimeout(()=>map.invalidateSize(),120);
+  if(mapLayer)map.removeLayer(mapLayer);
+  mapLayer=L.featureGroup(pts.map(p=>L.circleMarker([p.lat,p.lng],{radius:5,color:"#22d3ee",weight:1}).bindTooltip("Row "+p.row))).addTo(map);
+  map.fitBounds(mapLayer.getBounds().pad(.1));
 }
 function opt(list,sel){return list.map(c=>`<option value="${esc(c)}" ${c===sel?"selected":""}>${esc(c)}</option>`).join("")}
 function fillDashSelects(){
@@ -720,8 +944,11 @@ function renderSummary(sum){
     sum.fields.map(f=>{
       const detail=f.kind==="numeric"
         ? `min ${f.min} · mean ${f.mean} · median ${f.median} · max ${f.max}`
+        : f.kind==="repeat"
+        ? `repeat group · avg ${f.mean} items per row · ${f.total_items} items in total (min ${f.min}, max ${f.max})`
         : (f.top_values||[]).map(t=>`${esc(t.value)} (${t.count})`).join(", ");
-      return `<tr><td>${esc(f.name)}</td><td>${f.kind}</td><td>${f.missing} (${f.missing_percent}%)</td><td>${f.unique}</td><td title="${esc(detail)}">${esc(detail)}</td></tr>`;
+      const kind=f.kind==="repeat"?"repeat group":f.kind;
+      return `<tr><td>${esc(f.name)}</td><td>${kind}</td><td>${f.missing} (${f.missing_percent}%)</td><td>${f.unique}</td><td title="${esc(detail)}">${esc(detail)}</td></tr>`;
     }).join("")+`</tbody>`;
 }
 
@@ -772,14 +999,115 @@ async function addChartToBoard(){
   const spec=chartSpec();
   const res=await api(`${STUDIO_BASE}run/${dashRun}/chart/`,{method:"POST",body:JSON.stringify(spec)});
   if(!res.ok)return toast(res.error||"Chart failed");
-  savedCharts.push({spec,res}); renderChartBoard();
+  board.push({kind:"chart",spec,title:res.title,size:1});
+  boardDirty=true;updateBoardState();
+  toast("Added to 📌 My board — open the board tab to arrange and save it");
 }
-function renderChartBoard(){
-  savedChartObjs.forEach(c=>c&&c.destroy()); savedChartObjs=[];
-  $("#chartBoard").innerHTML=savedCharts.map((_,i)=>`<div class="chartbox saved-chart"><button class="rm" data-rm="${i}">✕</button><canvas id="saved_${i}"></canvas></div>`).join("");
-  savedCharts.forEach((c,i)=>savedChartObjs[i]=drawChart(`#saved_${i}`,c.res,null));
+
+/* ── 📌 My board: persistent, customizable dashboard ─────────────────── */
+function updateBoardState(){
+  const el=$("#boardState");
+  el.className="boardstate "+(boardDirty?"dirty":"");
+  el.textContent=boardDirty?"Unsaved board changes…":(board.length?`${board.length} card${board.length>1?"s":""} · saved`:"Empty board");
 }
-$("#chartBoard").addEventListener("click",e=>{if(e.target.dataset.rm!=null){savedCharts.splice(+e.target.dataset.rm,1);renderChartBoard();}});
+async function loadBoard(){
+  if(!dashRun)return;
+  try{const j=await api(`${STUDIO_BASE}run/${dashRun}/board/`);board=j.items||[];}
+  catch(err){board=[];}
+  boardDirty=false;updateBoardState();
+  if($("#sub-board").classList.contains("active"))renderBoard();
+}
+async function saveBoard(){
+  if(!dashRun)return toast("Select a completed run first");
+  try{await api(`${STUDIO_BASE}run/${dashRun}/board/`,{method:"POST",body:JSON.stringify({items:board})});}
+  catch(err){return toast(err.message)}
+  boardDirty=false;updateBoardState();toast("Board saved — it will look exactly like this next time");
+}
+function kpiValue(column,agg){
+  const f=(dashSummary?.fields||[]).find(x=>x.name===column);
+  if(!f)return null;
+  const answered=(dashSummary.rows||0)-(f.missing||0);
+  if(f.kind==="repeat"){
+    return {count:answered,sum:f.total_items,mean:f.mean,median:f.mean,min:f.min,max:f.max}[agg];
+  }
+  if(f.kind==="numeric"){
+    return {count:answered,sum:f.mean!=null?Math.round(f.mean*answered*1000)/1000:null,
+            mean:f.mean,median:f.median,min:f.min,max:f.max}[agg];
+  }
+  return agg==="count"?answered:null;
+}
+function kpiLabel(it){
+  const aggName={count:"answered",sum:"total",mean:"average",median:"median",min:"minimum",max:"maximum"}[it.agg]||it.agg;
+  return it.title||`${aggName} · ${it.column}`;
+}
+function destroyBoardObjs(){boardObjs.forEach(o=>{try{o&&o.destroy&&o.destroy();o&&o.remove&&o.remove()}catch(e){}});boardObjs=[];}
+function renderBoard(){
+  destroyBoardObjs();
+  const grid=$("#boardGrid");
+  if(!board.length){grid.innerHTML=`<p class="muted">Nothing here yet — build a chart in <b>📊 Custom charts</b> and press “＋ Add to board”, or add a number/map card above.</p>`;updateBoardState();return}
+  grid.innerHTML=board.map((it,i)=>{
+    const controls=`<button data-bact="left" data-i="${i}" title="Move left" ${i===0?"disabled":""}>◀</button>
+      <button data-bact="right" data-i="${i}" title="Move right" ${i===board.length-1?"disabled":""}>▶</button>
+      <button data-bact="size" data-i="${i}" title="Toggle normal / wide">⇔</button>
+      <button data-bact="rename" data-i="${i}" title="Rename card">✎</button>
+      <button data-bact="rm" data-i="${i}" title="Remove card">✕</button>`;
+    const title=it.kind==="kpi"?kpiLabel(it):(it.title||(it.kind==="map"?"Where the responses are":"Chart"));
+    let body=`<canvas id="bcv_${i}"></canvas>`;
+    if(it.kind==="kpi")body=`<div class="kpiv" id="bcv_${i}"><b>…</b><span></span></div>`;
+    if(it.kind==="map")body=`<div class="bmap" id="bcv_${i}"></div>`;
+    return `<div class="chartbox bcard ${it.size===2?"wide":""}"><div class="bhead"><b title="${esc(title)}">${esc(title)}</b>${controls}</div><div class="bbody">${body}</div></div>`;
+  }).join("");
+  board.forEach((it,i)=>hydrateBoardCard(it,i));
+  updateBoardState();
+}
+async function hydrateBoardCard(it,i){
+  const host=document.getElementById(`bcv_${i}`); if(!host)return;
+  if(it.kind==="kpi"){
+    const v=kpiValue(it.column,it.agg);
+    host.querySelector("b").textContent=v==null?"–":(typeof v==="number"?(+v.toFixed(3)).toLocaleString():v);
+    host.querySelector("span").textContent=it.column+(dashSummary?` · ${dashSummary.rows} rows`:"");
+    return;
+  }
+  if(it.kind==="map"){
+    const pts=dashPayload?.maps||[];
+    if(!pts.length){host.outerHTML=`<div class="kpiv"><b style="font-size:1.2rem">No location data</b><span>this run has no GPS question answers or device locations</span></div>`;return}
+    const m=L.map(host,{zoomControl:false,attributionControl:false});
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",{subdomains:"abcd",maxZoom:20}).addTo(m);
+    const layer=L.featureGroup(pts.map(p=>L.circleMarker([p.lat,p.lng],{radius:4,color:"#22d3ee",weight:1}).bindTooltip("Row "+p.row))).addTo(m);
+    m.fitBounds(layer.getBounds().pad(.12));
+    setTimeout(()=>m.invalidateSize(),150);
+    boardObjs.push(m);
+    return;
+  }
+  try{
+    const res=await api(`${STUDIO_BASE}run/${dashRun}/chart/`,{method:"POST",body:JSON.stringify(it.spec)});
+    if(it.title)res.title=it.title;
+    boardObjs.push(drawChart(`#bcv_${i}`,res,null));
+  }catch(err){/* stale spec against a different run — leave the card blank */}
+}
+$("#boardGrid").addEventListener("click",e=>{
+  const b=e.target.closest("[data-bact]"); if(!b||b.disabled)return;
+  const i=+b.dataset.i, act=b.dataset.bact, it=board[i]; if(!it)return;
+  if(act==="rm")board.splice(i,1);
+  if(act==="left"&&i>0)[board[i-1],board[i]]=[board[i],board[i-1]];
+  if(act==="right"&&i<board.length-1)[board[i+1],board[i]]=[board[i],board[i+1]];
+  if(act==="size")it.size=it.size===2?1:2;
+  if(act==="rename"){const t=prompt("Card title:",it.title||"");if(t===null)return;it.title=t.trim();}
+  boardDirty=true;renderBoard();
+});
+$("#addKpi").onclick=()=>{
+  if(!dashSummary)return toast("Load a run first");
+  const column=$("#kpiCol").value; if(!column)return toast("Pick a column for the number card");
+  board.push({kind:"kpi",column,agg:$("#kpiAgg").value,title:"",size:1});
+  boardDirty=true;renderBoard();
+};
+$("#addMap").onclick=()=>{
+  if(!dashPayload)return toast("Load a run first");
+  if(!(dashPayload.maps||[]).length)return toast("This run has no location data to map");
+  board.push({kind:"map",title:"",size:2});
+  boardDirty=true;renderBoard();
+};
+$("#saveBoard").onclick=saveBoard;
 
 /* ── Correlation ──────────────────────────────────────────────────── */
 async function loadCorrelation(){
@@ -815,8 +1143,9 @@ async function loadTimeline(){
   timeline=res; tlFrame=0;
   $("#tlPlayer").style.display="block";
   $("#tlScrub").max=res.frames.length-1; $("#tlScrub").value=0;
-  if(!tlMap){tlMap=L.map("tlMap").setView([13.45,-16.58],8);L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",{subdomains:"abcd",maxZoom:20,attribution:"© OSM © CARTO"}).addTo(tlMap);}
-  setTimeout(()=>tlMap.invalidateSize(),120);
+  $("#tlMapBox").style.display=res.has_gps?"":"none";
+  if(res.has_gps&&!tlMap){tlMap=L.map("tlMap").setView([13.45,-16.58],8);L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",{subdomains:"abcd",maxZoom:20,attribution:"© OSM © CARTO"}).addTo(tlMap);}
+  if(tlMap)setTimeout(()=>tlMap.invalidateSize(),120);
   showFrame(0);
 }
 function showFrame(i){
@@ -850,15 +1179,13 @@ async function analyse(){
   const dependent=$("#dependent").value,independent=[...$("#independent").selectedOptions].map(o=>o.value);
   const j=await api(`${STUDIO_BASE}run/${dashRun}/dashboard/`,{method:"POST",body:JSON.stringify({dependent,independent})});
   const d=j.dashboard;
+  dashPayload=d;
   if(d.regression?.ok){
     $("#regMetric").textContent=`${d.regression.kind} model · n=${d.regression.n} · `+(d.regression.metric.r2!=null?`R²=${d.regression.metric.r2.toFixed(3)}`:`accuracy=${(d.regression.metric.accuracy*100).toFixed(1)}%`);
     regChartObj=drawChart("#regChart",{chart:"scatter",title:"Actual vs predicted",series:[{name:"actual vs predicted",data:d.regression.actual.map((x,i)=>({x,y:d.regression.predicted[i]}))}]},regChartObj);
   }else{$("#regMetric").textContent=d.regression?.error||"Choose a dependent and independent variables.";}
-  // response map (all points)
-  if(!map){map=L.map("map").setView([13.45,-16.58],8);L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",{subdomains:"abcd",maxZoom:20,attribution:"© OSM © CARTO"}).addTo(map);}
-  if(mapLayer)map.removeLayer(mapLayer);
-  mapLayer=L.featureGroup((d.maps||[]).map(p=>L.circleMarker([p.lat,p.lng],{radius:5}))).addTo(map);
-  if((d.maps||[]).length)map.fitBounds(mapLayer.getBounds().pad(.1));
+  // response map (all points, geo priority applied server-side)
+  updateMainMap();
 }
 
 /* ── tab + subtab wiring ──────────────────────────────────────────── */
@@ -869,6 +1196,7 @@ $("#dashSubtabs").addEventListener("click",e=>{if(!e.target.dataset.sub)return;
   const sub=e.target.dataset.sub;
   if(sub==="correlation")loadCorrelation();
   if(sub==="charts")updateChartBuilderVisibility();
+  if(sub==="board")renderBoard();
   if(sub==="timeline"&&tlMap)setTimeout(()=>tlMap.invalidateSize(),120);
 });
 $("#dashLoad").onclick=useDashRun;

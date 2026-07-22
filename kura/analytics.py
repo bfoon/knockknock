@@ -26,7 +26,119 @@ def _safe(value):
     return value
 
 
-def dashboard_payload(run, dependent=None, independent=None):
+def _is_repeat_series(series):
+    """True when a column mostly holds repeat-group answers (lists of dicts)."""
+    sample = series.dropna().head(50)
+    if sample.empty:
+        return False
+    hits = sum(
+        1 for v in sample
+        if isinstance(v, list) and (not v or isinstance(v[0], dict))
+    )
+    return hits >= max(1, int(len(sample) * .6))
+
+
+def _parse_latlng(value):
+    """Best-effort parse of a GPS question answer → (lat, lng) or None.
+
+    Accepts "13.45 -16.57", "13.45,-16.57", [lat, lng], and
+    {"lat"/"latitude": …, "lng"/"lon"/"longitude": …} — every shape the
+    web runner and Kura Collect have ever sent.
+    """
+    lat = lng = None
+    if isinstance(value, (list, tuple)) and len(value) >= 2:
+        lat, lng = value[0], value[1]
+    elif isinstance(value, dict):
+        lat = value.get("lat", value.get("latitude"))
+        lng = value.get("lng", value.get("lon", value.get("longitude")))
+    elif isinstance(value, str):
+        parts = [p for p in value.replace(",", " ").split() if p]
+        if len(parts) >= 2:
+            lat, lng = parts[0], parts[1]
+    try:
+        lat, lng = float(lat), float(lng)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(lat) or math.isnan(lng):
+        return None
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        return None
+    return lat, lng
+
+
+def _gps_question_columns(schema):
+    """Names (and labels) of top-level GPS-type questions in the form."""
+    out = []
+    for q in (schema or {}).get("questions", []):
+        if q.get("type") == "gps" and q.get("name"):
+            out.append((q["name"], q.get("label") or q["name"]))
+    return out
+
+
+def map_points(run, df, schema=None, limit=5000):
+    """Points for the dashboard map, honouring the geo priority rule:
+
+    1. A GPS *question* in the form, if one exists and has answers;
+    2. explicit lat/lng column pairs in the data (uploaded files);
+    3. the default device geolocation captured during collection;
+    4. otherwise: no points — the UI hides the map entirely.
+
+    Returns (points, source) where source is None or
+    {"kind": "question"|"columns"|"device", "column": …, "label": …}.
+    """
+    if df is None or df.empty:
+        return [], None
+
+    # 1 — GPS question takes priority.
+    for name, label in _gps_question_columns(schema):
+        if name not in df.columns:
+            continue
+        points = []
+        for pos, value in enumerate(df[name].tolist()):
+            parsed = _parse_latlng(value)
+            if parsed:
+                points.append({"lat": parsed[0], "lng": parsed[1], "row": pos + 1})
+            if len(points) >= limit:
+                break
+        if points:
+            return points, {"kind": "question", "column": name, "label": label}
+
+    # 2 — explicit coordinate column pairs (typical for uploaded CSV/Excel).
+    lat_name = next((c for c in ["gps_lat", "_gps_lat", "latitude", "lat", "y"] if c in df.columns), None)
+    lng_name = next((c for c in ["gps_lng", "_gps_lng", "longitude", "lng", "lon", "x"] if c in df.columns), None)
+    if lat_name and lng_name:
+        lats = pd.to_numeric(df[lat_name], errors="coerce")
+        lngs = pd.to_numeric(df[lng_name], errors="coerce")
+        valid = lats.notna() & lngs.notna()
+        points = [
+            {"lat": float(lats[i]), "lng": float(lngs[i]), "row": int(pos + 1)}
+            for pos, i in enumerate(df.index[valid][:limit])
+        ]
+        if points:
+            return points, {"kind": "columns", "column": f"{lat_name}/{lng_name}",
+                            "label": f"{lat_name} / {lng_name}"}
+
+    # 3 — device geolocation captured at submission time.
+    if run is not None:
+        points = []
+        records = (
+            run.records.filter(excluded=False, source_submission__isnull=False)
+            .select_related("source_submission")
+            .order_by("row_number")[:limit]
+        )
+        for r in records:
+            s = r.source_submission
+            if s and s.gps_lat is not None and s.gps_lng is not None:
+                points.append({"lat": float(s.gps_lat), "lng": float(s.gps_lng),
+                               "row": r.row_number})
+        if points:
+            return points, {"kind": "device", "column": None,
+                            "label": "Device location at submission"}
+
+    return [], None
+
+
+def dashboard_payload(run, dependent=None, independent=None, schema=None):
     df = run_dataframe(run)
     independent = independent or []
     payload = {
@@ -43,6 +155,7 @@ def dashboard_payload(run, dependent=None, independent=None):
         "categorical": {},
         "correlation": {"columns": [], "matrix": []},
         "maps": [],
+        "map_source": None,
         "regression": None,
     }
     if df.empty:
@@ -58,7 +171,9 @@ def dashboard_payload(run, dependent=None, independent=None):
         "columns": len(df.columns),
         "missing_cells": sum(missing_by_column.values()),
         "missing_percent": round(sum(missing_by_column.values()) * 100 / total_cells, 2),
-        "duplicates": int(df.duplicated().sum()),
+        # astype(str) first: repeat-group cells hold lists, which the plain
+        # duplicated() cannot hash.
+        "duplicates": int(df.astype(str).duplicated().sum()),
         "missing_by_column": missing_by_column,
     }
 
@@ -82,13 +197,16 @@ def dashboard_payload(run, dependent=None, independent=None):
             },
         }
 
-    categorical_cols = [c for c in df.columns if c not in numeric_cols]
+    categorical_cols = [
+        c for c in df.columns
+        if c not in numeric_cols and not _is_repeat_series(df[c])
+    ]
     for c in categorical_cols[:50]:
         counts = df[c].fillna("(missing)").astype(str).value_counts().head(20)
         payload["categorical"][c] = {
             "labels": counts.index.tolist(),
             "values": counts.astype(int).tolist(),
-            "unique": int(df[c].nunique(dropna=True)),
+            "unique": int(df[c].astype(str).nunique(dropna=True)),
         }
 
     if numeric_cols:
@@ -101,16 +219,7 @@ def dashboard_payload(run, dependent=None, independent=None):
             ],
         }
 
-    lat_name = next((c for c in ["gps_lat", "_gps_lat", "latitude", "lat"] if c in df.columns), None)
-    lng_name = next((c for c in ["gps_lng", "_gps_lng", "longitude", "lng", "lon"] if c in df.columns), None)
-    if lat_name and lng_name:
-        lats = pd.to_numeric(df[lat_name], errors="coerce")
-        lngs = pd.to_numeric(df[lng_name], errors="coerce")
-        valid = lats.notna() & lngs.notna()
-        payload["maps"] = [
-            {"lat": float(lats[i]), "lng": float(lngs[i]), "row": int(pos + 1)}
-            for pos, i in enumerate(df.index[valid][:5000])
-        ]
+    payload["maps"], payload["map_source"] = map_points(run, df, schema)
 
     if dependent and dependent in df.columns and independent:
         payload["regression"] = regression_payload(df, dependent, independent)
@@ -215,9 +324,20 @@ def column_profile(run):
             "name": c,
             "missing": int(missing),
             "missing_percent": round(missing * 100 / max(1, len(df)), 1),
-            "unique": int(non_null.nunique()),
+            "unique": int(non_null.astype(str).nunique()),
         }
-        if _is_numeric_col(s):
+        if _is_repeat_series(s):
+            counts = pd.Series([
+                len(v) for v in non_null if isinstance(v, list)
+            ], dtype="float64")
+            info["kind"] = "repeat"
+            info.update({
+                "min": _safe(counts.min()) if len(counts) else 0,
+                "max": _safe(counts.max()) if len(counts) else 0,
+                "mean": _safe(round(counts.mean(), 2)) if len(counts) else 0,
+                "total_items": int(counts.sum()) if len(counts) else 0,
+            })
+        elif _is_numeric_col(s):
             nums = _coerce_numeric(s).dropna()
             info["kind"] = "numeric"
             info.update({
@@ -455,7 +575,7 @@ def time_series(run, spec):
             "date_col": date_col, "freq": freq, "labels": labels, "series": series}
 
 
-def timeline_frames(run, spec=None):
+def timeline_frames(run, spec=None, schema=None):
     """Cumulative snapshots for the historical playback scrubber.
 
     Returns a list of frames, one per time bucket, each with the running
@@ -466,6 +586,15 @@ def timeline_frames(run, spec=None):
     df = run_dataframe(run)
     if df.empty:
         return {"ok": False, "error": "No rows in this run."}
+
+    # Resolve coordinates once, honouring the same priority as the
+    # dashboard map (GPS question → explicit columns → device location),
+    # and pin them to the frame BEFORE it is sorted by time.
+    tl_points, tl_source = map_points(run, df, schema)
+    by_row = {p["row"]: p for p in tl_points}
+    df = df.copy()
+    df["_maplat"] = [by_row.get(i + 1, {}).get("lat") for i in range(len(df))]
+    df["_maplng"] = [by_row.get(i + 1, {}).get("lng") for i in range(len(df))]
 
     date_col, parsed = _find_datetime_column(df, spec.get("date"))
     if parsed is None:
@@ -488,10 +617,7 @@ def timeline_frames(run, spec=None):
     frames = []
     running_total = 0
     running_cats = {}
-    gps_cols = (
-        next((c for c in ["gps_lat", "_gps_lat", "latitude", "lat"] if c in work.columns), None),
-        next((c for c in ["gps_lng", "_gps_lng", "longitude", "lng", "lon"] if c in work.columns), None),
-    )
+    gps_cols = ("_maplat", "_maplng") if tl_source else (None, None)
     all_points = []
 
     for ts, grp in buckets:
@@ -532,5 +658,6 @@ def timeline_frames(run, spec=None):
         "frames": frames,
         "total_rows": len(work),
         "points": all_points[:5000],
-        "has_gps": bool(gps_cols[0] and gps_cols[1]),
+        "has_gps": bool(all_points),
+        "map_source": tl_source,
     }

@@ -76,6 +76,20 @@ def survey_dataframe(survey):
     return pd.DataFrame(rows), submissions
 
 
+def dataset_dataframe(dataset):
+    """Build the working frame from an UploadedDataset (CSV/Excel upload).
+
+    No submission metadata exists here — cleaned records simply have no
+    source_submission, which every consumer already tolerates.
+    """
+    df = pd.DataFrame(dataset.rows or [])
+    ordered = [c for c in (dataset.columns or []) if c in df.columns]
+    extras = [c for c in df.columns if c not in ordered]
+    if ordered:
+        df = df[ordered + extras]
+    return df
+
+
 class PipelineExecutionError(Exception):
     pass
 
@@ -355,7 +369,9 @@ class PipelineExecutor:
         if op == "deduplicate":
             fields = [c for c in cfg.get("fields", []) if c in df.columns]
             subset = fields or [c for c in df.columns if c not in META_COLUMNS]
-            duplicate_mask = df.duplicated(subset=subset, keep=cfg.get("keep", "first"))
+            # Stringify first: repeat-group cells hold lists, which the plain
+            # duplicated() cannot hash.
+            duplicate_mask = df[subset].astype(str).duplicated(keep=cfg.get("keep", "first"))
             for idx, row in df.loc[duplicate_mask].iterrows():
                 self.record_change(step, row, ",".join(fields), None, None, "drop_row", "Duplicate removed.")
             return df.loc[~duplicate_mask].copy()
@@ -593,7 +609,10 @@ class PipelineExecutor:
     def execute(self):
         self.run.status = "running"
         self.run.save(update_fields=["status"])
-        df, submissions = survey_dataframe(self.survey)
+        if self.pipeline.source == "dataset" and self.pipeline.source_dataset_id:
+            df = dataset_dataframe(self.pipeline.source_dataset)
+        else:
+            df, _submissions = survey_dataframe(self.survey)
         self.run.source_count = len(df)
 
         try:

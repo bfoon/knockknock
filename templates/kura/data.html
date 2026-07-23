@@ -86,17 +86,56 @@
   .pipe .pacts{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.2rem}
   .pipe .tag{font-family:"Spline Sans Mono",monospace;font-size:.54rem;letter-spacing:.08em;text-transform:uppercase;
     border:1px solid rgba(34,211,238,.4);color:var(--cyan);border-radius:999px;padding:.1rem .45rem;align-self:flex-start}
-  /* rules */
-  .rule{display:grid;grid-template-columns:auto 1.2fr 1fr 1fr 2.2fr auto;gap:.5rem;align-items:center;
-    padding:.5rem 1rem;border-top:1px solid rgba(255,255,255,.06)}
-  .rule input[type=text],.rule select,.rule textarea{background:rgba(0,0,0,.32);border:1px solid var(--line);
-    border-radius:8px;color:#fff;padding:.4rem .5rem;font-size:.76rem;outline:none;width:100%;
-    font-family:"Spline Sans Mono",monospace}
+  /* rules — visual builder */
+  .rule{border-top:1px solid rgba(255,255,255,.06);padding:.7rem 1rem}
+  .rule.off{opacity:.5}
+  .rtop{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+  .rtop input[type=checkbox]{accent-color:var(--pink)}
+  .rname{flex:1;min-width:150px;background:transparent;border:1px solid transparent;border-radius:8px;
+    color:#fff;padding:.35rem .5rem;font-size:.86rem;font-weight:700;font-family:"Archivo",sans-serif}
+  .rname:hover,.rname:focus{border-color:var(--line);background:rgba(0,0,0,.32);outline:none}
+  .rule select,.rule input[type=text],.rule input[type=number]{background:rgba(0,0,0,.32);
+    border:1px solid var(--line);border-radius:8px;color:#fff;padding:.4rem .5rem;font-size:.76rem;
+    outline:none;font-family:"Spline Sans Mono",monospace}
+  .rule select:focus,.rule input:focus{border-color:var(--cyan)}
   .rule select option{background:#0b0d26}
   .rule .mini{border:1px solid var(--line);background:transparent;color:var(--dim);border-radius:7px;
-    width:28px;height:30px;cursor:pointer}
-  .rule .mini:hover{color:#fff}
-  .rule input[type=checkbox]{accent-color:var(--pink)}
+    width:28px;height:30px;cursor:pointer;flex:none}
+  .rule .mini:hover{color:#fff;border-color:var(--red)}
+  .rbody{padding:.6rem 0 0}
+  .rrow{display:flex;gap:.45rem;align-items:center;flex-wrap:wrap;margin-bottom:.45rem}
+  .rrow:last-child{margin-bottom:0}
+  .rlead{color:var(--dim);font-size:.74rem;white-space:nowrap}
+  .f-field{min-width:190px}.f-cmp{min-width:150px}.f-val{min-width:130px}
+  .f-num{width:96px}.f-tiny{width:78px}
+  .andor{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .andor button{border:0;background:transparent;color:var(--dim);padding:.35rem .8rem;cursor:pointer;
+    font-size:.68rem;font-weight:700;font-family:"Spline Sans Mono",monospace;letter-spacing:.08em}
+  .andor button.on{background:linear-gradient(135deg,var(--orange),var(--pink));color:#fff}
+  .cond{display:flex;gap:.45rem;align-items:center;flex-wrap:wrap;padding:.4rem 0}
+  .cond+.cond{border-top:1px dashed rgba(255,255,255,.09)}
+  .addcond{background:transparent;border:1px dashed var(--line);color:var(--muted);border-radius:8px;
+    padding:.35rem .8rem;font-size:.74rem;font-weight:600;cursor:pointer;margin-top:.35rem}
+  .addcond:hover{color:#fff;border-color:var(--cyan)}
+  .chips{display:flex;flex-wrap:wrap;gap:.35rem;max-height:170px;overflow:auto;
+    border:1px solid var(--line);border-radius:10px;padding:.5rem;background:rgba(0,0,0,.22)}
+  .chip{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:999px;
+    padding:.22rem .6rem;cursor:pointer;font-size:.72rem;color:var(--muted);user-select:none}
+  .chip:hover{border-color:rgba(255,255,255,.32);color:#fff}
+  .chip.on{border-color:var(--cyan);color:var(--cyan);background:rgba(34,211,238,.12);font-weight:600}
+  .chip input{display:none}
+  .pairs{display:flex;flex-direction:column;gap:.35rem}
+  .pair{display:flex;gap:.45rem;align-items:center;flex-wrap:wrap}
+  .tgls{display:flex;gap:.9rem;flex-wrap:wrap;margin-top:.5rem;font-size:.72rem;color:var(--muted)}
+  .tgls label{display:inline-flex;align-items:center;gap:.3rem;cursor:pointer}
+  .tgls input{accent-color:var(--cyan)}
+  .plain{margin-top:.6rem;border:1px solid rgba(34,211,238,.28);border-radius:9px;
+    background:rgba(34,211,238,.07);color:#a5f3fc;padding:.45rem .65rem;font-size:.73rem;line-height:1.5}
+  .plain.warn{border-color:rgba(255,138,31,.35);background:rgba(255,138,31,.08);color:#ffc38a}
+  .presets{display:flex;gap:.4rem;flex-wrap:wrap;padding:0 1rem .8rem}
+  .preset{border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:999px;
+    padding:.3rem .75rem;font-size:.72rem;cursor:pointer}
+  .preset:hover{color:#fff;border-color:var(--cyan)}
   .addline{margin:.6rem 1rem .9rem;background:transparent;border:1px dashed var(--line);color:var(--muted);
     border-radius:9px;padding:.45rem 1rem;font-size:.78rem;font-weight:600;cursor:pointer}
   .addline:hover{color:#fff;border-color:rgba(255,255,255,.3)}
@@ -191,18 +230,21 @@
       <button class="btn ghost" id="save-rules" type="button" style="padding:.35rem .7rem">Save rules</button>
     </h3>
     <div id="rules"></div>
+    <div class="presets" id="presets">
+      <span class="rlead" style="align-self:center;margin-right:.2rem">Quick add:</span>
+      <button class="preset" data-preset="logic" type="button">Flag when…</button>
+      <button class="preset" data-preset="missing" type="button">Required answers</button>
+      <button class="preset" data-preset="duplicate" type="button">Duplicates</button>
+      <button class="preset" data-preset="outlier" type="button">Unusual numbers</button>
+      <button class="preset" data-preset="speeder" type="button">Too fast</button>
+      <button class="preset" data-preset="geofence" type="button">Outside area</button>
+      <button class="preset" data-preset="recode" type="button">Tidy up values</button>
+    </div>
     <button class="addline" id="add-rule" type="button">+ Add rule</button>
     <div class="note">
-      Config is JSON per rule kind — examples:
-      duplicate <code>{"fields":["phone"]}</code> ·
-      outlier <code>{"field":"income","method":"iqr","k":1.5}</code> ·
-      speeder <code>{"min_seconds":60}</code> ·
-      straightliner <code>{"fields":["s1","s2","s3"],"min_distinct":2}</code> ·
-      geofence <code>{"lat":13.45,"lng":-16.57,"radius_km":50}</code> ·
-      missing <code>{"fields":["consent"]}</code> ·
-      logic <code>{"condition":{"op":"and","rules":[{"q":"age","cmp":"lt","value":10}]},"detail":"implausible age"}</code> ·
-      recode <code>{"field":"region","trim":true,"map":{"bnjl":"Banjul"}}</code>.
-      Rules only <b>flag</b> by default; every recode and manual cell edit is stored in the audit trail with its old value.
+      Pick a variable, a condition and a value — no JSON needed. Each rule shows in plain
+      English what it will do. Rules only <b>flag</b> by default; every recode and manual
+      cell edit is stored in the audit trail with its old value.
     </div>
   </div>
 
@@ -258,6 +300,7 @@
 window.__KURA_DATA__ = {
   schema: {{ schema_json|safe }},
   columns: {{ columns_json|safe }},
+  fields: {{ fields_json|safe }},
   pipelines: {{ pipelines_json|safe }},
   rules: {{ rules_json|safe }},
   code: "{{ survey.code }}",
@@ -279,9 +322,7 @@ window.__KURA_DATA__ = {
 (function(){
 "use strict";
 const CFG=window.__KURA_DATA__;
-const KINDS=["duplicate","outlier","speeder","straightliner","geofence","missing","logic","recode"];
-const ACTIONS=["flag","exclude","recode"];
-let rules=Array.isArray(CFG.rules)?CFG.rules:[];
+let rules=[];   // populated via fromConfig() at init — see the rules editor below
 let pipelines=Array.isArray(CFG.pipelines)?CFG.pipelines:[];
 let rows=[];
 const names=(CFG.columns&&CFG.columns.length?CFG.columns
@@ -481,47 +522,564 @@ document.addEventListener("change",async e=>{
   }
 });
 
-/* ── rules editor ── */
+/* ── rules editor — visual builder (no JSON in the UI) ── */
+
+const FIELDS=Array.isArray(CFG.fields)&&CFG.fields.length?CFG.fields
+  :names.map(n=>({name:n,label:n,kind:"text",choices:[]}));
+const BY={}; FIELDS.forEach(f=>BY[f.name]=f);
+
+const KIND_LABELS=[
+  ["logic","Flag when… (custom condition)"],
+  ["missing","Flag when an answer is missing"],
+  ["duplicate","Flag duplicate responses"],
+  ["outlier","Flag unusual numbers"],
+  ["speeder","Flag responses filled in too fast"],
+  ["straightliner","Flag same-answer-all-the-way"],
+  ["geofence","Flag responses outside the survey area"],
+  ["recode","Fix / tidy up values"]
+];
+const CMP_ALL=[["answered","is answered"],["not_answered","is blank"]];
+const CMP_NUM=[["eq","is equal to"],["ne","is not equal to"],["gt","is greater than"],
+  ["gte","is greater or equal to"],["lt","is less than"],["lte","is less or equal to"],
+  ["between","is between"]];
+const CMP_CHOICE=[["selected","includes"],["not_selected","does not include"],
+  ["in","is any of"],["not_in","is none of"],["eq","is exactly"],["ne","is not"]];
+const CMP_TEXT=[["eq","is exactly"],["ne","is not"],["contains","contains"],
+  ["not_contains","does not contain"],["matches","matches pattern"]];
+
+function cmpsFor(f){
+  if(!f) return CMP_TEXT.concat(CMP_ALL);
+  if(f.kind==="number"||f.kind==="date") return CMP_NUM.concat(CMP_ALL);
+  if(f.kind==="choice") return CMP_CHOICE.concat(CMP_ALL);
+  return CMP_TEXT.concat(CMP_ALL);
+}
+function cmpLabel(c,f){
+  const list=f?cmpsFor(f):CMP_NUM.concat(CMP_CHOICE,CMP_TEXT,CMP_ALL);
+  for(const p of list) if(p[0]===c) return p[1];
+  const all=CMP_NUM.concat(CMP_CHOICE,CMP_TEXT,CMP_ALL);
+  for(const p of all) if(p[0]===c) return p[1];
+  return c;
+}
+const needsValue=c=>c!=="answered"&&c!=="not_answered";
+const lbl=n=>BY[n]?BY[n].label:(n||"…");
+
+function el(tag,cls,txt){const n=document.createElement(tag);
+  if(cls)n.className=cls; if(txt!=null)n.textContent=txt; return n;}
+function mkSel(cls,opts,val,on){
+  const s=el("select",cls);
+  opts.forEach(o=>{const op=el("option",null,o[1]); op.value=o[0]; s.appendChild(op);});
+  s.value=val==null?"":val;
+  if(s.selectedIndex<0&&opts.length) s.selectedIndex=0;
+  s.addEventListener("change",on); return s;
+}
+function mkIn(cls,val,ph,on,type){
+  const i=el("input",cls); i.type=type||"text";
+  i.value=val==null?"":val; if(ph)i.placeholder=ph;
+  i.addEventListener("input",on); return i;
+}
+const fieldOpts=()=>FIELDS.map(f=>[f.name,f.label+(
+  f.kind==="number"?" (number)":f.kind==="choice"?" (choice)":f.kind==="date"?" (date)":"")]);
+
+function defaultName(k){return{logic:"Flag when…",missing:"Required answers",
+  duplicate:"Duplicate responses",outlier:"Unusual numbers",speeder:"Too fast",
+  straightliner:"Same answer throughout",geofence:"Outside survey area",
+  recode:"Tidy up values"}[k]||"Rule";}
+const newCond=()=>({q:"",cmp:"eq",value:"",value2:""});
+function defaultUI(k){
+  switch(k){
+    case "logic":return{op:"and",conds:[newCond()]};
+    case "missing":return{fields:[]};
+    case "duplicate":return{whole:true,fields:[]};
+    case "outlier":return{field:"",method:"iqr",k:1.5};
+    case "speeder":return{mode:"seconds",min_seconds:30,percentile:5};
+    case "straightliner":return{fields:[],min_distinct:2};
+    case "geofence":return{lat:"",lng:"",radius_km:50};
+    case "recode":return{field:"",pairs:[{from:"",to:""}],trim:true,lower:false,titlecase:false};
+    default:return{};
+  }
+}
+
+/* config JSON → UI state */
+function fromConfig(r){
+  const c=r.config||{}, ui=defaultUI(r.kind);
+  switch(r.kind){
+    case "logic":{
+      const cond=c.condition||{};
+      const list=cond.rules||(cond.q?[cond]:[]);
+      ui.op=cond.op==="or"?"or":"and";
+      ui.conds=list.filter(x=>x&&x.q).map(x=>{
+        let v=x.value,v2="";
+        if(x.cmp==="between"&&Array.isArray(v)){v2=v[1];v=v[0];}
+        else if(Array.isArray(v)) v=v.join(", ");
+        return{q:x.q,cmp:x.cmp||"eq",value:v==null?"":v,value2:v2};
+      });
+      if(!ui.conds.length) ui.conds=[newCond()];
+      break;}
+    case "missing": ui.fields=(c.fields||[]).slice(); break;
+    case "duplicate": ui.fields=(c.fields||[]).slice(); ui.whole=ui.fields.length===0; break;
+    case "outlier":
+      ui.field=c.field||""; ui.method=c.method==="zscore"?"zscore":"iqr";
+      ui.k=c.k!=null?c.k:(ui.method==="zscore"?3:1.5); break;
+    case "speeder":
+      if(c.min_seconds!=null){ui.mode="seconds";ui.min_seconds=c.min_seconds;}
+      else if(c.percentile!=null){ui.mode="percentile";ui.percentile=c.percentile;} break;
+    case "straightliner":
+      ui.fields=(c.fields||[]).slice();
+      ui.min_distinct=c.min_distinct!=null?c.min_distinct:2; break;
+    case "geofence":
+      ui.lat=c.lat!=null?c.lat:""; ui.lng=c.lng!=null?c.lng:"";
+      ui.radius_km=c.radius_km!=null?c.radius_km:50; break;
+    case "recode":
+      ui.field=c.field||"";
+      ui.pairs=Object.keys(c.map||{}).map(k=>({from:k,to:c.map[k]}));
+      if(!ui.pairs.length) ui.pairs=[{from:"",to:""}];
+      ui.trim=!!c.trim; ui.lower=!!c.lower; ui.titlecase=!!c.titlecase; break;
+  }
+  return{id:r.id,name:r.name||defaultName(r.kind),kind:r.kind,
+    action:r.action||"flag",enabled:r.enabled!==false,ui};
+}
+
+/* UI state → config JSON (exactly what kura/cleaning.py reads) */
+function coerce(v){
+  if(typeof v!=="string") return v;
+  const t=v.trim();
+  if(t==="") return "";
+  if(/^-?\d+(\.\d+)?$/.test(t)) return parseFloat(t);
+  if(t==="true") return true;
+  if(t==="false") return false;
+  return t;
+}
+function toConfig(r){
+  const ui=r.ui, cfg={};
+  switch(r.kind){
+    case "logic":{
+      const list=ui.conds.filter(c=>c.q).map(c=>{
+        const o={q:c.q,cmp:c.cmp};
+        if(c.cmp==="between") o.value=[coerce(c.value),coerce(c.value2)];
+        else if(c.cmp==="in"||c.cmp==="not_in")
+          o.value=String(c.value).split(",").map(s=>coerce(s.trim())).filter(s=>s!=="");
+        else if(needsValue(c.cmp)) o.value=coerce(c.value);
+        return o;
+      });
+      cfg.condition=(list.length===1&&ui.op==="and")?list[0]:{op:ui.op,rules:list};
+      cfg.detail=plainEnglish(r);
+      break;}
+    case "missing": cfg.fields=ui.fields.slice(); break;
+    case "duplicate": cfg.fields=ui.whole?[]:ui.fields.slice(); break;
+    case "outlier":
+      cfg.field=ui.field; cfg.method=ui.method;
+      cfg.k=parseFloat(ui.k)||(ui.method==="zscore"?3:1.5); break;
+    case "speeder":
+      if(ui.mode==="seconds") cfg.min_seconds=parseFloat(ui.min_seconds)||30;
+      else cfg.percentile=parseFloat(ui.percentile)||5; break;
+    case "straightliner":
+      cfg.fields=ui.fields.slice();
+      cfg.min_distinct=parseInt(ui.min_distinct,10)||2; break;
+    case "geofence":
+      cfg.lat=parseFloat(ui.lat); cfg.lng=parseFloat(ui.lng);
+      cfg.radius_km=parseFloat(ui.radius_km)||50; break;
+    case "recode":
+      cfg.field=ui.field; cfg.map={};
+      ui.pairs.forEach(p=>{if(String(p.from).trim()!=="") cfg.map[p.from]=coerce(p.to);});
+      cfg.trim=!!ui.trim; cfg.lower=!!ui.lower; cfg.titlecase=!!ui.titlecase; break;
+  }
+  return cfg;
+}
+
+/* plain-English preview */
+function plainEnglish(r){
+  const ui=r.ui, verb=r.action==="exclude"?"Exclude":"Flag";
+  switch(r.kind){
+    case "logic":{
+      const parts=ui.conds.filter(c=>c.q).map(c=>{
+        const f=BY[c.q];
+        const show=v=>{
+          if(f&&f.choices&&f.choices.length){
+            const hit=f.choices.find(ch=>String(ch.value)===String(v));
+            if(hit) return hit.label;
+          }
+          return v;
+        };
+        let s=lbl(c.q)+" "+cmpLabel(c.cmp,f);
+        if(c.cmp==="between") s+=" "+(c.value||"…")+" and "+(c.value2||"…");
+        else if(c.cmp==="in"||c.cmp==="not_in"){
+          const items=String(c.value).split(",").map(x=>x.trim()).filter(Boolean);
+          s+=" "+(items.length?items.map(show).join(", "):"…");
+        }
+        else if(needsValue(c.cmp)){
+          const v=c.value;
+          if(v==="") s+=" …";
+          else if(/^-?\d+(\.\d+)?$/.test(String(v).trim())) s+=" "+v;
+          else s+=' "'+show(v)+'"';
+        }
+        return s;
+      });
+      if(!parts.length) return "Pick a variable to finish this rule.";
+      return verb+" a response when "+parts.join(ui.op==="or"?" OR ":" AND ")+".";}
+    case "missing":
+      return ui.fields.length?verb+" any response missing "+ui.fields.map(lbl).join(", ")+"."
+        :"Choose which answers are required.";
+    case "duplicate":
+      return ui.whole?verb+" a response that repeats another one exactly."
+        :(ui.fields.length?verb+" responses that share the same "+ui.fields.map(lbl).join(" + ")+"."
+          :"Choose the variables that identify a duplicate.");
+    case "outlier":
+      if(!ui.field) return "Choose a number variable.";
+      return verb+" unusually high or low values of "+lbl(ui.field)+
+        (ui.method==="zscore"?" (more than "+ui.k+" standard deviations from average)."
+          :" (outside "+ui.k+"× the normal spread).")+" Needs at least 8 responses.";
+    case "speeder":
+      return ui.mode==="seconds"
+        ?verb+" responses completed in under "+ui.min_seconds+" seconds."
+        :verb+" the fastest "+ui.percentile+"% of responses.";
+    case "straightliner":
+      return ui.fields.length>=3
+        ?verb+" responses giving fewer than "+ui.min_distinct+" different answers across "+
+          ui.fields.length+" questions."
+        :"Choose at least 3 questions.";
+    case "geofence":
+      return (ui.lat===""||ui.lng==="")?"Set the centre point of your survey area."
+        :verb+" responses collected more than "+ui.radius_km+" km from "+ui.lat+", "+ui.lng+".";
+    case "recode":{
+      if(!ui.field) return "Choose a variable to tidy up.";
+      const n=ui.pairs.filter(p=>String(p.from).trim()!=="").length, bits=[];
+      if(n) bits.push(n+" value"+(n===1?"":"s")+" replaced");
+      if(ui.trim) bits.push("extra spaces removed");
+      if(ui.lower) bits.push("made lowercase");
+      if(ui.titlecase) bits.push("made Title Case");
+      return "In "+lbl(ui.field)+": "+(bits.length?bits.join(", ")+".":"nothing changes yet.");}
+  }
+  return "";
+}
+
+/* incomplete rules would silently do nothing — say so instead */
+function ruleProblem(r){
+  const ui=r.ui;
+  if(r.kind==="logic"&&!ui.conds.filter(c=>c.q).length) return "Pick a variable.";
+  if(r.kind==="missing"&&!ui.fields.length) return "Choose at least one required answer.";
+  if(r.kind==="duplicate"&&!ui.whole&&!ui.fields.length) return "Choose the matching variables.";
+  if(r.kind==="outlier"&&!ui.field) return "Choose a number variable.";
+  if(r.kind==="straightliner"&&ui.fields.length<3) return "Choose at least 3 questions.";
+  if(r.kind==="geofence"&&(ui.lat===""||ui.lng==="")) return "Set the centre point.";
+  if(r.kind==="recode"&&!ui.field) return "Choose a variable.";
+  return null;
+}
+
 function renderRules(){
   const host=$("#rules"); host.innerHTML="";
-  rules.forEach((r,i)=>{
-    const div=document.createElement("div");
-    div.className="rule";
-    div.innerHTML=
-      '<input type="checkbox" data-en="'+i+'" '+(r.enabled!==false?"checked":"")+' title="Enabled">'+
-      '<input type="text" data-nm="'+i+'" value="'+esc(r.name||"")+'" placeholder="Rule name">'+
-      '<select data-kd="'+i+'">'+KINDS.map(k=>'<option'+(k===r.kind?" selected":"")+'>'+k+'</option>').join("")+'</select>'+
-      '<select data-ac="'+i+'">'+ACTIONS.map(a=>'<option'+(a===r.action?" selected":"")+'>'+a+'</option>').join("")+'</select>'+
-      '<input type="text" data-cfg="'+i+'" value="'+esc(JSON.stringify(r.config||{}))+'" placeholder=\'{"field":"…"}\'>'+
-      '<button class="mini" data-del="'+i+'">✕</button>';
-    host.appendChild(div);
-  });
+  rules.forEach((r,i)=>host.appendChild(ruleCard(r,i)));
+  $("#presets").style.display=rules.length?"none":"flex";
 }
-document.addEventListener("input",e=>{
-  const t=e.target;
-  if(t.dataset.nm!=null) rules[+t.dataset.nm].name=t.value;
-  if(t.dataset.en!=null) rules[+t.dataset.en].enabled=t.checked;
-  if(t.dataset.kd!=null) rules[+t.dataset.kd].kind=t.value;
-  if(t.dataset.ac!=null) rules[+t.dataset.ac].action=t.value;
-  if(t.dataset.cfg!=null){
-    try{ rules[+t.dataset.cfg].config=JSON.parse(t.value||"{}"); t.style.borderColor=""; }
-    catch(err){ t.style.borderColor="var(--red)"; }
+
+function ruleCard(r,idx){
+  const card=el("div","rule"+(r.enabled?"":" off"));
+  const top=el("div","rtop");
+
+  const en=el("input"); en.type="checkbox"; en.checked=r.enabled!==false;
+  en.title="Enabled";
+  en.addEventListener("change",()=>{r.enabled=en.checked;renderRules();});
+  top.appendChild(en);
+
+  const nm=el("input","rname"); nm.type="text"; nm.value=r.name||"";
+  nm.placeholder="Rule name";
+  nm.addEventListener("input",()=>{r.name=nm.value;});
+  top.appendChild(nm);
+
+  top.appendChild(mkSel("",KIND_LABELS,r.kind,e=>{
+    r.kind=e.target.value; r.ui=defaultUI(r.kind); r.name=defaultName(r.kind);
+    r.action=(r.kind==="recode")?"recode":(r.action==="recode"?"flag":r.action);
+    renderRules();
+  }));
+
+  if(r.kind!=="recode"){
+    top.appendChild(mkSel("",[["flag","→ mark as flagged"],["exclude","→ exclude from data"]],
+      r.action,e=>{r.action=e.target.value;renderRules();}));
   }
-});
-document.addEventListener("click",e=>{
-  if(e.target.dataset.del!=null && e.target.classList.contains("mini")){ rules.splice(+e.target.dataset.del,1); renderRules(); }
-});
+
+  const del=el("button","mini","✕"); del.type="button"; del.title="Delete rule";
+  del.addEventListener("click",()=>{rules.splice(idx,1);renderRules();});
+  top.appendChild(del);
+  card.appendChild(top);
+
+  const body=el("div","rbody");
+  ({logic:bLogic,missing:bMissing,duplicate:bDuplicate,outlier:bOutlier,speeder:bSpeeder,
+    straightliner:bStraight,geofence:bGeo,recode:bRecode}[r.kind]||(()=>{}))(body,r);
+
+  const bad=ruleProblem(r);
+  const p=el("div","plain"+(bad?" warn":""),bad?bad:plainEnglish(r));
+  body.appendChild(p);
+  card.appendChild(body);
+  return card;
+}
+
+/* live-update the plain-English line without losing input focus */
+function refresh(box,r){
+  const p=box.querySelector(".plain")||box.parentNode.querySelector(".plain");
+  if(!p) return;
+  const bad=ruleProblem(r);
+  p.className="plain"+(bad?" warn":"");
+  p.textContent=bad?bad:plainEnglish(r);
+}
+
+function bLogic(box,r){
+  const ui=r.ui;
+  const opRow=el("div","rrow");
+  opRow.appendChild(el("span","rlead","Match"));
+  const grp=el("div","andor");
+  [["and","ALL OF THESE"],["or","ANY OF THESE"]].forEach(o=>{
+    const b=el("button",ui.op===o[0]?"on":"",o[1]); b.type="button";
+    b.addEventListener("click",()=>{ui.op=o[0];renderRules();});
+    grp.appendChild(b);
+  });
+  opRow.appendChild(grp);
+  box.appendChild(opRow);
+
+  ui.conds.forEach((cond,ci)=>{
+    const row=el("div","cond"), f=BY[cond.q];
+    row.appendChild(mkSel("f-field",[["","— select variable —"]].concat(fieldOpts()),
+      cond.q,e=>{
+        cond.q=e.target.value;
+        const list=cmpsFor(BY[cond.q]).map(x=>x[0]);
+        if(list.indexOf(cond.cmp)===-1) cond.cmp=list[0];
+        cond.value=""; cond.value2=""; renderRules();
+      }));
+    row.appendChild(mkSel("f-cmp",cmpsFor(f),cond.cmp,e=>{
+      cond.cmp=e.target.value; cond.value=""; cond.value2=""; renderRules();
+    }));
+
+    if(needsValue(cond.cmp)){
+      if(f&&f.choices&&f.choices.length&&
+         ["eq","ne","selected","not_selected"].indexOf(cond.cmp)!==-1){
+        row.appendChild(mkSel("f-val",[["","— select value —"]].concat(
+          f.choices.map(ch=>[ch.value,ch.label])),cond.value,
+          e=>{cond.value=e.target.value;refresh(box,r);}));
+      } else if(cond.cmp==="between"){
+        row.appendChild(mkIn("f-num",cond.value,"from",
+          e=>{cond.value=e.target.value;refresh(box,r);},"number"));
+        row.appendChild(el("span","rlead","and"));
+        row.appendChild(mkIn("f-num",cond.value2,"to",
+          e=>{cond.value2=e.target.value;refresh(box,r);},"number"));
+      } else if(cond.cmp==="in"||cond.cmp==="not_in"){
+        row.appendChild(mkIn("f-val",cond.value,"value1, value2, value3",
+          e=>{cond.value=e.target.value;refresh(box,r);}));
+      } else {
+        row.appendChild(mkIn("f-val",cond.value,"value",
+          e=>{cond.value=e.target.value;refresh(box,r);},
+          f&&f.kind==="number"?"number":"text"));
+      }
+    }
+
+    if(ui.conds.length>1){
+      const x=el("button","mini","✕"); x.type="button";
+      x.addEventListener("click",()=>{ui.conds.splice(ci,1);renderRules();});
+      row.appendChild(x);
+    }
+    box.appendChild(row);
+  });
+
+  const add=el("button","addcond","+ another variable"); add.type="button";
+  add.addEventListener("click",()=>{ui.conds.push(newCond());renderRules();});
+  box.appendChild(add);
+}
+
+function chipList(box,selected,filter){
+  const wrap=el("div","chips");
+  FIELDS.filter(f=>!filter||filter(f)).forEach(f=>{
+    const on=selected.indexOf(f.name)!==-1;
+    const lab=el("label","chip"+(on?" on":""));
+    const cb=el("input"); cb.type="checkbox"; cb.checked=on;
+    cb.addEventListener("change",()=>{
+      const i=selected.indexOf(f.name);
+      if(cb.checked&&i===-1) selected.push(f.name);
+      if(!cb.checked&&i!==-1) selected.splice(i,1);
+      renderRules();
+    });
+    lab.appendChild(cb);
+    lab.appendChild(document.createTextNode(f.label));
+    wrap.appendChild(lab);
+  });
+  if(!wrap.children.length)
+    wrap.appendChild(el("span","rlead","No matching variables in this form."));
+  box.appendChild(wrap);
+}
+
+function bMissing(box,r){
+  box.appendChild(el("div","rlead","These answers must be filled in:"));
+  chipList(box,r.ui.fields);
+}
+
+function bDuplicate(box,r){
+  const ui=r.ui, row=el("div","rrow");
+  row.appendChild(el("span","rlead","A duplicate is"));
+  row.appendChild(mkSel("f-cmp",[["whole","an identical response"],
+    ["fields","a match on certain variables"]],ui.whole?"whole":"fields",
+    e=>{ui.whole=e.target.value==="whole";renderRules();}));
+  box.appendChild(row);
+  if(!ui.whole) chipList(box,ui.fields);
+}
+
+function bOutlier(box,r){
+  const ui=r.ui, row=el("div","rrow");
+  row.appendChild(el("span","rlead","Variable"));
+  row.appendChild(mkSel("f-field",[["","— select number variable —"]].concat(
+    FIELDS.filter(f=>f.kind==="number").map(f=>[f.name,f.label])),
+    ui.field,e=>{ui.field=e.target.value;renderRules();}));
+  row.appendChild(el("span","rlead","using"));
+  row.appendChild(mkSel("f-cmp",[["iqr","normal spread (IQR)"],
+    ["zscore","standard deviations"]],ui.method,
+    e=>{ui.method=e.target.value;ui.k=ui.method==="zscore"?3:1.5;renderRules();}));
+  row.appendChild(el("span","rlead","sensitivity"));
+  row.appendChild(mkIn("f-tiny",ui.k,"",e=>{ui.k=e.target.value;refresh(box,r);},"number"));
+  box.appendChild(row);
+  box.appendChild(el("div","rlead",
+    "Lower = flags more. Typical: 1.5 for IQR, 3 for standard deviations."));
+}
+
+function bSpeeder(box,r){
+  const ui=r.ui, row=el("div","rrow");
+  row.appendChild(el("span","rlead","Flag responses"));
+  row.appendChild(mkSel("f-cmp",[["seconds","faster than a fixed time"],
+    ["percentile","in the fastest N%"]],ui.mode,
+    e=>{ui.mode=e.target.value;renderRules();}));
+  if(ui.mode==="seconds"){
+    row.appendChild(mkIn("f-num",ui.min_seconds,"30",
+      e=>{ui.min_seconds=e.target.value;refresh(box,r);},"number"));
+    row.appendChild(el("span","rlead","seconds"));
+  } else {
+    row.appendChild(mkIn("f-tiny",ui.percentile,"5",
+      e=>{ui.percentile=e.target.value;refresh(box,r);},"number"));
+    row.appendChild(el("span","rlead","% fastest"));
+  }
+  box.appendChild(row);
+}
+
+function bStraight(box,r){
+  const ui=r.ui, row=el("div","rrow");
+  row.appendChild(el("span","rlead","Flag if fewer than"));
+  row.appendChild(mkIn("f-tiny",ui.min_distinct,"2",
+    e=>{ui.min_distinct=e.target.value;refresh(box,r);},"number"));
+  row.appendChild(el("span","rlead","different answers across these questions:"));
+  box.appendChild(row);
+  chipList(box,ui.fields);
+}
+
+function bGeo(box,r){
+  const ui=r.ui, row=el("div","rrow");
+  row.appendChild(el("span","rlead","Centre"));
+  row.appendChild(mkIn("f-num",ui.lat,"latitude",
+    e=>{ui.lat=e.target.value;refresh(box,r);},"number"));
+  row.appendChild(mkIn("f-num",ui.lng,"longitude",
+    e=>{ui.lng=e.target.value;refresh(box,r);},"number"));
+  row.appendChild(el("span","rlead","within"));
+  row.appendChild(mkIn("f-tiny",ui.radius_km,"50",
+    e=>{ui.radius_km=e.target.value;refresh(box,r);},"number"));
+  row.appendChild(el("span","rlead","km"));
+  const pick=el("button","addcond","Use my location"); pick.type="button";
+  pick.style.marginTop="0";
+  pick.addEventListener("click",()=>{
+    if(!navigator.geolocation){toast("Location not available");return;}
+    pick.textContent="Locating…";
+    navigator.geolocation.getCurrentPosition(pos=>{
+      ui.lat=pos.coords.latitude.toFixed(5);
+      ui.lng=pos.coords.longitude.toFixed(5);
+      renderRules();
+    },()=>{pick.textContent="Use my location";toast("Could not get your location");});
+  });
+  row.appendChild(pick);
+  box.appendChild(row);
+}
+
+function bRecode(box,r){
+  const ui=r.ui, row=el("div","rrow");
+  row.appendChild(el("span","rlead","In variable"));
+  row.appendChild(mkSel("f-field",[["","— select variable —"]].concat(fieldOpts()),
+    ui.field,e=>{ui.field=e.target.value;renderRules();}));
+  box.appendChild(row);
+
+  box.appendChild(el("div","rlead","Replace these values:"));
+  const pairs=el("div","pairs"), f=BY[ui.field];
+  ui.pairs.forEach((p,pi)=>{
+    const pr=el("div","pair");
+    if(f&&f.choices&&f.choices.length){
+      pr.appendChild(mkSel("f-val",[["","— any value —"]].concat(
+        f.choices.map(ch=>[ch.value,ch.label])),p.from,
+        e=>{p.from=e.target.value;refresh(box,r);}));
+    } else {
+      pr.appendChild(mkIn("f-val",p.from,"old value",
+        e=>{p.from=e.target.value;refresh(box,r);}));
+    }
+    pr.appendChild(el("span","rlead","→"));
+    pr.appendChild(mkIn("f-val",p.to,"new value",
+      e=>{p.to=e.target.value;refresh(box,r);}));
+    const x=el("button","mini","✕"); x.type="button";
+    x.addEventListener("click",()=>{
+      ui.pairs.splice(pi,1);
+      if(!ui.pairs.length) ui.pairs.push({from:"",to:""});
+      renderRules();
+    });
+    pr.appendChild(x);
+    pairs.appendChild(pr);
+  });
+  box.appendChild(pairs);
+
+  const add=el("button","addcond","+ another replacement"); add.type="button";
+  add.addEventListener("click",()=>{ui.pairs.push({from:"",to:""});renderRules();});
+  box.appendChild(add);
+
+  const tg=el("div","tgls");
+  [["trim","Remove extra spaces"],["lower","Make lowercase"],
+   ["titlecase","Make Title Case"]].forEach(t=>{
+    const l=el("label"), cb=el("input");
+    cb.type="checkbox"; cb.checked=!!ui[t[0]];
+    cb.addEventListener("change",()=>{
+      ui[t[0]]=cb.checked;
+      if(t[0]==="lower"&&cb.checked) ui.titlecase=false;
+      if(t[0]==="titlecase"&&cb.checked) ui.lower=false;
+      renderRules();
+    });
+    l.appendChild(cb);
+    l.appendChild(document.createTextNode(t[1]));
+    tg.appendChild(l);
+  });
+  box.appendChild(tg);
+}
+
+/* serialise for the API in the shape rules_save() already accepts */
+function rulesPayload(){
+  return rules.map(r=>({id:r.id,name:r.name,kind:r.kind,action:r.action,
+    enabled:r.enabled,config:toConfig(r)}));
+}
+function blockingProblems(){
+  return rules.filter(r=>r.enabled!==false).map(r=>{
+    const p=ruleProblem(r); return p?((r.name||"Untitled")+": "+p):null;
+  }).filter(Boolean);
+}
+
 $("#add-rule").addEventListener("click",()=>{
-  rules.push({name:"New rule",kind:"logic",action:"flag",config:{},enabled:true}); renderRules();
+  const r=fromConfig({name:defaultName("logic"),kind:"logic",action:"flag",
+    config:{},enabled:true});
+  rules.push(r); renderRules();
+});
+$("#presets").addEventListener("click",e=>{
+  const k=e.target.dataset&&e.target.dataset.preset;
+  if(!k) return;
+  rules.push(fromConfig({name:defaultName(k),kind:k,
+    action:k==="recode"?"recode":"flag",config:{},enabled:true}));
+  renderRules();
 });
 $("#save-rules").addEventListener("click",async()=>{
-  const j=await post(CFG.urls.rules,{rules});
-  if(j.ok){ toast("Rules saved"); j.ids.forEach((id,i)=>rules[i].id=id); } else toast(j.error||"Save failed");
+  const bad=blockingProblems();
+  if(bad.length){ toast(bad[0]); return; }
+  const j=await post(CFG.urls.rules,{rules:rulesPayload()});
+  if(j.ok){ toast("Rules saved"); j.ids.forEach((id,i)=>{if(rules[i])rules[i].id=id;}); }
+  else toast(j.error||"Save failed");
 });
 $("#run-clean").addEventListener("click",async()=>{
-  const j=await post(CFG.urls.rules,{rules});      // save first so the run uses latest configs
-  if(!j.ok){ toast(j.error||"Fix rule configs first"); return; }
-  j.ids.forEach((id,i)=>rules[i].id=id);
+  const bad=blockingProblems();
+  if(bad.length){ toast(bad[0]); return; }
+  const j=await post(CFG.urls.rules,{rules:rulesPayload()});   // save first
+  if(!j.ok){ toast(j.error||"Could not save rules"); return; }
+  j.ids.forEach((id,i)=>{if(rules[i])rules[i].id=id;});
   const r=await post(CFG.urls.clean,{});
   if(r.ok){
     toast(r.summary.map(s=>s.rule+": "+(s.hits??s.changed??0)).join(" · ")||"No rules ran");
@@ -551,6 +1109,7 @@ $("#purge-btn").addEventListener("click",async()=>{
 });
 
 renderPipes();
+rules=(Array.isArray(CFG.rules)?CFG.rules:[]).map(fromConfig);
 renderRules();
 load();
 })();

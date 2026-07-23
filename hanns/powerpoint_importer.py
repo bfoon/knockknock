@@ -24,6 +24,26 @@ What v2 imports beyond the original importer:
     onto the matching Hanns entrance (`anim`), with their delay (`animDelay`)
     and duration (`animDur`) preserved.
   • Z-order            — element order follows PPTX document order exactly.
+
+v3 fidelity fixes (import now matches the source PowerPoint):
+
+  • Font sizing        — sizes are scaled to the slide's real width so a
+    29 pt title on a 13.33-inch slide lands at ~29 px in the 960×540 design
+    space (the old fixed ×1.333 was only correct for 10-inch slides and
+    made every 16:9 deck ~33 % oversized, overflowing and overlapping).
+  • normAutofit        — PowerPoint's "shrink text on overflow" fontScale
+    and lnSpcReduction are honored, so autofitted boxes stay inside their
+    frames.
+  • No-fill shapes     — an AUTO_SHAPE whose fill is "no fill"
+    (MSO_FILL.BACKGROUND) no longer receives the beige placeholder fill;
+    invisible text-container shapes are skipped entirely instead of
+    painting stray boxes behind every text run.
+  • Line geometry      — shapes whose preset geometry is a line/connector
+    (prst="line", straightConnector1, …) import as real Hanns line
+    elements with their stroke colour, instead of 4 px-tall beige rects.
+  • Vertical anchor    — the shape's bodyPr anchor (top/middle/bottom) is
+    carried on text elements as ``valign``.
+  • Dash detection     — no longer mutates the source XML while reading.
 """
 
 from __future__ import annotations
@@ -128,6 +148,22 @@ def _box(shape, prs):
     }
 
 
+def _pt_scale(prs) -> float:
+    """px-per-pt when mapping this deck into the 960×540 design space.
+
+    A PPTX point is 12700 EMU. Scaling by the slide's real width means a
+    16:9 13.33-inch slide (960 pt wide) maps 1 pt → 1 px, while an old 4:3
+    10-inch slide (720 pt wide) maps 1 pt → 1.333 px — exactly the fixed
+    factor the previous importer applied to everything, which oversized
+    all widescreen decks by ~33 %.
+    """
+    try:
+        slide_w_pt = int(prs.slide_width) / 12700.0
+        return (DESIGN_W / slide_w_pt) if slide_w_pt > 0 else 1.333
+    except Exception:
+        return 1.333
+
+
 # ─────────────────────────── colour helpers ───────────────────────────
 
 def _rgb_to_hex(rgb) -> str | None:
@@ -165,38 +201,100 @@ def _srgb_from_xml(clr_el) -> str | None:
     return None
 
 
-def _fill_color(shape, default="none"):
+def _fill_kind(shape):
+    """Classify a shape's fill without guessing.
+
+    Returns (kind, hex) where kind is:
+      "none"  — explicitly no fill (MSO_FILL.BACKGROUND) or none set
+      "solid" — solid fill; hex is the colour when it resolved to RGB
+      "other" — gradient / pattern / picture fill
+    """
     try:
         fill = shape.fill
-        if getattr(fill, "type", None) == MSO_FILL.SOLID:
-            return _color_to_hex(fill.fore_color, default)
+        ftype = getattr(fill, "type", None)
+        if ftype is None or (MSO_FILL is not None and ftype == MSO_FILL.BACKGROUND):
+            return "none", None
+        if MSO_FILL is not None and ftype == MSO_FILL.SOLID:
+            return "solid", _color_to_hex(fill.fore_color, None)
+        return "other", None
     except Exception:
-        pass
-    return default
+        return "none", None
+
+
+def _fill_color(shape, default="none"):
+    """A shape with NO fill must import as "none" — never as a beige box.
+
+    The default only applies when the shape genuinely has a fill Hanns
+    cannot represent (theme-coloured solid, gradient, pattern).
+    """
+    kind, hexv = _fill_kind(shape)
+    if kind == "solid":
+        return hexv or default
+    if kind == "other":
+        return default
+    return "none"
+
+
+def _fill_or(shape, fallback):
+    """Solid fill colour, or ``fallback`` when there is none/unresolvable."""
+    kind, hexv = _fill_kind(shape)
+    return hexv if (kind == "solid" and hexv) else fallback
 
 
 def _stroke_color(shape, default="none"):
     try:
         line = shape.line
-        if line and line.color:
+        if line is None:
+            return default
+        # No outline (line fill is BACKGROUND / not set) → no stroke.
+        lft = getattr(getattr(line, "fill", None), "type", None)
+        if MSO_FILL is not None and lft == MSO_FILL.BACKGROUND:
+            return "none"
+        if line.color is not None:
             return _color_to_hex(line.color, default)
     except Exception:
         pass
     return default
 
 
-def _stroke_width(shape):
+def _stroke_width(shape, scale=1.333):
     try:
-        return max(0, round(float(shape.line.width.pt) * 1.333, 1)) if shape.line.width else 0
+        if shape.line.width:
+            return max(1, round(float(shape.line.width.pt) * scale, 1))
+        return 0
     except Exception:
         return 0
 
 
 def _line_is_dashed(shape) -> bool:
+    # Read-only lookup — the old _get_or_add_ln() call MUTATED the source
+    # XML while merely checking for a dash style.
     try:
-        ln = shape.line._get_or_add_ln()
+        ln = shape._element.find(".//" + qn("a:ln"))
+        if ln is None:
+            return False
         dash = ln.find(qn("a:prstDash"))
         return dash is not None and (dash.get("val") or "solid") != "solid"
+    except Exception:
+        return False
+
+
+# Preset geometries that are really lines/connectors. PowerPoint files
+# frequently store these as AUTO_SHAPEs (not MSO_SHAPE_TYPE.LINE), which the
+# old importer turned into 4 px-tall filled rectangles — losing every
+# divider line in the deck.
+_LINE_PRSTS = {
+    "line", "lineInv",
+    "straightConnector1",
+    "bentConnector2", "bentConnector3", "bentConnector4", "bentConnector5",
+    "curvedConnector2", "curvedConnector3", "curvedConnector4", "curvedConnector5",
+}
+
+
+def _is_line_geometry(shape) -> bool:
+    try:
+        pg = shape._element.find(".//" + qn("a:prstGeom"))
+        return pg is not None and (pg.get("prst") or "") in _LINE_PRSTS
     except Exception:
         return False
 
@@ -427,13 +525,46 @@ def _dominant_run(shape):
     return best_p, best_r
 
 
-def _font_size(run, fallback=28):
+def _font_size(run, scale=1.333, fallback=28):
     try:
         if run and run.font and run.font.size:
-            return int(round(float(run.font.size.pt) * 1.333))
+            return max(6, int(round(float(run.font.size.pt) * scale)))
     except Exception:
         pass
     return fallback
+
+
+def _autofit(shape):
+    """PowerPoint "shrink text on overflow" → (fontScale 0–1, lnSpcReduction 0–1).
+
+    <a:normAutofit fontScale="62500" lnSpcReduction="20000"/> means the text
+    is rendered at 62.5 % size with line spacing reduced by 20 %. Ignoring
+    this made autofitted boxes overflow their frames on import.
+    """
+    try:
+        body_pr = shape.text_frame._txBody.find(qn("a:bodyPr"))
+        if body_pr is None:
+            return 1.0, 0.0
+        na = body_pr.find(qn("a:normAutofit"))
+        if na is None:
+            return 1.0, 0.0
+        fs = na.get("fontScale")
+        lr = na.get("lnSpcReduction")
+        font_scale = (int(fs) / 100000.0) if fs else 1.0
+        lh_reduction = (int(lr) / 100000.0) if lr else 0.0
+        return max(0.1, min(1.0, font_scale)), max(0.0, min(0.8, lh_reduction))
+    except Exception:
+        return 1.0, 0.0
+
+
+def _text_valign(shape) -> str:
+    """The shape's vertical text anchor: top | middle | bottom."""
+    try:
+        body_pr = shape.text_frame._txBody.find(qn("a:bodyPr"))
+        anchor = body_pr.get("anchor") if body_pr is not None else None
+        return {"ctr": "middle", "b": "bottom"}.get(anchor, "top")
+    except Exception:
+        return "top"
 
 
 def _font_name(run):
@@ -524,6 +655,8 @@ def _text_element(shape, prs, anims):
     p, r = _dominant_run(shape)
     box = _box(shape, prs)
     fill = _fill_color(shape, "none")
+    scale = _pt_scale(prs)
+    autofit_scale, lh_reduction = _autofit(shape)
 
     url = _whole_shape_hyperlink(shape)
     if url:
@@ -553,12 +686,17 @@ def _text_element(shape, prs, anims):
         "animDelay": 0,
         "text": text,
         "font": _font_name(r),
-        "size": _font_size(r, fallback=max(18, min(44, int(box["h"] / 2) if box["h"] else 28))),
+        "size": _font_size(
+            r,
+            scale=scale * autofit_scale,
+            fallback=max(14, min(44, int(box["h"] / 2) if box["h"] else 28)),
+        ),
         "weight": 700 if getattr(getattr(r, "font", None), "bold", False) else 500,
         "italic": bool(getattr(getattr(r, "font", None), "italic", False)),
         "color": _font_color(r, "#16140f"),
         "align": _paragraph_align(p),
-        "lh": _line_spacing(shape),
+        "valign": _text_valign(shape),
+        "lh": max(0.9, round(_line_spacing(shape) * (1.0 - lh_reduction), 2)),
         "ls": 0,
         "fill": fill,
         **_anim_for(shape, anims),
@@ -602,9 +740,11 @@ def _image_element(request, deck, shape, prs, anims):
 
 def _shape_element(shape, prs, anims):
     box = _box(shape, prs)
+    # "none" for genuinely unfilled shapes; the neutral default only kicks
+    # in for fills Hanns cannot represent (gradient/pattern/theme solid).
     fill = _fill_color(shape, "#ece4d4")
     stroke = _stroke_color(shape, "none")
-    stroke_w = _stroke_width(shape)
+    stroke_w = _stroke_width(shape, _pt_scale(prs))
     typ = "rect"
     radius = 8
     try:
@@ -635,7 +775,7 @@ def _shape_element(shape, prs, anims):
 
 def _line_element(shape, prs, anims):
     box = _box(shape, prs)
-    thickness = max(2, _stroke_width(shape) or 2)
+    thickness = max(2, _stroke_width(shape, _pt_scale(prs)) or 2)
     if box["w"] >= box["h"]:
         box["h"] = thickness
     else:
@@ -887,6 +1027,16 @@ def _elements_from_shape(request, deck, shape, prs, warnings, anims):
     except Exception:
         pass
 
+    # Divider lines / connectors stored as AUTO_SHAPEs (prst="line",
+    # straightConnector1, …). These must become real line elements — the
+    # generic auto-shape path would render them as filled 4 px rects.
+    if not has_text and _is_line_geometry(shape):
+        try:
+            elements.append(_line_element(shape, prs, anims))
+            return elements
+        except Exception:
+            pass
+
     if is_auto:
         # An auto shape whose whole text is one hyperlink is a link button
         # (this is exactly how the Hanns exporter writes link elements).
@@ -916,9 +1066,9 @@ def _elements_from_shape(request, deck, shape, prs, warnings, anims):
                         "label": text.split("\n")[0][:80],
                         "description": (text.split("\n")[1][:120] if "\n" in text else url),
                         "linkStyle": "button",
-                        "accent": _fill_color(shape, "#2563eb"),
+                        "accent": _fill_or(shape, "#2563eb"),
                         "textColor": _font_color(r, "#ffffff"),
-                        "bg": _fill_color(shape, "#2563eb"),
+                        "bg": _fill_or(shape, "#2563eb"),
                         "radius": 18,
                         **_anim_for(shape, anims),
                     })
@@ -927,7 +1077,17 @@ def _elements_from_shape(request, deck, shape, prs, warnings, anims):
                 pass
         try:
             shp_el = _shape_element(shape, prs, anims)
-            elements.append(shp_el)
+            # Only emit the shape when it is actually visible. Text boxes in
+            # many decks are AUTO_SHAPEs with no fill and no outline — the
+            # old importer painted every one of them as a beige rectangle
+            # behind its text.
+            has_visible_fill = shp_el.get("fill") not in (None, "", "none")
+            has_visible_stroke = (
+                shp_el.get("stroke") not in (None, "", "none")
+                and float(shp_el.get("strokeW") or 0) > 0
+            )
+            if has_visible_fill or has_visible_stroke:
+                elements.append(shp_el)
         except Exception:
             pass
         if has_text:

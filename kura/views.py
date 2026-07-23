@@ -53,6 +53,85 @@ DEFAULT_SCHEMA = {
 }
 
 
+# ── field catalog (drives the visual rule builder on the data page) ──
+#
+# The rule builder needs more than bare variable names: to render
+# "Monthly income (number)" in a dropdown, and to offer a value *picker*
+# instead of a free-text box on select_one questions, the template needs
+# each question's label, type and choice list.
+#
+# NOTE: adjust these sets if the builder emits different type names for
+# number/text questions — anything not matched falls back to "text",
+# which only means it won't appear in the outlier dropdown.
+
+NUMERIC_TYPES = {"integer", "decimal", "number", "range", "calculate", "score"}
+CHOICE_TYPES = {"select_one", "select_multiple", "likert", "rank"}
+TEXT_TYPES = {"text", "note_text", "string", "barcode"}
+
+
+def _field_catalog(schema):
+    """Flatten a schema into a dropdown-ready field list.
+
+    Repeat-group children are included with dotted names (members.age)
+    so they can be picked too. Returns a list of dicts:
+
+        {"name", "label", "type", "kind", "multi", "choices"}
+
+    where `kind` is the coarse bucket the rule builder switches on:
+    number | choice | date | geo | text.
+    """
+    out = []
+
+    def walk(questions, prefix="", group_label=""):
+        for q in questions or []:
+            if not isinstance(q, dict):
+                continue
+            name, qtype = q.get("name"), q.get("type")
+            if not name or qtype in ("section", "note"):
+                continue
+
+            if qtype == "repeat":
+                walk(q.get("children"), f"{name}.", q.get("label") or name)
+                continue
+
+            if qtype in NUMERIC_TYPES:
+                kind = "number"
+            elif qtype in CHOICE_TYPES:
+                kind = "choice"
+            elif qtype in ("date", "datetime", "time"):
+                kind = "date"
+            elif qtype == "geopoint":
+                kind = "geo"
+            else:
+                kind = "text"
+
+            choices = []
+            for ch in (q.get("choices") or []):
+                if isinstance(ch, dict):
+                    choices.append({
+                        "value": ch.get("value"),
+                        "label": ch.get("label") or ch.get("value"),
+                    })
+                else:
+                    choices.append({"value": ch, "label": str(ch)})
+
+            label = q.get("label") or name
+            if group_label:
+                label = f"{group_label} › {label}"
+
+            out.append({
+                "name": f"{prefix}{name}",
+                "label": label,
+                "type": qtype,
+                "kind": kind,
+                "multi": qtype in ("select_multiple", "rank"),
+                "choices": choices,
+            })
+
+    walk(schema.get("questions"))
+    return out
+
+
 # ── build ────────────────────────────────────────────────────────────
 
 @login_required
@@ -325,13 +404,18 @@ def data(request, code):
         } if p.id in latest_runs else None),
     } for p in survey.pipelines.all()]
 
+    # `columns` is computed exactly as before, so existing table code on
+    # the page is unaffected. `fields` is the richer catalog (labels,
+    # types, choices, repeat children) that the rule builder needs.
     columns = [q["name"] for q in schema.get("questions", [])
                if q.get("name") and q.get("type") not in ("section", "note")]
+    fields = _field_catalog(schema)
 
     return render(request, "kura/data.html", {
         "survey": survey,
         "schema_json": json.dumps(schema),
         "columns_json": json.dumps(columns),
+        "fields_json": json.dumps(fields),
         "pipelines_json": json.dumps(pipelines),
         "rules_json": json.dumps([
             {"id": r.id, "name": r.name, "kind": r.kind, "action": r.action,

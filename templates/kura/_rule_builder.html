@@ -1,0 +1,873 @@
+{% comment %}
+kura/templates/kura/_rule_builder.html
+
+Visual Quick-flag rule builder — no JSON anywhere in the UI.
+
+DROP-IN USAGE — in kura/data.html, wherever the rules panel lives:
+
+    {% include "kura/_rule_builder.html" %}
+
+It expects three context vars already produced by views.data():
+    fields_json    (NEW — see views_patch.py)
+    rules_json
+    survey.code
+
+It posts to {% url 'kura:rules_save' survey.code %} in the exact shape
+rules_save() already accepts, so no view changes beyond fields_json.
+
+The whole thing is namespaced under .kqr- / KuraRules so it cannot
+collide with anything else on the data page.
+{% endcomment %}
+
+<div id="kqr-root" data-code="{{ survey.code }}">
+  <div class="kqr-head">
+    <div>
+      <h3 class="kqr-title">Quick flag rules</h3>
+      <p class="kqr-sub">Pick a variable, pick a condition, type a value. That's it.</p>
+    </div>
+    <div class="kqr-headbtns">
+      <button type="button" class="kqr-btn kqr-btn-ghost" id="kqr-add">+ Add rule</button>
+      <button type="button" class="kqr-btn kqr-btn-primary" id="kqr-save">Save rules</button>
+      <button type="button" class="kqr-btn kqr-btn-run" id="kqr-run">Save &amp; run cleaning</button>
+    </div>
+  </div>
+
+  <div id="kqr-status" class="kqr-status" hidden></div>
+  <div id="kqr-list" class="kqr-list"></div>
+
+  <div id="kqr-empty" class="kqr-empty">
+    <p>No rules yet.</p>
+    <p class="kqr-muted">Add one to start flagging bad responses automatically.</p>
+    <div class="kqr-presets">
+      <button type="button" class="kqr-chip" data-preset="duplicate">Find duplicates</button>
+      <button type="button" class="kqr-chip" data-preset="speeder">Catch speeders</button>
+      <button type="button" class="kqr-chip" data-preset="missing">Required answers</button>
+      <button type="button" class="kqr-chip" data-preset="logic">Custom condition</button>
+    </div>
+  </div>
+</div>
+
+<style>
+#kqr-root{--kqr-line:#e3e6ea;--kqr-ink:#1f2933;--kqr-mute:#6b7784;--kqr-accent:#2563eb;
+  --kqr-bg:#fff;--kqr-soft:#f6f8fa;--kqr-warn:#b45309;--kqr-danger:#b91c1c;
+  font-size:14px;color:var(--kqr-ink)}
+#kqr-root *{box-sizing:border-box}
+.kqr-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;
+  flex-wrap:wrap;margin-bottom:14px}
+.kqr-title{margin:0 0 2px;font-size:16px;font-weight:600}
+.kqr-sub{margin:0;color:var(--kqr-mute);font-size:13px}
+.kqr-headbtns{display:flex;gap:8px;flex-wrap:wrap}
+.kqr-btn{border:1px solid var(--kqr-line);background:var(--kqr-bg);color:var(--kqr-ink);
+  padding:7px 13px;border-radius:7px;cursor:pointer;font-size:13px;font-weight:500;
+  line-height:1.2}
+.kqr-btn:hover{background:var(--kqr-soft)}
+.kqr-btn-primary{background:var(--kqr-accent);border-color:var(--kqr-accent);color:#fff}
+.kqr-btn-primary:hover{filter:brightness(1.08);background:var(--kqr-accent)}
+.kqr-btn-run{background:#065f46;border-color:#065f46;color:#fff}
+.kqr-btn-run:hover{filter:brightness(1.12);background:#065f46}
+.kqr-btn[disabled]{opacity:.55;cursor:default}
+
+.kqr-status{padding:9px 12px;border-radius:7px;margin-bottom:12px;font-size:13px}
+.kqr-status.ok{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+.kqr-status.err{background:#fef2f2;color:var(--kqr-danger);border:1px solid #fecaca}
+
+.kqr-list{display:flex;flex-direction:column;gap:10px}
+.kqr-card{border:1px solid var(--kqr-line);border-radius:9px;background:var(--kqr-bg);
+  overflow:hidden}
+.kqr-card.off{opacity:.58}
+.kqr-cardtop{display:flex;align-items:center;gap:10px;padding:10px 12px;
+  background:var(--kqr-soft);border-bottom:1px solid var(--kqr-line);flex-wrap:wrap}
+.kqr-name{border:1px solid transparent;background:transparent;font-weight:600;
+  font-size:14px;padding:4px 6px;border-radius:5px;min-width:170px;flex:1;color:inherit}
+.kqr-name:hover,.kqr-name:focus{border-color:var(--kqr-line);background:#fff;outline:none}
+.kqr-body{padding:12px}
+
+.kqr-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.kqr-row:last-child{margin-bottom:0}
+.kqr-lead{color:var(--kqr-mute);font-size:13px;white-space:nowrap}
+select.kqr-in,input.kqr-in{border:1px solid var(--kqr-line);border-radius:6px;
+  padding:6px 9px;font-size:13px;background:#fff;color:inherit;min-height:33px;
+  font-family:inherit}
+select.kqr-in:focus,input.kqr-in:focus{outline:2px solid var(--kqr-accent);
+  outline-offset:-1px;border-color:var(--kqr-accent)}
+.kqr-in.field{min-width:190px}
+.kqr-in.cmp{min-width:150px}
+.kqr-in.val{min-width:130px}
+.kqr-in.num{width:92px}
+.kqr-in.tiny{width:74px}
+
+.kqr-and{display:inline-flex;border:1px solid var(--kqr-line);border-radius:6px;
+  overflow:hidden}
+.kqr-and button{border:0;background:#fff;padding:5px 12px;cursor:pointer;font-size:12px;
+  font-weight:600;color:var(--kqr-mute);font-family:inherit}
+.kqr-and button.on{background:var(--kqr-accent);color:#fff}
+
+.kqr-cond{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:7px 0}
+.kqr-cond+.kqr-cond{border-top:1px dashed var(--kqr-line)}
+.kqr-x{border:0;background:transparent;color:var(--kqr-mute);cursor:pointer;
+  font-size:17px;line-height:1;padding:3px 7px;border-radius:5px}
+.kqr-x:hover{background:#fef2f2;color:var(--kqr-danger)}
+.kqr-addcond{border:1px dashed var(--kqr-line);background:transparent;
+  color:var(--kqr-accent);padding:6px 11px;border-radius:6px;cursor:pointer;
+  font-size:13px;font-weight:500;margin-top:6px;font-family:inherit}
+.kqr-addcond:hover{background:#eff6ff;border-style:solid}
+
+.kqr-checks{display:flex;flex-wrap:wrap;gap:6px;max-height:172px;overflow:auto;
+  border:1px solid var(--kqr-line);border-radius:7px;padding:9px;background:#fff}
+.kqr-check{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--kqr-line);
+  border-radius:15px;padding:4px 11px;cursor:pointer;font-size:12.5px;user-select:none;
+  background:#fff}
+.kqr-check:hover{border-color:var(--kqr-accent)}
+.kqr-check.on{background:#eff6ff;border-color:var(--kqr-accent);color:#1d4ed8;
+  font-weight:500}
+.kqr-check input{display:none}
+
+.kqr-pairs{display:flex;flex-direction:column;gap:6px}
+.kqr-pair{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.kqr-toggles{display:flex;gap:14px;flex-wrap:wrap;margin-top:9px;font-size:12.5px;
+  color:var(--kqr-mute)}
+.kqr-toggles label{display:inline-flex;align-items:center;gap:5px;cursor:pointer}
+
+.kqr-plain{background:#fffbeb;border:1px solid #fde68a;color:#78350f;padding:8px 11px;
+  border-radius:6px;font-size:12.5px;margin-top:10px;line-height:1.45}
+.kqr-muted{color:var(--kqr-mute);font-size:12.5px}
+.kqr-empty{text-align:center;padding:34px 16px;color:var(--kqr-mute);
+  border:1px dashed var(--kqr-line);border-radius:9px}
+.kqr-empty p{margin:0 0 5px}
+.kqr-presets{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:14px}
+.kqr-chip{border:1px solid var(--kqr-line);background:#fff;border-radius:16px;
+  padding:6px 14px;cursor:pointer;font-size:12.5px;color:var(--kqr-ink);font-family:inherit}
+.kqr-chip:hover{border-color:var(--kqr-accent);color:var(--kqr-accent);background:#eff6ff}
+@media (max-width:640px){
+  .kqr-in.field,.kqr-in.cmp,.kqr-in.val{min-width:0;width:100%}
+  .kqr-cond,.kqr-row{align-items:stretch}
+}
+</style>
+
+<script>
+(function () {
+  "use strict";
+
+  var FIELDS = {{ fields_json|safe }};
+  var RULES  = {{ rules_json|safe }};
+  var CODE   = document.getElementById("kqr-root").dataset.code;
+
+  var listEl   = document.getElementById("kqr-list");
+  var emptyEl  = document.getElementById("kqr-empty");
+  var statusEl = document.getElementById("kqr-status");
+
+  var byName = {};
+  FIELDS.forEach(function (f) { byName[f.name] = f; });
+
+  // ── what each rule kind is called in plain words ───────────────────
+  var KINDS = [
+    ["logic",         "Flag when… (custom condition)"],
+    ["missing",       "Flag when an answer is missing"],
+    ["duplicate",     "Flag duplicate responses"],
+    ["outlier",       "Flag unusual numbers"],
+    ["speeder",       "Flag responses filled in too fast"],
+    ["straightliner", "Flag same-answer-all-the-way"],
+    ["geofence",      "Flag responses outside the survey area"],
+    ["recode",        "Fix / tidy up values"]
+  ];
+
+  // ── comparators, grouped by what field type they suit ──────────────
+  var CMP_ALL = [
+    ["answered",     "is answered"],
+    ["not_answered", "is blank"]
+  ];
+  var CMP_NUM = [
+    ["eq",      "is equal to"],
+    ["ne",      "is not equal to"],
+    ["gt",      "is greater than"],
+    ["gte",     "is greater or equal to"],
+    ["lt",      "is less than"],
+    ["lte",     "is less or equal to"],
+    ["between", "is between"]
+  ];
+  var CMP_CHOICE = [
+    ["selected",     "includes"],
+    ["not_selected", "does not include"],
+    ["in",           "is any of"],
+    ["not_in",       "is none of"],
+    ["eq",           "is exactly"],
+    ["ne",           "is not"]
+  ];
+  var CMP_TEXT = [
+    ["eq",           "is exactly"],
+    ["ne",           "is not"],
+    ["contains",     "contains"],
+    ["not_contains", "does not contain"],
+    ["matches",      "matches pattern"]
+  ];
+
+  function cmpsFor(field) {
+    if (!field) return CMP_TEXT.concat(CMP_ALL);
+    if (field.kind === "number" || field.kind === "date") return CMP_NUM.concat(CMP_ALL);
+    if (field.kind === "choice") return CMP_CHOICE.concat(CMP_ALL);
+    return CMP_TEXT.concat(CMP_ALL);
+  }
+  function cmpLabel(c) {
+    var all = CMP_NUM.concat(CMP_CHOICE, CMP_TEXT, CMP_ALL), i;
+    for (i = 0; i < all.length; i++) if (all[i][0] === c) return all[i][1];
+    return c;
+  }
+  function needsValue(c) {
+    return c !== "answered" && c !== "not_answered";
+  }
+
+  // ── tiny DOM helper ────────────────────────────────────────────────
+  function el(tag, cls, txt) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (txt !== undefined && txt !== null) n.textContent = txt;
+    return n;
+  }
+  function sel(cls, opts, value, onChange) {
+    var s = el("select", "kqr-in " + cls);
+    opts.forEach(function (o) {
+      var op = el("option", null, o[1]);
+      op.value = o[0];
+      s.appendChild(op);
+    });
+    s.value = value !== undefined && value !== null ? value : "";
+    if (s.value !== String(value === null ? "" : value) && opts.length) s.selectedIndex = 0;
+    s.addEventListener("change", onChange);
+    return s;
+  }
+  function fieldOpts() {
+    return FIELDS.map(function (f) {
+      var suffix = f.kind === "number" ? " (number)"
+                 : f.kind === "choice" ? " (choice)"
+                 : f.kind === "date"   ? " (date)" : "";
+      return [f.name, f.label + suffix];
+    });
+  }
+  function input(cls, value, ph, onInput, type) {
+    var i = el("input", "kqr-in " + cls);
+    i.type = type || "text";
+    i.value = value === undefined || value === null ? "" : value;
+    if (ph) i.placeholder = ph;
+    i.addEventListener("input", onInput);
+    return i;
+  }
+
+  // ── model: UI state is a plain list; JSON config is derived on save ─
+  // Each entry: {id, name, kind, action, enabled, ui:{…}}
+  var state = RULES.map(fromConfig);
+
+  function blank(kind) {
+    return {
+      id: null, name: defaultName(kind), kind: kind, action: "flag",
+      enabled: true, ui: defaultUI(kind)
+    };
+  }
+  function defaultName(kind) {
+    var m = { logic: "Flag when…", missing: "Required answers",
+      duplicate: "Duplicate responses", outlier: "Unusual numbers",
+      speeder: "Too fast", straightliner: "Same answer throughout",
+      geofence: "Outside survey area", recode: "Tidy up values" };
+    return m[kind] || "Rule";
+  }
+  function defaultUI(kind) {
+    switch (kind) {
+      case "logic":  return { op: "and", conds: [newCond()] };
+      case "missing": return { fields: [] };
+      case "duplicate": return { whole: true, fields: [] };
+      case "outlier": return { field: "", method: "iqr", k: 1.5 };
+      case "speeder": return { mode: "seconds", min_seconds: 30, percentile: 5 };
+      case "straightliner": return { fields: [], min_distinct: 2 };
+      case "geofence": return { lat: "", lng: "", radius_km: 50 };
+      case "recode": return { field: "", pairs: [{ from: "", to: "" }],
+        trim: true, lower: false, titlecase: false };
+      default: return {};
+    }
+  }
+  function newCond() { return { q: "", cmp: "eq", value: "", value2: "" }; }
+
+  // ── config JSON  →  UI state ───────────────────────────────────────
+  function fromConfig(r) {
+    var c = r.config || {}, ui = defaultUI(r.kind);
+    switch (r.kind) {
+      case "logic":
+        var cond = c.condition || {};
+        var rules = cond.rules || (cond.q ? [cond] : []);
+        ui.op = cond.op === "or" ? "or" : "and";
+        ui.conds = rules.filter(function (x) { return x && x.q; }).map(function (x) {
+          var v = x.value, v2 = "";
+          if (x.cmp === "between" && Array.isArray(v)) { v2 = v[1]; v = v[0]; }
+          else if (Array.isArray(v)) { v = v.join(", "); }
+          return { q: x.q, cmp: x.cmp || "eq", value: v === undefined ? "" : v,
+                   value2: v2 };
+        });
+        if (!ui.conds.length) ui.conds = [newCond()];
+        break;
+      case "missing":
+        ui.fields = (c.fields || []).slice(); break;
+      case "duplicate":
+        ui.fields = (c.fields || []).slice();
+        ui.whole = ui.fields.length === 0; break;
+      case "outlier":
+        ui.field = c.field || "";
+        ui.method = c.method === "zscore" ? "zscore" : "iqr";
+        ui.k = c.k !== undefined ? c.k : (ui.method === "zscore" ? 3 : 1.5); break;
+      case "speeder":
+        if (c.min_seconds !== undefined && c.min_seconds !== null) {
+          ui.mode = "seconds"; ui.min_seconds = c.min_seconds;
+        } else if (c.percentile !== undefined) {
+          ui.mode = "percentile"; ui.percentile = c.percentile;
+        } break;
+      case "straightliner":
+        ui.fields = (c.fields || []).slice();
+        ui.min_distinct = c.min_distinct !== undefined ? c.min_distinct : 2; break;
+      case "geofence":
+        ui.lat = c.lat !== undefined ? c.lat : "";
+        ui.lng = c.lng !== undefined ? c.lng : "";
+        ui.radius_km = c.radius_km !== undefined ? c.radius_km : 50; break;
+      case "recode":
+        ui.field = c.field || "";
+        ui.pairs = Object.keys(c.map || {}).map(function (k) {
+          return { from: k, to: c.map[k] };
+        });
+        if (!ui.pairs.length) ui.pairs = [{ from: "", to: "" }];
+        ui.trim = !!c.trim; ui.lower = !!c.lower; ui.titlecase = !!c.titlecase; break;
+    }
+    return { id: r.id, name: r.name, kind: r.kind, action: r.action,
+             enabled: r.enabled !== false, ui: ui };
+  }
+
+  // ── UI state  →  config JSON (exactly what cleaning.py expects) ────
+  function coerce(v) {
+    if (typeof v !== "string") return v;
+    var t = v.trim();
+    if (t === "") return "";
+    if (/^-?\d+(\.\d+)?$/.test(t)) return parseFloat(t);
+    if (t === "true") return true;
+    if (t === "false") return false;
+    return t;
+  }
+  function toConfig(r) {
+    var ui = r.ui, cfg = {};
+    switch (r.kind) {
+      case "logic":
+        var rules = ui.conds.filter(function (c) { return c.q; }).map(function (c) {
+          var o = { q: c.q, cmp: c.cmp };
+          if (c.cmp === "between") o.value = [coerce(c.value), coerce(c.value2)];
+          else if (c.cmp === "in" || c.cmp === "not_in") {
+            o.value = String(c.value).split(",").map(function (s) {
+              return coerce(s.trim()); }).filter(function (s) { return s !== ""; });
+          } else if (needsValue(c.cmp)) o.value = coerce(c.value);
+          return o;
+        });
+        cfg.condition = rules.length === 1 && ui.op === "and"
+          ? rules[0] : { op: ui.op, rules: rules };
+        cfg.detail = plainEnglish(r);
+        break;
+      case "missing": cfg.fields = ui.fields.slice(); break;
+      case "duplicate": cfg.fields = ui.whole ? [] : ui.fields.slice(); break;
+      case "outlier":
+        cfg.field = ui.field; cfg.method = ui.method;
+        cfg.k = parseFloat(ui.k) || (ui.method === "zscore" ? 3 : 1.5); break;
+      case "speeder":
+        if (ui.mode === "seconds") cfg.min_seconds = parseFloat(ui.min_seconds) || 30;
+        else cfg.percentile = parseFloat(ui.percentile) || 5; break;
+      case "straightliner":
+        cfg.fields = ui.fields.slice();
+        cfg.min_distinct = parseInt(ui.min_distinct, 10) || 2; break;
+      case "geofence":
+        cfg.lat = parseFloat(ui.lat); cfg.lng = parseFloat(ui.lng);
+        cfg.radius_km = parseFloat(ui.radius_km) || 50; break;
+      case "recode":
+        cfg.field = ui.field;
+        cfg.map = {};
+        ui.pairs.forEach(function (p) {
+          if (String(p.from).trim() !== "") cfg.map[p.from] = coerce(p.to);
+        });
+        cfg.trim = !!ui.trim; cfg.lower = !!ui.lower;
+        cfg.titlecase = !!ui.titlecase; break;
+    }
+    return cfg;
+  }
+
+  // ── plain-English preview, shown under every rule ──────────────────
+  function lbl(n) { return byName[n] ? byName[n].label : (n || "…"); }
+  function plainEnglish(r) {
+    var ui = r.ui, verb = r.action === "exclude" ? "Exclude" : "Flag";
+    switch (r.kind) {
+      case "logic":
+        var parts = ui.conds.filter(function (c) { return c.q; }).map(function (c) {
+          var s = lbl(c.q) + " " + cmpLabel(c.cmp);
+          if (c.cmp === "between") s += " " + (c.value || "…") + " and " + (c.value2 || "…");
+          else if (needsValue(c.cmp)) s += " " + (c.value === "" ? "…" : '"' + c.value + '"');
+          return s;
+        });
+        if (!parts.length) return "Pick a variable to finish this rule.";
+        return verb + " a response when " +
+          parts.join(ui.op === "or" ? " OR " : " AND ") + ".";
+      case "missing":
+        return ui.fields.length
+          ? verb + " any response missing " +
+            ui.fields.map(lbl).join(", ") + "."
+          : "Choose which answers are required.";
+      case "duplicate":
+        return ui.whole
+          ? verb + " a response that repeats another one exactly."
+          : (ui.fields.length
+              ? verb + " responses that share the same " + ui.fields.map(lbl).join(" + ") + "."
+              : "Choose the variables that identify a duplicate.");
+      case "outlier":
+        if (!ui.field) return "Choose a number variable.";
+        return verb + " unusually high or low values of " + lbl(ui.field) +
+          (ui.method === "zscore"
+            ? " (more than " + ui.k + " standard deviations from average)."
+            : " (outside " + ui.k + "× the normal spread).") +
+          " Needs at least 8 responses.";
+      case "speeder":
+        return ui.mode === "seconds"
+          ? verb + " responses completed in under " + ui.min_seconds + " seconds."
+          : verb + " the fastest " + ui.percentile + "% of responses.";
+      case "straightliner":
+        return ui.fields.length >= 3
+          ? verb + " responses giving fewer than " + ui.min_distinct +
+            " different answers across " + ui.fields.length + " questions."
+          : "Choose at least 3 questions.";
+      case "geofence":
+        return (ui.lat === "" || ui.lng === "")
+          ? "Set the centre point of your survey area."
+          : verb + " responses collected more than " + ui.radius_km +
+            " km from " + ui.lat + ", " + ui.lng + ".";
+      case "recode":
+        var n = ui.pairs.filter(function (p) { return String(p.from).trim() !== ""; }).length;
+        if (!ui.field) return "Choose a variable to tidy up.";
+        var bits = [];
+        if (n) bits.push(n + " value" + (n === 1 ? "" : "s") + " replaced");
+        if (ui.trim) bits.push("extra spaces removed");
+        if (ui.lower) bits.push("made lowercase");
+        if (ui.titlecase) bits.push("made Title Case");
+        return "In " + lbl(ui.field) + ": " +
+          (bits.length ? bits.join(", ") + "." : "nothing changes yet.");
+    }
+    return "";
+  }
+
+  // ── rendering ──────────────────────────────────────────────────────
+  function render() {
+    listEl.innerHTML = "";
+    emptyEl.hidden = state.length > 0;
+    state.forEach(function (r, i) { listEl.appendChild(card(r, i)); });
+  }
+
+  function card(r, idx) {
+    var c = el("div", "kqr-card" + (r.enabled ? "" : " off"));
+
+    // ── header: on/off, name, kind, action, delete ──
+    var top = el("div", "kqr-cardtop");
+
+    var onoff = el("input");
+    onoff.type = "checkbox"; onoff.checked = r.enabled;
+    onoff.title = "Enable / disable this rule";
+    onoff.addEventListener("change", function () {
+      r.enabled = onoff.checked; render();
+    });
+    top.appendChild(onoff);
+
+    var nm = el("input", "kqr-name");
+    nm.value = r.name; nm.placeholder = "Rule name";
+    nm.addEventListener("input", function () { r.name = nm.value; });
+    top.appendChild(nm);
+
+    top.appendChild(sel("kind", KINDS, r.kind, function (e) {
+      r.kind = e.target.value;
+      r.ui = defaultUI(r.kind);
+      r.name = defaultName(r.kind);
+      if (r.kind === "recode") r.action = "recode";
+      else if (r.action === "recode") r.action = "flag";
+      render();
+    }));
+
+    if (r.kind !== "recode") {
+      top.appendChild(sel("act", [["flag", "→ mark as flagged"],
+        ["exclude", "→ exclude from data"]], r.action, function (e) {
+        r.action = e.target.value; render();
+      }));
+    }
+
+    var del = el("button", "kqr-x", "×");
+    del.type = "button"; del.title = "Delete rule";
+    del.addEventListener("click", function () {
+      state.splice(idx, 1); render();
+    });
+    top.appendChild(del);
+    c.appendChild(top);
+
+    // ── body: the kind-specific editor ──
+    var body = el("div", "kqr-body");
+    ({ logic: bLogic, missing: bFields, duplicate: bDuplicate, outlier: bOutlier,
+       speeder: bSpeeder, straightliner: bStraight, geofence: bGeo, recode: bRecode
+    }[r.kind] || function () {})(body, r);
+
+    var p = el("div", "kqr-plain", plainEnglish(r));
+    body.appendChild(p);
+    c.appendChild(body);
+    return c;
+  }
+
+  // logic — the "select variable / condition / value" builder
+  function bLogic(box, r) {
+    var ui = r.ui;
+
+    var opRow = el("div", "kqr-row");
+    opRow.appendChild(el("span", "kqr-lead", "Match"));
+    var grp = el("div", "kqr-and");
+    [["and", "ALL of these"], ["or", "ANY of these"]].forEach(function (o) {
+      var b = el("button", ui.op === o[0] ? "on" : "", o[1]);
+      b.type = "button";
+      b.addEventListener("click", function () { ui.op = o[0]; render(); });
+      grp.appendChild(b);
+    });
+    opRow.appendChild(grp);
+    box.appendChild(opRow);
+
+    ui.conds.forEach(function (cond, ci) {
+      var row = el("div", "kqr-cond");
+      var f = byName[cond.q];
+
+      row.appendChild(sel("field", [["", "— select variable —"]].concat(fieldOpts()),
+        cond.q, function (e) {
+          cond.q = e.target.value;
+          var nf = byName[cond.q], list = cmpsFor(nf).map(function (x) { return x[0]; });
+          if (list.indexOf(cond.cmp) === -1) cond.cmp = list[0];
+          cond.value = ""; cond.value2 = "";
+          render();
+        }));
+
+      row.appendChild(sel("cmp", cmpsFor(f), cond.cmp, function (e) {
+        cond.cmp = e.target.value; cond.value = ""; cond.value2 = ""; render();
+      }));
+
+      if (needsValue(cond.cmp)) {
+        if (f && f.choices && f.choices.length &&
+            ["eq", "ne", "selected", "not_selected"].indexOf(cond.cmp) !== -1) {
+          // value picker instead of free text
+          row.appendChild(sel("val", [["", "— select value —"]].concat(
+            f.choices.map(function (ch) { return [ch.value, ch.label]; })),
+            cond.value, function (e) { cond.value = e.target.value; refresh(box, r); }));
+        } else if (cond.cmp === "between") {
+          row.appendChild(input("num", cond.value, "from", function (e) {
+            cond.value = e.target.value; refresh(box, r); }));
+          row.appendChild(el("span", "kqr-lead", "and"));
+          row.appendChild(input("num", cond.value2, "to", function (e) {
+            cond.value2 = e.target.value; refresh(box, r); }));
+        } else if (cond.cmp === "in" || cond.cmp === "not_in") {
+          row.appendChild(input("val", cond.value, "value1, value2, value3",
+            function (e) { cond.value = e.target.value; refresh(box, r); }));
+        } else {
+          row.appendChild(input("val", cond.value, "value",
+            function (e) { cond.value = e.target.value; refresh(box, r); },
+            f && f.kind === "number" ? "number" : "text"));
+        }
+      }
+
+      if (ui.conds.length > 1) {
+        var x = el("button", "kqr-x", "×");
+        x.type = "button";
+        x.addEventListener("click", function () {
+          ui.conds.splice(ci, 1); render();
+        });
+        row.appendChild(x);
+      }
+      box.appendChild(row);
+    });
+
+    var add = el("button", "kqr-addcond", "+ another variable");
+    add.type = "button";
+    add.addEventListener("click", function () { ui.conds.push(newCond()); render(); });
+    box.appendChild(add);
+  }
+
+  // multi-select chip list, used by missing / duplicate / straightliner
+  function chips(box, selected, onToggle, filterKind) {
+    var wrap = el("div", "kqr-checks");
+    FIELDS.filter(function (f) {
+      return !filterKind || filterKind(f);
+    }).forEach(function (f) {
+      var on = selected.indexOf(f.name) !== -1;
+      var lab = el("label", "kqr-check" + (on ? " on" : ""));
+      var cb = el("input"); cb.type = "checkbox"; cb.checked = on;
+      cb.addEventListener("change", function () { onToggle(f.name, cb.checked); });
+      lab.appendChild(cb);
+      lab.appendChild(document.createTextNode(f.label));
+      wrap.appendChild(lab);
+    });
+    if (!wrap.children.length) {
+      wrap.appendChild(el("span", "kqr-muted", "No matching variables in this form."));
+    }
+    box.appendChild(wrap);
+  }
+
+  function toggler(arr) {
+    return function (name, on) {
+      var i = arr.indexOf(name);
+      if (on && i === -1) arr.push(name);
+      if (!on && i !== -1) arr.splice(i, 1);
+      render();
+    };
+  }
+
+  function bFields(box, r) {
+    box.appendChild(el("div", "kqr-lead", "These answers must be filled in:"));
+    chips(box, r.ui.fields, toggler(r.ui.fields));
+  }
+
+  function bDuplicate(box, r) {
+    var ui = r.ui, row = el("div", "kqr-row");
+    row.appendChild(el("span", "kqr-lead", "A duplicate is"));
+    row.appendChild(sel("cmp", [["whole", "an identical response"],
+      ["fields", "a match on certain variables"]], ui.whole ? "whole" : "fields",
+      function (e) { ui.whole = e.target.value === "whole"; render(); }));
+    box.appendChild(row);
+    if (!ui.whole) chips(box, ui.fields, toggler(ui.fields));
+  }
+
+  function bOutlier(box, r) {
+    var ui = r.ui, row = el("div", "kqr-row");
+    row.appendChild(el("span", "kqr-lead", "Variable"));
+    row.appendChild(sel("field", [["", "— select number variable —"]].concat(
+      FIELDS.filter(function (f) { return f.kind === "number"; })
+            .map(function (f) { return [f.name, f.label]; })),
+      ui.field, function (e) { ui.field = e.target.value; render(); }));
+    row.appendChild(el("span", "kqr-lead", "using"));
+    row.appendChild(sel("cmp", [["iqr", "normal spread (IQR)"],
+      ["zscore", "standard deviations"]], ui.method, function (e) {
+      ui.method = e.target.value;
+      ui.k = ui.method === "zscore" ? 3 : 1.5; render();
+    }));
+    row.appendChild(el("span", "kqr-lead", "sensitivity"));
+    row.appendChild(input("tiny", ui.k, "", function (e) {
+      ui.k = e.target.value; refresh(box, r); }, "number"));
+    box.appendChild(row);
+    box.appendChild(el("div", "kqr-muted",
+      "Lower sensitivity flags more responses. Typical: 1.5 for IQR, 3 for standard deviations."));
+  }
+
+  function bSpeeder(box, r) {
+    var ui = r.ui, row = el("div", "kqr-row");
+    row.appendChild(el("span", "kqr-lead", "Flag responses"));
+    row.appendChild(sel("cmp", [["seconds", "faster than a fixed time"],
+      ["percentile", "in the fastest N%"]], ui.mode, function (e) {
+      ui.mode = e.target.value; render();
+    }));
+    if (ui.mode === "seconds") {
+      row.appendChild(input("num", ui.min_seconds, "30", function (e) {
+        ui.min_seconds = e.target.value; refresh(box, r); }, "number"));
+      row.appendChild(el("span", "kqr-lead", "seconds"));
+    } else {
+      row.appendChild(input("tiny", ui.percentile, "5", function (e) {
+        ui.percentile = e.target.value; refresh(box, r); }, "number"));
+      row.appendChild(el("span", "kqr-lead", "% fastest"));
+    }
+    box.appendChild(row);
+  }
+
+  function bStraight(box, r) {
+    var ui = r.ui, row = el("div", "kqr-row");
+    row.appendChild(el("span", "kqr-lead", "Flag if fewer than"));
+    row.appendChild(input("tiny", ui.min_distinct, "2", function (e) {
+      ui.min_distinct = e.target.value; refresh(box, r); }, "number"));
+    row.appendChild(el("span", "kqr-lead",
+      "different answers are given across these questions:"));
+    box.appendChild(row);
+    chips(box, ui.fields, toggler(ui.fields));
+  }
+
+  function bGeo(box, r) {
+    var ui = r.ui, row = el("div", "kqr-row");
+    row.appendChild(el("span", "kqr-lead", "Centre"));
+    row.appendChild(input("num", ui.lat, "latitude", function (e) {
+      ui.lat = e.target.value; refresh(box, r); }, "number"));
+    row.appendChild(input("num", ui.lng, "longitude", function (e) {
+      ui.lng = e.target.value; refresh(box, r); }, "number"));
+    row.appendChild(el("span", "kqr-lead", "within"));
+    row.appendChild(input("tiny", ui.radius_km, "50", function (e) {
+      ui.radius_km = e.target.value; refresh(box, r); }, "number"));
+    row.appendChild(el("span", "kqr-lead", "km"));
+
+    var pick = el("button", "kqr-btn kqr-btn-ghost", "Use my location");
+    pick.type = "button";
+    pick.addEventListener("click", function () {
+      if (!navigator.geolocation) return;
+      pick.textContent = "Locating…";
+      navigator.geolocation.getCurrentPosition(function (pos) {
+        ui.lat = pos.coords.latitude.toFixed(5);
+        ui.lng = pos.coords.longitude.toFixed(5);
+        render();
+      }, function () { pick.textContent = "Use my location"; });
+    });
+    row.appendChild(pick);
+    box.appendChild(row);
+  }
+
+  function bRecode(box, r) {
+    var ui = r.ui, row = el("div", "kqr-row");
+    row.appendChild(el("span", "kqr-lead", "In variable"));
+    row.appendChild(sel("field", [["", "— select variable —"]].concat(fieldOpts()),
+      ui.field, function (e) { ui.field = e.target.value; render(); }));
+    box.appendChild(row);
+
+    box.appendChild(el("div", "kqr-lead", "Replace these values:"));
+    var pairs = el("div", "kqr-pairs");
+    ui.pairs.forEach(function (p, pi) {
+      var pr = el("div", "kqr-pair");
+      var f = byName[ui.field];
+      if (f && f.choices && f.choices.length) {
+        pr.appendChild(sel("val", [["", "— any value —"]].concat(
+          f.choices.map(function (ch) { return [ch.value, ch.label]; })),
+          p.from, function (e) { p.from = e.target.value; refresh(box, r); }));
+      } else {
+        pr.appendChild(input("val", p.from, "old value", function (e) {
+          p.from = e.target.value; refresh(box, r); }));
+      }
+      pr.appendChild(el("span", "kqr-lead", "→"));
+      pr.appendChild(input("val", p.to, "new value", function (e) {
+        p.to = e.target.value; refresh(box, r); }));
+      var x = el("button", "kqr-x", "×");
+      x.type = "button";
+      x.addEventListener("click", function () {
+        ui.pairs.splice(pi, 1);
+        if (!ui.pairs.length) ui.pairs.push({ from: "", to: "" });
+        render();
+      });
+      pr.appendChild(x);
+      pairs.appendChild(pr);
+    });
+    box.appendChild(pairs);
+
+    var add = el("button", "kqr-addcond", "+ another replacement");
+    add.type = "button";
+    add.addEventListener("click", function () {
+      ui.pairs.push({ from: "", to: "" }); render();
+    });
+    box.appendChild(add);
+
+    var tg = el("div", "kqr-toggles");
+    [["trim", "Remove extra spaces"], ["lower", "Make lowercase"],
+     ["titlecase", "Make Title Case"]].forEach(function (t) {
+      var l = el("label"), cb = el("input");
+      cb.type = "checkbox"; cb.checked = !!ui[t[0]];
+      cb.addEventListener("change", function () {
+        ui[t[0]] = cb.checked;
+        if (t[0] === "lower" && cb.checked) ui.titlecase = false;
+        if (t[0] === "titlecase" && cb.checked) ui.lower = false;
+        render();
+      });
+      l.appendChild(cb);
+      l.appendChild(document.createTextNode(t[1]));
+      tg.appendChild(l);
+    });
+    box.appendChild(tg);
+  }
+
+  // update only the plain-English line — keeps focus in the box being typed in
+  function refresh(box, r) {
+    var p = box.parentNode.querySelector(".kqr-plain");
+    if (p) p.textContent = plainEnglish(r);
+  }
+
+  // ── validation, so a half-built rule never silently does nothing ───
+  function problems() {
+    var out = [];
+    state.forEach(function (r) {
+      if (!r.enabled) return;
+      var ui = r.ui, n = r.name || "Untitled rule";
+      if (r.kind === "logic" && !ui.conds.filter(function (c) { return c.q; }).length)
+        out.push(n + ": pick a variable.");
+      if (r.kind === "missing" && !ui.fields.length)
+        out.push(n + ": choose at least one required answer.");
+      if (r.kind === "duplicate" && !ui.whole && !ui.fields.length)
+        out.push(n + ": choose the variables that identify a duplicate.");
+      if (r.kind === "outlier" && !ui.field)
+        out.push(n + ": choose a number variable.");
+      if (r.kind === "straightliner" && ui.fields.length < 3)
+        out.push(n + ": choose at least 3 questions.");
+      if (r.kind === "geofence" && (ui.lat === "" || ui.lng === ""))
+        out.push(n + ": set the centre point.");
+      if (r.kind === "recode" && !ui.field)
+        out.push(n + ": choose a variable.");
+    });
+    return out;
+  }
+
+  function say(msg, kind) {
+    statusEl.hidden = false;
+    statusEl.className = "kqr-status " + (kind || "ok");
+    statusEl.textContent = msg;
+  }
+
+  function csrf() {
+    var m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    if (m) return decodeURIComponent(m[1]);
+    var i = document.querySelector("input[name=csrfmiddlewaretoken]");
+    return i ? i.value : "";
+  }
+
+  function post(url, payload) {
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": csrf() },
+      credentials: "same-origin",
+      body: JSON.stringify(payload || {})
+    }).then(function (res) { return res.json(); });
+  }
+
+  function save(thenRun) {
+    var bad = problems();
+    if (bad.length) { say(bad.join("  "), "err"); return; }
+
+    var payload = {
+      rules: state.map(function (r) {
+        return { id: r.id, name: r.name, kind: r.kind, action: r.action,
+                 enabled: r.enabled, config: toConfig(r) };
+      })
+    };
+
+    document.getElementById("kqr-save").disabled = true;
+    document.getElementById("kqr-run").disabled = true;
+
+    post("/kura/" + CODE + "/data/rules/", payload).then(function (d) {
+      if (!d.ok) throw new Error(d.error || "save failed");
+      d.ids.forEach(function (id, i) { if (state[i]) state[i].id = id; });
+      if (!thenRun) { say("Rules saved."); return null; }
+      return post("/kura/" + CODE + "/data/clean/", {});
+    }).then(function (d) {
+      if (d && d.ok) {
+        var hits = 0, changed = 0;
+        (d.summary || []).forEach(function (s) {
+          hits += s.hits || 0; changed += s.changed || 0;
+        });
+        say("Cleaning finished — " + hits + " response" + (hits === 1 ? "" : "s") +
+            " flagged, " + changed + " value" + (changed === 1 ? "" : "s") + " fixed.");
+        if (window.KuraData && window.KuraData.reload) window.KuraData.reload();
+      }
+    }).catch(function (e) {
+      say(e.message || "Something went wrong.", "err");
+    }).then(function () {
+      document.getElementById("kqr-save").disabled = false;
+      document.getElementById("kqr-run").disabled = false;
+    });
+  }
+
+  // ── wiring ─────────────────────────────────────────────────────────
+  document.getElementById("kqr-add").addEventListener("click", function () {
+    state.push(blank("logic")); render();
+    listEl.lastChild.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
+  document.getElementById("kqr-save").addEventListener("click", function () { save(false); });
+  document.getElementById("kqr-run").addEventListener("click", function () { save(true); });
+  emptyEl.addEventListener("click", function (e) {
+    var k = e.target.dataset && e.target.dataset.preset;
+    if (k) { state.push(blank(k)); render(); }
+  });
+
+  render();
+})();
+</script>

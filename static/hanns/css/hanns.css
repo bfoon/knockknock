@@ -385,6 +385,11 @@ input[type=range]{width:100%;accent-color:var(--signal)}
 .present.on{display:block}
 .present-stage{position:absolute;inset:0;display:grid;place-items:center;overflow:hidden}
 .present-canvas{position:relative;border-radius:0;overflow:hidden;box-shadow:0 40px 120px rgba(0,0,0,.7)}
+/* v51 — transition wrapper. #present-canvas owns the fullscreen fit scale;
+   .present-anim owns the slide transition. Keeping them on separate nodes
+   stops a transform-based transition (slide/push/zoom/flip) from replacing
+   the fit scale and shrinking the slide to centered 960x540 in fullscreen. */
+.present-anim{position:absolute;inset:0;width:100%;height:100%;transform-origin:center center;will-change:transform,opacity}
 .present-badge{
   position:absolute;bottom:22px;right:22px;z-index:210;display:flex;align-items:center;gap:.8rem;
   background:rgba(20,18,14,.82);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.12);
@@ -1742,3 +1747,45 @@ body.hanns-options-open .drawer{
 .chart-theme-dark .pareto-val{fill:var(--c3,#fbbf24)}
 .chart-theme-dark .combo-val{fill:var(--c1,#4ade80)}
 .pyr-val{fill:#ffffff;paint-order:stroke;stroke:rgba(0,0,0,.3);stroke-width:3}
+
+/* ════════════════════════════════════════════════════════════════════
+   v51 — Custom slide background builder (inspector → Slide tab).
+   The renderer already assigns slide.bg directly to style.background, so
+   this UI only composes a CSS string: solid, 2/3-stop linear or radial
+   gradient, or hand-written CSS (including url(...) images).
+   ════════════════════════════════════════════════════════════════════ */
+.bg-custom{margin-top:.6rem;display:flex;flex-direction:column;gap:.55rem}
+.bg-mode-row{flex-wrap:wrap;gap:.35rem}
+.bg-swatches{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+.bg-sw{display:inline-flex;flex-direction:column;align-items:center;gap:.2rem;
+  font:700 .58rem/1 var(--font-mono,ui-monospace,monospace);color:#8a806c;cursor:pointer}
+.bg-sw input[type=color]{width:42px;height:30px;border:1px solid rgba(0,0,0,.16);
+  border-radius:9px;background:none;cursor:pointer;padding:2px}
+.bg-sw input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:#2563eb}
+.bg-c3-toggle{flex-direction:row;gap:.35rem;align-items:center;align-self:flex-end;padding-bottom:.3rem}
+.bg-angle-wrap{display:block}
+.bg-angle{display:flex;align-items:center;gap:.5rem;
+  font:700 .62rem/1 var(--font-mono,ui-monospace,monospace);color:#8a806c}
+.bg-angle b{color:#2563eb;min-width:34px}
+.bg-angle input[type=range]{flex:1;accent-color:#2563eb}
+.bg-css-wrap textarea{width:100%;border:1px solid rgba(0,0,0,.16);border-radius:10px;
+  padding:8px 10px;font:500 .68rem/1.4 var(--font-mono,ui-monospace,monospace);
+  color:#16140f;background:#fff;resize:vertical}
+.bg-live-preview{height:56px;border-radius:12px;border:1px solid rgba(0,0,0,.14);
+  box-shadow:inset 0 1px 3px rgba(0,0,0,.10)}
+.bg-apply-row{flex-wrap:wrap;gap:.35rem}
+
+/* Show only the controls that matter for the selected mode. */
+.bg-custom[data-mode="solid"] .bg-c2-wrap,
+.bg-custom[data-mode="solid"] .bg-c3-wrap,
+.bg-custom[data-mode="solid"] .bg-c3-toggle,
+.bg-custom[data-mode="solid"] .bg-angle-wrap,
+.bg-custom[data-mode="radial"] .bg-angle-wrap{display:none}
+.bg-custom[data-mode="css"] .bg-swatches,
+.bg-custom[data-mode="css"] .bg-angle-wrap{display:none}
+.bg-custom[data-mode="preset"] .bg-angle-wrap{display:none}
+.bg-custom:not([data-mode="css"]) .bg-css-wrap textarea{opacity:.72}
+.bg-custom:not([data-mode="linear"]):not([data-mode="radial"]) .bg-c3-wrap,
+.bg-custom:not([data-mode="linear"]):not([data-mode="radial"]) .bg-c3-toggle{display:none}
+.bg-custom[data-mode="linear"]:not(.use3) .bg-c3-wrap,
+.bg-custom[data-mode="radial"]:not(.use3) .bg-c3-wrap{opacity:.45}

@@ -65,23 +65,67 @@ function incrementReactionCount(emoji){
   renderReactionCounts(localReactionCounts);
 }
 
+/* ── Fit / transition separation ──────────────────────────────────────
+   BUG (v37): fit() wrote transform:scale(z) inline on #present-canvas,
+   and transition() then ran a Web Animation on the SAME node whose
+   keyframes also set `transform` (slide/push/zoom/flip). The Web
+   Animations API composites with "replace" by default and the animation
+   used fill:"both", so the animation's final transform (e.g.
+   translateX(0)) permanently replaced the inline scale(z) — the slide
+   snapped back to its natural 960x540 and sat centered in the black
+   stage instead of filling the screen. fade/reveal never touched
+   transform, which is why only some transitions broke fullscreen.
+
+   FIX: two nested elements with one job each.
+     #present-canvas  — owns the fit scale ONLY (never animated)
+     .present-anim    — owns the transition ONLY (never scaled)
+   paintSlide() still receives the inner node, so element rendering,
+   backgrounds and bgFx are unchanged.                                  */
+
+let animWrap = null;
+function ensureAnimWrap(){
+  if(!pCanvas)return null;
+  if(animWrap && animWrap.parentNode === pCanvas)return animWrap;
+  animWrap = pCanvas.querySelector(":scope > .present-anim");
+  if(!animWrap){
+    animWrap = document.createElement("div");
+    animWrap.className = "present-anim";
+    while(pCanvas.firstChild) animWrap.appendChild(pCanvas.firstChild);
+    pCanvas.appendChild(animWrap);
+  }
+  return animWrap;
+}
+
 function fit(){
   if(!pCanvas)return;
   const z=Math.min(window.innerWidth/W, window.innerHeight/H);
   pCanvas.style.width=W+"px";pCanvas.style.height=H+"px";
+  // The outer canvas carries ONLY the fit scale. Nothing animates it.
   pCanvas.style.transform=`scale(${z})`;pCanvas.style.transformOrigin="center center";
+  const wrap=ensureAnimWrap();
+  if(wrap){wrap.style.width=W+"px";wrap.style.height=H+"px";}
 }
+
 function transition(node,kind){
   if(!node || !node.animate)return;
   const map={none:[{opacity:1}],fade:[{opacity:0},{opacity:1}],slide:[{transform:"translateX(60px)",opacity:0},{transform:"translateX(0)",opacity:1}],push:[{transform:"translateX(100%)"},{transform:"translateX(0)"}],zoom:[{transform:"scale(1.08)",opacity:0},{transform:"scale(1)",opacity:1}],flip:[{transform:"perspective(1200px) rotateY(12deg)",opacity:0},{transform:"perspective(1200px) rotateY(0)",opacity:1}],reveal:[{clipPath:"inset(0 0 100% 0)"},{clipPath:"inset(0 0 0 0)"}]};
-  node.animate(map[kind]||map.fade,{duration:480,easing:"cubic-bezier(.22,1,.36,1)",fill:"both"});
+  const anim=node.animate(map[kind]||map.fade,{duration:480,easing:"cubic-bezier(.22,1,.36,1)",fill:"both"});
+  // Hand the final state back to CSS so no fill:"both" transform lingers
+  // on the node and interferes with a later re-fit.
+  anim.addEventListener&&anim.addEventListener("finish",()=>{
+    try{ anim.commitStyles&&anim.commitStyles(); anim.cancel(); }catch(e){}
+    node.style.transform="";node.style.opacity="";node.style.clipPath="";
+  });
 }
 function show(n,broadcast=true){
   if(!DECK.slides.length || !paintSlide || !pCanvas)return;
   keepScreenAwake("slide-change");
   i=(clamp?clamp(n,0,DECK.slides.length-1):Math.max(0,Math.min(DECK.slides.length-1,n)));
   const s=DECK.slides[i];
-  paintSlide(pCanvas,s,{live:true});transition(pCanvas,(s&&s.transition)||"fade");
+  // Paint into the inner wrapper and animate THAT — the outer canvas keeps
+  // its fit scale untouched, so fullscreen survives every transition.
+  const wrap=ensureAnimWrap()||pCanvas;
+  paintSlide(wrap,s,{live:true});transition(wrap,(s&&s.transition)||"fade");
   const pos=$("#pp-pos");if(pos)pos.textContent=`${i+1} / ${DECK.slides.length}`;
   if(broadcast&&!suppressBroadcast)Live.goto(i);
 }

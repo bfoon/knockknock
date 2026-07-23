@@ -1981,7 +1981,49 @@ function slidePanel(){
   const curFx=s.bgFx||"none";
   let fx=(BG_FX||[]).map(f=>`<button class="chip bgfx-chip ${curFx===f.key?"active":""}" data-bgfx="${f.key}" title="${f.hint||""}">${f.label}</button>`).join("");
   let trans=Object.entries(TRANSITIONS).map(([k,v])=>`<button class="chip ${s.transition===k?"active":""}" data-trans="${k}">${v}</button>`).join("");
-  return `<div class="group"><span class="glabel">Slide background</span>${bgs}</div>
+  // ── v51: custom background builder ───────────────────────────────
+  // paintSlide() assigns slide.bg straight to container.style.background,
+  // so ANY valid CSS background value works — solid, multi-stop gradient,
+  // image URL, or a comma-separated stack. This UI just composes that
+  // string; nothing in the renderer needed to change.
+  const cur = s.bg || "";
+  const c1 = (s.bgC1 || pickHex(cur, 0) || "#0f172a");
+  const c2 = (s.bgC2 || pickHex(cur, 1) || "#38bdf8");
+  const c3 = (s.bgC3 || pickHex(cur, 2) || "#8b5cf6");
+  const ang = Number.isFinite(+s.bgAngle) ? +s.bgAngle : 135;
+  const mode = s.bgMode || "preset";
+  const useC3 = !!s.bgUse3;
+  const custom = `
+    <div class="bg-custom">
+      <div class="chiprow bg-mode-row">
+        <button class="chip bgmode-chip ${mode==="solid"?"active":""}" data-bgmode="solid">Solid</button>
+        <button class="chip bgmode-chip ${mode==="linear"?"active":""}" data-bgmode="linear">Gradient</button>
+        <button class="chip bgmode-chip ${mode==="radial"?"active":""}" data-bgmode="radial">Radial</button>
+        <button class="chip bgmode-chip ${mode==="css"?"active":""}" data-bgmode="css">Custom CSS</button>
+      </div>
+      <div class="bg-swatches">
+        <label class="bg-sw"><input type="color" id="bg-c1" value="${c1}"><span>Color 1</span></label>
+        <label class="bg-sw bg-c2-wrap"><input type="color" id="bg-c2" value="${c2}"><span>Color 2</span></label>
+        <label class="bg-sw bg-c3-wrap"><input type="color" id="bg-c3" value="${c3}"><span>Color 3</span></label>
+        <label class="bg-sw bg-c3-toggle"><input type="checkbox" id="bg-use3" ${useC3?"checked":""}><span>3rd color</span></label>
+      </div>
+      <div class="bg-angle-wrap">
+        <label class="bg-angle">Angle <b id="bg-angle-val">${ang}&deg;</b>
+          <input type="range" id="bg-angle" min="0" max="360" step="1" value="${ang}">
+        </label>
+      </div>
+      <div class="bg-css-wrap">
+        <textarea id="bg-css" rows="3" spellcheck="false"
+          placeholder="Any CSS background, e.g. linear-gradient(135deg,#0f172a,#38bdf8) or url('...') center/cover">${escapeTA(cur)}</textarea>
+      </div>
+      <div class="bg-live-preview" id="bg-live-preview" style="background:${cur};${s.bgSize?`background-size:${s.bgSize};`:""}"></div>
+      <div class="chiprow bg-apply-row">
+        <button class="chip" id="bg-apply-all" title="Use this background on every slide in the deck">Apply to all slides</button>
+        <button class="chip" id="bg-copy" title="Copy this background CSS to the clipboard">Copy CSS</button>
+      </div>
+    </div>`;
+
+  return `<div class="group"><span class="glabel">Slide background</span>${bgs}${custom}</div>
     <div class="group"><span class="glabel">Moving background</span><div class="chiprow bgfx-row">${fx}</div></div>
     <div class="group"><span class="glabel">Presenter notes</span>${field("Notes for phone controller",`<textarea id="s-notes" rows="6" placeholder="Private notes visible on presenter phone only">${escapeTA(s.notes||"")}</textarea>`)}</div>
     <div class="group"><span class="glabel">Transition in</span><div class="chiprow">${trans}</div></div>
@@ -1990,10 +2032,123 @@ function slidePanel(){
       <button class="del-el" id="s-del">Delete this slide</button>
     </div>`;
 }
+/* v51 — custom background helpers.
+   pickHex pulls the Nth #rrggbb / #rgb out of an existing background string
+   so switching to the custom builder starts from the colours already on the
+   slide instead of resetting to defaults. */
+function pickHex(css, n){
+  const m = String(css||"").match(/#[0-9a-f]{6}\b|#[0-9a-f]{3}\b/gi);
+  if(!m || !m[n])return null;
+  let h = m[n];
+  if(h.length === 4) h = "#" + h[1]+h[1] + h[2]+h[2] + h[3]+h[3];
+  return h.toLowerCase();
+}
+
+/* v51 — the custom-builder state (mode, colours, angle) rides alongside
+   bg/bgSize so reopening a deck restores the picker exactly as it was
+   left. These keys are additive; older decks without them simply fall
+   back to "preset". */
+function bgMeta(s){
+  return {
+    bgMode : s.bgMode  || "preset",
+    bgC1   : s.bgC1    || null,
+    bgC2   : s.bgC2    || null,
+    bgC3   : s.bgC3    || null,
+    bgAngle: Number.isFinite(+s.bgAngle) ? +s.bgAngle : null,
+    bgUse3 : !!s.bgUse3,
+  };
+}
+
+/* Compose the CSS background string from the builder's current state. */
+function buildBgCss(s){
+  const c1 = s.bgC1 || "#0f172a";
+  const c2 = s.bgC2 || "#38bdf8";
+  const c3 = s.bgC3 || "#8b5cf6";
+  const ang = Number.isFinite(+s.bgAngle) ? +s.bgAngle : 135;
+  const stops = s.bgUse3 ? `${c1},${c2} 50%,${c3}` : `${c1},${c2}`;
+  switch(s.bgMode){
+    case "solid":  return c1;
+    case "linear": return `linear-gradient(${ang}deg,${stops})`;
+    case "radial": return `radial-gradient(80% 90% at 50% 20%,${stops})`;
+    default:       return s.bg || c1;   // "css" mode — the textarea is source of truth
+  }
+}
+
+function applyCustomBg(s, {repaint=true}={}){
+  if(s.bgMode && s.bgMode !== "css" && s.bgMode !== "preset"){
+    s.bg = buildBgCss(s);
+    s.bgSize = null;              // builder output never needs a background-size
+  }
+  const prev = $("#bg-live-preview");
+  if(prev){
+    prev.style.background = s.bg || "";
+    prev.style.backgroundSize = s.bgSize || "";
+  }
+  const ta = $("#bg-css");
+  if(ta && document.activeElement !== ta) ta.value = s.bg || "";
+  if(repaint){ renderAll(); markDirty(); }
+}
+
 function bindSlidePanel(){
   const s=curSlide();
   $$(".bg-cell[data-bgi]",inspBody).forEach(c=>c.addEventListener("click",()=>{
-    const b=BACKGROUNDS[Number(c.dataset.bgi)];s.bg=b.css;s.bgSize=b.size||null;renderAll();markDirty();}));
+    const b=BACKGROUNDS[Number(c.dataset.bgi)];s.bg=b.css;s.bgSize=b.size||null;
+    s.bgMode="preset";applyCustomBg(s,{repaint:false});renderAll();markDirty();}));
+
+  // ── custom background builder ────────────────────────────────────
+  $$(".bgmode-chip[data-bgmode]",inspBody).forEach(c=>c.addEventListener("click",()=>{
+    s.bgMode=c.dataset.bgmode;
+    $$(".bgmode-chip[data-bgmode]",inspBody).forEach(x=>x.classList.remove("active"));
+    c.classList.add("active");
+    const wrap=$(".bg-custom",inspBody);
+    if(wrap)wrap.dataset.mode=s.bgMode;
+    applyCustomBg(s);
+  }));
+  const wrap0=$(".bg-custom",inspBody);
+  if(wrap0)wrap0.dataset.mode=s.bgMode||"preset";
+
+  [["#bg-c1","bgC1"],["#bg-c2","bgC2"],["#bg-c3","bgC3"]].forEach(([sel,key])=>{
+    const el=$(sel);
+    el&&el.addEventListener("input",()=>{
+      s[key]=el.value;
+      if(!s.bgMode||s.bgMode==="preset"||s.bgMode==="css")s.bgMode="linear";
+      applyCustomBg(s);
+    });
+  });
+  const use3=$("#bg-use3");
+  use3&&use3.addEventListener("change",()=>{s.bgUse3=use3.checked;applyCustomBg(s);});
+
+  const angle=$("#bg-angle"), angleVal=$("#bg-angle-val");
+  angle&&angle.addEventListener("input",()=>{
+    s.bgAngle=Number(angle.value)||0;
+    if(angleVal)angleVal.textContent=s.bgAngle+"\u00b0";
+    if(!s.bgMode||s.bgMode==="preset"||s.bgMode==="css")s.bgMode="linear";
+    applyCustomBg(s);
+  });
+
+  // Raw CSS — accepts anything paintSlide can hand to style.background.
+  const bgcss=$("#bg-css");
+  bgcss&&bgcss.addEventListener("input",()=>{
+    s.bgMode="css";
+    s.bg=bgcss.value.trim();
+    s.bgSize=null;
+    const wrap=$(".bg-custom",inspBody);
+    if(wrap)wrap.dataset.mode="css";
+    $$(".bgmode-chip[data-bgmode]",inspBody).forEach(x=>
+      x.classList.toggle("active", x.dataset.bgmode==="css"));
+    applyCustomBg(s);
+  });
+
+  $("#bg-apply-all")&&$("#bg-apply-all").addEventListener("click",()=>{
+    const css=s.bg, size=s.bgSize||null, fx=s.bgFx||"none";
+    Deck.slides.forEach(sl=>{sl.bg=css;sl.bgSize=size;sl.bgFx=fx;
+      sl.bgMode=s.bgMode;sl.bgC1=s.bgC1;sl.bgC2=s.bgC2;sl.bgC3=s.bgC3;
+      sl.bgAngle=s.bgAngle;sl.bgUse3=s.bgUse3;});
+    renderAll();markDirty();
+  });
+  $("#bg-copy")&&$("#bg-copy").addEventListener("click",()=>{
+    try{navigator.clipboard.writeText(s.bg||"");}catch(e){}
+  });
   $$(".bgfx-chip[data-bgfx]",inspBody).forEach(c=>c.addEventListener("click",()=>{
     s.bgFx=c.dataset.bgfx;
     $$(".bgfx-chip[data-bgfx]",inspBody).forEach(x=>x.classList.remove("active"));c.classList.add("active");
@@ -2101,6 +2256,7 @@ function applyImportedDeckPayload(deck){
     bg:s.bg||"#f6f1e7",
     bgSize:s.bgSize||null,
     bgFx:s.bgFx||"none",
+    ...bgMeta(s),
     transition:s.transition||"fade",
     notes:s.notes||"",
     els:(s.els||[]).map(e=>Object.assign({},e)),
@@ -2352,6 +2508,7 @@ function loadServerDeck(){
     Deck.code  = d.code  || Deck.code;
     Deck.slides = d.slides.map(s=>Object.assign(newSlide(),{
       id:String(s.id||uid()), bg:s.bg, bgSize:s.bgSize||null, bgFx:s.bgFx||"none",
+      ...bgMeta(s),
       transition:s.transition||"fade", notes:s.notes||"",
       els:(s.els||[]).map(e=>Object.assign({},e)),
     }));
@@ -2370,7 +2527,9 @@ function loadServerDeck(){
 let saveTimer=null, saving=false, queuedSave=false;
 function deckPayload(){
   return {title:Deck.title, allow_reactions:true,
-    slides:Deck.slides.map(s=>({bg:s.bg,bgSize:s.bgSize,bgFx:s.bgFx||"none",transition:s.transition,notes:s.notes||"",els:s.els}))};
+    slides:Deck.slides.map(s=>Object.assign(
+      {bg:s.bg,bgSize:s.bgSize,bgFx:s.bgFx||"none",transition:s.transition,notes:s.notes||"",els:s.els},
+      bgMeta(s)))};
 }
 
 function applyRemoteDeckPayload(payload, fromClient){
@@ -2391,6 +2550,7 @@ function applyRemoteDeckPayload(payload, fromClient){
     bg:s.bg||"#f6f1e7",
     bgSize:s.bgSize||null,
     bgFx:s.bgFx||"none",
+    ...bgMeta(s),
     transition:s.transition||"fade",
     notes:s.notes||"",
     els:(s.els||[]).map(e=>Object.assign({},e)),

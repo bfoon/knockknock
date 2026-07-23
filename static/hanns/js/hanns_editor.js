@@ -2014,7 +2014,7 @@ function slidePanel(){
       </div>
       <div class="bg-css-wrap">
         <textarea id="bg-css" rows="3" spellcheck="false"
-          placeholder="Any CSS background, e.g. linear-gradient(135deg,#0f172a,#38bdf8) or url('...') center/cover">${escapeTA(cur)}</textarea>
+          placeholder="Any CSS background, e.g. linear-gradient(135deg,#0f172a,#38bdf8) or url('https://example.com/photo.jpg') center/cover">${escapeTA(cur)}</textarea>
       </div>
       <div class="bg-live-preview" id="bg-live-preview" style="background:${cur};${s.bgSize?`background-size:${s.bgSize};`:""}"></div>
       <div class="chiprow bg-apply-row">

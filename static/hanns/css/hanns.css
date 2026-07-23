@@ -1752,7 +1752,7 @@ body.hanns-options-open .drawer{
    v51 — Custom slide background builder (inspector → Slide tab).
    The renderer already assigns slide.bg directly to style.background, so
    this UI only composes a CSS string: solid, 2/3-stop linear or radial
-   gradient, or hand-written CSS (including url(...) images).
+   gradient, or hand-written CSS (including background images).
    ════════════════════════════════════════════════════════════════════ */
 .bg-custom{margin-top:.6rem;display:flex;flex-direction:column;gap:.55rem}
 .bg-mode-row{flex-wrap:wrap;gap:.35rem}

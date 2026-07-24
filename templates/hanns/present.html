@@ -111,11 +111,13 @@
   .present-stage.zoomed .zoom-pill{display:inline-flex}
 
   /* ── end-of-show download QR ────────────────────────────────────── */
+  /* Must sit above the fullscreen widgets in hanns_present_extras.css,
+     which claim z-index 2147483647. */
   .end-share{
-    position:absolute;inset:0;z-index:300;display:flex;
+    position:fixed;inset:0;z-index:2147483647;display:flex;
     align-items:center;justify-content:center;padding:2rem;
     background:radial-gradient(900px 600px at 50% 0%,rgba(139,92,246,.22),transparent 62%),
-      rgba(6,5,12,.93);
+      rgba(6,5,12,.94);
     backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
     animation:endShareIn .45s cubic-bezier(.22,1,.36,1) both;
   }
@@ -193,6 +195,8 @@
       </div>
     </div>
 
+  </div>
+
     <!-- End-of-show download QR. Shown when the presenter (or the phone
          controller) ends the presentation and the deck owner has enabled
          audience downloads. -->
@@ -207,7 +211,6 @@
         <button class="end-close" id="end-close" type="button">Close</button>
       </div>
     </div>
-  </div>
 </div>
 
 <div class="present-modal" id="qr-modal" aria-hidden="true">
@@ -243,6 +246,8 @@
     controlPin: "{{ control_pin }}",
     stateUrl: "{% url 'hanns:set_state' deck.code %}",
     editUrl: "{% url 'hanns:edit' deck.code %}",
+    allowDownload: {{ deck.allow_download|yesno:"true,false" }},
+    downloadUrl: "{{ download_url|default:'' }}",
     csrftoken: "{{ csrf_token }}"
   };
 </script>
@@ -309,25 +314,57 @@
   var urlBox = document.getElementById("end-url");
 
   /* ── magnify ── */
+  // hanns_present.js fit() owns the canvas scale (and in fullscreen the two
+  // axes differ so the slide fills the screen). Magnify must compose with
+  // that, not overwrite it — writing a bare scale() here would undo the fit
+  // and snap the slide back to a centred 960×540.
+  var zoomState = { scale: 1, x: null, y: null };
+
+  function fitScale(){
+    var f = window.__hannsFitScale;
+    if(f && f.sx) return f;
+    // Fallback if fit() has not run yet: proportional, like the old build.
+    var z = Math.min(window.innerWidth / DESIGN_W, window.innerHeight / DESIGN_H);
+    return { sx: z, sy: z, full: false };
+  }
+
+  function composeTransform(){
+    if(!canvas) return;
+    var f = fitScale();
+    var z = zoomState;
+
+    // transformOrigin stays "center center" (what fit() sets), so the base
+    // scale keeps behaving exactly as before. With the list
+    //   scale(f) translate(t) scale(z)
+    // a point p (measured from the slide centre) lands at f*(t + z*p).
+    // Holding p still means t + z*p = p, i.e. t = p*(1 - z).
+    var parts = ["scale(" + f.sx + ", " + f.sy + ")"];
+    if(z.scale > 1){
+      var fx = (z.x === null ? DESIGN_W/2 : z.x) - DESIGN_W/2;
+      var fy = (z.y === null ? DESIGN_H/2 : z.y) - DESIGN_H/2;
+      parts.push("translate(" + (fx * (1 - z.scale)) + "px,"
+                              + (fy * (1 - z.scale)) + "px)");
+      parts.push("scale(" + z.scale + ")");
+    }
+    canvas.style.transformOrigin = "center center";
+    canvas.style.transform = parts.join(" ");
+  }
+
   function applyZoom(scale, x, y){
     if(!canvas) return;
     scale = Math.max(1, Math.min(6, Number(scale) || 1));
-    if(scale === 1){
-      canvas.style.transform = "";
-      canvas.style.transformOrigin = "";
-      if(stage) stage.classList.remove("zoomed");
-      return;
-    }
-    // Default focus is the middle of the slide.
-    var fx = (x === undefined || x === null) ? DESIGN_W/2 : Number(x);
-    var fy = (y === undefined || y === null) ? DESIGN_H/2 : Number(y);
-    var px = Math.max(0, Math.min(100, (fx / DESIGN_W) * 100));
-    var py = Math.max(0, Math.min(100, (fy / DESIGN_H) * 100));
-    canvas.style.transformOrigin = px + "% " + py + "%";
-    canvas.style.transform = "scale(" + scale + ")";
-    if(stage) stage.classList.add("zoomed");
-    if(pillV) pillV.textContent = scale.toFixed(1) + "×";
+    zoomState.scale = scale;
+    zoomState.x = (x === undefined || x === null) ? null : Number(x);
+    zoomState.y = (y === undefined || y === null) ? null : Number(y);
+    if(stage) stage.classList.toggle("zoomed", scale > 1);
+    if(pillV && scale > 1) pillV.textContent = scale.toFixed(1) + "×";
+    composeTransform();
   }
+  window.__hannsComposeTransform = composeTransform;
+  // Re-apply the magnifier after fit() runs (resize / fullscreen change),
+  // otherwise fit() would leave the canvas un-magnified.
+  window.addEventListener("resize", function(){ setTimeout(composeTransform, 0); });
+  document.addEventListener("fullscreenchange", function(){ setTimeout(composeTransform, 420); });
 
   /* ── end-of-show QR ── */
   var qrDrawn = null;
@@ -337,29 +374,58 @@
     return location.origin + url;
   }
   function showShare(url){
-    var full = absolute(url);
-    if(!full || !share) return;
+    var full = absolute(url || CFG.downloadUrl);
+    if(!full || !share) return false;
     if(urlBox) urlBox.textContent = full;
     if(qrBox && qrDrawn !== full){
-      qrBox.innerHTML = "";
-      try{
-        new window.QRCode(qrBox, {
-          text: full, width: 260, height: 260,
-          correctLevel: window.QRCode.CorrectLevel.M
-        });
+      // Reuse the app's own QR helper so the end-of-show code matches the
+      // join/controller codes (error-correction level H, same colours).
+      if(typeof window.makeQR === "function"){
+        window.makeQR(qrBox, full, 260);
         qrDrawn = full;
-      }catch(e){
-        // QR lib missing/offline — the printed URL is still usable.
-        qrBox.innerHTML = '<div style="padding:1rem;color:#111;font:600 13px sans-serif">'
-          + 'Open this link:</div>';
+      }else if(typeof window.QRCode === "function"){
+        qrBox.innerHTML = "";
+        try{
+          new window.QRCode(qrBox, {
+            text: full, width: 260, height: 260,
+            colorDark: "#111827", colorLight: "#ffffff",
+            correctLevel: window.QRCode.CorrectLevel.H
+          });
+          qrDrawn = full;
+        }catch(e){ qrBox.innerHTML = ""; }
+      }
+      if(!qrDrawn){
+        // QR lib unavailable — the printed URL below is still usable.
+        qrBox.innerHTML = '<div style="padding:1.2rem;color:#111;'
+          + 'font:600 13px sans-serif;max-width:240px">Open this link on your phone:</div>';
       }
     }
     share.hidden = false;
+    return true;
   }
   function hideShare(){ if(share) share.hidden = true; }
 
+  // Called by endPresent() in hanns_present.js. Returns true when the
+  // overlay took the screen, so the presenter is not navigated away.
+  window.__hannsShowEndShare = function(){
+    if(!CFG.allowDownload || !CFG.downloadUrl) return false;
+    return showShare(CFG.downloadUrl);
+  };
+
   var closeBtn = document.getElementById("end-close");
-  if(closeBtn) closeBtn.addEventListener("click", hideShare);
+  if(closeBtn) closeBtn.addEventListener("click", function(){
+    hideShare();
+    // Closing the end-of-show card leaves the presentation for real.
+    if(typeof window.__hannsFinishPresent === "function") window.__hannsFinishPresent();
+  });
+  // Esc closes it too, matching the rest of the stage.
+  document.addEventListener("keydown", function(e){
+    if(e.key === "Escape" && share && !share.hidden){
+      e.preventDefault();
+      hideShare();
+      if(typeof window.__hannsFinishPresent === "function") window.__hannsFinishPresent();
+    }
+  });
 
   /* ── listen alongside the main socket ── */
   function listen(){
@@ -377,7 +443,14 @@
         if(m.visible) showShare(m.download_url); else hideShare();
       }else if(m.type === "show_ended"){
         applyZoom(1);
+        // The phone controller ended the show. The consumer already set the
+        // deck to "ended", so the stage just needs to stand down: drop the
+        // magnifier, release the wake lock, and put the QR up if there is one.
+        if(typeof window.__hannsStandDown === "function") window.__hannsStandDown();
+        // The server is authoritative here: it knows if sharing was revoked
+        // after this page loaded, so never fall back to the page config.
         if(m.allow_download && m.download_url) showShare(m.download_url);
+        else hideShare();
       }else if(m.type === "goto"){
         // Moving slide always drops the magnifier — otherwise the next
         // slide arrives already zoomed into a corner.
@@ -396,5 +469,6 @@
   }
 })();
 </script>
+
 </body>
 </html>

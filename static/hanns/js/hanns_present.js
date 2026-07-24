@@ -96,12 +96,49 @@ function ensureAnimWrap(){
   return animWrap;
 }
 
+/* ── Fit vs fill ──────────────────────────────────────────────────────
+   The deck is authored in a fixed 960×540 space. Scaling it with
+   Math.min() shows every slide whole, but guarantees black bars on any
+   screen that is not exactly 16:9 — a 16:10 laptop loses ~45px top and
+   bottom, a 4:3 projector ~96px.
+
+   In FULLSCREEN we scale the axes independently so the slide reaches
+   every edge. Stretching a 16:10 screen distorts by 11%, which nobody
+   notices in a slide. Past MAX_DISTORTION we fall back to the
+   proportional fit, because the alternatives on a 4:3 projector are
+   both worse: stretching distorts 33% (circles become ovals) and
+   cropping would silently cut 25% of the slide width, hiding whatever
+   sits near the edges.
+
+   Windowed (non-fullscreen) presenting keeps the proportional fit so
+   the slide still reads as a slide inside the page chrome.            */
+const MAX_DISTORTION = 0.14;
+
 function fit(){
   if(!pCanvas)return;
-  const z=Math.min(window.innerWidth/W, window.innerHeight/H);
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const isFull = !!(document.fullscreenElement || document.webkitFullscreenElement);
+
+  let sx, sy;
+  if(isFull){
+    sx = vw / W;
+    sy = vh / H;
+    const distortion = Math.max(sx, sy) / Math.min(sx, sy) - 1;
+    if(distortion > MAX_DISTORTION){
+      sx = sy = Math.min(sx, sy);      // too extreme — protect the layout
+    }
+  }else{
+    sx = sy = Math.min(vw / W, vh / H);
+  }
+
   pCanvas.style.width=W+"px";pCanvas.style.height=H+"px";
   // The outer canvas carries ONLY the fit scale. Nothing animates it.
-  pCanvas.style.transform=`scale(${z})`;pCanvas.style.transformOrigin="center center";
+  // Two-argument scale() so the axes can differ in fullscreen; the stage
+  // still centres it, so a fallback fit stays centred as before.
+  pCanvas.style.transform=`scale(${sx}, ${sy})`;
+  pCanvas.style.transformOrigin="center center";
+  // Expose for the magnifier, which composes with this scale.
+  window.__hannsFitScale = { sx, sy, full: isFull };
   const wrap=ensureAnimWrap();
   if(wrap){wrap.style.width=W+"px";wrap.style.height=H+"px";}
 }
@@ -223,6 +260,11 @@ document.addEventListener("visibilitychange",()=>{
   if(document.visibilityState === "visible") keepScreenAwake("visible-again");
 });
 document.addEventListener("fullscreenchange",()=>{updateFullscreenButton();fit();keepScreenAwake("fullscreenchange");});
+// Some projectors and TVs report the pre-fullscreen viewport for a frame
+// or two, which would leave the slide sized for the old window. Re-measure
+// once things settle. Safari/iOS still needs the webkit-prefixed event.
+document.addEventListener("fullscreenchange",()=>{setTimeout(fit,60);setTimeout(fit,400);});
+document.addEventListener("webkitfullscreenchange",()=>{updateFullscreenButton();fit();setTimeout(fit,60);setTimeout(fit,400);});
 
 const Live={sock:null,retry:0,start(){if(!CFG.wsUrl)return;try{this.sock=new WebSocket(CFG.wsUrl);}catch(e){return;}this.sock.addEventListener("open",()=>{this.retry=0;this.send({type:"presenter_hello"});keepScreenAwake("websocket-open");});this.sock.addEventListener("message",ev=>{let m;try{m=JSON.parse(ev.data);}catch(e){return;}if(m.type==="reaction"){spawnEmoji(m.emoji);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);else incrementReactionCount(m.emoji);}else if(m.type==="participants")setCount(m.count);else if(m.type==="state"){if(typeof m.count==="number")setCount(m.count);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);}else if(m.type==="goto"&&typeof m.index==="number"){keepScreenAwake("phone-controller");if(m.index!==i){suppressBroadcast=true;show(m.index,false);suppressBroadcast=false;}}else if(m.type==="pointer"){showPointer(m.x,m.y);}});this.sock.addEventListener("close",()=>{if(this.retry++>6)return;setTimeout(()=>this.start(),Math.min(800*this.retry,5000));});},send(o){if(this.sock&&this.sock.readyState===1)this.sock.send(JSON.stringify(o));},goto(idx){this.send({type:"goto",index:idx});},stop(){if(this.sock){try{this.sock.close();}catch(e){}}this.sock=null;}};
 function setCount(n){const el=$("#aud-count");if(el)el.textContent=n;}
@@ -249,6 +291,9 @@ function wireActorClicks(){
   });
 }
 function makeQR(box,text,size=180){if(!box||typeof QRCode==="undefined"||!text)return;box.innerHTML="";new QRCode(box,{text:text,width:size,height:size,colorDark:"#111827",colorLight:"#ffffff",correctLevel:QRCode.CorrectLevel.H});}
+// Shared with the end-of-show download card so every QR on the stage is
+// generated the same way.
+window.makeQR = makeQR;
 function drawQRs(){makeQR($("#present-qr"),CFG.joinUrl,84);makeQR($("#qr-modal-code"),CFG.joinUrl,220);makeQR($("#controller-modal-qr"),CFG.controlUrl+(CFG.controlPin?`?pin=${encodeURIComponent(CFG.controlPin)}`:""),220);}
 function openModal(id){const m=$(id);if(m)m.classList.add("on");keepScreenAwake("modal-open");}
 function closeModals(){document.querySelectorAll(".present-modal").forEach(m=>m.classList.remove("on"));keepScreenAwake("modal-close");}
@@ -271,7 +316,53 @@ function downloadQR(){
   const img=new Image();img.onload=()=>{ctx.fillStyle="#ffffff";roundRect(ctx,170,220,560,560,42);ctx.fill();ctx.drawImage(img,220,270,460,460);ctx.fillStyle="#111827";ctx.font="900 54px Arial";ctx.fillText(DECK.code||"",450,870);ctx.fillStyle="#64748b";ctx.font="22px Arial";ctx.fillText((CFG.joinUrl||"").replace(/^https?:\/\//,""),450,925);const a=document.createElement("a");a.download=(DECK.title||"hanns_qr").replace(/\s+/g,"_")+"_qr.png";a.href=c.toDataURL("image/png");a.click();};img.src=src;
 }
 function roundRect(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
-async function endPresent(){Live.stop();await releaseWakeLock();if(CFG.stateUrl){try{await fetch(CFG.stateUrl,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded","X-CSRFToken":CFG.csrftoken||""},body:"state=ended"});}catch(e){}}if(CFG.editUrl)window.location.href=CFG.editUrl;}
+/* ── Ending the presentation ──────────────────────────────────────────
+   Previously this jumped straight back to the editor. That gave the room
+   no chance to save the deck, so when audience downloads are enabled we
+   now mark the deck ended, put the download QR on the big screen, and
+   only return to the editor when the presenter dismisses it. With
+   downloads off the behaviour is unchanged: end and leave.            */
+async function endPresent(){
+  await releaseWakeLock();
+  if(CFG.stateUrl){
+    try{
+      await fetch(CFG.stateUrl,{method:"POST",
+        headers:{"Content-Type":"application/x-www-form-urlencoded","X-CSRFToken":CFG.csrftoken||""},
+        body:"state=ended"});
+    }catch(e){}
+  }
+  // Ask the shared overlay whether it has a QR to show. It returns true
+  // when it took over the screen; the socket stays open so a phone
+  // controller still sees the ended state.
+  var showed = false;
+  try{
+    if(typeof window.__hannsShowEndShare === "function"){
+      showed = window.__hannsShowEndShare();
+    }
+  }catch(e){}
+  if(showed){
+    // Leaving is now the presenter's call — the overlay's Close button
+    // (and Esc) call finishPresent().
+    return;
+  }
+  Live.stop();
+  if(CFG.editUrl)window.location.href=CFG.editUrl;
+}
+
+/* Leave for real — used by the end-of-show overlay's Close button. */
+function finishPresent(){
+  Live.stop();
+  if(CFG.editUrl)window.location.href=CFG.editUrl;
+}
+window.__hannsFinishPresent = finishPresent;
+
+/* The phone controller ended the show: the consumer already flipped the
+   deck to "ended", so the stage only needs to release the wake lock. The
+   socket stays open so the controller still gets state, and the presenter
+   leaves via the overlay's Close button. */
+window.__hannsStandDown = function(){
+  try{ releaseWakeLock(); }catch(e){}
+};
 function init(){
   const controllerPillVisiblePatch = $("#open-controller");
   if(controllerPillVisiblePatch){controllerPillVisiblePatch.style.display="inline-flex";controllerPillVisiblePatch.style.alignItems="center";controllerPillVisiblePatch.style.gap=".4rem";}

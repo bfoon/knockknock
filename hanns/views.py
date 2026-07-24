@@ -441,12 +441,20 @@ def deck_present(request, code):
         DeckReaction.objects.filter(deck=deck).delete()
         deck.state = "live"
         deck.save(update_fields=["state"])
+    download_url = ""
+    if deck.allow_download:
+        download_url = request.build_absolute_uri(
+            reverse("hanns:audience_download", kwargs={
+                "code": deck.code, "token": str(deck.download_token),
+            })
+        )
     return render(request, "hanns/present.html", {
         "deck": deck,
         "deck_json": json.dumps(deck.as_dict()),
         "join_url": _join_url(request, deck),
         "control_url": _control_url(request, deck),
         "control_pin": _control_pin(deck),
+        "download_url": download_url,
     })
 
 

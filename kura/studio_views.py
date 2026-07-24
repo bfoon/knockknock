@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import math
+from decimal import Decimal
 
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
@@ -105,6 +107,74 @@ def _scan_column_values(rows, cap=100, max_rows=2000):
               for v, n in sorted(vals.items(), key=lambda kv: -kv[1])[:cap]]
         for col, vals in column_values.items()
     }
+
+
+def _json_safe(value):
+    """Coerce one parsed cell into a value ``json.dumps(allow_nan=False)`` accepts.
+
+    ``UploadedDataset.rows`` is a JSONField and the studio ships those
+    rows straight back to the browser, so a single ``float('nan')``
+    breaks both ends: Postgres rejects ``NaN`` in a jsonb column (500 →
+    HTML error page) and JsonResponse would otherwise write the bare
+    token ``NaN``, which no JSON parser accepts ("JSON.parse: unexpected
+    character…" in the studio).
+
+    Handles nan / NaT / pd.NA, numpy scalars, Timestamps, dates, times,
+    Decimals and bytes without importing pandas or numpy at module load.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+
+    # nan, NaT and pd.NA are the only values not equal to themselves;
+    # pd.NA raises rather than returning a bool, hence the guard.
+    try:
+        if value != value:
+            return None
+    except (TypeError, ValueError):
+        return None
+
+    if isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, Decimal):
+        f = float(value)
+        return f if math.isfinite(f) else None
+    if hasattr(value, "isoformat"):                 # date / datetime / time
+        return value.isoformat()
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value).decode("utf-8", "replace")
+    item = getattr(value, "item", None)             # numpy scalar → python
+    if callable(item):
+        try:
+            return _json_safe(item())
+        except Exception:
+            pass
+    return str(value)
+
+
+def _clean_columns(raw):
+    """Trim headers, name the blank ones and de-duplicate.
+
+    A row is a dict, so two columns sharing a name would silently
+    collapse into one and the studio's column list would lie about it.
+    """
+    out, seen = [], {}
+    for index, column in enumerate(raw):
+        name = "" if column is None else str(column).strip()
+        if not name or name.lower().startswith("unnamed:"):
+            name = f"column_{index + 1}"
+        if name in seen:
+            seen[name] += 1
+            name = f"{name}_{seen[name]}"
+        else:
+            seen[name] = 1
+        out.append(name[:140])
+    return out
 
 
 def _dataset_payload(ds, with_rows=False):
@@ -389,7 +459,18 @@ def dataset_upload(request, code):
     """Multipart upload of a CSV/Excel file → UploadedDataset.
 
     The whole file is parsed with pandas so CSV and Excel behave
-    identically (headers, NA handling, mixed types)."""
+    identically (headers, NA handling, mixed types).
+
+    Optional POST fields: ``name`` (dataset label) and ``sheet`` (Excel
+    sheet name or 0-based index — the first sheet by default, which is
+    the "Clean Data" sheet in Kura's own exports).
+
+    Every parsed value goes through :func:`_json_safe` before it is
+    stored. Note that ``df.where(pd.notna(df), None)`` does **not** do
+    this: ``where`` preserves each column's dtype, so on a float64 or
+    string column the ``None`` is coerced straight back to ``nan`` and
+    the NaN reaches the JSONField intact.
+    """
     survey = _own(request, code)
     f = request.FILES.get("file")
     if f is None:
@@ -401,11 +482,24 @@ def dataset_upload(request, code):
 
     name = (f.name or "upload").rsplit("/", 1)[-1]
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+
+    sheet = request.POST.get("sheet") or 0
+    try:
+        sheet = int(sheet)
+    except (TypeError, ValueError):
+        pass  # a sheet name is fine too
+
     try:
         if ext == "csv":
+            # Let pandas infer types here: a CSV is all text on disk, so
+            # inference is what turns "42" into a number.
             df = pd.read_csv(f)
         elif ext in ("xlsx", "xls", "xlsm"):
-            df = pd.read_excel(f)
+            # dtype=object keeps openpyxl's own per-cell types: one blank
+            # cell no longer flips a whole integer column to float
+            # (hh_size 2 → 2.0) and text-formatted codes stay text
+            # ("5", "007", phone numbers with a leading zero).
+            df = pd.read_excel(f, sheet_name=sheet, dtype=object)
         else:
             return JsonResponse({
                 "ok": False,
@@ -414,6 +508,14 @@ def dataset_upload(request, code):
     except Exception as exc:
         return JsonResponse({"ok": False, "error": f"Could not read the file: {exc}"}, status=400)
 
+    if isinstance(df, dict):                  # sheet_name matched several sheets
+        df = next(iter(df.values()))
+
+    # Blank rows are noise; blank columns are kept — a question nobody
+    # answered is still part of the schema and steps must be able to
+    # reference it.
+    df = df.dropna(axis=0, how="all")
+
     if df.empty:
         return JsonResponse({"ok": False, "error": "The file has no data rows."}, status=400)
     if len(df.columns) > MAX_DATASET_COLUMNS:
@@ -421,21 +523,29 @@ def dataset_upload(request, code):
     if len(df) > MAX_DATASET_ROWS:
         df = df.head(MAX_DATASET_ROWS)
 
-    # Clean headers and convert to plain JSON rows (NaN → None).
-    df.columns = [str(c).strip() or f"column_{i + 1}" for i, c in enumerate(df.columns)]
-    df = df.where(pd.notna(df), None)
-    rows = []
-    for record in df.to_dict(orient="records"):
-        rows.append({
-            k: (v.isoformat() if hasattr(v, "isoformat") else v)
-            for k, v in record.items()
-        })
+    columns = _clean_columns(df.columns)
+    df.columns = columns
+    rows = [
+        {column: _json_safe(record.get(column)) for column in columns}
+        for record in df.to_dict(orient="records")
+    ]
+
+    # Contract check — exactly what the JSONField and JsonResponse are
+    # about to attempt. Failing here is a clean 400 with a message
+    # instead of a 500 whose HTML body breaks the studio's r.json().
+    try:
+        json.dumps(rows, allow_nan=False)
+    except (ValueError, TypeError) as exc:
+        return JsonResponse({
+            "ok": False,
+            "error": f"The file contains values that cannot be stored: {exc}",
+        }, status=400)
 
     ds = UploadedDataset.objects.create(
         survey=survey,
         name=str(request.POST.get("name") or name.rsplit(".", 1)[0])[:140],
         original_filename=name[:200],
-        columns=list(df.columns),
+        columns=columns,
         rows=rows,
         row_count=len(rows),
         uploaded_by=request.user,

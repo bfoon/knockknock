@@ -43,6 +43,10 @@ urlpatterns = [
     path("<str:code>/powerpoint-import/", views.deck_powerpoint_import, name="powerpoint_import"),
     path("<str:code>/powerpoint-export/", views.deck_export_powerpoint, name="powerpoint_export"),
     path("<str:code>/html-export/", views.deck_export_html, name="html_export"),
+    path("<str:code>/download-settings/", views.deck_download_settings, name="download_settings"),
+    # PUBLIC — the end-of-show QR points here. The uuid token is the
+    # credential, so this route must stay above the <str:code>/ catch-all.
+    path("<str:code>/d/<uuid:token>/", views.deck_audience_download, name="audience_download"),
     path("invite/<uuid:token>/accept/", views.deck_accept_invite, name="accept_invite"),
     path("<str:code>/present/", views.deck_present, name="present"),
     path("<str:code>/control/", views.deck_control, name="control"),

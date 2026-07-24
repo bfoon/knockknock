@@ -130,6 +130,32 @@ class PresentConsumer(AsyncWebsocketConsumer):
             if self.is_presenter or self.is_controller:
                 await self._handle_pointer(data)
 
+        elif mtype == "zoom":
+            # Magnify the whole stage, or a specific area of it, on the big
+            # screen. Presenter screen or PIN-approved controller only.
+            if self.is_presenter or self.is_controller:
+                await self._handle_zoom(data)
+
+        elif mtype == "end_show":
+            # Controller ends the presentation on the big screen. The stage
+            # then shows the download QR (when the owner enabled downloads).
+            if self.is_presenter or self.is_controller:
+                await self._handle_end_show()
+
+        elif mtype == "show_download":
+            # Put the download QR up without ending the show.
+            if self.is_presenter or self.is_controller:
+                await self._handle_show_download(bool(data.get("visible", True)))
+
+        elif mtype == "download_status":
+            # Controller asking whether audience downloads are enabled.
+            if self.is_presenter or self.is_controller:
+                info = await self._download_info()
+                await self.send_json({
+                    "type": "download_status",
+                    "allow_download": bool(info.get("allow_download")),
+                })
+
     # ── reactions ────────────────────────────────────────────────────
     async def _handle_react(self, data):
         emoji = data.get("emoji")
@@ -183,6 +209,70 @@ class PresentConsumer(AsyncWebsocketConsumer):
             "payload": {"type": "pointer", "x": x, "y": y},
         })
 
+
+    async def _handle_zoom(self, data):
+        """Magnify the stage on the big screen.
+
+        {type:"zoom", scale, x, y}   scale 1 = normal; x/y are the point to
+                                     centre on, in 960×540 design space.
+        {type:"zoom", scale:1}       reset.
+
+        x/y are optional: with no point given the stage zooms about its
+        centre, which is what a plain "zoom the whole page" request means.
+        """
+        try:
+            scale = float(data.get("scale", 1))
+        except (TypeError, ValueError):
+            return
+        # Keep it sane: below 1 would shrink the slide, above 6 is unreadable.
+        scale = max(1.0, min(6.0, scale))
+
+        point = {}
+        if data.get("x") is not None and data.get("y") is not None:
+            try:
+                x = float(data.get("x"))
+                y = float(data.get("y"))
+            except (TypeError, ValueError):
+                return
+            point = {"x": max(0, min(960, x)), "y": max(0, min(540, y))}
+
+        payload = {"type": "zoom", "scale": scale}
+        payload.update(point)
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout", "payload": payload,
+        })
+
+    async def _handle_end_show(self):
+        """End the presentation for everyone and offer the download QR."""
+        info = await self._end_and_download_info()
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {
+                "type": "show_ended",
+                "download_url": info.get("download_url") or "",
+                "allow_download": bool(info.get("allow_download")),
+                "title": info.get("title") or "",
+            },
+        })
+
+    async def _handle_show_download(self, visible):
+        info = await self._download_info()
+        if visible and not info.get("allow_download"):
+            # Owner has not opted in — tell just the caller, don't fan out.
+            await self.send_json({
+                "type": "download_unavailable",
+                "reason": "The deck owner has not enabled audience downloads.",
+            })
+            return
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {
+                "type": "download_qr",
+                "visible": bool(visible),
+                "download_url": info.get("download_url") or "",
+                "title": info.get("title") or "",
+            },
+        })
 
     async def _handle_editor_saved(self, data):
         """Fan out a freshly saved deck payload to other live editors."""
@@ -318,6 +408,47 @@ class PresentConsumer(AsyncWebsocketConsumer):
             .values("emoji")
             .annotate(total=Count("id"))
         }
+
+    @sync_to_async
+    def _download_info(self):
+        """Audience-download details for this deck.
+
+        Returns a ROOT-RELATIVE url; the consumer has no request object, so
+        the browser resolves it against its own origin.
+        """
+        from django.urls import reverse
+        from .models import Deck
+
+        d = Deck.objects.filter(code=self.code).first()
+        if not d:
+            return {}
+        allow = bool(getattr(d, "allow_download", False))
+        url = ""
+        if allow:
+            url = reverse("hanns:audience_download", kwargs={
+                "code": d.code, "token": str(d.download_token),
+            })
+        return {"allow_download": allow, "download_url": url, "title": d.title}
+
+    @sync_to_async
+    def _end_and_download_info(self):
+        """Mark the deck ended, then return its download details."""
+        from django.urls import reverse
+        from .models import Deck
+
+        d = Deck.objects.filter(code=self.code).first()
+        if not d:
+            return {}
+        if d.state != "ended":
+            d.state = "ended"
+            d.save(update_fields=["state"])
+        allow = bool(getattr(d, "allow_download", False))
+        url = ""
+        if allow:
+            url = reverse("hanns:audience_download", kwargs={
+                "code": d.code, "token": str(d.download_token),
+            })
+        return {"allow_download": allow, "download_url": url, "title": d.title}
 
     @sync_to_async
     def _control_pin(self):

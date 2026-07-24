@@ -91,6 +91,72 @@
     overflow:hidden;
     text-overflow:ellipsis;
   }
+
+  /* ── magnify from the phone controller ──────────────────────────── */
+  /* The canvas is transformed, not the stage, so overlays (QR badge,
+     emoji, reaction counter, exit button) stay put and readable. */
+  #present-canvas{
+    transition:transform .32s cubic-bezier(.22,1,.36,1);
+    will-change:transform;
+  }
+  .present-stage.zoomed{overflow:hidden}
+  .zoom-pill{
+    position:absolute;left:18px;top:18px;z-index:240;
+    display:none;align-items:center;gap:.4rem;
+    background:rgba(20,18,14,.78);border:1px solid rgba(255,255,255,.14);
+    color:#fff;border-radius:999px;padding:.4rem .75rem;
+    font:700 .74rem/1 "Spline Sans Mono",ui-monospace,monospace;letter-spacing:.06em;
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);pointer-events:none;
+  }
+  .present-stage.zoomed .zoom-pill{display:inline-flex}
+
+  /* ── end-of-show download QR ────────────────────────────────────── */
+  .end-share{
+    position:absolute;inset:0;z-index:300;display:flex;
+    align-items:center;justify-content:center;padding:2rem;
+    background:radial-gradient(900px 600px at 50% 0%,rgba(139,92,246,.22),transparent 62%),
+      rgba(6,5,12,.93);
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    animation:endShareIn .45s cubic-bezier(.22,1,.36,1) both;
+  }
+  .end-share[hidden]{display:none}
+  @keyframes endShareIn{from{opacity:0}to{opacity:1}}
+  .end-share-card{
+    text-align:center;max-width:min(640px,92%);
+    color:#f6f1e7;
+  }
+  .end-kicker{
+    font:600 .7rem/1 "Spline Sans Mono",ui-monospace,monospace;
+    letter-spacing:.2em;text-transform:uppercase;color:rgba(246,241,231,.5);
+    margin-bottom:.7rem;
+  }
+  .end-title{
+    font-family:"Fraunces",Georgia,serif;font-size:clamp(1.5rem,3.4vw,2.4rem);
+    line-height:1.15;margin:0 0 .6rem;overflow-wrap:anywhere;
+  }
+  .end-sub{
+    margin:0 auto 1.5rem;max-width:34em;font-size:clamp(.82rem,1.3vw,1rem);
+    line-height:1.6;color:rgba(246,241,231,.66);
+  }
+  .end-qr{
+    display:inline-block;background:#fff;padding:14px;border-radius:16px;
+    box-shadow:0 24px 70px rgba(0,0,0,.5);line-height:0;
+  }
+  .end-qr img,.end-qr canvas{display:block;width:min(260px,42vh);height:auto}
+  .end-url{
+    margin-top:1rem;font:500 .74rem/1.5 "Spline Sans Mono",ui-monospace,monospace;
+    color:rgba(246,241,231,.42);overflow-wrap:anywhere;
+  }
+  .end-close{
+    margin-top:1.5rem;background:rgba(255,255,255,.08);color:#fff;
+    border:1px solid rgba(255,255,255,.16);border-radius:11px;
+    padding:.6rem 1.2rem;font-weight:700;cursor:pointer;font-size:.86rem;
+  }
+  .end-close:hover{background:rgba(255,255,255,.16)}
+  @media (max-width:640px){
+    .end-share{padding:1.2rem}
+    .end-qr img,.end-qr canvas{width:min(210px,38vh)}
+  }
 </style>
 </head>
 <body>
@@ -99,6 +165,7 @@
 <button class="fullscreen-pill" id="present-fullscreen" type="button" title="Full screen (press F)">⛶ Full screen</button>
     <div class="wake-pill" id="wake-pill" title="Screen wake lock status">☀ Keep screen awake</div>
     <div class="present-canvas" id="present-canvas"></div>
+    <div class="zoom-pill" id="zoom-pill">🔍 <span id="zoom-pill-val">1.0×</span></div>
     <div class="emoji-layer" id="emoji-layer"></div>
     <div class="pointer-layer" id="pointer-layer" aria-hidden="true"></div>
     <div class="reaction-top-stack" id="reaction-top-stack" aria-label="Presenter reaction tools">
@@ -123,6 +190,21 @@
         </div>
         <div class="code" id="present-code">––––––</div>
         <div class="url" id="present-url">hanns</div>
+      </div>
+    </div>
+
+    <!-- End-of-show download QR. Shown when the presenter (or the phone
+         controller) ends the presentation and the deck owner has enabled
+         audience downloads. -->
+    <div class="end-share" id="end-share" hidden aria-live="polite">
+      <div class="end-share-card">
+        <div class="end-kicker">Thanks for watching</div>
+        <h2 class="end-title" id="end-title">{{ deck.title }}</h2>
+        <p class="end-sub">Scan to take this presentation with you — it downloads
+          as one file that opens in any browser, offline.</p>
+        <div class="end-qr" id="end-qr"></div>
+        <div class="end-url" id="end-url"></div>
+        <button class="end-close" id="end-close" type="button">Close</button>
       </div>
     </div>
   </div>
@@ -204,6 +286,114 @@
     protectTitle("qr-modal-title");
     protectTitle("controller-modal-title");
   });
+})();
+</script>
+
+<script>
+/* ── controller-driven magnify + end-of-show download QR ─────────────
+   hanns_present.js owns the WebSocket. Rather than reach into it, this
+   listens on the same URL with a second read-only socket, so it keeps
+   working regardless of how that file evolves. Both sockets join the
+   same deck group, so every fanout arrives here too. */
+(function(){
+  "use strict";
+  var CFG = window.__HANNS_PRESENT__ || {};
+  var DESIGN_W = 960, DESIGN_H = 540;
+
+  var canvas = document.getElementById("present-canvas");
+  var stage  = document.getElementById("present-stage");
+  var pill   = document.getElementById("zoom-pill");
+  var pillV  = document.getElementById("zoom-pill-val");
+  var share  = document.getElementById("end-share");
+  var qrBox  = document.getElementById("end-qr");
+  var urlBox = document.getElementById("end-url");
+
+  /* ── magnify ── */
+  function applyZoom(scale, x, y){
+    if(!canvas) return;
+    scale = Math.max(1, Math.min(6, Number(scale) || 1));
+    if(scale === 1){
+      canvas.style.transform = "";
+      canvas.style.transformOrigin = "";
+      if(stage) stage.classList.remove("zoomed");
+      return;
+    }
+    // Default focus is the middle of the slide.
+    var fx = (x === undefined || x === null) ? DESIGN_W/2 : Number(x);
+    var fy = (y === undefined || y === null) ? DESIGN_H/2 : Number(y);
+    var px = Math.max(0, Math.min(100, (fx / DESIGN_W) * 100));
+    var py = Math.max(0, Math.min(100, (fy / DESIGN_H) * 100));
+    canvas.style.transformOrigin = px + "% " + py + "%";
+    canvas.style.transform = "scale(" + scale + ")";
+    if(stage) stage.classList.add("zoomed");
+    if(pillV) pillV.textContent = scale.toFixed(1) + "×";
+  }
+
+  /* ── end-of-show QR ── */
+  var qrDrawn = null;
+  function absolute(url){
+    if(!url) return "";
+    if(/^https?:\/\//i.test(url)) return url;
+    return location.origin + url;
+  }
+  function showShare(url){
+    var full = absolute(url);
+    if(!full || !share) return;
+    if(urlBox) urlBox.textContent = full;
+    if(qrBox && qrDrawn !== full){
+      qrBox.innerHTML = "";
+      try{
+        new window.QRCode(qrBox, {
+          text: full, width: 260, height: 260,
+          correctLevel: window.QRCode.CorrectLevel.M
+        });
+        qrDrawn = full;
+      }catch(e){
+        // QR lib missing/offline — the printed URL is still usable.
+        qrBox.innerHTML = '<div style="padding:1rem;color:#111;font:600 13px sans-serif">'
+          + 'Open this link:</div>';
+      }
+    }
+    share.hidden = false;
+  }
+  function hideShare(){ if(share) share.hidden = true; }
+
+  var closeBtn = document.getElementById("end-close");
+  if(closeBtn) closeBtn.addEventListener("click", hideShare);
+
+  /* ── listen alongside the main socket ── */
+  function listen(){
+    if(!CFG.wsUrl || !window.WebSocket) return;
+    var sock;
+    try{ sock = new WebSocket(CFG.wsUrl); }catch(e){ return; }
+
+    sock.addEventListener("message", function(ev){
+      var m;
+      try{ m = JSON.parse(ev.data); }catch(e){ return; }
+
+      if(m.type === "zoom"){
+        applyZoom(m.scale, m.x, m.y);
+      }else if(m.type === "download_qr"){
+        if(m.visible) showShare(m.download_url); else hideShare();
+      }else if(m.type === "show_ended"){
+        applyZoom(1);
+        if(m.allow_download && m.download_url) showShare(m.download_url);
+      }else if(m.type === "goto"){
+        // Moving slide always drops the magnifier — otherwise the next
+        // slide arrives already zoomed into a corner.
+        applyZoom(1);
+      }
+    });
+
+    // Reconnect if the projector's network blips mid-talk.
+    sock.addEventListener("close", function(){ setTimeout(listen, 3000); });
+  }
+
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", listen);
+  }else{
+    listen();
+  }
 })();
 </script>
 </body>

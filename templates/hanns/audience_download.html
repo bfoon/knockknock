@@ -1,0 +1,58 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{{ deck.title }} · Download</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..800&family=Archivo:wght@400;500;600;700;800&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100svh;display:flex;align-items:center;justify-content:center;
+    padding:1.2rem;color:#f6f1e7;font-family:"Archivo",system-ui,sans-serif;
+    background:radial-gradient(900px 560px at 82% -10%,rgba(255,138,31,.18),transparent 60%),
+      radial-gradient(760px 520px at 6% 4%,rgba(139,92,246,.26),transparent 60%),
+      linear-gradient(140deg,#0a0910,#12101f 46%,#1c0f2b)}
+  .card{width:100%;max-width:440px;border:1px solid rgba(255,255,255,.13);border-radius:20px;
+    padding:1.6rem 1.4rem 1.4rem;backdrop-filter:blur(14px);
+    background:linear-gradient(150deg,rgba(255,255,255,.09),rgba(255,255,255,.03));
+    box-shadow:0 30px 80px rgba(0,0,0,.5)}
+  .kicker{font-family:"Spline Sans Mono",monospace;font-size:.6rem;letter-spacing:.16em;
+    text-transform:uppercase;color:rgba(246,241,231,.5);margin-bottom:.5rem}
+  h1{font-family:"Fraunces",serif;font-size:1.5rem;line-height:1.2;margin:0 0 .4rem;
+    overflow-wrap:anywhere}
+  .sub{margin:0 0 1.1rem;color:rgba(246,241,231,.62);font-size:.85rem;line-height:1.55}
+  .facts{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1.2rem}
+  .fact{border:1px solid rgba(255,255,255,.13);border-radius:999px;padding:.3rem .7rem;
+    font-family:"Spline Sans Mono",monospace;font-size:.62rem;letter-spacing:.06em;
+    color:rgba(246,241,231,.7)}
+  .btn{display:flex;align-items:center;justify-content:center;gap:.5rem;width:100%;
+    border:0;border-radius:13px;padding:.95rem 1rem;font-size:.98rem;font-weight:800;
+    color:#fff;text-decoration:none;cursor:pointer;
+    background:linear-gradient(135deg,#ff8a1f,#ff3f98 55%,#8b5cf6);
+    box-shadow:0 16px 40px rgba(139,92,246,.34)}
+  .btn:active{transform:translateY(1px)}
+  .note{margin:.9rem 0 0;font-size:.72rem;line-height:1.6;color:rgba(246,241,231,.45)}
+  .note b{color:rgba(246,241,231,.72);font-weight:600}
+</style>
+</head>
+<body>
+<main class="card">
+  <div class="kicker">Presentation handout</div>
+  <h1>{{ deck.title }}</h1>
+  <p class="sub">The presenter has shared this deck with the room. It downloads as a
+    single file you can open in any browser — no app, no account, works offline.</p>
+
+  <div class="facts">
+    <span class="fact">{{ slide_count }} slide{{ slide_count|pluralize }}</span>
+    <span class="fact">HTML · offline</span>
+    <span class="fact">Code {{ deck.code }}</span>
+  </div>
+
+  <a class="btn" href="{{ download_url }}" download>⬇ Download presentation</a>
+
+  <p class="note">Saves as an <b>.html</b> file. Open it from your Files or Downloads
+    folder and it plays full screen — swipe or tap to move between slides.</p>
+</main>
+</body>
+</html>

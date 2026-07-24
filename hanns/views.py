@@ -30,7 +30,7 @@ from django.core.files.storage import default_storage
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError, RequestDataTooBig
 from django.db.models import Q
-from django.http import JsonResponse, HttpResponseBadRequest, HttpResponseForbidden
+from django.http import JsonResponse, HttpResponseBadRequest, HttpResponseForbidden, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -487,9 +487,15 @@ def deck_export_html(request, code):
     deck = get_object_or_404(Deck, code=code.upper())
     if not _can_edit_deck(request.user, deck):
         return HttpResponseForbidden("You do not have access to export this deck.")
+    return _deck_html_response(deck)
 
-    # Read the real static assets so the export uses the SAME renderer the app
-    # ships. We bundle both CSS files (base + rich data) plus the core JS.
+
+def _deck_html_response(deck):
+    """Build the standalone .html download for ``deck``.
+
+    Shared by the owner export and the public token download so both always
+    produce byte-identical files.
+    """
     from django.contrib.staticfiles import finders
 
     def _read_static(rel):
@@ -514,10 +520,7 @@ def deck_export_html(request, code):
 
     css_combined = (css or "") + "\n\n" + (rich_css or "")
     html = export_deck_to_html(
-        deck,
-        css_text=css_combined,
-        core_js_text=core_js,
-        request=request,
+        deck, css_text=css_combined, core_js_text=core_js,
     )
 
     from django.http import HttpResponse
@@ -526,6 +529,66 @@ def deck_export_html(request, code):
         f'attachment; filename="{html_export_filename(deck)}"'
     )
     return response
+
+
+def _audience_deck_or_404(code, token):
+    """Resolve a deck from a public download link, or 404.
+
+    Deliberately returns the SAME 404 for a wrong token, a disabled deck and
+    a missing deck, so the link cannot be used to probe which codes exist.
+    """
+    deck = get_object_or_404(Deck, code=code.upper())
+    if not getattr(deck, "allow_download", False):
+        raise Http404("Downloads are not enabled for this deck.")
+    if str(deck.download_token) != str(token):
+        raise Http404("This download link is no longer valid.")
+    return deck
+
+
+def deck_audience_download(request, code, token):
+    """PUBLIC landing page reached by scanning the end-of-show QR.
+
+    Shows what the file is and who it is from, then offers the download —
+    rather than firing a file at a phone that just scanned a code. No login:
+    the token IS the credential.
+    """
+    deck = _audience_deck_or_404(code, token)
+    if request.GET.get("download") == "1":
+        return _deck_html_response(deck)
+    return render(request, "hanns/audience_download.html", {
+        "deck": deck,
+        "download_url": (
+            reverse("hanns:audience_download",
+                    kwargs={"code": deck.code, "token": token}) + "?download=1"
+        ),
+        "slide_count": deck.slides.count(),
+    })
+
+
+@login_required
+@require_POST
+def deck_download_settings(request, code):
+    """Owner toggles audience downloads / rotates the share token."""
+    deck = get_object_or_404(Deck, code=code.upper(), owner=request.user)
+
+    if request.POST.get("rotate") == "1":
+        deck.rotate_download_token()
+    else:
+        deck.allow_download = request.POST.get("allow_download") in ("1", "true", "on")
+        deck.save(update_fields=["allow_download"])
+
+    url = ""
+    if deck.allow_download:
+        url = request.build_absolute_uri(
+            reverse("hanns:audience_download", kwargs={
+                "code": deck.code, "token": str(deck.download_token),
+            })
+        )
+    return JsonResponse({
+        "ok": True,
+        "allow_download": deck.allow_download,
+        "download_url": url,
+    })
 
 
 def deck_control(request, code):

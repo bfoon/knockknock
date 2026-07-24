@@ -52,6 +52,24 @@ class Deck(models.Model):
     # Whether the audience may send live emoji reactions while presenting.
     allow_reactions = models.BooleanField(default=True)
 
+    # ── audience download (end-of-presentation QR) ───────────────────
+    # When the presenter ends the show, the big screen can display a QR the
+    # room scans to download the deck as a standalone .html file. That page
+    # is PUBLIC, so it is gated on an explicit opt-in plus an unguessable
+    # token rather than on the deck code (which is short and shoulder-
+    # surfable). Rotating the token instantly kills every old QR.
+    allow_download = models.BooleanField(
+        default=False,
+        help_text="Let the audience download this deck from the end-of-show QR.",
+    )
+    download_token = models.UUIDField(default=uuid.uuid4, editable=False)
+
+    def rotate_download_token(self):
+        """Invalidate every QR handed out so far."""
+        self.download_token = uuid.uuid4()
+        self.save(update_fields=["download_token"])
+        return self.download_token
+
     # The slide the presenter is currently on. Lets a (re)connecting
     # audience phone or a second presenter screen sync to the right slide.
     current_slide = models.PositiveIntegerField(default=0)
@@ -84,6 +102,7 @@ class Deck(models.Model):
             "code": self.code,
             "state": self.state,
             "allow_reactions": self.allow_reactions,
+            "allow_download": self.allow_download,
             "current_slide": self.current_slide,
             "slides": [s.as_dict() for s in self.slides.all()],
         }

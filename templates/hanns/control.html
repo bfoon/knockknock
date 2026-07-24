@@ -91,6 +91,24 @@
   .phone-teleprompter.tp-fs .tp-track{font-size:var(--tp-font,34px)}
   /* when the page body is holding a fallback-fullscreen prompter, lock scroll */
   body.tp-fs-lock{overflow:hidden}
+
+  /* ── magnify + share panels ─────────────────────────────────────── */
+  .phone-panel{margin-top:12px;border:1px solid #2c2745;border-radius:16px;padding:12px;
+    background:rgba(18,16,28,.92);box-shadow:0 10px 34px rgba(0,0,0,.35)}
+  .panel-head{display:flex;align-items:center;justify-content:space-between;gap:.5rem;
+    margin-bottom:.7rem;font-size:.92rem}
+  .panel-x{background:none;border:0;color:#8d84b5;font-size:1rem;cursor:pointer;padding:.2rem .35rem}
+  .panel-x:hover{color:#fff}
+  .panel-hint{margin:.65rem 0 0;font-size:.74rem;line-height:1.55;color:#8d84b5}
+  .zoom-row{display:flex;align-items:center;gap:.7rem;font-size:.8rem;color:#cfc8ea}
+  .zoom-row b{color:#fff}
+  .zoom-row input[type=range]{flex:1;accent-color:#ff3f98}
+  .zoom-actions{display:flex;gap:.4rem;margin-top:.7rem}
+  .zoom-actions .phone-btn{flex:1;padding:.5rem .2rem;font-size:.78rem}
+  .zoom-step.on{background:linear-gradient(135deg,#ff8a1f,#ff3f98);color:#fff;border-color:transparent}
+  .phone-btn-wide{display:block;width:100%;margin-top:.55rem}
+  .phone-btn-danger{background:linear-gradient(135deg,#7a1f12,#e8482b);color:#fff;border-color:transparent}
+  .phone-btn[disabled]{opacity:.45;pointer-events:none}
 </style>
 </head>
 <body class="phone-control">
@@ -114,7 +132,42 @@
       <button class="phone-btn" id="toggle-preview" type="button">Show slide preview</button>
       <button class="phone-btn" id="toggle-notes" type="button">Show presenter notes</button>
       <button class="phone-btn" id="toggle-teleprompter" type="button" hidden>Show teleprompter</button>
+      <button class="phone-btn" id="toggle-zoom" type="button">Magnify big screen</button>
+      <button class="phone-btn" id="toggle-share" type="button">Share &amp; end</button>
     </div>
+
+    <section class="phone-panel" id="zoom-panel" hidden>
+      <div class="panel-head">
+        <strong>🔍 Magnify the big screen</strong>
+        <button class="panel-x" id="zoom-close" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="zoom-row">
+        <span>Zoom <b id="zoom-val">1.0×</b></span>
+        <input type="range" id="zoom-range" min="100" max="400" step="10" value="100">
+      </div>
+      <div class="zoom-actions">
+        <button class="phone-btn zoom-step" data-zoom="1" type="button">1×</button>
+        <button class="phone-btn zoom-step" data-zoom="1.5" type="button">1.5×</button>
+        <button class="phone-btn zoom-step" data-zoom="2" type="button">2×</button>
+        <button class="phone-btn zoom-step" data-zoom="3" type="button">3×</button>
+      </div>
+      <p class="panel-hint" id="zoom-hint">Tap the slide preview above to magnify that
+        exact spot. Without a tap it zooms the middle of the slide.</p>
+      <button class="phone-btn phone-btn-wide" id="zoom-reset" type="button">Reset to full slide</button>
+    </section>
+
+    <section class="phone-panel" id="share-panel" hidden>
+      <div class="panel-head">
+        <strong>📤 Share &amp; end</strong>
+        <button class="panel-x" id="share-close" type="button" aria-label="Close">✕</button>
+      </div>
+      <p class="panel-hint" id="share-state">Checking whether downloads are enabled…</p>
+      <button class="phone-btn phone-btn-wide" id="show-qr" type="button">Show download QR on big screen</button>
+      <button class="phone-btn phone-btn-wide" id="hide-qr" type="button" hidden>Hide the QR</button>
+      <button class="phone-btn phone-btn-wide phone-btn-danger" id="end-show" type="button">End presentation</button>
+      <p class="panel-hint">Ending stops the show on the big screen and puts the
+        download QR up for the room to scan.</p>
+    </section>
 
     <section class="phone-teleprompter" id="teleprompter" hidden>
       <div class="tp-head">
@@ -277,6 +330,12 @@ function pointerFromTap(ev){
   const y=clamp(((ev.clientY-r.top)/r.height)*H,0,H);
   localPointer(x,y);
   send({type:"pointer",x,y});
+  // Remember where the presenter tapped so the magnifier can centre there.
+  if(typeof zoomPoint!=="undefined"){
+    zoomPoint={x,y};
+    if(typeof updateZoomUI==="function") updateZoomUI();
+    if(typeof zoomScale!=="undefined" && zoomScale>1) send({type:"zoom",scale:zoomScale,x,y});
+  }
   setStatus("POINTER SENT TO PROJECTOR");
 }
 function connect(){
@@ -302,6 +361,26 @@ function connect(){
       i=clamp(Number(m.index),0,Math.max(((D.slides||[]).length)-1,0));
       if(m.slide) mergeSlide(i,m.slide);
       render();
+    }else if(m.type==="download_status"){
+      canDownload=!!m.allow_download;
+      applyDownloadAvailability();
+    }else if(m.type==="download_unavailable"){
+      canDownload=false;
+      applyDownloadAvailability();
+      setStatus("DOWNLOADS ARE OFF FOR THIS DECK");
+    }else if(m.type==="download_qr"){
+      qrShown=!!m.visible;
+      canDownload=true;
+      applyDownloadAvailability();
+      setStatus(qrShown?"DOWNLOAD QR IS ON THE BIG SCREEN":"QR HIDDEN");
+    }else if(m.type==="show_ended"){
+      qrShown=!!m.allow_download;
+      canDownload=!!m.allow_download;
+      applyDownloadAvailability();
+      $("#controls").hidden=true;
+      setStatus(m.allow_download
+        ? "PRESENTATION ENDED · QR ON THE BIG SCREEN"
+        : "PRESENTATION ENDED");
     }
   });
   sock.addEventListener("close",()=>{if(connected)setStatus("DISCONNECTED · REOPEN THIS PAGE OR REFRESH");});
@@ -493,6 +572,104 @@ window.addEventListener("resize",()=>{ if(tpVisible) tpApply(); });
 window.addEventListener("orientationchange",()=>{ setTimeout(()=>{ if(tpVisible) tpApply(); },250); });
 $("#phone-preview-stage").addEventListener("click",pointerFromTap);
 window.addEventListener("resize",fitPreview);
+
+/* ── magnify the big screen ─────────────────────────────────────────
+   Zoom is sent as {scale,x,y} in 960×540 design space. The last tapped
+   preview point becomes the focus, so "magnify that spot" is just: tap
+   the preview, then raise the slider. */
+let zoomVisible=false, zoomScale=1, zoomPoint=null;
+
+function updateZoomUI(){
+  const val=$("#zoom-val"), range=$("#zoom-range");
+  if(val) val.textContent=zoomScale.toFixed(1)+"×";
+  if(range && Number(range.value)!==Math.round(zoomScale*100)) range.value=Math.round(zoomScale*100);
+  document.querySelectorAll(".zoom-step").forEach(b=>{
+    b.classList.toggle("on", Math.abs(Number(b.dataset.zoom)-zoomScale)<0.01);
+  });
+  const hint=$("#zoom-hint");
+  if(hint){
+    hint.textContent = zoomPoint
+      ? `Magnifying the spot you tapped (${Math.round(zoomPoint.x)}, ${Math.round(zoomPoint.y)}). Tap the preview again to move it.`
+      : "Tap the slide preview above to magnify that exact spot. Without a tap it zooms the middle of the slide.";
+  }
+  const btn=$("#toggle-zoom");
+  if(btn) btn.textContent = zoomScale>1 ? `Magnifying ${zoomScale.toFixed(1)}×` : "Magnify big screen";
+}
+
+function sendZoom(){
+  if(!connected) return;
+  const msg={type:"zoom",scale:zoomScale};
+  if(zoomPoint && zoomScale>1){ msg.x=zoomPoint.x; msg.y=zoomPoint.y; }
+  send(msg);
+  updateZoomUI();
+  setStatus(zoomScale>1 ? `BIG SCREEN MAGNIFIED ${zoomScale.toFixed(1)}×` : "BIG SCREEN BACK TO FULL SLIDE");
+}
+
+function setZoom(scale){
+  zoomScale=Math.max(1,Math.min(6,Number(scale)||1));
+  if(zoomScale===1) zoomPoint=null;
+  sendZoom();
+}
+
+$("#toggle-zoom").addEventListener("click",()=>{
+  zoomVisible=!zoomVisible;
+  $("#zoom-panel").hidden=!zoomVisible;
+  if(zoomVisible && !previewVisible){
+    // the preview is how you choose WHERE to magnify — open it too
+    previewVisible=true; $("#phone-preview-wrap").hidden=false; renderPreview(); updateButtons();
+  }
+  updateZoomUI();
+});
+$("#zoom-close").addEventListener("click",()=>{zoomVisible=false;$("#zoom-panel").hidden=true;});
+$("#zoom-range").addEventListener("input",e=>setZoom(Number(e.target.value)/100));
+document.querySelectorAll(".zoom-step").forEach(b=>{
+  b.addEventListener("click",()=>setZoom(Number(b.dataset.zoom)));
+});
+$("#zoom-reset").addEventListener("click",()=>{zoomPoint=null;setZoom(1);});
+
+/* ── share & end ────────────────────────────────────────────────────*/
+let shareVisible=false, canDownload=null, qrShown=false;
+
+function setShareState(text){ const el=$("#share-state"); if(el) el.textContent=text; }
+
+function applyDownloadAvailability(){
+  const showBtn=$("#show-qr"), hideBtn=$("#hide-qr");
+  if(canDownload===true){
+    setShareState("Downloads are on — the room can scan a QR to keep this deck.");
+    if(showBtn) showBtn.disabled=false;
+  }else if(canDownload===false){
+    setShareState("Downloads are off for this deck. Turn them on from the deck editor, then reconnect.");
+    if(showBtn) showBtn.disabled=true;
+  }
+  if(showBtn) showBtn.hidden=qrShown;
+  if(hideBtn) hideBtn.hidden=!qrShown;
+}
+
+$("#toggle-share").addEventListener("click",()=>{
+  shareVisible=!shareVisible;
+  $("#share-panel").hidden=!shareVisible;
+  if(shareVisible && canDownload===null){
+    setShareState("Checking whether downloads are enabled…");
+    send({type:"download_status"});
+  }
+});
+$("#share-close").addEventListener("click",()=>{shareVisible=false;$("#share-panel").hidden=true;});
+$("#show-qr").addEventListener("click",()=>{
+  if(!connected) return;
+  send({type:"show_download",visible:true});
+  setStatus("DOWNLOAD QR SENT TO BIG SCREEN");
+});
+$("#hide-qr").addEventListener("click",()=>{
+  if(!connected) return;
+  send({type:"show_download",visible:false});
+});
+$("#end-show").addEventListener("click",()=>{
+  if(!connected) return;
+  if(!confirm("End the presentation on the big screen?")) return;
+  send({type:"end_show"});
+  setStatus("ENDING PRESENTATION…");
+});
+
 const qp=params().get("pin");
 if(qp){$("#pin").value=qp;setTimeout(connect,250);}
 render();

@@ -55,6 +55,12 @@
 .recode-arrow{color:var(--cyan);font-size:.8rem}
 .recode-to{padding:.3rem .4rem !important}
 .checklist{display:flex;flex-wrap:wrap;gap:.3rem .8rem;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:.5rem;margin-top:.3rem}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}
+.condrow{border:1px solid var(--line);border-radius:8px;padding:.45rem .55rem;margin-top:.4rem}
+.condrow select,.condrow input{margin-top:.25rem}
+.linkbtn{background:none;border:0;color:var(--pink);cursor:pointer;font-size:.66rem;padding:0 0 0 .4rem;text-decoration:underline}
+.row2 label{margin-top:.5rem}
+p.small,span.small,.muted.small{font-size:.68rem;line-height:1.45;margin:.4rem 0 0}
 .checklist label.inline{display:inline-flex;flex-direction:row;align-items:center;gap:.3rem;margin:0;font-size:.72rem;color:#dfe4fb}
 .checklist input{accent-color:var(--pink)}
 .split{display:grid;grid-template-columns:1fr 1fr;gap:1rem}.tablewrap{overflow:auto;max-height:65vh}table{border-collapse:collapse;width:100%;font-size:.73rem}th,td{padding:.42rem .55rem;border-bottom:1px solid rgba(255,255,255,.07);white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis}th{position:sticky;top:0;background:#0b0d26;color:var(--cyan);z-index:2}.changed{background:rgba(255,138,31,.18);outline:1px solid rgba(255,138,31,.45)}
@@ -377,22 +383,72 @@ function api(url,opt={}){return fetch(url,{...opt,headers:{"Content-Type":"appli
 
 /* ── palette ──────────────────────────────────────────────────────── */
 const categories={
-"Missing data":["fill_missing","regression_impute"],"Rows":["filter_rows","drop_rows","deduplicate","sample"],
-"Columns":["drop_columns","keep_columns","rename_column","cast_type","calculate"],
-"Generate & combine":["make_id","concat_columns","extract_datetime"],
-"Values":["recode","replace","trim_text","case_text"],
-"Outliers & advanced":["outlier","winsorize","scale","encode"]};
+"Missing data":["fill_missing","regression_impute"],
+"Rows":["filter_rows","drop_rows","deduplicate","sort_rows","sample","flag_rows"],
+"Columns":["drop_columns","keep_columns","rename_column","cast_type","calculate","split_column","round_numbers"],
+"Generate & combine":["make_id","concat_columns","extract_datetime","group_aggregate","rank_rows","running_total"],
+"Values":["recode","replace","replace_text","trim_text","case_text","strip_accents","bin_column","clip_range"],
+"Outliers & advanced":["outlier","winsorize","scale","encode"],
+"Machine learning":["cluster","detect_anomalies","predict_column","similar_duplicates","reduce_dimensions"]};
 const OP_HELP={
   make_id:"Create a unique ID for each row by combining columns (e.g. name + phone → one code).",
   concat_columns:"Join several columns into one new text column.",
   extract_datetime:"Split a date column into year, month, day… for time-series analysis.",
   recode:"Replace specific values with cleaner ones — pick a value, type its replacement.",
   fill_missing:"Fill blank cells using the average, most common value, or a fixed value.",
-  filter_rows:"Keep or remove rows that match a condition.",
+  filter_rows:"Keep or remove rows that match one or more conditions.",
+  drop_rows:"Remove rows by number range, by condition, by position, or where answers are blank.",
   deduplicate:"Remove repeated rows.",
-  calculate:"Make a new number column from a formula, e.g. price * quantity."};
+  calculate:"Make a new number column from a formula, e.g. price * quantity.",
+  sort_rows:"Put rows in order by one or more columns.",
+  split_column:"Split one column into several, e.g. full name → first and last.",
+  replace_text:"Find text inside a column and replace it.",
+  bin_column:"Turn numbers into bands, e.g. age → 18-30, 31-45.",
+  clip_range:"Force values into a sensible range — cap, blank, or drop what falls outside.",
+  round_numbers:"Round number columns to fewer decimal places.",
+  group_aggregate:"Add a column with a group's average, total or count next to every row.",
+  rank_rows:"Number rows from highest to lowest, optionally within each group.",
+  running_total:"Add a cumulative total down the rows.",
+  flag_rows:"Mark rows that match a condition without deleting them.",
+  strip_accents:"Turn é → e, ñ → n so spellings match.",
+  cluster:"Let the computer find natural groups in your data (k-means).",
+  detect_anomalies:"Find rows whose combination of values looks unusual (isolation forest).",
+  predict_column:"Learn from complete rows to predict missing answers (random forest).",
+  similar_duplicates:"Catch near-duplicates like 'Alieu Jallow' vs 'Aliu Jalow'.",
+  reduce_dimensions:"Squeeze many number columns into 2–3 summary columns (PCA)."};
 function renderPalette(){let h="";for(const [g,ops] of Object.entries(categories)){h+=`<b class="muted">${g}</b>`;for(const op of ops){const x=operations.find(v=>v.value===op);h+=`<div class="block" draggable="true" data-op="${op}" title="${esc(OP_HELP[op]||"")}">${esc(x?.label||op)}</div>`}}$("#palette").innerHTML=h}
-function defaultConfig(op){return {fill_missing:{field:columns[0]||"",method:"median"},filter_rows:{field:columns[0]||"",operator:"eq",value:"",keep_matching:true},drop_columns:{columns:[]},keep_columns:{columns:[]},rename_column:{field:columns[0]||"",new_name:""},recode:{field:columns[0]||"",map:{}},replace:{field:columns[0]||"",map:{}},deduplicate:{fields:[],keep:"first"},cast_type:{field:columns[0]||"",type:"text"},trim_text:{field:columns[0]||""},case_text:{field:columns[0]||"",mode:"title"},calculate:{new_field:"calculated",expression:""},outlier:{field:columns[0]||"",method:"iqr",k:1.5,action:"cap"},winsorize:{field:columns[0]||"",method:"iqr",k:1.5},scale:{field:columns[0]||"",method:"standard"},encode:{field:columns[0]||"",method:"onehot"},sample:{method:"random",n:100,seed:42},regression_impute:{target:columns[0]||"",predictors:[]},drop_rows:{submission_ids:[]},make_id:{new_field:"row_id",fields:[],id_mode:"uuid5",separator:"-",check_unique:true},concat_columns:{new_field:"combined",fields:[],separator:" "},extract_datetime:{field:columns[0]||"",parts:["year","month","yearmonth"],dayfirst:false}}[op]||{}}
+function defaultConfig(op){const NUM=numericColumns();return {fill_missing:{field:columns[0]||"",method:"median"},filter_rows:{field:columns[0]||"",operator:"eq",value:"",keep_matching:true},drop_columns:{columns:[]},keep_columns:{columns:[]},rename_column:{field:columns[0]||"",new_name:""},recode:{field:columns[0]||"",map:{}},replace:{field:columns[0]||"",map:{}},deduplicate:{fields:[],keep:"first"},cast_type:{field:columns[0]||"",type:"text"},trim_text:{field:columns[0]||""},case_text:{field:columns[0]||"",mode:"title"},calculate:{new_field:"calculated",expression:""},outlier:{field:columns[0]||"",method:"iqr",k:1.5,action:"cap"},winsorize:{field:columns[0]||"",method:"iqr",k:1.5},scale:{field:columns[0]||"",method:"standard"},encode:{field:columns[0]||"",method:"onehot"},sample:{method:"random",n:100,seed:42},regression_impute:{target:columns[0]||"",predictors:[]},
+drop_rows:{mode:"range",from:1,to:10,field:columns[0]||"",operator:"eq",value:"",where:"first",count:5,nth:2,fields:[],match:"any",keep:"first",invert:false},
+make_id:{new_field:"row_id",fields:[],id_mode:"uuid5",separator:"-",check_unique:true},concat_columns:{new_field:"combined",fields:[],separator:" "},extract_datetime:{field:columns[0]||"",parts:["year","month","yearmonth"],dayfirst:false},
+sort_rows:{fields:[columns[0]||""],ascending:true,numeric:true},
+split_column:{field:columns[0]||"",separator:" ",max_parts:2,prefix:"",trim:true},
+replace_text:{field:columns[0]||"",find:"",replace:"",regex:false,case_sensitive:false},
+bin_column:{field:NUM[0]||columns[0]||"",new_field:"",method:"equal",bins:4,edges:[],labels:[]},
+clip_range:{field:NUM[0]||columns[0]||"",min:"",max:"",action:"cap"},
+round_numbers:{fields:NUM.slice(0,1),places:0},
+group_aggregate:{group_by:[],field:NUM[0]||columns[0]||"",agg:"mean",new_field:""},
+rank_rows:{field:NUM[0]||columns[0]||"",new_field:"",ascending:false,group_by:[],method:"min"},
+running_total:{field:NUM[0]||columns[0]||"",new_field:"",mode:"sum",group_by:[]},
+flag_rows:{new_field:"flag",field:columns[0]||"",operator:"eq",value:"",true_label:"yes",false_label:"",reason:""},
+strip_accents:{fields:[columns[0]||""]},
+cluster:{fields:NUM.slice(0,2),clusters:3,new_field:"cluster",label_prefix:"Group ",seed:42},
+detect_anomalies:{fields:NUM.slice(0,2),rate:0.05,new_field:"anomaly",action:"flag",include_score:true,seed:42},
+predict_column:{target:columns[0]||"",predictors:[],new_field:"",task:"auto",scope:"missing",fill_target:false,trees:100,seed:42},
+similar_duplicates:{fields:[columns[0]||""],threshold:0.85,action:"flag",new_field:"similar_group"},
+reduce_dimensions:{fields:NUM.slice(0,3),components:2,prefix:"component",seed:42}
+}[op]||{}}
+/* columns whose sampled values look numeric — used to preselect sensible defaults */
+function numericColumns(){
+  const rows=(bootstrap?.preview_rows||bootstrap?.raw_rows||[]).slice(0,40);
+  if(!rows.length)return columns.slice();
+  return columns.filter(c=>{
+    let seen=0,num=0;
+    for(const r of rows){const v=(r.data||r.answers||r||{})[c];
+      if(v===null||v===undefined||v==="")continue;
+      seen++; if(!isNaN(parseFloat(v))&&isFinite(v))num++;}
+    return seen>0&&num/seen>=0.8;
+  });
+}
 
 /* ── node flow canvas ─────────────────────────────────────────────── */
 const NODE_W=196, NODE_H=64, TERM_W=170;
@@ -511,7 +567,10 @@ function addStep(op,pos){const x=operations.find(v=>v.value===op);
   pipeline.steps.push(step);selected=pipeline.steps.length-1;markDirty();renderFlow();renderConfig()}
 
 /* ── step config panel ────────────────────────────────────────────── */
-function colSelect(value,multiple=false){return `<select data-key="field"${multiple?" multiple size=6":""}>${columns.map(c=>`<option ${multiple?(value||[]).includes(c):value===c?"selected":""}>${esc(c)}</option>`).join("")}</select>`}
+function colSelect(value,multiple=false,key="field"){return `<select data-key="${key}"${multiple?" multiple size=6":""}>${columns.map(c=>`<option ${multiple?(value||[]).includes(c):value===c?"selected":""}>${esc(c)}</option>`).join("")}</select>`}
+/* shared condition list — used by filter_rows, drop_rows and flag_rows */
+const COND_OPS=[["eq","is equal to"],["ne","is not equal to"],["gt","is greater than"],["gte","is ≥"],["lt","is less than"],["lte","is ≤"],["contains","contains"],["not_contains","does not contain"],["starts_with","starts with"],["ends_with","ends with"],["answered","is answered"],["not_answered","is blank"],["in","is one of"],["not_in","is not one of"],["between","is between"],["regex","matches pattern"]];
+function condSelect(value,key="operator"){return `<select data-key="${key}">${COND_OPS.map(([v,l])=>`<option value="${v}" ${value===v?"selected":""}>${l}</option>`).join("")}</select>`}
 /* distinct values known for a column (from bootstrap), with schema labels */
 function valuesFor(col){
   const raw=(columnValues[col]||[]).map(x=>x.value);
@@ -531,9 +590,9 @@ function valueInput(col,value,key){
   return `<input data-key="${key}" list="dl_${key}" value="${esc(value??"")}"><datalist id="dl_${key}">${opts.slice(0,40).map(v=>`<option value="${esc(v)}">`).join("")}</datalist>`;
 }
 /* multi-column ordered picker (checkbox list preserves click order) */
-function multiField(selected){
+function multiField(selected,key="fields"){
   selected=selected||[];
-  return `<div class="checklist" data-multi="fields">${columns.map(c=>`<label class="inline"><input type="checkbox" data-col="${esc(c)}" ${selected.includes(c)?"checked":""}> ${esc(c)}</label>`).join("")}</div>`;
+  return `<div class="checklist" data-multi="${key}">${columns.map(c=>`<label class="inline"><input type="checkbox" data-col="${esc(c)}" ${selected.includes(c)?"checked":""}> ${esc(c)}</label>`).join("")}</div>`;
 }
 /* recode builder: lists the column's actual values, new value beside each */
 function recodeBuilder(step,c){
@@ -551,18 +610,29 @@ function recodeBuilder(step,c){
 }
 function renderConfig(){const s=pipeline.steps[selected];if(!s){$("#config").innerHTML='<p class="muted">Select a node to configure it.</p>';return}const c=s.config||{};let h=`<label>Step name</label><input data-main="name" value="${esc(s.name)}"><label><input type="checkbox" data-main="enabled" ${s.enabled?"checked":""}> Enabled</label><label><input type="checkbox" data-main="stop_on_error" ${s.stop_on_error?"checked":""}> Stop pipeline on error</label>`;
 if(["fill_missing","cast_type","trim_text","case_text","outlier","winsorize","scale","encode"].includes(s.operation))h+=`<label>Column</label>${colSelect(c.field)}`;
-if(s.operation==="fill_missing")h+=`<label>Method</label><select data-key="method">${["mean","median","mode","constant","forward","backward"].map(v=>`<option ${c.method===v?"selected":""}>${v}</option>`)}</select><label>Constant value</label><input data-key="value" value="${esc(c.value||"")}">`;
-if(s.operation==="regression_impute")h+=`<label>Target</label>${colSelect(c.target)}<label>Predictors (Ctrl/Cmd select)</label><select data-key="predictors" multiple size="8">${columns.map(x=>`<option ${(c.predictors||[]).includes(x)?"selected":""}>${esc(x)}</option>`)}</select>`;
+if(s.operation==="fill_missing")h+=`<label>Method</label><select data-key="method">${["mean","median","mode","constant","forward","backward"].map(v=>`<option ${c.method===v?"selected":""}>${v}</option>`).join("")}</select><label>Constant value</label><input data-key="value" value="${esc(c.value||"")}">`;
+if(s.operation==="regression_impute")h+=`<label>Target</label>${colSelect(c.target)}<label>Predictors (Ctrl/Cmd select)</label><select data-key="predictors" multiple size="8">${columns.map(x=>`<option ${(c.predictors||[]).includes(x)?"selected":""}>${esc(x)}</option>`).join("")}</select>`;
 if(s.operation==="filter_rows"){
-  const ops=[["eq","is equal to"],["ne","is not equal to"],["gt","is greater than"],["gte","is ≥"],["lt","is less than"],["lte","is ≤"],["contains","contains"],["not_contains","does not contain"],["answered","is answered"],["not_answered","is blank"],["in","is one of"],["not_in","is not one of"],["between","is between"],["regex","matches pattern"]];
-  h+=`<label>Column</label>${colSelect(c.field)}<label>Condition</label><select data-key="operator">${ops.map(([v,lbl])=>`<option value="${v}" ${c.operator===v?"selected":""}>${lbl}</option>`).join("")}</select>`;
-  if(!["answered","not_answered"].includes(c.operator)){
-    h+=`<label>Value</label>${valueInput(c.field,c.value,"value")}`;
-  }
-  h+=`<label><input type="checkbox" data-key="keep_matching" ${c.keep_matching!==false?"checked":""}> Keep matching rows (uncheck to remove them)</label>`;
+  const conds=(c.conditions&&c.conditions.length)?c.conditions:[{field:c.field||columns[0]||"",operator:c.operator||"eq",value:c.value??""}];
+  h+=`<label>Match</label><select data-key="match">${[["all","ALL of these conditions"],["any","ANY of these conditions"]].map(([v,l])=>`<option value="${v}" ${(c.match||"all")===v?"selected":""}>${l}</option>`).join("")}</select>`;
+  conds.forEach((cd,i)=>{
+    h+=`<div class="condrow" data-ci="${i}"><label>Condition ${i+1}${conds.length>1?` <button class="linkbtn" data-delcond="${i}">remove</button>`:""}</label>`
+     +`<select data-cond="${i}" data-cfield="field">${columns.map(x=>`<option ${cd.field===x?"selected":""}>${esc(x)}</option>`).join("")}</select>`
+     +`<select data-cond="${i}" data-cfield="operator">${COND_OPS.map(([v,l])=>`<option value="${v}" ${cd.operator===v?"selected":""}>${l}</option>`).join("")}</select>`;
+    if(!["answered","not_answered"].includes(cd.operator)){
+      h+=`<input data-cond="${i}" data-cfield="value" value="${esc(cd.value??"")}" placeholder="value">`;
+    }
+    if(cd.operator==="between"){
+      h+=`<div class="row2"><input data-cond="${i}" data-cfield="min" value="${esc(cd.min??"")}" placeholder="min">`
+       +`<input data-cond="${i}" data-cfield="max" value="${esc(cd.max??"")}" placeholder="max"></div>`;
+    }
+    h+=`</div>`;
+  });
+  h+=`<button class="btn small ghost" id="addCond" type="button">+ Add condition</button>`
+   +`<label><input type="checkbox" data-key="keep_matching" ${c.keep_matching!==false?"checked":""}> Keep matching rows (uncheck to remove them)</label>`;
 }
-if(["drop_columns","keep_columns"].includes(s.operation))h+=`<label>Columns</label><select data-key="columns" multiple size="10">${columns.map(x=>`<option ${(c.columns||[]).includes(x)?"selected":""}>${esc(x)}</option>`)}</select>`;
-if(s.operation==="deduplicate")h+=`<label>Duplicate key columns</label><select data-key="fields" multiple size="8">${columns.map(x=>`<option ${(c.fields||[]).includes(x)?"selected":""}>${esc(x)}</option>`)}</select>`;
+if(["drop_columns","keep_columns"].includes(s.operation))h+=`<label>Columns</label><select data-key="columns" multiple size="10">${columns.map(x=>`<option ${(c.columns||[]).includes(x)?"selected":""}>${esc(x)}</option>`).join("")}</select>`;
+if(s.operation==="deduplicate")h+=`<label>Duplicate key columns <span class="muted">(none = the whole row)</span></label>${multiField(c.fields)}<label>Keep</label><select data-key="keep">${[["first","the first one"],["last","the last one"],["none","none — drop them all"]].map(([v,l])=>`<option value="${v}" ${(c.keep||"first")===v?"selected":""}>${l}</option>`).join("")}</select>`;
 if(s.operation==="rename_column")h+=`<label>Column</label>${colSelect(c.field)}<label>New name</label><input data-key="new_name" value="${esc(c.new_name||"")}">`;
 if(["recode","replace"].includes(s.operation)){
   h+=`<label>Column</label>${colSelect(c.field)}`+recodeBuilder(s,c);
@@ -587,13 +657,152 @@ if(s.operation==="extract_datetime"){
   h+=`<label>Date column</label>${colSelect(c.field)}<label>Extract</label><div class="checklist" data-key="parts">${parts.map(([v,l])=>`<label class="inline"><input type="checkbox" data-part="${v}" ${(c.parts||[]).includes(v)?"checked":""}> ${l}</label>`).join("")}</div>`
    +`<label><input type="checkbox" data-key="dayfirst" ${c.dayfirst?"checked":""}> Day comes first (e.g. 05/03 = 5 March)</label>`;
 }
-if(s.operation==="cast_type")h+=`<label>Target type</label><select data-key="type">${["text","integer","decimal","date","boolean"].map(v=>`<option ${c.type===v?"selected":""}>${v}</option>`)}</select>`;
-if(s.operation==="case_text")h+=`<label>Case</label><select data-key="mode">${["lower","upper","title"].map(v=>`<option ${c.mode===v?"selected":""}>${v}</option>`)}</select>`;
+if(s.operation==="drop_rows"){
+  const modes=[["range","a row number range (from … to …)"],["condition","rows matching a condition"],["position","the first / last / every Nth row"],["blank","rows with blank answers"],["duplicates","duplicate rows"],["ids","specific submission IDs"]];
+  h+=`<label>Which rows should go?</label><select data-key="mode">${modes.map(([v,l])=>`<option value="${v}" ${(c.mode||"range")===v?"selected":""}>${l}</option>`).join("")}</select>`;
+  const mode=c.mode||"range";
+  if(mode==="range"){
+    h+=`<div class="row2"><div><label>From row</label><input type="number" min="1" data-key="from" value="${c.from??1}"></div>`
+     +`<div><label>To row</label><input type="number" min="1" data-key="to" value="${c.to??10}"></div></div>`
+     +`<p class="muted small">Row numbers are counted as shown in the results table, starting at 1. Both ends are included.</p>`;
+  }
+  if(mode==="condition"){
+    h+=`<label>Column</label>${colSelect(c.field)}<label>Condition</label>${condSelect(c.operator)}`;
+    if(!["answered","not_answered"].includes(c.operator))h+=`<label>Value</label>${valueInput(c.field,c.value,"value")}`;
+    if(c.operator==="between")h+=`<div class="row2"><div><label>Min</label><input data-key="min" value="${esc(c.min??"")}"></div><div><label>Max</label><input data-key="max" value="${esc(c.max??"")}"></div></div>`;
+  }
+  if(mode==="position"){
+    h+=`<label>Take</label><select data-key="where">${[["first","the first N rows"],["last","the last N rows"],["every_nth","every Nth row"]].map(([v,l])=>`<option value="${v}" ${c.where===v?"selected":""}>${l}</option>`).join("")}</select>`;
+    h+=(c.where==="every_nth")
+      ?`<label>Drop every</label><input type="number" min="2" data-key="nth" value="${c.nth??2}">`
+      :`<label>How many rows</label><input type="number" min="1" data-key="count" value="${c.count??5}">`;
+  }
+  if(mode==="blank"){
+    h+=`<label>Blank in these columns</label>${multiField(c.fields)}`
+     +`<label>Drop when</label><select data-key="match">${[["any","ANY chosen column is blank"],["all","EVERY chosen column is blank"]].map(([v,l])=>`<option value="${v}" ${(c.match||"any")===v?"selected":""}>${l}</option>`).join("")}</select>`;
+  }
+  if(mode==="duplicates"){
+    h+=`<label>Duplicate key columns <span class="muted">(none = whole row)</span></label>${multiField(c.fields)}`
+     +`<label>Keep</label><select data-key="keep">${[["first","the first one"],["last","the last one"],["none","none — drop them all"]].map(([v,l])=>`<option value="${v}" ${(c.keep||"first")===v?"selected":""}>${l}</option>`).join("")}</select>`;
+  }
+  if(mode==="ids"){
+    h+=`<label>Submission IDs (one per line or comma separated)</label><textarea data-key="submission_ids" data-list="1" rows="4">${esc((c.submission_ids||[]).join("\n"))}</textarea>`;
+  }
+  h+=`<label><input type="checkbox" data-key="invert" ${c.invert?"checked":""}> Flip it — keep ONLY these rows and drop the rest</label>`;
+}
+if(s.operation==="sort_rows"){
+  h+=`<label>Sort by (in order)</label>${multiField(c.fields)}`
+   +`<label>Direction</label><select data-key="ascending">${[["true","Smallest / A → Z first"],["false","Largest / Z → A first"]].map(([v,l])=>`<option value="${v}" ${String(c.ascending!==false)===v?"selected":""}>${l}</option>`).join("")}</select>`
+   +`<label><input type="checkbox" data-key="numeric" ${c.numeric!==false?"checked":""}> Treat number-like text as numbers (2 before 10)</label>`;
+}
+if(s.operation==="split_column"){
+  h+=`<label>Column to split</label>${colSelect(c.field)}`
+   +`<label>Split on</label><input data-key="separator" value="${esc(c.separator??" ")}" placeholder="e.g. a space, comma or -">`
+   +`<label>Maximum parts <span class="muted">(0 = as many as needed)</span></label><input type="number" min="0" data-key="max_parts" value="${c.max_parts??2}">`
+   +`<label>New column prefix <span class="muted">(blank = use the column name)</span></label><input data-key="prefix" value="${esc(c.prefix||"")}">`
+   +`<label><input type="checkbox" data-key="trim" ${c.trim!==false?"checked":""}> Trim spaces from each part</label>`;
+}
+if(s.operation==="replace_text"){
+  h+=`<label>Column</label>${colSelect(c.field)}`
+   +`<label>Find</label><input data-key="find" value="${esc(c.find||"")}">`
+   +`<label>Replace with <span class="muted">(leave blank to delete it)</span></label><input data-key="replace" value="${esc(c.replace||"")}">`
+   +`<label><input type="checkbox" data-key="case_sensitive" ${c.case_sensitive?"checked":""}> Match upper/lower case exactly</label>`
+   +`<label><input type="checkbox" data-key="regex" ${c.regex?"checked":""}> Find is a regular expression</label>`;
+}
+if(s.operation==="bin_column"){
+  h+=`<label>Number column</label>${colSelect(c.field)}`
+   +`<label>New column name <span class="muted">(blank = column_band)</span></label><input data-key="new_field" value="${esc(c.new_field||"")}">`
+   +`<label>Band style</label><select data-key="method">${[["equal","Equal-width bands"],["quantile","Equal-size groups (quartiles)"],["custom","My own cut-off numbers"]].map(([v,l])=>`<option value="${v}" ${(c.method||"equal")===v?"selected":""}>${l}</option>`).join("")}</select>`;
+  if(c.method==="custom"){
+    h+=`<label>Cut-off numbers (comma separated, e.g. 0,18,35,60,120)</label><input data-key="edges" data-list="num" value="${esc((c.edges||[]).join(","))}">`
+     +`<label>Band names (optional, one fewer than cut-offs)</label><input data-key="labels" data-list="1" value="${esc((c.labels||[]).join(","))}">`;
+  } else {
+    h+=`<label>How many bands</label><input type="number" min="2" max="20" data-key="bins" value="${c.bins??4}">`;
+  }
+}
+if(s.operation==="clip_range"){
+  h+=`<label>Number column</label>${colSelect(c.field)}`
+   +`<div class="row2"><div><label>Lowest allowed</label><input data-key="min" value="${esc(c.min??"")}" placeholder="none"></div>`
+   +`<div><label>Highest allowed</label><input data-key="max" value="${esc(c.max??"")}" placeholder="none"></div></div>`
+   +`<label>What to do with values outside</label><select data-key="action">${[["cap","Pull them to the limit"],["blank","Clear the cell"],["drop","Remove the whole row"]].map(([v,l])=>`<option value="${v}" ${(c.action||"cap")===v?"selected":""}>${l}</option>`).join("")}</select>`;
+}
+if(s.operation==="round_numbers"){
+  h+=`<label>Columns</label>${multiField(c.fields)}`
+   +`<label>Decimal places</label><input type="number" min="0" max="8" data-key="places" value="${c.places??0}">`;
+}
+if(s.operation==="group_aggregate"){
+  h+=`<label>Group rows by</label>${multiField(c.group_by,"group_by")}`
+   +`<label>Summarise</label><select data-key="agg">${[["mean","Average"],["sum","Total"],["count","Count of rows"],["min","Smallest"],["max","Largest"],["median","Middle value"],["nunique","How many different values"]].map(([v,l])=>`<option value="${v}" ${(c.agg||"mean")===v?"selected":""}>${l}</option>`).join("")}</select>`;
+  if(c.agg!=="count")h+=`<label>…of column</label>${colSelect(c.field)}`;
+  h+=`<label>New column name <span class="muted">(blank = auto)</span></label><input data-key="new_field" value="${esc(c.new_field||"")}">`;
+}
+if(s.operation==="rank_rows"){
+  h+=`<label>Rank by column</label>${colSelect(c.field)}`
+   +`<label>Order</label><select data-key="ascending">${[["false","Largest gets rank 1"],["true","Smallest gets rank 1"]].map(([v,l])=>`<option value="${v}" ${String(!!c.ascending)===v?"selected":""}>${l}</option>`).join("")}</select>`
+   +`<label>Rank within groups (optional)</label>${multiField(c.group_by,"group_by")}`
+   +`<label>New column name <span class="muted">(blank = auto)</span></label><input data-key="new_field" value="${esc(c.new_field||"")}">`;
+}
+if(s.operation==="running_total"){
+  h+=`<label>Column</label>${colSelect(c.field)}`
+   +`<label>Type</label><select data-key="mode">${[["sum","Running total"],["max","Running highest"],["min","Running lowest"]].map(([v,l])=>`<option value="${v}" ${(c.mode||"sum")===v?"selected":""}>${l}</option>`).join("")}</select>`
+   +`<label>Restart for each group (optional)</label>${multiField(c.group_by,"group_by")}`
+   +`<label>New column name <span class="muted">(blank = auto)</span></label><input data-key="new_field" value="${esc(c.new_field||"")}">`;
+}
+if(s.operation==="flag_rows"){
+  h+=`<label>New column name</label><input data-key="new_field" value="${esc(c.new_field||"flag")}">`
+   +`<label>Column</label>${colSelect(c.field)}<label>Condition</label>${condSelect(c.operator)}`;
+  if(!["answered","not_answered"].includes(c.operator))h+=`<label>Value</label>${valueInput(c.field,c.value,"value")}`;
+  h+=`<div class="row2"><div><label>Mark matches with</label><input data-key="true_label" value="${esc(c.true_label??"yes")}"></div>`
+   +`<div><label>Others get</label><input data-key="false_label" value="${esc(c.false_label??"")}"></div></div>`
+   +`<label>Reason (shown in the audit log)</label><input data-key="reason" value="${esc(c.reason||"")}">`;
+}
+if(s.operation==="strip_accents")h+=`<label>Columns</label>${multiField(c.fields)}`;
+if(s.operation==="cluster"){
+  h+=`<label>Group rows using these number columns</label>${multiField(c.fields)}`
+   +`<label>How many groups</label><input type="number" min="2" max="20" data-key="clusters" value="${c.clusters??3}">`
+   +`<label>New column name</label><input data-key="new_field" value="${esc(c.new_field||"cluster")}">`
+   +`<label>Group label prefix</label><input data-key="label_prefix" value="${esc(c.label_prefix??"Group ")}">`
+   +`<p class="muted small">Finds natural groupings (k-means). Rows with no numbers in these columns are left blank.</p>`;
+}
+if(s.operation==="detect_anomalies"){
+  h+=`<label>Look at these number columns</label>${multiField(c.fields)}`
+   +`<label>Expected share of unusual rows</label><select data-key="rate">${[[0.01,"1% — only the strangest"],[0.05,"5% — balanced"],[0.1,"10% — catch more"],[0.2,"20% — very sensitive"]].map(([v,l])=>`<option value="${v}" ${Number(c.rate)===v?"selected":""}>${l}</option>`).join("")}</select>`
+   +`<label>Then</label><select data-key="action">${[["flag","Mark them in a new column"],["drop","Remove those rows"]].map(([v,l])=>`<option value="${v}" ${(c.action||"flag")===v?"selected":""}>${l}</option>`).join("")}</select>`;
+  if((c.action||"flag")!=="drop"){
+    h+=`<label>New column name</label><input data-key="new_field" value="${esc(c.new_field||"anomaly")}">`
+     +`<label><input type="checkbox" data-key="include_score" ${c.include_score!==false?"checked":""}> Also add the strangeness score</label>`;
+  }
+  h+=`<p class="muted small">Uses an isolation forest — it spots rows whose <i>combination</i> of values is odd, even when each single value looks fine. Needs at least 8 rows.</p>`;
+}
+if(s.operation==="predict_column"){
+  h+=`<label>Column to predict</label>${colSelect(c.target,false,"target")}`
+   +`<label>Learn from these columns</label>${multiField(c.predictors,"predictors")}`
+   +`<label>Answer type</label><select data-key="task">${[["auto","Work it out automatically"],["number","A number"],["category","A category / choice"]].map(([v,l])=>`<option value="${v}" ${(c.task||"auto")===v?"selected":""}>${l}</option>`).join("")}</select>`
+   +`<label>Predict for</label><select data-key="scope">${[["missing","Only rows where it's blank"],["all","Every row (to compare)"]].map(([v,l])=>`<option value="${v}" ${(c.scope||"missing")===v?"selected":""}>${l}</option>`).join("")}</select>`
+   +`<label>New column name <span class="muted">(blank = auto)</span></label><input data-key="new_field" value="${esc(c.new_field||"")}">`
+   +`<label><input type="checkbox" data-key="fill_target" ${c.fill_target?"checked":""}> Also write the prediction into the original column</label>`
+   +`<p class="muted small">Learns from rows that already have an answer (random forest). Needs at least 10 of them. Every filled value is written to the audit log.</p>`;
+}
+if(s.operation==="similar_duplicates"){
+  h+=`<label>Compare these text columns</label>${multiField(c.fields)}`
+   +`<label>How alike counts as a match</label><select data-key="threshold">${[[0.95,"Almost identical (95%)"],[0.85,"Very similar (85%)"],[0.75,"Fairly similar (75%)"],[0.65,"Loosely similar (65%)"]].map(([v,l])=>`<option value="${v}" ${Number(c.threshold)===v?"selected":""}>${l}</option>`).join("")}</select>`
+   +`<label>Then</label><select data-key="action">${[["flag","Mark each group in a new column"],["drop","Keep the first, remove the rest"]].map(([v,l])=>`<option value="${v}" ${(c.action||"flag")===v?"selected":""}>${l}</option>`).join("")}</select>`;
+  if((c.action||"flag")!=="drop")h+=`<label>New column name</label><input data-key="new_field" value="${esc(c.new_field||"similar_group")}">`;
+  h+=`<p class="muted small">Catches spelling variations that exact duplicate checks miss — "Alieu Jallow" vs "Aliu Jalow".</p>`;
+}
+if(s.operation==="reduce_dimensions"){
+  h+=`<label>Number columns to summarise</label>${multiField(c.fields)}`
+   +`<label>How many summary columns</label><input type="number" min="1" max="10" data-key="components" value="${c.components??2}">`
+   +`<label>Column name prefix</label><input data-key="prefix" value="${esc(c.prefix||"component")}">`
+   +`<p class="muted small">PCA — turns many related number columns into a few that capture most of the variation. Useful before charting or clustering.</p>`;
+}
+if(s.operation==="cast_type")h+=`<label>Target type</label><select data-key="type">${["text","integer","decimal","date","boolean"].map(v=>`<option ${c.type===v?"selected":""}>${v}</option>`).join("")}</select>`;
+if(s.operation==="case_text")h+=`<label>Case</label><select data-key="mode">${["lower","upper","title"].map(v=>`<option ${c.mode===v?"selected":""}>${v}</option>`).join("")}</select>`;
 if(s.operation==="calculate")h+=`<label>New field</label><input data-key="new_field" value="${esc(c.new_field||"")}"><label>Expression</label><input data-key="expression" value="${esc(c.expression||"")}">`;
-if(["outlier","winsorize"].includes(s.operation))h+=`<label>Method</label><select data-key="method">${["iqr","zscore"].map(v=>`<option ${c.method===v?"selected":""}>${v}</option>`)}</select><label>Threshold</label><input type="number" step=".1" data-key="k" value="${c.k||1.5}"><label>Action</label><select data-key="action">${["cap","median","mean","drop","flag"].map(v=>`<option ${c.action===v?"selected":""}>${v}</option>`)}</select>`;
-if(s.operation==="scale")h+=`<label>Method</label><select data-key="method">${["standard","minmax","log"].map(v=>`<option ${c.method===v?"selected":""}>${v}</option>`)}</select>`;
-if(s.operation==="encode")h+=`<label>Method</label><select data-key="method">${["onehot","label"].map(v=>`<option ${c.method===v?"selected":""}>${v}</option>`)}</select>`;
-if(s.operation==="sample")h+=`<label>Method</label><select data-key="method">${["random","first","last"].map(v=>`<option ${c.method===v?"selected":""}>${v}</option>`)}</select><label>N</label><input type="number" data-key="n" value="${c.n||100}">`;
+if(["outlier","winsorize"].includes(s.operation))h+=`<label>Method</label><select data-key="method">${["iqr","zscore"].map(v=>`<option ${c.method===v?"selected":""}>${v}</option>`).join("")}</select><label>Threshold</label><input type="number" step=".1" data-key="k" value="${c.k||1.5}"><label>Action</label><select data-key="action">${["cap","median","mean","drop","flag"].map(v=>`<option ${c.action===v?"selected":""}>${v}</option>`).join("")}</select>`;
+if(s.operation==="scale")h+=`<label>Method</label><select data-key="method">${["standard","minmax","log"].map(v=>`<option ${c.method===v?"selected":""}>${v}</option>`).join("")}</select>`;
+if(s.operation==="encode")h+=`<label>Method</label><select data-key="method">${["onehot","label"].map(v=>`<option ${c.method===v?"selected":""}>${v}</option>`).join("")}</select>`;
+if(s.operation==="sample")h+=`<label>Method</label><select data-key="method">${["random","first","last"].map(v=>`<option ${c.method===v?"selected":""}>${v}</option>`).join("")}</select><label>N</label><input type="number" data-key="n" value="${c.n||100}">`;
 h+=`<label>Note</label><textarea data-main="note">${esc(s.note||"")}</textarea>
 <div class="orderbtns">
   <button class="btn small ghost" id="stepEarlier" ${selected===0?"disabled":""}>▲ Run earlier</button>
@@ -602,6 +811,25 @@ h+=`<label>Note</label><textarea data-main="note">${esc(s.note||"")}</textarea>
 $("#config").innerHTML=h;
 $("#stepEarlier")?.addEventListener("click",()=>moveStep(-1));
 $("#stepLater")?.addEventListener("click",()=>moveStep(1));
+$("#addCond")?.addEventListener("click",()=>{
+  const st=pipeline.steps[selected];if(!st)return;
+  const cur=(st.config.conditions&&st.config.conditions.length)
+    ? st.config.conditions.map(x=>({...x}))
+    : [{field:st.config.field||columns[0]||"",operator:st.config.operator||"eq",value:st.config.value??""}];
+  cur.push({field:columns[0]||"",operator:"eq",value:""});
+  st.config.conditions=cur;
+  delete st.config.field; delete st.config.operator; delete st.config.value;
+  markDirty(); renderConfig();
+});
+$("#config").querySelectorAll("[data-delcond]").forEach(b=>b.addEventListener("click",ev=>{
+  ev.preventDefault();
+  const st=pipeline.steps[selected];if(!st)return;
+  const i=+b.dataset.delcond;
+  const cur=(st.config.conditions||[]).map(x=>({...x}));
+  cur.splice(i,1);
+  st.config.conditions=cur.length?cur:[{field:columns[0]||"",operator:"eq",value:""}];
+  markDirty(); renderConfig();
+}));
 }
 function moveStep(d){const i=selected,j=i+d;if(j<0||j>=pipeline.steps.length)return;
   const [x]=pipeline.steps.splice(i,1);pipeline.steps.splice(j,0,x);selected=j;markDirty();renderFlow();renderConfig()}
@@ -614,13 +842,28 @@ $("#config").addEventListener("input",e=>{
     if(to==="") delete map[from]; else map[from]=to;
     s.config.map=map; markDirty(); renderFlow(); return;
   }
-  // multi-column ordered checklist
+  // multi-condition rows (filter_rows)
+  if(t.dataset.cond!=null){
+    const i=+t.dataset.cond, f=t.dataset.cfield;
+    const cur=(s.config.conditions&&s.config.conditions.length)
+      ? s.config.conditions.map(x=>({...x}))
+      : [{field:s.config.field||columns[0]||"",operator:s.config.operator||"eq",value:s.config.value??""}];
+    while(cur.length<=i) cur.push({field:columns[0]||"",operator:"eq",value:""});
+    cur[i][f]=t.value;
+    s.config.conditions=cur;
+    delete s.config.field; delete s.config.operator; delete s.config.value;
+    markDirty(); renderFlow();
+    if(f==="operator") renderConfig();
+    return;
+  }
+  // multi-column ordered checklist (key comes from data-multi)
   const multiWrap=t.closest("[data-multi]");
   if(multiWrap&&t.dataset.col!=null){
-    const cur=[...(s.config.fields||[])];
+    const mkey=multiWrap.dataset.multi||"fields";
+    const cur=[...(s.config[mkey]||[])];
     if(t.checked){ if(!cur.includes(t.dataset.col)) cur.push(t.dataset.col); }
     else { const i=cur.indexOf(t.dataset.col); if(i>=0) cur.splice(i,1); }
-    s.config.fields=cur; markDirty(); renderFlow(); return;
+    s.config[mkey]=cur; markDirty(); renderFlow(); return;
   }
   // datetime parts checklist
   const partWrap=t.closest('[data-key="parts"]');
@@ -631,12 +874,21 @@ $("#config").addEventListener("input",e=>{
     s.config.parts=cur; markDirty(); renderFlow(); return;
   }
   let v=t.type==="checkbox"?t.checked:t.multiple?[...t.selectedOptions].map(o=>o.value):t.value;
-  if(["n","k","pad","length","bins","rolling"].includes(key))v=Number(v);
+  // comma / newline separated inputs become arrays
+  if(t.dataset.list!=null&&typeof v==="string"){
+    const parts=v.split(/[\n,]/).map(x=>x.trim()).filter(x=>x!=="");
+    v=t.dataset.list==="num"?parts.map(Number).filter(n=>!isNaN(n)):parts;
+  }
+  if(["n","k","pad","length","bins","rolling","from","to","count","nth","places",
+      "clusters","components","trees","max_parts","seed"].includes(key))v=Number(v);
+  if(["rate","threshold"].includes(key))v=parseFloat(v);
+  // selects that carry true/false as strings
+  if(["ascending"].includes(key))v=(v==="true"||v===true);
   if(main)s[main]=v;
   if(key)s.config[key]=v;
-  // re-render the settings panel when the chosen column changes so the
-  // value pickers / recode list refresh to that column's real values.
-  const needsRerender=(key==="field"||key==="operator"||key==="id_mode");
+  // re-render the settings panel when a choice changes which controls apply
+  const needsRerender=["field","operator","id_mode","mode","where","method",
+                       "action","agg","target","task"].includes(key);
   markDirty(); renderFlow();
   if(needsRerender) renderConfig();
 });

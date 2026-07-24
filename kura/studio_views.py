@@ -36,6 +36,24 @@ EXTRA_OPERATIONS = [
     ("make_id", "Generate ID from columns"),
     ("concat_columns", "Combine columns into text"),
     ("extract_datetime", "Extract date/time parts"),
+    # ── rows & shaping ──
+    ("sort_rows", "Sort rows"),
+    ("split_column", "Split column into parts"),
+    ("replace_text", "Find and replace text"),
+    ("bin_column", "Group numbers into bands"),
+    ("clip_range", "Limit to a valid range"),
+    ("round_numbers", "Round numbers"),
+    ("group_aggregate", "Add group summary column"),
+    ("rank_rows", "Rank rows"),
+    ("running_total", "Running total"),
+    ("flag_rows", "Mark rows (keep them)"),
+    ("strip_accents", "Remove accents"),
+    # ── machine learning ──
+    ("cluster", "Find natural groups (ML)"),
+    ("detect_anomalies", "Detect unusual rows (ML)"),
+    ("predict_column", "Predict missing answers (ML)"),
+    ("similar_duplicates", "Find near-duplicates (ML)"),
+    ("reduce_dimensions", "Summarise many columns (ML)"),
 ]
 
 

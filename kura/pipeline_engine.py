@@ -182,12 +182,45 @@ class PipelineExecutor:
                 lo = float(cfg.get("min"))
                 hi = float(cfg.get("max"))
                 return numeric.between(lo, hi, inclusive="both")
+            # eq/ne on a numeric column must compare numerically: as strings
+            # "40.0" != "40" would wrongly report a mismatch.
+            if numeric.notna().any():
+                if op == "eq":
+                    return numeric == wanted
+                if op == "ne":
+                    return numeric != wanted
         except (TypeError, ValueError):
             pass
 
         if op == "ne":
             return s.astype(str) != str(value)
         return s.astype(str) == str(value)
+
+    @classmethod
+    def _combined_mask(cls, df, cfg):
+        """One condition, or several joined by AND/OR.
+
+        Accepts the original single-condition shape ({"field","operator",
+        "value"}) unchanged, plus an optional {"conditions":[…], "match":
+        "all"|"any"} form used by the multi-condition editor.
+        """
+        conditions = cfg.get("conditions")
+        if not conditions:
+            return cls._condition_mask(df, cfg)
+
+        masks = [cls._condition_mask(df, c) for c in conditions
+                 if c and c.get("field")]
+        if not masks:
+            raise PipelineExecutionError("Add at least one condition.")
+
+        combined = masks[0]
+        if str(cfg.get("match", "all")).lower() == "any":
+            for m in masks[1:]:
+                combined = combined | m
+        else:
+            for m in masks[1:]:
+                combined = combined & m
+        return combined
 
     def _fill_missing(self, df, step, cfg):
         field = cfg.get("field")
@@ -312,7 +345,7 @@ class PipelineExecutor:
             return self._regression_impute(df, step, cfg)
 
         if op == "filter_rows":
-            mask = self._condition_mask(df, cfg)
+            mask = self._combined_mask(df, cfg)
             keep = bool(cfg.get("keep_matching", True))
             dropped = df.loc[~mask if keep else mask]
             for idx, row in dropped.iterrows():
@@ -320,10 +353,83 @@ class PipelineExecutor:
             return df.loc[mask if keep else ~mask].copy()
 
         if op == "drop_rows":
-            ids = {str(v) for v in (cfg.get("submission_ids") or [])}
-            mask = df["_submission_id"].astype(str).isin(ids) if "_submission_id" in df else pd.Series(False, index=df.index)
+            # Five ways to choose which rows go. Default stays "ids" so any
+            # pipeline saved before this block gained options behaves the same.
+            mode = cfg.get("mode") or "ids"
+            n = len(df)
+            if n == 0:
+                return df
+
+            if mode == "range":
+                # 1-based, inclusive, as shown in the results table.
+                try:
+                    start = int(cfg.get("from") or 1)
+                    end = int(cfg.get("to") or n)
+                except (TypeError, ValueError):
+                    raise PipelineExecutionError(
+                        "Row range needs whole numbers.")
+                if start > end:
+                    start, end = end, start
+                start = max(1, start)
+                end = min(n, end)
+                positions = pd.Series(range(1, n + 1), index=df.index)
+                mask = (positions >= start) & (positions <= end)
+                reason = f"Row {start}–{end} of {n}."
+
+            elif mode == "condition":
+                mask = self._condition_mask(df, cfg)
+                reason = "Matched the drop condition."
+
+            elif mode == "position":
+                where = cfg.get("where", "first")
+                count = max(0, int(cfg.get("count") or 0))
+                positions = pd.Series(range(1, n + 1), index=df.index)
+                if where == "last":
+                    mask = positions > (n - count)
+                    reason = f"Last {count} row(s)."
+                elif where == "every_nth":
+                    step_n = max(2, int(cfg.get("nth") or 2))
+                    mask = (positions % step_n) == 0
+                    reason = f"Every {step_n}th row."
+                else:
+                    mask = positions <= count
+                    reason = f"First {count} row(s)."
+
+            elif mode == "blank":
+                fields = [c for c in (cfg.get("fields") or []) if c in df.columns]
+                if not fields:
+                    raise PipelineExecutionError(
+                        "Choose at least one column to check for blanks.")
+                blanks = pd.DataFrame(
+                    {c: self._series_missing(df[c]) for c in fields})
+                require_all = cfg.get("match", "any") == "all"
+                mask = blanks.all(axis=1) if require_all else blanks.any(axis=1)
+                reason = ("Blank in every chosen column."
+                          if require_all else "Blank in a chosen column.")
+
+            elif mode == "duplicates":
+                fields = [c for c in (cfg.get("fields") or []) if c in df.columns]
+                subset = fields or [c for c in df.columns
+                                    if c not in META_COLUMNS]
+                keep = cfg.get("keep", "first")
+                mask = df[subset].astype(str).duplicated(
+                    keep=False if keep == "none" else keep)
+                reason = "Duplicate row."
+
+            else:  # "ids" — the original behaviour
+                ids = {str(v) for v in (cfg.get("submission_ids") or [])}
+                if "_submission_id" in df.columns:
+                    mask = df["_submission_id"].astype(str).isin(ids)
+                else:
+                    mask = pd.Series(False, index=df.index)
+                reason = "Explicitly removed."
+
+            if bool(cfg.get("invert")):
+                mask = ~mask
+                reason = "Kept only the chosen rows; this one fell outside."
+
             for idx, row in df.loc[mask].iterrows():
-                self.record_change(step, row, "", None, None, "drop_row", "Explicitly removed.")
+                self.record_change(step, row, "", None, None, "drop_row", reason)
             return df.loc[~mask].copy()
 
         if op == "drop_columns":
@@ -371,7 +477,9 @@ class PipelineExecutor:
             subset = fields or [c for c in df.columns if c not in META_COLUMNS]
             # Stringify first: repeat-group cells hold lists, which the plain
             # duplicated() cannot hash.
-            duplicate_mask = df[subset].astype(str).duplicated(keep=cfg.get("keep", "first"))
+            keep = cfg.get("keep", "first")
+            duplicate_mask = df[subset].astype(str).duplicated(
+                keep=False if keep == "none" else keep)
             for idx, row in df.loc[duplicate_mask].iterrows():
                 self.record_change(step, row, ",".join(fields), None, None, "drop_row", "Duplicate removed.")
             return df.loc[~duplicate_mask].copy()
@@ -471,6 +579,530 @@ class PipelineExecutor:
                 for idx, row in df.loc[mask].iterrows():
                     self.record_change(step, row, field, row[field], None, "drop_row", "Outlier row removed.")
                 df = df.loc[~mask].copy()
+            return df
+
+        if op == "sort_rows":
+            fields = [c for c in (cfg.get("fields") or []) if c in df.columns]
+            if not fields:
+                raise PipelineExecutionError("Choose at least one column to sort by.")
+            ascending = bool(cfg.get("ascending", True))
+            if cfg.get("numeric", True):
+                keys = {}
+                for c in fields:
+                    num = pd.to_numeric(df[c], errors="coerce")
+                    keys[c] = num if num.notna().any() else df[c].astype(str)
+                order = pd.DataFrame(keys).sort_values(
+                    by=fields, ascending=ascending, kind="mergesort").index
+            else:
+                order = df.sort_values(by=fields, ascending=ascending,
+                                       kind="mergesort").index
+            return df.loc[order].copy()
+
+        if op == "split_column":
+            field = cfg.get("field")
+            if field not in df.columns:
+                raise PipelineExecutionError(f"Column '{field}' does not exist.")
+            sep = cfg.get("separator") or " "
+            limit = int(cfg.get("max_parts") or 0)
+            prefix = str(cfg.get("prefix") or field)
+            text = df[field].fillna("").astype(str)
+            parts = text.str.split(re.escape(sep), n=(limit - 1) if limit else -1,
+                                   regex=True, expand=True)
+            if limit:
+                parts = parts.iloc[:, :limit]
+            for i in range(parts.shape[1]):
+                name = f"{prefix}_{i + 1}"
+                col = parts[i]
+                if cfg.get("trim", True):
+                    col = col.apply(lambda v: v.strip() if isinstance(v, str) else v)
+                df[name] = col
+                for idx in df.index:
+                    self.record_change(step, df.loc[idx], name, None,
+                                       df.at[idx, name], "calculate",
+                                       f"Split from {field}.")
+            return df
+
+        if op == "replace_text":
+            field = cfg.get("field")
+            if field not in df.columns:
+                raise PipelineExecutionError(f"Column '{field}' does not exist.")
+            find = str(cfg.get("find") or "")
+            if not find:
+                raise PipelineExecutionError("Type the text to find.")
+            repl = str(cfg.get("replace") or "")
+            use_regex = bool(cfg.get("regex"))
+            old = df[field].copy()
+            try:
+                df[field] = df[field].apply(
+                    lambda v: (re.sub(find, repl, v, flags=0 if cfg.get("case_sensitive")
+                                      else re.IGNORECASE) if use_regex
+                               else (v.replace(find, repl) if cfg.get("case_sensitive")
+                                     else re.sub(re.escape(find), repl, v,
+                                                 flags=re.IGNORECASE)))
+                    if isinstance(v, str) else v)
+            except re.error as exc:
+                raise PipelineExecutionError(f"Invalid pattern: {exc}") from exc
+            changed = old.astype(str) != df[field].astype(str)
+            for idx in df.index[changed]:
+                self.record_change(step, df.loc[idx], field, old.loc[idx],
+                                   df.at[idx, field], "replace",
+                                   f"Replaced '{find}'.")
+            return df
+
+        if op == "bin_column":
+            field = cfg.get("field")
+            if field not in df.columns:
+                raise PipelineExecutionError(f"Column '{field}' does not exist.")
+            values = pd.to_numeric(df[field], errors="coerce")
+            new_name = str(cfg.get("new_field") or f"{field}_band").strip()
+            method = cfg.get("method", "equal")
+            try:
+                if method == "custom":
+                    edges = [float(x) for x in (cfg.get("edges") or [])]
+                    if len(edges) < 2:
+                        raise PipelineExecutionError(
+                            "Custom bands need at least two edge numbers.")
+                    labels = cfg.get("labels") or None
+                    if labels and len(labels) != len(edges) - 1:
+                        labels = None
+                    df[new_name] = pd.cut(values, bins=edges, labels=labels,
+                                          include_lowest=True).astype(str)
+                elif method == "quantile":
+                    q = max(2, int(cfg.get("bins") or 4))
+                    df[new_name] = pd.qcut(values, q=q, duplicates="drop").astype(str)
+                else:
+                    q = max(2, int(cfg.get("bins") or 4))
+                    df[new_name] = pd.cut(values, bins=q).astype(str)
+            except ValueError as exc:
+                raise PipelineExecutionError(f"Could not build bands: {exc}") from exc
+            df[new_name] = df[new_name].replace({"nan": None, "NaN": None})
+            for idx in df.index:
+                self.record_change(step, df.loc[idx], new_name, None,
+                                   df.at[idx, new_name], "calculate",
+                                   f"Banded from {field}.")
+            return df
+
+        if op == "clip_range":
+            field = cfg.get("field")
+            if field not in df.columns:
+                raise PipelineExecutionError(f"Column '{field}' does not exist.")
+            values = pd.to_numeric(df[field], errors="coerce")
+            lo = cfg.get("min")
+            hi = cfg.get("max")
+            lo = float(lo) if lo not in (None, "") else None
+            hi = float(hi) if hi not in (None, "") else None
+            if lo is None and hi is None:
+                raise PipelineExecutionError("Set a minimum, a maximum, or both.")
+            action = cfg.get("action", "cap")
+            outside = pd.Series(False, index=df.index)
+            if lo is not None:
+                outside |= values < lo
+            if hi is not None:
+                outside |= values > hi
+            old = df[field].copy()
+            if action == "blank":
+                df.loc[outside, field] = None
+                verb = "Cleared (outside range)."
+            elif action == "drop":
+                for idx, row in df.loc[outside].iterrows():
+                    self.record_change(step, row, field, row[field], None,
+                                       "drop_row", "Outside allowed range.")
+                return df.loc[~outside].copy()
+            else:
+                df[field] = values.clip(lower=lo, upper=hi)
+                verb = "Capped to the allowed range."
+            for idx in df.index[outside]:
+                self.record_change(step, df.loc[idx], field, old.loc[idx],
+                                   df.at[idx, field], "other", verb)
+            return df
+
+        if op == "round_numbers":
+            fields = [c for c in (cfg.get("fields") or []) if c in df.columns]
+            if not fields:
+                raise PipelineExecutionError("Choose at least one column.")
+            places = int(cfg.get("places") or 0)
+            for c in fields:
+                old = df[c].copy()
+                values = pd.to_numeric(df[c], errors="coerce")
+                rounded = values.round(places)
+                df[c] = rounded.astype("Int64") if places <= 0 else rounded
+                changed = old.astype(str) != df[c].astype(str)
+                for idx in df.index[changed]:
+                    self.record_change(step, df.loc[idx], c, old.loc[idx],
+                                       df.at[idx, c], "other",
+                                       f"Rounded to {places} dp.")
+            return df
+
+        if op == "group_aggregate":
+            groups = [c for c in (cfg.get("group_by") or []) if c in df.columns]
+            field = cfg.get("field")
+            agg = cfg.get("agg", "mean")
+            if not groups:
+                raise PipelineExecutionError("Choose at least one grouping column.")
+            if agg != "count" and field not in df.columns:
+                raise PipelineExecutionError(f"Column '{field}' does not exist.")
+            new_name = str(cfg.get("new_field")
+                           or f"{field or 'row'}_{agg}_by_{'_'.join(groups)}").strip()
+            if agg == "count":
+                result = df.groupby(groups, dropna=False)[groups[0]].transform("size")
+            else:
+                values = pd.to_numeric(df[field], errors="coerce")
+                if agg in {"first", "last", "nunique"}:
+                    result = df.groupby(groups, dropna=False)[field].transform(agg)
+                else:
+                    result = values.groupby(
+                        [df[c] for c in groups], dropna=False).transform(agg)
+            df[new_name] = result
+            for idx in df.index:
+                self.record_change(step, df.loc[idx], new_name, None,
+                                   df.at[idx, new_name], "calculate",
+                                   f"{agg} within {', '.join(groups)}.")
+            return df
+
+        if op == "rank_rows":
+            field = cfg.get("field")
+            if field not in df.columns:
+                raise PipelineExecutionError(f"Column '{field}' does not exist.")
+            new_name = str(cfg.get("new_field") or f"{field}_rank").strip()
+            values = pd.to_numeric(df[field], errors="coerce")
+            ascending = bool(cfg.get("ascending", True))
+            groups = [c for c in (cfg.get("group_by") or []) if c in df.columns]
+            method = cfg.get("method", "min")
+            if groups:
+                df[new_name] = values.groupby(
+                    [df[c] for c in groups], dropna=False).rank(
+                        ascending=ascending, method=method).astype("Int64")
+            else:
+                df[new_name] = values.rank(
+                    ascending=ascending, method=method).astype("Int64")
+            for idx in df.index:
+                self.record_change(step, df.loc[idx], new_name, None,
+                                   df.at[idx, new_name], "calculate",
+                                   f"Rank of {field}.")
+            return df
+
+        if op == "running_total":
+            field = cfg.get("field")
+            if field not in df.columns:
+                raise PipelineExecutionError(f"Column '{field}' does not exist.")
+            new_name = str(cfg.get("new_field") or f"{field}_running").strip()
+            values = pd.to_numeric(df[field], errors="coerce").fillna(0)
+            groups = [c for c in (cfg.get("group_by") or []) if c in df.columns]
+            mode = cfg.get("mode", "sum")
+            if groups:
+                grouped = values.groupby([df[c] for c in groups], dropna=False)
+                df[new_name] = (grouped.cumsum() if mode == "sum"
+                                else grouped.cummax() if mode == "max"
+                                else grouped.cummin())
+            else:
+                df[new_name] = (values.cumsum() if mode == "sum"
+                                else values.cummax() if mode == "max"
+                                else values.cummin())
+            for idx in df.index:
+                self.record_change(step, df.loc[idx], new_name, None,
+                                   df.at[idx, new_name], "calculate",
+                                   f"Running {mode} of {field}.")
+            return df
+
+        if op == "flag_rows":
+            # Mark rows instead of removing them — keeps the row, adds a column.
+            new_name = str(cfg.get("new_field") or "flag").strip()
+            mask = self._combined_mask(df, cfg)
+            true_label = cfg.get("true_label", "yes")
+            false_label = cfg.get("false_label", "")
+            df[new_name] = [true_label if m else false_label for m in mask]
+            for idx in df.index[mask]:
+                self.record_change(step, df.loc[idx], new_name, None,
+                                   df.at[idx, new_name], "other",
+                                   cfg.get("reason") or "Matched flag condition.")
+            return df
+
+        if op == "strip_accents":
+            import unicodedata
+            fields = [c for c in (cfg.get("fields") or []) if c in df.columns]
+            if not fields:
+                raise PipelineExecutionError("Choose at least one column.")
+
+            def _plain(v):
+                if not isinstance(v, str):
+                    return v
+                norm = unicodedata.normalize("NFKD", v)
+                return "".join(ch for ch in norm if not unicodedata.combining(ch))
+
+            for c in fields:
+                old = df[c].copy()
+                df[c] = df[c].apply(_plain)
+                changed = old.astype(str) != df[c].astype(str)
+                for idx in df.index[changed]:
+                    self.record_change(step, df.loc[idx], c, old.loc[idx],
+                                       df.at[idx, c], "replace",
+                                       "Accents removed.")
+            return df
+
+        # ── machine-learning blocks ──────────────────────────────────
+        # Each one degrades to a clear message if scikit-learn is absent,
+        # matching how regression_impute already behaves.
+
+        if op == "cluster":
+            fields = [c for c in (cfg.get("fields") or []) if c in df.columns]
+            if len(fields) < 1:
+                raise PipelineExecutionError("Choose at least one column to cluster on.")
+            try:
+                from sklearn.cluster import KMeans
+                from sklearn.impute import SimpleImputer
+                from sklearn.preprocessing import StandardScaler
+            except ImportError as exc:
+                raise PipelineExecutionError(
+                    "Clustering requires scikit-learn.") from exc
+
+            new_name = str(cfg.get("new_field") or "cluster").strip()
+            k = max(2, int(cfg.get("clusters") or 3))
+            matrix = pd.DataFrame(
+                {c: pd.to_numeric(df[c], errors="coerce") for c in fields})
+            usable = matrix.notna().any(axis=1)
+            if usable.sum() < k:
+                raise PipelineExecutionError(
+                    f"Need at least {k} rows with numbers in those columns.")
+            filled = SimpleImputer(strategy="median").fit_transform(matrix[usable])
+            scaled = StandardScaler().fit_transform(filled)
+            model = KMeans(n_clusters=k, n_init=10,
+                           random_state=int(cfg.get("seed", 42)))
+            labels = model.fit_predict(scaled)
+            prefix = cfg.get("label_prefix", "Group ")
+            df[new_name] = None
+            df.loc[usable, new_name] = [f"{prefix}{int(v) + 1}" for v in labels]
+            for idx in df.index[usable]:
+                self.record_change(step, df.loc[idx], new_name, None,
+                                   df.at[idx, new_name], "calculate",
+                                   f"K-means on {', '.join(fields)}.")
+            return df
+
+        if op == "detect_anomalies":
+            fields = [c for c in (cfg.get("fields") or []) if c in df.columns]
+            if not fields:
+                raise PipelineExecutionError("Choose at least one column.")
+            try:
+                from sklearn.ensemble import IsolationForest
+                from sklearn.impute import SimpleImputer
+                from sklearn.preprocessing import StandardScaler
+            except ImportError as exc:
+                raise PipelineExecutionError(
+                    "Anomaly detection requires scikit-learn.") from exc
+
+            new_name = str(cfg.get("new_field") or "anomaly").strip()
+            matrix = pd.DataFrame(
+                {c: pd.to_numeric(df[c], errors="coerce") for c in fields})
+            usable = matrix.notna().any(axis=1)
+            if usable.sum() < 8:
+                raise PipelineExecutionError(
+                    "Need at least 8 rows with numbers to find anomalies.")
+            filled = SimpleImputer(strategy="median").fit_transform(matrix[usable])
+            scaled = StandardScaler().fit_transform(filled)
+            rate = float(cfg.get("rate", 0.05))
+            rate = min(0.5, max(0.001, rate))
+            model = IsolationForest(contamination=rate,
+                                    random_state=int(cfg.get("seed", 42)))
+            pred = model.fit_predict(scaled)          # -1 = outlier
+            scores = model.score_samples(scaled)
+            flags = pd.Series(False, index=df.index)
+            flags.loc[df.index[usable]] = pred == -1
+
+            if cfg.get("action") == "drop":
+                for idx, row in df.loc[flags].iterrows():
+                    self.record_change(step, row, "", None, None, "drop_row",
+                                       "Flagged as unusual by the model.")
+                return df.loc[~flags].copy()
+
+            df[new_name] = ["yes" if f else "" for f in flags]
+            if cfg.get("include_score", True):
+                score_col = f"{new_name}_score"
+                df[score_col] = None
+                df.loc[usable, score_col] = [round(float(v), 4) for v in scores]
+            for idx in df.index[flags]:
+                self.record_change(step, df.loc[idx], new_name, None,
+                                   df.at[idx, new_name], "other",
+                                   "Unusual combination of values.")
+            return df
+
+        if op == "predict_column":
+            target = cfg.get("target") or cfg.get("field")
+            predictors = [c for c in (cfg.get("predictors") or [])
+                          if c in df.columns and c != target]
+            if target not in df.columns:
+                raise PipelineExecutionError(
+                    f"Target column '{target}' does not exist.")
+            if not predictors:
+                raise PipelineExecutionError("Choose at least one input column.")
+            try:
+                from sklearn.compose import ColumnTransformer
+                from sklearn.ensemble import (RandomForestClassifier,
+                                              RandomForestRegressor)
+                from sklearn.impute import SimpleImputer
+                from sklearn.pipeline import Pipeline as SkPipeline
+                from sklearn.preprocessing import OneHotEncoder
+            except ImportError as exc:
+                raise PipelineExecutionError(
+                    "Prediction requires scikit-learn.") from exc
+
+            new_name = str(cfg.get("new_field") or f"{target}_predicted").strip()
+            known = ~self._series_missing(df[target])
+            if known.sum() < 10:
+                raise PipelineExecutionError(
+                    "Need at least 10 rows with a known answer to learn from.")
+
+            train_x = df.loc[known, predictors]
+            numeric_cols = [c for c in predictors
+                            if pd.api.types.is_numeric_dtype(train_x[c])]
+            categorical_cols = [c for c in predictors if c not in numeric_cols]
+            prep = ColumnTransformer([
+                ("num", SimpleImputer(strategy="median"), numeric_cols),
+                ("cat", SkPipeline([
+                    ("imputer", SimpleImputer(strategy="most_frequent")),
+                    ("onehot", OneHotEncoder(handle_unknown="ignore")),
+                ]), categorical_cols),
+            ])
+
+            numeric_target = pd.to_numeric(df.loc[known, target], errors="coerce")
+            treat_numeric = (cfg.get("task") == "number") or (
+                cfg.get("task") in (None, "", "auto")
+                and numeric_target.notna().sum() >= known.sum() * 0.8)
+            seed = int(cfg.get("seed", 42))
+            trees = max(10, int(cfg.get("trees") or 100))
+
+            if treat_numeric:
+                model = SkPipeline([("prep", prep),
+                                    ("model", RandomForestRegressor(
+                                        n_estimators=trees, random_state=seed))])
+                valid = numeric_target.notna()
+                model.fit(train_x.loc[valid], numeric_target.loc[valid])
+            else:
+                labels = df.loc[known, target].astype(str)
+                if labels.nunique() < 2:
+                    raise PipelineExecutionError(
+                        "The target column needs at least two different answers.")
+                model = SkPipeline([("prep", prep),
+                                    ("model", RandomForestClassifier(
+                                        n_estimators=trees, random_state=seed))])
+                model.fit(train_x, labels)
+
+            scope = cfg.get("scope", "missing")   # missing | all
+            rows = df.index if scope == "all" else df.index[~known]
+            if len(rows):
+                predicted = model.predict(df.loc[rows, predictors])
+                df[new_name] = df.get(new_name)
+                for idx, value in zip(rows, predicted):
+                    df.at[idx, new_name] = _json_value(value)
+                    self.record_change(step, df.loc[idx], new_name, None,
+                                       df.at[idx, new_name], "calculate",
+                                       f"Predicted from {', '.join(predictors)}.")
+            if bool(cfg.get("fill_target")):
+                for idx in df.index[~known]:
+                    value = df.at[idx, new_name]
+                    if value is not None:
+                        old = df.at[idx, target]
+                        df.at[idx, target] = value
+                        self.record_change(step, df.loc[idx], target, old, value,
+                                           "impute", "Filled with the prediction.")
+            return df
+
+        if op == "similar_duplicates":
+            fields = [c for c in (cfg.get("fields") or []) if c in df.columns]
+            if not fields:
+                raise PipelineExecutionError("Choose at least one text column.")
+            try:
+                from sklearn.feature_extraction.text import TfidfVectorizer
+                from sklearn.metrics.pairwise import cosine_similarity
+            except ImportError as exc:
+                raise PipelineExecutionError(
+                    "Fuzzy duplicate detection requires scikit-learn.") from exc
+
+            threshold = float(cfg.get("threshold", 0.85))
+            threshold = min(0.99, max(0.5, threshold))
+            text = df[fields].fillna("").astype(str).agg(" ".join, axis=1)
+            text = text.str.lower().str.replace(r"\s+", " ", regex=True).str.strip()
+            usable = text.str.len() > 0
+            if usable.sum() < 2:
+                return df
+
+            vect = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 3),
+                                   min_df=1)
+            matrix = vect.fit_transform(text[usable])
+            sim = cosine_similarity(matrix)
+            np.fill_diagonal(sim, 0.0)
+
+            idx_list = list(df.index[usable])
+            group_of, groups = {}, []
+            for i in range(len(idx_list)):
+                for j in range(i + 1, len(idx_list)):
+                    if sim[i, j] >= threshold:
+                        gi, gj = group_of.get(i), group_of.get(j)
+                        if gi is None and gj is None:
+                            groups.append({i, j})
+                            group_of[i] = group_of[j] = len(groups) - 1
+                        elif gi is None:
+                            groups[gj].add(i); group_of[i] = gj
+                        elif gj is None:
+                            groups[gi].add(j); group_of[j] = gi
+                        elif gi != gj:
+                            groups[gi] |= groups[gj]
+                            for m in groups[gj]:
+                                group_of[m] = gi
+                            groups[gj] = set()
+
+            new_name = str(cfg.get("new_field") or "similar_group").strip()
+            action = cfg.get("action", "flag")
+            df[new_name] = None
+            drop_idx = []
+            label = 0
+            for members in groups:
+                if len(members) < 2:
+                    continue
+                label += 1
+                ordered = sorted(members)
+                for pos, m in enumerate(ordered):
+                    row_idx = idx_list[m]
+                    df.at[row_idx, new_name] = f"Group {label}"
+                    if action == "drop" and pos > 0:
+                        drop_idx.append(row_idx)
+                    else:
+                        self.record_change(
+                            step, df.loc[row_idx], new_name, None,
+                            df.at[row_idx, new_name], "other",
+                            f"Looks like {len(members) - 1} other row(s).")
+            if action == "drop" and drop_idx:
+                for idx in drop_idx:
+                    self.record_change(step, df.loc[idx], "", None, None,
+                                       "drop_row", "Near-duplicate of an earlier row.")
+                return df.drop(index=drop_idx).copy()
+            return df
+
+        if op == "reduce_dimensions":
+            fields = [c for c in (cfg.get("fields") or []) if c in df.columns]
+            if len(fields) < 2:
+                raise PipelineExecutionError("Choose at least two columns.")
+            try:
+                from sklearn.decomposition import PCA
+                from sklearn.impute import SimpleImputer
+                from sklearn.preprocessing import StandardScaler
+            except ImportError as exc:
+                raise PipelineExecutionError(
+                    "Dimension reduction requires scikit-learn.") from exc
+
+            n_parts = max(1, min(int(cfg.get("components") or 2), len(fields)))
+            prefix = str(cfg.get("prefix") or "component")
+            matrix = pd.DataFrame(
+                {c: pd.to_numeric(df[c], errors="coerce") for c in fields})
+            usable = matrix.notna().any(axis=1)
+            if usable.sum() <= n_parts:
+                raise PipelineExecutionError("Not enough rows with numbers.")
+            filled = SimpleImputer(strategy="median").fit_transform(matrix[usable])
+            scaled = StandardScaler().fit_transform(filled)
+            coords = PCA(n_components=n_parts,
+                         random_state=int(cfg.get("seed", 42))).fit_transform(scaled)
+            for i in range(n_parts):
+                name = f"{prefix}_{i + 1}"
+                df[name] = None
+                df.loc[usable, name] = [round(float(v), 4) for v in coords[:, i]]
             return df
 
         if op == "scale":

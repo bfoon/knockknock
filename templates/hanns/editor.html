@@ -100,6 +100,64 @@ body.hanns-options-open .drawer{
   .top-options-panel{width:min(270px,calc(100vw - 20px))!important;}
   .option-item{min-height:44px!important;font-size:13px!important;}
 }
+
+/* ── Audience download: menu pill + modal ─────────────────────────── */
+.option-pill{
+  margin-left:auto;border-radius:999px;padding:.1rem .45rem;
+  font:800 .58rem/1.5 var(--font-mono,ui-monospace,monospace);
+  letter-spacing:.08em;text-transform:uppercase;
+  background:linear-gradient(135deg,#16a34a,#14b8a6);color:#fff;
+}
+.dl-switch{
+  display:flex;align-items:flex-start;gap:.75rem;cursor:pointer;
+  margin:.2rem 1.3rem .9rem;padding:.75rem .85rem;border-radius:14px;
+  border:1px solid var(--line);background:rgba(255,255,255,.03);
+  transition:border-color .16s ease,background .16s ease;
+}
+.dl-switch:hover{border-color:rgba(255,255,255,.24)}
+.dl-switch input{position:absolute;opacity:0;width:0;height:0}
+.dl-switch-track{
+  flex:0 0 auto;width:42px;height:24px;border-radius:999px;margin-top:.1rem;
+  background:rgba(255,255,255,.16);position:relative;transition:background .18s ease;
+}
+.dl-switch-thumb{
+  position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;
+  background:#fff;transition:transform .18s cubic-bezier(.22,1,.36,1);
+  box-shadow:0 2px 6px rgba(0,0,0,.35);
+}
+.dl-switch input:checked + .dl-switch-track{background:linear-gradient(135deg,#16a34a,#14b8a6)}
+.dl-switch input:checked + .dl-switch-track .dl-switch-thumb{transform:translateX(18px)}
+.dl-switch input:focus-visible + .dl-switch-track{outline:2px solid #14b8a6;outline-offset:2px}
+.dl-switch-text{display:flex;flex-direction:column;gap:.15rem;font-size:.86rem}
+.dl-switch-text small{color:var(--fog-2);font-size:.74rem;line-height:1.45}
+.dl-share{
+  display:flex;gap:.9rem;align-items:flex-start;margin:0 1.3rem .8rem;
+  padding:.85rem;border-radius:14px;border:1px solid var(--line);
+  background:rgba(255,255,255,.03);
+}
+.dl-qr{
+  flex:0 0 auto;width:108px;height:108px;background:#fff;border-radius:10px;
+  padding:6px;display:grid;place-items:center;
+}
+.dl-qr canvas,.dl-qr img{width:100%;height:100%}
+.dl-share-meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:.35rem}
+.dl-label{
+  font:700 .58rem/1 var(--font-mono,ui-monospace,monospace);
+  letter-spacing:.12em;text-transform:uppercase;color:var(--fog-2);
+}
+#dl-url{
+  width:100%;background:rgba(0,0,0,.3);border:1px solid var(--line);
+  border-radius:9px;color:inherit;padding:.45rem .55rem;
+  font:500 .7rem/1.4 var(--font-mono,ui-monospace,monospace);
+  overflow-wrap:anywhere;
+}
+.dl-actions{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.15rem}
+.dl-note{font-size:.74rem!important;line-height:1.55;color:var(--fog-2);
+  padding:0 1.3rem 1.2rem!important;margin:0!important}
+@media(max-width:560px){
+  .dl-share{flex-direction:column;align-items:center;text-align:center}
+  .dl-share-meta{width:100%}
+}
 </style>
 
 </head>
@@ -186,6 +244,11 @@ body.hanns-options-open .drawer{
           <button class="option-item" id="btn-invite" type="button" role="menuitem" title="Invite people to live-edit this deck">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-8 0v2"/><circle cx="12" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
             <span>Invite editors</span>
+          </button>
+          <button class="option-item" id="btn-audience-download" type="button" role="menuitem" title="Let the audience scan a QR at the end to download this deck">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v3M17 20h4M14 20h.01"/></svg>
+            <span>Audience download</span>
+            <span class="option-pill" id="audience-download-pill" hidden>On</span>
           </button>
           {% endif %}
           <button class="option-item" id="btn-import-powerpoint" type="button" role="menuitem" title="Import a PowerPoint file into this Hanns deck">
@@ -341,6 +404,46 @@ body.hanns-options-open .drawer{
 </div>
 {% endif %}
 
+{% if is_deck_owner %}
+<div class="modal" id="download-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="download-modal-title">
+  <div class="modal-card collab-card">
+    <button class="modal-x" data-close-download type="button" aria-label="Close">✕</button>
+    <div class="collab-icon">📥</div>
+    <h3 id="download-modal-title">Audience download</h3>
+    <p>When you end the presentation, the big screen can show a QR code. Anyone
+      who scans it downloads this deck as a single file that opens in any
+      browser, offline — no account needed.</p>
+
+    <label class="dl-switch" for="dl-toggle">
+      <input type="checkbox" id="dl-toggle">
+      <span class="dl-switch-track"><span class="dl-switch-thumb"></span></span>
+      <span class="dl-switch-text">
+        <b>Let the audience download this deck</b>
+        <small id="dl-state">Off — the QR will not appear.</small>
+      </span>
+    </label>
+
+    <div class="dl-share" id="dl-share" hidden>
+      <div class="dl-qr" id="dl-qr"></div>
+      <div class="dl-share-meta">
+        <span class="dl-label">Share link</span>
+        <input type="text" id="dl-url" readonly>
+        <div class="dl-actions">
+          <button class="tbtn compact" id="dl-copy" type="button">Copy link</button>
+          <button class="tbtn ghost compact" id="dl-rotate" type="button"
+                  title="Invalidate every QR you have already shown">New link</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="collab-result" id="dl-result" hidden></div>
+    <p class="dl-note">Anyone with the link can download the deck, so treat it
+      like a share link. <b>New link</b> instantly invalidates every QR shown
+      before — use it if a deck went out to the wrong room.</p>
+  </div>
+</div>
+{% endif %}
+
 
 <input type="file" id="ppt-import-input" class="hidden" accept=".ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation">
 
@@ -366,6 +469,9 @@ body.hanns-options-open .drawer{
     inviteUrl: "{% url 'hanns:invite' deck.code %}",
     editorWsUrl: (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/hanns/{{ deck.code }}/",
     canInvite: {{ is_deck_owner|yesno:"true,false" }},
+    downloadSettingsUrl: "{% url 'hanns:download_settings' deck.code %}",
+    allowDownload: {{ deck.allow_download|yesno:"true,false" }},
+    downloadUrl: "{{ download_url|default:'' }}",
     csrftoken: "{{ csrf_token }}"
   };
 </script>
@@ -461,6 +567,138 @@ body.hanns-options-open .drawer{
 
 {# SheetJS enables .xlsx/.xls import in the chart/table inspector. CSV/TSV still works without it. #}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+{# QR preview for the audience-download share link. #}
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+
+{% if is_deck_owner %}
+<script>
+/* ── Audience download settings ───────────────────────────────────────
+   Owner-only. Toggles Deck.allow_download and can rotate the share token,
+   which instantly invalidates every QR already shown to a room.        */
+(function(){
+  "use strict";
+  var CFG = window.__HANNS__ || {};
+  var modal = document.getElementById("download-modal");
+  if(!modal || !CFG.downloadSettingsUrl) return;
+
+  var toggle  = document.getElementById("dl-toggle");
+  var stateEl = document.getElementById("dl-state");
+  var share   = document.getElementById("dl-share");
+  var qrBox   = document.getElementById("dl-qr");
+  var urlBox  = document.getElementById("dl-url");
+  var result  = document.getElementById("dl-result");
+  var pill    = document.getElementById("audience-download-pill");
+  var busy    = false;
+
+  function say(msg, bad){
+    if(!result) return;
+    result.hidden = !msg;
+    result.textContent = msg || "";
+    result.style.color = bad ? "#fca5a5" : "";
+  }
+
+  function drawQR(url){
+    if(!qrBox) return;
+    qrBox.innerHTML = "";
+    if(!url || typeof window.QRCode !== "function") return;
+    try{
+      new window.QRCode(qrBox, {
+        text: url, width: 96, height: 96,
+        colorDark: "#111827", colorLight: "#ffffff",
+        // Level H matches the codes drawn on the presenter stage.
+        correctLevel: window.QRCode.CorrectLevel.H
+      });
+    }catch(e){ qrBox.innerHTML = ""; }
+  }
+
+  function render(on, url){
+    if(toggle) toggle.checked = !!on;
+    if(stateEl){
+      stateEl.textContent = on
+        ? "On — the QR appears when you end the presentation."
+        : "Off — the QR will not appear.";
+    }
+    if(pill) pill.hidden = !on;
+    if(share) share.hidden = !on || !url;
+    if(on && url){
+      if(urlBox) urlBox.value = url;
+      drawQR(url);
+    }
+    CFG.allowDownload = !!on;
+    CFG.downloadUrl = url || "";
+  }
+
+  function post(body){
+    if(busy) return Promise.resolve(null);
+    busy = true;
+    say("");
+    return fetch(CFG.downloadSettingsUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-CSRFToken": CFG.csrftoken || ""
+      },
+      credentials: "same-origin",
+      body: body
+    }).then(function(r){ return r.json(); })
+      .then(function(j){
+        if(!j || !j.ok) throw new Error((j && j.error) || "Could not save that.");
+        render(j.allow_download, j.download_url);
+        return j;
+      })
+      .catch(function(err){
+        say(err.message || "Could not reach the server.", true);
+        // Put the switch back where the server actually left it.
+        render(CFG.allowDownload, CFG.downloadUrl);
+        return null;
+      })
+      .then(function(j){ busy = false; return j; });
+  }
+
+  if(toggle) toggle.addEventListener("change", function(){
+    post("allow_download=" + (toggle.checked ? "1" : "0")).then(function(j){
+      if(j) say(j.allow_download ? "Audience download is on." : "Audience download is off.");
+    });
+  });
+
+  var rotateBtn = document.getElementById("dl-rotate");
+  if(rotateBtn) rotateBtn.addEventListener("click", function(){
+    if(!window.confirm("Create a new link?\n\nEvery QR code you have already shown will stop working.")) return;
+    post("rotate=1").then(function(j){ if(j) say("New link created — old QR codes no longer work."); });
+  });
+
+  var copyBtn = document.getElementById("dl-copy");
+  if(copyBtn) copyBtn.addEventListener("click", function(){
+    if(!urlBox || !urlBox.value) return;
+    var done = function(){ copyBtn.textContent = "Copied"; setTimeout(function(){ copyBtn.textContent = "Copy link"; }, 1600); };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(urlBox.value).then(done, function(){
+        urlBox.select(); done();
+      });
+    }else{
+      urlBox.select();
+      try{ document.execCommand("copy"); }catch(e){}
+      done();
+    }
+  });
+
+  function open(){ modal.classList.add("on"); modal.setAttribute("aria-hidden","false"); }
+  function close(){ modal.classList.remove("on"); modal.setAttribute("aria-hidden","true"); say(""); }
+
+  var openBtn = document.getElementById("btn-audience-download");
+  if(openBtn) openBtn.addEventListener("click", open);
+  modal.addEventListener("click", function(e){
+    if(e.target === modal || (e.target.closest && e.target.closest("[data-close-download]"))) close();
+  });
+  document.addEventListener("keydown", function(e){
+    if(e.key === "Escape" && modal.classList.contains("on")) close();
+  });
+
+  // Reflect whatever the server already has.
+  render(CFG.allowDownload, CFG.downloadUrl);
+})();
+</script>
+{% endif %}
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="{% static 'hanns/js/hanns_actors.js' %}?v=1"></script>

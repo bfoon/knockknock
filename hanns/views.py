@@ -171,6 +171,13 @@ def deck_edit(request, code):
     if not _can_edit_deck(request.user, deck):
         messages.error(request, "You do not have permission to edit this deck.")
         return redirect("hanns:list")
+    download_url = ""
+    if deck.allow_download:
+        download_url = request.build_absolute_uri(
+            reverse("hanns:audience_download", kwargs={
+                "code": deck.code, "token": str(deck.download_token),
+            })
+        )
     return render(request, "hanns/editor.html", {
         "deck": deck,
         "deck_json": json.dumps(deck.as_dict()),
@@ -179,6 +186,7 @@ def deck_edit(request, code):
         "is_deck_owner": deck.owner_id == request.user.id,
         "collaborators": deck.deck_collaborators.select_related("user").all(),
         "pending_invites": deck.deck_invites.filter(status=DeckInvite.STATUS_PENDING),
+        "download_url": download_url,
     })
 
 

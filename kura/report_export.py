@@ -7,6 +7,7 @@ import io
 import json
 from datetime import datetime
 
+import pandas as pd
 from django.http import HttpResponse
 
 from .analytics import dashboard_payload, run_dataframe
@@ -15,6 +16,269 @@ from .analytics import dashboard_payload, run_dataframe
 def _filename(run, ext):
     code = run.pipeline.survey.code
     return f"{code}_cleaning_run_{run.id}.{ext}"
+
+
+# ── repeat groups ────────────────────────────────────────────────────
+# A repeat group (household members, plots, livestock…) lives in ONE cell
+# of the parent row as a list of dicts. Excel can't hold that, so the
+# exports below split each repeat group onto its own sheet, carrying the
+# parent's identifiers so the two can be joined back together.
+
+# Identifier columns copied onto every child row, in preference order.
+PARENT_KEYS = ["_row_number", "_submission_id", "_uuid"]
+
+# How many parent context columns (region, district…) to carry across
+# so the child sheet is useful on its own without a manual join.
+MAX_PARENT_CONTEXT = 6
+
+
+def _sheet_name(base, used=None, limit=31):
+    """Excel sheet names: <=31 chars, no []:*?/\\ , and must be unique."""
+    clean = "".join("_" if ch in "[]:*?/\\" else ch for ch in str(base)).strip()
+    clean = (clean or "Sheet")[:limit]
+    if used is None:
+        return clean
+    name, n = clean, 2
+    while name.lower() in used:
+        suffix = f"_{n}"
+        name = clean[: limit - len(suffix)] + suffix
+        n += 1
+    used.add(name.lower())
+    return name
+
+
+def _is_repeat_cell(value):
+    return isinstance(value, list) and (not value or isinstance(value[0], dict))
+
+
+def repeat_columns(df):
+    """Columns that hold repeat-group answers, in dataframe order."""
+    found = []
+    for c in df.columns:
+        sample = df[c].dropna().head(50)
+        if sample.empty:
+            continue
+        hits = sum(1 for v in sample if _is_repeat_cell(v))
+        if hits >= max(1, int(len(sample) * 0.6)):
+            found.append(c)
+    return found
+
+
+def _parent_key_columns(df):
+    return [c for c in PARENT_KEYS if c in df.columns]
+
+
+def _parent_context_columns(df, repeats, keys):
+    """Plain scalar parent columns worth carrying onto the child sheet.
+
+    Ordered so that good grouping columns (region, district — few distinct
+    values) come first, because the pivot uses the first one as its rows.
+    A near-unique column like a household code groups nothing useful.
+    """
+    skip = set(repeats) | set(keys)
+    candidates = []
+    for c in df.columns:
+        if c in skip or c.startswith("_"):
+            continue
+        if df[c].map(lambda v: isinstance(v, (list, dict))).any():
+            continue
+        candidates.append(c)
+
+    total = max(1, len(df))
+
+    def rank(col):
+        distinct = df[col].astype(str).nunique()
+        # 2..~15 distinct values makes a good grouping column
+        good = 2 <= distinct <= max(15, total * 0.5)
+        return (0 if good else 1, distinct)
+
+    candidates.sort(key=rank)
+    return candidates[:MAX_PARENT_CONTEXT]
+
+
+def flatten_repeat(df, column, keys=None, context=None, with_fields=False):
+    """One row per repeat ITEM, carrying the parent's identifiers.
+
+    A parent with an empty repeat contributes no rows — the parent sheet
+    still holds it, so nothing is lost.
+
+    with_fields=True returns (frame, child_field_names) so callers can tell
+    the group's own fields apart from the carried parent columns.
+    """
+    keys = keys if keys is not None else _parent_key_columns(df)
+    context = context or []
+    carry = [c for c in list(keys) + list(context) if c in df.columns]
+
+    records, child_fields = [], []
+    for _, parent in df.iterrows():
+        items = parent[column]
+        if not isinstance(items, list):
+            continue
+        for position, item in enumerate(items, start=1):
+            if not isinstance(item, dict):
+                item = {"value": item}
+            record = {c: parent[c] for c in carry}
+            record[f"{column}_index"] = position
+            for k, v in item.items():
+                # never let a child field clobber a parent identifier
+                key = f"{column}_{k}" if k in record else k
+                record[key] = json.dumps(v, ensure_ascii=False) if isinstance(v, (list, dict)) else v
+                if key not in child_fields:
+                    child_fields.append(key)
+            records.append(record)
+
+    if not records:
+        return (None, []) if with_fields else None
+
+    frame = pd.DataFrame(records)
+    ordered = [c for c in carry + [f"{column}_index"] if c in frame.columns]
+    rest = [c for c in frame.columns if c not in ordered]
+    frame = frame[ordered + rest]
+    return (frame, child_fields) if with_fields else frame
+
+
+def _pivot_candidates(frame, exclude):
+    """Split a child frame into (categorical, numeric) columns worth pivoting.
+
+    Categorical candidates are ordered by how well they group: a field like
+    sex or crop (few repeated values) is useful as a cross-tab column, while
+    a near-unique field like a person's name would produce one column per
+    row and tell you nothing. Anything with almost as many distinct values
+    as rows is rejected outright.
+    """
+    categorical, numeric = [], []
+    total = max(1, len(frame))
+    for c in frame.columns:
+        if c in exclude or c.startswith("_"):
+            continue
+        values = frame[c].dropna()
+        if values.empty:
+            continue
+        as_num = pd.to_numeric(values, errors="coerce")
+        if as_num.notna().sum() >= len(values) * 0.8:
+            numeric.append(c)
+            continue
+        distinct = values.astype(str).nunique()
+        # Must actually group: reject a field that is near-unique per row
+        # (a person's name would give one column per row). The ratio test
+        # only bites once there are enough rows for it to mean something.
+        if distinct < 2 or distinct > 25:
+            continue
+        if total >= 8 and distinct > total * 0.6:
+            continue
+        if total < 8 and distinct >= total:
+            continue
+        categorical.append((distinct, c))
+
+    categorical.sort()          # fewest distinct values first
+    return [c for _, c in categorical], numeric
+
+
+def repeat_pivot(frame, column, parent_context=None, child_fields=None):
+    """A ready-made cross-tab of a repeat group.
+
+    Rows = the first parent context column (region, district…) when we have
+    one, else the repeat index. Columns = the child's own first categorical
+    field (sex, relationship…). Values = count of items, plus the mean of
+    the child's first numeric field when there is one.
+
+    Only the repeat group's OWN fields are used as the measure and the
+    column split — the parent columns are carried for joining, and
+    cross-tabbing them against each other would be meaningless.
+
+    Returns None when the data can't support a meaningful cross-tab.
+    """
+    if frame is None or frame.empty:
+        return None
+
+    parent_context = [c for c in (parent_context or []) if c in frame.columns]
+    index_col = parent_context[0] if parent_context else f"{column}_index"
+    if index_col not in frame.columns:
+        return None
+
+    # candidates are the child's own fields only
+    carried = set(PARENT_KEYS) | set(parent_context) | {f"{column}_index"}
+    if child_fields is not None:
+        pool = [c for c in child_fields if c in frame.columns]
+    else:
+        pool = [c for c in frame.columns if c not in carried and not c.startswith("_")]
+    if not pool:
+        return None
+
+    categorical, numeric = _pivot_candidates(frame[pool], set())
+
+    try:
+        if categorical:
+            column_field = categorical[0]
+            if numeric:
+                measure = numeric[0]
+                table = pd.pivot_table(
+                    frame, index=index_col, columns=column_field,
+                    values=measure, aggfunc=["count", "mean"], fill_value=0,
+                )
+                table.columns = [f"{a} of {measure} — {b}" for a, b in table.columns]
+            else:
+                table = pd.pivot_table(
+                    frame, index=index_col, columns=column_field,
+                    values=f"{column}_index", aggfunc="count", fill_value=0,
+                )
+                table.columns = [f"count — {c}" for c in table.columns]
+        elif numeric:
+            measure = numeric[0]
+            table = frame.groupby(index_col)[measure].agg(["count", "mean", "min", "max"])
+            table.columns = [f"{a} of {measure}" for a in table.columns]
+        else:
+            table = frame.groupby(index_col).size().to_frame("count")
+    except (KeyError, ValueError, TypeError):
+        return None
+
+    if table.empty:
+        return None
+    table = table.round(2)
+    table.insert(0, index_col, table.index)
+    return table.reset_index(drop=True)
+
+
+def _excel_safe(df):
+    """Serialize anything Excel can't store, so no value is silently lost."""
+    out = df.copy()
+    for c in out.columns:
+        out[c] = out[c].apply(
+            lambda v: json.dumps(v, ensure_ascii=False)
+            if isinstance(v, (list, dict)) else v
+        )
+    return out
+
+
+def _write_repeat_sheets(writer, df, used_names):
+    """Write one sheet per repeat group, plus a pivot sheet for each.
+
+    Returns the list of repeat column names handled.
+    """
+    repeats = repeat_columns(df)
+    if not repeats:
+        return []
+
+    keys = _parent_key_columns(df)
+    context = _parent_context_columns(df, repeats, keys)
+
+    for column in repeats:
+        child, child_fields = flatten_repeat(
+            df, column, keys=keys, context=context, with_fields=True)
+        if child is None or child.empty:
+            continue
+        child.to_excel(
+            writer, sheet_name=_sheet_name(column, used_names), index=False)
+
+        pivot = repeat_pivot(child, column, parent_context=context,
+                             child_fields=child_fields)
+        if pivot is not None:
+            pivot.to_excel(
+                writer,
+                sheet_name=_sheet_name(f"{column} pivot", used_names),
+                index=False,
+            )
+    return repeats
 
 
 def export_clean_csv(run):
@@ -48,19 +312,23 @@ def export_clean_csv(run):
 
 
 def export_clean_excel(run):
-    """Just the cleaned dataset as a single-sheet Excel workbook."""
-    import pandas as pd
+    """The cleaned dataset as an Excel workbook.
 
+    Sheet 1 is the parent rows. Every repeat group (household members,
+    plots…) gets its own sheet keyed back to the parent, followed by a
+    ready-made pivot of that group.
+    """
     df = run_dataframe(run)
-    # Excel can't store lists/dicts — serialize them so nothing is lost.
-    for c in df.columns:
-        df[c] = df[c].apply(
-            lambda v: json.dumps(v, ensure_ascii=False)
-            if isinstance(v, (list, dict)) else v
-        )
+    if "_row_number" not in df.columns:
+        df.insert(0, "_row_number", range(1, len(df) + 1))
+
     out = io.BytesIO()
+    used_names = set()
     with pd.ExcelWriter(out, engine="openpyxl") as writer:
-        df.to_excel(writer, sheet_name="Clean Data", index=False)
+        _excel_safe(df).to_excel(
+            writer, sheet_name=_sheet_name("Clean Data", used_names), index=False)
+        _write_repeat_sheets(writer, df, used_names)
+
     response = HttpResponse(
         out.getvalue(),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -72,9 +340,10 @@ def export_clean_excel(run):
 
 
 def export_excel(run):
-    import pandas as pd
-
     df = run_dataframe(run)
+    if "_row_number" not in df.columns:
+        df.insert(0, "_row_number", range(1, len(df) + 1))
+
     changes = list(run.changes.values(
         "row_number", "field", "change_type", "old_value", "new_value", "detail"
     ))
@@ -84,16 +353,25 @@ def export_excel(run):
     stats = dashboard_payload(run)
 
     out = io.BytesIO()
+    used_names = set()
     with pd.ExcelWriter(out, engine="openpyxl") as writer:
-        df.to_excel(writer, sheet_name="Cleaned Data", index=False)
-        pd.DataFrame(changes).to_excel(writer, sheet_name="Change Log", index=False)
-        pd.DataFrame(steps).to_excel(writer, sheet_name="Pipeline Steps", index=False)
-        pd.DataFrame(stats.get("numeric", {})).T.to_excel(writer, sheet_name="Summary Statistics")
+        _excel_safe(df).to_excel(
+            writer, sheet_name=_sheet_name("Cleaned Data", used_names), index=False)
+
+        # one sheet per repeat group + its pivot, right after the parent data
+        _write_repeat_sheets(writer, df, used_names)
+
+        pd.DataFrame(changes).to_excel(
+            writer, sheet_name=_sheet_name("Change Log", used_names), index=False)
+        pd.DataFrame(steps).to_excel(
+            writer, sheet_name=_sheet_name("Pipeline Steps", used_names), index=False)
+        pd.DataFrame(stats.get("numeric", {})).T.to_excel(
+            writer, sheet_name=_sheet_name("Summary Statistics", used_names))
         corr = stats.get("correlation", {})
         if corr.get("columns"):
             pd.DataFrame(
                 corr["matrix"], index=corr["columns"], columns=corr["columns"]
-            ).to_excel(writer, sheet_name="Correlation Matrix")
+            ).to_excel(writer, sheet_name=_sheet_name("Correlation Matrix", used_names))
     response = HttpResponse(
         out.getvalue(),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

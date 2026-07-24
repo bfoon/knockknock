@@ -209,17 +209,27 @@ def _apply_recode(subs, rule, user=None):
 
 
 @transaction.atomic
-def run_rules(survey, user=None):
-    """Run every enabled rule. Returns a per-rule summary dict."""
+def run_rules(survey, user=None, rule_ids=None):
+    """Run enabled rules over the survey. Returns a per-rule summary list.
+
+    rule_ids: optional iterable of CleaningRule ids. When given, only those
+    rules run. Each rule still re-baselines only its OWN flags, so running
+    one rule never disturbs another rule's findings.
+    """
     subs = list(
         survey.submissions.exclude(status="excluded").order_by("received_at")
     )
     summary = []
 
-    for rule in survey.cleaning_rules.filter(enabled=True):
+    queryset = survey.cleaning_rules.filter(enabled=True)
+    if rule_ids is not None:
+        queryset = queryset.filter(id__in=list(rule_ids))
+
+    for rule in queryset:
         if rule.kind == "recode":
             n = _apply_recode(subs, rule, user=user)
-            summary.append({"rule": rule.name, "kind": rule.kind, "changed": n})
+            summary.append({"id": rule.id, "rule": rule.name, "kind": rule.kind,
+                            "action": rule.action, "changed": n})
             continue
 
         detector = DETECTORS.get(rule.kind)
@@ -230,6 +240,7 @@ def run_rules(survey, user=None):
         SubmissionFlag.objects.filter(rule=rule, resolved=False).delete()
 
         hits = detector(subs, rule.config or {})
+        excluded = 0
         for s, field, detail in hits:
             SubmissionFlag.objects.create(
                 submission=s, rule=rule, field=field, detail=detail[:240],
@@ -237,11 +248,14 @@ def run_rules(survey, user=None):
             if rule.action == "exclude" and s.status != "excluded":
                 s.status = "excluded"
                 s.save(update_fields=["status"])
+                excluded += 1
             elif s.status == "complete":
                 s.status = "flagged"
                 s.save(update_fields=["status"])
 
-        summary.append({"rule": rule.name, "kind": rule.kind, "hits": len(hits)})
+        summary.append({"id": rule.id, "rule": rule.name, "kind": rule.kind,
+                        "action": rule.action, "hits": len(hits),
+                        "excluded": excluded})
 
     # Heal: any flagged submission with no unresolved flags returns to complete.
     for s in survey.submissions.filter(status="flagged"):

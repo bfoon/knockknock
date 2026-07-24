@@ -136,6 +136,28 @@
   .preset{border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:999px;
     padding:.3rem .75rem;font-size:.72rem;cursor:pointer}
   .preset:hover{color:#fff;border-color:var(--cyan)}
+  .rrun{border:1px solid rgba(34,197,94,.45);background:rgba(34,197,94,.12);color:#86efac;
+    border-radius:8px;padding:.3rem .6rem;font-size:.7rem;font-weight:700;cursor:pointer;
+    white-space:nowrap;flex:none}
+  .rrun:hover{background:rgba(34,197,94,.25)}
+  .rrun:disabled{opacity:.5;cursor:default}
+  .rres{display:inline-flex;align-items:center;gap:.3rem;border-radius:999px;
+    padding:.16rem .55rem;font-family:"Spline Sans Mono",monospace;font-size:.6rem;
+    letter-spacing:.06em;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+  .rres.hit{border-color:rgba(255,138,31,.5);color:#ffc38a;background:rgba(255,138,31,.1)}
+  .rres.none{border-color:rgba(34,197,94,.45);color:#86efac;background:rgba(34,197,94,.1)}
+  .rres a{color:inherit;text-decoration:underline;cursor:pointer}
+  .dlmenu{position:relative;display:inline-flex}
+  .dlpop{position:absolute;top:calc(100% + .4rem);right:0;z-index:40;min-width:270px;
+    border:1px solid var(--line);border-radius:12px;padding:.35rem;display:none;
+    background:#0c0e28;box-shadow:0 18px 46px rgba(0,0,0,.55)}
+  .dlpop.open{display:block}
+  .dlpop button{display:block;width:100%;text-align:left;background:transparent;border:0;
+    color:#f8fbff;border-radius:8px;padding:.5rem .6rem;font-size:.78rem;cursor:pointer;
+    font-family:"Archivo",sans-serif}
+  .dlpop button:hover{background:rgba(255,255,255,.08)}
+  .dlpop button small{display:block;color:var(--dim);font-size:.66rem;margin-top:.1rem}
+  .dlpop hr{border:0;border-top:1px solid var(--line);margin:.3rem .2rem}
   .addline{margin:.6rem 1rem .9rem;background:transparent;border:1px dashed var(--line);color:var(--muted);
     border-radius:9px;padding:.45rem 1rem;font-size:.78rem;font-weight:600;cursor:pointer}
   .addline:hover{color:#fff;border-color:rgba(255,255,255,.3)}
@@ -176,7 +198,9 @@
   @media(max-width:720px){
     .studio-launch{grid-template-columns:1fr}
     .studio-launch .studio-btn{justify-content:center;width:100%}
-    .rule{grid-template-columns:1fr 1fr}
+    .f-field,.f-cmp,.f-val{min-width:0;width:100%}
+    .cond,.rrow{align-items:stretch}
+    .dlpop{right:auto;left:0}
   }
 </style>
 </head>
@@ -189,8 +213,21 @@
   <a class="btn ghost" href="{% url 'kura:monitor' survey.code %}">📡 Live monitor</a>
   <a class="btn ghost" href="{% url 'kura:live_map' survey.code %}">🗺 Live map</a>
   <a class="btn" href="{% url 'kura:studio' survey.code %}">📊 Open Data Studio</a>
-  <button class="btn ghost" id="export-menu" type="button">⬇ Export CSV</button>
-  <button class="btn ghost" id="run-clean" type="button">🧹 Run rules</button>
+  <span class="dlmenu">
+    <button class="btn ghost" id="export-menu" type="button">⬇ Download CSV</button>
+    <div class="dlpop" id="dlpop">
+      <button data-rows="clean" type="button">Cleaned data
+        <small>Passed every rule — excluded and flagged rows removed</small></button>
+      <button data-rows="flagged" type="button">Flagged rows only
+        <small>With the rule name and reason for each flag</small></button>
+      <button data-rows="all" type="button">Everything
+        <small>All rows including excluded, plus flag columns</small></button>
+      <hr>
+      <button data-rows="view" type="button">Current view
+        <small>Matches the filters on the table below</small></button>
+    </div>
+  </span>
+  <button class="btn ghost" id="run-clean" type="button">🧹 Run all rules</button>
   <button class="btn" id="to-hanns" type="button">✨ Create Hanns deck</button>
 </div>
 
@@ -323,6 +360,7 @@ window.__KURA_DATA__ = {
 "use strict";
 const CFG=window.__KURA_DATA__;
 let rules=[];   // populated via fromConfig() at init — see the rules editor below
+let lastRun=null;   // {scope, summary, totals} from the most recent cleaning run
 let pipelines=Array.isArray(CFG.pipelines)?CFG.pipelines:[];
 let rows=[];
 const names=(CFG.columns&&CFG.columns.length?CFG.columns
@@ -494,13 +532,6 @@ $("#f-clear").addEventListener("click",()=>{
   $("#f-col").value="";$("#f-colval").value="";renderGrid();
 });
 $("#f-col").innerHTML='<option value="">Filter a column…</option>'+names.map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join("");
-
-/* CSV export honours the flagged/status view */
-$("#export-menu").addEventListener("click",()=>{
-  const params=new URLSearchParams();
-  if(filters.status==="excluded"||!filters.status) params.set("all","1");
-  location.href=CFG.urls.exportCsv+(params.toString()?"?"+params:"");
-});
 
 /* cell edit + status change */
 document.addEventListener("click",async e=>{
@@ -798,6 +829,29 @@ function ruleCard(r,idx){
 
   const del=el("button","mini","✕"); del.type="button"; del.title="Delete rule";
   del.addEventListener("click",()=>{rules.splice(idx,1);renderRules();});
+
+  // per-rule result badge (set after a run)
+  if(r.result){
+    const n=r.result.hits!=null?r.result.hits:r.result.changed;
+    const isRecode=r.result.changed!=null;
+    const b=el("span","rres "+(n?"hit":"none"));
+    if(n&&!isRecode){
+      const a=el("a",null,n+(n===1?" row":" rows"));
+      a.title="Download just these rows";
+      a.addEventListener("click",()=>downloadCsv({rule:r.id}));
+      b.appendChild(a);
+    } else {
+      b.appendChild(document.createTextNode(
+        isRecode?(n+(n===1?" value fixed":" values fixed")):"no matches"));
+    }
+    top.appendChild(b);
+  }
+
+  const run=el("button","rrun","▶ Run");
+  run.type="button"; run.title="Run only this rule";
+  run.addEventListener("click",()=>runOne(r,run));
+  top.appendChild(run);
+
   top.appendChild(del);
   card.appendChild(top);
 
@@ -1067,24 +1121,102 @@ $("#presets").addEventListener("click",e=>{
     action:k==="recode"?"recode":"flag",config:{},enabled:true}));
   renderRules();
 });
+/* ── running rules: one at a time, or all together ── */
+
+async function saveRules(){
+  const j=await post(CFG.urls.rules,{rules:rulesPayload()});
+  if(j.ok) j.ids.forEach((id,i)=>{if(rules[i])rules[i].id=id;});
+  return j;
+}
+
+function summarise(summary){
+  let hits=0,changed=0;
+  (summary||[]).forEach(s=>{hits+=s.hits||0;changed+=s.changed||0;});
+  const bits=[];
+  if(hits) bits.push(hits+(hits===1?" row flagged":" rows flagged"));
+  if(changed) bits.push(changed+(changed===1?" value fixed":" values fixed"));
+  return bits.length?bits.join(" · "):"No matches — nothing flagged";
+}
+
+/* run a single rule; `btn` is its ▶ Run button */
+async function runOne(r,btn){
+  const bad=ruleProblem(r);
+  if(bad){ toast((r.name||"This rule")+": "+bad); return; }
+  btn.disabled=true; btn.textContent="Running…";
+  try{
+    const j=await saveRules();                    // save so the run uses latest config
+    if(!j.ok){ toast(j.error||"Could not save rules"); return; }
+    if(!r.id){ toast("Rule was not saved — try again"); return; }
+    const res=await post(CFG.urls.clean,{rule_ids:[r.id]});
+    if(!res.ok){ toast(res.error||"Cleaning failed"); return; }
+    const mine=(res.summary||[]).find(s=>s.id===r.id)||{};
+    r.result=mine;
+    lastRun={scope:"rule",summary:res.summary,totals:res.totals};
+    toast((r.name||"Rule")+" — "+summarise(res.summary));
+    renderRules();
+    load();
+  } finally {
+    if(btn.isConnected){ btn.disabled=false; btn.textContent="▶ Run"; }
+  }
+}
+
+/* download CSV. opts: {rows:"clean"|"flagged"|"all"|"view"} or {rule:id} */
+function downloadCsv(opts){
+  const p=new URLSearchParams();
+  if(opts.rule){ p.set("rule",opts.rule); }
+  else if(opts.rows==="view"){
+    // mirror the table filters as closely as the export supports
+    if(filters.flagged) p.set("rows","flagged");
+    else if(filters.status==="excluded") p.set("rows","all");
+    else p.set("rows","all");
+    p.set("flags","1");
+  } else {
+    p.set("rows",opts.rows||"clean");
+    if(opts.rows!=="clean") p.set("flags","1");
+  }
+  location.href=CFG.urls.exportCsv+"?"+p.toString();
+}
+
 $("#save-rules").addEventListener("click",async()=>{
   const bad=blockingProblems();
   if(bad.length){ toast(bad[0]); return; }
-  const j=await post(CFG.urls.rules,{rules:rulesPayload()});
-  if(j.ok){ toast("Rules saved"); j.ids.forEach((id,i)=>{if(rules[i])rules[i].id=id;}); }
-  else toast(j.error||"Save failed");
+  const j=await saveRules();
+  toast(j.ok?"Rules saved":(j.error||"Save failed"));
 });
-$("#run-clean").addEventListener("click",async()=>{
+
+$("#run-clean").addEventListener("click",async e=>{
   const bad=blockingProblems();
   if(bad.length){ toast(bad[0]); return; }
-  const j=await post(CFG.urls.rules,{rules:rulesPayload()});   // save first
-  if(!j.ok){ toast(j.error||"Could not save rules"); return; }
-  j.ids.forEach((id,i)=>{if(rules[i])rules[i].id=id;});
-  const r=await post(CFG.urls.clean,{});
-  if(r.ok){
-    toast(r.summary.map(s=>s.rule+": "+(s.hits??s.changed??0)).join(" · ")||"No rules ran");
+  const btn=e.currentTarget;
+  btn.disabled=true; const label=btn.textContent; btn.textContent="Running…";
+  try{
+    const j=await saveRules();
+    if(!j.ok){ toast(j.error||"Could not save rules"); return; }
+    const res=await post(CFG.urls.clean,{});
+    if(!res.ok){ toast(res.error||"Cleaning failed"); return; }
+    // attach each rule's own result to its card
+    const byId={}; (res.summary||[]).forEach(s=>{byId[s.id]=s;});
+    rules.forEach(r=>{ r.result=byId[r.id]||null; });
+    lastRun={scope:"all",summary:res.summary,totals:res.totals};
+    toast(summarise(res.summary)+" — use ⬇ Download CSV to export");
+    renderRules();
     load();
-  } else toast(r.error||"Cleaning failed");
+  } finally { btn.disabled=false; btn.textContent=label; }
+});
+
+/* download menu */
+$("#export-menu").addEventListener("click",e=>{
+  e.stopPropagation();
+  $("#dlpop").classList.toggle("open");
+});
+$("#dlpop").addEventListener("click",e=>{
+  const b=e.target.closest("button[data-rows]");
+  if(!b) return;
+  $("#dlpop").classList.remove("open");
+  downloadCsv({rows:b.dataset.rows});
+});
+document.addEventListener("click",e=>{
+  if(!e.target.closest(".dlmenu")) $("#dlpop").classList.remove("open");
 });
 $("#to-hanns").addEventListener("click",async()=>{
   toast("Building your results deck…");

@@ -14,6 +14,7 @@ import json
 from datetime import timedelta
 
 from django.contrib.auth.decorators import login_required
+from django.db.models import Count
 from django.http import (
     Http404, HttpResponse, JsonResponse,
 )
@@ -500,9 +501,36 @@ def rules_save(request, code):
 @login_required
 @require_POST
 def run_cleaning(request, code):
+    """Run the quick flag rules.
+
+    POST {}                     → run every enabled rule
+    POST {"rule_ids": [3, 7]}   → run only those rules
+
+    Returns {"ok": true, "summary": [...], "totals": {...}} where every
+    summary entry carries the rule id so the caller can show per-rule results.
+    """
     survey = _own(request, code)
-    summary = run_rules(survey, user=request.user)
-    return JsonResponse({"ok": True, "summary": summary})
+    body = _body(request) or {}
+
+    rule_ids = body.get("rule_ids")
+    if rule_ids is not None:
+        try:
+            rule_ids = [int(x) for x in rule_ids]
+        except (TypeError, ValueError):
+            return JsonResponse({"ok": False, "error": "Bad rule_ids."}, status=400)
+        if not rule_ids:
+            return JsonResponse({"ok": False, "error": "No rules selected."},
+                                status=400)
+
+    summary = run_rules(survey, user=request.user, rule_ids=rule_ids)
+
+    counts = survey.submissions.values("status").annotate(n=Count("id"))
+    totals = {row["status"]: row["n"] for row in counts}
+    totals["flagged_rows"] = (survey.submissions
+                              .filter(flags__resolved=False)
+                              .distinct().count())
+
+    return JsonResponse({"ok": True, "summary": summary, "totals": totals})
 
 
 @login_required
@@ -553,21 +581,64 @@ def data_purge(request, code):
 @login_required
 @require_GET
 def export_csv(request, code):
+    """Download responses as CSV, optionally shaped by the cleaning result.
+
+    Query params:
+      ?rows=clean     only rows with no unresolved flags, excluded dropped
+                      (the "cleaned dataset" — this is the default)
+      ?rows=flagged   only rows carrying an unresolved flag
+      ?rows=all       everything, excluded rows included
+      ?flags=1        append flag_count / flagged_by / flag_details columns
+      ?rule=<id>      restrict to rows flagged by one specific rule
+
+    Legacy: ?all=1 is still honoured and means rows=all.
+    """
     survey = _own(request, code)
     schema = (survey.current_version.schema if survey.current_version
               else survey.draft_schema) or {}
     names = [q["name"] for q in schema.get("questions", [])
              if q.get("name") and q.get("type") not in ("section", "note")]
 
+    mode = (request.GET.get("rows") or "").strip().lower()
+    if not mode:
+        mode = "all" if request.GET.get("all") == "1" else "clean"
+    if mode not in ("clean", "flagged", "all"):
+        mode = "clean"
+
+    with_flags = request.GET.get("flags") == "1" or mode == "flagged"
+
+    rule_id = request.GET.get("rule")
+    try:
+        rule_id = int(rule_id) if rule_id else None
+    except (TypeError, ValueError):
+        rule_id = None
+
+    subs = survey.submissions.all().prefetch_related("flags__rule")
+
+    if rule_id:
+        subs = subs.filter(flags__rule_id=rule_id, flags__resolved=False).distinct()
+        with_flags = True
+    elif mode == "clean":
+        subs = subs.exclude(status="excluded").exclude(
+            flags__resolved=False).distinct()
+    elif mode == "flagged":
+        subs = subs.filter(flags__resolved=False).distinct()
+
+    suffix = {"clean": "clean", "flagged": "flagged", "all": "all"}[mode]
+    if rule_id:
+        suffix = f"rule{rule_id}"
+
     response = HttpResponse(content_type="text/csv; charset=utf-8")
-    response["Content-Disposition"] = f'attachment; filename="{survey.code}_data.csv"'
+    response["Content-Disposition"] = (
+        f'attachment; filename="{survey.code}_{suffix}.csv"')
     writer = csv.writer(response)
-    writer.writerow(["uuid", "status", "source", "version", "received_at",
-                     "duration_s", "score", "gps_lat", "gps_lng"] + names)
-    include_excluded = request.GET.get("all") == "1"
-    subs = survey.submissions.all()
-    if not include_excluded:
-        subs = subs.exclude(status="excluded")
+
+    header = ["uuid", "status", "source", "version", "received_at",
+              "duration_s", "score", "gps_lat", "gps_lng"]
+    if with_flags:
+        header += ["flag_count", "flagged_by", "flag_details"]
+    writer.writerow(header + names)
+
     for s in subs:
         row = [
             s.client_uuid, s.status, s.source,
@@ -577,6 +648,13 @@ def export_csv(request, code):
             s.gps_lat if s.gps_lat is not None else "",
             s.gps_lng if s.gps_lng is not None else "",
         ]
+        if with_flags:
+            open_flags = [f for f in s.flags.all() if not f.resolved]
+            row += [
+                len(open_flags),
+                " | ".join(f.rule.name if f.rule else "manual" for f in open_flags),
+                " | ".join(f.detail for f in open_flags if f.detail),
+            ]
         merged = {**s.answers, **s.calculations}
         for n in names:
             v = merged.get(n)

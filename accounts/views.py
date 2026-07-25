@@ -15,6 +15,11 @@ from .forms import (
     TeamSignupForm,
 )
 
+# With more than one entry in settings.AUTHENTICATION_BACKENDS, login() must be
+# told which backend the user was "authenticated" with, because form.save()
+# never sets user.backend.
+AUTH_BACKEND = "accounts.backends.EmailOrUsernameModelBackend"
+
 
 # ─── Legacy single-route signup (kept so existing links don't break) ───
 def signup(request):
@@ -79,7 +84,8 @@ def _signup_with_form(request, FormClass, *, after_path, attach_free_plan,
             if image and hasattr(user, "profile"):
                 user.profile.logo = image
                 user.profile.save()
-            login(request, user)
+            # backend= is required: multiple AUTHENTICATION_BACKENDS configured
+            login(request, user, backend=AUTH_BACKEND)
             if attach_free_plan:
                 free = Plan.objects.filter(tier=Plan.TIER_FREE).first()
                 if free:

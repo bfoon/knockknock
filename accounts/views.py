@@ -1,8 +1,9 @@
 from django.contrib import messages
-from django.contrib.auth import login
+from django.contrib.auth import login, logout as auth_logout
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, render, redirect
 from django.utils import timezone
+from django.views.decorators.http import require_POST
 from datetime import timedelta
 
 from subscriptions.models import Plan, Subscription
@@ -14,6 +15,7 @@ from .forms import (
     SignupForm,
     TeamSignupForm,
 )
+from .models import Profile, UserSession
 
 # With more than one entry in settings.AUTHENTICATION_BACKENDS, login() must be
 # told which backend the user was "authenticated" with, because form.save()
@@ -175,9 +177,9 @@ def _accept_pending_invite_if_any(request, user):
     return None
 
 
+# ─── Profile + signed-in devices ─────────────────────────────
 @login_required
 def profile_view(request):
-    from .models import Profile
     profile, _ = Profile.objects.get_or_create(
         user=request.user,
         defaults={"display_name": request.user.username},
@@ -190,4 +192,67 @@ def profile_view(request):
             return redirect("accounts:profile")
     else:
         form = ProfileForm(instance=profile)
-    return render(request, "accounts/profile.html", {"form": form, "profile": profile})
+
+    sessions, current_key = _sessions_for(request)
+    return render(request, "accounts/profile.html", {
+        "form": form,
+        "profile": profile,
+        "sessions": sessions,
+        "current_session_key": current_key,
+        "other_session_count": sum(1 for s in sessions if s.session_key != current_key),
+    })
+
+
+def _sessions_for(request):
+    """Live sessions for this user, current one first, dead rows pruned."""
+    current_key = request.session.session_key
+    # A session that predates this feature has no row yet — adopt it so the
+    # device the person is looking at is never missing from the list.
+    if current_key and not UserSession.objects.filter(session_key=current_key).exists():
+        UserSession.record(request, request.user)
+
+    sessions = list(UserSession.objects.filter(user=request.user).alive())
+    sessions.sort(key=lambda s: (s.session_key != current_key, -s.last_seen.timestamp()))
+    return sessions, current_key
+
+
+@login_required
+@require_POST
+def session_end(request):
+    """Sign out one device. Ending your own session logs you out here."""
+    key = (request.POST.get("key") or "").strip()
+    target = UserSession.objects.filter(user=request.user, session_key=key).first()
+    if not target:
+        messages.error(request, "That session has already ended.")
+        return redirect("accounts:profile")
+
+    device = target.device or "that device"
+
+    if key == request.session.session_key:
+        # Don't delete the store we are currently serving from — Django's
+        # SessionMiddleware raises SessionInterrupted (HTTP 400) when the
+        # session vanishes mid-request. logout() flushes it cleanly, and
+        # the user_logged_out receiver drops the row for us.
+        auth_logout(request)
+        messages.success(request, "Signed out.")
+        return redirect("accounts:login")
+
+    target.end()
+    messages.success(request, f"Signed out of {device}.")
+    return redirect("accounts:profile")
+
+
+@login_required
+@require_POST
+def session_end_others(request):
+    """Sign out everywhere except the device making this request."""
+    current_key = request.session.session_key
+    ended = 0
+    for s in UserSession.objects.filter(user=request.user).exclude(session_key=current_key):
+        s.end()
+        ended += 1
+    if ended:
+        messages.success(request, f"Signed out of {ended} other device(s).")
+    else:
+        messages.info(request, "You're not signed in anywhere else.")
+    return redirect("accounts:profile")

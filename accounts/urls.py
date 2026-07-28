@@ -29,5 +29,9 @@ urlpatterns = [
         name="login",
     ),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
+
+    # Profile + signed-in devices
     path("profile/", views.profile_view, name="profile"),
+    path("profile/sessions/end/", views.session_end, name="session_end"),
+    path("profile/sessions/end-others/", views.session_end_others, name="session_end_others"),
 ]

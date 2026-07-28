@@ -14,6 +14,15 @@ SECRET_KEY = env("SECRET_KEY", default="dev-secret-key-change-me")
 DEBUG = env.bool("DEBUG", default=True)
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["*"])
 
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = True
+
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+
+
 INSTALLED_APPS = [
     "daphne",  # must come before django.contrib.staticfiles
     "django.contrib.admin",
@@ -22,6 +31,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.humanize",   # naturaltime on the signed-in devices panel
 
     "channels",
 
@@ -40,6 +50,7 @@ INSTALLED_APPS = [
     "quest_rpg",
     "cards",
     "kura",
+    "community",
     "icebreakers.apps.IcebreakersConfig",
 ]
 
@@ -50,6 +61,9 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Keeps UserSession.last_seen fresh (throttled — one write per session
+    # per SESSION_ACTIVITY_INTERVAL). Must come after AuthenticationMiddleware.
+    "accounts.middleware.SessionActivityMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -132,10 +146,32 @@ LOGIN_URL = "accounts:login"
 LOGIN_REDIRECT_URL = "core:dashboard"
 LOGOUT_REDIRECT_URL = "core:home"
 
+# ─────────────────────────────────────────────────────────────────────────
+# Authentication backends
+# ─────────────────────────────────────────────────────────────────────────
+#
+# EmailOrUsernameModelBackend lets people sign in with either their
+# username or their email address (both case-insensitive). It runs first;
+# Django's stock ModelBackend stays as a fallback so the admin login,
+# createsuperuser, and anything relying on default behaviour keep working.
+#
+# NOTE: with more than one backend configured, django.contrib.auth.login()
+# must be called with an explicit `backend=` argument whenever the user was
+# not produced by authenticate() — accounts.views does this after signup.
 
-# ──────────────────────────────────────────────────────────────────
+AUTHENTICATION_BACKENDS = [
+    "accounts.backends.EmailOrUsernameModelBackend",
+    "django.contrib.auth.backends.ModelBackend",
+]
+
+# How often SessionActivityMiddleware may refresh a session's last_seen.
+# Lower = more precise "last active", more writes. 5 minutes is plenty.
+SESSION_ACTIVITY_INTERVAL = 300
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Email (Gmail SMTP)
-# ──────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
 #
 # Gmail no longer accepts your normal account password over SMTP. You
 # need an "App Password":

@@ -1,0 +1,82 @@
+{% comment %}
+accounts/_sessions.html — "Signed in devices" panel.
+
+Drop this into your existing profile page wherever it fits:
+
+    {% include "accounts/_sessions.html" %}
+
+Needs from the view (profile_view already supplies all of it):
+    profile, sessions, current_session_key, other_session_count
+
+Bootstrap 5 markup, to match the form-control classes already used on
+the profile form. Uses `naturaltime`, so add "django.contrib.humanize"
+to INSTALLED_APPS — or delete the {% load %} line and the |naturaltime
+filters and the dates will simply render in full.
+{% endcomment %}
+{% load humanize %}
+
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>Signed-in devices</span>
+    {% if other_session_count %}
+      <form method="post" action="{% url 'accounts:session_end_others' %}"
+            onsubmit="return confirm('Sign out of every other device?');">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-sm btn-outline-danger">
+          Sign out of {{ other_session_count }} other device{{ other_session_count|pluralize }}
+        </button>
+      </form>
+    {% endif %}
+  </div>
+
+  <div class="card-body">
+    <p class="text-muted small mb-3">
+      {% if profile.previous_login_at %}
+        Previous sign-in {{ profile.previous_login_at|naturaltime }}
+        ({{ profile.previous_login_at }}){% if profile.last_login_ip %}
+          from {{ profile.last_login_ip }}{% endif %}.
+      {% else %}
+        This is the first sign-in recorded on this account.
+      {% endif %}
+      {% if profile.last_login_at %}
+        Current sign-in {{ profile.last_login_at|naturaltime }}{% if profile.last_login_device %}
+          on {{ profile.last_login_device }}{% endif %}.
+      {% endif %}
+      Don't recognise something below? Sign it out and change your password.
+    </p>
+
+    <ul class="list-group list-group-flush">
+      {% for s in sessions %}
+        <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+          <div>
+            <div>
+              <span class="me-1">{{ s.icon }}</span>
+              <strong>{{ s.device|default:"Unknown device" }}</strong>
+              {% if s.session_key == current_session_key %}
+                <span class="badge bg-success ms-2">This device</span>
+              {% endif %}
+            </div>
+            <div class="small text-muted">
+              {% if s.ip %}{{ s.ip }} · {% endif %}
+              signed in {{ s.created_at|naturaltime }} ·
+              last active {{ s.last_seen|naturaltime }}
+            </div>
+          </div>
+
+          <form method="post" action="{% url 'accounts:session_end' %}"
+                {% if s.session_key == current_session_key %}
+                onsubmit="return confirm('This will sign you out here. Continue?');"
+                {% endif %}>
+            {% csrf_token %}
+            <input type="hidden" name="key" value="{{ s.session_key }}">
+            <button type="submit" class="btn btn-sm btn-outline-secondary">
+              {% if s.session_key == current_session_key %}Sign out{% else %}End session{% endif %}
+            </button>
+          </form>
+        </li>
+      {% empty %}
+        <li class="list-group-item px-0 text-muted">No other active sessions.</li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>

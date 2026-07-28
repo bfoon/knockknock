@@ -1,0 +1,133 @@
+{% comment %}
+accounts/_sessions.html — "Signed-in devices" panel, kk-* styled.
+
+Included from accounts/profile.html. Needs from the view (profile_view
+already supplies all of it):
+
+    profile, sessions, current_session, current_session_key,
+    other_session_count
+
+The <style> block below defines only the classes this panel invents
+(kk-session-*). It leans on kk-card, kk-auth-kicker, kk-auth-panel-title,
+kk-auth-panel-sub, kk-btn and kk-gradient-text, which already exist in the
+kk stylesheet. If you'd rather keep CSS out of templates, lift the block
+into your kk CSS file verbatim and delete it here.
+{% endcomment %}
+{% load humanize %}
+
+<style>
+  .kk-session-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+  .kk-session-count{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;opacity:.75}
+  .kk-session-lastlogin{border-left:2px solid rgba(124,58,237,.55);padding:.35rem 0 .35rem .8rem;
+    margin:1.1rem 0 1.4rem;font-size:.88rem;line-height:1.6;opacity:.85}
+  .kk-session-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.6rem}
+  .kk-session-row{display:flex;align-items:center;gap:.9rem;flex-wrap:wrap;
+    padding:.85rem 1rem;border:1px solid rgba(255,255,255,.09);border-radius:14px;
+    background:rgba(255,255,255,.03)}
+  .kk-session-row.is-current{border-color:rgba(124,58,237,.5);background:rgba(124,58,237,.08)}
+  .kk-session-icon{font-size:1.35rem;opacity:.85;flex:0 0 auto;width:1.6rem;text-align:center}
+  .kk-session-body{flex:1 1 12rem;min-width:0}
+  .kk-session-device{font-weight:600;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+  .kk-session-meta{font-size:.78rem;opacity:.65;margin-top:.15rem}
+  .kk-session-here{font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;
+    padding:.15rem .5rem;border-radius:999px;background:rgba(34,197,94,.16);
+    color:#86efac;border:1px solid rgba(34,197,94,.35)}
+  .kk-session-end{flex:0 0 auto;background:transparent;color:inherit;cursor:pointer;
+    border:1px solid rgba(255,255,255,.18);border-radius:999px;
+    padding:.35rem .9rem;font-size:.78rem;transition:.15s}
+  .kk-session-end:hover{border-color:rgba(248,113,113,.6);color:#fca5a5;background:rgba(248,113,113,.08)}
+  .kk-session-empty{opacity:.6;font-size:.9rem;padding:.6rem 0}
+  .kk-session-foot{margin-top:1.2rem;font-size:.78rem;opacity:.6}
+</style>
+
+<section class="kk-card kk-profile-card kk-session-card">
+  <div class="kk-auth-panel-head kk-session-head">
+    <div>
+      <span class="kk-auth-kicker"><i class="bi bi-shield-lock"></i> Security</span>
+      <h2 class="kk-auth-panel-title mt-3">Signed-in devices</h2>
+      <p class="kk-auth-panel-sub">
+        {% with n=sessions|length %}
+          You're signed in on <span class="kk-gradient-text">{{ n }}</span> device{{ n|pluralize }}.
+        {% endwith %}
+      </p>
+    </div>
+
+    {% if other_session_count %}
+      <form method="post" action="{% url 'accounts:session_end_others' %}"
+            onsubmit="return confirm('Sign out of every device except this one?');">
+        {% csrf_token %}
+        <button type="submit" class="kk-session-end">
+          <i class="bi bi-box-arrow-right"></i>
+          Sign out of {{ other_session_count }} other device{{ other_session_count|pluralize }}
+        </button>
+      </form>
+    {% endif %}
+  </div>
+
+  <div class="kk-session-lastlogin">
+    {% if current_session %}
+      <div><i class="bi bi-display"></i>
+        This session started {{ current_session.created_at|naturaltime }}{% if current_session.ip %}
+          from {{ current_session.ip }}{% endif %}.
+      </div>
+    {% endif %}
+    {% if profile.last_login_at %}
+      <div><i class="bi bi-clock-history"></i>
+        Latest sign-in on this account {{ profile.last_login_at|naturaltime }}{% if profile.last_login_device %}
+          on {{ profile.last_login_device }}{% endif %}{% if profile.last_login_ip %}
+          from {{ profile.last_login_ip }}{% endif %}.
+      </div>
+    {% endif %}
+    {% if profile.previous_login_at %}
+      <div><i class="bi bi-arrow-counterclockwise"></i>
+        The one before that {{ profile.previous_login_at|naturaltime }}
+        <span class="kk-session-count">({{ profile.previous_login_at }})</span>
+      </div>
+    {% else %}
+      <div><i class="bi bi-stars"></i> This is the first sign-in recorded on this account.</div>
+    {% endif %}
+  </div>
+
+  <ul class="kk-session-list">
+    {% for s in sessions %}
+      <li class="kk-session-row{% if s.session_key == current_session_key %} is-current{% endif %}">
+        <span class="kk-session-icon"><i class="bi {{ s.icon_class }}"></i></span>
+
+        <div class="kk-session-body">
+          <div class="kk-session-device">
+            {{ s.device|default:"Unknown device" }}
+            {% if s.session_key == current_session_key %}
+              <span class="kk-session-here">This device</span>
+            {% endif %}
+          </div>
+          <div class="kk-session-meta">
+            {% if s.ip %}{{ s.ip }} · {% endif %}
+            signed in {{ s.created_at|naturaltime }} · last active {{ s.last_seen|naturaltime }}
+          </div>
+        </div>
+
+        <form method="post" action="{% url 'accounts:session_end' %}"
+              {% if s.session_key == current_session_key %}
+              onsubmit="return confirm('This signs you out on this device. Continue?');"
+              {% endif %}>
+          {% csrf_token %}
+          <input type="hidden" name="key" value="{{ s.session_key }}">
+          <button type="submit" class="kk-session-end">
+            {% if s.session_key == current_session_key %}
+              <i class="bi bi-box-arrow-right"></i> Sign out
+            {% else %}
+              <i class="bi bi-x-circle"></i> End session
+            {% endif %}
+          </button>
+        </form>
+      </li>
+    {% empty %}
+      <li class="kk-session-empty">No active sessions on record yet.</li>
+    {% endfor %}
+  </ul>
+
+  <p class="kk-session-foot">
+    <i class="bi bi-info-circle"></i>
+    Don't recognise a device? End its session, then change your password.
+  </p>
+</section>

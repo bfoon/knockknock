@@ -64,6 +64,9 @@ MIDDLEWARE = [
     # Keeps UserSession.last_seen fresh (throttled — one write per session
     # per SESSION_ACTIVITY_INTERVAL). Must come after AuthenticationMiddleware.
     "accounts.middleware.SessionActivityMiddleware",
+    # Buckets traffic by URL namespace so the admin can answer "which part
+    # of the platform gets used?". Set SITE_USAGE_TRACKING=False to disable.
+    "accounts.middleware.SiteUsageMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -167,6 +170,11 @@ AUTHENTICATION_BACKENDS = [
 # How often SessionActivityMiddleware may refresh a session's last_seen.
 # Lower = more precise "last active", more writes. 5 minutes is plenty.
 SESSION_ACTIVITY_INTERVAL = 300
+
+# Per-app usage rollups behind the admin analytics page.
+SITE_USAGE_TRACKING = True
+# SITE_USAGE_IGNORE = ("/admin/", "/static/", "/media/", "/favicon.ico")
+# SITE_USAGE_LABELS = {"hanns": "Hanns (presentations)"}   # override names
 
 
 # ─────────────────────────────────────────────────────────────────────────

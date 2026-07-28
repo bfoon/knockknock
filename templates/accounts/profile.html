@@ -12,6 +12,9 @@
       <span class="kk-auth-badge kk-auth-badge--hot">Brand ready</span>
       <span class="kk-auth-badge">Secure account</span>
       <span class="kk-auth-badge">Presentation profile</span>
+      {% with n=sessions|length %}
+        <span class="kk-auth-badge"><i class="bi bi-shield-check"></i> {{ n }} device{{ n|pluralize }} signed in</span>
+      {% endwith %}
     </div>
     <div class="kk-profile-metric-grid">
       <div class="kk-profile-metric"><strong>Live</strong><span>Polls, quizzes and sessions</span></div>
@@ -43,5 +46,9 @@
     {% endfor %}
     <button class="kk-btn kk-btn-primary kk-btn-lg w-100">Save profile <i class="bi bi-check2-circle"></i></button>
   </form>
+
+  {# Sessions live OUTSIDE the profile form — nested <form> tags are invalid
+     HTML and the browser would silently drop the inner ones. #}
+  {% include "accounts/_sessions.html" %}
 </div>
 {% endblock %}

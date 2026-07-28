@@ -1,0 +1,157 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Platform analytics | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block breadcrumbs %}
+  <div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Home</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label='accounts' %}">Accounts</a>
+    &rsaquo; Platform analytics
+  </div>
+{% endblock %}
+
+{% block content %}
+<style>
+  .kkA-range{margin:0 0 1.4rem;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+  .kkA-range a{padding:.25rem .7rem;border:1px solid var(--border-color,#ccc);border-radius:999px;
+    text-decoration:none;font-size:.82rem}
+  .kkA-range a.on{background:var(--selected-bg,#e8e8e8);font-weight:600}
+  .kkA-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:.9rem;margin-bottom:1.6rem}
+  .kkA-stat{border:1px solid var(--hairline-color,#e0e0e0);border-radius:10px;padding:.9rem 1rem;
+    background:var(--darkened-bg,#f8f8f8)}
+  .kkA-stat b{display:block;font-size:1.7rem;line-height:1.15;font-weight:700}
+  .kkA-stat span{font-size:.78rem;opacity:.75;display:block;margin-top:.2rem}
+  .kkA-stat small{font-size:.7rem;opacity:.55;display:block;margin-top:.35rem}
+  .kkA-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.6rem}
+  .kkA-panel{border:1px solid var(--hairline-color,#e0e0e0);border-radius:10px;padding:1rem 1.2rem}
+  .kkA-panel h2{font-size:.95rem;margin:0 0 .2rem}
+  .kkA-panel p.sub{font-size:.78rem;opacity:.65;margin:0 0 1rem}
+  .kkA-bar{margin-bottom:.7rem}
+  .kkA-bar .top{display:flex;justify-content:space-between;gap:1rem;font-size:.85rem;margin-bottom:.25rem}
+  .kkA-bar .top em{font-style:normal;opacity:.6;font-size:.78rem;white-space:nowrap}
+  .kkA-track{height:8px;border-radius:99px;background:var(--darkened-bg,#eee);overflow:hidden}
+  .kkA-fill{height:100%;border-radius:99px;background:#7c3aed}
+  .kkA-fill.alt{background:#0ea5e9}
+  .kkA-spark{display:flex;align-items:flex-end;gap:2px;height:70px;margin-top:.4rem}
+  .kkA-spark i{flex:1 1 auto;min-width:2px;background:#7c3aed;border-radius:2px 2px 0 0;display:block}
+  .kkA-empty{opacity:.6;font-size:.85rem;padding:.4rem 0}
+  .kkA-note{font-size:.76rem;opacity:.6;margin-top:1.2rem;line-height:1.6}
+</style>
+
+<h1>Platform analytics</h1>
+
+<div class="kkA-range">
+  <span>Window:</span>
+  {% for d in window_choices %}
+    <a href="?days={{ d }}" class="{% if d == window %}on{% endif %}">{{ d }} days</a>
+  {% endfor %}
+</div>
+
+<h2 style="font-size:1rem">Registrations</h2>
+<div class="kkA-grid">
+  <div class="kkA-stat"><b>{{ registrations.total }}</b><span>Registered users</span>
+    <small>{{ registrations.active_flag }} enabled · {{ registrations.staff }} staff</small></div>
+  <div class="kkA-stat"><b>{{ registrations.in_window }}</b><span>New in {{ window }} days</span>
+    <small>{{ registrations.last_7 }} in the last 7</small></div>
+  <div class="kkA-stat"><b>{{ registrations.last_30 }}</b><span>New in 30 days</span></div>
+  <div class="kkA-stat"><b>{{ registrations.never_signed_in }}</b><span>Never signed in</span>
+    <small>registered but never returned</small></div>
+</div>
+
+<h2 style="font-size:1rem">Who's actually on the platform</h2>
+<div class="kkA-grid">
+  <div class="kkA-stat"><b>{{ activity.signed_in_now }}</b><span>Signed in right now</span>
+    <small>{{ activity.open_sessions }} open session{{ activity.open_sessions|pluralize }}</small></div>
+  <div class="kkA-stat"><b>{{ activity.seen_24h }}</b><span>Active in 24 hours</span></div>
+  <div class="kkA-stat"><b>{{ activity.seen_7d }}</b><span>Active in 7 days</span></div>
+  <div class="kkA-stat"><b>{{ activity.active_in_window }}</b><span>Used the platform in {{ window }} days</span>
+    <small>distinct users with recorded activity</small></div>
+  <div class="kkA-stat"><b>{{ activity.multi_device_users }}</b><span>On more than one device</span></div>
+</div>
+
+<div class="kkA-cols">
+
+  <div class="kkA-panel">
+    <h2>Most used areas</h2>
+    <p class="sub">
+      {% if top_site %}
+        <strong>{{ top_site.label }}</strong> leads with {{ top_site.hits }} request{{ top_site.hits|pluralize }}
+        from {{ top_site.users }} user{{ top_site.users|pluralize }} over {{ window }} days.
+      {% else %}
+        Nothing recorded yet.
+      {% endif %}
+    </p>
+    {% for s in sites %}
+      <div class="kkA-bar">
+        <div class="top">
+          <span>{{ s.label }}</span>
+          <em>{{ s.hits }} hits · {{ s.users }} user{{ s.users|pluralize }}</em>
+        </div>
+        <div class="kkA-track"><div class="kkA-fill" style="width:{{ s.pct }}%"></div></div>
+      </div>
+    {% empty %}
+      <p class="kkA-empty">
+        No traffic recorded in this window. Usage tracking begins the moment
+        <code>SiteUsageMiddleware</code> is installed — it can't see the past.
+      </p>
+    {% endfor %}
+  </div>
+
+  <div class="kkA-panel">
+    <h2>Devices in use</h2>
+    <p class="sub">Across all open sessions right now.</p>
+    {% for d in devices %}
+      <div class="kkA-bar">
+        <div class="top"><span>{{ d.label }}</span><em>{{ d.n }} · {{ d.pct }}%</em></div>
+        <div class="kkA-track"><div class="kkA-fill alt" style="width:{{ d.pct }}%"></div></div>
+      </div>
+    {% empty %}
+      <p class="kkA-empty">Nobody is signed in.</p>
+    {% endfor %}
+
+    {% if browsers %}
+      <h2 style="margin-top:1.4rem">Top device strings</h2>
+      <p class="sub">Browser and OS as reported at sign-in.</p>
+      <table style="width:100%;font-size:.85rem">
+        {% for b in browsers %}
+          <tr><td>{{ b.device }}</td><td style="text-align:right;opacity:.65">{{ b.n }}</td></tr>
+        {% endfor %}
+      </table>
+    {% endif %}
+  </div>
+
+  <div class="kkA-panel">
+    <h2>Sign-ups over {{ window }} days</h2>
+    <p class="sub">Peak {{ signup_peak }} in a day.</p>
+    {% if signup_rows %}
+      <div class="kkA-spark">
+        {% for r in signup_rows %}
+          <i style="height:{% widthratio r.n signup_peak 100 %}%" title="{{ r.day }}: {{ r.n }}"></i>
+        {% endfor %}
+      </div>
+      <table style="width:100%;font-size:.82rem;margin-top:.8rem">
+        {% for r in signup_rows reversed %}
+          {% if forloop.counter <= 10 %}
+            <tr><td>{{ r.day }}</td><td style="text-align:right;opacity:.65">{{ r.n }}</td></tr>
+          {% endif %}
+        {% endfor %}
+      </table>
+    {% else %}
+      <p class="kkA-empty">No sign-ups in this window.</p>
+    {% endif %}
+  </div>
+
+</div>
+
+<p class="kkA-note">
+  <strong>Reading these numbers.</strong>
+  "Signed in right now" counts users with at least one live session — a
+  cookie that hasn't expired, not someone typing this second.
+  "Active" counts recorded page activity.
+  Area usage counts requests by URL namespace, so a survey runner hit lands
+  under Kura and a deck edit under Hanns; the admin, static files and media
+  are excluded.
+  {% if tracking_started %}Usage tracking has data from {{ tracking_started }} onward.{% endif %}
+</p>
+{% endblock %}

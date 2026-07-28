@@ -1,5 +1,5 @@
 """
-accounts/models.py — profile, plus per-device session tracking.
+accounts/models.py — profile, per-device session tracking, usage rollups.
 
 Django's session table has no user column, so there is no way to ask
 "which devices is this account signed in on?" out of the box. UserSession
@@ -9,6 +9,12 @@ removed when they log out or the session store expires.
 Deleting a session is done through the configured SESSION_ENGINE rather
 than by deleting a row from django_session directly, so this keeps working
 if the project ever moves sessions to cache or Redis.
+
+AppUsage / AppUsageUser answer "which part of the platform actually gets
+used?". They key on the URL namespace (hanns, kura, boardly, polls…),
+which means every app is covered — including ones added later — without
+any app needing to know it is being measured, and without this module
+importing a single one of their models.
 """
 
 import re
@@ -164,6 +170,15 @@ class UserSession(models.Model):
     def icon(self):
         return {"mobile": "📱", "tablet": "📱", "desktop": "💻"}.get(self.kind, "🖥")
 
+    @property
+    def icon_class(self):
+        """Bootstrap Icons class, to match the kk-* templates."""
+        return {
+            "mobile": "bi-phone",
+            "tablet": "bi-tablet",
+            "desktop": "bi-laptop",
+        }.get(self.kind, "bi-display")
+
     def end(self):
         """Sign this device out and forget the row."""
         _session_store()(session_key=self.session_key).delete()
@@ -216,3 +231,72 @@ def on_logout(sender, request, user, **kwargs):
     key = getattr(session, "session_key", None)
     if key:
         UserSession.objects.filter(session_key=key).delete()
+
+
+# ── usage rollups ────────────────────────────────────────────────────
+
+#: Display names for URL namespaces. Override in settings with
+#: SITE_USAGE_LABELS = {...} to add or rename entries.
+DEFAULT_APP_LABELS = {
+    "accounts": "Accounts",
+    "attendance": "Attendance",
+    "boardly": "Boardly (sticky notes)",
+    "cards": "Cards",
+    "collaborations": "Collaborations",
+    "community": "Community",
+    "core": "Core / dashboard",
+    "games": "Games",
+    "hanns": "Hanns (presentations)",
+    "icebreakers": "Icebreakers",
+    "kura": "Kura (surveys)",
+    "organizations": "Organizations",
+    "polls": "Polls",
+    "presentations": "Presentations",
+    "quest_rpg": "Quest RPG",
+    "subscriptions": "Subscriptions",
+}
+
+
+def app_label_for(app: str) -> str:
+    from django.conf import settings as dj_settings
+    labels = dict(DEFAULT_APP_LABELS)
+    labels.update(getattr(dj_settings, "SITE_USAGE_LABELS", {}) or {})
+    return labels.get(app, app.replace("_", " ").title())
+
+
+class AppUsage(models.Model):
+    """One row per app per day: raw request volume."""
+
+    app = models.CharField(max_length=64, db_index=True)
+    day = models.DateField(db_index=True)
+    hits = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        unique_together = [("app", "day")]
+        ordering = ["-day", "-hits"]
+
+    def __str__(self):
+        return f"{self.app} {self.day}: {self.hits}"
+
+    @property
+    def label(self):
+        return app_label_for(self.app)
+
+
+class AppUsageUser(models.Model):
+    """One row per (app, day, user): lets us count distinct users, not just
+    requests. Written once per user per app per day — the middleware keeps a
+    marker in the session so repeat visits cost nothing."""
+
+    app = models.CharField(max_length=64, db_index=True)
+    day = models.DateField(db_index=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name="app_usage")
+
+    class Meta:
+        unique_together = [("app", "day", "user")]
+        ordering = ["-day"]
+
+    def __str__(self):
+        return f"{self.user_id} used {self.app} on {self.day}"

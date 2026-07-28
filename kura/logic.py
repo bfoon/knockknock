@@ -9,6 +9,10 @@ semantics to what the respondent saw.
   evaluate_expression(expr, answers)         → number (calculated questions)
   point_in_zone(lat, lng, zone)              → bool   (geofencing)
   geo_relevant(question, gps, zones)         → bool
+  is_relevant(item, ctx, gps, zones)         → bool   (logic AND geofence)
+  walk_visibility(questions, ctx, gps, zones)
+      → yields (item, visible, section)              (section gating)
+  visibility_map(questions, ctx, gps, zones) → {name: bool}
   allowed_choice_values(q, ctx, gps, zones)  → list   (cascade + geo filter)
   validate_submission(schema, answers, gps=None)
       → (clean_answers, calcs, score, errors)
@@ -42,6 +46,37 @@ A choice is offered only if (a) its "parent" equals the parent question's
 current answer, and (b) it has no "zones" OR the respondent's GPS is
 inside one of them. The server enforces both, so a tampered client cannot
 submit a value the respondent could not legitimately see.
+
+── Sections and notes (display items with skip logic) ────────────────
+Both "section" and "note" items accept "relevant" and "geofence" exactly
+like questions do. They never hold an answer, so their own relevance is
+about *display* — but a section additionally GATES everything that
+follows it:
+
+    {"name":"sec_kids","type":"section","label":"Children",
+     "relevant":{"q":"has_children","cmp":"eq","value":"yes"},
+     "scope":"until_next"}      # default; "self" = header only
+
+    {"name":"note_kids","type":"note","label":"Answer for each child.",
+     "relevant":{"q":"hh_size","cmp":"gt","value":1}}
+
+A section opens a run that ends at the next section item (or at the end
+of the list). While the section's condition is false, every item in that
+run is hidden: its answers are dropped, its "required" flags do not fire,
+and a tampered client cannot smuggle values back in. Sections do not
+nest — each section header closes the previous run.
+
+    "scope":"self"   the header hides on its own but does NOT gate the
+                     items after it (a decorative heading).
+    {"type":"section","end":true}
+                     closes the current run without opening a new one.
+
+Inside a repeat group the same rules apply to the children list, and the
+gate resets at the start of every repeat item.
+
+Notes carry no answers, so a note's relevance has no server-side effect —
+it is evaluated here anyway so the runner, the preview and the server all
+agree, and so walk_visibility() can drive rendering.
 
 ── Repeat groups ─────────────────────────────────────────────────────
     {"name":"members","type":"repeat","label":"Household members",
@@ -333,6 +368,80 @@ def geo_relevant(question: dict, gps, zones: dict) -> bool:
     return inside if gf.get("mode", "inside") == "inside" else not inside
 
 
+# ── relevance + section gating ───────────────────────────────────────
+
+def is_relevant(item: dict, ctx: dict, gps=None, zones: dict = None) -> bool:
+    """An item's OWN relevance: skip logic AND geofence.
+
+    Says nothing about enclosing sections — use walk_visibility() when you
+    need the effective visibility of an item in a list.
+    """
+    return bool(evaluate_condition((item or {}).get("relevant"), ctx)) \
+        and geo_relevant(item, gps, zones or {})
+
+
+def _gates_following(section: dict) -> bool:
+    """A section gates the run after it unless it is marked scope='self'."""
+    return str((section or {}).get("scope") or "until_next") != "self"
+
+
+def walk_visibility(questions, ctx: dict, gps=None, zones: dict = None):
+    """Yield (item, visible, section) for every item in a question list.
+
+    `visible` folds three things together:
+        1. the item's own "relevant" condition,
+        2. the item's own "geofence",
+        3. the gate of the section run the item sits in.
+
+    `section` is the section item currently in force (or None). Section
+    items themselves report their own relevance as `visible` and their own
+    dict as `section`; an {"type":"section","end":true} marker reports
+    visible=False, since it renders nothing.
+
+    Sections are flat markers, not containers — a run ends at the next
+    section item. This is the single source of truth for section gating:
+    validate_submission() uses it, and the JS runner mirrors it.
+    """
+    zones = zones or {}
+    gate = True        # is the current section run switched on?
+    section = None     # the section item that opened the run
+
+    for q in questions or []:
+        if not isinstance(q, dict):
+            continue
+
+        if q.get("type") == "section":
+            if q.get("end"):
+                gate, section = True, None
+                yield q, False, None
+                continue
+            own = is_relevant(q, ctx, gps, zones)
+            if _gates_following(q):
+                gate, section = own, q
+            else:
+                # Decorative header: may hide itself, gates nothing after it.
+                gate, section = True, None
+            yield q, own, q
+            continue
+
+        yield q, (gate and is_relevant(q, ctx, gps, zones)), section
+
+
+def visibility_map(questions, ctx: dict, gps=None, zones: dict = None) -> dict:
+    """{name: bool} for every named item, section gating applied.
+
+    Handy for tests, for debugging a form, and for anything that wants the
+    answer to "would the respondent have seen this?" without re-running a
+    whole validation pass.
+    """
+    out = {}
+    for q, visible, _sec in walk_visibility(questions, ctx, gps, zones):
+        name = q.get("name")
+        if name:
+            out[name] = visible
+    return out
+
+
 # ── choice filtering: cascade + geo ─────────────────────────────────
 
 def allowed_choice_values(q: dict, ctx: dict, gps, zones: dict):
@@ -471,15 +580,16 @@ def validate_submission(schema: dict, answers: dict, gps=None):
         if q.get("type") == "calculate":
             ctx[q.get("name")] = evaluate_expression(q.get("calc"), ctx)
 
-    for q in questions:
+    for q, visible, _sec in walk_visibility(questions, ctx, gps, zones):
         name = q.get("name")
         qtype = q.get("type")
         if not name or qtype in ("section", "note"):
-            continue
+            continue  # display-only items never carry an answer
 
-        if not (evaluate_condition(q.get("relevant"), ctx)
-                and geo_relevant(q, gps, zones)):
-            continue  # drop answers to hidden questions
+        if not visible:
+            # Drop answers to hidden questions — hidden by their own skip
+            # logic, by their geofence, or by a switched-off section.
+            continue
 
         if qtype == "calculate":
             calcs[name] = ctx.get(name)
@@ -524,12 +634,14 @@ def validate_submission(schema: dict, answers: dict, gps=None):
                     if ch.get("type") == "calculate":
                         item_ctx[ch.get("name")] = evaluate_expression(ch.get("calc"), item_ctx)
                 clean_item = {}
-                for ch in children:
+                # Section gating applies inside the group too, and resets at
+                # the start of every item.
+                for ch, ch_visible, _csec in walk_visibility(
+                        children, item_ctx, gps, zones):
                     cname, ctype_ = ch.get("name"), ch.get("type")
                     if not cname or ctype_ in ("section", "note"):
                         continue
-                    if not (evaluate_condition(ch.get("relevant"), item_ctx)
-                            and geo_relevant(ch, gps, zones)):
+                    if not ch_visible:
                         continue
                     if ctype_ == "calculate":
                         clean_item[cname] = item_ctx.get(cname)

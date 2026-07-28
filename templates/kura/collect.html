@@ -295,6 +295,31 @@ function geoRelevant(q){
   const inside=gpsInAny(gps,ids);
   return (gf.mode||"inside")==="inside"?inside:!inside;
 }
+/* An item's OWN relevance: skip logic AND geofence. */
+function ownRelevant(q,ctx){ return evalCond(q.relevant,ctx)&&geoRelevant(q); }
+/* Section gating — mirrors walk_visibility() in kura/logic.py.
+   A "section" opens a run that ends at the next section item; while its
+   condition is false every item in the run is hidden, its answers are
+   dropped and its required flag does not fire. scope:"self" hides only
+   the header; {type:"section",end:true} closes a run. Sections do not
+   nest, and inside a repeat item the gate starts fresh.
+   Returns [{q, visible, section}] in schema order. */
+function sectionWalk(list,ctx){
+  const out=[]; let gate=true, section=null;
+  (list||[]).forEach(q=>{
+    if(!q||typeof q!=="object") return;
+    if(q.type==="section"){
+      if(q.end){ gate=true; section=null; out.push({q,visible:false,section:null}); return; }
+      const own=ownRelevant(q,ctx);
+      if(String(q.scope||"until_next")!=="self"){ gate=own; section=q; }
+      else { gate=true; section=null; }
+      out.push({q,visible:own,section:q});
+      return;
+    }
+    out.push({q,visible:gate&&ownRelevant(q,ctx),section});
+  });
+  return out;
+}
 function allowedChoices(q,ctx){
   if(!q.choices) return null;
   const pn=(q.cascade&&q.cascade.parent)||"";
@@ -471,16 +496,18 @@ function repeatHtml(q,ctx){
     const ic=itemContext(q,item||{},ctx);
     const label=pipeText((rp.item_label||"Item ${index}").replace(/\$\{index\}/g,String(idx+1)),ic);
     let inner="";
-    (q.children||[]).forEach(ch=>{
-      if(ch.type==="section"){ inner+='<div class="lbl" style="color:var(--cyan)">'+esc(pipeText(ch.label,ic))+'</div>'; return; }
+    sectionWalk(q.children,ic).forEach(({q:ch,visible})=>{
+      if(ch.type==="section"){
+        if(!visible) return;
+        inner+='<div class="lbl" style="color:var(--cyan)">'+esc(pipeText(ch.label,ic))+'</div>'; return;
+      }
+      if(!visible) return;
       if(ch.type==="note"){
-        if(!evalCond(ch.relevant,ic)||!geoRelevant(ch)) return;
         inner+='<div class="q note" style="margin:.5rem 0"><div class="lbl">🛈 '+esc(pipeText(ch.label,ic))+'</div>'+
           (ch.hint?'<p class="note-body">'+esc(pipeText(ch.hint,ic))+'</p>':'')+'</div>';
         return;
       }
       if(ch.type==="calculate") return;
-      if(!evalCond(ch.relevant,ic)||!geoRelevant(ch)) return;
       const ns="r|"+q.name+"|"+idx+"|";
       inner+='<div class="subq">'+questionHtml(ch,ic,ns,(item||{})[ch.name],q.name+"."+idx+"."+ch.name)+'</div>';
     });
@@ -506,10 +533,10 @@ function render(){
   const scrollY=window.scrollY;
   form.innerHTML="";
   let answered=0, visible=0;
-  Q.forEach(q=>{
+  sectionWalk(Q,ctx).forEach(({q,visible:vis})=>{
     if(q.type==="calculate"){
       if(!q.visible) return;
-      if(!evalCond(q.relevant,ctx)||!geoRelevant(q)) return;
+      if(!vis) return;
       const out=ctx[q.name];
       const div=document.createElement("div");
       div.className="q calc-live";
@@ -519,7 +546,7 @@ function render(){
       form.appendChild(div);
       return;
     }
-    if(!evalCond(q.relevant,ctx)||!geoRelevant(q)){ delete errors[q.name]; return; }
+    if(!vis){ delete errors[q.name]; return; }
     const div=document.createElement("div");
     if(q.type==="section"){
       div.className="q section";
@@ -777,9 +804,9 @@ function checkOne(q,val,ctx,errs,key){
 function validate(){
   const ctx=context();
   Object.keys(errors).forEach(k=>delete errors[k]);
-  Q.forEach(q=>{
+  sectionWalk(Q,ctx).forEach(({q,visible})=>{
     if(q.type==="section"||q.type==="note"||q.type==="calculate") return;
-    if(!evalCond(q.relevant,ctx)||!geoRelevant(q)) return;
+    if(!visible) return;
     const v=answers[q.name];
     const empty=v==null||v===""||(Array.isArray(v)&&!v.length);
     if(q.type==="repeat"){
@@ -792,9 +819,9 @@ function validate(){
       if(q.required&&!items.length){ errors[q.name]="Add at least one item."; return; }
       items.forEach((item,idx)=>{
         const ic=itemContext(q,item||{},ctx);
-        (q.children||[]).forEach(ch=>{
+        sectionWalk(q.children,ic).forEach(({q:ch,visible:cvis})=>{
           if(ch.type==="section"||ch.type==="note"||ch.type==="calculate") return;
-          if(!evalCond(ch.relevant,ic)||!geoRelevant(ch)) return;
+          if(!cvis) return;
           const cv=(item||{})[ch.name];
           const cempty=cv==null||cv===""||(Array.isArray(cv)&&!cv.length);
           const key=q.name+"."+idx+"."+ch.name;

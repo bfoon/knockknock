@@ -459,6 +459,7 @@ function retype(q, type){
   if(type!=="calculate") delete q.calc;
   if(type==="repeat"){ q.children=q.children||[]; q.repeat=q.repeat||{min:null,max:null,item_label:"Item ${index}"}; }
   if(type!=="repeat"){ delete q.children; delete q.repeat; }
+  if(type!=="section") delete q.scope;
   if(type==="note"||type==="section"){ q.required=false; q.validate={}; delete q.indicator; }
 }
 function addQuestion(type){
@@ -1956,6 +1957,10 @@ $("#tpl-modal").addEventListener("click", e=>{
 function metaTags(q){
   const tags=[];
   if(q.relevant && (q.relevant.rules||[]).length) tags.push('<span class="tag logic">skip logic</span>');
+  if(q.type==="section" && (q.scope||"until_next")!=="self" &&
+     ((q.relevant&&(q.relevant.rules||[]).length) || (q.geofence&&(q.geofence.zones||[]).length)))
+    tags.push('<span class="tag logic">⌄ gates the questions below</span>');
+  if(q.type==="section" && q.scope==="self") tags.push('<span class="tag">heading only</span>');
   if(q.geofence && (q.geofence.zones||[]).length)
     tags.push('<span class="tag geo">geo '+esc(q.geofence.mode||"inside")+'</span>');
   if(q.cascade && q.cascade.parent) tags.push('<span class="tag casc">⇢ '+esc(q.cascade.parent)+'</span>');
@@ -2128,7 +2133,15 @@ function renderInspector(){
     html += field("Body text — shown under the title (supports ${piping})",
       '<textarea data-k="hint" style="min-height:96px">'+esc(q.hint||"")+'</textarea>');
     html += '<div class="hint-text">A note is display-only: it renders on the form (introduction, consent script, disclaimer…) but never records an answer and never appears as a data column. Skip logic and geofencing below still control when it is shown.</div>';
-  } else if(q.type!=="section" && q.type!=="calculate"){
+  } else if(q.type==="section"){
+    html += field("Body text — shown under the heading (supports ${piping})",
+      '<textarea data-k="hint" style="min-height:64px">'+esc(q.hint||"")+'</textarea>');
+    html += '<div class="divider">Section scope</div>'+
+      field("This section's skip logic controls",
+        '<select data-scope><option value="until_next"'+((q.scope||"until_next")==="until_next"?" selected":"")+'>the heading AND every question below it, until the next section</option>'+
+        '<option value="self"'+(q.scope==="self"?" selected":"")+'>the heading only (decoration)</option></select>')+
+      '<div class="hint-text">A section opens a run that ends at the next section heading. When its conditions are false the whole run disappears — the questions inside are not shown, their <b>required</b> flags do not fire, and their answers are discarded by the server even if a tampered client sends them. Pick "heading only" when you just want the title itself to come and go.</div>';
+  } else if(q.type!=="calculate"){
     html += field("Hint", '<input type="text" data-k="hint" value="'+esc(q.hint||"")+'">');
     html += '<div class="field"><label class="check"><input type="checkbox" data-k="required" '+(q.required?"checked":"")+'> Required</label></div>';
   }
@@ -2262,10 +2275,10 @@ function renderInspector(){
   }
 
   /* geofence */
-  if(q.type!=="section"){
+  {
     const gf = q.geofence||{};
     const active = (gf.zones||[]).length>0;
-    html += '<div class="divider geo">Geofence — show this question only…</div>';
+    html += '<div class="divider geo">Geofence — show '+(q.type==="section"?"this section":"this question")+' only…</div>';
     if(!schema.zones.length){
       html += '<div class="hint-text">Define zones in the left column first, then pick them here.</div>';
     } else {
@@ -2278,19 +2291,25 @@ function renderInspector(){
           const on = (gf.zones||[]).includes(z.id);
           return '<label class="'+(on?"on":"")+'"><input type="checkbox" data-gfz="'+esc(z.id)+'" '+(on?"checked":"")+'>'+esc(z.name||z.id)+'</label>';
         }).join("")+'</div>';
+      const noun = q.type==="section" ? "the section" : "the question";
       html += field("If location is unavailable",
-        '<select data-gf="fallback"><option value="show"'+((gf.fallback||"show")==="show"?" selected":"")+'>show the question</option>'+
-        '<option value="hide"'+(gf.fallback==="hide"?" selected":"")+'>hide the question</option></select>');
+        '<select data-gf="fallback"><option value="show"'+((gf.fallback||"show")==="show"?" selected":"")+'>show '+noun+'</option>'+
+        '<option value="hide"'+(gf.fallback==="hide"?" selected":"")+'>hide '+noun+'</option></select>');
     }
   }
 
   /* skip logic */
-  if(q.type!=="section"){
-    html += '<div class="divider">Skip logic — show this question when…</div>'+
+  {
+    const isSection = q.type==="section";
+    const gates = isSection && (q.scope||"until_next")!=="self";
+    html += '<div class="divider">Skip logic — show '+
+      (isSection ? (gates ? "this section (and everything in it)" : "this heading") : "this question")+' when…</div>'+
       '<div class="field"><label>Combine rules with</label><select data-relop><option value="and"'+((q.relevant&&q.relevant.op)!=="or"?" selected":"")+'>ALL must match (AND)</option><option value="or"'+((q.relevant&&q.relevant.op)==="or"?" selected":"")+'>ANY may match (OR)</option></select></div>'+
       '<div style="padding:0 1rem" id="rules"></div>'+
       '<button class="addline" data-add="rule">+ Add condition</button>'+
-      '<div class="hint-text">No conditions = always shown (geofence still applies).'+(isChild?' Children can reference siblings in the same item or any earlier top-level question.':'')+' Deeper AND/OR nesting is supported in the JSON.</div>';
+      '<div class="hint-text">No conditions = always shown (geofence still applies).'+
+      (gates?' Gating a section is the cheap way to skip a whole block — one condition here beats copying the same rule onto ten questions.':'')+
+      (isChild?' Children can reference siblings in the same item or any earlier top-level question.':'')+' Deeper AND/OR nesting is supported in the JSON.</div>';
   }
 
   body.innerHTML = html;
@@ -2433,6 +2452,10 @@ function wireInspectorOnce(){
     if(t.dataset.relop!==undefined){
       q.relevant = q.relevant||{op:"and",rules:[]};
       q.relevant.op = t.value; markDirty(); return;
+    }
+    if(t.dataset.scope!==undefined){
+      if(t.value==="self") q.scope="self"; else delete q.scope;
+      markDirty(); renderInspector(); renderCanvas(); return;
     }
     if(t.dataset.lkds!==undefined){
       if(t.value) q.lookup = {dataset: Number(t.value), fill: (q.lookup&&q.lookup.fill)||[]};

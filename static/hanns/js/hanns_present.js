@@ -162,6 +162,9 @@ function show(n,broadcast=true){
   // Paint into the inner wrapper and animate THAT — the outer canvas keeps
   // its fit scale untouched, so fullscreen survives every transition.
   const wrap=ensureAnimWrap()||pCanvas;
+  // A new slide starts with its cue-held elements hidden again, matching
+  // the consumer, which clears the revealed set on every goto.
+  revealedNow.clear();
   paintSlide(wrap,s,{live:true});transition(wrap,(s&&s.transition)||"fade");
   const pos=$("#pp-pos");if(pos)pos.textContent=`${i+1} / ${DECK.slides.length}`;
   if(broadcast&&!suppressBroadcast)Live.goto(i);
@@ -266,7 +269,53 @@ document.addEventListener("fullscreenchange",()=>{updateFullscreenButton();fit()
 document.addEventListener("fullscreenchange",()=>{setTimeout(fit,60);setTimeout(fit,400);});
 document.addEventListener("webkitfullscreenchange",()=>{updateFullscreenButton();fit();setTimeout(fit,60);setTimeout(fit,400);});
 
-const Live={sock:null,retry:0,start(){if(!CFG.wsUrl)return;try{this.sock=new WebSocket(CFG.wsUrl);}catch(e){return;}this.sock.addEventListener("open",()=>{this.retry=0;this.send({type:"presenter_hello"});keepScreenAwake("websocket-open");});this.sock.addEventListener("message",ev=>{let m;try{m=JSON.parse(ev.data);}catch(e){return;}if(m.type==="reaction"){spawnEmoji(m.emoji);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);else incrementReactionCount(m.emoji);}else if(m.type==="participants")setCount(m.count);else if(m.type==="state"){if(typeof m.count==="number")setCount(m.count);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);}else if(m.type==="goto"&&typeof m.index==="number"){keepScreenAwake("phone-controller");if(m.index!==i){suppressBroadcast=true;show(m.index,false);suppressBroadcast=false;}}else if(m.type==="pointer"){showPointer(m.x,m.y);}});this.sock.addEventListener("close",()=>{if(this.retry++>6)return;setTimeout(()=>this.start(),Math.min(800*this.retry,5000));});},send(o){if(this.sock&&this.sock.readyState===1)this.sock.send(JSON.stringify(o));},goto(idx){this.send({type:"goto",index:idx});},stop(){if(this.sock){try{this.sock.close();}catch(e){}}this.sock=null;}};
+/* ── reveal-on-cue ────────────────────────────────────────────────────
+   Elements authored with revealOn:"cue" are painted by paintSlide() but
+   held at opacity 0. The phone controller sends {type:"reveal", ids:[…]}
+   and they enter here with their own entrance animation, count-up and
+   fill sweep — identical to how they would have arrived on entry.
+
+   `revealedNow` mirrors what the server believes is showing on this
+   slide, so a reconnect snapshot can restore the same state WITHOUT
+   replaying every entrance in front of the room.                       */
+let revealedNow = new Set();
+
+function elNodeById(id){
+  const wrap = ensureAnimWrap() || pCanvas;
+  if(!wrap || id == null) return null;
+  return wrap.querySelector(`.el[data-id="${String(id).replace(/["\\]/g,"\\$&")}"]`);
+}
+function slideElById(id){
+  const s = DECK.slides[i] || {};
+  return ((s.els) || []).find(e => e && e.id === id) || null;
+}
+function applyReveal(ids, hide, instant){
+  const Hh = window.Hanns || {};
+  if(!Hh.revealElement || !Array.isArray(ids)) return;
+  ids.forEach(id => {
+    const node = elNodeById(id);
+    if(!node) return;
+    Hh.revealElement(node, slideElById(id), {hide: !!hide, instant: !!instant});
+    if(hide) revealedNow.delete(id); else revealedNow.add(id);
+  });
+}
+/* After a repaint or a reconnect: put back what was already on screen,
+   with no animation, so nothing replays mid-sentence. */
+function restoreRevealed(){
+  if(!revealedNow.size) return;
+  applyReveal([...revealedNow], false, true);
+}
+/* Play a one-off actor action triggered from the phone controller. This
+   is the same path as clicking the character on the stage. */
+function playActorFromCue(elId, action){
+  const AC = window.HannsActors;
+  if(!AC) return;
+  const node = elNodeById(elId);
+  const actor = node && node.querySelector(".actor");
+  if(actor) AC.playActorOnce(actor, action || "idle", 1500);
+}
+
+const Live={sock:null,retry:0,start(){if(!CFG.wsUrl)return;try{this.sock=new WebSocket(CFG.wsUrl);}catch(e){return;}this.sock.addEventListener("open",()=>{this.retry=0;this.send({type:"presenter_hello"});keepScreenAwake("websocket-open");});this.sock.addEventListener("message",ev=>{let m;try{m=JSON.parse(ev.data);}catch(e){return;}if(m.type==="reaction"){spawnEmoji(m.emoji);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);else incrementReactionCount(m.emoji);}else if(m.type==="participants")setCount(m.count);else if(m.type==="state"){if(typeof m.count==="number")setCount(m.count);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);if(Array.isArray(m.revealed)){revealedNow=new Set(m.revealed);restoreRevealed();}}else if(m.type==="reveal"){keepScreenAwake("cue-reveal");applyReveal(m.ids,m.hide,false);}else if(m.type==="actor_action"){keepScreenAwake("actor-cue");playActorFromCue(m.elId,m.action);}else if(m.type==="goto"&&typeof m.index==="number"){keepScreenAwake("phone-controller");if(m.index!==i){suppressBroadcast=true;show(m.index,false);suppressBroadcast=false;}}else if(m.type==="pointer"){showPointer(m.x,m.y);}});this.sock.addEventListener("close",()=>{if(this.retry++>6)return;setTimeout(()=>this.start(),Math.min(800*this.retry,5000));});},send(o){if(this.sock&&this.sock.readyState===1)this.sock.send(JSON.stringify(o));},goto(idx){this.send({type:"goto",index:idx});},stop(){if(this.sock){try{this.sock.close();}catch(e){}}this.sock=null;}};
 function setCount(n){const el=$("#aud-count");if(el)el.textContent=n;}
 
 /* Click an actor on the live stage to play its action once. If a phone

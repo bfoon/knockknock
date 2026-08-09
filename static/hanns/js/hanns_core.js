@@ -844,6 +844,29 @@ const OBJECTS = [
     "help": "Vertical bar — fills to a percentage"
   },
   {
+    "kind": "counter",
+    "label": "Counting number",
+    "icon": "🔢",
+    "count": 1,
+    "level": 0,
+    "w": 380,
+    "h": 190,
+    "accent": "#e8482b",
+    "help": "A big number that counts up on the live stage \u2014 totals, money, people reached"
+  },
+  {
+    "kind": "loading_bar",
+    "label": "Loading bar (%)",
+    "icon": "⏳",
+    "count": 1,
+    "level": 72,
+    "w": 460,
+    "h": 140,
+    "accent": "#22c55e",
+    "fill": true,
+    "help": "A progress bar that loads up to its percentage while the number counts"
+  },
+  {
     "kind": "gauge",
     "label": "Gauge / dial",
     "icon": "🎛️",
@@ -3095,6 +3118,10 @@ function elBase(type,over={}){
   return Object.assign({
     id:uid(), type, x:120,y:120,w:300,h:120,rot:0,
     anim:"fade", animDelay:0,
+    // "entry"  — appears with the slide (the default, and every old deck)
+    // "cue"    — held back on the live stage until the presenter taps it
+    //            in on the phone controller. The editor always shows it.
+    revealOn:"entry",
   },over);
 }
 function makeText(over={}){
@@ -4673,6 +4700,9 @@ function renderElement(el,{live=false}={}){
   node.className="el "+el.type;
   node.dataset.id=el.id;
   styleEl(el,node);
+  // Cue-held elements stay fully visible and selectable in the editor —
+  // you cannot lay out what you cannot see. The outline marks them.
+  if(el.revealOn==="cue"&&!live)node.classList.add("el-cued");
   const inner=document.createElement("div");inner.className="el-inner";
 
   if(el.type==="text"){
@@ -6043,6 +6073,104 @@ function renderFunnelStack(el){
    ──────────────────────────────────────────────────────────────────── */
 
 /* ── percent_ring: circular progress + centre % ─────────────────────── */
+/* ════════════════════════════════════════════════════════════════════
+   ANIMATED READOUTS — a number that counts up, and a bar that loads.
+
+   Both draw their own number, so renderObject() skips the generic badge
+   for them. The digits are animated by animateCountUp() in LIVE views
+   only; the editor paints the finished value so the slide is easy to lay
+   out and the thumbnail reads correctly.
+
+   Formatting rides on the node itself (data-num-*) rather than being
+   looked up from the element at animation time — that way a cued reveal,
+   a repaint, or the standalone HTML export all animate identically
+   without needing the element object in hand.
+   ──────────────────────────────────────────────────────────────────── */
+function numFormat(n,spec){
+  const dec=clamp(Number(spec.numberDecimals)||0,0,4);
+  let s=(Number(n)||0).toFixed(dec);
+  if(spec.countSep!==false){
+    const parts=s.split(".");
+    parts[0]=parts[0].replace(/\B(?=(\d{3})+(?!\d))/g,",");
+    s=parts.join(".");
+  }
+  return (spec.numberPrefix||"")+s+(spec.numberSuffix||"");
+}
+function numAnimAttrs(el,from,to){
+  return ` data-num-anim="1" data-num-from="${Number(from)||0}" data-num-to="${Number(to)||0}"`+
+    ` data-num-dec="${clamp(Number(el.numberDecimals)||0,0,4)}"`+
+    ` data-num-sep="${el.countSep===false?0:1}"`+
+    ` data-num-pre="${escHTML(el.numberPrefix||"")}"`+
+    ` data-num-suf="${escHTML(el.numberSuffix||"")}"`+
+    ` data-num-dur="${Math.max(120,Number(el.countDur)||1600)}"`;
+}
+
+/* ── counter: one big number that counts up to its target ───────────── */
+function renderCounter(el){
+  const d=objectDef(el.objectType);
+  const accent=el.accent||d.accent||"#e8482b";
+  const from=Number(el.countFrom)||0;
+  const to=Number(el.countTo!=null?el.countTo:100)||0;
+  const wrap=document.createElement("div");
+  wrap.className="hanns-counter";
+  wrap.style.setProperty("--accent",accent);
+  const animate=el.objAnim!==false;
+
+  const num=document.createElement("div");
+  num.className="hc-num";
+  if(el.numberColor)num.style.color=el.numberColor;
+  if(Number(el.numberSize)>0)num.style.fontSize=Number(el.numberSize)+"px";
+  num.innerHTML=`<b${animate?numAnimAttrs(el,from,to):""}>${escHTML(numFormat(to,el))}</b>`;
+  wrap.appendChild(num);
+
+  const cap=el.label||d.label;
+  if(el.showLabel!==false&&cap){
+    const c=document.createElement("div");
+    c.className="hc-cap";
+    c.textContent=cap;
+    wrap.appendChild(c);
+  }
+  return wrap;
+}
+
+/* ── loading_bar: a progress track that fills to el.level ────────────
+   The track width reads --level, which renderObject() already sets on the
+   .object-box for every fill kind — so animateLoad() sweeping that one
+   variable is all the "loading" motion this needs.                     */
+function renderLoadingBar(el){
+  const d=objectDef(el.objectType);
+  const lvl=clamp(Number(el.level)||0,0,100);
+  const accent=el.accent||d.accent||"#22c55e";
+  const wrap=document.createElement("div");
+  wrap.className="loading-bar"+(el.barStyle==="slim"?" lb-slim":"");
+  wrap.style.setProperty("--accent",accent);
+  const animate=el.objAnim!==false;
+
+  // Percent is the natural suffix here, but an author can override it.
+  const spec=Object.assign({},el);
+  if(spec.numberSuffix==null||spec.numberSuffix==="")spec.numberSuffix="%";
+
+  const showLabel=el.showLabel!==undefined?el.showLabel!==false:(el.showCount!==false);
+  const showValue=el.showValue!==undefined?el.showValue!==false:(el.showCount!==false);
+  const head=document.createElement("div");
+  head.className="lb-head";
+  head.innerHTML=
+    (showLabel?`<span class="lb-cap">${escHTML(el.label||d.label||"")}</span>`:"")+
+    (showValue?`<b class="lb-num"${animate?numAnimAttrs(spec,0,lvl):""}>${escHTML(numFormat(lvl,spec))}</b>`:"");
+  if(el.numberColor)head.style.color=el.numberColor;
+  if(Number(el.numberSize)>0)head.style.fontSize=Number(el.numberSize)+"px";
+
+  const track=document.createElement("div");
+  track.className="lb-track";
+  const fill=document.createElement("div");
+  fill.className="lb-fill";
+  track.appendChild(fill);
+
+  wrap.appendChild(head);
+  wrap.appendChild(track);
+  return wrap;
+}
+
 function renderPercentRing(el){
   const d=objectDef(el.objectType);
   const lvl=clamp(Number(el.level)||0,0,100);
@@ -6419,6 +6547,8 @@ function renderObject(el){
   else if(el.objectType==="diet_plate") art=renderDietPlate(el);
   else if(el.objectType==="food_wheel") art=renderFoodWheel(el);
   else if(el.objectType==="funnel_stack") art=renderFunnelStack(el);
+  else if(el.objectType==="counter") art=renderCounter(el);
+  else if(el.objectType==="loading_bar") art=renderLoadingBar(el);
   else if(el.objectType==="percent_ring") art=renderPercentRing(el);
   else if(el.objectType==="stat_item") art=renderStatItem(el);
   else if(el.objectType==="pie_percent") art=renderPiePercent(el);
@@ -6448,7 +6578,8 @@ function renderObject(el){
      || el.objectType==="funnel_stack"
      || el.objectType==="percent_ring" || el.objectType==="stat_item"
      || el.objectType==="pie_percent" || el.objectType==="radial_bars"
-     || el.objectType==="teardrop_badge") return box;
+     || el.objectType==="teardrop_badge"
+     || el.objectType==="counter" || el.objectType==="loading_bar") return box;
 
   // ── the number + label (independent) ─────────────────────────────
   const pos = el.numberPos || (d.fill?"onfill":"below");
@@ -6532,32 +6663,136 @@ function animateIn(node,el){
   node.animate(frames,{duration,delay:(el.animDelay||0)*1000,easing,fill:"both"});
 }
 
-/* Count a number up from 0 → target while the fill rises (present/preview).
-   Position of the label is handled by CSS (labelRise); this only animates
-   the digits, so it stays in sync with the liquid. */
+/* Count numbers up (present / preview / cued reveal).
+
+   Two node shapes are supported:
+     [data-count-to]  the original vessel / ring / gauge percentage. Still
+                      gated on el.numberMode==="countup" so no existing deck
+                      changes behaviour.
+     [data-num-anim]  the counter + loading-bar objects, which carry their
+                      own from / to / duration / formatting on the node.
+   Both ease out and land exactly on the target value.                    */
+function easeOutCubic(p){return 1-Math.pow(1-p,3);}
 function animateCountUp(node,el){
-  if(!el || el.type!=="object" || el.numberMode!=="countup" || el.objAnim===false) return;
-  const targets=node.querySelectorAll("[data-count-to]");
-  if(!targets.length) return;
-  const dur=1000, delay=(el.animDelay||0)*1000;
-  targets.forEach(t=>{
-    const to=Math.round(Number(t.getAttribute("data-count-to"))||0);
-    const suffix=/%/.test(t.textContent||"")?"%":"";
+  if(!node||!el)return;
+  const delay=(el.animDelay||0)*1000;
+  function run(t,from,to,dur,fmt){
     const start=performance.now()+delay;
-    t.textContent="0"+suffix;
+    t.textContent=fmt(from);
     function step(now){
-      const p=clamp((now-start)/dur,0,1);
       if(now<start){requestAnimationFrame(step);return;}
-      const eased=1-Math.pow(1-p,3);
-      t.textContent=Math.round(to*eased)+suffix;
-      if(p<1)requestAnimationFrame(step); else t.textContent=to+suffix;
+      const p=clamp((now-start)/dur,0,1);
+      t.textContent=fmt(from+(to-from)*easeOutCubic(p));
+      if(p<1)requestAnimationFrame(step);else t.textContent=fmt(to);
     }
     requestAnimationFrame(step);
+  }
+
+  // Self-describing readouts (counter, loading_bar).
+  node.querySelectorAll("[data-num-anim]").forEach(t=>{
+    const from=Number(t.getAttribute("data-num-from"))||0;
+    const to=Number(t.getAttribute("data-num-to"))||0;
+    const dur=Math.max(120,Number(t.getAttribute("data-num-dur"))||1600);
+    const spec={
+      numberDecimals:Number(t.getAttribute("data-num-dec"))||0,
+      countSep:t.getAttribute("data-num-sep")!=="0",
+      numberPrefix:t.getAttribute("data-num-pre")||"",
+      numberSuffix:t.getAttribute("data-num-suf")||"",
+    };
+    run(t,from,to,dur,v=>numFormat(v,spec));
+  });
+
+  // Legacy percentage readouts on vessels / rings / gauges.
+  if(el.type!=="object"||el.numberMode!=="countup"||el.objAnim===false)return;
+  node.querySelectorAll("[data-count-to]").forEach(t=>{
+    const to=Math.round(Number(t.getAttribute("data-count-to"))||0);
+    const suffix=/%/.test(t.textContent||"")?"%":"";
+    const dur=Math.max(120,Number(el.countDur)||1000);
+    run(t,0,to,dur,v=>Math.round(v)+suffix);
   });
 }
 
+/* Sweep a percentage up from empty instead of appearing already full.
+
+   One rAF loop drives every shape a level can take:
+     --level   on .object-box   → vessels, percent bars, the loading bar
+     --angle   on .object-gauge → the dial needle
+     dasharray on .pr-fill      → the percent ring
+
+   Opt-in per element via el.levelMode==="load", except for the two new
+   animated kinds where loading IS the point, so they default to it.      */
+function wantsLoad(el){
+  if(!el||el.type!=="object"||el.objAnim===false)return false;
+  if(el.levelMode==="instant")return false;
+  if(el.objectType==="loading_bar"||el.objectType==="counter")return true;
+  return el.levelMode==="load";
+}
+function animateLoad(node,el){
+  if(!node||!wantsLoad(el))return;
+  const lvl=clamp(Number(el.level)||0,0,100);
+  const box=node.querySelector(".object-box");
+  const gauge=node.querySelector(".object-gauge");
+  const ring=node.querySelector(".pct-ring .pr-fill");
+  if(!box&&!gauge&&!ring)return;
+  const ringLen=ring?(Number(ring.getAttribute("pathLength"))||0):0;
+  const dur=Math.max(120,Number(el.countDur)||1600);
+  const delay=(el.animDelay||0)*1000;
+  const paint=v=>{
+    if(box)box.style.setProperty("--level",v.toFixed(2)+"%");
+    if(gauge)gauge.style.setProperty("--angle",(v*1.8-90).toFixed(1)+"deg");
+    if(ring){
+      const dash=v/100*ringLen;
+      ring.setAttribute("stroke-dasharray",`${dash.toFixed(2)} ${(ringLen-dash).toFixed(2)}`);
+    }
+  };
+  paint(0);
+  const start=performance.now()+delay;
+  function step(now){
+    if(now<start){requestAnimationFrame(step);return;}
+    const p=clamp((now-start)/dur,0,1);
+    paint(lvl*easeOutCubic(p));
+    if(p<1)requestAnimationFrame(step);else paint(lvl);
+  }
+  requestAnimationFrame(step);
+}
+
+/* ── reveal-on-cue ────────────────────────────────────────────────────
+   A cue-held element is painted normally — it just never gets its
+   entrance. Holding it with opacity (rather than display:none) keeps its
+   layout, so charts, maps and Plotly nodes that measure themselves on
+   attach still size correctly before they are shown.                    */
+function holdElement(node){
+  if(!node)return;
+  node.classList.add("el-held");
+  node.style.opacity="0";
+  node.style.pointerEvents="none";
+}
+function playElement(node,el){
+  animateIn(node,el);
+  animateCountUp(node,el);
+  animateLoad(node,el);
+}
+/* Bring a held element in, or put it back.
+   The presenter's tap IS the cue, so the authored delay is dropped —
+   otherwise a 1.5s stagger would make the reveal feel broken.
+   {instant:true} restores state after a repaint or reconnect without
+   replaying the entrance, since the rendered markup already carries the
+   final number and fill.                                                */
+function revealElement(node,el,opts){
+  if(!node)return;
+  const o=opts||{};
+  if(o.hide){holdElement(node);return;}
+  node.classList.remove("el-held");
+  node.style.pointerEvents="";
+  if(o.instant){node.style.opacity="1";return;}
+  playElement(node,Object.assign({},el||{},{animDelay:0}));
+}
+function cuedElements(slide){
+  return (((slide&&slide.els)||[]).filter(e=>e&&e.revealOn==="cue"));
+}
+
 /* paint a slide into a container at native 960×540 */
-function paintSlide(container,slide,{live=false}={}){
+function paintSlide(container,slide,{live=false,revealAll=false}={}){
   container.innerHTML="";
   container.style.background=slide.bg;
   if(slide.bgSize)container.style.backgroundSize=slide.bgSize;else container.style.backgroundSize="";
@@ -6576,12 +6811,19 @@ function paintSlide(container,slide,{live=false}={}){
   slide.els.forEach(el=>{
     const node=renderElement(el,{live});
     container.appendChild(node);
-    if(live){animateIn(node,el);animateCountUp(node,el);}
+    if(!live)return;
+    // revealAll is for live views with no presenter to cue them — the
+    // editor Preview button and the standalone HTML export.
+    if(el.revealOn==="cue"&&!revealAll)holdElement(node);
+    else playElement(node,el);
   });
 }
 
 window.Hanns = {Deck,TEMPLATES,BACKGROUNDS,BG_FX,ANIMS,TRANSITIONS,PALETTE,FONTS,OBJECTS,SHAPES,
-  newSlide,curSlide,selEl,paintSlide,renderElement,
+  newSlide,curSlide,selEl,paintSlide,renderElement,objectDef,
+  // reveal-on-cue + animated readouts (used by hanns_present.js and the
+  // phone controller)
+  revealElement,cuedElements,holdElement,playElement,animateIn,animateCountUp,animateLoad,numFormat,
   makeText,makeShape,makeLine,makeImage,makeVideo,makeLink,makeObject,makeCreativeShape,makeTable,makeChart,makeMap,makeGallery,W,H,$,$$,uid,clamp,genCode};
 
 })();

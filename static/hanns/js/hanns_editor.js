@@ -1489,6 +1489,19 @@ Affected Area 1,-16.52,13.39,45,#e8482b,#ffffff">${escapeTA(areasToText(el))}</t
       ${field("Show text",`<div class="seg" id="f-nodeshowtext"><button data-nsx="1" class="${el.nodeShowText!==false?"active":""}">Show</button><button data-nsx="0" class="${el.nodeShowText===false?"active":""}">Hide</button></div>`)}
       ${field("Text colour",`<span style="display:flex;gap:.4rem;align-items:center"><input type="color" id="f-nodetextcolor" value="${el.nodeTextColor||"#2f3a3f"}"><button class="chip" id="f-nodetextcolor-auto" type="button" title="Reset to default (white)">Auto</button></span>`)}
       ` : ""}
+      ${(el.objectType==="counter"||el.objectType==="loading_bar") ? `
+      ${el.objectType==="counter" ? field("Count from",`<input type="number" id="f-countfrom" value="${Number(el.countFrom)||0}">`) : ""}
+      ${el.objectType==="counter" ? field("Count to",`<input type="number" id="f-countto" value="${el.countTo!=null?el.countTo:100}">`) : ""}
+      ${field("Prefix",`<input type="text" id="f-numpre" value="${(el.numberPrefix||"").replace(/"/g,"&quot;")}" placeholder="e.g. D or $">`)}
+      ${field("Suffix",`<input type="text" id="f-numsuf" value="${(el.numberSuffix||"").replace(/"/g,"&quot;")}" placeholder="${el.objectType==="loading_bar"?"% (default)":"e.g. + or km"}">`)}
+      ${field("Decimals "+(Number(el.numberDecimals)||0),`<input type="range" id="f-numdec" min="0" max="4" step="1" value="${Number(el.numberDecimals)||0}">`)}
+      ${field("Thousands separator",`<div class="seg" id="f-countsep"><button data-cs="1" class="${el.countSep!==false?"active":""}">1,000</button><button data-cs="0" class="${el.countSep===false?"active":""}">1000</button></div>`)}
+      ${field("Load time "+((Number(el.countDur)||1600)/1000).toFixed(1)+"s",`<input type="range" id="f-countdur" min="300" max="5000" step="100" value="${Number(el.countDur)||1600}">`)}
+      <div class="insp-empty" style="padding-top:.2rem;font-size:.78em">The number counts up on the live stage and in Preview. The editor always shows the final value so you can lay the slide out.</div>
+      ` : ""}
+      ${(def.fill && el.objectType!=="loading_bar") ? field("Fill behaviour",`<div class="seg" id="f-levelmode">
+        <button data-lm="instant" class="${el.levelMode!=="load"?"active":""}">Instant</button>
+        <button data-lm="load" class="${el.levelMode==="load"?"active":""}">Load up</button></div>`) : ""}
       ${field("Animation",`<div class="seg" id="f-objanim"><button data-objanim="on" class="${el.objAnim!==false?"active":""}">On</button><button data-objanim="off" class="${el.objAnim===false?"active":""}">Off</button></div>`)}
       <div class="insp-empty" style="padding-top:.2rem">${def.help||"Animated visual object"}</div>
     </div>`;
@@ -1696,6 +1709,17 @@ function bindElementPanel(el){
     seg("f-numpos","numpos",v=>{el.numberPos=v;renderCanvas();markDirty();});
     seg("f-nummode","nummode",v=>{el.numberMode=v;renderCanvas();markDirty();});
     seg("f-objanim","objanim",v=>{el.objAnim=(v==="on");renderCanvas();markDirty();});
+    // animated readouts (counter / loading bar)
+    const readout=(id,key,cast)=>{const i=$("#"+id);if(!i)return;
+      i.addEventListener("input",()=>{el[key]=cast?cast(i.value):i.value;renderCanvas();markDirty();});};
+    readout("f-countfrom","countFrom",v=>Number(v)||0);
+    readout("f-countto","countTo",v=>Number(v)||0);
+    readout("f-numpre","numberPrefix");
+    readout("f-numsuf","numberSuffix");
+    bindRange("f-numdec",v=>{el.numberDecimals=v;renderCanvas();markDirty();},v=>v,"Decimals");
+    bindRange("f-countdur",v=>{el.countDur=v;renderCanvas();markDirty();},v=>(v/1000).toFixed(1)+"s","Load time");
+    seg("f-countsep","cs",v=>{el.countSep=(v==="1");renderCanvas();markDirty();});
+    seg("f-levelmode","lm",v=>{el.levelMode=v;renderCanvas();markDirty();});
     bindRange("f-objscale",v=>{el.objScale=Math.max(0.4,Math.min(4,v/100));renderCanvas();markDirty();},v=>v+"%","Object size");
     const numc=$("#f-numcolor");numc&&numc.addEventListener("input",()=>{el.numberColor=numc.value;renderCanvas();markDirty();});
     const numcAuto=$("#f-numcolor-auto");numcAuto&&numcAuto.addEventListener("click",()=>{el.numberColor="";renderInspector();renderCanvas();markDirty();});
@@ -1941,6 +1965,13 @@ function animatePanel(el){
       <div class="insp-empty" style="padding-top:.15rem">Speed 0 = automatic (each entrance has its own tuned duration).</div>
     </div>
     <div class="group">
+      <span class="glabel">Reveal</span>
+      ${field("When this appears on the projector",`<div class="seg" id="f-revealon">
+        <button data-rv="entry" class="${(el.revealOn||"entry")!=="cue"?"active":""}">With the slide</button>
+        <button data-rv="cue" class="${el.revealOn==="cue"?"active":""}">📱 On my cue</button></div>`)}
+      <div class="insp-empty" style="padding-top:.2rem">On my cue holds this element back on the big screen until you tap it in on the phone controller. It then enters with the animation above. In the editor it stays visible, outlined in orange.</div>
+    </div>
+    <div class="group">
       <button class="tbtn" id="f-preview" style="width:100%;justify-content:center;margin-bottom:.5rem">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 4 14 8-14 8z"/></svg>
         Preview animations
@@ -1961,13 +1992,18 @@ function bindAnimatePanel(el){
   }));
   bindRange("f-delay",v=>{el.animDelay=v;markDirty();},v=>v.toFixed(1)+"s","Delay");
   bindRange("f-animdur",v=>{el.animDur=v>0?v:0;markDirty();},v=>v>0?v.toFixed(1)+"s":"auto","Speed");
+  seg("f-revealon","rv",v=>{el.revealOn=v;renderCanvas();markDirty();});
   $("#f-preview")&&$("#f-preview").addEventListener("click",previewAnimations);
   $$(".anim-preset-btn[data-preset]",inspBody).forEach(b=>b.addEventListener("click",()=>{
     const p=ANIM_PRESETS.find(x=>x.key===b.dataset.preset);
     if(p)applyAnimPreset(p);
   }));
 }
-function previewAnimations(){const s=curSlide();paintSlide(canvas,s,{live:true});
+function previewAnimations(){const s=curSlide();
+  // Preview plays the slide as authored, cue-held elements included —
+  // otherwise they would blink out for 1.4s and look broken. Their
+  // timing on the night comes from your taps, not from here.
+  paintSlide(canvas,s,{live:true,revealAll:true});
   // restore editor interactivity after the preview plays
   setTimeout(()=>renderCanvas(),1400);}
 

@@ -6,7 +6,7 @@
 <title>Controller · {{ deck.title }} · Hanns</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800;900&family=Spline+Sans+Mono:wght@500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=49">
+<link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=52">
 
 <style>
   .phone-card h1,
@@ -109,6 +109,24 @@
   .phone-btn-wide{display:block;width:100%;margin-top:.55rem}
   .phone-btn-danger{background:linear-gradient(135deg,#7a1f12,#e8482b);color:#fff;border-color:transparent}
   .phone-btn[disabled]{opacity:.45;pointer-events:none}
+
+  /* ── reveal held objects ──────────────────────────────── */
+  .reveal-list{display:flex;flex-direction:column;gap:.45rem;margin-top:.2rem}
+  .reveal-btn{display:flex;align-items:center;gap:.6rem;width:100%;text-align:left;
+    background:#221d38;color:#e7e2ff;border:1px solid #37305a;border-radius:13px;
+    padding:.72rem .8rem;font-weight:700;font-size:.9rem;cursor:pointer;
+    -webkit-tap-highlight-color:transparent}
+  .reveal-btn:active{transform:scale(.985)}
+  .reveal-btn .rv-dot{flex:0 0 auto;width:10px;height:10px;border-radius:999px;
+    background:#4a3f77;box-shadow:0 0 0 3px rgba(74,63,119,.28);transition:.15s}
+  .reveal-btn .rv-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .reveal-btn .rv-kind{flex:0 0 auto;font:700 .62rem/1 "Spline Sans Mono",monospace;
+    letter-spacing:.07em;text-transform:uppercase;color:#8d84b5}
+  .reveal-btn.shown{background:linear-gradient(135deg,rgba(255,138,31,.24),rgba(255,63,152,.20));
+    border-color:rgba(255,138,31,.55);color:#fff}
+  .reveal-btn.shown .rv-dot{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.26)}
+  .reveal-btn.shown .rv-kind{color:#ffd9b0}
+  .reveal-empty{color:#8d84b5;font-size:.78rem;line-height:1.55;margin:.2rem 0 0}
 </style>
 </head>
 <body class="phone-control">
@@ -132,9 +150,27 @@
       <button class="phone-btn" id="toggle-preview" type="button">Show slide preview</button>
       <button class="phone-btn" id="toggle-notes" type="button">Show presenter notes</button>
       <button class="phone-btn" id="toggle-teleprompter" type="button" hidden>Show teleprompter</button>
+      <button class="phone-btn" id="toggle-reveal" type="button" hidden>Reveal objects</button>
       <button class="phone-btn" id="toggle-zoom" type="button">Magnify big screen</button>
       <button class="phone-btn" id="toggle-share" type="button">Share &amp; end</button>
     </div>
+
+    <section class="phone-panel" id="reveal-panel" hidden>
+      <div class="panel-head">
+        <strong>✨ Reveal on the big screen</strong>
+        <button class="panel-x" id="reveal-close" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="reveal-list" id="reveal-list"></div>
+      <p class="reveal-empty" id="reveal-empty" hidden>Nothing is held back on this slide.
+        In the editor, open an element’s <b>Animate</b> tab and set Reveal to
+        “On my cue” — it will then wait here for your tap.</p>
+      <div class="zoom-actions" id="reveal-actions" hidden>
+        <button class="phone-btn" id="reveal-all" type="button">Show all</button>
+        <button class="phone-btn" id="reveal-none" type="button">Hide all</button>
+      </div>
+      <p class="panel-hint">Tap an item to bring it in with its animation.
+        Tap it again to take it back off the screen.</p>
+    </section>
 
     <section class="phone-panel" id="zoom-panel" hidden>
       <div class="panel-head">
@@ -221,7 +257,7 @@ window.__HANNS_CONTROL__ = {
 };
 </script>
 <script src="{% static 'hanns/js/hanns_actors.js' %}?v=1"></script>
-<script src="{% static 'hanns/js/hanns_core.js' %}?v=49"></script>
+<script src="{% static 'hanns/js/hanns_core.js' %}?v=52"></script>
 
 <script>
 (function(){
@@ -278,6 +314,14 @@ function updateButtons(){
   if(pv) pv.textContent=previewVisible?"Hide slide preview":"Show slide preview";
   if(nt) nt.textContent=notesVisible?"Hide presenter notes":"Show presenter notes";
   if(tp) tp.textContent=tpVisible?"Hide teleprompter":"Show teleprompter";
+  const rv=$("#toggle-reveal");
+  if(rv){
+    const held=cueElsForSlide().length;
+    rv.hidden = held===0;
+    const shown=[...revealedIds].length;
+    rv.textContent = revealVisible ? "Hide reveal list"
+      : (shown ? `Reveal objects (${shown}/${held} shown)` : `Reveal objects (${held})`);
+  }
 }
 function render(){
   const s=currentSlide();
@@ -288,6 +332,7 @@ function render(){
   if(notes) notes.textContent=(s.notes&&String(s.notes).trim())?s.notes:"No presenter notes for this slide.";
   renderPreview();
   refreshTeleprompter();
+  renderRevealPanel();
   updateButtons();
 }
 function fitPreview(){
@@ -350,6 +395,7 @@ function connect(){
       connected=true;
       if(Array.isArray(m.slides)){D.slides=m.slides;}
       i=clamp(Number(m.current_slide)||i,0,Math.max(((D.slides||[]).length)-1,0));
+      if(Array.isArray(m.revealed)) revealedIds=new Set(m.revealed);
       $("#pin-row").hidden=true;
       $("#controls").hidden=false;
       $("#phone-secondary-actions").hidden=false;
@@ -360,7 +406,15 @@ function connect(){
     }else if(m.type==="goto"&&typeof m.index==="number"){
       i=clamp(Number(m.index),0,Math.max(((D.slides||[]).length)-1,0));
       if(m.slide) mergeSlide(i,m.slide);
+      // The consumer clears the revealed set on every goto, so a slide
+      // always starts with its cue elements held again.
+      revealedIds=new Set(Array.isArray(m.revealed)?m.revealed:[]);
       render();
+    }else if(m.type==="reveal"){
+      applyRevealState(m.ids,m.revealed);
+      setStatus(m.hide?"TAKEN OFF THE BIG SCREEN":"NOW SHOWING ON THE BIG SCREEN");
+    }else if(m.type==="reveal_state"){
+      applyRevealState(null,m.revealed);
     }else if(m.type==="download_status"){
       canDownload=!!m.allow_download;
       applyDownloadAvailability();
@@ -572,6 +626,98 @@ window.addEventListener("resize",()=>{ if(tpVisible) tpApply(); });
 window.addEventListener("orientationchange",()=>{ setTimeout(()=>{ if(tpVisible) tpApply(); },250); });
 $("#phone-preview-stage").addEventListener("click",pointerFromTap);
 window.addEventListener("resize",fitPreview);
+
+/* ── reveal held objects on the big screen ──────────────────────────
+   An element is "held" when the deck author set revealOn:"cue" on it in
+   the editor. The stage paints it but keeps it invisible until we send
+   {type:"reveal", index, elId}; the consumer validates the id against the
+   slide's real cue elements and fans it out, so a stale page here can
+   never un-hide something that was not marked.
+
+   revealedIds mirrors the server's set for the CURRENT slide only —
+   moving slide resets it on both ends.                                 */
+let revealVisible=false;
+let revealedIds=new Set();
+
+function cueElsForSlide(){
+  const s=currentSlide();
+  return ((s&&s.els)||[]).filter(e=>e&&e.revealOn==="cue"&&e.id);
+}
+function cueLabel(e){
+  const raw=e.label||e.title||e.text||e.name;
+  if(raw&&String(raw).trim()){
+    const t=String(raw).trim().replace(/\s+/g," ");
+    return t.length>40?t.slice(0,40)+"\u2026":t;
+  }
+  const kind=e.objectType||e.shapeType||e.type||"element";
+  return String(kind).replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase());
+}
+function cueKind(e){
+  return String(e.objectType||e.type||"").replace(/_/g," ").slice(0,14);
+}
+function renderRevealPanel(){
+  const list=$("#reveal-list"), empty=$("#reveal-empty"), actions=$("#reveal-actions");
+  if(!list)return;
+  const els=cueElsForSlide();
+  // Drop ids that belong to a slide we have left.
+  const valid=new Set(els.map(e=>e.id));
+  [...revealedIds].forEach(id=>{ if(!valid.has(id)) revealedIds.delete(id); });
+
+  list.innerHTML="";
+  if(empty) empty.hidden = els.length>0;
+  if(actions) actions.hidden = els.length<2;
+  els.forEach(e=>{
+    const b=document.createElement("button");
+    b.type="button";
+    b.className="reveal-btn"+(revealedIds.has(e.id)?" shown":"");
+    b.innerHTML=`<span class="rv-dot"></span><span class="rv-name"></span><span class="rv-kind"></span>`;
+    b.querySelector(".rv-name").textContent=cueLabel(e);
+    b.querySelector(".rv-kind").textContent=cueKind(e);
+    b.addEventListener("click",()=>toggleReveal(e.id));
+    list.appendChild(b);
+  });
+}
+function sendReveal(elId,hide){
+  if(!connected)return;
+  send({type:"reveal",index:i,elId:elId,hide:!!hide});
+}
+function toggleReveal(elId){
+  const hide=revealedIds.has(elId);
+  sendReveal(elId,hide);
+  setStatus(hide?"TAKING IT BACK OFF THE SCREEN":"BRINGING IT IN\u2026");
+}
+/* Apply what the server says is showing. It is authoritative: a second
+   presenter screen or the stage itself may have moved things. */
+function applyRevealState(ids,revealed){
+  if(Array.isArray(revealed)) revealedIds=new Set(revealed);
+  renderRevealPanel();
+  updateButtons();
+}
+
+$("#toggle-reveal").addEventListener("click",()=>{
+  revealVisible=!revealVisible;
+  $("#reveal-panel").hidden=!revealVisible;
+  if(revealVisible){
+    renderRevealPanel();
+    // Ask the server rather than trusting our own bookkeeping — this page
+    // may have been opened mid-presentation.
+    if(connected) send({type:"reveal_state",index:i});
+  }
+  updateButtons();
+});
+$("#reveal-close").addEventListener("click",()=>{
+  revealVisible=false;$("#reveal-panel").hidden=true;updateButtons();
+});
+$("#reveal-all").addEventListener("click",()=>{
+  if(!connected)return;
+  send({type:"reveal",index:i,elId:"*"});
+  setStatus("REVEALING EVERYTHING ON THIS SLIDE");
+});
+$("#reveal-none").addEventListener("click",()=>{
+  if(!connected)return;
+  send({type:"reveal",index:i,elId:"*",hide:true});
+  setStatus("HIDING EVERYTHING HELD ON THIS SLIDE");
+});
 
 /* ── magnify the big screen ─────────────────────────────────────────
    Zoom is sent as {scale,x,y} in 960×540 design space. The last tapped

@@ -1789,3 +1789,113 @@ body.hanns-options-open .drawer{
 .bg-custom:not([data-mode="linear"]):not([data-mode="radial"]) .bg-c3-toggle{display:none}
 .bg-custom[data-mode="linear"]:not(.use3) .bg-c3-wrap,
 .bg-custom[data-mode="radial"]:not(.use3) .bg-c3-wrap{opacity:.45}
+
+
+/* ════════════════════════════════════════════════════════════════════
+   v52 — ANIMATED READOUTS + REVEAL ON CUE
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ── counter: one big number that counts up ─────────────────────────
+   Sized in container-query units so it fills whatever box the author
+   draws, exactly like the other object art. .object-box already sets
+   container-type:size, so cqw/cqh resolve against the element box.   */
+.hanns-counter{
+  width:100%;height:100%;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:.28em;padding:6% 7%;text-align:center;
+}
+.hc-num{
+  font-family:var(--font-display,"Archivo Expanded","Archivo",sans-serif);
+  font-weight:800;line-height:.92;letter-spacing:-.03em;
+  color:var(--num-color,var(--accent,#e8482b));
+  font-size:var(--num-size,clamp(28px,26cqh,150px));
+  font-variant-numeric:tabular-nums;
+  /* Tabular figures stop the layout jittering while the digits change. */
+  font-feature-settings:"tnum" 1,"lnum" 1;
+  filter:drop-shadow(0 10px 26px rgba(0,0,0,.22));
+  overflow-wrap:anywhere;
+}
+.object-num-fixed .hc-num{font-size:var(--num-size)}
+.hc-cap{
+  font-family:var(--font-mono,ui-monospace,monospace);
+  font-size:clamp(9px,5.4cqh,20px);letter-spacing:.14em;text-transform:uppercase;
+  color:#d5d0c6;opacity:.85;line-height:1.25;
+}
+.object-bare .hc-cap{color:inherit;opacity:.7}
+
+/* ── loading_bar: a track that fills to --level ─────────────────────
+   --level lives on .object-box (renderObject sets it for every fill
+   kind), so animateLoad() sweeping that single variable is the whole
+   "loading" motion.                                                  */
+.loading-bar{
+  width:100%;height:100%;
+  display:flex;flex-direction:column;justify-content:center;gap:.5em;
+  padding:8% 7%;
+}
+.lb-head{
+  display:flex;align-items:baseline;justify-content:space-between;gap:.6em;
+  color:var(--num-color,#f6f1e7);
+}
+.lb-cap{
+  font-family:var(--font-mono,ui-monospace,monospace);
+  font-size:clamp(9px,11cqh,20px);letter-spacing:.12em;text-transform:uppercase;
+  opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;
+}
+.lb-num{
+  font-family:var(--font-display,"Archivo Expanded","Archivo",sans-serif);
+  font-weight:800;font-size:clamp(14px,22cqh,56px);line-height:1;
+  color:var(--accent,#22c55e);font-variant-numeric:tabular-nums;
+  font-feature-settings:"tnum" 1,"lnum" 1;flex:0 0 auto;
+}
+.lb-track{
+  position:relative;width:100%;height:clamp(8px,17cqh,34px);
+  border-radius:999px;overflow:hidden;
+  background:rgba(255,255,255,.13);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),inset 0 0 0 1px rgba(0,0,0,.10);
+}
+.lb-fill{
+  position:absolute;inset:0 auto 0 0;width:var(--level,0%);
+  border-radius:999px;
+  background:linear-gradient(90deg,color-mix(in srgb,var(--accent,#22c55e) 62%,#000 0%),var(--accent,#22c55e));
+  box-shadow:0 0 18px color-mix(in srgb,var(--accent,#22c55e) 55%,transparent);
+}
+/* A moving sheen so the bar reads as "loading" even when it is already
+   at its target (thumbnails, the editor, a paused stage). */
+.lb-fill::after{
+  content:"";position:absolute;inset:0;border-radius:inherit;
+  background:linear-gradient(100deg,transparent 20%,rgba(255,255,255,.38) 50%,transparent 80%);
+  transform:translateX(-100%);
+  animation:lbSheen 2.4s ease-in-out infinite;
+}
+.object-static .lb-fill::after,
+.lb-slim .lb-fill::after{animation:none;opacity:0}
+.lb-slim .lb-track{height:clamp(5px,9cqh,16px)}
+@keyframes lbSheen{
+  0%{transform:translateX(-100%)}
+  55%{transform:translateX(100%)}
+  100%{transform:translateX(100%)}
+}
+
+/* ── reveal on cue ──────────────────────────────────────────────────
+   LIVE: held at opacity 0 rather than display:none, so charts, maps and
+   Plotly nodes that measure themselves on attach are already the right
+   size when they are cued in.
+   EDITOR: fully visible and selectable — you cannot lay out what you
+   cannot see — with an orange outline and a corner tag.               */
+.el.el-held{opacity:0;pointer-events:none}
+.el.el-cued{outline:2px dashed rgba(232,72,43,.62);outline-offset:3px;border-radius:4px}
+.el.el-cued::after{
+  content:"📱 cue";position:absolute;top:-9px;right:-4px;z-index:9;
+  background:linear-gradient(135deg,#ff8a1f,#e8482b);color:#fff;
+  font:800 9px/1 var(--font-mono,ui-monospace,monospace);letter-spacing:.09em;
+  padding:3px 6px;border-radius:999px;pointer-events:none;
+  box-shadow:0 4px 12px rgba(0,0,0,.35);
+}
+/* The filmstrip thumbnails paint at editor scale; the tag would be
+   illegible confetti there, so only the outline survives. */
+.filmstrip .el.el-cued::after,
+.mini .el.el-cued::after{display:none}
+
+@media (prefers-reduced-motion:reduce){
+  .lb-fill::after{animation:none;opacity:0}
+}

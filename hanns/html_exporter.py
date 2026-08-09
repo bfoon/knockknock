@@ -10,6 +10,18 @@ editor and present mode.
 Chart/map elements use Plotly / Leaflet, loaded from CDN with graceful
 degradation (an element simply renders its non-rich fallback when offline).
 
+REVEAL-ON-CUE
+    Elements authored with ``revealOn:"cue"`` are held back on the live stage
+    until the presenter taps them in from the phone controller. A downloaded
+    file has no controller, so the player below turns each cue into a
+    click-step instead: a tap brings in the next held element, and only once
+    the slide has nothing left held does a tap move on. That keeps the
+    author's build order intact for a reader working through the deck alone.
+
+    If the bundled ``hanns_core.js`` predates cue support the player falls
+    back to painting everything at once, so an older static bundle still
+    exports a usable file.
+
 Public API:
     export_deck_to_html(deck, *, css_text, core_js_text, request=None) -> str
     html_export_filename(deck) -> str
@@ -71,11 +83,12 @@ def _deck_payload(deck) -> dict:
 
 
 # Player bootstrap: scales the 960×540 stage to the viewport, paints the
-# current slide with the REAL renderer, and wires keyboard / click / swipe
-# navigation. Uses Hanns.paintSlide(container, slide, {live:true}).
+# current slide with the REAL renderer, steps through any cue-held elements,
+# and wires keyboard / click / swipe navigation.
 _PLAYER_JS = """
 (function () {
   "use strict";
+  var DESIGN_W = %DESIGN_W%, DESIGN_H = %DESIGN_H%;
   var DECK = window.__HANNS_DECK__ || { slides: [] };
   var slides = Array.isArray(DECK.slides) ? DECK.slides : [];
   var idx = 0;
@@ -83,13 +96,61 @@ _PLAYER_JS = """
   var stage = document.getElementById("hanns-stage");
   var scaler = document.getElementById("hanns-scaler");
   var counter = document.getElementById("hanns-counter");
+  var hint = document.getElementById("hanns-hint");
+
+  // Cue support depends on the bundled renderer. An older hanns_core.js has
+  // no revealElement(), and also never holds anything back — so we simply
+  // ask it to paint everything and the file still plays start to finish.
+  var CAN_CUE = !!(window.Hanns && typeof window.Hanns.revealElement === "function");
+  var pending = [];          // cue-held elements on this slide, in author order
 
   function fit() {
     var vw = window.innerWidth, vh = window.innerHeight;
     var scale = Math.min(vw / DESIGN_W, vh / DESIGN_H);
     scaler.style.transform = "translate(-50%,-50%) scale(" + scale + ")";
   }
-  var DESIGN_W = %DESIGN_W%, DESIGN_H = %DESIGN_H%;
+
+  function elsOf(slide) {
+    return (slide && Array.isArray(slide.els)) ? slide.els : [];
+  }
+
+  // Collect the held nodes in the order the author laid them out, so the
+  // build steps through the slide the same way it would on the big screen.
+  function collectPending(slide) {
+    if (!CAN_CUE) return [];
+    var out = [];
+    elsOf(slide).forEach(function (el) {
+      if (!el || el.revealOn !== "cue" || el.id == null) return;
+      var node = stage.querySelector('.el[data-id="' + String(el.id).replace(/["\\\\]/g, "\\\\$&") + '"]');
+      if (node) out.push({ node: node, el: el });
+    });
+    return out;
+  }
+
+  function revealNext() {
+    var next = pending.shift();
+    if (!next) return false;
+    try {
+      window.Hanns.revealElement(next.node, next.el, {});
+    } catch (e) {
+      next.node.style.opacity = "1";
+      if (window.console) console.error(e);
+    }
+    updateChrome();
+    return true;
+  }
+
+  function updateChrome() {
+    if (counter) {
+      counter.textContent = (idx + 1) + " / " + slides.length
+        + (pending.length ? "  ·  " + pending.length + " to reveal" : "");
+    }
+    if (hint) {
+      hint.textContent = pending.length
+        ? "click or → to reveal the next item"
+        : "← → or click · F for fullscreen";
+    }
+  }
 
   function paint() {
     if (!slides.length) return;
@@ -99,15 +160,17 @@ _PLAYER_JS = """
     // entrance animations and count-ups run exactly like the stage.
     stage.className = "slide-stage";
     stage.innerHTML = "";
+    pending = [];
     try {
-      window.Hanns.paintSlide(stage, slide, { live: true });
+      window.Hanns.paintSlide(stage, slide, { live: true, revealAll: !CAN_CUE });
+      pending = collectPending(slide);
     } catch (e) {
       stage.innerHTML = '<div style="color:#fff;padding:2rem;font-family:sans-serif">'
         + 'Could not render this slide.</div>';
       if (window.console) console.error(e);
     }
     playTransition(slide, lastDir);
-    if (counter) counter.textContent = (idx + 1) + " / " + slides.length;
+    updateChrome();
   }
 
   // Slide-to-slide transition, mirroring the live stage. The deck stores the
@@ -136,12 +199,22 @@ _PLAYER_JS = """
     } catch (e) { /* transitions are a bonus */ }
   }
 
-  function go(n) { lastDir = n < 0 ? -1 : 1; idx += n; paint(); }
+  // Forward first works through the slide's build, then moves on. Backward
+  // always leaves the slide — stepping a build in reverse would mean
+  // un-animating, which reads worse than simply replaying it.
+  function go(n) {
+    if (n > 0 && pending.length) { revealNext(); return; }
+    lastDir = n < 0 ? -1 : 1;
+    idx += n;
+    paint();
+  }
   function goto(i) { lastDir = i >= idx ? 1 : -1; idx = i; paint(); }
+  function revealRest() { while (pending.length) { revealNext(); } }
 
   document.addEventListener("keydown", function (e) {
     if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") { go(1); e.preventDefault(); }
     else if (e.key === "ArrowLeft" || e.key === "PageUp") { go(-1); e.preventDefault(); }
+    else if (e.key === "ArrowDown") { revealRest(); e.preventDefault(); }
     else if (e.key === "Home") { goto(0); }
     else if (e.key === "End") { goto(slides.length - 1); }
     else if (e.key === "f" || e.key === "F") {
@@ -150,8 +223,12 @@ _PLAYER_JS = """
     }
   });
 
-  // Click right half = next, left half = previous.
-  stage.parentElement.addEventListener("click", function (e) {
+  // Click right half = next (or reveal), left half = previous slide.
+  // Bound to the full-bleed viewport, not the scaled stage: the page sets
+  // cursor:pointer everywhere, and on any screen that is not exactly 16:9
+  // the letterboxed margins are a large part of what a reader will click.
+  var clickTarget = document.getElementById("hanns-viewport") || stage.parentElement;
+  clickTarget.addEventListener("click", function (e) {
     var midX = window.innerWidth / 2;
     go(e.clientX >= midX ? 1 : -1);
   });

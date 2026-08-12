@@ -564,9 +564,25 @@ function previewFocus(el){
   // Repaint in live mode first so the callout magnifies the SLIDE, not the
   // editor's selection outlines and drag handles.
   paintSlide(canvas,curSlide(),{live:true,revealAll:true});
-  Hx.showFocus(canvas,el);
-  clearTimeout(previewFocus._t);
-  previewFocus._t=setTimeout(()=>{Hx.hideFocus&&Hx.hideFocus(canvas,{instant:true});renderCanvas();},4200);
+
+  // The panel holds a copy of the stage, so it has to be taken AFTER the
+  // entrances have landed — clone the slide on its first frame and every
+  // animated element is still at opacity 0, i.e. an empty circle. Wait for
+  // the entrances to finish, with a hard cap because looping animations
+  // (idle actors, moving backgrounds) never resolve.
+  const show=()=>{
+    Hx.showFocus(canvas,el);
+    clearTimeout(previewFocus._t);
+    previewFocus._t=setTimeout(()=>{
+      Hx.hideFocus&&Hx.hideFocus(canvas,{instant:true});renderCanvas();
+    },4200);
+  };
+  let anims=[];
+  try{ anims=canvas.getAnimations?canvas.getAnimations({subtree:true}):[]; }catch(e){ anims=[]; }
+  const settled=anims.length
+    ? Promise.all(anims.map(a=>a.finished.catch(()=>{})))
+    : Promise.resolve();
+  Promise.race([settled,new Promise(r=>setTimeout(r,1500))]).then(show);
 }
 
 function addObject(kind){

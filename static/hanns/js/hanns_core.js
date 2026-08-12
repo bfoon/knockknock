@@ -4937,10 +4937,53 @@ function focusSvg(region,lens,el){
   return s;
 }
 
+/* Carry the CURRENT ON-SCREEN APPEARANCE across to the clone.
+
+   cloneNode copies markup and inline styles but NOT Web Animations. That
+   matters here because animateIn() writes ``style.opacity=0`` on an
+   element and then relies on a fill:"both" animation to bring it back to
+   1 — so a naive clone inherits the zero and nothing else, and the
+   magnified panel comes up empty. Copying the COMPUTED value of the few
+   properties entrances touch reproduces whatever the room is actually
+   looking at, including elements caught mid-animation.
+
+   Only nodes that carry an animation are touched, so this stays cheap.
+   Nodes driven by looping CSS keyframes (idle actors, moving backgrounds)
+   re-run in the clone and override the inline value we set, which is the
+   behaviour we want. Held cue elements have no animation and keep their
+   zero — they stay hidden inside the lens too, exactly as on the stage.
+
+   <canvas> is a separate problem: a cloned canvas is always blank, so its
+   bitmap is blitted across. */
+function freezeClone(src,dst){
+  let a,b;
+  try{ a=src.querySelectorAll("*"); b=dst.querySelectorAll("*"); }catch(e){ return; }
+  const n=Math.min(a.length,b.length);
+  for(let i=0;i<n;i++){
+    const s=a[i], d=b[i];
+    if(s.tagName==="CANVAS"&&d.tagName==="CANVAS"&&s.width&&s.height){
+      try{ d.width=s.width; d.height=s.height;
+           d.getContext("2d").drawImage(s,0,0); }catch(e){}
+    }
+    let anims=null;
+    try{ anims=s.getAnimations?s.getAnimations():null; }catch(e){ anims=null; }
+    if(!anims||!anims.length)continue;
+    let cs;
+    try{ cs=getComputedStyle(s); }catch(e){ continue; }
+    d.style.opacity=cs.opacity;
+    if(cs.transform&&cs.transform!=="none")d.style.transform=cs.transform;
+    if(cs.filter&&cs.filter!=="none")d.style.filter=cs.filter;
+    const cp=cs.clipPath||cs.webkitClipPath;
+    if(cp&&cp!=="none")d.style.clipPath=cp;
+  }
+}
+
 /* A frozen copy of everything currently on the stage, minus the overlay
    itself and minus anything that would misbehave when duplicated. */
 function focusClone(stage){
   const c=stage.cloneNode(true);
+  // Freeze FIRST, while the two trees still match node for node.
+  freezeClone(stage,c);
   c.querySelectorAll(".hanns-focus").forEach(n=>n.remove());
   c.querySelectorAll("script").forEach(n=>n.remove());
   c.querySelectorAll("video,audio").forEach(n=>{

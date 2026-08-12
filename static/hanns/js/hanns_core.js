@@ -4658,6 +4658,324 @@ const EXEC_TEMPLATES = [
 const TEMPLATES = [...EXEC_TEMPLATES, ...PRO_TEMPLATES, ...BASE_TEMPLATES, ...AUTO_TEMPLATES, ...DATA_TEMPLATES];
 
 /* ════════════════════════════════════════════════════════════════════
+   FREEFORM SHAPES + UNIVERSAL EFFECTS                            v54
+   ────────────────────────────────────────────────────────────────────
+   Two separate things that arrived together because they answer the same
+   wish — stop picking from a menu, make the thing you actually want.
+
+   1. A `freeform` element: a vector shape defined by POINTS, not by a
+      fixed library path. Presets seed the points (polygon, star, blob,
+      arrow, heart, wave…), then every vertex is yours to drag in the
+      editor. Sharp corners, rounded corners or a smooth spline through
+      the lot. It ships with anim:"none" — a free object that simply sits
+      there until you decide otherwise.
+
+   2. `el.fx`: shadow, glow, 3-D tilt, extrude depth, blur/brightness/
+      saturation, blend mode and flips — applied by applyElFx() to ANY
+      element type. Text, images, charts, actors, objects and freeforms
+      all get the same controls, because there was no good reason for a
+      drop shadow to be a shape-only privilege.
+
+   WHERE THE EFFECTS LAND
+      Everything visual goes on ``.el-inner``, never on ``.el`` itself.
+      The outer node keeps its plain rotate() so the editor's drag,
+      resize and rotate maths — and the selection handles — carry on
+      working exactly as before. A 3-D tilt visibly leans the artwork
+      while its bounding box stays honest.
+   ════════════════════════════════════════════════════════════════════ */
+
+const FREEFORM_KINDS = [
+  {key:"polygon", label:"Polygon"},
+  {key:"star",    label:"Star"},
+  {key:"burst",   label:"Burst"},
+  {key:"blob",    label:"Blob"},
+  {key:"arrow",   label:"Arrow"},
+  {key:"chevron", label:"Chevron"},
+  {key:"cross",   label:"Cross"},
+  {key:"bubble",  label:"Speech bubble"},
+  {key:"wave",    label:"Wave"},
+  {key:"heart",   label:"Heart"},
+  {key:"drop",    label:"Droplet"},
+  {key:"custom",  label:"Custom (your points)"},
+];
+const BLEND_MODES = ["normal","multiply","screen","overlay","darken","lighten",
+  "color-dodge","color-burn","hard-light","soft-light","difference","exclusion",
+  "hue","saturation","color","luminosity"];
+
+function makeFreeform(kind="polygon",over={}){
+  return elBase("freeform",Object.assign({
+    x:340,y:150,w:260,h:260,
+    shapeKind:kind,
+    sides:6,             // polygon sides · star/burst points · blob lobes
+    inset:0.45,          // star/burst inner radius, as a share of the outer
+    corner:0,            // corner rounding, 0–1
+    smooth:false,        // spline through the points instead of straight edges
+    points:null,         // [{x,y}] in a 0–100 box — written once you drag one
+    closed:true,
+    fillMode:"solid",    // solid | linear | radial | none
+    fill:"#e8482b", fill2:"#f2c14e", gradAngle:135,
+    stroke:"none", strokeW:0, dash:0,
+    // A free object with nothing moving. Give it an entrance if you want one.
+    anim:"none", animDelay:0,
+  },over));
+}
+
+/* ── preset point sets, all in a 0–100 box ───────────────────────────
+   Presets only SEED the shape. The moment a vertex is dragged the points
+   are stored on the element and the preset stops being consulted, so an
+   edit is never silently undone by a later slider nudge. */
+function freeformPoints(el){
+  if(Array.isArray(el.points)&&el.points.length>=2)return el.points;
+  return freeformPreset(el.shapeKind,el);
+}
+function freeformPreset(kind,el={}){
+  const n=Math.max(3,Math.min(24,Number(el.sides)||6));
+  const inset=Math.max(.08,Math.min(.95,Number(el.inset)==null?.45:Number(el.inset)));
+  const pt=(a,r)=>({x:50+Math.cos(a)*r, y:50+Math.sin(a)*r});
+  const TAU=Math.PI*2, start=-Math.PI/2;
+  const out=[];
+  switch(kind){
+    case "star": case "burst": {
+      const spikes=kind==="burst"?Math.max(6,n*2):n;
+      const inner=kind==="burst"?Math.max(.55,inset):inset;
+      for(let i=0;i<spikes*2;i++){
+        out.push(pt(start+i*TAU/(spikes*2), i%2?50*inner:50));
+      }
+      return out;
+    }
+    case "blob": {
+      // Deterministic wobble — the same slide always draws the same blob.
+      const lobes=Math.max(4,n);
+      let seed=lobes*97+13;
+      const rnd=()=>{seed=(seed*1103515245+12345)&0x7fffffff;return seed/0x7fffffff;};
+      for(let i=0;i<lobes;i++)out.push(pt(start+i*TAU/lobes, 34+rnd()*16));
+      return out;
+    }
+    case "arrow":
+      return [{x:0,y:32},{x:58,y:32},{x:58,y:6},{x:100,y:50},
+              {x:58,y:94},{x:58,y:68},{x:0,y:68}];
+    case "chevron":
+      return [{x:0,y:0},{x:56,y:0},{x:100,y:50},{x:56,y:100},{x:0,y:100},{x:44,y:50}];
+    case "cross": {
+      const a=34,b=66;
+      return [{x:a,y:0},{x:b,y:0},{x:b,y:a},{x:100,y:a},{x:100,y:b},{x:b,y:b},
+              {x:b,y:100},{x:a,y:100},{x:a,y:b},{x:0,y:b},{x:0,y:a},{x:a,y:a}];
+    }
+    case "bubble":
+      return [{x:4,y:2},{x:96,y:2},{x:96,y:70},{x:44,y:70},{x:26,y:98},
+              {x:26,y:70},{x:4,y:70}];
+    case "wave": {
+      const pts=[];
+      const cycles=Math.max(1,Math.min(5,Math.round(n/3)));
+      for(let i=0;i<=20;i++){
+        pts.push({x:i*100/20, y:40+Math.sin(i/20*TAU*cycles)*18});
+      }
+      pts.push({x:100,y:100},{x:0,y:100});
+      return pts;
+    }
+    case "heart": {
+      const pts=[];
+      for(let i=0;i<28;i++){
+        const t=i/28*TAU;
+        const hx=16*Math.pow(Math.sin(t),3);
+        const hy=13*Math.cos(t)-5*Math.cos(2*t)-2*Math.cos(3*t)-Math.cos(4*t);
+        pts.push({x:50+hx*2.9, y:50-hy*2.9});
+      }
+      return pts;
+    }
+    case "drop": {
+      // Pointed tip, round belly: a 270° arc closed back up to the point.
+      const pts=[{x:50,y:1}];
+      for(let i=0;i<=22;i++){
+        const a=-Math.PI/4+i*(Math.PI*1.5)/22;
+        pts.push({x:50+Math.cos(a)*38, y:62+Math.sin(a)*38});
+      }
+      return pts;
+    }
+    case "custom":
+      return [{x:8,y:8},{x:92,y:20},{x:78,y:92},{x:14,y:70}];
+    default: {                                   // polygon
+      for(let i=0;i<n;i++)out.push(pt(start+i*TAU/n,50));
+      return out;
+    }
+  }
+}
+
+/* ── points → SVG path ───────────────────────────────────────────────
+   Three modes, in rising order of softness: straight edges, rounded
+   corners (each vertex cut back and bridged with a quadratic), or a
+   Catmull-Rom spline threaded through every point. */
+function freeformPath(pts,{closed=true,corner=0,smooth=false}={}){
+  const p=(pts||[]).filter(q=>q&&isFinite(q.x)&&isFinite(q.y));
+  if(p.length<2)return "";
+  const f=n=>Math.round(n*1000)/1000;
+
+  if(smooth){
+    // Catmull-Rom → cubic bézier.
+    const at=i=>p[closed?((i%p.length)+p.length)%p.length:Math.max(0,Math.min(p.length-1,i))];
+    let d=`M${f(p[0].x)} ${f(p[0].y)}`;
+    const last=closed?p.length:p.length-1;
+    for(let i=0;i<last;i++){
+      const p0=at(i-1),p1=at(i),p2=at(i+1),p3=at(i+2);
+      d+=`C${f(p1.x+(p2.x-p0.x)/6)} ${f(p1.y+(p2.y-p0.y)/6)},`
+       + `${f(p2.x-(p3.x-p1.x)/6)} ${f(p2.y-(p3.y-p1.y)/6)},`
+       + `${f(p2.x)} ${f(p2.y)}`;
+    }
+    return d+(closed?"Z":"");
+  }
+
+  const r=Math.max(0,Math.min(1,Number(corner)||0));
+  if(r<=0.001){
+    let d=`M${f(p[0].x)} ${f(p[0].y)}`;
+    for(let i=1;i<p.length;i++)d+=`L${f(p[i].x)} ${f(p[i].y)}`;
+    return d+(closed?"Z":"");
+  }
+
+  // Rounded corners. Open paths keep their true first and last vertex.
+  const len=(a,b)=>Math.hypot(b.x-a.x,b.y-a.y)||1e-6;
+  const lerp=(a,b,t)=>({x:a.x+(b.x-a.x)*t, y:a.y+(b.y-a.y)*t});
+  let d="", started=false;
+  for(let i=0;i<p.length;i++){
+    const v=p[i];
+    const prev=p[(i-1+p.length)%p.length], next=p[(i+1)%p.length];
+    const edge=!closed&&(i===0||i===p.length-1);
+    if(edge){
+      d+=(started?"L":"M")+f(v.x)+" "+f(v.y); started=true; continue;
+    }
+    const cut=Math.min(len(v,prev),len(v,next))/2*r;
+    const a=lerp(v,prev,cut/len(v,prev)), b=lerp(v,next,cut/len(v,next));
+    d+=(started?"L":"M")+f(a.x)+" "+f(a.y);
+    d+=`Q${f(v.x)} ${f(v.y)},${f(b.x)} ${f(b.y)}`;
+    started=true;
+  }
+  return d+(closed?"Z":"");
+}
+
+function renderFreeform(el,{live=false}={}){
+  const box=document.createElement("div");
+  box.className="freeform-box";
+  box.style.cssText="position:absolute;inset:0;";
+  const S=svg("svg",{viewBox:"0 0 100 100",preserveAspectRatio:"none",class:"freeform-svg"});
+  S.style.cssText="position:absolute;inset:0;width:100%;height:100%;overflow:visible;display:block";
+
+  const mode=el.fillMode||"solid";
+  let fill=el.fill||"#e8482b";
+  if(mode==="none")fill="none";
+  if(mode==="linear"||mode==="radial"){
+    // The gradient id has to be unique per element or two shapes on one
+    // slide fight over it and the second wins for both.
+    const gid="ffg-"+String(el.id||Math.random().toString(36).slice(2));
+    const defs=svg("defs",{});
+    let g;
+    if(mode==="linear"){
+      const a=((Number(el.gradAngle)||0)-90)*Math.PI/180;
+      g=svg("linearGradient",{id:gid,
+        x1:(50-Math.cos(a)*50)+"%", y1:(50-Math.sin(a)*50)+"%",
+        x2:(50+Math.cos(a)*50)+"%", y2:(50+Math.sin(a)*50)+"%"});
+    }else{
+      g=svg("radialGradient",{id:gid,cx:"50%",cy:"50%",r:"62%"});
+    }
+    g.appendChild(svg("stop",{offset:"0%","stop-color":el.fill||"#e8482b"}));
+    g.appendChild(svg("stop",{offset:"100%","stop-color":el.fill2||"#f2c14e"}));
+    defs.appendChild(g);S.appendChild(defs);
+    fill="url(#"+gid+")";
+  }
+
+  const d=freeformPath(freeformPoints(el),{
+    closed:el.closed!==false, corner:el.corner, smooth:!!el.smooth,
+  });
+  const path=svg("path",{d,class:"freeform-path"});
+  path.setAttribute("fill",fill);
+  path.setAttribute("vector-effect","non-scaling-stroke");
+  if(el.stroke&&el.stroke!=="none"&&Number(el.strokeW)>0){
+    path.setAttribute("stroke",el.stroke);
+    path.setAttribute("stroke-width",String(Number(el.strokeW)||0));
+    path.setAttribute("stroke-linejoin","round");
+    path.setAttribute("stroke-linecap","round");
+    if(Number(el.dash)>0)path.setAttribute("stroke-dasharray",String(Number(el.dash)*2)+" "+String(Number(el.dash)));
+  }
+  S.appendChild(path);
+  box.appendChild(S);
+  return box;
+}
+
+/* ── universal effects ───────────────────────────────────────────────
+   Read lazily off el.fx so nothing is written into every element's JSON
+   until it is actually used — an untouched deck saves byte-for-byte the
+   same as before. */
+function elFx(el){
+  const f=(el&&el.fx)||{};
+  return {
+    shadow:!!f.shadow,
+    sx:Number(f.sx)||0, sy:Number(f.sy==null?6:f.sy), sblur:Number(f.sblur==null?14:f.sblur),
+    scolor:f.scolor||"rgba(0,0,0,.38)",
+    glow:!!f.glow, gsize:Number(f.gsize==null?12:f.gsize), gcolor:f.gcolor||"#7dd3fc",
+    d3:!!f.d3, rx:Number(f.rx)||0, ry:Number(f.ry)||0, persp:Number(f.persp==null?900:f.persp),
+    depth:Number(f.depth)||0, dcolor:f.dcolor||"rgba(0,0,0,.55)",
+    blur:Number(f.blur)||0, bright:Number(f.bright==null?100:f.bright),
+    sat:Number(f.sat==null?100:f.sat), contrast:Number(f.contrast==null?100:f.contrast),
+    hue:Number(f.hue)||0,
+    blend:f.blend||"normal", flipH:!!f.flipH, flipV:!!f.flipV,
+  };
+}
+function hasFx(el){
+  const f=(el&&el.fx)||{};
+  for(const k in f){
+    const v=f[k];
+    if(v===true)return true;
+    if(typeof v==="number"&&v!==0)return true;
+    if(typeof v==="string"&&v&&v!=="normal")return true;
+  }
+  return (el&&el.opacity!=null&&Number(el.opacity)!==1);
+}
+
+/* Paint the effects onto the element's INNER box. Called for every
+   element type, and a no-op for anything that has never been styled. */
+function applyElFx(el,inner){
+  if(!el||!inner||!hasFx(el))return;
+  const f=elFx(el);
+
+  // filter — shadow, glow and the extrude stack all ride here, because
+  // drop-shadow follows the artwork's alpha and box-shadow follows its
+  // rectangle. On a star, only one of those is the shape you drew.
+  const filt=[];
+  if(f.depth>0){
+    // Fake thickness by stacking hard offset copies one pixel apart.
+    // Capped: each shadow is a full extra raster pass.
+    const steps=Math.min(24,Math.round(f.depth));
+    for(let i=1;i<=steps;i++)filt.push(`drop-shadow(${i}px ${i}px 0 ${f.dcolor})`);
+  }
+  if(f.glow)filt.push(`drop-shadow(0 0 ${f.gsize}px ${f.gcolor})`);
+  if(f.shadow)filt.push(`drop-shadow(${f.sx}px ${f.sy}px ${f.sblur}px ${f.scolor})`);
+  if(f.blur>0)filt.push(`blur(${f.blur}px)`);
+  if(f.bright!==100)filt.push(`brightness(${f.bright}%)`);
+  if(f.contrast!==100)filt.push(`contrast(${f.contrast}%)`);
+  if(f.sat!==100)filt.push(`saturate(${f.sat}%)`);
+  if(f.hue)filt.push(`hue-rotate(${f.hue}deg)`);
+  if(filt.length)inner.style.filter=filt.join(" ");
+
+  // transform — 3-D lean and flips. The outer .el keeps its plain
+  // rotate(), so selection handles and drag maths stay put.
+  const tr=[];
+  if(f.d3&&(f.rx||f.ry)){
+    tr.push(`perspective(${Math.max(120,f.persp)}px)`);
+    if(f.rx)tr.push(`rotateX(${f.rx}deg)`);
+    if(f.ry)tr.push(`rotateY(${f.ry}deg)`);
+  }
+  if(f.flipH)tr.push("scaleX(-1)");
+  if(f.flipV)tr.push("scaleY(-1)");
+  if(tr.length){
+    inner.style.transform=tr.join(" ");
+    inner.style.transformOrigin="center center";
+  }
+
+  if(f.blend&&f.blend!=="normal")inner.style.mixBlendMode=f.blend;
+  if(el.opacity!=null&&Number(el.opacity)!==1&&el.type!=="creative_shape"){
+    inner.style.opacity=String(el.opacity);
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════
    ZOOM REGIONS  ("focus")                                       v53
    ────────────────────────────────────────────────────────────────────
    A focus element is an AUTHORED marker, not a picture. You drop it in
@@ -5206,6 +5524,8 @@ function renderElement(el,{live=false}={}){
     }
   } else if(el.type==="creative_shape"){
     inner.appendChild(renderCreativeShape(el));
+  } else if(el.type==="freeform"){
+    inner.appendChild(renderFreeform(el,{live}));
   } else if(el.type==="focus"){
     // A zoom region: a dashed marker while authoring, nothing at all on
     // the live stage until the presenter calls it up from the phone.
@@ -5225,6 +5545,9 @@ function renderElement(el,{live=false}={}){
     });
     inner.appendChild(box);
   }
+  // Shadow / glow / 3-D / filters / blend — any element, any type.
+  applyElFx(el,inner);
+
   node.appendChild(inner);
 
   if(!live){
@@ -7285,6 +7608,9 @@ window.Hanns = {Deck,TEMPLATES,BACKGROUNDS,BG_FX,ANIMS,TRANSITIONS,PALETTE,FONTS
   // phone controller, painted in front of the slide by showFocus()
   makeFocus,renderFocus,focusElements,showFocus,hideFocus,activeFocusId,
   FOCUS_SHAPES,FOCUS_PLACES,
+  // free-form vector shapes + the universal effect layer
+  makeFreeform,renderFreeform,freeformPath,freeformPoints,freeformPreset,
+  applyElFx,elFx,hasFx,FREEFORM_KINDS,BLEND_MODES,
   makeText,makeShape,makeLine,makeImage,makeVideo,makeLink,makeObject,makeCreativeShape,makeTable,makeChart,makeMap,makeGallery,W,H,$,$$,uid,clamp,genCode};
 
 })();

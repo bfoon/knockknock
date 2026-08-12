@@ -532,6 +532,9 @@ function addElement(kind){
   else if(kind==="graph"){el=makeChart("line",{x:W/2-325,y:H/2-165,title:"Growth graph",accent:"#22c55e"});}
   else if(kind==="map"){el=makeMap("gambia",{x:W/2-325,y:H/2-180});}
   else if(kind==="creative_shape"){el=makeCreativeShape("blob_01",{x:W/2-120,y:H/2-120});}
+  else if(kind==="freeform"){
+    el=Hx.makeFreeform("polygon",{x:W/2-130,y:H/2-130});
+  }
   else if(kind==="focus"){
     // Drop the region a little off-centre so it does not land exactly on
     // top of whatever the author just placed in the middle.
@@ -867,6 +870,9 @@ function wireCanvasElements(){
       });
       ce.addEventListener("pointerdown",e=>{if(ce.isContentEditable&&document.activeElement===ce)e.stopPropagation();});
     }
+    // freeform: vertex editing right on the canvas
+    decorateFreeform(node,id);
+
     // handles
     $$("[data-handle]",node).forEach(h=>{
       h.addEventListener("pointerdown",e=>{e.stopPropagation();selectEl(id,false);
@@ -875,6 +881,127 @@ function wireCanvasElements(){
     });
   });
 }
+/* ── freeform vertex editing ─────────────────────────────────────────
+   Dots appear on the selected shape: solid ones are its points, hollow
+   ones sit at the midpoints and add a new point where you click. The
+   path is redrawn live while dragging rather than re-rendering the whole
+   canvas, so reshaping stays smooth on a busy slide.
+
+   The moment a point moves, the preset's generated points are committed
+   onto the element. After that the sides/inner-radius sliders no longer
+   regenerate anything — losing hand-placed points to a stray slider nudge
+   would be the worst possible surprise. "Back to the preset shape" in the
+   inspector is the way out. */
+function ensureFreeformEditorCss(){
+  if(document.getElementById("hanns-ff-css"))return;
+  const st=document.createElement("style");
+  st.id="hanns-ff-css";
+  st.textContent=`
+.ff-vtx-layer{position:absolute;inset:0;pointer-events:none;z-index:6}
+.ff-vtx{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;
+  background:#fff;border:2px solid #8b5cf6;box-shadow:0 1px 4px rgba(0,0,0,.35);
+  cursor:grab;pointer-events:auto;touch-action:none}
+.ff-vtx:hover{background:#8b5cf6;border-color:#fff}
+.ff-vtx.dragging{cursor:grabbing;background:#8b5cf6}
+.ff-mid{position:absolute;width:9px;height:9px;margin:-4.5px 0 0 -4.5px;border-radius:50%;
+  background:rgba(255,255,255,.55);border:1.5px dashed #8b5cf6;cursor:copy;
+  pointer-events:auto;opacity:.55;touch-action:none}
+.ff-mid:hover{opacity:1;background:#fff}
+`;
+  (document.head||document.documentElement).appendChild(st);
+}
+
+function decorateFreeform(node,id){
+  const el=elById(id);
+  if(!el||el.type!=="freeform")return;
+  if(!node.classList.contains("selected")||multiSel.size>1)return;
+  if(!Hx.freeformPoints||!Hx.freeformPath)return;
+  ensureFreeformEditorCss();
+
+  const layer=document.createElement("div");
+  layer.className="ff-vtx-layer";
+  node.appendChild(layer);
+
+  const pathOf=()=>node.querySelector(".freeform-path");
+  const redraw=()=>{
+    const p=pathOf();
+    if(p)p.setAttribute("d",Hx.freeformPath(el.points,{
+      closed:el.closed!==false, corner:el.corner, smooth:!!el.smooth}));
+  };
+  // Turn the preset into real, owned points before the first edit.
+  const commit=()=>{
+    if(!Array.isArray(el.points)||el.points.length<2){
+      el.points=Hx.freeformPoints(el).map(p=>({x:p.x,y:p.y}));
+    }
+    return el.points;
+  };
+
+  const pts=Hx.freeformPoints(el);
+  const place=(n,p)=>{n.style.left=p.x+"%";n.style.top=p.y+"%";};
+
+  pts.forEach((p,i)=>{
+    const dot=document.createElement("div");
+    dot.className="ff-vtx";
+    dot.title="Drag to reshape · Alt-click to remove";
+    place(dot,p);
+    dot.addEventListener("pointerdown",ev=>{
+      ev.stopPropagation();ev.preventDefault();
+      const list=commit();
+      if(ev.altKey){
+        if(list.length<=3){setStatusSafe("A shape needs at least three points.");return;}
+        list.splice(i,1);renderCanvas();renderInspector();markDirty();return;
+      }
+      dot.classList.add("dragging");
+      dot.setPointerCapture&&dot.setPointerCapture(ev.pointerId);
+      const sx=ev.clientX, sy=ev.clientY;
+      const o={x:list[i].x, y:list[i].y};
+      const mv=e2=>{
+        // Pointer travel → the shape's own 0–100 box, via the canvas zoom.
+        const dx=(e2.clientX-sx)/zoom/Math.max(1,el.w)*100;
+        const dy=(e2.clientY-sy)/zoom/Math.max(1,el.h)*100;
+        let nx=o.x+dx, ny=o.y+dy;
+        if(e2.shiftKey){nx=Math.round(nx/5)*5;ny=Math.round(ny/5)*5;}
+        list[i].x=Math.round(nx*100)/100;
+        list[i].y=Math.round(ny*100)/100;
+        place(dot,list[i]);
+        redraw();
+      };
+      const up=()=>{
+        document.removeEventListener("pointermove",mv);
+        document.removeEventListener("pointerup",up);
+        dot.classList.remove("dragging");
+        renderCanvas();renderFilmstrip();markDirty();
+      };
+      document.addEventListener("pointermove",mv);
+      document.addEventListener("pointerup",up);
+    });
+    layer.appendChild(dot);
+  });
+
+  // Midpoint "add a point here" dots. An open path has no closing edge,
+  // so it gets one fewer.
+  const closed=el.closed!==false;
+  const edges=closed?pts.length:pts.length-1;
+  for(let i=0;i<edges;i++){
+    const a=pts[i], b=pts[(i+1)%pts.length];
+    const mid={x:(a.x+b.x)/2, y:(a.y+b.y)/2};
+    const dot=document.createElement("div");
+    dot.className="ff-mid";
+    dot.title="Click to add a point here";
+    place(dot,mid);
+    dot.addEventListener("pointerdown",ev=>{
+      ev.stopPropagation();ev.preventDefault();
+      const list=commit();
+      list.splice(i+1,0,{x:mid.x,y:mid.y});
+      renderCanvas();renderInspector();markDirty();
+    });
+    layer.appendChild(dot);
+  }
+}
+function setStatusSafe(msg){
+  try{ if(typeof toast==="function")toast(msg); else console.info(msg); }catch(e){}
+}
+
 function startDrag(e,node,id){
   const el=elById(id);if(!el)return;
   const moving=(multiSel.size>1&&multiSel.has(id))?selectedElements():[el];
@@ -926,6 +1053,26 @@ canvas.addEventListener("pointerdown",e=>{if(e.target===canvas){clearSelection()
 /* ════════════════════════════════════════════════════════════════════
    INSPECTOR
    ════════════════════════════════════════════════════════════════════ */
+/* <input type="color"> only accepts #rrggbb, but a shadow colour is far
+   more useful with alpha, so the stored value may be rgba(). Show the
+   nearest hex in the picker and keep the alpha when writing back. */
+function rgbaToHex(v){
+  const s=String(v||"").trim();
+  if(s.startsWith("#"))return s.length>=7?s.slice(0,7):s;
+  const m=s.match(/rgba?\(([^)]+)\)/);
+  if(!m)return "#000000";
+  const n=m[1].split(",").map(x=>parseFloat(x));
+  const hx=c=>Math.max(0,Math.min(255,Math.round(c||0))).toString(16).padStart(2,"0");
+  return "#"+hx(n[0])+hx(n[1])+hx(n[2]);
+}
+function hexWithAlpha(hex,prev){
+  const m=String(prev||"").match(/rgba\(([^)]+)\)/);
+  const a=m?parseFloat(m[1].split(",")[3]):1;
+  if(!isFinite(a)||a>=1)return hex;
+  const h=String(hex).replace("#","");
+  const n=parseInt(h.length===3?h.split("").map(c=>c+c).join(""):h,16);
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
+}
 function field(label,inner){return `<div class="field"><label>${label}</label>${inner}</div>`;}
 function swatchRow(current,onAttr){
   let h='<div class="swatches">';
@@ -1548,6 +1695,32 @@ Affected Area 1,-16.52,13.39,45,#e8482b,#ffffff">${escapeTA(areasToText(el))}</t
     </div>`;
     }
   }
+  if(el.type==="freeform"){
+    const kinds=(Hx.FREEFORM_KINDS||[]);
+    const pts=(Hx.freeformPoints?Hx.freeformPoints(el):[]).length;
+    const edited=Array.isArray(el.points)&&el.points.length>=2;
+    const mode=el.fillMode||"solid";
+    h+=`<div class="group"><span class="glabel">Shape</span>
+      ${field("Start from",`<select id="f-ff-kind">${kinds.map(k=>`<option value="${k.key}" ${(el.shapeKind||"polygon")===k.key?"selected":""}>${k.label}</option>`).join("")}</select>`)}
+      ${field(`Points / sides ${Number(el.sides)||6}`,`<input type="range" id="f-ff-sides" min="3" max="24" step="1" value="${Number(el.sides)||6}">`)}
+      ${field(`Inner radius ${Math.round((el.inset==null?.45:el.inset)*100)}%`,`<input type="range" id="f-ff-inset" min="0.08" max="0.95" step="0.01" value="${el.inset==null?.45:el.inset}">`)}
+      ${field(`Corner rounding ${Math.round((Number(el.corner)||0)*100)}%`,`<input type="range" id="f-ff-corner" min="0" max="1" step="0.02" value="${Number(el.corner)||0}">`)}
+      ${field("Edges",`<div class="seg" id="f-ff-smooth"><button data-ffs="0" class="${el.smooth?"":"active"}">Straight</button><button data-ffs="1" class="${el.smooth?"active":""}">Smooth curve</button></div>`)}
+      ${field("Path",`<div class="seg" id="f-ff-closed"><button data-ffc="1" class="${el.closed!==false?"active":""}">Closed</button><button data-ffc="0" class="${el.closed===false?"active":""}">Open</button></div>`)}
+      <div class="insp-empty" style="padding:.15rem 0 .5rem">${pts} point${pts===1?"":"s"}${edited?" · edited by hand":""}. Drag any dot on the canvas to reshape it, click a hollow dot to add one, Alt-click a solid one to remove it.</div>
+      ${edited?`<button class="tbtn" id="f-ff-reset" type="button" style="width:100%;justify-content:center">↺ Back to the preset shape</button>`:""}
+    </div>
+    <div class="group"><span class="glabel">Fill &amp; outline</span>
+      ${field("Fill",`<div class="seg" id="f-ff-fillmode">${[["solid","Solid"],["linear","Gradient"],["radial","Radial"],["none","None"]].map(([k,l])=>`<button data-ffm="${k}" class="${mode===k?"active":""}">${l}</button>`).join("")}</div>`)}
+      ${mode!=="none"?field("Colour",`<input type="color" id="f-ff-fill" value="${el.fill||"#e8482b"}">`):""}
+      ${(mode==="linear"||mode==="radial")?field("Second colour",`<input type="color" id="f-ff-fill2" value="${el.fill2||"#f2c14e"}">`):""}
+      ${mode==="linear"?field(`Gradient angle ${Number(el.gradAngle)||0}°`,`<input type="range" id="f-ff-angle" min="0" max="360" step="5" value="${Number(el.gradAngle)||0}">`):""}
+      ${field("Outline colour",`<input type="color" id="f-ff-stroke" value="${el.stroke&&el.stroke!=="none"?el.stroke:"#16140f"}">`)}
+      ${field(`Outline width ${Number(el.strokeW)||0}`,`<input type="range" id="f-ff-strokew" min="0" max="14" step="0.5" value="${Number(el.strokeW)||0}">`)}
+      ${field(`Dashes ${Number(el.dash)||0}`,`<input type="range" id="f-ff-dash" min="0" max="12" step="1" value="${Number(el.dash)||0}">`)}
+    </div>`;
+  }
+
   if(el.type==="focus"){
     const shapes=(Hx.FOCUS_SHAPES||[{key:"circle",label:"Circle"},{key:"rect",label:"Rectangle"}]);
     const places=(Hx.FOCUS_PLACES||[{key:"auto",label:"Auto"}]);
@@ -1567,6 +1740,38 @@ Affected Area 1,-16.52,13.39,45,#e8482b,#ffffff">${escapeTA(areasToText(el))}</t
       <div class="insp-empty" style="padding-top:.5rem">Auto placement puts the panel on whichever side of the region has the most room. A region can hold anything — chart, map, table, photo — because the panel magnifies the real slide, not a copy of one element.</div>
     </div>`;
   }
+  // ── Effects: shadow / glow / 3-D / filters / blend, on ANY element ──
+  if(el.type!=="group"){
+    const f=(Hx.elFx?Hx.elFx(el):{});
+    const blends=(Hx.BLEND_MODES||["normal"]);
+    h+=`<div class="group"><span class="glabel">Effects</span>
+      ${field(`Opacity ${Math.round((el.opacity==null?1:el.opacity)*100)}%`,`<input type="range" id="f-fx-op" min="0" max="1" step="0.02" value="${el.opacity==null?1:el.opacity}">`)}
+      ${field("Drop shadow",`<div class="seg" id="f-fx-shadow"><button data-fxs="0" class="${f.shadow?"":"active"}">Off</button><button data-fxs="1" class="${f.shadow?"active":""}">On</button></div>`)}
+      ${f.shadow?`
+        ${field(`Shadow across ${f.sx}`,`<input type="range" id="f-fx-sx" min="-40" max="40" step="1" value="${f.sx}">`)}
+        ${field(`Shadow down ${f.sy}`,`<input type="range" id="f-fx-sy" min="-40" max="40" step="1" value="${f.sy}">`)}
+        ${field(`Shadow softness ${f.sblur}`,`<input type="range" id="f-fx-sblur" min="0" max="60" step="1" value="${f.sblur}">`)}
+        ${field("Shadow colour",`<input type="color" id="f-fx-scolor" value="${rgbaToHex(f.scolor)}">`)}`:""}
+      ${field("Glow",`<div class="seg" id="f-fx-glow"><button data-fxg="0" class="${f.glow?"":"active"}">Off</button><button data-fxg="1" class="${f.glow?"active":""}">On</button></div>`)}
+      ${f.glow?`
+        ${field(`Glow size ${f.gsize}`,`<input type="range" id="f-fx-gsize" min="2" max="60" step="1" value="${f.gsize}">`)}
+        ${field("Glow colour",`<input type="color" id="f-fx-gcolor" value="${f.gcolor}">`)}`:""}
+      ${field("3-D tilt",`<div class="seg" id="f-fx-d3"><button data-fx3="0" class="${f.d3?"":"active"}">Flat</button><button data-fx3="1" class="${f.d3?"active":""}">Tilted</button></div>`)}
+      ${f.d3?`
+        ${field(`Lean back / forward ${f.rx}°`,`<input type="range" id="f-fx-rx" min="-70" max="70" step="1" value="${f.rx}">`)}
+        ${field(`Turn left / right ${f.ry}°`,`<input type="range" id="f-fx-ry" min="-70" max="70" step="1" value="${f.ry}">`)}
+        ${field(`Perspective ${f.persp}`,`<input type="range" id="f-fx-persp" min="200" max="2400" step="20" value="${f.persp}">`)}`:""}
+      ${field(`Extruded depth ${f.depth}`,`<input type="range" id="f-fx-depth" min="0" max="24" step="1" value="${f.depth}">`)}
+      ${f.depth>0?field("Depth colour",`<input type="color" id="f-fx-dcolor" value="${rgbaToHex(f.dcolor)}">`):""}
+      ${field(`Blur ${f.blur}`,`<input type="range" id="f-fx-blur" min="0" max="24" step="0.5" value="${f.blur}">`)}
+      ${field(`Brightness ${f.bright}%`,`<input type="range" id="f-fx-bright" min="20" max="220" step="5" value="${f.bright}">`)}
+      ${field(`Saturation ${f.sat}%`,`<input type="range" id="f-fx-sat" min="0" max="260" step="5" value="${f.sat}">`)}
+      ${field("Blend with what is behind",`<select id="f-fx-blend">${blends.map(b=>`<option value="${b}" ${f.blend===b?"selected":""}>${b}</option>`).join("")}</select>`)}
+      ${field("Flip",`<div class="seg" id="f-fx-flip"><button data-fxf="h" class="${f.flipH?"active":""}">↔ Across</button><button data-fxf="v" class="${f.flipV?"active":""}">↕ Down</button></div>`)}
+      <div class="insp-empty" style="padding-top:.4rem">Extruded depth stacks hard copies behind the artwork and follows its real outline — so it works on a star or a letter, not just a box.</div>
+    </div>`;
+  }
+
   if(el.type==="group"){
     h+=`<div class="group"><span class="glabel">Bound group</span>
       <div class="bind-summary"><b>${Array.isArray(el.children)?el.children.length:0}</b><span>objects are bound together. You can move, resize, copy, layer, animate, or unbind them later.</span></div>
@@ -1598,7 +1803,78 @@ function bindElementPanel(el){
   }
   if(el.type==="rect"){bindRange("f-radius",v=>{el.radius=v;renderCanvas();markDirty();},v=>v,"Corner radius");}
 
-  if(el.type==="focus"){
+  if(el.type==="freeform"){
+    const kd=$("#f-ff-kind");
+    kd&&kd.addEventListener("change",()=>{
+      // Choosing a new preset is an explicit "start over": it drops any
+      // hand-dragged points, which is why the panel warns you first.
+      if(Array.isArray(el.points)&&el.points.length>=2
+         && !confirm("Switching preset replaces the points you dragged. Continue?")){
+        kd.value=el.shapeKind||"polygon";return;
+      }
+      el.shapeKind=kd.value;el.points=null;renderCanvas();renderInspector();markDirty();
+    });
+    const reseed=()=>{ if(!Array.isArray(el.points))return; };
+    bindRange("f-ff-sides",v=>{el.sides=v;if(!Array.isArray(el.points))renderCanvas();markDirty();},v=>String(v),"Points / sides");
+    bindRange("f-ff-inset",v=>{el.inset=v;if(!Array.isArray(el.points))renderCanvas();markDirty();},v=>Math.round(v*100)+"%","Inner radius");
+    bindRange("f-ff-corner",v=>{el.corner=v;renderCanvas();markDirty();},v=>Math.round(v*100)+"%","Corner rounding");
+    seg("f-ff-smooth","ffs",v=>{el.smooth=v==="1";renderCanvas();markDirty();});
+    seg("f-ff-closed","ffc",v=>{el.closed=v==="1";renderCanvas();markDirty();});
+    seg("f-ff-fillmode","ffm",v=>{el.fillMode=v;renderCanvas();renderInspector();markDirty();});
+    const c1=$("#f-ff-fill"); c1&&c1.addEventListener("input",()=>{el.fill=c1.value;renderCanvas();markDirty();});
+    const c2=$("#f-ff-fill2");c2&&c2.addEventListener("input",()=>{el.fill2=c2.value;renderCanvas();markDirty();});
+    bindRange("f-ff-angle",v=>{el.gradAngle=v;renderCanvas();markDirty();},v=>v+"\u00b0","Gradient angle");
+    const st=$("#f-ff-stroke");st&&st.addEventListener("input",()=>{el.stroke=st.value;if(!Number(el.strokeW))el.strokeW=2;renderCanvas();renderInspector();markDirty();});
+    bindRange("f-ff-strokew",v=>{el.strokeW=v;if(v>0&&(!el.stroke||el.stroke==="none"))el.stroke="#16140f";renderCanvas();markDirty();},v=>String(v),"Outline width");
+    bindRange("f-ff-dash",v=>{el.dash=v;renderCanvas();markDirty();},v=>String(v),"Dashes");
+    $("#f-ff-reset")&&$("#f-ff-reset").addEventListener("click",()=>{
+      el.points=null;renderCanvas();renderInspector();markDirty();
+    });
+  }
+
+  // ── Effects, bound for every element type ──────────────────────────
+  if(el.type!=="group"){
+    const fx=()=>(el.fx||(el.fx={}));
+    const touch=()=>{renderCanvas();markDirty();};
+    bindRange("f-fx-op",v=>{el.opacity=v;touch();},v=>Math.round(v*100)+"%","Opacity");
+    seg("f-fx-shadow","fxs",v=>{fx().shadow=v==="1";renderCanvas();renderInspector();markDirty();});
+    bindRange("f-fx-sx",v=>{fx().sx=v;touch();},v=>String(v),"Shadow across");
+    bindRange("f-fx-sy",v=>{fx().sy=v;touch();},v=>String(v),"Shadow down");
+    bindRange("f-fx-sblur",v=>{fx().sblur=v;touch();},v=>String(v),"Shadow softness");
+    const sc=$("#f-fx-scolor");
+    sc&&sc.addEventListener("input",()=>{fx().scolor=hexWithAlpha(sc.value,fx().scolor);touch();});
+    seg("f-fx-glow","fxg",v=>{fx().glow=v==="1";renderCanvas();renderInspector();markDirty();});
+    bindRange("f-fx-gsize",v=>{fx().gsize=v;touch();},v=>String(v),"Glow size");
+    const gc=$("#f-fx-gcolor");gc&&gc.addEventListener("input",()=>{fx().gcolor=gc.value;touch();});
+    seg("f-fx-d3","fx3",v=>{
+      const o=fx();o.d3=v==="1";
+      // A tilt of nothing is invisible, which reads as "the button is broken".
+      if(o.d3&&!o.rx&&!o.ry){o.rx=-12;o.ry=18;}
+      renderCanvas();renderInspector();markDirty();
+    });
+    bindRange("f-fx-rx",v=>{fx().rx=v;touch();},v=>v+"\u00b0","Lean back / forward");
+    bindRange("f-fx-ry",v=>{fx().ry=v;touch();},v=>v+"\u00b0","Turn left / right");
+    bindRange("f-fx-persp",v=>{fx().persp=v;touch();},v=>String(v),"Perspective");
+    bindRange("f-fx-depth",v=>{
+      const had=Number(fx().depth)||0;fx().depth=v;
+      if((had>0)!==(v>0)){renderCanvas();renderInspector();markDirty();}else touch();
+    },v=>String(v),"Extruded depth");
+    const dc=$("#f-fx-dcolor");
+    dc&&dc.addEventListener("input",()=>{fx().dcolor=hexWithAlpha(dc.value,fx().dcolor);touch();});
+    bindRange("f-fx-blur",v=>{fx().blur=v;touch();},v=>String(v),"Blur");
+    bindRange("f-fx-bright",v=>{fx().bright=v;touch();},v=>v+"%","Brightness");
+    bindRange("f-fx-sat",v=>{fx().sat=v;touch();},v=>v+"%","Saturation");
+    const bl=$("#f-fx-blend");bl&&bl.addEventListener("change",()=>{fx().blend=bl.value;touch();});
+    const fl=$("#f-fx-flip");
+    fl&&fl.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
+      const o=fx();
+      if(b.dataset.fxf==="h")o.flipH=!o.flipH; else o.flipV=!o.flipV;
+      b.classList.toggle("active", b.dataset.fxf==="h"?!!o.flipH:!!o.flipV);
+      touch();
+    }));
+  }
+
+    if(el.type==="focus"){
     const lab=$("#f-focus-label");
     lab&&lab.addEventListener("input",()=>{el.label=lab.value;renderCanvas();markDirty();});
     const cap=$("#f-focus-caption");

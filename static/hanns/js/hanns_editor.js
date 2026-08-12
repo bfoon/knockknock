@@ -532,6 +532,11 @@ function addElement(kind){
   else if(kind==="graph"){el=makeChart("line",{x:W/2-325,y:H/2-165,title:"Growth graph",accent:"#22c55e"});}
   else if(kind==="map"){el=makeMap("gambia",{x:W/2-325,y:H/2-180});}
   else if(kind==="creative_shape"){el=makeCreativeShape("blob_01",{x:W/2-120,y:H/2-120});}
+  else if(kind==="focus"){
+    // Drop the region a little off-centre so it does not land exactly on
+    // top of whatever the author just placed in the middle.
+    el=Hx.makeFocus({x:W/2-240,y:H/2-110,w:220,h:220,label:"Zoom "+(focusCountOnSlide()+1)});
+  }
   if(!el)return;
   s.els.push(el);multiSel.clear();Deck.sel=el.id;renderAll();markDirty();
   if(kind==="image")pickImageFor(el.id);
@@ -544,6 +549,26 @@ function addElement(kind){
     },60);
   }
 }
+/* How many zoom regions this slide already has — only used to name the
+   next one ("Zoom 1", "Zoom 2") so the phone list reads sensibly. */
+function focusCountOnSlide(){
+  return currentElements().filter(e=>e&&e.type==="focus").length;
+}
+
+/* Show the author exactly what the room will see when this region is
+   called up. Paints the callout over the editor canvas, then clears it.
+   This is a rehearsal, not state — nothing is saved and the socket is
+   not touched. */
+function previewFocus(el){
+  if(!Hx.showFocus||!el)return;
+  // Repaint in live mode first so the callout magnifies the SLIDE, not the
+  // editor's selection outlines and drag handles.
+  paintSlide(canvas,curSlide(),{live:true,revealAll:true});
+  Hx.showFocus(canvas,el);
+  clearTimeout(previewFocus._t);
+  previewFocus._t=setTimeout(()=>{Hx.hideFocus&&Hx.hideFocus(canvas,{instant:true});renderCanvas();},4200);
+}
+
 function addObject(kind){
   const d=(OBJECTS||[]).find(o=>o.kind===kind);
   const el=makeObject(kind,{x:Math.round(W/2-(d?.w||320)/2),y:Math.round(H/2-(d?.h||220)/2)});
@@ -1507,6 +1532,25 @@ Affected Area 1,-16.52,13.39,45,#e8482b,#ffffff">${escapeTA(areasToText(el))}</t
     </div>`;
     }
   }
+  if(el.type==="focus"){
+    const shapes=(Hx.FOCUS_SHAPES||[{key:"circle",label:"Circle"},{key:"rect",label:"Rectangle"}]);
+    const places=(Hx.FOCUS_PLACES||[{key:"auto",label:"Auto"}]);
+    const zoom=Number(el.zoom)||2.4;
+    const dim=(el.dim==null?.55:Number(el.dim));
+    h+=`<div class="group"><span class="glabel">Zoom region</span>
+      <div class="insp-empty" style="padding:0 0 .6rem">Drag and size this marker over the part of the slide worth a closer look. It is invisible during the show until you tap it on the phone controller — then the slide dims behind and this area lifts forward, enlarged.</div>
+      ${field("Name shown on your phone",`<input type="text" id="f-focus-label" value="${escapeAttr(el.label||"Zoom in")}" placeholder="e.g. 2024 spike">`)}
+      ${field("Shape",`<div class="seg" id="f-focus-shape">${shapes.map(s=>`<button data-fshape="${s.key}" class="${(el.focusShape||"circle")===s.key?"active":""}">${s.label}</button>`).join("")}</div>`)}
+      ${field(`Magnification ${zoom.toFixed(1)}×`,`<input type="range" id="f-focus-zoom" min="1.2" max="6" step="0.1" value="${zoom}">`)}
+      ${field("Where the enlarged panel sits",`<select id="f-focus-place">${places.map(p=>`<option value="${p.key}" ${(el.place||"auto")===p.key?"selected":""}>${p.label}</option>`).join("")}</select>`)}
+      ${field(`Dim the rest of the slide ${Math.round(dim*100)}%`,`<input type="range" id="f-focus-dim" min="0" max="0.9" step="0.05" value="${dim}">`)}
+      ${field("Leader lines",`<div class="seg" id="f-focus-leaders"><button data-fl="1" class="${el.leaders!==false?"active":""}">Show</button><button data-fl="0" class="${el.leaders===false?"active":""}">Hide</button></div>`)}
+      ${field("Caption under the panel",`<input type="text" id="f-focus-caption" value="${escapeAttr(el.focusCaption||"")}" placeholder="optional">`)}
+      ${field("Ring &amp; line colour",`<input type="color" id="f-focus-accent" value="${el.accent||"#1d4e89"}">`)}
+      <button class="tbtn primary" id="f-focus-preview" type="button" style="width:100%;justify-content:center;margin-top:.55rem">🔍 Preview this zoom</button>
+      <div class="insp-empty" style="padding-top:.5rem">Auto placement puts the panel on whichever side of the region has the most room. A region can hold anything — chart, map, table, photo — because the panel magnifies the real slide, not a copy of one element.</div>
+    </div>`;
+  }
   if(el.type==="group"){
     h+=`<div class="group"><span class="glabel">Bound group</span>
       <div class="bind-summary"><b>${Array.isArray(el.children)?el.children.length:0}</b><span>objects are bound together. You can move, resize, copy, layer, animate, or unbind them later.</span></div>
@@ -1537,6 +1581,22 @@ function bindElementPanel(el){
     seg("f-italic","it",v=>{el.italic=v==="1";renderCanvas();markDirty();});
   }
   if(el.type==="rect"){bindRange("f-radius",v=>{el.radius=v;renderCanvas();markDirty();},v=>v,"Corner radius");}
+
+  if(el.type==="focus"){
+    const lab=$("#f-focus-label");
+    lab&&lab.addEventListener("input",()=>{el.label=lab.value;renderCanvas();markDirty();});
+    const cap=$("#f-focus-caption");
+    cap&&cap.addEventListener("input",()=>{el.focusCaption=cap.value;markDirty();});
+    seg("f-focus-shape","fshape",v=>{el.focusShape=v;renderCanvas();markDirty();});
+    seg("f-focus-leaders","fl",v=>{el.leaders=v==="1";markDirty();});
+    bindRange("f-focus-zoom",v=>{el.zoom=v;renderCanvas();markDirty();},v=>v.toFixed(1)+"\u00d7","Magnification");
+    bindRange("f-focus-dim",v=>{el.dim=v;markDirty();},v=>Math.round(v*100)+"%","Dim the rest of the slide");
+    const pl=$("#f-focus-place");
+    pl&&pl.addEventListener("change",()=>{el.place=pl.value;markDirty();});
+    const ac=$("#f-focus-accent");
+    ac&&ac.addEventListener("input",()=>{el.accent=ac.value;renderCanvas();markDirty();});
+    $("#f-focus-preview")&&$("#f-focus-preview").addEventListener("click",()=>previewFocus(el));
+  }
 
   if(el.type==="creative_shape"){
     const st=$("#f-shapetype");st&&st.addEventListener("change",()=>{const d=(SHAPES||[]).find(s=>s.kind===st.value)||SHAPES[0];el.shapeType=d.kind;el.fill=el.fill||d.accent||"#e8482b";renderCanvas();markDirty();renderInspector();});

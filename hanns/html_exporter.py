@@ -22,6 +22,14 @@ REVEAL-ON-CUE
     back to painting everything at once, so an older static bundle still
     exports a usable file.
 
+ZOOM REGIONS
+    Elements of ``type:"focus"`` are authored close-ups: an area of the
+    slide the presenter magnifies from the phone on the night. A reader
+    working through the file alone has no phone, so the player exposes
+    them as a pill in the corner (and the "z" key): tapping it steps
+    through the slide's close-ups and then back to the plain slide. If the
+    bundled renderer predates focus support the pill never appears.
+
 Public API:
     export_deck_to_html(deck, *, css_text, core_js_text, request=None) -> str
     html_export_filename(deck) -> str
@@ -104,6 +112,12 @@ _PLAYER_JS = """
   var CAN_CUE = !!(window.Hanns && typeof window.Hanns.revealElement === "function");
   var pending = [];          // cue-held elements on this slide, in author order
 
+  // Authored close-ups. Same story as cues: an older bundle simply has no
+  // showFocus(), and the pill stays hidden.
+  var CAN_FOCUS = !!(window.Hanns && typeof window.Hanns.showFocus === "function");
+  var regions = [];          // focus elements on this slide, in author order
+  var focusAt = -1;          // -1 = plain slide
+
   function fit() {
     var vw = window.innerWidth, vh = window.innerHeight;
     var scale = Math.min(vw / DESIGN_W, vh / DESIGN_H);
@@ -125,6 +139,27 @@ _PLAYER_JS = """
       if (node) out.push({ node: node, el: el });
     });
     return out;
+  }
+
+  function collectRegions(slide) {
+    if (!CAN_FOCUS) return [];
+    return elsOf(slide).filter(function (el) {
+      return el && el.type === "focus" && el.id != null;
+    });
+  }
+
+  // Step: plain slide → close-up 1 → close-up 2 → … → plain slide.
+  function stepFocus() {
+    if (!regions.length) return;
+    focusAt += 1;
+    if (focusAt >= regions.length) focusAt = -1;
+    if (focusAt < 0) window.Hanns.hideFocus(stage);
+    else window.Hanns.showFocus(stage, regions[focusAt]);
+    updateChrome();
+  }
+  function dropFocus() {
+    if (CAN_FOCUS && focusAt >= 0) { window.Hanns.hideFocus(stage, { instant: true }); }
+    focusAt = -1;
   }
 
   function revealNext() {
@@ -150,6 +185,14 @@ _PLAYER_JS = """
         ? "click or → to reveal the next item"
         : "← → or click · F for fullscreen";
     }
+    var zb = document.getElementById("hanns-zoom");
+    if (zb) {
+      zb.style.display = regions.length ? "inline-flex" : "none";
+      zb.textContent = focusAt < 0
+        ? "🔍 " + regions.length + " close-up" + (regions.length === 1 ? "" : "s")
+        : "🔍 " + (regions[focusAt].label || "Close-up")
+            + (focusAt === regions.length - 1 ? " · tap to close" : " · tap for next");
+    }
   }
 
   function paint() {
@@ -161,9 +204,12 @@ _PLAYER_JS = """
     stage.className = "slide-stage";
     stage.innerHTML = "";
     pending = [];
+    focusAt = -1;
+    regions = [];
     try {
       window.Hanns.paintSlide(stage, slide, { live: true, revealAll: !CAN_CUE });
       pending = collectPending(slide);
+      regions = collectRegions(slide);
     } catch (e) {
       stage.innerHTML = '<div style="color:#fff;padding:2rem;font-family:sans-serif">'
         + 'Could not render this slide.</div>';
@@ -203,6 +249,8 @@ _PLAYER_JS = """
   // always leaves the slide — stepping a build in reverse would mean
   // un-animating, which reads worse than simply replaying it.
   function go(n) {
+    // A close-up is a detour, not a step — leave it before moving on.
+    if (focusAt >= 0) { dropFocus(); if (CAN_FOCUS) window.Hanns.hideFocus(stage); updateChrome(); return; }
     if (n > 0 && pending.length) { revealNext(); return; }
     lastDir = n < 0 ? -1 : 1;
     idx += n;
@@ -215,6 +263,7 @@ _PLAYER_JS = """
     if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") { go(1); e.preventDefault(); }
     else if (e.key === "ArrowLeft" || e.key === "PageUp") { go(-1); e.preventDefault(); }
     else if (e.key === "ArrowDown") { revealRest(); e.preventDefault(); }
+    else if (e.key === "z" || e.key === "Z") { stepFocus(); e.preventDefault(); }
     else if (e.key === "Home") { goto(0); }
     else if (e.key === "End") { goto(slides.length - 1); }
     else if (e.key === "f" || e.key === "F") {
@@ -227,6 +276,12 @@ _PLAYER_JS = """
   // Bound to the full-bleed viewport, not the scaled stage: the page sets
   // cursor:pointer everywhere, and on any screen that is not exactly 16:9
   // the letterboxed margins are a large part of what a reader will click.
+  var zoomBtn = document.getElementById("hanns-zoom");
+  if (zoomBtn) zoomBtn.addEventListener("click", function (e) {
+    e.stopPropagation();          // the pill is not a "next slide" tap
+    stepFocus();
+  });
+
   var clickTarget = document.getElementById("hanns-viewport") || stage.parentElement;
   clickTarget.addEventListener("click", function (e) {
     var midX = window.innerWidth / 2;
@@ -270,6 +325,14 @@ _PAGE_CSS = """
     background: rgba(0,0,0,.35); padding: 6px 10px; border-radius: 999px;
     pointer-events: none; letter-spacing: .03em;
   }
+  #hanns-zoom {
+    position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 60;
+    display: none; align-items: center; gap: .4rem; cursor: pointer;
+    font: 700 12.5px/1 system-ui, sans-serif; color: rgba(255,255,255,.9);
+    background: rgba(29,78,137,.9); border: 1px solid rgba(255,255,255,.18);
+    padding: 8px 14px; border-radius: 999px; letter-spacing: .02em;
+  }
+  #hanns-zoom:active { transform: translateX(-50%) scale(.96); }
   #hanns-hint {
     position: fixed; left: 16px; bottom: 12px; z-index: 50;
     font: 500 12px/1 system-ui, sans-serif; color: rgba(255,255,255,.4);
@@ -316,6 +379,7 @@ def export_deck_to_html(deck, *, css_text: str, core_js_text: str, request=None)
 </div>
 <div id="hanns-counter">1 / 1</div>
 <div id="hanns-hint">← → or click · F for fullscreen</div>
+<button id="hanns-zoom" type="button"></button>
 
 <!-- Optional rich renderers: charts (Plotly) and maps (Leaflet). The deck
      degrades gracefully if these fail to load offline. -->

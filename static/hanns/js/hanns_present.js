@@ -165,6 +165,7 @@ function show(n,broadcast=true){
   // A new slide starts with its cue-held elements hidden again, matching
   // the consumer, which clears the revealed set on every goto.
   revealedNow.clear();
+  focusNow=null;
   paintSlide(wrap,s,{live:true});transition(wrap,(s&&s.transition)||"fade");
   const pos=$("#pp-pos");if(pos)pos.textContent=`${i+1} / ${DECK.slides.length}`;
   if(broadcast&&!suppressBroadcast)Live.goto(i);
@@ -315,7 +316,57 @@ function playActorFromCue(elId, action){
   if(actor) AC.playActorOnce(actor, action || "idle", 1500);
 }
 
-const Live={sock:null,retry:0,start(){if(!CFG.wsUrl)return;try{this.sock=new WebSocket(CFG.wsUrl);}catch(e){return;}this.sock.addEventListener("open",()=>{this.retry=0;this.send({type:"presenter_hello"});keepScreenAwake("websocket-open");});this.sock.addEventListener("message",ev=>{let m;try{m=JSON.parse(ev.data);}catch(e){return;}if(m.type==="reaction"){spawnEmoji(m.emoji);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);else incrementReactionCount(m.emoji);}else if(m.type==="participants")setCount(m.count);else if(m.type==="state"){if(typeof m.count==="number")setCount(m.count);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);if(Array.isArray(m.revealed)){revealedNow=new Set(m.revealed);restoreRevealed();}}else if(m.type==="reveal"){keepScreenAwake("cue-reveal");applyReveal(m.ids,m.hide,false);}else if(m.type==="actor_action"){keepScreenAwake("actor-cue");playActorFromCue(m.elId,m.action);}else if(m.type==="goto"&&typeof m.index==="number"){keepScreenAwake("phone-controller");if(m.index!==i){suppressBroadcast=true;show(m.index,false);suppressBroadcast=false;}}else if(m.type==="pointer"){showPointer(m.x,m.y);}});this.sock.addEventListener("close",()=>{if(this.retry++>6)return;setTimeout(()=>this.start(),Math.min(800*this.retry,5000));});},send(o){if(this.sock&&this.sock.readyState===1)this.sock.send(JSON.stringify(o));},goto(idx){this.send({type:"goto",index:idx});},stop(){if(this.sock){try{this.sock.close();}catch(e){}}this.sock=null;}};
+/* ── zoom regions ─────────────────────────────────────────────────────
+   The author marks a region in the editor; the phone taps it in here.
+   The callout is painted INTO the same wrapper the slide lives in, so it
+   inherits the stage's fit scale, the fullscreen stretch and any
+   controller magnification without a line of extra maths.
+
+   Only one region is up at a time and it never survives a slide change —
+   both rules are enforced by the consumer as well, so a second presenter
+   screen sees exactly the same thing.                                    */
+let focusNow = null;
+
+function stageWrap(){ return ensureAnimWrap() || pCanvas; }
+
+function focusElById(id){
+  const s = DECK.slides[i] || {};
+  return ((s.els) || []).find(e => e && e.type === "focus" && e.id === id) || null;
+}
+function applyFocus(elId, off){
+  const Hh = window.Hanns || {};
+  const wrap = stageWrap();
+  if(!wrap || !Hh.showFocus) return;
+  if(off || !elId){
+    Hh.hideFocus(wrap);
+    focusNow = null;
+    return;
+  }
+  const el = focusElById(elId);
+  if(!el) return;
+  Hh.showFocus(wrap, el);
+  focusNow = elId;
+}
+function clearFocus(){
+  const Hh = window.Hanns || {};
+  const wrap = stageWrap();
+  if(wrap && Hh.hideFocus) Hh.hideFocus(wrap, {instant:true});
+  focusNow = null;
+}
+/* Keyboard equivalent for a presenter driving from the laptop: Z steps
+   through this slide's regions and then back to the plain slide. The tap
+   goes through the socket like the phone's would, so the controller's
+   panel stays in step. */
+function cycleFocus(){
+  const s = DECK.slides[i] || {};
+  const regions = ((s.els) || []).filter(e => e && e.type === "focus" && e.id);
+  if(!regions.length) return;
+  const at = regions.findIndex(r => r.id === focusNow);
+  const next = regions[at + 1] || null;
+  Live.focus(next ? next.id : "", !next);
+}
+
+const Live={sock:null,retry:0,start(){if(!CFG.wsUrl)return;try{this.sock=new WebSocket(CFG.wsUrl);}catch(e){return;}this.sock.addEventListener("open",()=>{this.retry=0;this.send({type:"presenter_hello"});keepScreenAwake("websocket-open");});this.sock.addEventListener("message",ev=>{let m;try{m=JSON.parse(ev.data);}catch(e){return;}if(m.type==="reaction"){spawnEmoji(m.emoji);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);else incrementReactionCount(m.emoji);}else if(m.type==="participants")setCount(m.count);else if(m.type==="state"){if(typeof m.count==="number")setCount(m.count);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);if(Array.isArray(m.revealed)){revealedNow=new Set(m.revealed);restoreRevealed();}if(m.focus)setTimeout(()=>applyFocus(m.focus,false),60);}else if(m.type==="reveal"){keepScreenAwake("cue-reveal");applyReveal(m.ids,m.hide,false);}else if(m.type==="focus"){keepScreenAwake("zoom-region");applyFocus(m.elId,m.off);}else if(m.type==="actor_action"){keepScreenAwake("actor-cue");playActorFromCue(m.elId,m.action);}else if(m.type==="goto"&&typeof m.index==="number"){keepScreenAwake("phone-controller");if(m.index!==i){suppressBroadcast=true;show(m.index,false);suppressBroadcast=false;}}else if(m.type==="pointer"){showPointer(m.x,m.y);}});this.sock.addEventListener("close",()=>{if(this.retry++>6)return;setTimeout(()=>this.start(),Math.min(800*this.retry,5000));});},send(o){if(this.sock&&this.sock.readyState===1)this.sock.send(JSON.stringify(o));},goto(idx){this.send({type:"goto",index:idx});},focus(elId,off){this.send({type:"focus",index:i,elId:elId||"",off:!!off});},stop(){if(this.sock){try{this.sock.close();}catch(e){}}this.sock=null;}};
 function setCount(n){const el=$("#aud-count");if(el)el.textContent=n;}
 
 /* Click an actor on the live stage to play its action once. If a phone
@@ -433,7 +484,7 @@ function init(){
   document.querySelectorAll("[data-close-present-modal]").forEach(b=>b.addEventListener("click",closeModals));
   document.addEventListener("pointerdown",()=>keepScreenAwake("user-pointer"),{passive:true});
   window.addEventListener("resize",fit);
-  document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(document.querySelector(".present-modal.on"))closeModals();else endPresent();}else if(e.key.toLowerCase()==="c")openModal("#controller-modal");else if(e.key.toLowerCase()==="f")toggleFullscreen();else if(e.key==="ArrowRight"||e.key===" ")show(i+1);else if(e.key==="ArrowLeft")show(i-1);});
+  document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(document.querySelector(".present-modal.on"))closeModals();else endPresent();}else if(e.key.toLowerCase()==="c")openModal("#controller-modal");else if(e.key.toLowerCase()==="f")toggleFullscreen();else if(e.key.toLowerCase()==="z"){cycleFocus();e.preventDefault();}else if(e.key==="ArrowRight"||e.key===" ")show(i+1);else if(e.key==="ArrowLeft")show(i-1);});
   window.addEventListener("beforeunload",()=>{Live.stop();releaseWakeLock();});
   updateFullscreenButton();
 }

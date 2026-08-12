@@ -127,6 +127,35 @@
   .reveal-btn.shown .rv-dot{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.26)}
   .reveal-btn.shown .rv-kind{color:#ffd9b0}
   .reveal-empty{color:#8d84b5;font-size:.78rem;line-height:1.55;margin:.2rem 0 0}
+
+  /* ── zoom regions ─────────────────────────────────────── */
+  .focus-btn.on{background:linear-gradient(135deg,rgba(29,78,137,.42),rgba(56,189,248,.26));
+    border-color:rgba(96,165,250,.6);color:#fff}
+  .focus-btn.on .rv-dot{background:#38bdf8;box-shadow:0 0 0 3px rgba(56,189,248,.26)}
+  .focus-btn .rv-kind{font-family:"Spline Sans Mono",monospace}
+
+  /* ── preview peek (look ahead without moving the big screen) ─────
+     The amber treatment is deliberate and load-bearing: the one thing
+     that must never happen is the presenter believing the room is seeing
+     the slide they are reading. Amber = only you can see this. */
+  .peek-bar{display:flex;align-items:center;gap:.4rem;margin-bottom:.55rem}
+  .peek-nav{flex:0 0 auto;width:38px;height:38px;display:grid;place-items:center;
+    background:#221d38;color:#e7e2ff;border:1px solid #37305a;border-radius:11px;
+    font-size:1.15rem;font-weight:800;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .peek-nav:active{transform:scale(.94)}
+  .peek-nav[disabled]{opacity:.35;pointer-events:none}
+  .peek-label{flex:1;min-width:0;text-align:center;line-height:1.25}
+  .peek-label b{display:block;font-size:.84rem;color:#e7e2ff}
+  .peek-label span{display:block;font:600 .62rem/1.4 "Spline Sans Mono",monospace;
+    letter-spacing:.08em;text-transform:uppercase;color:#8d84b5}
+  .phone-preview-wrap.peeking .peek-label b{color:#ffc46b}
+  .phone-preview-wrap.peeking .peek-label span{color:#ff9f43}
+  .phone-preview-wrap.peeking .phone-preview-stage{
+    outline:2px solid rgba(255,159,67,.75);outline-offset:2px;border-radius:10px}
+  .peek-actions{display:flex;gap:.4rem;margin-top:.55rem}
+  .peek-actions .phone-btn{flex:1;padding:.6rem .3rem;font-size:.78rem}
+  .peek-actions[hidden]{display:none}
+  .peek-go{background:linear-gradient(135deg,#ff8a1f,#ff3f98);color:#fff;border-color:transparent}
 </style>
 </head>
 <body class="phone-control">
@@ -151,6 +180,7 @@
       <button class="phone-btn" id="toggle-notes" type="button">Show presenter notes</button>
       <button class="phone-btn" id="toggle-teleprompter" type="button" hidden>Show teleprompter</button>
       <button class="phone-btn" id="toggle-reveal" type="button" hidden>Reveal objects</button>
+      <button class="phone-btn" id="toggle-focus" type="button" hidden>Zoom regions</button>
       <button class="phone-btn" id="toggle-zoom" type="button">Magnify big screen</button>
       <button class="phone-btn" id="toggle-share" type="button">Share &amp; end</button>
     </div>
@@ -170,6 +200,20 @@
       </div>
       <p class="panel-hint">Tap an item to bring it in with its animation.
         Tap it again to take it back off the screen.</p>
+    </section>
+
+    <section class="phone-panel" id="focus-panel" hidden>
+      <div class="panel-head">
+        <strong>🔎 Zoom in on the big screen</strong>
+        <button class="panel-x" id="focus-close" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="reveal-list" id="focus-list"></div>
+      <p class="reveal-empty" id="focus-empty" hidden>No zoom regions on this slide.
+        In the editor, add a <b>Zoom</b> marker from the left rail and drag it over
+        the part of the slide worth enlarging.</p>
+      <button class="phone-btn phone-btn-wide" id="focus-off" type="button" hidden>Back to the full slide</button>
+      <p class="panel-hint">Tap a region and the slide dims behind an enlarged view
+        of that area. Tap it again — or move slide — to drop it.</p>
     </section>
 
     <section class="phone-panel" id="zoom-panel" hidden>
@@ -238,13 +282,18 @@
     </section>
 
     <section class="phone-preview-wrap" id="phone-preview-wrap" hidden>
-      <div class="phone-preview-head">
-        <strong>Current slide preview</strong>
-        <span>Tap anywhere to point on the projector</span>
+      <div class="peek-bar">
+        <button class="peek-nav" id="peek-prev" type="button" aria-label="Look at the previous slide">‹</button>
+        <span class="peek-label" id="peek-label"><b>Slide 1</b><span>On the big screen</span></span>
+        <button class="peek-nav" id="peek-next" type="button" aria-label="Look at the next slide">›</button>
       </div>
       <div class="phone-preview-stage" id="phone-preview-stage">
         <div class="phone-preview-canvas" id="phone-preview-canvas"></div>
         <div class="phone-preview-pointer" id="phone-preview-pointer" hidden></div>
+      </div>
+      <div class="peek-actions" id="peek-actions" hidden>
+        <button class="phone-btn peek-go" id="peek-go" type="button">Go to this slide</button>
+        <button class="phone-btn" id="peek-back" type="button">Back to live</button>
       </div>
     </section>
 
@@ -257,7 +306,7 @@ window.__HANNS_CONTROL__ = {
 };
 </script>
 <script src="{% static 'hanns/js/hanns_actors.js' %}?v=1"></script>
-<script src="{% static 'hanns/js/hanns_core.js' %}?v=52"></script>
+<script src="{% static 'hanns/js/hanns_core.js' %}?v=53"></script>
 
 <script>
 (function(){
@@ -283,6 +332,11 @@ let sock=null;
 let connected=false;
 let previewVisible=false;
 let notesVisible=false;
+/* Which slide the PREVIEW is showing. Normally the live one; while the
+   presenter is looking ahead it runs ahead of `i` without the big screen
+   moving an inch. Nothing is sent to the projector until they tap
+   "Go to this slide". */
+let peek=Number(D.current_slide)||0;
 
 // ── teleprompter state (presenter-only, runs locally on this phone) ──
 let tpVisible=false;
@@ -304,6 +358,9 @@ function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
 function setStatus(t){const el=$("#status"); if(el) el.textContent=t;}
 function send(o){if(sock&&sock.readyState===1)sock.send(JSON.stringify(o));}
 function currentSlide(){return (D.slides||[])[i]||{};}
+function slideCount(){return ((D.slides||[]).length)||1;}
+function peekSlide(){return (D.slides||[])[peek]||{};}
+function isPeeking(){return peek!==i;}
 function mergeSlide(index, slide){
   if(!slide || !D.slides) return;
   if(!Array.isArray(D.slides)) D.slides=[];
@@ -314,6 +371,13 @@ function updateButtons(){
   if(pv) pv.textContent=previewVisible?"Hide slide preview":"Show slide preview";
   if(nt) nt.textContent=notesVisible?"Hide presenter notes":"Show presenter notes";
   if(tp) tp.textContent=tpVisible?"Hide teleprompter":"Show teleprompter";
+  const fc=$("#toggle-focus");
+  if(fc){
+    const n=focusElsForSlide().length;
+    fc.hidden = n===0;
+    fc.textContent = focusVisible ? "Hide zoom regions"
+      : (focusActive ? "Zoomed in \u2014 tap to release" : `Zoom regions (${n})`);
+  }
   const rv=$("#toggle-reveal");
   if(rv){
     const held=cueElsForSlide().length;
@@ -325,15 +389,48 @@ function updateButtons(){
 }
 function render(){
   const s=currentSlide();
-  const count=(D.slides&&D.slides.length)||1;
+  const count=slideCount();
   const title=$("#slide-title");
   if(title) title.textContent=`Slide ${i+1} / ${count}`;
   const notes=$("#notes");
   if(notes) notes.textContent=(s.notes&&String(s.notes).trim())?s.notes:"No presenter notes for this slide.";
   renderPreview();
+  renderPeekChrome();
   refreshTeleprompter();
   renderRevealPanel();
+  renderFocusPanel();
   updateButtons();
+}
+
+/* ── looking ahead ───────────────────────────────────────────────────
+   The preview doubles as a rehearsal window: swipe it (or use the arrows)
+   to read the slides coming up while the room keeps looking at the one
+   you are talking to. The label and the amber outline are the whole
+   safety story — you should never have to wonder whether what you are
+   reading is also on the wall. */
+function renderPeekChrome(){
+  const wrap=$("#phone-preview-wrap");
+  const label=$("#peek-label"), acts=$("#peek-actions");
+  const prev=$("#peek-prev"), next=$("#peek-next");
+  const ahead=isPeeking();
+  if(wrap) wrap.classList.toggle("peeking",ahead);
+  if(label){
+    const b=label.querySelector("b"), sub=label.querySelector("span");
+    if(b) b.textContent=`Slide ${peek+1} / ${slideCount()}`;
+    if(sub) sub.textContent=ahead
+      ? (peek>i?`Coming up · big screen on ${i+1}`:`Earlier · big screen on ${i+1}`)
+      : "On the big screen";
+  }
+  if(prev) prev.disabled=peek<=0;
+  if(next) next.disabled=peek>=slideCount()-1;
+  if(acts) acts.hidden=!ahead;
+}
+function setPeek(n){
+  const next=clamp(n,0,slideCount()-1);
+  if(next===peek) return;
+  peek=next;
+  renderPreview();
+  renderPeekChrome();
 }
 function fitPreview(){
   const stage=$("#phone-preview-stage"), canvas=$("#phone-preview-canvas");
@@ -350,7 +447,7 @@ function fitPreview(){
 function renderPreview(){
   const wrap=$("#phone-preview-wrap"), canvas=$("#phone-preview-canvas");
   if(!wrap||!canvas||wrap.hidden) return;
-  if(Hx.paintSlide){Hx.paintSlide(canvas,currentSlide(),{live:false});}
+  if(Hx.paintSlide){Hx.paintSlide(canvas,peekSlide(),{live:false});}
   else {canvas.innerHTML='<div class="phone-preview-empty">Preview unavailable</div>';}
   fitPreview();
 }
@@ -368,6 +465,9 @@ function localPointer(x,y){
 }
 function pointerFromTap(ev){
   if(!connected||!previewVisible) return;
+  // Pointing at a slide the room cannot see would put a dot on the wrong
+  // slide, so while looking ahead the preview is read-only.
+  if(isPeeking()){ setStatus("LOOKING AHEAD \u2014 TAP \u201cGO TO THIS SLIDE\u201d TO MOVE"); return; }
   const stage=$("#phone-preview-stage");
   if(!stage) return;
   const r=stage.getBoundingClientRect();
@@ -396,6 +496,7 @@ function connect(){
       if(Array.isArray(m.slides)){D.slides=m.slides;}
       i=clamp(Number(m.current_slide)||i,0,Math.max(((D.slides||[]).length)-1,0));
       if(Array.isArray(m.revealed)) revealedIds=new Set(m.revealed);
+      peek=i;
       $("#pin-row").hidden=true;
       $("#controls").hidden=false;
       $("#phone-secondary-actions").hidden=false;
@@ -409,10 +510,17 @@ function connect(){
       // The consumer clears the revealed set on every goto, so a slide
       // always starts with its cue elements held again.
       revealedIds=new Set(Array.isArray(m.revealed)?m.revealed:[]);
+      // Someone moved the deck (this phone, the stage, a second screen):
+      // the preview follows the room and any callout is already gone.
+      peek=i; focusActive="";
       render();
     }else if(m.type==="reveal"){
       applyRevealState(m.ids,m.revealed);
       setStatus(m.hide?"TAKEN OFF THE BIG SCREEN":"NOW SHOWING ON THE BIG SCREEN");
+    }else if(m.type==="focus"){
+      applyFocusState(m.elId,m.off);
+    }else if(m.type==="focus_state"){
+      applyFocusState(m.active,!m.active);
     }else if(m.type==="reveal_state"){
       applyRevealState(null,m.revealed);
     }else if(m.type==="download_status"){
@@ -442,6 +550,10 @@ function connect(){
 function go(n){
   if(!connected)return;
   i=clamp(n,0,Math.max(((D.slides||[]).length)-1,0));
+  // Driving the deck always ends a peek — the preview snaps back to
+  // whatever the room is now looking at.
+  peek=i;
+  focusActive="";
   render();
   send({type:"goto",index:i});
 }
@@ -627,6 +739,41 @@ window.addEventListener("orientationchange",()=>{ setTimeout(()=>{ if(tpVisible)
 $("#phone-preview-stage").addEventListener("click",pointerFromTap);
 window.addEventListener("resize",fitPreview);
 
+/* Swipe the preview to look ahead. A tap is still a tap: only a drag past
+   the threshold counts as a swipe, so pointing at the projector keeps
+   working exactly as it did. */
+(function(){
+  const stage=$("#phone-preview-stage");
+  if(!stage) return;
+  let sx=0, sy=0, moved=false, t0=0;
+  stage.addEventListener("touchstart",e=>{
+    const t=e.touches[0]; sx=t.clientX; sy=t.clientY; moved=false; t0=Date.now();
+  },{passive:true});
+  stage.addEventListener("touchmove",e=>{
+    const t=e.touches[0];
+    if(Math.abs(t.clientX-sx)>34 && Math.abs(t.clientX-sx)>Math.abs(t.clientY-sy)) moved=true;
+  },{passive:true});
+  stage.addEventListener("touchend",e=>{
+    if(!moved) return;
+    const dx=e.changedTouches[0].clientX-sx;
+    if(Math.abs(dx)<34 || Date.now()-t0>900) return;
+    setPeek(peek+(dx<0?1:-1));
+    // Swallow the click the browser fires after the swipe, or the preview
+    // would also fire a pointer at the projector.
+    const eat=ev=>{ev.stopPropagation();ev.preventDefault();};
+    stage.addEventListener("click",eat,{capture:true,once:true});
+  },{passive:true});
+})();
+
+$("#peek-prev").addEventListener("click",()=>setPeek(peek-1));
+$("#peek-next").addEventListener("click",()=>setPeek(peek+1));
+$("#peek-back").addEventListener("click",()=>{peek=i;renderPreview();renderPeekChrome();});
+$("#peek-go").addEventListener("click",()=>{
+  if(!connected) return;
+  go(peek);
+  setStatus("MOVED THE BIG SCREEN TO SLIDE "+(peek+1));
+});
+
 /* ── reveal held objects on the big screen ──────────────────────────
    An element is "held" when the deck author set revealOn:"cue" on it in
    the editor. The stage paints it but keeps it invisible until we send
@@ -717,6 +864,75 @@ $("#reveal-none").addEventListener("click",()=>{
   if(!connected)return;
   send({type:"reveal",index:i,elId:"*",hide:true});
   setStatus("HIDING EVERYTHING HELD ON THIS SLIDE");
+});
+
+/* ── zoom regions ────────────────────────────────────────────────────
+   A region is an authored element (type:"focus") sitting over the part of
+   the slide worth enlarging. Tapping one here sends {type:"focus",elId};
+   the consumer checks the id against the slide's real regions and the
+   stage lifts a magnified view of that area in front of the dimmed slide.
+
+   focusActive mirrors the server's idea of what is up on the CURRENT
+   slide — one at a time, cleared by any slide change on both ends. */
+let focusVisible=false, focusActive="";
+
+function focusElsForSlide(){
+  const s=currentSlide();
+  return ((s&&s.els)||[]).filter(e=>e&&e.type==="focus"&&e.id);
+}
+function focusLabel(e){
+  const t=String(e.label||"Zoom region").trim().replace(/\s+/g," ");
+  return t.length>40?t.slice(0,40)+"\u2026":t;
+}
+function renderFocusPanel(){
+  const list=$("#focus-list"), empty=$("#focus-empty"), off=$("#focus-off");
+  if(!list)return;
+  const els=focusElsForSlide();
+  if(!els.some(e=>e.id===focusActive)) focusActive="";
+  list.innerHTML="";
+  if(empty) empty.hidden=els.length>0;
+  if(off) off.hidden=!focusActive;
+  els.forEach(e=>{
+    const b=document.createElement("button");
+    b.type="button";
+    b.className="reveal-btn focus-btn"+(focusActive===e.id?" on":"");
+    b.innerHTML=`<span class="rv-dot"></span><span class="rv-name"></span><span class="rv-kind"></span>`;
+    b.querySelector(".rv-name").textContent=focusLabel(e);
+    b.querySelector(".rv-kind").textContent=(Number(e.zoom)||2.4).toFixed(1)+"\u00d7";
+    b.addEventListener("click",()=>sendFocus(e.id));
+    list.appendChild(b);
+  });
+}
+function sendFocus(elId){
+  if(!connected)return;
+  const dropping=focusActive===elId;
+  send({type:"focus",index:i,elId:elId,off:dropping});
+  setStatus(dropping?"BACK TO THE FULL SLIDE":"ZOOMING IN ON THE BIG SCREEN\u2026");
+}
+/* The server is authoritative: the stage or a second controller may have
+   changed what is up since we last looked. */
+function applyFocusState(elId,off){
+  focusActive=off?"":(elId||"");
+  renderFocusPanel();
+  updateButtons();
+}
+
+$("#toggle-focus").addEventListener("click",()=>{
+  focusVisible=!focusVisible;
+  $("#focus-panel").hidden=!focusVisible;
+  if(focusVisible){
+    renderFocusPanel();
+    if(connected) send({type:"focus_state",index:i});
+  }
+  updateButtons();
+});
+$("#focus-close").addEventListener("click",()=>{
+  focusVisible=false;$("#focus-panel").hidden=true;updateButtons();
+});
+$("#focus-off").addEventListener("click",()=>{
+  if(!connected)return;
+  send({type:"focus",index:i,elId:focusActive||"",off:true});
+  setStatus("BACK TO THE FULL SLIDE");
 });
 
 /* ── magnify the big screen ─────────────────────────────────────────

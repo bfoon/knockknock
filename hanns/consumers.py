@@ -26,6 +26,11 @@ Client → server:
     {type:"reveal", index, elId, hide:true} put it back out of sight
     {type:"reveal_state", index}            which elements are cue-held, and
                                             which are already showing
+    {type:"focus", index, elId}             lift the authored zoom region
+                                            <elId> in front of the slide
+    {type:"focus", index, off:true}          drop the callout
+    {type:"focus_state", index}              which zoom regions this slide
+                                            has, and which one is up
     {type:"actor_action", index, elId,      make an actor object perform
           action, mood}                     (the Pass-2 half of hanns_actors)
 
@@ -45,6 +50,7 @@ Server → client (fanned out to the whole deck group):
 
 Server → the calling controller only:
     {type:"reveal_state", index, elements, revealed}
+    {type:"focus_state", index, regions, active}
 
 ── Reveal-on-cue ───────────────────────────────────────────────────────
 An element opts in from the editor by carrying ``revealOn: "cue"`` in its
@@ -60,8 +66,22 @@ and moving to a slide clears that slide's reveals so revisiting it replays
 from the top. Behind multiple workers it is per-worker; promote it to
 Redis alongside ``_counts`` if you ever run more than one.
 
-Nothing here needs a migration: cue flags ride inside Slide.data["els"],
-which Slide.as_dict() already ships to every client.
+── Zoom regions ────────────────────────────────────────────────────────
+A region is an element of ``type: "focus"`` — an authored rectangle or
+circle over the part of the slide worth enlarging. It draws nothing on the
+big screen by itself. The controller lists the regions on the current
+slide; tapping one fans out {type:"focus", elId} and the stage lifts a
+magnified view of that area in front of the (dimmed) slide. Tapping again,
+or moving slide, drops it.
+
+Only ONE region is up at a time — a second tap replaces the first, which
+is what a presenter means by "now look over here". The active region is
+tracked per slide in memory next to the reveal set, with the same
+per-worker caveat.
+
+Nothing here needs a migration: cue flags and zoom regions both ride
+inside Slide.data["els"], which Slide.as_dict() already ships to every
+client.
 """
 
 import json
@@ -202,6 +222,16 @@ class PresentConsumer(AsyncWebsocketConsumer):
             if self.is_presenter or self.is_controller:
                 await self._handle_reveal(data)
 
+        elif mtype == "focus":
+            # Lift an authored zoom region in front of the slide (or drop it).
+            if self.is_presenter or self.is_controller:
+                await self._handle_focus(data)
+
+        elif mtype == "focus_state":
+            # Controller asking which zoom regions this slide carries.
+            if self.is_presenter or self.is_controller:
+                await self._handle_focus_state(data)
+
         elif mtype == "reveal_state":
             # Controller asking what is holdable / already shown on a slide.
             if self.is_presenter or self.is_controller:
@@ -269,6 +299,9 @@ class PresentConsumer(AsyncWebsocketConsumer):
         # to a slide replays it from the top instead of showing every reveal
         # the presenter already spent.
         self._clear_reveals(index)
+        # A callout belongs to the slide it was authored on — arriving
+        # anywhere (including back here) starts with a clean stage.
+        self._set_focus(index, None)
         await self.channel_layer.group_send(self.group, {
             "type": "fanout",
             "payload": {
@@ -378,6 +411,55 @@ class PresentConsumer(AsyncWebsocketConsumer):
             "revealed": self._revealed_list(index),
         })
 
+    # ── zoom regions ─────────────────────────────────────────────────
+    async def _handle_focus(self, data):
+        """Show (or drop) an authored zoom region on the big screen.
+
+        Like reveal, the id is checked against the slide's real focus
+        elements first, so a stale phone cannot ask the stage to magnify
+        coordinates the author never marked.
+        """
+        index = await self._index_arg(data)
+        el_id = str(data.get("elId") or "").strip()[:MAX_EL_ID]
+        off = bool(data.get("off")) or not el_id
+
+        if off:
+            self._set_focus(index, None)
+            await self.channel_layer.group_send(self.group, {
+                "type": "fanout",
+                "payload": {"type": "focus", "index": index, "elId": "", "off": True},
+            })
+            return
+
+        valid = {r["id"] for r in await self._focus_regions(index)}
+        if el_id not in valid:
+            return
+
+        # Tapping the region that is already up is how you put it away.
+        if self._get_focus(index) == el_id:
+            self._set_focus(index, None)
+            await self.channel_layer.group_send(self.group, {
+                "type": "fanout",
+                "payload": {"type": "focus", "index": index, "elId": el_id, "off": True},
+            })
+            return
+
+        self._set_focus(index, el_id)
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {"type": "focus", "index": index, "elId": el_id, "off": False},
+        })
+
+    async def _handle_focus_state(self, data):
+        """Answer just the caller: the slide's zoom regions and the live one."""
+        index = await self._index_arg(data)
+        await self.send_json({
+            "type": "focus_state",
+            "index": index,
+            "regions": await self._focus_regions(index),
+            "active": self._get_focus(index) or "",
+        })
+
     async def _handle_actor_action(self, data):
         """Trigger a one-off actor performance on the big screen."""
         index = await self._index_arg(data)
@@ -479,6 +561,20 @@ class PresentConsumer(AsyncWebsocketConsumer):
     # currently on the big screen. Same per-process caveat as _counts.
     _revealed = {}
 
+    # {code: {slide_index: el_id}} — the zoom region currently magnified on
+    # the big screen. At most one per slide, same per-process caveat.
+    _focused = {}
+
+    def _get_focus(self, index):
+        return PresentConsumer._focused.setdefault(self.code, {}).get(int(index))
+
+    def _set_focus(self, index, el_id):
+        bucket = PresentConsumer._focused.setdefault(self.code, {})
+        if el_id:
+            bucket[int(index)] = el_id
+        else:
+            bucket.pop(int(index), None)
+
     def _reveal_bucket(self, index):
         return PresentConsumer._revealed.setdefault(self.code, {}).setdefault(
             int(index), set()
@@ -575,6 +671,45 @@ class PresentConsumer(AsyncWebsocketConsumer):
                 "type": str(el.get("type") or ""),
                 "objectType": str(el.get("objectType") or ""),
                 "label": _cue_label(el),
+            })
+        return out
+
+    @sync_to_async
+    def _focus_regions(self, index):
+        """Zoom regions on slide <index> — elements of type "focus".
+
+        Lean, like _cue_elements: the phone needs a labelled button, and
+        the stage already holds the full element in its own copy of the
+        slide, so geometry never has to travel over the socket.
+        """
+        from .models import Deck
+        d = Deck.objects.filter(code=self.code).first()
+        if not d:
+            return []
+        slides = list(d.slides.all())
+        if not slides:
+            return []
+        index = max(0, min(int(index), len(slides) - 1))
+
+        out = []
+        for el in (slides[index].data or {}).get("els") or []:
+            if not isinstance(el, dict):
+                continue
+            if str(el.get("type") or "").lower() != "focus":
+                continue
+            el_id = str(el.get("id") or "").strip()[:MAX_EL_ID]
+            if not el_id:
+                continue
+            label = str(el.get("label") or "").strip() or "Zoom region"
+            try:
+                zoom = round(float(el.get("zoom") or 2.4), 1)
+            except (TypeError, ValueError):
+                zoom = 2.4
+            out.append({
+                "id": el_id,
+                "label": label[:48],
+                "zoom": zoom,
+                "shape": str(el.get("focusShape") or "circle"),
             })
         return out
 
@@ -716,4 +851,7 @@ class PresentConsumer(AsyncWebsocketConsumer):
             "count": PresentConsumer._counts.get(self.code, 0),
             "reaction_counts": reaction_counts,
             "revealed": revealed,
+            # So a projector that reconnects mid-callout puts it straight back.
+            "focus": PresentConsumer._focused.get(self.code, {}).get(
+                int(d.current_slide)) or "",
         }

@@ -4658,6 +4658,409 @@ const EXEC_TEMPLATES = [
 const TEMPLATES = [...EXEC_TEMPLATES, ...PRO_TEMPLATES, ...BASE_TEMPLATES, ...AUTO_TEMPLATES, ...DATA_TEMPLATES];
 
 /* ════════════════════════════════════════════════════════════════════
+   ZOOM REGIONS  ("focus")                                       v53
+   ────────────────────────────────────────────────────────────────────
+   A focus element is an AUTHORED marker, not a picture. You drop it in
+   the editor over the part of the slide worth a closer look — a figure
+   on a chart, one country on a map, a clause in a table — and size it
+   like any other element. It renders nothing on the big screen.
+
+   During the talk the phone controller lists the regions on the current
+   slide. Tapping one lifts a MAGNIFIED VIEW of that region in front of
+   the slide: the slide stays visible behind (dimmed), the region itself
+   stays un-dimmed and ringed, and leader lines run from the region to
+   the enlarged panel — the standard "detail callout" figure. Tapping
+   again drops it. Nothing happens automatically; the presenter is
+   always the trigger.
+
+   HOW THE MAGNIFICATION WORKS
+       The lens does not re-render the slide. It holds a CLONE of the
+       live stage, scaled and offset so the marked region fills it. That
+       means anything the renderer can draw — charts, maps, tables,
+       galleries, actors — magnifies correctly with no per-type code,
+       and elements still held back by reveal-on-cue stay hidden inside
+       the lens too, because the clone inherits their held state.
+
+   Geometry is all in the 960×540 design space, so the callout scales
+   with the stage on any projector.
+   ════════════════════════════════════════════════════════════════════ */
+
+const FOCUS_SHAPES = [
+  {key:"circle", label:"Circle"},
+  {key:"rect",   label:"Rectangle"},
+];
+const FOCUS_PLACES = [
+  {key:"auto",   label:"Auto"},
+  {key:"left",   label:"Left"},
+  {key:"right",  label:"Right"},
+  {key:"top",    label:"Top"},
+  {key:"bottom", label:"Bottom"},
+  {key:"center", label:"Centre"},
+];
+
+function makeFocus(over={}){
+  return elBase("focus",Object.assign({
+    x:120,y:150,w:220,h:220,
+    label:"Zoom in",
+    focusShape:"circle",     // circle | rect
+    zoom:2.4,                // how much bigger the callout is drawn
+    place:"auto",            // where the callout sits: auto|left|right|top|bottom|center
+    dim:0.55,                // how far the rest of the slide dims (0–0.9)
+    accent:"#1d4e89",        // ring + leader line colour
+    leaders:true,            // draw the connecting leader lines
+    focusCaption:"",         // optional caption under the magnified panel
+    anim:"zoom", animDelay:0,
+    revealOn:"entry",        // never used — a focus marker is never painted live
+  },over));
+}
+
+/* The marker as seen IN THE EDITOR. On a live stage it renders nothing:
+   an empty, invisible, click-through node that only exists so the stage
+   can look its geometry up by data-id.                                  */
+function renderFocus(el,{live=false}={}){
+  const box=document.createElement("div");
+  const accent=el.accent||"#1d4e89";
+  box.className="focus-marker";
+  box.style.cssText="position:absolute;inset:0;pointer-events:none;";
+  if(live){
+    box.style.opacity="0";
+    return box;
+  }
+  const round=(el.focusShape||"circle")==="circle";
+  const ring=document.createElement("div");
+  ring.style.cssText=
+    "position:absolute;inset:0;border:2px dashed "+accent+";"
+    +"border-radius:"+(round?"50%":"14px")+";"
+    +"background:"+hexToRgba(accent,.08)+";box-sizing:border-box;";
+  const tag=document.createElement("div");
+  tag.style.cssText=
+    "position:absolute;left:50%;top:-14px;transform:translateX(-50%);"
+    +"white-space:nowrap;padding:3px 9px;border-radius:999px;"
+    +"background:"+accent+";color:#fff;font:700 12px/1 Archivo,system-ui,sans-serif;"
+    +"letter-spacing:.02em;box-shadow:0 4px 14px rgba(0,0,0,.28)";
+  const z=Number(el.zoom)||2;
+  tag.textContent="🔍 "+(el.label||"Zoom in")+" · "+z.toFixed(1)+"×";
+  box.appendChild(ring);box.appendChild(tag);
+  return box;
+}
+
+function focusElements(slide){
+  return (((slide&&slide.els)||[]).filter(e=>e&&e.type==="focus"));
+}
+
+function hexToRgba(hex,a){
+  const h=String(hex||"#1d4e89").replace("#","");
+  const s=h.length===3?h.split("").map(c=>c+c).join(""):h;
+  const n=parseInt(s.slice(0,6),16);
+  if(!isFinite(n))return "rgba(29,78,137,"+a+")";
+  return "rgba("+((n>>16)&255)+","+((n>>8)&255)+","+(n&255)+","+a+")";
+}
+
+/* ── overlay stylesheet ──────────────────────────────────────────────
+   Injected from here rather than added to hanns.css so the callout works
+   unchanged in the editor preview, the live stage, the phone preview and
+   the standalone HTML export (which inlines this file and hanns.css but
+   is otherwise on its own).                                            */
+function ensureFocusCss(){
+  if(document.getElementById("hanns-focus-css"))return;
+  const st=document.createElement("style");
+  st.id="hanns-focus-css";
+  st.textContent=`
+.hanns-focus{position:absolute;inset:0;z-index:900;pointer-events:none;overflow:hidden}
+.hanns-focus .hf-svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+.hanns-focus .hf-lens{position:absolute;overflow:hidden;background:inherit;
+  box-shadow:0 26px 70px rgba(0,0,0,.45),0 0 0 3px var(--hf-accent,#1d4e89);
+  transform-origin:center center}
+.hanns-focus .hf-lens.round{border-radius:50%}
+.hanns-focus .hf-lens.boxy{border-radius:16px}
+.hanns-focus .hf-lens-inner{position:absolute;width:960px;height:540px;
+  transform-origin:0 0;pointer-events:none}
+.hanns-focus .hf-lens-inner .handle,
+.hanns-focus .hf-lens-inner .rot,
+.hanns-focus .hf-lens-inner .focus-marker{display:none!important}
+.hanns-focus .hf-cap{position:absolute;left:50%;transform:translateX(-50%);
+  white-space:nowrap;max-width:92%;overflow:hidden;text-overflow:ellipsis;
+  padding:6px 14px;border-radius:999px;color:#fff;
+  font:700 15px/1.2 Archivo,system-ui,sans-serif;letter-spacing:.01em;
+  background:var(--hf-accent,#1d4e89);box-shadow:0 10px 26px rgba(0,0,0,.35)}
+`;
+  (document.head||document.documentElement).appendChild(st);
+}
+
+/* Andrew monotone-chain hull — used to find the two leader lines that
+   wrap a rectangular region and its rectangular callout. */
+function convexHull(pts){
+  const p=pts.slice().sort((a,b)=>a.x-b.x||a.y-b.y);
+  if(p.length<3)return p;
+  const cross=(o,a,b)=>(a.x-o.x)*(b.y-o.y)-(a.y-o.y)*(b.x-o.x);
+  const lower=[];
+  for(const q of p){while(lower.length>=2&&cross(lower[lower.length-2],lower[lower.length-1],q)<=0)lower.pop();lower.push(q);}
+  const upper=[];
+  for(let i=p.length-1;i>=0;i--){const q=p[i];
+    while(upper.length>=2&&cross(upper[upper.length-2],upper[upper.length-1],q)<=0)upper.pop();upper.push(q);}
+  lower.pop();upper.pop();
+  return lower.concat(upper);
+}
+
+/* Where the magnified panel sits. "auto" takes the roomiest side. */
+function focusLensBox(region,el){
+  const M=18;                                  // margin from the slide edge
+  const zoom=Math.max(1.1,Math.min(8,Number(el.zoom)||2.4));
+  const place=el.place||"auto";
+  const space={
+    left:region.x-M, right:W-(region.x+region.w)-M,
+    top:region.y-M,  bottom:H-(region.y+region.h)-M,
+  };
+  let side=place;
+  if(side==="auto"){
+    side=Object.keys(space).reduce((a,b)=>space[b]>space[a]?b:a,"right");
+    if(space[side]<140)side="center";
+  }
+  // The panel never leaves the slide, so cap it by the room on that side.
+  // Centre placement floats over the whole (dimmed) slide, so it is only
+  // capped by the slide itself.
+  const capW=side==="left"||side==="right"
+    ? Math.max(160,space[side]-M) : (W-2*M);
+  const capH=side==="top"||side==="bottom"
+    ? Math.max(120,space[side]-M) : (H-2*M);
+  let lw=Math.min(region.w*zoom, capW, W-2*M);
+  let lh=Math.min(region.h*zoom, capH, H-2*M);
+  if((el.focusShape||"circle")==="circle"){ lw=lh=Math.min(lw,lh); }
+
+  // How much bigger the region actually ends up. A region that already
+  // fills most of the slide has nowhere to grow into — there is no honest
+  // way to enlarge 700px of a 960px slide and still show all of it. When
+  // that happens the sided placement is not the problem, so try the centre
+  // (the roomiest option) before giving up on the panel entirely.
+  let k=Math.min(lw/region.w, lh/region.h);
+  if(k<1.05 && side!=="center"){
+    side="center";
+    let cw=Math.min(region.w*zoom, W-2*M), ch=Math.min(region.h*zoom, H-2*M);
+    if((el.focusShape||"circle")==="circle"){ cw=ch=Math.min(cw,ch); }
+    const ck=Math.min(cw/region.w, ch/region.h);
+    if(ck>k){ lw=cw; lh=ch; k=ck; }
+  }
+  // Still no room: fall back to a SPOTLIGHT — dim the slide and ring the
+  // region, with no panel at all. "Look at this" without the lie of a
+  // magnified view that is really the same size or smaller.
+  const spotlight = k < 1.05;
+
+  let cx, cy;
+  if(side==="left")       { cx=Math.max(M+lw/2, (region.x-M)/2); cy=region.y+region.h/2; }
+  else if(side==="right") { cx=Math.min(W-M-lw/2,(region.x+region.w+W)/2); cy=region.y+region.h/2; }
+  else if(side==="top")   { cy=Math.max(M+lh/2,(region.y-M)/2); cx=region.x+region.w/2; }
+  else if(side==="bottom"){ cy=Math.min(H-M-lh/2,(region.y+region.h+H)/2); cx=region.x+region.w/2; }
+  else                    { cx=W/2; cy=H/2; }
+
+  cx=Math.max(M+lw/2, Math.min(W-M-lw/2, cx));
+  cy=Math.max(M+lh/2, Math.min(H-M-lh/2, cy));
+  return {x:cx-lw/2, y:cy-lh/2, w:lw, h:lh, cx, cy, side, k, spotlight};
+}
+
+/* Build the dim mask, the region ring and the leader lines. */
+function focusSvg(region,lens,el){
+  const NS="http://www.w3.org/2000/svg";
+  const round=(el.focusShape||"circle")==="circle";
+  const accent=el.accent||"#1d4e89";
+  const dim=Math.max(0,Math.min(.9,Number(el.dim)==null?.55:Number(el.dim)));
+  const s=document.createElementNS(NS,"svg");
+  s.setAttribute("class","hf-svg");
+  s.setAttribute("viewBox","0 0 "+W+" "+H);
+  s.setAttribute("preserveAspectRatio","none");
+
+  // 1. Dim everything except the region itself (even-odd punches the hole).
+  const rr=Math.min(region.w,region.h)/2;
+  const hole=round
+    ? "M"+(region.cx-rr)+" "+region.cy+"a"+rr+" "+rr+" 0 1 0 "+(2*rr)+" 0a"+rr+" "+rr+" 0 1 0 "+(-2*rr)+" 0Z"
+    : "M"+region.x+" "+region.y+"h"+region.w+"v"+region.h+"h"+(-region.w)+"Z";
+  const mask=document.createElementNS(NS,"path");
+  mask.setAttribute("d","M0 0h"+W+"v"+H+"H0Z "+hole);
+  mask.setAttribute("fill-rule","evenodd");
+  mask.setAttribute("fill","#05070c");
+  mask.setAttribute("opacity",String(dim));
+  s.appendChild(mask);
+
+  // 2. Leader lines, region ring → callout edge.
+  if(el.leaders!==false && !lens.spotlight){
+    let d="";
+    if(round){
+      const R=Math.min(lens.w,lens.h)/2;
+      const dx=lens.cx-region.cx, dy=lens.cy-region.cy;
+      const dist=Math.hypot(dx,dy);
+      if(dist>Math.abs(R-rr)+2){
+        const a=Math.atan2(dy,dx), b=Math.acos(Math.max(-1,Math.min(1,(R-rr)/dist)));
+        [a+b,a-b].forEach(t=>{
+          const p={x:region.cx+rr*Math.cos(t), y:region.cy+rr*Math.sin(t)};
+          const q={x:lens.cx+R*Math.cos(t),   y:lens.cy+R*Math.sin(t)};
+          d+="M"+p.x+" "+p.y+"L"+q.x+" "+q.y;
+        });
+      }
+    }else{
+      // Rect → rect: the two hull edges that bridge the two boxes.
+      const A=[{x:region.x,y:region.y},{x:region.x+region.w,y:region.y},
+               {x:region.x+region.w,y:region.y+region.h},{x:region.x,y:region.y+region.h}];
+      const B=[{x:lens.x,y:lens.y},{x:lens.x+lens.w,y:lens.y},
+               {x:lens.x+lens.w,y:lens.y+lens.h},{x:lens.x,y:lens.y+lens.h}];
+      A.forEach(p=>p.g=0); B.forEach(p=>p.g=1);
+      const hull=convexHull(A.concat(B));
+      for(let i=0;i<hull.length;i++){
+        const p=hull[i], q=hull[(i+1)%hull.length];
+        if(p.g!==q.g) d+="M"+p.x+" "+p.y+"L"+q.x+" "+q.y;
+      }
+    }
+    if(d){
+      const path=document.createElementNS(NS,"path");
+      path.setAttribute("d",d);
+      path.setAttribute("stroke",accent);
+      path.setAttribute("stroke-width","2");
+      path.setAttribute("fill","none");
+      path.setAttribute("opacity",".85");
+      s.appendChild(path);
+    }
+  }
+
+  // 3. The ring around the region on the slide.
+  let ring;
+  if(round){
+    ring=document.createElementNS(NS,"circle");
+    ring.setAttribute("cx",region.cx);ring.setAttribute("cy",region.cy);ring.setAttribute("r",rr);
+  }else{
+    ring=document.createElementNS(NS,"rect");
+    ring.setAttribute("x",region.x);ring.setAttribute("y",region.y);
+    ring.setAttribute("width",region.w);ring.setAttribute("height",region.h);
+    ring.setAttribute("rx","10");
+  }
+  ring.setAttribute("fill","none");
+  ring.setAttribute("stroke",accent);
+  ring.setAttribute("stroke-width","3");
+  s.appendChild(ring);
+  return s;
+}
+
+/* A frozen copy of everything currently on the stage, minus the overlay
+   itself and minus anything that would misbehave when duplicated. */
+function focusClone(stage){
+  const c=stage.cloneNode(true);
+  c.querySelectorAll(".hanns-focus").forEach(n=>n.remove());
+  c.querySelectorAll("script").forEach(n=>n.remove());
+  c.querySelectorAll("video,audio").forEach(n=>{
+    try{n.pause&&n.pause();}catch(e){}
+    n.removeAttribute("autoplay");n.muted=true;n.controls=false;
+  });
+  c.querySelectorAll("iframe").forEach(n=>n.remove());
+  c.style.position="absolute";c.style.left="0";c.style.top="0";
+  c.style.width=W+"px";c.style.height=H+"px";
+  c.style.transform="";c.style.margin="0";
+  c.classList.remove("zoomed");
+  c.removeAttribute("id");
+  return c;
+}
+
+/* Lift the magnified callout onto `stage` for the focus element `el`.
+   Returns the overlay node, or null when the element is not a region. */
+function showFocus(stage,el,{animate=true}={}){
+  if(!stage||!el||el.type!=="focus")return null;
+  ensureFocusCss();
+  hideFocus(stage,{instant:true});
+
+  // The overlay is positioned against the stage, so the stage has to be a
+  // positioning context. The editor canvas and the present wrapper both
+  // already are; a bare container (a thumbnail, an export shell) may not.
+  try{
+    if(getComputedStyle(stage).position==="static")stage.style.position="relative";
+  }catch(e){}
+
+  const region={
+    x:Number(el.x)||0, y:Number(el.y)||0,
+    w:Math.max(24,Number(el.w)||120), h:Math.max(24,Number(el.h)||120),
+  };
+  region.cx=region.x+region.w/2; region.cy=region.y+region.h/2;
+  const lens=focusLensBox(region,el);
+  const accent=el.accent||"#1d4e89";
+  const round=(el.focusShape||"circle")==="circle";
+
+  const wrap=document.createElement("div");
+  wrap.className="hanns-focus";
+  wrap.dataset.focusId=String(el.id==null?"":el.id);
+  wrap.style.setProperty("--hf-accent",accent);
+  wrap.appendChild(focusSvg(region,lens,el));
+
+  if(lens.spotlight){
+    // Region too big to magnify — the ring and the dim carry the point.
+    stage.appendChild(wrap);
+    if(animate&&wrap.animate){
+      try{wrap.animate([{opacity:0},{opacity:1}],
+        {duration:380,easing:"ease-out",fill:"both"});}catch(e){}
+    }
+    return wrap;
+  }
+
+  const box=document.createElement("div");
+  box.className="hf-lens "+(round?"round":"boxy");
+  box.style.left=lens.x+"px";box.style.top=lens.y+"px";
+  box.style.width=lens.w+"px";box.style.height=lens.h+"px";
+  box.style.background=(stage.style.background||"#f6f1e7");
+
+  // The clone is scaled so the whole marked region fits the panel.
+  const k=Math.min(lens.w/region.w, lens.h/region.h);
+  const inner=document.createElement("div");
+  inner.className="hf-lens-inner";
+  inner.style.left=((lens.w-region.w*k)/2)+"px";
+  inner.style.top=((lens.h-region.h*k)/2)+"px";
+  inner.style.transform="scale("+k+") translate("+(-region.x)+"px,"+(-region.y)+"px)";
+  inner.appendChild(focusClone(stage));
+  box.appendChild(inner);
+  wrap.appendChild(box);
+
+  const capText=String(el.focusCaption||"").trim();
+  if(capText){
+    const cap=document.createElement("div");
+    cap.className="hf-cap";
+    cap.textContent=capText;
+    // Below the panel, or above it when the panel is already near the floor.
+    if(lens.y+lens.h+46<H) cap.style.top=(lens.y+lens.h+12)+"px";
+    else cap.style.top=Math.max(8,lens.y-44)+"px";
+    cap.style.left=lens.cx+"px";
+    wrap.appendChild(cap);
+  }
+
+  stage.appendChild(wrap);
+
+  if(animate&&box.animate){
+    // Grow out of the region it came from, so the eye follows the jump.
+    const sx=Math.max(.08,region.w/lens.w), sy=Math.max(.08,region.h/lens.h);
+    const s0=round?Math.min(sx,sy):Math.min(sx,sy);
+    const tx=region.cx-lens.cx, ty=region.cy-lens.cy;
+    try{
+      box.animate(
+        [{transform:"translate("+tx+"px,"+ty+"px) scale("+s0+")",opacity:0},
+         {transform:"translate(0,0) scale(1)",opacity:1}],
+        {duration:520,easing:"cubic-bezier(.22,1,.36,1)",fill:"both"});
+      wrap.querySelector(".hf-svg").animate([{opacity:0},{opacity:1}],
+        {duration:380,easing:"ease-out",fill:"both"});
+    }catch(e){}
+  }
+  return wrap;
+}
+
+function hideFocus(stage,{instant=false}={}){
+  if(!stage)return;
+  stage.querySelectorAll(".hanns-focus").forEach(n=>{
+    if(instant||!n.animate){n.remove();return;}
+    try{
+      const a=n.animate([{opacity:1},{opacity:0}],{duration:260,easing:"ease-in",fill:"both"});
+      a.onfinish=()=>n.remove();
+      setTimeout(()=>{if(n.parentNode)n.remove();},400);
+    }catch(e){n.remove();}
+  });
+}
+
+function activeFocusId(stage){
+  const n=stage&&stage.querySelector(".hanns-focus");
+  return n?(n.dataset.focusId||null):null;
+}
+
+/* ════════════════════════════════════════════════════════════════════
    DECK STATE
    ════════════════════════════════════════════════════════════════════ */
 const Deck = {
@@ -4760,6 +5163,12 @@ function renderElement(el,{live=false}={}){
     }
   } else if(el.type==="creative_shape"){
     inner.appendChild(renderCreativeShape(el));
+  } else if(el.type==="focus"){
+    // A zoom region: a dashed marker while authoring, nothing at all on
+    // the live stage until the presenter calls it up from the phone.
+    node.classList.add("el-focus");
+    if(live){node.style.pointerEvents="none";}
+    inner.appendChild(renderFocus(el,{live}));
   } else if(el.type==="group"){
     inner.classList.add("group-inner");
     const box=document.createElement("div");
@@ -6812,11 +7221,16 @@ function paintSlide(container,slide,{live=false,revealAll=false}={}){
     const node=renderElement(el,{live});
     container.appendChild(node);
     if(!live)return;
+    // A zoom region is a marker, never a picture — it gets no entrance
+    // and is never "revealed"; the presenter calls it up instead.
+    if(el.type==="focus")return;
     // revealAll is for live views with no presenter to cue them — the
     // editor Preview button and the standalone HTML export.
     if(el.revealOn==="cue"&&!revealAll)holdElement(node);
     else playElement(node,el);
   });
+  // Repainting a slide drops any callout that was up on the old one.
+  if(typeof hideFocus==="function")hideFocus(container,{instant:true});
 }
 
 window.Hanns = {Deck,TEMPLATES,BACKGROUNDS,BG_FX,ANIMS,TRANSITIONS,PALETTE,FONTS,OBJECTS,SHAPES,
@@ -6824,6 +7238,10 @@ window.Hanns = {Deck,TEMPLATES,BACKGROUNDS,BG_FX,ANIMS,TRANSITIONS,PALETTE,FONTS
   // reveal-on-cue + animated readouts (used by hanns_present.js and the
   // phone controller)
   revealElement,cuedElements,holdElement,playElement,animateIn,animateCountUp,animateLoad,numFormat,
+  // zoom regions ("focus") — authored in the editor, triggered from the
+  // phone controller, painted in front of the slide by showFocus()
+  makeFocus,renderFocus,focusElements,showFocus,hideFocus,activeFocusId,
+  FOCUS_SHAPES,FOCUS_PLACES,
   makeText,makeShape,makeLine,makeImage,makeVideo,makeLink,makeObject,makeCreativeShape,makeTable,makeChart,makeMap,makeGallery,W,H,$,$$,uid,clamp,genCode};
 
 })();

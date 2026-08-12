@@ -4931,7 +4931,7 @@ function hasFx(el){
 
 /* Paint the effects onto the element's INNER box. Called for every
    element type, and a no-op for anything that has never been styled. */
-function applyElFx(el,inner){
+function applyElFx(el,inner,node){
   if(!el||!inner||!hasFx(el))return;
   const f=elFx(el);
 
@@ -4969,7 +4969,21 @@ function applyElFx(el,inner){
     inner.style.transformOrigin="center center";
   }
 
-  if(f.blend&&f.blend!=="normal")inner.style.mixBlendMode=f.blend;
+  // Blend goes on .el, NOT on .el-inner. styleEl always writes
+  // transform:rotate(...) — never "none" — which makes every .el a
+  // stacking context, so a mix-blend-mode on the inner box would blend
+  // against the empty backdrop inside its own element and do visibly
+  // nothing. On .el itself the backdrop is the slide and its earlier
+  // elements, which is what "blend with what is behind" means.
+  // (In the editor the selection handles are part of that group and
+  // blend along with it; deselect to judge the real result.)
+  if(f.blend&&f.blend!=="normal"&&node)node.style.mixBlendMode=f.blend;
+
+  // A shadow, glow or extrude paints OUTSIDE the element's box. If any
+  // ancestor clips, the effect is silently cropped at the bounding box —
+  // so open the element up when one of those is switched on. The slide
+  // stage still clips, which is correct: effects should not leak off it.
+  if(node&&(f.shadow||f.glow||f.depth>0))node.style.overflow="visible";
   if(el.opacity!=null&&Number(el.opacity)!==1&&el.type!=="creative_shape"){
     inner.style.opacity=String(el.opacity);
   }
@@ -5546,7 +5560,7 @@ function renderElement(el,{live=false}={}){
     inner.appendChild(box);
   }
   // Shadow / glow / 3-D / filters / blend — any element, any type.
-  applyElFx(el,inner);
+  applyElFx(el,inner,node);
 
   node.appendChild(inner);
 

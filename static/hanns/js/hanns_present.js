@@ -333,10 +333,14 @@ function focusElById(id){
   const s = DECK.slides[i] || {};
   return ((s.els) || []).find(e => e && e.type === "focus" && e.id === id) || null;
 }
-function applyFocus(elId, off){
+function applyFocus(elId, off, index){
   const Hh = window.Hanns || {};
   const wrap = stageWrap();
   if(!wrap || !Hh.showFocus) return;
+  // The cue names the slide it was authored on. If this screen has moved
+  // on since the phone drew its panel, magnifying a region from a slide
+  // nobody is looking at is worse than doing nothing.
+  if(index != null && Number(index) !== i) return;
   if(off || !elId){
     Hh.hideFocus(wrap);
     focusNow = null;
@@ -366,7 +370,7 @@ function cycleFocus(){
   Live.focus(next ? next.id : "", !next);
 }
 
-const Live={sock:null,retry:0,start(){if(!CFG.wsUrl)return;try{this.sock=new WebSocket(CFG.wsUrl);}catch(e){return;}this.sock.addEventListener("open",()=>{this.retry=0;this.send({type:"presenter_hello"});keepScreenAwake("websocket-open");});this.sock.addEventListener("message",ev=>{let m;try{m=JSON.parse(ev.data);}catch(e){return;}if(m.type==="reaction"){spawnEmoji(m.emoji);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);else incrementReactionCount(m.emoji);}else if(m.type==="participants")setCount(m.count);else if(m.type==="state"){if(typeof m.count==="number")setCount(m.count);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);if(Array.isArray(m.revealed)){revealedNow=new Set(m.revealed);restoreRevealed();}if(m.focus)setTimeout(()=>applyFocus(m.focus,false),60);}else if(m.type==="reveal"){keepScreenAwake("cue-reveal");applyReveal(m.ids,m.hide,false);}else if(m.type==="focus"){keepScreenAwake("zoom-region");applyFocus(m.elId,m.off);}else if(m.type==="actor_action"){keepScreenAwake("actor-cue");playActorFromCue(m.elId,m.action);}else if(m.type==="goto"&&typeof m.index==="number"){keepScreenAwake("phone-controller");if(m.index!==i){suppressBroadcast=true;show(m.index,false);suppressBroadcast=false;}}else if(m.type==="pointer"){showPointer(m.x,m.y);}});this.sock.addEventListener("close",()=>{if(this.retry++>6)return;setTimeout(()=>this.start(),Math.min(800*this.retry,5000));});},send(o){if(this.sock&&this.sock.readyState===1)this.sock.send(JSON.stringify(o));},goto(idx){this.send({type:"goto",index:idx});},focus(elId,off){this.send({type:"focus",index:i,elId:elId||"",off:!!off});},stop(){if(this.sock){try{this.sock.close();}catch(e){}}this.sock=null;}};
+const Live={sock:null,retry:0,start(){if(!CFG.wsUrl)return;try{this.sock=new WebSocket(CFG.wsUrl);}catch(e){return;}this.sock.addEventListener("open",()=>{this.retry=0;this.send({type:"presenter_hello"});keepScreenAwake("websocket-open");});this.sock.addEventListener("message",ev=>{let m;try{m=JSON.parse(ev.data);}catch(e){return;}if(m.type==="reaction"){spawnEmoji(m.emoji);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);else incrementReactionCount(m.emoji);}else if(m.type==="participants")setCount(m.count);else if(m.type==="state"){if(typeof m.count==="number")setCount(m.count);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);if(Array.isArray(m.revealed)){revealedNow=new Set(m.revealed);restoreRevealed();}if(m.focus)setTimeout(()=>applyFocus(m.focus,false),60);}else if(m.type==="reveal"){keepScreenAwake("cue-reveal");applyReveal(m.ids,m.hide,false);}else if(m.type==="focus"){keepScreenAwake("zoom-region");applyFocus(m.elId,m.off,m.index);}else if(m.type==="actor_action"){keepScreenAwake("actor-cue");playActorFromCue(m.elId,m.action);}else if(m.type==="goto"&&typeof m.index==="number"){keepScreenAwake("phone-controller");if(m.index!==i){suppressBroadcast=true;show(m.index,false);suppressBroadcast=false;}}else if(m.type==="pointer"){showPointer(m.x,m.y);}});this.sock.addEventListener("close",()=>{if(this.retry++>6)return;setTimeout(()=>this.start(),Math.min(800*this.retry,5000));});},send(o){if(this.sock&&this.sock.readyState===1)this.sock.send(JSON.stringify(o));},goto(idx){this.send({type:"goto",index:idx});},focus(elId,off){this.send({type:"focus",index:i,elId:elId||"",off:!!off});},stop(){if(this.sock){try{this.sock.close();}catch(e){}}this.sock=null;}};
 function setCount(n){const el=$("#aud-count");if(el)el.textContent=n;}
 
 /* Click an actor on the live stage to play its action once. If a phone

@@ -936,8 +936,53 @@ function decorateFreeform(node,id){
     return el.points;
   };
 
+  /* The dots have to live in the SAME space as the artwork.
+     Two transforms sit between a point's 0–100 coordinate and the pixel
+     the user sees: rotate() on .el, and the Effects transform (flip,
+     3-D tilt) on .el-inner. Ignoring them put the dots somewhere the
+     shape is not, and — worse — made a drag travel the wrong way, since
+     a flip mirrors the axis the pointer is moving along. Both flips on
+     meant right went left and down went up.
+
+     So: project a point THROUGH the transform to place its dot, and push
+     the pointer delta back through the INVERSE to work out what the user
+     actually meant. As a bonus this makes dragging a rotated shape
+     behave, which it never did. */
+  const matOf=n=>{
+    try{
+      const t=getComputedStyle(n).transform;
+      return (!t||t==="none")?new DOMMatrix():new DOMMatrix(t);
+    }catch(e){ return null; }
+  };
+  const inner=node.querySelector(".el-inner")||node;
+  const mIn=matOf(inner), mNode=matOf(node);
+  const cx=()=>(Number(el.w)||1)/2, cy=()=>(Number(el.h)||1)/2;
+
+  // 0–100 shape coordinate → pixels inside .el, as actually drawn.
+  const project=p=>{
+    const px=p.x/100*(Number(el.w)||1), py=p.y/100*(Number(el.h)||1);
+    if(!mIn)return {x:px,y:py};
+    try{
+      const q=mIn.transformPoint(new DOMPoint(px-cx(),py-cy(),0,1));
+      const w=q.w||1;
+      return {x:cx()+q.x/w, y:cy()+q.y/w};
+    }catch(e){ return {x:px,y:py}; }
+  };
+  // Screen travel (already un-zoomed) → travel in the shape's own box.
+  const unproject=(dxPx,dyPx)=>{
+    const flat=()=>({dx:dxPx/Math.max(1,el.w)*100, dy:dyPx/Math.max(1,el.h)*100});
+    if(!mIn||!mNode)return flat();
+    try{
+      const inv=mNode.multiply(mIn).inverse();
+      const at=(x,y)=>{const q=inv.transformPoint(new DOMPoint(x,y,0,1));
+        const w=q.w||1;return {x:q.x/w,y:q.y/w};};
+      const a=at(0,0), b=at(dxPx,dyPx);
+      return {dx:(b.x-a.x)/Math.max(1,el.w)*100, dy:(b.y-a.y)/Math.max(1,el.h)*100};
+    }catch(e){ return flat(); }
+  };
+
   const pts=Hx.freeformPoints(el);
-  const place=(n,p)=>{n.style.left=p.x+"%";n.style.top=p.y+"%";};
+  const place=(n,p)=>{const q=project(p);n.style.left=q.x+"px";n.style.top=q.y+"px";};
 
   pts.forEach((p,i)=>{
     const dot=document.createElement("div");
@@ -956,10 +1001,11 @@ function decorateFreeform(node,id){
       const sx=ev.clientX, sy=ev.clientY;
       const o={x:list[i].x, y:list[i].y};
       const mv=e2=>{
-        // Pointer travel → the shape's own 0–100 box, via the canvas zoom.
-        const dx=(e2.clientX-sx)/zoom/Math.max(1,el.w)*100;
-        const dy=(e2.clientY-sy)/zoom/Math.max(1,el.h)*100;
-        let nx=o.x+dx, ny=o.y+dy;
+        // Pointer travel → the shape's own 0–100 box: un-zoom for the
+        // canvas, then un-rotate and un-flip so the point follows the
+        // mouse rather than mirroring it.
+        const d=unproject((e2.clientX-sx)/zoom,(e2.clientY-sy)/zoom);
+        let nx=o.x+d.dx, ny=o.y+d.dy;
         if(e2.shiftKey){nx=Math.round(nx/5)*5;ny=Math.round(ny/5)*5;}
         list[i].x=Math.round(nx*100)/100;
         list[i].y=Math.round(ny*100)/100;
@@ -1762,7 +1808,7 @@ Affected Area 1,-16.52,13.39,45,#e8482b,#ffffff">${escapeTA(areasToText(el))}</t
         ${field(`Turn left / right ${f.ry}°`,`<input type="range" id="f-fx-ry" min="-70" max="70" step="1" value="${f.ry}">`)}
         ${field(`Perspective ${f.persp}`,`<input type="range" id="f-fx-persp" min="200" max="2400" step="20" value="${f.persp}">`)}`:""}
       ${field(`Extruded depth ${f.depth}`,`<input type="range" id="f-fx-depth" min="0" max="24" step="1" value="${f.depth}">`)}
-      ${f.depth>0?field("Depth colour",`<input type="color" id="f-fx-dcolor" value="${rgbaToHex(f.dcolor)}">`):""}
+      ${field("Depth colour",`<input type="color" id="f-fx-dcolor" value="${rgbaToHex(f.dcolor)}">`)}
       ${field(`Blur ${f.blur}`,`<input type="range" id="f-fx-blur" min="0" max="24" step="0.5" value="${f.blur}">`)}
       ${field(`Brightness ${f.bright}%`,`<input type="range" id="f-fx-bright" min="20" max="220" step="5" value="${f.bright}">`)}
       ${field(`Saturation ${f.sat}%`,`<input type="range" id="f-fx-sat" min="0" max="260" step="5" value="${f.sat}">`)}
@@ -1824,7 +1870,21 @@ function bindElementPanel(el){
     const c1=$("#f-ff-fill"); c1&&c1.addEventListener("input",()=>{el.fill=c1.value;renderCanvas();markDirty();});
     const c2=$("#f-ff-fill2");c2&&c2.addEventListener("input",()=>{el.fill2=c2.value;renderCanvas();markDirty();});
     bindRange("f-ff-angle",v=>{el.gradAngle=v;renderCanvas();markDirty();},v=>v+"\u00b0","Gradient angle");
-    const st=$("#f-ff-stroke");st&&st.addEventListener("input",()=>{el.stroke=st.value;if(!Number(el.strokeW))el.strokeW=2;renderCanvas();renderInspector();markDirty();});
+    const st=$("#f-ff-stroke");
+    st&&st.addEventListener("input",()=>{
+      el.stroke=st.value;
+      // Picking an outline colour on a shape that has no outline yet
+      // should show one. Nudge the width field in place rather than
+      // re-rendering the panel — a rebuild mid-drag closes the colour
+      // picker the user is still holding open.
+      if(!Number(el.strokeW)){
+        el.strokeW=2;
+        const w=$("#f-ff-strokew");
+        if(w){w.value=2;const lab=w.closest(".field")?.querySelector("label");
+          if(lab)lab.textContent="Outline width 2";}
+      }
+      renderCanvas();markDirty();
+    });
     bindRange("f-ff-strokew",v=>{el.strokeW=v;if(v>0&&(!el.stroke||el.stroke==="none"))el.stroke="#16140f";renderCanvas();markDirty();},v=>String(v),"Outline width");
     bindRange("f-ff-dash",v=>{el.dash=v;renderCanvas();markDirty();},v=>String(v),"Dashes");
     $("#f-ff-reset")&&$("#f-ff-reset").addEventListener("click",()=>{
@@ -1855,10 +1915,9 @@ function bindElementPanel(el){
     bindRange("f-fx-rx",v=>{fx().rx=v;touch();},v=>v+"\u00b0","Lean back / forward");
     bindRange("f-fx-ry",v=>{fx().ry=v;touch();},v=>v+"\u00b0","Turn left / right");
     bindRange("f-fx-persp",v=>{fx().persp=v;touch();},v=>String(v),"Perspective");
-    bindRange("f-fx-depth",v=>{
-      const had=Number(fx().depth)||0;fx().depth=v;
-      if((had>0)!==(v>0)){renderCanvas();renderInspector();markDirty();}else touch();
-    },v=>String(v),"Extruded depth");
+    // No renderInspector() here: rebuilding the panel while the slider is
+    // still under the pointer drops the drag on the first step.
+    bindRange("f-fx-depth",v=>{fx().depth=v;touch();},v=>String(v),"Extruded depth");
     const dc=$("#f-fx-dcolor");
     dc&&dc.addEventListener("input",()=>{fx().dcolor=hexWithAlpha(dc.value,fx().dcolor);touch();});
     bindRange("f-fx-blur",v=>{fx().blur=v;touch();},v=>String(v),"Blur");

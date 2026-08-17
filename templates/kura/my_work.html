@@ -1,0 +1,347 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My work · {{ survey.title }} · Kura</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900&family=Archivo:wght@400;500;600;700;800;900&family=Spline+Sans+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--line:rgba(255,255,255,.12);--muted:#b9c2e7;--dim:rgba(248,251,255,.45);
+    --orange:#ff8a1f;--pink:#ff3f98;--cyan:#22d3ee;--violet:#8b5cf6;--green:#22c55e;--red:#e8482b;--amber:#fbbf24}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;color:#f8fbff;font-family:"Archivo",sans-serif;-webkit-font-smoothing:antialiased;
+    background:radial-gradient(900px 560px at 86% -8%,rgba(255,138,31,.2),transparent 60%),
+      radial-gradient(780px 520px at 5% 5%,rgba(139,92,246,.3),transparent 60%),
+      linear-gradient(135deg,#050616,#090b23 45%,#160a2c)}
+  .bar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;
+    padding:.8rem 1.1rem;border-bottom:1px solid var(--line);background:rgba(6,7,24,.85);backdrop-filter:blur(16px)}
+  .mark{font-weight:900;font-size:1.1rem;text-decoration:none;
+    background:linear-gradient(110deg,#fff 8%,var(--orange) 40%,var(--pink) 70%,var(--cyan) 100%);
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .bar h1{flex:1;min-width:140px;margin:0;font-family:"Fraunces",serif;font-size:1.05rem;font-weight:600;color:#fff;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bar h1 small{display:block;font-family:"Spline Sans Mono",monospace;font-size:.56rem;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--dim);font-weight:400}
+  .btn{display:inline-flex;align-items:center;gap:.4rem;border:1px solid rgba(255,255,255,.16);color:var(--muted);
+    background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.04));
+    border-radius:10px;padding:.5rem .9rem;font-weight:700;font-size:.8rem;cursor:pointer;
+    text-decoration:none;font-family:inherit}
+  .btn:hover{color:#fff}
+  .btn.go{border-color:rgba(34,197,94,.45);color:#86efac}
+  .btn.sm{padding:.3rem .6rem;font-size:.72rem;border-radius:8px}
+  .wrap{max-width:820px;margin:0 auto;padding:1rem 1.1rem 5rem}
+  .stats{display:flex;gap:.7rem;flex-wrap:wrap;margin-bottom:1rem}
+  .stat{flex:1;min-width:106px;border:1px solid var(--line);border-radius:14px;padding:.65rem .9rem;
+    background:linear-gradient(135deg,rgba(255,255,255,.09),rgba(255,255,255,.03))}
+  .stat b{display:block;font-size:1.5rem;font-weight:900}
+  .stat span{font-family:"Spline Sans Mono",monospace;font-size:.55rem;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--dim)}
+  .stat.fix b{color:var(--amber)}
+  .panel{border:1px solid var(--line);border-radius:16px;margin-bottom:1rem;overflow:hidden;
+    background:linear-gradient(135deg,rgba(255,255,255,.08),rgba(255,255,255,.03))}
+  .panel>h3{margin:0;padding:.8rem 1rem .6rem;display:flex;gap:.6rem;align-items:center;
+    font-family:"Spline Sans Mono",monospace;font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+  .pad{padding:0 1rem 1rem}
+  .fix{border:1px solid rgba(255,138,31,.35);border-radius:13px;padding:.8rem .9rem;margin-bottom:.7rem;
+    background:rgba(255,138,31,.08)}
+  .fix h4{margin:0 0 .25rem;font-size:.94rem}
+  .fix .meta{color:var(--dim);font-size:.72rem;margin-bottom:.5rem}
+  .fix .note{color:var(--muted);font-size:.8rem;line-height:1.5;margin:.3rem 0 .5rem;
+    border-left:2px solid rgba(255,255,255,.16);padding-left:.6rem}
+  .fix .row{display:flex;gap:.45rem;flex-wrap:wrap;align-items:center}
+  .pill{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:.12rem .5rem;
+    font:700 .58rem/1.5 "Spline Sans Mono",monospace;letter-spacing:.06em;text-transform:uppercase}
+  .pill.open{color:#ffc38a;border-color:rgba(255,138,31,.4)}
+  .pill.assigned{color:var(--cyan);border-color:rgba(34,211,238,.4)}
+  .pill.in_progress{color:var(--violet);border-color:rgba(139,92,246,.5)}
+  .pill.flagged{color:var(--amber);border-color:rgba(251,191,36,.4)}
+  .pill.complete{color:#86efac;border-color:rgba(34,197,94,.35)}
+  .pill.excluded{color:var(--red);border-color:rgba(232,72,43,.4)}
+  table{width:100%;border-collapse:collapse;font-size:.79rem}
+  th{text-align:left;padding:.45rem .6rem;color:var(--dim);font-family:"Spline Sans Mono",monospace;
+    font-size:.55rem;letter-spacing:.1em;text-transform:uppercase}
+  td{padding:.45rem .6rem;border-top:1px solid rgba(255,255,255,.07)}
+  .scroll{max-height:420px;overflow:auto}
+  .empty{padding:1.6rem 1rem;text-align:center;color:var(--muted);font-size:.85rem;line-height:1.6}
+  .allclear{font-size:2rem;display:block;margin-bottom:.4rem}
+  /* chat */
+  .msgs{max-height:300px;overflow:auto;padding:.3rem 1rem .6rem;display:flex;flex-direction:column;gap:.5rem}
+  .msg{max-width:88%;border:1px solid var(--line);border-radius:12px;padding:.45rem .65rem;
+    font-size:.8rem;line-height:1.45;background:rgba(255,255,255,.05)}
+  .msg .who{display:block;font:700 .56rem/1.6 "Spline Sans Mono",monospace;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--dim)}
+  .msg.mine{align-self:flex-end;background:rgba(34,211,238,.14);border-color:rgba(34,211,238,.35)}
+  .msg.system{align-self:center;max-width:100%;text-align:center;background:rgba(139,92,246,.12);
+    border-color:rgba(139,92,246,.3);color:var(--muted);font-size:.74rem}
+  .msg.issue{border-color:rgba(255,138,31,.45);background:rgba(255,138,31,.12)}
+  .compose{display:flex;gap:.5rem;padding:.6rem 1rem 1rem}
+  .compose textarea{flex:1;resize:none;height:40px;background:rgba(0,0,0,.3);border:1px solid var(--line);
+    border-radius:9px;color:#f8fbff;padding:.45rem .6rem;font-family:inherit;font-size:.82rem}
+  .toast{position:fixed;left:50%;bottom:1.3rem;transform:translateX(-50%);z-index:90;border:1px solid var(--line);
+    border-radius:11px;padding:.6rem 1rem;font-size:.82rem;font-weight:600;background:#11142e;
+    opacity:0;pointer-events:none;transition:.2s}
+  .toast.on{opacity:1}
+  .toast.bad{border-color:rgba(232,72,43,.55);color:#ffb4a2}
+  .toast.good{border-color:rgba(34,197,94,.5);color:#86efac}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <a class="mark" href="{% url 'kura:list' %}">Kura<span style="-webkit-text-fill-color:var(--pink)">.</span></a>
+  <h1 id="hd">My work<small>{{ survey.title }}</small></h1>
+  <a class="btn sm" href="{% url 'kura:collect' survey.code %}">Open the form</a>
+</div>
+
+<div class="wrap">
+
+  <div class="stats">
+    <div class="stat fix"><b id="s-fix">0</b><span>To fix</span></div>
+    <div class="stat"><b id="s-subs">0</b><span>My responses</span></div>
+    <div class="stat"><b id="s-today">0</b><span>Today</span></div>
+  </div>
+
+  <div class="panel">
+    <h3>Data problems assigned to me</h3>
+    <div class="pad" id="fixes"></div>
+  </div>
+
+  <div class="panel">
+    <h3>My responses</h3>
+    <div class="scroll">
+      <table>
+        <thead><tr><th style="width:150px">Sent</th><th style="width:90px">Status</th>
+          <th style="width:60px">Flags</th><th>Answers</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="rows-empty" style="display:none">You have not submitted anything yet.</div>
+  </div>
+
+  <div class="panel" id="chat-panel" style="display:none">
+    <h3>Team chat <span id="chat-title" style="color:var(--muted)"></span></h3>
+    <div class="msgs" id="msgs"></div>
+    <div class="compose">
+      <textarea id="chat-input" placeholder="Message your team… (Enter to send)"></textarea>
+      <button class="btn go" id="chat-send" type="button">Send</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script id="mywork-config" type="application/json">
+{
+  "code": "{{ survey.code }}",
+  "you": {{ request.user.id }},
+  "csrf": "{{ csrf_token }}",
+  "tasksUrl": "{% url 'kura:my_tasks' survey.code %}",
+  "issueBase": "/kura/{{ survey.code }}/issues/",
+  "chatThreadsUrl": "{% url 'kura:chat_threads' survey.code %}",
+  "chatMessagesUrl": "{% url 'kura:chat_messages' survey.code %}",
+  "chatSendUrl": "{% url 'kura:chat_send' survey.code %}"
+}
+</script>
+
+<script>
+(function(){
+"use strict";
+const CFG = JSON.parse(document.getElementById("mywork-config").textContent);
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+let thread = null, lastMsgId = 0, sock = null, pollTimer = null;
+
+function toast(msg, kind){
+  const t = $("#toast");
+  t.textContent = msg;
+  t.className = "toast on " + (kind || "");
+  clearTimeout(t._t);
+  t._t = setTimeout(() => { t.className = "toast " + (kind || ""); }, 3600);
+}
+
+async function post(url, body){
+  const r = await fetch(url, {
+    method: "POST",
+    headers: {"Content-Type": "application/json", "X-CSRFToken": CFG.csrf},
+    body: JSON.stringify(body || {})
+  });
+  let j = {};
+  try { j = await r.json(); } catch (e) { j = {ok:false, error:"Server error."}; }
+  return j;
+}
+
+function fmt(iso){
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString(undefined,
+    {day:"numeric", month:"short", hour:"2-digit", minute:"2-digit"});
+}
+
+/* ── tasks ────────────────────────────────────────────────── */
+
+function drawFixes(issues){
+  $("#s-fix").textContent = issues.length;
+  if (!issues.length) {
+    $("#fixes").innerHTML = '<div class="empty"><span class="allclear">✓</span>' +
+      "Nothing to fix. Everything you have submitted has passed the checks.</div>";
+    return;
+  }
+  $("#fixes").innerHTML = issues.map(i =>
+    '<div class="fix" data-id="' + i.id + '">' +
+      "<h4>" + esc(i.detail || "Something needs checking") + "</h4>" +
+      '<div class="meta"><span class="pill ' + i.status + '">' +
+        i.status.replace("_", " ") + "</span> · " + esc(i.rule) +
+        (i.field ? " · field <b>" + esc(i.field) + "</b>" : "") +
+        " · response of " + esc(fmt(i.received_at)) + "</div>" +
+      (i.note ? '<div class="note">' + esc(i.note) + "</div>" : "") +
+      '<div class="row">' +
+        (i.status !== "in_progress"
+          ? '<button class="btn sm" data-act="start" type="button">I am on it</button>' : "") +
+        '<button class="btn sm go" data-act="done" type="button">✓ I have fixed this</button>' +
+        '<button class="btn sm" data-act="ask" type="button">💬 Ask my supervisor</button>' +
+      "</div></div>").join("");
+}
+
+$("#fixes").addEventListener("click", async e => {
+  const btn = e.target.closest("button[data-act]");
+  if (!btn) return;
+  const id = btn.closest(".fix").dataset.id;
+
+  if (btn.dataset.act === "start") {
+    const j = await post(CFG.issueBase + id + "/update/", {status: "in_progress"});
+    toast(j.ok ? "Marked as being fixed." : (j.error || "Failed."), j.ok ? "good" : "bad");
+
+  } else if (btn.dataset.act === "done") {
+    const note = prompt("What did you change? (optional)") || "";
+    const j = await post(CFG.issueBase + id + "/update/",
+      {status: "resolved", resolution_note: note});
+    toast(j.ok
+      ? "Thanks — your supervisor will confirm when they run the checks."
+      : (j.error || "Failed."), j.ok ? "good" : "bad");
+
+  } else if (btn.dataset.act === "ask") {
+    const q = prompt("What do you want to ask about this?");
+    if (!q) return;
+    const j = await post(CFG.issueBase + id + "/update/", {message: q});
+    toast(j.ok ? "Sent to the team chat." : (j.error || "Failed."), j.ok ? "good" : "bad");
+    loadMessages();
+  }
+  load();
+});
+
+function drawRows(subs){
+  $("#s-subs").textContent = subs.length;
+  const today = new Date().toDateString();
+  $("#s-today").textContent = subs.filter(
+    s => s.received_at && new Date(s.received_at).toDateString() === today).length;
+
+  $("#rows-empty").style.display = subs.length ? "none" : "";
+  $("#rows").innerHTML = subs.map(s => {
+    const answers = Object.keys(s.answers || {}).slice(0, 5)
+      .map(k => "<b>" + esc(k) + "</b> " + esc(JSON.stringify(s.answers[k]))).join(" · ");
+    const flags = (s.flags || []).length;
+    return "<tr><td>" + esc(fmt(s.received_at)) + "</td>" +
+      '<td><span class="pill ' + s.status + '">' + s.status + "</span></td>" +
+      "<td>" + (flags
+        ? '<span style="color:var(--amber);font-weight:800">' + flags + "</span>"
+        : '<span style="color:var(--dim)">—</span>') + "</td>" +
+      '<td style="color:var(--muted);font-size:.74rem">' + answers + "</td></tr>";
+  }).join("");
+}
+
+/* ── chat ─────────────────────────────────────────────────── */
+
+async function loadThread(){
+  const j = await fetch(CFG.chatThreadsUrl).then(r => r.json()).catch(() => null);
+  if (!j || !j.ok || !j.enabled || !(j.threads || []).length) return;
+  const team = j.threads.find(t => t.kind === "team") || j.threads[0];
+  thread = team.id;
+  $("#chat-title").textContent = team.title;
+  $("#chat-panel").style.display = "";
+  await loadMessages();
+  connect();
+}
+
+async function loadMessages(){
+  if (!thread) return;
+  const j = await fetch(CFG.chatMessagesUrl + "?thread=" + thread + "&after=" + lastMsgId)
+    .then(r => r.json()).catch(() => null);
+  if (!j || !j.ok) return;
+  (j.messages || []).forEach(add);
+}
+
+function add(m){
+  if (m.id <= lastMsgId) return;
+  lastMsgId = m.id;
+  const mine = m.author_id === CFG.you;
+  const cls = m.kind === "system" ? "system" : (m.kind === "issue" ? "issue" : (mine ? "mine" : ""));
+  const div = document.createElement("div");
+  div.className = "msg " + cls;
+  div.innerHTML = (m.kind === "system" ? "" :
+      '<span class="who">' + esc(m.author || "someone") + " · " +
+      new Date(m.created_at).toLocaleTimeString(undefined,
+        {hour:"2-digit", minute:"2-digit"}) + "</span>") +
+    esc(m.body).replace(/\n/g, "<br>");
+  $("#msgs").appendChild(div);
+  $("#msgs").scrollTop = $("#msgs").scrollHeight;
+}
+
+function connect(){
+  clearInterval(pollTimer);
+  const url = (location.protocol === "https:" ? "wss://" : "ws://") +
+    location.host + "/ws/kura/" + CFG.code + "/chat/" + thread + "/";
+  try { sock = new WebSocket(url); } catch (e) { poll(); return; }
+  sock.onmessage = ev => {
+    let d;
+    try { d = JSON.parse(ev.data); } catch (e) { return; }
+    if (d.type === "message") add(d.message);
+  };
+  sock.onclose = () => { sock = null; poll(); };
+  sock.onerror = () => { try { sock.close(); } catch (e) {} };
+}
+
+function poll(){
+  clearInterval(pollTimer);
+  pollTimer = setInterval(loadMessages, 8000);
+}
+
+async function send(){
+  const box = $("#chat-input");
+  const body = box.value.trim();
+  if (!body || !thread) return;
+  box.value = "";
+  if (sock && sock.readyState === 1) {
+    sock.send(JSON.stringify({type:"message", body: body}));
+  } else {
+    const j = await post(CFG.chatSendUrl, {thread: thread, body: body});
+    if (j.ok) add(j.message); else toast(j.error || "Could not send.", "bad");
+  }
+}
+$("#chat-send").onclick = send;
+$("#chat-input").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+});
+
+/* ── load ─────────────────────────────────────────────────── */
+
+async function load(){
+  const j = await fetch(CFG.tasksUrl).then(r => r.json()).catch(() => null);
+  if (!j || !j.ok) { toast("Could not load.", "bad"); return; }
+  if (j.team) {
+    $("#hd").innerHTML = "My work<small>" + esc(j.team.name) +
+      " · {{ survey.title|escapejs }}</small>";
+  }
+  drawFixes(j.issues || []);
+  drawRows(j.submissions || []);
+}
+
+load();
+loadThread();
+setInterval(load, 60000);
+})();
+</script>
+</body>
+</html>

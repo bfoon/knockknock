@@ -1,0 +1,592 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teams · {{ survey.title }} · Kura</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900&family=Archivo:wght@400;500;600;700;800;900&family=Spline+Sans+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--line:rgba(255,255,255,.12);--muted:#b9c2e7;--dim:rgba(248,251,255,.45);
+    --orange:#ff8a1f;--pink:#ff3f98;--cyan:#22d3ee;--violet:#8b5cf6;--green:#22c55e;--red:#e8482b;--amber:#fbbf24}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;color:#f8fbff;font-family:"Archivo",sans-serif;-webkit-font-smoothing:antialiased;
+    background:radial-gradient(900px 560px at 86% -8%,rgba(255,138,31,.2),transparent 60%),
+      radial-gradient(780px 520px at 5% 5%,rgba(139,92,246,.3),transparent 60%),
+      linear-gradient(135deg,#050616,#090b23 45%,#160a2c)}
+  .bar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;
+    padding:.8rem 1.2rem;border-bottom:1px solid var(--line);background:rgba(6,7,24,.85);backdrop-filter:blur(16px)}
+  .mark{font-weight:900;font-size:1.1rem;text-decoration:none;
+    background:linear-gradient(110deg,#fff 8%,var(--orange) 40%,var(--pink) 70%,var(--cyan) 100%);
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .bar h1{flex:1;min-width:160px;margin:0;font-family:"Fraunces",serif;font-size:1.12rem;font-weight:600;color:#fff;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .btn{display:inline-flex;align-items:center;gap:.4rem;border:1px solid rgba(255,255,255,.16);color:var(--muted);
+    background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.04));
+    border-radius:10px;padding:.5rem .9rem;font-weight:700;font-size:.8rem;cursor:pointer;
+    text-decoration:none;font-family:inherit}
+  .btn:hover{color:#fff}
+  .btn[disabled]{opacity:.4;cursor:not-allowed}
+  .btn.go{border-color:rgba(34,197,94,.45);color:#86efac}
+  .btn.bad{border-color:rgba(232,72,43,.45);color:#ffb4a2}
+  .btn.sm{padding:.3rem .6rem;font-size:.72rem;border-radius:8px}
+  .wrap{max-width:1180px;margin:0 auto;padding:1.2rem 1.2rem 5rem}
+  .panel{border:1px solid var(--line);border-radius:16px;margin-bottom:1.1rem;overflow:hidden;
+    background:linear-gradient(135deg,rgba(255,255,255,.08),rgba(255,255,255,.03));backdrop-filter:blur(12px)}
+  .panel>h3{margin:0;padding:.8rem 1.1rem .6rem;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;
+    font-family:"Spline Sans Mono",monospace;font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+  .panel>h3 .sp{flex:1}
+  .pad{padding:0 1.1rem 1.1rem}
+  .lede{color:var(--muted);font-size:.84rem;line-height:1.55;margin:0 0 .9rem}
+  label.sw{display:flex;align-items:flex-start;gap:.6rem;padding:.5rem 0;border-top:1px solid rgba(255,255,255,.06);
+    cursor:pointer;font-size:.85rem}
+  label.sw:first-of-type{border-top:0}
+  label.sw input{margin-top:.22rem;accent-color:var(--cyan);width:16px;height:16px;flex:0 0 auto}
+  label.sw small{display:block;color:var(--dim);font-size:.74rem;line-height:1.45;margin-top:.1rem}
+  input[type=text],input[type=number],input[type=time],select,textarea{
+    background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:9px;color:#f8fbff;
+    padding:.45rem .6rem;font-family:inherit;font-size:.82rem}
+  input[type=text]:focus,select:focus{outline:1px solid rgba(34,211,238,.5)}
+  .row{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+  .row.mt{margin-top:.8rem}
+  .grow{flex:1;min-width:150px}
+  .teamcard{border:1px solid var(--line);border-radius:14px;padding:.85rem 1rem;margin-bottom:.8rem;
+    background:rgba(255,255,255,.04)}
+  .teamcard h4{margin:0 0 .2rem;font-family:"Fraunces",serif;font-size:1.02rem;display:flex;align-items:center;gap:.5rem}
+  .teamcard .meta{color:var(--dim);font-size:.74rem;margin-bottom:.6rem}
+  .nums{display:flex;gap:1.1rem;flex-wrap:wrap;margin:.5rem 0 .7rem;font-size:.78rem}
+  .nums b{display:block;font-size:1.15rem;font-weight:900}
+  .nums span{font-family:"Spline Sans Mono",monospace;font-size:.54rem;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--dim)}
+  .chips{display:flex;flex-wrap:wrap;gap:.35rem;margin:.5rem 0}
+  .chip{display:inline-flex;align-items:center;gap:.35rem;border:1px solid var(--line);border-radius:99px;
+    padding:.22rem .6rem;font-size:.74rem;background:rgba(255,255,255,.05)}
+  .chip button{background:none;border:0;color:var(--dim);cursor:pointer;font-size:.85rem;padding:0;line-height:1}
+  .chip button:hover{color:var(--red)}
+  table{width:100%;border-collapse:collapse;font-size:.8rem}
+  th{text-align:left;padding:.45rem .6rem;color:var(--dim);font-family:"Spline Sans Mono",monospace;
+    font-size:.55rem;letter-spacing:.1em;text-transform:uppercase}
+  td{padding:.45rem .6rem;border-top:1px solid rgba(255,255,255,.07);vertical-align:middle}
+  .link{font-family:"Spline Sans Mono",monospace;font-size:.68rem;color:var(--cyan);word-break:break-all}
+  .checkrow{display:flex;align-items:center;gap:.6rem;padding:.45rem .2rem;border-top:1px solid rgba(255,255,255,.06);
+    font-size:.83rem}
+  .checkrow:first-child{border-top:0}
+  .checkrow .nm{flex:1;min-width:0}
+  .checkrow .nm small{display:block;color:var(--dim);font-size:.7rem}
+  .kind{font-family:"Spline Sans Mono",monospace;font-size:.56rem;letter-spacing:.1em;text-transform:uppercase;
+    border:1px solid var(--line);border-radius:5px;padding:.14rem .4rem;color:var(--dim)}
+  .empty{padding:1.2rem;text-align:center;color:var(--muted);font-size:.83rem}
+  .off{opacity:.45;pointer-events:none}
+  .toast{position:fixed;left:50%;bottom:1.4rem;transform:translateX(-50%);z-index:90;border:1px solid var(--line);
+    border-radius:11px;padding:.65rem 1.1rem;font-size:.83rem;font-weight:600;background:#11142e;
+    opacity:0;pointer-events:none;transition:.2s}
+  .toast.on{opacity:1}
+  .toast.bad{border-color:rgba(232,72,43,.55);color:#ffb4a2}
+  .toast.good{border-color:rgba(34,197,94,.5);color:#86efac}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <a class="mark" href="{% url 'kura:list' %}">Kura<span style="-webkit-text-fill-color:var(--pink)">.</span></a>
+  <a class="btn sm" href="{% url 'kura:list' %}">← Surveys</a>
+  <h1>{{ survey.title }} — teams &amp; sharing</h1>
+  <a class="btn" href="{% url 'kura:builder' survey.code %}">Builder</a>
+  <a class="btn" href="{% url 'kura:data' survey.code %}">Data</a>
+  <a class="btn" href="{% url 'kura:monitor' survey.code %}">📡 Live monitor</a>
+</div>
+
+<div class="wrap">
+
+  <div class="panel">
+    <h3>How this form is collected</h3>
+    <div class="pad">
+      <p class="lede">Turn this on when enumerators in the field will collect the data on
+        phones. You then group them into teams, give each team a supervisor, and the
+        supervisor gets a board showing only their team's data.</p>
+
+      <label class="sw"><input type="checkbox" id="c-team_collection">
+        <span><b>Data collection will be done by teams</b>
+          <small>Unlocks team boards, supervisor sign-off and team chat. Responses
+            from the public web link stay anonymous and belong to no team.</small></span></label>
+
+      <label class="sw"><input type="checkbox" id="c-require_signoff">
+        <span>Supervisors must sign off each period
+          <small>The supervisor confirms a day's data is clean before it is treated as final.</small></span></label>
+
+      <label class="sw"><input type="checkbox" id="c-allow_signoff_with_issues">
+        <span>Allow sign-off while issues are still open
+          <small>Off is safer: a required check with an unresolved problem blocks sign-off.</small></span></label>
+
+      <label class="sw"><input type="checkbox" id="c-chat_enabled">
+        <span>Chat
+          <small>A room per team, plus a direct line between you and each supervisor.</small></span></label>
+
+      <div class="row mt">
+        <span style="font-size:.82rem">Sign-off period</span>
+        <select id="c-signoff_period">
+          <option value="day">Daily</option>
+          <option value="week">Weekly</option>
+        </select>
+      </div>
+
+      <h4 style="margin:1.2rem 0 .3rem;font-size:.9rem">What a supervisor may do</h4>
+      <label class="sw"><input type="checkbox" id="c-supervisor_can_export">
+        <span>Download their team's data as CSV</span></label>
+      <label class="sw"><input type="checkbox" id="c-supervisor_can_edit_answers">
+        <span>Correct answers directly
+          <small>Off by default — normally the enumerator fixes their own row.</small></span></label>
+      <label class="sw"><input type="checkbox" id="c-supervisor_can_see_other_teams">
+        <span>See every team's data, not just their own</span></label>
+
+      <h4 style="margin:1.2rem 0 .3rem;font-size:.9rem">Automatic checks</h4>
+      <p class="lede" style="margin-bottom:.4rem">Normally the supervisor runs the checks
+        themselves when their team finishes for the day — they know when collection has
+        actually stopped. Switch this on only if you also want an unattended backstop.</p>
+      <label class="sw"><input type="checkbox" id="c-validation_enabled">
+        <span>Also run the checks automatically
+          <small>Requires the <code>kura_run_validations</code> command on cron or Celery beat.</small></span></label>
+      <div class="row">
+        <span style="font-size:.82rem">Backstop time</span>
+        <input type="time" id="c-validation_time" value="20:00">
+      </div>
+
+      <div class="row mt">
+        <button class="btn go" id="save-config" type="button">Save settings</button>
+        <span id="cfg-note" style="color:var(--dim);font-size:.75rem"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="teams-panel">
+    <h3>Field teams <span class="sp"></span>
+      <span style="font-size:.62rem;color:var(--dim)" id="team-count"></span></h3>
+    <div class="pad">
+      <div id="teams"></div>
+      <div class="row mt">
+        <input type="text" id="new-team" class="grow" placeholder="New team name — e.g. North Bank">
+        <input type="text" id="new-sup" placeholder="Supervisor username or email (optional)">
+        <button class="btn go" id="add-team" type="button">+ Add team</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>Validation checks <span class="sp"></span>
+      <span style="font-size:.62rem;color:var(--dim)">supervisors can run these, only you can change them</span></h3>
+    <div class="pad">
+      <p class="lede">Promote your quick flag rules and Data Studio pipelines into the
+        check suite. A <b>required</b> check with an unresolved problem stops a supervisor
+        signing off; an advisory one is reported but does not block.</p>
+      <div id="checks"></div>
+      <div class="row mt">
+        <button class="btn go" id="save-checks" type="button">Save the check suite</button>
+        <button class="btn" id="run-checks" type="button">▶ Run the checks now</button>
+        <span id="check-note" style="color:var(--dim);font-size:.75rem"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>People working on the form with you</h3>
+    <div class="pad">
+      <p class="lede"><b>Editor</b> builds the form and cleans data. <b>Analyst</b> reads
+        data and runs the studio. <b>Viewer</b> reads only. None of them can change the
+        validation checks — that stays with you.</p>
+      <table><tbody id="collabs"></tbody></table>
+      <div class="row mt">
+        <input type="text" id="new-collab" class="grow" placeholder="Username or email">
+        <select id="new-collab-role">
+          <option value="editor">Editor</option>
+          <option value="analyst" selected>Analyst</option>
+          <option value="viewer">Viewer</option>
+        </select>
+        <button class="btn go" id="add-collab" type="button">+ Share</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>Invitation links</h3>
+    <div class="pad">
+      <p class="lede">Send a link instead of adding an account by hand. The person signs in,
+        accepts, and the role is bound to their account — the link never exposes data to
+        an anonymous visitor.</p>
+      <table>
+        <thead><tr><th>Role</th><th>Team</th><th>Link</th><th>Uses</th><th></th></tr></thead>
+        <tbody id="invites"></tbody>
+      </table>
+      <div class="row mt">
+        <select id="inv-role">
+          <option value="supervisor">Team supervisor</option>
+          <option value="member">Team member (enumerator)</option>
+          <option value="editor">Editor</option>
+          <option value="analyst">Analyst</option>
+          <option value="viewer">Viewer</option>
+        </select>
+        <select id="inv-team"></select>
+        <input type="number" id="inv-days" value="14" min="0" style="width:88px" title="Days until it expires — 0 for never">
+        <button class="btn go" id="add-invite" type="button">+ Create link</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script id="teams-config" type="application/json">
+{
+  "code": "{{ survey.code }}",
+  "csrf": "{{ csrf_token }}",
+  "bootstrapUrl": "{% url 'kura:teams_bootstrap' survey.code %}",
+  "configUrl": "{% url 'kura:team_config' survey.code %}",
+  "teamCreateUrl": "{% url 'kura:team_create' survey.code %}",
+  "collabAddUrl": "{% url 'kura:collaborator_add' survey.code %}",
+  "inviteCreateUrl": "{% url 'kura:invite_create' survey.code %}",
+  "checksUrl": "{% url 'kura:validation_checks' survey.code %}",
+  "runUrl": "{% url 'kura:validation_run' survey.code %}"
+}
+</script>
+
+<script>
+(function(){
+"use strict";
+const CFG = JSON.parse(document.getElementById("teams-config").textContent);
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const base = "/kura/" + CFG.code;
+
+let DATA = null;
+let checkState = [];   // [{kind, rule_id|pipeline_id, label, required, on}]
+
+function toast(msg, kind){
+  const t = $("#toast");
+  t.textContent = msg;
+  t.className = "toast on " + (kind || "");
+  clearTimeout(t._t);
+  t._t = setTimeout(() => { t.className = "toast " + (kind || ""); }, 3600);
+}
+
+async function post(url, body){
+  const r = await fetch(url, {
+    method: "POST",
+    headers: {"Content-Type": "application/json", "X-CSRFToken": CFG.csrf},
+    body: JSON.stringify(body || {})
+  });
+  let j = {};
+  try { j = await r.json(); } catch (e) { j = {ok:false, error:"Server error."}; }
+  if (!r.ok && !j.error) j.error = "Request failed (" + r.status + ").";
+  return j;
+}
+
+/* ── config ───────────────────────────────────────────────── */
+
+const BOOLS = ["team_collection","require_signoff","allow_signoff_with_issues",
+  "chat_enabled","supervisor_can_export","supervisor_can_edit_answers",
+  "supervisor_can_see_other_teams","validation_enabled"];
+
+function fillConfig(c){
+  BOOLS.forEach(k => { const el = $("#c-" + k); if (el) el.checked = !!c[k]; });
+  $("#c-signoff_period").value = c.signoff_period || "day";
+  $("#c-validation_time").value = c.validation_time || "20:00";
+  if (c.validation_last_run_at) {
+    $("#cfg-note").textContent = "Checks last run " +
+      new Date(c.validation_last_run_at).toLocaleString() +
+      (c.validation_last_run_by_person ? " by a person." : " automatically.");
+  }
+  document.querySelectorAll("#teams-panel").forEach(
+    el => el.classList.toggle("off", !c.team_collection));
+}
+
+$("#save-config").onclick = async () => {
+  const body = {
+    signoff_period: $("#c-signoff_period").value,
+    validation_time: $("#c-validation_time").value
+  };
+  BOOLS.forEach(k => { const el = $("#c-" + k); if (el) body[k] = el.checked; });
+  const j = await post(CFG.configUrl, body);
+  if (j.ok) { fillConfig(j.config); toast("Settings saved.", "good"); }
+  else toast(j.error || "Could not save.", "bad");
+};
+
+/* ── teams ────────────────────────────────────────────────── */
+
+function drawTeams(teams){
+  $("#team-count").textContent = teams.length + " team(s)";
+  if (!teams.length) {
+    $("#teams").innerHTML = '<div class="empty">No teams yet. Add one below, ' +
+      'then send its supervisor an invitation link.</div>';
+    return;
+  }
+  $("#teams").innerHTML = teams.map(t => {
+    const sup = t.supervisor
+      ? esc(t.supervisor.name) + ' <span style="color:var(--dim)">(' + esc(t.supervisor.username) + ")</span>"
+      : '<span style="color:var(--amber)">no supervisor yet</span>';
+    const chips = (t.members || []).map(m =>
+      '<span class="chip">' + esc(m.name) +
+      '<button data-rm-member="' + m.id + '" data-team="' + t.id + '" title="Remove from team">✕</button></span>'
+    ).join("") || '<span style="color:var(--dim);font-size:.76rem">No members yet.</span>';
+
+    return '<div class="teamcard" data-team="' + t.id + '">' +
+      "<h4>" + esc(t.name) +
+        (t.is_active ? "" : ' <span class="kind">paused</span>') + "</h4>" +
+      '<div class="meta">Supervisor: ' + sup + "</div>" +
+      '<div class="nums">' +
+        "<div><b>" + t.submissions + "</b><span>Responses</span></div>" +
+        '<div><b style="color:var(--amber)">' + t.flagged + "</b><span>Flagged</span></div>" +
+        '<div><b style="color:var(--red)">' + t.open_issues + "</b><span>Open issues</span></div>" +
+        "<div><b>" + t.member_count + "</b><span>Members</span></div>" +
+        (t.target ? "<div><b>" + t.target + "</b><span>Target</span></div>" : "") +
+      "</div>" +
+      '<div class="chips">' + chips + "</div>" +
+      '<div class="row">' +
+        '<input type="text" class="grow" data-add-member placeholder="Add enumerator by username or email">' +
+        '<button class="btn sm" data-act="add-member" type="button">+ Add</button>' +
+        '<button class="btn sm" data-act="set-sup" type="button">Set supervisor</button>' +
+        '<button class="btn sm" data-act="sup-link" type="button">🔗 Supervisor link</button>' +
+        '<button class="btn sm" data-act="join-link" type="button">🔗 Team join link</button>' +
+        '<a class="btn sm" href="' + base + "/team/" + t.id + '/board/">Open board →</a>' +
+        '<button class="btn sm bad" data-act="del" type="button">Delete</button>' +
+      "</div></div>";
+  }).join("");
+}
+
+$("#add-team").onclick = async () => {
+  const name = $("#new-team").value.trim();
+  if (!name) { toast("Give the team a name.", "bad"); return; }
+  const j = await post(CFG.teamCreateUrl,
+    {name: name, supervisor: $("#new-sup").value.trim()});
+  if (j.ok) { $("#new-team").value = ""; $("#new-sup").value = ""; load(); toast("Team added.", "good"); }
+  else toast(j.error || "Could not add the team.", "bad");
+};
+
+$("#teams").addEventListener("click", async e => {
+  const rm = e.target.closest("button[data-rm-member]");
+  if (rm) {
+    const j = await post(base + "/team/" + rm.dataset.team + "/members/" +
+                         rm.dataset.rmMember + "/remove/");
+    if (j.ok) load(); else toast(j.error || "Failed.", "bad");
+    return;
+  }
+  const btn = e.target.closest("button[data-act]");
+  if (!btn) return;
+  const card = btn.closest(".teamcard");
+  const id = card.dataset.team;
+
+  if (btn.dataset.act === "add-member") {
+    const input = card.querySelector("[data-add-member]");
+    const who = input.value.trim();
+    if (!who) return;
+    const j = await post(base + "/team/" + id + "/members/add/", {users: [who]});
+    if (j.ok && j.added.length) { input.value = ""; load(); toast("Added to the team.", "good"); }
+    else toast("No account found for “" + who + "”.", "bad");
+
+  } else if (btn.dataset.act === "set-sup") {
+    const who = prompt("Supervisor's username or email (blank to clear):");
+    if (who === null) return;
+    const j = await post(base + "/team/" + id + "/update/", {supervisor: who.trim()});
+    if (j.ok) { load(); toast("Supervisor updated.", "good"); }
+    else toast(j.error || "Failed.", "bad");
+
+  } else if (btn.dataset.act === "sup-link") {
+    makeInvite("supervisor", id);
+  } else if (btn.dataset.act === "join-link") {
+    makeInvite("member", id, 0);
+
+  } else if (btn.dataset.act === "del") {
+    if (!confirm("Delete this team? Responses already collected are kept — " +
+                 "only the grouping goes away.")) return;
+    const j = await post(base + "/team/" + id + "/delete/");
+    if (j.ok) { load(); toast("Team deleted.", "good"); }
+    else toast(j.error || "Failed.", "bad");
+  }
+});
+
+/* ── validation checks ────────────────────────────────────── */
+
+function buildCheckState(d){
+  const chosen = {};
+  (d.validation_checks || []).forEach(c => {
+    chosen[c.kind + ":" + (c.rule_id || c.pipeline_id)] = c;
+  });
+  checkState = [];
+  (d.rules || []).forEach(r => {
+    const key = "rule:" + r.id, hit = chosen[key];
+    checkState.push({kind:"rule", rule_id:r.id, label:r.name,
+      sub:"Quick flag rule · " + r.kind + " · " + r.action,
+      on: !!hit, required: hit ? hit.required : true});
+  });
+  (d.pipelines || []).forEach(p => {
+    const key = "pipeline:" + p.id, hit = chosen[key];
+    checkState.push({kind:"pipeline", pipeline_id:p.id, label:p.name,
+      sub:"Studio pipeline · " + p.steps + " step(s)",
+      on: !!hit, required: hit ? hit.required : true});
+  });
+  drawChecks();
+}
+
+function drawChecks(){
+  if (!checkState.length) {
+    $("#checks").innerHTML = '<div class="empty">No quick rules or pipelines exist yet. ' +
+      'Create them on the <a href="' + base + '/data/" style="color:var(--cyan)">data page</a> ' +
+      'or in the Data Studio first.</div>';
+    return;
+  }
+  $("#checks").innerHTML = checkState.map((c, i) =>
+    '<div class="checkrow">' +
+      '<input type="checkbox" data-i="' + i + '" data-f="on"' + (c.on ? " checked" : "") + ">" +
+      '<span class="kind">' + (c.kind === "rule" ? "rule" : "pipeline") + "</span>" +
+      '<span class="nm"><b>' + esc(c.label) + "</b><small>" + esc(c.sub) + "</small></span>" +
+      '<label style="font-size:.75rem;color:var(--muted);display:flex;gap:.35rem;align-items:center">' +
+        '<input type="checkbox" data-i="' + i + '" data-f="required"' +
+        (c.required ? " checked" : "") + (c.on ? "" : " disabled") + "> blocks sign-off</label>" +
+    "</div>").join("");
+}
+
+$("#checks").addEventListener("change", e => {
+  const el = e.target.closest("input[data-i]");
+  if (!el) return;
+  checkState[Number(el.dataset.i)][el.dataset.f] = el.checked;
+  drawChecks();
+});
+
+$("#save-checks").onclick = async () => {
+  const checks = checkState.filter(c => c.on).map(c => ({
+    kind: c.kind, rule_id: c.rule_id, pipeline_id: c.pipeline_id, required: c.required
+  }));
+  const j = await post(CFG.checksUrl, {checks: checks});
+  if (j.ok) { toast(checks.length + " check(s) saved.", "good"); load(); }
+  else toast(j.error || "Could not save.", "bad");
+};
+
+$("#run-checks").onclick = async () => {
+  const b = $("#run-checks");
+  b.disabled = true; b.textContent = "⏳ Running…";
+  const j = await post(CFG.runUrl, {});
+  b.disabled = false; b.textContent = "▶ Run the checks now";
+  if (j.run && j.run.passed) toast("All clear.", "good");
+  else if (j.run) toast(j.run.issues_open + " issue(s) found.", "bad");
+  else toast(j.error || "Could not run.", "bad");
+  load();
+};
+
+/* ── collaborators ────────────────────────────────────────── */
+
+function drawCollabs(rows){
+  if (!rows.length) {
+    $("#collabs").innerHTML = '<tr><td class="empty">Not shared with anyone yet.</td></tr>';
+    return;
+  }
+  $("#collabs").innerHTML = rows.map(c =>
+    "<tr><td><b>" + esc(c.name) + '</b> <span style="color:var(--dim)">' +
+      esc(c.username) + "</span></td>" +
+    '<td style="width:110px"><span class="kind">' + esc(c.role) + "</span></td>" +
+    '<td style="width:90px;text-align:right">' +
+      '<button class="btn sm bad" data-rm-collab="' + c.id + '" type="button">Remove</button>' +
+    "</td></tr>").join("");
+}
+
+$("#add-collab").onclick = async () => {
+  const who = $("#new-collab").value.trim();
+  if (!who) return;
+  const j = await post(CFG.collabAddUrl, {user: who, role: $("#new-collab-role").value});
+  if (j.ok) { $("#new-collab").value = ""; load(); toast("Shared.", "good"); }
+  else toast(j.error || "Could not share.", "bad");
+};
+
+$("#collabs").addEventListener("click", async e => {
+  const b = e.target.closest("button[data-rm-collab]");
+  if (!b) return;
+  const j = await post(base + "/collaborators/" + b.dataset.rmCollab + "/remove/");
+  if (j.ok) load(); else toast(j.error || "Failed.", "bad");
+});
+
+/* ── invites ──────────────────────────────────────────────── */
+
+function drawInvites(rows){
+  if (!rows.length) {
+    $("#invites").innerHTML = '<tr><td colspan="5" class="empty">No links yet.</td></tr>';
+    return;
+  }
+  $("#invites").innerHTML = rows.map(i =>
+    "<tr>" +
+    '<td><span class="kind">' + esc(i.role) + "</span></td>" +
+    "<td>" + esc(i.team || "—") + "</td>" +
+    '<td><span class="link">' + esc(i.url) + "</span></td>" +
+    "<td>" + i.uses + (i.max_uses ? " / " + i.max_uses : " / ∞") + "</td>" +
+    '<td style="text-align:right;white-space:nowrap">' +
+      '<button class="btn sm" data-copy="' + esc(i.url) + '" type="button">Copy</button> ' +
+      (i.valid
+        ? '<button class="btn sm bad" data-revoke="' + i.id + '" type="button">Revoke</button>'
+        : '<span style="color:var(--dim);font-size:.72rem">spent</span>') +
+    "</td></tr>").join("");
+}
+
+async function makeInvite(role, teamId, days){
+  const body = {role: role, expires_days: days === undefined ? Number($("#inv-days").value || 0) : days};
+  if (teamId) body.team_id = Number(teamId);
+  if (role === "member") body.max_uses = 0;
+  const j = await post(CFG.inviteCreateUrl, body);
+  if (!j.ok) { toast(j.error || "Could not create the link.", "bad"); return; }
+  copy(j.invite.url);
+  load();
+}
+
+$("#add-invite").onclick = () => {
+  const role = $("#inv-role").value;
+  const team = $("#inv-team").value;
+  if ((role === "supervisor" || role === "member") && !team) {
+    toast("Pick which team this link is for.", "bad");
+    return;
+  }
+  makeInvite(role, team);
+};
+
+$("#invites").addEventListener("click", async e => {
+  const c = e.target.closest("button[data-copy]");
+  if (c) { copy(c.dataset.copy); return; }
+  const r = e.target.closest("button[data-revoke]");
+  if (!r) return;
+  const j = await post(base + "/invites/" + r.dataset.revoke + "/revoke/");
+  if (j.ok) { load(); toast("Link revoked.", "good"); }
+  else toast(j.error || "Failed.", "bad");
+});
+
+function copy(text){
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text)
+      .then(() => toast("Link copied — send it to them.", "good"))
+      .catch(() => window.prompt("Copy this link:", text));
+  } else {
+    window.prompt("Copy this link:", text);
+  }
+}
+
+/* ── load ─────────────────────────────────────────────────── */
+
+async function load(){
+  const j = await fetch(CFG.bootstrapUrl).then(r => r.json()).catch(() => null);
+  if (!j || !j.ok) { toast("Could not load.", "bad"); return; }
+  DATA = j;
+  fillConfig(j.config);
+  drawTeams(j.teams || []);
+  drawCollabs(j.collaborators || []);
+  drawInvites(j.invites || []);
+  buildCheckState(j);
+  $("#inv-team").innerHTML = '<option value="">— pick a team —</option>' +
+    (j.teams || []).map(t => '<option value="' + t.id + '">' + esc(t.name) + "</option>").join("");
+  if (j.last_validation) {
+    const l = j.last_validation;
+    $("#check-note").textContent = "Last run " +
+      new Date(l.completed_at || l.started_at).toLocaleString() +
+      (l.passed ? " — all clear." : " — " + l.issues_open + " outstanding.");
+  }
+}
+
+load();
+})();
+</script>
+</body>
+</html>

@@ -222,6 +222,8 @@
   <input type="file" id="ch-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none">
   <a class="btn ghost" href="{% url 'kura:data' survey.code %}">Data</a>
   <a class="btn ghost" href="{% url 'kura:monitor' survey.code %}">Live</a>
+  <a class="btn ghost" href="{% url 'kura:teams' survey.code %}"
+     title="Teams, supervisors, sharing and the validation check suite">Teams</a>
   <a class="btn ghost" href="{% url 'kura:preview' survey.code %}" target="_blank" rel="noopener" title="Live preview of the DRAFT — no publish needed">Preview</a>
   <button class="btn" id="publish-btn" type="button">Publish v<span id="next-v">?</span></button>
 </div>

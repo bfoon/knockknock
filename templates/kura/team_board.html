@@ -1,0 +1,820 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ team.name }} · {{ survey.title }} · Kura</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900&family=Archivo:wght@400;500;600;700;800;900&family=Spline+Sans+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root{--line:rgba(255,255,255,.12);--muted:#b9c2e7;--dim:rgba(248,251,255,.45);
+    --orange:#ff8a1f;--pink:#ff3f98;--cyan:#22d3ee;--violet:#8b5cf6;--green:#22c55e;--red:#e8482b;--amber:#fbbf24}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;color:#f8fbff;font-family:"Archivo",sans-serif;-webkit-font-smoothing:antialiased;
+    background:radial-gradient(900px 560px at 86% -8%,rgba(255,138,31,.2),transparent 60%),
+      radial-gradient(780px 520px at 5% 5%,rgba(139,92,246,.3),transparent 60%),
+      linear-gradient(135deg,#050616,#090b23 45%,#160a2c)}
+  .bar{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;
+    padding:.8rem 1.2rem;border-bottom:1px solid var(--line);background:rgba(6,7,24,.85);backdrop-filter:blur(16px)}
+  .mark{font-weight:900;font-size:1.1rem;text-decoration:none;
+    background:linear-gradient(110deg,#fff 8%,var(--orange) 40%,var(--pink) 70%,var(--cyan) 100%);
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .bar h1{flex:1;min-width:150px;margin:0;font-family:"Fraunces",serif;font-size:1.12rem;font-weight:600;color:#fff;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bar h1 small{display:block;font-family:"Spline Sans Mono",monospace;font-size:.58rem;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--dim);font-weight:400}
+  .btn{display:inline-flex;align-items:center;gap:.4rem;border:1px solid rgba(255,255,255,.16);color:var(--muted);
+    background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.04));
+    border-radius:10px;padding:.5rem .9rem;font-weight:700;font-size:.8rem;cursor:pointer;text-decoration:none;font-family:inherit}
+  .btn:hover{color:#fff}
+  .btn[disabled]{opacity:.4;cursor:not-allowed}
+  .btn.go{border-color:rgba(34,197,94,.45);color:#86efac}
+  .btn.warn{border-color:rgba(255,138,31,.45);color:#ffc38a}
+  .btn.sm{padding:.32rem .6rem;font-size:.7rem;border-radius:8px}
+  .period{display:inline-flex;align-items:center;gap:.3rem;border:1px solid var(--line);border-radius:10px;
+    padding:.18rem .3rem;background:rgba(255,255,255,.04)}
+  .period b{font:700 .74rem/1 "Spline Sans Mono",monospace;padding:0 .5rem;color:#fff;min-width:96px;text-align:center}
+  .period button{background:none;border:0;color:var(--muted);cursor:pointer;font-size:.9rem;padding:.3rem .45rem;font-family:inherit}
+  .period button:hover{color:#fff}
+  .wrap{max-width:1400px;margin:0 auto;padding:1rem 1.2rem 4rem}
+  .stats{display:flex;gap:.7rem;flex-wrap:wrap;margin:.2rem 0 1rem}
+  .stat{flex:1;min-width:112px;border:1px solid var(--line);border-radius:14px;padding:.65rem .9rem;
+    background:linear-gradient(135deg,rgba(255,255,255,.09),rgba(255,255,255,.03))}
+  .stat b{display:block;font-size:1.5rem;font-weight:900;line-height:1.15}
+  .stat span{font-family:"Spline Sans Mono",monospace;font-size:.55rem;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+  .stat.clean b{color:#86efac}.stat.flag b{color:var(--amber)}.stat.iss b{color:var(--red)}
+  .stat.mem b{color:var(--cyan)}.stat.tgt b{color:var(--violet)}
+  .bar-track{height:5px;border-radius:99px;background:rgba(255,255,255,.1);margin-top:.4rem;overflow:hidden}
+  .bar-track i{display:block;height:100%;background:linear-gradient(90deg,var(--violet),var(--cyan))}
+  .panel{border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-bottom:1rem;
+    background:linear-gradient(135deg,rgba(255,255,255,.08),rgba(255,255,255,.03));backdrop-filter:blur(12px)}
+  .panel>h3{margin:0;padding:.75rem 1rem .6rem;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;
+    font-family:"Spline Sans Mono",monospace;font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+  .panel>h3 .sp{flex:1}
+  .pad{padding:0 1rem 1rem}
+  .grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,1fr);gap:1rem;align-items:start}
+  @media(max-width:1000px){.grid{grid-template-columns:1fr}}
+  #map{height:420px;background:#0b0d26}
+  .leaflet-container{font-family:"Archivo",sans-serif}
+  .leaflet-popup-content-wrapper,.leaflet-popup-tip{background:#11142e;color:#f8fbff;border:1px solid var(--line)}
+  .chartbox{padding:.4rem 1rem 1rem;height:210px;position:relative}
+  /* sign-off */
+  .signoff{border:1px solid var(--line);border-radius:16px;padding:1rem 1.1rem;margin-bottom:1rem;
+    background:linear-gradient(135deg,rgba(139,92,246,.16),rgba(255,255,255,.03))}
+  .signoff.ready{background:linear-gradient(135deg,rgba(34,197,94,.18),rgba(255,255,255,.03));border-color:rgba(34,197,94,.35)}
+  .signoff.done{background:linear-gradient(135deg,rgba(34,211,238,.15),rgba(255,255,255,.03));border-color:rgba(34,211,238,.35)}
+  .signoff.blocked{background:linear-gradient(135deg,rgba(232,72,43,.14),rgba(255,255,255,.03));border-color:rgba(232,72,43,.3)}
+  .signoff h2{margin:0 0 .3rem;font-family:"Fraunces",serif;font-size:1.05rem}
+  .signoff p{margin:.25rem 0;color:var(--muted);font-size:.84rem;line-height:1.5}
+  .signoff ul{margin:.4rem 0 .6rem;padding-left:1.1rem;color:#ffc38a;font-size:.82rem}
+  .signoff .row{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-top:.7rem}
+  .signoff input[type=text]{flex:1;min-width:200px;background:rgba(0,0,0,.28);border:1px solid var(--line);
+    border-radius:9px;padding:.5rem .7rem;color:#f8fbff;font-family:inherit;font-size:.82rem}
+  /* tables */
+  table{width:100%;border-collapse:collapse;font-size:.79rem}
+  th{position:sticky;top:0;background:#0d1030;text-align:left;padding:.5rem .7rem;color:var(--dim);
+    font-family:"Spline Sans Mono",monospace;font-size:.56rem;letter-spacing:.1em;text-transform:uppercase;z-index:2}
+  td{padding:.5rem .7rem;border-top:1px solid rgba(255,255,255,.07);vertical-align:top}
+  tbody tr:hover{background:rgba(255,255,255,.04)}
+  .scroll{max-height:440px;overflow:auto}
+  .pill{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:.12rem .5rem;
+    font:700 .58rem/1.5 "Spline Sans Mono",monospace;letter-spacing:.06em;text-transform:uppercase}
+  .pill.open{color:#ffc38a;border-color:rgba(255,138,31,.4)}
+  .pill.assigned{color:var(--cyan);border-color:rgba(34,211,238,.4)}
+  .pill.in_progress{color:var(--violet);border-color:rgba(139,92,246,.5)}
+  .pill.resolved{color:#86efac;border-color:rgba(34,197,94,.4)}
+  .pill.dismissed{color:var(--dim)}
+  .pill.flagged{color:var(--amber);border-color:rgba(251,191,36,.4)}
+  .pill.complete{color:#86efac;border-color:rgba(34,197,94,.35)}
+  .pill.excluded{color:var(--red);border-color:rgba(232,72,43,.4)}
+  select,textarea{background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:8px;color:#f8fbff;
+    padding:.3rem .45rem;font-family:inherit;font-size:.75rem}
+  .tabs{display:flex;gap:.35rem}
+  .tabs button{border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--muted);
+    border-radius:8px;padding:.28rem .6rem;font:700 .68rem/1 inherit;cursor:pointer;font-family:inherit}
+  .tabs button.on{color:#fff;border-color:rgba(34,211,238,.5);background:rgba(34,211,238,.14)}
+  .empty{padding:1.6rem 1rem;text-align:center;color:var(--muted);font-size:.84rem}
+  .checks{display:flex;flex-wrap:wrap;gap:.4rem;padding:0 1rem .9rem}
+  .chk{display:inline-flex;align-items:center;gap:.35rem;border:1px solid var(--line);border-radius:99px;
+    padding:.25rem .65rem;font-size:.72rem;color:var(--muted);background:rgba(255,255,255,.04)}
+  .chk i{font-style:normal}
+  .lock{color:var(--dim);font-size:.66rem}
+  /* chat drawer */
+  #chat{position:fixed;top:0;right:0;bottom:0;width:min(400px,92vw);z-index:60;display:flex;flex-direction:column;
+    transform:translateX(103%);transition:transform .22s ease;border-left:1px solid var(--line);
+    background:linear-gradient(160deg,#0a0c22,#12102c)}
+  #chat.on{transform:none;box-shadow:-20px 0 60px rgba(0,0,0,.5)}
+  #chat header{display:flex;align-items:center;gap:.5rem;padding:.7rem .9rem;border-bottom:1px solid var(--line)}
+  #chat header b{flex:1;font-size:.9rem}
+  #chat select{flex:1;min-width:0}
+  #chat .msgs{flex:1;overflow:auto;padding:.8rem .9rem;display:flex;flex-direction:column;gap:.55rem}
+  .msg{max-width:86%;border-radius:12px;padding:.45rem .65rem;font-size:.8rem;line-height:1.45;
+    border:1px solid var(--line);background:rgba(255,255,255,.05)}
+  .msg .who{display:block;font:700 .58rem/1.6 "Spline Sans Mono",monospace;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--dim)}
+  .msg.mine{align-self:flex-end;background:rgba(34,211,238,.14);border-color:rgba(34,211,238,.35)}
+  .msg.system{align-self:center;max-width:100%;text-align:center;background:rgba(139,92,246,.12);
+    border-color:rgba(139,92,246,.3);color:var(--muted);font-size:.74rem}
+  .msg.issue{border-color:rgba(255,138,31,.45);background:rgba(255,138,31,.12)}
+  #chat .compose{display:flex;gap:.5rem;padding:.7rem .9rem;border-top:1px solid var(--line)}
+  #chat textarea{flex:1;resize:none;height:42px;font-size:.82rem}
+  .badge{display:inline-block;min-width:17px;padding:0 .3rem;border-radius:99px;background:var(--pink);
+    color:#fff;font:800 .6rem/17px "Spline Sans Mono",monospace;text-align:center}
+  .toast{position:fixed;left:50%;bottom:1.4rem;transform:translateX(-50%);z-index:90;border:1px solid var(--line);
+    border-radius:11px;padding:.65rem 1.1rem;font-size:.83rem;font-weight:600;background:#11142e;
+    opacity:0;pointer-events:none;transition:.2s}
+  .toast.on{opacity:1}
+  .toast.bad{border-color:rgba(232,72,43,.55);color:#ffb4a2}
+  .toast.good{border-color:rgba(34,197,94,.5);color:#86efac}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <a class="mark" href="{% url 'kura:list' %}">Kura<span style="-webkit-text-fill-color:var(--pink)">.</span></a>
+  <h1>{{ team.name }}<small>{{ survey.title }} · {{ survey.code }}</small></h1>
+
+  <span class="period">
+    <button id="p-prev" type="button" title="Previous period">‹</button>
+    <b id="p-label">—</b>
+    <button id="p-next" type="button" title="Next period">›</button>
+  </span>
+  <button class="btn sm" id="p-today" type="button">Today</button>
+  <button class="btn sm" id="p-all" type="button">All time</button>
+
+  <button class="btn warn" id="b-run" type="button" title="Run the owner's data checks over this team's data">✔ Run data checks</button>
+  <a class="btn" id="b-export" href="#">⬇ CSV</a>
+  <button class="btn" id="b-chat" type="button">💬 Chat <span class="badge" id="chat-badge" style="display:none">0</span></button>
+</div>
+
+<div class="wrap">
+
+  <div class="stats">
+    <div class="stat"><b id="s-total">0</b><span>Responses</span></div>
+    <div class="stat clean"><b id="s-clean">0</b><span>Clean</span></div>
+    <div class="stat flag"><b id="s-flag">0</b><span>Flagged</span></div>
+    <div class="stat iss"><b id="s-iss">0</b><span>Open issues</span></div>
+    <div class="stat mem"><b id="s-mem">0</b><span>Active members</span></div>
+    <div class="stat tgt"><b id="s-tgt">—</b><span>Target</span>
+      <div class="bar-track"><i id="s-tgt-bar" style="width:0"></i></div></div>
+  </div>
+
+  <div class="signoff" id="signoff">
+    <h2 id="so-title">Sign-off</h2>
+    <p id="so-body">Loading…</p>
+    <ul id="so-blockers" style="display:none"></ul>
+    <div class="row" id="so-row" style="display:none">
+      <input type="text" id="so-note" placeholder="Optional note for the record — anything the owner should know">
+      <button class="btn go" id="so-sign" type="button">✍ Sign off this period</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>Data checks
+      <span class="sp"></span>
+      <span class="lock" title="Only the survey owner can add or change these checks">🔒 set by the survey owner</span>
+    </h3>
+    <div class="checks" id="checks"><span class="chk">Loading…</span></div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h3>Where the data is coming from <span class="sp"></span>
+        <span style="font-size:.62rem;color:var(--dim)" id="map-count"></span></h3>
+      <div id="map"></div>
+    </div>
+    <div>
+      <div class="panel">
+        <h3>Who is submitting</h3>
+        <div class="chartbox"><canvas id="c-members"></canvas></div>
+      </div>
+      <div class="panel">
+        <h3>Activity through the period</h3>
+        <div class="chartbox"><canvas id="c-hourly"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>Data problems to resolve <span class="sp"></span>
+      <span class="tabs" id="issue-tabs">
+        <button data-f="open" class="on" type="button">Open</button>
+        <button data-f="all" type="button">Everything</button>
+      </span>
+    </h3>
+    <div class="scroll">
+      <table>
+        <thead><tr>
+          <th style="width:80px">Status</th><th>Problem</th><th style="width:120px">Field</th>
+          <th style="width:150px">Assigned to</th><th style="width:230px">Action</th>
+        </tr></thead>
+        <tbody id="issue-rows"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="issue-empty" style="display:none">Nothing outstanding — this team's data is clean for this period.</div>
+  </div>
+
+  <div class="panel">
+    <h3>Responses <span class="sp"></span>
+      <select id="f-member"><option value="">Everyone</option></select>
+      <span class="tabs" id="row-tabs">
+        <button data-f="" class="on" type="button">All</button>
+        <button data-f="flagged" type="button">Flagged only</button>
+      </span>
+    </h3>
+    <div class="scroll">
+      <table>
+        <thead><tr>
+          <th style="width:150px">Received</th><th style="width:120px">Enumerator</th>
+          <th style="width:90px">Status</th><th style="width:70px">Flags</th><th>Answers</th>
+          <th style="width:110px"></th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="rows-empty" style="display:none">No responses in this period.</div>
+  </div>
+
+</div>
+
+<aside id="chat">
+  <header>
+    <select id="chat-thread"></select>
+    <button class="btn sm" id="chat-close" type="button">✕</button>
+  </header>
+  <div class="msgs" id="chat-msgs"></div>
+  <div class="compose">
+    <textarea id="chat-input" placeholder="Message the team… (Enter to send)"></textarea>
+    <button class="btn go" id="chat-send" type="button">Send</button>
+  </div>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+<script id="board-config" type="application/json">
+{
+  "code": "{{ survey.code }}",
+  "teamId": {{ team.id }},
+  "you": {{ request.user.id }},
+  "csrf": "{{ csrf_token }}",
+  "boardUrl": "{% url 'kura:board_data' survey.code team.id %}",
+  "rowsUrl": "{% url 'kura:board_rows' survey.code team.id %}",
+  "exportUrl": "{% url 'kura:board_export' survey.code team.id %}",
+  "runUrl": "{% url 'kura:validation_run' survey.code %}",
+  "signUrl": "{% url 'kura:signoff_sign' survey.code team.id %}",
+  "issueUpdateBase": "/kura/{{ survey.code }}/issues/",
+  "chatThreadsUrl": "{% url 'kura:chat_threads' survey.code %}",
+  "chatMessagesUrl": "{% url 'kura:chat_messages' survey.code %}",
+  "chatSendUrl": "{% url 'kura:chat_send' survey.code %}",
+  "chatReadUrl": "{% url 'kura:chat_read' survey.code %}"
+}
+</script>
+<script id="board-access" type="application/json">{{ access_json|safe }}</script>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+(function(){
+"use strict";
+const CFG = JSON.parse(document.getElementById("board-config").textContent);
+const ACCESS = JSON.parse(document.getElementById("board-access").textContent);
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+let day = null;          // Date, or null for "all time"
+let members = [];
+let issueFilter = "open";
+let rowFilter = "";
+let lastBoard = null;
+
+/* ── plumbing ─────────────────────────────────────────────── */
+
+function toast(msg, kind){
+  const t = $("#toast");
+  t.textContent = msg;
+  t.className = "toast on " + (kind || "");
+  clearTimeout(t._t);
+  t._t = setTimeout(() => { t.className = "toast " + (kind || ""); }, 3600);
+}
+
+async function post(url, body){
+  const r = await fetch(url, {
+    method: "POST",
+    headers: {"Content-Type": "application/json", "X-CSRFToken": CFG.csrf},
+    body: JSON.stringify(body || {})
+  });
+  let j = {};
+  try { j = await r.json(); } catch (e) { j = {ok:false, error:"Server error."}; }
+  if (!r.ok && !j.error) j.error = "Request failed (" + r.status + ").";
+  return j;
+}
+
+function qs(){
+  if (day === null) return "?range=all";
+  return "?day=" + day.toISOString().slice(0, 10);
+}
+
+function fmtDay(d){
+  return d.toLocaleDateString(undefined, {weekday:"short", day:"numeric", month:"short"});
+}
+function fmtTime(iso){
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleString(undefined,
+    {day:"numeric", month:"short", hour:"2-digit", minute:"2-digit"});
+}
+
+/* ── period controls ──────────────────────────────────────── */
+
+function shiftDay(n){
+  if (day === null) day = new Date();
+  day = new Date(day.getTime() + n * 86400000);
+  refresh();
+}
+$("#p-prev").onclick = () => shiftDay(-1);
+$("#p-next").onclick = () => shiftDay(1);
+$("#p-today").onclick = () => { day = new Date(); refresh(); };
+$("#p-all").onclick = () => { day = null; refresh(); };
+
+/* ── map ──────────────────────────────────────────────────── */
+
+const map = L.map("map", {zoomControl:true}).setView([13.44, -16.6], 8);
+L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+  {maxZoom:20, subdomains:"abcd",
+   attribution:"&copy; OpenStreetMap contributors &copy; CARTO"}).addTo(map);
+const pinLayer = L.layerGroup().addTo(map);
+let areaCircle = null;
+
+function drawMap(stats){
+  pinLayer.clearLayers();
+  const bounds = [];
+  (stats.points || []).forEach(p => {
+    if (p.lat == null || p.lng == null) return;
+    const colour = p.flags > 0 ? "#fbbf24"
+                 : (p.status === "excluded" ? "#e8482b" : "#22d3ee");
+    L.circleMarker([p.lat, p.lng],
+      {radius:7, color:colour, weight:2, fillColor:colour, fillOpacity:.55})
+     .bindPopup(
+        "<b>" + esc(p.enumerator || "unknown") + "</b><br>" +
+        esc(fmtTime(p.received_at)) +
+        (p.flags ? "<br><span style='color:#fbbf24'>" + p.flags + " open flag(s)</span>" : ""))
+     .addTo(pinLayer);
+    bounds.push([p.lat, p.lng]);
+  });
+
+  const area = stats.area || {};
+  if (areaCircle) { map.removeLayer(areaCircle); areaCircle = null; }
+  if (area.lat != null && area.lng != null && area.radius_km) {
+    areaCircle = L.circle([area.lat, area.lng], {
+      radius: area.radius_km * 1000, color:"#8b5cf6", weight:1,
+      fillColor:"#8b5cf6", fillOpacity:.06, dashArray:"6 6"
+    }).addTo(map);
+    bounds.push([area.lat, area.lng]);
+  }
+  if (bounds.length) map.fitBounds(bounds, {padding:[36,36], maxZoom:14});
+  $("#map-count").textContent = (stats.points || []).length + " with GPS";
+}
+
+/* ── charts ───────────────────────────────────────────────── */
+
+Chart.defaults.color = "#b9c2e7";
+Chart.defaults.font.family = "Archivo, sans-serif";
+Chart.defaults.font.size = 11;
+
+let cMembers = null, cHourly = null;
+
+function drawCharts(stats){
+  const rows = stats.per_member || [];
+  const labels = rows.map(r => r.name);
+  const data = rows.map(r => r.submissions);
+  const issues = rows.map(r => r.open_issues);
+
+  if (cMembers) cMembers.destroy();
+  cMembers = new Chart($("#c-members"), {
+    type: "bar",
+    data: {labels, datasets: [
+      {label:"Responses", data, backgroundColor:"rgba(34,211,238,.65)",
+       borderColor:"#22d3ee", borderWidth:1, borderRadius:5},
+      {label:"Open issues", data:issues, backgroundColor:"rgba(232,72,43,.6)",
+       borderColor:"#e8482b", borderWidth:1, borderRadius:5}
+    ]},
+    options: {
+      responsive:true, maintainAspectRatio:false, indexAxis:"y",
+      scales:{x:{stacked:false, grid:{color:"rgba(255,255,255,.07)"},
+                 ticks:{precision:0}},
+              y:{grid:{display:false}}},
+      plugins:{legend:{labels:{boxWidth:11, font:{size:10}}}}
+    }
+  });
+
+  const series = stats.hourly || [];
+  if (cHourly) cHourly.destroy();
+  cHourly = new Chart($("#c-hourly"), {
+    type: "line",
+    data: {
+      labels: series.map(p => p.t.slice(11, 16)),
+      datasets: [{
+        label:"Responses", data: series.map(p => p.n),
+        borderColor:"#ff8a1f", backgroundColor:"rgba(255,138,31,.2)",
+        fill:true, tension:.32, pointRadius:3
+      }]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      scales:{y:{beginAtZero:true, grid:{color:"rgba(255,255,255,.07)"},
+                 ticks:{precision:0}},
+              x:{grid:{display:false}}},
+      plugins:{legend:{display:false}}
+    }
+  });
+}
+
+/* ── checks (read-only for the supervisor) ────────────────── */
+
+function drawChecks(checks, last){
+  const box = $("#checks");
+  if (!checks.length) {
+    box.innerHTML = '<span class="chk">The owner has not set any data checks on this survey yet.</span>';
+    return;
+  }
+  const bits = checks.map(c =>
+    '<span class="chk"><i>' + (c.kind === "pipeline" ? "⚙" : "✔") + "</i> " +
+    esc(c.label) + (c.required
+      ? ' <b style="color:#ffc38a;font-size:.62rem">REQUIRED</b>'
+      : ' <span style="color:var(--dim);font-size:.62rem">advisory</span>') +
+    "</span>");
+  if (last) {
+    const when = fmtTime(last.completed_at || last.started_at);
+    const who = last.run_by ? ("by " + esc(last.run_by)) : "automatically";
+    bits.push('<span class="chk" style="border-color:' +
+      (last.passed ? "rgba(34,197,94,.45);color:#86efac" : "rgba(255,138,31,.45);color:#ffc38a") +
+      '">Last run ' + esc(when) + " " + who +
+      (last.passed ? " — all clear" : " — " + last.issues_open + " to resolve") + "</span>");
+  } else {
+    bits.push('<span class="chk" style="border-color:rgba(255,138,31,.45);color:#ffc38a">Not run yet for this period</span>');
+  }
+  box.innerHTML = bits.join("");
+}
+
+/* ── sign-off ─────────────────────────────────────────────── */
+
+function drawSignoff(s){
+  const el = $("#signoff");
+  const title = $("#so-title"), body = $("#so-body");
+  const blockers = $("#so-blockers"), row = $("#so-row");
+  blockers.style.display = "none";
+  row.style.display = "none";
+
+  if (!s) {
+    el.className = "signoff";
+    title.textContent = "Sign-off";
+    body.textContent = "Pick a single day or week to sign off — “All time” cannot be signed.";
+    return;
+  }
+
+  const rec = s.record;
+  if (rec && rec.status === "signed") {
+    el.className = "signoff done";
+    title.textContent = "✓ Signed off";
+    body.innerHTML = esc(rec.signed_by || "Someone") + " signed off " +
+      esc(rec.period_start) + " on " + esc(fmtTime(rec.signed_at)) + " — " +
+      rec.submissions_count + " response(s), no outstanding issues." +
+      (rec.note ? "<br><i>" + esc(rec.note) + "</i>" : "");
+    return;
+  }
+  if (rec && rec.status === "returned") {
+    el.className = "signoff blocked";
+    title.textContent = "↩ Returned by the owner";
+    body.innerHTML = "The owner sent this period back: <i>" +
+      esc(rec.returned_reason || "no reason given") +
+      "</i><br>Fix what is outstanding, run the checks again, then sign off once more.";
+  } else if (s.can_sign) {
+    el.className = "signoff ready";
+    title.textContent = "Ready to sign off";
+    body.textContent = s.submissions_count + " response(s) in this period, " +
+      "all data checks clear" +
+      (s.advisory_issues ? " (" + s.advisory_issues + " advisory note(s) outstanding)" : "") + ".";
+  } else {
+    el.className = "signoff blocked";
+    title.textContent = "Not ready to sign off";
+    body.textContent = s.submissions_count + " response(s) in this period.";
+  }
+
+  if (!s.can_sign && (s.blockers || []).length) {
+    blockers.innerHTML = s.blockers.map(b => "<li>" + esc(b) + "</li>").join("");
+    blockers.style.display = "";
+  }
+  if (ACCESS.can.signoff) {
+    row.style.display = "";
+    $("#so-sign").disabled = !s.can_sign;
+  }
+}
+
+$("#so-sign").onclick = async () => {
+  if (!lastBoard || !lastBoard.window.from) return;
+  const btn = $("#so-sign");
+  btn.disabled = true;
+  const j = await post(CFG.signUrl, {
+    period_start: lastBoard.window.from,
+    period_end: lastBoard.window.to,
+    note: $("#so-note").value
+  });
+  if (j.ok) { toast("Signed off. The owner has been notified.", "good"); $("#so-note").value = ""; }
+  else toast(j.error || "Could not sign off.", "bad");
+  refresh();
+};
+
+/* ── run the checks ───────────────────────────────────────── */
+
+$("#b-run").onclick = async () => {
+  const btn = $("#b-run");
+  btn.disabled = true;
+  btn.textContent = "⏳ Running the checks…";
+  const j = await post(CFG.runUrl, {team_id: CFG.teamId});
+  btn.disabled = false;
+  btn.textContent = "✔ Run data checks";
+  if (j.run && j.run.status === "failed") toast("A check failed: " + (j.run.error || ""), "bad");
+  else if (j.ok && j.run && j.run.passed) toast("All checks passed — nothing outstanding.", "good");
+  else if (j.run) toast(j.run.issues_open + " issue(s) to resolve.", "bad");
+  else toast(j.error || "Could not run the checks.", "bad");
+  refresh();
+};
+
+/* ── issues ───────────────────────────────────────────────── */
+
+function memberOptions(selectedId){
+  let out = '<option value="">— nobody —</option>';
+  members.forEach(m => {
+    out += '<option value="' + m.user_id + '"' +
+      (m.user_id === selectedId ? " selected" : "") + ">" + esc(m.name) + "</option>";
+  });
+  return out;
+}
+
+function drawIssues(issues){
+  const shown = issueFilter === "open"
+    ? issues.filter(i => ["open","assigned","in_progress"].indexOf(i.status) >= 0)
+    : issues;
+  const tb = $("#issue-rows");
+  $("#issue-empty").style.display = shown.length ? "none" : "";
+  tb.innerHTML = shown.map(i => {
+    const canAct = ACCESS.can.raise_issues;
+    return '<tr data-id="' + i.id + '">' +
+      '<td><span class="pill ' + i.status + '">' + i.status.replace("_", " ") + "</span></td>" +
+      "<td><b>" + esc(i.detail || "Flagged") + "</b><br>" +
+        '<span style="color:var(--dim);font-size:.7rem">' + esc(i.rule) + " · " +
+        esc(fmtTime(i.received_at)) + "</span></td>" +
+      "<td>" + esc(i.field || "—") + "</td>" +
+      "<td>" + (canAct
+        ? '<select data-act="assign">' + memberOptions(i.assigned_to && i.assigned_to.id) + "</select>"
+        : esc(i.assigned_to ? i.assigned_to.name : "—")) + "</td>" +
+      "<td>" + (canAct
+        ? '<button class="btn sm" data-act="ask" type="button" title="Send them a chat message about this row">💬 Ask to fix</button> ' +
+          '<button class="btn sm go" data-act="resolve" type="button">✓ Resolved</button> ' +
+          '<button class="btn sm" data-act="dismiss" type="button" title="Not a real problem">Dismiss</button>'
+        : "") + "</td></tr>";
+  }).join("");
+}
+
+$("#issue-tabs").onclick = e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  issueFilter = b.dataset.f;
+  [...$("#issue-tabs").children].forEach(x => x.classList.toggle("on", x === b));
+  if (lastBoard) drawIssues(lastBoard.issues);
+};
+
+$("#issue-rows").addEventListener("change", async e => {
+  const sel = e.target.closest("select[data-act=assign]");
+  if (!sel) return;
+  const id = sel.closest("tr").dataset.id;
+  const j = await post(CFG.issueUpdateBase + id + "/update/", {assign_to: sel.value || ""});
+  toast(j.ok ? "Reassigned." : (j.error || "Could not reassign."), j.ok ? "good" : "bad");
+  refresh();
+});
+
+$("#issue-rows").addEventListener("click", async e => {
+  const btn = e.target.closest("button[data-act]");
+  if (!btn) return;
+  const id = btn.closest("tr").dataset.id;
+  const act = btn.dataset.act;
+
+  if (act === "ask") {
+    const note = prompt("What should they do about this row?");
+    if (note === null) return;
+    const j = await post(CFG.issueUpdateBase + id + "/update/",
+      {status: "assigned", message: note || undefined});
+    toast(j.ok ? "Sent to the team chat." : (j.error || "Could not send."), j.ok ? "good" : "bad");
+  } else if (act === "resolve") {
+    const j = await post(CFG.issueUpdateBase + id + "/update/", {status: "resolved"});
+    toast(j.ok ? "Marked resolved. Run the checks again to confirm." : (j.error || "Failed."),
+          j.ok ? "good" : "bad");
+  } else if (act === "dismiss") {
+    const why = prompt("Why is this not a real problem?");
+    if (why === null) return;
+    const j = await post(CFG.issueUpdateBase + id + "/update/",
+      {status: "dismissed", resolution_note: why});
+    toast(j.ok ? "Dismissed." : (j.error || "Failed."), j.ok ? "good" : "bad");
+  }
+  refresh();
+});
+
+/* ── responses table ──────────────────────────────────────── */
+
+$("#row-tabs").onclick = e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  rowFilter = b.dataset.f;
+  [...$("#row-tabs").children].forEach(x => x.classList.toggle("on", x === b));
+  loadRows();
+};
+$("#f-member").onchange = loadRows;
+
+async function loadRows(){
+  let url = CFG.rowsUrl + qs();
+  if (rowFilter === "flagged") url += "&flagged=1";
+  const m = $("#f-member").value;
+  if (m) url += "&member=" + encodeURIComponent(m);
+
+  const j = await fetch(url).then(r => r.json()).catch(() => null);
+  if (!j || !j.ok) return;
+  $("#rows-empty").style.display = j.rows.length ? "none" : "";
+  $("#rows").innerHTML = j.rows.map(r => {
+    const answers = Object.keys(r.answers || {}).slice(0, 6)
+      .map(k => "<b>" + esc(k) + "</b> " + esc(JSON.stringify(r.answers[k]))).join(" · ");
+    const flags = (r.flags || []).length;
+    return "<tr>" +
+      "<td>" + esc(fmtTime(r.received_at)) + "</td>" +
+      "<td>" + esc(r.enumerator || "—") + "</td>" +
+      '<td><span class="pill ' + r.status + '">' + r.status + "</span></td>" +
+      "<td>" + (flags
+        ? '<span style="color:var(--amber);font-weight:800">' + flags + "</span>"
+        : '<span style="color:var(--dim)">—</span>') + "</td>" +
+      '<td style="color:var(--muted);font-size:.74rem">' + answers + "</td>" +
+      "<td>" + (ACCESS.can.raise_issues
+        ? '<button class="btn sm" data-raise="' + r.id + '" type="button">⚑ Raise issue</button>'
+        : "") + "</td></tr>";
+  }).join("");
+}
+
+$("#rows").addEventListener("click", async e => {
+  const btn = e.target.closest("button[data-raise]");
+  if (!btn) return;
+  const detail = prompt("What is wrong with this response?");
+  if (!detail) return;
+  const j = await post("/kura/" + CFG.code + "/issues/create/",
+    {submission_id: Number(btn.dataset.raise), detail: detail, notify: true});
+  toast(j.ok ? "Issue raised and sent to the team." : (j.error || "Failed."),
+        j.ok ? "good" : "bad");
+  refresh();
+});
+
+/* ── chat ─────────────────────────────────────────────────── */
+
+let threads = [], activeThread = null, lastMsgId = 0, sock = null, pollTimer = null;
+
+$("#b-chat").onclick = () => {
+  $("#chat").classList.toggle("on");
+  if ($("#chat").classList.contains("on")) openChat();
+};
+$("#chat-close").onclick = () => {
+  $("#chat").classList.remove("on");
+  if (sock) { try { sock.close(); } catch (e) {} sock = null; }
+  clearInterval(pollTimer);
+};
+
+async function loadThreads(){
+  const j = await fetch(CFG.chatThreadsUrl).then(r => r.json()).catch(() => null);
+  if (!j || !j.ok || !j.enabled) { $("#b-chat").style.display = "none"; return; }
+  threads = j.threads || [];
+  const total = threads.reduce((n, t) => n + (t.unread || 0), 0);
+  const badge = $("#chat-badge");
+  badge.style.display = total ? "" : "none";
+  badge.textContent = total;
+  $("#chat-thread").innerHTML = threads.map(t =>
+    '<option value="' + t.id + '">' + esc(t.title) +
+    (t.unread ? " (" + t.unread + ")" : "") + "</option>").join("");
+  if (activeThread) $("#chat-thread").value = activeThread;
+}
+
+function openChat(){
+  if (!threads.length) return;
+  activeThread = Number($("#chat-thread").value || threads[0].id);
+  $("#chat-thread").value = activeThread;
+  lastMsgId = 0;
+  $("#chat-msgs").innerHTML = "";
+  loadMessages().then(connectSocket);
+}
+$("#chat-thread").onchange = () => {
+  if (sock) { try { sock.close(); } catch (e) {} sock = null; }
+  openChat();
+};
+
+async function loadMessages(){
+  const j = await fetch(CFG.chatMessagesUrl + "?thread=" + activeThread +
+                        "&after=" + lastMsgId).then(r => r.json()).catch(() => null);
+  if (!j || !j.ok) return;
+  (j.messages || []).forEach(addMessage);
+}
+
+function addMessage(m){
+  if (m.id <= lastMsgId) return;
+  lastMsgId = m.id;
+  const mine = m.author_id === CFG.you;
+  const cls = m.kind === "system" ? "system" : (m.kind === "issue" ? "issue" : (mine ? "mine" : ""));
+  const div = document.createElement("div");
+  div.className = "msg " + cls;
+  div.innerHTML = (m.kind === "system" ? "" :
+      '<span class="who">' + esc(m.author || "someone") + " · " +
+      new Date(m.created_at).toLocaleTimeString(undefined,
+        {hour:"2-digit", minute:"2-digit"}) + "</span>") +
+    esc(m.body).replace(/\n/g, "<br>");
+  $("#chat-msgs").appendChild(div);
+  $("#chat-msgs").scrollTop = $("#chat-msgs").scrollHeight;
+}
+
+function connectSocket(){
+  clearInterval(pollTimer);
+  const url = (location.protocol === "https:" ? "wss://" : "ws://") +
+    location.host + "/ws/kura/" + CFG.code + "/chat/" + activeThread + "/";
+  try { sock = new WebSocket(url); } catch (e) { startPolling(); return; }
+
+  sock.onmessage = ev => {
+    let d;
+    try { d = JSON.parse(ev.data); } catch (e) { return; }
+    if (d.type === "message") addMessage(d.message);
+  };
+  sock.onclose = () => { sock = null; startPolling(); };
+  sock.onerror = () => { try { sock.close(); } catch (e) {} };
+}
+
+function startPolling(){
+  clearInterval(pollTimer);
+  pollTimer = setInterval(() => {
+    if ($("#chat").classList.contains("on")) loadMessages();
+  }, 6000);
+}
+
+async function sendMessage(){
+  const box = $("#chat-input");
+  const body = box.value.trim();
+  if (!body || !activeThread) return;
+  box.value = "";
+  if (sock && sock.readyState === 1) {
+    sock.send(JSON.stringify({type:"message", body: body}));
+  } else {
+    const j = await post(CFG.chatSendUrl, {thread: activeThread, body: body});
+    if (j.ok) addMessage(j.message); else toast(j.error || "Could not send.", "bad");
+  }
+}
+$("#chat-send").onclick = sendMessage;
+$("#chat-input").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+
+/* ── refresh ──────────────────────────────────────────────── */
+
+async function refresh(){
+  const j = await fetch(CFG.boardUrl + qs()).then(r => r.json()).catch(() => null);
+  if (!j || !j.ok) { toast("Could not load the board.", "bad"); return; }
+  lastBoard = j;
+
+  $("#p-label").textContent = day === null ? "All time" : fmtDay(day);
+  $("#b-export").href = CFG.exportUrl + qs();
+  $("#b-export").style.display = j.access.can.export ? "" : "none";
+  $("#b-run").style.display = j.access.can.run_validation ? "" : "none";
+
+  const t = j.stats.totals;
+  $("#s-total").textContent = t.submissions;
+  $("#s-clean").textContent = t.clean;
+  $("#s-flag").textContent = t.flagged;
+  $("#s-iss").textContent = (j.issues || []).filter(
+    i => ["open","assigned","in_progress"].indexOf(i.status) >= 0).length;
+  $("#s-mem").textContent = t.active_members + " / " + t.members;
+  $("#s-tgt").textContent = t.target ? (t.submissions + " / " + t.target) : "—";
+  $("#s-tgt-bar").style.width =
+    t.target ? Math.min(100, Math.round(t.submissions / t.target * 100)) + "%" : "0";
+
+  members = j.stats.per_member || [];
+  const sel = $("#f-member"), keep = sel.value;
+  sel.innerHTML = '<option value="">Everyone</option>' +
+    members.map(m => '<option value="' + m.user_id + '">' + esc(m.name) + "</option>").join("");
+  sel.value = keep;
+
+  drawMap(j.stats);
+  drawCharts(j.stats);
+  drawChecks(j.checks || [], j.last_validation);
+  drawIssues(j.issues || []);
+  drawSignoff(j.signoff);
+  loadRows();
+  loadThreads();
+}
+
+refresh();
+setInterval(refresh, 60000);
+})();
+</script>
+</body>
+</html>

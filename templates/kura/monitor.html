@@ -187,6 +187,13 @@
       </div>
     </div>
   </div>
+
+  <div class="panel" id="teams-panel" style="display:none;margin-top:1rem">
+    <h3>Field teams <span class="sp"></span>
+      <span id="teams-summary" style="font-size:.62rem;color:var(--dim)"></span>
+      <a class="btn" href="{% url 'kura:teams' survey.code %}">Manage teams</a></h3>
+    <div id="teams-list"></div>
+  </div>
 </div>
 
 <div class="qr-back" id="qr-back" hidden>
@@ -485,6 +492,68 @@ function connectWS(){
     }catch(e){}
   }, 60000);
 })();
+})();
+</script>
+<script>
+/* ── field teams summary ──────────────────────────────────────────────
+   Silent unless this survey is actually collected by teams, so nothing
+   changes on a solo survey. Reuses the .dev/.ic/.nm/.cnt classes the
+   devices list above already defines — no new CSS needed. */
+(function(){
+"use strict";
+const panel   = document.getElementById("teams-panel");
+const box     = document.getElementById("teams-list");
+const summary = document.getElementById("teams-summary");
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+async function loadTeams(){
+  let j = null;
+  try {
+    const r = await fetch("{% url 'kura:teams_bootstrap' survey.code %}");
+    if (!r.ok) return;
+    j = await r.json();
+  } catch (e) { return; }
+
+  if (!j || !j.ok || !j.config || !j.config.team_collection) return;
+  const teams = j.teams || [];
+  if (!teams.length) return;
+
+  panel.style.display = "";
+
+  const issues = teams.reduce((n, t) => n + (t.open_issues || 0), 0);
+  const unsupervised = teams.filter(t => !t.supervisor).length;
+  summary.textContent =
+    teams.length + " team" + (teams.length === 1 ? "" : "s") +
+    (issues ? " · " + issues + " to fix" : "") +
+    (unsupervised ? " · " + unsupervised + " without a supervisor" : "");
+
+  box.innerHTML = teams.map(t => {
+    const icon = t.open_issues ? "\u26a0" : (t.supervisor ? "\ud83d\udc65" : "\u2753");
+    const who  = t.supervisor
+      ? "Supervisor: " + esc(t.supervisor.name)
+      : "<span style='color:var(--orange)'>No supervisor yet</span>";
+    const counts =
+      '<span class="cnt">' + t.submissions + " in" +
+      (t.flagged
+        ? ' <span style="color:#ffc38a">\u00b7 ' + t.flagged + " flagged</span>" : "") +
+      (t.open_issues
+        ? ' <b style="color:var(--red)">\u00b7 ' + t.open_issues + " to fix</b>" : "") +
+      "</span>";
+    return '<div class="dev">' +
+      '<span class="ic">' + icon + "</span>" +
+      '<span class="nm">' + esc(t.name) +
+        "<small>" + who + " \u00b7 " + t.member_count + " member" +
+        (t.member_count === 1 ? "" : "s") + "</small></span>" +
+      counts +
+      '<a class="btn" style="margin-left:.6rem" href="/kura/{{ survey.code }}/team/' +
+        t.id + '/board/">Board \u2192</a>' +
+      "</div>";
+  }).join("");
+}
+
+loadTeams();
+setInterval(loadTeams, 60000);
 })();
 </script>
 </body>

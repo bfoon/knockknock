@@ -775,3 +775,6 @@ class AnalysisDashboard(models.Model):
 
     def __str__(self):
         return f"{self.run} · {self.name}"
+
+
+from .models_team import *  # noqa: E402,F401,F403

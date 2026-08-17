@@ -18,6 +18,16 @@ Resulting URLs:
     /kura/<code>/qr.png             → share QR PNG (?variant=web|app, ?download=1)
     /kura/<code>/present-export/    → build a Hanns results deck (POST)
     /kura/<code>/submit/            → web runner submit (POST, public)
+
+    Team collection (kura/team_views.py):
+    /kura/<code>/teams/             → owner's team management screen
+    /kura/<code>/join/<token>/      → invite link (supervisor / member / collaborator)
+    /kura/<code>/team/<id>/board/   → the supervisor's board
+    /kura/<code>/my/                → an enumerator's own submissions & fixes
+    /kura/<code>/issues/…           → raise, assign, resolve data problems
+    /kura/<code>/validation/…       → the owner's locked check suite
+    /kura/<code>/chat/…             → chat REST fallback (WebSocket in routing.py)
+
     /kura/<code>/                   → collect   (public runner — the QR URL)
 
 ORDERING MATTERS — same rule as hanns/urls.py: every literal route and
@@ -26,7 +36,7 @@ every longer-suffixed route must precede the bare <str:code>/ catch-all.
 
 from django.urls import path
 
-from . import api, views, studio_views
+from . import api, team_views, views, studio_views
 
 app_name = "kura"
 
@@ -82,6 +92,52 @@ urlpatterns = [
     path("<str:code>/data/purge/", views.data_purge, name="data_purge"),
     path("<str:code>/data/export.csv", views.export_csv, name="export_csv"),
     path("<str:code>/present-export/", views.export_hanns, name="export_hanns"),
+
+    # ── Team collection: management (owner) ──────────────────────────
+    path("<str:code>/teams/", team_views.teams_page, name="teams"),
+    path("<str:code>/teams/data/", team_views.teams_bootstrap, name="teams_bootstrap"),
+    path("<str:code>/teams/config/", team_views.config_save, name="team_config"),
+    path("<str:code>/teams/create/", team_views.team_create, name="team_create"),
+    path("<str:code>/team/<int:team_id>/update/", team_views.team_update, name="team_update"),
+    path("<str:code>/team/<int:team_id>/delete/", team_views.team_delete, name="team_delete"),
+    path("<str:code>/team/<int:team_id>/members/add/", team_views.member_add, name="member_add"),
+    path("<str:code>/team/<int:team_id>/members/<int:member_id>/remove/", team_views.member_remove, name="member_remove"),
+
+    path("<str:code>/collaborators/add/", team_views.collaborator_add, name="collaborator_add"),
+    path("<str:code>/collaborators/<int:collab_id>/remove/", team_views.collaborator_remove, name="collaborator_remove"),
+    path("<str:code>/invites/create/", team_views.invite_create, name="invite_create"),
+    path("<str:code>/invites/<int:invite_id>/revoke/", team_views.invite_revoke, name="invite_revoke"),
+    path("<str:code>/join/<str:token>/", team_views.join, name="join"),
+
+    # ── Team collection: the supervisor's board ──────────────────────
+    path("<str:code>/team/<int:team_id>/board/", team_views.team_board, name="team_board"),
+    path("<str:code>/team/<int:team_id>/board/data/", team_views.board_data, name="board_data"),
+    path("<str:code>/team/<int:team_id>/board/rows/", team_views.board_rows, name="board_rows"),
+    path("<str:code>/team/<int:team_id>/board/export.csv", team_views.board_export, name="board_export"),
+
+    # ── Team collection: validation, issues, sign-off ────────────────
+    path("<str:code>/validation/checks/", team_views.validation_checks_save, name="validation_checks"),
+    path("<str:code>/validation/run/", team_views.validation_run, name="validation_run"),
+    path("<str:code>/validation/history/", team_views.validation_history, name="validation_history"),
+
+    path("<str:code>/issues/", team_views.issues_list, name="issues"),
+    path("<str:code>/issues/create/", team_views.issue_create, name="issue_create"),
+    path("<str:code>/issues/<int:issue_id>/update/", team_views.issue_update, name="issue_update"),
+
+    path("<str:code>/team/<int:team_id>/signoff/", team_views.signoff_state, name="signoff_state"),
+    path("<str:code>/team/<int:team_id>/signoff/sign/", team_views.signoff_sign, name="signoff_sign"),
+    path("<str:code>/signoff/<int:signoff_id>/return/", team_views.signoff_return, name="signoff_return"),
+
+    # ── Team collection: enumerator self-service ─────────────────────
+    path("<str:code>/my/", team_views.my_work, name="my_work"),
+    path("<str:code>/my/tasks/", team_views.my_tasks, name="my_tasks"),
+
+    # ── Team collection: chat REST fallback ──────────────────────────
+    path("<str:code>/chat/threads/", team_views.chat_threads, name="chat_threads"),
+    path("<str:code>/chat/messages/", team_views.chat_messages, name="chat_messages"),
+    path("<str:code>/chat/send/", team_views.chat_send, name="chat_send"),
+    path("<str:code>/chat/read/", team_views.chat_read, name="chat_read"),
+    path("<str:code>/chat/direct/", team_views.chat_direct, name="chat_direct"),
 
     path("<str:code>/submit/", views.collect_submit, name="collect_submit"),
     path("<str:code>/preview/", views.preview, name="preview"),

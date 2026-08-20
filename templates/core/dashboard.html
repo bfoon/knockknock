@@ -190,6 +190,14 @@
       </span>
     </button>
   </form>
+  <a href="{% url 'chalk:boards' %}" class="kk-action-tile chalk">
+    <span class="kk-tile-icon">🧑‍🏫</span>
+    <h2>New Chalk Board</h2>
+    <p>A wide classroom board on the projector &mdash; write, draw, type and drop photos on it from your phone.</p>
+    <span class="kk-btn kk-btn-primary btn-sm">
+      Open Chalk <i class="bi bi-arrow-right"></i>
+    </span>
+  </a>
   <a href="{% url 'cards:create' %}" class="kk-action-tile cards">
     <span class="kk-tile-icon">💌</span>
     <h2>New Group Card</h2>
@@ -502,6 +510,56 @@
     {% endif %}
   </div>
 
+  <!-- ── Chalk boards ────────────────────────────────────────── -->
+  <div class="col-lg-6 col-xl-3">
+    <h2 class="kk-section-title"><i class="bi bi-pencil-square"></i> Recent Chalk boards</h2>
+    {% for c in chalk_boards %}
+      <div class="kk-list-item kk-list-item-row">
+        {# Straight to the projector view — that is the "running" view. #}
+        <a href="{% url 'chalk:stage' c.id %}" class="kk-list-item-main">
+          <span class="kk-chalk-mini" data-surface="{{ c.surface }}" aria-hidden="true"></span>
+          <div class="flex-grow-1">
+            <div class="kk-list-item-title">{{ c.title }}</div>
+            <div class="kk-list-item-meta">
+              {{ c.get_surface_display }} ·
+              {{ c.page_count }} page{{ c.page_count|pluralize }}
+            </div>
+          </div>
+          <i class="bi bi-arrow-right text-secondary"></i>
+        </a>
+        {# Same inline POST delete pattern as the other columns. #}
+        <form method="post"
+              action="{% url 'chalk:settings' c.id %}"
+              class="kk-row-delete-form"
+              onsubmit="return confirm('Delete “{{ c.title|escapejs }}”? Everything drawn on it goes too.');">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="delete">
+          <button type="submit"
+                  class="kk-row-delete"
+                  title="Delete board"
+                  aria-label="Delete {{ c.title }}">
+            <i class="bi bi-trash3-fill"></i>
+          </button>
+        </form>
+      </div>
+    {% empty %}
+      <div class="kk-empty"><div class="em">🧑‍🏫</div><p>No Chalk boards yet. Create your first one!</p></div>
+    {% endfor %}
+
+    {% if chalk_boards_total > recent_limit %}
+      <a href="{% url 'chalk:boards' %}" class="kk-see-all">
+        See all Chalk boards
+        <span class="kk-see-all-count">{{ chalk_boards_total }}</span>
+        <i class="bi bi-arrow-right"></i>
+      </a>
+    {% elif chalk_boards_total > 0 %}
+      <a href="{% url 'chalk:boards' %}" class="kk-see-all kk-see-all-muted">
+        See all
+        <i class="bi bi-arrow-right"></i>
+      </a>
+    {% endif %}
+  </div>
+
   <!-- ── Decks (Hanns) ───────────────────────────────────────── -->
   <div class="col-lg-6 col-xl-3">
     <h2 class="kk-section-title"><i class="bi bi-easel2"></i> Recent decks</h2>
@@ -694,6 +752,41 @@
   content: ""; position: absolute; inset: 0;
   background: radial-gradient(400px 200px at 100% 0%, rgba(236, 72, 153, 0.25), transparent);
   pointer-events: none;
+}
+
+/* Chalk creation tile — slate and brass, matching the board itself. */
+.kk-action-tile.chalk {
+  background: linear-gradient(135deg, #10151b, #1b2530);
+  border-color: rgba(217, 164, 65, 0.3);
+}
+.kk-action-tile.chalk::before {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(400px 200px at 100% 0%, rgba(217, 164, 65, 0.22), transparent);
+  pointer-events: none;
+}
+
+/* A chip of the real board surface, so the row reads at a glance the way
+   the coloured status pills do for the other apps. */
+.kk-chalk-mini {
+  width: 30px; height: 30px;
+  flex: 0 0 30px;
+  margin-right: .1rem;
+  border-radius: 7px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: #131a1f;
+}
+.kk-chalk-mini[data-surface="green"] { background: #1d3a2f; }
+.kk-chalk-mini[data-surface="white"] { background: #f7f9fb; }
+.kk-chalk-mini[data-surface="grid"] {
+  background:
+    linear-gradient(rgba(16,21,27,.18) 1px, transparent 1px) 0 0 / 25% 25%,
+    linear-gradient(90deg, rgba(16,21,27,.18) 1px, transparent 1px) 0 0 / 25% 25%,
+    #f7f9fb;
+}
+.kk-chalk-mini[data-surface="ruled"] {
+  background:
+    linear-gradient(rgba(16,21,27,.18) 1px, transparent 1px) 0 0 / 100% 28%,
+    #fbfaf6;
 }
 
 /* Quest RPG creation tile — immersive adventure styling for the team

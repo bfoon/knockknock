@@ -5,6 +5,7 @@
   var CFG = JSON.parse(document.getElementById("chalk-config").textContent);
   var boardEl = document.getElementById("board");
   var inkEl = document.getElementById("ink");
+  var elsEl = document.getElementById("els");
   var laser = document.getElementById("laser");
   var lobby = document.getElementById("lobby");
   var dot = document.getElementById("net-dot");
@@ -16,6 +17,8 @@
 
   var surface = new ChalkInk.Surface(inkEl);
   surface.setStrokes(CFG.strokes || []);
+  var layer = new ChalkEls.Layer(elsEl);
+  layer.setEls(CFG.els || []);
   setSurface(CFG.surface);
   setPageTag(CFG.pageIndex, CFG.pageCount);
 
@@ -42,6 +45,7 @@
       case "ready":
       case "snapshot":
         surface.setStrokes(m.strokes || []);
+        layer.setEls(m.els || []);
         setSurface(m.surface);
         setPageTag(m.pageIndex, m.pageCount);
         break;
@@ -52,6 +56,14 @@
       /* undo / redo / clear arrive as an op instead of a full page. A busy
        * board used to rebroadcast every stroke on every undo tap. */
       case "ink":          surface.applyOps(m.add, m.del); break;
+      /* Objects arrive as ops too, for the same reason: a page carrying
+       * twenty photos should not be resent because somebody tapped Undo. */
+      case "els":          layer.applyOps(m.add, m.del, m.edit); break;
+      case "el_add":       layer.upsert(m.el); break;
+      case "el_live":
+      case "el_update":    layer.patch(m.id, m.patch); break;
+      case "el_delete":    layer.remove(m.ids); break;
+      case "el_raise":     layer.raise(m.id); break;
       case "surface":      setSurface(m.surface); break;
       case "pointer":      queueLaser(m); break;
       case "peer":         setPhone(m); break;
@@ -127,6 +139,7 @@
 
   document.getElementById("start-board").addEventListener("click", function () {
     hideLobby();
+    wakeHud();
     var el = document.documentElement;
     if (el.requestFullscreen) el.requestFullscreen().catch(function () {});
     keepAwake();
@@ -136,11 +149,24 @@
     showLobby();
   });
 
+  var boardsLink = document.getElementById("hud-boards");
+
   document.addEventListener("keydown", function (e) {
+    /* Never steal a keystroke from a field — the lobby has one. */
+    var tag = (e.target && e.target.tagName) || "";
+    if (tag === "INPUT" || tag === "TEXTAREA" || e.target.isContentEditable) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+    wakeHud();
     if (e.key === "Escape") showLobby();
     if (e.key === "f" || e.key === "F") {
       if (document.fullscreenElement) document.exitFullscreen();
       else document.documentElement.requestFullscreen().catch(function () {});
+    }
+    if ((e.key === "b" || e.key === "B") && boardsLink) {
+      /* The page is saved continuously, so leaving is safe and needs no
+       * confirmation. */
+      location.href = boardsLink.href;
     }
   });
 
@@ -193,14 +219,35 @@
     }
   });
 
-  var idle;
-  document.addEventListener("mousemove", function () {
+  /* The corner bar fades to almost nothing while projecting so it does not
+   * sit over the lesson. It used to come back only on :hover, which is no
+   * help at all on a projector nobody has a mouse pointed at — the way out
+   * of a full-screen board was effectively hidden. Any activity now wakes
+   * it, and it stays awake long enough to actually click something. */
+  var idle, hudSleep;
+  var HUD_AWAKE_MS = 4000;
+  var CURSOR_IDLE_MS = 2500;
+
+  function wakeHud() {
+    document.body.classList.add("hud-awake");
+    clearTimeout(hudSleep);
+    hudSleep = setTimeout(function () {
+      document.body.classList.remove("hud-awake");
+    }, HUD_AWAKE_MS);
+  }
+
+  function activity() {
     document.body.classList.remove("hide-cursor");
+    wakeHud();
     clearTimeout(idle);
     idle = setTimeout(function () {
       if (document.body.classList.contains("projecting")) {
         document.body.classList.add("hide-cursor");
       }
-    }, 2500);
+    }, CURSOR_IDLE_MS);
+  }
+
+  ["mousemove", "pointerdown", "touchstart", "wheel"].forEach(function (type) {
+    document.addEventListener(type, activity, { passive: true });
   });
 })();

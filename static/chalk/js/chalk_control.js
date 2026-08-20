@@ -1,4 +1,9 @@
-/* Chalk — the phone. Every mark on the board starts here. */
+/* Chalk — the phone. Every mark and every object on the board starts here.
+ *
+ * Two input modes share one pad. In a drawing tool the pad captures ink; in
+ * "Pick" it selects and drags elements. The selection overlay sits above the
+ * pad and swallows its own gestures, so the two never fight over a finger.
+ */
 (function () {
   "use strict";
 
@@ -6,6 +11,7 @@
 
   var pad = document.getElementById("pad");
   var padWrap = document.getElementById("pad-wrap");
+  var elsHost = document.getElementById("els");
   var mini = document.getElementById("mini");
   var miniWin = document.getElementById("mini-win");
   var dot = document.getElementById("net-dot");
@@ -17,9 +23,19 @@
   var expired = document.getElementById("expired");
   var expiredWhy = document.getElementById("expired-why");
   var expiredRetry = document.getElementById("expired-retry");
+  var inspector = document.getElementById("inspector");
+  var inspectorBody = document.getElementById("inspector-body");
+  var inspectorName = document.getElementById("inspector-name");
+  var sheet = document.getElementById("sheet");
+  var sheetBody = document.getElementById("sheet-body");
+  var sheetTitle = document.getElementById("sheet-title");
+  var photoInput = document.getElementById("photo-input");
+  var toast = document.getElementById("toast");
 
   var surface = new ChalkInk.Surface(pad);
   surface.setStrokes(CFG.strokes || []);
+  var layer = new ChalkEls.Layer(elsHost);
+  layer.setEls(CFG.els || []);
 
   var state = {
     tool: "pen",
@@ -29,7 +45,8 @@
     zoom: 1,
     view: { x: 0, y: 0, s: 1 },
     pageIndex: CFG.pageIndex,
-    pageCount: CFG.pageCount
+    pageCount: CFG.pageCount,
+    surface: CFG.surface
   };
 
   var MIN_STEP = 0.0012;    // normalised distance before a point is worth sending
@@ -81,6 +98,9 @@
       case "ready":
       case "snapshot":
         surface.setStrokes(m.strokes || []);
+        layer.setEls(m.els || []);
+        /* Keep the selection only if that element survived the page change. */
+        editor.select(layer.get(editor.selected) ? editor.selected : null);
         setPage(m.pageIndex, m.pageCount);
         setSurfaceButtons(m.surface);
         setHistory(m.canUndo, m.canRedo);
@@ -99,6 +119,27 @@
         surface.applyOps(m.add, m.del);
         setHistory(m.canUndo, m.canRedo);
         break;
+      case "els":
+        layer.applyOps(m.add, m.del, m.edit);
+        setHistory(m.canUndo, m.canRedo);
+        afterElChange();
+        break;
+      case "el_add":
+        layer.upsert(m.el);
+        setHistory(m.canUndo, m.canRedo);
+        break;
+      case "el_live":
+      case "el_update":
+        layer.patch(m.id, m.patch);
+        setHistory(m.canUndo, m.canRedo);
+        if (editor.selected === m.id) afterElChange();
+        break;
+      case "el_delete":
+        layer.remove(m.ids);
+        setHistory(m.canUndo, m.canRedo);
+        if (m.ids.indexOf(editor.selected) !== -1) editor.select(null);
+        break;
+      case "el_raise": layer.raise(m.id); editor.refresh(); break;
       case "surface": setSurfaceButtons(m.surface); break;
       case "denied":  break;  // handled in onDenied
     }
@@ -116,6 +157,15 @@
      * `live`, orphaning the first stroke: it never got a stroke_end, so it
      * stuck on the live layer here AND on the projector until reload. */
     if (activePointer !== null) return;
+
+    if (state.tool === "select") {
+      /* Tapping bare board deselects. No capture: the overlay handles the
+       * drag from here, and capturing would steal it back. */
+      var sp = surface.toBoard(e.clientX, e.clientY);
+      editor.select(layer.hit(sp.x, sp.y));
+      return;
+    }
+
     activePointer = e.pointerId;
     pad.setPointerCapture(e.pointerId);
     var p = surface.toBoard(e.clientX, e.clientY);
@@ -157,6 +207,7 @@
   }
 
   pad.addEventListener("pointermove", function (e) {
+    if (state.tool === "select") return;
     if (activePointer !== null && e.pointerId !== activePointer) return;
     var events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
 
@@ -193,6 +244,7 @@
    * early and the rest of the movement was dropped in silence. */
   ["pointerup", "pointercancel"].forEach(function (type) {
     pad.addEventListener(type, function (e) {
+      if (state.tool === "select") return;
       if (activePointer !== null && e.pointerId !== activePointer) return;
       activePointer = null;
 
@@ -285,10 +337,16 @@
     };
   }
 
+  function applyView() {
+    surface.setView(state.view);
+    layer.setView(state.view);
+    editor.refresh();
+    drawMini();
+  }
+
   function panTo(x, y) {
     state.view = clampView(x, y, state.view.s);
-    surface.setView(state.view);
-    drawMini();
+    applyView();
   }
 
   function setZoom(s) {
@@ -296,14 +354,13 @@
     var cy = state.view.y + 0.5 / state.view.s;
     state.zoom = s;
     state.view = clampView(cx - 0.5 / s, cy - 0.5 / s, s);
-    surface.setView(state.view);
     document.querySelectorAll("[data-zoom]").forEach(function (b) {
       var on = Number(b.dataset.zoom) === s;
       b.dataset.on = String(on);
       b.setAttribute("aria-pressed", String(on));
     });
     mini.hidden = s === 1;
-    drawMini();
+    applyView();
   }
 
   function drawMini() {
@@ -347,6 +404,7 @@
       b.setAttribute("aria-pressed", String(on));
     });
     padWrap.dataset.tool = tool;
+    if (tool !== "select") editor.select(null);
   }
 
   document.querySelectorAll("[data-tool]").forEach(function (b) {
@@ -362,7 +420,9 @@
       b.setAttribute("aria-pressed", String(on));
     });
     document.documentElement.style.setProperty("--pick", hex);
-    if (state.tool === "eraser" || state.tool === "laser") setTool("pen");
+    if (state.tool === "eraser" || state.tool === "laser" || state.tool === "select") {
+      setTool("pen");
+    }
   }
 
   document.querySelectorAll("[data-color]").forEach(function (b) {
@@ -380,6 +440,507 @@
     widthDots.style.setProperty("--w", (4 + t * t * 46) + "px");
   });
   widthInput.dispatchEvent(new Event("input"));
+
+
+  /* ------------------------------------------------------------------ */
+  /* objects: select, insert, inspect                                    */
+  /* ------------------------------------------------------------------ */
+
+  var editor = ChalkEdit(padWrap, layer, {
+    /* Continuous during a drag: broadcast so the class sees it move, but
+     * nothing is written until the finger lifts. */
+    live: function (id, patch) { net.send({ t: "el_live", id: id, patch: patch }, true); },
+    commit: function (id, patch) { net.send({ t: "el_update", id: id, patch: patch }); },
+    select: function () { renderInspector(); }
+  });
+
+  function afterElChange() {
+    editor.refresh();
+    renderInspector();
+  }
+
+  function pushEl(el) {
+    layer.upsert(el);
+    net.send({ t: "el_add", el: el });
+    setTool("select");
+    editor.select(el.id);
+  }
+
+  function patchEl(patch) {
+    var el = editor.selected && layer.get(editor.selected);
+    if (!el) return;
+    layer.patch(el.id, patch);
+    editor.refresh();
+    net.send({ t: "el_update", id: el.id, patch: patch });
+  }
+
+  function inkColor() {
+    return state.surface === "black" || state.surface === "green"
+      ? "#ffffff" : "#111827";
+  }
+
+  /* Drop new objects into the middle of whatever part of the board the pad is
+   * looking at, sized against the zoom so they arrive usable rather than
+   * microscopic at 4x. */
+  function placeCentre(el, w, h) {
+    el.w = round(Math.min(1.5, w / state.view.s));
+    el.h = round(Math.min(1.5, h / state.view.s));
+    el.x = round(state.view.x + 0.5 / state.view.s - el.w / 2);
+    el.y = round(state.view.y + 0.5 / state.view.s - el.h / 2);
+    return el;
+  }
+
+  document.getElementById("add-text").addEventListener("click", function () {
+    var el = ChalkEls.blank("text", { color: inkColor() });
+    placeCentre(el, 0.36, 0.12);
+    pushEl(el);
+    openTextSheet();
+  });
+
+  document.getElementById("add-photo").addEventListener("click", function () {
+    photoInput.value = "";
+    photoInput.click();
+  });
+
+  photoInput.addEventListener("change", function () {
+    var file = photoInput.files && photoInput.files[0];
+    if (!file) return;
+    say("Sending the photo…");
+    var fd = new FormData();
+    fd.append("file", file);
+    fd.append("t", CFG.token);
+    fetch(CFG.uploadUrl, {
+      method: "POST",
+      body: fd,
+      credentials: "same-origin",
+      headers: { "X-CSRFToken": CFG.csrf }
+    })
+      .then(function (r) { return r.json().catch(function () { return {}; }); })
+      .then(function (d) {
+        if (!d.ok) throw new Error(d.error || "That photo did not go through.");
+        var el = ChalkEls.blank("image", { src: d.src });
+        /* The board is 16:9, so a square photo needs a box 16/9 taller than
+         * it is wide to come out square. */
+        placeCentre(el, 0.32, 0.32 * (d.ratio || 0.75) * (16 / 9));
+        pushEl(el);
+        say("");
+      })
+      .catch(function (err) { say(err.message || "That photo did not go through."); });
+  });
+
+  document.getElementById("add-shape").addEventListener("click", function () {
+    openSheet("Pick a shape", function (body) {
+      var groups = { "2D": [], "3D": [] };
+      ChalkShapes.list.forEach(function (sh) { groups[sh.group].push(sh); });
+      [["2D", "Flat shapes"], ["3D", "Solids"]].forEach(function (g) {
+        body.appendChild(rowLabel(g[1]));
+        var grid = document.createElement("div");
+        grid.className = "pick-grid";
+        groups[g[0]].forEach(function (sh) {
+          grid.appendChild(pickButton(shapeThumb(sh.id), sh.name, function () {
+            var el = ChalkEls.blank("shape", { shape: sh.id, stroke: inkColor() });
+            placeCentre(el, 0.22, 0.26);
+            /* A line or an arrow with a fill is just a smear. */
+            if (["line", "arrow", "darrow", "brace", "angle"].indexOf(sh.id) !== -1) {
+              el.fillOn = false;
+            }
+            closeSheet();
+            pushEl(el);
+          }));
+        });
+        body.appendChild(grid);
+      });
+    });
+  });
+
+  document.getElementById("add-free").addEventListener("click", function () {
+    openSheet("Start a free shape", function (body) {
+      var note = document.createElement("p");
+      note.className = "sheet-note";
+      note.textContent = "Pick something to start from, then drag any corner to " +
+        "reshape it. Tap a hollow dot to add a corner.";
+      body.appendChild(note);
+      var grid = document.createElement("div");
+      grid.className = "pick-grid";
+      ChalkShapes.presets.forEach(function (pr) {
+        grid.appendChild(pickButton(freeThumb(pr.id), pr.name, function () {
+          var el = ChalkEls.blank("freeform", { preset: pr.id, stroke: inkColor() });
+          placeCentre(el, 0.24, 0.28);
+          closeSheet();
+          pushEl(el);
+          editor.setVertexMode(true);
+          renderInspector();
+        }));
+      });
+      body.appendChild(grid);
+    });
+  });
+
+  function rowLabel(text) {
+    var h = document.createElement("div");
+    h.className = "row-label";
+    h.textContent = text;
+    return h;
+  }
+  function pickButton(thumb, label, onPick) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "pick";
+    b.appendChild(thumb);
+    var lab = document.createElement("span");
+    lab.textContent = label;
+    b.appendChild(lab);
+    b.addEventListener("click", onPick);
+    return b;
+  }
+  function svgThumb(d, closed) {
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "-8 -8 116 116");
+    svg.setAttribute("class", "thumb");
+    svg.setAttribute("aria-hidden", "true");
+    var p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute("d", d);
+    p.setAttribute("fill", closed ? "rgba(232,238,244,.16)" : "none");
+    p.setAttribute("stroke", "currentColor");
+    p.setAttribute("stroke-width", "5");
+    p.setAttribute("stroke-linejoin", "round");
+    p.setAttribute("stroke-linecap", "round");
+    svg.appendChild(p);
+    return svg;
+  }
+  function shapeThumb(id) {
+    var built = ChalkShapes.build(id, {});
+    return svgThumb(built.parts.map(function (p) { return p.d; }).join(" "), !built.open);
+  }
+  function freeThumb(id) {
+    var closed = id !== "wave";
+    return svgThumb(
+      ChalkShapes.pathFromPoints(ChalkShapes.seedPoints(id, 6, 45), closed, "sharp"),
+      closed
+    );
+  }
+
+  /* ---- inspector --------------------------------------------------- */
+
+  var SHAPE_OPTS = ChalkShapes.list.map(function (sh) { return [sh.id, sh.name]; });
+  var PRESET_OPTS = ChalkShapes.presets.map(function (p) { return [p.id, p.name]; });
+
+  /* Which shapes actually use which knob. Showing "Corners" on a sphere is
+   * how an inspector becomes noise. */
+  var PARAM_FOR = {
+    sides: ["polygon", "star"], inset: ["star"],
+    depth: ["cube", "cylinder", "cone", "pyramid", "prism"],
+    radius: ["rrect"], thickness: ["cross", "chevron"],
+    slant: ["parallelogram", "trapezoid"], head: ["arrow", "darrow"],
+    degrees: ["angle"], hole: ["torus"]
+  };
+  var PARAM_SPEC = {
+    sides: [3, 24, 1, "Corners"], inset: [10, 90, 1, "Point depth"],
+    depth: [4, 45, 1, "Thickness"], radius: [0, 50, 1, "Rounded"],
+    thickness: [10, 60, 1, "Bar width"], slant: [0, 45, 1, "Slant"],
+    head: [8, 45, 1, "Head size"], degrees: [5, 175, 1, "Degrees"],
+    hole: [10, 70, 1, "Hole"]
+  };
+
+  function paintFields() {
+    return [
+      { k: "fillOn", type: "toggle", label: "Fill it in" },
+      { k: "fill", type: "color", label: "Fill colour" },
+      { k: "stroke", type: "color", label: "Outline colour" },
+      { k: "strokeW", type: "range", min: 0, max: 12, step: 0.5, label: "Outline width" },
+      { k: "dash", type: "range", min: 0, max: 20, step: 1, label: "Dashes" }
+    ];
+  }
+
+  var FIELDS = {
+    text: function () {
+      return [
+        { k: "text", type: "button", label: "Words", action: openTextSheet, cta: "Type" },
+        { k: "size", type: "range", min: 0.02, max: 0.3, step: 0.005, label: "Size" },
+        { k: "color", type: "color", label: "Colour" },
+        { k: "font", type: "select", label: "Font",
+          opts: [["sans", "Sans"], ["serif", "Serif"], ["mono", "Mono"], ["hand", "Handwriting"]] },
+        { k: "align", type: "select", label: "Line up",
+          opts: [["left", "Left"], ["center", "Centre"], ["right", "Right"]] },
+        { k: "bold", type: "toggle", label: "Bold" },
+        { k: "italic", type: "toggle", label: "Italic" }
+      ];
+    },
+    image: function () {
+      return [
+        { k: "fit", type: "select", label: "Fit",
+          opts: [["contain", "Show all of it"], ["cover", "Fill the box"]] },
+        { k: "radius", type: "range", min: 0, max: 50, step: 1, label: "Rounded corners" }
+      ];
+    },
+    shape: function (el) {
+      var f = [{ k: "shape", type: "select", label: "Shape", opts: SHAPE_OPTS }];
+      Object.keys(PARAM_SPEC).forEach(function (k) {
+        if ((PARAM_FOR[k] || []).indexOf(el.shape) === -1) return;
+        var sp = PARAM_SPEC[k];
+        f.push({ k: k, type: "range", min: sp[0], max: sp[1], step: sp[2], label: sp[3] });
+      });
+      return f.concat(paintFields());
+    },
+    freeform: function (el) {
+      var f = [{
+        k: "__verts", type: "toggle", label: "Edit corners",
+        get: function () { return editor.vertexMode; },
+        set: function (on) { editor.setVertexMode(on); renderInspector(); }
+      }];
+      if (editor.vertexMode) {
+        f.push({
+          k: "__delv", type: "button", label: "Remove the corner you touched",
+          cta: "Remove",
+          action: function () {
+            var patch = editor.removeVertex();
+            if (patch) net.send({ t: "el_update", id: el.id, patch: patch });
+            else say("Tap a corner first, and keep at least three.");
+          }
+        });
+      }
+      f.push({
+        k: "preset", type: "select", label: "Start from", opts: PRESET_OPTS,
+        confirm: el.edited
+          ? "Go back to the preset shape? The corners you moved will be lost."
+          : null
+      });
+      /* Corner-count sliders re-seed the points, so they disappear once the
+       * shape has been edited by hand rather than silently discarding work. */
+      if (!el.edited && ["polygon", "star", "burst"].indexOf(el.preset) !== -1) {
+        f.push({ k: "sides", type: "range", min: 3, max: 24, step: 1, label: "Corners" });
+        if (el.preset !== "polygon") {
+          f.push({ k: "inset", type: "range", min: 10, max: 90, step: 1, label: "Point depth" });
+        }
+      }
+      f.push({ k: "edge", type: "select", label: "Corner style",
+        opts: [["sharp", "Sharp"], ["round", "Rounded"], ["smooth", "Smooth curve"]] });
+      if (el.edge === "round") {
+        f.push({ k: "radius", type: "range", min: 0, max: 50, step: 1, label: "How rounded" });
+      }
+      f.push({ k: "closed", type: "toggle", label: "Joined up" });
+      return f.concat(paintFields());
+    }
+  };
+
+  var FX_FIELDS = [
+    { k: "fx.shadow", type: "toggle", label: "Shadow" },
+    { k: "fx.blur", type: "range", min: 0, max: 40, step: 1, label: "Shadow softness" },
+    { k: "fx.glow", type: "toggle", label: "Glow" },
+    { k: "fx.glowColor", type: "color", label: "Glow colour" },
+    { k: "fx.extrude", type: "range", min: 0, max: 24, step: 1, label: "3-D depth" },
+    { k: "fx.tiltX", type: "range", min: -60, max: 60, step: 1, label: "Tilt up / down" },
+    { k: "fx.tiltY", type: "range", min: -60, max: 60, step: 1, label: "Tilt left / right" },
+    { k: "fx.opacity", type: "range", min: 0.1, max: 1, step: 0.05, label: "See-through" },
+    { k: "fx.blend", type: "select", label: "Blend with the board",
+      opts: [["normal", "Off"], ["multiply", "Multiply"], ["screen", "Screen"],
+             ["overlay", "Overlay"], ["difference", "Difference"],
+             ["luminosity", "Luminosity"]] },
+    { k: "fx.flipH", type: "toggle", label: "Flip across" },
+    { k: "fx.flipV", type: "toggle", label: "Flip over" }
+  ];
+
+  function readVal(el, key) {
+    if (key.indexOf("fx.") === 0) return (el.fx || {})[key.slice(3)];
+    return el[key];
+  }
+
+  /* Changing a free shape's preset or corner count re-seeds its points: a
+   * preset is a starting shape, not a permanent identity. */
+  function buildPatch(el, key, value) {
+    if (key.indexOf("fx.") === 0) {
+      var fx = {};
+      Object.keys(el.fx || {}).forEach(function (k) { fx[k] = el.fx[k]; });
+      fx[key.slice(3)] = value;
+      return { fx: fx };
+    }
+    var patch = {};
+    patch[key] = value;
+    if (el.type === "freeform" && (key === "preset" || key === "sides" || key === "inset")) {
+      var preset = key === "preset" ? value : el.preset;
+      patch.pts = ChalkShapes.seedPoints(
+        preset,
+        key === "sides" ? value : el.sides,
+        key === "inset" ? value : el.inset
+      );
+      patch.edited = false;
+      if (key === "preset") patch.closed = preset !== "wave";
+    }
+    return patch;
+  }
+
+  function writeVal(key, value) {
+    var el = layer.get(editor.selected);
+    if (el) patchEl(buildPatch(el, key, value));
+  }
+
+  function renderInspector() {
+    var el = editor.selected && layer.get(editor.selected);
+    if (!el) {
+      inspector.hidden = true;
+      document.body.classList.remove("inspecting");
+      return;
+    }
+    inspector.hidden = false;
+    document.body.classList.add("inspecting");
+    inspectorName.textContent = {
+      text: "Text", image: "Photo", shape: "Shape", freeform: "Free shape"
+    }[el.type] || "Object";
+
+    inspectorBody.textContent = "";
+    (FIELDS[el.type] || FIELDS.shape)(el)
+      .concat([{ type: "heading", label: "Effects" }], FX_FIELDS)
+      .forEach(function (f) { inspectorBody.appendChild(buildField(el, f)); });
+  }
+
+  function buildField(el, f) {
+    if (f.type === "heading") return rowLabel(f.label);
+
+    var row = document.createElement("label");
+    row.className = "field";
+    var name = document.createElement("span");
+    name.className = "field-label";
+    name.textContent = f.label;
+    row.appendChild(name);
+
+    var input;
+    if (f.type === "toggle") {
+      input = document.createElement("button");
+      input.type = "button";
+      input.className = "icon-btn";
+      var on = f.get ? f.get() : !!readVal(el, f.k);
+      input.dataset.on = String(on);
+      input.setAttribute("aria-pressed", String(on));
+      input.textContent = on ? "On" : "Off";
+      input.addEventListener("click", function () {
+        var next = !(f.get ? f.get() : !!readVal(el, f.k));
+        if (f.set) f.set(next);
+        else { writeVal(f.k, next); renderInspector(); }
+      });
+    } else if (f.type === "button") {
+      input = document.createElement("button");
+      input.type = "button";
+      input.className = "icon-btn";
+      input.textContent = f.cta || "Open";
+      input.addEventListener("click", f.action);
+    } else if (f.type === "color") {
+      input = document.createElement("input");
+      input.type = "color";
+      input.className = "field-color";
+      input.value = normHex(readVal(el, f.k)) || "#ffffff";
+      input.addEventListener("input", function () { writeVal(f.k, input.value); });
+    } else if (f.type === "select") {
+      input = document.createElement("select");
+      input.className = "field-select";
+      f.opts.forEach(function (o) {
+        var opt = document.createElement("option");
+        opt.value = o[0];
+        opt.textContent = o[1];
+        input.appendChild(opt);
+      });
+      input.value = readVal(el, f.k);
+      input.addEventListener("change", function () {
+        if (f.confirm && !confirm(f.confirm)) {
+          input.value = readVal(el, f.k);
+          return;
+        }
+        writeVal(f.k, input.value);
+        renderInspector();
+      });
+    } else {
+      input = document.createElement("input");
+      input.type = "range";
+      input.min = f.min; input.max = f.max; input.step = f.step;
+      var cur = readVal(el, f.k);
+      input.value = cur == null ? f.min : cur;
+      /* Slide freely, store once. Writing on every `input` event would put a
+       * hundred undo entries behind one adjustment of a slider. */
+      input.addEventListener("input", function () {
+        var target = layer.get(editor.selected);
+        if (!target) return;
+        var patch = buildPatch(target, f.k, Number(input.value));
+        layer.patch(target.id, patch);
+        net.send({ t: "el_live", id: target.id, patch: patch }, true);
+        editor.refresh();
+      });
+      input.addEventListener("change", function () {
+        writeVal(f.k, Number(input.value));
+      });
+    }
+    row.appendChild(input);
+    return row;
+  }
+
+  function normHex(v) {
+    return typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v) ? v : null;
+  }
+
+  document.getElementById("el-front").addEventListener("click", function () {
+    if (!editor.selected) return;
+    layer.raise(editor.selected);
+    editor.refresh();
+    net.send({ t: "el_raise", id: editor.selected });
+  });
+  document.getElementById("el-delete").addEventListener("click", function () {
+    if (!editor.selected) return;
+    var id = editor.selected;
+    layer.remove([id]);
+    editor.select(null);
+    net.send({ t: "el_delete", ids: [id] });
+  });
+  document.getElementById("el-close").addEventListener("click", function () {
+    editor.select(null);
+  });
+
+  /* ---- sheets ------------------------------------------------------ */
+
+  function openSheet(title, fill) {
+    sheetTitle.textContent = title;
+    sheetBody.textContent = "";
+    fill(sheetBody);
+    sheet.hidden = false;
+  }
+  function closeSheet() { sheet.hidden = true; }
+  document.getElementById("sheet-close").addEventListener("click", closeSheet);
+  sheet.addEventListener("click", function (e) { if (e.target === sheet) closeSheet(); });
+
+  function openTextSheet() {
+    var el = editor.selected && layer.get(editor.selected);
+    if (!el || el.type !== "text") return;
+    openSheet("Type for the board", function (body) {
+      var ta = document.createElement("textarea");
+      ta.className = "sheet-text";
+      ta.value = el.text || "";
+      ta.rows = 5;
+      ta.placeholder = "Whatever you type appears on the board as you go";
+      body.appendChild(ta);
+      /* Live while typing so the class watches the sentence form; one write
+       * on Done, so the whole sentence is a single undo. */
+      ta.addEventListener("input", function () {
+        layer.patch(el.id, { text: ta.value });
+        editor.refresh();
+        net.send({ t: "el_live", id: el.id, patch: { text: ta.value } }, true);
+      });
+      var done = document.createElement("button");
+      done.type = "button";
+      done.className = "btn btn-primary sheet-done";
+      done.textContent = "Done";
+      done.addEventListener("click", function () {
+        net.send({ t: "el_update", id: el.id, patch: { text: ta.value } });
+        closeSheet();
+      });
+      body.appendChild(done);
+      setTimeout(function () { ta.focus(); }, 60);
+    });
+  }
+
+  var toastTimer;
+  function say(msg) {
+    toast.textContent = msg || "";
+    toast.hidden = !msg;
+    clearTimeout(toastTimer);
+    if (msg) toastTimer = setTimeout(function () { toast.hidden = true; }, 3200);
+  }
 
   /* ------------------------------------------------------------------ */
   /* board actions                                                       */
@@ -413,6 +974,7 @@
 
   function setSurfaceButtons(name) {
     if (!name) return;
+    state.surface = name;
     document.querySelectorAll("[data-surface]").forEach(function (b) {
       var on = b.dataset.surface === name;
       b.dataset.on = String(on);
@@ -485,6 +1047,7 @@
 
   setTool("pen");
   setColor(CFG.surface === "white" ? "#111827" : "#ffffff");
+  renderInspector();
   setSurfaceButtons(CFG.surface);
   setPage(CFG.pageIndex, CFG.pageCount);
   setZoom(1);

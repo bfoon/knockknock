@@ -1,41 +1,162 @@
-{% load static %}<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Chalk boards</title>
-<link rel="stylesheet" href="{% static 'chalk/css/chalk.css' %}?v=1">
-</head>
-<body class="chalk-page">
-<div class="page-wrap">
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Chalk boards — Knock-Knock{% endblock %}
 
-  <p class="kicker">Chalk</p>
-  <h1>Your boards</h1>
+{% comment %}
+  The list lives inside the app shell so the nav is one tap away, unlike the
+  stage and the phone controller, which are deliberately chrome-free.
 
-  <form class="form-card" method="post" action="{% url 'chalk:boards' %}">
-    {% csrf_token %}
-    <div class="row" style="margin:0">
-      <input type="text" name="title" placeholder="What is this board for?" maxlength="200">
-      <select name="surface">
-        {% for value, label in surfaces %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-      </select>
-      <button class="btn btn-primary" type="submit">Create board</button>
-    </div>
-  </form>
+  chalk.css is NOT loaded here on purpose: it defines .row and .btn, which
+  would collide with Bootstrap on any page that extends base.html. The few
+  styles this page needs are scoped below.
+{% endcomment %}
 
-  {% if boards %}
-    <div class="board-grid">
-      {% for b in boards %}
-        <a class="board-card" href="{% url 'chalk:stage' b.id %}">
-          <div class="name">{{ b.title }}</div>
-          <div class="meta">{{ b.get_surface_display }} · last used {{ b.updated_at|date:"j M, H:i" }}</div>
-        </a>
-      {% endfor %}
-    </div>
-  {% else %}
-    <p class="empty">No boards yet. Create one above, project it, then pair your phone.</p>
-  {% endif %}
-
+{% block content %}
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4">
+  <div>
+    <h1 class="mb-1">Chalk boards</h1>
+    <p class="kk-text-dim mb-0">
+      A classroom board on the projector, written from your phone.
+    </p>
+  </div>
+  <a href="{% url 'core:dashboard' %}" class="kk-btn kk-btn-ghost">
+    <i class="bi bi-grid-1x2"></i> Dashboard
+  </a>
 </div>
-</body>
-</html>
+
+<form class="kk-card kk-chalk-new mb-4" method="post" action="{% url 'chalk:boards' %}">
+  {% csrf_token %}
+  <input type="text" name="title" class="kk-chalk-input"
+         placeholder="What is this board for?" maxlength="200"
+         aria-label="Board name">
+  <select name="surface" class="kk-chalk-input kk-chalk-select" aria-label="Board surface">
+    {% for value, label in surfaces %}
+      <option value="{{ value }}">{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button class="kk-btn kk-btn-primary" type="submit">
+    <i class="bi bi-plus-lg"></i> Create board
+  </button>
+</form>
+
+{% if boards %}
+  <div class="kk-chalk-grid">
+    {% for b in boards %}
+      <div class="kk-card kk-chalk-card">
+        <a class="kk-chalk-card-main" href="{% url 'chalk:stage' b.id %}">
+          <span class="kk-chalk-swatch" data-surface="{{ b.surface }}" aria-hidden="true"></span>
+          <span class="kk-chalk-card-copy">
+            <span class="kk-list-item-title">{{ b.title }}</span>
+            <span class="kk-list-item-meta">
+              {{ b.get_surface_display }} ·
+              {{ b.page_count }} page{{ b.page_count|pluralize }} ·
+              last used {{ b.updated_at|date:"j M, H:i" }}
+            </span>
+          </span>
+          <i class="bi bi-arrow-right text-secondary"></i>
+        </a>
+        <form method="post"
+              action="{% url 'chalk:settings' b.id %}"
+              class="kk-chalk-delete-form"
+              onsubmit="return confirm('Delete “{{ b.title|escapejs }}”? Everything drawn on it goes too.');">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="delete">
+          <button type="submit" class="kk-chalk-delete"
+                  title="Delete board" aria-label="Delete {{ b.title }}">
+            <i class="bi bi-trash3-fill"></i>
+          </button>
+        </form>
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="kk-empty">
+    <div class="em">🧑‍🏫</div>
+    <p>No boards yet. Create one above, project it, then pair your phone.</p>
+  </div>
+{% endif %}
+
+<style>
+.kk-chalk-new {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .6rem;
+  align-items: center;
+}
+.kk-chalk-input {
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.12);
+  color: inherit;
+  border-radius: 10px;
+  padding: .6rem .75rem;
+  font: inherit;
+}
+.kk-chalk-input:focus-visible {
+  outline: 2px solid #a78bfa;
+  outline-offset: 2px;
+}
+.kk-chalk-new input[type="text"] { flex: 1 1 220px; min-width: 0; }
+.kk-chalk-select { color-scheme: dark; }
+
+.kk-chalk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+}
+.kk-chalk-card {
+  display: flex;
+  align-items: stretch;
+  gap: .5rem;
+  padding: 0;
+  overflow: hidden;
+}
+.kk-chalk-card-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: .85rem;
+  padding: 1rem;
+  text-decoration: none;
+  color: inherit;
+}
+.kk-chalk-card-main:hover { background: rgba(255,255,255,.04); }
+.kk-chalk-card-copy { min-width: 0; flex: 1; display: block; }
+.kk-chalk-card-copy .kk-list-item-title,
+.kk-chalk-card-copy .kk-list-item-meta { display: block; }
+
+/* A small square of the real board surface, so the list reads at a glance. */
+.kk-chalk-swatch {
+  width: 42px; height: 42px;
+  flex: 0 0 42px;
+  border-radius: 9px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: #131a1f;
+}
+.kk-chalk-swatch[data-surface="green"] { background: #1d3a2f; }
+.kk-chalk-swatch[data-surface="white"] { background: #f7f9fb; }
+.kk-chalk-swatch[data-surface="grid"] {
+  background:
+    linear-gradient(rgba(16,21,27,.16) 1px, transparent 1px) 0 0 / 25% 25%,
+    linear-gradient(90deg, rgba(16,21,27,.16) 1px, transparent 1px) 0 0 / 25% 25%,
+    #f7f9fb;
+}
+.kk-chalk-swatch[data-surface="ruled"] {
+  background:
+    linear-gradient(rgba(16,21,27,.16) 1px, transparent 1px) 0 0 / 100% 28%,
+    #fbfaf6;
+}
+
+.kk-chalk-delete-form { display: flex; }
+.kk-chalk-delete {
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,.35);
+  padding: 0 .9rem;
+  cursor: pointer;
+  transition: color .15s ease, background .15s ease;
+}
+.kk-chalk-delete:hover { color: #f87171; background: rgba(248,113,113,.1); }
+.kk-chalk-delete:focus-visible { outline: 2px solid #f87171; outline-offset: -2px; }
+</style>
+{% endblock %}

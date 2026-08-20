@@ -32,8 +32,18 @@ MAX_FAILED_JOINS = 10
 MAX_POINTS = 12000            # values (not points) per committed stroke
 MAX_STROKES_PER_PAGE = 4000
 MAX_UNDO = 60
-MAX_HISTORY_ITEMS = 4000      # total strokes retained across the undo stacks
+MAX_HISTORY_ITEMS = 4000      # total objects retained across the undo stacks
 MAX_PAGES = 60
+
+# Elements — text, photos, shapes, free shapes. Far fewer than strokes, but
+# each one is heavier, and an image element carries a URL into media.
+MAX_ELS_PER_PAGE = 400
+MAX_TEXT = 2000               # characters in one text element
+MAX_FF_POINTS = 240           # vertices in one free shape
+
+# Photo uploads.
+MAX_IMAGE_BYTES = 12 * 1024 * 1024
+IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 
 
 def make_code():
@@ -151,6 +161,11 @@ class BoardPage(models.Model):
         {"id": "s_ab12cd", "tool": "pen", "color": "#ffffff",
          "w": 0.0035, "pts": [x, y, x, y, ...]}
 
+    Elements — text, photos, shapes, free shapes — live alongside the ink in
+    `els`, above it in z-order:
+        {"id": "e_ab12cd", "type": "shape", "x": .3, "y": .3, "w": .2,
+         "h": .2, "rot": 0, ...type fields, "fx": {...}}
+
     Coordinates are normalised 0-1 against the board box, so the same page
     renders identically on a phone pad and a 4K projector.
     """
@@ -161,7 +176,7 @@ class BoardPage(models.Model):
     strokes = models.JSONField(default=list, blank=True)
     history = models.JSONField(default=list, blank=True)  # undo stack
     undone = models.JSONField(default=list, blank=True)  # redo stack
-    els = models.JSONField(default=list, blank=True)  # reserved for Pass 2
+    els = models.JSONField(default=list, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -174,6 +189,43 @@ class BoardPage(models.Model):
 
     def __str__(self):
         return f"{self.board.title} · page {self.index + 1}"
+
+
+def board_image_path(instance, filename):
+    import os
+
+    ext = os.path.splitext(filename)[1].lower()[:8]
+    if ext not in (".jpg", ".jpeg", ".png", ".gif", ".webp"):
+        ext = ".jpg"
+    return f"chalk/{instance.board_id}/{uuid.uuid4().hex}{ext}"
+
+
+class BoardImage(models.Model):
+    """Photos dropped onto a board.
+
+    Tracked as rows rather than loose files so deleting a board takes its
+    uploads with it, and so an upload can be attributed to a board before any
+    element referencing it exists.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    board = models.ForeignKey(Board, on_delete=models.CASCADE, related_name="images")
+    file = models.ImageField(upload_to=board_image_path)
+    width = models.PositiveIntegerField(default=0)
+    height = models.PositiveIntegerField(default=0)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-uploaded_at"]
+
+    def __str__(self):
+        return self.file.name
+
+    def delete(self, *args, **kwargs):
+        storage, name = self.file.storage, self.file.name
+        super().delete(*args, **kwargs)
+        if name:
+            storage.delete(name)
 
 
 class BoardSession(models.Model):

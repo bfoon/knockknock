@@ -9,7 +9,13 @@ Wire protocol — every frame is {"t": "<type>", ...}.
   stroke_pts              stroke_pts     (id, pts)   -- appended, not replaced
   stroke_end              stroke_end     (id, ...)   -- full list, committed
   erase {ids}             erase          (ids, canUndo, canRedo)
+  el_add {el}             el_add         (el)
+  el_live {id, patch}     el_live        (id, patch)  -- mid-drag, never stored
+  el_update {id, patch}   el_update      (id, patch, canUndo, canRedo)
+  el_delete {ids}         el_delete      (ids, canUndo, canRedo)
+  el_raise {id}           el_raise       (id)
   undo | redo | clear     ink            (add, del, canUndo, canRedo)
+                          els            (add, del, edit, canUndo, canRedo)
   surface {surface}       surface        (surface)
   page {index}            snapshot
   page_add | page_delete  snapshot
@@ -30,6 +36,13 @@ Two things changed from the first pass and both matter:
 Only `stroke_end` and the structural messages touch the database, so a normal
 lesson still costs roughly one write per pen stroke. Undo/redo/clear used to
 rebroadcast the entire page; they now broadcast the operation instead.
+
+Elements (text, photos, shapes, free shapes) share the ink's undo stacks
+rather than keeping a second timeline. Undo walks back through a lesson in the
+order things actually happened, which is the only ordering a teacher can hold
+in their head mid-sentence. Dragging an element emits `el_live` continuously
+and one `el_update` on release, so a two-second drag costs one undo entry and
+one write, not a hundred of each.
 """
 
 import asyncio
@@ -42,10 +55,13 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.db import transaction
 
 from .models import (
+    MAX_ELS_PER_PAGE,
+    MAX_FF_POINTS,
     MAX_HISTORY_ITEMS,
     MAX_PAGES,
     MAX_POINTS,
     MAX_STROKES_PER_PAGE,
+    MAX_TEXT,
     MAX_UNDO,
 )
 
@@ -67,7 +83,7 @@ RATE_PER_SEC = 200.0
 
 # Messages the sender already rendered locally — don't echo them back.
 # "peer" is here so a socket is never told about its own arrival.
-NO_ECHO = {"stroke_start", "stroke_pts", "stroke_end", "pointer", "peer"}
+NO_ECHO = {"stroke_start", "stroke_pts", "stroke_end", "pointer", "peer", "el_live"}
 
 
 def _num(v, lo=0.0, hi=1.0, default=0.0):
@@ -117,8 +133,209 @@ def clean_stroke(raw):
     }
 
 
+def _entry_items(entry):
+    """Objects held by one history entry, including its paired `also` half.
+
+    A wipe stores the ink and the elements as one entry with two halves, so
+    the trimmer has to see through the pairing or a full page of elements
+    counts as zero.
+    """
+    n = len(entry.get("items") or [])
+    also = entry.get("also")
+    if isinstance(also, dict):
+        n += len(also.get("items") or [])
+    return n
+
+
 def _history_items(stacks):
-    return sum(len(e.get("items") or []) for stack in stacks for e in stack)
+    return sum(_entry_items(e) for stack in stacks for e in stack)
+
+
+# ----------------------------------------------------------------------
+# elements
+# ----------------------------------------------------------------------
+
+EL_TYPES = {"text", "image", "shape", "freeform"}
+FONTS = {"sans", "serif", "mono", "hand"}
+ALIGNS = {"left", "center", "right"}
+FITS = {"contain", "cover"}
+EDGES = {"sharp", "round", "smooth"}
+BLENDS = {
+    "normal", "multiply", "screen", "overlay", "darken", "lighten",
+    "color-dodge", "color-burn", "hard-light", "soft-light", "difference",
+    "exclusion", "hue", "saturation", "color", "luminosity",
+}
+SHAPES = {
+    "line", "arrow", "darrow", "rect", "rrect", "ellipse", "triangle",
+    "rtriangle", "diamond", "parallelogram", "trapezoid", "polygon", "star",
+    "cross", "chevron", "brace", "angle", "cube", "cylinder", "cone",
+    "sphere", "pyramid", "prism", "torus",
+}
+PRESETS = {
+    "polygon", "star", "burst", "blob", "arrow", "chevron", "cross",
+    "bubble", "heart", "drop", "wave", "custom",
+}
+
+# field -> (low, high, default). A key absent from these tables never reaches
+# storage, so a new client field cannot smuggle anything in.
+EL_NUM = {
+    "x": (-0.5, 1.5, 0.3), "y": (-0.5, 1.5, 0.3),
+    "w": (0.01, 2.0, 0.2), "h": (0.01, 2.0, 0.2),
+    "rot": (-360.0, 360.0, 0.0),
+    "size": (0.005, 0.6, 0.06),
+    "strokeW": (0.0, 24.0, 2.0), "dash": (0.0, 40.0, 0.0),
+    "radius": (0.0, 50.0, 14.0), "sides": (3.0, 24.0, 6.0),
+    "inset": (10.0, 90.0, 45.0), "depth": (4.0, 45.0, 22.0),
+    "thickness": (10.0, 60.0, 30.0), "slant": (0.0, 45.0, 22.0),
+    "head": (8.0, 45.0, 22.0), "degrees": (5.0, 175.0, 45.0),
+    "hole": (10.0, 70.0, 40.0),
+}
+EL_INT = {"sides", "dash", "degrees"}
+EL_BOOL = {"bold", "italic", "closed", "fillOn", "edited"}
+
+FX_NUM = {
+    "sx": (-60.0, 60.0, 0.0), "sy": (-60.0, 60.0, 4.0), "blur": (0.0, 60.0, 8.0),
+    "glowSize": (0.0, 60.0, 10.0), "extrude": (0.0, 24.0, 0.0),
+    "softBlur": (0.0, 20.0, 0.0), "tiltX": (-80.0, 80.0, 0.0),
+    "tiltY": (-80.0, 80.0, 0.0), "perspective": (100.0, 3000.0, 800.0),
+    "opacity": (0.0, 1.0, 1.0),
+}
+FX_BOOL = {"shadow", "glow", "flipH", "flipV"}
+FX_COLOR = {"shadowColor", "glowColor", "extrudeColor"}
+
+# An image src must be something this server stored under MEDIA_URL. An
+# absolute URL, a data: blob, or a path climbing out of media is refused —
+# otherwise "add a photo" is an arbitrary-URL fetch on every projector.
+SRC_RE = re.compile(r"^/[A-Za-z0-9._/-]{1,300}$")
+
+
+def _rng(v, key, table):
+    lo, hi, dflt = table[key]
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return dflt
+    if f != f or f in (float("inf"), float("-inf")):
+        return dflt
+    return round(min(hi, max(lo, f)), 5)
+
+
+def _color(v, dflt="#ffffff", allow_blank=False):
+    v = str(v or "")
+    if allow_blank and v == "":
+        return ""
+    return v if COLOR_RE.match(v) else dflt
+
+
+def clean_src(v):
+    from django.conf import settings
+
+    v = str(v or "")
+    media = settings.MEDIA_URL or "/media/"
+    if not media.startswith("/"):
+        # MEDIA_URL on a CDN host. Nothing local to validate against, so refuse
+        # rather than guess.
+        return ""
+    if not v.startswith(media) or ".." in v:
+        return ""
+    return v if SRC_RE.match(v) else ""
+
+
+def clean_fx(raw):
+    if not isinstance(raw, dict):
+        return None
+    fx = {}
+    for k, v in raw.items():
+        if k in FX_NUM:
+            fx[k] = _rng(v, k, FX_NUM)
+        elif k in FX_BOOL:
+            fx[k] = bool(v)
+        elif k in FX_COLOR:
+            fx[k] = _color(v, "#000000")
+        elif k == "blend" and v in BLENDS:
+            fx[k] = v
+    return fx
+
+
+def clean_points100(raw):
+    """Free-shape vertices, in the shape's own 0..100 box."""
+    if not isinstance(raw, (list, tuple)):
+        return []
+    out = []
+    for v in raw[: MAX_FF_POINTS * 2]:
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            f = 0.0
+        if f != f or f in (float("inf"), float("-inf")):
+            f = 0.0
+        out.append(round(min(200.0, max(-100.0, f)), 2))
+    if len(out) % 2:
+        out.pop()
+    return out
+
+
+def clean_el_fields(raw, etype=None):
+    """Whitelist and clamp. Returns only the keys present in `raw`, so one
+    function serves both a whole new element and a partial patch."""
+    out = {}
+    if not isinstance(raw, dict):
+        return out
+    for k, v in raw.items():
+        if k in EL_NUM:
+            out[k] = _rng(v, k, EL_NUM)
+        elif k in EL_BOOL:
+            out[k] = bool(v)
+        elif k == "text":
+            out[k] = str(v or "")[:MAX_TEXT]
+        elif k == "font" and v in FONTS:
+            out[k] = v
+        elif k == "align" and v in ALIGNS:
+            out[k] = v
+        elif k == "fit" and v in FITS:
+            out[k] = v
+        elif k == "edge" and v in EDGES:
+            out[k] = v
+        elif k == "shape" and v in SHAPES:
+            out[k] = v
+        elif k == "preset" and v in PRESETS:
+            out[k] = v
+        elif k in ("color", "fill", "stroke"):
+            out[k] = _color(v)
+        elif k == "bg":
+            out[k] = _color(v, "", allow_blank=True)
+        elif k == "src":
+            out[k] = clean_src(v)
+        elif k == "pts" and etype == "freeform":
+            out[k] = clean_points100(v)
+        elif k == "fx":
+            fx = clean_fx(v)
+            if fx is not None:
+                out[k] = fx
+    for k in EL_INT:
+        if k in out:
+            out[k] = int(out[k])
+    return out
+
+
+def clean_el(raw):
+    if not isinstance(raw, dict):
+        return None
+    eid = str(raw.get("id") or "")
+    etype = raw.get("type")
+    if not ID_RE.match(eid) or etype not in EL_TYPES:
+        return None
+    el = clean_el_fields(raw, etype)
+    el["id"] = eid
+    el["type"] = etype
+    for k in ("x", "y", "w", "h"):
+        el.setdefault(k, EL_NUM[k][2])
+    # An element with nothing to draw is not worth a row on the page.
+    if etype == "image" and not el.get("src"):
+        return None
+    if etype == "freeform" and len(el.get("pts") or []) < 4:
+        return None
+    return el
 
 
 class ChalkConsumer(AsyncJsonWebsocketConsumer):
@@ -265,19 +482,49 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
                         echo=True,
                     )
 
+        elif t == "el_add":
+            el = clean_el(content.get("el"))
+            if el:
+                result = await self._el_add(el)
+                if result:
+                    await self._fan({"t": "el_add", "el": el, **result}, echo=True)
+
+        elif t == "el_live":
+            # Mid-drag. Broadcast, never store: a drag is one action and it is
+            # the release that counts.
+            eid = str(content.get("id") or "")
+            patch = clean_el_fields(content.get("patch"), self._type_of(eid))
+            if ID_RE.match(eid) and patch:
+                await self._fan({"t": "el_live", "id": eid, "patch": patch})
+
+        elif t == "el_update":
+            eid = str(content.get("id") or "")
+            if ID_RE.match(eid):
+                patch = clean_el_fields(content.get("patch"), self._type_of(eid))
+                if patch:
+                    result = await self._el_update(eid, patch)
+                    if result:
+                        await self._fan({"t": "el_update", "id": eid, **result}, echo=True)
+
+        elif t == "el_delete":
+            raw = content.get("ids")
+            ids = []
+            if isinstance(raw, (list, tuple)):
+                ids = [str(i) for i in raw if ID_RE.match(str(i))][:200]
+            if ids:
+                result = await self._el_delete(ids)
+                if result:
+                    await self._fan({"t": "el_delete", **result}, echo=True)
+
+        elif t == "el_raise":
+            eid = str(content.get("id") or "")
+            if ID_RE.match(eid) and await self._el_raise(eid):
+                await self._fan({"t": "el_raise", "id": eid}, echo=True)
+
         elif t in ("undo", "redo", "clear"):
             result = await self._history(t)
             if result and result["changed"]:
-                await self._fan(
-                    {
-                        "t": "ink",
-                        "add": result["add"],
-                        "del": result["del"],
-                        "canUndo": result["canUndo"],
-                        "canRedo": result["canRedo"],
-                    },
-                    echo=True,
-                )
+                await self._fan_ops(result)
 
         elif t == "surface":
             surface = content.get("surface")
@@ -364,6 +611,7 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
         self._watcher = asyncio.create_task(self._watch_pairing())
 
         state = await self._snapshot()
+        self._remember_types(state.get("els") or [])
         await self.send_json({"t": "ready", "role": self.role, **state})
         await self._fan({"t": "peer", "role": self.role, "state": "joined"})
 
@@ -409,8 +657,31 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
             event.get("code", "expired"),
         )
 
+    async def _fan_ops(self, result):
+        """Send one frame per layer that actually changed.
+
+        Both frames carry canUndo/canRedo, so a client that only understands
+        one of them still tracks the buttons correctly.
+        """
+        ops = result["ops"]
+        flags = {"canUndo": result["canUndo"], "canRedo": result["canRedo"]}
+        sent = False
+        for layer, name in (("ink", "ink"), ("els", "els")):
+            part = ops.get(layer)
+            if not part or not (part["add"] or part["del"] or part["edit"]):
+                continue
+            frame = {"t": name, "add": part["add"], "del": part["del"], **flags}
+            if layer == "els":
+                frame["edit"] = part["edit"]
+            await self._fan(frame, echo=True)
+            sent = True
+        if not sent:
+            # Nothing moved, but the buttons may still need to flip.
+            await self._fan({"t": "ink", "add": [], "del": [], **flags}, echo=True)
+
     async def _broadcast_snapshot(self):
         state = await self._snapshot()
+        self._remember_types(state.get("els") or [])
         await self.channel_layer.group_send(
             self.group,
             {"type": "fan.out", "payload": {"t": "snapshot", **state}, "origin": ""},
@@ -474,6 +745,7 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
             "pageIndex": page.index,
             "pageCount": len(pages),
             "strokes": page.strokes,
+            "els": page.els,
             "canUndo": bool(page.history),
             "canRedo": bool(page.undone),
         }
@@ -507,29 +779,80 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
 
     # -- history -------------------------------------------------------
     #
-    # One undo stack and one redo stack, both holding the same entry shape:
-    #     {"op": "add" | "del", "items": [{"i": <index>, "s": <stroke>}]}
-    # "add" means those strokes were put on the board; "del" means they were
-    # taken off. Undo applies the opposite, redo applies it again. Storing the
-    # index lets an undone erase come back in its original z-order.
+    # One undo stack and one redo stack, shared by both layers. Entries:
+    #
+    #   {"op": "add"|"del", "layer": "ink"|"els",
+    #    "items": [{"i": <index>, "s": <object>}]}
+    #   {"op": "edit", "layer": "els",
+    #    "items": [{"id": ..., "before": {...}, "after": {...}}]}
+    #
+    # "add" means those objects were put on the board; "del" means they were
+    # taken off; "edit" means one element's fields changed. Undo applies the
+    # opposite, redo applies it again. Storing the index lets an undone erase
+    # come back in its original z-order.
+    #
+    # A wipe touches both layers at once and must undo as one action, so it is
+    # stored as a single entry carrying its other half in `also`.
+    #
+    # Entries written before elements existed have no "layer" and default to
+    # ink, so a page mid-lesson keeps working across the upgrade.
 
     @staticmethod
-    def _apply(strokes, entry, forward):
-        """Mutate `strokes` and return the ops needed to reproduce the change
-        on a client: ({"add": [...], "del": [ids]})."""
+    def _apply(objects, entry, forward):
+        """Mutate `objects` and return the ops a client needs to match:
+        {"add": [{i, s}], "del": [ids], "edit": [{id, patch, drop}]}."""
         op = entry.get("op")
-        items = [it for it in (entry.get("items") or []) if isinstance(it, dict) and "s" in it]
+        raw = entry.get("items") or []
+
+        if op == "edit":
+            key, other = ("after", "before") if forward else ("before", "after")
+            edits = []
+            for it in raw:
+                if not isinstance(it, dict):
+                    continue
+                eid = it.get("id")
+                want = it.get(key) or {}
+                had = it.get(other) or {}
+                target = next((o for o in objects if o.get("id") == eid), None)
+                if target is None:
+                    continue
+                # A key present on one side and absent on the other was absent
+                # from the element too — remove it rather than leave it stale.
+                drop = [k for k in had if k not in want]
+                target.update(want)
+                for k in drop:
+                    target.pop(k, None)
+                edits.append({"id": eid, "patch": want, "drop": drop})
+            return {"add": [], "del": [], "edit": edits}
+
+        items = [it for it in raw if isinstance(it, dict) and "s" in it]
         adding = (op == "add") == forward
         if adding:
             placed = []
             for it in sorted(items, key=lambda i: i.get("i", 0)):
-                idx = min(max(0, int(it.get("i", len(strokes)))), len(strokes))
-                strokes.insert(idx, it["s"])
+                idx = min(max(0, int(it.get("i", len(objects)))), len(objects))
+                objects.insert(idx, it["s"])
                 placed.append({"i": idx, "s": it["s"]})
-            return {"add": placed, "del": []}
+            return {"add": placed, "del": [], "edit": []}
         gone = {it["s"].get("id") for it in items}
-        strokes[:] = [s for s in strokes if s.get("id") not in gone]
-        return {"add": [], "del": sorted(i for i in gone if i)}
+        objects[:] = [o for o in objects if o.get("id") not in gone]
+        return {"add": [], "del": sorted(i for i in gone if i), "edit": []}
+
+    @classmethod
+    def _apply_entry(cls, strokes, els, entry, forward):
+        """Apply an entry and its `also` half, routing each to its own layer."""
+        ops = {"ink": None, "els": None}
+        for part in (entry, entry.get("also")):
+            if not isinstance(part, dict):
+                continue
+            layer = "els" if part.get("layer") == "els" else "ink"
+            result = cls._apply(els if layer == "els" else strokes, part, forward)
+            if ops[layer] is None:
+                ops[layer] = result
+            else:
+                for k in ("add", "del", "edit"):
+                    ops[layer][k] = ops[layer][k] + result[k]
+        return ops
 
     @staticmethod
     def _trim_history(history, undone):
@@ -565,7 +888,11 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
                 return
             strokes.append(stroke)
             self._push(
-                page, {"op": "add", "items": [{"i": len(strokes) - 1, "s": stroke}]}
+                page,
+                {
+                    "op": "add", "layer": "ink",
+                    "items": [{"i": len(strokes) - 1, "s": stroke}],
+                },
             )
             if len(strokes) > MAX_STROKES_PER_PAGE:
                 # Dropping strokes invalidates every index held in history, so
@@ -589,7 +916,7 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
             ]
             if not items:
                 return None
-            entry = {"op": "del", "items": items}
+            entry = {"op": "del", "layer": "ink", "items": items}
             ops = self._apply(strokes, entry, True)
             self._push(page, entry)
             page.strokes = strokes
@@ -613,47 +940,169 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
         with transaction.atomic():
             _, page = self._page_locked()
             strokes = list(page.strokes or [])
+            els = list(page.els or [])
             history = list(page.history or [])
             undone = list(page.undone or [])
 
             if action == "clear":
-                if not strokes:
+                if not strokes and not els:
                     return idle
+                # One wipe, one undo: the ink and the objects come back
+                # together, because that is what the teacher just did.
                 entry = {
-                    "op": "del",
-                    "items": [{"i": i, "s": s} for i, s in enumerate(strokes)],
+                    "op": "del", "layer": "ink",
+                    "items": [{"i": i, "s": o} for i, o in enumerate(strokes)],
+                    "also": {
+                        "op": "del", "layer": "els",
+                        "items": [{"i": i, "s": o} for i, o in enumerate(els)],
+                    },
                 }
-                ops = self._apply(strokes, entry, True)
+                ops = self._apply_entry(strokes, els, entry, True)
                 history.append(entry)
                 undone = []
-            elif action == "undo":
-                if not history:
+            elif action in ("undo", "redo"):
+                stack, other = (history, undone) if action == "undo" else (undone, history)
+                if not stack:
                     return idle
-                entry = history.pop()
-                ops = self._apply(strokes, entry, False)
-                undone.append(entry)
-            elif action == "redo":
-                if not undone:
-                    return idle
-                entry = undone.pop()
-                ops = self._apply(strokes, entry, True)
-                history.append(entry)
+                entry = stack.pop()
+                ops = self._apply_entry(strokes, els, entry, action == "redo")
+                other.append(entry)
             else:
                 return idle
 
             history, undone = self._trim_history(history, undone)
             page.strokes = strokes
+            page.els = els
             page.history = history
             page.undone = undone
-            page.save(update_fields=["strokes", "history", "undone", "updated_at"])
+            page.save(
+                update_fields=["strokes", "els", "history", "undone", "updated_at"]
+            )
             self._touch_board()
             return {
                 "changed": True,
-                "add": ops["add"],
-                "del": ops["del"],
+                "ops": ops,
                 "canUndo": bool(history),
                 "canRedo": bool(undone),
             }
+
+    # -- elements --------------------------------------------------------
+    #
+    # `_el_cache` mirrors id -> type for this socket. It exists so `el_live`,
+    # which fires many times a second during a drag, can validate a `pts`
+    # patch against the element's type without a database round-trip per
+    # frame. It is only ever used to choose a validation branch.
+
+    def _type_of(self, eid):
+        return getattr(self, "_el_cache", {}).get(eid)
+
+    def _remember_types(self, els):
+        self._el_cache = {
+            e.get("id"): e.get("type") for e in els if isinstance(e, dict)
+        }
+
+    @database_sync_to_async
+    def _el_add(self, el):
+        with transaction.atomic():
+            _, page = self._page_locked()
+            els = list(page.els or [])
+            if len(els) >= MAX_ELS_PER_PAGE:
+                return None
+            if any(e.get("id") == el["id"] for e in els):
+                return None
+            els.append(el)
+            self._push(
+                page,
+                {
+                    "op": "add", "layer": "els",
+                    "items": [{"i": len(els) - 1, "s": el}],
+                },
+            )
+            page.els = els
+            page.save(update_fields=["els", "history", "undone", "updated_at"])
+            self._touch_board()
+            self._remember_types(els)
+            return {"canUndo": bool(page.history), "canRedo": bool(page.undone)}
+
+    @database_sync_to_async
+    def _el_update(self, eid, patch):
+        with transaction.atomic():
+            _, page = self._page_locked()
+            els = list(page.els or [])
+            target = next((e for e in els if e.get("id") == eid), None)
+            if target is None:
+                return None
+            # id and type are identity, never patchable, and a point list only
+            # means anything on the type that has one.
+            patch = {k: v for k, v in patch.items() if k not in ("id", "type")}
+            if "pts" in patch and target.get("type") != "freeform":
+                patch.pop("pts")
+            if not patch:
+                return None
+            before = {k: target[k] for k in patch if k in target}
+            if before == patch and set(before) == set(patch):
+                return None  # nothing actually moved
+            target.update(patch)
+            self._push(
+                page,
+                {
+                    "op": "edit", "layer": "els",
+                    "items": [{"id": eid, "before": before, "after": dict(patch)}],
+                },
+            )
+            page.els = els
+            page.save(update_fields=["els", "history", "undone", "updated_at"])
+            self._touch_board()
+            return {
+                "patch": patch,
+                "canUndo": bool(page.history),
+                "canRedo": bool(page.undone),
+            }
+
+    @database_sync_to_async
+    def _el_delete(self, ids):
+        with transaction.atomic():
+            _, page = self._page_locked()
+            els = list(page.els or [])
+            wanted = set(ids)
+            items = [
+                {"i": i, "s": e} for i, e in enumerate(els) if e.get("id") in wanted
+            ]
+            if not items:
+                return None
+            entry = {"op": "del", "layer": "els", "items": items}
+            ops = self._apply(els, entry, True)
+            self._push(page, entry)
+            page.els = els
+            page.save(update_fields=["els", "history", "undone", "updated_at"])
+            self._touch_board()
+            self._remember_types(els)
+            return {
+                "ids": ops["del"],
+                "canUndo": bool(page.history),
+                "canRedo": bool(page.undone),
+            }
+
+    @database_sync_to_async
+    def _el_raise(self, eid):
+        """Bring to front.
+
+        Deliberately not undoable. Z-order churn is constant while arranging a
+        diagram, and putting it on the stack would bury the marks the teacher
+        actually wants to step back through.
+        """
+        with transaction.atomic():
+            _, page = self._page_locked()
+            els = list(page.els or [])
+            target = next((e for e in els if e.get("id") == eid), None)
+            if target is None or els[-1] is target:
+                return False
+            els.remove(target)
+            els.append(target)
+            page.els = els
+            page.save(update_fields=["els", "updated_at"])
+            self._touch_board()
+            return True
 
     @database_sync_to_async
     def _set_surface(self, surface):

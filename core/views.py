@@ -1,9 +1,13 @@
 from django.contrib.auth.decorators import login_required
+from django.db.models import Count
 from django.shortcuts import render, redirect
 from polls.models import Questionnaire
 from games.models import Quiz
 from presentations.models import LiveSession
 from boardly.models import BoardSession
+# Chalk also calls its top-level model "Board", and core already imports
+# boardly's BoardSession — alias to keep the two apart at a glance.
+from chalk.models import Board as ChalkBoard
 from attendance.models import AttendanceEvent
 from attendance.venue_models import Venue
 from hanns.models import Deck
@@ -79,6 +83,13 @@ def dashboard(request):
         Deck.objects.filter(owner=request.user)
         .order_by("-updated_at")[:DASHBOARD_RECENT_LIMIT]
     )
+    # Annotated because Board.page_count reads `pages_total` when present —
+    # without it the dashboard runs one COUNT per board.
+    chalk_boards = (
+        ChalkBoard.objects.filter(owner=request.user)
+        .annotate(pages_total=Count("pages"))
+        .order_by("-updated_at")[:DASHBOARD_RECENT_LIMIT]
+    )
     quest_sessions = (
         QuestSession.objects.filter(owner=request.user)
         .order_by("-updated_at")[:DASHBOARD_RECENT_LIMIT]
@@ -94,6 +105,7 @@ def dashboard(request):
     attendance_events_total = AttendanceEvent.objects.filter(owner=request.user).count()
     boards_total = BoardSession.objects.filter(owner=request.user).count()
     decks_total = Deck.objects.filter(owner=request.user).count()
+    chalk_boards_total = ChalkBoard.objects.filter(owner=request.user).count()
     quest_sessions_total = QuestSession.objects.filter(owner=request.user).count()
     cards_total = Card.objects.filter(created_by=request.user).count()
 
@@ -118,6 +130,7 @@ def dashboard(request):
         "attendance_events": attendance_events,
         "boards": boards,
         "decks": decks,
+        "chalk_boards": chalk_boards,
         "quest_sessions": quest_sessions,
         "cards": cards,
 
@@ -128,6 +141,7 @@ def dashboard(request):
         "attendance_events_total": attendance_events_total,
         "boards_total": boards_total,
         "decks_total": decks_total,
+        "chalk_boards_total": chalk_boards_total,
         "quest_sessions_total": quest_sessions_total,
         "cards_total": cards_total,
         "recent_limit": DASHBOARD_RECENT_LIMIT,

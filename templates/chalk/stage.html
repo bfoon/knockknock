@@ -4,13 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ board.title }} · Chalk</title>
-<link rel="stylesheet" href="{% static 'chalk/css/chalk.css' %}?v=1">
+<link rel="stylesheet" href="{% static 'chalk/css/chalk.css' %}?v=3">
 </head>
 <body class="chalk-stage">
 
 <div class="stage-wrap">
   <div id="board" class="chalk-board" data-surface="{{ board.surface }}">
     <div id="ink"></div>
+    <div id="els" class="chalk-els"></div>
   </div>
 </div>
 
@@ -21,6 +22,8 @@
   <span id="phone-badge" class="phone-badge" data-on="0" hidden></span>
   <span id="net-dot" class="net-dot" data-state="connecting"></span>
   <button id="show-lobby" class="hud-btn" type="button">Pairing</button>
+  {# Leaving the board loses nothing — every stroke is already saved. #}
+  <a id="hud-boards" class="hud-btn" href="{% url 'chalk:boards' %}">All boards</a>
 </div>
 
 <div id="lobby">
@@ -40,7 +43,12 @@
         <button id="start-board" class="btn btn-primary" type="button">Start projecting</button>
         <button id="rotate-code" class="btn" type="button">New number</button>
         <a class="btn" href="{% url 'chalk:boards' %}">All boards</a>
+        <a class="btn" href="{% url 'core:dashboard' %}">Dashboard</a>
       </div>
+      <p class="lobby-keys">
+        While projecting: <kbd>Esc</kbd> pairing · <kbd>F</kbd> full screen ·
+        <kbd>B</kbd> all boards. Move the mouse to bring the corner bar back.
+      </p>
 
       <a id="join-link" href="{{ join_url }}">{{ join_url }}</a>
       <p id="lobby-error" hidden></p>
@@ -54,16 +62,10 @@
 </div>
 
 {{ config|json_script:"chalk-config" }}
-<script>
-  (function () {
-    var c = JSON.parse(document.getElementById("chalk-config").textContent);
-    c.rotateUrl = "{% url 'chalk:rotate_code' board.id %}";
-    c.csrf = "{{ csrf_token }}";
-    document.getElementById("chalk-config").textContent = JSON.stringify(c);
-  })();
-</script>
-<script src="{% static 'chalk/js/chalk_ink.js' %}?v=1"></script>
-<script src="{% static 'chalk/js/chalk_net.js' %}?v=1"></script>
-<script src="{% static 'chalk/js/chalk_stage.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/chalk_shapes.js' %}?v=3"></script>
+<script src="{% static 'chalk/js/chalk_ink.js' %}?v=3"></script>
+<script src="{% static 'chalk/js/chalk_els.js' %}?v=3"></script>
+<script src="{% static 'chalk/js/chalk_net.js' %}?v=3"></script>
+<script src="{% static 'chalk/js/chalk_stage.js' %}?v=3"></script>
 </body>
 </html>

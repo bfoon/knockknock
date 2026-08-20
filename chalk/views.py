@@ -11,7 +11,14 @@ from django.urls import reverse
 from django.views import View
 
 from . import throttle
-from .models import SURFACES, Board, BoardSession
+from .models import (
+    IMAGE_TYPES,
+    MAX_IMAGE_BYTES,
+    SURFACES,
+    Board,
+    BoardImage,
+    BoardSession,
+)
 
 # /join/ limits. Six-to-eight digits is a small enough space that an
 # unthrottled POST endpoint is a code-guessing oracle; these numbers are
@@ -21,6 +28,13 @@ JOIN_IP_LIMIT = 8
 JOIN_IP_WINDOW = 60
 JOIN_IP_HOUR_LIMIT = 40
 JOIN_IP_HOUR_WINDOW = 3600
+
+# Photo uploads. Generous for a lesson, hopeless as a file dump: a paired
+# phone is trusted, but a leaked pairing should not become free storage.
+UPLOAD_LIMIT = 20
+UPLOAD_WINDOW = 60
+UPLOAD_HOUR_LIMIT = 120
+UPLOAD_HOUR_WINDOW = 3600
 
 
 # --------------------------------------------------------------------------
@@ -57,7 +71,25 @@ def board_payload(board, session, page):
         "code": session.code,
         "pageIndex": page.index,
         "pageCount": board.page_count,
+        "strokes": page.strokes,
+        "els": page.els,
     }
+
+
+def paired(request, board, session):
+    """Is this request allowed to drive this board?
+
+    Same three doors as ControlView: the token in the link, a grant already
+    held in this browser's session, or being signed in as the owner.
+    """
+    token = request.POST.get("t") or request.GET.get("t") or ""
+    grants = request.session.get("chalk_grants") or {}
+    held = str(grants.get(str(board.id)) or "")
+    if bool(token) and compare_digest(token, session.token):
+        return True
+    if bool(held) and compare_digest(held, session.token):
+        return True
+    return request.user.is_authenticated and board.owner_id == request.user.id
 
 
 def grant_control(request, board, session):
@@ -144,11 +176,11 @@ class BoardStageView(LoginRequiredMixin, View):
                 **board_payload(board, session, page),
                 "role": "stage",
                 "token": session.token,
-                "strokes": page.strokes,
                 # chalk_stage.js reads both of these for the rotate button.
                 # They were missing, so the fetch went to "undefined" with a
                 # null CSRF header and the button could never work.
                 "rotateUrl": reverse("chalk:rotate_code", args=[board.id]),
+                "boardsUrl": reverse("chalk:boards"),
                 "csrf": get_token(request),
             },
         }
@@ -199,6 +231,83 @@ class RotateCodeView(LoginRequiredMixin, View):
 # --------------------------------------------------------------------------
 # phone views
 # --------------------------------------------------------------------------
+
+class UploadImageView(View):
+    """A photo from the phone.
+
+    Authenticated by pairing rather than by login, because the phone driving
+    the board usually is not signed in. Everything about the file is checked
+    server-side; the element that references it is validated separately when
+    it arrives over the websocket.
+    """
+
+    def post(self, request, pk):
+        board = get_object_or_404(Board, pk=pk)
+        session = board.ensure_session()
+        if not session.is_live or not paired(request, board, session):
+            return JsonResponse(
+                {"ok": False, "error": "This phone is not paired with the board."},
+                status=403,
+            )
+
+        ip = throttle.client_ip(request)
+        ok_minute = throttle.hit("upload", ip, UPLOAD_LIMIT, UPLOAD_WINDOW)
+        ok_hour = throttle.hit(
+            "upload-hr", ip, UPLOAD_HOUR_LIMIT, UPLOAD_HOUR_WINDOW
+        )
+        if not (ok_minute and ok_hour):
+            return JsonResponse(
+                {"ok": False, "error": "Too many photos at once. Wait a moment."},
+                status=429,
+            )
+
+        upload = request.FILES.get("file")
+        if not upload:
+            return JsonResponse(
+                {"ok": False, "error": "No photo arrived."}, status=400
+            )
+        if upload.size > MAX_IMAGE_BYTES:
+            return JsonResponse(
+                {"ok": False, "error": "That photo is over 12 MB. Try a smaller one."},
+                status=400,
+            )
+        if upload.content_type not in IMAGE_TYPES:
+            return JsonResponse(
+                {"ok": False, "error": "That file is not a photo."}, status=400
+            )
+
+        # Trust the pixels, not the header. A .png content-type on a zip is
+        # one line of curl; Pillow actually parsing it is not.
+        try:
+            from PIL import Image
+
+            probe = Image.open(upload)
+            probe.verify()
+            width, height = probe.size
+            upload.seek(0)
+        except Exception:
+            return JsonResponse(
+                {"ok": False, "error": "That photo could not be read."}, status=400
+            )
+        if not width or not height:
+            return JsonResponse(
+                {"ok": False, "error": "That photo could not be read."}, status=400
+            )
+
+        image = BoardImage.objects.create(
+            board=board, file=upload, width=width, height=height
+        )
+        session.extend()
+        return JsonResponse(
+            {
+                "ok": True,
+                "src": image.file.url,
+                "width": width,
+                "height": height,
+                "ratio": round(height / width, 4),
+            }
+        )
+
 
 class JoinView(View):
     """Type the number shown on the board."""
@@ -306,8 +415,11 @@ class ControlView(View):
                 **board_payload(board, session, page),
                 "role": "control",
                 "token": session.token,
-                "strokes": page.strokes,
                 "joinUrl": reverse("chalk:join"),
+                "uploadUrl": reverse("chalk:upload", args=[board.id]),
+                # The upload is a POST from the phone, which is usually not
+                # signed in, so it needs a CSRF token of its own.
+                "csrf": get_token(request),
             },
         }
         return render(request, self.template_name, ctx)

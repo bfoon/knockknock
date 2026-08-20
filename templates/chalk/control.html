@@ -24,13 +24,13 @@
 <div id="pad-wrap" class="chalk-board" data-surface="{{ board.surface }}">
   <div id="pad"></div>
   <div id="els" class="chalk-els"></div>
-  {# Drag on empty board with Pick to lasso handwriting. #}
+  <!-- Drag on empty board with Pick to lasso handwriting. -->
   <div id="marquee" hidden></div>
   <div id="mini" hidden><div id="mini-win"></div></div>
 </div>
 
-{# Only on screen while the board is filling the phone: the tools float over
-   it, so there has to be a way to get them out of the way. #}
+<!-- Only on screen while the board is filling the phone: the tools float
+     over it, so there has to be a way to get them out of the way. -->
 <button id="tools-toggle" class="float-btn" type="button" aria-expanded="true">Tools</button>
 
 <div class="c-scroll">
@@ -112,6 +112,8 @@
   <header class="insp-top">
     <strong id="inspector-name">Object</strong>
     <span class="spacer"></span>
+    <button class="icon-btn" id="insp-toggle" type="button" aria-expanded="true"
+            aria-controls="inspector-body">Hide details</button>
     <button class="icon-btn" id="el-front" type="button">To front</button>
     <button class="icon-btn danger" id="el-delete" type="button">Delete</button>
     <button class="icon-btn" id="el-close" type="button">Done</button>

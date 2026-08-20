@@ -531,6 +531,41 @@ body.immersive #custom-color { width: 28px; height: 28px; }
 body.immersive #width-preview { width: 40px; height: 28px; }
 body.immersive .surface-chip { padding: 5px 9px; font-size: 11.5px; }
 
+/* Full screen: the board is the whole phone, so a panel that takes 56dvh of
+   it takes most of the lesson with it. Half height at most, and a selection
+   starts collapsed — see setInspCollapsed in chalk_control.js. */
+body.immersive #inspector { max-height: 46dvh; }
+body.immersive.inspecting .c-scroll { padding-bottom: 12px; }
+
+/* Turned sideways there is room to put it beside the board rather than over
+   it, on the opposite edge from the tools. */
+@media (min-aspect-ratio: 1 / 1) {
+  body.immersive #inspector {
+    left: auto;
+    right: 8px;
+    width: 268px;
+    top: calc(46px + env(safe-area-inset-top));
+    bottom: 8px;
+    max-height: none;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding-bottom: 14px;
+  }
+  body.immersive #inspector.is-collapsed {
+    top: auto;
+    bottom: 8px;
+    padding-bottom: 10px;
+  }
+  body.immersive #ink-bar {
+    left: auto;
+    right: 8px;
+    width: 268px;
+    bottom: 8px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+  }
+}
+
 .float-btn {
   display: none;
   position: fixed;
@@ -550,9 +585,20 @@ body.immersive .surface-chip { padding: 5px 9px; font-size: 11.5px; }
 }
 .float-btn:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
 body.immersive .float-btn { display: inline-flex; }
-/* The inspector and the handwriting bar own that corner while they are up. */
+/* The inspector and the handwriting bar share that corner. Step over them
+   rather than vanishing: hiding the tools button while an object is picked
+   is how you end up in full screen with no way back to the toolbar. */
 body.inspecting .float-btn,
-body.ink-picked .float-btn { display: none; }
+body.ink-picked .float-btn { bottom: calc(70px + env(safe-area-inset-bottom)); }
+@media (min-aspect-ratio: 1 / 1) {
+  body.immersive .float-btn,
+  body.immersive.inspecting .float-btn,
+  body.immersive.ink-picked .float-btn {
+    right: auto;
+    left: 212px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+  }
+}
 
 #mini {
   position: absolute;
@@ -894,10 +940,22 @@ body.chalk-page {
 /* Give the scroller room so the last row is not stuck under the panel. */
 body.inspecting .c-scroll { padding-bottom: 58dvh; }
 
+/* Collapsed: the panel is a bar with the actions on it and nothing else, so
+   the object it describes is still reachable underneath. */
+#inspector.is-collapsed {
+  max-height: none;
+  overflow: visible;
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+}
+#inspector.is-collapsed #inspector-body { display: none; }
+#inspector.is-collapsed .insp-top { border-bottom: 0; margin-bottom: 0; }
+body.inspecting.insp-collapsed .c-scroll { padding-bottom: 110px; }
+
 .insp-top {
   position: sticky;
   top: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 12px 0 10px;

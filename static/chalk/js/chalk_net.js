@@ -95,6 +95,13 @@
       var msg;
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
       if (msg.t === "pong") return;
+      /* Moved handwriting is applied here, not only in the page's own
+       * handler, so the projector follows it whether or not chalk_stage.js
+       * knows these frames exist. Applying twice is a no-op — see
+       * ChalkInk.applyInkFrame. */
+      if (global.ChalkInk && global.ChalkInk.applyInkFrame) {
+        try { global.ChalkInk.applyInkFrame(msg); } catch (err) {}
+      }
       if (msg.t === "denied") {
         var reason = msg.code || "denied";
         if (RETRYABLE[reason] && !self.retriedDenial) {

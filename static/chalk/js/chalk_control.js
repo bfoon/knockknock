@@ -24,6 +24,7 @@
   var expiredWhy = document.getElementById("expired-why");
   var expiredRetry = document.getElementById("expired-retry");
   var inspector = document.getElementById("inspector");
+  var inspToggle = document.getElementById("insp-toggle");
   var inspectorBody = document.getElementById("inspector-body");
   var inspectorName = document.getElementById("inspector-name");
   var sheet = document.getElementById("sheet");
@@ -741,6 +742,8 @@
     var el = ChalkEls.blank("text", { color: inkColor() });
     placeCentre(el, 0.36, 0.12);
     pushEl(el);
+    /* A brand new text box has nothing in it, so the keyboard is the only
+     * useful next step whatever the layout. */
     openTextSheet();
   });
 
@@ -1021,12 +1024,41 @@
     if (el) patchEl(buildPatch(el, key, value));
   }
 
+  /* The details are a drawer, not a wall.
+   *
+   * Picking a shape used to open every knob it has, and on a phone that is
+   * most of the screen. On the full-screen board it was the whole board: the
+   * object you had just picked was underneath the panel describing it, and
+   * there was no way to reach its handles. So the panel opens as a bar —
+   * name, To front, Delete, Done — and the knobs come out only when asked
+   * for. Full screen starts every selection that way; the ordinary layout,
+   * where there is a pad above the panel and nothing is hidden, does not. */
+  var inspCollapsed = false;
+  var lastInspected = null;
+
+  function setInspCollapsed(on) {
+    inspCollapsed = !!on;
+    inspector.classList.toggle("is-collapsed", inspCollapsed);
+    document.body.classList.toggle("insp-collapsed", inspCollapsed);
+    inspToggle.textContent = inspCollapsed ? "Details" : "Hide details";
+    inspToggle.setAttribute("aria-expanded", String(!inspCollapsed));
+  }
+
+  inspToggle.addEventListener("click", function () {
+    setInspCollapsed(!inspCollapsed);
+  });
+
   function renderInspector() {
     var el = editor.selected && layer.get(editor.selected);
     if (!el) {
       inspector.hidden = true;
       document.body.classList.remove("inspecting");
+      lastInspected = null;
       return;
+    }
+    if (el.id !== lastInspected) {
+      lastInspected = el.id;
+      setInspCollapsed(document.body.classList.contains("immersive"));
     }
     inspector.hidden = false;
     document.body.classList.add("inspecting");
@@ -1296,6 +1328,8 @@
     goFs.setAttribute("aria-pressed", String(on));
     goFs.title = on ? "Back to the normal layout" : "Whole screen";
     if (on) setTools(true);
+    /* Whatever is picked right now should not be buried by the change. */
+    if (editor.selected) setInspCollapsed(on);
     /* After the class lands, not before: the pad has not moved yet. */
     requestAnimationFrame(function () { requestAnimationFrame(relayout); });
   }

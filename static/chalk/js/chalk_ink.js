@@ -239,6 +239,11 @@
   /* Surface: two stacked canvases — committed ink and the in-flight stroke. */
   /* ------------------------------------------------------------------ */
 
+  /* Every surface on the page, so a moved-ink frame can be applied without
+   * the page's own message handler knowing the frame type exists. See
+   * applyInkFrame below. */
+  var liveSurfaces = [];
+
   function Surface(host) {
     this.host = host;
     this.strokes = [];
@@ -274,6 +279,7 @@
     global.addEventListener("scroll", function () { self._rect = null; }, true);
     global.addEventListener("orientationchange", function () { self._rect = null; });
 
+    liveSurfaces.push(this);
     requestAnimationFrame(this._tick);
   }
 
@@ -554,6 +560,35 @@
     };
   };
 
+  /* ------------------------------------------------------------------ */
+  /* moved-ink frames, applied for any page that loads this file          */
+  /*                                                                      */
+  /* chalk_net.js calls this on every inbound frame, before handing it to  */
+  /* the page. The projector therefore follows moved handwriting without   */
+  /* a case for it in its own switch — which matters because a page whose  */
+  /* handler drops these frames does not look broken, it looks like the    */
+  /* feature simply does not work on the wall.                             */
+  /*                                                                      */
+  /* Applying twice is safe: `sel` identifies the gesture, the surface     */
+  /* remembers the ink as it was when that gesture began, and a committed  */
+  /* one is claimed once and then ignored. So a page that DOES handle      */
+  /* these frames itself loses nothing.                                    */
+  /* ------------------------------------------------------------------ */
+
+  function applyInkFrame(msg) {
+    if (!msg || !liveSurfaces.length) return;
+    if (msg.t === "ink_live") {
+      liveSurfaces.forEach(function (s) { s.xform(msg.sel, msg.ids, msg.m); });
+      return;
+    }
+    if (msg.t === "ink" && msg.xform && msg.xform.length) {
+      msg.xform.forEach(function (op) {
+        if (!op) return;
+        liveSurfaces.forEach(function (s) { s.xformOnce(op.sel, op.ids, op.m); });
+      });
+    }
+  }
+
   global.ChalkInk = {
     TOOLS: TOOLS,
     smooth: smooth,
@@ -561,6 +596,8 @@
     hit: hit,
     newId: newId,
     bounds: boundsOf,
+    applyInkFrame: applyInkFrame,
+    surfaces: liveSurfaces,
     mapPoints: mapPoints,
     matrixScale: matrixScale,
     Surface: Surface

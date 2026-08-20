@@ -17,14 +17,21 @@
   <button class="icon-btn" id="page-prev" type="button" title="Previous page" aria-label="Previous page">‹</button>
   <span class="page-tag" id="page-tag">1 / 1</span>
   <button class="icon-btn" id="page-next" type="button" title="Next page" aria-label="Next page">›</button>
-  <button class="icon-btn" id="go-fs" type="button" title="Full screen" aria-label="Full screen">⛶</button>
+  <button class="icon-btn" id="go-fs" type="button" title="Whole screen"
+          aria-label="Use the whole screen" aria-pressed="false">⛶</button>
 </header>
 
 <div id="pad-wrap" class="chalk-board" data-surface="{{ board.surface }}">
   <div id="pad"></div>
   <div id="els" class="chalk-els"></div>
+  {# Drag on empty board with Pick to lasso handwriting. #}
+  <div id="marquee" hidden></div>
   <div id="mini" hidden><div id="mini-win"></div></div>
 </div>
+
+{# Only on screen while the board is filling the phone: the tools float over
+   it, so there has to be a way to get them out of the way. #}
+<button id="tools-toggle" class="float-btn" type="button" aria-expanded="true">Tools</button>
 
 <div class="c-scroll">
 
@@ -86,11 +93,20 @@
     <span class="row-label">Page</span>
     <button class="icon-btn" id="undo" type="button" disabled>Undo</button>
     <button class="icon-btn" id="redo" type="button" disabled>Redo</button>
+    <button class="icon-btn" id="ink-all" type="button">Pick all writing</button>
     <button class="icon-btn" id="clear" type="button">Wipe page</button>
     <button class="icon-btn danger" id="page-delete" type="button">Delete page</button>
   </div>
 
 </div>
+
+<section id="ink-bar" hidden aria-label="Selected handwriting">
+  <strong id="ink-count">Handwriting</strong>
+  <span class="spacer"></span>
+  <button class="icon-btn" id="ink-more" type="button" aria-pressed="false">Add more</button>
+  <button class="icon-btn danger" id="ink-delete" type="button">Rub out</button>
+  <button class="icon-btn" id="ink-done" type="button">Done</button>
+</section>
 
 <section id="inspector" hidden aria-label="Selected object">
   <header class="insp-top">

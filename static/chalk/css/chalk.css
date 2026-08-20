@@ -452,6 +452,108 @@ body[data-net="connecting"] #pad-wrap::after {
   }
 }
 
+/* ==========================================================================
+   Whole-screen board on the phone
+
+   Two separate ideas, and they are kept separate on purpose: the browser
+   full-screen API, which iOS Safari does not offer, and this layout, where
+   the board fills the phone and the tools float over it. The layout does not
+   wait for the API — `body.immersive` is set either way.
+
+   The pad keeps its 16:9 shape here. It is a scale model of the projector;
+   stretching it to the shape of a phone would mean a circle drawn on the
+   phone arriving on the wall as an ellipse.
+   ========================================================================== */
+
+body.immersive { padding: 0; }
+
+body.immersive .c-top {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 9;
+  padding: max(6px, env(safe-area-inset-top)) 12px 8px;
+  background: rgba(16, 21, 27, .78);
+  backdrop-filter: blur(10px);
+}
+
+body.immersive #pad-wrap {
+  position: fixed;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  aspect-ratio: auto;      /* width and height are both given below */
+  width: min(100vw, calc(100dvh * 16 / 9));
+  height: min(100dvh, calc(100vw * 9 / 16));
+  max-height: none;
+}
+
+/* The toolbar becomes a floating panel: a strip under the status bar when
+   the phone is upright, a rail down the side once it is turned. */
+body.immersive .c-scroll {
+  position: fixed;
+  z-index: 8;
+  left: 8px; right: 8px;
+  top: calc(48px + env(safe-area-inset-top));
+  max-height: 42dvh;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(16, 21, 27, .84);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .5);
+  flex: 0 0 auto;
+}
+@media (min-aspect-ratio: 1 / 1) {
+  body.immersive .c-scroll {
+    right: auto;
+    width: 196px;
+    top: calc(46px + env(safe-area-inset-top));
+    bottom: 8px;
+    max-height: none;
+  }
+}
+body.immersive.tools-away .c-scroll { display: none; }
+
+/* Everything shrinks a size: the panel is over the board, so every pixel it
+   does not take is board. */
+body.immersive .row { gap: 6px; margin-bottom: 9px; }
+body.immersive .row-label { margin-bottom: 0; font-size: 10px; }
+body.immersive .icon-btn {
+  height: 30px; min-width: 32px;
+  padding: 0 8px;
+  font-size: 12.5px;
+  border-radius: 8px;
+}
+body.immersive .swatch,
+body.immersive #custom-color { width: 28px; height: 28px; }
+body.immersive #width-preview { width: 40px; height: 28px; }
+body.immersive .surface-chip { padding: 5px 9px; font-size: 11.5px; }
+
+.float-btn {
+  display: none;
+  position: fixed;
+  right: 10px;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  z-index: 11;
+  align-items: center;
+  border-radius: 999px;
+  padding: 9px 15px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--dust);
+  background: rgba(16, 21, 27, .88);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+}
+.float-btn:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+body.immersive .float-btn { display: inline-flex; }
+/* The inspector and the handwriting bar own that corner while they are up. */
+body.inspecting .float-btn,
+body.ink-picked .float-btn { display: none; }
+
 #mini {
   position: absolute;
   right: 8px; bottom: 8px;
@@ -668,6 +770,28 @@ body.chalk-page {
   height: 100%;
   display: block;
 }
+/* A photo that cannot be fetched used to be an empty rectangle with nothing
+   to say for itself. Now the frame carries the reason, and the full address
+   is in the element's title for whoever is fixing the server. */
+.chalk-el[data-img="err"] {
+  border: 1.5px dashed var(--rust);
+  border-radius: 8px;
+  background: rgba(217,97,74,.08);
+}
+.chalk-el[data-img="err"] img { display: none; }
+.chalk-el[data-img="err"]::after {
+  content: "Photo could not be loaded";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 6px;
+  text-align: center;
+  font-family: var(--sans);
+  font-size: clamp(11px, 1.4vw, 15px);
+  color: var(--rust);
+}
+.chalk-el[data-img="loading"] { background: rgba(232,238,244,.04); }
 
 .chalk-svg { width: 100%; height: 100%; display: block; overflow: visible; }
 
@@ -721,6 +845,13 @@ body.chalk-page {
   background: var(--sky);
   opacity: .6;
 }
+
+/* Handwriting is picked with the same frame and handles as an object, in the
+   second accent, so it is never in doubt which of the two you are holding. */
+.chalk-sel-ink .chalk-sel-frame { border-color: var(--sky); }
+.chalk-sel-ink .chalk-h { background: var(--sky); border-color: #06222e; }
+.chalk-sel-ink .chalk-h-rot { background: var(--brass); border-color: #1b1405; }
+.chalk-sel-ink .chalk-h-rot::after { background: var(--brass); }
 
 .chalk-verts { position: absolute; inset: 0; }
 .chalk-sel[data-mode="box"] .chalk-verts { display: none; }
@@ -875,6 +1006,39 @@ body.inspecting .c-scroll { padding-bottom: 58dvh; }
 .pick span { text-align: center; line-height: 1.2; opacity: .82; }
 
 #pad-wrap[data-tool="select"] { outline: 2px solid var(--brass); outline-offset: -2px; }
+
+/* Lasso: drag on bare board with Pick to gather up handwriting. */
+#marquee {
+  position: absolute;
+  z-index: 4;
+  border: 1.5px dashed var(--sky);
+  background: rgba(86,183,230,.12);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+/* ---- picked handwriting --------------------------------------------
+   Same frame and handles as an object, in the second accent, so it is
+   never in doubt whether the box round something is holding a shape or a
+   sentence you wrote. */
+
+#ink-bar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px max(12px, env(safe-area-inset-bottom));
+  background: var(--board);
+  border-top: 1px solid var(--line);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -18px 44px rgba(0,0,0,.5);
+  font-size: 13px;
+}
+#ink-bar .spacer { flex: 1; }
+#ink-count { color: var(--sky); font-weight: 600; white-space: nowrap; }
+body.ink-picked .c-scroll { padding-bottom: 90px; }
 
 #toast {
   position: fixed;

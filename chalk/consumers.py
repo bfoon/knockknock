@@ -9,6 +9,8 @@ Wire protocol — every frame is {"t": "<type>", ...}.
   stroke_pts              stroke_pts     (id, pts)   -- appended, not replaced
   stroke_end              stroke_end     (id, ...)   -- full list, committed
   erase {ids}             erase          (ids, canUndo, canRedo)
+  ink_live {sel,ids,m}    ink_live       (sel, ids, m) -- mid-drag, never stored
+  ink_xform {sel,ids,m}   ink            (xform, canUndo, canRedo)
   el_add {el}             el_add         (el)
   el_live {id, patch}     el_live        (id, patch)  -- mid-drag, never stored
   el_update {id, patch}   el_update      (id, patch, canUndo, canRedo)
@@ -63,6 +65,8 @@ from .models import (
     MAX_STROKES_PER_PAGE,
     MAX_TEXT,
     MAX_UNDO,
+    MAX_XFORM_IDS,
+    clean_src,
 )
 
 TOOLS = {"pen", "marker", "chalk", "highlighter"}
@@ -83,7 +87,10 @@ RATE_PER_SEC = 200.0
 
 # Messages the sender already rendered locally — don't echo them back.
 # "peer" is here so a socket is never told about its own arrival.
-NO_ECHO = {"stroke_start", "stroke_pts", "stroke_end", "pointer", "peer", "el_live"}
+NO_ECHO = {
+    "stroke_start", "stroke_pts", "stroke_end", "pointer", "peer",
+    "el_live", "ink_live",
+}
 
 
 def _num(v, lo=0.0, hi=1.0, default=0.0):
@@ -131,6 +138,110 @@ def clean_stroke(raw):
         "w": _num(raw.get("w"), 0.0004, 0.12, 0.0035),
         "pts": pts,
     }
+
+
+# ----------------------------------------------------------------------
+# moving and resizing ink
+# ----------------------------------------------------------------------
+#
+# Handwriting is a list of points, so moving it is an affine map over those
+# points: [a, b, c, d, e, f], in SVG's order —
+#     x' = a*x + c*y + e
+#     y' = b*x + d*y + f
+# The client sends the map from where the ink was when the finger went down
+# to where it is now, so a whole gesture is six numbers on the wire whatever
+# the selection weighs, and the same frame arriving twice is a no-op rather
+# than a second move.
+#
+# The undo entry keeps the matrix and its inverse, so stepping back through a
+# move costs six numbers as well, instead of a second copy of the ink.
+
+SEL_RE = re.compile(r"^[A-Za-z0-9_-]{1,48}$")
+
+
+def clean_ids(raw, limit):
+    if not isinstance(raw, (list, tuple)):
+        return []
+    out, seen = [], set()
+    for i in raw[:limit]:
+        i = str(i)
+        if i in seen or not ID_RE.match(i):
+            continue
+        seen.add(i)
+        out.append(i)
+    return out
+
+
+def clean_matrix(raw):
+    """Six finite numbers that describe a map worth applying, or None.
+
+    A near-zero determinant is a matrix that folds the ink onto a line, which
+    is not recoverable by undo because it is not invertible. Refuse it here
+    rather than let a stray divide-by-almost-zero flatten a page.
+    """
+    if not isinstance(raw, (list, tuple)) or len(raw) != 6:
+        return None
+    m = []
+    for v in raw:
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return None
+        if f != f or f in (float("inf"), float("-inf")):
+            return None
+        if abs(f) > 1000:
+            return None
+        m.append(round(f, 6))
+    det = m[0] * m[3] - m[1] * m[2]
+    if not (1e-6 < abs(det) < 1e6):
+        return None
+    return m
+
+
+def invert_matrix(m):
+    a, b, c, d, e, f = m
+    det = a * d - b * c
+    ia, ib, ic, idd = d / det, -b / det, -c / det, a / det
+    return [
+        round(ia, 6), round(ib, 6), round(ic, 6), round(idd, 6),
+        round(-(ia * e + ic * f), 6), round(-(ib * e + idd * f), 6),
+    ]
+
+
+def matrix_scale(m):
+    s = abs(m[0] * m[3] - m[1] * m[2]) ** 0.5
+    return s if 0.0001 < s < 10000 else 1.0
+
+
+def xform_strokes(strokes, ids, m):
+    """Move/scale/rotate the named strokes in place. Returns the ids hit.
+
+    Points are clamped wide rather than to 0..1: ink dragged half off the
+    board on its way somewhere else should keep its shape, not flatten
+    against the edge.
+    """
+    wanted = set(ids)
+    a, b, c, d, e, f = m
+    ws = matrix_scale(m)
+    touched = []
+    for s in strokes:
+        if s.get("id") not in wanted:
+            continue
+        pts = s.get("pts") or []
+        out = []
+        for i in range(0, len(pts) - 1, 2):
+            try:
+                x, y = float(pts[i]), float(pts[i + 1])
+            except (TypeError, ValueError):
+                x = y = 0.0
+            out.append(round(min(2.0, max(-1.0, a * x + c * y + e)), 4))
+            out.append(round(min(2.0, max(-1.0, b * x + d * y + f)), 4))
+        if not out:
+            continue
+        s["pts"] = out
+        s["w"] = round(min(0.12, max(0.0004, _num(s.get("w"), 0.0004, 0.12, 0.0035) * ws)), 6)
+        touched.append(s["id"])
+    return touched
 
 
 def _entry_items(entry):
@@ -203,12 +314,6 @@ FX_NUM = {
 FX_BOOL = {"shadow", "glow", "flipH", "flipV"}
 FX_COLOR = {"shadowColor", "glowColor", "extrudeColor"}
 
-# An image src must be something this server stored under MEDIA_URL. An
-# absolute URL, a data: blob, or a path climbing out of media is refused —
-# otherwise "add a photo" is an arbitrary-URL fetch on every projector.
-SRC_RE = re.compile(r"^/[A-Za-z0-9._/-]{1,300}$")
-
-
 def _rng(v, key, table):
     lo, hi, dflt = table[key]
     try:
@@ -225,20 +330,6 @@ def _color(v, dflt="#ffffff", allow_blank=False):
     if allow_blank and v == "":
         return ""
     return v if COLOR_RE.match(v) else dflt
-
-
-def clean_src(v):
-    from django.conf import settings
-
-    v = str(v or "")
-    media = settings.MEDIA_URL or "/media/"
-    if not media.startswith("/"):
-        # MEDIA_URL on a CDN host. Nothing local to validate against, so refuse
-        # rather than guess.
-        return ""
-    if not v.startswith(media) or ".." in v:
-        return ""
-    return v if SRC_RE.match(v) else ""
 
 
 def clean_fx(raw):
@@ -482,6 +573,36 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
                         echo=True,
                     )
 
+        elif t == "ink_live":
+            # Mid-drag, exactly like el_live: broadcast so the class watches
+            # the ink move, store nothing until the finger lifts.
+            sel = str(content.get("sel") or "")
+            ids = clean_ids(content.get("ids"), MAX_XFORM_IDS)
+            m = clean_matrix(content.get("m"))
+            if SEL_RE.match(sel) and ids and m:
+                await self._fan({"t": "ink_live", "sel": sel, "ids": ids, "m": m})
+
+        elif t == "ink_xform":
+            sel = str(content.get("sel") or "")
+            ids = clean_ids(content.get("ids"), MAX_XFORM_IDS)
+            m = clean_matrix(content.get("m"))
+            if SEL_RE.match(sel) and ids and m:
+                result = await self._ink_xform(ids, m)
+                if result:
+                    await self._fan(
+                        {
+                            "t": "ink",
+                            "add": [],
+                            "del": [],
+                            "xform": [
+                                {"sel": sel, "ids": result["ids"], "m": m}
+                            ],
+                            "canUndo": result["canUndo"],
+                            "canRedo": result["canRedo"],
+                        },
+                        echo=True,
+                    )
+
         elif t == "el_add":
             el = clean_el(content.get("el"))
             if el:
@@ -668,11 +789,15 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
         sent = False
         for layer, name in (("ink", "ink"), ("els", "els")):
             part = ops.get(layer)
-            if not part or not (part["add"] or part["del"] or part["edit"]):
+            if not part or not (
+                part["add"] or part["del"] or part["edit"] or part.get("xform")
+            ):
                 continue
             frame = {"t": name, "add": part["add"], "del": part["del"], **flags}
             if layer == "els":
                 frame["edit"] = part["edit"]
+            else:
+                frame["xform"] = part.get("xform") or []
             await self._fan(frame, echo=True)
             sent = True
         if not sent:
@@ -785,6 +910,8 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
     #    "items": [{"i": <index>, "s": <object>}]}
     #   {"op": "edit", "layer": "els",
     #    "items": [{"id": ..., "before": {...}, "after": {...}}]}
+    #   {"op": "xform", "layer": "ink",
+    #    "items": [{"ids": [...], "m": [a,b,c,d,e,f], "inv": [...]}]}
     #
     # "add" means those objects were put on the board; "del" means they were
     # taken off; "edit" means one element's fields changed. Undo applies the
@@ -800,9 +927,31 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
     @staticmethod
     def _apply(objects, entry, forward):
         """Mutate `objects` and return the ops a client needs to match:
-        {"add": [{i, s}], "del": [ids], "edit": [{id, patch, drop}]}."""
+        {"add": [{i, s}], "del": [ids], "edit": [{id, patch, drop}],
+         "xform": [{sel, ids, m}]}."""
         op = entry.get("op")
         raw = entry.get("items") or []
+
+        if op == "xform":
+            # Forward replays the move, backward applies its inverse. Each
+            # application gets a fresh `sel` so every client treats it as a
+            # new gesture and re-reads its own ink as the starting point.
+            moves = []
+            for n, it in enumerate(raw):
+                if not isinstance(it, dict):
+                    continue
+                m = it.get("m") if forward else it.get("inv")
+                ids = it.get("ids") or []
+                if not isinstance(m, (list, tuple)) or len(m) != 6 or not ids:
+                    continue
+                m = list(m)
+                hit = xform_strokes(objects, ids, m)
+                if not hit:
+                    continue
+                moves.append(
+                    {"sel": "h%d%d" % (time.monotonic_ns(), n), "ids": hit, "m": m}
+                )
+            return {"add": [], "del": [], "edit": [], "xform": moves}
 
         if op == "edit":
             key, other = ("after", "before") if forward else ("before", "after")
@@ -823,7 +972,7 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
                 for k in drop:
                     target.pop(k, None)
                 edits.append({"id": eid, "patch": want, "drop": drop})
-            return {"add": [], "del": [], "edit": edits}
+            return {"add": [], "del": [], "edit": edits, "xform": []}
 
         items = [it for it in raw if isinstance(it, dict) and "s" in it]
         adding = (op == "add") == forward
@@ -833,10 +982,13 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
                 idx = min(max(0, int(it.get("i", len(objects)))), len(objects))
                 objects.insert(idx, it["s"])
                 placed.append({"i": idx, "s": it["s"]})
-            return {"add": placed, "del": [], "edit": []}
+            return {"add": placed, "del": [], "edit": [], "xform": []}
         gone = {it["s"].get("id") for it in items}
         objects[:] = [o for o in objects if o.get("id") not in gone]
-        return {"add": [], "del": sorted(i for i in gone if i), "edit": []}
+        return {
+            "add": [], "del": sorted(i for i in gone if i),
+            "edit": [], "xform": [],
+        }
 
     @classmethod
     def _apply_entry(cls, strokes, els, entry, forward):
@@ -850,7 +1002,7 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
             if ops[layer] is None:
                 ops[layer] = result
             else:
-                for k in ("add", "del", "edit"):
+                for k in ("add", "del", "edit", "xform"):
                     ops[layer][k] = ops[layer][k] + result[k]
         return ops
 
@@ -924,6 +1076,36 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
             self._touch_board()
             return {
                 "ids": ops["del"],
+                "canUndo": bool(page.history),
+                "canRedo": bool(page.undone),
+            }
+
+    @database_sync_to_async
+    def _ink_xform(self, ids, m):
+        """Move, resize or turn a set of strokes. One gesture, one entry.
+
+        The whole drag is one row in the undo stack, the same way dragging an
+        element is: it is one thing the teacher did, and stepping back through
+        it point by point would be unusable.
+        """
+        with transaction.atomic():
+            _, page = self._page_locked()
+            strokes = list(page.strokes or [])
+            touched = xform_strokes(strokes, ids, m)
+            if not touched:
+                return None
+            self._push(
+                page,
+                {
+                    "op": "xform", "layer": "ink",
+                    "items": [{"ids": touched, "m": m, "inv": invert_matrix(m)}],
+                },
+            )
+            page.strokes = strokes
+            page.save(update_fields=["strokes", "history", "undone", "updated_at"])
+            self._touch_board()
+            return {
+                "ids": touched,
                 "canUndo": bool(page.history),
                 "canRedo": bool(page.undone),
             }

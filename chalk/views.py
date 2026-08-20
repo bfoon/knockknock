@@ -18,6 +18,7 @@ from .models import (
     Board,
     BoardImage,
     BoardSession,
+    clean_src,
 )
 
 # /join/ limits. Six-to-eight digits is a small enough space that an
@@ -297,11 +298,32 @@ class UploadImageView(View):
         image = BoardImage.objects.create(
             board=board, file=upload, width=width, height=height
         )
+
+        # The address has to be one the board will accept later, when the
+        # phone sends the element over the websocket. If it is not, the photo
+        # uploads, the element is silently refused, and all anyone sees is an
+        # empty frame on the projector. Fail here instead, where there is
+        # somewhere to put the reason.
+        src = clean_src(image.file.url)
+        if not src:
+            image.delete()
+            return JsonResponse(
+                {
+                    "ok": False,
+                    "error": (
+                        "This server is not set up to serve photos yet. "
+                        "Ask whoever runs it to check MEDIA_URL and MEDIA_ROOT."
+                    ),
+                    "detail": f"Rejected media address: {image.file.url!r}",
+                },
+                status=500,
+            )
+
         session.extend()
         return JsonResponse(
             {
                 "ok": True,
-                "src": image.file.url,
+                "src": src,
                 "width": width,
                 "height": height,
                 "ratio": round(height / width, 4),

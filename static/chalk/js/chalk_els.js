@@ -160,6 +160,12 @@
     inner.appendChild(t);
   }
 
+  /* A photo that cannot be fetched used to render as an empty box: the
+   * element was on the board, the frame was on the board, and the picture
+   * simply was not. Nothing anywhere said why. The two usual causes are a
+   * media root the web server is not serving and a MEDIA_URL the board never
+   * stored, and both look identical from the classroom. So say it on the
+   * board itself, and put the path in the title for whoever is fixing it. */
   function renderImage(inner, el) {
     var img = inner.firstChild;
     if (!img || img.tagName !== "IMG") {
@@ -167,9 +173,26 @@
       img = document.createElement("img");
       img.alt = "";
       img.draggable = false;
+      img.decoding = "async";
       inner.appendChild(img);
     }
-    if (img.getAttribute("src") !== el.src) img.setAttribute("src", el.src || "");
+    var box = inner.parentNode;
+    if (img.getAttribute("src") !== (el.src || "")) {
+      img.onload = function () {
+        if (box) box.dataset.img = "ok";
+      };
+      img.onerror = function () {
+        if (box) {
+          box.dataset.img = "err";
+          box.title = "This photo could not be loaded: " + (el.src || "(no address)");
+        }
+      };
+      if (box) box.dataset.img = el.src ? "loading" : "err";
+      /* Setting src to "" makes the browser re-request the page itself, so
+       * an element with no photo yet is left with no src at all. */
+      if (el.src) img.setAttribute("src", el.src);
+      else img.removeAttribute("src");
+    }
     img.style.objectFit = el.fit === "cover" ? "cover" : "contain";
     img.style.borderRadius = (el.radius || 0) + "%";
   }

@@ -180,6 +180,62 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* moving and resizing ink                                             */
+  /*                                                                     */
+  /* A stroke is a flat point list, so "move this handwriting" is just an */
+  /* affine map over those points. The matrix is [a,b,c,d,e,f], the same  */
+  /* order SVG uses:                                                      */
+  /*     x' = a*x + c*y + e                                               */
+  /*     y' = b*x + d*y + f                                               */
+  /* One matrix moves, scales and rotates in a single step, and it is six */
+  /* numbers on the wire whatever the selection weighs.                   */
+  /* ------------------------------------------------------------------ */
+
+  function mapPoints(pts, m) {
+    var out = new Array(pts.length);
+    for (var i = 0; i < pts.length; i += 2) {
+      var x = pts[i], y = pts[i + 1];
+      /* Ink may be dragged past the edge of the board on the way somewhere
+       * else. Clamp wide rather than to 0..1, which would flatten a stroke
+       * against the edge and lose its shape for good. */
+      out[i] = Math.round(Math.min(2, Math.max(-1, m[0] * x + m[2] * y + m[4])) * 10000) / 10000;
+      out[i + 1] = Math.round(Math.min(2, Math.max(-1, m[1] * x + m[3] * y + m[5])) * 10000) / 10000;
+    }
+    return out;
+  }
+
+  /* How much the matrix scales area, as a single linear factor. Used to
+   * carry stroke width along with a resize — handwriting scaled to twice the
+   * size with the same hairline width reads as a different pen. */
+  function matrixScale(m) {
+    var det = Math.abs(m[0] * m[3] - m[1] * m[2]);
+    var s = Math.sqrt(det);
+    return s > 0.0001 && s < 10000 ? s : 1;
+  }
+
+  function boundsOf(list) {
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    list.forEach(function (s) {
+      var p = s.pts || [];
+      for (var i = 0; i < p.length; i += 2) {
+        if (p[i] < minX) minX = p[i];
+        if (p[i] > maxX) maxX = p[i];
+        if (p[i + 1] < minY) minY = p[i + 1];
+        if (p[i + 1] > maxY) maxY = p[i + 1];
+      }
+    });
+    if (minX === Infinity) return null;
+    /* Never hand back a zero-width box: a single dot would give a scale
+     * factor of infinity the moment somebody grabbed a corner. */
+    var pad = 0.004;
+    return {
+      x: minX - pad, y: minY - pad,
+      w: Math.max(0.012, maxX - minX + pad * 2),
+      h: Math.max(0.012, maxY - minY + pad * 2)
+    };
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Surface: two stacked canvases — committed ink and the in-flight stroke. */
   /* ------------------------------------------------------------------ */
 
@@ -254,6 +310,7 @@
   Surface.prototype.setStrokes = function (list) {
     this.strokes = (list || []).map(copyStroke);
     this.live = Object.create(null);
+    this.dropXformBase();
     this.redrawBase();
     this._liveDirty = true;
   };
@@ -331,12 +388,117 @@
     ids.forEach(function (i) { gone[i] = 1; });
     var before = this.strokes.length;
     this.strokes = this.strokes.filter(function (s) { return !gone[s.id]; });
-    if (this.strokes.length !== before) this.redrawBase();
+    if (this.strokes.length !== before) { this.dropXformBase(); this.redrawBase(); }
+  };
+
+  Surface.prototype.byId = function (id) {
+    for (var i = 0; i < this.strokes.length; i++) {
+      if (this.strokes[i].id === id) return this.strokes[i];
+    }
+    return null;
+  };
+
+  /* Bounding box of a set of strokes, in normalised board space. */
+  Surface.prototype.bboxOf = function (ids) {
+    var self = this;
+    var list = (ids || []).map(function (id) { return self.byId(id); })
+      .filter(function (s) { return !!s; });
+    return list.length ? boundsOf(list) : null;
+  };
+
+  /* Every stroke with at least one point inside `rect` ({x,y,w,h}). Touch,
+   * not containment: a teacher lassoing a word should not have to enclose
+   * the tail of every letter. */
+  Surface.prototype.idsIn = function (rect) {
+    var x2 = rect.x + rect.w, y2 = rect.y + rect.h, out = [];
+    this.strokes.forEach(function (s) {
+      var p = s.pts || [];
+      for (var i = 0; i < p.length; i += 2) {
+        if (p[i] >= rect.x && p[i] <= x2 && p[i + 1] >= rect.y && p[i + 1] <= y2) {
+          out.push(s.id);
+          return;
+        }
+      }
+    });
+    return out;
+  };
+
+  Surface.prototype.allIds = function () {
+    return this.strokes.map(function (s) { return s.id; });
+  };
+
+  /* --- transform ------------------------------------------------------
+   *
+   * Every frame of a drag sends the SAME matrix shape: the map from where
+   * the ink was when the finger went down to where it is now. So the base
+   * has to be remembered, keyed by `sel` — one id per gesture. Applying the
+   * same (sel, matrix) twice is then a no-op rather than a double move,
+   * which is what makes the mid-drag broadcast and the committed frame safe
+   * to both arrive at the same screen.
+   */
+
+  Surface.prototype._baseFor = function (sel, ids) {
+    if (this._xsel === sel && this._xbase) return this._xbase;
+    var base = Object.create(null), self = this;
+    (ids || []).forEach(function (id) {
+      var s = self.byId(id);
+      if (s) base[id] = { pts: s.pts.slice(), w: s.w };
+    });
+    this._xsel = sel;
+    this._xbase = base;
+    return base;
+  };
+
+  /* A committed move is applied exactly once per gesture, wherever it comes
+   * from. The phone that made the move has already drawn it, so it claims
+   * the gesture before sending; the echo then lands here and is ignored. */
+  Surface.prototype.markXformDone = function (sel) {
+    if (!this._xdone) this._xdone = Object.create(null);
+    this._xdone[sel] = 1;
+    var keys = Object.keys(this._xdone);
+    if (keys.length > 80) delete this._xdone[keys[0]];
+  };
+
+  Surface.prototype.xformOnce = function (sel, ids, m) {
+    if (!this._xdone) this._xdone = Object.create(null);
+    if (this._xdone[sel]) return false;
+    var moved = this.xform(sel, ids, m);
+    this.markXformDone(sel);
+    return moved;
+  };
+
+  Surface.prototype.dropXformBase = function () {
+    this._xsel = null;
+    this._xbase = null;
+  };
+
+  Surface.prototype.xform = function (sel, ids, m) {
+    if (!m || m.length !== 6) return false;
+    var base = this._baseFor(sel, ids);
+    var ws = matrixScale(m), moved = false, self = this;
+    (ids || []).forEach(function (id) {
+      var s = self.byId(id), b = base[id];
+      if (!s || !b) return;
+      s.pts = mapPoints(b.pts, m);
+      s.w = Math.min(0.12, Math.max(0.0004, b.w * ws));
+      /* The smoothing cache is keyed on point COUNT, which a transform does
+       * not change. Without this the projector redraws the old curve at the
+       * new width and the ink appears not to move at all. */
+      s._sm = null;
+      s._smN = -1;
+      moved = true;
+    });
+    if (moved) {
+      this.redrawBase();
+      this._liveDirty = true;
+    }
+    return moved;
   };
 
   /* Apply a server "ink" op: delete these ids, insert these strokes at these
-   * indices. Replaces the old full-page snapshot on every undo/redo. */
-  Surface.prototype.applyOps = function (add, del) {
+   * indices, move these ones. Replaces the old full-page snapshot on every
+   * undo/redo. */
+  Surface.prototype.applyOps = function (add, del, xform) {
     var changed = false;
     if (del && del.length) {
       var gone = {};
@@ -356,8 +518,17 @@
       });
     }
     if (changed) {
+      /* Inserting or removing strokes invalidates any half-finished drag:
+       * the base was captured against a page that no longer exists. */
+      this.dropXformBase();
       this.redrawBase();
       this._liveDirty = true;
+    }
+    if (xform && xform.length) {
+      var self2 = this;
+      xform.forEach(function (op) {
+        if (op && self2.xformOnce(op.sel, op.ids, op.m)) changed = true;
+      });
     }
     return changed;
   };
@@ -365,6 +536,7 @@
   Surface.prototype.clear = function () {
     this.strokes = [];
     this.live = Object.create(null);
+    this.dropXformBase();
     this.redrawBase();
     this._liveDirty = true;
   };
@@ -388,6 +560,9 @@
     drawStroke: drawStroke,
     hit: hit,
     newId: newId,
+    bounds: boundsOf,
+    mapPoints: mapPoints,
+    matrixScale: matrixScale,
     Surface: Surface
   };
 })(window);

@@ -31,6 +31,11 @@
   var sheetTitle = document.getElementById("sheet-title");
   var photoInput = document.getElementById("photo-input");
   var toast = document.getElementById("toast");
+  var marquee = document.getElementById("marquee");
+  var inkBar = document.getElementById("ink-bar");
+  var inkCount = document.getElementById("ink-count");
+  var goFs = document.getElementById("go-fs");
+  var toolsToggle = document.getElementById("tools-toggle");
 
   var surface = new ChalkInk.Surface(pad);
   surface.setStrokes(CFG.strokes || []);
@@ -99,6 +104,7 @@
       case "snapshot":
         surface.setStrokes(m.strokes || []);
         layer.setEls(m.els || []);
+        clearInk();
         /* Keep the selection only if that element survived the page change. */
         editor.select(layer.get(editor.selected) ? editor.selected : null);
         setPage(m.pageIndex, m.pageCount);
@@ -114,10 +120,20 @@
       case "erase":
         surface.remove(m.ids);
         setHistory(m.canUndo, m.canRedo);
+        if (inkIds.length && m.ids.some(inSelection)) reboxInk();
+        break;
+      /* Another paired device is moving ink. Same treatment as stroke_pts:
+       * follow it live, store nothing. */
+      case "ink_live":
+        surface.xform(m.sel, m.ids, m.m);
         break;
       case "ink":
-        surface.applyOps(m.add, m.del);
+        surface.applyOps(m.add, m.del, m.xform);
         setHistory(m.canUndo, m.canRedo);
+        /* Strokes appearing or vanishing (an undone wipe, a redone erase)
+         * invalidates the picked set; a move only shifts it. */
+        if ((m.add && m.add.length) || (m.del && m.del.length)) clearInk();
+        else if (m.xform && m.xform.length) reboxInk();
         break;
       case "els":
         layer.applyOps(m.add, m.del, m.edit);
@@ -145,6 +161,8 @@
     }
   }
 
+  function inSelection(id) { return inkIds.indexOf(id) !== -1; }
+
   /* ------------------------------------------------------------------ */
   /* drawing                                                             */
   /* ------------------------------------------------------------------ */
@@ -159,10 +177,28 @@
     if (activePointer !== null) return;
 
     if (state.tool === "select") {
-      /* Tapping bare board deselects. No capture: the overlay handles the
-       * drag from here, and capturing would steal it back. */
+      /* Objects first, then handwriting, then a lasso. No capture for the
+       * first two: the selection overlay handles the drag from here, and
+       * capturing would steal it back. */
       var sp = surface.toBoard(e.clientX, e.clientY);
-      editor.select(layer.hit(sp.x, sp.y));
+      var elHit = layer.hit(sp.x, sp.y);
+      if (elHit) {
+        clearInk();
+        editor.select(elHit);
+        return;
+      }
+      var inkHit = surface.hit(sp.x, sp.y, 0.014 / state.view.s);
+      if (inkHit) {
+        editor.select(null);
+        selectInk(inkAdd ? withId(inkIds, inkHit) : [inkHit]);
+        return;
+      }
+      /* Bare board: drag a box round whatever you want to pick up. */
+      activePointer = e.pointerId;
+      pad.setPointerCapture(e.pointerId);
+      lasso = { from: sp, to: sp };
+      placeMarquee(lassoRect());
+      marquee.hidden = false;
       return;
     }
 
@@ -207,7 +243,14 @@
   }
 
   pad.addEventListener("pointermove", function (e) {
-    if (state.tool === "select") return;
+    if (state.tool === "select") {
+      if (lasso && e.pointerId === activePointer) {
+        e.preventDefault();
+        lasso.to = surface.toBoard(e.clientX, e.clientY);
+        placeMarquee(lassoRect());
+      }
+      return;
+    }
     if (activePointer !== null && e.pointerId !== activePointer) return;
     var events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
 
@@ -244,7 +287,13 @@
    * early and the rest of the movement was dropped in silence. */
   ["pointerup", "pointercancel"].forEach(function (type) {
     pad.addEventListener(type, function (e) {
-      if (state.tool === "select") return;
+      if (state.tool === "select") {
+        if (lasso && e.pointerId === activePointer) {
+          endLasso(type === "pointercancel");
+          activePointer = null;
+        }
+        return;
+      }
       if (activePointer !== null && e.pointerId !== activePointer) return;
       activePointer = null;
 
@@ -340,7 +389,10 @@
   function applyView() {
     surface.setView(state.view);
     layer.setView(state.view);
+    inkAdapter.view = state.view;
     editor.refresh();
+    inkEditor.refresh();
+    if (lasso) placeMarquee(lassoRect());
     drawMini();
   }
 
@@ -404,7 +456,10 @@
       b.setAttribute("aria-pressed", String(on));
     });
     padWrap.dataset.tool = tool;
-    if (tool !== "select") editor.select(null);
+    if (tool !== "select") {
+      editor.select(null);
+      clearInk();
+    }
   }
 
   document.querySelectorAll("[data-tool]").forEach(function (b) {
@@ -458,6 +513,198 @@
     editor.refresh();
     renderInspector();
   }
+
+  /* ------------------------------------------------------------------ */
+  /* handwriting: pick it up, move it, resize it, turn it                */
+  /*                                                                     */
+  /* Ink is not an element and has no box of its own, so one is invented: */
+  /* the bounding box of whatever is picked. ChalkEdit only ever asks a   */
+  /* layer for `view`, `get` and `patch`, so a three-method stand-in gets */
+  /* the same handles, the same frame and the same drag behaviour as an   */
+  /* object, and every stroke follows the box as an affine map.           */
+  /* ------------------------------------------------------------------ */
+
+  var INK_ID = "__ink__";
+  var inkIds = [];          // strokes currently picked
+  var inkBox = null;        // the box being dragged
+  var inkBase = null;       // the box as it was when this gesture began
+  var inkSel = "";          // gesture id — see ChalkInk.Surface.xform
+  var inkAdd = false;       // does the next lasso add to the selection?
+  var lasso = null;         // in-progress lasso, in board coordinates
+  var selSeed = 0;
+
+  function newSel() {
+    selSeed = (selSeed + 1) % 100000;
+    return "g" + Date.now().toString(36) + selSeed.toString(36);
+  }
+
+  function withId(ids, id) {
+    return ids.indexOf(id) === -1 ? ids.concat([id]) : ids;
+  }
+
+  function r6(v) { return Math.round(v * 1000000) / 1000000; }
+
+  /* The map from the box where the gesture started to the box as it is now.
+   * Scale on each axis, then rotation about the new centre. Recomputed from
+   * the base every frame rather than accumulated, so a long drag cannot
+   * drift a word off the line it belongs on. */
+  function inkMatrix() {
+    var b = inkBase, n = inkBox;
+    var sx = n.w / b.w, sy = n.h / b.h;
+    var rad = (n.rot || 0) * Math.PI / 180;
+    var cs = Math.cos(rad), sn = Math.sin(rad);
+    var a = sx * cs, c = -sy * sn, bb = sx * sn, d = sy * cs;
+    var bcx = b.x + b.w / 2, bcy = b.y + b.h / 2;
+    var cx = n.x + n.w / 2, cy = n.y + n.h / 2;
+    return [
+      r6(a), r6(bb), r6(c), r6(d),
+      r6(cx - (a * bcx + c * bcy)),
+      r6(cy - (bb * bcx + d * bcy))
+    ];
+  }
+
+  var inkAdapter = {
+    view: state.view,
+    get: function (id) { return id === INK_ID ? inkBox : null; },
+    patch: function (id, patch) {
+      if (id !== INK_ID || !inkBox || !inkBase) return null;
+      Object.assign(inkBox, patch);
+      surface.xform(inkSel, inkIds, inkMatrix());
+      return inkBox;
+    }
+  };
+
+  var inkEditor = ChalkEdit(padWrap, inkAdapter, {
+    live: function () {
+      if (inkIds.length) {
+        net.send({ t: "ink_live", sel: inkSel, ids: inkIds, m: inkMatrix() }, true);
+      }
+    },
+    commit: function () { commitInk(); },
+    select: function () {}
+  });
+  inkEditor.box.classList.add("chalk-sel-ink");
+
+  function selectInk(ids) {
+    ids = (ids || []).filter(function (id) { return !!surface.byId(id); });
+    if (!ids.length) return clearInk();
+    var box = surface.bboxOf(ids);
+    if (!box) return clearInk();
+    inkIds = ids;
+    inkBox = { id: INK_ID, type: "ink", x: box.x, y: box.y, w: box.w, h: box.h, rot: 0 };
+    inkBase = { x: box.x, y: box.y, w: box.w, h: box.h };
+    inkSel = newSel();
+    surface.dropXformBase();
+    editor.select(null);
+    inkEditor.select(INK_ID);
+    renderInkBar();
+  }
+
+  function clearInk() {
+    if (!inkIds.length && !inkBox) return;
+    inkIds = [];
+    inkBox = null;
+    inkBase = null;
+    inkEditor.select(null);
+    renderInkBar();
+  }
+
+  /* Re-read the box off the ink itself. After a move the strokes are where
+   * they are; after a turn their upright box is a different box entirely,
+   * and the frame has to agree with what is on the board. */
+  function reboxInk() {
+    if (!inkIds.length) return;
+    var live = inkIds.filter(function (id) { return !!surface.byId(id); });
+    if (!live.length) return clearInk();
+    var box = surface.bboxOf(live);
+    if (!box) return clearInk();
+    inkIds = live;
+    inkBox = { id: INK_ID, type: "ink", x: box.x, y: box.y, w: box.w, h: box.h, rot: 0 };
+    inkBase = { x: box.x, y: box.y, w: box.w, h: box.h };
+    inkSel = newSel();
+    surface.dropXformBase();
+    inkEditor.select(INK_ID);
+    renderInkBar();
+  }
+
+  function commitInk() {
+    if (!inkIds.length || !inkBox || !inkBase) return;
+    var m = inkMatrix();
+    /* Claim this gesture before the server echoes it back, or the echo
+     * applies the same move a second time. */
+    surface.markXformDone(inkSel);
+    net.send({ t: "ink_xform", sel: inkSel, ids: inkIds, m: m });
+    setHistory(true, false);
+    reboxInk();
+  }
+
+  function renderInkBar() {
+    var n = inkIds.length;
+    inkBar.hidden = n === 0;
+    document.body.classList.toggle("ink-picked", n > 0);
+    if (n) inkCount.textContent = n + (n === 1 ? " mark picked" : " marks picked");
+  }
+
+  /* ---- lasso -------------------------------------------------------- */
+
+  function lassoRect() {
+    var a = lasso.from, b = lasso.to;
+    return {
+      x: Math.min(a.x, b.x), y: Math.min(a.y, b.y),
+      w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y)
+    };
+  }
+
+  function placeMarquee(r) {
+    var v = state.view;
+    marquee.style.left = ((r.x - v.x) * v.s * 100) + "%";
+    marquee.style.top = ((r.y - v.y) * v.s * 100) + "%";
+    marquee.style.width = (r.w * v.s * 100) + "%";
+    marquee.style.height = (r.h * v.s * 100) + "%";
+  }
+
+  function endLasso(cancelled) {
+    var r = lassoRect();
+    lasso = null;
+    marquee.hidden = true;
+    if (cancelled) return;
+    /* A tap, not a drag: that is "nothing, thanks". */
+    if (r.w < 0.012 && r.h < 0.012) {
+      if (!inkAdd) { editor.select(null); clearInk(); }
+      return;
+    }
+    var found = surface.idsIn(r);
+    if (!found.length) {
+      if (!inkAdd) clearInk();
+      else say("Nothing written inside that box.");
+      return;
+    }
+    selectInk(inkAdd ? inkIds.concat(found.filter(function (id) {
+      return inkIds.indexOf(id) === -1;
+    })) : found);
+  }
+
+  document.getElementById("ink-all").addEventListener("click", function () {
+    setTool("select");
+    selectInk(surface.allIds());
+    if (!inkIds.length) say("There is no handwriting on this page yet.");
+  });
+  document.getElementById("ink-more").addEventListener("click", function () {
+    inkAdd = !inkAdd;
+    var b = document.getElementById("ink-more");
+    b.dataset.on = String(inkAdd);
+    b.setAttribute("aria-pressed", String(inkAdd));
+    say(inkAdd ? "Lasso more writing to add it to the selection."
+               : "Lasso now starts a fresh selection.");
+  });
+  document.getElementById("ink-delete").addEventListener("click", function () {
+    if (!inkIds.length) return;
+    var ids = inkIds.slice();
+    surface.remove(ids);
+    net.send({ t: "erase", ids: ids });
+    clearInk();
+  });
+  document.getElementById("ink-done").addEventListener("click", clearInk);
 
   function pushEl(el) {
     layer.upsert(el);
@@ -1017,11 +1264,89 @@
   /* phone housekeeping                                                  */
   /* ------------------------------------------------------------------ */
 
-  document.getElementById("go-fs").addEventListener("click", function () {
+  /* ------------------------------------------------------------------ */
+  /* whole-screen board                                                  */
+  /*                                                                     */
+  /* Two separate things, deliberately: browser full screen, which iOS    */
+  /* Safari does not offer at all, and the layout where the board fills   */
+  /* the phone and the tools float over it. The layout is the one that    */
+  /* matters, so it does not wait for the API.                            */
+  /*                                                                     */
+  /* The pad stays 16:9 whatever the phone is doing. It is a scale model  */
+  /* of the projector — stretch it and a circle drawn here arrives on the */
+  /* wall as an ellipse.                                                  */
+  /* ------------------------------------------------------------------ */
+
+  function relayout() {
+    /* The cached rect is stale the moment the pad moves, and every finger
+     * position is measured against it. */
+    surface._rect = null;
+    surface.resize();
+    layer.resize();
+    layer.setView(state.view);
+    editor.refresh();
+    inkEditor.refresh();
+    drawMini();
+  }
+
+  function setImmersive(on) {
+    document.body.classList.toggle("immersive", on);
+    document.body.classList.toggle("fs-fallback", on && !document.fullscreenElement);
+    goFs.dataset.on = String(on);
+    goFs.setAttribute("aria-pressed", String(on));
+    goFs.title = on ? "Back to the normal layout" : "Whole screen";
+    if (on) setTools(true);
+    /* After the class lands, not before: the pad has not moved yet. */
+    requestAnimationFrame(function () { requestAnimationFrame(relayout); });
+  }
+
+  function setTools(open) {
+    document.body.classList.toggle("tools-away", !open);
+    toolsToggle.setAttribute("aria-expanded", String(open));
+    toolsToggle.textContent = open ? "Hide tools" : "Tools";
+  }
+
+  goFs.addEventListener("click", function () {
+    var turningOn = !document.body.classList.contains("immersive");
+    setImmersive(turningOn);
     var el = document.documentElement;
-    if (document.fullscreenElement) document.exitFullscreen();
-    else if (el.requestFullscreen) el.requestFullscreen().catch(function () {});
-    else document.body.classList.toggle("fs-fallback");
+    if (turningOn) {
+      if (el.requestFullscreen) el.requestFullscreen().catch(function () {});
+      /* Sideways is where a 16:9 board and a phone agree. Android honours
+       * this inside full screen; iOS ignores it, which is why it is a hint
+       * on screen as well and not the only cue. */
+      if (screen.orientation && screen.orientation.lock) {
+        try { screen.orientation.lock("landscape").catch(function () {}); }
+        catch (err) {}
+      }
+    } else {
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(function () {});
+      }
+      if (screen.orientation && screen.orientation.unlock) {
+        try { screen.orientation.unlock(); } catch (err) {}
+      }
+    }
+  });
+
+  toolsToggle.addEventListener("click", function () {
+    setTools(document.body.classList.contains("tools-away"));
+  });
+
+  /* Leaving full screen by swipe or Back should not leave the phone in a
+   * layout the button says it is not in. */
+  document.addEventListener("fullscreenchange", function () {
+    if (document.fullscreenElement) {
+      /* The real thing arrived, so the CSS stand-in is not needed. */
+      document.body.classList.remove("fs-fallback");
+      relayout();
+      return;
+    }
+    if (document.body.classList.contains("immersive")) setImmersive(false);
+  });
+
+  ["resize", "orientationchange"].forEach(function (evt) {
+    window.addEventListener(evt, function () { setTimeout(relayout, 120); });
   });
 
   var lock = null;
@@ -1045,6 +1370,18 @@
     if (e.target.closest("#pad-wrap")) e.preventDefault();
   }, { passive: false });
 
+  /* Landscape on a short screen is where the board is biggest, so say so
+   * once, the first time somebody fills the screen while upright. */
+  var toldAboutTurning = false;
+  window.addEventListener("orientationchange", function () { toldAboutTurning = false; });
+  goFs.addEventListener("click", function () {
+    if (!document.body.classList.contains("immersive")) return;
+    if (toldAboutTurning || window.innerWidth >= window.innerHeight) return;
+    toldAboutTurning = true;
+    say("Turn the phone sideways for a bigger board.");
+  });
+
+  setTools(true);
   setTool("pen");
   setColor(CFG.surface === "white" ? "#111827" : "#ffffff");
   renderInspector();

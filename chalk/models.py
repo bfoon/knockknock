@@ -1,3 +1,4 @@
+import re
 import secrets
 import uuid
 from datetime import timedelta
@@ -44,6 +45,59 @@ MAX_FF_POINTS = 240           # vertices in one free shape
 # Photo uploads.
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
 IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+
+# Moving or resizing handwriting. One gesture carries one matrix and a list
+# of stroke ids, so the cost is in the ids, not the ink.
+MAX_XFORM_IDS = 1500
+
+
+# ----------------------------------------------------------------------
+# image addresses
+# ----------------------------------------------------------------------
+#
+# An image src on a board must be something this server stored. An arbitrary
+# absolute URL would make "add a photo" a fetch of anything, on the
+# projector, in front of a class.
+#
+# This lives here rather than in consumers.py because the upload view needs
+# the same answer: if the URL a fresh upload produces would not survive this
+# check, the element is going to be refused the moment the phone sends it,
+# and the teacher sees a photo that arrives and then silently is not there.
+# Far better to fail the upload with a message someone can act on.
+
+_SRC_PATH_RE = re.compile(r"^/[A-Za-z0-9._/~-]{1,300}$")
+_SRC_ABS_RE = re.compile(r"^https?://[A-Za-z0-9.:-]{1,120}/[A-Za-z0-9._/~-]{1,300}$")
+
+
+def clean_src(v):
+    """Return `v` if it is an address under MEDIA_URL, else "".
+
+    Handles both shapes MEDIA_URL comes in: a local path ("/media/") and an
+    absolute origin ("https://files.example.com/media/"), which is what a
+    storage backend on a CDN or a bucket gives you. A query string is kept
+    when the whole thing is absolute — signed URLs carry their signature
+    there — and refused on a local path, where it has no business.
+    """
+    from django.conf import settings
+
+    v = str(v or "").strip()
+    if not v or ".." in v or "\\" in v:
+        return ""
+    media = str(settings.MEDIA_URL or "")
+    if not media:
+        return ""
+    if not v.startswith(media):
+        return ""
+
+    if media.startswith("/"):
+        return v if _SRC_PATH_RE.match(v) else ""
+
+    head, _, query = v.partition("?")
+    if not _SRC_ABS_RE.match(head):
+        return ""
+    if query and not re.match(r"^[A-Za-z0-9._~%&=+/:-]{1,400}$", query):
+        return ""
+    return v
 
 
 def make_code():

@@ -27,7 +27,12 @@
     },
     onState: function (s) {
       dot.dataset.state = s;
-      dot.title = s === "live" ? "Connected" : s === "offline" ? "Reconnecting" : s;
+      dot.title = s === "live" ? "Connected"
+        : s === "offline" ? "Reconnecting"
+        : s === "denied" ? "Not paired" : "Connecting";
+    },
+    onDenied: function (m) {
+      showLobby(m.reason || "This board could not start.");
     },
     onMessage: handle
   });
@@ -44,10 +49,13 @@
       case "stroke_pts":   surface.extend(m.id, m.pts); break;
       case "stroke_end":   surface.commit(m.stroke); break;
       case "erase":        surface.remove(m.ids); break;
+      /* undo / redo / clear arrive as an op instead of a full page. A busy
+       * board used to rebroadcast every stroke on every undo tap. */
+      case "ink":          surface.applyOps(m.add, m.del); break;
       case "surface":      setSurface(m.surface); break;
-      case "pointer":      moveLaser(m); break;
+      case "pointer":      queueLaser(m); break;
       case "peer":         setPhone(m); break;
-      case "denied":       showLobby("This board could not start: " + m.reason); break;
+      case "denied":       break;  // handled in onDenied
     }
   }
 
@@ -74,15 +82,30 @@
     if (on) setPhone._t = setTimeout(function () { phoneBadge.hidden = true; }, 2600);
   }
 
-  var laserOff;
-  function moveLaser(m) {
-    if (!m.on) { laser.hidden = true; return; }
-    var r = inkEl.getBoundingClientRect();
-    laser.style.transform =
-      "translate(" + (r.left + m.x * r.width) + "px," + (r.top + m.y * r.height) + "px)";
-    laser.hidden = false;
-    clearTimeout(laserOff);
-    laserOff = setTimeout(function () { laser.hidden = true; }, 1400);
+  /* ------------------------------ laser ---------------------------- */
+  /* Pointer frames arrive up to 50x a second. Reading the rect and writing
+   * the transform inline meant a forced layout per frame; coalesce into one
+   * rAF and reuse the Surface's cached rect. */
+
+  var laserFrame = null, laserMsg = null, laserOff;
+
+  function queueLaser(m) {
+    laserMsg = m;
+    if (laserFrame) return;
+    laserFrame = requestAnimationFrame(function () {
+      laserFrame = null;
+      var msg = laserMsg;
+      laserMsg = null;
+      if (!msg) return;
+      if (!msg.on) { laser.hidden = true; return; }
+      var r = surface.rect();
+      laser.style.transform =
+        "translate3d(" + (r.left + msg.x * r.width) + "px," +
+        (r.top + msg.y * r.height) + "px,0)";
+      laser.hidden = false;
+      clearTimeout(laserOff);
+      laserOff = setTimeout(function () { laser.hidden = true; }, 1400);
+    });
   }
 
   /* ------------------------- lobby & fullscreen -------------------- */
@@ -121,23 +144,35 @@
     }
   });
 
-  /* Regenerate the pairing number. */
+  /* Regenerate the pairing number.
+   * CFG.rotateUrl and CFG.csrf are supplied by BoardStageView. They used to
+   * be absent, so this fetched the string "undefined" with a null CSRF
+   * header and the button could never succeed. */
   document.getElementById("rotate-code").addEventListener("click", function (ev) {
     var btn = ev.currentTarget;
+    if (!CFG.rotateUrl || !CFG.csrf) {
+      btn.textContent = "Unavailable";
+      return;
+    }
     btn.disabled = true;
     btn.textContent = "Generating…";
     fetch(CFG.rotateUrl, {
       method: "POST",
+      credentials: "same-origin",
       headers: { "X-CSRFToken": CFG.csrf, "X-Requested-With": "XMLHttpRequest" }
     })
-      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (!r.ok) throw new Error("http " + r.status);
+        return r.json();
+      })
       .then(function (d) {
-        if (!d.ok) throw new Error();
+        if (!d.ok) throw new Error("refused");
         codeEl.textContent = d.prettyCode;
         qrImg.src = d.qr;
         linkEl.textContent = d.joinUrl;
         linkEl.href = d.joinUrl;
-        /* The old code is dead — reload so the socket moves to the new room. */
+        /* The old code is dead — reload so the socket moves to the new room.
+         * The server has already evicted anyone still in the old one. */
         setTimeout(function () { location.reload(); }, 900);
       })
       .catch(function () {
@@ -152,6 +187,12 @@
       navigator.wakeLock.request("screen").catch(function () {});
     }
   }
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden && document.body.classList.contains("projecting")) {
+      keepAwake();
+    }
+  });
+
   var idle;
   document.addEventListener("mousemove", function () {
     document.body.classList.remove("hide-cursor");

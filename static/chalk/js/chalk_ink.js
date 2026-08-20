@@ -15,6 +15,11 @@
     highlighter: { alpha: 0.24, taper: false, grain: 0, widthx: 5.00, cap: "butt"  }
   };
 
+  /* A live stroke with no stroke_end after this long is assumed lost — the
+   * phone was closed, or a second finger orphaned it. Without this an
+   * abandoned half-stroke sits on the projector for the rest of the lesson. */
+  var LIVE_TTL_MS = 20000;
+
   var idSeed = 0;
   function newId() {
     idSeed = (idSeed + 1) % 100000;
@@ -51,6 +56,28 @@
     s._sm = smooth(s.pts);
     s._smN = s.pts.length;
     return s._sm;
+  }
+
+  /* Chalk grain used Math.random() on every frame, so the dust crawled while
+   * the stroke sat still. Seed it off the stroke instead: same stroke, same
+   * speckles, every redraw. */
+  function seededRandom(seed) {
+    var v = seed >>> 0;
+    return function () {
+      v = (v * 1664525 + 1013904223) >>> 0;
+      return v / 4294967296;
+    };
+  }
+
+  function seedOf(s) {
+    if (s._seed !== undefined) return s._seed;
+    var h = 2166136261, id = String(s.id || "");
+    for (var i = 0; i < id.length; i++) {
+      h ^= id.charCodeAt(i);
+      h = (h * 16777619) >>> 0;
+    }
+    s._seed = h;
+    return h;
   }
 
   /* view = {x, y, s} — the normalised top-left of the visible window and its
@@ -98,17 +125,19 @@
     if (cfg.grain) {
       /* Chalk dust: scatter along the path so a blackboard reads as chalk,
        * not as a glowing neon line. */
+      var rnd = seededRandom(seedOf(s));
       ctx.globalAlpha = cfg.alpha * 0.35;
       ctx.fillStyle = s.color;
       var spread = base * 0.62;
+      var dot = Math.max(0.7, base * 0.16);
       for (var k = 0; k < pts.length; k += 4) {
         var cx = pxX(pts[k], view, W), cy = pxY(pts[k + 1], view, H);
         for (var g = 0; g < 3; g++) {
           ctx.fillRect(
-            cx + (Math.random() - 0.5) * spread * 2,
-            cy + (Math.random() - 0.5) * spread * 2,
-            Math.max(0.7, base * 0.16),
-            Math.max(0.7, base * 0.16)
+            cx + (rnd() - 0.5) * spread * 2,
+            cy + (rnd() - 0.5) * spread * 2,
+            dot,
+            dot
           );
         }
       }
@@ -143,6 +172,13 @@
     return null;
   }
 
+  function copyStroke(s) {
+    return {
+      id: s.id, tool: s.tool, color: s.color,
+      w: s.w, pts: (s.pts || []).slice()
+    };
+  }
+
   /* ------------------------------------------------------------------ */
   /* Surface: two stacked canvases — committed ink and the in-flight stroke. */
   /* ------------------------------------------------------------------ */
@@ -165,6 +201,8 @@
     this.tctx = this.top.getContext("2d");
 
     this._liveDirty = false;
+    this._rect = null;
+    this._reapAt = 0;
     this._tick = this._tick.bind(this);
     this.resize();
 
@@ -175,11 +213,17 @@
     } else {
       global.addEventListener("resize", function () { self.resize(); });
     }
+    /* The cached rect is also invalidated by scrolling, which no observer
+     * reports. Both listeners are passive; neither blocks the compositor. */
+    global.addEventListener("scroll", function () { self._rect = null; }, true);
+    global.addEventListener("orientationchange", function () { self._rect = null; });
+
     requestAnimationFrame(this._tick);
   }
 
   Surface.prototype.resize = function () {
     var r = this.host.getBoundingClientRect();
+    this._rect = r;
     this.W = Math.max(1, Math.round(r.width));
     this.H = Math.max(1, Math.round(r.height));
     [this.base, this.top].forEach(function (c) {
@@ -194,6 +238,13 @@
     this._liveDirty = true;
   };
 
+  /* Cached because moveLaser used to call getBoundingClientRect up to 50
+   * times a second, forcing a layout on every laser frame. */
+  Surface.prototype.rect = function () {
+    if (!this._rect) this._rect = this.host.getBoundingClientRect();
+    return this._rect;
+  };
+
   Surface.prototype.setView = function (view) {
     this.view = { x: view.x, y: view.y, s: view.s };
     this.redrawBase();
@@ -201,9 +252,7 @@
   };
 
   Surface.prototype.setStrokes = function (list) {
-    this.strokes = (list || []).map(function (s) {
-      return { id: s.id, tool: s.tool, color: s.color, w: s.w, pts: (s.pts || []).slice() };
-    });
+    this.strokes = (list || []).map(copyStroke);
     this.live = Object.create(null);
     this.redrawBase();
     this._liveDirty = true;
@@ -217,7 +266,7 @@
     }
   };
 
-  Surface.prototype._tick = function () {
+  Surface.prototype._tick = function (now) {
     if (this._liveDirty) {
       this._liveDirty = false;
       this.tctx.clearRect(0, 0, this.W, this.H);
@@ -225,14 +274,18 @@
         drawStroke(this.tctx, this.live[k], this.view, this.W, this.H);
       }
     }
+    /* Sweep abandoned live strokes once a second. */
+    if (!now || now - this._reapAt > 1000) {
+      this._reapAt = now || 0;
+      this.reapLive();
+    }
     requestAnimationFrame(this._tick);
   };
 
   Surface.prototype.begin = function (stroke) {
-    this.live[stroke.id] = {
-      id: stroke.id, tool: stroke.tool, color: stroke.color,
-      w: stroke.w, pts: (stroke.pts || []).slice()
-    };
+    var s = copyStroke(stroke);
+    s._born = Date.now();
+    this.live[stroke.id] = s;
     this._liveDirty = true;
   };
 
@@ -240,27 +293,73 @@
     var s = this.live[id];
     if (!s) return;
     for (var i = 0; i < pts.length; i++) s.pts.push(pts[i]);
+    s._born = Date.now();
     this._liveDirty = true;
   };
 
   Surface.prototype.commit = function (stroke) {
     delete this.live[stroke.id];
     if (!this.strokes.some(function (s) { return s.id === stroke.id; })) {
-      var s = {
-        id: stroke.id, tool: stroke.tool, color: stroke.color,
-        w: stroke.w, pts: (stroke.pts || []).slice()
-      };
+      var s = copyStroke(stroke);
       this.strokes.push(s);
       drawStroke(this.bctx, s, this.view, this.W, this.H);
     }
     this._liveDirty = true;
   };
 
+  /* Drop an in-flight stroke without committing it. */
+  Surface.prototype.abandon = function (id) {
+    if (this.live[id]) {
+      delete this.live[id];
+      this._liveDirty = true;
+    }
+  };
+
+  Surface.prototype.reapLive = function () {
+    var cutoff = Date.now() - LIVE_TTL_MS, dropped = false;
+    for (var k in this.live) {
+      if ((this.live[k]._born || 0) < cutoff) {
+        delete this.live[k];
+        dropped = true;
+      }
+    }
+    if (dropped) this._liveDirty = true;
+  };
+
   Surface.prototype.remove = function (ids) {
     var gone = {};
     ids.forEach(function (i) { gone[i] = 1; });
+    var before = this.strokes.length;
     this.strokes = this.strokes.filter(function (s) { return !gone[s.id]; });
-    this.redrawBase();
+    if (this.strokes.length !== before) this.redrawBase();
+  };
+
+  /* Apply a server "ink" op: delete these ids, insert these strokes at these
+   * indices. Replaces the old full-page snapshot on every undo/redo. */
+  Surface.prototype.applyOps = function (add, del) {
+    var changed = false;
+    if (del && del.length) {
+      var gone = {};
+      del.forEach(function (i) { gone[i] = 1; });
+      var before = this.strokes.length;
+      this.strokes = this.strokes.filter(function (s) { return !gone[s.id]; });
+      changed = changed || this.strokes.length !== before;
+    }
+    if (add && add.length) {
+      var self = this;
+      add.forEach(function (item) {
+        if (!item || !item.s) return;
+        if (self.strokes.some(function (s) { return s.id === item.s.id; })) return;
+        var at = Math.max(0, Math.min(self.strokes.length, item.i | 0));
+        self.strokes.splice(at, 0, copyStroke(item.s));
+        changed = true;
+      });
+    }
+    if (changed) {
+      this.redrawBase();
+      this._liveDirty = true;
+    }
+    return changed;
   };
 
   Surface.prototype.clear = function () {
@@ -276,7 +375,7 @@
 
   /* Screen point -> normalised board point, honouring the zoom window. */
   Surface.prototype.toBoard = function (clientX, clientY) {
-    var r = this.host.getBoundingClientRect();
+    var r = this.rect();
     return {
       x: this.view.x + ((clientX - r.left) / Math.max(1, r.width)) / this.view.s,
       y: this.view.y + ((clientY - r.top) / Math.max(1, r.height)) / this.view.s

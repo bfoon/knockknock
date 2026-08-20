@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "cards",
     "kura",
     "community",
+    "chalk",
     "icebreakers.apps.IcebreakersConfig",
 ]
 

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ board.title }} · Chalk</title>
-<link rel="stylesheet" href="{% static 'chalk/css/chalk.css' %}?v=3">
+<link rel="stylesheet" href="{% static 'chalk/css/chalk.css' %}">
 </head>
 <body class="chalk-stage">
 
@@ -62,10 +62,10 @@
 </div>
 
 {{ config|json_script:"chalk-config" }}
-<script src="{% static 'chalk/js/chalk_shapes.js' %}?v=3"></script>
-<script src="{% static 'chalk/js/chalk_ink.js' %}?v=3"></script>
-<script src="{% static 'chalk/js/chalk_els.js' %}?v=3"></script>
-<script src="{% static 'chalk/js/chalk_net.js' %}?v=3"></script>
-<script src="{% static 'chalk/js/chalk_stage.js' %}?v=3"></script>
+<script src="{% static 'chalk/js/chalk_shapes.js' %}"></script>
+<script src="{% static 'chalk/js/chalk_ink.js' %}"></script>
+<script src="{% static 'chalk/js/chalk_els.js' %}"></script>
+<script src="{% static 'chalk/js/chalk_net.js' %}"></script>
+<script src="{% static 'chalk/js/chalk_stage.js' %}"></script>
 </body>
 </html>

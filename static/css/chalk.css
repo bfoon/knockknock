@@ -1,0 +1,892 @@
+/* ==========================================================================
+   Chalk — classroom board
+   Palette is named after the thing it draws: slate, dust, brass, sky, rust.
+   ========================================================================== */
+
+:root {
+  --slate:   #10151b;   /* room behind the board */
+  --board:   #16202a;   /* panel chrome */
+  --dust:    #e8eef4;   /* chalk white */
+  --muted:   #8b9aa8;
+  --brass:   #d9a441;   /* the one warm accent — pairing, focus, live */
+  --sky:     #56b7e6;
+  --rust:    #d9614a;
+  --mint:    #4bbf7a;   /* was hardcoded in two places */
+  --line:    rgba(232, 238, 244, .12);
+  --pick:    #ffffff;
+
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  --r: 14px;
+}
+
+/* --------------------------------------------------------------------------
+   THE `hidden` GUARD — read this before removing it.
+
+   The browser's default rule is `[hidden] { display: none }`, specificity
+   (0,1,0). Any rule that sets `display` through an ID selector, specificity
+   (1,0,0), silently beats it. `#expired`, `#lobby` and anything else driven
+   by `el.hidden = true` from JS then stays on screen forever.
+
+   That is what made the phone say "This pairing has expired" on every load:
+   the overlay was painted over the controller from the moment the page
+   rendered, whatever the websocket was doing. `hideLobby()` on the projector
+   had the same problem.
+
+   `!important` beats specificity outright, so this holds no matter what else
+   the stylesheet grows later.
+   -------------------------------------------------------------------------- */
+
+[hidden] { display: none !important; }
+
+/* ==========================================================================
+   Board surfaces — shared by the projector and the phone pad
+   ========================================================================== */
+
+.chalk-board {
+  position: relative;
+  overflow: hidden;
+  background: #101418;
+  --rule: rgba(232, 238, 244, .10);
+}
+
+.chalk-board[data-surface="black"] {
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(255,255,255,.05), transparent 60%),
+    #131a1f;
+}
+.chalk-board[data-surface="green"] {
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(255,255,255,.05), transparent 60%),
+    #1d3a2f;
+}
+.chalk-board[data-surface="white"] {
+  background: #f7f9fb;
+  --rule: rgba(16, 21, 27, .10);
+}
+.chalk-board[data-surface="grid"] {
+  /* --rule is declared first here on purpose. Custom properties resolve at
+     computed-value time, so declaration order inside the block does not
+     actually matter — but reading `var(--rule)` above its own declaration
+     invites someone to "fix" it by moving things around. */
+  --rule: rgba(16, 21, 27, .12);
+  background:
+    linear-gradient(var(--rule) 1px, transparent 1px) 0 0 / 4% 4%,
+    linear-gradient(90deg, var(--rule) 1px, transparent 1px) 0 0 / 4% 4%,
+    #f7f9fb;
+}
+.chalk-board[data-surface="ruled"] {
+  --rule: rgba(16, 21, 27, .10);
+  background:
+    linear-gradient(var(--rule) 1px, transparent 1px) 0 0 / 100% 7.5%,
+    #fbfaf6;
+}
+
+/* Grain over the dark surfaces so chalk reads as chalk. */
+.chalk-board[data-surface="black"]::before,
+.chalk-board[data-surface="green"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .5;
+  background-image:
+    radial-gradient(rgba(255,255,255,.05) .5px, transparent .5px),
+    radial-gradient(rgba(255,255,255,.04) .5px, transparent .5px);
+  background-size: 7px 7px, 11px 11px;
+  background-position: 0 0, 3px 5px;
+}
+
+.chalk-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   Projector
+   ========================================================================== */
+
+body.chalk-stage {
+  margin: 0;
+  background: #05070a;
+  font-family: var(--sans);
+  color: var(--dust);
+  overflow: hidden;
+}
+body.chalk-stage.hide-cursor { cursor: none; }
+
+.stage-wrap {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+/* A wide classroom board: 16:9 so the phone pad maps to it exactly. */
+#board {
+  width: min(100vw, calc(100vh * 16 / 9));
+  height: min(100vh, calc(100vw * 9 / 16));
+  box-shadow: 0 0 0 1px rgba(255,255,255,.06), 0 40px 120px rgba(0,0,0,.7);
+}
+#ink { position: absolute; inset: 0; }
+
+.stage-hud {
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--muted);
+  z-index: 4;
+  transition: opacity .25s;
+}
+/* Dimmed while projecting so it does not sit over the lesson, but woken by
+   any activity — see chalk_stage.js. Relying on :hover alone made the exit
+   from a full-screen board unreachable on a projector with no mouse. */
+body.projecting .stage-hud { opacity: .18; }
+body.projecting .stage-hud:hover,
+body.projecting.hud-awake .stage-hud { opacity: 1; }
+/* Even dimmed it stays clickable, so a tap in the corner always works. */
+.stage-hud { pointer-events: auto; }
+
+.net-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--muted);
+  flex: 0 0 auto;
+}
+.net-dot[data-state="live"]      { background: var(--mint); }
+.net-dot[data-state="offline"]   { background: var(--rust); animation: pulse 1.2s infinite; }
+.net-dot[data-state="connecting"]{ background: var(--brass); animation: pulse 1.2s infinite; }
+/* New state: the socket was refused and is not retrying. Solid, not pulsing —
+   nothing is in progress. */
+.net-dot[data-state="denied"]    { background: var(--rust); box-shadow: 0 0 0 3px rgba(217,97,74,.22); }
+@keyframes pulse { 50% { opacity: .25; } }
+
+.phone-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(232,238,244,.08);
+  border: 1px solid var(--line);
+  font-size: 12px;
+}
+.phone-badge[data-on="1"] { color: #7fd6a2; }
+
+.page-tag {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
+  letter-spacing: .04em;
+}
+
+.hud-btn {
+  background: rgba(232,238,244,.06);
+  border: 1px solid var(--line);
+  color: var(--dust);
+  border-radius: 9px;
+  padding: 5px 11px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.hud-btn:hover { background: rgba(232,238,244,.13); }
+a.hud-btn { text-decoration: none; display: inline-flex; align-items: center; }
+
+#laser {
+  position: fixed;
+  left: 0; top: 0;
+  width: 26px; height: 26px;
+  margin: -13px 0 0 -13px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 6;
+  background: radial-gradient(circle, rgba(217,97,74,.95) 0 22%, rgba(217,97,74,.35) 45%, transparent 70%);
+  /* chalk_stage.js writes translate3d here every animation frame; promoting
+     the layer keeps the laser off the main paint path. */
+  will-change: transform;
+}
+
+/* ---- lobby ---------------------------------------------------------- */
+
+#lobby {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  background: rgba(5,7,10,.92);
+  backdrop-filter: blur(6px);
+  padding: 24px;
+}
+
+.lobby-card {
+  width: min(880px, 100%);
+  background: var(--board);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: 34px 36px 30px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 34px;
+  align-items: center;
+}
+@media (max-width: 720px) {
+  .lobby-card { grid-template-columns: 1fr; }
+}
+
+.kicker {
+  font-size: 11px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--brass);
+  margin: 0 0 10px;
+}
+.lobby-card h1 {
+  margin: 0 0 6px;
+  font-size: 27px;
+  font-weight: 620;
+  letter-spacing: -.01em;
+}
+.lobby-card p.sub { margin: 0 0 22px; color: var(--muted); font-size: 15px; line-height: 1.5; }
+
+/* Signature: the pairing number written large on the slate. */
+.code-panel {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 16px 20px 14px;
+  background: linear-gradient(180deg, rgba(232,238,244,.05), transparent);
+  display: inline-block;
+}
+.code-label { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+#code-value {
+  display: block;
+  margin-top: 6px;
+  font-family: var(--mono);
+  /* Codes are eight digits now, rendered as two blocks of four. The old
+     clamp assumed six and overflowed the panel on a 1024-wide projector. */
+  font-size: clamp(30px, 4.6vw, 54px);
+  letter-spacing: .14em;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--dust);
+  text-shadow: 0 0 22px rgba(232,238,244,.22);
+}
+.code-panel::after {
+  content: "";
+  display: block;
+  height: 3px;
+  margin-top: 8px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(232,238,244,.55), rgba(232,238,244,.05) 78%, transparent);
+  filter: blur(.4px);
+}
+
+.qr-panel { text-align: center; }
+.qr-panel img {
+  width: 190px; height: 190px;
+  border-radius: 12px;
+  background: #fff;
+  padding: 8px;
+  display: block;
+}
+.qr-panel span { display: block; margin-top: 10px; font-size: 12px; color: var(--muted); }
+
+.lobby-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; align-items: center; }
+
+.btn {
+  font: inherit;
+  border-radius: 11px;
+  padding: 11px 20px;
+  border: 1px solid var(--line);
+  background: rgba(232,238,244,.06);
+  color: var(--dust);
+  cursor: pointer;
+}
+.btn:hover { background: rgba(232,238,244,.13); }
+.btn-primary {
+  background: var(--brass);
+  border-color: var(--brass);
+  color: #1b1405;
+  font-weight: 620;
+}
+.btn-primary:hover { filter: brightness(1.08); background: var(--brass); }
+.btn:disabled { opacity: .5; cursor: default; }
+
+/* Keyboard users could not see where they were — nothing in the stylesheet
+   styled focus, so the UA outline was the only cue and it is invisible on a
+   dark surface. */
+.btn:focus-visible,
+.hud-btn:focus-visible,
+.icon-btn:focus-visible,
+.surface-chip:focus-visible,
+.swatch:focus-visible,
+.board-card:focus-visible,
+#code-input:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+
+#join-link {
+  font-size: 12px;
+  color: var(--muted);
+  word-break: break-all;
+  margin-top: 14px;
+  display: block;
+}
+.lobby-keys {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.lobby-keys kbd {
+  background: rgba(232,238,244,.09);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--dust);
+}
+
+#lobby-error {
+  margin-top: 14px;
+  color: var(--rust);
+  font-size: 14px;
+}
+
+/* ==========================================================================
+   Phone controller
+   ========================================================================== */
+
+body.chalk-control {
+  margin: 0;
+  background: var(--slate);
+  color: var(--dust);
+  font-family: var(--sans);
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  box-sizing: border-box;
+}
+body.fs-fallback { position: fixed; inset: 0; }
+
+.c-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.c-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#net-text { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.c-top .spacer { flex: 1; }
+
+.icon-btn {
+  background: rgba(232,238,244,.06);
+  border: 1px solid var(--line);
+  color: var(--dust);
+  border-radius: 10px;
+  min-width: 38px;
+  height: 34px;
+  padding: 0 9px;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.icon-btn[data-on="true"] { background: var(--brass); border-color: var(--brass); color: #1b1405; }
+.icon-btn:disabled { opacity: .35; }
+
+/* ---- pad ------------------------------------------------------------ */
+
+#pad-wrap {
+  position: relative;
+  margin: 10px 12px 0;
+  border-radius: var(--r);
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.4);
+}
+#pad-wrap[data-tool="eraser"] { outline: 2px solid var(--rust); outline-offset: -2px; }
+#pad-wrap[data-tool="laser"]  { outline: 2px solid var(--sky);  outline-offset: -2px; }
+#pad { position: absolute; inset: 0; touch-action: none; }
+
+/* When the socket is not live, marks are not reaching the board. Say so on
+   the pad itself rather than only in the 12px status line at the top, which
+   nobody looks at while writing. */
+body[data-net="offline"] #pad-wrap,
+body[data-net="connecting"] #pad-wrap { border-color: rgba(217,164,65,.55); }
+body[data-net="offline"] #pad-wrap::after,
+body[data-net="connecting"] #pad-wrap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(217,164,65,.05) 0 12px,
+    transparent 12px 24px
+  );
+}
+
+/* Landscape phones get a taller pad and side rails. */
+@media (orientation: landscape) and (max-height: 520px) {
+  #pad-wrap {
+    margin: 6px 10px 0;
+    /* Without a ceiling the 16:9 pad pushes the whole toolbar off a short
+       landscape screen. */
+    max-height: 46dvh;
+  }
+}
+
+#mini {
+  position: absolute;
+  right: 8px; bottom: 8px;
+  width: 92px;
+  aspect-ratio: 16 / 9;
+  border: 1px solid rgba(232,238,244,.35);
+  border-radius: 6px;
+  background: rgba(5,7,10,.55);
+  touch-action: none;
+  z-index: 3;
+}
+#mini-win {
+  position: absolute;
+  border: 1.5px solid var(--brass);
+  background: rgba(217,164,65,.18);
+  border-radius: 3px;
+}
+
+/* ---- controls ------------------------------------------------------- */
+
+.c-scroll { flex: 1; overflow-y: auto; padding: 12px 12px 20px; }
+
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.row-label {
+  width: 100%;
+  font-size: 11px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.swatch {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.35);
+  cursor: pointer;
+  padding: 0;
+}
+.swatch[data-on="true"] { border-color: var(--dust); transform: scale(1.08); }
+
+#custom-color {
+  width: 34px; height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: none;
+  padding: 0;
+}
+
+#width { flex: 1; min-width: 120px; accent-color: var(--brass); }
+#width-preview {
+  width: 54px; height: 34px;
+  display: grid; place-items: center;
+}
+#width-preview::after {
+  content: "";
+  width: var(--w, 8px);
+  height: var(--w, 8px);
+  max-width: 44px; max-height: 30px;
+  border-radius: 50%;
+  background: var(--pick);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.4);
+}
+
+.surface-chip {
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  padding: 7px 12px;
+  font-size: 12px;
+  background: rgba(232,238,244,.05);
+  color: var(--dust);
+  cursor: pointer;
+}
+.surface-chip[data-on="true"] { border-color: var(--brass); color: var(--brass); }
+
+.danger { color: var(--rust); }
+
+/* ---- pairing panel --------------------------------------------------
+   Only ever visible when chalk_control.js clears the `hidden` attribute
+   after a `denied` frame. The [hidden] guard at the top of this file is what
+   makes that true — see the comment up there. */
+
+#expired {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgba(5,7,10,.94);
+  padding: 24px;
+  text-align: center;
+}
+#expired > div { max-width: 340px; width: 100%; }
+#expired h2 { font-size: 20px; margin: 0 0 8px; font-weight: 620; }
+#expired-why { color: var(--muted); font-size: 15px; line-height: 1.5; margin: 0; }
+#expired .btn { margin-top: 12px; display: block; width: 100%; box-sizing: border-box; }
+
+/* `timeout` is the one denial the client retries on its own, so it is a
+   "not yet" rather than a "no". */
+#expired[data-code="timeout"] h2 { color: var(--brass); }
+
+/* ==========================================================================
+   Board list + join
+   ========================================================================== */
+
+body.chalk-page {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--slate);
+  color: var(--dust);
+  font-family: var(--sans);
+}
+.page-wrap { max-width: 900px; margin: 0 auto; padding: 40px 20px 80px; }
+.page-wrap h1 { font-size: 30px; letter-spacing: -.01em; margin: 4px 0 26px; }
+
+.board-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.board-card {
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 16px;
+  text-decoration: none;
+  color: inherit;
+  background: var(--board);
+}
+.board-card:hover { border-color: var(--brass); }
+.board-card .name { font-weight: 600; }
+.board-card .meta { color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+.form-card {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 20px;
+  background: var(--board);
+  margin-bottom: 26px;
+}
+.form-card input[type="text"],
+.form-card select {
+  background: rgba(232,238,244,.05);
+  border: 1px solid var(--line);
+  color: var(--dust);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+}
+.form-card input[type="text"] { flex: 1; min-width: 180px; }
+
+.empty { color: var(--muted); border: 1px dashed var(--line); border-radius: var(--r); padding: 28px; text-align: center; }
+
+/* ---- join ----------------------------------------------------------- */
+/* These three replace inline styles that were in join.html. */
+
+.join-wrap { max-width: 380px; margin: 0 auto; padding: 60px 20px; text-align: center; }
+.join-title { font-size: 24px; font-weight: 620; letter-spacing: -.01em; margin: 0 0 20px; }
+.join-error { color: var(--rust); font-size: 14px; margin: 10px 0 0; }
+.join-submit { width: 100%; margin-top: 14px; box-sizing: border-box; }
+
+#code-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--mono);
+  /* Eight digits plus a space at .3em tracking overflowed a 360px phone. */
+  font-size: clamp(24px, 7.5vw, 32px);
+  letter-spacing: .22em;
+  text-indent: .22em;   /* centres the text despite the trailing letter-space */
+  text-align: center;
+  padding: 16px 10px;
+  border-radius: var(--r);
+  border: 1px solid var(--line);
+  background: rgba(232,238,244,.05);
+  color: var(--dust);
+}
+#code-input[aria-invalid="true"] { border-color: var(--rust); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* ==========================================================================
+   Objects — text, photos, shapes, free shapes
+   ========================================================================== */
+
+.chalk-els {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;   /* taps fall through to the ink pad beneath */
+}
+
+.chalk-el {
+  position: absolute;
+  transform-origin: 50% 50%;
+}
+.chalk-el-inner {
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 50%;
+}
+
+.chalk-text {
+  width: 100%;
+  height: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.22;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.chalk-text.is-empty { opacity: .38; font-style: italic; }
+
+.chalk-el[data-type="image"] img {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.chalk-svg { width: 100%; height: 100%; display: block; overflow: visible; }
+
+/* ==========================================================================
+   Selection overlay — phone only
+   ========================================================================== */
+
+.chalk-sel {
+  position: absolute;
+  transform-origin: 50% 50%;
+  z-index: 5;
+}
+.chalk-sel-frame {
+  position: absolute;
+  inset: 0;
+  border: 1.5px dashed var(--brass);
+  border-radius: 2px;
+  touch-action: none;
+  cursor: move;
+}
+/* In corner-editing mode the frame stops taking gestures, so a drag near an
+   edge moves that corner instead of the whole shape. */
+.chalk-sel[data-mode="verts"] .chalk-sel-frame { pointer-events: none; opacity: .45; }
+.chalk-sel[data-mode="verts"] .chalk-h { display: none; }
+
+.chalk-h {
+  position: absolute;
+  width: 26px; height: 26px;
+  margin: -13px 0 0 -13px;
+  border-radius: 50%;
+  background: var(--brass);
+  border: 2px solid #1b1405;
+  touch-action: none;
+  z-index: 2;
+}
+.chalk-h-nw { left: 0;    top: 0; }
+.chalk-h-ne { left: 100%; top: 0; }
+.chalk-h-se { left: 100%; top: 100%; }
+.chalk-h-sw { left: 0;    top: 100%; }
+.chalk-h-rot {
+  left: 50%; top: 0;
+  margin-top: -40px;
+  background: var(--sky);
+}
+.chalk-h-rot::after {
+  content: "";
+  position: absolute;
+  left: 50%; top: 100%;
+  width: 1.5px; height: 27px;
+  margin-left: -.75px;
+  background: var(--sky);
+  opacity: .6;
+}
+
+.chalk-verts { position: absolute; inset: 0; }
+.chalk-sel[data-mode="box"] .chalk-verts { display: none; }
+.chalk-v {
+  position: absolute;
+  width: 24px; height: 24px;
+  margin: -12px 0 0 -12px;
+  border-radius: 50%;
+  background: var(--dust);
+  border: 2px solid #10151b;
+  touch-action: none;
+}
+.chalk-v.is-on { background: var(--rust); transform: scale(1.15); }
+/* Hollow = "tap me to add a corner here". */
+.chalk-v-mid {
+  width: 18px; height: 18px;
+  margin: -9px 0 0 -9px;
+  background: transparent;
+  border: 2px dashed var(--dust);
+  opacity: .75;
+}
+
+/* ==========================================================================
+   Inspector and sheets
+   ========================================================================== */
+
+#inspector {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 12;
+  max-height: 56dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--board);
+  border-top: 1px solid var(--line);
+  border-radius: 16px 16px 0 0;
+  padding: 0 12px max(20px, env(safe-area-inset-bottom));
+  box-shadow: 0 -18px 44px rgba(0,0,0,.5);
+}
+/* Give the scroller room so the last row is not stuck under the panel. */
+body.inspecting .c-scroll { padding-bottom: 58dvh; }
+
+.insp-top {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0 10px;
+  background: var(--board);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 10px;
+}
+.insp-top .spacer { flex: 1; }
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(232,238,244,.06);
+}
+.field-label { flex: 1; font-size: 13px; color: var(--dust); }
+.field input[type="range"] { flex: 1.2; min-width: 110px; accent-color: var(--brass); }
+.field-color {
+  width: 40px; height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: none;
+  padding: 0;
+}
+.field-select {
+  background: rgba(232,238,244,.06);
+  border: 1px solid var(--line);
+  color: var(--dust);
+  border-radius: 9px;
+  padding: 7px 9px;
+  font: inherit;
+  font-size: 13px;
+  max-width: 52%;
+}
+.field-select:focus-visible,
+.field-color:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+
+#sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 16;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(5,7,10,.72);
+}
+.sheet-card {
+  width: 100%;
+  max-height: 82dvh;
+  overflow-y: auto;
+  background: var(--board);
+  border-radius: 18px 18px 0 0;
+  border-top: 1px solid var(--line);
+  padding: 0 14px max(22px, env(safe-area-inset-bottom));
+}
+.sheet-top {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  padding: 14px 0 12px;
+  background: var(--board);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+.sheet-top .spacer { flex: 1; }
+.sheet-note { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
+.sheet-text {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(232,238,244,.05);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--dust);
+  font: inherit;
+  font-size: 17px;
+  padding: 12px;
+  margin-bottom: 14px;
+  resize: vertical;
+}
+.sheet-done { width: 100%; box-sizing: border-box; }
+
+.pick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.pick {
+  background: rgba(232,238,244,.05);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--dust);
+  padding: 10px 6px 8px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.pick:active { border-color: var(--brass); }
+.pick:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+.pick .thumb { width: 38px; height: 38px; color: var(--dust); }
+.pick span { text-align: center; line-height: 1.2; opacity: .82; }
+
+#pad-wrap[data-tool="select"] { outline: 2px solid var(--brass); outline-offset: -2px; }
+
+#toast {
+  position: fixed;
+  left: 50%; bottom: 22px;
+  transform: translateX(-50%);
+  z-index: 30;
+  margin: 0;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(5,7,10,.94);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  max-width: 88vw;
+  text-align: center;
+}

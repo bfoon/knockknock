@@ -16,6 +16,7 @@ import presentations.routing
 import boardly.routing
 import hanns.routing
 import quest_rpg.routing
+import chalk.routing
 
 
 websocket_urlpatterns = (
@@ -23,6 +24,7 @@ websocket_urlpatterns = (
     + boardly.routing.websocket_urlpatterns
     + hanns.routing.websocket_urlpatterns
     + quest_rpg.routing.websocket_urlpatterns
+    + chalk.routing.websocket_urlpatterns
 )
 
 

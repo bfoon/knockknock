@@ -1,0 +1,41 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chalk boards</title>
+<link rel="stylesheet" href="{% static 'chalk/css/chalk.css' %}?v=1">
+</head>
+<body class="chalk-page">
+<div class="page-wrap">
+
+  <p class="kicker">Chalk</p>
+  <h1>Your boards</h1>
+
+  <form class="form-card" method="post" action="{% url 'chalk:boards' %}">
+    {% csrf_token %}
+    <div class="row" style="margin:0">
+      <input type="text" name="title" placeholder="What is this board for?" maxlength="200">
+      <select name="surface">
+        {% for value, label in surfaces %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+      </select>
+      <button class="btn btn-primary" type="submit">Create board</button>
+    </div>
+  </form>
+
+  {% if boards %}
+    <div class="board-grid">
+      {% for b in boards %}
+        <a class="board-card" href="{% url 'chalk:stage' b.id %}">
+          <div class="name">{{ b.title }}</div>
+          <div class="meta">{{ b.get_surface_display }} · last used {{ b.updated_at|date:"j M, H:i" }}</div>
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty">No boards yet. Create one above, project it, then pair your phone.</p>
+  {% endif %}
+
+</div>
+</body>
+</html>

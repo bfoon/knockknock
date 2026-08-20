@@ -1,0 +1,515 @@
+/* ==========================================================================
+   Chalk — classroom board
+   Palette is named after the thing it draws: slate, dust, brass, sky, rust.
+   ========================================================================== */
+
+:root {
+  --slate:   #10151b;   /* room behind the board */
+  --board:   #16202a;   /* panel chrome */
+  --dust:    #e8eef4;   /* chalk white */
+  --muted:   #8b9aa8;
+  --brass:   #d9a441;   /* the one warm accent — pairing, focus, live */
+  --sky:     #56b7e6;
+  --rust:    #d9614a;
+  --line:    rgba(232, 238, 244, .12);
+  --pick:    #ffffff;
+
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  --r: 14px;
+}
+
+/* ==========================================================================
+   Board surfaces — shared by the projector and the phone pad
+   ========================================================================== */
+
+.chalk-board {
+  position: relative;
+  overflow: hidden;
+  background: #101418;
+  --rule: rgba(232, 238, 244, .10);
+}
+
+.chalk-board[data-surface="black"] {
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(255,255,255,.05), transparent 60%),
+    #131a1f;
+}
+.chalk-board[data-surface="green"] {
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(255,255,255,.05), transparent 60%),
+    #1d3a2f;
+}
+.chalk-board[data-surface="white"] {
+  background: #f7f9fb;
+  --rule: rgba(16, 21, 27, .10);
+}
+.chalk-board[data-surface="grid"] {
+  background:
+    linear-gradient(var(--rule) 1px, transparent 1px) 0 0 / 4% 4%,
+    linear-gradient(90deg, var(--rule) 1px, transparent 1px) 0 0 / 4% 4%,
+    #f7f9fb;
+  --rule: rgba(16, 21, 27, .12);
+}
+.chalk-board[data-surface="ruled"] {
+  background:
+    linear-gradient(rgba(16,21,27,.10) 1px, transparent 1px) 0 0 / 100% 7.5%,
+    #fbfaf6;
+}
+
+/* Grain over the dark surfaces so chalk reads as chalk. */
+.chalk-board[data-surface="black"]::before,
+.chalk-board[data-surface="green"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .5;
+  background-image:
+    radial-gradient(rgba(255,255,255,.05) .5px, transparent .5px),
+    radial-gradient(rgba(255,255,255,.04) .5px, transparent .5px);
+  background-size: 7px 7px, 11px 11px;
+  background-position: 0 0, 3px 5px;
+}
+
+.chalk-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   Projector
+   ========================================================================== */
+
+body.chalk-stage {
+  margin: 0;
+  background: #05070a;
+  font-family: var(--sans);
+  color: var(--dust);
+  overflow: hidden;
+}
+body.chalk-stage.hide-cursor { cursor: none; }
+
+.stage-wrap {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+/* A wide classroom board: 16:9 so the phone pad maps to it exactly. */
+#board {
+  width: min(100vw, calc(100vh * 16 / 9));
+  height: min(100vh, calc(100vw * 9 / 16));
+  box-shadow: 0 0 0 1px rgba(255,255,255,.06), 0 40px 120px rgba(0,0,0,.7);
+}
+#ink { position: absolute; inset: 0; }
+
+.stage-hud {
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--muted);
+  z-index: 4;
+  transition: opacity .25s;
+}
+body.projecting .stage-hud { opacity: .18; }
+body.projecting .stage-hud:hover { opacity: 1; }
+
+.net-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--muted);
+}
+.net-dot[data-state="live"]      { background: #4bbf7a; }
+.net-dot[data-state="offline"]   { background: var(--rust); animation: pulse 1.2s infinite; }
+.net-dot[data-state="connecting"]{ background: var(--brass); animation: pulse 1.2s infinite; }
+@keyframes pulse { 50% { opacity: .25; } }
+
+.phone-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(232,238,244,.08);
+  border: 1px solid var(--line);
+  font-size: 12px;
+}
+.phone-badge[data-on="1"] { color: #7fd6a2; }
+
+.page-tag {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
+  letter-spacing: .04em;
+}
+
+.hud-btn {
+  background: rgba(232,238,244,.06);
+  border: 1px solid var(--line);
+  color: var(--dust);
+  border-radius: 9px;
+  padding: 5px 11px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.hud-btn:hover { background: rgba(232,238,244,.13); }
+
+#laser {
+  position: fixed;
+  left: 0; top: 0;
+  width: 26px; height: 26px;
+  margin: -13px 0 0 -13px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 6;
+  background: radial-gradient(circle, rgba(217,97,74,.95) 0 22%, rgba(217,97,74,.35) 45%, transparent 70%);
+}
+
+/* ---- lobby ---------------------------------------------------------- */
+
+#lobby {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  background: rgba(5,7,10,.92);
+  backdrop-filter: blur(6px);
+  padding: 24px;
+}
+
+.lobby-card {
+  width: min(880px, 100%);
+  background: var(--board);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: 34px 36px 30px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 34px;
+  align-items: center;
+}
+@media (max-width: 720px) {
+  .lobby-card { grid-template-columns: 1fr; }
+}
+
+.kicker {
+  font-size: 11px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--brass);
+  margin: 0 0 10px;
+}
+.lobby-card h1 {
+  margin: 0 0 6px;
+  font-size: 27px;
+  font-weight: 620;
+  letter-spacing: -.01em;
+}
+.lobby-card p.sub { margin: 0 0 22px; color: var(--muted); font-size: 15px; line-height: 1.5; }
+
+/* Signature: the pairing number written large on the slate. */
+.code-panel {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 16px 20px 14px;
+  background: linear-gradient(180deg, rgba(232,238,244,.05), transparent);
+  display: inline-block;
+}
+.code-label { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+#code-value {
+  display: block;
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: clamp(38px, 6vw, 58px);
+  letter-spacing: .16em;
+  font-weight: 600;
+  color: var(--dust);
+  text-shadow: 0 0 22px rgba(232,238,244,.22);
+}
+.code-panel::after {
+  content: "";
+  display: block;
+  height: 3px;
+  margin-top: 8px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(232,238,244,.55), rgba(232,238,244,.05) 78%, transparent);
+  filter: blur(.4px);
+}
+
+.qr-panel { text-align: center; }
+.qr-panel img {
+  width: 190px; height: 190px;
+  border-radius: 12px;
+  background: #fff;
+  padding: 8px;
+  display: block;
+}
+.qr-panel span { display: block; margin-top: 10px; font-size: 12px; color: var(--muted); }
+
+.lobby-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; align-items: center; }
+
+.btn {
+  font: inherit;
+  border-radius: 11px;
+  padding: 11px 20px;
+  border: 1px solid var(--line);
+  background: rgba(232,238,244,.06);
+  color: var(--dust);
+  cursor: pointer;
+}
+.btn:hover { background: rgba(232,238,244,.13); }
+.btn-primary {
+  background: var(--brass);
+  border-color: var(--brass);
+  color: #1b1405;
+  font-weight: 620;
+}
+.btn-primary:hover { filter: brightness(1.08); background: var(--brass); }
+.btn:disabled { opacity: .5; cursor: default; }
+
+#join-link {
+  font-size: 12px;
+  color: var(--muted);
+  word-break: break-all;
+  margin-top: 14px;
+  display: block;
+}
+#lobby-error {
+  margin-top: 14px;
+  color: var(--rust);
+  font-size: 14px;
+}
+
+/* ==========================================================================
+   Phone controller
+   ========================================================================== */
+
+body.chalk-control {
+  margin: 0;
+  background: var(--slate);
+  color: var(--dust);
+  font-family: var(--sans);
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  box-sizing: border-box;
+}
+body.fs-fallback { position: fixed; inset: 0; }
+
+.c-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.c-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#net-text { color: var(--muted); font-size: 12px; }
+.c-top .spacer { flex: 1; }
+
+.icon-btn {
+  background: rgba(232,238,244,.06);
+  border: 1px solid var(--line);
+  color: var(--dust);
+  border-radius: 10px;
+  min-width: 38px;
+  height: 34px;
+  padding: 0 9px;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.icon-btn[data-on="true"] { background: var(--brass); border-color: var(--brass); color: #1b1405; }
+.icon-btn:disabled { opacity: .35; }
+
+/* ---- pad ------------------------------------------------------------ */
+
+#pad-wrap {
+  position: relative;
+  margin: 10px 12px 0;
+  border-radius: var(--r);
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.4);
+}
+#pad-wrap[data-tool="eraser"] { outline: 2px solid var(--rust); outline-offset: -2px; }
+#pad-wrap[data-tool="laser"]  { outline: 2px solid var(--sky);  outline-offset: -2px; }
+#pad { position: absolute; inset: 0; touch-action: none; }
+
+/* Landscape phones get a taller pad and side rails. */
+@media (orientation: landscape) and (max-height: 520px) {
+  #pad-wrap { margin: 6px 10px 0; }
+}
+
+#mini {
+  position: absolute;
+  right: 8px; bottom: 8px;
+  width: 92px;
+  aspect-ratio: 16 / 9;
+  border: 1px solid rgba(232,238,244,.35);
+  border-radius: 6px;
+  background: rgba(5,7,10,.55);
+  touch-action: none;
+  z-index: 3;
+}
+#mini-win {
+  position: absolute;
+  border: 1.5px solid var(--brass);
+  background: rgba(217,164,65,.18);
+  border-radius: 3px;
+}
+
+/* ---- controls ------------------------------------------------------- */
+
+.c-scroll { flex: 1; overflow-y: auto; padding: 12px 12px 20px; }
+
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.row-label {
+  width: 100%;
+  font-size: 11px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.swatch {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.35);
+  cursor: pointer;
+  padding: 0;
+}
+.swatch[data-on="true"] { border-color: var(--dust); transform: scale(1.08); }
+
+#custom-color {
+  width: 34px; height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: none;
+  padding: 0;
+}
+
+#width { flex: 1; min-width: 120px; accent-color: var(--brass); }
+#width-preview {
+  width: 54px; height: 34px;
+  display: grid; place-items: center;
+}
+#width-preview::after {
+  content: "";
+  width: var(--w, 8px);
+  height: var(--w, 8px);
+  max-width: 44px; max-height: 30px;
+  border-radius: 50%;
+  background: var(--pick);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.4);
+}
+
+.surface-chip {
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  padding: 7px 12px;
+  font-size: 12px;
+  background: rgba(232,238,244,.05);
+  color: var(--dust);
+  cursor: pointer;
+}
+.surface-chip[data-on="true"] { border-color: var(--brass); color: var(--brass); }
+
+.danger { color: var(--rust); }
+
+#expired {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgba(5,7,10,.94);
+  padding: 24px;
+  text-align: center;
+}
+#expired .btn { margin-top: 16px; }
+
+/* ==========================================================================
+   Board list + join
+   ========================================================================== */
+
+body.chalk-page {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--slate);
+  color: var(--dust);
+  font-family: var(--sans);
+}
+.page-wrap { max-width: 900px; margin: 0 auto; padding: 40px 20px 80px; }
+.page-wrap h1 { font-size: 30px; letter-spacing: -.01em; margin: 4px 0 26px; }
+
+.board-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.board-card {
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 16px;
+  text-decoration: none;
+  color: inherit;
+  background: var(--board);
+}
+.board-card:hover { border-color: var(--brass); }
+.board-card .name { font-weight: 600; }
+.board-card .meta { color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+.form-card {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 20px;
+  background: var(--board);
+  margin-bottom: 26px;
+}
+.form-card input[type="text"],
+.form-card select {
+  background: rgba(232,238,244,.05);
+  border: 1px solid var(--line);
+  color: var(--dust);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+}
+.form-card input[type="text"] { flex: 1; min-width: 180px; }
+
+.empty { color: var(--muted); border: 1px dashed var(--line); border-radius: var(--r); padding: 28px; text-align: center; }
+
+.join-wrap { max-width: 380px; margin: 0 auto; padding: 60px 20px; text-align: center; }
+#code-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--mono);
+  font-size: 34px;
+  letter-spacing: .3em;
+  text-align: center;
+  padding: 16px 10px;
+  border-radius: var(--r);
+  border: 1px solid var(--line);
+  background: rgba(232,238,244,.05);
+  color: var(--dust);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

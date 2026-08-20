@@ -1,0 +1,98 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#10151b">
+<title>{{ board.title }} · Chalk controller</title>
+<link rel="stylesheet" href="{% static 'chalk/css/chalk.css' %}?v=1">
+</head>
+<body class="chalk-control">
+
+<header class="c-top">
+  <span class="net-dot" id="net-dot" data-state="connecting"></span>
+  <span class="c-title">{{ board.title }}</span>
+  <span id="net-text">Connecting…</span>
+  <span class="spacer"></span>
+  <button class="icon-btn" id="page-prev" type="button" title="Previous page">‹</button>
+  <span class="page-tag" id="page-tag">1 / 1</span>
+  <button class="icon-btn" id="page-next" type="button" title="Next page">›</button>
+  <button class="icon-btn" id="go-fs" type="button" title="Full screen">⛶</button>
+</header>
+
+<div id="pad-wrap" class="chalk-board" data-surface="{{ board.surface }}">
+  <div id="pad"></div>
+  <div id="mini" hidden><div id="mini-win"></div></div>
+</div>
+
+<div class="c-scroll">
+
+  <div class="row">
+    <span class="row-label">Write with</span>
+    <button class="icon-btn" data-tool="pen" type="button">Pen</button>
+    <button class="icon-btn" data-tool="marker" type="button">Marker</button>
+    <button class="icon-btn" data-tool="chalk" type="button">Chalk</button>
+    <button class="icon-btn" data-tool="highlighter" type="button">Highlight</button>
+    <button class="icon-btn" data-tool="eraser" type="button">Erase</button>
+    <button class="icon-btn" data-tool="laser" type="button">Point</button>
+  </div>
+
+  <div class="row">
+    <span class="row-label">Colour</span>
+    <button class="swatch" data-color="#ffffff" style="background:#ffffff" type="button" aria-label="White"></button>
+    <button class="swatch" data-color="#111827" style="background:#111827" type="button" aria-label="Black"></button>
+    <button class="swatch" data-color="#d9a441" style="background:#d9a441" type="button" aria-label="Amber"></button>
+    <button class="swatch" data-color="#56b7e6" style="background:#56b7e6" type="button" aria-label="Blue"></button>
+    <button class="swatch" data-color="#4bbf7a" style="background:#4bbf7a" type="button" aria-label="Green"></button>
+    <button class="swatch" data-color="#d9614a" style="background:#d9614a" type="button" aria-label="Red"></button>
+    <button class="swatch" data-color="#b98cf0" style="background:#b98cf0" type="button" aria-label="Violet"></button>
+    <input type="color" id="custom-color" value="#ffffff" aria-label="Any other colour">
+  </div>
+
+  <div class="row">
+    <span class="row-label">Thickness</span>
+    <input type="range" id="width" min="1" max="100" value="34" aria-label="Pen thickness">
+    <span id="width-preview" aria-hidden="true"></span>
+  </div>
+
+  <div class="row">
+    <span class="row-label">Write bigger</span>
+    <button class="icon-btn" data-zoom="1" type="button">Whole board</button>
+    <button class="icon-btn" data-zoom="2" type="button">2×</button>
+    <button class="icon-btn" data-zoom="3" type="button">3×</button>
+    <button class="icon-btn" data-zoom="4" type="button">4×</button>
+  </div>
+
+  <div class="row">
+    <span class="row-label">Board</span>
+    <button class="surface-chip" data-surface="black" type="button">Blackboard</button>
+    <button class="surface-chip" data-surface="green" type="button">Green</button>
+    <button class="surface-chip" data-surface="white" type="button">Whiteboard</button>
+    <button class="surface-chip" data-surface="grid" type="button">Grid</button>
+    <button class="surface-chip" data-surface="ruled" type="button">Ruled</button>
+  </div>
+
+  <div class="row">
+    <span class="row-label">Page</span>
+    <button class="icon-btn" id="undo" type="button">Undo</button>
+    <button class="icon-btn" id="redo" type="button">Redo</button>
+    <button class="icon-btn" id="clear" type="button">Wipe page</button>
+    <button class="icon-btn danger" id="page-delete" type="button">Delete page</button>
+  </div>
+
+</div>
+
+<div id="expired" hidden>
+  <div>
+    <h2>This pairing has expired</h2>
+    <p>A new board number was generated. Scan the code on the screen again.</p>
+    <a class="btn btn-primary" href="{% url 'chalk:join' %}">Enter a board number</a>
+  </div>
+</div>
+
+{{ config|json_script:"chalk-config" }}
+<script src="{% static 'chalk/js/chalk_ink.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/chalk_net.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/chalk_control.js' %}?v=1"></script>
+</body>
+</html>

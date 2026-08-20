@@ -20,6 +20,7 @@ urlpatterns = [
     path("kura/", include("kura.urls", namespace="kura")),
     path("icebreakers/", include("icebreakers.urls", namespace="icebreakers")),
     path("community/", include("community.urls")),
+    path("chalk/", include("chalk.urls", namespace="chalk")),
     path("", include("core.urls")),
 ]
 

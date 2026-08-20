@@ -1,0 +1,26 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#10151b">
+<title>Open a board · Chalk</title>
+<link rel="stylesheet" href="{% static 'chalk/css/chalk.css' %}?v=1">
+</head>
+<body class="chalk-page">
+<div class="join-wrap">
+
+  <p class="kicker">Chalk</p>
+  <h1 style="font-size:24px">Type the number on the screen</h1>
+
+  <form method="post" action="{% url 'chalk:join' %}">
+    {% csrf_token %}
+    <input id="code-input" name="code" inputmode="numeric" pattern="[0-9 ]*" maxlength="8"
+           autocomplete="one-time-code" autofocus value="{{ code }}" aria-label="Board number">
+    {% if error %}<p style="color:var(--rust);font-size:14px">{{ error }}</p>{% endif %}
+    <button class="btn btn-primary" type="submit" style="width:100%;margin-top:14px">Open the board</button>
+  </form>
+
+</div>
+</body>
+</html>

@@ -70,7 +70,7 @@ from .models import (
     clean_src,
 )
 
-TOOLS = {"pen", "marker", "chalk", "highlighter"}
+TOOLS = {"pen", "pencil", "marker", "chalk", "crayon", "highlighter"}
 SURFACE_KEYS = {"black", "green", "white", "grid", "ruled"}
 
 # Exactly the CSS colour forms that are real: #rgb, #rgba, #rrggbb, #rrggbbaa.

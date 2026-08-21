@@ -8,11 +8,18 @@
 (function (global) {
   "use strict";
 
+  /* `grain` names a texture pass, not a flag. Graphite and wax do not look
+   * like chalk dust: a pencil is a narrow line whose edge breaks up on the
+   * tooth of the paper, and a crayon is a wide waxy band that skips. Both
+   * are drawn as offset passes over the same path rather than as one line,
+   * which is why they read as a material instead of a colour. */
   var TOOLS = {
-    pen:         { alpha: 1.00, taper: true,  grain: 0, widthx: 1.00, cap: "round" },
-    marker:      { alpha: 0.88, taper: false, grain: 0, widthx: 2.10, cap: "round" },
-    chalk:       { alpha: 0.90, taper: false, grain: 1, widthx: 1.50, cap: "round" },
-    highlighter: { alpha: 0.24, taper: false, grain: 0, widthx: 5.00, cap: "butt"  }
+    pen:         { alpha: 1.00, taper: true,  grain: "",       widthx: 1.00, cap: "round" },
+    pencil:      { alpha: 0.66, taper: true,  grain: "pencil", widthx: 0.85, cap: "round" },
+    marker:      { alpha: 0.88, taper: false, grain: "",       widthx: 2.10, cap: "round" },
+    chalk:       { alpha: 0.90, taper: false, grain: "chalk",  widthx: 1.50, cap: "round" },
+    crayon:      { alpha: 0.58, taper: false, grain: "crayon", widthx: 3.20, cap: "round" },
+    highlighter: { alpha: 0.24, taper: false, grain: 0,        widthx: 5.00, cap: "butt"  }
   };
 
   /* A live stroke with no stroke_end after this long is assumed lost — the
@@ -85,6 +92,42 @@
   function pxX(n, view, W) { return (n - view.x) * view.s * W; }
   function pxY(n, view, H) { return (n - view.y) * view.s * H; }
 
+  /* Redraw the path shifted sideways, with gaps. `off` is in pixels across
+   * the direction of travel; `gap` is the chance of skipping a segment,
+   * which is what makes a pencil line look like it was dragged over paper
+   * rather than printed. */
+  function offsetPass(ctx, pts, view, W, H, off, rnd, gap, step) {
+    var drawing = false, i;
+    step = step || 2;
+    ctx.beginPath();
+    for (i = step; i < pts.length - 1; i += step) {
+      var x0 = pxX(pts[i - step], view, W), y0 = pxY(pts[i - step + 1], view, H);
+      var x1 = pxX(pts[i], view, W), y1 = pxY(pts[i + 1], view, H);
+      var dx = x1 - x0, dy = y1 - y0;
+      var len = Math.hypot(dx, dy) || 1;
+      var nx = -dy / len * off, ny = dx / len * off;
+      if (gap && rnd() < gap) { drawing = false; continue; }
+      if (!drawing) { ctx.moveTo(x0 + nx, y0 + ny); drawing = true; }
+      ctx.lineTo(x1 + nx, y1 + ny);
+    }
+    ctx.stroke();
+  }
+
+  /* Speckle along the path. Seeded, so the same stroke gets the same
+   * speckles on every redraw — the chalk dust used to crawl. */
+  function speckle(ctx, pts, view, W, H, rnd, spread, dot, per, every) {
+    for (var k = 0; k < pts.length - 1; k += every) {
+      var cx = pxX(pts[k], view, W), cy = pxY(pts[k + 1], view, H);
+      for (var g = 0; g < per; g++) {
+        ctx.fillRect(
+          cx + (rnd() - 0.5) * spread * 2,
+          cy + (rnd() - 0.5) * spread * 2,
+          dot, dot
+        );
+      }
+    }
+  }
+
   function drawStroke(ctx, s, view, W, H) {
     var cfg = TOOLS[s.tool] || TOOLS.pen;
     var pts = smoothed(s);
@@ -123,23 +166,51 @@
     }
 
     if (cfg.grain) {
-      /* Chalk dust: scatter along the path so a blackboard reads as chalk,
-       * not as a glowing neon line. */
       var rnd = seededRandom(seedOf(s));
-      ctx.globalAlpha = cfg.alpha * 0.35;
       ctx.fillStyle = s.color;
-      var spread = base * 0.62;
-      var dot = Math.max(0.7, base * 0.16);
-      for (var k = 0; k < pts.length; k += 4) {
-        var cx = pxX(pts[k], view, W), cy = pxY(pts[k + 1], view, H);
-        for (var g = 0; g < 3; g++) {
-          ctx.fillRect(
-            cx + (rnd() - 0.5) * spread * 2,
-            cy + (rnd() - 0.5) * spread * 2,
-            dot,
-            dot
-          );
+      ctx.strokeStyle = s.color;
+
+      if (cfg.grain === "chalk") {
+        /* Chalk dust: scatter along the path so a blackboard reads as chalk,
+         * not as a glowing neon line. */
+        ctx.globalAlpha = cfg.alpha * 0.35;
+        speckle(ctx, pts, view, W, H, rnd, base * 0.62,
+          Math.max(0.7, base * 0.16), 3, 4);
+
+      } else if (cfg.grain === "pencil") {
+        /* Graphite: a couple of passes either side of the line, broken up,
+         * plus a fine dusting. The darkness comes from the passes landing on
+         * top of each other, which is also how a real pencil works. */
+        ctx.lineWidth = Math.max(0.5, base * 0.5);
+        /* Offsets are jittered rather than fixed. Two passes at exactly
+         * ±0.26 read as a pair of rails either side of the line, which is
+         * a printed look, not a drawn one. */
+        ctx.globalAlpha = cfg.alpha * 0.5;
+        offsetPass(ctx, pts, view, W, H, base * (0.16 + rnd() * 0.2), rnd, 0.18);
+        offsetPass(ctx, pts, view, W, H, -base * (0.16 + rnd() * 0.2), rnd, 0.2);
+        ctx.globalAlpha = cfg.alpha * 0.3;
+        ctx.lineWidth = Math.max(0.4, base * 0.3);
+        offsetPass(ctx, pts, view, W, H, base * (0.4 + rnd() * 0.25), rnd, 0.45, 4);
+        offsetPass(ctx, pts, view, W, H, -base * (0.4 + rnd() * 0.25), rnd, 0.45, 4);
+        ctx.globalAlpha = cfg.alpha * 0.22;
+        speckle(ctx, pts, view, W, H, rnd, base * 0.55,
+          Math.max(0.5, base * 0.1), 2, 6);
+
+      } else if (cfg.grain === "crayon") {
+        /* Wax: a wide band of streaks that skip, so the board shows through
+         * in places the way it does under a crayon. Filling a shape by
+         * scribbling then reads as colouring rather than as painting. */
+        ctx.lineWidth = Math.max(0.6, base * 0.17);
+        /* Five streaks at a coarse step, not fifteen at a fine one: a whole
+         * page of crayon has to redraw when the board resizes. */
+        for (var i = 0; i < 5; i++) {
+          ctx.globalAlpha = cfg.alpha * (0.32 + rnd() * 0.42);
+          offsetPass(ctx, pts, view, W, H,
+            (rnd() - 0.5) * base * 0.86, rnd, 0.22, 3);
         }
+        ctx.globalAlpha = cfg.alpha * 0.3;
+        speckle(ctx, pts, view, W, H, rnd, base * 0.5,
+          Math.max(0.6, base * 0.13), 4, 4);
       }
     }
     ctx.restore();
@@ -271,6 +342,21 @@
       '<path d="M38,62 L62,62 L56,94 L44,94 Z" fill="COL"' +
       ' stroke="rgba(0,0,0,.45)" stroke-width="2"/>' +
       '<path d="M38,12 L38,48" stroke="rgba(255,255,255,.22)" stroke-width="4"/>',
+    pencil:
+      '<path d="M40,4 L60,4 L60,62 L50,96 L40,62 Z" fill="#c9922f"' +
+      ' stroke="rgba(0,0,0,.5)" stroke-width="2"/>' +
+      '<path d="M40,62 L60,62 L50,96 Z" fill="#f0e3c8"' +
+      ' stroke="rgba(0,0,0,.45)" stroke-width="2"/>' +
+      '<path d="M45,82 L55,82 L50,96 Z" fill="COL"/>' +
+      '<rect x="40" y="4" width="20" height="10" fill="#e2606a"/>' +
+      '<path d="M50,8 L50,60" stroke="rgba(0,0,0,.22)" stroke-width="2"/>',
+    crayon:
+      '<path d="M34,20 L66,20 L66,72 L58,94 L42,94 L34,72 Z" fill="COL"' +
+      ' stroke="rgba(0,0,0,.45)" stroke-width="2"/>' +
+      '<rect x="30" y="28" width="40" height="34" rx="3" fill="COL"' +
+      ' stroke="rgba(0,0,0,.35)" stroke-width="2"/>' +
+      '<rect x="30" y="34" width="40" height="4" fill="rgba(255,255,255,.5)"/>' +
+      '<rect x="30" y="52" width="40" height="4" fill="rgba(0,0,0,.2)"/>',
     highlighter:
       '<rect x="31" y="8" width="38" height="50" rx="6" fill="COL" opacity=".55"' +
       ' stroke="rgba(0,0,0,.4)" stroke-width="2"/>' +

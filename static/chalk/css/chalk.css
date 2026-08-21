@@ -1110,6 +1110,9 @@ body.inspecting.insp-collapsed .c-scroll { padding-bottom: 110px; }
 }
 
 #pad-wrap[data-tool="select"] { outline: 2px solid var(--brass); outline-offset: -2px; }
+/* Colouring in: the frame is the colour that a tap would apply, so there is
+   no guessing what is loaded before touching the drawing. */
+#pad-wrap[data-tool="fill"] { outline: 3px solid var(--pick); outline-offset: -3px; }
 
 /* Lasso: drag on bare board with Pick to gather up handwriting. */
 #marquee {

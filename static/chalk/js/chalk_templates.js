@@ -165,13 +165,84 @@
       Object.assign({ size: 0.062, bold: true }, o || {}));
   }
 
+  /* ---- drawing helpers ------------------------------------------------
+   *
+   * Pictures are easier to think about in board units than in fractions: the
+   * board is 16 wide and 9 tall, and a circle is a circle. Everything below
+   * takes those units and converts, so a flower stays a flower and does not
+   * come out as an oval because the numbers were in fractions of two
+   * different lengths.
+   */
+
+  function ubox(X, Y, W, H) {
+    return { x: (X - W / 2) / 16, y: (Y - H / 2) / 9, w: W / 16, h: H / 9 };
+  }
+
+  function ushp(p, name, X, Y, W, H, o) {
+    var b = ubox(X, Y, W, H);
+    return shp(p, name, b.x, b.y, b.w, b.h, o);
+  }
+
+  function udisc(p, X, Y, D, o) { return ushp(p, "ellipse", X, Y, D, D, o); }
+
+  function upoly(p, coords, o) {
+    var mapped = [];
+    for (var i = 0; i < coords.length; i += 2) {
+      mapped.push(coords[i] / 16, coords[i + 1] / 9);
+    }
+    return poly(p, mapped, o);
+  }
+
+  function useg(p, X1, Y1, X2, Y2, o) {
+    return upoly(p, [X1, Y1, X2, Y2], o);
+  }
+
+  function utext(p, X, Y, W, str, o) {
+    return text(p, (X - W / 2) / 16, Y / 9, W / 16, str, o);
+  }
+
+  /* A petal, leaf or wing: an oval pushed out from a centre and turned to
+   * face outward. */
+  function petal(p, cx, cy, angle, dist, len, wide, o) {
+    var a = angle * Math.PI / 180;
+    var e = ushp(p, "ellipse",
+      cx + Math.cos(a) * dist, cy + Math.sin(a) * dist, len, wide, o);
+    e.rot = Math.round(angle * 10) / 10;
+    return e;
+  }
+
+  /* A crescent whose two tips meet. Sweeping an inner circle from a shifted
+   * centre leaves the ends open, so the inner edge is the outer edge pulled
+   * in by an amount that goes to nothing at both tips. */
+  function crescent(cx, cy, rad, thick, from, to, steps) {
+    var out = [], back = [], i;
+    for (i = 0; i <= steps; i++) {
+      var t = i / steps;
+      var a = (from + (to - from) * t) * Math.PI / 180;
+      var pull = Math.sin(t * Math.PI) * thick;
+      out.push(cx + Math.cos(a) * rad, cy + Math.sin(a) * rad);
+      back.unshift(cx + Math.cos(a) * (rad - pull), cy + Math.sin(a) * (rad - pull));
+    }
+    return out.concat(back);
+  }
+
+  function ring(cx, cy, rad, from, to, steps, squash) {
+    var out = [], i;
+    for (i = 0; i <= steps; i++) {
+      var a = (from + (to - from) * i / steps) * Math.PI / 180;
+      out.push(cx + Math.cos(a) * rad, cy + Math.sin(a) * rad * (squash || 1));
+    }
+    return out;
+  }
+
   /* ---- the library --------------------------------------------------- */
 
   var SUBJECTS = [
     { id: "maths", name: "Maths" },
     { id: "science", name: "Science" },
     { id: "english", name: "English" },
-    { id: "class", name: "Class" }
+    { id: "class", name: "Class" },
+    { id: "draw", name: "Drawing" }
   ];
 
   var LIST = [];
@@ -751,6 +822,267 @@
           { strokeW: 2, stroke: p.faint }));
       }
     }
+    return out;
+  });
+
+  /* =============================== DRAWING ============================
+   *
+   * Outlines to draw over and colour in. Every piece is a closed shape of
+   * its own — each petal, each leaf, each wing — because the Colour in tool
+   * fills one shape per tap, and a flower that is a single outline is a
+   * flower you can only colour one colour.
+   *
+   * Nothing here is traced from anyone's artwork. They are put together out
+   * of ovals, arcs and point lists, which is also why they can be pulled
+   * apart and rebuilt on the board.
+   */
+
+  T("draw", "flower", "Flower", "Petals, centre, stem and leaves", function (p) {
+    var out = [], i;
+    var cx = 8, cy = 3.7;
+    /* Ten petals rather than twelve: enough to read as a flower, few enough
+     * that each one is a shape a child can aim a finger at and colour. */
+    for (i = 0; i < 10; i++) {
+      out.push(petal(p, cx, cy, i * 36, 1.7, 2.6, 1.15, { strokeW: 2.5 }));
+    }
+    out.push(udisc(p, cx, cy, 1.7, { strokeW: 2.5, stroke: p.amber }));
+    out.push(upoly(p, [cx, cy + 0.85, 7.75, 5.9, 8.1, 7.2, 7.95, 8.6],
+      { strokeW: 4, edge: "smooth", radius: 22, stroke: p.green }));
+    /* Distance from the stem is half the leaf's length, so the inner end
+     * meets the stem instead of floating beside it. */
+    out.push(petal(p, 7.8, 6.2, 200, 1.2, 2.4, 1.05, { strokeW: 2.5, stroke: p.green }));
+    out.push(petal(p, 8.05, 7.1, 340, 1.2, 2.4, 1.05, { strokeW: 2.5, stroke: p.green }));
+    return out;
+  });
+
+  T("draw", "flower-trace", "Flower to trace", "Dotted outline to draw over", function (p) {
+    var out = [], i;
+    var faint = { strokeW: 2, dash: 4, stroke: p.faint };
+    for (i = 0; i < 8; i++) {
+      out.push(petal(p, 8, 4.1, i * 45, 1.5, 2.4, 1.2, faint));
+    }
+    out.push(udisc(p, 8, 4.1, 1.8, faint));
+    out.push(upoly(p, [8, 5.1, 7.8, 6.6, 8.05, 8.4],
+      { strokeW: 2.5, dash: 4, stroke: p.faint, edge: "smooth", radius: 20 }));
+    out.push(petal(p, 7.85, 6.5, 200, 1.1, 2.2, 1.0, faint));
+    out.push(petal(p, 8, 7.3, 340, 1.1, 2.2, 1.0, faint));
+    out.push(utext(p, 8, 0.4, 10, "Draw over the dots, then colour it in",
+      { size: 0.04, align: "center", color: p.faint }));
+    return out;
+  });
+
+  T("draw", "leaf", "Leaf", "Outline, midrib and veins", function (p) {
+    var out = [];
+    out.push(upoly(p, [4.6, 6.9, 6.2, 4.4, 9, 3.0, 12, 2.4, 10.2, 4.9, 7.4, 6.4],
+      { closed: true, edge: "smooth", radius: 26, strokeW: 3, stroke: p.green }));
+    out.push(useg(p, 4.6, 6.9, 12, 2.4, { strokeW: 2.5, stroke: p.green }));
+    out.push(useg(p, 3.2, 7.8, 4.6, 6.9, { strokeW: 3, stroke: p.green }));
+    /* Veins run across the midrib, not at a guessed angle, and get shorter
+     * towards the tip where the leaf itself is narrower. Guessed offsets
+     * poked out through the outline. */
+    var dx = 12 - 4.6, dy = 2.4 - 6.9;
+    var len = Math.sqrt(dx * dx + dy * dy);
+    var px = -dy / len, py = dx / len;
+    for (var i = 1; i <= 5; i++) {
+      var t = i / 6;
+      var mx = 4.6 + dx * t, my = 6.9 + dy * t;
+      var reach = 1.45 * (1 - t * 0.55);
+      out.push(useg(p, mx, my,
+        mx + px * reach + dx / len * 0.5, my + py * reach + dy / len * 0.5,
+        { strokeW: 1.6, stroke: p.green }));
+      out.push(useg(p, mx, my,
+        mx - px * reach + dx / len * 0.5, my - py * reach + dy / len * 0.5,
+        { strokeW: 1.6, stroke: p.green }));
+    }
+    return out;
+  });
+
+  T("draw", "sprout", "Seedling", "A shoot coming up out of the soil", function (p) {
+    var out = [];
+    out.push(upoly(p, [4.9, 8.1, 5.8, 6.9, 8, 6.4, 10.2, 6.9, 11.1, 8.1],
+      { closed: true, edge: "smooth", radius: 22, strokeW: 2.5, stroke: p.amber }));
+    out.push(upoly(p, [8, 6.6, 7.9, 5.2, 8.05, 3.2],
+      { strokeW: 4, edge: "smooth", radius: 24, stroke: p.green }));
+    /* Each leaf sits half its own length away from the stem, which is what
+     * makes it join the stem rather than hover beside it. */
+    out.push(petal(p, 7.95, 4.4, 202, 1.45, 2.9, 1.35, { strokeW: 2.5, stroke: p.green }));
+    out.push(petal(p, 8.05, 4.8, 340, 1.45, 2.9, 1.35, { strokeW: 2.5, stroke: p.green }));
+    out.push(petal(p, 8.05, 3.3, 260, 0.95, 1.9, 0.9, { strokeW: 2.5, stroke: p.green }));
+    return out;
+  });
+
+  T("draw", "butterfly", "Butterfly", "Four wings, ready for colours", function (p) {
+    var out = [];
+    out.push(petal(p, 8, 4.2, 215, 2.6, 3.4, 2.5, { strokeW: 2.5, stroke: p.violet }));
+    out.push(petal(p, 8, 4.2, 325, 2.6, 3.4, 2.5, { strokeW: 2.5, stroke: p.violet }));
+    out.push(petal(p, 8, 4.6, 150, 2.4, 2.7, 2.0, { strokeW: 2.5, stroke: p.blue }));
+    out.push(petal(p, 8, 4.6, 30, 2.4, 2.7, 2.0, { strokeW: 2.5, stroke: p.blue }));
+    out.push(udisc(p, 5.6, 3.0, 0.9, { strokeW: 2, stroke: p.amber }));
+    out.push(udisc(p, 10.4, 3.0, 0.9, { strokeW: 2, stroke: p.amber }));
+    out.push(ushp(p, "ellipse", 8, 4.4, 0.7, 4.4, { strokeW: 2.5 }));
+    out.push(udisc(p, 8, 2.0, 0.9, { strokeW: 2.5 }));
+    out.push(useg(p, 7.8, 1.6, 6.9, 0.5, { strokeW: 2 }));
+    out.push(useg(p, 8.2, 1.6, 9.1, 0.5, { strokeW: 2 }));
+    return out;
+  });
+
+  T("draw", "fish", "Fish", "Body, fins, tail and bubbles", function (p) {
+    var out = [];
+    out.push(upoly(p, [4.4, 4.6, 6.4, 2.8, 9.4, 2.9, 11.2, 4.6, 9.4, 6.3, 6.4, 6.2],
+      { closed: true, edge: "smooth", radius: 30, strokeW: 3, stroke: p.blue }));
+    out.push(upoly(p, [11.2, 4.6, 13.4, 2.9, 13.4, 6.3],
+      { closed: true, strokeW: 3, stroke: p.blue }));
+    out.push(upoly(p, [7.6, 2.85, 8.6, 1.5, 9.7, 3.0],
+      { closed: true, edge: "smooth", radius: 16, strokeW: 2.5, stroke: p.blue }));
+    out.push(upoly(p, [7.4, 6.2, 8.2, 7.4, 9.2, 6.15],
+      { closed: true, edge: "smooth", radius: 16, strokeW: 2.5, stroke: p.blue }));
+    out.push(udisc(p, 6.0, 4.1, 0.8, { strokeW: 2.5 }));
+    out.push(udisc(p, 6.0, 4.1, 0.3, { fill: p.ink, strokeW: 0 }));
+    /* A gill behind the head, not a dashed line down the middle: that read
+     * as a rendering fault rather than as part of the fish. */
+    out.push(upoly(p, [6.9, 3.1, 6.4, 4.6, 6.9, 6.0],
+      { strokeW: 2, edge: "smooth", radius: 20, stroke: p.blue }));
+    [[4.6, 1.9, 0.7], [3.6, 1.1, 0.5], [5.4, 0.8, 0.4]].forEach(function (b) {
+      out.push(udisc(p, b[0], b[1], b[2], { strokeW: 1.8, stroke: p.faint }));
+    });
+    return out;
+  });
+
+  T("draw", "tree", "Tree", "Trunk, branches and canopy", function (p) {
+    var out = [];
+    out.push(upoly(p, [7.2, 8.4, 7.6, 5.6, 8.4, 5.6, 8.8, 8.4],
+      { closed: true, strokeW: 3, stroke: p.amber }));
+    out.push(useg(p, 7.7, 6.4, 6.6, 5.4, { strokeW: 2.2, stroke: p.amber }));
+    out.push(useg(p, 8.3, 6.1, 9.4, 5.2, { strokeW: 2.2, stroke: p.amber }));
+    out.push(udisc(p, 8, 3.2, 4.4, { strokeW: 3, stroke: p.green }));
+    out.push(udisc(p, 5.9, 4.3, 3.2, { strokeW: 3, stroke: p.green }));
+    out.push(udisc(p, 10.1, 4.3, 3.2, { strokeW: 3, stroke: p.green }));
+    out.push(useg(p, 2.5, 8.4, 13.5, 8.4, { strokeW: 2.5, stroke: p.faint }));
+    return out;
+  });
+
+  T("draw", "house", "House", "Walls, roof, door and windows", function (p) {
+    var out = [];
+    out.push(upoly(p, [5.4, 4.4, 10.6, 4.4, 10.6, 8.2, 5.4, 8.2],
+      { closed: true, strokeW: 3 }));
+    out.push(upoly(p, [4.7, 4.4, 8, 1.9, 11.3, 4.4],
+      { closed: true, strokeW: 3, stroke: p.red }));
+    out.push(upoly(p, [7.3, 8.2, 7.3, 6.1, 8.7, 6.1, 8.7, 8.2],
+      { closed: true, strokeW: 2.5, stroke: p.amber }));
+    out.push(udisc(p, 8.45, 7.2, 0.25, { fill: p.ink, strokeW: 0 }));
+    [[6.2, 5.5], [9.8, 5.5]].forEach(function (w) {
+      out.push(upoly(p, [w[0] - 0.7, w[1] - 0.7, w[0] + 0.7, w[1] - 0.7,
+        w[0] + 0.7, w[1] + 0.7, w[0] - 0.7, w[1] + 0.7],
+        { closed: true, strokeW: 2.5, stroke: p.blue }));
+      out.push(useg(p, w[0], w[1] - 0.7, w[0], w[1] + 0.7, { strokeW: 1.6, stroke: p.blue }));
+      out.push(useg(p, w[0] - 0.7, w[1], w[0] + 0.7, w[1], { strokeW: 1.6, stroke: p.blue }));
+    });
+    out.push(upoly(p, [9.4, 2.9, 9.4, 1.0, 10.3, 1.0, 10.3, 3.6],
+      { closed: true, strokeW: 2.5, stroke: p.red }));
+    out.push(useg(p, 2.5, 8.2, 13.5, 8.2, { strokeW: 2.5, stroke: p.faint }));
+    return out;
+  });
+
+  T("draw", "bird", "Bird", "On a branch", function (p) {
+    var out = [];
+    out.push(ushp(p, "ellipse", 7.4, 4.4, 4.6, 3.0, { strokeW: 3, stroke: p.blue }));
+    out.push(udisc(p, 10.2, 3.0, 2.0, { strokeW: 3, stroke: p.blue }));
+    out.push(upoly(p, [11.2, 2.9, 12.9, 3.4, 11.2, 3.8],
+      { closed: true, strokeW: 2.5, stroke: p.amber }));
+    out.push(udisc(p, 10.5, 2.6, 0.35, { fill: p.ink, strokeW: 0 }));
+    out.push(upoly(p, [6.1, 4.2, 8.2, 3.6, 8.9, 4.6, 7.0, 5.3],
+      { closed: true, edge: "smooth", radius: 30, strokeW: 2.5, stroke: p.violet }));
+    out.push(upoly(p, [5.2, 4.4, 2.9, 3.4, 3.3, 5.6],
+      { closed: true, strokeW: 2.5, stroke: p.violet }));
+    out.push(useg(p, 7.2, 5.8, 7.0, 6.9, { strokeW: 2, stroke: p.amber }));
+    out.push(useg(p, 8.2, 5.8, 8.4, 6.9, { strokeW: 2, stroke: p.amber }));
+    out.push(useg(p, 3.0, 6.9, 13.0, 6.9, { strokeW: 3.5, stroke: p.green }));
+    return out;
+  });
+
+  T("draw", "apple", "Apple", "With a stalk and a leaf", function (p) {
+    var out = [];
+    out.push(ushp(p, "ellipse", 8, 5.1, 5.2, 5.4, { strokeW: 3, stroke: p.red }));
+    out.push(upoly(p, [8, 2.5, 8.3, 1.2, 8.9, 0.6],
+      { strokeW: 3, edge: "smooth", radius: 20, stroke: p.amber }));
+    out.push(petal(p, 8.85, 0.75, 355, 1.1, 2.2, 1.0, { strokeW: 2.5, stroke: p.green }));
+    return out;
+  });
+
+  T("draw", "pot-plant", "Plant in a pot", "Three flowers to colour", function (p) {
+    var out = [];
+    out.push(upoly(p, [5.6, 6.2, 10.4, 6.2, 9.6, 8.5, 6.4, 8.5],
+      { closed: true, strokeW: 3, stroke: p.amber }));
+    out.push(upoly(p, [5.2, 5.5, 10.8, 5.5, 10.8, 6.3, 5.2, 6.3],
+      { closed: true, strokeW: 3, stroke: p.amber }));
+    [[5.6, 2.4, 210], [8, 1.6, 270], [10.4, 2.4, 330]].forEach(function (f, n) {
+      out.push(upoly(p, [8, 5.5, (8 + f[0]) / 2, (5.5 + f[1]) / 2 + 0.5, f[0], f[1] + 0.95],
+        { strokeW: 3, edge: "smooth", radius: 22, stroke: p.green }));
+      for (var i = 0; i < 5; i++) {
+        out.push(petal(p, f[0], f[1], i * 72 + n * 15, 0.85, 1.5, 0.8,
+          { strokeW: 2.2, stroke: [p.red, p.violet, p.blue][n] }));
+      }
+      out.push(udisc(p, f[0], f[1], 0.8, { strokeW: 2, stroke: p.amber }));
+    });
+    return out;
+  });
+
+  T("draw", "boat", "Boat", "Hull, sails and water", function (p) {
+    var out = [];
+    out.push(upoly(p, [3.4, 6.2, 12.6, 6.2, 11.2, 7.9, 4.8, 7.9],
+      { closed: true, strokeW: 3, stroke: p.amber }));
+    out.push(useg(p, 8, 6.2, 8, 1.2, { strokeW: 3 }));
+    out.push(upoly(p, [8.3, 1.6, 11.9, 5.9, 8.3, 5.9],
+      { closed: true, strokeW: 2.5, stroke: p.red }));
+    out.push(upoly(p, [7.7, 2.4, 7.7, 5.9, 4.9, 5.9],
+      { closed: true, strokeW: 2.5, stroke: p.blue }));
+    out.push(upoly(p, [1.5, 8.3, 3.5, 7.9, 5.5, 8.3, 7.5, 7.9, 9.5, 8.3, 11.5, 7.9, 14.5, 8.3],
+      { strokeW: 2.5, edge: "smooth", radius: 20, stroke: p.blue }));
+    out.push(upoly(p, [1.5, 8.8, 4, 8.5, 6.5, 8.8, 9, 8.5, 11.5, 8.8, 14.5, 8.5],
+      { strokeW: 2, edge: "smooth", radius: 20, stroke: p.blue }));
+    return out;
+  });
+
+  T("draw", "sun-cloud", "Sun and cloud", "Good for weather charts", function (p) {
+    var out = [], i;
+    out.push(udisc(p, 5.2, 3.0, 3.0, { strokeW: 3, stroke: p.amber }));
+    for (i = 0; i < 12; i++) {
+      var a = i * 30 * Math.PI / 180;
+      out.push(useg(p,
+        5.2 + Math.cos(a) * 1.85, 3.0 + Math.sin(a) * 1.85,
+        5.2 + Math.cos(a) * 2.7, 3.0 + Math.sin(a) * 2.7,
+        { strokeW: 2.5, stroke: p.amber }));
+    }
+    out.push(udisc(p, 9.6, 5.6, 2.6, { strokeW: 3, stroke: p.blue }));
+    out.push(udisc(p, 11.6, 5.9, 2.2, { strokeW: 3, stroke: p.blue }));
+    out.push(udisc(p, 10.6, 4.7, 2.4, { strokeW: 3, stroke: p.blue }));
+    out.push(useg(p, 9.4, 7.2, 8.9, 8.4, { strokeW: 2, stroke: p.blue }));
+    out.push(useg(p, 10.8, 7.3, 10.3, 8.5, { strokeW: 2, stroke: p.blue }));
+    out.push(useg(p, 12.2, 7.2, 11.7, 8.4, { strokeW: 2, stroke: p.blue }));
+    return out;
+  });
+
+  T("draw", "moon-stars", "Moon and stars", "A night sky to fill in", function (p) {
+    var out = [];
+    out.push(upoly(p, crescent(6.2, 4.4, 3.1, 2.2, 55, 305, 14),
+      { closed: true, edge: "smooth", radius: 10, strokeW: 3, stroke: p.amber }));
+    [[11.5, 2.2, 1.8], [13.3, 4.6, 1.3], [10.6, 6.2, 1.1], [12.8, 7.4, 0.9]].forEach(
+      function (st) {
+        out.push(ushp(p, "star", st[0] - st[2] / 2, st[1] - st[2] / 2, st[2], st[2],
+          { strokeW: 2.2, stroke: p.amber, sides: 5, inset: 45 }));
+      });
+    return out;
+  });
+
+  T("draw", "colour-me", "Shapes to colour", "Six blanks for the colour tool", function (p) {
+    var out = [utext(p, 8, 0.3, 12, "Tap a shape with Colour in",
+      { size: 0.04, align: "center", color: p.faint })];
+    var kinds = ["ellipse", "rect", "triangle", "star", "diamond", "polygon"];
+    kinds.forEach(function (k, i) {
+      var col = i % 3, row = (i / 3) | 0;
+      out.push(ushp(p, k, 4 + col * 4, 3.2 + row * 3.0, 2.8, 2.2,
+        { strokeW: 3, stroke: [p.red, p.blue, p.green, p.amber, p.violet, p.ink][i] }));
+    });
     return out;
   });
 

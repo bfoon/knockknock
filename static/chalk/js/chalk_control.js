@@ -180,6 +180,12 @@
      * stuck on the live layer here AND on the projector until reload. */
     if (activePointer !== null) return;
 
+    if (state.tool === "fill") {
+      var cp = surface.toBoard(e.clientX, e.clientY);
+      colourIn(layer.hit(cp.x, cp.y));
+      return;
+    }
+
     if (state.tool === "select") {
       /* Objects first, then handwriting, then a lasso. No capture for the
        * first two: the selection overlay handles the drag from here, and
@@ -247,6 +253,7 @@
   }
 
   pad.addEventListener("pointermove", function (e) {
+    if (state.tool === "fill") return;
     if (state.tool === "select") {
       if (lasso && e.pointerId === activePointer) {
         e.preventDefault();
@@ -291,6 +298,7 @@
    * early and the rest of the movement was dropped in silence. */
   ["pointerup", "pointercancel"].forEach(function (type) {
     pad.addEventListener(type, function (e) {
+      if (state.tool === "fill") return;
       if (state.tool === "select") {
         if (lasso && e.pointerId === activePointer) {
           endLasso(type === "pointercancel");
@@ -512,6 +520,33 @@
     commit: function (id, patch) { net.send({ t: "el_update", id: id, patch: patch }); },
     select: function () { renderInspector(); }
   });
+
+  /* Colouring in.
+   *
+   * Tap a shape and it takes the current colour. That is the whole tool.
+   * Flood-filling a scribble is not on the table — ink is vector strokes,
+   * not pixels, and there are no regions to flood — but every ready-made
+   * drawing is built from closed shapes, so tapping inside a petal fills
+   * that petal. Tapping a shape that already holds this colour clears it,
+   * so a wrong colour is one tap to undo rather than a hunt for Undo. */
+  function colourIn(id) {
+    if (!id) return say("Tap a shape or a drawing to colour it in.");
+    var el = layer.get(id);
+    if (!el) return;
+    var patch;
+    if (el.type === "image") return say("A photo already has its own colours.");
+    if (el.type === "text") {
+      patch = { color: state.color };
+    } else if (el.fillOn &&
+               String(el.fill || "").toLowerCase() === state.color.toLowerCase()) {
+      patch = { fillOn: false };
+    } else {
+      patch = { fillOn: true, fill: state.color };
+    }
+    layer.patch(id, patch);
+    editor.refresh();
+    net.send({ t: "el_update", id: id, patch: patch });
+  }
 
   function afterElChange() {
     editor.refresh();

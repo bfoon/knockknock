@@ -50,6 +50,11 @@ IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 # of stroke ids, so the cost is in the ids, not the ink.
 MAX_XFORM_IDS = 1500
 
+# A ready-made board arrives as one message and lands as one undo entry: a
+# teacher who drops in a times-table grid and changes their mind wants one
+# Undo, not forty. The biggest template in the library is under fifty.
+MAX_TPL_ELS = 80
+
 
 # ----------------------------------------------------------------------
 # image addresses
@@ -69,6 +74,40 @@ _SRC_PATH_RE = re.compile(r"^/[A-Za-z0-9._/~-]{1,300}$")
 _SRC_ABS_RE = re.compile(r"^https?://[A-Za-z0-9.:-]{1,120}/[A-Za-z0-9._/~-]{1,300}$")
 
 
+def board_image_src(image):
+    """The address to store for an uploaded photo.
+
+    Prefer the app's own route. A path under MEDIA_URL only works if
+    something is actually serving MEDIA_ROOT, and when nothing is — the
+    default in a fresh Django project, and in most ASGI deployments until
+    somebody remembers — the photo uploads fine and then renders as an empty
+    frame with no clue as to why. Serving it ourselves cannot be
+    misconfigured.
+    """
+    from django.conf import settings
+    from django.urls import reverse
+
+    if getattr(settings, "CHALK_IMAGE_URLS", "app") == "media":
+        direct = clean_src(image.file.url)
+        if direct:
+            return direct
+    return reverse("chalk:image", args=[image.board_id, image.id])
+
+
+def _is_own_image_url(path):
+    """Is this path our own image route? Resolved, not pattern-matched, so it
+    stays correct if the app is mounted somewhere other than /chalk/."""
+    from django.urls import Resolver404, get_script_prefix, resolve
+
+    prefix = get_script_prefix()
+    if prefix != "/" and path.startswith(prefix):
+        path = "/" + path[len(prefix):]
+    try:
+        return resolve(path).view_name == "chalk:image"
+    except (Resolver404, Exception):
+        return False
+
+
 def clean_src(v):
     """Return `v` if it is an address under MEDIA_URL, else "".
 
@@ -83,6 +122,12 @@ def clean_src(v):
     v = str(v or "").strip()
     if not v or ".." in v or "\\" in v:
         return ""
+
+    # Served by this app. Checked first, and without MEDIA_URL needing to be
+    # set at all.
+    if v.startswith("/") and _is_own_image_url(v.split("?")[0]):
+        return v.split("?")[0]
+
     media = str(settings.MEDIA_URL or "")
     if not media:
         return ""

@@ -26,6 +26,13 @@ urlpatterns = [
     path("b/<uuid:pk>/settings/", views.BoardSettingsView.as_view(), name="settings"),
     path("b/<uuid:pk>/code/", views.RotateCodeView.as_view(), name="rotate_code"),
     path("b/<uuid:pk>/upload/", views.UploadImageView.as_view(), name="upload"),
+    # Photos are served by the app rather than by MEDIA_URL, so a board that
+    # is running at all is a board whose photos appear. See views.BoardImageView.
+    path(
+        "b/<uuid:pk>/img/<uuid:image_id>/",
+        views.BoardImageView.as_view(),
+        name="image",
+    ),
     path("join/", views.JoinView.as_view(), name="join"),
     path("join/<boardcode:code>/", views.JoinView.as_view(), name="join_code"),
     path("c/<boardcode:code>/", views.ControlView.as_view(), name="control"),

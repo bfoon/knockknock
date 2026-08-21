@@ -39,6 +39,9 @@
   var toolsToggle = document.getElementById("tools-toggle");
 
   var surface = new ChalkInk.Surface(pad);
+  /* No chalk stick on the pad: a finger is already covering that spot, and a
+   * sprite under it is one more thing in the way. It belongs on the wall. */
+  surface.setWriter(false);
   surface.setStrokes(CFG.strokes || []);
   var layer = new ChalkEls.Layer(elsHost);
   layer.setEls(CFG.els || []);
@@ -776,6 +779,110 @@
         say("");
       })
       .catch(function (err) { say(err.message || "That photo did not go through."); });
+  });
+
+  /* ------------------------------------------------------------------ */
+  /* ready-made boards                                                   */
+  /*                                                                     */
+  /* A template arrives as ordinary elements — no special kind of object, */
+  /* nothing locked. Once it is down, every line of it can be dragged,    */
+  /* recoloured, deleted or written over by hand, which is the point: the */
+  /* number line is a starting position, not a worksheet.                 */
+  /* ------------------------------------------------------------------ */
+
+  /* A wireframe of the template itself, built from the elements it would
+   * actually place. Cheaper to keep honest than a drawn icon, which goes
+   * stale the moment somebody edits the template it claims to show. */
+  function tplThumb(els) {
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 160 90");
+    svg.setAttribute("class", "thumb thumb-wide");
+    els.slice(0, 26).forEach(function (e) {
+      var x = e.x * 160, y = e.y * 90, w = e.w * 160, h = e.h * 90;
+      var node;
+      if (e.type === "text") {
+        node = document.createElementNS(svg.namespaceURI, "line");
+        node.setAttribute("x1", x);
+        node.setAttribute("y1", y + h * 0.6);
+        node.setAttribute("x2", x + Math.min(w, 34));
+        node.setAttribute("y2", y + h * 0.6);
+        node.setAttribute("stroke-width", "2.4");
+        node.setAttribute("opacity", ".62");
+      } else if (e.type === "shape" && e.shape === "ellipse") {
+        node = document.createElementNS(svg.namespaceURI, "ellipse");
+        node.setAttribute("cx", x + w / 2);
+        node.setAttribute("cy", y + h / 2);
+        node.setAttribute("rx", Math.max(1, w / 2));
+        node.setAttribute("ry", Math.max(1, h / 2));
+        node.setAttribute("fill", "none");
+      } else if (e.type === "freeform" && e.pts && e.pts.length >= 4) {
+        node = document.createElementNS(svg.namespaceURI, "polyline");
+        var pairs = [];
+        for (var i = 0; i < e.pts.length; i += 2) {
+          pairs.push((x + e.pts[i] / 100 * w) + "," + (y + e.pts[i + 1] / 100 * h));
+        }
+        if (e.closed) pairs.push(pairs[0]);
+        node.setAttribute("points", pairs.join(" "));
+        node.setAttribute("fill", "none");
+      } else {
+        node = document.createElementNS(svg.namespaceURI, "rect");
+        node.setAttribute("x", x);
+        node.setAttribute("y", y);
+        node.setAttribute("width", Math.max(1, w));
+        node.setAttribute("height", Math.max(1, h));
+        node.setAttribute("fill", "none");
+      }
+      node.setAttribute("stroke", "currentColor");
+      if (!node.getAttribute("stroke-width")) node.setAttribute("stroke-width", "1.6");
+      svg.appendChild(node);
+    });
+    return svg;
+  }
+
+  function insertTemplate(tpl) {
+    var els;
+    try {
+      els = tpl.build(ChalkTemplates.palette(state.surface));
+    } catch (err) {
+      say("That one could not be built.");
+      return;
+    }
+    if (!els || !els.length) return;
+    closeSheet();
+    editor.select(null);
+    clearInk();
+    els.forEach(function (e) { layer.upsert(e); });
+    /* One message, so it lands as one undo entry on the server. */
+    net.send({ t: "el_tpl", els: els });
+    setHistory(true, false);
+    setTool("select");
+    say(tpl.name + " is on the board — drag any part of it to change it.");
+  }
+
+  document.getElementById("add-tpl").addEventListener("click", function () {
+    if (!window.ChalkTemplates) return say("The ready-made boards did not load.");
+    openSheet("Ready-made boards", function (body) {
+      var p = ChalkTemplates.palette(state.surface);
+      ChalkTemplates.subjects.forEach(function (sub) {
+        var mine = ChalkTemplates.list.filter(function (t) {
+          return t.subject === sub.id;
+        });
+        if (!mine.length) return;
+        body.appendChild(rowLabel(sub.name));
+        var grid = document.createElement("div");
+        grid.className = "pick-grid pick-grid-wide";
+        mine.forEach(function (t) {
+          var preview = [];
+          try { preview = t.build(p); } catch (err) { preview = []; }
+          var b = pickButton(tplThumb(preview), t.name, function () {
+            insertTemplate(t);
+          });
+          if (t.hint) b.title = t.hint;
+          grid.appendChild(b);
+        });
+        body.appendChild(grid);
+      });
+    });
   });
 
   document.getElementById("add-shape").addEventListener("click", function () {

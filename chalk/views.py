@@ -1,10 +1,11 @@
+import mimetypes
 from hmac import compare_digest
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Count
-from django.http import Http404, JsonResponse
+from django.http import FileResponse, Http404, JsonResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -18,6 +19,7 @@ from .models import (
     Board,
     BoardImage,
     BoardSession,
+    board_image_src,
     clean_src,
 )
 
@@ -304,17 +306,18 @@ class UploadImageView(View):
         # uploads, the element is silently refused, and all anyone sees is an
         # empty frame on the projector. Fail here instead, where there is
         # somewhere to put the reason.
-        src = clean_src(image.file.url)
-        if not src:
+        src = board_image_src(image)
+        if not clean_src(src):
             image.delete()
             return JsonResponse(
                 {
                     "ok": False,
                     "error": (
-                        "This server is not set up to serve photos yet. "
-                        "Ask whoever runs it to check MEDIA_URL and MEDIA_ROOT."
+                        "This server could not work out an address for that "
+                        "photo. Ask whoever runs it to check the chalk URLs "
+                        "and MEDIA_ROOT."
                     ),
-                    "detail": f"Rejected media address: {image.file.url!r}",
+                    "detail": f"Rejected image address: {src!r}",
                 },
                 status=500,
             )
@@ -329,6 +332,46 @@ class UploadImageView(View):
                 "ratio": round(height / width, 4),
             }
         )
+
+
+class BoardImageView(View):
+    """Serve a photo that was dropped on a board.
+
+    The app serves its own uploads rather than relying on MEDIA_URL being
+    wired to a web server. That is the difference between a photo appearing
+    on the projector and a photo that uploaded successfully, was accepted by
+    the board, and renders as an empty frame because nothing answers /media/.
+
+    Not behind pairing: a board is projected in a room, the phone that drives
+    it is usually signed out, and the projector fetches the same file. Both
+    ids are random UUIDs, so the address is no easier to guess than the one
+    under MEDIA_ROOT would have been. It is deliberately no *more* private
+    either — treat these as unlisted, not secret.
+    """
+
+    # Long, because the file at this address never changes: a new upload is
+    # a new row and a new UUID.
+    MAX_AGE = 60 * 60 * 24 * 30
+
+    def get(self, request, pk, image_id):
+        image = get_object_or_404(BoardImage, pk=image_id, board_id=pk)
+        try:
+            handle = image.file.open("rb")
+        except (FileNotFoundError, OSError, ValueError):
+            # The row outlived the file. A 404 renders as the "could not be
+            # loaded" frame on the board, which is the honest answer.
+            raise Http404
+
+        content_type, _ = mimetypes.guess_type(image.file.name)
+        response = FileResponse(
+            handle, content_type=content_type or "application/octet-stream"
+        )
+        response["Cache-Control"] = f"private, max-age={self.MAX_AGE}"
+        # Never let a stored file talk the browser into treating it as
+        # anything other than the picture it claims to be.
+        response["X-Content-Type-Options"] = "nosniff"
+        response["Content-Disposition"] = "inline"
+        return response
 
 
 class JoinView(View):

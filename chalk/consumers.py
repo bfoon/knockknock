@@ -64,6 +64,7 @@ from .models import (
     MAX_POINTS,
     MAX_STROKES_PER_PAGE,
     MAX_TEXT,
+    MAX_TPL_ELS,
     MAX_UNDO,
     MAX_XFORM_IDS,
     clean_src,
@@ -242,6 +243,48 @@ def xform_strokes(strokes, ids, m):
         s["w"] = round(min(0.12, max(0.0004, _num(s.get("w"), 0.0004, 0.12, 0.0035) * ws)), 6)
         touched.append(s["id"])
     return touched
+
+
+def heal_image_srcs(board_id, els):
+    """Repoint photos stored before the app served its own images.
+
+    Boards written earlier hold a path under MEDIA_URL. If nothing serves
+    MEDIA_ROOT those elements are frames with nothing in them, and re-adding
+    every photo by hand is not a reasonable thing to ask of a teacher. The
+    upload row survives, and its file name is in the old path, so the two can
+    be matched up and the element repointed at a route that works.
+
+    Returns (els, changed). Costs one query, and only when there is something
+    to fix.
+    """
+    from django.urls import reverse
+
+    from .models import BoardImage
+
+    marker = "chalk/%s/" % board_id
+    wanted = {}
+    for e in els:
+        if not isinstance(e, dict) or e.get("type") != "image":
+            continue
+        src = str(e.get("src") or "")
+        if not src or clean_src(src) == src:
+            continue  # already an address this board accepts
+        at = src.find(marker)
+        if at < 0:
+            continue
+        wanted.setdefault(src[at:].split("?")[0], []).append(e)
+    if not wanted:
+        return els, False
+
+    found = BoardImage.objects.filter(
+        board_id=board_id, file__in=list(wanted)
+    ).values_list("file", "id")
+    changed = False
+    for name, image_id in found:
+        for e in wanted.get(name, []):
+            e["src"] = reverse("chalk:image", args=[board_id, image_id])
+            changed = True
+    return els, changed
 
 
 def _entry_items(entry):
@@ -610,6 +653,32 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
                 if result:
                     await self._fan({"t": "el_add", "el": el, **result}, echo=True)
 
+        elif t == "el_tpl":
+            # A ready-made board. Many elements, one message, one undo entry.
+            raw = content.get("els")
+            els = []
+            if isinstance(raw, (list, tuple)):
+                for item in raw[:MAX_TPL_ELS]:
+                    cleaned = clean_el(item)
+                    if cleaned:
+                        els.append(cleaned)
+            if els:
+                result = await self._el_add_many(els)
+                if result:
+                    # Fanned one at a time, as ordinary el_add frames. A
+                    # bulk frame would need every client to understand a new
+                    # message type before a template showed up on the wall.
+                    for placed in result["els"]:
+                        await self._fan(
+                            {
+                                "t": "el_add",
+                                "el": placed,
+                                "canUndo": result["canUndo"],
+                                "canRedo": result["canRedo"],
+                            },
+                            echo=True,
+                        )
+
         elif t == "el_live":
             # Mid-drag. Broadcast, never store: a drag is one action and it is
             # the release that counts.
@@ -864,13 +933,16 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
             # last one rather than conjuring a blank via get_or_create.
             page = pages[-1]
             BoardSession.objects.filter(pk=session.pk).update(page_index=page.index)
+        els, healed = heal_image_srcs(self.board_id, list(page.els or []))
+        if healed:
+            BoardPage.objects.filter(pk=page.pk).update(els=els)
         return {
             "title": board.title,
             "surface": board.surface,
             "pageIndex": page.index,
             "pageCount": len(pages),
             "strokes": page.strokes,
-            "els": page.els,
+            "els": els,
             "canUndo": bool(page.history),
             "canRedo": bool(page.undone),
         }
@@ -1205,6 +1277,43 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
             self._touch_board()
             self._remember_types(els)
             return {"canUndo": bool(page.history), "canRedo": bool(page.undone)}
+
+    @database_sync_to_async
+    def _el_add_many(self, incoming):
+        """Add a whole template as a single action.
+
+        One history entry for the lot: dropping in a times-table grid and
+        changing your mind should be one Undo, not forty.
+        """
+        with transaction.atomic():
+            _, page = self._page_locked()
+            els = list(page.els or [])
+            have = {e.get("id") for e in els}
+            room = MAX_ELS_PER_PAGE - len(els)
+            if room <= 0:
+                return None
+            placed, items = [], []
+            for el in incoming:
+                if len(placed) >= room:
+                    break
+                if el["id"] in have:
+                    continue
+                have.add(el["id"])
+                els.append(el)
+                items.append({"i": len(els) - 1, "s": el})
+                placed.append(el)
+            if not placed:
+                return None
+            self._push(page, {"op": "add", "layer": "els", "items": items})
+            page.els = els
+            page.save(update_fields=["els", "history", "undone", "updated_at"])
+            self._touch_board()
+            self._remember_types(els)
+            return {
+                "els": placed,
+                "canUndo": bool(page.history),
+                "canRedo": bool(page.undone),
+            }
 
     @database_sync_to_async
     def _el_update(self, eid, patch):

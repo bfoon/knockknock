@@ -236,6 +236,57 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* the hand                                                            */
+  /*                                                                     */
+  /* While a stroke is being drawn, the tool that is drawing it rides the */
+  /* tip. On a projector that is the difference between words appearing   */
+  /* out of nowhere and somebody writing on the board: the class can see   */
+  /* where to look, and they can see which tool it is.                     */
+  /*                                                                      */
+  /* Nothing new comes over the wire for this. Live strokes already carry  */
+  /* the tool, the colour and the leading point — the same frames the      */
+  /* projector needs to draw the ink at all — so the sprite is derived     */
+  /* from what is already there.                                           */
+  /* ------------------------------------------------------------------ */
+
+  /* Drawn upright with the tip at (50, 96), so the sprite can be pinned by
+   * its tip and turned about it. */
+  var TOOL_ART = {
+    chalk:
+      '<path d="M35,18 L65,18 L61,86 L58,96 L42,96 L39,86 Z" fill="COL"' +
+      ' stroke="rgba(0,0,0,.45)" stroke-width="2"/>' +
+      '<path d="M39,86 L61,86" stroke="rgba(0,0,0,.28)" stroke-width="3"/>' +
+      '<path d="M43,24 L47,84" stroke="rgba(255,255,255,.35)" stroke-width="4"/>',
+    pen:
+      '<rect x="40" y="6" width="20" height="58" rx="6" fill="#2b3440"' +
+      ' stroke="rgba(0,0,0,.5)" stroke-width="2"/>' +
+      '<rect x="40" y="56" width="20" height="9" fill="#9aa7b4"/>' +
+      '<path d="M42,65 L58,65 L50,96 Z" fill="COL" stroke="rgba(0,0,0,.45)"' +
+      ' stroke-width="2"/>' +
+      '<path d="M45,12 L45,52" stroke="rgba(255,255,255,.25)" stroke-width="3"/>',
+    marker:
+      '<rect x="33" y="6" width="34" height="54" rx="7" fill="#39424f"' +
+      ' stroke="rgba(0,0,0,.5)" stroke-width="2"/>' +
+      '<rect x="33" y="52" width="34" height="10" fill="COL" opacity=".9"/>' +
+      '<path d="M38,62 L62,62 L56,94 L44,94 Z" fill="COL"' +
+      ' stroke="rgba(0,0,0,.45)" stroke-width="2"/>' +
+      '<path d="M38,12 L38,48" stroke="rgba(255,255,255,.22)" stroke-width="4"/>',
+    highlighter:
+      '<rect x="31" y="8" width="38" height="50" rx="6" fill="COL" opacity=".55"' +
+      ' stroke="rgba(0,0,0,.4)" stroke-width="2"/>' +
+      '<rect x="35" y="56" width="30" height="38" rx="3" fill="COL"' +
+      ' stroke="rgba(0,0,0,.4)" stroke-width="2"/>' +
+      '<path d="M35,90 L65,90" stroke="rgba(0,0,0,.25)" stroke-width="4"/>'
+  };
+
+  function toolArt(tool, color) {
+    var art = TOOL_ART[tool];
+    if (!art) return "";
+    return '<svg viewBox="0 0 100 100" width="100%" height="100%">' +
+      art.split("COL").join(color || "#ffffff") + "</svg>";
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Surface: two stacked canvases — committed ink and the in-flight stroke. */
   /* ------------------------------------------------------------------ */
 
@@ -279,6 +330,7 @@
     global.addEventListener("scroll", function () { self._rect = null; }, true);
     global.addEventListener("orientationchange", function () { self._rect = null; });
 
+    this.writer = true;
     liveSurfaces.push(this);
     requestAnimationFrame(this._tick);
   }
@@ -337,12 +389,69 @@
         drawStroke(this.tctx, this.live[k], this.view, this.W, this.H);
       }
     }
+    if (this.writer) this._tickWriter();
     /* Sweep abandoned live strokes once a second. */
     if (!now || now - this._reapAt > 1000) {
       this._reapAt = now || 0;
       this.reapLive();
     }
     requestAnimationFrame(this._tick);
+  };
+
+  /* Off on the phone pad, where a finger is already covering the tip and a
+   * chalk stick under it is just something else in the way. */
+  Surface.prototype.setWriter = function (on) {
+    this.writer = !!on;
+    if (!on && this._writer) this._writer.style.opacity = "0";
+  };
+
+  Surface.prototype._tickWriter = function () {
+    var newest = null, k;
+    for (k in this.live) {
+      if (!newest || (this.live[k]._born || 0) > (newest._born || 0)) {
+        newest = this.live[k];
+      }
+    }
+    var drawing = newest && TOOL_ART[newest.tool] && newest.pts.length >= 2;
+    if (!drawing) {
+      /* A short tail, so the tool does not blink out of existence between
+       * the letters of a word. */
+      if (this._writer && this._wSeen && Date.now() - this._wSeen > 260) {
+        this._writer.style.opacity = "0";
+      }
+      return;
+    }
+
+    var node = this._writer;
+    if (!node) {
+      node = document.createElement("div");
+      node.className = "chalk-writer";
+      node.setAttribute("aria-hidden", "true");
+      this.host.appendChild(node);
+      this._writer = node;
+    }
+    if (this._wTool !== newest.tool || this._wColor !== newest.color) {
+      node.innerHTML = toolArt(newest.tool, newest.color);
+      node.dataset.tool = newest.tool;
+      this._wTool = newest.tool;
+      this._wColor = newest.color;
+    }
+
+    var pts = newest.pts, n = pts.length;
+    var x = pxX(pts[n - 2], this.view, this.W);
+    var y = pxY(pts[n - 1], this.view, this.H);
+    var back = n >= 8 ? n - 8 : 0;
+    var dx = pts[n - 2] - pts[back];
+    var size = Math.max(44, Math.min(150, this.H * 0.17));
+    /* Lean into the direction of travel, the way a hand does. */
+    var sway = Math.max(-16, Math.min(16, dx * 260));
+    node.style.width = size + "px";
+    node.style.height = size + "px";
+    node.style.transform =
+      "translate(" + (x - size * 0.5) + "px," + (y - size * 0.96) + "px) " +
+      "rotate(" + (-28 + sway) + "deg)";
+    node.style.opacity = "1";
+    this._wSeen = Date.now();
   };
 
   Surface.prototype.begin = function (stroke) {

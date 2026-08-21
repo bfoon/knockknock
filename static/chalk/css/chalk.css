@@ -1063,6 +1063,52 @@ body.inspecting.insp-collapsed .c-scroll { padding-bottom: 110px; }
 .pick .thumb { width: 38px; height: 38px; color: var(--dust); }
 .pick span { text-align: center; line-height: 1.2; opacity: .82; }
 
+/* Ready-made boards preview as a 16:9 wireframe of the real thing, so the
+   grid needs wider cells than the shape picker's square thumbs. */
+.pick-grid-wide { grid-template-columns: repeat(auto-fill, minmax(126px, 1fr)); }
+.pick .thumb-wide {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(0,0,0,.22);
+  padding: 3px;
+  box-sizing: border-box;
+}
+.icon-btn.primary {
+  border-color: rgba(217,164,65,.55);
+  color: var(--brass);
+}
+
+/* The tool that is doing the writing, riding the tip of a live stroke. It is
+   decoration over the board: never in the way of a finger, never a hit
+   target, and gone a moment after the writing stops. */
+.chalk-writer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 3;
+  transform-origin: 50% 96%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .16s ease-out;
+  filter: drop-shadow(0 6px 10px rgba(0,0,0,.45));
+  will-change: transform, opacity;
+}
+.chalk-writer svg { display: block; overflow: visible; }
+/* Chalk drags; a pen glides. A hair of movement is enough to read as a hand
+   rather than a sticker. */
+@keyframes chalk-scritch {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50%      { transform: translate(.6px, -1.1px) rotate(.9deg); }
+}
+.chalk-writer[data-tool="chalk"] svg { animation: chalk-scritch .12s linear infinite; }
+.chalk-writer[data-tool="marker"] svg { animation: chalk-scritch .2s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .chalk-writer svg { animation: none !important; }
+}
+
 #pad-wrap[data-tool="select"] { outline: 2px solid var(--brass); outline-offset: -2px; }
 
 /* Lasso: drag on bare board with Pick to gather up handwriting. */

@@ -1549,6 +1549,73 @@
         });
         body.appendChild(grid);
       });
+
+      /* The built-in list is fixed in chalk_shapes.js, so everything else
+       * arrives as a free shape carrying its own points. The teacher does
+       * not need to know the difference — except that these ones can have
+       * their corners dragged afterwards, and the built-ins cannot. */
+      if (!window.ChalkStickers) return;
+      ChalkStickers.shapeCats.forEach(function (cat) {
+        body.appendChild(rowLabel(cat));
+        var grid = document.createElement("div");
+        grid.className = "pick-grid";
+        ChalkStickers.shapes.filter(function (sh) {
+          return sh.cat === cat;
+        }).forEach(function (sh) {
+          grid.appendChild(pickButton(
+            svgThumb(ChalkStickers.pathOf(sh), sh.closed), sh.name,
+            function () {
+              var el = ChalkEls.blank("freeform", { stroke: inkColor() });
+              el.preset = "custom";
+              el.edited = true;
+              el.pts = sh.pts.slice();
+              el.closed = sh.closed;
+              el.edge = sh.edge;
+              el.radius = sh.radius;
+              el.fillOn = false;
+              el.strokeW = 3;
+              placeCentre(el, sh.wide ? 0.3 : 0.22, sh.wide ? 0.2 : 0.26);
+              closeSheet();
+              pushEl(el);
+            }
+          ));
+        });
+        body.appendChild(grid);
+      });
+    });
+  });
+
+  /* ---- emoji ---------------------------------------------------------
+   *
+   * An emoji is a character, so a sticker of one is a text element holding
+   * that character: nothing to draw, nothing to store, nothing to load, and
+   * it arrives in colour. Everything the board can do to text it can do to
+   * these — resize, turn, shadow, send behind the writing.
+   */
+  document.getElementById("add-emoji").addEventListener("click", function () {
+    if (!window.ChalkStickers) return say("The emoji did not load.");
+    openSheet("Emoji", function (body) {
+      ChalkStickers.emoji.forEach(function (group) {
+        body.appendChild(rowLabel(group.name));
+        var grid = document.createElement("div");
+        grid.className = "emoji-grid";
+        group.chars.forEach(function (ch) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.className = "emoji-pick";
+          b.textContent = ch;
+          b.addEventListener("click", function () {
+            var el = ChalkEls.blank("text", { text: ch, color: inkColor() });
+            el.size = 0.22;
+            el.align = "center";
+            placeCentre(el, 0.16, 0.28);
+            closeSheet();
+            pushEl(el);
+          });
+          grid.appendChild(b);
+        });
+        body.appendChild(grid);
+      });
     });
   });
 

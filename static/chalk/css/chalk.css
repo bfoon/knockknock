@@ -1081,6 +1081,27 @@ body.inspecting.insp-collapsed .c-scroll { padding-bottom: 110px; }
 /* Ready-made boards preview as a 16:9 wireframe of the real thing, so the
    grid needs wider cells than the shape picker's square thumbs. */
 .pick-grid-wide { grid-template-columns: repeat(auto-fill, minmax(126px, 1fr)); }
+
+/* Emoji need no thumbnail — the character is the thumbnail — so they pack
+   far tighter than the shape picker. */
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+  gap: 4px;
+  margin-bottom: 16px;
+}
+.emoji-pick {
+  background: rgba(232,238,244,.05);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 6px 0 7px;
+  font-size: 24px;
+  line-height: 1.1;
+  cursor: pointer;
+  color: inherit;
+}
+.emoji-pick:active { border-color: var(--brass); }
+.emoji-pick:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
 .pick .thumb-wide {
   width: 100%;
   height: auto;

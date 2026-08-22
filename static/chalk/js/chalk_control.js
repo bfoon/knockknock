@@ -192,6 +192,12 @@
       return;
     }
 
+    if (state.tool === "grab") {
+      if (startGrab(e)) e.preventDefault();
+      else say("Press on writing or an object to move it.");
+      return;
+    }
+
     if (state.tool === "duster") {
       activePointer = e.pointerId;
       pad.setPointerCapture(e.pointerId);
@@ -269,6 +275,13 @@
   }
 
   pad.addEventListener("pointermove", function (e) {
+    if (state.tool === "grab") {
+      if (grab && e.pointerId === activePointer) {
+        e.preventDefault();
+        moveGrab(e);
+      }
+      return;
+    }
     if (state.tool === "duster") {
       if (!duster || e.pointerId !== activePointer) return;
       e.preventDefault();
@@ -324,6 +337,12 @@
    * early and the rest of the movement was dropped in silence. */
   ["pointerup", "pointercancel"].forEach(function (type) {
     pad.addEventListener(type, function (e) {
+      if (state.tool === "grab") {
+        if (grab && e.pointerId === activePointer) {
+          endGrab(type === "pointercancel");
+        }
+        return;
+      }
       if (state.tool === "duster") {
         if (duster) {
           if (type !== "pointercancel") flushDuster(true);
@@ -507,7 +526,10 @@
       duster = null;
       hideDuster();
     }
-    if (tool !== "select") {
+    if (tool !== "grab" && grab) endGrab(true);
+    /* Grab keeps whatever is picked, because pressing a picked thing moves
+     * the whole selection. Every other tool drops it. */
+    if (tool !== "select" && tool !== "grab") {
       editor.select(null);
       clearInk();
     }
@@ -748,6 +770,136 @@
       duplicateSelection(dup, editor.selected ? [] : inkIds);
     }
   });
+
+  /* ------------------------------------------------------------------ */
+  /* the grab tool                                                       */
+  /*                                                                     */
+  /* Press on a thing and drag it. No box, no handles, no selection left  */
+  /* behind — the one gesture that does nothing but move. Pick is for     */
+  /* choosing what to work on; this is for shoving a heading two inches   */
+  /* left in the middle of a lesson without first choosing it.            */
+  /*                                                                     */
+  /* Three rules about what comes along:                                  */
+  /*   - press something already picked and the whole selection moves;    */
+  /*   - press one object of a group and the group moves;                 */
+  /*   - otherwise just the one thing under the finger.                   */
+  /* ------------------------------------------------------------------ */
+
+  var grab = null;
+  var grabSentAt = 0;
+
+  function startGrab(e) {
+    var p = surface.toBoard(e.clientX, e.clientY);
+    var elHit = layer.hit(p.x, p.y);
+    var inkHit = elHit ? null : surface.hit(p.x, p.y, 0.014 / state.view.s);
+    if (!elHit && !inkHit) return false;
+
+    var takeEls, takeInk;
+    var inPicked = (elHit && elIds.indexOf(elHit) !== -1) ||
+                   (inkHit && inkIds.indexOf(inkHit) !== -1);
+    if (inPicked) {
+      takeEls = elIds.slice();
+      takeInk = inkIds.slice();
+    } else if (elHit) {
+      takeEls = withGroups([elHit]);
+      takeInk = [];
+    } else {
+      takeEls = [];
+      takeInk = [inkHit];
+    }
+
+    var base = Object.create(null);
+    takeEls.forEach(function (id) {
+      var el = layer.get(id);
+      if (el) base[id] = { x: el.x, y: el.y };
+    });
+    grab = {
+      start: p, elIds: takeEls, inkIds: takeInk, base: base,
+      sel: newSel(), moved: false, dx: 0, dy: 0
+    };
+    surface.dropXformBase();
+    padWrap.dataset.grabbing = "1";
+    activePointer = e.pointerId;
+    pad.setPointerCapture(e.pointerId);
+    return true;
+  }
+
+  function moveGrab(e) {
+    var p = surface.toBoard(e.clientX, e.clientY);
+    var dx = r4(p.x - grab.start.x), dy = r4(p.y - grab.start.y);
+    if (!grab.moved && Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return;
+    grab.moved = true;
+    grab.dx = dx;
+    grab.dy = dy;
+
+    if (grab.inkIds.length) {
+      surface.xform(grab.sel, grab.inkIds, [1, 0, 0, 1, dx, dy]);
+    }
+    grab.elIds.forEach(function (id) {
+      var b = grab.base[id];
+      if (b) layer.patch(id, { x: r4(b.x + dx), y: r4(b.y + dy) });
+    });
+    editor.refresh();
+
+    /* Same throttle as a group drag, and for the same reason: one frame per
+     * object per tick walks straight into the server's flood guard. */
+    var now = Date.now();
+    if (now - grabSentAt < 66) return;
+    grabSentAt = now;
+    if (grab.inkIds.length) {
+      net.send({
+        t: "ink_live", sel: grab.sel, ids: grab.inkIds,
+        m: [1, 0, 0, 1, dx, dy]
+      }, true);
+    }
+    if (grab.elIds.length) {
+      var items = grab.elIds.map(function (id) {
+        var b = grab.base[id];
+        return b && { id: id, patch: { x: r4(b.x + dx), y: r4(b.y + dy) } };
+      }).filter(Boolean);
+      if (items.length) net.send({ t: "el_live_many", items: items }, true);
+    }
+  }
+
+  function endGrab(cancelled) {
+    var g = grab;
+    grab = null;
+    activePointer = null;
+    delete padWrap.dataset.grabbing;
+    if (!g || !g.moved) return;
+    if (cancelled) {
+      /* Put everything back where it was rather than committing half a
+       * gesture that the phone lost hold of. */
+      if (g.inkIds.length) surface.xform(g.sel, g.inkIds, [1, 0, 0, 1, 0, 0]);
+      g.elIds.forEach(function (id) {
+        var b = g.base[id];
+        if (b) layer.patch(id, { x: b.x, y: b.y });
+      });
+      editor.refresh();
+      return;
+    }
+
+    if (g.inkIds.length) {
+      /* The same translation the surface is already showing — kept on the
+       * gesture rather than measured back off the ink, which would mean
+       * reading the surface's private base. */
+      surface.markXformDone(g.sel);
+      net.send({
+        t: "ink_xform", sel: g.sel, ids: g.inkIds,
+        m: [1, 0, 0, 1, g.dx, g.dy]
+      });
+    }
+    if (g.elIds.length) {
+      var items = g.elIds.map(function (id) {
+        var el = layer.get(id);
+        return el && { id: id, patch: { x: el.x, y: el.y } };
+      }).filter(Boolean);
+      if (items.length) net.send({ t: "el_multi", items: items });
+    }
+    setHistory(true, false);
+    /* If what moved was the current selection, its box has moved with it. */
+    if (inkBox) reboxInk();
+  }
 
   function afterElChange() {
     editor.refresh();

@@ -1148,6 +1148,9 @@ body.inspecting.insp-collapsed .c-scroll { padding-bottom: 110px; }
   background: rgba(232,238,244,.14);
 }
 #pad-wrap[data-tool="duster"] { outline: 2px dashed var(--dust); outline-offset: -2px; }
+#pad-wrap[data-tool="grab"] { outline: 2px solid var(--mint); outline-offset: -2px; }
+#pad-wrap[data-tool="grab"] #pad { cursor: grab; }
+#pad-wrap[data-tool="grab"][data-grabbing="1"] #pad { cursor: grabbing; }
 
 /* ---- picked handwriting --------------------------------------------
    Same frame and handles as an object, in the second accent, so it is

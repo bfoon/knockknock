@@ -109,6 +109,8 @@
   function handle(m) {
     switch (m.t) {
       case "ready":
+        if (m.role === "join") welcomeGuest(m.me);
+        /* falls through */
       case "snapshot":
         surface.setStrokes(m.strokes || []);
         layer.setEls(m.els || []);
@@ -2222,6 +2224,25 @@
     if (editor.selected) setInspCollapsed(on);
     /* After the class lands, not before: the pad has not moved yet. */
     requestAnimationFrame(function () { requestAnimationFrame(relayout); });
+  }
+
+  /* A guest gets the drawing half of the board and not the running-the-room
+   * half: no wiping the page, no turning it, no changing the surface under
+   * thirty other people. The server refuses those from a guest as well —
+   * this is only the part that stops them being offered. */
+  function welcomeGuest(person) {
+    document.body.classList.add("as-guest");
+    ["clear", "page-delete", "page-prev", "page-next"].forEach(function (id) {
+      var b = document.getElementById(id);
+      if (b) b.hidden = true;
+    });
+    Array.prototype.forEach.call(
+      document.querySelectorAll(".surface-chip"),
+      function (chip) { chip.disabled = true; }
+    );
+    say(person
+      ? "You are writing on this board as " + person.name + "."
+      : "You have joined this board.");
   }
 
   function setTools(open) {

@@ -170,12 +170,20 @@ class BoardStageView(LoginRequiredMixin, View):
             session.extend()
         page = board.ensure_page(session.page_index)
         join = control_url(request, session)
+        # The pairing link carries the token and turns whoever opens it into
+        # THE phone. The link for everybody else deliberately does not.
+        team = request.build_absolute_uri(
+            reverse("chalk:control", args=[session.code])
+        )
         ctx = {
             "board": board,
             "session": session,
             "page": page,
             "join_url": join,
             "qr": qr_data_uri(join),
+            "team_url": team,
+            "join_short": request.get_host() + reverse("chalk:join"),
+            "team_qr": qr_data_uri(team) if board.guests_allowed else "",
             "surfaces": SURFACES,
             "config": {
                 **board_payload(board, session, page),
@@ -436,7 +444,35 @@ class JoinView(View):
             )
 
         session.extend()
-        grant_control(request, session.board, session)
+        board = session.board
+
+        # Two different people type this number.
+        #
+        # The teacher's own phone is pairing: it gets the grant and the token
+        # and becomes the one device driving the board. A colleague or a
+        # student on an open board is joining: they get neither, so they
+        # arrive at ControlView as a guest, in their own name, and cannot
+        # keep the board after it is closed again.
+        #
+        # Without this the first branch swallowed both, everybody who typed
+        # the number became the paired phone, and the collaboration setting
+        # had nothing to act on.
+        joining = (
+            board.guests_allowed
+            and request.user.is_authenticated
+            and board.owner_id != request.user.id
+        )
+        if joining:
+            return redirect("chalk:control", code=session.code)
+
+        if board.guests_allowed and not request.user.is_authenticated:
+            # An open board, and somebody who has not said who they are.
+            # Signing in is the whole gate — send them at it and back.
+            return redirect_to_login(
+                reverse("chalk:control", args=[session.code])
+            )
+
+        grant_control(request, board, session)
         return redirect(
             f"{reverse('chalk:control', args=[session.code])}?t={session.token}"
         )

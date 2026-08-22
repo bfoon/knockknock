@@ -1248,6 +1248,25 @@ body.inspecting.insp-collapsed .c-scroll { padding-bottom: 110px; }
 
 /* Who is in the room, bottom left, and only once there is more than one of
    you — a strip showing your own face alone is furniture. */
+.lobby-team {
+  margin: 6px 0 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(217,164,65,.35);
+  border-radius: 12px;
+  background: rgba(217,164,65,.07);
+}
+.lobby-team .sub { margin: 4px 0 8px; }
+#team-link {
+  display: inline-block;
+  font: 13px var(--mono);
+  color: var(--brass);
+  word-break: break-all;
+}
+#team-qr { margin-top: 12px; }
+
+/* A guest is here to write, not to run the room. */
+body.as-guest .surface-chip { opacity: .4; }
+
 .lobby-open {
   margin: 14px 0 10px;
   display: flex;

@@ -48,10 +48,27 @@
           Let signed-in people write on this board
         </label>
         <span class="lobby-open-note">
-          They need the board number and a Knock-Knock account. Everything
-          they draw carries their name.
+          {% if board.guests_allowed %}
+            Anyone signed in to Knock-Knock can join with the number below.
+            Everything they draw carries their name.
+          {% else %}
+            Turn this on to hand the board round. People need a Knock-Knock
+            account, and everything they draw carries their name.
+          {% endif %}
         </span>
       </form>
+
+      {% if board.guests_allowed %}
+        <div class="lobby-team">
+          <p class="kicker">For everyone else</p>
+          <p class="sub">
+            They can type the board number at <strong>{{ join_short }}</strong>,
+            or open this link. It does not pair their phone — it lets them
+            write alongside you.
+          </p>
+          <a id="team-link" href="{{ team_url }}">{{ team_url }}</a>
+        </div>
+      {% endif %}
 
       <div class="lobby-actions">
         <button id="start-board" class="btn btn-primary" type="button">Start projecting</button>
@@ -70,7 +87,11 @@
 
     <div class="qr-panel">
       {% if qr %}<img id="qr-img" src="{{ qr }}" alt="Scan to open this board on your phone">{% endif %}
-      <span>Scan with the phone camera</span>
+      <span>Your phone — scan to drive the board</span>
+      {% if team_qr %}
+        <img id="team-qr" src="{{ team_qr }}" alt="Scan to join and write on this board">
+        <span>Everyone else — scan to join in</span>
+      {% endif %}
     </div>
   </div>
 </div>

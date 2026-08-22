@@ -95,6 +95,16 @@ RATE_PER_SEC = 200.0
 
 # Messages the sender already rendered locally — don't echo them back.
 # "peer" is here so a socket is never told about its own arrival.
+# What a guest cannot do.
+#
+# A colleague or a student can draw, erase, dust, and put things on the
+# board — everything that adds to the lesson. They cannot turn the page,
+# wipe it, delete it or change the surface under everybody else, because
+# those are not contributions, they are things that happen TO the other
+# thirty people in the room. The buttons are hidden on their phone as well;
+# this is the half that a hidden button cannot be talked out of.
+TEACHER_ONLY = {"clear", "page", "page_add", "page_delete", "surface"}
+
 NO_ECHO = {
     "stroke_start", "stroke_pts", "stroke_end", "pointer", "peer",
     "el_live", "ink_live", "el_live_many",
@@ -700,6 +710,11 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
         if t == "ping":
             return await self.send_json({"t": "pong"})
         if not self.can_draw:
+            return
+        if self.role == "join" and t in TEACHER_ONLY:
+            # Silently. The buttons are hidden on their phone too, so a guest
+            # who gets here is not a confused teacher, and telling them what
+            # they are not allowed to do is an invitation to try.
             return
 
         if t == "stroke_start":

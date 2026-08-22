@@ -410,6 +410,12 @@
   }
   function flush() {
     if (!live || !pending.length) return;
+    /* The pad's own surface has to be told, exactly like the projector is.
+     * `surface.begin` takes a COPY of the stroke, so pushing points onto
+     * `live.pts` here does not reach the copy being painted — and the phone
+     * showed nothing at all until the finger came up and the stroke was
+     * committed, while the wall drew it live off these same frames. */
+    surface.extend(live.id, pending);
     net.send({ t: "stroke_pts", id: live.id, pts: pending }, true);
     pending = [];
   }

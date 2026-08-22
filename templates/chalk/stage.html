@@ -39,6 +39,20 @@
         <strong id="code-value">{{ session.pretty_code }}</strong>
       </div>
 
+      <form class="lobby-open" method="post" action="{% url 'chalk:settings' board.id %}">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="guests">
+        <label>
+          <input type="checkbox" name="guests" onchange="this.form.submit()"
+                 {% if board.guests_allowed %}checked{% endif %}>
+          Let signed-in people write on this board
+        </label>
+        <span class="lobby-open-note">
+          They need the board number and a Knock-Knock account. Everything
+          they draw carries their name.
+        </span>
+      </form>
+
       <div class="lobby-actions">
         <button id="start-board" class="btn btn-primary" type="button">Start projecting</button>
         <button id="rotate-code" class="btn" type="button">New number</button>
@@ -65,6 +79,7 @@
 <script src="{% static 'chalk/js/chalk_shapes.js' %}"></script>
 <script src="{% static 'chalk/js/chalk_ink.js' %}"></script>
 <script src="{% static 'chalk/js/chalk_els.js' %}"></script>
+<script src="{% static 'chalk/js/chalk_who.js' %}"></script>
 <script src="{% static 'chalk/js/chalk_net.js' %}"></script>
 <script src="{% static 'chalk/js/chalk_stage.js' %}"></script>
 </body>

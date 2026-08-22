@@ -150,6 +150,92 @@ def clean_src(v):
     return v
 
 
+# ----------------------------------------------------------------------
+# who drew what
+# ----------------------------------------------------------------------
+#
+# Every stroke and every element carries a `by`: the id of the person who
+# put it there. The board stores the id and nothing else, and the name,
+# initials, colour and picture are looked up when they are needed — so
+# somebody changing their photo changes it everywhere, and a page of
+# handwriting does not carry a hundred copies of a name.
+
+# Where to find a profile picture. Every project keeps it somewhere
+# different, so this walks a few likely paths and gives up quietly. Point
+# CHALK_AVATAR at the right one — "profile.photo", say — to skip the guessing.
+AVATAR_PATHS = (
+    "avatar", "photo", "image", "picture",
+    "profile.avatar", "profile.photo", "profile.image", "profile.picture",
+    "userprofile.avatar", "userprofile.photo",
+    "member.avatar", "member.photo",
+)
+
+
+def _dig(obj, path):
+    for attr in path.split("."):
+        obj = getattr(obj, attr)
+        if obj is None:
+            return None
+    return obj
+
+
+def avatar_url(user):
+    """Best-effort profile picture. Blank means initials will be used."""
+    from django.conf import settings
+
+    paths = list(AVATAR_PATHS)
+    configured = getattr(settings, "CHALK_AVATAR", "")
+    if configured:
+        paths.insert(0, configured)
+    for path in paths:
+        try:
+            found = _dig(user, path)
+        except Exception:
+            continue
+        if not found:
+            continue
+        url = getattr(found, "url", None)
+        if url:
+            return str(url)
+        if isinstance(found, str) and found.startswith(("/", "http")):
+            return found
+    getter = getattr(user, "get_avatar_url", None)
+    if callable(getter):
+        try:
+            return str(getter() or "")
+        except Exception:
+            pass
+    return ""
+
+
+def person_name(user):
+    full = (getattr(user, "get_full_name", None) and user.get_full_name() or "").strip()
+    return full or getattr(user, "username", "") or getattr(user, "email", "") or "Someone"
+
+
+def initials_of(name):
+    bits = [b for b in str(name).replace(".", " ").split() if b]
+    if not bits:
+        return "?"
+    if len(bits) == 1:
+        return bits[0][:2].upper()
+    return (bits[0][0] + bits[-1][0]).upper()
+
+
+def person_card(user):
+    """What the board needs to show for one person."""
+    name = person_name(user)
+    return {
+        "id": str(user.id),
+        "name": name[:60],
+        "initials": initials_of(name),
+        "avatar": avatar_url(user),
+        # A stable hue per person, so the same colleague is the same colour
+        # on every board and after every reload.
+        "hue": (int(user.id) * 47) % 360,
+    }
+
+
 def make_code():
     return "".join(secrets.choice(CODE_ALPHABET) for _ in range(CODE_LENGTH))
 
@@ -179,6 +265,11 @@ class Board(models.Model):
     )
     title = models.CharField(max_length=200, default="Untitled board")
     surface = models.CharField(max_length=16, choices=SURFACES, default="black")
+    # When on, anyone signed in to Knock-Knock who has the board number can
+    # join and draw. Off by default: a board number read off a projector is
+    # not a secret, and a class of thirty with the run of the board is
+    # something a teacher should have to ask for.
+    guests_allowed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

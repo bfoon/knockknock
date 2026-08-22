@@ -1151,6 +1151,130 @@ body.inspecting.insp-collapsed .c-scroll { padding-bottom: 110px; }
 #pad-wrap[data-tool="fill"] { outline: 3px solid var(--pick); outline-offset: -3px; }
 
 /* Lasso: drag on bare board with Pick to gather up handwriting. */
+/* ==========================================================================
+   Who wrote what
+
+   Everything here sits above the board and takes no clicks. It is the only
+   layer that is allowed to cover the ink, because it is answering a question
+   about the ink and needs to be readable while it does.
+   ========================================================================== */
+
+.who-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+  font-family: var(--sans);
+}
+
+/* A face: a photo if there is one, initials if not, ringed in that person's
+   own colour so the same colleague reads the same on every board. */
+.who-face {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 2px solid;
+  overflow: hidden;
+  font-weight: 700;
+  letter-spacing: .02em;
+  background: rgba(16,21,27,.9);
+  flex: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,.45);
+}
+.who-face img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* Beside a fresh mark, and beside the tip of one being drawn right now. */
+.who-bubble {
+  position: absolute;
+  transform: translate(-14px, -110%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 3px;
+  border-radius: 999px;
+  background: rgba(16,21,27,.82);
+  backdrop-filter: blur(6px);
+  transition: opacity .25s linear;
+  white-space: nowrap;
+}
+.who-name {
+  font-size: 12px;
+  color: var(--dust);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Point at something and it is ringed, with a line running to the face of
+   whoever put it there. Writing gets a soft round box and an object gets a
+   square one, so the shape of the ring says which of the two you found
+   before you have read anything. */
+.who-ring {
+  position: absolute;
+  border: 2px dashed;
+  border-radius: 4px;
+  margin: -6px 0 0 -6px;
+  padding: 6px;
+  box-sizing: content-box;
+  animation: who-in .14s ease-out;
+}
+.who-ring[data-kind="writing"] { border-radius: 40px; border-style: solid; }
+@keyframes who-in {
+  from { opacity: 0; transform: scale(.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.who-line {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.who-line line { stroke-width: 2; stroke-dasharray: 4 4; opacity: .85; }
+.who-tag {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 4px 4px;
+  border: 1px solid;
+  border-radius: 999px;
+  background: rgba(16,21,27,.92);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 8px 22px rgba(0,0,0,.5);
+}
+
+/* Who is in the room, bottom left, and only once there is more than one of
+   you — a strip showing your own face alone is furniture. */
+.lobby-open {
+  margin: 14px 0 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+}
+.lobby-open label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.lobby-open-note { font-size: 12px; color: var(--muted); }
+
+.who-strip {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: -6px;
+  pointer-events: none;
+}
+.who-strip .who-face { margin-right: -8px; }
+.who-more {
+  margin-left: 14px;
+  font: 600 12px var(--sans);
+  color: var(--muted);
+}
+
 #marquee {
   position: absolute;
   z-index: 6;

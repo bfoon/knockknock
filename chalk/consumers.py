@@ -74,6 +74,7 @@ from .models import (
     MAX_UNDO,
     MAX_XFORM_IDS,
     clean_src,
+    person_card,
 )
 
 TOOLS = {"pen", "pencil", "marker", "chalk", "crayon", "highlighter"}
@@ -146,6 +147,10 @@ def clean_stroke(raw):
         # Absent means front: handwriting goes over the top of whatever is
         # already on the board, the way it does on a real one.
         "top": raw.get("top") is not False,
+        # Overwritten by _sign for anything arriving fresh. Kept here so a
+        # stroke that comes back through undo, redo or the duster keeps the
+        # name of whoever actually drew it.
+        "by": str(raw.get("by") or "")[:12],
         "pts": pts,
     }
 
@@ -536,6 +541,9 @@ def clean_el_fields(raw, etype=None):
             out[k] = v
         elif k in ("color", "fill", "stroke"):
             out[k] = _color(v)
+        elif k == "by":
+            v = str(v or "")
+            out[k] = v if v.isdigit() and len(v) <= 12 else ""
         elif k == "gid":
             # Which group this element belongs to. "" means none. Grouping is
             # a shared label rather than a container: an element is still an
@@ -610,6 +618,9 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
         self.owner_id = info["owner_id"]
         self.token = info["token"]
         self.revision = info["revision"]
+        self.guests_allowed = info.get("guests", False)
+        self.person = None
+        self.person_id = ""
 
         # NOTE: no group_add here. See module docstring, point 1.
         await self.accept()
@@ -622,6 +633,10 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
         if getattr(self, "in_group", False):
             if self.role in ("stage", "control"):
                 await self._fan({"t": "peer", "role": self.role, "state": "left"})
+            if getattr(self, "person", None):
+                await self._fan(
+                    {"t": "person", "person": self.person, "on": False}
+                )
             await self.channel_layer.group_discard(self.group, self.channel_name)
             self.in_group = False
 
@@ -701,6 +716,11 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
         elif t == "stroke_end":
             stroke = clean_stroke(content.get("stroke"))
             if stroke:
+                # Stamped here, from the connection, never from the message.
+                # Authorship a client can set is authorship a client can lie
+                # about, and the whole point of the bubbles is that they are
+                # true.
+                self._sign(stroke)
                 await self._fan({"t": "stroke_end", "stroke": stroke})
                 await self._commit_stroke(stroke)
 
@@ -755,6 +775,7 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
         elif t == "el_add":
             el = clean_el(content.get("el"))
             if el:
+                self._sign(el)
                 result = await self._el_add(el)
                 if result:
                     await self._fan({"t": "el_add", "el": el, **result}, echo=True)
@@ -851,11 +872,15 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
                 for item in raw_els[:MAX_TPL_ELS]:
                     cleaned = clean_el(item)
                     if cleaned:
+                        # A copy is the work of whoever pasted it, not of
+                        # whoever drew the original.
+                        self._sign(cleaned)
                         els.append(cleaned)
             if isinstance(raw_ink, (list, tuple)):
                 for item in raw_ink[:MAX_PASTE_STROKES]:
                     cleaned = clean_stroke(item)
                     if cleaned:
+                        self._sign(cleaned)
                         strokes.append(cleaned)
             if els or strokes:
                 result = await self._paste(els, strokes)
@@ -884,6 +909,7 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
                 for item in raw[:MAX_TPL_ELS]:
                     cleaned = clean_el(item)
                     if cleaned:
+                        self._sign(cleaned)
                         els.append(cleaned)
             if els:
                 result = await self._el_add_many(els)
@@ -1010,6 +1036,19 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
                 return await self._deny(
                     "This board number was regenerated. Scan the new one.", "bad_token"
                 )
+        elif role == "join":
+            # A colleague or a student. Signing in is the whole gate: the
+            # board number gets you to the door, an account gets you through
+            # it, and everything you then draw has your name on it.
+            signed_in = bool(user and getattr(user, "is_authenticated", False))
+            if not signed_in:
+                return await self._deny(
+                    "Sign in to Knock-Knock to write on this board.", "sign_in"
+                )
+            if not (self.guests_allowed or self.is_owner):
+                return await self._deny(
+                    "This board is not open for other people to write on.", "closed"
+                )
         else:
             return await self._deny("Unrecognised role.", "bad_role")
 
@@ -1023,10 +1062,30 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
         self.in_group = True
         self._watcher = asyncio.create_task(self._watch_pairing())
 
+        self.person = await self._my_card()
+        self.person_id = self.person["id"] if self.person else ""
+
         state = await self._snapshot()
         self._remember_types(state.get("els") or [])
-        await self.send_json({"t": "ready", "role": self.role, **state})
+        people = await self._page_people()
+        await self.send_json({
+            "t": "ready", "role": self.role, "me": self.person,
+            "people": people, **state,
+        })
         await self._fan({"t": "peer", "role": self.role, "state": "joined"})
+        if self.person:
+            # Tell the room who just arrived, and ask who is already here.
+            # Nobody keeps a list of connections — each socket answers for
+            # itself, which is the only kind of presence that survives more
+            # than one web process without a shared store.
+            await self._fan({"t": "person", "person": self.person, "on": True})
+            await self._fan({"t": "whois", "ask": self.channel_name})
+
+    def _sign(self, item):
+        """Put this connection's name on something arriving from it."""
+        if self.person_id:
+            item["by"] = self.person_id
+        return item
 
     async def _deny(self, reason, code="denied"):
         if self.closing:
@@ -1059,9 +1118,29 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
 
     async def fan_out(self, event):
         payload = event["payload"]
+        if payload.get("t") == "whois":
+            await self.fan_whois(payload)
+            return
         if event.get("origin") == self.channel_name and payload.get("t") in NO_ECHO:
             return
         await self.send_json(payload)
+
+    async def fan_whois(self, event):
+        """Somebody joined and asked who else is here.
+
+        Answered straight down their channel rather than to the group: a
+        class of thirty answering a group broadcast is nine hundred frames
+        for one arrival.
+        """
+        asker = event.get("ask")
+        if not asker or asker == self.channel_name or not self.person:
+            return
+        await self.channel_layer.send(
+            asker,
+            {"type": "fan.out", "payload": {
+                "t": "person", "person": self.person, "on": True
+            }, "origin": ""},
+        )
 
     async def kick(self, event):
         """Group message from views.RotateCodeView — evict everyone here."""
@@ -1108,6 +1187,51 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
     # database
     # ------------------------------------------------------------------
 
+    def _people_cards(self, ids):
+        """Cards for a set of user ids, in one query."""
+        from django.contrib.auth import get_user_model
+
+        wanted = {int(i) for i in ids if str(i).isdigit()}
+        if not wanted:
+            return []
+        users = get_user_model().objects.filter(id__in=sorted(wanted))
+        return [person_card(u) for u in users]
+
+    @database_sync_to_async
+    def _page_people(self):
+        """Everyone who has put something on this page, plus the owner.
+
+        Sent with the snapshot, so a bubble can be labelled for somebody who
+        drew yesterday and is not connected today. One query for the page and
+        one for the people, however many marks they left.
+        """
+        from .models import Board, BoardPage, BoardSession
+
+        board = Board.objects.filter(pk=self.board_id).first()
+        if not board:
+            return []
+        session = BoardSession.objects.filter(board=board).first()
+        page = BoardPage.objects.filter(
+            board=board, index=session.page_index if session else 0
+        ).first()
+        ids = {str(board.owner_id)}
+        for bag in ((page.strokes if page else []), (page.els if page else [])):
+            for item in bag or []:
+                if isinstance(item, dict) and item.get("by"):
+                    ids.add(str(item["by"]))
+        return self._people_cards(ids)
+
+    @database_sync_to_async
+    def _my_card(self):
+        user = self.scope.get("user")
+        if user and getattr(user, "is_authenticated", False):
+            return person_card(user)
+        # A phone paired by the number rather than by signing in is the
+        # teacher's own phone — the owner granted it — so it draws as the
+        # owner rather than as nobody.
+        cards = self._people_cards([self.owner_id])
+        return cards[0] if cards else None
+
     @database_sync_to_async
     def _session_info(self, code, extend=False):
         from .models import BoardSession
@@ -1123,6 +1247,7 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
             "token": s.token,
             "revision": s.revision,
             "live": s.is_live,
+            "guests": s.board.guests_allowed,
         }
 
     @database_sync_to_async

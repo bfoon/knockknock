@@ -76,7 +76,11 @@
 
   var net = ChalkNet(CFG.code, {
     onOpen: function () {
-      net.send({ t: "hello", role: "control", token: CFG.token });
+      /* "control" is the teacher's paired phone; "join" is a colleague or a
+       * student signed in to Knock-Knock. The view decides which this page
+       * is, because it is the only side that knows how the person got here. */
+      net.send({ t: "hello", role: CFG.role === "join" ? "join" : "control",
+                 token: CFG.token || "" });
     },
     onState: function (s) {
       dot.dataset.state = s;

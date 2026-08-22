@@ -4,6 +4,7 @@ from hmac import compare_digest
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.views import redirect_to_login
 from django.db.models import Count
 from django.http import FileResponse, Http404, JsonResponse
 from django.middleware.csrf import get_token
@@ -21,6 +22,7 @@ from .models import (
     BoardSession,
     board_image_src,
     clean_src,
+    person_card,
 )
 
 # /join/ limits. Six-to-eight digits is a small enough space that an
@@ -179,6 +181,8 @@ class BoardStageView(LoginRequiredMixin, View):
                 **board_payload(board, session, page),
                 "role": "stage",
                 "token": session.token,
+                "me": person_card(request.user) if request.user.is_authenticated else None,
+                "guestsAllowed": board.guests_allowed,
                 # chalk_stage.js reads both of these for the rotate button.
                 # They were missing, so the fetch went to "undefined" with a
                 # null CSRF header and the button could never work.
@@ -197,6 +201,10 @@ class BoardSettingsView(LoginRequiredMixin, View):
         if action == "delete":
             board.delete()
             return redirect("chalk:boards")
+        if action == "guests":
+            board.guests_allowed = request.POST.get("guests") == "on"
+            board.save(update_fields=["guests_allowed", "updated_at"])
+            return redirect("chalk:stage", pk=board.id)
         title = (request.POST.get("title") or "").strip()
         if title:
             board.title = title[:200]
@@ -464,12 +472,23 @@ class ControlView(View):
             request.user.is_authenticated and board.owner_id == request.user.id
         )
 
-        if not (by_token or by_grant or by_owner):
+        # A colleague or a student: signed in to Knock-Knock, and the owner
+        # has opened the board. The number gets them to the door; the
+        # account gets them through it, and everything they draw carries
+        # their name.
+        by_guest = board.guests_allowed and request.user.is_authenticated
+
+        if not (by_token or by_grant or by_owner or by_guest):
+            if board.guests_allowed and not request.user.is_authenticated:
+                # They have the right number but nobody knows who they are.
+                return redirect_to_login(request.get_full_path())
             return redirect("chalk:join_code", code=code)
 
-        # Refresh the grant on every successful load. From here on the phone
-        # does not need the ?t= parameter to survive anything.
-        grant_control(request, board, session)
+        # Guests are not granted the phone's pairing: it belongs to the
+        # teacher's own device, and handing it to a class would let any of
+        # them keep the board after it was closed again.
+        if by_token or by_grant or by_owner:
+            grant_control(request, board, session)
         session.extend()
 
         page = board.ensure_page(session.page_index)
@@ -478,8 +497,10 @@ class ControlView(View):
             "session": session,
             "config": {
                 **board_payload(board, session, page),
-                "role": "control",
-                "token": session.token,
+                "role": "control" if (by_token or by_grant or by_owner) else "join",
+                "token": session.token if (by_token or by_grant or by_owner) else "",
+                "me": person_card(request.user) if request.user.is_authenticated else None,
+                "guestsAllowed": board.guests_allowed,
                 "joinUrl": reverse("chalk:join"),
                 "uploadUrl": reverse("chalk:upload", args=[board.id]),
                 # The upload is a POST from the phone, which is usually not

@@ -105,6 +105,12 @@
       if (global.ChalkEls && global.ChalkEls.applyElFrame) {
         try { global.ChalkEls.applyElFrame(msg); } catch (err) {}
       }
+      /* Who drew what. Same arrangement again: the overlay reads the frames
+       * here so the projector shows the bubbles without chalk_stage.js
+       * knowing they exist. */
+      if (global.ChalkWho && global.ChalkWho.frame) {
+        try { global.ChalkWho.frame(msg); } catch (err) {}
+      }
       if (msg.t === "denied") {
         var reason = msg.code || "denied";
         if (RETRYABLE[reason] && !self.retriedDenial) {

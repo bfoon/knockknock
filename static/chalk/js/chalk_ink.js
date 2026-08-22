@@ -18,7 +18,11 @@
     pencil:      { alpha: 0.66, taper: true,  grain: "pencil", widthx: 0.85, cap: "round" },
     marker:      { alpha: 0.88, taper: false, grain: "",       widthx: 2.10, cap: "round" },
     chalk:       { alpha: 0.90, taper: false, grain: "chalk",  widthx: 1.50, cap: "round" },
-    crayon:      { alpha: 0.58, taper: false, grain: "crayon", widthx: 3.20, cap: "round" },
+    /* `core: false` — the streaks ARE the stroke. Drawing a solid band and
+     * then texturing it gave a fat marker with a fuzzy edge: the wax never
+     * skipped, because there was a filled line underneath it the whole way. */
+    crayon:      { alpha: 0.62, taper: false, grain: "crayon", widthx: 2.60,
+                   cap: "round", core: false },
     highlighter: { alpha: 0.24, taper: false, grain: 0,        widthx: 5.00, cap: "butt"  }
   };
 
@@ -140,7 +144,9 @@
     ctx.lineCap = cfg.cap;
     ctx.lineJoin = "round";
 
-    if (cfg.taper) {
+    if (cfg.core === false) {
+      /* Nothing solid down the middle: see the crayon entry in TOOLS. */
+    } else if (cfg.taper) {
       /* Width follows speed: fast strokes thin out, like a real pen. */
       var prev = base, i, x0, y0, x1, y1, dist, w;
       for (i = 2; i < pts.length; i += 2) {
@@ -197,20 +203,24 @@
           Math.max(0.5, base * 0.1), 2, 6);
 
       } else if (cfg.grain === "crayon") {
+        /* Wax laid down in bands across the width, each one skipping in
+         * different places, so the board shows through between them. */
         /* Wax: a wide band of streaks that skip, so the board shows through
          * in places the way it does under a crayon. Filling a shape by
          * scribbling then reads as colouring rather than as painting. */
-        ctx.lineWidth = Math.max(0.6, base * 0.17);
-        /* Five streaks at a coarse step, not fifteen at a fine one: a whole
-         * page of crayon has to redraw when the board resizes. */
-        for (var i = 0; i < 5; i++) {
-          ctx.globalAlpha = cfg.alpha * (0.32 + rnd() * 0.42);
-          offsetPass(ctx, pts, view, W, H,
-            (rnd() - 0.5) * base * 0.86, rnd, 0.22, 3);
+        var bands = 9;
+        ctx.lineWidth = Math.max(0.8, base * 0.26);
+        for (var i = 0; i < bands; i++) {
+          /* Spread evenly across the width, jittered, so the band is solid
+           * enough to be a colour and broken enough to be a crayon. */
+          var across = ((i + 0.5) / bands - 0.5) * base * 1.05
+            + (rnd() - 0.5) * base * 0.12;
+          ctx.globalAlpha = cfg.alpha * (0.34 + rnd() * 0.4);
+          offsetPass(ctx, pts, view, W, H, across, rnd, 0.16, 3);
         }
-        ctx.globalAlpha = cfg.alpha * 0.3;
-        speckle(ctx, pts, view, W, H, rnd, base * 0.5,
-          Math.max(0.6, base * 0.13), 4, 4);
+        ctx.globalAlpha = cfg.alpha * 0.34;
+        speckle(ctx, pts, view, W, H, rnd, base * 0.52,
+          Math.max(0.6, base * 0.14), 4, 4);
       }
     }
     ctx.restore();
@@ -245,10 +255,15 @@
 
   function copyStroke(s) {
     return {
-      id: s.id, tool: s.tool, color: s.color,
+      id: s.id, tool: s.tool, color: s.color, top: s.top !== false,
       w: s.w, pts: (s.pts || []).slice()
     };
   }
+
+  /* Which side of the objects a stroke is written on. Absent means front:
+   * handwriting belongs over the top of whatever is already on the board,
+   * which is what happens on a real one. */
+  function isFront(s) { return s.top !== false; }
 
   /* ------------------------------------------------------------------ */
   /* moving and resizing ink                                             */
@@ -388,15 +403,25 @@
     this.view = { x: 0, y: 0, s: 1 };
     this.dpr = Math.min(global.devicePixelRatio || 1, 2.5);
 
-    this.base = document.createElement("canvas");
-    this.base.className = "chalk-layer chalk-layer-base";
+    /* Two committed canvases, not one, and the objects layer sits between
+     * them. That is what lets a single stroke be in front of a diagram while
+     * another is behind it — z-index alone cannot split one canvas. */
+    this.back = document.createElement("canvas");
+    this.back.className = "chalk-layer chalk-layer-back";
+    this.front = document.createElement("canvas");
+    this.front.className = "chalk-layer chalk-layer-front";
     this.top = document.createElement("canvas");
     this.top.className = "chalk-layer chalk-layer-live";
-    host.appendChild(this.base);
+    host.appendChild(this.back);
+    host.appendChild(this.front);
     host.appendChild(this.top);
 
-    this.bctx = this.base.getContext("2d");
+    this.bkctx = this.back.getContext("2d");
+    this.frctx = this.front.getContext("2d");
     this.tctx = this.top.getContext("2d");
+    /* Kept for anything still reaching for the old single base context. */
+    this.base = this.front;
+    this.bctx = this.frctx;
 
     this._liveDirty = false;
     this._rect = null;
@@ -426,14 +451,15 @@
     this._rect = r;
     this.W = Math.max(1, Math.round(r.width));
     this.H = Math.max(1, Math.round(r.height));
-    [this.base, this.top].forEach(function (c) {
+    [this.back, this.front, this.top].forEach(function (c) {
       c.width = Math.round(this.W * this.dpr);
       c.height = Math.round(this.H * this.dpr);
       c.style.width = this.W + "px";
       c.style.height = this.H + "px";
     }, this);
-    this.bctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    this.tctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    [this.bkctx, this.frctx, this.tctx].forEach(function (c) {
+      c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    }, this);
     this.redrawBase();
     this._liveDirty = true;
   };
@@ -461,9 +487,11 @@
 
   Surface.prototype.redrawBase = function () {
     if (!this.W) return;
-    this.bctx.clearRect(0, 0, this.W, this.H);
+    this.bkctx.clearRect(0, 0, this.W, this.H);
+    this.frctx.clearRect(0, 0, this.W, this.H);
     for (var i = 0; i < this.strokes.length; i++) {
-      drawStroke(this.bctx, this.strokes[i], this.view, this.W, this.H);
+      var s = this.strokes[i];
+      drawStroke(isFront(s) ? this.frctx : this.bkctx, s, this.view, this.W, this.H);
     }
   };
 
@@ -560,7 +588,7 @@
     if (!this.strokes.some(function (s) { return s.id === stroke.id; })) {
       var s = copyStroke(stroke);
       this.strokes.push(s);
-      drawStroke(this.bctx, s, this.view, this.W, this.H);
+      drawStroke(isFront(s) ? this.frctx : this.bkctx, s, this.view, this.W, this.H);
     }
     this._liveDirty = true;
   };
@@ -734,6 +762,34 @@
     return changed;
   };
 
+  /* Move strokes between the front and back bands, or within one. Order in
+   * the array is the order they are painted, so "bring to the front" is a
+   * splice: pull them out, put them back at the end. */
+  Surface.prototype.setBand = function (ids, front) {
+    var want = Object.create(null), changed = false;
+    (ids || []).forEach(function (i) { want[i] = 1; });
+    this.strokes.forEach(function (s) {
+      if (want[s.id] && isFront(s) !== !!front) {
+        s.top = !!front;
+        changed = true;
+      }
+    });
+    if (changed) { this.redrawBase(); this._liveDirty = true; }
+    return changed;
+  };
+
+  Surface.prototype.reorder = function (ids, toEnd) {
+    var want = Object.create(null);
+    (ids || []).forEach(function (i) { want[i] = 1; });
+    var moved = this.strokes.filter(function (s) { return want[s.id]; });
+    if (!moved.length || moved.length === this.strokes.length) return false;
+    var rest = this.strokes.filter(function (s) { return !want[s.id]; });
+    this.strokes = toEnd ? rest.concat(moved) : moved.concat(rest);
+    this.redrawBase();
+    this._liveDirty = true;
+    return true;
+  };
+
   Surface.prototype.clear = function () {
     this.strokes = [];
     this.live = Object.create(null);
@@ -774,6 +830,10 @@
     if (!msg || !liveSurfaces.length) return;
     if (msg.t === "ink_live") {
       liveSurfaces.forEach(function (s) { s.xform(msg.sel, msg.ids, msg.m); });
+      return;
+    }
+    if (msg.t === "ink_band") {
+      liveSurfaces.forEach(function (s) { s.setBand(msg.ids, msg.front); });
       return;
     }
     if (msg.t === "ink" && msg.xform && msg.xform.length) {

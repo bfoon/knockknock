@@ -55,6 +55,7 @@
     <button class="icon-btn" data-tool="fill" type="button" aria-pressed="false">Colour in</button>
     <button class="icon-btn" data-tool="highlighter" type="button" aria-pressed="false">Highlight</button>
     <button class="icon-btn" data-tool="eraser" type="button" aria-pressed="false">Erase</button>
+    <button class="icon-btn" data-tool="duster" type="button" aria-pressed="false">Duster</button>
     <button class="icon-btn" data-tool="laser" type="button" aria-pressed="false">Point</button>
   </div>
 
@@ -97,18 +98,22 @@
     <span class="row-label">Page</span>
     <button class="icon-btn" id="undo" type="button" disabled>Undo</button>
     <button class="icon-btn" id="redo" type="button" disabled>Redo</button>
-    <button class="icon-btn" id="ink-all" type="button">Pick all writing</button>
+    <button class="icon-btn" id="ink-all" type="button">Pick everything</button>
     <button class="icon-btn" id="clear" type="button">Wipe page</button>
     <button class="icon-btn danger" id="page-delete" type="button">Delete page</button>
   </div>
 
 </div>
 
-<section id="ink-bar" hidden aria-label="Selected handwriting">
-  <strong id="ink-count">Handwriting</strong>
+<section id="ink-bar" hidden aria-label="Selection">
+  <strong id="ink-count">Selection</strong>
   <span class="spacer"></span>
   <button class="icon-btn" id="ink-more" type="button" aria-pressed="false">Add more</button>
-  <button class="icon-btn danger" id="ink-delete" type="button">Rub out</button>
+  <button class="icon-btn" id="sel-group" type="button">Group</button>
+  <button class="icon-btn" id="sel-ungroup" type="button" hidden>Ungroup</button>
+  <button class="icon-btn" id="sel-front" type="button">Front</button>
+  <button class="icon-btn" id="sel-back" type="button">Back</button>
+  <button class="icon-btn danger" id="ink-delete" type="button">Delete</button>
   <button class="icon-btn" id="ink-done" type="button">Done</button>
 </section>
 
@@ -119,6 +124,7 @@
     <button class="icon-btn" id="insp-toggle" type="button" aria-expanded="true"
             aria-controls="inspector-body">Hide details</button>
     <button class="icon-btn" id="el-front" type="button">To front</button>
+    <button class="icon-btn" id="el-band" type="button" aria-pressed="false">Over writing</button>
     <button class="icon-btn danger" id="el-delete" type="button">Delete</button>
     <button class="icon-btn" id="el-close" type="button">Done</button>
   </header>

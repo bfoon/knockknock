@@ -102,6 +102,9 @@
       if (global.ChalkInk && global.ChalkInk.applyInkFrame) {
         try { global.ChalkInk.applyInkFrame(msg); } catch (err) {}
       }
+      if (global.ChalkEls && global.ChalkEls.applyElFrame) {
+        try { global.ChalkEls.applyElFrame(msg); } catch (err) {}
+      }
       if (msg.t === "denied") {
         var reason = msg.code || "denied";
         if (RETRYABLE[reason] && !self.retriedDenial) {

@@ -98,11 +98,23 @@
   background-position: 0 0, 3px 5px;
 }
 
+/* ---- what is in front of what ---------------------------------------
+   Bottom to top: writing sent to the back, objects, writing (the default),
+   objects brought to the front, and the stroke currently under the finger.
+
+   None of #ink, #pad or .chalk-els sets z-index, so none of them opens a
+   stacking context and these five numbers all compete inside .chalk-board.
+   Adding z-index to any of those three wrappers would collapse the whole
+   arrangement back into two flat layers.
+   -------------------------------------------------------------------- */
 .chalk-layer {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
+.chalk-layer-back  { z-index: 1; }
+.chalk-layer-front { z-index: 3; }
+.chalk-layer-live  { z-index: 5; }
 
 /* ==========================================================================
    Projector
@@ -787,9 +799,12 @@ body.chalk-page {
   position: absolute;
   inset: 0;
   pointer-events: none;   /* taps fall through to the ink pad beneath */
+  /* No z-index here on purpose — see the note by .chalk-layer. */
 }
+.chalk-el[data-top="1"] { z-index: 4; }
 
 .chalk-el {
+  z-index: 2;                 /* behind handwriting unless brought forward */
   position: absolute;
   transform-origin: 50% 50%;
 }
@@ -1117,12 +1132,22 @@ body.inspecting.insp-collapsed .c-scroll { padding-bottom: 110px; }
 /* Lasso: drag on bare board with Pick to gather up handwriting. */
 #marquee {
   position: absolute;
-  z-index: 4;
+  z-index: 6;
   border: 1.5px dashed var(--sky);
   background: rgba(86,183,230,.12);
   border-radius: 3px;
   pointer-events: none;
 }
+/* The duster borrows the same box, as a circle the size of what it will
+   rub. Showing the reach is the whole difference between a duster you can
+   aim and one you cannot. */
+#marquee[data-round] {
+  border-radius: 50%;
+  border-style: solid;
+  border-color: rgba(232,238,244,.75);
+  background: rgba(232,238,244,.14);
+}
+#pad-wrap[data-tool="duster"] { outline: 2px dashed var(--dust); outline-offset: -2px; }
 
 /* ---- picked handwriting --------------------------------------------
    Same frame and handles as an object, in the second accent, so it is

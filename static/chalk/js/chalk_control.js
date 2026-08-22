@@ -128,6 +128,9 @@
         break;
       /* Another paired device is moving ink. Same treatment as stroke_pts:
        * follow it live, store nothing. */
+      case "ink_band":
+        surface.setBand(m.ids, m.front);
+        break;
       case "ink_live":
         surface.xform(m.sel, m.ids, m.m);
         break;
@@ -186,6 +189,16 @@
       return;
     }
 
+    if (state.tool === "duster") {
+      activePointer = e.pointerId;
+      pad.setPointerCapture(e.pointerId);
+      var dp = surface.toBoard(e.clientX, e.clientY);
+      duster = { gid: newSel(), path: [r4(dp.x), r4(dp.y)], sentAt: 0 };
+      showDuster(dp.x, dp.y);
+      flushDuster(true);
+      return;
+    }
+
     if (state.tool === "select") {
       /* Objects first, then handwriting, then a lasso. No capture for the
        * first two: the selection overlay handles the drag from here, and
@@ -193,14 +206,14 @@
       var sp = surface.toBoard(e.clientX, e.clientY);
       var elHit = layer.hit(sp.x, sp.y);
       if (elHit) {
-        clearInk();
-        editor.select(elHit);
+        if (inkAdd) selectMany(inkIds, withId(elIds, elHit));
+        else selectMany([], [elHit]);
         return;
       }
       var inkHit = surface.hit(sp.x, sp.y, 0.014 / state.view.s);
       if (inkHit) {
-        editor.select(null);
-        selectInk(inkAdd ? withId(inkIds, inkHit) : [inkHit]);
+        if (inkAdd) selectMany(withId(inkIds, inkHit), elIds);
+        else selectMany([inkHit], []);
         return;
       }
       /* Bare board: drag a box round whatever you want to pick up. */
@@ -253,6 +266,16 @@
   }
 
   pad.addEventListener("pointermove", function (e) {
+    if (state.tool === "duster") {
+      if (!duster || e.pointerId !== activePointer) return;
+      e.preventDefault();
+      var dp = surface.toBoard(e.clientX, e.clientY);
+      duster.path.push(r4(dp.x), r4(dp.y));
+      if (duster.path.length > 240) duster.path = duster.path.slice(-240);
+      showDuster(dp.x, dp.y);
+      flushDuster(false);
+      return;
+    }
     if (state.tool === "fill") return;
     if (state.tool === "select") {
       if (lasso && e.pointerId === activePointer) {
@@ -298,6 +321,15 @@
    * early and the rest of the movement was dropped in silence. */
   ["pointerup", "pointercancel"].forEach(function (type) {
     pad.addEventListener(type, function (e) {
+      if (state.tool === "duster") {
+        if (duster) {
+          if (type !== "pointercancel") flushDuster(true);
+          duster = null;
+          activePointer = null;
+        }
+        hideDuster();
+        return;
+      }
       if (state.tool === "fill") return;
       if (state.tool === "select") {
         if (lasso && e.pointerId === activePointer) {
@@ -468,6 +500,10 @@
       b.setAttribute("aria-pressed", String(on));
     });
     padWrap.dataset.tool = tool;
+    if (tool !== "duster" && duster) {
+      duster = null;
+      hideDuster();
+    }
     if (tool !== "select") {
       editor.select(null);
       clearInk();
@@ -565,12 +601,15 @@
 
   var INK_ID = "__ink__";
   var inkIds = [];          // strokes currently picked
+  var elIds = [];           // objects picked alongside them
+  var elBase = null;        // each picked object's geometry when the drag began
   var inkBox = null;        // the box being dragged
   var inkBase = null;       // the box as it was when this gesture began
   var inkSel = "";          // gesture id — see ChalkInk.Surface.xform
   var inkAdd = false;       // does the next lasso add to the selection?
   var lasso = null;         // in-progress lasso, in board coordinates
   var selSeed = 0;
+  var liveSentAt = 0;
 
   function newSel() {
     selSeed = (selSeed + 1) % 100000;
@@ -602,21 +641,70 @@
     ];
   }
 
+  /* An object is a box, not a point list, so it cannot follow a general
+   * matrix exactly: a rotated box that is then squashed on one axis is a
+   * parallelogram, and there is nowhere to put that. Centre, size and angle
+   * are carried instead, which is right for every drag that is not a
+   * non-uniform scale of something already turned, and close enough there. */
+  function applyMatrixToEls(m) {
+    if (!elBase) return [];
+    var sx = Math.sqrt(m[0] * m[0] + m[1] * m[1]);
+    var sy = Math.sqrt(m[2] * m[2] + m[3] * m[3]);
+    var spin = Math.atan2(m[1], m[0]) * 180 / Math.PI;
+    var patches = [];
+    elIds.forEach(function (id) {
+      var b = elBase[id];
+      if (!b) return;
+      var cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      var nx = m[0] * cx + m[2] * cy + m[4];
+      var ny = m[1] * cx + m[3] * cy + m[5];
+      var w = Math.max(0.01, b.w * sx), h = Math.max(0.01, b.h * sy);
+      var patch = {
+        x: r4(nx - w / 2), y: r4(ny - h / 2), w: r4(w), h: r4(h),
+        rot: Math.round(((b.rot || 0) + spin) * 10) / 10
+      };
+      layer.patch(id, patch);
+      patches.push({ id: id, patch: patch });
+    });
+    return patches;
+  }
+
+  function r4(v) { return Math.round(v * 10000) / 10000; }
+
   var inkAdapter = {
     view: state.view,
     get: function (id) { return id === INK_ID ? inkBox : null; },
     patch: function (id, patch) {
       if (id !== INK_ID || !inkBox || !inkBase) return null;
       Object.assign(inkBox, patch);
-      surface.xform(inkSel, inkIds, inkMatrix());
+      var m = inkMatrix();
+      if (inkIds.length) surface.xform(inkSel, inkIds, m);
+      applyMatrixToEls(m);
       return inkBox;
     }
   };
 
   var inkEditor = ChalkEdit(padWrap, inkAdapter, {
     live: function () {
+      var m = inkMatrix();
       if (inkIds.length) {
-        net.send({ t: "ink_live", sel: inkSel, ids: inkIds, m: inkMatrix() }, true);
+        net.send({ t: "ink_live", sel: inkSel, ids: inkIds, m: m }, true);
+      }
+      /* Objects go out at about 15 a second rather than every frame: one
+       * frame per object per tick would put a group of ten straight through
+       * the server's flood guard. */
+      if (elIds.length) {
+        var now = Date.now();
+        if (now - liveSentAt < 66) return;
+        liveSentAt = now;
+        var items = elIds.map(function (id) {
+          var el = layer.get(id);
+          return el && {
+            id: id,
+            patch: { x: el.x, y: el.y, w: el.w, h: el.h, rot: el.rot || 0 }
+          };
+        }).filter(Boolean);
+        if (items.length) net.send({ t: "el_live_many", items: items }, true);
       }
     },
     commit: function () { commitInk(); },
@@ -624,14 +712,68 @@
   });
   inkEditor.box.classList.add("chalk-sel-ink");
 
-  function selectInk(ids) {
-    ids = (ids || []).filter(function (id) { return !!surface.byId(id); });
-    if (!ids.length) return clearInk();
-    var box = surface.bboxOf(ids);
+  /* The box round a mixed selection: whatever the strokes cover, plus
+   * whatever the objects cover. */
+  function selectionBox() {
+    var box = inkIds.length ? surface.bboxOf(inkIds) : null;
+    var x0 = box ? box.x : Infinity, y0 = box ? box.y : Infinity;
+    var x1 = box ? box.x + box.w : -Infinity, y1 = box ? box.y + box.h : -Infinity;
+    elIds.forEach(function (id) {
+      var el = layer.get(id);
+      if (!el) return;
+      x0 = Math.min(x0, el.x); y0 = Math.min(y0, el.y);
+      x1 = Math.max(x1, el.x + el.w); y1 = Math.max(y1, el.y + el.h);
+    });
+    if (x0 === Infinity) return null;
+    return {
+      x: x0, y: y0,
+      w: Math.max(0.012, x1 - x0), h: Math.max(0.012, y1 - y0)
+    };
+  }
+
+  /* Everything in the same group as the ids given. Grouping is a shared
+   * label rather than a container, so "the group" is a lookup, not a tree. */
+  function withGroups(ids) {
+    var gids = Object.create(null), out = ids.slice();
+    ids.forEach(function (id) {
+      var el = layer.get(id);
+      if (el && el.gid) gids[el.gid] = 1;
+    });
+    layer.els.forEach(function (el) {
+      if (el.gid && gids[el.gid] && out.indexOf(el.id) === -1) out.push(el.id);
+    });
+    return out;
+  }
+
+  function selectMany(strokeIds, objectIds) {
+    inkIds = (strokeIds || []).filter(function (id) { return !!surface.byId(id); });
+    elIds = withGroups((objectIds || []).filter(function (id) {
+      return !!layer.get(id);
+    }));
+    if (!inkIds.length && !elIds.length) return clearInk();
+
+    /* One object on its own gets the inspector and its corner handles — all
+     * the per-type controls only make sense for a single thing. */
+    if (!inkIds.length && elIds.length === 1) {
+      var only = elIds[0];
+      inkIds = [];
+      elIds = [];
+      inkBox = null;
+      inkEditor.select(null);
+      editor.select(only);
+      renderInkBar();
+      return;
+    }
+
+    var box = selectionBox();
     if (!box) return clearInk();
-    inkIds = ids;
     inkBox = { id: INK_ID, type: "ink", x: box.x, y: box.y, w: box.w, h: box.h, rot: 0 };
     inkBase = { x: box.x, y: box.y, w: box.w, h: box.h };
+    elBase = Object.create(null);
+    elIds.forEach(function (id) {
+      var el = layer.get(id);
+      if (el) elBase[id] = { x: el.x, y: el.y, w: el.w, h: el.h, rot: el.rot || 0 };
+    });
     inkSel = newSel();
     surface.dropXformBase();
     editor.select(null);
@@ -639,9 +781,13 @@
     renderInkBar();
   }
 
+  function selectInk(ids) { selectMany(ids, []); }
+
   function clearInk() {
-    if (!inkIds.length && !inkBox) return;
+    if (!inkIds.length && !elIds.length && !inkBox) return;
     inkIds = [];
+    elIds = [];
+    elBase = null;
     inkBox = null;
     inkBase = null;
     inkEditor.select(null);
@@ -652,14 +798,19 @@
    * they are; after a turn their upright box is a different box entirely,
    * and the frame has to agree with what is on the board. */
   function reboxInk() {
-    if (!inkIds.length) return;
-    var live = inkIds.filter(function (id) { return !!surface.byId(id); });
-    if (!live.length) return clearInk();
-    var box = surface.bboxOf(live);
+    if (!inkIds.length && !elIds.length) return;
+    inkIds = inkIds.filter(function (id) { return !!surface.byId(id); });
+    elIds = elIds.filter(function (id) { return !!layer.get(id); });
+    if (!inkIds.length && !elIds.length) return clearInk();
+    var box = selectionBox();
     if (!box) return clearInk();
-    inkIds = live;
     inkBox = { id: INK_ID, type: "ink", x: box.x, y: box.y, w: box.w, h: box.h, rot: 0 };
     inkBase = { x: box.x, y: box.y, w: box.w, h: box.h };
+    elBase = Object.create(null);
+    elIds.forEach(function (id) {
+      var el = layer.get(id);
+      if (el) elBase[id] = { x: el.x, y: el.y, w: el.w, h: el.h, rot: el.rot || 0 };
+    });
     inkSel = newSel();
     surface.dropXformBase();
     inkEditor.select(INK_ID);
@@ -667,21 +818,98 @@
   }
 
   function commitInk() {
-    if (!inkIds.length || !inkBox || !inkBase) return;
+    if ((!inkIds.length && !elIds.length) || !inkBox || !inkBase) return;
     var m = inkMatrix();
-    /* Claim this gesture before the server echoes it back, or the echo
-     * applies the same move a second time. */
-    surface.markXformDone(inkSel);
-    net.send({ t: "ink_xform", sel: inkSel, ids: inkIds, m: m });
+    if (inkIds.length) {
+      /* Claim this gesture before the server echoes it back, or the echo
+       * applies the same move a second time. */
+      surface.markXformDone(inkSel);
+      net.send({ t: "ink_xform", sel: inkSel, ids: inkIds, m: m });
+    }
+    if (elIds.length) {
+      var items = applyMatrixToEls(m);
+      if (items.length) net.send({ t: "el_multi", items: items });
+    }
     setHistory(true, false);
     reboxInk();
   }
 
+  function sendMulti(patch) {
+    if (!elIds.length) return;
+    var items = elIds.map(function (id) {
+      layer.patch(id, patch);
+      return { id: id, patch: patch };
+    });
+    net.send({ t: "el_multi", items: items });
+    setHistory(true, false);
+  }
+
   function renderInkBar() {
-    var n = inkIds.length;
+    var n = inkIds.length + elIds.length;
     inkBar.hidden = n === 0;
     document.body.classList.toggle("ink-picked", n > 0);
-    if (n) inkCount.textContent = n + (n === 1 ? " mark picked" : " marks picked");
+    if (!n) return;
+    var bits = [];
+    if (elIds.length) {
+      bits.push(elIds.length + (elIds.length === 1 ? " object" : " objects"));
+    }
+    if (inkIds.length) {
+      bits.push(inkIds.length + (inkIds.length === 1 ? " mark" : " marks"));
+    }
+    inkCount.textContent = bits.join(" + ") + " picked";
+    var grouped = elIds.some(function (id) {
+      var el = layer.get(id);
+      return !!(el && el.gid);
+    });
+    document.getElementById("sel-group").hidden = elIds.length < 2;
+    document.getElementById("sel-ungroup").hidden = !grouped;
+  }
+
+  /* ---- the duster ----------------------------------------------------
+   *
+   * The eraser takes whole strokes; the duster takes the part you rubbed
+   * and leaves the rest, for cleaning an edge or opening a gap. The wipe
+   * path goes to the server in chunks while the finger is still moving, so
+   * the wall keeps up with the hand, and every chunk of one rub carries the
+   * same id and merges into a single Undo.
+   */
+
+  var duster = null;
+  var DUSTER_CHUNK_MS = 90;
+
+  function dusterRadius() {
+    /* Tied to the thickness slider, but never a pinprick: a duster you have
+     * to aim precisely is a duster nobody uses. */
+    return Math.min(0.16, Math.max(0.018, state.width * 3.2));
+  }
+
+  function showDuster(x, y) {
+    var r = dusterRadius() * state.view.s;
+    marquee.hidden = false;
+    marquee.dataset.round = "1";
+    marquee.style.left = ((x - state.view.x) * state.view.s - r) * 100 + "%";
+    marquee.style.top = ((y - state.view.y) * state.view.s - r * 16 / 9) * 100 + "%";
+    marquee.style.width = (r * 200) + "%";
+    marquee.style.height = (r * 200 * 16 / 9) + "%";
+  }
+
+  function hideDuster() {
+    marquee.hidden = true;
+    delete marquee.dataset.round;
+  }
+
+  function flushDuster(force) {
+    if (!duster || duster.path.length < 2) return;
+    var now = Date.now();
+    if (!force && now - duster.sentAt < DUSTER_CHUNK_MS) return;
+    duster.sentAt = now;
+    net.send({
+      t: "ink_wipe", gid: duster.gid,
+      path: duster.path, r: dusterRadius()
+    });
+    /* Keep the last point so the next chunk joins on to this one rather
+     * than leaving an un-rubbed gap between them. */
+    duster.path = duster.path.slice(-2);
   }
 
   /* ---- lasso -------------------------------------------------------- */
@@ -713,20 +941,76 @@
       return;
     }
     var found = surface.idsIn(r);
-    if (!found.length) {
+    /* Objects whose middle is inside the box. Their whole box does not have
+     * to be: lassoing a diagram would otherwise mean carefully enclosing
+     * every label that hangs off the edge of it. */
+    var objects = layer.els.filter(function (el) {
+      var cx = el.x + el.w / 2, cy = el.y + el.h / 2;
+      return cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h;
+    }).map(function (el) { return el.id; });
+
+    if (!found.length && !objects.length) {
       if (!inkAdd) clearInk();
-      else say("Nothing written inside that box.");
+      else say("Nothing inside that box.");
       return;
     }
-    selectInk(inkAdd ? inkIds.concat(found.filter(function (id) {
-      return inkIds.indexOf(id) === -1;
-    })) : found);
+    if (inkAdd) {
+      selectMany(
+        inkIds.concat(found.filter(function (id) { return inkIds.indexOf(id) === -1; })),
+        elIds.concat(objects.filter(function (id) { return elIds.indexOf(id) === -1; }))
+      );
+    } else {
+      selectMany(found, objects);
+    }
   }
 
   document.getElementById("ink-all").addEventListener("click", function () {
     setTool("select");
-    selectInk(surface.allIds());
-    if (!inkIds.length) say("There is no handwriting on this page yet.");
+    selectMany(surface.allIds(), layer.els.map(function (el) { return el.id; }));
+    if (!inkIds.length && !elIds.length) say("This page is empty.");
+  });
+
+  document.getElementById("sel-group").addEventListener("click", function () {
+    if (elIds.length < 2) return say("Pick two or more objects first.");
+    /* A group is a shared label, not a container: the elements stay
+     * elements, they just answer to a name together. Tapping any one of
+     * them picks the lot, and Ungroup drops the label. */
+    var gid = "g" + ChalkEls.newId();
+    sendMulti({ gid: gid });
+    renderInkBar();
+    say(elIds.length + " objects grouped — tap any of them to pick them all.");
+  });
+
+  document.getElementById("sel-ungroup").addEventListener("click", function () {
+    if (!elIds.length) return;
+    sendMulti({ gid: "" });
+    renderInkBar();
+    say("Ungrouped.");
+  });
+
+  document.getElementById("sel-front").addEventListener("click", function () {
+    if (inkIds.length) {
+      surface.setBand(inkIds, true);
+      surface.reorder(inkIds, true);
+      net.send({ t: "ink_band", ids: inkIds, front: true });
+    }
+    if (elIds.length) {
+      sendMulti({ top: true });
+      elIds.forEach(function (id) { net.send({ t: "el_raise", id: id }); });
+      elIds.forEach(function (id) { layer.raise(id); });
+    }
+    inkEditor.refresh();
+    say("Brought to the front.");
+  });
+
+  document.getElementById("sel-back").addEventListener("click", function () {
+    if (inkIds.length) {
+      surface.setBand(inkIds, false);
+      net.send({ t: "ink_band", ids: inkIds, front: false });
+    }
+    if (elIds.length) sendMulti({ top: false });
+    inkEditor.refresh();
+    say("Sent behind.");
   });
   document.getElementById("ink-more").addEventListener("click", function () {
     inkAdd = !inkAdd;
@@ -737,10 +1021,16 @@
                : "Lasso now starts a fresh selection.");
   });
   document.getElementById("ink-delete").addEventListener("click", function () {
-    if (!inkIds.length) return;
-    var ids = inkIds.slice();
-    surface.remove(ids);
-    net.send({ t: "erase", ids: ids });
+    if (inkIds.length) {
+      var ids = inkIds.slice();
+      surface.remove(ids);
+      net.send({ t: "erase", ids: ids });
+    }
+    if (elIds.length) {
+      var eids = elIds.slice();
+      layer.remove(eids);
+      net.send({ t: "el_delete", ids: eids });
+    }
     clearInk();
   });
   document.getElementById("ink-done").addEventListener("click", clearInk);
@@ -1207,6 +1497,10 @@
     inspectorName.textContent = {
       text: "Text", image: "Photo", shape: "Shape", freeform: "Free shape"
     }[el.type] || "Object";
+    var band = document.getElementById("el-band");
+    band.dataset.on = String(!!el.top);
+    band.setAttribute("aria-pressed", String(!!el.top));
+    band.textContent = el.top ? "Behind writing" : "Over writing";
 
     inspectorBody.textContent = "";
     (FIELDS[el.type] || FIELDS.shape)(el)
@@ -1295,6 +1589,13 @@
   function normHex(v) {
     return typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v) ? v : null;
   }
+
+  document.getElementById("el-band").addEventListener("click", function () {
+    var id = editor.selected, el = id && layer.get(id);
+    if (!el) return;
+    patchEl({ top: !el.top });
+    renderInspector();
+  });
 
   document.getElementById("el-front").addEventListener("click", function () {
     if (!editor.selected) return;

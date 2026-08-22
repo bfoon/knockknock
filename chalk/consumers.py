@@ -10,6 +10,10 @@ Wire protocol — every frame is {"t": "<type>", ...}.
   stroke_end              stroke_end     (id, ...)   -- full list, committed
   erase {ids}             erase          (ids, canUndo, canRedo)
   ink_live {sel,ids,m}    ink_live       (sel, ids, m) -- mid-drag, never stored
+  ink_wipe {gid,path,r}   ink            (add, del) -- the duster
+  ink_band {ids,front}    ink_band       (ids, front)
+  el_multi {items}        el_update x N  one undo entry for the whole set
+  el_live_many {items}    el_live_many   mid-drag for a group, never stored
   ink_xform {sel,ids,m}   ink            (xform, canUndo, canRedo)
   el_add {el}             el_add         (el)
   el_live {id, patch}     el_live        (id, patch)  -- mid-drag, never stored
@@ -50,6 +54,7 @@ one write, not a hundred of each.
 import asyncio
 import re
 import time
+import uuid
 from hmac import compare_digest
 
 from channels.db import database_sync_to_async
@@ -90,7 +95,7 @@ RATE_PER_SEC = 200.0
 # "peer" is here so a socket is never told about its own arrival.
 NO_ECHO = {
     "stroke_start", "stroke_pts", "stroke_end", "pointer", "peer",
-    "el_live", "ink_live",
+    "el_live", "ink_live", "el_live_many",
 }
 
 
@@ -137,6 +142,9 @@ def clean_stroke(raw):
         "tool": tool if tool in TOOLS else "pen",
         "color": color if COLOR_RE.match(color) else "#ffffff",
         "w": _num(raw.get("w"), 0.0004, 0.12, 0.0035),
+        # Absent means front: handwriting goes over the top of whatever is
+        # already on the board, the way it does on a real one.
+        "top": raw.get("top") is not False,
         "pts": pts,
     }
 
@@ -287,6 +295,97 @@ def heal_image_srcs(board_id, els):
     return els, changed
 
 
+# ----------------------------------------------------------------------
+# the duster
+# ----------------------------------------------------------------------
+#
+# The ordinary eraser takes whole strokes: touch a letter, the letter goes.
+# A duster takes the part you rubbed and leaves the rest, which is what you
+# need to clean up an edge or open a gap in a line.
+#
+# A stroke is a point list, so rubbing it is a filter: drop the points the
+# duster passed over, and whatever survives comes back as one or more
+# shorter strokes. That means the operation is a delete plus some inserts —
+# the "splice" entry below — and both halves land in the same undo step, so
+# one Undo puts the original stroke back whole.
+
+DUSTER_MAX_PATH = 120         # points in one wipe message
+MIN_FRAGMENT = 3              # points; shorter than this is a speck, not a mark
+
+
+def _near_path(x, y, path, r2):
+    """Is (x, y) within the duster of any segment of `path`?"""
+    n = len(path)
+    if n == 2:
+        dx, dy = x - path[0], y - path[1]
+        return dx * dx + dy * dy <= r2
+    for i in range(2, n, 2):
+        ax, ay, bx, by = path[i - 2], path[i - 1], path[i], path[i + 1]
+        vx, vy = bx - ax, by - ay
+        seg = vx * vx + vy * vy
+        t = ((x - ax) * vx + (y - ay) * vy) / seg if seg else 0.0
+        t = 0.0 if t < 0 else (1.0 if t > 1 else t)
+        dx, dy = x - (ax + t * vx), y - (ay + t * vy)
+        if dx * dx + dy * dy <= r2:
+            return True
+    return False
+
+
+def _bounds(pts):
+    xs = pts[0::2]
+    ys = pts[1::2]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def wipe_strokes(strokes, path, radius, new_id):
+    """Rub `path` across the page. Returns (out, added).
+
+    `out` is [(index, stroke)] for strokes that were touched, `added` is
+    [(index, stroke)] for the pieces that survived. Untouched strokes are
+    never in either, so wiping empty board costs a bounding-box test each.
+    """
+    r2 = radius * radius
+    px0, py0, px1, py1 = _bounds(path)
+    px0 -= radius
+    py0 -= radius
+    px1 += radius
+    py1 += radius
+
+    out, added = [], []
+    for idx, s in enumerate(strokes):
+        pts = s.get("pts") or []
+        if len(pts) < 2:
+            continue
+        sx0, sy0, sx1, sy1 = _bounds(pts)
+        pad = float(s.get("w") or 0.0035)
+        if sx1 + pad < px0 or sx0 - pad > px1 or sy1 + pad < py0 or sy0 - pad > py1:
+            continue
+
+        runs, cur, hit = [], [], False
+        reach = r2 if pad <= 0 else (radius + pad * 0.5) ** 2
+        for i in range(0, len(pts) - 1, 2):
+            if _near_path(pts[i], pts[i + 1], path, reach):
+                hit = True
+                if len(cur) >= MIN_FRAGMENT * 2:
+                    runs.append(cur)
+                cur = []
+            else:
+                cur.append(pts[i])
+                cur.append(pts[i + 1])
+        if not hit:
+            continue
+        if len(cur) >= MIN_FRAGMENT * 2:
+            runs.append(cur)
+
+        out.append((idx, s))
+        for run in runs:
+            piece = dict(s)
+            piece["id"] = new_id()
+            piece["pts"] = run
+            added.append((idx, piece))
+    return out, added
+
+
 def _entry_items(entry):
     """Objects held by one history entry, including its paired `also` half.
 
@@ -345,7 +444,7 @@ EL_NUM = {
     "hole": (10.0, 70.0, 40.0),
 }
 EL_INT = {"sides", "dash", "degrees"}
-EL_BOOL = {"bold", "italic", "closed", "fillOn", "edited"}
+EL_BOOL = {"bold", "italic", "closed", "fillOn", "edited", "top"}
 
 FX_NUM = {
     "sx": (-60.0, 60.0, 0.0), "sy": (-60.0, 60.0, 4.0), "blur": (0.0, 60.0, 8.0),
@@ -436,6 +535,12 @@ def clean_el_fields(raw, etype=None):
             out[k] = v
         elif k in ("color", "fill", "stroke"):
             out[k] = _color(v)
+        elif k == "gid":
+            # Which group this element belongs to. "" means none. Grouping is
+            # a shared label rather than a container: an element is still an
+            # ordinary element, it just answers to a name alongside others.
+            v = str(v or "")
+            out[k] = v if (v == "" or ID_RE.match(v)) else ""
         elif k == "bg":
             out[k] = _color(v, "", allow_blank=True)
         elif k == "src":
@@ -652,6 +757,86 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
                 result = await self._el_add(el)
                 if result:
                     await self._fan({"t": "el_add", "el": el, **result}, echo=True)
+
+        elif t == "ink_wipe":
+            # The duster, arriving in chunks so the wall keeps up with the
+            # hand. Chunks that share a gid merge into one undo step.
+            gid = str(content.get("gid") or "")
+            path = clean_points(content.get("path"))[: DUSTER_MAX_PATH * 2]
+            radius = _num(content.get("r"), 0.004, 0.16, 0.03)
+            if SEL_RE.match(gid) and len(path) >= 2:
+                result = await self._ink_wipe(gid, path, radius)
+                if result:
+                    await self._fan(
+                        {
+                            "t": "ink",
+                            "add": result["add"],
+                            "del": result["del"],
+                            "xform": [],
+                            "canUndo": result["canUndo"],
+                            "canRedo": result["canRedo"],
+                        },
+                        echo=True,
+                    )
+
+        elif t == "ink_band":
+            # Send handwriting behind the objects, or bring it back in front.
+            ids = clean_ids(content.get("ids"), MAX_XFORM_IDS)
+            if ids:
+                front = bool(content.get("front"))
+                result = await self._ink_band(ids, front)
+                if result:
+                    await self._fan(
+                        {"t": "ink_band", "ids": result["ids"], "front": front},
+                        echo=True,
+                    )
+
+        elif t == "el_multi":
+            # One message, one undo step, and it fans out as ordinary
+            # el_update frames so every client already understands it.
+            raw = content.get("items")
+            items = []
+            if isinstance(raw, (list, tuple)):
+                for it in raw[:MAX_TPL_ELS]:
+                    if not isinstance(it, dict):
+                        continue
+                    eid = str(it.get("id") or "")
+                    if not ID_RE.match(eid):
+                        continue
+                    patch = clean_el_fields(it.get("patch"), self._type_of(eid))
+                    if patch:
+                        items.append({"id": eid, "patch": patch})
+            if items:
+                result = await self._el_multi(items)
+                if result:
+                    for done in result["items"]:
+                        await self._fan(
+                            {
+                                "t": "el_update",
+                                "id": done["id"],
+                                "patch": done["patch"],
+                                "canUndo": result["canUndo"],
+                                "canRedo": result["canRedo"],
+                            },
+                            echo=True,
+                        )
+
+        elif t == "el_live_many":
+            # Mid-drag for a group. Broadcast, never stored.
+            raw = content.get("items")
+            items = []
+            if isinstance(raw, (list, tuple)):
+                for it in raw[:MAX_TPL_ELS]:
+                    if not isinstance(it, dict):
+                        continue
+                    eid = str(it.get("id") or "")
+                    if not ID_RE.match(eid):
+                        continue
+                    patch = clean_el_fields(it.get("patch"), self._type_of(eid))
+                    if patch:
+                        items.append({"id": eid, "patch": patch})
+            if items:
+                await self._fan({"t": "el_live_many", "items": items})
 
         elif t == "el_tpl":
             # A ready-made board. Many elements, one message, one undo entry.
@@ -984,6 +1169,8 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
     #    "items": [{"id": ..., "before": {...}, "after": {...}}]}
     #   {"op": "xform", "layer": "ink",
     #    "items": [{"ids": [...], "m": [a,b,c,d,e,f], "inv": [...]}]}
+    #   {"op": "splice", "layer": "ink", "gid": "...",
+    #    "items": [{"k": "out"|"in", "i": index, "s": {...}}]}
     #
     # "add" means those objects were put on the board; "del" means they were
     # taken off; "edit" means one element's fields changed. Undo applies the
@@ -1045,6 +1232,27 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
                     target.pop(k, None)
                 edits.append({"id": eid, "patch": want, "drop": drop})
             return {"add": [], "del": [], "edit": edits, "xform": []}
+
+        if op == "splice":
+            # Out and in together, in one step. Used by the duster (a stroke
+            # leaves, its surviving pieces arrive) and by reordering, where
+            # the same strokes leave and come back at different indices.
+            outs = [it for it in raw if isinstance(it, dict) and it.get("k") == "out"]
+            ins = [it for it in raw if isinstance(it, dict) and it.get("k") == "in"]
+            drop, put = (outs, ins) if forward else (ins, outs)
+            gone = {it["s"].get("id") for it in drop if "s" in it}
+            objects[:] = [o for o in objects if o.get("id") not in gone]
+            placed = []
+            for it in sorted(put, key=lambda i: i.get("i", 0)):
+                if "s" not in it:
+                    continue
+                idx = min(max(0, int(it.get("i", len(objects)))), len(objects))
+                objects.insert(idx, it["s"])
+                placed.append({"i": idx, "s": it["s"]})
+            return {
+                "add": placed, "del": sorted(i for i in gone if i),
+                "edit": [], "xform": [],
+            }
 
         items = [it for it in raw if isinstance(it, dict) and "s" in it]
         adding = (op == "add") == forward
@@ -1148,6 +1356,133 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
             self._touch_board()
             return {
                 "ids": ops["del"],
+                "canUndo": bool(page.history),
+                "canRedo": bool(page.undone),
+            }
+
+    @database_sync_to_async
+    def _ink_wipe(self, gid, path, radius):
+        """Rub out the part of every stroke the duster passed over.
+
+        Consecutive chunks of one wipe merge into a single history entry, so
+        a five-second rub is one Undo. Merging cancels pairs: a fragment that
+        chunk two removed and chunk one had added disappears from both lists,
+        or undo would put the intermediate fragment back alongside the
+        original stroke.
+        """
+        with transaction.atomic():
+            _, page = self._page_locked()
+            strokes = list(page.strokes or [])
+            counter = [0]
+
+            def new_id():
+                counter[0] += 1
+                return "w%s%d" % (uuid.uuid4().hex[:10], counter[0])
+
+            out, added = wipe_strokes(strokes, path, radius, new_id)
+            if not out:
+                return None
+
+            gone = {s["id"] for _, s in out}
+            strokes = [s for s in strokes if s["id"] not in gone]
+            placed = []
+            for idx, piece in sorted(added, key=lambda p: p[0]):
+                at = min(max(0, idx), len(strokes))
+                strokes.insert(at, piece)
+                placed.append({"i": at, "s": piece})
+
+            items = [{"k": "out", "i": i, "s": s} for i, s in out]
+            items += [{"k": "in", "i": p["i"], "s": p["s"]} for p in placed]
+
+            history = list(page.history or [])
+            last = history[-1] if history else None
+            if (
+                isinstance(last, dict)
+                and last.get("op") == "splice"
+                and last.get("layer") == "ink"
+                and last.get("gid") == gid
+            ):
+                merged = last.get("items", []) + items
+                # A fragment this wipe created and then rubbed away again
+                # never existed as far as the outside is concerned: drop both
+                # halves, or undo would restore the intermediate piece
+                # alongside the original stroke.
+                arrived = {it["s"]["id"] for it in merged if it["k"] == "in"}
+                left = {it["s"]["id"] for it in merged if it["k"] == "out"}
+                cancelled = arrived & left
+                last["items"] = [
+                    it for it in merged if it["s"]["id"] not in cancelled
+                ]
+                page.history = history
+                page.undone = []
+            else:
+                self._push(
+                    page,
+                    {"op": "splice", "layer": "ink", "gid": gid, "items": items},
+                )
+
+            page.strokes = strokes
+            page.save(update_fields=["strokes", "history", "undone", "updated_at"])
+            self._touch_board()
+            return {
+                "add": placed,
+                "del": sorted(gone),
+                "canUndo": bool(page.history),
+                "canRedo": bool(page.undone),
+            }
+
+    @database_sync_to_async
+    def _ink_band(self, ids, front):
+        """Move handwriting in front of the objects, or behind them."""
+        with transaction.atomic():
+            _, page = self._page_locked()
+            strokes = list(page.strokes or [])
+            want = set(ids)
+            moved = []
+            for st in strokes:
+                if st.get("id") in want and (st.get("top") is not False) != front:
+                    st["top"] = front
+                    moved.append(st["id"])
+            if not moved:
+                return None
+            page.strokes = strokes
+            page.save(update_fields=["strokes", "updated_at"])
+            self._touch_board()
+            return {"ids": moved}
+
+    @database_sync_to_async
+    def _el_multi(self, items):
+        """Patch many elements as one action.
+
+        Moving a group of eight is one thing the teacher did, so it is one
+        entry, holding the before and after of each element.
+        """
+        with transaction.atomic():
+            _, page = self._page_locked()
+            els = list(page.els or [])
+            by_id = {e.get("id"): e for e in els}
+            entry_items, done = [], []
+            for it in items:
+                el = by_id.get(it["id"])
+                if el is None:
+                    continue
+                patch = it["patch"]
+                before = {k: el[k] for k in patch if k in el}
+                if all(el.get(k) == v for k, v in patch.items()):
+                    continue
+                el.update(patch)
+                entry_items.append(
+                    {"id": it["id"], "before": before, "after": dict(patch)}
+                )
+                done.append({"id": it["id"], "patch": patch})
+            if not done:
+                return None
+            self._push(page, {"op": "edit", "layer": "els", "items": entry_items})
+            page.els = els
+            page.save(update_fields=["els", "history", "undone", "updated_at"])
+            self._touch_board()
+            return {
+                "items": done,
                 "canUndo": bool(page.history),
                 "canRedo": bool(page.undone),
             }

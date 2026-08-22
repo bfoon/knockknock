@@ -275,6 +275,7 @@
     } else {
       global.addEventListener("resize", this._sync);
     }
+    liveLayers.push(this);
     this.resize();
   }
 
@@ -400,6 +401,10 @@
     /* Always written, so every element is its own stacking context and a blend
      * mode has something real to blend against. */
     node.style.transform = "rotate(" + (el.rot || 0) + "deg)";
+    /* Which side of the handwriting this object sits on. The bands are set
+     * out in chalk.css by .chalk-layer. */
+    if (el.top) node.dataset.top = "1";
+    else delete node.dataset.top;
   };
 
   Layer.prototype._draw = function (el) {
@@ -451,7 +456,24 @@
     if (this.nodes[id]) this.host.appendChild(this.nodes[id]);
   };
 
+  /* Every layer on the page, so a bulk element frame can be applied without
+   * the page's own message handler knowing the frame type exists — the same
+   * arrangement ChalkInk uses for moved ink, and for the same reason: a
+   * dropped frame does not look like a missing case, it looks like the
+   * feature is broken. chalk_net.js calls this on every inbound frame. */
+  var liveLayers = [];
+
+  function applyElFrame(msg) {
+    if (!msg || !liveLayers.length) return;
+    if (msg.t !== "el_live_many" || !msg.items) return;
+    msg.items.forEach(function (item) {
+      if (!item || !item.id || !item.patch) return;
+      liveLayers.forEach(function (l) { l.patch(item.id, item.patch); });
+    });
+  }
+
   global.ChalkEls = {
-    Layer: Layer, blank: blank, newId: newId, FONTS: FONTS, shade: shade, applyFx: applyFx
+    Layer: Layer, blank: blank, newId: newId, FONTS: FONTS, shade: shade,
+    applyFx: applyFx, applyElFrame: applyElFrame, layers: liveLayers
   };
 })(window);

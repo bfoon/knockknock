@@ -256,6 +256,11 @@
   function copyStroke(s) {
     return {
       id: s.id, tool: s.tool, color: s.color, top: s.top !== false,
+      /* Who drew it. Left out of this copy at first, which is why hovering
+       * handwriting found no author while hovering a text box found one:
+       * elements are deep-copied whole, strokes are copied field by field,
+       * and this field was not in the list. */
+      by: s.by || "",
       w: s.w, pts: (s.pts || []).slice()
     };
   }

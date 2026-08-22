@@ -17,19 +17,12 @@
 (function (global) {
   "use strict";
 
-  /* A new mark is worth pointing out for a while and then not: a board that
-   * keeps every bubble is a board covered in faces. */
-  var FRESH_MS = 22000;
-  var LIVE_TAIL_MS = 2600;
-  var MAX_BUBBLES = 14;
-
   var people = Object.create(null);   // id -> card
   var me = null;
   var host = null;                    // .chalk-board
   var root = null;                    // our overlay
   var strip = null;                   // the row of who is here
   var linkBox = null, linkLine = null, linkFace = null;
-  var bubbles = [];                   // { id, by, x, y, at, node }
   var hovered = null;
   var mounted = false;
 
@@ -73,6 +66,15 @@
 
   /* ---- mounting ------------------------------------------------------ */
 
+  /* `hidden` is a property of HTMLElement. An <svg> is not one, so
+   * `svg.hidden = true` quietly sets a meaningless property, no attribute
+   * appears, the [hidden] rule never matches, and the dashed leader line
+   * stayed on the board after the pointer had left — pointing at nothing. */
+  function show(node, on) {
+    if (on) node.removeAttribute("hidden");
+    else node.setAttribute("hidden", "");
+  }
+
   function mount() {
     if (mounted) return true;
     host = document.querySelector(".chalk-board");
@@ -86,14 +88,14 @@
 
     linkBox = document.createElement("div");
     linkBox.className = "who-ring";
-    linkBox.hidden = true;
+    show(linkBox, false);
     root.appendChild(linkBox);
 
     linkLine = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     linkLine.setAttribute("class", "who-line");
     linkLine.setAttribute("viewBox", "0 0 100 100");
     linkLine.setAttribute("preserveAspectRatio", "none");
-    linkLine.hidden = true;
+    show(linkLine, false);
     var path = document.createElementNS(linkLine.namespaceURI, "line");
     path.setAttribute("vector-effect", "non-scaling-stroke");
     linkLine.appendChild(path);
@@ -102,7 +104,7 @@
 
     linkFace = document.createElement("div");
     linkFace.className = "who-tag";
-    linkFace.hidden = true;
+    show(linkFace, false);
     root.appendChild(linkFace);
 
     strip = document.createElement("div");
@@ -142,7 +144,8 @@
     if (t === "ready" || t === "snapshot") {
       if (msg.me) { me = msg.me; me.on = true; people[me.id] = me; }
       (msg.people || []).forEach(function (p) { people[p.id] = p; });
-      clearBubbles();
+      clearMarks();
+      seedMarks(msg);
       drawStrip();
       return;
     }
@@ -153,101 +156,192 @@
       drawStrip();
       return;
     }
-    /* Somebody else's stroke, live. The bubble rides the leading point, so
-     * the room can see who is writing while they write. */
-    if (t === "stroke_start" || t === "stroke_pts") {
-      var pt = lastPoint(msg);
-      if (pt) live(msg.id || msg.stroke && msg.stroke.id, pt, msg.by);
-      return;
-    }
+    /* Something arriving. The mark is pinned to it and stays. */
     if (t === "stroke_end" && msg.stroke) {
-      var s = msg.stroke;
-      var end = tailOf(s.pts);
-      if (end) bubble("s:" + s.id, s.by, end[0], end[1]);
+      noteMark("ink", msg.stroke.id, msg.stroke.by || msg.by);
       return;
     }
     if (t === "el_add" && msg.el) {
-      bubble("e:" + msg.el.id, msg.el.by,
-        msg.el.x + msg.el.w, msg.el.y);
+      noteMark("el", msg.el.id, msg.el.by || msg.by);
       return;
     }
     if (t === "ink" && msg.add) {
       msg.add.forEach(function (item) {
-        var end = item && item.s && tailOf(item.s.pts);
-        if (end) bubble("s:" + item.s.id, item.s.by, end[0], end[1]);
+        if (item && item.s) noteMark("ink", item.s.id, item.s.by || msg.by);
       });
-    }
-  }
-
-  function tailOf(pts) {
-    if (!pts || pts.length < 2) return null;
-    return [pts[pts.length - 2], pts[pts.length - 1]];
-  }
-
-  function lastPoint(msg) {
-    if (msg.pts && msg.pts.length >= 2) return tailOf(msg.pts);
-    if (msg.stroke && msg.stroke.pts) return tailOf(msg.stroke.pts);
-    return null;
-  }
-
-  /* ---- bubbles ------------------------------------------------------- */
-
-  function bubble(key, by, x, y) {
-    if (!by || (me && String(by) === me.id)) return;   // not your own
-    var p = card(by);
-    var found = bubbles.filter(function (b) { return b.key === key; })[0];
-    if (found) {
-      found.x = x;
-      found.y = y;
-      found.at = Date.now();
-      place(found);
+      /* A move by somebody else: whose hands are on it. */
+      (msg.xform || []).forEach(function (op) {
+        (op.ids || []).forEach(function (id) { noteMover("ink", id, msg.by); });
+      });
       return;
     }
+    if (t === "els" && msg.add) {
+      msg.add.forEach(function (item) {
+        if (item && item.s) noteMark("el", item.s.id, item.s.by || msg.by);
+      });
+      return;
+    }
+
+    /* Mid-gesture. Nothing is stored for these, and neither is anything
+     * here beyond "this person has hold of this thing right now". */
+    if (t === "ink_live") {
+      (msg.ids || []).forEach(function (id) { noteMover("ink", id, msg.by); });
+      return;
+    }
+    if (t === "el_live" && msg.id) {
+      noteMover("el", msg.id, msg.by);
+      return;
+    }
+    if (t === "el_live_many") {
+      (msg.items || []).forEach(function (item) {
+        if (item && item.id) noteMover("el", item.id, msg.by);
+      });
+      return;
+    }
+    if (t === "el_update" && msg.id) {
+      noteMover("el", msg.id, msg.by);
+      return;
+    }
+  }
+
+  /* Everything already on the page when you arrive. Without this a board
+   * only labelled what happened while you were watching. */
+  function seedMarks(msg) {
+    (msg.strokes || []).forEach(function (st) { noteMark("ink", st.id, st.by); });
+    (msg.els || []).forEach(function (el) { noteMark("el", el.id, el.by); });
+  }
+
+  /* ---- marks ----------------------------------------------------------
+   *
+   * A mark is a face pinned to a thing on the board, and it stays there.
+   * It used to be a face dropped at a coordinate that faded after twenty
+   * seconds, which meant it drifted off whatever it was labelling the
+   * moment that thing moved, and then vanished — so a board you came back
+   * to could not tell you who had written any of it.
+   *
+   * Now each one holds the id of what it belongs to and is re-read from
+   * that thing's own geometry a few times a second. It follows a move,
+   * survives a page being scrolled or zoomed, and goes when the thing goes.
+   * The name beside it is what fades: after a few seconds all that is left
+   * is the small circle, which is enough once you know who is in the room.
+   */
+
+  var marks = Object.create(null);    // key -> { by, kind, id, node, at }
+  var movers = Object.create(null);   // id  -> { by, kind, at }
+  var NAME_MS = 6000;
+  var MOVER_TAIL_MS = 2200;
+  var MAX_MARKS = 40;
+
+  function markKey(kind, id) { return kind + ":" + id; }
+
+  function noteMark(kind, id, by) {
+    if (!by || !id) return;
+    if (me && String(by) === me.id) return;   // not your own
+    var key = markKey(kind, id);
+    if (marks[key]) { marks[key].by = by; return; }
+    var p = card(by);
     var node = document.createElement("div");
-    node.className = "who-bubble";
-    node.appendChild(faceNode(p, 26));
+    node.className = "who-mark";
+    node.appendChild(faceNode(p, 22));
     var tag = document.createElement("span");
     tag.className = "who-name";
     tag.textContent = p ? p.name.split(" ")[0] : "Someone";
     node.appendChild(tag);
     root.appendChild(node);
-    var b = { key: key, by: by, x: x, y: y, at: Date.now(), node: node };
-    bubbles.push(b);
-    place(b);
-    /* Oldest goes first when the board gets busy. */
-    while (bubbles.length > MAX_BUBBLES) {
-      var old = bubbles.shift();
-      old.node.remove();
+    marks[key] = { by: by, kind: kind, id: id, node: node, at: Date.now() };
+    trimMarks();
+  }
+
+  /* A board can hold a great many marks, and a face on every one of them is
+   * a board you cannot read. Oldest go first. */
+  function trimMarks() {
+    var keys = Object.keys(marks);
+    if (keys.length <= MAX_MARKS) return;
+    keys.sort(function (a, b) { return marks[a].at - marks[b].at; });
+    keys.slice(0, keys.length - MAX_MARKS).forEach(dropMark);
+  }
+
+  function dropMark(key) {
+    if (!marks[key]) return;
+    marks[key].node.remove();
+    delete marks[key];
+  }
+
+  function clearMarks() {
+    Object.keys(marks).forEach(dropMark);
+    movers = Object.create(null);
+  }
+
+  /* Where is the thing now? Returns its top-right corner, or null if it has
+   * been rubbed out — which is how a mark learns to remove itself. */
+  function anchorOf(kind, id) {
+    var els = global.ChalkEls, ink = global.ChalkInk;
+    if (kind === "el") {
+      var layers = (els && els.layers) || [];
+      for (var i = 0; i < layers.length; i++) {
+        var el = layers[i].get(id);
+        if (el) return { x: el.x + el.w, y: el.y };
+      }
+      return null;
+    }
+    var surfaces = (ink && ink.surfaces) || [];
+    for (var j = 0; j < surfaces.length; j++) {
+      if (!surfaces[j].byId(id)) continue;
+      var box = surfaces[j].bboxOf([id]);
+      if (box) return { x: box.x + box.w, y: box.y };
+    }
+    return null;
+  }
+
+  function noteMover(kind, id, by) {
+    if (!by || !id) return;
+    if (me && String(by) === me.id) return;
+    movers[markKey(kind, id)] = { by: by, kind: kind, id: id, at: Date.now() };
+    /* Somebody moving a thing is worth a face even when the thing is yours
+     * — that is the question being asked: who is doing that. */
+    var key = markKey(kind, id);
+    if (!marks[key]) {
+      var p = card(by);
+      var node = document.createElement("div");
+      node.className = "who-mark is-moving";
+      node.appendChild(faceNode(p, 22));
+      var tag = document.createElement("span");
+      tag.className = "who-name";
+      tag.textContent = (p ? p.name.split(" ")[0] : "Someone") + " is moving this";
+      node.appendChild(tag);
+      root.appendChild(node);
+      marks[key] = {
+        by: by, kind: kind, id: id, node: node, at: Date.now(), borrowed: true
+      };
+      trimMarks();
+    } else {
+      marks[key].at = Date.now();
+      marks[key].node.classList.add("is-moving");
     }
   }
 
-  function live(key, pt, by) {
-    if (!key) return;
-    bubble("live:" + key, by, pt[0], pt[1]);
-  }
+  var lastPlace = 0;
 
-  function place(b) {
-    b.node.style.left = (b.x * 100) + "%";
-    b.node.style.top = (b.y * 100) + "%";
-  }
-
-  function clearBubbles() {
-    bubbles.forEach(function (b) { b.node.remove(); });
-    bubbles = [];
-  }
-
-  function tick() {
-    var now = Date.now();
-    for (var i = bubbles.length - 1; i >= 0; i--) {
-      var b = bubbles[i];
-      var age = now - b.at;
-      var life = b.key.indexOf("live:") === 0 ? LIVE_TAIL_MS : FRESH_MS;
-      if (age > life) {
-        b.node.remove();
-        bubbles.splice(i, 1);
-      } else if (age > life - 900) {
-        b.node.style.opacity = String((life - age) / 900);
-      }
+  function tick(now) {
+    /* Six times a second is plenty for a face following a finger, and it
+     * keeps a page of forty marks off the compositor's back. */
+    if (!lastPlace || now - lastPlace > 160) {
+      lastPlace = now;
+      var stamp = Date.now();
+      Object.keys(marks).forEach(function (key) {
+        var m = marks[key];
+        var at = anchorOf(m.kind, m.id);
+        if (!at) { dropMark(key); return; }
+        m.node.style.left = (at.x * 100) + "%";
+        m.node.style.top = (at.y * 100) + "%";
+        var moving = movers[key] && stamp - movers[key].at < MOVER_TAIL_MS;
+        if (!moving && m.node.classList.contains("is-moving")) {
+          m.node.classList.remove("is-moving");
+          if (m.borrowed) { dropMark(key); return; }
+        }
+        /* The name goes quiet; the circle stays. */
+        m.node.classList.toggle("is-quiet", !moving && stamp - m.at > NAME_MS);
+      });
     }
     requestAnimationFrame(tick);
   }
@@ -306,16 +400,16 @@
   function setHover(found) {
     if (!found || !found.by) {
       hovered = null;
-      linkBox.hidden = true;
-      linkLine.hidden = true;
-      linkFace.hidden = true;
+      show(linkBox, false);
+      show(linkLine, false);
+      show(linkFace, false);
       return;
     }
     hovered = found;
     var p = card(found.by);
     var b = found.box;
 
-    linkBox.hidden = false;
+    show(linkBox, true);
     linkBox.dataset.kind = found.kind;
     linkBox.style.left = (b.x * 100) + "%";
     linkBox.style.top = (b.y * 100) + "%";
@@ -329,7 +423,7 @@
     var fx = Math.min(0.94, Math.max(0.06, b.x + b.w / 2));
     var fy = above ? b.y - 0.1 : b.y + b.h + 0.1;
 
-    linkFace.hidden = false;
+    show(linkFace, true);
     linkFace.textContent = "";
     linkFace.appendChild(faceNode(p, 34));
     var name = document.createElement("span");
@@ -340,7 +434,7 @@
     linkFace.style.top = (fy * 100) + "%";
     linkFace.style.borderColor = colourOf(p);
 
-    linkLine.hidden = false;
+    show(linkLine, true);
     linkLine._line.setAttribute("x1", fx * 100);
     linkLine._line.setAttribute("y1", fy * 100);
     linkLine._line.setAttribute("x2", (b.x + b.w / 2) * 100);
@@ -357,10 +451,10 @@
       .map(function (k) { return people[k]; })
       .filter(function (p) { return p.on; });
     if (here.length < 2) {
-      strip.hidden = true;
+      show(strip, false);
       return;
     }
-    strip.hidden = false;
+    show(strip, true);
     here.slice(0, 12).forEach(function (p) {
       var face = faceNode(p, 26);
       face.title = p.name;

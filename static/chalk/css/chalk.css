@@ -1184,19 +1184,50 @@ body.inspecting.insp-collapsed .c-scroll { padding-bottom: 110px; }
 }
 .who-face img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-/* Beside a fresh mark, and beside the tip of one being drawn right now. */
-.who-bubble {
+/* Pinned to the thing it belongs to, and it stays there: it follows the
+   thing when the thing is moved and goes when the thing goes. The name
+   beside it is what quietens down after a few seconds — the circle is the
+   part that has to keep answering "who wrote this". */
+.who-mark {
   position: absolute;
-  transform: translate(-14px, -110%);
+  transform: translate(-11px, -60%);
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 9px 3px 3px;
+  padding: 2px 9px 2px 2px;
   border-radius: 999px;
   background: rgba(16,21,27,.82);
   backdrop-filter: blur(6px);
-  transition: opacity .25s linear;
+  transition: padding .3s ease, background .3s ease;
   white-space: nowrap;
+}
+.who-mark .who-name {
+  max-width: 160px;
+  transition: max-width .3s ease, opacity .25s linear, margin .3s ease;
+  overflow: hidden;
+}
+.who-mark.is-quiet {
+  padding: 2px;
+  background: transparent;
+  backdrop-filter: none;
+}
+.who-mark.is-quiet .who-name {
+  max-width: 0;
+  opacity: 0;
+  margin-right: -6px;
+}
+/* Somebody has hold of it right now. */
+.who-mark.is-moving {
+  background: rgba(16,21,27,.9);
+  padding: 2px 10px 2px 2px;
+}
+.who-mark.is-moving .who-face { animation: who-hold 1.1s ease-in-out infinite; }
+@keyframes who-hold {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.14); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .who-mark.is-moving .who-face { animation: none; }
 }
 .who-name {
   font-size: 12px;
@@ -1232,6 +1263,9 @@ body.inspecting.insp-collapsed .c-scroll { padding-bottom: 110px; }
   overflow: visible;
 }
 .who-line line { stroke-width: 2; stroke-dasharray: 4 4; opacity: .85; }
+/* An <svg> takes no notice of the `hidden` property, only of the attribute
+   — see `show()` in chalk_who.js. This rule is the other half of that. */
+.who-line[hidden] { display: none; }
 .who-tag {
   position: absolute;
   transform: translate(-50%, -50%);

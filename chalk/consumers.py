@@ -1116,12 +1116,20 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
     # ------------------------------------------------------------------
 
     async def _fan(self, payload, echo=False):
-        """`echo=True` sends the frame back to the originator too.
+        """Broadcast to the room.
 
-        Used for anything the sender cannot have applied correctly on its own
-        — erases carry authoritative undo flags, and undo/redo ops are
-        computed server-side.
+        Everything that leaves here carries who sent it. Doing it in one
+        place rather than at each call site means a frame added later cannot
+        forget to say — and it is what lets the board show who is moving a
+        thing while they are still moving it, not only once they let go.
+
+        `echo=True` sends the frame back to the originator too. Used for
+        anything the sender cannot have applied correctly on its own — erases
+        carry authoritative undo flags, and undo/redo ops are computed
+        server-side.
         """
+        if self.person_id and "by" not in payload:
+            payload = dict(payload, by=self.person_id)
         await self.channel_layer.group_send(
             self.group,
             {

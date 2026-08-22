@@ -69,6 +69,7 @@ from .models import (
     MAX_POINTS,
     MAX_STROKES_PER_PAGE,
     MAX_TEXT,
+    MAX_PASTE_STROKES,
     MAX_TPL_ELS,
     MAX_UNDO,
     MAX_XFORM_IDS,
@@ -838,6 +839,43 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
             if items:
                 await self._fan({"t": "el_live_many", "items": items})
 
+        elif t == "paste":
+            # Copies arrive already built by the phone: new ids, nudged
+            # across, everything else exactly as it was. The server's job is
+            # to check them and land the objects and the writing in ONE undo
+            # step, which is what the entry's `also` half is for.
+            raw_els = content.get("els")
+            raw_ink = content.get("strokes")
+            els, strokes = [], []
+            if isinstance(raw_els, (list, tuple)):
+                for item in raw_els[:MAX_TPL_ELS]:
+                    cleaned = clean_el(item)
+                    if cleaned:
+                        els.append(cleaned)
+            if isinstance(raw_ink, (list, tuple)):
+                for item in raw_ink[:MAX_PASTE_STROKES]:
+                    cleaned = clean_stroke(item)
+                    if cleaned:
+                        strokes.append(cleaned)
+            if els or strokes:
+                result = await self._paste(els, strokes)
+                if result:
+                    flags = {
+                        "canUndo": result["canUndo"], "canRedo": result["canRedo"]
+                    }
+                    if result["add"]:
+                        await self._fan(
+                            {
+                                "t": "ink", "add": result["add"], "del": [],
+                                "xform": [], **flags,
+                            },
+                            echo=True,
+                        )
+                    for placed in result["els"]:
+                        await self._fan(
+                            {"t": "el_add", "el": placed, **flags}, echo=True
+                        )
+
         elif t == "el_tpl":
             # A ready-made board. Many elements, one message, one undo entry.
             raw = content.get("els")
@@ -1356,6 +1394,65 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
             self._touch_board()
             return {
                 "ids": ops["del"],
+                "canUndo": bool(page.history),
+                "canRedo": bool(page.undone),
+            }
+
+    @database_sync_to_async
+    def _paste(self, els, strokes):
+        """Land a copied selection — objects, writing, or both — as one action.
+
+        Both halves go in a single entry, the ink as the entry itself and the
+        objects as its `also`, so pasting a labelled diagram is one Undo
+        rather than one per piece.
+        """
+        with transaction.atomic():
+            _, page = self._page_locked()
+            cur_ink = list(page.strokes or [])
+            cur_els = list(page.els or [])
+
+            have_ink = {s.get("id") for s in cur_ink}
+            room_ink = MAX_STROKES_PER_PAGE - len(cur_ink)
+            ink_items, added = [], []
+            for st in strokes:
+                if len(added) >= room_ink or st["id"] in have_ink:
+                    continue
+                have_ink.add(st["id"])
+                cur_ink.append(st)
+                item = {"i": len(cur_ink) - 1, "s": st}
+                ink_items.append(item)
+                added.append(item)
+
+            have_els = {e.get("id") for e in cur_els}
+            room_els = MAX_ELS_PER_PAGE - len(cur_els)
+            el_items, placed = [], []
+            for el in els:
+                if len(placed) >= room_els or el["id"] in have_els:
+                    continue
+                have_els.add(el["id"])
+                cur_els.append(el)
+                el_items.append({"i": len(cur_els) - 1, "s": el})
+                placed.append(el)
+
+            if not ink_items and not el_items:
+                return None
+
+            entry = {"op": "add", "layer": "ink", "items": ink_items}
+            if el_items:
+                entry["also"] = {"op": "add", "layer": "els", "items": el_items}
+            self._push(page, entry)
+
+            page.strokes = cur_ink
+            page.els = cur_els
+            page.save(
+                update_fields=["strokes", "els", "history", "undone", "updated_at"]
+            )
+            self._touch_board()
+            if placed:
+                self._remember_types(cur_els)
+            return {
+                "add": added,
+                "els": placed,
                 "canUndo": bool(page.history),
                 "canRedo": bool(page.undone),
             }

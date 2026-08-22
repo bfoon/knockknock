@@ -55,6 +55,11 @@ MAX_XFORM_IDS = 1500
 # Undo, not forty. The biggest template in the library is under fifty.
 MAX_TPL_ELS = 80
 
+# Strokes in one paste. Copying a whole page of handwriting and dropping it
+# on the next one is a reasonable thing to want; copying four thousand
+# strokes in one message is not.
+MAX_PASTE_STROKES = 1200
+
 
 # ----------------------------------------------------------------------
 # image addresses

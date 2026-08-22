@@ -137,10 +137,12 @@
       case "ink":
         surface.applyOps(m.add, m.del, m.xform);
         setHistory(m.canUndo, m.canRedo);
-        /* Strokes appearing or vanishing (an undone wipe, a redone erase)
-         * invalidates the picked set; a move only shifts it. */
-        if ((m.add && m.add.length) || (m.del && m.del.length)) clearInk();
-        else if (m.xform && m.xform.length) reboxInk();
+        /* Re-read the box rather than dropping the selection. Strokes come
+         * and go for reasons that have nothing to do with what is picked —
+         * an undone wipe, and now the echo of your own paste, which used to
+         * clear the very selection the paste had just made. reboxInk drops
+         * ids that really did vanish and clears out if none are left. */
+        reboxInk();
         break;
       case "els":
         layer.applyOps(m.add, m.del, m.edit);
@@ -161,6 +163,7 @@
         layer.remove(m.ids);
         setHistory(m.canUndo, m.canRedo);
         if (m.ids.indexOf(editor.selected) !== -1) editor.select(null);
+        reboxInk();
         break;
       case "el_raise": layer.raise(m.id); editor.refresh(); break;
       case "surface": setSurfaceButtons(m.surface); break;
@@ -583,6 +586,168 @@
     editor.refresh();
     net.send({ t: "el_update", id: id, patch: patch });
   }
+
+  /* ------------------------------------------------------------------ */
+  /* copy, paste, duplicate                                              */
+  /*                                                                     */
+  /* The clipboard holds deep copies taken at the moment of copying, so a  */
+  /* paste is what was copied even if the original has since been moved,   */
+  /* recoloured or deleted. It outlives page changes: copying a heading on  */
+  /* page one and pasting it on page four is the whole point.              */
+  /* ------------------------------------------------------------------ */
+
+  var clip = null;          // { els: [...], strokes: [...] }
+  var pasteRun = 0;         // how far to nudge the next paste across
+  var pasteBtn = document.getElementById("paste");
+
+  function deepCopy(v) { return JSON.parse(JSON.stringify(v)); }
+
+  function copySelection(elList, inkList) {
+    var els = (elList || []).map(function (id) {
+      var el = layer.get(id);
+      return el ? deepCopy(el) : null;
+    }).filter(Boolean);
+    var strokes = (inkList || []).map(function (id) {
+      var st = surface.byId(id);
+      return st ? deepCopy(st) : null;
+    }).filter(Boolean);
+    if (!els.length && !strokes.length) return false;
+    clip = { els: els, strokes: strokes };
+    pasteRun = 0;
+    pasteBtn.disabled = false;
+    return true;
+  }
+
+  /* Where a paste lands. Each successive paste of the same clipboard steps
+   * further down and across, so pasting five times gives five visible
+   * copies rather than one pile. */
+  function pasteOffset(bounds) {
+    var step = 0.022 * (pasteRun + 1);
+    var dx = step, dy = step * 16 / 9;
+    /* Do not walk it off the edge of the board — wrap back to the top left
+     * once the cascade runs out of room. */
+    if (bounds.x + bounds.w + dx > 1.05 || bounds.y + bounds.h + dy > 1.05) {
+      pasteRun = 0;
+      dx = 0.022;
+      dy = 0.022 * 16 / 9;
+    }
+    return { dx: dx, dy: dy };
+  }
+
+  function clipBounds(c) {
+    var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    c.els.forEach(function (el) {
+      x0 = Math.min(x0, el.x); y0 = Math.min(y0, el.y);
+      x1 = Math.max(x1, el.x + el.w); y1 = Math.max(y1, el.y + el.h);
+    });
+    c.strokes.forEach(function (st) {
+      for (var i = 0; i < st.pts.length; i += 2) {
+        x0 = Math.min(x0, st.pts[i]); x1 = Math.max(x1, st.pts[i]);
+        y0 = Math.min(y0, st.pts[i + 1]); y1 = Math.max(y1, st.pts[i + 1]);
+      }
+    });
+    if (x0 === Infinity) return null;
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  }
+
+  function pasteClip() {
+    if (!clip) return say("Copy something first.");
+    var bounds = clipBounds(clip);
+    if (!bounds) return;
+    var off = pasteOffset(bounds);
+    pasteRun++;
+
+    /* A copied group becomes its own group rather than joining the original:
+     * two diagrams that move as one whenever either is touched is not what
+     * anybody means by "duplicate". */
+    var gidMap = Object.create(null);
+
+    var els = clip.els.map(function (src) {
+      var el = deepCopy(src);
+      el.id = ChalkEls.newId();
+      el.x = r4(el.x + off.dx);
+      el.y = r4(el.y + off.dy);
+      if (el.gid) {
+        if (!gidMap[el.gid]) gidMap[el.gid] = "g" + ChalkEls.newId();
+        el.gid = gidMap[el.gid];
+      }
+      return el;
+    });
+
+    var strokes = clip.strokes.map(function (src) {
+      var st = deepCopy(src);
+      st.id = ChalkInk.newId();
+      var pts = st.pts.slice();
+      for (var i = 0; i < pts.length; i += 2) {
+        pts[i] = r4(pts[i] + off.dx);
+        pts[i + 1] = r4(pts[i + 1] + off.dy);
+      }
+      st.pts = pts;
+      return st;
+    });
+
+    els.forEach(function (el) { layer.upsert(el); });
+    strokes.forEach(function (st) { surface.commit(st); });
+    net.send({ t: "paste", els: els, strokes: strokes });
+    setHistory(true, false);
+
+    setTool("select");
+    selectMany(
+      strokes.map(function (st) { return st.id; }),
+      els.map(function (el) { return el.id; })
+    );
+    var n = els.length + strokes.length;
+    say("Pasted " + n + (n === 1 ? " piece." : " pieces."));
+  }
+
+  function duplicateSelection(elList, inkList) {
+    if (!copySelection(elList, inkList)) return;
+    pasteClip();
+  }
+
+  document.getElementById("sel-copy").addEventListener("click", function () {
+    if (copySelection(elIds, inkIds)) {
+      say("Copied. Paste it here or on any other page.");
+    }
+  });
+  document.getElementById("sel-dupe").addEventListener("click", function () {
+    duplicateSelection(elIds, inkIds);
+  });
+  document.getElementById("el-copy").addEventListener("click", function () {
+    if (editor.selected && copySelection([editor.selected], [])) {
+      say("Copied. Paste it here or on any other page.");
+    }
+  });
+  document.getElementById("el-dupe").addEventListener("click", function () {
+    if (editor.selected) duplicateSelection([editor.selected], []);
+  });
+  pasteBtn.addEventListener("click", pasteClip);
+
+  /* The controller is usually a phone, but it is a web page, so anyone
+   * driving it from a laptop gets the shortcuts they already expect. */
+  document.addEventListener("keydown", function (e) {
+    if (!(e.metaKey || e.ctrlKey)) return;
+    var t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" ||
+              t.isContentEditable)) return;
+    var key = String(e.key || "").toLowerCase();
+    if (key === "c") {
+      var picked = editor.selected ? [editor.selected] : elIds;
+      if (copySelection(picked, editor.selected ? [] : inkIds)) {
+        e.preventDefault();
+        say("Copied.");
+      }
+    } else if (key === "v") {
+      if (!clip) return;
+      e.preventDefault();
+      pasteClip();
+    } else if (key === "d") {
+      var dup = editor.selected ? [editor.selected] : elIds;
+      if (!dup.length && !inkIds.length) return;
+      e.preventDefault();
+      duplicateSelection(dup, editor.selected ? [] : inkIds);
+    }
+  });
 
   function afterElChange() {
     editor.refresh();

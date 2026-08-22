@@ -1619,6 +1619,59 @@
     });
   });
 
+  /* ---- icons ---------------------------------------------------------
+   *
+   * An icon is several strokes — an envelope is a box and two lines — so it
+   * arrives as a handful of elements sharing one group label. It moves and
+   * resizes as one thing, and it still comes apart: colour the ring of the
+   * key differently from the shaft, or drag one corner of the roof.
+   */
+  function insertIcon(ic) {
+    var w = Math.min(1.2, 0.2 / state.view.s);
+    /* Square on screen, which on a 16:9 board is not square in the numbers. */
+    var box = {
+      x: state.view.x + 0.5 / state.view.s - w / 2,
+      y: state.view.y + 0.5 / state.view.s - (w * 16 / 9) / 2,
+      w: w, h: w * 16 / 9
+    };
+    var els;
+    try {
+      els = ChalkIcons.build(ic, box, ChalkTemplates.palette(state.surface));
+    } catch (err) {
+      return say("That icon could not be built.");
+    }
+    if (!els || !els.length) return;
+    var gid = "g" + ChalkEls.newId();
+    els.forEach(function (el) {
+      el.gid = gid;
+      layer.upsert(el);
+    });
+    closeSheet();
+    net.send({ t: "el_tpl", els: els });
+    setHistory(true, false);
+    setTool("select");
+    selectMany([], [els[0].id]);
+    say(ic.name + " added — it moves as one, or ungroup it to take it apart.");
+  }
+
+  document.getElementById("add-icon").addEventListener("click", function () {
+    if (!window.ChalkIcons) return say("The icons did not load.");
+    openSheet("Icons", function (body) {
+      ChalkIcons.cats.forEach(function (cat) {
+        body.appendChild(rowLabel(cat));
+        var grid = document.createElement("div");
+        grid.className = "pick-grid";
+        ChalkIcons.list.filter(function (ic) {
+          return ic.cat === cat;
+        }).forEach(function (ic) {
+          grid.appendChild(pickButton(ChalkIcons.preview(ic), ic.name,
+            function () { insertIcon(ic); }));
+        });
+        body.appendChild(grid);
+      });
+    });
+  });
+
   document.getElementById("add-free").addEventListener("click", function () {
     openSheet("Start a free shape", function (body) {
       var note = document.createElement("p");

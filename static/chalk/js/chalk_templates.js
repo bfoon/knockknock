@@ -1089,6 +1089,13 @@
   global.ChalkTemplates = {
     subjects: SUBJECTS,
     list: LIST,
-    palette: palette
+    palette: palette,
+    /* Shared with chalk_icons.js, so there is one set of element builders
+     * rather than two that drift apart. */
+    make: {
+      text: text, shape: shp, poly: poly, seg: seg, box: box,
+      circle: circle, arrow: arrow, petal: petal, ring: ring,
+      crescent: crescent, put: put
+    }
   };
 })(window);

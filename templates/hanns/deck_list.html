@@ -1,118 +1,143 @@
-{% load static %}<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Your decks · Hanns</title>
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Your decks · Hanns{% endblock %}
+
+{# Standard KnockKnock page shell: shared nav + drawer come from base.html,
+   the gradient/noise background comes from .kk-standard-page in app.css. #}
+{% block body_class %}kk-standard-page{% endblock %}
+
+{% block head_extra %}
+{# The deck thumbnails are painted live by hanns_core.js using whatever font
+   the slide author picked, so the full Hanns font set has to load here — this
+   is NOT page chrome and must not be trimmed to the app.css stack. #}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Archivo:wght@400;500;600;700;800&family=Archivo+Expanded:wght@600;700;800&family=Spline+Sans+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800;900&family=Manrope:wght@300;400;500;600;700;800&family=Poppins:wght@300;400;500;600;700;800;900&family=Montserrat:wght@300;400;500;600;700;800;900&family=Roboto:wght@300;400;500;700;900&family=Open+Sans:wght@300;400;500;600;700;800&family=Lato:wght@300;400;700;900&family=Nunito+Sans:wght@300;400;600;700;800;900&family=Raleway:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=DM+Serif+Display:ital@0;1&family=Bebas+Neue&family=Oswald:wght@300;400;500;600;700&family=Merriweather:wght@300;400;700;900&family=Libre+Baskerville:wght@400;700&family=Lora:ital,wght@0,400..700;1,400..700&family=Cormorant+Garamond:ital,wght@0,300..700;1,300..700&family=Space+Grotesk:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Barlow+Condensed:wght@300;400;500;600;700;800&family=Rubik:wght@300;400;500;600;700;800;900&family=Quicksand:wght@300;400;500;600;700&family=Sora:wght@300;400;500;600;700;800&family=Exo+2:wght@300;400;500;600;700;800;900&family=Ubuntu:wght@300;400;500;700&family=Work+Sans:wght@300;400;500;600;700;800;900&family=Noto+Sans:wght@300;400;500;600;700;800;900&family=Noto+Serif:wght@400;500;600;700;800;900&family=Source+Serif+4:opsz,wght@8..60,300..900&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Serif:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700;800&family=Fira+Code:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Cinzel:wght@400;500;600;700;800;900&family=Abril+Fatface&family=Anton&family=Pacifico&family=Caveat:wght@400;500;600;700&family=Permanent+Marker&family=Righteous&family=Kanit:wght@300;400;500;600;700;800;900&family=Lexend:wght@300;400;500;600;700;800;900&family=Urbanist:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
 <style>
-  :root{--ink:#16140f;--ink2:#211e18;--ink3:#2c281f;--line:#3a352a;--paper:#f6f1e7;
-    --fog:#a59c88;--fog2:#cfc6b2;--signal:#e8482b;--signal2:#ff6a4d}
-  *{box-sizing:border-box}
-  body{margin:0;background:
-      radial-gradient(1000px 500px at 80% -10%,#241f17 0%,transparent 55%),var(--ink);
-    color:var(--paper);font-family:"Archivo",sans-serif;min-height:100vh;-webkit-font-smoothing:antialiased}
-  .wrap{max-width:1080px;margin:0 auto;padding:2.4rem 1.6rem 4rem}
-  header.top{display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:2rem}
-  .mark{font-family:"Archivo",sans-serif;font-weight:800;font-size:1.6rem;letter-spacing:-.02em}
-  .mark .dot{color:var(--signal)}
-  .lead{font-family:"Fraunces",serif;font-size:2.4rem;font-weight:600;margin:.4rem 0 0;line-height:1}
-  .lead em{font-style:italic;color:var(--fog2)}
-  .sub{color:var(--fog);font-size:.9rem;margin-top:.4rem;font-family:"Spline Sans Mono",monospace}
-  .top-actions{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;justify-content:flex-end}
-  .btn{display:inline-flex;align-items:center;gap:.5rem;background:var(--signal);color:#fff;border:0;
-    border-radius:11px;padding:.7rem 1.1rem;font-weight:700;font-size:.92rem;cursor:pointer;text-decoration:none}
-  .btn:hover{background:var(--signal2)}
-  .btn.secondary{background:var(--ink3);border:1px solid var(--line);color:var(--fog2)}
-  .btn.secondary:hover{background:#363126;border-color:#4b4536;color:#fff}
-  form.inline{display:inline}
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1.2rem}
-  .card{background:var(--ink2);border:1px solid var(--line);border-radius:16px;overflow:hidden;
-    display:flex;flex-direction:column;transition:.16s}
-  .card:hover{border-color:#4b4536;transform:translateY(-3px)}
-  .card .thumb{aspect-ratio:16/9;background:#000;position:relative;overflow:hidden}
-  .card .mini{position:absolute;inset:0;transform-origin:top left;pointer-events:none}
-  .card .pill{position:absolute;top:8px;left:8px;font-family:"Spline Sans Mono",monospace;
-    font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;background:rgba(0,0,0,.55);
-    color:#fff;border-radius:6px;padding:.2rem .45rem;z-index:2}
-  .card .pill.live{background:var(--signal)}
-  .card .body{padding:.9rem 1rem 1rem;display:flex;flex-direction:column;gap:.5rem;flex:1}
-  .card .name{font-family:"Fraunces",serif;font-size:1.15rem;font-weight:600;line-height:1.15}
-  .card .meta{color:var(--fog);font-size:.74rem;font-family:"Spline Sans Mono",monospace}
-  .card .acts{display:flex;gap:.5rem;margin-top:auto;padding-top:.5rem}
-  .a{flex:1;text-align:center;background:var(--ink3);border:1px solid var(--line);color:var(--fog2);
-    border-radius:9px;padding:.5rem;font-size:.82rem;font-weight:600;cursor:pointer;text-decoration:none}
-  .a:hover{color:#fff;border-color:#4b4536}
-  .a.go{background:var(--signal);border-color:var(--signal);color:#fff}
-  .a.go:hover{background:var(--signal2)}
-  .a.del{flex:0 0 auto;color:#e8746088;border-color:#5a2a22}
-  .a.del:hover{background:#3a1f1b;color:var(--signal2)}
-  .empty{border:1px dashed var(--line);border-radius:16px;padding:3rem 1rem;text-align:center;color:var(--fog)}
-  .empty .big{font-family:"Fraunces",serif;font-size:1.6rem;color:var(--fog2);display:block;margin-bottom:.5rem}
+  /* Page-local layout only — colours, radii and shadows come from the
+     app.css design tokens so Hanns matches the rest of the platform. */
+  .hanns-head{
+    display:flex;align-items:flex-end;justify-content:space-between;
+    flex-wrap:wrap;gap:1rem;margin-bottom:1.75rem;
+  }
+  .hanns-head h1{font-size:clamp(1.9rem,4vw,2.6rem);line-height:1.05;margin:0}
+  .hanns-head .sub{
+    color:var(--kk-text-dim);font-size:.85rem;margin:.45rem 0 0;
+    font-family:var(--kk-font-mono);
+  }
+  .hanns-actions{display:flex;gap:.6rem;flex-wrap:wrap;justify-content:flex-end}
+  .hanns-actions form.inline{display:inline}
 
-  /* Knock-Knock flyer alignment */
-  body{background:radial-gradient(900px 560px at 86% -8%,rgba(255,138,31,.23),transparent 60%),radial-gradient(780px 520px at 5% 5%,rgba(139,92,246,.34),transparent 60%),radial-gradient(620px 420px at 60% 110%,rgba(34,211,238,.14),transparent 60%),linear-gradient(135deg,#050616,#090b23 45%,#160a2c)!important;color:#f8fbff!important;}
-  .top{border:1px solid rgba(255,255,255,.12);background:linear-gradient(135deg,rgba(255,255,255,.11),rgba(255,255,255,.04));border-radius:28px;padding:1rem;box-shadow:0 28px 90px rgba(0,0,0,.48),0 0 42px rgba(124,58,237,.18);backdrop-filter:blur(18px)}
-  .mark,.lead{background:linear-gradient(110deg,#fff 8%,#ff8a1f 36%,#ff3f98 64%,#22d3ee 95%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}.dot{-webkit-text-fill-color:#ff3f98;color:#ff3f98}.sub{color:#b9c2e7}.btn{background:linear-gradient(135deg,#ff8a1f,#ff3f98,#8b5cf6)!important;border-color:rgba(255,255,255,.16)!important;color:#fff!important}.btn.secondary{background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.04))!important}.card{background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.035))!important;border-color:rgba(255,255,255,.12)!important;box-shadow:0 20px 60px rgba(0,0,0,.33)!important;backdrop-filter:blur(16px)}.a.go{background:linear-gradient(135deg,#ff8a1f,#ff3f98)!important;color:#fff!important}
+  .hanns-grid{
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1.2rem;
+  }
+  /* Padding lives on .hanns-body so the thumbnail can bleed to the card edge. */
+  .hanns-card{padding:0;overflow:hidden;display:flex;flex-direction:column}
+  .hanns-card:hover{transform:translateY(-3px)}
 
+  .hanns-thumb{aspect-ratio:16/9;background:#000;position:relative;overflow:hidden}
+  .hanns-mini{position:absolute;inset:0;transform-origin:top left;pointer-events:none}
+
+  /* Compact .kk-pill variant, absolutely placed over the thumbnail. */
+  .hanns-card .kk-pill{
+    position:absolute;top:8px;left:8px;z-index:2;
+    padding:.2rem .5rem;font-size:.6rem;letter-spacing:.12em;
+    font-family:var(--kk-font-mono);font-weight:600;
+    background:rgba(0,0,0,.55);border-color:rgba(255,255,255,.18);
+  }
+  .hanns-card .kk-pill.is-live{
+    background:linear-gradient(135deg,#ff7a18,#fb3c8f);border-color:transparent;
+  }
+
+  .hanns-body{padding:.9rem 1rem 1rem;display:flex;flex-direction:column;gap:.5rem;flex:1}
+  .hanns-name{
+    font-family:var(--kk-font-display);font-size:1.15rem;font-weight:600;
+    line-height:1.15;color:var(--kk-text);
+  }
+  .hanns-meta{color:var(--kk-text-dim);font-size:.74rem;font-family:var(--kk-font-mono)}
+
+  .hanns-acts{display:flex;gap:.5rem;margin-top:auto;padding-top:.5rem}
+  .hanns-acts .kk-btn{
+    flex:1;min-width:70px;justify-content:center;
+    padding:.5rem;font-size:.82rem;font-weight:600;
+  }
+  .hanns-acts form.inline{display:inline-flex}
+  .hanns-acts .kk-btn.is-del{
+    flex:0 0 auto;min-width:0;padding:.5rem .7rem;
+    color:#fb7185;border-color:rgba(244,63,94,.4);background:rgba(244,63,94,.08);
+  }
+  .hanns-acts .kk-btn.is-del:hover{background:var(--kk-danger);color:#fff}
 </style>
-</head>
-<body>
-<div class="wrap">
-  <header class="top">
-    <div>
-      <span class="mark">Hanns<span class="dot">.</span></span>
-      <h1 class="lead">Your <em>decks</em></h1>
-      <p class="sub">{{ decks_total }} deck{{ decks_total|pluralize }} · magazine-level presentations</p>
-    </div>
-    <div class="top-actions">
-      <a class="btn secondary" href="{% url 'core:dashboard' %}">
-        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>
-        Main dashboard
-      </a>
-      <form class="inline" method="post" action="{% url 'hanns:create' %}">
-        {% csrf_token %}
-        <button class="btn" type="submit">
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-          New deck
-        </button>
-      </form>
-    </div>
-  </header>
+{% endblock %}
 
-  {% if decks %}
-  <div class="grid" id="grid">
-    {% for d in decks %}
-    <div class="card" data-code="{{ d.code }}">
-      <div class="thumb">
-        <span class="pill {% if d.state == 'live' %}live{% endif %}">{{ d.get_state_display }}</span>
-        <div class="mini" data-deck-mini></div>
+{% block content %}
+<header class="hanns-head">
+  <div>
+    <h1 class="kk-gradient-text">Your decks</h1>
+    <p class="sub">{{ decks_total }} deck{{ decks_total|pluralize }} · magazine-level presentations</p>
+  </div>
+
+  <div class="hanns-actions">
+    <a class="kk-btn kk-btn-ghost" href="{% url 'core:dashboard' %}">
+      <i class="bi bi-grid-1x2"></i> Dashboard
+    </a>
+    <form class="inline" method="post" action="{% url 'hanns:create' %}">
+      {% csrf_token %}
+      <button class="kk-btn kk-btn-primary" type="submit">
+        <i class="bi bi-plus-lg"></i> New deck
+      </button>
+    </form>
+  </div>
+</header>
+
+{% if decks %}
+<div class="hanns-grid" id="grid">
+  {% for d in decks %}
+  <div class="kk-card hanns-card" data-code="{{ d.code }}">
+    <div class="hanns-thumb">
+      <span class="kk-pill {% if d.state == 'live' %}is-live{% endif %}">{{ d.get_state_display }}</span>
+      <div class="hanns-mini" data-deck-mini></div>
+    </div>
+    <div class="hanns-body">
+      <div class="hanns-name">{{ d.title }}</div>
+      <div class="hanns-meta">
+        {{ d.code }} · {{ d.slides.count }} slide{{ d.slides.count|pluralize }} · {{ d.updated_at|date:"M j" }}
       </div>
-      <div class="body">
-        <div class="name">{{ d.title }}</div>
-        <div class="meta">{{ d.code }} · {{ d.slides.count }} slide{{ d.slides.count|pluralize }} · {{ d.updated_at|date:"M j" }}</div>
-        <div class="acts">
-          <a class="a" href="{% url 'hanns:edit' d.code %}">Edit</a>
-          <a class="a go" href="{% url 'hanns:present' d.code %}">Present</a>
-          <form class="inline" method="post" action="{% url 'hanns:delete' d.code %}"
-                onsubmit="return confirm('Delete “{{ d.title|escapejs }}”? This cannot be undone.');">
-            {% csrf_token %}
-            <button class="a del" type="submit" title="Delete">✕</button>
-          </form>
-        </div>
+      <div class="hanns-acts">
+        <a class="kk-btn kk-btn-ghost" href="{% url 'hanns:edit' d.code %}">Edit</a>
+        <a class="kk-btn kk-btn-primary" href="{% url 'hanns:present' d.code %}">Present</a>
+        <form class="inline" method="post" action="{% url 'hanns:delete' d.code %}"
+              onsubmit="return confirm('Delete “{{ d.title|escapejs }}”? This cannot be undone.');">
+          {% csrf_token %}
+          <button class="kk-btn kk-btn-ghost is-del" type="submit" title="Delete">
+            <i class="bi bi-trash"></i>
+          </button>
+        </form>
       </div>
     </div>
-    {% endfor %}
   </div>
-  {% else %}
-  <div class="empty">
-    <span class="big">No decks yet</span>
-    Create your first deck and start from a template — title cards, statements, big numbers and more.
-  </div>
-  {% endif %}
+  {% endfor %}
 </div>
+{% else %}
+<div class="kk-empty">
+  <div class="em"><i class="bi bi-easel2"></i></div>
+  <h2 class="kk-section-title" style="justify-content:center">No decks yet</h2>
+  <p style="max-width:520px;margin:0 auto 1.5rem">
+    Create your first deck and start from a template — title cards, statements,
+    big numbers and more.
+  </p>
+  <form method="post" action="{% url 'hanns:create' %}">
+    {% csrf_token %}
+    <button class="kk-btn kk-btn-primary kk-btn-lg" type="submit">
+      <i class="bi bi-plus-lg"></i> New deck
+    </button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}
 
+{% block scripts %}
 {# Thumbnails: render each deck's first slide live via the shared core renderer. #}
 {% if decks %}
 <script id="deck-firsts" type="application/json">{{ firsts_json|safe }}</script>
@@ -122,15 +147,14 @@
   const W=960,H=540;
   let firsts={};
   try{ firsts=JSON.parse(document.getElementById("deck-firsts").textContent||"{}"); }catch(e){}
-  document.querySelectorAll(".card").forEach(card=>{
+  document.querySelectorAll(".hanns-card").forEach(card=>{
     const code=card.dataset.code, slide=firsts[code], host=card.querySelector("[data-deck-mini]");
     if(!slide||!host||!window.Hanns)return;
     host.style.width=W+"px";host.style.height=H+"px";
     window.Hanns.paintSlide(host,slide,{live:false});
-    requestAnimationFrame(()=>{const sc=card.querySelector(".thumb").clientWidth/W;host.style.transform=`scale(${sc})`;});
+    requestAnimationFrame(()=>{const sc=card.querySelector(".hanns-thumb").clientWidth/W;host.style.transform=`scale(${sc})`;});
   });
 })();
 </script>
 {% endif %}
-</body>
-</html>
+{% endblock %}

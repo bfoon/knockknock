@@ -148,6 +148,42 @@ def _box(shape, prs):
     }
 
 
+def _media_url(saved_path: str) -> str:
+    """URL for a freshly saved media file, as the BROWSER should see it.
+
+    Deliberately NOT ``request.build_absolute_uri(...)``. Behind a reverse
+    proxy / CDN, build_absolute_uri regularly produces the wrong scheme
+    (http:// on an https:// page → blocked as mixed content) or an internal
+    hostname the browser cannot reach. Either way the slide element renders
+    as an EMPTY FRAME, because CSS background-image fails silently.
+
+    A root-relative "/media/…" URL always resolves against the page origin,
+    so it works in dev, behind nginx, and behind Cloudflare alike. Remote
+    storages (S3, GCS) already return a fully-qualified URL from
+    ``default_storage.url()``; those are passed through untouched.
+    """
+    url = default_storage.url(saved_path)
+    if url.startswith(("http://", "https://", "//", "data:")):
+        return url
+    return url if url.startswith("/") else "/" + url
+
+
+def _shape_image(shape):
+    """Return the shape's embedded image, for ANY shape that carries one.
+
+    ``shape_type == PICTURE`` is not the only way a picture reaches a slide.
+    Pictures dropped into a layout's picture/content placeholder keep
+    ``shape_type == PLACEHOLDER`` (python-pptx: PicturePlaceholder), and
+    linked pictures report LINKED_PICTURE. Both were previously skipped by
+    the importer, so template-based decks lost every image.
+    """
+    try:
+        image = shape.image
+    except (AttributeError, ValueError, KeyError, TypeError):
+        return None
+    return image if getattr(image, "blob", None) else None
+
+
 def _pt_scale(prs) -> float:
     """px-per-pt when mapping this deck into the 960×540 design space.
 
@@ -347,7 +383,7 @@ def _bg_picture_url(request, deck, bg_pr, part) -> str | None:
             ext = "jpg"
         rel_path = f"hanns/decks/{deck.code}/imports/bg_{uuid.uuid4().hex}.{ext}"
         saved = default_storage.save(rel_path, ContentFile(image_part.blob))
-        return request.build_absolute_uri(default_storage.url(saved))
+        return _media_url(saved)
     except Exception:
         return None
 
@@ -715,13 +751,15 @@ def _anim_for(shape, anims: dict[int, dict]) -> dict:
 
 def _image_element(request, deck, shape, prs, anims):
     try:
-        image = shape.image
+        image = _shape_image(shape)
+        if image is None:
+            return None
         ext = (image.ext or "png").lower().lstrip(".")
         if ext == "jpeg":
             ext = "jpg"
         rel_path = f"hanns/decks/{deck.code}/imports/{uuid.uuid4().hex}.{ext}"
         saved = default_storage.save(rel_path, ContentFile(image.blob))
-        url = request.build_absolute_uri(default_storage.url(saved))
+        url = _media_url(saved)
         return {
             "id": _uid(),
             "type": "image",
@@ -987,12 +1025,19 @@ def _elements_from_shape(request, deck, shape, prs, warnings, anims):
     except Exception:
         pass
 
+    # ANY shape that carries an embedded image is a picture as far as Hanns
+    # is concerned. Checking MSO_SHAPE_TYPE.PICTURE alone missed:
+    #   • pictures inside a layout's picture/content placeholder
+    #     (shape_type == PLACEHOLDER) — the normal way template decks
+    #     hold images, and they were silently dropped;
+    #   • LINKED_PICTURE shapes;
+    #   • picture-filled auto shapes.
     try:
-        if stype == MSO_SHAPE_TYPE.PICTURE:
+        if _shape_image(shape) is not None:
             el = _image_element(request, deck, shape, prs, anims)
             if el:
                 elements.append(el)
-            return elements
+                return elements
     except Exception:
         pass
 

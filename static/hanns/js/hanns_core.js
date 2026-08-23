@@ -5461,6 +5461,47 @@ function styleEl(el,node){
   node.style.transform=`rotate(${el.rot||0}deg)`;
 }
 
+/* ── MEDIA SOURCES ───────────────────────────────────────────────────
+   Self-healing for slide media URLs.
+
+   Decks imported before the importer switched to root-relative /media/
+   URLs carry an ABSOLUTE url built server-side from the request. Behind a
+   proxy that is regularly the wrong scheme (http:// inside an https:// page
+   → blocked as mixed content) or an internal hostname. The picture then
+   fails to load and, because it is painted as a CSS background-image, the
+   element renders as a silent EMPTY FRAME.
+
+   When the URL points at THIS host we drop the scheme+host and let the
+   browser resolve it against the page origin. Genuinely remote media
+   (S3/GCS/CDN, a pasted https:// image) is left completely alone. */
+function mediaSrc(src){
+  const s=String(src||"").trim();
+  if(!s||/^(data:|blob:)/i.test(s))return s;
+  try{
+    const u=new URL(s,location.href);
+    if(u.hostname===location.hostname&&(u.protocol!==location.protocol||u.port!==location.port||u.origin!==location.origin)){
+      return u.pathname+u.search;
+    }
+    return s;
+  }catch(_){return s;}
+}
+/* Paint a src into a .imgbox and, if it cannot be fetched, swap the silent
+   blank box for a labelled placeholder instead of leaving a bare frame. */
+function paintImageBox(box,src,fit){
+  const url=mediaSrc(src);
+  box.style.backgroundImage=`url("${url}")`;
+  box.style.backgroundSize=fit||"cover";
+  const probe=new Image();
+  probe.onerror=()=>{
+    box.classList.add("placeholder","imgbox-broken");
+    box.style.backgroundImage="";
+    box.textContent="⚠ image not found";
+    box.title="Could not load: "+url;
+  };
+  probe.src=url;
+  return url;
+}
+
 function renderCreativeShape(el){
   const def=shapeDef(el.shapeType);
   const box=document.createElement("div");box.className="creative-shape-box";
@@ -5511,7 +5552,7 @@ function renderElement(el,{live=false}={}){
     inner.appendChild(s);
   } else if(el.type==="image"){
     const im=document.createElement("div");im.className="imgbox"+(el.src?"":" placeholder");
-    if(el.src){im.style.backgroundImage=`url("${el.src}")`;im.style.backgroundSize=el.fit;}
+    if(el.src)paintImageBox(im,el.src,el.fit);
     else im.textContent="🖼  click to add image";
     im.style.borderRadius=(el.radius||0)+"px";
     inner.appendChild(im);
@@ -6067,8 +6108,7 @@ function buildGalleryCard(el, photo){
   card.className="gallery-card gframe-"+frame;
   const media=document.createElement("div");
   media.className="gallery-media";
-  media.style.backgroundImage=`url("${photo.src}")`;
-  media.style.backgroundSize=(el.fit||"cover");
+  paintImageBox(media,photo.src,el.fit||"cover");
   card.appendChild(media);
   const cap=String(photo.caption||"").trim();
   if(cap){
@@ -6153,7 +6193,7 @@ function renderGallery(el,{live=false}={}){
 }
 
 function renderVideo(el,{live=false}={}){
-  const src=String(el.src||"").trim();
+  const src=mediaSrc(el.src);
   const isEmbed=/youtube\.com\/embed|player\.vimeo\.com|youtu\.be|youtube\.com\/watch/.test(src);
   if(live&&src&&isEmbed){
     let embed=src;

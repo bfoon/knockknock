@@ -271,6 +271,10 @@ button{font-family:inherit}
 .imgbox{width:100%;height:100%;background-size:cover;background-position:center;border-radius:inherit}
 .imgbox.placeholder{display:grid;place-items:center;background:var(--paper-2);
   color:#9a907a;font-size:.8rem;text-align:center}
+/* src is set but the file could not be fetched — show it, do not leave a
+   blank frame the author cannot diagnose. */
+.imgbox.imgbox-broken{background:repeating-linear-gradient(45deg,#f6efe2 0 10px,#efe5d2 10px 20px);
+  border:1px dashed #c9bda3;color:#8a7f68;font-family:var(--font-mono);font-size:.72rem}
 
 /* zoom badge */
 .zoombar{

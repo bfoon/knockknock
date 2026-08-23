@@ -1,122 +1,146 @@
-{% load static %}<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Your surveys · Kura</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900&family=Archivo:wght@400;500;600;700;800;900&family=Spline+Sans+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Your surveys · Kura{% endblock %}
+
+{# Standard KnockKnock page shell: shared nav + drawer come from base.html,
+   the gradient/noise background comes from .kk-standard-page in app.css. #}
+{% block body_class %}kk-standard-page{% endblock %}
+
+{% block head_extra %}
 <style>
-  :root{--line:rgba(255,255,255,.12);--muted:#b9c2e7;--dim:rgba(248,251,255,.45);
-    --orange:#ff8a1f;--pink:#ff3f98;--cyan:#22d3ee;--violet:#8b5cf6;--green:#22c55e}
-  *{box-sizing:border-box}
-  body{margin:0;min-height:100vh;color:#f8fbff;font-family:"Archivo",sans-serif;-webkit-font-smoothing:antialiased;
-    background:radial-gradient(900px 560px at 86% -8%,rgba(255,138,31,.23),transparent 60%),
-      radial-gradient(780px 520px at 5% 5%,rgba(139,92,246,.34),transparent 60%),
-      radial-gradient(620px 420px at 60% 110%,rgba(34,211,238,.14),transparent 60%),
-      linear-gradient(135deg,#050616,#090b23 45%,#160a2c)}
-  .wrap{max-width:1080px;margin:0 auto;padding:2.4rem 1.6rem 4rem}
-  header.top{display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:2rem;
-    border:1px solid var(--line);background:linear-gradient(135deg,rgba(255,255,255,.11),rgba(255,255,255,.04));
-    border-radius:28px;padding:1.4rem 1.6rem;box-shadow:0 28px 90px rgba(0,0,0,.48);backdrop-filter:blur(18px)}
-  .mark{font-weight:900;font-size:1.6rem;letter-spacing:-.02em;
-    background:linear-gradient(110deg,#fff 8%,var(--orange) 36%,var(--pink) 64%,var(--cyan) 95%);
-    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-  .mark .dot{-webkit-text-fill-color:var(--pink)}
-  .lead{font-family:"Fraunces",serif;font-size:2.3rem;font-weight:600;margin:.35rem 0 0;line-height:1;color:#fff}
-  .lead em{font-style:italic;color:var(--muted)}
-  .sub{color:var(--muted);font-size:.85rem;margin-top:.4rem;font-family:"Spline Sans Mono",monospace}
-  .btn{display:inline-flex;align-items:center;gap:.5rem;border:1px solid rgba(255,255,255,.16);color:#fff;
-    background:linear-gradient(135deg,var(--orange),var(--pink),var(--violet));
-    border-radius:11px;padding:.7rem 1.1rem;font-weight:700;font-size:.92rem;cursor:pointer;text-decoration:none}
-  .btn:hover{filter:brightness(1.08)}
-  .btn.secondary{background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.04));color:var(--muted)}
-  .btn.secondary:hover{color:#fff}
-  form.inline{display:inline}
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1.2rem}
-  .card{border:1px solid var(--line);border-radius:16px;padding:1.1rem 1.15rem 1rem;display:flex;flex-direction:column;gap:.55rem;
-    background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.035));
-    box-shadow:0 20px 60px rgba(0,0,0,.33);backdrop-filter:blur(16px);transition:.16s}
-  .card:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.22)}
-  .pillrow{display:flex;gap:.4rem;align-items:center}
-  .pill{font-family:"Spline Sans Mono",monospace;font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;
-    border:1px solid var(--line);border-radius:6px;padding:.22rem .5rem;color:var(--muted)}
-  .pill.collecting{background:rgba(34,197,94,.16);border-color:rgba(34,197,94,.4);color:#86efac}
-  .pill.paused{background:rgba(255,138,31,.14);border-color:rgba(255,138,31,.4);color:#ffc38a}
-  .pill.closed,.pill.draft{background:rgba(255,255,255,.05)}
-  .name{font-family:"Fraunces",serif;font-size:1.2rem;font-weight:600;line-height:1.15;color:#fff}
-  .meta{color:var(--dim);font-size:.72rem;font-family:"Spline Sans Mono",monospace}
-  .meta b{color:var(--cyan);font-weight:600}
-  .acts{display:flex;gap:.45rem;margin-top:auto;padding-top:.6rem;flex-wrap:wrap}
-  .a{flex:1;min-width:70px;text-align:center;border:1px solid var(--line);color:var(--muted);border-radius:9px;
-    padding:.5rem .4rem;font-size:.8rem;font-weight:600;cursor:pointer;text-decoration:none;
-    background:linear-gradient(135deg,rgba(255,255,255,.07),rgba(255,255,255,.02))}
-  .a:hover{color:#fff;border-color:rgba(255,255,255,.24)}
-  .a.go{background:linear-gradient(135deg,var(--orange),var(--pink));border-color:transparent;color:#fff}
-  .a.del{flex:0 0 auto;color:#f0a397;border-color:rgba(232,72,43,.4)}
-  .a.del:hover{background:rgba(232,72,43,.2)}
-  .empty{border:1px dashed var(--line);border-radius:16px;padding:3rem 1rem;text-align:center;color:var(--muted)}
-  .empty .big{font-family:"Fraunces",serif;font-size:1.6rem;color:#fff;display:block;margin-bottom:.5rem}
+  /* Page-local layout only — colours, radii and shadows all come from the
+     app.css design tokens so Kura matches the rest of the platform. */
+  .kura-head{
+    display:flex;align-items:flex-end;justify-content:space-between;
+    flex-wrap:wrap;gap:1rem;margin-bottom:1.75rem;
+  }
+  .kura-head h1{
+    font-size:clamp(1.9rem,4vw,2.6rem);line-height:1.05;margin:0;
+  }
+  .kura-head .sub{
+    color:var(--kk-text-dim);font-size:.85rem;margin:.45rem 0 0;
+    font-family:var(--kk-font-mono);
+  }
+  .kura-actions{display:flex;gap:.6rem;flex-wrap:wrap;justify-content:flex-end}
+  .kura-actions form.inline{display:inline}
+
+  .kura-grid{
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1.2rem;
+  }
+  .kura-card{
+    padding:1.15rem 1.2rem 1rem;
+    display:flex;flex-direction:column;gap:.55rem;
+  }
+  .kura-card:hover{transform:translateY(-3px)}
+
+  .kura-pillrow{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap}
+  /* Compact variant of .kk-pill for the status chips on each card. */
+  .kura-card .kk-pill{
+    padding:.24rem .6rem;font-size:.62rem;letter-spacing:.12em;
+    font-family:var(--kk-font-mono);font-weight:600;
+  }
+  .kk-pill.is-collecting{background:rgba(52,211,153,.16);border-color:rgba(52,211,153,.42);color:#86efac}
+  .kk-pill.is-paused{background:rgba(251,191,36,.14);border-color:rgba(251,191,36,.42);color:#fcd34d}
+  .kk-pill.is-closed,
+  .kk-pill.is-draft{background:rgba(255,255,255,.05)}
+
+  .kura-name{
+    font-family:var(--kk-font-display);font-size:1.2rem;font-weight:600;
+    line-height:1.15;color:var(--kk-text);
+  }
+  .kura-meta{color:var(--kk-text-dim);font-size:.74rem;font-family:var(--kk-font-mono)}
+  .kura-meta b{color:var(--kk-accent-2);font-weight:600}
+
+  .kura-acts{display:flex;gap:.45rem;margin-top:auto;padding-top:.65rem;flex-wrap:wrap}
+  .kura-acts .kk-btn{
+    flex:1;min-width:72px;justify-content:center;
+    padding:.5rem .5rem;font-size:.82rem;font-weight:600;
+  }
+  .kura-acts .kk-btn.is-icon{flex:0 0 auto;min-width:0;padding:.5rem .7rem}
+  .kura-acts form.inline{display:inline-flex}
+  .kura-acts .kk-btn.is-del{
+    flex:0 0 auto;min-width:0;padding:.5rem .7rem;
+    color:#fb7185;border-color:rgba(244,63,94,.4);background:rgba(244,63,94,.08);
+  }
+  .kura-acts .kk-btn.is-del:hover{background:var(--kk-danger);color:#fff}
 </style>
-</head>
-<body>
-<div class="wrap">
-  <header class="top">
-    <div>
-      <span class="mark">Kura<span class="dot">.</span></span>
-      <h1 class="lead">Your <em>surveys</em></h1>
-      <p class="sub">{{ total }} survey{{ total|pluralize }} · build → collect → clean → present</p>
+{% endblock %}
+
+{% block content %}
+<header class="kura-head">
+  <div>
+    <h1 class="kk-gradient-text">Your surveys</h1>
+    <p class="sub">{{ total }} survey{{ total|pluralize }} · build → collect → clean → present</p>
+  </div>
+
+  <div class="kura-actions">
+    <a class="kk-btn kk-btn-ghost" href="{% url 'core:dashboard' %}">
+      <i class="bi bi-grid-1x2"></i> Dashboard
+    </a>
+    <a class="kk-btn kk-btn-ghost" href="{% static 'kura/kura_form_sample.xlsx' %}" download
+       title="A fully worked example questionnaire in Excel — open it, adapt it, then Import it in the builder">
+      <i class="bi bi-file-earmark-spreadsheet"></i> Form sample
+    </a>
+    <a class="kk-btn kk-btn-ghost" href="{% static 'kura/kura-collect-release.apk' %}" download
+       title="Kura Collect for Android — install on enumerator phones for offline data collection">
+      <i class="bi bi-phone"></i> Phone app (APK)
+    </a>
+    <form class="inline" method="post" action="{% url 'kura:create' %}">
+      {% csrf_token %}
+      <button class="kk-btn kk-btn-primary" type="submit">
+        <i class="bi bi-plus-lg"></i> New survey
+      </button>
+    </form>
+  </div>
+</header>
+
+{% if rows %}
+<div class="kura-grid">
+  {% for r in rows %}
+  <div class="kk-card kura-card">
+    <div class="kura-pillrow">
+      <span class="kk-pill is-{{ r.obj.state }}">{{ r.obj.get_state_display }}</span>
+      {% if r.version %}<span class="kk-pill">v{{ r.version }}</span>{% endif %}
     </div>
-    <div style="display:flex;gap:.7rem;flex-wrap:wrap;justify-content:flex-end">
-      <a class="btn secondary" href="{% url 'core:dashboard' %}">Main dashboard</a>
-      <a class="btn secondary" href="{% static 'kura/kura_form_sample.xlsx' %}" download
-         title="A fully worked example questionnaire in Excel — open it, adapt it, then Import it in the builder">
-        📗 Kura Form sample
+
+    <div class="kura-name">{{ r.obj.title }}</div>
+    <div class="kura-meta">
+      {{ r.obj.code }} · <b>{{ r.responses }}</b> response{{ r.responses|pluralize }} · {{ r.obj.updated_at|date:"M j" }}
+    </div>
+
+    <div class="kura-acts">
+      <a class="kk-btn kk-btn-ghost" href="{% url 'kura:builder' r.obj.code %}">Build</a>
+      <a class="kk-btn kk-btn-ghost" href="{% url 'kura:data' r.obj.code %}">Data</a>
+      <a class="kk-btn kk-btn-ghost is-icon" href="{% url 'kura:monitor' r.obj.code %}" title="Live monitor">
+        <i class="bi bi-broadcast"></i>
       </a>
-      <a class="btn secondary" href="{% static 'kura/kura-collect-release.apk' %}" download
-         title="Kura Collect for Android — install on enumerator phones for offline data collection">
-        📱 Phone app (APK)
-      </a>
-      <form class="inline" method="post" action="{% url 'kura:create' %}">
+      <a class="kk-btn kk-btn-primary" href="{% url 'kura:collect' r.obj.code %}" target="_blank" rel="noopener">Collect</a>
+      <form class="inline" method="post" action="{% url 'kura:delete' r.obj.code %}"
+            onsubmit="return confirm('Delete “{{ r.obj.title|escapejs }}” and all its responses? This cannot be undone.');">
         {% csrf_token %}
-        <button class="btn" type="submit">
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-          New survey
+        <button class="kk-btn kk-btn-ghost is-del" type="submit" title="Delete">
+          <i class="bi bi-trash"></i>
         </button>
       </form>
     </div>
-  </header>
-
-  {% if rows %}
-  <div class="grid">
-    {% for r in rows %}
-    <div class="card">
-      <div class="pillrow">
-        <span class="pill {{ r.obj.state }}">{{ r.obj.get_state_display }}</span>
-        {% if r.version %}<span class="pill">v{{ r.version }}</span>{% endif %}
-      </div>
-      <div class="name">{{ r.obj.title }}</div>
-      <div class="meta">{{ r.obj.code }} · <b>{{ r.responses }}</b> response{{ r.responses|pluralize }} · {{ r.obj.updated_at|date:"M j" }}</div>
-      <div class="acts">
-        <a class="a" href="{% url 'kura:builder' r.obj.code %}">Build</a>
-        <a class="a" href="{% url 'kura:data' r.obj.code %}">Data</a>
-        <a class="a" href="{% url 'kura:monitor' r.obj.code %}" title="Live monitor">📡</a>
-        <a class="a go" href="{% url 'kura:collect' r.obj.code %}" target="_blank" rel="noopener">Collect</a>
-        <form class="inline" method="post" action="{% url 'kura:delete' r.obj.code %}"
-              onsubmit="return confirm('Delete “{{ r.obj.title|escapejs }}” and all its responses? This cannot be undone.');">
-          {% csrf_token %}
-          <button class="a del" type="submit" title="Delete">✕</button>
-        </form>
-      </div>
-    </div>
-    {% endfor %}
   </div>
-  {% else %}
-  <div class="empty">
-    <span class="big">No surveys yet</span>
-    Create your first questionnaire — skip logic, calculations, scoring, offline mobile sync and one-click Hanns result decks are all built in.
-  </div>
-  {% endif %}
+  {% endfor %}
 </div>
-</body>
-</html>
+{% else %}
+<div class="kk-empty">
+  <div class="em"><i class="bi bi-clipboard-data"></i></div>
+  <h2 class="kk-section-title" style="justify-content:center">No surveys yet</h2>
+  <p style="max-width:520px;margin:0 auto 1.5rem">
+    Create your first questionnaire — skip logic, calculations, scoring, offline mobile sync
+    and one-click Hanns result decks are all built in.
+  </p>
+  <form method="post" action="{% url 'kura:create' %}">
+    {% csrf_token %}
+    <button class="kk-btn kk-btn-primary kk-btn-lg" type="submit">
+      <i class="bi bi-plus-lg"></i> New survey
+    </button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

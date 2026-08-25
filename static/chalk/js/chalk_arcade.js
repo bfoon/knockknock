@@ -19,10 +19,18 @@
 (function (global) {
   "use strict";
 
-  var VERSION = "timeout 1.1";
+  var VERSION = "timeout 1.2";
   var B = null, IS_STAGE = false, IS_TEACHER = false;
+  var heard = false, watch = null;
 
-  function send(frame) { B.net.send(frame, true); }
+  function send(frame) { if (B && B.net) B.net.send(frame, true); }
+
+  /* Every game frame that arrives is also proof that the round trip works.
+   * See link() at the bottom: this flag is what stops the fallback. */
+  function heardOne() {
+    heard = true;
+    if (watch) { clearTimeout(watch); watch = null; }
+  }
 
   /* --- saying what went wrong --------------------------------------- */
 
@@ -63,7 +71,9 @@
 
     global.ChalkArcade = {
       frame: function (m) {
-        if (!m || m.act === "state" || m.act === "cue") return;
+        if (!m) return;
+        heardOne();
+        if (m.act === "state" || m.act === "cue" || m.act === "you") return;
         if (m.act === "open") {
           if (arcade.open(m.game, m.opt)) {
             document.body.classList.add("in-timeout");
@@ -118,6 +128,7 @@
     global.ChalkArcade = {
       frame: function (m) {
         if (!m) return;
+        heardOne();
         if (m.act === "you") { myPidCache = m.pid; return; }
         if (m.act === "cue") {
           if (m.to === myPidCache) buzz(m.k);
@@ -577,15 +588,55 @@
 
   /* Script order is the usual culprit, so wait a moment for the board to
    * finish setting itself up before deciding anything is missing. */
+  /* The board's own socket, opened by us, used when the page will not lend
+   * us its one. A second connection to the same room is a few bytes and one
+   * extra `peer` announcement; a feature that does not work at all is worse.
+   * Everything else about it is identical — same room, same board number,
+   * same server rules about who may start a game. */
+  function ownSocket() {
+    var node = document.getElementById("chalk-config");
+    if (!node || !global.ChalkNet) return null;
+    var CFG;
+    try { CFG = JSON.parse(node.textContent); } catch (e) { return null; }
+    if (!CFG || !CFG.code) return null;
+    var role = CFG.role === "stage" ? "stage"
+             : CFG.role === "join" ? "join" : "control";
+    var net = global.ChalkNet(CFG.code, {
+      onOpen: function () {
+        net.send({ t: "hello", role: role, token: CFG.token || "" });
+        setTimeout(function () {
+          send({ t: "game", act: "join", who: (CFG.me && CFG.me.name) || "" });
+        }, 250);
+      },
+      onDenied: function (m) {
+        complain("The board refused the game connection: " +
+                 ((m && m.reason) || "not paired."),
+                 "Rescan the board number and try again.");
+      },
+      onMessage: function (m) {
+        if (m && m.t === "game" && global.ChalkArcade) global.ChalkArcade.frame(m);
+      }
+    });
+    return { net: net, cfg: CFG, role: role, own: true };
+  }
+
   function boot(tries) {
     B = global.ChalkBoard;
     if (!B || !B.net) {
-      if (tries < 40) return setTimeout(function () { boot(tries + 1); }, 100);
-      return complain(
-        "window.ChalkBoard was never set, so there is no socket to play over.",
-        "Add the ChalkBoard line and the case \"game\" line to chalk_stage.js " +
-        "and chalk_control.js, then hard-reload."
-      );
+      /* Script order first: the board may simply not have got there yet. */
+      if (tries < 15) return setTimeout(function () { boot(tries + 1); }, 100);
+      B = ownSocket();
+      if (!B) {
+        return complain(
+          "There is no socket to play over: window.ChalkBoard was never set " +
+          "and chalk_net.js is not on the page either.",
+          "Check the script tags in the template, then hard-reload."
+        );
+      }
+      if (global.console && console.info) {
+        console.info("[Chalk Timeout] window.ChalkBoard is not set — opened " +
+                     "a socket of our own instead.");
+      }
     }
     if (!global.ChalkGames) {
       return complain(
@@ -607,8 +658,47 @@
     if (IS_STAGE) mountStage(); else mountPad();
     if (global.console && console.info) {
       console.info("[Chalk Timeout] " + VERSION + " ready as " + B.role +
-                   " — " + global.ChalkGames.list().length + " games.");
+                   " — " + global.ChalkGames.list().length + " games" +
+                   (B.own ? ", on its own socket." : "."));
     }
+    link();
+  }
+
+  /* Borrowing the page's socket only works if the page hands game frames
+   * back — that is the `case "game"` line. Rather than trust it, ask: the
+   * server answers every join directly with {"act":"you"}. Silence means the
+   * frames go out and nothing comes back, so open a socket that does. */
+  function link() {
+    send({ t: "game", act: "join", who: (B.cfg && B.cfg.me && B.cfg.me.name) || "" });
+    watch = setTimeout(function () {
+      watch = null;
+      if (heard) return;
+      if (!B.own) {
+        var own = ownSocket();
+        if (own) {
+          B = own;
+          if (global.console && console.info) {
+            console.info("[Chalk Timeout] the page's socket does not pass game " +
+                         "frames on (the case \"game\" line is missing) — " +
+                         "opened a second socket instead.");
+          }
+          watch = setTimeout(serverSilent, 8000);
+          return;
+        }
+      }
+      serverSilent();
+    }, 4000);
+  }
+
+  function serverSilent() {
+    if (heard) return;
+    complain(
+      "Game frames are going out and nothing is coming back, so the server " +
+      "is dropping them.",
+      "consumers.py needs the `elif t == \"game\":` branch — and the ASGI " +
+      "server needs restarting afterwards, which the autoreloader does not " +
+      "always do for Channels consumers."
+    );
   }
 
   if (document.readyState === "loading") {

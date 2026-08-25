@@ -426,3 +426,38 @@ body.in-timeout .stage-hud { opacity: 0; pointer-events: none; }
   .menu-card { max-width: 620px; border-radius: var(--r); border: 1px solid var(--line); }
   .menu-list { grid-template-columns: 1fr 1fr; }
 }
+
+/* --- when the wiring is wrong ------------------------------------------
+   A missing script tag used to look exactly like a dead button. It now
+   looks like a message that says which script is missing. */
+
+.timeout-broken {
+  position: fixed;
+  left: 12px; right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0));
+  z-index: 95;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--rust);
+  border-radius: var(--r);
+  background: rgba(22, 32, 42, .97);
+  color: var(--dust);
+  font: 400 13px/1.5 var(--sans);
+}
+.timeout-broken strong { font-size: 15px; }
+.timeout-broken span { grid-column: 1; color: var(--muted); }
+.timeout-broken button {
+  grid-row: 1 / span 2;
+  align-self: start;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dust);
+  font: inherit;
+}
+
+/* The stand-in opener, only used when the template has no #open-games. */
+.pad-float.is-opener { bottom: calc(74px + env(safe-area-inset-bottom, 0)); }

@@ -11,17 +11,37 @@
  *
  * Needs window.ChalkBoard = { net, cfg, role } — three lines added to
  * chalk_stage.js and chalk_control.js. See the notes at the end of this file.
+ *
+ * If any of that is missing this file says so, out loud, in the console and
+ * on the screen. The first version returned quietly and a missing script tag
+ * looked exactly like a broken button.
  */
 (function (global) {
   "use strict";
 
-  var B = global.ChalkBoard;
-  if (!B || !B.net || !global.ChalkGames) return;
-
-  var IS_STAGE = B.role === "stage";
-  var IS_TEACHER = B.role === "stage" || B.role === "control";
+  var VERSION = "timeout 1.1";
+  var B = null, IS_STAGE = false, IS_TEACHER = false;
 
   function send(frame) { B.net.send(frame, true); }
+
+  /* --- saying what went wrong --------------------------------------- */
+
+  function complain(what, fix) {
+    if (global.console) {
+      console.error("[Chalk Timeout] " + what + "\n" + fix);
+    }
+    var box = document.createElement("div");
+    box.className = "timeout-broken";
+    box.setAttribute("role", "alert");
+    box.innerHTML = '<strong></strong><span></span>' +
+      '<button type="button">Close</button>';
+    box.querySelector("strong").textContent = "Timeout is not wired up";
+    box.querySelector("span").textContent = what + " " + fix;
+    box.querySelector("button").addEventListener("click", function () {
+      box.remove();
+    });
+    (document.body || document.documentElement).appendChild(box);
+  }
 
   /* ==================================================================
      Projector
@@ -179,7 +199,18 @@
       document.body.appendChild(fab);
       showFloat = function (on) { fab.hidden = !on || state.phase === "off"; };
 
+      /* The button in the tool rows, when the template has it. When it does
+       * not — an older control.html, a cached page — put one on the screen
+       * anyway rather than leaving the whole feature unreachable. */
       var opener = document.getElementById("open-games");
+      if (!opener && IS_TEACHER) {
+        opener = document.createElement("button");
+        opener.id = "open-games";
+        opener.type = "button";
+        opener.className = "pad-float is-opener";
+        opener.textContent = "Timeout";
+        document.body.appendChild(opener);
+      }
       if (opener) opener.addEventListener("click", openMenu);
     }
 
@@ -542,7 +573,49 @@
     }
   }
 
-  if (IS_STAGE) mountStage(); else mountPad();
+  /* --- boot ---------------------------------------------------------- */
+
+  /* Script order is the usual culprit, so wait a moment for the board to
+   * finish setting itself up before deciding anything is missing. */
+  function boot(tries) {
+    B = global.ChalkBoard;
+    if (!B || !B.net) {
+      if (tries < 40) return setTimeout(function () { boot(tries + 1); }, 100);
+      return complain(
+        "window.ChalkBoard was never set, so there is no socket to play over.",
+        "Add the ChalkBoard line and the case \"game\" line to chalk_stage.js " +
+        "and chalk_control.js, then hard-reload."
+      );
+    }
+    if (!global.ChalkGames) {
+      return complain(
+        "chalk_games.js did not load.",
+        "Check the <script> tags in the template and that the file is in " +
+        "static/chalk/js/ — then run collectstatic and hard-reload."
+      );
+    }
+    if (!global.ChalkGames.list().length) {
+      return complain(
+        "The engine loaded but no games registered themselves.",
+        "chalk_games_pack.js and chalk_games_class.js are missing or 404ing. " +
+        "Both must load after chalk_games.js and before chalk_arcade.js."
+      );
+    }
+
+    IS_STAGE = B.role === "stage";
+    IS_TEACHER = B.role === "stage" || B.role === "control";
+    if (IS_STAGE) mountStage(); else mountPad();
+    if (global.console && console.info) {
+      console.info("[Chalk Timeout] " + VERSION + " ready as " + B.role +
+                   " — " + global.ChalkGames.list().length + " games.");
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () { boot(0); });
+  } else {
+    boot(0);
+  }
 })(window);
 
 /* ---------------------------------------------------------------------

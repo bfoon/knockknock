@@ -26,6 +26,7 @@ Wire protocol — every frame is {"t": "<type>", ...}.
   page {index}            snapshot
   page_add | page_delete  snapshot
   pointer {x,y,on}        pointer        (laser, never stored)
+  game {act, ...}         game           (Timeout — relayed, never stored)
   ping                    pong
 
 Two things changed from the first pass and both matter:
@@ -107,7 +108,7 @@ TEACHER_ONLY = {"clear", "page", "page_add", "page_delete", "surface"}
 
 NO_ECHO = {
     "stroke_start", "stroke_pts", "stroke_end", "pointer", "peer",
-    "el_live", "ink_live", "el_live_many",
+    "el_live", "ink_live", "el_live_many", "game",
 }
 
 
@@ -596,6 +597,83 @@ def clean_el(raw):
     return el
 
 
+# ----------------------------------------------------------------------
+# Timeout — the arcade.
+#
+# One frame type carries the lot, and none of it is ever stored: no strokes,
+# no elements, no undo entries, no writes. A game is a conversation the room
+# has over the top of the board, and when it ends the lesson is exactly where
+# it was left. That is the whole design, and it is why this branch sits apart
+# from everything above it.
+#
+# The projector simulates and draws. Phones send buttons and receive a
+# scoreboard. Starting, stopping and restarting a game are the teacher's,
+# for the same reason turning the page is: they happen TO everybody.
+GAME_ACTS = {"open", "close", "again", "input", "join", "leave", "state", "cue"}
+GAME_TEACHER_ACTS = {"open", "close", "again"}
+GAME_KEY_RE = re.compile(r"^[A-Za-z0-9_]{1,16}$")
+
+
+def _small(value, depth=0):
+    """A bounded copy of whatever a client sent.
+
+    Game frames carry free-form payloads — a pad layout, a scoreboard, the
+    four answers to a question — and the server has no business understanding
+    any of it. It does have business making sure it is small.
+    """
+    if depth > 3:
+        return None
+    if value is None or isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value if -1e6 < value < 1e6 else 0
+    if isinstance(value, str):
+        return value[:160]
+    if isinstance(value, list):
+        return [_small(v, depth + 1) for v in value[:64]]
+    if isinstance(value, dict):
+        out = {}
+        for k, v in list(value.items())[:32]:
+            if isinstance(k, str) and GAME_KEY_RE.match(k):
+                out[k] = _small(v, depth + 1)
+        return out
+    return None
+
+
+def clean_game(raw):
+    act = raw.get("act")
+    if act not in GAME_ACTS:
+        return None
+    out = {"t": "game", "act": act}
+    game = raw.get("game")
+    if isinstance(game, str) and GAME_KEY_RE.match(game):
+        out["game"] = game
+    for key in ("k", "to", "phase", "name"):
+        v = raw.get(key)
+        if isinstance(v, str):
+            out[key] = v[:60]
+    v = raw.get("v")
+    if isinstance(v, str):
+        out["v"] = v[:16]
+    elif isinstance(v, bool) or isinstance(v, (int, float)):
+        out["v"] = v if isinstance(v, bool) else _num(v, -1e4, 1e4)
+    for key in ("x", "y"):
+        if key in raw:
+            out[key] = _num(raw.get(key), -4.0, 4.0)
+    for key in ("left", "rev"):
+        if key in raw:
+            out[key] = _num(raw.get(key), 0, 1e6)
+    msg = raw.get("msg")
+    if isinstance(msg, str):
+        out["msg"] = msg[:140]
+    for key in ("pad", "opt"):
+        if isinstance(raw.get(key), dict):
+            out[key] = _small(raw[key])
+    if isinstance(raw.get("scores"), list):
+        out["scores"] = _small(raw["scores"])
+    return out
+
+
 class ChalkConsumer(AsyncJsonWebsocketConsumer):
     # ------------------------------------------------------------------
     # lifecycle
@@ -614,6 +692,9 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
         self._tokens_at = time.monotonic()
         self._reaper = None
         self._watcher = None
+        # A phone paired by QR code is usually not signed in and so has no
+        # person card. It still needs to be one player and not another.
+        self.anon_id = uuid.uuid4().hex[:8]
 
         info = await self._session_info(self.code)
         if not info:
@@ -1019,6 +1100,24 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
                     "on": bool(content.get("on")),
                 }
             )
+
+        elif t == "game":
+            # Timeout. Relayed and forgotten — see the note above the class.
+            frame = clean_game(content)
+            if not frame:
+                return
+            if frame["act"] in GAME_TEACHER_ACTS and self.role == "join":
+                return
+            frame["pid"] = self.person_id or self.anon_id
+            frame["who"] = (self.person or {}).get("name") or (
+                "The board phone" if self.role == "control" else "Player"
+            )
+            if frame["act"] == "join":
+                # A phone cannot know which player it is until it is told.
+                await self.send_json(
+                    {"t": "game", "act": "you", "pid": frame["pid"]}
+                )
+            await self._fan(frame)
 
     # ------------------------------------------------------------------
     # pairing

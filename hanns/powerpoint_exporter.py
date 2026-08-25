@@ -1006,6 +1006,590 @@ def _set_notes(slide, slide_data):
 
 # ───────────────────────── element dispatch ─────────────────────────
 
+# ─────────────────── studio objects (data & diagram) ───────────────────
+#
+# Studio objects are drawn in the browser as SVG. PowerPoint has no SVG
+# canvas worth targeting, so each one is rebuilt from NATIVE shapes and
+# text boxes: a KPI tile becomes a rounded rectangle, a ranked bar becomes
+# two rectangles, a process step becomes a real PPTX chevron. The result
+# is editable in PowerPoint rather than a flat picture.
+#
+# The geometric ones (choropleth, Sankey, Venn, 2x2, slope, pyramid) have
+# no honest native equivalent, so they fall back to a card that at least
+# carries the title and the data as text — nothing silently vanishes and
+# the numbers survive the round trip.
+
+STUDIO_KINDS = {
+    "choropleth", "gradient_legend", "stat_block", "kpi_grid", "bullet_bars",
+    "slope_chart", "waffle", "ring_grid", "process_steps", "timeline_track",
+    "rank_bars", "matrix_2x2", "venn", "pyramid_tiers", "sankey_flow",
+    "heat_grid", "quote_card",
+}
+
+# Sequential ramps, kept in step with RAMPS in hanns_core.js.
+_STUDIO_RAMPS = {
+    "ocean":  ["E0F2FE", "7DD3FC", "38BDF8", "0284C7", "075985", "0C3A5B"],
+    "teal":   ["CCFBF1", "5EEAD4", "2DD4BF", "0D9488", "115E59", "0B3B38"],
+    "forest": ["DCFCE7", "86EFAC", "4ADE80", "16A34A", "15803D", "14532D"],
+    "sunset": ["FEF3C7", "FCD34D", "FB923C", "EF4444", "B91C1C", "7F1D1D"],
+    "ember":  ["FFEDD5", "FDBA74", "FB923C", "EA580C", "C2410C", "7C2D12"],
+    "violet": ["EDE9FE", "C4B5FD", "A78BFA", "7C3AED", "5B21B6", "3B0764"],
+    "slate":  ["F1F5F9", "CBD5E1", "94A3B8", "64748B", "334155", "0F172A"],
+    "clay":   ["F6F1E7", "E3D5BD", "C9AD82", "A5834F", "6F5533", "3F2F1C"],
+}
+
+
+def _mix_hex(a, b, t):
+    try:
+        ar, ag, ab = int(a[0:2], 16), int(a[2:4], 16), int(a[4:6], 16)
+        br, bg, bb = int(b[0:2], 16), int(b[2:4], 16), int(b[4:6], 16)
+    except (ValueError, IndexError):
+        return a
+    t = max(0.0, min(1.0, t))
+    return "%02X%02X%02X" % (
+        int(round(ar + (br - ar) * t)),
+        int(round(ag + (bg - ag) * t)),
+        int(round(ab + (bb - ab) * t)),
+    )
+
+
+def _studio_ramp(el):
+    key = str(el.get("ramp") or "accent")
+    if key in _STUDIO_RAMPS:
+        return _STUDIO_RAMPS[key]
+    accent = _clean_hex(el.get("accent")) or "1D4E89"
+    return [
+        _mix_hex(accent, "FFFFFF", 0.88), _mix_hex(accent, "FFFFFF", 0.66),
+        _mix_hex(accent, "FFFFFF", 0.38), accent,
+        _mix_hex(accent, "0B1220", 0.22), _mix_hex(accent, "0B1220", 0.44),
+    ]
+
+
+def _ramp_at(stops, t):
+    t = max(0.0, min(1.0, t))
+    n = len(stops) - 1
+    i = min(n - 1, int(t * n))
+    return _mix_hex(stops[i], stops[i + 1], t * n - i)
+
+
+def _series_color(el, i, n):
+    """Categorical colour. Mirrors seriesColor() in hanns_core.js: the palest
+    end of a ramp is fine as a map fill but illegible as a bar or a label,
+    so series sample the upper part only."""
+    stops = _studio_ramp(el)
+    t = (i / (n - 1)) if n > 1 else 0.5
+    return _ramp_at(stops, 0.30 + t * 0.66)
+
+
+def _readable_on(hex6):
+    try:
+        r, g, b = int(hex6[0:2], 16), int(hex6[2:4], 16), int(hex6[4:6], 16)
+    except (ValueError, IndexError):
+        return "FFFFFF"
+    return "10202E" if (0.299 * r + 0.587 * g + 0.114 * b) > 150 else "FFFFFF"
+
+
+def _studio_rows(el):
+    out = []
+    for r in (el.get("rows") or []):
+        if not isinstance(r, dict):
+            continue
+        out.append({
+            "label": "" if r.get("label") is None else str(r.get("label")),
+            "value": _num(r.get("value"), 0.0),
+            "value2": None if r.get("value2") in (None, "") else _num(r.get("value2"), 0.0),
+            "color": _clean_hex(r.get("color")),
+            "note": "" if r.get("note") is None else str(r.get("note")),
+        })
+    return out
+
+
+def _studio_fmt(el, v):
+    dec = int(_num(el.get("decimals"), 0))
+    dec = 0 if dec < 0 else (4 if dec > 4 else dec)
+    try:
+        body = f"{float(v):,.{dec}f}"
+    except (TypeError, ValueError):
+        body = str(v)
+    return f"{el.get('valuePrefix') or ''}{body}{el.get('valueSuffix') or ''}"
+
+
+def _txt_box(slide, x, y, w, h, text, *, size=14, bold=False, color="0F172A",
+             align=PP_ALIGN.LEFT, anchor=None, italic=False):
+    """A plain text box in slide pixel coordinates."""
+    box = slide.shapes.add_textbox(_px_to_emu(x), _px_to_emu(y),
+                                   _px_to_emu(max(8, w)), _px_to_emu(max(8, h)))
+    tf = box.text_frame
+    tf.word_wrap = True
+    tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
+    if anchor is not None:
+        tf.vertical_anchor = anchor
+    p = tf.paragraphs[0]
+    p.alignment = align
+    r = p.add_run()
+    r.text = str(text)
+    r.font.size = Pt(max(6, int(round(size / 1.333))))
+    r.font.bold = bold
+    r.font.italic = italic
+    r.font.color.rgb = _rgb("#" + (_clean_hex(color) or "0F172A"), "0F172A")
+    return box
+
+
+def _rect(slide, x, y, w, h, fill, *, radius=0, line=None, line_w=0):
+    shp = slide.shapes.add_shape(
+        MSO_SHAPE.ROUNDED_RECTANGLE if radius else MSO_SHAPE.RECTANGLE,
+        _px_to_emu(x), _px_to_emu(y), _px_to_emu(max(2, w)), _px_to_emu(max(2, h)))
+    if radius:
+        _set_rounded_radius(shp, radius, min(w, h))
+    if fill:
+        shp.fill.solid()
+        shp.fill.fore_color.rgb = RGBColor.from_string(fill)
+    else:
+        shp.fill.background()
+    if line and line_w:
+        shp.line.color.rgb = RGBColor.from_string(line)
+        shp.line.width = Pt(max(0.5, line_w / 1.333))
+    else:
+        shp.line.fill.background()
+    return shp
+
+
+def _studio_frame(el):
+    """Element box in slide pixels, plus a cursor for stacked content."""
+    x, y = _num(el.get("x"), 0), _num(el.get("y"), 0)
+    w, h = max(40, _num(el.get("w"), 300)), max(30, _num(el.get("h"), 200))
+    return x, y, w, h
+
+
+def _studio_title(slide, el, x, y, w):
+    """Draw the object title if it has one; return the height consumed."""
+    title = str(el.get("title") or "").strip()
+    if not title:
+        return 0
+    dark = bool(el.get("dark"))
+    _txt_box(slide, x, y, w, 26, title, size=20, bold=True,
+             color="F1F5F9" if dark else "0F172A")
+    return 30
+
+
+def _std_stat_block(slide, el):
+    x, y, w, h = _studio_frame(el)
+    rows = _studio_rows(el) or [{"label": "", "value": _num(el.get("level"), 0),
+                                 "value2": None, "note": "", "color": None}]
+    r = rows[0]
+    accent = _clean_hex(el.get("accent")) or "E8482B"
+    dark = bool(el.get("dark"))
+    align = {"center": PP_ALIGN.CENTER, "right": PP_ALIGN.RIGHT}.get(
+        str(el.get("textAlign") or "left"), PP_ALIGN.LEFT)
+    cy = y
+    if el.get("title"):
+        _txt_box(slide, x, cy, w, 18, str(el["title"]).upper(), size=13, bold=True,
+                 color=accent, align=align)
+        cy += 22
+    vh = min(h * 0.52, 96)
+    _txt_box(slide, x, cy, w, vh, _studio_fmt(el, r["value"]),
+             size=max(28, vh * 0.92), bold=True, color=accent, align=align)
+    cy += vh + 4
+    if r["label"]:
+        _txt_box(slide, x, cy, w, 40, r["label"], size=18, bold=True,
+                 color="E6EDF5" if dark else "0F172A", align=align)
+        cy += 42
+    if r["value2"] is not None:
+        up = r["value2"] >= 0
+        _txt_box(slide, x, cy, w, 20,
+                 ("\u25B2 " if up else "\u25BC ") + _studio_fmt(el, abs(r["value2"])),
+                 size=14, bold=True, color="15803D" if up else "B91C1C", align=align)
+        cy += 22
+    if r["note"]:
+        _txt_box(slide, x, cy, w, 24, r["note"], size=13,
+                 color="94A3B8" if dark else "5B7183", align=align)
+    return None
+
+
+def _std_kpi_grid(slide, el):
+    x, y, w, h = _studio_frame(el)
+    rows = _studio_rows(el)
+    if not rows:
+        return None
+    top = _studio_title(slide, el, x, y, w)
+    y += top
+    h -= top
+    cols = max(1, min(6, int(_num(el.get("cols"), min(3, len(rows))))))
+    import math as _math
+    rws = _math.ceil(len(rows) / cols)
+    gap = 10
+    cw = (w - gap * (cols - 1)) / cols
+    ch = (h - gap * (rws - 1)) / max(1, rws)
+    style = str(el.get("tileStyle") or "soft")
+    for i, r in enumerate(rows):
+        cx = x + (i % cols) * (cw + gap)
+        cyy = y + (i // cols) * (ch + gap)
+        tint = r["color"] or _series_color(el, i, len(rows))
+        if style == "solid":
+            _rect(slide, cx, cyy, cw, ch, tint, radius=14)
+            ink = _readable_on(tint)
+        else:
+            _rect(slide, cx, cyy, cw, ch, _mix_hex(tint, "FFFFFF", 0.85), radius=14,
+                  line=tint, line_w=1.2)
+            ink = tint
+        _txt_box(slide, cx + 12, cyy + 10, cw - 24, ch * 0.5,
+                 _studio_fmt(el, r["value"]), size=min(46, ch * 0.42), bold=True, color=ink)
+        if r["label"]:
+            _txt_box(slide, cx + 12, cyy + ch * 0.55, cw - 24, ch * 0.24, r["label"],
+                     size=min(15, ch * 0.16), bold=True,
+                     color=ink if style == "solid" else "0F172A")
+        if r["note"]:
+            _txt_box(slide, cx + 12, cyy + ch * 0.76, cw - 24, ch * 0.2, r["note"],
+                     size=min(12, ch * 0.13),
+                     color=ink if style == "solid" else "5B7183")
+    return None
+
+
+def _std_bar_rows(slide, el, ranked):
+    """Ranked bars and bullet bars: same row geometry, different trimmings."""
+    x, y, w, h = _studio_frame(el)
+    rows = _studio_rows(el)
+    if not rows:
+        return None
+    if ranked:
+        srt = str(el.get("sort") or "desc")
+        if srt == "desc":
+            rows.sort(key=lambda r: -r["value"])
+        elif srt == "asc":
+            rows.sort(key=lambda r: r["value"])
+    top = _studio_title(slide, el, x, y, w)
+    y += top
+    h -= top
+    hi = _num(el.get("max"), 0) or max([r["value"] for r in rows] +
+                                       [(r["value2"] or 0) for r in rows] + [1])
+    n = len(rows)
+    gap = 7
+    rh = max(12, (h - gap * (n - 1)) / n)
+    pos_w = 26 if (ranked and el.get("showNumbers") is not False) else 0
+    lab_w = max(70, w * 0.24)
+    val_w = 66 if el.get("showValues") is not False else 0
+    track_x = x + pos_w + lab_w + 8
+    track_w = max(30, w - pos_w - lab_w - val_w - 16)
+    dark = bool(el.get("dark"))
+    for i, r in enumerate(rows):
+        ry = y + i * (rh + gap)
+        c = r["color"] or _series_color(el, (n - 1 - i) if ranked else i, n)
+        if pos_w:
+            _rect(slide, x, ry + rh * 0.1, 22, rh * 0.8,
+                  "1F293722" if dark else "E2E8F0", radius=6)
+            _txt_box(slide, x, ry + rh * 0.22, 22, rh * 0.6, str(i + 1), size=min(13, rh * 0.5),
+                     bold=True, color="0F172A", align=PP_ALIGN.CENTER)
+        _txt_box(slide, x + pos_w + 4, ry + rh * 0.15, lab_w, rh * 0.7, r["label"],
+                 size=min(16, rh * 0.56), bold=True,
+                 color="E6EDF5" if dark else "0F172A")
+        _rect(slide, track_x, ry + rh * 0.22, track_w, rh * 0.56,
+              "334155" if dark else "EDF1F6", radius=rh * 0.28)
+        fw = max(2, track_w * max(0.0, min(1.0, r["value"] / hi)))
+        _rect(slide, track_x, ry + rh * 0.22, fw, rh * 0.56, c, radius=rh * 0.28)
+        if r["value2"] is not None:
+            tx = track_x + track_w * max(0.0, min(1.0, r["value2"] / hi))
+            _rect(slide, tx - 1.5, ry + rh * 0.1, 3, rh * 0.8,
+                  "E2E8F0" if dark else "0F172A")
+        if val_w:
+            _txt_box(slide, x + w - val_w, ry + rh * 0.15, val_w, rh * 0.7,
+                     _studio_fmt(el, r["value"]), size=min(16, rh * 0.56), bold=True,
+                     color="E6EDF5" if dark else "0F172A", align=PP_ALIGN.RIGHT)
+    return None
+
+
+def _std_process_steps(slide, el):
+    x, y, w, h = _studio_frame(el)
+    rows = _studio_rows(el)
+    if not rows:
+        return None
+    top = _studio_title(slide, el, x, y, w)
+    y += top
+    h -= top
+    n = len(rows)
+    vertical = str(el.get("orient") or "horizontal") == "vertical"
+    chevron = str(el.get("stepStyle") or "chevron") == "chevron" and not vertical
+    gap = 6
+    if vertical:
+        sh = (h - gap * (n - 1)) / n
+        sw = w
+    else:
+        sw = (w - gap * (n - 1)) / n
+        sh = h
+    for i, r in enumerate(rows):
+        sx = x + (0 if vertical else i * (sw + gap))
+        sy = y + (i * (sh + gap) if vertical else 0)
+        tint = r["color"] or _series_color(el, i, n)
+        if chevron:
+            shp = slide.shapes.add_shape(
+                MSO_SHAPE.CHEVRON, _px_to_emu(sx), _px_to_emu(sy),
+                _px_to_emu(max(4, sw)), _px_to_emu(max(4, sh)))
+            shp.fill.solid()
+            shp.fill.fore_color.rgb = RGBColor.from_string(tint)
+            shp.line.fill.background()
+        else:
+            _rect(slide, sx, sy, sw, sh, _mix_hex(tint, "FFFFFF", 0.84),
+                  radius=12, line=tint, line_w=1.2)
+        ink = _readable_on(tint) if chevron else "0F172A"
+        pad = sh * 0.22 if chevron else 12
+        label = (f"{i + 1}. " if el.get("showNumbers") is not False else "") + r["label"]
+        _txt_box(slide, sx + pad, sy + sh * 0.22, sw - pad * 2, sh * 0.32, label,
+                 size=min(17, sh * 0.24), bold=True, color=ink,
+                 align=PP_ALIGN.CENTER if chevron else PP_ALIGN.LEFT)
+        if r["note"]:
+            _txt_box(slide, sx + pad, sy + sh * 0.55, sw - pad * 2, sh * 0.3, r["note"],
+                     size=min(13, sh * 0.17), color=ink,
+                     align=PP_ALIGN.CENTER if chevron else PP_ALIGN.LEFT)
+    return None
+
+
+def _std_timeline(slide, el):
+    x, y, w, h = _studio_frame(el)
+    rows = _studio_rows(el)
+    if not rows:
+        return None
+    top = _studio_title(slide, el, x, y, w)
+    y += top
+    h -= top
+    n = len(rows)
+    dark = bool(el.get("dark"))
+    axis_y = y + h / 2
+    _rect(slide, x, axis_y - 1.5, w, 3, "334155" if dark else "D8E0E8")
+    step = w / max(1, n)
+    for i, r in enumerate(rows):
+        cx = x + step * i + step / 2
+        tint = r["color"] or _series_color(el, i, n)
+        slide.shapes.add_shape(MSO_SHAPE.OVAL, _px_to_emu(cx - 7), _px_to_emu(axis_y - 7),
+                               _px_to_emu(14), _px_to_emu(14)).fill.solid()
+        dot = slide.shapes[-1]
+        dot.fill.fore_color.rgb = RGBColor.from_string(tint)
+        dot.line.fill.background()
+        above = (i % 2 == 0) or el.get("alternate") is False
+        ty = (axis_y - h * 0.44) if above else (axis_y + 16)
+        _txt_box(slide, cx - step / 2, ty, step, 22, r["label"], size=17, bold=True,
+                 color=tint, align=PP_ALIGN.CENTER)
+        if r["note"]:
+            _txt_box(slide, cx - step / 2, ty + 22, step, 34, r["note"], size=12,
+                     color="94A3B8" if dark else "5B7183", align=PP_ALIGN.CENTER)
+    return None
+
+
+def _arc(slide, x, y, d, start_deg, end_deg, fill, thickness=0.26):
+    """A BLOCK_ARC is a ring with a real sweep: adjustments are
+    (start angle, end angle, thickness as a fraction of the radius)."""
+    shp = slide.shapes.add_shape(MSO_SHAPE.BLOCK_ARC, _px_to_emu(x), _px_to_emu(y),
+                                 _px_to_emu(d), _px_to_emu(d))
+    try:
+        shp.adjustments[0] = float(start_deg)
+        shp.adjustments[1] = float(end_deg)
+        shp.adjustments[2] = float(thickness)
+    except (IndexError, ValueError):
+        pass
+    shp.fill.solid()
+    shp.fill.fore_color.rgb = RGBColor.from_string(fill)
+    shp.line.fill.background()
+    return shp
+
+
+def _std_ring_grid(slide, el):
+    """Percentage donuts. PowerPoint can draw a genuine partial ring, so the
+    sweep encodes the value rather than the number doing all the work."""
+    x, y, w, h = _studio_frame(el)
+    rows = _studio_rows(el)
+    if not rows:
+        return None
+    top = _studio_title(slide, el, x, y, w)
+    y += top
+    h -= top
+    cols = max(1, min(6, int(_num(el.get("cols"), min(4, len(rows))))))
+    gap = 10
+    cw = (w - gap * (cols - 1)) / cols
+    hi = _num(el.get("max"), 100) or 100
+    dark = bool(el.get("dark"))
+    thickness = max(0.08, min(0.45, _num(el.get("ringW"), 13) / 50.0))
+    for i, r in enumerate(rows):
+        cx = x + (i % cols) * (cw + gap)
+        d = max(24, min(cw, h * 0.7))
+        ox = cx + (cw - d) / 2
+        tint = r["color"] or _series_color(el, i, len(rows))
+        pct = max(0.0, min(1.0, (r["value"] / hi) if hi else 0.0))
+        # Track, then the sweep clockwise from 12 o'clock.
+        _arc(slide, ox, y, d, 0, 359.9, "334155" if dark else "E6EBF1", thickness)
+        if pct > 0.001:
+            _arc(slide, ox, y, d, 270.0, (270.0 + 359.9 * pct) % 360.0, tint, thickness)
+        _txt_box(slide, ox, y + d * 0.38, d, d * 0.26, _studio_fmt(el, r["value"]),
+                 size=max(10, min(26, d * 0.24)), bold=True,
+                 color="FFFFFF" if dark else "0F172A", align=PP_ALIGN.CENTER,
+                 anchor=MSO_ANCHOR.MIDDLE)
+        if r["label"]:
+            _txt_box(slide, cx, y + d + 6, cw, 20, r["label"], size=13, bold=True,
+                     color="E6EDF5" if dark else "0F172A", align=PP_ALIGN.CENTER)
+    return None
+
+
+def _std_waffle(slide, el):
+    x, y, w, h = _studio_frame(el)
+    rows = _studio_rows(el)
+    cols = max(2, min(20, int(_num(el.get("cols"), 10))))
+    total = cols * cols
+    top = _studio_title(slide, el, x, y, w)
+    y += top
+    h -= top
+    side = min(w, h)
+    cell = side / cols
+    pad = cell * 0.14
+    cells = []
+    if len(rows) <= 1:
+        pct = max(0.0, min(100.0, rows[0]["value"] if rows else _num(el.get("level"), 60)))
+        on = int(round(pct / 100 * total))
+        c = (rows[0]["color"] if rows else None) or _clean_hex(el.get("accent")) or "0284C7"
+        cells = [c if i < on else None for i in range(total)]
+    else:
+        ssum = sum(max(0.0, r["value"]) for r in rows) or 1
+        acc = []
+        for i, r in enumerate(rows):
+            c = r["color"] or _series_color(el, i, len(rows))
+            acc += [c] * int(round(max(0.0, r["value"]) / ssum * total))
+        cells = [acc[i] if i < len(acc) else None for i in range(total)]
+    dark = bool(el.get("dark"))
+    for i, c in enumerate(cells):
+        cx = x + (i % cols) * cell
+        cy = y + (i // cols) * cell
+        _rect(slide, cx, cy, cell - pad, cell - pad,
+              c or ("2B3648" if dark else "E4E9EF"), radius=max(1, cell * 0.18))
+    return None
+
+
+def _std_heat_grid(slide, el):
+    """A labelled matrix maps cleanly onto a real PowerPoint table."""
+    rows = _studio_rows(el)
+    if not rows:
+        return None
+    cells = [[_num(v, None) for v in re.split(r"[,;\s]+", r["note"]) if v != ""] for r in rows]
+    ncols = max([len(c) for c in cells] + [1])
+    col_labels = [s.strip() for s in str(el.get("colLabels") or "").split(",")]
+    flat = [v for row in cells for v in row if v is not None]
+    lo = _num(el.get("scaleMin"), min(flat) if flat else 0)
+    hi = _num(el.get("scaleMax"), max(flat) if flat else 1)
+    if hi == lo:
+        hi = lo + 1
+    stops = _studio_ramp(el)
+    x, y, w, h = _studio_frame(el)
+    top = _studio_title(slide, el, x, y, w)
+    y += top
+    h -= top
+    shape = slide.shapes.add_table(len(rows) + 1, ncols + 1, _px_to_emu(x), _px_to_emu(y),
+                                   _px_to_emu(w), _px_to_emu(h))
+    tbl = shape.table
+    tbl.cell(0, 0).text = ""
+    for c in range(ncols):
+        tbl.cell(0, c + 1).text = col_labels[c] if c < len(col_labels) else ""
+    for ri, r in enumerate(rows):
+        tbl.cell(ri + 1, 0).text = r["label"]
+        for c in range(ncols):
+            cell = tbl.cell(ri + 1, c + 1)
+            v = cells[ri][c] if c < len(cells[ri]) else None
+            if v is None:
+                cell.text = ""
+                continue
+            bg = _ramp_at(stops, (v - lo) / (hi - lo))
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = RGBColor.from_string(bg)
+            cell.text = "" if el.get("showValues") is False else _studio_fmt(el, v)
+            for p in cell.text_frame.paragraphs:
+                p.alignment = PP_ALIGN.CENTER
+                for run in p.runs:
+                    run.font.size = Pt(11)
+                    run.font.bold = True
+                    run.font.color.rgb = RGBColor.from_string(_readable_on(bg))
+    return shape
+
+
+def _std_quote_card(slide, el):
+    x, y, w, h = _studio_frame(el)
+    accent = _clean_hex(el.get("accent")) or "7C3AED"
+    dark = bool(el.get("dark"))
+    style = str(el.get("quoteStyle") or "bar")
+    if style == "bar":
+        _rect(slide, x, y, 6, h, accent)
+        x += 22
+        w -= 22
+    elif style == "card":
+        _rect(slide, x, y, w, h, None, radius=18, line=accent, line_w=2)
+        x += 18
+        w -= 36
+    quote = str(el.get("quote") or "")
+    _txt_box(slide, x, y + h * 0.14, w, h * 0.5, "\u201C" + quote + "\u201D",
+             size=_num(el.get("quoteSize"), 34), bold=True,
+             color="E6EDF5" if dark else "0F172A")
+    cy = y + h * 0.66
+    if el.get("attribution"):
+        _txt_box(slide, x, cy, w, 24, str(el["attribution"]), size=18, bold=True, color=accent)
+        cy += 26
+    if el.get("role"):
+        _txt_box(slide, x, cy, w, 22, str(el["role"]), size=14,
+                 color="94A3B8" if dark else "5B7183")
+    return None
+
+
+def _std_data_card(slide, el, kind_label):
+    """Fallback for the geometric objects. A choropleth or a Sankey has no
+    honest native PowerPoint equivalent, so the deck gets a titled card with
+    the underlying figures listed — the numbers survive, editable."""
+    x, y, w, h = _studio_frame(el)
+    accent = _clean_hex(el.get("accent")) or "94A3B8"
+    _rect(slide, x, y, w, h, "F6F9FC", radius=18, line=accent, line_w=1.5)
+    title = str(el.get("title") or el.get("label") or kind_label)
+    _txt_box(slide, x + 16, y + 12, w - 32, 26, title, size=19, bold=True, color="0F172A")
+    rows = _studio_rows(el)
+    if not rows:
+        return None
+    lines = [f"{r['label']}   {_studio_fmt(el, r['value'])}" for r in rows[:14]]
+    if len(rows) > 14:
+        lines.append(f"… and {len(rows) - 14} more")
+    body = slide.shapes.add_textbox(_px_to_emu(x + 16), _px_to_emu(y + 44),
+                                    _px_to_emu(max(20, w - 32)), _px_to_emu(max(20, h - 56)))
+    tf = body.text_frame
+    tf.word_wrap = True
+    for i, line in enumerate(lines):
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        r = p.add_run()
+        r.text = line
+        r.font.size = Pt(11)
+        r.font.color.rgb = RGBColor.from_string("334155")
+    return None
+
+
+_STUDIO_NATIVE = {
+    "stat_block":     _std_stat_block,
+    "kpi_grid":       _std_kpi_grid,
+    "rank_bars":      lambda s, e: _std_bar_rows(s, e, True),
+    "bullet_bars":    lambda s, e: _std_bar_rows(s, e, False),
+    "process_steps":  _std_process_steps,
+    "timeline_track": _std_timeline,
+    "ring_grid":      _std_ring_grid,
+    "waffle":         _std_waffle,
+    "heat_grid":      _std_heat_grid,
+    "quote_card":     _std_quote_card,
+}
+_STUDIO_CARD_LABEL = {
+    "choropleth": "Region map", "gradient_legend": "Colour scale",
+    "slope_chart": "Slope chart", "matrix_2x2": "2x2 matrix",
+    "venn": "Venn diagram", "pyramid_tiers": "Pyramid", "sankey_flow": "Flow",
+}
+
+
+def _add_studio_object(slide, el):
+    kind = str(el.get("objectType") or "")
+    fn = _STUDIO_NATIVE.get(kind)
+    try:
+        if fn:
+            return fn(slide, el)
+        return _std_data_card(slide, el, _STUDIO_CARD_LABEL.get(kind, "Infographic"))
+    except Exception:
+        # Never let one object take the whole export down.
+        return _add_rich_placeholder(slide, el, _STUDIO_CARD_LABEL.get(kind, "Infographic"))
+
+
 def _render_element(slide, el, fx: _AnimFx):
     """Render one element and register its entrance animation."""
     etype = str(el.get("type", "")).lower()
@@ -1031,7 +1615,12 @@ def _render_element(slide, el, fx: _AnimFx):
     elif etype == "map":
         shp = _add_rich_placeholder(slide, el, "Map")
     elif etype == "object":
-        shp = _add_rich_placeholder(slide, el, "Infographic")
+        if str(el.get("objectType") or "") in STUDIO_KINDS:
+            # Studio objects are rebuilt from native shapes so they stay
+            # editable in PowerPoint rather than exporting as a flat card.
+            shp = _add_studio_object(slide, el)
+        else:
+            shp = _add_rich_placeholder(slide, el, "Infographic")
     elif etype == "creative_shape":
         shp = _add_shape(slide, {**el, "type": "ellipse", "radius": 0}, "ellipse")
     elif etype == "group":

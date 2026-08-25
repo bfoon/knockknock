@@ -5,7 +5,7 @@
 "use strict";
 const Hx = window.Hanns;
 const {Deck,TEMPLATES,BACKGROUNDS,BG_FX,ANIMS,TRANSITIONS,PALETTE,FONTS,OBJECTS,SHAPES,
-  newSlide,curSlide,selEl,paintSlide,renderElement,
+  newSlide,curSlide,selEl,paintSlide,renderElement,isStudioObject,
   makeText,makeShape,makeLine,makeImage,makeVideo,makeLink,makeObject,makeCreativeShape,makeTable,makeChart,makeMap,makeGallery,W,H,$,$$,uid,clamp,genCode}=Hx;
 
 const canvas   = $("#canvas");
@@ -1374,7 +1374,11 @@ function renderInspector(){
   const el=selEl();
   if(inspTab==="slide"){inspBody.innerHTML=slidePanel();bindSlidePanel();return;}
   const selected=selectedElements();
-  if(selected.length>1){inspBody.innerHTML=multiSelectionPanel(selected);bindMultiSelectionPanel();return;}
+  if(selected.length>1){
+    inspBody.innerHTML=multiSelectionPanel(selected);bindMultiSelectionPanel();
+    studioPanels(null);   // align & distribute across the whole selection
+    return;
+  }
   if(!el){
     inspBody.innerHTML=`<div class="insp-empty"><span class="big">Nothing selected</span>
       Pick an element on the canvas, or add one from the left rail. Switch to <b>Slide</b> to style the background &amp; transition.</div>`;
@@ -1382,6 +1386,7 @@ function renderInspector(){
   }
   if(inspTab==="animate"){inspBody.innerHTML=animatePanel(el);bindAnimatePanel(el);return;}
   inspBody.innerHTML=elementPanel(el);bindElementPanel(el);
+  studioPanels(el);
 }
 function multiSelectionPanel(els){
   return `<div class="group"><span class="glabel">Selected objects</span>
@@ -1627,8 +1632,14 @@ Affected Area 1,-16.52,13.39,45,#e8482b,#ffffff">${escapeTA(areasToText(el))}</t
 
   if(el.type==="object"){
     const def=(OBJECTS||[]).find(o=>o.kind===el.objectType)||OBJECTS[0];
+    // ── Studio objects (choropleth, KPI tiles, Sankey…) ──────────────
+    // Their controls carry live per-row handlers, so studioPanels()
+    // builds them as DOM after this markup is bound. Nothing to add here.
+    if(isStudioObject(el.objectType)){
+      /* intentionally empty — see studioPanels() */
+    }
     // ── Teleprompter: presenter-only speech script. Dedicated panel. ──
-    if(el.objectType==="teleprompter"){
+    else if(el.objectType==="teleprompter"){
       const script=el.script!=null?String(el.script):"";
       const words=script.trim()?script.trim().split(/\s+/).length:0;
       const mins=words?Math.max(1,Math.round(words/130)):0;
@@ -3468,6 +3479,417 @@ document.getElementById("nx").onclick=function(){go(i+1)};document.getElementByI
 addEventListener("keydown",function(e){if(e.key==="ArrowRight"||e.key===" ")go(i+1);if(e.key==="ArrowLeft")go(i-1)});
 addEventListener("resize",fit);fit();go(0);
 <\/script></body></html>`;
+
+
+/* ════════════════════════════════════════════════════════════════════
+   STUDIO OBJECT INSPECTOR + ARRANGE TOOLS                        v57
+   ────────────────────────────────────────────────────────────────────
+   Studio objects (choropleth, KPI tiles, Sankey…) all read the same
+   `rows` shape, so ONE data grid drives every one of them; the per-kind
+   differences are declared as a field list in STUDIO_FIELDS and turned
+   into controls by studioFields().
+
+   These panels are built as DOM rather than as an HTML string because
+   they carry live per-row handlers. They are appended after
+   bindElementPanel() has run, so the Position / Arrange / Delete
+   controls above them are the standard ones.
+   ════════════════════════════════════════════════════════════════════ */
+
+const hEl=(tag,attrs,kids)=>{
+  const n=document.createElement(tag);
+  for(const k in (attrs||{})){
+    if(attrs[k]==null)continue;
+    if(k==="class")n.className=attrs[k];
+    else if(k==="text")n.textContent=attrs[k];
+    else if(k.slice(0,2)==="on")n.addEventListener(k.slice(2),attrs[k]);
+    else n.setAttribute(k,attrs[k]);
+  }
+  (kids||[]).forEach(c=>c&&n.appendChild(c));
+  return n;
+};
+const hGroup=(title,kids)=>hEl("div",{class:"group hs-panel"},
+  [hEl("span",{class:"glabel",text:title})].concat(kids||[]));
+const hField=(label,ctrl)=>hEl("div",{class:"field"},[hEl("label",{text:label}),ctrl]);
+const touch=()=>{renderCanvas();markDirty();};
+
+function hText(el,key,ph){
+  const i=hEl("input",{type:"text",value:el[key]==null?"":String(el[key]),placeholder:ph||""});
+  i.addEventListener("input",()=>{el[key]=i.value;touch();});
+  return i;
+}
+function hNum(el,key,min,max,step){
+  const i=hEl("input",{type:"number",value:el[key]==null?"":el[key],min,max,step:step||"any"});
+  i.addEventListener("input",()=>{el[key]=i.value===""?"":Number(i.value);touch();});
+  return i;
+}
+function hColor(el,key,fb){
+  const i=hEl("input",{type:"color",value:el[key]||fb||"#1d4e89"});
+  i.addEventListener("input",()=>{el[key]=i.value;touch();});
+  return i;
+}
+function hSelect(el,key,opts,redraw){
+  const s=hEl("select",{});
+  opts.forEach(o=>{
+    const v=typeof o==="string"?o:o.v, l=typeof o==="string"?o:o.l;
+    const op=hEl("option",{value:v,text:l});
+    if(String(el[key]??"")===String(v))op.selected=true;
+    s.appendChild(op);
+  });
+  s.addEventListener("change",()=>{
+    el[key] = s.value==="true"?true : s.value==="false"?false : s.value;
+    touch(); if(redraw)renderInspector();
+  });
+  return s;
+}
+function hToggle(el,key,onL,offL,defOn){
+  const cur = el[key]===undefined ? !!defOn : el[key]!==false;
+  const on =hEl("button",{type:"button",text:onL||"Show",class:cur?"active":""});
+  const off=hEl("button",{type:"button",text:offL||"Hide",class:cur?"":"active"});
+  on.addEventListener("click",()=>{el[key]=true;on.classList.add("active");off.classList.remove("active");touch();});
+  off.addEventListener("click",()=>{el[key]=false;off.classList.add("active");on.classList.remove("active");touch();});
+  return hEl("div",{class:"seg"},[on,off]);
+}
+
+/* ── the shared data grid ───────────────────────────────────────── */
+function studioDataGrid(el){
+  if(!Array.isArray(el.rows)){
+    const seed=(Hx.STUDIO_SEED||{})[el.objectType];
+    el.rows = seed && seed.rows ? JSON.parse(JSON.stringify(seed.rows)) : [];
+  }
+  const k=el.objectType;
+  const wantsV2   = ["bullet_bars","slope_chart","matrix_2x2","stat_block"].indexOf(k)>=0;
+  const wantsNote = ["heat_grid","process_steps","timeline_track","stat_block","kpi_grid",
+                     "pyramid_tiers","ring_grid","choropleth"].indexOf(k)>=0;
+  const labelHead = k==="choropleth"?"Country":(k==="heat_grid"?"Row":"Label");
+  const noteHead  = k==="heat_grid"?"Cells (comma separated)":(k==="choropleth"?"Chip name":"Note");
+  const vHead     = k==="matrix_2x2"?"X (0–100)":(k==="slope_chart"?"Before":"Value");
+  const v2Head    = k==="matrix_2x2"?"Y (0–100)":(k==="slope_chart"?"After":(k==="stat_block"?"Delta":"Target"));
+
+  const tbl=hEl("table",{class:"hs-grid-tbl"});
+  const head=hEl("tr",{},[hEl("th",{text:labelHead})]);
+  if(k!=="venn")head.appendChild(hEl("th",{text:vHead}));
+  if(wantsV2)   head.appendChild(hEl("th",{text:v2Head}));
+  if(wantsNote) head.appendChild(hEl("th",{text:noteHead}));
+  head.appendChild(hEl("th",{text:""}));head.appendChild(hEl("th",{text:""}));
+  tbl.appendChild(head);
+
+  el.rows.forEach((r,idx)=>{
+    const tr=hEl("tr",{});
+    const cell=c=>{const td=hEl("td",{});td.appendChild(c);tr.appendChild(td);};
+    const li=hEl("input",{type:"text",value:r.label==null?"":r.label});
+    if(k==="choropleth"){li.setAttribute("list","hs-country-list");li.title="Country name or ISO3 code";}
+    li.addEventListener("input",()=>{r.label=li.value;touch();});
+    cell(li);
+    if(k!=="venn"){
+      const vi=hEl("input",{type:"number",step:"any",value:r.value==null?"":r.value});
+      vi.addEventListener("input",()=>{r.value=vi.value===""?0:Number(vi.value);touch();});
+      cell(vi);
+    }
+    if(wantsV2){
+      const v2=hEl("input",{type:"number",step:"any",value:r.value2==null?"":r.value2});
+      v2.addEventListener("input",()=>{r.value2=v2.value===""?null:Number(v2.value);touch();});
+      cell(v2);
+    }
+    if(wantsNote){
+      const ni=hEl("input",{type:"text",value:r.note==null?"":r.note});
+      ni.addEventListener("input",()=>{r.note=ni.value;touch();});
+      cell(ni);
+    }
+    const ci=hEl("input",{type:"color",value:r.color||"#94a3b8",title:"Override this row's colour"});
+    ci.addEventListener("input",()=>{r.color=ci.value;touch();});
+    cell(ci);
+    const del=hEl("button",{class:"hs-grid-del",type:"button",text:"×",title:"Remove row",
+      onclick:()=>{el.rows.splice(idx,1);touch();renderInspector();}});
+    cell(del);
+    tbl.appendChild(tr);
+  });
+
+  const ta=hEl("textarea",{class:"hs-paste-area",
+    placeholder:"Paste rows from a spreadsheet — one per line.\nLabel, value, value2, note\n\nGhana, 22.9\nNigeria, 19.5"});
+  const pasteWrap=hEl("div",{style:"display:none;margin-top:.45rem"},[ta,
+    hEl("button",{class:"hs-mini",type:"button",text:"Apply",onclick:()=>{
+      const lines=String(ta.value||"").split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+      if(!lines.length)return;
+      const out=[];
+      lines.forEach(line=>{
+        const p=line.split(/\t|,|;/).map(s=>s.trim());
+        if(!p[0])return;
+        const row={label:p[0]};
+        if(p[1])row.value=Number(String(p[1]).replace(/[^0-9.\-]/g,""))||0;
+        if(p[2]){
+          const n=Number(String(p[2]).replace(/[^0-9.\-]/g,""));
+          if(/[0-9]/.test(p[2])&&isFinite(n))row.value2=n; else row.note=p[2];
+        }
+        if(p[3])row.note=p[3];
+        out.push(row);
+      });
+      if(out.length){el.rows=out;touch();renderInspector();toast(out.length+" rows applied");}
+    }})]);
+
+  const btns=hEl("div",{class:"hs-row-btns"},[
+    hEl("button",{class:"hs-mini",type:"button",text:"+ Row",
+      onclick:()=>{el.rows.push({label:"New",value:0});touch();renderInspector();}}),
+    hEl("button",{class:"hs-mini",type:"button",text:"↓ Sort",
+      onclick:()=>{el.rows.sort((a,b)=>(Number(b.value)||0)-(Number(a.value)||0));touch();renderInspector();}}),
+    hEl("button",{class:"hs-mini",type:"button",text:"Clear colours",
+      onclick:()=>{el.rows.forEach(r=>{delete r.color;});touch();renderInspector();}}),
+    hEl("button",{class:"hs-mini",type:"button",text:"⇪ Paste data",
+      onclick:()=>{pasteWrap.style.display=pasteWrap.style.display==="none"?"block":"none";}}),
+  ]);
+  const hint = k==="choropleth"
+    ? "Type a country name or ISO3 code. Anything unmatched simply is not shaded."
+    : (k==="heat_grid" ? "Each row's cell values go in the Note column, comma separated."
+                       : "Leave a colour untouched to let the palette assign it.");
+  return hEl("div",{},[tbl,btns,pasteWrap,hEl("div",{class:"hs-hint",text:hint})]);
+}
+
+/* Country autocomplete for the choropleth grid. */
+function ensureCountryList(){
+  if(document.getElementById("hs-country-list"))return;
+  const GEO=Hx.GEO||{};
+  const dl=document.createElement("datalist");dl.id="hs-country-list";
+  const seen={};
+  Object.keys(GEO).forEach(set=>{
+    const f=GEO[set].f;
+    Object.keys(f).forEach(iso=>{
+      const n=f[iso].n;
+      if(n&&!seen[n]){seen[n]=1;dl.appendChild(hEl("option",{value:n}));}
+    });
+  });
+  document.body.appendChild(dl);
+}
+
+/* ── per-kind controls ──────────────────────────────────────────── */
+function studioFields(el,keys){
+  const out=[], has=k=>keys.indexOf(k)>=0;
+  const GEO_SETS=Hx.GEO_SETS||[], RAMP_KEYS=Hx.RAMP_KEYS||["accent"];
+
+  if(has("title"))     out.push(hField("Title (blank to hide)",hText(el,"title","")));
+  if(has("geoSet"))    out.push(hField("Region set",hSelect(el,"geoSet",GEO_SETS.map(s=>({v:s.key,l:s.label})),true)));
+  if(has("ramp"))      out.push(hField("Colour scale",hSelect(el,"ramp",RAMP_KEYS.map(k=>({v:k,l:k==="accent"?"From accent colour":k[0].toUpperCase()+k.slice(1)})))));
+  if(has("accent"))    out.push(hField("Accent colour",hColor(el,"accent","#1d4e89")));
+  if(has("cols"))      out.push(hField("Columns",hNum(el,"cols",1,20,1)));
+  if(has("ringW"))     out.push(hField("Ring thickness",hNum(el,"ringW",4,34,1)));
+  if(has("max"))       out.push(hField("Scale maximum (blank = auto)",hNum(el,"max")));
+  if(has("labelSize")) out.push(hField("Label size",hNum(el,"labelSize",10,60,1)));
+  if(has("colLabels")) out.push(hField("Column names (comma separated)",hText(el,"colLabels","Q1, Q2, Q3, Q4")));
+  if(has("align"))     out.push(hField("Text alignment",hSelect(el,"textAlign",[{v:"left",l:"Left"},{v:"center",l:"Centre"},{v:"right",l:"Right"}])));
+  if(has("tileStyle")) out.push(hField("Tile style",hSelect(el,"tileStyle",[{v:"soft",l:"Soft tint"},{v:"solid",l:"Solid"},{v:"line",l:"Side rule"}])));
+  if(has("stepStyle")) out.push(hField("Step style",hSelect(el,"stepStyle",[{v:"chevron",l:"Chevron"},{v:"card",l:"Card"},{v:"solid",l:"Solid"}])));
+  if(has("orient"))    out.push(hField("Direction",hSelect(el,"orient",[{v:"horizontal",l:"Horizontal"},{v:"vertical",l:"Vertical"}])));
+  if(has("sort"))      out.push(hField("Sort",hSelect(el,"sort",[{v:"desc",l:"Highest first"},{v:"asc",l:"Lowest first"},{v:"none",l:"Keep my order"}])));
+  if(has("waffleShape"))out.push(hField("Cell shape",hSelect(el,"shape",[{v:"square",l:"Square"},{v:"circle",l:"Circle"}])));
+  if(has("showValues"))out.push(hField("Show values",hToggle(el,"showValues","Show","Hide",true)));
+  if(has("showNumbers"))out.push(hField("Show numbering",hToggle(el,"showNumbers","Show","Hide",true)));
+  if(has("alternate"))out.push(hField("Alternate above / below",hToggle(el,"alternate","On","Off",true)));
+  if(has("countup"))  out.push(hField("Number behaviour",hSelect(el,"numberMode",[{v:"static",l:"Static"},{v:"countup",l:"Count up on reveal"}])));
+  if(has("dark"))     out.push(hField("Colour mode",hToggle(el,"dark","Dark","Light",false)));
+  if(has("grid"))     out.push(hField("Container box",hToggle(el,"hideContainer","Hidden","Visible",true)));
+
+  if(has("numfmt")){
+    out.push(hEl("div",{class:"row2"},[hField("Prefix",hText(el,"valuePrefix","")),hField("Suffix",hText(el,"valueSuffix","%"))]));
+    out.push(hField("Decimal places",hNum(el,"decimals",0,4,1)));
+  }
+  if(has("scaleRange"))out.push(hEl("div",{class:"row2"},[
+    hField("Scale min (auto)",hNum(el,"scaleMin")),hField("Scale max (auto)",hNum(el,"scaleMax"))]));
+  if(has("legend")){
+    out.push(hField("Legend",hToggle(el,"showLegend","Show","Hide",true)));
+    out.push(hField("Legend title",hText(el,"legendTitle","Value")));
+    out.push(hEl("div",{class:"row2"},[hField("Ticks",hNum(el,"legendTicks",2,9,1)),
+                                       hField("Gutter",hNum(el,"legendGutter",0,400,2))]));
+  }
+  if(has("chips")){
+    out.push(hField("Value chips",hToggle(el,"showChips","Show","Hide",true)));
+    out.push(hField("Chip style",hSelect(el,"chipStyle",[{v:"plain",l:"Plain text"},{v:"pill",l:"Pill"},{v:"bubble",l:"Bubble"}])));
+    out.push(hField("Country name on chip",hToggle(el,"chipName","Show","Hide",true)));
+    out.push(hField("Unshaded countries",hColor(el,"baseFill","#e8edf3")));
+  }
+  if(has("slopeAxes"))out.push(hEl("div",{class:"row2"},[
+    hField("Left axis",hText(el,"leftLabel","Before")),hField("Right axis",hText(el,"rightLabel","After"))]));
+  if(has("matrixAxes"))out.push(hEl("div",{class:"row2"},[
+    hField("X axis label",hText(el,"xLabel","")),hField("Y axis label",hText(el,"yLabel",""))]));
+  if(has("quadrants")){
+    out.push(hEl("div",{class:"row2"},[hField("Top left",hText(el,"q1","")),hField("Top right",hText(el,"q2",""))]));
+    out.push(hEl("div",{class:"row2"},[hField("Bottom left",hText(el,"q3","")),hField("Bottom right",hText(el,"q4",""))]));
+  }
+  if(has("vennOpts")){
+    out.push(hField("Overlap label",hText(el,"centerLabel","")));
+    out.push(hEl("div",{class:"row2"},[hField("Circle size",hNum(el,"circleR",.12,.42,.01)),
+                                       hField("Opacity",hNum(el,"circleOpacity",.2,1,.05))]));
+  }
+  if(has("pyramidOpts")){
+    out.push(hField("Direction",hSelect(el,"inverted",[{v:"false",l:"Widest at base"},{v:"true",l:"Inverted (funnel)"}])));
+    out.push(hEl("div",{class:"row2"},[hField("Base width",hNum(el,"baseWidth",.15,.48,.01)),
+                                       hField("Apex width",hNum(el,"apexRatio",0,.6,.02))]));
+    out.push(hField("Horizontal position",hNum(el,"centerX",.2,.8,.02)));
+  }
+  if(has("sankeyOpts")){
+    out.push(hField("Source label",hText(el,"sourceLabel","Total")));
+    out.push(hField("Show percentage share",hToggle(el,"showShare","Show","Hide",true)));
+    out.push(hEl("div",{class:"row2"},[hField("Node width",hNum(el,"nodeW",8,60,1)),
+                                       hField("Ribbon opacity",hNum(el,"flowOpacity",.2,1,.05))]));
+  }
+  if(has("quoteOpts")){
+    const ta=hEl("textarea",{rows:4});ta.value=el.quote||"";
+    ta.addEventListener("input",()=>{el.quote=ta.value;touch();});
+    out.push(hField("Quotation",ta));
+    out.push(hField("Attribution",hText(el,"attribution","")));
+    out.push(hField("Role / source",hText(el,"role","")));
+    out.push(hField("Style",hSelect(el,"quoteStyle",[{v:"bar",l:"Side rule"},{v:"card",l:"Outlined card"},{v:"plain",l:"Plain"}])));
+    out.push(hEl("div",{class:"row2"},[hField("Quote size",hNum(el,"quoteSize",14,72,1)),
+                                       hField("Opening mark",hToggle(el,"showMark","Show","Hide",true))]));
+  }
+  if(has("benchmarks"))out.push(studioBenchmarks(el));
+  return out;
+}
+
+function studioBenchmarks(el){
+  if(!Array.isArray(el.benchmarks))el.benchmarks=[];
+  const tbl=hEl("table",{class:"hs-grid-tbl"});
+  el.benchmarks.forEach((b,i)=>{
+    const li=hEl("input",{type:"text",value:b.label||""});
+    li.addEventListener("input",()=>{b.label=li.value;touch();});
+    const vi=hEl("input",{type:"number",step:"any",value:b.value==null?"":b.value});
+    vi.addEventListener("input",()=>{b.value=Number(vi.value)||0;touch();});
+    const ci=hEl("input",{type:"color",value:b.color||"#38bdf8"});
+    ci.addEventListener("input",()=>{b.color=ci.value;touch();});
+    const del=hEl("button",{class:"hs-grid-del",type:"button",text:"×",
+      onclick:()=>{el.benchmarks.splice(i,1);touch();renderInspector();}});
+    const tr=hEl("tr",{});
+    [li,vi,ci,del].forEach(c=>{const td=hEl("td",{});td.appendChild(c);tr.appendChild(td);});
+    tbl.appendChild(tr);
+  });
+  return hEl("div",{},[
+    hEl("label",{text:"Benchmark markers",style:"font-size:.66rem;opacity:.7;font-weight:700"}),
+    tbl,
+    hEl("div",{class:"hs-row-btns"},[hEl("button",{class:"hs-mini",type:"button",text:"+ Benchmark",
+      onclick:()=>{el.benchmarks.push({label:"Benchmark",value:0,color:"#38bdf8"});touch();renderInspector();}})]),
+    hEl("div",{class:"hs-hint",text:"Markers sit beside the scale. An automatic range widens to include them."})
+  ]);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   ARRANGE, ALIGN & DISTRIBUTE — for every element type
+   ────────────────────────────────────────────────────────────────────
+   One element aligns to the slide; several align to their combined
+   bounds, which is what every other design tool has taught people to
+   expect. selectedElements() already resolves the multi-selection, so
+   these work on whatever is picked.
+   ════════════════════════════════════════════════════════════════════ */
+let styleClip=null;
+
+function arrangeTargets(){return selectedElements();}
+function arrangeBBox(list){
+  const x=Math.min(...list.map(e=>e.x)), y=Math.min(...list.map(e=>e.y));
+  return {x,y,w:Math.max(...list.map(e=>e.x+e.w))-x,h:Math.max(...list.map(e=>e.y+e.h))-y};
+}
+function alignSelection(mode){
+  const list=arrangeTargets();if(!list.length)return;
+  const box=list.length>1?arrangeBBox(list):{x:0,y:0,w:W,h:H};
+  list.forEach(e=>{
+    if(mode==="left")   e.x=Math.round(box.x);
+    if(mode==="center") e.x=Math.round(box.x+(box.w-e.w)/2);
+    if(mode==="right")  e.x=Math.round(box.x+box.w-e.w);
+    if(mode==="top")    e.y=Math.round(box.y);
+    if(mode==="middle") e.y=Math.round(box.y+(box.h-e.h)/2);
+    if(mode==="bottom") e.y=Math.round(box.y+box.h-e.h);
+  });
+  pushHistory();renderAll();markDirty();
+}
+function distributeSelection(axis){
+  const list=arrangeTargets();
+  if(list.length<3){toast("Select three or more objects to distribute");return;}
+  const key=axis==="h"?"x":"y", size=axis==="h"?"w":"h";
+  const sorted=list.slice().sort((a,b)=>a[key]-b[key]);
+  const first=sorted[0], last=sorted[sorted.length-1];
+  const gap=((last[key]+last[size])-first[key]-sorted.reduce((s,e)=>s+e[size],0))/(sorted.length-1);
+  let cur=first[key];
+  sorted.forEach(e=>{e[key]=Math.round(cur);cur+=e[size]+gap;});
+  pushHistory();renderAll();markDirty();
+}
+function matchSizeSelection(dim){
+  const list=arrangeTargets();
+  if(list.length<2){toast("Select two or more objects to match size");return;}
+  const ref=list[list.length-1];
+  list.forEach(e=>{if(dim==="w"||dim==="both")e.w=ref.w;if(dim==="h"||dim==="both")e.h=ref.h;});
+  pushHistory();renderAll();markDirty();
+}
+function flipSelection(axis){
+  const list=arrangeTargets();if(!list.length)return;
+  list.forEach(e=>{e.fx=Object.assign({},e.fx||{});const k=axis==="h"?"flipH":"flipV";e.fx[k]=!e.fx[k];});
+  pushHistory();renderAll();markDirty();
+}
+function fitSelection(mode){
+  const list=arrangeTargets();if(!list.length)return;
+  list.forEach(e=>{
+    if(mode==="width"||mode==="both"){e.x=0;e.w=W;}
+    if(mode==="height"||mode==="both"){e.y=0;e.h=H;}
+  });
+  pushHistory();renderAll();markDirty();
+}
+const STUDIO_STYLE_KEYS=["fill","stroke","strokeW","radius","dashed","color","font","size","weight",
+  "italic","lh","ls","align","accent","ramp","dark","hideContainer","labelSize","decimals",
+  "valuePrefix","valueSuffix","theme","chartTheme","opacity","fx"];
+function copySelectionStyle(){
+  const one=selEl();if(!one){toast("Select an object first");return;}
+  styleClip={};
+  STUDIO_STYLE_KEYS.forEach(k=>{if(one[k]!==undefined)styleClip[k]=deepClone(one[k]);});
+  toast("Style copied");
+}
+function pasteSelectionStyle(){
+  if(!styleClip){toast("Copy a style first");return;}
+  const list=arrangeTargets();if(!list.length)return;
+  list.forEach(e=>{for(const k in styleClip){
+    if(e[k]!==undefined||["accent","ramp","fx","dark"].indexOf(k)>=0)e[k]=deepClone(styleClip[k]);
+  }});
+  pushHistory();renderAll();markDirty();renderInspector();
+  toast("Style applied to "+list.length+" object"+(list.length>1?"s":""));
+}
+function arrangePanel(){
+  const n=arrangeTargets().length;
+  const b=(label,title,fn)=>hEl("button",{type:"button",title,text:label,onclick:fn});
+  return hGroup("Align & distribute",[
+    hEl("div",{class:"hs-arrange"},[
+      b("⭰","Align left",()=>alignSelection("left")),
+      b("⭶","Align horizontal centres",()=>alignSelection("center")),
+      b("⭲","Align right",()=>alignSelection("right")),
+      b("⭱","Align top",()=>alignSelection("top")),
+      b("⭷","Align vertical centres",()=>alignSelection("middle")),
+      b("⭳","Align bottom",()=>alignSelection("bottom")),
+    ]),
+    hEl("div",{style:"height:.3rem"}),
+    hEl("div",{class:"hs-arrange"},[
+      b("↔","Distribute horizontally (needs 3+)",()=>distributeSelection("h")),
+      b("↕","Distribute vertically (needs 3+)",()=>distributeSelection("v")),
+      b("W","Match width to last selected",()=>matchSizeSelection("w")),
+      b("H","Match height to last selected",()=>matchSizeSelection("h")),
+      b("⇋","Flip horizontally",()=>flipSelection("h")),
+      b("⇵","Flip vertically",()=>flipSelection("v")),
+    ]),
+    hEl("div",{class:"hs-hint",text: n>1
+      ? n+" objects selected — alignment uses their combined bounds."
+      : "One object selected — alignment uses the slide. Shift-click more objects to align them to each other."}),
+    hEl("div",{class:"hs-row-btns"},[
+      hEl("button",{class:"hs-mini",type:"button",text:"⧉ Copy style",onclick:copySelectionStyle}),
+      hEl("button",{class:"hs-mini",type:"button",text:"⧉ Paste style",onclick:pasteSelectionStyle}),
+      hEl("button",{class:"hs-mini",type:"button",text:"Full bleed",onclick:()=>fitSelection("both")}),
+      hEl("button",{class:"hs-mini",type:"button",text:"Full width",onclick:()=>fitSelection("width")}),
+    ]),
+    hEl("div",{class:"hs-hint",text:"Arrow keys nudge by 1px, Shift+arrows by 10px."}),
+  ]);
+}
+
+/* Append the studio panels underneath whatever the inspector just drew. */
+function studioPanels(el){
+  if(!inspBody)return;
+  if(el && el.type==="object" && isStudioObject(el.objectType)){
+    const def=(OBJECTS||[]).find(o=>o.kind===el.objectType)||{label:el.objectType,icon:"◆"};
+    ensureCountryList();
+    inspBody.appendChild(hGroup(def.icon+"  "+def.label, studioFields(el,(Hx.STUDIO_FIELDS||{})[el.objectType]||[])));
+    inspBody.appendChild(hGroup("Data",[studioDataGrid(el)]));
+  }
+  inspBody.appendChild(arrangePanel());
+}
 
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init);else init();
 

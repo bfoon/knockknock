@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ board.title }} · Chalk</title>
 <link rel="stylesheet" href="{% static 'chalk/css/chalk.css' %}">
+<link rel="stylesheet" href="{% static 'chalk/css/chalk_games.css' %}">
 </head>
 <body class="chalk-stage">
 
@@ -79,6 +80,7 @@
       <p class="lobby-keys">
         While projecting: <kbd>Esc</kbd> pairing · <kbd>F</kbd> full screen ·
         <kbd>B</kbd> all boards. Move the mouse to bring the corner bar back.
+        Games live on the phone under Timeout; <kbd>Esc</kbd> ends one.
       </p>
 
       <a id="join-link" href="{{ join_url }}">{{ join_url }}</a>
@@ -103,5 +105,9 @@
 <script src="{% static 'chalk/js/chalk_who.js' %}"></script>
 <script src="{% static 'chalk/js/chalk_net.js' %}"></script>
 <script src="{% static 'chalk/js/chalk_stage.js' %}"></script>
+<script src="{% static 'chalk/js/chalk_games.js' %}"></script>
+<script src="{% static 'chalk/js/chalk_games_pack.js' %}"></script>
+<script src="{% static 'chalk/js/chalk_games_class.js' %}"></script>
+<script src="{% static 'chalk/js/chalk_arcade.js' %}"></script>
 </body>
 </html>

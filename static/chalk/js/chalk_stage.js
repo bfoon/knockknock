@@ -40,6 +40,10 @@
     onMessage: handle
   });
 
+  /* Timeout — the arcade needs the socket and the config, and nothing else
+   * on this page needs to know it exists. */
+  window.ChalkBoard = { net: net, cfg: CFG, role: "stage" };
+
   function handle(m) {
     switch (m.t) {
       case "ready":
@@ -67,6 +71,8 @@
       case "surface":      setSurface(m.surface); break;
       case "pointer":      queueLaser(m); break;
       case "peer":         setPhone(m); break;
+      /* Timeout frames are never stored and never touch the page. */
+      case "game":         if (window.ChalkArcade) ChalkArcade.frame(m); break;
       case "denied":       break;  // handled in onDenied
     }
   }

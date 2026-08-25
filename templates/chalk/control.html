@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#10151b">
 <title>{{ board.title }} · Chalk controller</title>
 <link rel="stylesheet" href="{% static 'chalk/css/chalk.css' %}">
+<link rel="stylesheet" href="{% static 'chalk/css/chalk_games.css' %}">
 </head>
 <body class="chalk-control">
 
@@ -107,6 +108,13 @@
     <button class="icon-btn danger" id="page-delete" type="button">Delete page</button>
   </div>
 
+  <!-- Five minutes at the end of the lesson. Nothing here is saved into the
+       page, so the board is untouched when the game stops. -->
+  <div class="row" role="group" aria-label="Timeout">
+    <span class="row-label">Timeout</span>
+    <button class="icon-btn primary" id="open-games" type="button">Play a game</button>
+  </div>
+
 </div>
 
 <section id="ink-bar" hidden aria-label="Selection">
@@ -173,5 +181,9 @@
 <script src="{% static 'chalk/js/chalk_who.js' %}"></script>
 <script src="{% static 'chalk/js/chalk_net.js' %}"></script>
 <script src="{% static 'chalk/js/chalk_control.js' %}"></script>
+<script src="{% static 'chalk/js/chalk_games.js' %}"></script>
+<script src="{% static 'chalk/js/chalk_games_pack.js' %}"></script>
+<script src="{% static 'chalk/js/chalk_games_class.js' %}"></script>
+<script src="{% static 'chalk/js/chalk_arcade.js' %}"></script>
 </body>
 </html>

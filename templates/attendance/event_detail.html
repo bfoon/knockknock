@@ -50,9 +50,9 @@
 
 {# ── Status strip with quick actions ── #}
 <div class="kk-status-strip mb-4">
-  <div class="kk-status-pill kk-status-{{ event.status }}">
+  <div class="kk-status-pill kk-status-{{ event.status }}" data-event-status-badge>
     <span class="kk-status-dot"></span>
-    {{ event.get_status_display }}
+    <span data-event-status-label>{{ event.get_status_display }}</span>
   </div>
   <form method="post" action="{% url 'attendance:event_set_status' event.pk %}" class="d-inline">
     {% csrf_token %}
@@ -176,7 +176,7 @@
   <div class="kk-stats-head">
     <div>
       <h2 class="kk-section-title mb-1"><i class="bi bi-graph-up"></i> Analytics</h2>
-      <p class="kk-text-dim small mb-0">Live — auto-refreshes every 30 s and on every check-in.</p>
+      <p class="kk-text-dim small mb-0" id="kk-stats-live-note">Live — auto-refreshes every 30 s and on every check-in.</p>
     </div>
     <div class="kk-stats-controls">
       <div class="btn-group btn-group-sm" role="group" aria-label="Date range">
@@ -232,7 +232,7 @@
     {# Row 3: Hourly arrivals #}
     <div class="kk-chart-card kk-chart-fullrow">
       <div class="kk-chart-head">
-        <h4>Hourly arrivals on event day</h4>
+        <h4 id="kk-hourly-title">Hourly arrivals on event day</h4>
         <span class="kk-text-dim small" id="kk-hourly-empty-hint"></span>
       </div>
       <div class="kk-chart-canvas-wrap"><canvas id="kk-chart-hourly"></canvas></div>
@@ -773,9 +773,81 @@
 
   // ── State ──
   let currentRange = '30';
+  let isFinal = false;   // event's data horizon has passed → numbers frozen
+  let autoTimer = null;  // handle for the 30 s poll
   const charts = {};   // id → Chart instance, so we can destroy & rebuild on reload
 
   function destroy(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
+
+  function startAutoRefresh() {
+    if (isFinal || autoTimer) return;
+    autoTimer = setInterval(loadStats, 30000);
+  }
+  function stopAutoRefresh() {
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso + 'T00:00:00');
+    return isNaN(d.getTime())
+      ? iso
+      : d.toLocaleDateString(undefined, {day: 'numeric', month: 'short', year: 'numeric'});
+  }
+
+  // Toggle a "nothing here" message over a canvas WITHOUT removing it.
+  // Overwriting the wrapper's innerHTML deleted the <canvas> for good, so
+  // the chart never came back on a later refresh.
+  function setChartEmpty(canvasId, message) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return false;
+    const wrap = canvas.parentElement;
+    let note = wrap.querySelector('.kk-chart-empty');
+    if (message) {
+      canvas.style.display = 'none';
+      if (!note) {
+        note = document.createElement('p');
+        note.className = 'kk-chart-empty kk-text-dim small text-center my-4';
+        wrap.appendChild(note);
+      }
+      note.textContent = message;
+      note.hidden = false;
+      return true;
+    }
+    canvas.style.display = '';
+    if (note) note.hidden = true;
+    return false;
+  }
+
+  // Once the event's data horizon has passed nothing can change, so stop
+  // polling and stop calling the panel "Live". Manual refresh still works.
+  function applyFinality(data) {
+    const note = document.getElementById('kk-stats-live-note');
+    if (data.is_final) {
+      isFinal = true;
+      stopAutoRefresh();
+      if (note) {
+        note.textContent =
+          `Final — event ended ${fmtDate(data.timeline_end)}. These figures no longer change.`;
+      }
+    } else {
+      isFinal = false;
+      if (note) {
+        note.textContent = 'Live — auto-refreshes every 30 s and on every check-in.';
+      }
+      startAutoRefresh();
+    }
+    // Label the timeline with the dates actually plotted rather than a
+    // hard-coded "Last 30 days" — for a past event the window is the last
+    // N days *of the event*, not of the calendar.
+    const label = document.getElementById('kk-timeline-range-label');
+    if (label) {
+      label.textContent = (data.timeline && data.timeline.length)
+        ? `${fmtDate(data.timeline_start)} → ${fmtDate(data.timeline_end)}` +
+          (data.timeline_truncated ? ' (clipped)' : '')
+        : 'No data in this range';
+    }
+  }
 
   // ── Range buttons ──
   document.querySelectorAll('.kk-range-btn').forEach(btn => {
@@ -783,8 +855,7 @@
       document.querySelectorAll('.kk-range-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       currentRange = btn.dataset.range;
-      const label = {7:'Last 7 days', 30:'Last 30 days', all:'All time'}[currentRange] || '';
-      document.getElementById('kk-timeline-range-label').textContent = label;
+      document.getElementById('kk-timeline-range-label').textContent = '…';
       loadStats();
     });
   });
@@ -808,11 +879,12 @@
         try { fn(arg); }
         catch (e) { console.error(`[stats] ${name} failed:`, e); }
       };
+      safe('finality',  applyFinality,  data);
       safe('timeline',  renderTimeline,  data.timeline || []);
       safe('status',    renderStatus,    data.status_counts || {});
       safe('funnel',    renderFunnel,    data.funnel || {});
       safe('walkin',    renderWalkIn,    data.walk_in_split || {});
-      safe('hourly',    renderHourly,    data.hourly_arrivals || []);
+      safe('hourly',    renderHourly,    data);
       safe('breakdowns',renderFieldBreakdowns, data.field_breakdowns || []);
     } catch (err) {
       console.error('Stats load failed', err);
@@ -926,14 +998,15 @@
 
   function renderWalkIn(split) {
     destroy('walkin');
-    const ctx = document.getElementById('kk-chart-walkin').getContext('2d');
     const pre = split.pre_registered || 0;
     const walk = split.walk_in || 0;
-    if (pre === 0 && walk === 0) {
-      ctx.canvas.parentElement.innerHTML =
-        '<p class="kk-text-dim small text-center my-4">No check-ins yet.</p>';
+    if (setChartEmpty('kk-chart-walkin',
+        (pre === 0 && walk === 0)
+          ? (isFinal ? 'No check-ins were recorded.' : 'No check-ins yet.')
+          : '')) {
       return;
     }
+    const ctx = document.getElementById('kk-chart-walkin').getContext('2d');
     charts.walkin = new Chart(ctx, {
       type: 'doughnut',
       data: {
@@ -955,11 +1028,21 @@
     });
   }
 
-  function renderHourly(hourly) {
+  function renderHourly(data) {
     destroy('hourly');
+    const hourly = data.hourly_arrivals || [];
+    const days = data.hourly_days || 1;
+    const title = document.getElementById('kk-hourly-title');
+    if (title) {
+      title.textContent = days > 1
+        ? `Hourly arrivals across ${days} event days`
+        : 'Hourly arrivals on event day';
+    }
     const hint = document.getElementById('kk-hourly-empty-hint');
     if (!hourly.length || hourly.every(h => h.count === 0)) {
-      hint.textContent = 'No arrivals recorded for the event day yet.';
+      hint.textContent = data.is_final
+        ? 'No arrivals were recorded during the event.'
+        : 'No arrivals recorded yet.';
     } else {
       hint.textContent = '';
     }
@@ -1100,19 +1183,26 @@
   });
 
   // ── Boot + auto-refresh ──
+  // The poll is started by applyFinality() on the first successful load,
+  // so an event that's already over never schedules one at all.
   loadStats();
-  let autoTimer = setInterval(loadStats, 30000);
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) { clearInterval(autoTimer); }
-    else { loadStats(); autoTimer = setInterval(loadStats, 30000); }
+    if (document.hidden) { stopAutoRefresh(); }
+    else if (!isFinal) { loadStats(); startAutoRefresh(); }
   });
 
   // Expose so the WebSocket handler below can poke us on check-ins.
   window.__kkReloadStats = loadStats;
+  // Called when an `event_ended` broadcast arrives: one last load, then
+  // freeze. applyFinality() will flip the copy once the API agrees.
+  window.__kkFreezeStats = () => { stopAutoRefresh(); loadStats(); };
 })();
 </script>
 
-{# ── Live updates via WebSocket ── #}
+{# ── Live updates via WebSocket ──
+     Skipped entirely for an event that's already ended: there is nothing
+     left to push, and an idle socket per open dashboard adds up. #}
+{% if event.status != 'ended' %}
 <script>
 (function(){
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -1140,10 +1230,23 @@
       // new row in server-rendered. Debounced so a burst doesn't thrash.
       clearTimeout(window.__kkReload);
       window.__kkReload = setTimeout(() => location.reload(), 1200);
+    } else if (msg.type === 'event_ended') {
+      // The organizer ended the event — possibly from another tab or
+      // device. Previously this broadcast was ignored here and the
+      // dashboard carried on polling and calling itself "Live" forever.
+      // Take one final reading, then freeze.
+      window.__kkFreezeStats?.();
+      const badge = document.querySelector('[data-event-status-badge]');
+      if (badge) {
+        badge.className = 'kk-status-pill kk-status-ended';
+        const lbl = badge.querySelector('[data-event-status-label]');
+        if (lbl) lbl.textContent = 'Ended';
+      }
     }
   };
 })();
 </script>
+{% endif %}
 
 <!--{# ─────────── Certificate preview modal ───────────────────────────────-->
 <!--   Single modal reused by every certificate button on the page. The-->

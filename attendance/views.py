@@ -148,6 +148,68 @@ def _ensure_default_day(event):
         order=0,
     )
 
+
+# ────────────── date-window helpers for the stats endpoint ──────────────
+
+# Hard cap on how many points the timeline may return, so `range=all`
+# on a long-running event can't build a multi-thousand-point series.
+MAX_TIMELINE_DAYS = 366
+
+
+def _local_time(dt):
+    """Aware datetime → local datetime. Naive values pass straight through."""
+    if dt is None:
+        return None
+    if timezone.is_naive(dt):
+        return dt
+    return timezone.localtime(dt)
+
+
+def _local_date(dt):
+    """The calendar date `dt` falls on, in the project's local timezone."""
+    local = _local_time(dt)
+    return local.date() if local is not None else None
+
+
+def _event_data_window(event, reg_list):
+    """
+    (first_day, last_day) of the window in which this event can hold data.
+
+    `last_day` — the "data horizon" — is the event's end date, pushed out
+    if a row somehow landed later (clock skew, a late manual check-in,
+    ends_at edited backwards), and clamped to today. Once the horizon is
+    in the past nothing about this event can change, which is what lets
+    the dashboard stop the series there instead of drawing zeroes up to
+    today.
+
+    `first_day` is the earliest date carrying data, falling back to the
+    event's start date so a brand-new event still has a valid window.
+    """
+    today = _local_date(timezone.now())
+
+    first_day = _local_date(event.starts_at)
+    last_day = _local_date(event.ends_at)
+    if last_day < first_day:
+        last_day = first_day
+
+    for r in reg_list:
+        stamps = [r.registered_at]
+        if r.checked_in_at:
+            stamps.append(r.checked_in_at)
+        for ts in stamps:
+            d = _local_date(ts)
+            if d is None:
+                continue
+            if d > last_day:
+                last_day = d
+            if d < first_day:
+                first_day = d
+
+    last_day = min(last_day, today)
+    first_day = min(first_day, last_day)
+    return first_day, last_day
+
+
 # ═══════════════════════════════════════════════════════════════
 # ORGANIZER-SIDE
 # ═══════════════════════════════════════════════════════════════
@@ -944,10 +1006,22 @@ def event_stats_json(request, pk):
     """
     Series + breakdowns powering the dashboard charts.
 
+    Everything time-based is bounded by the event's *data horizon* — the
+    last calendar day that can legitimately hold a registration or a
+    check-in (normally ends_at, extended if a row somehow landed later,
+    and never beyond today). Once that day is in the past the numbers
+    are frozen, so the series stops there instead of marching on to
+    today with a tail of zeroes.
+
     Response shape matches what event_detail.html's chart JS consumes:
       - status_counts       : {pending, accepted, checked_in, declined, cancelled} (object, not array)
       - timeline            : [{date, registrations, check_ins}, ...]
-      - hourly_arrivals     : [{hour, count}, ...] for the event day
+      - timeline_start/end  : ISO dates actually plotted
+      - timeline_truncated  : True if the window was clipped for size
+      - is_final            : True once the horizon has passed — the
+                              dashboard uses this to stop auto-refreshing
+      - hourly_arrivals     : [{hour, count}, ...] across the event's days
+      - hourly_days         : number of event days folded into the above
       - funnel              : {registered, accepted, checked_in} (object)
       - walk_in_split       : {pre_registered, walk_in} (object)
       - field_breakdowns    : [{label, type, buckets: [{value, count}, ...]}, ...]
@@ -956,10 +1030,12 @@ def event_stats_json(request, pk):
       - generated_at        : ISO timestamp
     """
     event = _own_event_or_404(request.user, pk)
-    regs = event.registrations.all()
+    # Pull once and reuse — the old code walked the queryset for the
+    # counters and then issued extra COUNT queries for the same rows.
+    reg_list = list(event.registrations.all())
 
     # ── Status counts as a flat object (chart JS keys into it directly) ──
-    status_counter = Counter(r.status for r in regs)
+    status_counter = Counter(r.status for r in reg_list)
     status_counts = {
         Registration.STATUS_PENDING:    status_counter.get(Registration.STATUS_PENDING, 0),
         Registration.STATUS_ACCEPTED:   status_counter.get(Registration.STATUS_ACCEPTED, 0),
@@ -969,29 +1045,47 @@ def event_stats_json(request, pk):
     }
 
     # ── Registration timeline (per day) ────────────────────────
-    # Honour a `range` query param for the advanced control:
-    #   ?range=7  → last 7 days, ?range=30 → last 30 days, ?range=all → all
-    range_param = request.GET.get("range", "30")
+    # The window is anchored on the data horizon, NOT on "now". For a
+    # live event the two are the same day; for an event that ended in
+    # March, "last 30 days" means the 30 days up to the event's end —
+    # otherwise the range simply lands past all the data and the chart
+    # renders a flat, empty line.
+    today = _local_date(timezone.now())
+    first_day, end_day = _event_data_window(event, reg_list)
+    # "Frozen" means no further rows can arrive: either the horizon is
+    # behind us, or the organizer has explicitly marked the event ended
+    # (which kills the QR and the check-in window today).
+    is_final = end_day < today or event.status == AttendanceEvent.STATUS_ENDED
+
+    range_param = (request.GET.get("range") or "30").strip()
     if range_param == "all":
-        earliest = regs.order_by("registered_at").values_list("registered_at", flat=True).first()
-        start_day = (earliest or timezone.now()).date()
+        start_day = first_day
     else:
         try:
             days_back = max(1, min(int(range_param), 365))
-        except ValueError:
+        except (TypeError, ValueError):
+            range_param = "30"
             days_back = 30
-        start_day = (timezone.now() - timedelta(days=days_back)).date()
+        # days_back INCLUDES the horizon day, so "7 d" plots 7 points.
+        start_day = end_day - timedelta(days=days_back - 1)
 
-    end_day = timezone.now().date()
+    # Never start after the horizon, and never start before there is
+    # anything to show.
+    start_day = min(start_day, end_day)
+    truncated = False
+    if (end_day - start_day).days > MAX_TIMELINE_DAYS:
+        start_day = end_day - timedelta(days=MAX_TIMELINE_DAYS)
+        truncated = True
+
     regs_per_day = defaultdict(int)
     checkins_per_day = defaultdict(int)
-    for r in regs:
-        d = r.registered_at.date()
-        if d >= start_day:
+    for r in reg_list:
+        d = _local_date(r.registered_at)
+        if start_day <= d <= end_day:
             regs_per_day[d] += 1
         if r.checked_in_at:
-            cd = r.checked_in_at.date()
-            if cd >= start_day:
+            cd = _local_date(r.checked_in_at)
+            if start_day <= cd <= end_day:
                 checkins_per_day[cd] += 1
     # Fill gaps so the chart line doesn't disappear on quiet days.
     timeline = []
@@ -1004,19 +1098,29 @@ def event_stats_json(request, pk):
         })
         cursor += timedelta(days=1)
 
-    # ── Hourly check-in arrivals (on event day) ────────────────
-    # The JS labels these "HH:00" so they look like clock hours.
-    event_day = event.starts_at.date()
+    # ── Hourly check-in arrivals (across the event's days) ─────
+    # Multi-day events used to lose every arrival after day one because
+    # this only looked at starts_at.date(). We now fold every day of the
+    # event window into one hour-of-day distribution and tell the client
+    # how many days that was, so it can label the chart honestly.
+    event_first = _local_date(event.starts_at)
+    event_last = _local_date(event.ends_at)
+    if event_last < event_first:
+        event_last = event_first
     hourly = {h: 0 for h in range(24)}
-    for r in regs.filter(checked_in_at__isnull=False):
-        if r.checked_in_at.date() == event_day:
-            hourly[r.checked_in_at.hour] += 1
+    for r in reg_list:
+        if not r.checked_in_at:
+            continue
+        cd = _local_date(r.checked_in_at)
+        if event_first <= cd <= event_last:
+            hourly[_local_time(r.checked_in_at).hour] += 1
     hourly_arrivals = [
         {"hour": f"{h:02d}:00", "count": hourly[h]} for h in range(24)
     ]
+    hourly_days = (event_last - event_first).days + 1
 
     # ── Funnel (object keyed by stage name) ────────────────────
-    total = regs.count()
+    total = len(reg_list)
     accepted = (
         status_counter.get(Registration.STATUS_ACCEPTED, 0)
         + status_counter.get(Registration.STATUS_CHECKED_IN, 0)
@@ -1029,7 +1133,10 @@ def event_stats_json(request, pk):
     }
 
     # ── Walk-in split (object) ─────────────────────────────────
-    walk_in_count = event.walk_in_count()
+    walk_in_count = sum(
+        1 for r in reg_list
+        if r.is_walk_in and r.status == Registration.STATUS_CHECKED_IN
+    )
     pre_reg_in = max(checked_in - walk_in_count, 0)
     walk_in_split = {
         "pre_registered": pre_reg_in,
@@ -1061,7 +1168,9 @@ def event_stats_json(request, pk):
             if ans.value:
                 by_field[ans.field_id][ans.value] += 1
     for f in choice_fields:
-        if not by_field[f.pk]:
+        # `in` rather than by_field[f.pk] — the defaultdict would happily
+        # create an empty Counter for every field we look at.
+        if f.pk not in by_field or not by_field[f.pk]:
             continue
         # Top 8 values; anything else lumped into "Other".
         items = by_field[f.pk].most_common()
@@ -1078,23 +1187,31 @@ def event_stats_json(request, pk):
     # ── Capacity ──────────────────────────────────────────────
     capacity_info = None
     if event.capacity:
+        filled = accepted
         capacity_info = {
             "capacity":  event.capacity,
-            "filled":    event.accepted_count(),
-            "remaining": event.seats_remaining(),
+            "filled":    filled,
+            "remaining": max(event.capacity - filled, 0),
         }
 
     return JsonResponse({
-        "ok":               True,
-        "generated_at":     timezone.now().isoformat(),
-        "status_counts":    status_counts,
-        "timeline":         timeline,
-        "timeline_range":   range_param,
-        "hourly_arrivals":  hourly_arrivals,
-        "funnel":           funnel,
-        "walk_in_split":    walk_in_split,
-        "field_breakdowns": breakdowns,
-        "capacity":         capacity_info,
+        "ok":                 True,
+        "generated_at":       timezone.now().isoformat(),
+        "status_counts":      status_counts,
+        "timeline":           timeline,
+        "timeline_range":     range_param,
+        "timeline_start":     start_day.isoformat(),
+        "timeline_end":       end_day.isoformat(),
+        "timeline_truncated": truncated,
+        "is_final":           is_final,
+        "event_status":       event.status,
+        "ends_at":            event.ends_at.isoformat(),
+        "hourly_arrivals":    hourly_arrivals,
+        "hourly_days":        hourly_days,
+        "funnel":             funnel,
+        "walk_in_split":      walk_in_split,
+        "field_breakdowns":   breakdowns,
+        "capacity":           capacity_info,
         "headline": {
             "total":      total,
             "accepted":   accepted,
@@ -1102,7 +1219,6 @@ def event_stats_json(request, pk):
             "pending":    status_counter.get(Registration.STATUS_PENDING, 0),
         },
     })
-
 
 # ═══════════════════════════════════════════════════════════════
 # ATTENDEE-SIDE (public, no auth)

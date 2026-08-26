@@ -441,8 +441,22 @@ function applySelectionDom(){
     const on=ids.has(n.dataset.id);
     n.classList.toggle("selected",on);
     n.classList.toggle("multi-selected",on&&multi);
+    setMotionPaused(n,on);
   });
   updateBindButtons();
+}
+
+/* A selected shape holds still.
+   Done inline rather than with a stylesheet rule: an inline declaration
+   beats every selector in hanns.css regardless of specificity or source
+   order, so there is no cascade argument to lose. Clearing the animation
+   outright (rather than animation-play-state:paused) returns the shape to
+   its untransformed position, so what you drag is where it will sit. */
+function setMotionPaused(node,paused){
+  const inner=node&&node.firstElementChild;
+  if(!inner||!inner.classList||!inner.classList.contains("shape-motion"))return;
+  inner.style.animation = paused ? "none" : "";
+  inner.style.transform = paused ? "none" : "";
 }
 function updateBindButtons(){
   const count=selectedIds().length;
@@ -3799,9 +3813,9 @@ function shapeMotionPanel(el){
     ]));
     kids.push(hField("Start offset (s)",hNum(el,"motionDelay",-30,30,.1)));
     kids.push(hEl("div",{class:"hs-hint",
-      text:"Give neighbouring shapes different cycles or offsets so they do not move in lockstep. The selected shape holds still here so you can place it; it moves on the stage."}));
+      text:"Give neighbouring shapes different cycles or offsets so they do not move in lockstep. A selected shape always holds still in the editor; it moves on the stage."}));
   }else{
-    kids.push(hEl("div",{class:"hs-hint",text:"Shapes move by default. This one is set to stay still."}));
+    kids.push(hEl("div",{class:"hs-hint",text:"This shape stays still. Pick a movement above to animate it on the stage."}));
   }
   // Set the motion on every shape in the selection at once.
   const all=hEl("button",{class:"hs-mini",type:"button",text:"Apply to all selected shapes",

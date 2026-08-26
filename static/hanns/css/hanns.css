@@ -2184,9 +2184,20 @@ body.hanns-options-open .drawer{
                      to  {transform:rotate(360deg) translateX(calc(6px*var(--motion-amt))) rotate(-360deg)}}
 @keyframes shShimmer{0%,100%{opacity:.72} 50%{opacity:1}}
 
-/* Hold the selected shape still while it is being positioned. */
+/* Hold the selected shape still while it is being positioned.
+   applySelectionDom() also clears this inline, which is what actually
+   guarantees it; these rules are the fallback for any path that repaints
+   without going through it. Written as LONGHANDS: some engines do not
+   propagate !important from the `animation` shorthand to animation-name,
+   which left the shape drifting even while selected. */
 #canvas .el.selected > .el-inner.shape-motion,
-#canvas .el.multi-selected > .el-inner.shape-motion{animation:none!important;transform:none!important;}
+#canvas .el.multi-selected > .el-inner.shape-motion{
+  animation-name:none!important;
+  animation-play-state:paused!important;
+  animation-duration:0s!important;
+  animation-delay:0s!important;
+  transform:none!important;
+}
 
 @media (prefers-reduced-motion:reduce){
   .shape-motion{animation:none!important;}

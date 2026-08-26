@@ -5525,11 +5525,16 @@ function renderCreativeShape(el){
 }
 
 /* ════════════════════════════════════════════════════════════════════
-   SHAPE MOTION — idle movement on shapes, on by default
+   SHAPE MOTION — optional idle movement on shapes
    ────────────────────────────────────────────────────────────────────
-   Shapes drift, sway or pulse unless told otherwise: `motion` undefined
-   means SHAPE_MOTION_DEFAULT, so decks authored before this existed pick
-   the movement up too, and "none" switches it off per shape.
+   Off by default: `motion` undefined resolves to SHAPE_MOTION_DEFAULT,
+   which is "none". Pick a movement per shape in the inspector.
+
+   A SELECTED shape never animates in the editor — you cannot place a
+   thing that is drifting under the cursor. That is enforced in
+   applySelectionDom() in hanns_editor.js, by clearing the animation
+   inline rather than by a stylesheet rule, so it cannot lose a
+   specificity argument with the motion rules.
 
    The animation is applied to .el-inner, never to the element node
    itself. styleEl() writes `transform: rotate(...)` on that node for the
@@ -5550,7 +5555,11 @@ const SHAPE_MOTIONS = {
   shimmer: {label:"Shimmer"},
 };
 const SHAPE_MOTION_KEYS = Object.keys(SHAPE_MOTIONS);
-const SHAPE_MOTION_DEFAULT = "float";
+/* Shapes stand still unless the author asks for movement. A shape with no
+   `motion` key — anything drawn before this feature existed — resolves to
+   this, so old decks stay exactly as they were. Set it to "float" (or any
+   other key above) to make movement the default instead. */
+const SHAPE_MOTION_DEFAULT = "none";
 /* Which element types carry motion. Objects are excluded: they have their
    own idle animation, governed by objAnim. */
 const MOTION_TYPES = new Set(["rect","ellipse","creative_shape","line"]);

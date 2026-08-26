@@ -48,7 +48,7 @@
   </div>
 </div>
 
-{# ── Status strip with quick actions ── #}
+<!--{# ── Status strip with quick actions ── #}-->
 <div class="kk-status-strip mb-4">
   <div class="kk-status-pill kk-status-{{ event.status }}" data-event-status-badge>
     <span class="kk-status-dot"></span>
@@ -83,7 +83,7 @@
   </form>
 </div>
 
-{# ── Counters row ── #}
+<!--{# ── Counters row ── #}-->
 <div class="kk-counter-row mb-4">
   <div class="kk-counter">
     <div class="kk-counter-num" data-counter="accepted">{{ accepted_count }}</div>
@@ -106,7 +106,7 @@
 </div>
 
 {% if event.capacity %}
-  {# Capacity gauge — same visual language as the quota banner on the main dashboard. #}
+<!--  {# Capacity gauge — same visual language as the quota banner on the main dashboard. #}-->
   <div class="kk-quota-banner mb-4">
     <div class="d-flex align-items-center justify-content-between mb-2">
       <div>
@@ -121,7 +121,7 @@
   </div>
 {% endif %}
 
-{# ── AGENDA ──────────────────────────────────────────────────── #}
+<!--{# ── AGENDA ──────────────────────────────────────────────────── #}-->
 {% if event.agenda_items.exists or event.agenda %}
   <section class="kk-event-agenda mb-4">
     <div class="d-flex justify-content-between align-items-baseline mb-3">
@@ -170,7 +170,7 @@
 {% endif %}
 
 
-{# ── ANALYTICS PANEL ─────────────────────────────────────────── #}
+<!--{# ── ANALYTICS PANEL ─────────────────────────────────────────── #}-->
 <section class="kk-stats-wrap mb-4"
          data-stats-url="{% url 'attendance:event_stats_json' event.pk %}">
   <div class="kk-stats-head">
@@ -204,7 +204,7 @@
   </div>
 
   <div id="kk-stats-content" class="kk-stats-grid d-none">
-    {# Row 1: Timeline (wide) + Status donut #}
+<!--    {# Row 1: Timeline (wide) + Status donut #}-->
     <div class="kk-chart-card kk-chart-wide">
       <div class="kk-chart-head">
         <h4>Registrations over time</h4>
@@ -218,7 +218,7 @@
       <div class="kk-chart-canvas-wrap"><canvas id="kk-chart-status"></canvas></div>
     </div>
 
-    {# Row 2: Funnel (wide) + Walk-in split #}
+<!--    {# Row 2: Funnel (wide) + Walk-in split #}-->
     <div class="kk-chart-card kk-chart-wide">
       <div class="kk-chart-head"><h4>Attendance funnel</h4></div>
       <div class="kk-funnel" id="kk-funnel"></div>
@@ -229,7 +229,7 @@
       <div class="kk-chart-canvas-wrap"><canvas id="kk-chart-walkin"></canvas></div>
     </div>
 
-    {# Row 3: Hourly arrivals #}
+<!--    {# Row 3: Hourly arrivals #}-->
     <div class="kk-chart-card kk-chart-fullrow">
       <div class="kk-chart-head">
         <h4 id="kk-hourly-title">Hourly arrivals on event day</h4>
@@ -238,7 +238,7 @@
       <div class="kk-chart-canvas-wrap"><canvas id="kk-chart-hourly"></canvas></div>
     </div>
 
-    {# Row 4: Per-field breakdowns get appended here dynamically #}
+<!--    {# Row 4: Per-field breakdowns get appended here dynamically #}-->
     <div class="kk-chart-fullrow" id="kk-field-breakdowns-wrap" hidden>
       <h3 class="kk-section-title mt-2"><i class="bi bi-pie-chart"></i> Form answers</h3>
       <div class="kk-stats-subgrid" id="kk-field-breakdowns"></div>
@@ -247,7 +247,7 @@
 </section>
 
 <div class="row g-4">
-  {# ─── LEFT COLUMN ─────────────────────────────────────── #}
+<!--  {# ─── LEFT COLUMN ─────────────────────────────────────── #}-->
   <div class="col-lg-7">
 
     {% if registrations_pending %}
@@ -281,7 +281,7 @@
       <span class="kk-text-dim small">({{ registrations_accepted|length }})</span>
     </h2>
 
-    {# Search — filters the list below client-side by name/email/phone. #}
+<!--    {# Search — filters the list below client-side by name/email/phone. #}-->
     {% if registrations_accepted %}
     <div class="kk-attendee-search">
       <i class="bi bi-search"></i>
@@ -322,9 +322,9 @@
               </button>
             {% else %}
               {% if event.generate_certificates %}
-                {# Opens the certificate preview modal (defined once near the #}
-                {# bottom of this template). The JS listener reads the data-* #}
-                {# attrs to load the right PDF and wire the download button. #}
+<!--                {# Opens the certificate preview modal (defined once near the #}-->
+<!--                {# bottom of this template). The JS listener reads the data-* #}-->
+<!--                {# attrs to load the right PDF and wire the download button. #}-->
                 <button type="button"
                         class="kk-btn kk-btn-ghost btn-sm kk-cert-open"
                         title="Preview & download certificate"
@@ -345,7 +345,7 @@
           <p>No registrations yet. Share the link below to get the word out.</p>
         </div>
       {% endfor %}
-      {# Shown by the search JS when a query matches nobody. #}
+<!--      {# Shown by the search JS when a query matches nobody. #}-->
       <div class="kk-empty" id="kk-attendee-no-match" style="display:none;">
         <div class="em">🔍</div>
         <p>No attendees match your search.</p>
@@ -353,7 +353,7 @@
     </div>
   </div>
 
-  {# ── Attendee detail modal — one reused instance ── #}
+<!--  {# ── Attendee detail modal — one reused instance ── #}-->
   <div class="modal fade" id="kk-attendee-modal" tabindex="-1"
        aria-labelledby="kk-attendee-modal-title" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -374,8 +374,8 @@
     </div>
   </div>
 
-  {# Attendee detail payloads — serialised safely by Django. The modal #}
-  {# JS reads this and looks up the clicked attendee by registration id. #}
+<!--  {# Attendee detail payloads — serialised safely by Django. The modal #}-->
+<!--  {# JS reads this and looks up the clicked attendee by registration id. #}-->
   {{ attendee_details|json_script:"kk-attendee-details" }}
 
   <style>
@@ -571,7 +571,7 @@
   {# ─── RIGHT COLUMN ────────────────────────────────────── #}
   <div class="col-lg-5">
 
-    {# Share panel #}
+<!--    {# Share panel #}-->
     <div class="kk-side-card mb-4">
       <h3 class="kk-side-card-title"><i class="bi bi-share"></i> Share</h3>
 
@@ -620,7 +620,7 @@
       </p>
     </div>
 
-    {# Announcement composer #}
+<!--    {# Announcement composer #}-->
     <div class="kk-side-card mb-4">
       <h3 class="kk-side-card-title"><i class="bi bi-megaphone"></i> Send announcement</h3>
       <form method="post" action="{% url 'attendance:announcement_send' event.pk %}">
@@ -1199,9 +1199,9 @@
 })();
 </script>
 
-{# ── Live updates via WebSocket ──
-     Skipped entirely for an event that's already ended: there is nothing
-     left to push, and an idle socket per open dashboard adds up. #}
+<!--{# ── Live updates via WebSocket ──-->
+<!--     Skipped entirely for an event that's already ended: there is nothing-->
+<!--     left to push, and an idle socket per open dashboard adds up. #}-->
 {% if event.status != 'ended' %}
 <script>
 (function(){
@@ -1272,7 +1272,7 @@
                 data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body p-0">
-        {# Holder collapses to its loading state until a button sets the src. #}
+<!--        {# Holder collapses to its loading state until a button sets the src. #}-->
         <div class="kk-cert-frame-wrap">
           <div class="kk-cert-loading" id="kk-cert-loading">
             <div class="spinner-border" role="status" aria-hidden="true"></div>

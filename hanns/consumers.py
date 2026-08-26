@@ -84,6 +84,7 @@ inside Slide.data["els"], which Slide.as_dict() already ships to every
 client.
 """
 
+import asyncio
 import json
 
 from asgiref.sync import sync_to_async
@@ -109,6 +110,19 @@ ALLOWED_ACTOR_MOODS = {"neutral", "happy", "sad", "surprised", "tired"}
 # Element ids are author-supplied strings; cap them so a junk payload can
 # neither bloat the group message nor the in-memory reveal set.
 MAX_EL_ID = 120
+
+# How often the server pokes each socket.
+#
+# Nothing here is chatty: a presenter can sit on one slide for minutes and
+# a phone controller can sit untouched even longer. nginx cuts an idle
+# proxied WebSocket at 60s by default, and most CDNs are similar. The
+# browser is never told — no close frame arrives — so readyState stays
+# OPEN(1): the controller still shows "connected", every send() reports
+# success, and the commands go nowhere. Only reloading the page fixed it.
+#
+# A ping from the SERVER keeps the tunnel warm for every client, including
+# control.html, without each of them having to implement anything.
+HEARTBEAT_SECONDS = 20
 
 
 def _cue_label(el):
@@ -140,11 +154,17 @@ class PresentConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(self.group, self.channel_name)
         await self.accept()
 
+        self._hb_task = asyncio.create_task(self._heartbeat())
+
         # Snapshot so a (re)connecting phone can build its reaction pad and
         # sync to whatever slide the presenter is currently showing.
         await self.send_json(await self._snapshot())
 
     async def disconnect(self, code):
+        task = getattr(self, "_hb_task", None)
+        if task is not None:
+            task.cancel()
+            self._hb_task = None
         if getattr(self, "group", None):
             await self.channel_layer.group_discard(self.group, self.channel_name)
             if not self.is_presenter and self.nick:
@@ -159,6 +179,16 @@ class PresentConsumer(AsyncWebsocketConsumer):
             return
 
         mtype = data.get("type")
+
+        # Keepalive. Answered before anything else and deliberately cheap:
+        # no DB hit, no group traffic. A client that pings and watches for
+        # the reply can tell a live socket from a half-open one, which
+        # readyState alone cannot.
+        if mtype == "ping":
+            await self.send_json({"type": "pong"})
+            return
+        if mtype == "pong":
+            return
 
         if mtype == "presenter_hello":
             self.is_presenter = True
@@ -547,6 +577,24 @@ class PresentConsumer(AsyncWebsocketConsumer):
         })
 
     # ── helpers ──────────────────────────────────────────────────────
+    async def _heartbeat(self):
+        """Keep the socket from going idle long enough to be cut.
+
+        Sending is also how we find out the peer is gone: once the tunnel is
+        dead the send raises, we stop, and Channels tears the consumer down
+        properly instead of leaving a phantom member in the group that every
+        `goto` is broadcast to.
+        """
+        try:
+            while True:
+                await asyncio.sleep(HEARTBEAT_SECONDS)
+                await self.send_json({"type": "ping"})
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Peer has gone. disconnect() does the cleanup.
+            return
+
     async def send_json(self, obj):
         await self.send(text_data=json.dumps(obj))
 

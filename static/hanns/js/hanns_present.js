@@ -370,7 +370,103 @@ function cycleFocus(){
   Live.focus(next ? next.id : "", !next);
 }
 
-const Live={sock:null,retry:0,start(){if(!CFG.wsUrl)return;try{this.sock=new WebSocket(CFG.wsUrl);}catch(e){return;}this.sock.addEventListener("open",()=>{this.retry=0;this.send({type:"presenter_hello"});keepScreenAwake("websocket-open");});this.sock.addEventListener("message",ev=>{let m;try{m=JSON.parse(ev.data);}catch(e){return;}if(m.type==="reaction"){spawnEmoji(m.emoji);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);else incrementReactionCount(m.emoji);}else if(m.type==="participants")setCount(m.count);else if(m.type==="state"){if(typeof m.count==="number")setCount(m.count);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);if(Array.isArray(m.revealed)){revealedNow=new Set(m.revealed);restoreRevealed();}if(m.focus)setTimeout(()=>applyFocus(m.focus,false),60);}else if(m.type==="reveal"){keepScreenAwake("cue-reveal");applyReveal(m.ids,m.hide,false);}else if(m.type==="focus"){keepScreenAwake("zoom-region");applyFocus(m.elId,m.off,m.index);}else if(m.type==="actor_action"){keepScreenAwake("actor-cue");playActorFromCue(m.elId,m.action);}else if(m.type==="goto"&&typeof m.index==="number"){keepScreenAwake("phone-controller");if(m.index!==i){suppressBroadcast=true;show(m.index,false);suppressBroadcast=false;}}else if(m.type==="pointer"){showPointer(m.x,m.y);}});this.sock.addEventListener("close",()=>{if(this.retry++>6)return;setTimeout(()=>this.start(),Math.min(800*this.retry,5000));});},send(o){if(this.sock&&this.sock.readyState===1)this.sock.send(JSON.stringify(o));},goto(idx){this.send({type:"goto",index:idx});},focus(elId,off){this.send({type:"focus",index:i,elId:elId||"",off:!!off});},stop(){if(this.sock){try{this.sock.close();}catch(e){}}this.sock=null;}};
+/* ── live socket ──────────────────────────────────────────────────────
+   Two failures used to cost a talk, and both are handled here.
+
+   1. A HALF-OPEN socket. nginx cuts an idle proxied WebSocket at 60s by
+      default and CDNs are similar. No close frame reaches the browser, so
+      readyState stays OPEN(1): the phone still shows "connected", every
+      send() succeeds, and nothing happens. Only a refresh cleared it.
+      readyState cannot be trusted on its own, so we ping and watch for
+      traffic coming back; if the socket has gone quiet for STALE_MS we
+      close it ourselves and reconnect.
+
+   2. GIVING UP. Retries stopped after six attempts, permanently. A laptop
+      asleep between rehearsal and the talk woke with a dead socket and no
+      route back. The backoff is now capped rather than counted, and a
+      reconnect is attempted the moment the tab is shown or the network
+      returns.
+
+   Each socket carries a generation number. A close arriving from a socket
+   we have already replaced is ignored, so a reconnect cannot race with the
+   old socket's close handler and open two connections at once.           */
+const HEARTBEAT_MS=20000, STALE_MS=50000;
+const Live={
+  sock:null, retry:0, gen:0, lastRx:0, timer:null, closed:false,
+  start(){
+    if(!CFG.wsUrl)return;
+    this.closed=false;
+    const gen=++this.gen;
+    let sock;
+    try{ sock=new WebSocket(CFG.wsUrl); }catch(e){ this.scheduleRetry(gen); return; }
+    this.sock=sock;
+    sock.addEventListener("open",()=>{
+      if(gen!==this.gen)return;
+      this.retry=0; this.lastRx=Date.now();
+      this.send({type:"presenter_hello"});
+      keepScreenAwake("websocket-open");
+      this.beat();
+    });
+    sock.addEventListener("message",ev=>{
+      if(gen!==this.gen)return;
+      this.lastRx=Date.now();
+      let m; try{ m=JSON.parse(ev.data);}catch(e){return;}
+      if(m.type==="ping"){ this.send({type:"pong"}); return; }
+      if(m.type==="pong") return;
+      if(m.type==="reaction"){spawnEmoji(m.emoji);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);else incrementReactionCount(m.emoji);}else if(m.type==="participants")setCount(m.count);else if(m.type==="state"){if(typeof m.count==="number")setCount(m.count);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);if(Array.isArray(m.revealed)){revealedNow=new Set(m.revealed);restoreRevealed();}if(m.focus)setTimeout(()=>applyFocus(m.focus,false),60);}else if(m.type==="reveal"){keepScreenAwake("cue-reveal");applyReveal(m.ids,m.hide,false);}else if(m.type==="focus"){keepScreenAwake("zoom-region");applyFocus(m.elId,m.off,m.index);}else if(m.type==="actor_action"){keepScreenAwake("actor-cue");playActorFromCue(m.elId,m.action);}else if(m.type==="goto"&&typeof m.index==="number"){keepScreenAwake("phone-controller");if(m.index!==i){suppressBroadcast=true;show(m.index,false);suppressBroadcast=false;}}else if(m.type==="pointer"){showPointer(m.x,m.y);}
+    });
+    sock.addEventListener("close",()=>{
+      if(gen!==this.gen)return;              // superseded by a reconnect
+      this.idle();
+      if(!this.closed)this.scheduleRetry(gen);
+    });
+    sock.addEventListener("error",()=>{ try{sock.close();}catch(e){} });
+  },
+  scheduleRetry(gen){
+    if(gen!==undefined&&gen!==this.gen)return;
+    this.retry++;
+    // Capped, never abandoned — a presentation can outlast any outage.
+    setTimeout(()=>{ if(!this.closed)this.start(); },Math.min(1000*this.retry,15000));
+  },
+  beat(){
+    this.idle();
+    this.timer=setInterval(()=>{
+      if(!this.sock||this.sock.readyState!==1)return;
+      if(this.lastRx&&Date.now()-this.lastRx>STALE_MS){ this.revive(); return; }
+      this.send({type:"ping"});
+    },HEARTBEAT_MS);
+  },
+  idle(){ if(this.timer){clearInterval(this.timer);this.timer=null;} },
+  revive(){
+    // Drop the socket we no longer trust and build a fresh one. Bumping the
+    // generation in start() makes the old close handler a no-op.
+    this.idle();
+    const dead=this.sock; this.sock=null;
+    if(dead){ try{dead.close();}catch(e){} }
+    this.retry=0;
+    this.start();
+  },
+  healthy(){ return !!this.sock && this.sock.readyState===1 &&
+    (!this.lastRx || Date.now()-this.lastRx<STALE_MS); },
+  send(o){
+    if(this.sock&&this.sock.readyState===1){
+      try{ this.sock.send(JSON.stringify(o)); }
+      catch(e){ this.revive(); }
+    }
+  },
+  goto(idx){this.send({type:"goto",index:idx});},
+  focus(elId,off){this.send({type:"focus",index:i,elId:elId||"",off:!!off});},
+  stop(){ this.closed=true; this.gen++; this.idle();
+    if(this.sock){try{this.sock.close();}catch(e){}} this.sock=null; }
+};
+/* Waking from sleep, regaining Wi-Fi or switching back to the tab are the
+   moments a socket is most likely to be dead-but-open. Check on each. */
+(function watchLiveness(){
+  const check=()=>{ if(!Live.closed && CFG.wsUrl && !Live.healthy()) Live.revive(); };
+  window.addEventListener("online",check);
+  window.addEventListener("focus",check);
+  document.addEventListener("visibilitychange",()=>{ if(!document.hidden)check(); });
+})();
 function setCount(n){const el=$("#aud-count");if(el)el.textContent=n;}
 
 /* Click an actor on the live stage to play its action once. If a phone

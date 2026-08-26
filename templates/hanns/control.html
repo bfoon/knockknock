@@ -356,7 +356,13 @@ function scriptForSlide(s){
 function params(){return new URLSearchParams(location.search)}
 function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
 function setStatus(t){const el=$("#status"); if(el) el.textContent=t;}
-function send(o){if(sock&&sock.readyState===1)sock.send(JSON.stringify(o));}
+function send(o){
+  if(!sock||sock.readyState!==1)return false;
+  // A throw here means the tunnel is gone even though readyState
+  // still claims otherwise — rebuild rather than swallow it.
+  try{ sock.send(JSON.stringify(o)); return true; }
+  catch(e){ if(typeof revive==="function")revive(); return false; }
+}
 function currentSlide(){return (D.slides||[])[i]||{};}
 function slideCount(){return ((D.slides||[]).length)||1;}
 function peekSlide(){return (D.slides||[])[peek]||{};}
@@ -483,14 +489,61 @@ function pointerFromTap(ev){
   }
   setStatus("POINTER SENT TO PROJECTOR");
 }
+/* ── connection ───────────────────────────────────────────────────────
+   This page used to open one socket and, if it ever closed, do nothing
+   but tell you to refresh. Two things went wrong with that.
+
+   1. A phone controller is idle for minutes at a time, and nginx cuts an
+      idle proxied WebSocket at 60s by default. No close frame reaches the
+      browser, so readyState stays OPEN(1): the status still said
+      CONNECTED, every send() succeeded, and the buttons did nothing.
+      There was no way back except reloading the page.
+
+   2. Phones sleep. Locking the screen mid-talk killed the socket, and
+      close only ever produced "REFRESH".
+
+   So: the PIN is remembered and re-sent automatically, a ping goes out on
+   a timer, and a socket that has heard nothing back for STALE_MS is not
+   believed — it is closed and replaced. Waking the phone or regaining
+   signal triggers the same check, which is the common case here.
+
+   Each socket carries a generation number so a close arriving from one we
+   have already replaced cannot start a second connection.               */
+const HEARTBEAT_MS=20000, STALE_MS=50000;
+let ctlPin="", sockGen=0, hbTimer=null, lastRx=0, stopped=false, retry=0;
+
 function connect(){
   const pin=$("#pin").value.trim();
   if(!pin){setStatus("ENTER THE PIN SHOWN ON THE PRESENTER SCREEN");return;}
-  if(sock&&sock.readyState===1){try{sock.close();}catch(e){}}
-  sock=new WebSocket(CFG.wsUrl);
-  sock.addEventListener("open",()=>send({type:"controller_hello",pin}));
-  sock.addEventListener("message",ev=>{
+  ctlPin=pin;
+  stopped=false; retry=0;
+  openSocket();
+}
+
+function openSocket(){
+  if(!ctlPin||stopped)return;
+  const gen=++sockGen;
+  stopBeat();
+  if(sock){ try{sock.close();}catch(e){} }
+  let s;
+  try{ s=new WebSocket(CFG.wsUrl); }catch(e){ scheduleRetry(gen); return; }
+  sock=s;
+
+  s.addEventListener("open",()=>{
+    if(gen!==sockGen)return;
+    retry=0; lastRx=Date.now();
+    // Re-authenticate without asking again: the PIN has not changed and the
+    // presenter should not have to read it out twice.
+    send({type:"controller_hello",pin:ctlPin});
+    beat();
+  });
+
+  s.addEventListener("message",ev=>{
+    if(gen!==sockGen)return;
+    lastRx=Date.now();
     let m;try{m=JSON.parse(ev.data)}catch(e){return}
+    if(m.type==="ping"){ send({type:"pong"}); return; }
+    if(m.type==="pong") return;
     if(m.type==="controller_ok"){
       connected=true;
       if(Array.isArray(m.slides)){D.slides=m.slides;}
@@ -545,8 +598,50 @@ function connect(){
         : "PRESENTATION ENDED");
     }
   });
-  sock.addEventListener("close",()=>{if(connected)setStatus("DISCONNECTED · REOPEN THIS PAGE OR REFRESH");});
+
+  s.addEventListener("close",()=>{
+    if(gen!==sockGen)return;            // superseded by a reconnect
+    stopBeat();
+    if(stopped)return;
+    setStatus(connected?"RECONNECTING…":"CONNECTING…");
+    scheduleRetry(gen);
+  });
+  s.addEventListener("error",()=>{ try{s.close();}catch(e){} });
 }
+
+function scheduleRetry(gen){
+  if(gen!==undefined&&gen!==sockGen)return;
+  if(stopped||!ctlPin)return;
+  retry++;
+  // Capped, never abandoned. A talk can outlast any outage.
+  setTimeout(()=>{ if(!stopped)openSocket(); },Math.min(1000*retry,10000));
+}
+function beat(){
+  stopBeat();
+  hbTimer=setInterval(()=>{
+    if(!sock||sock.readyState!==1)return;
+    if(lastRx&&Date.now()-lastRx>STALE_MS){ revive(); return; }
+    send({type:"ping"});
+  },HEARTBEAT_MS);
+}
+function stopBeat(){ if(hbTimer){clearInterval(hbTimer);hbTimer=null;} }
+function revive(){
+  // readyState says open, but nothing has come back for long enough that we
+  // no longer believe it. Replace the socket rather than trust the flag.
+  setStatus("RECONNECTING…");
+  retry=0;
+  openSocket();
+}
+function linkHealthy(){
+  return !!sock && sock.readyState===1 && (!lastRx || Date.now()-lastRx<STALE_MS);
+}
+/* A phone that has been in a pocket is the usual way this socket dies. */
+["online","focus"].forEach(evt=>window.addEventListener(evt,()=>{
+  if(ctlPin&&!stopped&&!linkHealthy())revive();
+}));
+document.addEventListener("visibilitychange",()=>{
+  if(!document.hidden&&ctlPin&&!stopped&&!linkHealthy())revive();
+});
 function go(n){
   if(!connected)return;
   i=clamp(n,0,Math.max(((D.slides||[]).length)-1,0));

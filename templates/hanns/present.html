@@ -427,15 +427,41 @@
     }
   });
 
-  /* ── listen alongside the main socket ── */
+  /* ── listen alongside the main socket ──
+     This is a second connection into the same group, and it had the same
+     weakness as the first: an idle proxy cuts the tunnel, no close frame
+     arrives, and it sits there looking open while zoom / QR / end-of-show
+     messages quietly stop landing. Same treatment — ping on a timer, watch
+     for traffic coming back, rebuild when it goes quiet, and never stop
+     retrying. */
+  var HB_MS = 20000, STALE_MS = 50000;
   function listen(){
     if(!CFG.wsUrl || !window.WebSocket) return;
-    var sock;
-    try{ sock = new WebSocket(CFG.wsUrl); }catch(e){ return; }
+    var sock, timer = null, lastRx = 0, dead = false;
+    try{ sock = new WebSocket(CFG.wsUrl); }catch(e){ setTimeout(listen, 3000); return; }
+
+    function stopBeat(){ if(timer){ clearInterval(timer); timer = null; } }
+    function revive(){
+      if(dead) return;
+      dead = true; stopBeat();
+      try{ sock.close(); }catch(e){}
+      setTimeout(listen, 200);
+    }
+    sock.addEventListener("open", function(){
+      lastRx = Date.now();
+      timer = setInterval(function(){
+        if(!sock || sock.readyState !== 1) return;
+        if(lastRx && Date.now() - lastRx > STALE_MS){ revive(); return; }
+        try{ sock.send(JSON.stringify({type:"ping"})); }catch(e){ revive(); }
+      }, HB_MS);
+    });
 
     sock.addEventListener("message", function(ev){
+      lastRx = Date.now();
       var m;
       try{ m = JSON.parse(ev.data); }catch(e){ return; }
+      if(m.type === "ping"){ try{ sock.send(JSON.stringify({type:"pong"})); }catch(e){} return; }
+      if(m.type === "pong") return;
 
       if(m.type === "zoom"){
         applyZoom(m.scale, m.x, m.y);
@@ -459,7 +485,13 @@
     });
 
     // Reconnect if the projector's network blips mid-talk.
-    sock.addEventListener("close", function(){ setTimeout(listen, 3000); });
+    sock.addEventListener("close", function(){
+      stopBeat();
+      if(dead) return;            // revive() already queued a fresh socket
+      dead = true;
+      setTimeout(listen, 3000);
+    });
+    sock.addEventListener("error", function(){ try{ sock.close(); }catch(e){} });
   }
 
   if(document.readyState === "loading"){

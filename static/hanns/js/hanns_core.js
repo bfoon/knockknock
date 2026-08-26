@@ -8164,6 +8164,31 @@ function renderGradientLegend(el){
 /* ════════════════════════════════════════════════════════════════════
    3. STAT BLOCK — one number that has to land
    ════════════════════════════════════════════════════════════════════ */
+/* Count-up attributes for a studio number.
+   ────────────────────────────────────────────────────────────────────
+   animateCountUp() has two paths. `data-count-to` is the LEGACY one, kept
+   for vessels and rings: it rebuilds the text as Math.round(v) plus a "%"
+   it sniffs out of the existing content. Feeding a studio number to it
+   destroys the value — 22.9 lands as 23, decimals vanish, a prefix or any
+   suffix that is not "%" is dropped, and a thousands separator never
+   returns. That is why figures looked rounded up, or came back wrong.
+
+   The `data-num-anim` path is self-describing: it carries the target, the
+   decimals, the separator and the affixes on the node, so it lands on
+   exactly the string fmtNum() would have produced. Studio objects use it. */
+function studioCountAttrs(node,el,value){
+  if(!node||!el||el.numberMode!=="countup"||el.objAnim===false)return;
+  const dec=hsClamp(num(el.decimals,0),0,4);
+  node.setAttribute("data-num-anim","1");
+  node.setAttribute("data-num-from","0");
+  node.setAttribute("data-num-to",String(Number(value)||0));
+  node.setAttribute("data-num-dec",String(dec));
+  node.setAttribute("data-num-sep","1");
+  node.setAttribute("data-num-pre",el.valuePrefix||"");
+  node.setAttribute("data-num-suf",el.valueSuffix||"");
+  node.setAttribute("data-num-dur",String(Math.max(120,num(el.countDur,1400))));
+}
+
 function renderStatBlock(el){
   const box=div("hs-box hs-stat"+(el.dark?" hs-dark":"")+(el.hideContainer?" hs-bare":""));
   box.style.setProperty("--accent", el.accent||"#e8482b");
@@ -8175,7 +8200,7 @@ function renderStatBlock(el){
   if(el.title) box.appendChild(div("hs-stat-kicker",el.title));
   const v=div("hs-stat-value");
   v.textContent=fmtNum(r.value,el);
-  if(el.numberMode==="countup") v.dataset.countTo=String(r.value);
+  studioCountAttrs(v,el,r.value);
   box.appendChild(v);
   if(r.label) box.appendChild(div("hs-stat-label",r.label));
   if(r.value2!=null){
@@ -8207,7 +8232,7 @@ function renderKpiGrid(el){
     tile.style.setProperty("--i",i);
     if((el.tileStyle||"soft")==="solid") tile.style.setProperty("--ink",readable(c));
     const v=div("hs-kpi-value",fmtNum(r.value,el));
-    if(el.numberMode==="countup") v.dataset.countTo=String(r.value);
+    studioCountAttrs(v,el,r.value);
     tile.appendChild(v);
     if(r.label) tile.appendChild(div("hs-kpi-label",r.label));
     if(r.note)  tile.appendChild(div("hs-kpi-note",r.note));

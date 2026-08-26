@@ -8842,14 +8842,25 @@ function renderClockFace(el){
   const running = el.objAnim!==false && mode!=="fixed";
   const sweep = Math.max(.5,num(el.sweepSeconds,6));   // "fast" mode: sec/rev
 
+  // A hand is placed EITHER by a CSS animation OR by an SVG transform
+  // attribute — never by both, and the two must not share an element.
+  //
+  // Under SVG2 the `transform` attribute is the CSS `transform` property, so
+  // a `transform-origin` in the stylesheet applies to it as well. Since
+  // rotate(a 100 100) already names its own centre, the origin gets counted
+  // twice and the hand swings off the dial. `.clock-hand` (which carries the
+  // origin, for the keyframes) is therefore only attached while animating;
+  // a stopped hand gets `.clock-hand-still`, which sets no origin at all.
   function hand(len,width,color,periodSec,phaseSec,cls,tail){
-    const g=svg("g",{class:"clock-hand "+(running?cls:"")});
+    const g=svg("g",{class:running?("clock-hand "+cls):"clock-hand-still"});
     if(running){
       const period = mode==="fast" ? periodSec/(3600/sweep) : periodSec;
       g.style.animationDuration=period+"s";
       g.style.animationDelay=(-(phaseSec % period))+"s";
     }else{
-      g.setAttribute("transform","rotate("+(phaseSec/periodSec*360)+" 100 100)");
+      // Normalised, so a frozen clock does not carry rotate(68802).
+      const deg=((phaseSec/periodSec*360)%360+360)%360;
+      g.setAttribute("transform","rotate("+deg.toFixed(2)+" 100 100)");
     }
     g.appendChild(svg("line",{x1:100,y1:100+(tail||0),x2:100,y2:100-len,
       stroke:color,"stroke-width":width,"stroke-linecap":"round"}));
@@ -9103,17 +9114,23 @@ function renderSpeedometer(el){
       stroke:el.dark?"rgba(255,255,255,.4)":"rgba(15,23,42,.35)","stroke-width":2.4,"stroke-linecap":"round"}));
   }
   const needleA=START+SPAN*t;
-  // The rotation is written as an SVG attribute so the needle is correct in
-  // any renderer, including ones that ignore CSS. transform-origin lives in
-  // the stylesheet rather than inline: an inline style block here is enough
-  // to make some static SVG rasterisers drop the group entirely.
-  const ng=svg("g",{class:running?"speed-needle":"",
-    transform:`rotate(${(needleA-START).toFixed(2)} ${CX} ${CY})`});
-  if(running) ng.style.setProperty("--to",(needleA-START).toFixed(2)+"deg");
+  // Same rule as the clock hands: the transform ATTRIBUTE and the
+  // transform-origin the keyframes need must live on different elements,
+  // or browsers apply the origin twice and the needle points nowhere near
+  // the value. The outer group holds the real angle as an attribute (so it
+  // is right with CSS disabled, and in static renderers); the inner group
+  // owns the sweep, which runs from -angle back to 0 and therefore lands
+  // exactly on the outer group's angle.
+  const needleDeg = needleA - START;
+  const ngOuter=svg("g",{class:"speed-needle-anchor",
+    transform:`rotate(${needleDeg.toFixed(2)} ${CX} ${CY})`});
+  const ngInner=svg("g",{class:running?"speed-needle":""});
+  if(running) ngInner.style.setProperty("--to",needleDeg.toFixed(2)+"deg");
   const tip=pt(START,R-26);
-  ng.appendChild(svg("line",{x1:CX,y1:CY,x2:tip[0],y2:tip[1],stroke:el.dark?"#f8fafc":"#0f172a",
+  ngInner.appendChild(svg("line",{x1:CX,y1:CY,x2:tip[0],y2:tip[1],stroke:el.dark?"#f8fafc":"#0f172a",
     "stroke-width":5,"stroke-linecap":"round"}));
-  S.appendChild(ng);
+  ngOuter.appendChild(ngInner);
+  S.appendChild(ngOuter);
   S.appendChild(svg("circle",{cx:CX,cy:CY,r:11,fill:el.dark?"#f8fafc":"#0f172a"}));
   S.appendChild(svg("circle",{cx:CX,cy:CY,r:4.5,fill:accent}));
   if(el.showValues!==false){

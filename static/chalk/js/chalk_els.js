@@ -15,12 +15,63 @@
 
   var SVGNS = "http://www.w3.org/2000/svg";
 
+  /* The hands. Each of these is a family declared in chalk_fonts.css and
+   * served from the board's own static files, with a system handwriting font
+   * behind it so a missing file still lands somewhere handwritten.
+   *
+   * Keep the four original keys exactly as they were: boards saved before
+   * any of this existed have `font: "sans"` written into their pages, and a
+   * lesson from last term is not a thing to break for a nicer list. */
   var FONTS = {
     sans:  'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
     serif: 'Georgia, "Times New Roman", serif',
     mono:  'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-    hand:  '"Comic Sans MS", "Segoe Print", "Bradley Hand", cursive'
+    hand:  '"Chalk Patrick", "Comic Sans MS", "Segoe Print", cursive',
+
+    chalk:      '"Chalk Gloria", "Chalkboard SE", "Segoe Print", cursive',
+    rough:      '"Chalk Rock", "Chalkduster", "Segoe Print", cursive',
+    caps:       '"Chalk Amatic", "Haettenschweiler", "Impact", sans-serif',
+    pencil:     '"Chalk Indie", "Segoe Print", "Bradley Hand", cursive',
+    print:      '"Chalk Patrick", "Comic Sans MS", "Segoe Print", cursive',
+    architect:  '"Chalk Architect", "Segoe Print", "Courier New", monospace',
+    pen:        '"Chalk Caveat", "Bradley Hand", "Segoe Script", cursive',
+    fountain:   '"Chalk Dancing", "Snell Roundhand", "Segoe Script", cursive',
+    marker:     '"Chalk Marker", "Marker Felt", Impact, sans-serif',
+    sketch:     '"Chalk Sketch", "Chalkduster", Impact, sans-serif',
+    fine:       '"Chalk Shadows", "Segoe Script", "Bradley Hand", cursive',
+    typewriter: '"Chalk Elite", "Courier New", ui-monospace, monospace'
   };
+
+  /* What each hand was written with. The font decides the shape of the
+   * letter; this decides whether it is dusty, waxy, wet or flat. Anything
+   * not listed here is drawn as plain colour. */
+  var INK = {
+    chalk: "chalk", rough: "chalk", caps: "chalk", sketch: "chalk",
+    pencil: "pencil", architect: "pencil",
+    pen: "pen", fine: "pen", fountain: "pen",
+    marker: "marker"
+  };
+
+  /* For the picker: key, what a teacher calls it, and which drawer it is in.
+   * Written out here so the phone and the board cannot disagree about it. */
+  var FONT_LIST = [
+    ["chalk", "Chalk", "hand"],
+    ["rough", "Rough chalk", "hand"],
+    ["caps", "Tall chalk", "hand"],
+    ["pencil", "Pencil", "hand"],
+    ["pen", "Pen", "hand"],
+    ["fine", "Fine liner", "hand"],
+    ["fountain", "Fountain pen", "hand"],
+    ["marker", "Marker", "hand"],
+    ["print", "Neat print", "print"],
+    ["architect", "Architect", "print"],
+    ["sketch", "Sketched", "print"],
+    ["typewriter", "Typewriter", "print"],
+    ["sans", "Plain", "plain"],
+    ["serif", "Book", "plain"],
+    ["mono", "Code", "plain"],
+    ["hand", "Handwriting", "plain"]
+  ];
 
   var idSeed = 0;
   function newId() {
@@ -143,6 +194,14 @@
     /* textContent, never innerHTML — a lesson title is not markup. */
     t.textContent = el.text || "";
     t.style.fontFamily = FONTS[el.font] || FONTS.sans;
+    /* The texture is painted with a background rather than a colour, and by
+     * then currentColor is transparent — so the colour goes in as its own
+     * property for chalk_fonts.css to pick up. */
+    var ink = INK[el.font] || "";
+    if (ink) {
+      t.dataset.ink = ink;
+      t.style.setProperty("--ink", el.color || "#ffffff");
+    }
     t.style.fontSize = "calc(var(--chalk-bh, 100px) * " + (el.size || 0.06) + ")";
     t.style.color = el.color || "#ffffff";
     t.style.textAlign = el.align || "left";
@@ -474,6 +533,7 @@
 
   global.ChalkEls = {
     Layer: Layer, blank: blank, newId: newId, FONTS: FONTS, shade: shade,
+    INK: INK, FONT_LIST: FONT_LIST,
     applyFx: applyFx, applyElFrame: applyElFrame, layers: liveLayers
   };
 })(window);

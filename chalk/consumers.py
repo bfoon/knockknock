@@ -13,6 +13,7 @@ Wire protocol — every frame is {"t": "<type>", ...}.
   ink_wipe {gid,path,r}   ink            (add, del) -- the duster
   ink_band {ids,front}    ink_band       (ids, front)
   el_multi {items}        el_update x N  one undo entry for the whole set
+  group {ink,els,gid}     group          one label over ink and objects alike
   el_live_many {items}    el_live_many   mid-drag for a group, never stored
   ink_xform {sel,ids,m}   ink            (xform, canUndo, canRedo)
   el_add {el}             el_add         (el)
@@ -139,6 +140,11 @@ def clean_points(raw, limit=MAX_POINTS):
     return out
 
 
+# A group is a label, not a container: strokes and elements that share a gid
+# answer to it together. Empty means "in no group".
+GID_RE = re.compile(r"^[A-Za-z0-9_-]{0,48}$")
+
+
 def clean_stroke(raw):
     if not isinstance(raw, dict):
         return None
@@ -150,6 +156,7 @@ def clean_stroke(raw):
         return None
     tool = raw.get("tool")
     color = str(raw.get("color") or "")
+    gid = str(raw.get("gid") or "")
     return {
         "id": sid,
         "tool": tool if tool in TOOLS else "pen",
@@ -162,6 +169,10 @@ def clean_stroke(raw):
         # stroke that comes back through undo, redo or the duster keeps the
         # name of whoever actually drew it.
         "by": str(raw.get("by") or "")[:12],
+        # Kept for the same reason as "by": a stroke that comes back through
+        # undo, the duster or a paste is still part of whatever it was part
+        # of before it left.
+        "gid": gid if GID_RE.match(gid) else "",
         "pts": pts,
     }
 
@@ -426,7 +437,14 @@ def _history_items(stacks):
 # ----------------------------------------------------------------------
 
 EL_TYPES = {"text", "image", "shape", "freeform"}
-FONTS = {"sans", "serif", "mono", "hand"}
+# The four original keys stay: pages written before the handwriting fonts
+# existed have them saved, and a lesson from last term is not a thing to
+# break for a nicer list.
+FONTS = {
+    "sans", "serif", "mono", "hand",
+    "chalk", "rough", "caps", "pencil", "print", "architect",
+    "pen", "fountain", "marker", "sketch", "fine", "typewriter",
+}
 ALIGNS = {"left", "center", "right"}
 FITS = {"contain", "cover"}
 EDGES = {"sharp", "round", "smooth"}
@@ -906,6 +924,27 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
                 if result:
                     await self._fan(
                         {"t": "ink_band", "ids": result["ids"], "front": front},
+                        echo=True,
+                    )
+
+        elif t == "group":
+            # Grouping and ungrouping are not undo steps. Ungroup is the undo,
+            # it is one tap away, and putting a label change in the same stack
+            # as the drawing means an Undo aimed at a stray line silently
+            # takes a diagram apart instead. Banding works the same way.
+            ink_ids = clean_ids(content.get("ink"), MAX_XFORM_IDS)
+            el_ids = clean_ids(content.get("els"), MAX_TPL_ELS)
+            gid = str(content.get("gid") or "")
+            if (ink_ids or el_ids) and GID_RE.match(gid):
+                result = await self._group(ink_ids, el_ids, gid)
+                if result:
+                    await self._fan(
+                        {
+                            "t": "group",
+                            "ink": result["ink"],
+                            "els": result["els"],
+                            "gid": gid,
+                        },
                         echo=True,
                     )
 
@@ -1793,6 +1832,36 @@ class ChalkConsumer(AsyncJsonWebsocketConsumer):
             page.save(update_fields=["strokes", "updated_at"])
             self._touch_board()
             return {"ids": moved}
+
+    @database_sync_to_async
+    def _group(self, ink_ids, el_ids, gid):
+        """Put one label on a mixed pile of handwriting and objects.
+
+        Both layers in one write, because a group that is half saved is worse
+        than one that is not saved at all: the objects would move and the
+        writing would stay where it was.
+        """
+        with transaction.atomic():
+            _, page = self._page_locked()
+            strokes = list(page.strokes or [])
+            els = list(page.els or [])
+            want_ink, want_els = set(ink_ids), set(el_ids)
+            ink_done, el_done = [], []
+            for st in strokes:
+                if st.get("id") in want_ink and st.get("gid", "") != gid:
+                    st["gid"] = gid
+                    ink_done.append(st["id"])
+            for el in els:
+                if el.get("id") in want_els and el.get("gid", "") != gid:
+                    el["gid"] = gid
+                    el_done.append(el["id"])
+            if not ink_done and not el_done:
+                return None
+            page.strokes = strokes
+            page.els = els
+            page.save(update_fields=["strokes", "els", "updated_at"])
+            self._touch_board()
+            return {"ink": ink_done, "els": el_done}
 
     @database_sync_to_async
     def _el_multi(self, items):

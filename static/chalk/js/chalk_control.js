@@ -102,6 +102,10 @@
     onMessage: handle
   });
 
+  /* Timeout — see chalk_arcade.js. The controller becomes a gamepad when a
+   * game is running and goes back to being a board when it is not. */
+  window.ChalkBoard = { net: net, cfg: CFG, role: CFG.role === "join" ? "join" : "control" };
+
   if (expiredRetry) {
     expiredRetry.addEventListener("click", function () { location.reload(); });
   }
@@ -136,6 +140,16 @@
        * follow it live, store nothing. */
       case "ink_band":
         surface.setBand(m.ids, m.front);
+        break;
+      /* Somebody else grouped or ungrouped. Only the label changes — nothing
+       * moves, nothing redraws — but this phone has to agree about what one
+       * thing is, or tapping the photo here would pick up half a diagram. */
+      case "group":
+        (m.ink || []).forEach(function (id) {
+          var st = surface.byId(id);
+          if (st) st.gid = m.gid;
+        });
+        (m.els || []).forEach(function (id) { layer.patch(id, { gid: m.gid }); });
         break;
       case "ink_live":
         surface.xform(m.sel, m.ids, m.m);
@@ -173,6 +187,7 @@
         break;
       case "el_raise": layer.raise(m.id); editor.refresh(); break;
       case "surface": setSurfaceButtons(m.surface); break;
+      case "game":    if (window.ChalkArcade) ChalkArcade.frame(m); break;
       case "denied":  break;  // handled in onDenied
     }
   }
@@ -711,6 +726,12 @@
     var strokes = clip.strokes.map(function (src) {
       var st = deepCopy(src);
       st.id = ChalkInk.newId();
+      /* Through the same map as the objects, so a copied diagram stays one
+       * diagram — a new one, not a second handle on the original. */
+      if (st.gid) {
+        if (!gidMap[st.gid]) gidMap[st.gid] = "g" + ChalkEls.newId();
+        st.gid = gidMap[st.gid];
+      }
       var pts = st.pts.slice();
       for (var i = 0; i < pts.length; i += 2) {
         pts[i] = r4(pts[i] + off.dx);
@@ -1060,25 +1081,49 @@
     };
   }
 
-  /* Everything in the same group as the ids given. Grouping is a shared
-   * label rather than a container, so "the group" is a lookup, not a tree. */
-  function withGroups(ids) {
-    var gids = Object.create(null), out = ids.slice();
-    ids.forEach(function (id) {
+  /* Everything in the same group as the ids given — handwriting and objects
+   * alike. Grouping is a shared label rather than a container, so "the group"
+   * is a lookup and not a tree, and a group can hold a drawn arrow, a photo
+   * and a caption without any of them stopping being what they are.
+   *
+   * Both directions matter: touch the photo and the arrow comes too. */
+  function groupOf(strokeIds, objectIds) {
+    var gids = Object.create(null);
+    var ink = (strokeIds || []).slice(), els = (objectIds || []).slice();
+
+    els.forEach(function (id) {
       var el = layer.get(id);
       if (el && el.gid) gids[el.gid] = 1;
     });
-    layer.els.forEach(function (el) {
-      if (el.gid && gids[el.gid] && out.indexOf(el.id) === -1) out.push(el.id);
+    ink.forEach(function (id) {
+      var st = surface.byId(id);
+      if (st && st.gid) gids[st.gid] = 1;
     });
-    return out;
+
+    var any = false, k;
+    for (k in gids) { any = true; break; }
+    if (!any) return { ink: ink, els: els };
+
+    layer.els.forEach(function (el) {
+      if (el.gid && gids[el.gid] && els.indexOf(el.id) === -1) els.push(el.id);
+    });
+    surface.allIds().forEach(function (id) {
+      var st = surface.byId(id);
+      if (st && st.gid && gids[st.gid] && ink.indexOf(id) === -1) ink.push(id);
+    });
+    return { ink: ink, els: els };
   }
 
+  /* Kept for anything still calling it with objects only. */
+  function withGroups(ids) { return groupOf([], ids).els; }
+
   function selectMany(strokeIds, objectIds) {
-    inkIds = (strokeIds || []).filter(function (id) { return !!surface.byId(id); });
-    elIds = withGroups((objectIds || []).filter(function (id) {
-      return !!layer.get(id);
-    }));
+    var whole = groupOf(
+      (strokeIds || []).filter(function (id) { return !!surface.byId(id); }),
+      (objectIds || []).filter(function (id) { return !!layer.get(id); })
+    );
+    inkIds = whole.ink;
+    elIds = whole.els;
     if (!inkIds.length && !elIds.length) return clearInk();
 
     /* One object on its own gets the inspector and its corner handles — all
@@ -1173,11 +1218,23 @@
     setHistory(true, false);
   }
 
+  function showExtra(on) {
+    var more = document.getElementById("sel-more");
+    var extra = document.getElementById("sel-extra");
+    if (!more || !extra) return;
+    extra.hidden = !on;
+    more.setAttribute("aria-expanded", on ? "true" : "false");
+    more.textContent = on ? "Less" : "More";
+  }
+
   function renderInkBar() {
     var n = inkIds.length + elIds.length;
     inkBar.hidden = n === 0;
     document.body.classList.toggle("ink-picked", n > 0);
-    if (!n) return;
+    /* A new selection starts folded up. The second row is for the things
+     * people do occasionally; leaving it open makes the panel tall for the
+     * rest of the lesson. */
+    if (!n) { showExtra(false); return; }
     var bits = [];
     if (elIds.length) {
       bits.push(elIds.length + (elIds.length === 1 ? " object" : " objects"));
@@ -1189,8 +1246,13 @@
     var grouped = elIds.some(function (id) {
       var el = layer.get(id);
       return !!(el && el.gid);
+    }) || inkIds.some(function (id) {
+      var st = surface.byId(id);
+      return !!(st && st.gid);
     });
-    document.getElementById("sel-group").hidden = elIds.length < 2;
+    /* Two of anything can be a group — two marks, two objects, or one of
+     * each. That is the whole point of it. */
+    document.getElementById("sel-group").hidden = n < 2 || grouped;
     document.getElementById("sel-ungroup").hidden = !grouped;
   }
 
@@ -1299,22 +1361,43 @@
     if (!inkIds.length && !elIds.length) say("This page is empty.");
   });
 
-  document.getElementById("sel-group").addEventListener("click", function () {
-    if (elIds.length < 2) return say("Pick two or more objects first.");
-    /* A group is a shared label, not a container: the elements stay
-     * elements, they just answer to a name together. Tapping any one of
-     * them picks the lot, and Ungroup drops the label. */
-    var gid = "g" + ChalkEls.newId();
-    sendMulti({ gid: gid });
+  /* Writing the label onto whatever is picked, on this phone and on the
+   * server, in one message. It covers both layers because a diagram is
+   * usually a drawn arrow, a photo and a caption, and a grouping that only
+   * held the photo and the caption would be a worse kind of nothing. */
+  function tagGroup(gid) {
+    inkIds.forEach(function (id) {
+      var st = surface.byId(id);
+      if (st) st.gid = gid;
+    });
+    elIds.forEach(function (id) { layer.patch(id, { gid: gid }); });
+    net.send({ t: "group", ink: inkIds, els: elIds, gid: gid });
     renderInkBar();
-    say(elIds.length + " objects grouped — tap any of them to pick them all.");
+  }
+
+  (function () {
+    var more = document.getElementById("sel-more");
+    if (!more) return;
+    more.addEventListener("click", function () {
+      var extra = document.getElementById("sel-extra");
+      showExtra(!!(extra && extra.hidden));
+    });
+  })();
+
+  document.getElementById("sel-group").addEventListener("click", function () {
+    var n = inkIds.length + elIds.length;
+    if (n < 2) return say("Pick two or more things first.");
+    tagGroup("g" + ChalkEls.newId());
+    var bits = [];
+    if (elIds.length) bits.push(elIds.length + (elIds.length === 1 ? " object" : " objects"));
+    if (inkIds.length) bits.push(inkIds.length + (inkIds.length === 1 ? " mark" : " marks"));
+    say(bits.join(" and ") + " are one thing now — tap any part to pick it all.");
   });
 
   document.getElementById("sel-ungroup").addEventListener("click", function () {
-    if (!elIds.length) return;
-    sendMulti({ gid: "" });
-    renderInkBar();
-    say("Ungrouped.");
+    if (!inkIds.length && !elIds.length) return;
+    tagGroup("");
+    say("Ungrouped. They are separate things again.");
   });
 
   document.getElementById("sel-front").addEventListener("click", function () {
@@ -1789,8 +1872,7 @@
         { k: "text", type: "button", label: "Words", action: openTextSheet, cta: "Type" },
         { k: "size", type: "range", min: 0.02, max: 0.3, step: 0.005, label: "Size" },
         { k: "color", type: "color", label: "Colour" },
-        { k: "font", type: "select", label: "Font",
-          opts: [["sans", "Sans"], ["serif", "Serif"], ["mono", "Mono"], ["hand", "Handwriting"]] },
+        { k: "font", type: "font", label: "Written with" },
         { k: "align", type: "select", label: "Line up",
           opts: [["left", "Left"], ["center", "Centre"], ["right", "Right"]] },
         { k: "bold", type: "toggle", label: "Bold" },
@@ -1993,6 +2075,41 @@
       input.className = "field-color";
       input.value = normHex(readVal(el, f.k)) || "#ffffff";
       input.addEventListener("input", function () { writeVal(f.k, input.value); });
+    } else if (f.type === "font") {
+      /* A list of font names all set in the same font is not a choice, it is
+       * a quiz. Every chip is written in the hand it offers. */
+      input = document.createElement("div");
+      input.className = "field-fonts";
+      var groups = { hand: "Written by hand", print: "Printed", plain: "Plain" };
+      var current = readVal(el, f.k);
+      /* If chalk_els.js is still the old copy there is no list to read, so
+       * fall back to the four keys that have always been there rather than
+       * drawing an empty picker. */
+      var fonts = ChalkEls.FONT_LIST || [
+        ["sans", "Plain", "plain"], ["serif", "Book", "plain"],
+        ["mono", "Code", "plain"], ["hand", "Handwriting", "plain"]
+      ];
+      Object.keys(groups).forEach(function (kind) {
+        var inKind = fonts.filter(function (o) { return o[2] === kind; });
+        if (!inKind.length) return;
+        var head = document.createElement("p");
+        head.className = "font-group";
+        head.textContent = groups[kind];
+        input.appendChild(head);
+        inKind.forEach(function (o) {
+          var chip = document.createElement("button");
+          chip.type = "button";
+          chip.className = "font-chip";
+          chip.dataset.font = o[0];
+          chip.textContent = o[1];
+          chip.setAttribute("aria-pressed", current === o[0] ? "true" : "false");
+          chip.addEventListener("click", function () {
+            writeVal(f.k, o[0]);
+            renderInspector();
+          });
+          input.appendChild(chip);
+        });
+      });
     } else if (f.type === "select") {
       input = document.createElement("select");
       input.className = "field-select";
@@ -2084,6 +2201,10 @@
       ta.value = el.text || "";
       ta.rows = 5;
       ta.placeholder = "Whatever you type appears on the board as you go";
+      /* Type in the hand it will be written in, so the shape of the sentence
+       * on the wall is not a surprise. */
+      ta.dataset.font = el.font || "sans";
+      ta.style.fontFamily = (ChalkEls.FONTS || {})[el.font] || "";
       body.appendChild(ta);
       /* Live while typing so the class watches the sentence form; one write
        * on Done, so the whole sentence is a single undo. */

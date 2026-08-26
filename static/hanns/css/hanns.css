@@ -2220,8 +2220,19 @@ body.hanns-options-open .drawer{
                     6%,84%{opacity:1;transform:scaleY(1)}
                     90%,100%{opacity:0;transform:scaleY(1)}}
 
-/* ── clock ── */
+/* ── clock ──
+   transform-origin is set ONLY on animated hands. A stopped hand is placed
+   by its SVG transform="rotate(a 100 100)" attribute, which already carries
+   its own centre; under SVG2 that attribute IS the CSS transform property,
+   so adding an origin here too would apply the offset twice and throw the
+   hand off the face. .clock-hand-still deliberately sets nothing. */
 .clock-hand{transform-origin:100px 100px;}
+/* Pinned rather than left to the UA default. Browsers use 0 0 for SVG
+   elements, but the CSS initial value is 50% 50%; if anything ever resolved
+   to the latter, rotate(a 100 100) would be offset by half the viewBox and
+   the hand would leave the dial. */
+.clock-hand-still,
+.speed-needle-anchor{transform-origin:0 0;}
 .clock-hand.spin-hour,.clock-hand.spin-min{animation-name:clockSpin;animation-timing-function:linear;
   animation-iteration-count:infinite;}
 /* The second hand steps rather than glides, like a quartz movement. */
@@ -2246,9 +2257,11 @@ body.hanns-options-open .drawer{
 .present .therm-rise{animation:thermRise 1.1s cubic-bezier(.22,1,.36,1) both;
   transform-origin:60px 182px;transform-box:view-box;}
 @keyframes thermRise{from{transform:scaleY(0)} to{transform:scaleY(1)}}
-.speed-needle{transform-origin:110px 112px;}   /* CX,CY of the dial */
+/* The needle's angle lives on the parent group as an attribute; this inner
+   group only sweeps up to it, from -angle back to zero. */
+.speed-needle{transform-origin:110px 112px;}
 .present .speed-needle{animation:speedSweep 1.2s cubic-bezier(.34,1.35,.5,1) both;}
-@keyframes speedSweep{from{transform:rotate(0)} to{transform:rotate(var(--to,0deg))}}
+@keyframes speedSweep{from{transform:rotate(calc(-1 * var(--to,0deg)))} to{transform:rotate(0deg)}}
 @media (prefers-reduced-motion:reduce){
   .hg-rot,.hg-sand-top,.hg-sand-bottom,.hg-stream,.clock-hand,.gear-spin,
   .bat-pulse,.bat-bolt{animation:none!important;}

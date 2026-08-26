@@ -1,0 +1,246 @@
+/* ==========================================================================
+   Chalk — the hands.
+   ==========================================================================
+
+   Thirteen typefaces that look like somebody wrote them, served from the
+   board's own static files rather than a font CDN. A classroom projector on
+   a school network that blocks half the internet still gets its handwriting,
+   and a board that works offline stays working offline.
+
+   Every one of them is open licence — OFL or Apache — and the licence files
+   sit next to the fonts in static/chalk/fonts/licences/. They are unmodified
+   originals: no subsetting, no renaming, nothing to argue about.
+
+   A browser only downloads a face when something on the page actually uses
+   it, so declaring all thirteen costs nothing until a teacher picks one.
+
+   Each family is also a fallback stack ending in a system handwriting font,
+   so a missing file degrades to something still handwritten rather than to
+   Times New Roman.
+   ========================================================================== */
+
+@font-face {
+  font-family: "Chalk Gloria";
+  src: url("../fonts/GloriaHallelujah.ttf") format("truetype");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Chalk Rock";
+  src: url("../fonts/RockSalt-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Chalk Amatic";
+  src: url("../fonts/AmaticSC-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Chalk Amatic";
+  src: url("../fonts/AmaticSC-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Chalk Indie";
+  src: url("../fonts/IndieFlower-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Chalk Patrick";
+  src: url("../fonts/PatrickHand-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Chalk Architect";
+  src: url("../fonts/ArchitectsDaughter-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+/* Caveat and Dancing Script are variable fonts, so one file covers the whole
+   weight range and Bold costs no second download. */
+@font-face {
+  font-family: "Chalk Caveat";
+  src: url("../fonts/Caveat.ttf") format("truetype-variations");
+  font-weight: 400 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Chalk Dancing";
+  src: url("../fonts/DancingScript.ttf") format("truetype-variations");
+  font-weight: 400 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Chalk Marker";
+  src: url("../fonts/PermanentMarker-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Chalk Sketch";
+  src: url("../fonts/CabinSketch-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Chalk Shadows";
+  src: url("../fonts/ShadowsIntoLight.ttf") format("truetype");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Chalk Elite";
+  src: url("../fonts/SpecialElite-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+
+/* --------------------------------------------------------------------------
+   The stacks. chalk_els.js has the same list in JavaScript because it writes
+   fontFamily onto each element; these variables are for everything else —
+   the picker on the phone, the games, the text box you type into.
+   -------------------------------------------------------------------------- */
+
+:root {
+  --f-chalk:      "Chalk Gloria", "Chalkboard SE", "Segoe Print", cursive;
+  --f-rough:      "Chalk Rock", "Chalkduster", "Segoe Print", cursive;
+  --f-caps:       "Chalk Amatic", "Haettenschweiler", "Impact", sans-serif;
+  --f-pencil:     "Chalk Indie", "Segoe Print", "Bradley Hand", cursive;
+  --f-print:      "Chalk Patrick", "Comic Sans MS", "Segoe Print", cursive;
+  --f-architect:  "Chalk Architect", "Segoe Print", "Courier New", monospace;
+  --f-pen:        "Chalk Caveat", "Bradley Hand", "Segoe Script", cursive;
+  --f-fountain:   "Chalk Dancing", "Snell Roundhand", "Segoe Script", cursive;
+  --f-marker:     "Chalk Marker", "Marker Felt", Impact, sans-serif;
+  --f-sketch:     "Chalk Sketch", "Chalkduster", Impact, sans-serif;
+  --f-fine:       "Chalk Shadows", "Segoe Script", "Bradley Hand", cursive;
+  --f-typewriter: "Chalk Elite", "Courier New", ui-monospace, monospace;
+
+  /* The four that were here before any of this, named the same way so code
+     never has to special-case them. */
+  --f-sans:  system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-serif: Georgia, "Times New Roman", serif;
+  --f-mono:  ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --f-hand:  "Chalk Patrick", "Comic Sans MS", "Segoe Print", cursive;
+
+  /* Two sheets of noise, coarse for chalk and fine for pencil. Multiplied
+     into the letters so the colour comes through in patches, the way it does
+     when a stick of chalk skips over the weave of a board. */
+  --grain-chalk: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3'/%3E%3C/filter%3E%3Crect width='240' height='240' fill='%23fff'/%3E%3Crect width='240' height='240' filter='url(%23n)' opacity='0.42'/%3E%3C/svg%3E");
+  --grain-fine: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.6' numOctaves='2'/%3E%3C/filter%3E%3Crect width='200' height='200' fill='%23fff'/%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.3'/%3E%3C/svg%3E");
+}
+
+/* --------------------------------------------------------------------------
+   Materials.
+
+   The font decides the shape of a letter; these decide what it was written
+   with. chalk_els.js puts data-ink on the text node and hands the colour in
+   as --ink, because a grained letter is painted with a background rather
+   than a colour and `currentColor` is transparent by then.
+   -------------------------------------------------------------------------- */
+
+.chalk-text[data-ink] { --ink: #ffffff; }
+
+/* Chalk: soft, slightly luminous, and never quite solid. */
+.chalk-text[data-ink="chalk"] {
+  letter-spacing: .012em;
+  text-shadow: 0 0 .05em var(--ink);
+}
+/* Pencil: greyer than you think, and lighter on the page. */
+.chalk-text[data-ink="pencil"] { opacity: .9; }
+/* Pen: a wet line sits slightly proud of the paper. */
+.chalk-text[data-ink="pen"] {
+  text-shadow: .008em .014em 0 rgba(0, 0, 0, .38);
+}
+/* Marker: bleeds a little into whatever it is written on. */
+.chalk-text[data-ink="marker"] {
+  text-shadow: 0 0 .045em var(--ink), 0 0 .12em rgba(0, 0, 0, .3);
+}
+
+/* The grain needs background-clip: text. Where that is missing — and it is
+   worth remembering that it is missing on some old projector browsers — the
+   rules above still apply and the text is simply a clean colour. Nothing
+   disappears, which is the only outcome that matters on a wall. */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .chalk-text[data-ink="chalk"],
+  .chalk-text[data-ink="pencil"] {
+    color: transparent;
+    background-repeat: repeat;
+    background-blend-mode: multiply;
+    -webkit-background-clip: text;
+    background-clip: text;
+    text-shadow: none;
+  }
+  .chalk-text[data-ink="chalk"] {
+    background-image: var(--grain-chalk), linear-gradient(var(--ink), var(--ink));
+    background-size: 240px 240px, auto;
+    filter: drop-shadow(0 0 .035em var(--ink));
+  }
+  .chalk-text[data-ink="pencil"] {
+    background-image: var(--grain-fine), linear-gradient(var(--ink), var(--ink));
+    background-size: 200px 200px, auto;
+  }
+}
+
+/* Somebody will turn the texture off for a projector that renders it badly,
+   or for a whiteboard where chalk dust makes no sense. One class does it. */
+.no-texture .chalk-text[data-ink] {
+  color: var(--ink);
+  background: none;
+  filter: none;
+  text-shadow: none;
+  opacity: 1;
+}
+
+/* --------------------------------------------------------------------------
+   Picking one, on the phone.
+   Every chip is written in the font it offers. Reading a list of names in
+   one font and guessing what they look like is not choosing.
+   -------------------------------------------------------------------------- */
+
+.field-fonts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 6px;
+  width: 100%;
+}
+.font-chip {
+  padding: 10px 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(232, 238, 244, .03);
+  color: var(--dust);
+  font-size: 19px;
+  line-height: 1.15;
+  text-align: center;
+  -webkit-tap-highlight-color: transparent;
+}
+.font-chip[aria-pressed="true"] {
+  border-color: var(--brass);
+  background: rgba(217, 164, 65, .16);
+  color: var(--brass);
+}
+.font-chip[data-font="chalk"]      { font-family: var(--f-chalk); }
+.font-chip[data-font="rough"]      { font-family: var(--f-rough); font-size: 15px; }
+.font-chip[data-font="caps"]       { font-family: var(--f-caps); font-size: 23px; }
+.font-chip[data-font="pencil"]     { font-family: var(--f-pencil); }
+.font-chip[data-font="print"]      { font-family: var(--f-print); }
+.font-chip[data-font="architect"]  { font-family: var(--f-architect); font-size: 17px; }
+.font-chip[data-font="pen"]        { font-family: var(--f-pen); font-size: 22px; }
+.font-chip[data-font="fountain"]   { font-family: var(--f-fountain); font-size: 21px; }
+.font-chip[data-font="marker"]     { font-family: var(--f-marker); font-size: 17px; }
+.font-chip[data-font="sketch"]     { font-family: var(--f-sketch); font-size: 18px; }
+.font-chip[data-font="fine"]       { font-family: var(--f-fine); }
+.font-chip[data-font="typewriter"] { font-family: var(--f-typewriter); font-size: 16px; }
+.font-chip[data-font="hand"]       { font-family: var(--f-print); }
+.font-chip[data-font="sans"]       { font-family: system-ui, sans-serif; font-size: 16px; }
+.font-chip[data-font="serif"]      { font-family: Georgia, serif; font-size: 17px; }
+.font-chip[data-font="mono"]       { font-family: ui-monospace, monospace; font-size: 15px; }
+
+/* The box you type into shows the font you are typing in. */
+.sheet-text[data-font] { line-height: 1.35; }
+
+.font-group {
+  grid-column: 1 / -1;
+  margin: 8px 0 0;
+  font: 500 11px/1 var(--sans, system-ui);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.font-group:first-child { margin-top: 0; }

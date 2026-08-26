@@ -1,0 +1,112 @@
+/* ==========================================================================
+   Chalk — the selection panel.
+   Loaded after chalk.css, which it deliberately overrides.
+   ==========================================================================
+
+   What was wrong with it: nine buttons and a label in one flex row, pinned
+   edge to edge along the bottom. On a phone held upright the buttons squeezed
+   until the words broke; in immersive landscape a rule shrank the whole thing
+   to a 268px box in the bottom right corner, which is nine buttons in the
+   space of three, and the last of them were simply off the screen. The one
+   you wanted — Group — was usually among them.
+
+   What it is now: three short rows in a panel that is never wider than the
+   screen and never taller than it can afford. What is picked, then the four
+   things people actually do to a selection, then everything else behind More.
+   It floats clear of the bottom edge instead of sitting in the corner, and it
+   is centred, because a panel you have to reach across the screen for is a
+   panel you mis-tap.
+   ========================================================================== */
+
+#ink-bar {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  bottom: max(8px, env(safe-area-inset-bottom));
+  width: min(560px, calc(100vw - 16px));
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  /* Long selections and small screens: it scrolls rather than growing over
+     the board or pushing its own buttons out of reach. */
+  max-height: min(46vh, 340px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, .55);
+}
+
+.sel-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.sel-row .spacer { flex: 1; }
+
+.sel-top {
+  gap: 8px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Every button in the two action rows is the same size and none of them are
+   allowed to shrink to a sliver: 44px is the smallest thing a thumb hits
+   reliably, and this panel is used mid-lesson, one-handed. */
+.sel-main .icon-btn,
+.sel-extra .icon-btn {
+  flex: 1 1 92px;
+  min-height: 44px;
+  justify-content: center;
+  white-space: nowrap;
+}
+.sel-main .icon-btn { font-weight: 600; }
+
+#ink-count {
+  color: var(--sky);
+  font-weight: 600;
+  /* It says "2 objects + 5 marks picked", which on a narrow phone is two
+     lines rather than a squeezed row. */
+  white-space: normal;
+  line-height: 1.3;
+  min-width: 0;
+}
+
+#sel-more[aria-expanded="true"] {
+  border-color: var(--brass);
+  color: var(--brass);
+}
+
+/* Immersive landscape used to park this in a 268px corner. Same media query,
+   later in the cascade, so the corner rule loses. */
+@media (min-aspect-ratio: 1 / 1) {
+  body.immersive #ink-bar {
+    left: 50%;
+    right: auto;
+    width: min(560px, calc(100vw - 16px));
+    bottom: max(8px, env(safe-area-inset-bottom));
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    max-height: min(60vh, 300px);
+  }
+}
+
+/* The tools button shares this corner. Step further over it, since the panel
+   is taller than the old strip and floats off the bottom edge as well. */
+body.ink-picked .float-btn { bottom: calc(96px + env(safe-area-inset-bottom)); }
+@media (min-aspect-ratio: 1 / 1) {
+  body.immersive.ink-picked .float-btn {
+    right: auto;
+    left: 12px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+  }
+}
+
+/* Room to scroll the tool rows clear of the panel. */
+body.ink-picked .c-scroll { padding-bottom: 190px; }
+
+/* While the same trip is being made: the inspector header is the other row
+   that ran off the edge, for the same reason. Let it wrap. */
+#inspector .insp-top { flex-wrap: wrap; row-gap: 6px; }
+#inspector .insp-top .icon-btn { min-height: 40px; }

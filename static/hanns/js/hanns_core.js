@@ -3134,6 +3134,7 @@ function makeText(over={}){
 function makeShape(type,over={}){
   return elBase(type,Object.assign({
     w:220,h:220, fill:"#e8482b", stroke:"none", strokeW:0, radius:14,
+    motion:SHAPE_MOTION_DEFAULT, motionSpeed:6, motionAmount:1,
   },over));
 }
 function makeLine(over={}){
@@ -3259,6 +3260,7 @@ function makeCreativeShape(kind="blob_01",over={}){
   return elBase("creative_shape",Object.assign({
     shapeType:kind, w:240, h:240, fill:d.accent||"#e8482b", stroke:"none", strokeW:0, opacity:1,
     anim:"rise", animDelay:0,
+    motion:SHAPE_MOTION_DEFAULT, motionSpeed:6, motionAmount:1,
   },over));
 }
 
@@ -5522,6 +5524,55 @@ function renderCreativeShape(el){
   S.appendChild(p);box.appendChild(S);return box;
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   SHAPE MOTION — idle movement on shapes, on by default
+   ────────────────────────────────────────────────────────────────────
+   Shapes drift, sway or pulse unless told otherwise: `motion` undefined
+   means SHAPE_MOTION_DEFAULT, so decks authored before this existed pick
+   the movement up too, and "none" switches it off per shape.
+
+   The animation is applied to .el-inner, never to the element node
+   itself. styleEl() writes `transform: rotate(...)` on that node for the
+   element's own rotation, and a second transform animation there would
+   silently discard it.
+   ════════════════════════════════════════════════════════════════════ */
+const SHAPE_MOTIONS = {
+  none:    {label:"None"},
+  float:   {label:"Float"},
+  sway:    {label:"Sway"},
+  pulse:   {label:"Pulse"},
+  breathe: {label:"Breathe"},
+  drift:   {label:"Drift"},
+  bob:     {label:"Bob"},
+  wobble:  {label:"Wobble"},
+  spin:    {label:"Spin"},
+  orbit:   {label:"Orbit"},
+  shimmer: {label:"Shimmer"},
+};
+const SHAPE_MOTION_KEYS = Object.keys(SHAPE_MOTIONS);
+const SHAPE_MOTION_DEFAULT = "float";
+/* Which element types carry motion. Objects are excluded: they have their
+   own idle animation, governed by objAnim. */
+const MOTION_TYPES = new Set(["rect","ellipse","creative_shape","line"]);
+
+function motionOf(el){
+  if(!el || !MOTION_TYPES.has(el.type)) return "none";
+  const m = el.motion===undefined ? SHAPE_MOTION_DEFAULT : String(el.motion||"none");
+  return SHAPE_MOTIONS[m] ? m : "none";
+}
+function applyShapeMotion(el,inner){
+  const m=motionOf(el);
+  if(m==="none")return;
+  inner.classList.add("shape-motion");
+  inner.dataset.motion=m;
+  // Cycle length and travel are per element so a slide is not a metronome.
+  const dur=Math.max(.4,Number(el.motionSpeed)||6);
+  const amt=Math.max(0,Number(el.motionAmount)==null?1:Number(el.motionAmount));
+  inner.style.setProperty("--motion-dur",dur+"s");
+  inner.style.setProperty("--motion-amt",(isFinite(amt)?amt:1));
+  if(el.motionDelay)inner.style.setProperty("--motion-delay",Number(el.motionDelay)+"s");
+}
+
 function renderElement(el,{live=false}={}){
   const node=document.createElement("div");
   node.className="el "+el.type;
@@ -5611,6 +5662,7 @@ function renderElement(el,{live=false}={}){
   // Shadow / glow / 3-D / filters / blend — any element, any type.
   applyElFx(el,inner,node);
 
+  applyShapeMotion(el,inner);
   node.appendChild(inner);
 
   if(!live){
@@ -8674,6 +8726,406 @@ function renderQuoteCard(el){
    `render` → the DOM builder
    `fields` → which inspector controls this kind wants
    ════════════════════════════════════════════════════════════════════ */
+
+/* ════════════════════════════════════════════════════════════════════
+   18. HOURGLASS — sand runs through, then the glass flips
+   ────────────────────────────────────────────────────────────────────
+   The sand is not redrawn frame by frame; both bodies are triangles
+   scaled about their apex, which is exactly how a real hourglass empties
+   and fills. The whole frame then rotates 180 degrees at the end of the
+   run. Because an hourglass is symmetrical about that turn, the loop back
+   to 0 degrees is invisible, so one CSS cycle reads as a continuous
+   sequence of flips with no JavaScript timer.
+   ════════════════════════════════════════════════════════════════════ */
+function renderHourglass(el){
+  const box=div("hs-box hs-glassbox"+(el.dark?" hs-dark":"")+(el.hideContainer?" hs-bare":""));
+  const accent=el.accent||"#c2861a";
+  const sand=el.sandColor||accent;
+  const frame=el.frameColor||(el.dark?"#e2e8f0":"#3f2f1c");
+  const glass=el.glassColor||(el.dark?"rgba(148,197,255,.16)":"rgba(148,197,255,.22)");
+  const dur=Math.max(1,num(el.duration,8));
+  box.style.setProperty("--accent",accent);
+  box.style.setProperty("--hg-dur",dur+"s");
+  box.style.setProperty("--hg-sand",sand);
+
+  const running = el.objAnim!==false;
+  const rot=div("hg-rot"+(running?"":" hg-static"));
+  const S=svg("svg",{viewBox:"0 0 100 140",preserveAspectRatio:"xMidYMid meet",class:"hs-svg hg-svg"});
+
+  // glass body: two funnels meeting at the neck
+  const TOP="M 14 16 L 86 16 L 54 68 L 54 72 L 86 124 L 14 124 L 46 72 L 46 68 Z";
+  S.appendChild(svg("path",{d:TOP,fill:glass,stroke:frame,"stroke-width":2.4,"stroke-linejoin":"round"}));
+
+  // caps
+  S.appendChild(svg("rect",{x:8,y:6,width:84,height:11,rx:5,fill:frame}));
+  S.appendChild(svg("rect",{x:8,y:123,width:84,height:11,rx:5,fill:frame}));
+
+  // Sand is clipped to the glass so a scaled triangle can never spill past
+  // the funnel walls.
+  const cid="hgclip"+(el.id||Math.random().toString(36).slice(2,7));
+  const defs=svg("defs",{});
+  const cp=svg("clipPath",{id:cid});
+  cp.appendChild(svg("path",{d:TOP}));
+  defs.appendChild(cp);S.appendChild(defs);
+
+  const g=svg("g",{"clip-path":"url(#"+cid+")"});
+  // upper body: inverted triangle, scaled about its apex at the neck
+  g.appendChild(svg("path",{d:"M 14 17 L 86 17 L 50 69 Z",fill:sand,
+    class:"hg-sand-top"+(running?"":" hg-frozen")}));
+  // Lower pile and stream are drawn at full size and scaled from zero by the
+  // animation. With movement switched off there is no animation to hold them
+  // at zero, so they are simply not drawn — a still hourglass reads as one
+  // that has not started, rather than one impossibly full at both ends.
+  if(running){
+    g.appendChild(svg("path",{d:"M 16 123 L 84 123 L 50 76 Z",fill:sand,
+      class:"hg-sand-bottom"}));
+    g.appendChild(svg("rect",{x:48.4,y:69,width:3.2,height:52,fill:sand,
+      class:"hg-stream"}));
+  }
+  S.appendChild(g);
+
+  rot.appendChild(S);
+  box.appendChild(rot);
+  if(el.title) box.appendChild(div("hs-glass-cap",el.title));
+  return box;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   19. CLOCK FACE — live, fixed, or a fast sweep
+   ────────────────────────────────────────────────────────────────────
+   A live clock needs no interval. Each hand gets a CSS rotation whose
+   period is its real one (60s, 3600s, 43200s) and a NEGATIVE
+   animation-delay equal to how far through that period the current time
+   already is. The browser starts each hand mid-cycle, at the right angle,
+   and keeps it there — accurate, and free when the tab is idle.
+   ════════════════════════════════════════════════════════════════════ */
+function renderClockFace(el){
+  const box=div("hs-box hs-clockbox"+(el.dark?" hs-dark":"")+(el.hideContainer?" hs-bare":""));
+  const accent=el.accent||"#1d4e89";
+  const face=el.faceColor||(el.dark?"#0f172a":"#ffffff");
+  const ink=el.handColor||(el.dark?"#e6edf5":"#0f172a");
+  box.style.setProperty("--accent",accent);
+  const S=svg("svg",{viewBox:"0 0 200 200",preserveAspectRatio:"xMidYMid meet",class:"hs-svg"});
+
+  const style=el.faceStyle||"ticks";        // ticks | numbers | roman | minimal
+  const bezel=num(el.bezelW,7);
+  S.appendChild(svg("circle",{cx:100,cy:100,r:94,fill:face,stroke:accent,"stroke-width":bezel}));
+
+  if(style!=="minimal"){
+    for(let i=0;i<60;i++){
+      const major=i%5===0;
+      if(!major && style==="numbers") continue;
+      const a=(i/60)*Math.PI*2-Math.PI/2;
+      const r1=major?76:82, r2=87;
+      S.appendChild(svg("line",{
+        x1:100+Math.cos(a)*r1,y1:100+Math.sin(a)*r1,
+        x2:100+Math.cos(a)*r2,y2:100+Math.sin(a)*r2,
+        stroke:major?ink:(el.dark?"rgba(255,255,255,.35)":"rgba(15,23,42,.30)"),
+        "stroke-width":major?3.4:1.4,"stroke-linecap":"round"}));
+    }
+  }
+  if(style==="numbers"||style==="roman"){
+    const RN=["XII","I","II","III","IV","V","VI","VII","VIII","IX","X","XI"];
+    for(let i=0;i<12;i++){
+      const a=(i/12)*Math.PI*2-Math.PI/2;
+      const label=style==="roman"?RN[i]:(i===0?"12":String(i));
+      S.appendChild(svgText(100+Math.cos(a)*62,100+Math.sin(a)*62+7,label,
+        {"text-anchor":"middle","font-size":style==="roman"?15:19,"font-weight":800,fill:ink}));
+    }
+  }
+
+  const mode=el.clockMode||"live";
+  const now=new Date();
+  const secs = mode==="fixed"
+    ? (hsClamp(num(el.hour,10),0,23)%12)*3600 + hsClamp(num(el.minute,10),0,59)*60 + hsClamp(num(el.second,0),0,59)
+    : now.getHours()%12*3600 + now.getMinutes()*60 + now.getSeconds();
+  const running = el.objAnim!==false && mode!=="fixed";
+  const sweep = Math.max(.5,num(el.sweepSeconds,6));   // "fast" mode: sec/rev
+
+  function hand(len,width,color,periodSec,phaseSec,cls,tail){
+    const g=svg("g",{class:"clock-hand "+(running?cls:"")});
+    if(running){
+      const period = mode==="fast" ? periodSec/(3600/sweep) : periodSec;
+      g.style.animationDuration=period+"s";
+      g.style.animationDelay=(-(phaseSec % period))+"s";
+    }else{
+      g.setAttribute("transform","rotate("+(phaseSec/periodSec*360)+" 100 100)");
+    }
+    g.appendChild(svg("line",{x1:100,y1:100+(tail||0),x2:100,y2:100-len,
+      stroke:color,"stroke-width":width,"stroke-linecap":"round"}));
+    return g;
+  }
+  S.appendChild(hand(52,7.5,ink,43200,secs,"spin-hour",8));
+  S.appendChild(hand(74,5,ink,3600,secs,"spin-min",10));
+  if(el.showSeconds!==false)
+    S.appendChild(hand(80,2.2,accent,60,secs,"spin-sec",16));
+  S.appendChild(svg("circle",{cx:100,cy:100,r:6,fill:accent}));
+  S.appendChild(svg("circle",{cx:100,cy:100,r:2.4,fill:face}));
+
+  box.appendChild(S);
+  if(el.title) box.appendChild(div("hs-glass-cap",el.title));
+  return box;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   20. GEARS — meshing wheels that actually gear down
+   ────────────────────────────────────────────────────────────────────
+   Each row is one wheel and its value is its tooth count. Meshed gears
+   turn in opposite directions at speeds inversely proportional to their
+   teeth, so the drawing behaves like a real train: a big wheel next to a
+   small one turns slower, and reversing one reverses the next.
+   ════════════════════════════════════════════════════════════════════ */
+function gearPath(teeth,rOuter,rInner,rHub){
+  const t=Math.max(6,Math.min(40,Math.round(teeth)));
+  const step=Math.PI*2/t, half=step/2, land=half*0.52;
+  let d="";
+  for(let i=0;i<t;i++){
+    const a=i*step;
+    const p=(ang,r)=>[(Math.cos(ang)*r).toFixed(2),(Math.sin(ang)*r).toFixed(2)];
+    const a1=a-land, a2=a+land, a3=a+half-land*0.6, a4=a+half+land*0.6;
+    const P1=p(a1,rInner),P2=p(a1,rOuter),P3=p(a2,rOuter),P4=p(a2,rInner),P5=p(a3,rInner);
+    d+=(i?"L":"M")+P1+"L"+P2+"L"+P3+"L"+P4+"L"+P5;
+  }
+  d+="Z";
+  // hub cut-out, drawn the other way round so evenodd punches a hole
+  d+=` M ${rHub} 0 A ${rHub} ${rHub} 0 1 0 ${-rHub} 0 A ${rHub} ${rHub} 0 1 0 ${rHub} 0 Z`;
+  return d;
+}
+function renderGears(el){
+  const box=div("hs-box hs-gearbox"+(el.dark?" hs-dark":"")+(el.hideContainer?" hs-bare":""));
+  box.style.setProperty("--accent",el.accent||"#64748b");
+  const data=rows(el);
+  const list=data.length?data:[{label:"",value:18},{label:"",value:12}];
+  const {VW,VH}=viewBox(el,600,.5,1.4);
+  const S=svg("svg",{viewBox:`0 0 ${VW} ${VH}`,preserveAspectRatio:"xMidYMid meet",class:"hs-svg"});
+  const stops=rampFor(el);
+  const running=el.objAnim!==false;
+  const base=Math.max(1,num(el.speed,6));       // seconds per rev for 12 teeth
+  const scale=num(el.gearScale,1);
+
+  // Lay the train out left to right in unscaled units first, then scale the
+  // whole thing once to fit the box. Centre distance between meshing wheels
+  // is the sum of their pitch radii, less a little so the teeth overlap.
+  const teethList=list.map(r=>Math.max(6,Math.min(40,Math.round(Math.abs(num(r.value,12))))));
+  const radii=teethList.map(t=>t*3.4);
+  const centres=[];
+  let run=radii[0];
+  centres.push(run);
+  for(let i=1;i<radii.length;i++){
+    run += (radii[i-1]+radii[i])*0.90;
+    centres.push(run);
+  }
+  const spanW=centres[centres.length-1]+radii[radii.length-1];
+  const maxR=Math.max.apply(null,radii);
+  const labelRoom=list.some(r=>r.label)?num(el.labelSize,18)*1.6:0;
+  const k=Math.min(
+    (VW*0.94)/Math.max(1,spanW),
+    (VH*0.90-labelRoom)/Math.max(1,maxR*2)
+  )*scale;
+  const originX=VW/2-(spanW*k)/2;
+  const cyBase=VH/2-labelRoom/2;
+
+  list.forEach((r,i)=>{
+    const teeth=teethList[i];
+    const R=radii[i]*k;
+    const cx=originX+centres[i]*k;
+    const cy=cyBase;
+    const c=r.color||seriesColor(stops,i,list.length);
+    const g=svg("g",{transform:`translate(${cx.toFixed(1)},${cy.toFixed(1)})`});
+    const spin=svg("g",{class:running?("gear-spin"+((i%2)?" gear-ccw":"")):""});
+    if(running){
+      // period scales with teeth: more teeth, slower wheel
+      spin.style.animationDuration=(base*(teeth/12)).toFixed(2)+"s";
+    }
+    spin.appendChild(svg("path",{
+      d:gearPath(teeth,R,R*0.80,R*0.30),
+      fill:c,"fill-rule":"evenodd",
+      stroke:el.dark?"rgba(255,255,255,.16)":"rgba(15,23,42,.16)","stroke-width":1.2}));
+    // spokes, so the rotation is legible
+    if(el.spokes!==false){
+      for(let s=0;s<4;s++){
+        const a=s*Math.PI/2;
+        spin.appendChild(svg("line",{
+          x1:Math.cos(a)*R*0.32,y1:Math.sin(a)*R*0.32,
+          x2:Math.cos(a)*R*0.74,y2:Math.sin(a)*R*0.74,
+          stroke:el.dark?"rgba(255,255,255,.22)":"rgba(255,255,255,.55)",
+          "stroke-width":Math.max(2,R*0.09),"stroke-linecap":"round"}));
+      }
+    }
+    g.appendChild(spin);
+    if(r.label){
+      g.appendChild(svgText(0,R+num(el.labelSize,18)*1.2,r.label,
+        {"text-anchor":"middle","font-size":num(el.labelSize,18),"font-weight":800,
+         fill:el.dark?"#e2e8f0":"#0f172a"}));
+    }
+    S.appendChild(g);
+  });
+  if(el.title) S.appendChild(svgText(VW/2,num(el.labelSize,18)*1.4,el.title,
+    {"text-anchor":"middle","font-size":num(el.labelSize,18)*1.3,"font-weight":800,
+     fill:el.dark?"#f1f5f9":"#0f172a",class:"hs-title"}));
+  box.appendChild(S);
+  return box;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   21. BATTERY — charge level, with an optional charging pulse
+   ════════════════════════════════════════════════════════════════════ */
+function renderBattery(el){
+  const box=div("hs-box hs-batbox"+(el.dark?" hs-dark":"")+(el.hideContainer?" hs-bare":""));
+  const r=rows(el)[0]||{label:"",value:num(el.level,72),note:""};
+  const pct=hsClamp(r.value,0,100);
+  // Colour by state unless the row overrides it: low charge should look low.
+  const auto = pct<15?"#dc2626":pct<35?"#ea580c":"#16a34a";
+  const c=r.color||el.accent||auto;
+  const frame=el.dark?"#e2e8f0":"#1f2937";
+  box.style.setProperty("--accent",c);
+  const vertical=el.orient==="vertical";
+  const S=svg("svg",{viewBox:vertical?"0 0 90 170":"0 0 170 90",
+    preserveAspectRatio:"xMidYMid meet",class:"hs-svg"});
+  const running=el.objAnim!==false&&el.charging===true;
+
+  if(vertical){
+    S.appendChild(svg("rect",{x:30,y:4,width:30,height:10,rx:4,fill:frame}));
+    S.appendChild(svg("rect",{x:8,y:14,width:74,height:150,rx:14,fill:"none",stroke:frame,"stroke-width":6}));
+    const ih=138, iy=20+ih*(1-pct/100);
+    S.appendChild(svg("rect",{x:14,y:iy,width:62,height:ih*(pct/100),rx:9,fill:c,
+      class:running?"bat-pulse":""}));
+  }else{
+    S.appendChild(svg("rect",{x:156,y:30,width:10,height:30,rx:4,fill:frame}));
+    S.appendChild(svg("rect",{x:4,y:8,width:150,height:74,rx:14,fill:"none",stroke:frame,"stroke-width":6}));
+    S.appendChild(svg("rect",{x:10,y:14,width:138*(pct/100),height:62,rx:9,fill:c,
+      class:running?"bat-pulse":""}));
+  }
+  if(el.showValues!==false){
+    // Shift the reading off-centre when the charging bolt is present.
+    S.appendChild(svgText(vertical?(el.charging?40:45):(el.charging?68:79),vertical?95:56,fmtNum(pct,el),
+      {"text-anchor":"middle","font-size":vertical?26:34,"font-weight":900,
+       fill:pct>45?"#ffffff":(el.dark?"#e6edf5":"#0f172a")}));
+  }
+  if(el.charging){
+    // Kept clear of the value, which sits centred.
+    S.appendChild(svg("path",{d:vertical?"M 54 24 L 42 50 L 52 50 L 46 74 L 64 44 L 53 44 Z"
+                                        :"M 138 24 L 122 52 L 133 52 L 128 74 L 145 44 L 134 44 Z",
+      fill:"#fde047",stroke:"rgba(0,0,0,.25)","stroke-width":1.2,
+      class:running?"bat-bolt":""}));
+  }
+  box.appendChild(S);
+  if(r.label) box.appendChild(div("hs-glass-cap",r.label));
+  return box;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   22. THERMOMETER — a level that reads against a real scale
+   ════════════════════════════════════════════════════════════════════ */
+function renderThermometer(el){
+  const box=div("hs-box hs-thermbox"+(el.dark?" hs-dark":"")+(el.hideContainer?" hs-bare":""));
+  const r=rows(el)[0]||{label:"",value:num(el.level,28)};
+  const lo=num(el.scaleMin,0), hi=num(el.scaleMax,50);
+  const t=hsClamp((r.value-lo)/Math.max(1e-9,hi-lo),0,1);
+  const stops=rampFor(el);
+  const c=r.color||(el.ramp&&el.ramp!=="accent"?rampAt(stops,t):(el.accent||"#dc2626"));
+  const frame=el.dark?"#cbd5e1":"#334155";
+  box.style.setProperty("--accent",c);
+  const S=svg("svg",{viewBox:"0 0 120 220",preserveAspectRatio:"xMidYMid meet",class:"hs-svg"});
+  const running=el.objAnim!==false;
+
+  const TOP=22, BOT=162, TUBE=18;
+  S.appendChild(svg("rect",{x:60-TUBE/2-4,y:TOP-4,width:TUBE+8,height:BOT-TOP+12,rx:(TUBE+8)/2,
+    fill:el.dark?"rgba(255,255,255,.07)":"#ffffff",stroke:frame,"stroke-width":3}));
+  S.appendChild(svg("circle",{cx:60,cy:182,r:26,fill:el.dark?"rgba(255,255,255,.07)":"#ffffff",
+    stroke:frame,"stroke-width":3}));
+  // mercury: grows from the bulb, so it is scaled about the bottom
+  const h=(BOT-TOP)*t;
+  const g=svg("g",{class:running?"therm-rise":""});
+  g.appendChild(svg("rect",{x:60-TUBE/2,y:BOT-h,width:TUBE,height:h+14,rx:TUBE/2,fill:c}));
+  S.appendChild(g);
+  S.appendChild(svg("circle",{cx:60,cy:182,r:21,fill:c}));
+
+  const ticks=hsClamp(num(el.legendTicks,6),2,11);
+  for(let i=0;i<ticks;i++){
+    const f=i/(ticks-1), y=BOT-(BOT-TOP)*f;
+    S.appendChild(svg("line",{x1:78,y1:y,x2:88,y2:y,stroke:frame,"stroke-width":2}));
+    S.appendChild(svgText(92,y+5,fmtNum(lo+(hi-lo)*f,el),
+      {"font-size":13,"font-weight":700,fill:el.dark?"#94a3b8":"#5b7183"}));
+  }
+  if(el.showValues!==false){
+    // Anchored to the left wall of the box and clamped inside it, so a wide
+    // reading (or one near the top of the scale) cannot run off the edge.
+    const vy=Math.max(TOP+14,Math.min(BOT-2,BOT-h+6));
+    S.appendChild(svgText(42,vy,fmtNum(r.value,el),
+      {"text-anchor":"end","font-size":21,"font-weight":900,fill:c}));
+  }
+  box.appendChild(S);
+  if(r.label) box.appendChild(div("hs-glass-cap",r.label));
+  return box;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   23. SPEEDOMETER — an arc gauge whose needle swings to the value
+   ════════════════════════════════════════════════════════════════════ */
+function renderSpeedometer(el){
+  const box=div("hs-box hs-speedbox"+(el.dark?" hs-dark":"")+(el.hideContainer?" hs-bare":""));
+  const r=rows(el)[0]||{label:"",value:num(el.level,68)};
+  const lo=num(el.scaleMin,0), hi=num(el.scaleMax,100);
+  const t=hsClamp((r.value-lo)/Math.max(1e-9,hi-lo),0,1);
+  const stops=rampFor(el);
+  const accent=el.accent||"#0d9488";
+  box.style.setProperty("--accent",accent);
+  // The dial needs room BELOW the hub for the reading. Putting the value in
+  // the middle of the face, as a chart would, buries it under the needle —
+  // both are dark, and the needle simply disappears into the digits.
+  const S=svg("svg",{viewBox:"0 0 220 186",preserveAspectRatio:"xMidYMid meet",class:"hs-svg"});
+  const running=el.objAnim!==false;
+
+  const CX=110, CY=112, R=92, SPAN=220, START=180+(180-SPAN)/2;
+  const pt=(deg,rad)=>[CX+Math.cos(deg*Math.PI/180)*rad, CY+Math.sin(deg*Math.PI/180)*rad];
+  const arc=(a0,a1,rad,w,col,cls)=>{
+    const p0=pt(a0,rad),p1=pt(a1,rad);
+    const big=(a1-a0)>180?1:0;
+    const p=svg("path",{d:`M ${p0[0].toFixed(1)} ${p0[1].toFixed(1)} A ${rad} ${rad} 0 ${big} 1 ${p1[0].toFixed(1)} ${p1[1].toFixed(1)}`,
+      fill:"none",stroke:col,"stroke-width":w,"stroke-linecap":"round"});
+    if(cls)p.setAttribute("class",cls);
+    return p;
+  };
+  S.appendChild(arc(START,START+SPAN,R,16,el.dark?"rgba(255,255,255,.13)":"#e6ebf1"));
+  // Coloured band up to the value. Segments keep the ramp readable across it.
+  const segs=28;
+  for(let i=0;i<segs;i++){
+    const f0=i/segs, f1=(i+1)/segs;
+    if(f0>t)break;
+    const col = el.ramp&&el.ramp!=="accent" ? rampAt(stops,0.25+f0*0.7) : accent;
+    S.appendChild(arc(START+SPAN*f0,START+SPAN*Math.min(f1,t),R,16,col));
+  }
+  for(let i=0;i<=8;i++){
+    const f=i/8, a=START+SPAN*f;
+    const p1=pt(a,R-14), p2=pt(a,R-24);
+    S.appendChild(svg("line",{x1:p1[0],y1:p1[1],x2:p2[0],y2:p2[1],
+      stroke:el.dark?"rgba(255,255,255,.4)":"rgba(15,23,42,.35)","stroke-width":2.4,"stroke-linecap":"round"}));
+  }
+  const needleA=START+SPAN*t;
+  // The rotation is written as an SVG attribute so the needle is correct in
+  // any renderer, including ones that ignore CSS. transform-origin lives in
+  // the stylesheet rather than inline: an inline style block here is enough
+  // to make some static SVG rasterisers drop the group entirely.
+  const ng=svg("g",{class:running?"speed-needle":"",
+    transform:`rotate(${(needleA-START).toFixed(2)} ${CX} ${CY})`});
+  if(running) ng.style.setProperty("--to",(needleA-START).toFixed(2)+"deg");
+  const tip=pt(START,R-26);
+  ng.appendChild(svg("line",{x1:CX,y1:CY,x2:tip[0],y2:tip[1],stroke:el.dark?"#f8fafc":"#0f172a",
+    "stroke-width":5,"stroke-linecap":"round"}));
+  S.appendChild(ng);
+  S.appendChild(svg("circle",{cx:CX,cy:CY,r:11,fill:el.dark?"#f8fafc":"#0f172a"}));
+  S.appendChild(svg("circle",{cx:CX,cy:CY,r:4.5,fill:accent}));
+  if(el.showValues!==false){
+    S.appendChild(svgText(CX,CY+46,fmtNum(r.value,el),
+      {"text-anchor":"middle","font-size":36,"font-weight":900,fill:el.dark?"#f1f5f9":"#0f172a"}));
+  }
+  if(r.label) S.appendChild(svgText(CX,CY+68,r.label,
+    {"text-anchor":"middle","font-size":15,"font-weight":700,fill:el.dark?"#94a3b8":"#5b7183"}));
+  box.appendChild(S);
+  return box;
+}
+
 const STUDIO = {
 
   choropleth:{
@@ -8853,6 +9305,71 @@ const STUDIO = {
           quoteStyle:"bar",quoteSize:34,showMark:true,showLabel:false,hideContainer:true,rows:[]},
     render:renderQuoteCard,
     fields:["quoteOpts","accent","dark"]
+  },
+
+/* NOTE ON KINDS — core already ships count-style objects called
+   "hourglass", "battery" and "thermometer". Reusing those kinds here would
+   have made renderObject() hand every existing one of them to the new
+   renderer, silently changing decks that were authored years ago. The
+   mechanical versions therefore take distinct kinds: sand_timer,
+   charge_meter, temp_gauge. */
+  sand_timer:{
+    def:{kind:"sand_timer",label:"Hourglass (sand timer)",icon:"⏳",group:"Time",w:220,h:300,accent:"#c2861a",
+         help:"Sand runs through, then the glass flips — loops on its own"},
+    seed:{title:"",duration:8,sandColor:"",glassColor:"",frameColor:"",objAnim:true,
+          showLabel:false,hideContainer:true,rows:[]},
+    render:renderHourglass,
+    fields:["title","hourglassOpts","accent","objAnim","dark","grid"]
+  },
+
+  clock_face:{
+    def:{kind:"clock_face",label:"Clock face",icon:"🕰️",group:"Time",w:280,h:280,accent:"#1d4e89",
+         help:"Live, fixed or fast-sweep clock with real hand speeds"},
+    seed:{title:"",clockMode:"live",faceStyle:"ticks",hour:10,minute:10,second:0,
+          sweepSeconds:6,showSeconds:true,bezelW:7,faceColor:"",handColor:"",objAnim:true,
+          showLabel:false,hideContainer:true,rows:[]},
+    render:renderClockFace,
+    fields:["title","clockOpts","accent","objAnim","dark","grid"]
+  },
+
+  gears:{
+    def:{kind:"gears",label:"Gears / wheels",icon:"⚙️",group:"Time",w:520,h:260,accent:"#64748b",
+         help:"Meshing wheels — each row's value is its tooth count"},
+    seed:{title:"",speed:6,gearScale:1,spokes:true,labelSize:18,objAnim:true,
+          showLabel:false,hideContainer:true,
+          rows:[{label:"Policy",value:20},{label:"Finance",value:13},{label:"Delivery",value:9}]},
+    render:renderGears,
+    fields:["title","gearOpts","ramp","accent","labelSize","objAnim","dark","grid"]
+  },
+
+  charge_meter:{
+    def:{kind:"charge_meter",label:"Battery meter",icon:"🔋",group:"Meters",w:300,h:180,accent:"",
+         help:"Charge level, colour-coded, with an optional charging pulse"},
+    seed:{orient:"horizontal",charging:false,showValues:true,decimals:0,valueSuffix:"%",
+          objAnim:true,showLabel:false,hideContainer:true,
+          rows:[{label:"Grid storage capacity",value:72}]},
+    render:renderBattery,
+    fields:["batteryOpts","accent","numfmt","showValues","objAnim","dark","grid"]
+  },
+
+  temp_gauge:{
+    def:{kind:"temp_gauge",label:"Thermometer gauge",icon:"🌡️",group:"Meters",w:200,h:340,accent:"#dc2626",
+         help:"A level read against a labelled scale"},
+    seed:{scaleMin:0,scaleMax:50,legendTicks:6,showValues:true,decimals:0,valueSuffix:"°",
+          objAnim:true,showLabel:false,hideContainer:true,
+          rows:[{label:"Average July high",value:34}]},
+    render:renderThermometer,
+    fields:["ramp","accent","scaleRange","legendTicksOnly","numfmt","showValues","objAnim","dark","grid"]
+  },
+
+  speedometer:{
+    def:{kind:"speedometer",label:"Speedometer",icon:"🎛️",group:"Meters",w:340,h:230,accent:"#0d9488",
+         help:"An arc gauge whose needle swings up to the value"},
+    seed:{scaleMin:0,scaleMax:100,showValues:true,decimals:0,valueSuffix:"%",
+          objAnim:true,showLabel:false,hideContainer:true,
+          rows:[{label:"Capacity used",value:68}]},
+    render:renderSpeedometer,
+    fields:["ramp","accent","scaleRange","numfmt","showValues","objAnim","dark","grid"]
   },
 };
 
@@ -9128,6 +9645,7 @@ window.Hanns = {Deck,TEMPLATES,BACKGROUNDS,BG_FX,ANIMS,TRANSITIONS,PALETTE,FONTS
   // studio objects — data & diagram objects, their geography and palettes
   STUDIO,STUDIO_KINDS,STUDIO_RENDER,STUDIO_SEED,STUDIO_FIELDS,STUDIO_OBJECTS,
   isStudioObject,renderStudioObject,GEO,GEO_SETS,RAMPS,RAMP_KEYS,toIso,rampFor,rampAt,seriesColor,
+  SHAPE_MOTIONS,SHAPE_MOTION_KEYS,SHAPE_MOTION_DEFAULT,MOTION_TYPES,motionOf,
   makeText,makeShape,makeLine,makeImage,makeVideo,makeLink,makeObject,makeCreativeShape,makeTable,makeChart,makeMap,makeGallery,W,H,$,$$,uid,clamp,genCode};
 
 })();

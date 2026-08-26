@@ -5,7 +5,7 @@
 "use strict";
 const Hx = window.Hanns;
 const {Deck,TEMPLATES,BACKGROUNDS,BG_FX,ANIMS,TRANSITIONS,PALETTE,FONTS,OBJECTS,SHAPES,
-  newSlide,curSlide,selEl,paintSlide,renderElement,isStudioObject,
+  newSlide,curSlide,selEl,paintSlide,renderElement,isStudioObject,motionOf,SHAPE_MOTIONS,MOTION_TYPES,
   makeText,makeShape,makeLine,makeImage,makeVideo,makeLink,makeObject,makeCreativeShape,makeTable,makeChart,makeMap,makeGallery,W,H,$,$$,uid,clamp,genCode}=Hx;
 
 const canvas   = $("#canvas");
@@ -3739,8 +3739,80 @@ function studioFields(el,keys){
     out.push(hEl("div",{class:"row2"},[hField("Quote size",hNum(el,"quoteSize",14,72,1)),
                                        hField("Opening mark",hToggle(el,"showMark","Show","Hide",true))]));
   }
+  if(has("objAnim")){
+    out.push(hField("Movement",hToggle(el,"objAnim","Animate","Hold still",true)));
+  }
+  if(has("hourglassOpts")){
+    out.push(hField("Seconds per turn",hNum(el,"duration",1,120,1)));
+    out.push(hEl("div",{class:"row2"},[hField("Sand",hColor(el,"sandColor","#c2861a")),
+                                       hField("Frame",hColor(el,"frameColor","#3f2f1c"))]));
+    out.push(hEl("div",{class:"hs-hint",text:"The glass turns over at the end of each run and starts again."}));
+  }
+  if(has("clockOpts")){
+    out.push(hField("Clock mode",hSelect(el,"clockMode",[
+      {v:"live",l:"Live — real time now"},{v:"fixed",l:"Fixed time"},{v:"fast",l:"Fast sweep"}],true)));
+    if(String(el.clockMode||"live")==="fixed"){
+      out.push(hEl("div",{class:"row2"},[hField("Hour",hNum(el,"hour",0,23,1)),
+                                         hField("Minute",hNum(el,"minute",0,59,1))]));
+    }
+    if(String(el.clockMode||"live")==="fast"){
+      out.push(hField("Seconds per hour of dial",hNum(el,"sweepSeconds",.5,120,.5)));
+    }
+    out.push(hField("Dial",hSelect(el,"faceStyle",[{v:"ticks",l:"Ticks"},{v:"numbers",l:"Numbers"},
+                                                   {v:"roman",l:"Roman numerals"},{v:"minimal",l:"Bare"}])));
+    out.push(hField("Second hand",hToggle(el,"showSeconds","Show","Hide",true)));
+    out.push(hEl("div",{class:"row2"},[hField("Face",hColor(el,"faceColor","#ffffff")),
+                                       hField("Hands",hColor(el,"handColor","#0f172a"))]));
+    out.push(hEl("div",{class:"hs-hint",
+      text:"Live mode reads the clock when the slide paints and keeps real time from there."}));
+  }
+  if(has("gearOpts")){
+    out.push(hField("Seconds per turn (12 teeth)",hNum(el,"speed",.5,60,.5)));
+    out.push(hEl("div",{class:"row2"},[hField("Wheel size",hNum(el,"gearScale",.3,3,.05)),
+                                       hField("Spokes",hToggle(el,"spokes","Show","Hide",true))]));
+    out.push(hEl("div",{class:"hs-hint",
+      text:"Each row is one wheel; its value is the tooth count. More teeth turn slower, and neighbours turn opposite ways."}));
+  }
+  if(has("batteryOpts")){
+    out.push(hField("Orientation",hSelect(el,"orient",[{v:"horizontal",l:"Horizontal"},{v:"vertical",l:"Vertical"}])));
+    out.push(hField("Charging",hToggle(el,"charging","Charging","Idle",false)));
+    out.push(hEl("div",{class:"hs-hint",
+      text:"Leave the accent colour empty to let the level colour itself — green, amber, then red."}));
+  }
+  if(has("legendTicksOnly"))out.push(hField("Scale ticks",hNum(el,"legendTicks",2,11,1)));
   if(has("benchmarks"))out.push(studioBenchmarks(el));
   return out;
+}
+
+/* ── shape motion: idle movement, on by default, off per shape ────── */
+function shapeMotionPanel(el){
+  if(!el||!MOTION_TYPES.has(el.type))return null;
+  const cur=motionOf(el);
+  const kids=[
+    hField("Movement",hSelect(el,"motion",
+      Object.keys(SHAPE_MOTIONS).map(k=>({v:k,l:SHAPE_MOTIONS[k].label})),true)),
+  ];
+  if(cur!=="none"){
+    kids.push(hEl("div",{class:"row2"},[
+      hField("Seconds per cycle",hNum(el,"motionSpeed",.4,60,.2)),
+      hField("Amount",hNum(el,"motionAmount",0,4,.1)),
+    ]));
+    kids.push(hField("Start offset (s)",hNum(el,"motionDelay",-30,30,.1)));
+    kids.push(hEl("div",{class:"hs-hint",
+      text:"Give neighbouring shapes different cycles or offsets so they do not move in lockstep. The selected shape holds still here so you can place it; it moves on the stage."}));
+  }else{
+    kids.push(hEl("div",{class:"hs-hint",text:"Shapes move by default. This one is set to stay still."}));
+  }
+  // Set the motion on every shape in the selection at once.
+  const all=hEl("button",{class:"hs-mini",type:"button",text:"Apply to all selected shapes",
+    onclick:()=>{
+      const list=selectedElements().filter(e=>MOTION_TYPES.has(e.type));
+      list.forEach(e=>{e.motion=el.motion;e.motionSpeed=el.motionSpeed;e.motionAmount=el.motionAmount;});
+      pushHistory();renderAll();markDirty();
+      toast("Movement applied to "+list.length+" shape"+(list.length>1?"s":""));
+    }});
+  kids.push(hEl("div",{class:"hs-row-btns"},[all]));
+  return hGroup("Shape movement",kids);
 }
 
 function studioBenchmarks(el){
@@ -3882,6 +3954,8 @@ function arrangePanel(){
 /* Append the studio panels underneath whatever the inspector just drew. */
 function studioPanels(el){
   if(!inspBody)return;
+  const mp = shapeMotionPanel(el);
+  if(mp) inspBody.appendChild(mp);
   if(el && el.type==="object" && isStudioObject(el.objectType)){
     const def=(OBJECTS||[]).find(o=>o.kind===el.objectType)||{label:el.objectType,icon:"◆"};
     ensureCountryList();

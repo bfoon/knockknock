@@ -320,6 +320,9 @@
       var kind = spec.kind, keys = spec.keys || [];
 
       if (kind === "dpad") return padDirections();
+      if (kind === "padplus") return padPlus(spec);
+      if (kind === "grid") return padGrid(spec);
+      if (kind === "word") return padWord(spec);
       if (kind === "slider") return padSlider(spec);
       if (kind === "aim") return padAim(spec);
       if (kind === "zones") return padZones(keys);
@@ -360,6 +363,104 @@
         press("dir", Math.abs(dx) > Math.abs(dy)
           ? (dx > 0 ? "right" : "left") : (dy > 0 ? "down" : "up"));
       });
+    }
+
+    /* A direction pad that holds, with action buttons beside it. Anything
+     * that has to move and do something at the same time uses this. */
+    function padPlus(spec) {
+      var box = document.createElement("div");
+      box.className = "pad-plus";
+      var cross = document.createElement("div");
+      cross.className = "pad-dpad";
+      cross.dataset.axis = spec.axis || "";
+      var dirs = spec.axis === "x" ? [["left", "\u25C0", "l"], ["right", "\u25B6", "r"]]
+        : [["up", "\u25B2", "u"], ["left", "\u25C0", "l"],
+           ["right", "\u25B6", "r"], ["down", "\u25BC", "d"]];
+      dirs.forEach(function (d) {
+        var b = bigButton(d[1],
+          function () { press(d[0], 1); },
+          function () { press(d[0], 0); }, "is-dir");
+        b.dataset.dir = d[2];
+        b.setAttribute("aria-label", d[0]);
+        cross.appendChild(b);
+      });
+      box.appendChild(cross);
+
+      var acts = document.createElement("div");
+      acts.className = "pad-acts";
+      (spec.keys || []).forEach(function (k) {
+        acts.appendChild(bigButton(k.label,
+          function () { press(k.k, 1); },
+          function () { press(k.k, 0); }, "is-act"));
+      });
+      box.appendChild(acts);
+      controls.appendChild(box);
+    }
+
+    /* The board, small enough to tap. The projector sends the position with
+     * every change, so this is a mirror and never a second opinion. */
+    function padGrid(spec) {
+      var cols = Math.max(1, Math.min(12, spec.cols || 4));
+      var rows = Math.max(1, Math.min(12, spec.rows || 4));
+      var wrapper = document.createElement("div");
+      wrapper.className = "pad-grid-wrap";
+      if (spec.label) {
+        var lab = document.createElement("p");
+        lab.className = "pad-note";
+        lab.textContent = spec.label;
+        wrapper.appendChild(lab);
+      }
+      var grid = document.createElement("div");
+      grid.className = "pad-grid";
+      grid.style.setProperty("--cols", cols);
+      grid.style.setProperty("--rows", rows);
+      var cells = spec.cells || [], hi = spec.hi || [];
+      for (var i = 0; i < cols * rows; i++) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "pad-cell";
+        b.dataset.i = i;
+        b.dataset.dark = ((i / cols | 0) + (i % cols)) % 2 ? "1" : "0";
+        if (hi.indexOf(i) >= 0) b.dataset.hi = "1";
+        b.textContent = cells[i] || "";
+        b.addEventListener("pointerdown", function (e) {
+          e.preventDefault();
+          press("cell", Number(e.currentTarget.dataset.i));
+        });
+        grid.appendChild(b);
+      }
+      wrapper.appendChild(grid);
+      controls.appendChild(wrapper);
+    }
+
+    /* A box to type in. The keyboard covers half the phone, so the answer
+     * being typed is the only thing on screen that matters. */
+    function padWord(spec) {
+      var box = document.createElement("div");
+      box.className = "pad-word";
+      box.innerHTML =
+        '<p class="word-clue"></p><p class="word-hint"></p>' +
+        '<input type="text" inputmode="text" autocomplete="off" ' +
+        'autocorrect="off" autocapitalize="characters" spellcheck="false" ' +
+        'maxlength="16" aria-label="Your answer">' +
+        '<button class="pad-btn is-send" type="button">Send</button>';
+      box.querySelector(".word-clue").textContent = spec.label || "";
+      box.querySelector(".word-hint").textContent = spec.hint || "";
+      var field = box.querySelector("input");
+      var go = box.querySelector("button");
+      function submit() {
+        var val = field.value.trim();
+        if (!val) return;
+        press("word", val.slice(0, 16));
+        field.value = "";
+        field.focus();
+      }
+      go.addEventListener("click", submit);
+      field.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); submit(); }
+      });
+      controls.appendChild(box);
+      setTimeout(function () { field.focus(); }, 120);
     }
 
     function padSlider(spec) {

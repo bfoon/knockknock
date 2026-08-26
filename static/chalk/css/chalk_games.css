@@ -341,6 +341,113 @@ body.in-timeout .stage-hud { opacity: 0; pointer-events: none; }
 }
 .pad-btn.is-colour:active { background: color-mix(in srgb, var(--c) 42%, transparent); }
 
+
+/* --- direction pad with actions beside it (padplus) --------------------- */
+
+.pad-controls[data-kind="padplus"] { align-items: stretch; }
+.pad-plus {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: var(--pad-gap);
+  min-height: 0;
+}
+.pad-plus .pad-dpad {
+  width: auto;
+  aspect-ratio: auto;
+  place-self: stretch;
+}
+.pad-plus .pad-dpad[data-axis="x"] {
+  grid-template-rows: 1fr;
+  grid-template-columns: 1fr 1fr;
+}
+.pad-plus .pad-dpad[data-axis="x"] [data-dir="l"] { grid-area: 1 / 1; }
+.pad-plus .pad-dpad[data-axis="x"] [data-dir="r"] { grid-area: 1 / 2; }
+.pad-acts {
+  display: grid;
+  gap: var(--pad-gap);
+  grid-auto-rows: 1fr;
+}
+.pad-btn.is-act { font-size: clamp(18px, 5vw, 30px); }
+
+/* --- a board you can tap (grid) ---------------------------------------- */
+
+.pad-grid-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+.pad-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(var(--cols), 1fr);
+  grid-template-rows: repeat(var(--rows), 1fr);
+  gap: 2px;
+  align-self: center;
+  width: min(100%, 92vh);
+  aspect-ratio: var(--cols) / var(--rows);
+  padding: 4px;
+  border: 2px solid var(--line);
+  border-radius: 14px;
+}
+.pad-cell {
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dust);
+  /* The glyphs are chess pieces and counters — size them off the cell, not
+     the viewport, or an 8×8 board turns to soup on a small phone. */
+  font-size: clamp(11px, calc(52vw / var(--cols)), 34px);
+  line-height: 1;
+  -webkit-tap-highlight-color: transparent;
+}
+.pad-cell[data-dark="1"] { background: rgba(232, 238, 244, .06); }
+.pad-cell[data-hi="1"] {
+  background: rgba(75, 191, 122, .28);
+  box-shadow: inset 0 0 0 2px var(--mint);
+}
+.pad-cell:active { background: rgba(217, 164, 65, .3); }
+
+/* --- typing (word) ------------------------------------------------------ */
+
+.pad-word {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 4px;
+}
+.word-clue {
+  margin: 0;
+  text-align: center;
+  font: 400 clamp(28px, 11vw, 54px)/1.1 var(--hand);
+  letter-spacing: .18em;
+  color: var(--dust);
+}
+.word-hint {
+  margin: 0;
+  text-align: center;
+  font: 400 13px/1 var(--sans);
+  color: var(--muted);
+}
+.pad-word input {
+  width: 100%;
+  padding: 14px 16px;
+  border: 2px solid var(--line);
+  border-radius: 14px;
+  background: rgba(232, 238, 244, .04);
+  color: var(--dust);
+  font: 400 24px/1 var(--sans);
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+}
+.pad-word input:focus { outline: none; border-color: var(--brass); }
+.pad-btn.is-send { flex: 0 0 auto; padding: 14px; font-size: 22px; }
+
 /* --- the way back in --------------------------------------------------- */
 
 .pad-float {

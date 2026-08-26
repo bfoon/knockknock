@@ -1024,6 +1024,8 @@ STUDIO_KINDS = {
     "slope_chart", "waffle", "ring_grid", "process_steps", "timeline_track",
     "rank_bars", "matrix_2x2", "venn", "pyramid_tiers", "sankey_flow",
     "heat_grid", "quote_card",
+    # mechanical objects
+    "sand_timer", "clock_face", "gears", "charge_meter", "temp_gauge", "speedometer",
 }
 
 # Sequential ramps, kept in step with RAMPS in hanns_core.js.
@@ -1559,6 +1561,221 @@ def _std_data_card(slide, el, kind_label):
     return None
 
 
+# ── mechanical objects ────────────────────────────────────────────────
+# These animate in the browser. A slide is a still frame, so each exports
+# at the state it is set to: the clock at its time, the gauge at its value,
+# the hourglass part-run. Nothing pretends to move.
+
+def _std_clock_face(slide, el):
+    import math
+    x, y, w, h = _studio_frame(el)
+    d = min(w, h)
+    cx, cy = x + w / 2, y + d / 2
+    r = d / 2
+    accent = _clean_hex(el.get("accent")) or "1D4E89"
+    dark = bool(el.get("dark"))
+    face = _clean_hex(el.get("faceColor")) or ("0F172A" if dark else "FFFFFF")
+    ink = _clean_hex(el.get("handColor")) or ("E6EDF5" if dark else "0F172A")
+    ring = slide.shapes.add_shape(MSO_SHAPE.OVAL, _px_to_emu(cx - r), _px_to_emu(cy - r),
+                                  _px_to_emu(d), _px_to_emu(d))
+    ring.fill.solid()
+    ring.fill.fore_color.rgb = RGBColor.from_string(face)
+    ring.line.color.rgb = RGBColor.from_string(accent)
+    ring.line.width = Pt(max(1.0, _num(el.get("bezelW"), 7) / 1.333))
+
+    mode = str(el.get("clockMode") or "live")
+    if mode == "fixed":
+        hh, mm = int(_num(el.get("hour"), 10)) % 12, int(_num(el.get("minute"), 10)) % 60
+    else:
+        # A static export of a "live" clock is the moment it was exported.
+        from datetime import datetime
+        now = datetime.now()
+        hh, mm = now.hour % 12, now.minute
+    if str(el.get("faceStyle") or "ticks") in ("numbers", "roman"):
+        RN = ["XII", "I", "II", "III", "IV", "V", "VI", "VII",
+              "VIII", "IX", "X", "XI"]
+        roman = str(el.get("faceStyle")) == "roman"
+        for i in range(12):
+            a = math.radians(i * 30 - 90)
+            lx, ly = cx + math.cos(a) * r * 0.72, cy + math.sin(a) * r * 0.72
+            _txt_box(slide, lx - 22, ly - 12, 44, 24,
+                     RN[i] if roman else ("12" if i == 0 else str(i)),
+                     size=max(9, r * 0.19), bold=True, color=ink, align=PP_ALIGN.CENTER)
+    for ang, length, width in ((( hh + mm / 60.0) * 30 - 90, r * 0.52, 6.0),
+                               (mm * 6 - 90, r * 0.76, 4.0)):
+        a = math.radians(ang)
+        ln = slide.shapes.add_connector(
+            1, _px_to_emu(cx), _px_to_emu(cy),
+            _px_to_emu(cx + math.cos(a) * length), _px_to_emu(cy + math.sin(a) * length))
+        ln.line.color.rgb = RGBColor.from_string(ink)
+        ln.line.width = Pt(width)
+    hub = slide.shapes.add_shape(MSO_SHAPE.OVAL, _px_to_emu(cx - 6), _px_to_emu(cy - 6),
+                                 _px_to_emu(12), _px_to_emu(12))
+    hub.fill.solid()
+    hub.fill.fore_color.rgb = RGBColor.from_string(accent)
+    hub.line.fill.background()
+    return ring
+
+
+def _std_gears(slide, el):
+    """Meshing wheels as real PPTX gear autoshapes, laid out left to right
+    with each wheel sized by its tooth count."""
+    rows = _studio_rows(el) or [{"label": "", "value": 18, "color": None, "note": "", "value2": None},
+                                {"label": "", "value": 12, "color": None, "note": "", "value2": None}]
+    x, y, w, h = _studio_frame(el)
+    top = _studio_title(slide, el, x, y, w)
+    y += top
+    h -= top
+    teeth = [max(6, min(40, int(abs(_num(r["value"], 12))))) for r in rows]
+    radii = [t * 3.4 for t in teeth]
+    centres, run = [], radii[0]
+    centres.append(run)
+    for i in range(1, len(radii)):
+        run += (radii[i - 1] + radii[i]) * 0.90
+        centres.append(run)
+    span = centres[-1] + radii[-1]
+    label_room = 22 if any(r["label"] for r in rows) else 0
+    k = min((w * 0.94) / max(1, span), (h * 0.9 - label_room) / max(1, max(radii) * 2))
+    ox = x + w / 2 - (span * k) / 2
+    cy = y + (h - label_room) / 2
+    # python-pptx exposes GEAR_6 and GEAR_9; pick whichever is closer.
+    for i, r in enumerate(rows):
+        R = radii[i] * k
+        cx = ox + centres[i] * k
+        col = r["color"] or _series_color(el, i, len(rows))
+        shape = MSO_SHAPE.GEAR_9 if teeth[i] >= 12 else MSO_SHAPE.GEAR_6
+        g = slide.shapes.add_shape(shape, _px_to_emu(cx - R), _px_to_emu(cy - R),
+                                   _px_to_emu(R * 2), _px_to_emu(R * 2))
+        g.fill.solid()
+        g.fill.fore_color.rgb = RGBColor.from_string(col)
+        g.line.fill.background()
+        if r["label"]:
+            _txt_box(slide, cx - R, cy + R + 2, R * 2, 20, r["label"], size=13, bold=True,
+                     color="E6EDF5" if el.get("dark") else "0F172A", align=PP_ALIGN.CENTER)
+    return None
+
+
+def _std_battery(slide, el):
+    x, y, w, h = _studio_frame(el)
+    r = (_studio_rows(el) or [{"label": "", "value": _num(el.get("level"), 72)}])[0]
+    pct = max(0.0, min(100.0, r["value"]))
+    auto = "DC2626" if pct < 15 else ("EA580C" if pct < 35 else "16A34A")
+    c = r.get("color") or _clean_hex(el.get("accent")) or auto
+    frame = "E2E8F0" if el.get("dark") else "1F2937"
+    vertical = str(el.get("orient") or "horizontal") == "vertical"
+    if vertical:
+        bw, bh = min(w * 0.62, h * 0.42), h * 0.88
+        bx, by = x + (w - bw) / 2, y + h * 0.1
+        _rect(slide, bx + bw * 0.32, by - h * 0.05, bw * 0.36, h * 0.05, frame, radius=4)
+        _rect(slide, bx, by, bw, bh, None, radius=16, line=frame, line_w=5)
+        fh = (bh - 12) * pct / 100
+        _rect(slide, bx + 6, by + bh - 6 - fh, bw - 12, fh, c, radius=10)
+    else:
+        bw, bh = w * 0.88, min(h * 0.72, w * 0.5)
+        bx, by = x + w * 0.03, y + (h - bh) / 2
+        _rect(slide, bx + bw + 2, by + bh * 0.32, w * 0.05, bh * 0.36, frame, radius=4)
+        _rect(slide, bx, by, bw, bh, None, radius=16, line=frame, line_w=5)
+        _rect(slide, bx + 6, by + 6, (bw - 12) * pct / 100, bh - 12, c, radius=10)
+    if el.get("showValues") is not False:
+        _txt_box(slide, x, y + h * 0.38, w, h * 0.26, _studio_fmt(el, pct),
+                 size=min(38, h * 0.3), bold=True,
+                 color="FFFFFF" if pct > 45 else ("E6EDF5" if el.get("dark") else "0F172A"),
+                 align=PP_ALIGN.CENTER)
+    if r["label"]:
+        _txt_box(slide, x, y + h - 18, w, 18, r["label"], size=12, bold=True,
+                 color="94A3B8" if el.get("dark") else "5B7183", align=PP_ALIGN.CENTER)
+    return None
+
+
+def _std_thermometer(slide, el):
+    x, y, w, h = _studio_frame(el)
+    r = (_studio_rows(el) or [{"label": "", "value": _num(el.get("level"), 28)}])[0]
+    lo, hi = _num(el.get("scaleMin"), 0), _num(el.get("scaleMax"), 50)
+    t = max(0.0, min(1.0, (r["value"] - lo) / max(1e-9, hi - lo)))
+    c = r.get("color") or _clean_hex(el.get("accent")) or "DC2626"
+    frame = "CBD5E1" if el.get("dark") else "334155"
+    tube_w = min(w * 0.22, 34)
+    cx = x + w * 0.4
+    top_y, bulb_r = y + h * 0.06, tube_w * 0.95
+    bot_y = y + h - bulb_r * 2.1
+    _rect(slide, cx - tube_w / 2, top_y, tube_w, bot_y - top_y + bulb_r,
+          "FFFFFF", radius=tube_w / 2, line=frame, line_w=3)
+    fh = (bot_y - top_y) * t
+    _rect(slide, cx - tube_w / 2 + 4, bot_y - fh, tube_w - 8, fh + bulb_r, c,
+          radius=(tube_w - 8) / 2)
+    bulb = slide.shapes.add_shape(MSO_SHAPE.OVAL, _px_to_emu(cx - bulb_r),
+                                  _px_to_emu(bot_y + bulb_r * 0.1),
+                                  _px_to_emu(bulb_r * 2), _px_to_emu(bulb_r * 2))
+    bulb.fill.solid()
+    bulb.fill.fore_color.rgb = RGBColor.from_string(c)
+    bulb.line.color.rgb = RGBColor.from_string(frame)
+    bulb.line.width = Pt(2)
+    ticks = max(2, min(11, int(_num(el.get("legendTicks"), 6))))
+    for i in range(ticks):
+        f = i / (ticks - 1)
+        ty = bot_y - (bot_y - top_y) * f
+        _txt_box(slide, cx + tube_w, ty - 9, w * 0.5, 18, _studio_fmt(el, lo + (hi - lo) * f),
+                 size=11, bold=True, color="94A3B8" if el.get("dark") else "5B7183")
+    if r["label"]:
+        _txt_box(slide, x, y + h - 16, w, 16, r["label"], size=12, bold=True,
+                 color="94A3B8" if el.get("dark") else "5B7183", align=PP_ALIGN.CENTER)
+    return None
+
+
+def _std_speedometer(slide, el):
+    """The dial is a BLOCK_ARC track plus a coloured sweep, with the reading
+    below the hub — the same layout the browser draws."""
+    x, y, w, h = _studio_frame(el)
+    r = (_studio_rows(el) or [{"label": "", "value": _num(el.get("level"), 68)}])[0]
+    lo, hi = _num(el.get("scaleMin"), 0), _num(el.get("scaleMax"), 100)
+    t = max(0.0, min(1.0, (r["value"] - lo) / max(1e-9, hi - lo)))
+    accent = _clean_hex(el.get("accent")) or "0D9488"
+    d = min(w, h * 1.5)
+    cx, cy = x + w / 2, y + h * 0.52
+    START, SPAN = 160.0, 220.0
+    _arc(slide, cx - d / 2, cy - d / 2, d, START, START + SPAN,
+         "334155" if el.get("dark") else "E6EBF1", 0.17)
+    if t > 0.004:
+        _arc(slide, cx - d / 2, cy - d / 2, d, START, (START + SPAN * t) % 360.0, accent, 0.17)
+    if el.get("showValues") is not False:
+        _txt_box(slide, x, cy + d * 0.10, w, d * 0.22, _studio_fmt(el, r["value"]),
+                 size=min(40, d * 0.19), bold=True,
+                 color="F1F5F9" if el.get("dark") else "0F172A", align=PP_ALIGN.CENTER)
+    if r["label"]:
+        _txt_box(slide, x, cy + d * 0.33, w, 20, r["label"], size=13, bold=True,
+                 color="94A3B8" if el.get("dark") else "5B7183", align=PP_ALIGN.CENTER)
+    return None
+
+
+def _std_hourglass(slide, el):
+    """Drawn mid-run: sand in both bulbs, which is what an hourglass on a
+    still slide should look like."""
+    x, y, w, h = _studio_frame(el)
+    sand = _clean_hex(el.get("sandColor")) or _clean_hex(el.get("accent")) or "C2861A"
+    frame = _clean_hex(el.get("frameColor")) or ("E2E8F0" if el.get("dark") else "3F2F1C")
+    gw = min(w * 0.8, h * 0.62)
+    gx, gy = x + (w - gw) / 2, y + h * 0.06
+    gh = h * 0.88
+    cap = max(8, gh * 0.06)
+    _rect(slide, gx - gw * 0.06, gy, gw * 1.12, cap, frame, radius=cap / 2)
+    _rect(slide, gx - gw * 0.06, gy + gh - cap, gw * 1.12, cap, frame, radius=cap / 2)
+    up = slide.shapes.add_shape(MSO_SHAPE.ISOSCELES_TRIANGLE, _px_to_emu(gx),
+                                _px_to_emu(gy + cap), _px_to_emu(gw), _px_to_emu((gh - cap * 2) / 2))
+    up.rotation = 180
+    dn = slide.shapes.add_shape(MSO_SHAPE.ISOSCELES_TRIANGLE, _px_to_emu(gx),
+                                _px_to_emu(gy + cap + (gh - cap * 2) / 2),
+                                _px_to_emu(gw), _px_to_emu((gh - cap * 2) / 2))
+    for shp, frac in ((up, 0.55), (dn, 0.45)):
+        shp.fill.solid()
+        shp.fill.fore_color.rgb = RGBColor.from_string(sand)
+        shp.line.color.rgb = RGBColor.from_string(frame)
+        shp.line.width = Pt(2)
+    if el.get("title"):
+        _txt_box(slide, x, y + h - 18, w, 18, str(el["title"]), size=12, bold=True,
+                 color="94A3B8" if el.get("dark") else "5B7183", align=PP_ALIGN.CENTER)
+    return None
+
+
 _STUDIO_NATIVE = {
     "stat_block":     _std_stat_block,
     "kpi_grid":       _std_kpi_grid,
@@ -1570,6 +1787,12 @@ _STUDIO_NATIVE = {
     "waffle":         _std_waffle,
     "heat_grid":      _std_heat_grid,
     "quote_card":     _std_quote_card,
+    "clock_face":     _std_clock_face,
+    "gears":          _std_gears,
+    "charge_meter":   _std_battery,
+    "temp_gauge":     _std_thermometer,
+    "speedometer":    _std_speedometer,
+    "sand_timer":     _std_hourglass,
 }
 _STUDIO_CARD_LABEL = {
     "choropleth": "Region map", "gradient_legend": "Colour scale",

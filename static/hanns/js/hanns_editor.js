@@ -1386,7 +1386,7 @@ function renderInspector(){
   // tab state
   $$(".insp-tab").forEach(t=>t.classList.toggle("active",t.dataset.tab===inspTab));
   const el=selEl();
-  if(inspTab==="slide"){inspBody.innerHTML=slidePanel();bindSlidePanel();return;}
+  if(inspTab==="slide"){inspBody.innerHTML=slidePanel();bindSlidePanel();slideDesignPanel();return;}
   const selected=selectedElements();
   if(selected.length>1){
     inspBody.innerHTML=multiSelectionPanel(selected);bindMultiSelectionPanel();
@@ -3977,6 +3977,145 @@ function studioPanels(el){
     inspBody.appendChild(hGroup("Data",[studioDataGrid(el)]));
   }
   inspBody.appendChild(arrangePanel());
+}
+
+
+/* ════════════════════════════════════════════════════════════════════
+   DECK-WIDE DESIGN — apply to all slides, and auto-design
+   ────────────────────────────────────────────────────────────────────
+   Both of these change every slide at once, so both push history first:
+   one undo puts the whole deck back.
+   ════════════════════════════════════════════════════════════════════ */
+
+/* Copy one property of the current slide onto every other slide. */
+function applySlidePropToAll(prop){
+  const s=curSlide(); if(!s)return 0;
+  let n=0;
+  pushHistory();
+  Deck.slides.forEach(t=>{
+    if(t===s)return;
+    if(prop==="bg"){ t.bg=s.bg; t.bgSize=s.bgSize||null; t.bgMode=s.bgMode;
+                     t.bgC1=s.bgC1; t.bgC2=s.bgC2; t.bgC3=s.bgC3;
+                     t.bgAngle=s.bgAngle; t.bgUse3=s.bgUse3; }
+    else t[prop]=s[prop];
+    n++;
+  });
+  renderAll(); markDirty();
+  return n;
+}
+
+/* Copy the entrance animation of THIS slide's elements onto the matching
+   elements of every other slide.
+   Matching is by type and by reading order within that type, not by id —
+   ids are unique per element, so nothing would ever match. Two slides that
+   both open with a heading and two paragraphs therefore build the same way,
+   which is the point of setting it once. */
+function applyAnimationsToAll(){
+  const s=curSlide(); if(!s)return 0;
+  const byType={};
+  (s.els||[]).forEach(e=>{ (byType[e.type]=byType[e.type]||[]).push(e); });
+  Object.keys(byType).forEach(k=>byType[k].sort((a,b)=>(a.y-b.y)||(a.x-b.x)));
+  let n=0;
+  pushHistory();
+  Deck.slides.forEach(t=>{
+    if(t===s)return;
+    const seen={};
+    (t.els||[]).slice().sort((a,b)=>(a.y-b.y)||(a.x-b.x)).forEach(e=>{
+      const list=byType[e.type]; if(!list)return;
+      const idx=(seen[e.type]=(seen[e.type]||0)+1)-1;
+      const src=list[Math.min(idx,list.length-1)];
+      e.anim=src.anim; e.animDelay=src.animDelay;
+      if(src.animDur!==undefined)e.animDur=src.animDur;
+      if(src.animEase!==undefined)e.animEase=src.animEase;
+      n++;
+    });
+  });
+  renderAll(); markDirty();
+  return n;
+}
+
+let autoThemeKey=(Hx.AUTO_THEMES&&Hx.AUTO_THEMES[0]&&Hx.AUTO_THEMES[0].key)||"midnight";
+let autoKeepPositions=false;
+
+function runAutoDesign(scope){
+  const themes=Hx.AUTO_THEMES||[];
+  if(!themes.length){toast("Auto-design is unavailable");return;}
+  pushHistory();
+  const opts={keepPositions:autoKeepPositions,slideNumbers:true};
+  let report;
+  if(scope==="slide"){
+    const s=curSlide();
+    const kind=Hx.autoDesignSlide(s,Hx.autoTheme(autoThemeKey),Deck.cur,Deck.slides.length,opts);
+    report={slides:[kind]};
+  }else{
+    report=Hx.autoDesignDeck(Deck.slides,autoThemeKey,opts);
+  }
+  Deck.sel=null;
+  renderAll(); markDirty();
+  const counts={};
+  report.slides.forEach(k=>{counts[k]=(counts[k]||0)+1;});
+  const summary=Object.keys(counts).map(k=>counts[k]+" "+k).join(", ");
+  toast(scope==="slide" ? ("Designed as "+report.slides[0])
+                        : ("Designed "+report.slides.length+" slides — "+summary));
+}
+
+function slideDesignPanel(){
+  if(!inspBody||!Hx.AUTO_THEMES)return;
+  const themes=Hx.AUTO_THEMES;
+
+  // ── apply the current slide's settings across the deck ──
+  const others=Math.max(0,Deck.slides.length-1);
+  const applyBtn=(label,title,fn)=>hEl("button",{class:"hs-mini",type:"button",text:label,title,
+    onclick:()=>{ const n=fn(); toast(n?("Applied to "+n+" other slide"+(n>1?"s":"")):"No other slides"); }});
+  inspBody.appendChild(hGroup("Apply to all slides",[
+    hEl("div",{class:"hs-row-btns"},[
+      applyBtn("Transition","Give every slide this slide's transition",()=>applySlidePropToAll("transition")),
+      applyBtn("Background","Give every slide this background",()=>applySlidePropToAll("bg")),
+      applyBtn("Background effect","Give every slide this background effect",()=>applySlidePropToAll("bgFx")),
+      applyBtn("Element animations","Match each slide's build to this one",applyAnimationsToAll),
+    ]),
+    hEl("div",{class:"hs-hint",text: others
+      ? ("This slide's setting is copied onto the other "+others+" slide"+(others>1?"s":"")+". Undo reverses the lot.")
+      : "There is only one slide in this deck."}),
+  ]));
+
+  // ── auto-design ──
+  const grid=hEl("div",{class:"auto-theme-grid"});
+  themes.forEach(t=>{
+    const cell=hEl("button",{type:"button",
+      class:"auto-theme"+(t.key===autoThemeKey?" active":""),
+      title:t.name, onclick:()=>{ autoThemeKey=t.key; renderInspector(); }});
+    cell.appendChild(hEl("span",{class:"auto-swatch",style:"background:"+(t.coverBg||t.bg)}));
+    cell.appendChild(hEl("span",{class:"auto-name",text:t.name}));
+    const dot=hEl("span",{class:"auto-dot",style:"background:"+t.accent});
+    cell.appendChild(dot);
+    grid.appendChild(cell);
+  });
+
+  const keep=hEl("button",{class:"hs-mini"+(autoKeepPositions?" on":""),type:"button",
+    text:autoKeepPositions?"Keeping my layout":"Re-laying out",
+    title:"Whether auto-design may move and resize your text",
+    onclick:()=>{ autoKeepPositions=!autoKeepPositions; renderInspector(); }});
+
+  inspBody.appendChild(hGroup("Auto-design",[
+    grid,
+    hEl("div",{class:"hs-row-btns"},[
+      hEl("button",{class:"hs-mini",type:"button",text:"✨ Design all slides",
+        onclick:()=>runAutoDesign("all")}),
+      hEl("button",{class:"hs-mini",type:"button",text:"This slide only",
+        onclick:()=>runAutoDesign("slide")}),
+      keep,
+      hEl("button",{class:"hs-mini",type:"button",text:"Remove decoration",
+        title:"Strip the shapes and slide numbers auto-design added; your own content stays",
+        onclick:()=>{ pushHistory(); const n=Hx.autoDesignStrip(Deck.slides);
+          Deck.sel=null; renderAll(); markDirty();
+          toast(n?("Removed "+n+" added element"+(n>1?"s":"")):"Nothing to remove"); }}),
+    ]),
+    hEl("div",{class:"hs-hint",text:
+      "Each slide is read first — cover, statement, split, media or dense — and laid out to suit, "+
+      "so the deck does not come out as the same template six times. Your text is restyled and moved, "+
+      "never deleted. Undo puts everything back."}),
+  ]));
 }
 
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init);else init();

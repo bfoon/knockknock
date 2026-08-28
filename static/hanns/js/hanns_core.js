@@ -9681,6 +9681,361 @@ function renderStudioObject(el){
   }
 }
 
+
+/* ════════════════════════════════════════════════════════════════════
+   AUTO-DESIGN — turn plain or imported slides into a designed deck
+   ────────────────────────────────────────────────────────────────────
+   The job is to make a bare deck look considered without throwing away
+   what the author wrote. Three rules keep it safe to run:
+
+   1. CONTENT IS NEVER DELETED. Auto-design restyles and repositions the
+      elements it finds; it never removes one. The only elements it
+      removes are its own, which is what makes it re-runnable.
+
+   2. ITS OWN WORK IS TAGGED. Every element it adds carries `_auto:true`.
+      Running it again strips those first, so switching themes five times
+      does not leave five sets of corner brackets stacked on the slide.
+
+   3. THE ORIGINAL IS RECOVERABLE. The editor pushes history before
+      calling in, so a single undo puts the deck back.
+
+   A slide is classified by what is on it — cover, statement, title and
+   body, split with media, media-led, or dense — and each classification
+   gets a layout. That is why the result reads as a deck rather than as
+   the same template stamped six times.
+   ════════════════════════════════════════════════════════════════════ */
+
+const AUTO_THEMES = [
+  {
+    key:"midnight", name:"Midnight", dark:true,
+    bg:"radial-gradient(90% 90% at 12% 8%,#1e3a8a 0%,transparent 58%),radial-gradient(70% 70% at 92% 18%,#7c3aed 0%,transparent 62%),linear-gradient(140deg,#020617,#0b1220 70%,#020617)",
+    coverBg:"radial-gradient(80% 90% at 20% 12%,#2563eb 0%,transparent 55%),linear-gradient(150deg,#010409,#0b1220 65%,#020617)",
+    bgFx:"drift", ink:"#f8fafc", muted:"#93a7c4", accent:"#38bdf8", accent2:"#a78bfa",
+    titleFont:'"Archivo Expanded","Archivo",sans-serif', bodyFont:'"Archivo",sans-serif',
+    transition:"fade",
+  },
+  {
+    key:"paper", name:"Editorial paper", dark:false,
+    bg:"linear-gradient(180deg,#fdfcf9,#f4efe6)",
+    coverBg:"linear-gradient(160deg,#fdfcf9 0%,#f0e8d8 60%,#e8ddc7 100%)",
+    bgFx:"none", ink:"#1c1917", muted:"#78716c", accent:"#b45309", accent2:"#1c1917",
+    titleFont:'"Fraunces",serif', bodyFont:'"Archivo",sans-serif',
+    transition:"reveal",
+  },
+  {
+    key:"consultancy", name:"Consultancy", dark:false,
+    bg:"linear-gradient(180deg,#ffffff,#eef4f9)",
+    coverBg:"linear-gradient(150deg,#0f2f4f 0%,#1d4e89 60%,#0f2f4f 100%)",
+    bgFx:"none", ink:"#0f2f4f", muted:"#5b7183", accent:"#2ba8e0", accent2:"#1d4e89",
+    titleFont:'"Archivo",sans-serif', bodyFont:'"Archivo",sans-serif',
+    transition:"push",
+  },
+  {
+    key:"forest", name:"Deep forest", dark:true,
+    bg:"radial-gradient(80% 80% at 85% 15%,#065f46 0%,transparent 60%),linear-gradient(160deg,#022c22,#064e3b 70%,#022c22)",
+    coverBg:"radial-gradient(90% 90% at 20% 20%,#10b981 0%,transparent 55%),linear-gradient(150deg,#01201a,#043b2e 70%,#022c22)",
+    bgFx:"drift", ink:"#ecfdf5", muted:"#8fc7ae", accent:"#34d399", accent2:"#fbbf24",
+    titleFont:'"Archivo Expanded","Archivo",sans-serif', bodyFont:'"Archivo",sans-serif',
+    transition:"slide",
+  },
+  {
+    key:"ember", name:"Ember", dark:true,
+    bg:"radial-gradient(85% 85% at 10% 90%,#7c2d12 0%,transparent 58%),linear-gradient(145deg,#1c0a04,#2b1206 70%,#170803)",
+    coverBg:"radial-gradient(90% 90% at 80% 20%,#ea580c 0%,transparent 55%),linear-gradient(150deg,#170803,#3b1508 70%,#1c0a04)",
+    bgFx:"gradient", ink:"#fff7ed", muted:"#d8b49b", accent:"#fb923c", accent2:"#fcd34d",
+    titleFont:'"Fraunces",serif', bodyFont:'"Archivo",sans-serif',
+    transition:"zoom",
+  },
+  {
+    key:"studio", name:"Studio white", dark:false,
+    bg:"linear-gradient(180deg,#ffffff,#f5f5f4)",
+    coverBg:"linear-gradient(135deg,#111827 0%,#1f2937 55%,#0b0f16 100%)",
+    bgFx:"none", ink:"#111827", muted:"#6b7280", accent:"#e8482b", accent2:"#111827",
+    titleFont:'"Archivo Expanded","Archivo",sans-serif', bodyFont:'"Archivo",sans-serif',
+    transition:"fade",
+  },
+];
+const AUTO_THEME_KEYS = AUTO_THEMES.map(t=>t.key);
+function autoTheme(key){
+  return AUTO_THEMES.find(t=>t.key===key) || AUTO_THEMES[0];
+}
+
+/* ── reading a slide ──────────────────────────────────────────────── */
+const AUTO_MEDIA_TYPES = new Set(["image","video","chart","map","table","gallery","object",
+                                  "creative_shape","link"]);
+
+function autoIsDecor(el){ return !!(el && el._auto); }
+function autoTextLen(el){ return String((el&&el.text)||"").replace(/<[^>]*>/g,"").trim().length; }
+
+/* Sort the author's own elements into title / body / media.
+   The title is the largest text, not the topmost: imported decks often put
+   a footer above the heading in element order, and "biggest type wins" is
+   how a reader decides what the title is anyway. */
+function autoRead(slide){
+  const els=(slide.els||[]).filter(e=>!autoIsDecor(e));
+  const texts=els.filter(e=>e.type==="text" && autoTextLen(e)>0);
+  const media=els.filter(e=>AUTO_MEDIA_TYPES.has(e.type));
+  const shapes=els.filter(e=>e.type==="rect"||e.type==="ellipse"||e.type==="line");
+  texts.sort((a,b)=>(Number(b.size)||0)-(Number(a.size)||0) || (Number(a.y)||0)-(Number(b.y)||0));
+  const title=texts[0]||null;
+  const body=texts.slice(1);
+  return {els,texts,media,shapes,title,body};
+}
+
+function autoClassify(slide,index,total){
+  const r=autoRead(slide);
+  if(!r.texts.length && !r.media.length) return "blank";
+  if(index===0 && r.texts.length<=3 && !r.media.length) return "cover";
+  if(!r.texts.length) return "media";
+  if(!r.media.length && r.texts.length===1)
+    return autoTextLen(r.title)<=90 ? "statement" : "body";
+  if(r.media.length && r.texts.length<=3) return "split";
+  if(r.body.length>=5) return "dense";
+  return "body";
+}
+
+/* ── writing a slide ──────────────────────────────────────────────── */
+function autoStyleText(el,{font,size,weight,color,lh,ls,align}){
+  if(font!=null)el.font=font;
+  if(size!=null)el.size=Math.round(size);
+  if(weight!=null)el.weight=weight;
+  if(color!=null)el.color=color;
+  if(lh!=null)el.lh=lh;
+  if(ls!=null)el.ls=ls;
+  if(align!=null)el.align=align;
+  el.fill="none";
+  return el;
+}
+function autoPlace(el,x,y,w,h){
+  el.x=Math.round(x); el.y=Math.round(y);
+  el.w=Math.round(w); if(h!=null)el.h=Math.round(h);
+  el.rot=0;
+  return el;
+}
+/* Entrance order is the reading order: title, then body, then media, each
+   a beat behind the last. A deck where everything lands at once reads as
+   a screenshot; a stagger reads as a build. */
+function autoAnimate(el,anim,step){
+  el.anim=anim;
+  el.animDelay=Math.round(step*100)/100;
+  return el;
+}
+function autoDecor(el,theme){
+  el._auto=true;
+  el._autoTheme=theme.key;
+  return el;
+}
+
+/* Roughly how tall this text will be once it wraps.
+   There is no measuring in the model — the renderer does that in the DOM —
+   but stacking one block under another needs a number NOW. Characters per
+   line from the box width and the type size is close enough to keep a
+   two-line heading from sitting on top of its own subtitle, which is what
+   a fixed offset did. */
+function autoTextHeight(el){
+  const size=Number(el.size)||24, lh=Number(el.lh)||1.25, w=Number(el.w)||400;
+  const chars=autoTextLen(el)||1;
+  const perLine=Math.max(8,Math.floor(w/(size*0.52)));
+  const lines=Math.max(1,Math.ceil(chars/perLine));
+  return Math.round(lines*size*lh+size*0.35);
+}
+/* Set the box to its wrapped height and hand back where the next one starts. */
+function autoStack(el,x,y,w,gap){
+  el.h=autoTextHeight(Object.assign({},el,{w}));
+  autoPlace(el,x,y,w,el.h);
+  return y+el.h+(gap==null?14:gap);
+}
+
+/* Title size that fits the words it has. A 90-character heading set at the
+   same size as a three-word one either overflows the slide or forces the
+   author to fix every slide by hand. */
+function autoTitleSize(el,base,min){
+  const n=autoTextLen(el);
+  if(n<=28) return base;
+  if(n<=55) return Math.max(min,base*0.78);
+  if(n<=90) return Math.max(min,base*0.62);
+  return Math.max(min,base*0.5);
+}
+
+function autoDesignSlide(slide,theme,index,total,opts){
+  opts=opts||{};
+  const keepPos=!!opts.keepPositions;
+  const kind=autoClassify(slide,index,total);
+  if(kind==="blank" && !opts.decorateBlank){
+    slide.bg=theme.bg; slide.bgFx=theme.bgFx; slide.transition=theme.transition;
+    return kind;
+  }
+  const r=autoRead(slide);
+
+  // Strip our own previous decoration so re-running replaces rather than piles up.
+  slide.els=(slide.els||[]).filter(e=>!autoIsDecor(e));
+
+  const cover = kind==="cover";
+  slide.bg = cover ? (theme.coverBg||theme.bg) : theme.bg;
+  slide.bgFx = theme.bgFx;
+  slide.transition = theme.transition;
+
+  const ink   = (cover && !theme.dark && theme.coverBg && /#0|#1|#2/.test(theme.coverBg)) ? "#ffffff" : theme.ink;
+  const muted = (ink==="#ffffff") ? "rgba(255,255,255,.72)" : theme.muted;
+  const decor = [];
+  let step = 0;
+
+  const M = 72;                    // page margin
+  const COL = W - M*2;
+
+  if(kind==="cover"){
+    decor.push(autoDecor(makeShape("rect",{x:0,y:0,w:W,h:8,fill:theme.accent,radius:0,
+      anim:"reveal",animDelay:0,motion:"none"}),theme));
+    decor.push(autoDecor(makeShape("ellipse",{x:W-260,y:-120,w:420,h:420,
+      fill:theme.accent2,opacity:.16,anim:"zoom",animDelay:.15,motion:"none"}),theme));
+    decor.push(autoDecor(makeShape("rect",{x:M,y:H-96,w:120,h:5,fill:theme.accent,radius:3,
+      anim:"reveal",animDelay:.5,motion:"none"}),theme));
+    // Measure the title, then hang everything else off the bottom of it, so
+    // a heading that wraps to two or three lines pushes the subtitle down
+    // instead of being written over by it.
+    let cy=H*0.32;
+    if(r.title){
+      autoStyleText(r.title,{font:theme.titleFont,size:autoTitleSize(r.title,72,34),
+        weight:800,color:ink,lh:1.05,ls:-1,align:"left"});
+      if(!keepPos){
+        const th=autoTextHeight(Object.assign({},r.title,{w:COL*0.78}));
+        cy=Math.max(M+24,Math.min(H*0.34,H-140-th));   // keep the block on the slide
+        cy=autoStack(r.title,M,cy,COL*0.78,20);
+      }
+      autoAnimate(r.title,"rise",step); step+=.14;
+    }
+    r.body.forEach(t=>{
+      autoStyleText(t,{font:theme.bodyFont,size:22,weight:500,color:muted,lh:1.35,align:"left"});
+      if(!keepPos)cy=autoStack(t,M,cy,COL*0.62,10);
+      autoAnimate(t,"fade",step); step+=.1;
+    });
+  }
+
+  else if(kind==="statement"){
+    decor.push(autoDecor(makeShape("rect",{x:M,y:H*0.26,w:6,h:H*0.42,fill:theme.accent,radius:3,
+      anim:"reveal",animDelay:0,motion:"none"}),theme));
+    if(r.title){
+      autoStyleText(r.title,{font:theme.titleFont,size:autoTitleSize(r.title,58,30),
+        weight:800,color:ink,lh:1.14,ls:-.5,align:"left"});
+      if(!keepPos){
+        const th=autoTextHeight(Object.assign({},r.title,{w:COL-60}));
+        autoPlace(r.title,M+34,Math.max(M,(H-th)/2),COL-60,th);
+      }
+      autoAnimate(r.title,"rise",.08);
+    }
+    step=.2;
+  }
+
+  else if(kind==="split"){
+    const half=(COL-48)/2;
+    decor.push(autoDecor(makeShape("rect",{x:M,y:M-22,w:56,h:5,fill:theme.accent,radius:3,
+      anim:"reveal",animDelay:0,motion:"none"}),theme));
+    if(r.title){
+      autoStyleText(r.title,{font:theme.titleFont,size:autoTitleSize(r.title,40,24),
+        weight:800,color:ink,lh:1.12,ls:-.3,align:"left"});
+      if(!keepPos)autoStack(r.title,M,M,half,18);
+      autoAnimate(r.title,"rise",step); step+=.12;
+    }
+    let ty=M+(r.title?autoTextHeight(Object.assign({},r.title,{w:half}))+18:0);
+    r.body.forEach(t=>{
+      autoStyleText(t,{font:theme.bodyFont,size:19,weight:500,color:muted,lh:1.45,align:"left"});
+      if(!keepPos)ty=autoStack(t,M,ty,half,14);
+      autoAnimate(t,"rise",step); step+=.09;
+    });
+    r.media.forEach((mEl,k)=>{
+      if(!keepPos){
+        autoPlace(mEl,M+half+48,M+ (k? k*12:0), half, Math.min(H-M*2, Number(mEl.h)||H-M*2));
+      }
+      autoAnimate(mEl,"right",step); step+=.12;
+    });
+  }
+
+  else if(kind==="media"){
+    decor.push(autoDecor(makeShape("rect",{x:0,y:H-64,w:W,h:64,
+      fill: theme.dark?"rgba(2,6,23,.62)":"rgba(255,255,255,.72)",radius:0,
+      anim:"up",animDelay:.3,motion:"none"}),theme));
+    r.media.forEach((mEl,k)=>{ autoAnimate(mEl,"zoom",k*.1); });
+    step=.4;
+  }
+
+  else if(kind==="dense"){
+    decor.push(autoDecor(makeShape("rect",{x:M,y:M-22,w:56,h:5,fill:theme.accent,radius:3,
+      anim:"reveal",animDelay:0,motion:"none"}),theme));
+    if(r.title){
+      autoStyleText(r.title,{font:theme.titleFont,size:autoTitleSize(r.title,38,22),
+        weight:800,color:ink,lh:1.1,align:"left"});
+      if(!keepPos)autoStack(r.title,M,M,COL,16);
+      autoAnimate(r.title,"rise",step); step+=.1;
+    }
+    // Two columns, because eight stacked lines in one column is a wall.
+    const two=r.body.length>=6;
+    const cw=two?(COL-40)/2:COL;
+    let dy=M+(r.title?autoTextHeight(Object.assign({},r.title,{w:COL}))+16:0), col=0;
+    const startY=dy;
+    r.body.forEach((t,k)=>{
+      autoStyleText(t,{font:theme.bodyFont,size:18,weight:500,color:muted,lh:1.45,align:"left"});
+      if(!keepPos){
+        if(two && k===Math.ceil(r.body.length/2)){ col=1; dy=startY; }
+        dy=autoStack(t,M+col*(cw+40),dy,cw,10);
+      }
+      autoAnimate(t,"rise",step); step+=.06;
+    });
+  }
+
+  else { /* body */
+    decor.push(autoDecor(makeShape("rect",{x:M,y:M-22,w:56,h:5,fill:theme.accent,radius:3,
+      anim:"reveal",animDelay:0,motion:"none"}),theme));
+    if(r.title){
+      autoStyleText(r.title,{font:theme.titleFont,size:autoTitleSize(r.title,42,24),
+        weight:800,color:ink,lh:1.12,ls:-.3,align:"left"});
+      if(!keepPos)autoStack(r.title,M,M,COL*0.86,20);
+      autoAnimate(r.title,"rise",step); step+=.12;
+    }
+    let by=M+(r.title?autoTextHeight(Object.assign({},r.title,{w:COL*0.86}))+20:0);
+    r.body.forEach(t=>{
+      autoStyleText(t,{font:theme.bodyFont,size:20,weight:500,color:muted,lh:1.5,align:"left"});
+      if(!keepPos)by=autoStack(t,M,by,COL*0.78,12);
+      autoAnimate(t,"rise",step); step+=.08;
+    });
+    r.media.forEach(mEl=>{ autoAnimate(mEl,"fade",step); step+=.1; });
+  }
+
+  // Shapes the author drew keep their place but join the build.
+  r.shapes.forEach(sh=>{ if(!sh.anim||sh.anim==="none")autoAnimate(sh,"fade",step); });
+
+  // Slide number, everywhere but the cover.
+  if(opts.slideNumbers!==false && kind!=="cover" && total>1){
+    decor.push(autoDecor(makeText({text:String(index+1).padStart(2,"0"),
+      x:W-M-70,y:H-58,w:70,h:34,size:15,weight:800,color:muted,align:"right",
+      font:theme.bodyFont,fill:"none",anim:"fade",animDelay:.5}),theme));
+  }
+  slide.els=slide.els.concat(decor);
+  return kind;
+}
+
+/* Design the whole deck. Returns a per-slide report of what it decided,
+   which the editor shows so the author can see it was not uniform. */
+function autoDesignDeck(slides,themeKey,opts){
+  const theme=autoTheme(themeKey);
+  const total=(slides||[]).length;
+  const report=[];
+  (slides||[]).forEach((s,i)=>{ report.push(autoDesignSlide(s,theme,i,total,opts||{})); });
+  return {theme:theme.key,slides:report};
+}
+
+/* Remove every trace of auto-design decoration, leaving the author's own
+   elements exactly where they are. Colours and sizes stay as designed —
+   undo is the way back to those. */
+function autoDesignStrip(slides){
+  let n=0;
+  (slides||[]).forEach(s=>{
+    const before=(s.els||[]).length;
+    s.els=(s.els||[]).filter(e=>!autoIsDecor(e));
+    n+=before-s.els.length;
+  });
+  return n;
+}
+
 window.Hanns = {Deck,TEMPLATES,BACKGROUNDS,BG_FX,ANIMS,TRANSITIONS,PALETTE,FONTS,OBJECTS,SHAPES,
   newSlide,curSlide,selEl,paintSlide,renderElement,objectDef,
   // reveal-on-cue + animated readouts (used by hanns_present.js and the
@@ -9697,6 +10052,7 @@ window.Hanns = {Deck,TEMPLATES,BACKGROUNDS,BG_FX,ANIMS,TRANSITIONS,PALETTE,FONTS
   STUDIO,STUDIO_KINDS,STUDIO_RENDER,STUDIO_SEED,STUDIO_FIELDS,STUDIO_OBJECTS,
   isStudioObject,renderStudioObject,GEO,GEO_SETS,RAMPS,RAMP_KEYS,toIso,rampFor,rampAt,seriesColor,
   SHAPE_MOTIONS,SHAPE_MOTION_KEYS,SHAPE_MOTION_DEFAULT,MOTION_TYPES,motionOf,
+  AUTO_THEMES,AUTO_THEME_KEYS,autoTheme,autoClassify,autoDesignSlide,autoDesignDeck,autoDesignStrip,
   makeText,makeShape,makeLine,makeImage,makeVideo,makeLink,makeObject,makeCreativeShape,makeTable,makeChart,makeMap,makeGallery,W,H,$,$$,uid,clamp,genCode};
 
 })();

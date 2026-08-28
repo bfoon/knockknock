@@ -2277,3 +2277,16 @@ body.hanns-options-open .drawer{
   .hg-rot,.hg-sand-top,.hg-sand-bottom,.hg-stream,.clock-hand,.gear-spin,
   .bat-pulse,.bat-bolt{animation:none!important;}
 }
+
+/* ── auto-design theme picker (slide panel) ─────────────────────── */
+.auto-theme-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.4rem;}
+.auto-theme{position:relative;display:flex;flex-direction:column;gap:.3rem;padding:0;
+  border:1px solid rgba(120,130,145,.28);border-radius:10px;background:transparent;
+  color:inherit;cursor:pointer;overflow:hidden;text-align:left;}
+.auto-theme:hover{border-color:currentColor;}
+.auto-theme.active{border-color:#38bdf8;box-shadow:0 0 0 2px rgba(56,189,248,.28);}
+.auto-swatch{display:block;height:38px;width:100%;}
+.auto-name{display:block;font-size:.64rem;font-weight:800;padding:0 .4rem .35rem;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.auto-dot{position:absolute;right:5px;top:5px;width:9px;height:9px;border-radius:999px;
+  box-shadow:0 0 0 2px rgba(255,255,255,.55);}

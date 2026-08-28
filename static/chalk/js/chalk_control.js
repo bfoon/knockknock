@@ -1488,7 +1488,7 @@
       var grid = document.createElement("div");
       grid.className = "pick-grid";
       [1, 2, 3, 4, 5].forEach(function (n) {
-        grid.appendChild(pickButton(String(n), n === 1 ? "One card" : n + " in a row",
+        grid.appendChild(pickButton(cardThumb(n), n === 1 ? "One card" : n + " in a row",
           function () {
             closeSheet();
             dropCards(n);
@@ -1497,6 +1497,42 @@
       body.appendChild(grid);
     });
   });
+
+  /* A picture of what you are about to get: n boxes with a badge on the
+   * first. pickButton appends this, so it has to be a real node — handing it
+   * a string throws inside openSheet, before the sheet is ever shown, and
+   * the button looks dead rather than broken. That was the first version. */
+  function cardThumb(n) {
+    var NS = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 100 100");
+    svg.setAttribute("class", "thumb");
+    svg.setAttribute("aria-hidden", "true");
+    var gap = 6, w = (100 - gap * (n - 1)) / n;
+    for (var i = 0; i < n; i++) {
+      var r = document.createElementNS(NS, "rect");
+      r.setAttribute("x", i * (w + gap));
+      r.setAttribute("y", 22);
+      r.setAttribute("width", w);
+      r.setAttribute("height", 56);
+      r.setAttribute("rx", Math.min(8, w / 3));
+      r.setAttribute("fill", "rgba(232,238,244,.10)");
+      r.setAttribute("stroke", "currentColor");
+      r.setAttribute("stroke-width", 4);
+      svg.appendChild(r);
+      var b = document.createElementNS(NS, "rect");
+      b.setAttribute("x", i * (w + gap) + w / 2 - 7);
+      b.setAttribute("y", 71);
+      b.setAttribute("width", 14);
+      b.setAttribute("height", 14);
+      b.setAttribute("rx", 3);
+      b.setAttribute("fill", "var(--board, #16202a)");
+      b.setAttribute("stroke", "currentColor");
+      b.setAttribute("stroke-width", 4);
+      svg.appendChild(b);
+    }
+    return svg;
+  }
 
   function dropCards(n) {
     var accent = inkColor();
@@ -2275,8 +2311,11 @@
 
   function openTextSheet() {
     var el = editor.selected && layer.get(editor.selected);
-    if (!el || el.type !== "text") return;
-    openSheet("Type for the board", function (body) {
+    /* Cards hold their words in the same field a text element does, which is
+     * the whole reason they hold them in a field called "text". */
+    if (!el || (el.type !== "text" && el.type !== "card")) return;
+    openSheet(el.type === "card" ? "Type in the card" : "Type for the board",
+      function (body) {
       var ta = document.createElement("textarea");
       ta.className = "sheet-text";
       ta.value = el.text || "";

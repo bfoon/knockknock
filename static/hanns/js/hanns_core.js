@@ -9707,7 +9707,7 @@ function renderStudioObject(el){
 
 const AUTO_THEMES = [
   {
-    key:"midnight", name:"Midnight", dark:true,
+    key:"midnight", deco:"rule", name:"Midnight", dark:true,
     bg:"radial-gradient(90% 90% at 12% 8%,#1e3a8a 0%,transparent 58%),radial-gradient(70% 70% at 92% 18%,#7c3aed 0%,transparent 62%),linear-gradient(140deg,#020617,#0b1220 70%,#020617)",
     coverBg:"radial-gradient(80% 90% at 20% 12%,#2563eb 0%,transparent 55%),linear-gradient(150deg,#010409,#0b1220 65%,#020617)",
     bgFx:"drift", ink:"#f8fafc", muted:"#93a7c4", accent:"#38bdf8", accent2:"#a78bfa",
@@ -9715,7 +9715,7 @@ const AUTO_THEMES = [
     transition:"fade",
   },
   {
-    key:"paper", name:"Editorial paper", dark:false,
+    key:"paper", deco:"underline", name:"Editorial paper", dark:false,
     bg:"linear-gradient(180deg,#fdfcf9,#f4efe6)",
     coverBg:"linear-gradient(160deg,#fdfcf9 0%,#f0e8d8 60%,#e8ddc7 100%)",
     bgFx:"none", ink:"#1c1917", muted:"#78716c", accent:"#b45309", accent2:"#1c1917",
@@ -9723,7 +9723,8 @@ const AUTO_THEMES = [
     transition:"reveal",
   },
   {
-    key:"consultancy", name:"Consultancy", dark:false,
+    key:"consultancy", deco:"rule", name:"Consultancy", dark:false,
+    coverInk:"#ffffff", coverMuted:"rgba(255,255,255,.74)",
     bg:"linear-gradient(180deg,#ffffff,#eef4f9)",
     coverBg:"linear-gradient(150deg,#0f2f4f 0%,#1d4e89 60%,#0f2f4f 100%)",
     bgFx:"none", ink:"#0f2f4f", muted:"#5b7183", accent:"#2ba8e0", accent2:"#1d4e89",
@@ -9731,7 +9732,7 @@ const AUTO_THEMES = [
     transition:"push",
   },
   {
-    key:"forest", name:"Deep forest", dark:true,
+    key:"forest", deco:"orb", name:"Deep forest", dark:true,
     bg:"radial-gradient(80% 80% at 85% 15%,#065f46 0%,transparent 60%),linear-gradient(160deg,#022c22,#064e3b 70%,#022c22)",
     coverBg:"radial-gradient(90% 90% at 20% 20%,#10b981 0%,transparent 55%),linear-gradient(150deg,#01201a,#043b2e 70%,#022c22)",
     bgFx:"drift", ink:"#ecfdf5", muted:"#8fc7ae", accent:"#34d399", accent2:"#fbbf24",
@@ -9739,7 +9740,7 @@ const AUTO_THEMES = [
     transition:"slide",
   },
   {
-    key:"ember", name:"Ember", dark:true,
+    key:"ember", deco:"band", name:"Ember", dark:true,
     bg:"radial-gradient(85% 85% at 10% 90%,#7c2d12 0%,transparent 58%),linear-gradient(145deg,#1c0a04,#2b1206 70%,#170803)",
     coverBg:"radial-gradient(90% 90% at 80% 20%,#ea580c 0%,transparent 55%),linear-gradient(150deg,#170803,#3b1508 70%,#1c0a04)",
     bgFx:"gradient", ink:"#fff7ed", muted:"#d8b49b", accent:"#fb923c", accent2:"#fcd34d",
@@ -9747,12 +9748,186 @@ const AUTO_THEMES = [
     transition:"zoom",
   },
   {
-    key:"studio", name:"Studio white", dark:false,
+    key:"studio", deco:"blocks", name:"Studio white", dark:false,
+    coverInk:"#ffffff", coverMuted:"rgba(255,255,255,.72)",
     bg:"linear-gradient(180deg,#ffffff,#f5f5f4)",
     coverBg:"linear-gradient(135deg,#111827 0%,#1f2937 55%,#0b0f16 100%)",
     bgFx:"none", ink:"#111827", muted:"#6b7280", accent:"#e8482b", accent2:"#111827",
     titleFont:'"Archivo Expanded","Archivo",sans-serif', bodyFont:'"Archivo",sans-serif',
     transition:"fade",
+  },
+  /* ── boardroom & consultancy ───────────────────────────────────── */
+  {
+    key:"slate", name:"Slate report", dark:false, deco:"frame",
+    coverInk:"#ffffff", coverMuted:"rgba(255,255,255,.74)",
+    bg:"linear-gradient(180deg,#ffffff,#eef1f5)",
+    coverBg:"linear-gradient(135deg,#1e293b 0%,#334155 55%,#0f172a 100%)",
+    bgFx:"none", ink:"#1e293b", muted:"#64748b", accent:"#0ea5e9", accent2:"#64748b",
+    titleFont:'"IBM Plex Sans",sans-serif', bodyFont:'"IBM Plex Sans",sans-serif',
+    transition:"fade",
+  },
+  {
+    key:"oxford", name:"Oxford blue", dark:true, deco:"panel",
+    bg:"linear-gradient(160deg,#020c1b,#0a1f3c 65%,#020c1b)",
+    coverBg:"radial-gradient(90% 90% at 25% 15%,#123a6b 0%,transparent 60%),linear-gradient(150deg,#01060f,#0a1f3c 70%,#020c1b)",
+    bgFx:"none", ink:"#e8eef7", muted:"#8fa6c4", accent:"#c9a227", accent2:"#5b8dd9",
+    titleFont:'"Libre Baskerville",serif', bodyFont:'"Lato",sans-serif',
+    transition:"fade",
+  },
+  {
+    key:"ledger", name:"Ledger", dark:false, deco:"grid",
+    bg:"linear-gradient(180deg,#fcfcfa,#f2f1ec)",
+    coverBg:"linear-gradient(150deg,#f7f6f1,#e6e3d8 70%,#dbd7c8)",
+    bgFx:"grid", ink:"#1a1a17", muted:"#6f6c63", accent:"#0f766e", accent2:"#1a1a17",
+    titleFont:'"IBM Plex Serif",serif', bodyFont:'"IBM Plex Mono",monospace',
+    transition:"push",
+  },
+  {
+    key:"graphite", name:"Graphite", dark:true, deco:"bracket",
+    bg:"linear-gradient(160deg,#111214,#1c1e22 65%,#0d0e10)",
+    coverBg:"radial-gradient(80% 80% at 80% 10%,#2b2f36 0%,transparent 60%),linear-gradient(150deg,#0b0c0e,#191b1f 70%,#0d0e10)",
+    bgFx:"noise", ink:"#f4f4f5", muted:"#a1a1aa", accent:"#f97316", accent2:"#71717a",
+    titleFont:'"Archivo Expanded","Archivo",sans-serif', bodyFont:'"Inter",sans-serif',
+    transition:"slide",
+  },
+  {
+    key:"sandstone", name:"Sandstone", dark:false, deco:"band",
+    coverInk:"#fff7ed", coverMuted:"rgba(255,247,237,.80)",
+    bg:"linear-gradient(180deg,#fdfaf5,#f3e9dc)",
+    coverBg:"linear-gradient(150deg,#c2703d 0%,#a85a2e 55%,#7c3f1d 100%)",
+    bgFx:"none", ink:"#3b2a1d", muted:"#8a7361", accent:"#c2703d", accent2:"#3b2a1d",
+    titleFont:'"Merriweather",serif', bodyFont:'"Work Sans",sans-serif',
+    transition:"reveal",
+  },
+
+  /* ── editorial & typographic ───────────────────────────────────── */
+  {
+    key:"broadsheet", name:"Broadsheet", dark:false, deco:"underline",
+    bg:"linear-gradient(180deg,#ffffff,#f7f7f5)",
+    coverBg:"linear-gradient(180deg,#ffffff,#efefec)",
+    bgFx:"none", ink:"#0a0a0a", muted:"#57534e", accent:"#b91c1c", accent2:"#0a0a0a",
+    titleFont:'"Playfair Display",serif', bodyFont:'"Source Serif 4",serif',
+    transition:"reveal",
+  },
+  {
+    key:"gallery", name:"Gallery white", dark:false, deco:"bracket",
+    bg:"#fbfbfa",
+    coverBg:"linear-gradient(160deg,#fbfbfa,#efeeea)",
+    bgFx:"none", ink:"#18181b", muted:"#7c7c85", accent:"#18181b", accent2:"#a1a1aa",
+    titleFont:'"Cormorant Garamond",serif', bodyFont:'"Nunito Sans",sans-serif',
+    transition:"fade",
+  },
+  {
+    key:"manifesto", name:"Manifesto", dark:true, deco:"watermark",
+    bg:"linear-gradient(160deg,#0a0a0a,#171717 70%,#0a0a0a)",
+    coverBg:"linear-gradient(150deg,#000000,#1c1917 65%,#0a0a0a)",
+    bgFx:"none", ink:"#fafafa", muted:"#a3a3a3", accent:"#facc15", accent2:"#ef4444",
+    titleFont:'"Anton",sans-serif', bodyFont:'"Barlow Condensed",sans-serif',
+    transition:"push",
+  },
+  {
+    key:"journal", name:"Journal", dark:false, deco:"ticket",
+    bg:"linear-gradient(180deg,#fffdf8,#f6f0e4)",
+    coverBg:"linear-gradient(155deg,#fffdf8,#efe4cf 70%,#e3d5b8)",
+    bgFx:"none", ink:"#2f2a22", muted:"#7d7466", accent:"#9a6b3f", accent2:"#2f2a22",
+    titleFont:'"Lora",serif', bodyFont:'"Lora",serif',
+    transition:"reveal",
+  },
+  {
+    key:"blueprint", name:"Blueprint", dark:true, deco:"grid",
+    bg:"linear-gradient(160deg,#052135,#07304d 65%,#041a2b)",
+    coverBg:"radial-gradient(85% 85% at 20% 20%,#0b4a76 0%,transparent 60%),linear-gradient(150deg,#03131f,#07304d 70%,#041a2b)",
+    bgFx:"grid", ink:"#e0f2fe", muted:"#8ab6d6", accent:"#7dd3fc", accent2:"#fbbf24",
+    titleFont:'"Space Grotesk",sans-serif', bodyFont:'"IBM Plex Mono",monospace',
+    transition:"slide",
+  },
+
+  /* ── modern tech ───────────────────────────────────────────────── */
+  {
+    key:"neon", name:"Neon grid", dark:true, deco:"stripe",
+    bg:"linear-gradient(160deg,#0b0121,#1a0b3d 60%,#05010f)",
+    coverBg:"radial-gradient(90% 90% at 70% 20%,#7c3aed 0%,transparent 58%),linear-gradient(150deg,#05010f,#240b52 70%,#0b0121)",
+    bgFx:"mesh", ink:"#f5f3ff", muted:"#a5a0c8", accent:"#22d3ee", accent2:"#f472b6",
+    titleFont:'"Orbitron",sans-serif', bodyFont:'"Rajdhani",sans-serif',
+    transition:"zoom",
+  },
+  {
+    key:"aurora", name:"Aurora", dark:true, deco:"orb",
+    bg:"radial-gradient(80% 80% at 15% 20%,#0e7490 0%,transparent 60%),radial-gradient(70% 70% at 85% 75%,#7c3aed 0%,transparent 62%),linear-gradient(150deg,#020617,#0b1220)",
+    coverBg:"radial-gradient(90% 90% at 30% 20%,#06b6d4 0%,transparent 55%),radial-gradient(80% 80% at 80% 80%,#a855f7 0%,transparent 60%),linear-gradient(150deg,#010409,#0b1220)",
+    bgFx:"drift", ink:"#f0f9ff", muted:"#94b8cc", accent:"#38bdf8", accent2:"#c084fc",
+    titleFont:'"Sora",sans-serif', bodyFont:'"Inter",sans-serif',
+    transition:"fade",
+  },
+  {
+    key:"terminal", name:"Terminal", dark:true, deco:"bracket",
+    bg:"linear-gradient(160deg,#04120c,#07200f 70%,#020c07)",
+    coverBg:"radial-gradient(80% 80% at 25% 20%,#0b3d1d 0%,transparent 60%),linear-gradient(150deg,#010a05,#07200f 70%,#020c07)",
+    bgFx:"noise", ink:"#d1fae5", muted:"#6ea888", accent:"#4ade80", accent2:"#a3e635",
+    titleFont:'"JetBrains Mono",monospace', bodyFont:'"JetBrains Mono",monospace',
+    transition:"none",
+  },
+  {
+    key:"vapor", name:"Vapour", dark:false, deco:"arc",
+    bg:"linear-gradient(160deg,#fdf2f8,#eef2ff 60%,#ecfeff)",
+    coverBg:"radial-gradient(85% 85% at 25% 20%,#f9a8d4 0%,transparent 58%),linear-gradient(150deg,#eef2ff,#cffafe 70%,#fdf2f8)",
+    bgFx:"bokeh", ink:"#3b0764", muted:"#7e6b9c", accent:"#d946ef", accent2:"#22d3ee",
+    titleFont:'"Outfit",sans-serif', bodyFont:'"Urbanist",sans-serif',
+    transition:"zoom",
+  },
+  {
+    key:"steel", name:"Steel deck", dark:true, deco:"split",
+    coverInk:"#f8fafc", coverMuted:"rgba(248,250,252,.76)",
+    bg:"linear-gradient(160deg,#0f172a,#1e293b 65%,#0b1220)",
+    coverBg:"linear-gradient(120deg,#0b1220 0%,#1e293b 50%,#334155 100%)",
+    bgFx:"none", ink:"#f1f5f9", muted:"#94a3b8", accent:"#60a5fa", accent2:"#f8fafc",
+    titleFont:'"Lexend",sans-serif', bodyFont:'"Plus Jakarta Sans",sans-serif',
+    transition:"push",
+  },
+
+  /* ── warm, human, fun ──────────────────────────────────────────── */
+  {
+    key:"citrus", name:"Citrus pop", dark:false, deco:"blocks",
+    coverInk:"#ffffff", coverMuted:"rgba(255,255,255,.86)",
+    bg:"linear-gradient(160deg,#fffbeb,#fef3c7 60%,#ffedd5)",
+    coverBg:"linear-gradient(140deg,#f59e0b 0%,#f97316 55%,#ea580c 100%)",
+    bgFx:"confetti", ink:"#431407", muted:"#9a6b3f", accent:"#ea580c", accent2:"#0d9488",
+    titleFont:'"Poppins",sans-serif', bodyFont:'"Quicksand",sans-serif',
+    transition:"zoom",
+  },
+  {
+    key:"bubblegum", name:"Bubblegum", dark:false, deco:"dots",
+    coverInk:"#ffffff", coverMuted:"rgba(255,255,255,.88)",
+    bg:"linear-gradient(160deg,#fff1f2,#ffe4e6 60%,#fce7f3)",
+    coverBg:"linear-gradient(140deg,#fb7185 0%,#f472b6 55%,#e879f9 100%)",
+    bgFx:"bubbles", ink:"#500724", muted:"#9d6b81", accent:"#ec4899", accent2:"#8b5cf6",
+    titleFont:'"Righteous",sans-serif', bodyFont:'"Rubik",sans-serif',
+    transition:"zoom",
+  },
+  {
+    key:"chalk", name:"Chalkboard", dark:true, deco:"ticket",
+    bg:"linear-gradient(160deg,#1f2421,#2b322d 65%,#1a1f1c)",
+    coverBg:"radial-gradient(85% 85% at 30% 25%,#3a433c 0%,transparent 60%),linear-gradient(150deg,#161a17,#2b322d 70%,#1a1f1c)",
+    bgFx:"noise", ink:"#f5f5f0", muted:"#a8b0a5", accent:"#fcd34d", accent2:"#7dd3fc",
+    titleFont:'"Caveat",cursive', bodyFont:'"Nunito Sans",sans-serif',
+    transition:"reveal",
+  },
+  {
+    key:"festival", name:"Festival", dark:true, deco:"stripe",
+    bg:"linear-gradient(160deg,#170b2e,#2e1065 60%,#0f0722)",
+    coverBg:"radial-gradient(90% 90% at 25% 20%,#f43f5e 0%,transparent 55%),radial-gradient(80% 80% at 80% 75%,#8b5cf6 0%,transparent 60%),linear-gradient(150deg,#0f0722,#2e1065)",
+    bgFx:"confetti", ink:"#fdf4ff", muted:"#c4b5fd", accent:"#fb7185", accent2:"#fcd34d",
+    titleFont:'"Bebas Neue",sans-serif', bodyFont:'"Montserrat",sans-serif',
+    transition:"flip",
+  },
+  {
+    key:"sunrise", name:"Sunrise", dark:false, deco:"arc",
+    coverInk:"#ffffff", coverMuted:"rgba(255,255,255,.88)",
+    bg:"linear-gradient(180deg,#fffbf5,#ffe8d6 70%,#ffd9c0)",
+    coverBg:"linear-gradient(160deg,#fb923c 0%,#f472b6 50%,#a855f7 100%)",
+    bgFx:"rays", ink:"#4a2410", muted:"#9c6b4a", accent:"#f97316", accent2:"#db2777",
+    titleFont:'"Abril Fatface",serif', bodyFont:'"Raleway",sans-serif',
+    transition:"reveal",
   },
 ];
 const AUTO_THEME_KEYS = AUTO_THEMES.map(t=>t.key);
@@ -9835,9 +10010,16 @@ function autoDecor(el,theme){
 function autoTextHeight(el){
   const size=Number(el.size)||24, lh=Number(el.lh)||1.25, w=Number(el.w)||400;
   const chars=autoTextLen(el)||1;
-  const perLine=Math.max(8,Math.floor(w/(size*0.52)));
+  // Average glyph width as a fraction of the type size. Bold display faces
+  // — Poppins, Anton, Bebas at heading weight — run much wider than body
+  // text, and a flat 0.52 underestimated them: a heading that wrapped to
+  // two lines was measured as one, and the paragraph beneath it was placed
+  // straight over the second line. Erring wide only costs a little space.
+  const bold=(Number(el.weight)||400)>=700;
+  const em=bold?0.60:0.54;
+  const perLine=Math.max(6,Math.floor(w/(size*em)));
   const lines=Math.max(1,Math.ceil(chars/perLine));
-  return Math.round(lines*size*lh+size*0.35);
+  return Math.round(lines*size*lh+size*0.4)+6;
 }
 /* Set the box to its wrapped height and hand back where the next one starts. */
 function autoStack(el,x,y,w,gap){
@@ -9855,6 +10037,152 @@ function autoTitleSize(el,base,min){
   if(n<=55) return Math.max(min,base*0.78);
   if(n<=90) return Math.max(min,base*0.62);
   return Math.max(min,base*0.5);
+}
+
+/* ── decoration languages ─────────────────────────────────────────────
+   Palette and typography alone do not make two themes look like two
+   designs; six colourways of the same corner rule still read as one
+   template. Each theme therefore names a `deco` — the ornament vocabulary
+   it draws with — and that is what carries most of the character.
+
+   Every element returned here is tagged _auto by the caller, so a theme
+   switch clears the previous vocabulary before drawing the new one.     */
+function autoDecoSet(ctx){
+  const {theme,kind,index,total,muted}=ctx;
+  const A=theme.accent, B=theme.accent2||theme.accent, dark=!!theme.dark;
+  const cover=kind==="cover";
+  const M=72, out=[];
+  const soft = dark?"rgba(255,255,255,.10)":"rgba(15,23,42,.08)";
+  const R=o=>{out.push(makeShape("rect",Object.assign({motion:"none",anim:"fade",animDelay:0},o)));};
+  const E=o=>{out.push(makeShape("ellipse",Object.assign({motion:"none",anim:"fade",animDelay:0},o)));};
+  const TX=o=>{out.push(makeText(Object.assign({fill:"none",motion:"none",anim:"fade",animDelay:.35},o)));};
+
+  switch(theme.deco||"rule"){
+
+    case "rule":
+      if(cover){
+        R({x:0,y:0,w:W,h:8,fill:A,radius:0,anim:"reveal"});
+        E({x:W-260,y:-120,w:420,h:420,fill:B,opacity:.16,anim:"zoom",animDelay:.15});
+        R({x:M,y:H-96,w:120,h:5,fill:A,radius:3,anim:"reveal",animDelay:.5});
+      } else R({x:M,y:M-22,w:56,h:5,fill:A,radius:3,anim:"reveal"});
+      break;
+
+    case "bracket": {                       // corner brackets, gallery-label feel
+      const L=54,T=5;
+      R({x:M-24,y:M-24,w:L,h:T,fill:A,radius:2,anim:"left"});
+      R({x:M-24,y:M-24,w:T,h:L,fill:A,radius:2,anim:"drop"});
+      R({x:W-M+24-L,y:H-M+24-T,w:L,h:T,fill:A,radius:2,anim:"right"});
+      R({x:W-M+24-T,y:H-M+24-L,w:T,h:L,fill:A,radius:2,anim:"up"});
+      if(cover) R({x:M-24,y:H-M+8,w:180,h:2,fill:soft,radius:1,animDelay:.4});
+      break;
+    }
+
+    case "panel":                            // full-height colour spine
+      R({x:0,y:0,w:cover?26:14,h:H,fill:A,radius:0,anim:"left"});
+      if(cover) R({x:26,y:0,w:6,h:H,fill:B,opacity:.5,radius:0,anim:"left",animDelay:.1});
+      break;
+
+    case "band":                             // tinted band behind the heading
+      R({x:0,y:cover?H*0.28:M-30,w:W,h:cover?H*0.30:96,
+         fill:A,opacity:dark?.16:.10,radius:0,anim:"reveal"});
+      R({x:0,y:(cover?H*0.28:M-30)+(cover?H*0.30:96)-3,w:W,h:3,fill:A,radius:0,
+         anim:"reveal",animDelay:.12});
+      break;
+
+    case "frame": {                          // thin inset rule around the page
+      const i=26,t=2;
+      R({x:i,y:i,w:W-i*2,h:t,fill:A,opacity:.55,radius:0,anim:"reveal"});
+      R({x:i,y:H-i-t,w:W-i*2,h:t,fill:A,opacity:.55,radius:0,anim:"reveal",animDelay:.08});
+      R({x:i,y:i,w:t,h:H-i*2,fill:A,opacity:.55,radius:0,anim:"drop",animDelay:.05});
+      R({x:W-i-t,y:i,w:t,h:H-i*2,fill:A,opacity:.55,radius:0,anim:"drop",animDelay:.12});
+      break;
+    }
+
+    case "grid": {                           // engineering tick marks
+      const marks=[[M-30,M-30],[W-M+18,M-30],[M-30,H-M+18],[W-M+18,H-M+18]];
+      marks.forEach(([x,y],k)=>{
+        R({x,y:y+5,w:14,h:2,fill:A,opacity:.8,radius:0,animDelay:k*.05});
+        R({x:x+6,y,w:2,h:14,fill:A,opacity:.8,radius:0,animDelay:k*.05});
+      });
+      if(!cover) R({x:M,y:M+2,w:W-M*2,h:1,fill:soft,radius:0,animDelay:.2});
+      break;
+    }
+
+    case "orb":                              // soft light, poster-like
+      E({x:-140,y:H-260,w:460,h:460,fill:A,opacity:dark?.22:.14,anim:"zoom"});
+      E({x:W-220,y:-160,w:400,h:400,fill:B,opacity:dark?.20:.12,anim:"zoom",animDelay:.12});
+      if(cover) E({x:W*0.55,y:H*0.6,w:220,h:220,fill:B,opacity:.10,anim:"zoom",animDelay:.24});
+      break;
+
+    case "stripe": {                         // diagonal flash in one corner
+      for(let k=0;k<5;k++)
+        R({x:W-300+k*44,y:-90,w:16,h:340,fill:k%2?B:A,opacity:.5-k*.06,
+           radius:0,rot:32,anim:"drop",animDelay:k*.06});
+      break;
+    }
+
+    case "watermark":                        // oversized folio behind the words
+      TX({text:String(index+1).padStart(2,"0"),x:W-330,y:H-320,w:320,h:300,
+          size:230,weight:800,color:A,align:"right",lh:.9,
+          font:theme.titleFont,anim:"fade",animDelay:.1});
+      out[out.length-1].opacity=dark?.14:.09;
+      R({x:M,y:M-22,w:44,h:5,fill:A,radius:3,anim:"reveal"});
+      break;
+
+    case "blocks": {                         // little stacked squares
+      const s=14;
+      for(let k=0;k<3;k++)
+        R({x:M-26+k*(s+6),y:M-30,w:s,h:s,fill:k===1?B:A,opacity:1-k*.22,
+           radius:3,anim:"drop",animDelay:k*.07});
+      if(cover) R({x:M-26,y:H-M+16,w:120,h:4,fill:A,radius:2,animDelay:.4});
+      break;
+    }
+
+    case "arc":                              // quarter-circle sweep
+      E({x:W-300,y:H-300,w:600,h:600,fill:A,opacity:dark?.18:.11,anim:"zoom"});
+      E({x:W-190,y:H-190,w:380,h:380,fill:B,opacity:dark?.16:.10,anim:"zoom",animDelay:.12});
+      if(!cover) R({x:M,y:M-22,w:48,h:5,fill:A,radius:3,anim:"reveal",animDelay:.2});
+      break;
+
+    case "dots": {                           // dot field in a corner
+      // Three rows of five reads as a dot field; six rows of four is just
+      // twenty-four more nodes on every slide.
+      for(let r=0;r<3;r++)for(let c=0;c<5;c++)
+        E({x:W-M-10-c*24,y:H-M+6-r*24,w:7,h:7,fill:A,opacity:.6-r*.1,
+           anim:"fade",animDelay:.2+(r+c)*.015});
+      R({x:M,y:M-22,w:56,h:5,fill:A,radius:3,anim:"reveal"});
+      break;
+    }
+
+    case "ticket": {                         // notched edges, event-programme feel
+      // The tear line sits at the half on content slides, but a cover's
+      // title occupies exactly that band — the rule struck straight through
+      // the words. Covers get the notches lower down, clear of the type.
+      const ty=cover?H*0.78:H/2;
+      E({x:-22,y:ty-22,w:44,h:44,fill:dark?"#0b1220":"#ffffff",anim:"fade"});
+      E({x:W-22,y:ty-22,w:44,h:44,fill:dark?"#0b1220":"#ffffff",anim:"fade"});
+      R({x:M,y:ty-1,w:W-M*2,h:2,fill:soft,radius:0,anim:"reveal",animDelay:.2});
+      R({x:M,y:M-22,w:56,h:5,fill:A,radius:3,anim:"reveal"});
+      break;
+    }
+
+    case "split":                            // solid block down one side
+      R({x:W-300,y:0,w:300,h:H,fill:A,opacity:dark?.20:.12,radius:0,anim:"right"});
+      R({x:W-304,y:0,w:4,h:H,fill:A,radius:0,anim:"right",animDelay:.1});
+      break;
+
+    case "underline": {                      // heavy rule beneath the heading
+      const t=ctx.title;
+      if(t) R({x:t.x,y:t.y+(Number(t.h)||90)+8,w:Math.min(220,Number(t.w)||220),h:7,
+               fill:A,radius:4,anim:"reveal",animDelay:.18});
+      else R({x:M,y:M-22,w:120,h:8,fill:A,radius:4,anim:"reveal"});
+      break;
+    }
+
+    case "none":
+    default: break;
+  }
+  return out;
 }
 
 function autoDesignSlide(slide,theme,index,total,opts){
@@ -9875,21 +10203,25 @@ function autoDesignSlide(slide,theme,index,total,opts){
   slide.bgFx = theme.bgFx;
   slide.transition = theme.transition;
 
-  const ink   = (cover && !theme.dark && theme.coverBg && /#0|#1|#2/.test(theme.coverBg)) ? "#ffffff" : theme.ink;
-  const muted = (ink==="#ffffff") ? "rgba(255,255,255,.72)" : theme.muted;
+  // Many light themes have a deep or saturated COVER — navy, burnt orange,
+  // magenta — where the body ink would vanish. Which ink a cover needs is a
+  // fact about the theme, so the theme states it: coverInk / coverMuted.
+  // (This used to be guessed by grepping the gradient string for "#0", which
+  // was wrong for every mid-tone cover.)
+  const ink   = cover ? (theme.coverInk   || theme.ink)   : theme.ink;
+  const muted = cover ? (theme.coverMuted || theme.muted) : theme.muted;
   const decor = [];
   let step = 0;
 
   const M = 72;                    // page margin
   const COL = W - M*2;
+  // Themes that rule under the heading need the paragraph to start lower.
+  // The decoration is drawn last (it needs the final title box), so the
+  // layout has to leave the room for it up front or the rule lands on the
+  // first line of body copy.
+  const titleGap = (theme.deco==="underline") ? 38 : 18;
 
   if(kind==="cover"){
-    decor.push(autoDecor(makeShape("rect",{x:0,y:0,w:W,h:8,fill:theme.accent,radius:0,
-      anim:"reveal",animDelay:0,motion:"none"}),theme));
-    decor.push(autoDecor(makeShape("ellipse",{x:W-260,y:-120,w:420,h:420,
-      fill:theme.accent2,opacity:.16,anim:"zoom",animDelay:.15,motion:"none"}),theme));
-    decor.push(autoDecor(makeShape("rect",{x:M,y:H-96,w:120,h:5,fill:theme.accent,radius:3,
-      anim:"reveal",animDelay:.5,motion:"none"}),theme));
     // Measure the title, then hang everything else off the bottom of it, so
     // a heading that wraps to two or three lines pushes the subtitle down
     // instead of being written over by it.
@@ -9900,7 +10232,7 @@ function autoDesignSlide(slide,theme,index,total,opts){
       if(!keepPos){
         const th=autoTextHeight(Object.assign({},r.title,{w:COL*0.78}));
         cy=Math.max(M+24,Math.min(H*0.34,H-140-th));   // keep the block on the slide
-        cy=autoStack(r.title,M,cy,COL*0.78,20);
+        cy=autoStack(r.title,M,cy,COL*0.78,titleGap+4);
       }
       autoAnimate(r.title,"rise",step); step+=.14;
     }
@@ -9912,8 +10244,12 @@ function autoDesignSlide(slide,theme,index,total,opts){
   }
 
   else if(kind==="statement"){
-    decor.push(autoDecor(makeShape("rect",{x:M,y:H*0.26,w:6,h:H*0.42,fill:theme.accent,radius:3,
-      anim:"reveal",animDelay:0,motion:"none"}),theme));
+    // A theme that already draws a spine or a full-width band down the page
+    // does not want a second vertical rule next to the sentence.
+    if(["panel","split","band","frame","ticket"].indexOf(theme.deco||"rule")<0){
+      decor.push(autoDecor(makeShape("rect",{x:M,y:H*0.26,w:6,h:H*0.42,fill:theme.accent,radius:3,
+        anim:"reveal",animDelay:0,motion:"none"}),theme));
+    }
     if(r.title){
       autoStyleText(r.title,{font:theme.titleFont,size:autoTitleSize(r.title,58,30),
         weight:800,color:ink,lh:1.14,ls:-.5,align:"left"});
@@ -9928,15 +10264,13 @@ function autoDesignSlide(slide,theme,index,total,opts){
 
   else if(kind==="split"){
     const half=(COL-48)/2;
-    decor.push(autoDecor(makeShape("rect",{x:M,y:M-22,w:56,h:5,fill:theme.accent,radius:3,
-      anim:"reveal",animDelay:0,motion:"none"}),theme));
     if(r.title){
       autoStyleText(r.title,{font:theme.titleFont,size:autoTitleSize(r.title,40,24),
         weight:800,color:ink,lh:1.12,ls:-.3,align:"left"});
-      if(!keepPos)autoStack(r.title,M,M,half,18);
+      if(!keepPos)autoStack(r.title,M,M,half,titleGap);
       autoAnimate(r.title,"rise",step); step+=.12;
     }
-    let ty=M+(r.title?autoTextHeight(Object.assign({},r.title,{w:half}))+18:0);
+    let ty=M+(r.title?autoTextHeight(Object.assign({},r.title,{w:half}))+titleGap:0);
     r.body.forEach(t=>{
       autoStyleText(t,{font:theme.bodyFont,size:19,weight:500,color:muted,lh:1.45,align:"left"});
       if(!keepPos)ty=autoStack(t,M,ty,half,14);
@@ -9959,18 +10293,16 @@ function autoDesignSlide(slide,theme,index,total,opts){
   }
 
   else if(kind==="dense"){
-    decor.push(autoDecor(makeShape("rect",{x:M,y:M-22,w:56,h:5,fill:theme.accent,radius:3,
-      anim:"reveal",animDelay:0,motion:"none"}),theme));
     if(r.title){
       autoStyleText(r.title,{font:theme.titleFont,size:autoTitleSize(r.title,38,22),
         weight:800,color:ink,lh:1.1,align:"left"});
-      if(!keepPos)autoStack(r.title,M,M,COL,16);
+      if(!keepPos)autoStack(r.title,M,M,COL,titleGap);
       autoAnimate(r.title,"rise",step); step+=.1;
     }
     // Two columns, because eight stacked lines in one column is a wall.
     const two=r.body.length>=6;
     const cw=two?(COL-40)/2:COL;
-    let dy=M+(r.title?autoTextHeight(Object.assign({},r.title,{w:COL}))+16:0), col=0;
+    let dy=M+(r.title?autoTextHeight(Object.assign({},r.title,{w:COL}))+titleGap:0), col=0;
     const startY=dy;
     r.body.forEach((t,k)=>{
       autoStyleText(t,{font:theme.bodyFont,size:18,weight:500,color:muted,lh:1.45,align:"left"});
@@ -9983,15 +10315,13 @@ function autoDesignSlide(slide,theme,index,total,opts){
   }
 
   else { /* body */
-    decor.push(autoDecor(makeShape("rect",{x:M,y:M-22,w:56,h:5,fill:theme.accent,radius:3,
-      anim:"reveal",animDelay:0,motion:"none"}),theme));
     if(r.title){
       autoStyleText(r.title,{font:theme.titleFont,size:autoTitleSize(r.title,42,24),
         weight:800,color:ink,lh:1.12,ls:-.3,align:"left"});
-      if(!keepPos)autoStack(r.title,M,M,COL*0.86,20);
+      if(!keepPos)autoStack(r.title,M,M,COL*0.86,titleGap+2);
       autoAnimate(r.title,"rise",step); step+=.12;
     }
-    let by=M+(r.title?autoTextHeight(Object.assign({},r.title,{w:COL*0.86}))+20:0);
+    let by=M+(r.title?autoTextHeight(Object.assign({},r.title,{w:COL*0.86}))+titleGap+2:0);
     r.body.forEach(t=>{
       autoStyleText(t,{font:theme.bodyFont,size:20,weight:500,color:muted,lh:1.5,align:"left"});
       if(!keepPos)by=autoStack(t,M,by,COL*0.78,12);
@@ -10000,13 +10330,35 @@ function autoDesignSlide(slide,theme,index,total,opts){
     r.media.forEach(mEl=>{ autoAnimate(mEl,"fade",step); step+=.1; });
   }
 
+  // Data objects carry their own light/dark styling. Left alone, a KPI grid
+  // or a chart keeps its pale card on a midnight background and looks like
+  // it was pasted in from another deck.
+  r.media.forEach(mEl=>{
+    if(mEl.type==="object" && typeof isStudioObject==="function" && isStudioObject(mEl.objectType)){
+      mEl.dark=!!theme.dark;
+      mEl.accent=theme.accent;
+      if(mEl.ramp===undefined)mEl.ramp="accent";
+    }
+  });
+
   // Shapes the author drew keep their place but join the build.
   r.shapes.forEach(sh=>{ if(!sh.anim||sh.anim==="none")autoAnimate(sh,"fade",step); });
 
-  // Slide number, everywhere but the cover.
-  if(opts.slideNumbers!==false && kind!=="cover" && total>1){
+  // The theme's decoration language. Built last (it needs the final title
+  // box for styles that hang off it) but unshifted to the FRONT of the
+  // element list, so ornament sits behind the words rather than over them.
+  const vocab=autoDecoSet({theme,kind,index,total,ink,muted,title:r.title})
+    .map(e=>autoDecor(e,theme));
+  slide.els=vocab.concat(slide.els);
+
+  // Slide number, everywhere but the cover — unless the theme already
+  // draws an oversized folio of its own.
+  if(opts.slideNumbers!==false && kind!=="cover" && total>1 && theme.deco!=="watermark"){
+    // Bracket and dot themes already occupy the bottom-right corner.
+    const cornerBusy=["bracket","dots"].indexOf(theme.deco||"rule")>=0;
     decor.push(autoDecor(makeText({text:String(index+1).padStart(2,"0"),
-      x:W-M-70,y:H-58,w:70,h:34,size:15,weight:800,color:muted,align:"right",
+      x:cornerBusy?M:W-M-70,y:H-58,w:70,h:34,size:15,weight:800,color:muted,
+      align:cornerBusy?"left":"right",
       font:theme.bodyFont,fill:"none",anim:"fade",animDelay:.5}),theme));
   }
   slide.els=slide.els.concat(decor);

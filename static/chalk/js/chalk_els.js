@@ -118,6 +118,19 @@
         align: "left", bold: false, italic: false, bg: ""
       });
     }
+    if (type === "card") {
+      return Object.assign(base, {
+        w: 0.21, h: 0.17,
+        text: opts.text || "",
+        num: opts.num == null ? "1" : String(opts.num),
+        numAt: "bottom",
+        size: 0.034, color: opts.color || "#ffffff", font: "print",
+        align: "center", bold: true, italic: false,
+        fill: opts.fill || "#16202a", fillOn: true,
+        stroke: opts.stroke || "#56b7e6", accent: opts.accent || opts.stroke || "#56b7e6",
+        strokeW: 2, dash: 0, radius: 14
+      });
+    }
     if (type === "image") {
       return Object.assign(base, {
         w: 0.3, h: 0.24, src: opts.src || "", fit: "contain", radius: 0
@@ -187,12 +200,9 @@
 
   /* ---- renderers ---------------------------------------------------- */
 
-  function renderText(inner, el) {
-    inner.textContent = "";
-    var t = document.createElement("div");
-    t.className = "chalk-text";
-    /* textContent, never innerHTML — a lesson title is not markup. */
-    t.textContent = el.text || "";
+  /* The hand and the material, shared by anything that shows words — a text
+   * element, and the words inside a card. */
+  function writeWith(t, el, fallbackSize) {
     t.style.fontFamily = FONTS[el.font] || FONTS.sans;
     /* The texture is painted with a background rather than a colour, and by
      * then currentColor is transparent — so the colour goes in as its own
@@ -201,12 +211,24 @@
     if (ink) {
       t.dataset.ink = ink;
       t.style.setProperty("--ink", el.color || "#ffffff");
+    } else {
+      delete t.dataset.ink;
     }
-    t.style.fontSize = "calc(var(--chalk-bh, 100px) * " + (el.size || 0.06) + ")";
+    t.style.fontSize = "calc(var(--chalk-bh, 100px) * " +
+      (el.size || fallbackSize || 0.06) + ")";
     t.style.color = el.color || "#ffffff";
     t.style.textAlign = el.align || "left";
     t.style.fontWeight = el.bold ? "700" : "400";
     t.style.fontStyle = el.italic ? "italic" : "normal";
+  }
+
+  function renderText(inner, el) {
+    inner.textContent = "";
+    var t = document.createElement("div");
+    t.className = "chalk-text";
+    /* textContent, never innerHTML — a lesson title is not markup. */
+    t.textContent = el.text || "";
+    writeWith(t, el, 0.06);
     if (el.bg) {
       t.style.background = el.bg;
       t.style.padding = ".25em .5em";
@@ -315,8 +337,56 @@
     paintParts(ensureSvg(inner), [{ d: d, role: el.closed === false ? "line" : "face" }], el);
   }
 
+  /* A card: a box with a number on its edge and room to write in it. The
+   * numbered row of them across the top of a lesson is the thing people draw
+   * by hand every single time, so it is one object rather than a rectangle,
+   * a text box and a little circle that have to be dragged about together.
+   *
+   * Everything is sized in em off the card's own text, so stretching the box
+   * on the board keeps the badge in proportion with the words. */
+  function renderCard(inner, el) {
+    var card = inner.firstChild;
+    if (!card || card.className !== "chalk-card") {
+      inner.textContent = "";
+      card = document.createElement("div");
+      card.className = "chalk-card";
+      card.appendChild(document.createElement("div")).className = "card-body";
+      card.appendChild(document.createElement("span")).className = "card-num";
+      inner.appendChild(card);
+    }
+    var body = card.firstChild, badge = card.lastChild;
+
+    card.style.setProperty("--fill", el.fillOn === false ? "transparent" : (el.fill || "transparent"));
+    card.style.setProperty("--stroke", el.stroke || "#56b7e6");
+    card.style.setProperty("--accent", el.accent || el.stroke || "#56b7e6");
+    card.style.setProperty("--sw", (el.strokeW == null ? 2 : el.strokeW) + "px");
+    card.style.setProperty("--radius", (el.radius == null ? 14 : el.radius) + "px");
+    card.style.setProperty("--dash", el.dash ? el.dash + "px" : "0");
+    card.dataset.dashed = el.dash ? "1" : "0";
+
+    var text = document.createElement("div");
+    text.className = "chalk-text card-title";
+    text.textContent = el.text || "";
+    writeWith(text, el, 0.035);
+    if (!el.text) {
+      text.classList.add("is-empty");
+      text.textContent = "Tap and type";
+    }
+    body.textContent = "";
+    body.appendChild(text);
+
+    var num = String(el.num == null ? "" : el.num).slice(0, 4);
+    var where = el.numAt === "top" ? "top" : el.numAt === "none" ? "none" : "bottom";
+    card.dataset.numat = where;
+    badge.hidden = where === "none" || !num;
+    badge.textContent = num;
+    badge.style.fontSize = "calc(var(--chalk-bh, 100px) * " +
+      ((el.size || 0.035) * 0.8) + ")";
+  }
+
   var RENDER = {
-    text: renderText, image: renderImage, shape: renderShape, freeform: renderFreeform
+    text: renderText, image: renderImage, shape: renderShape,
+    freeform: renderFreeform, card: renderCard
   };
 
   /* ---- layer -------------------------------------------------------- */

@@ -436,7 +436,8 @@ def _history_items(stacks):
 # elements
 # ----------------------------------------------------------------------
 
-EL_TYPES = {"text", "image", "shape", "freeform"}
+EL_TYPES = {"text", "image", "shape", "freeform", "card"}
+NUM_AT = {"bottom", "top", "none"}
 # The four original keys stay: pages written before the handwriting fonts
 # existed have them saved, and a lesson from last term is not a thing to
 # break for a nicer list.
@@ -568,8 +569,14 @@ def clean_el_fields(raw, etype=None):
             out[k] = v
         elif k == "preset" and v in PRESETS:
             out[k] = v
-        elif k in ("color", "fill", "stroke"):
+        elif k in ("color", "fill", "stroke", "accent"):
             out[k] = _color(v)
+        elif k == "num":
+            # The number on a card's edge. Stored as text, because "3", "3a"
+            # and "iii" are all things a teacher writes in that spot.
+            out[k] = str(v if v is not None else "")[:4]
+        elif k == "numAt" and v in NUM_AT:
+            out[k] = v
         elif k == "by":
             v = str(v or "")
             out[k] = v if v.isdigit() and len(v) <= 12 else ""

@@ -1478,6 +1478,63 @@
     return el;
   }
 
+  /* One card, or a row of them. A row is what people actually want — four
+   * questions along the top of the board — and building it four taps at a
+   * time is four chances to get the spacing wrong. */
+  var addCard = document.getElementById("add-card");
+  if (addCard) addCard.addEventListener("click", function () {
+    openSheet("Numbered cards", function (body) {
+      body.appendChild(rowLabel("How many?"));
+      var grid = document.createElement("div");
+      grid.className = "pick-grid";
+      [1, 2, 3, 4, 5].forEach(function (n) {
+        grid.appendChild(pickButton(String(n), n === 1 ? "One card" : n + " in a row",
+          function () {
+            closeSheet();
+            dropCards(n);
+          }));
+      });
+      body.appendChild(grid);
+    });
+  });
+
+  function dropCards(n) {
+    var accent = inkColor();
+    var v = state.view;
+    /* Across the middle of whatever is on screen, with the gaps worked out
+     * rather than guessed, so five cards fit as well as two do. */
+    var span = 0.88 / v.s, gap = 0.03 / v.s;
+    var w = (span - gap * (n - 1)) / n;
+    var h = Math.min(0.3, Math.max(0.12, w * 0.8));
+    var left = v.x + (1 / v.s - span) / 2;
+    var top = v.y + 0.5 / v.s - h / 2;
+    var made = [];
+    for (var i = 0; i < n; i++) {
+      var el = ChalkEls.blank("card", { num: i + 1, accent: accent, stroke: accent });
+      el.w = round(w);
+      el.h = round(h);
+      el.x = round(left + i * (w + gap));
+      el.y = round(top);
+      made.push(el);
+    }
+    /* Deliberately not grouped. A grouped row is one thing to drag, but it
+     * is also one thing to tap — and the next move after making five cards
+     * is always writing in one of them. Group them afterwards if you want
+     * to move the row; the button is right there. */
+    made.forEach(function (el) {
+      layer.upsert(el);
+      net.send({ t: "el_add", el: el });
+    });
+    setTool("select");
+    if (n === 1) {
+      editor.select(made[0].id);
+      openTextSheet();
+    } else {
+      selectMany([], made.map(function (el) { return el.id; }));
+      say(n + " cards. Tap one to write in it, or Group to move them together.");
+    }
+  }
+
   document.getElementById("add-text").addEventListener("click", function () {
     var el = ChalkEls.blank("text", { color: inkColor() });
     placeCentre(el, 0.36, 0.12);
@@ -1877,6 +1934,30 @@
           opts: [["left", "Left"], ["center", "Centre"], ["right", "Right"]] },
         { k: "bold", type: "toggle", label: "Bold" },
         { k: "italic", type: "toggle", label: "Italic" }
+      ];
+    },
+    card: function () {
+      var nums = [["", "None"]];
+      for (var i = 1; i <= 20; i++) nums.push([String(i), String(i)]);
+      return [
+        { k: "text", type: "button", label: "Words", action: openTextSheet, cta: "Type" },
+        { k: "num", type: "select", label: "Number", opts: nums },
+        { k: "numAt", type: "select", label: "Number sits",
+          opts: [["bottom", "On the bottom edge"], ["top", "On the top edge"],
+                 ["none", "Nowhere"]] },
+        { k: "size", type: "range", min: 0.012, max: 0.12, step: 0.002, label: "Text size" },
+        { k: "color", type: "color", label: "Text colour" },
+        { k: "font", type: "font", label: "Written with" },
+        { k: "align", type: "select", label: "Line up",
+          opts: [["left", "Left"], ["center", "Centre"], ["right", "Right"]] },
+        { k: "bold", type: "toggle", label: "Bold" },
+        { k: "accent", type: "color", label: "Number and glow" },
+        { k: "stroke", type: "color", label: "Border" },
+        { k: "strokeW", type: "range", min: 0, max: 8, step: 0.5, label: "Border width" },
+        { k: "dash", type: "range", min: 0, max: 12, step: 1, label: "Dashes" },
+        { k: "radius", type: "range", min: 0, max: 40, step: 1, label: "Rounded corners" },
+        { k: "fillOn", type: "toggle", label: "Filled" },
+        { k: "fill", type: "color", label: "Inside colour" }
       ];
     },
     image: function () {

@@ -250,6 +250,56 @@
     LIST.push({ id: id, subject: subject, name: name, hint: hint, build: build });
   }
 
+  /* ---- cards --------------------------------------------------------- */
+
+  /* One numbered card. Everything is in board space; the card sizes its own
+   * badge and padding off its text, so a wide card and a narrow one look
+   * like the same object. */
+  function card(p, x, y, w, h, n, words, o) {
+    o = o || {};
+    var accent = o.accent || p.blue;
+    var e = ChalkEls.blank("card", {
+      num: n, text: words || "", color: o.color || p.ink,
+      accent: accent, stroke: o.stroke || accent,
+      fill: o.fill || (p.dark ? "#16202a" : "#f4f7fa")
+    });
+    e.size = o.size || 0.032;
+    e.align = "center";
+    e.font = o.font || "print";
+    return put(e, x, y, w, h);
+  }
+
+  T("class", "cards-row", "Numbered cards", "A heading and a row you can type into",
+    function (p) {
+      var out = [];
+      var n = 4, L = 0.06, R = 0.94, gap = 0.025;
+      var w = ((R - L) - gap * (n - 1)) / n;
+      out.push(text(p, L, 0.12, R - L, "How to master this",
+        { size: 0.085, align: "center", bold: true }));
+      out.push(seg(p, L + 0.1, 0.30, R - 0.1, 0.30, { stroke: p.faint, strokeW: 1 }));
+      for (var i = 0; i < n; i++) {
+        var x = L + i * (w + gap);
+        /* the little stem from the rail down to each card, as in a plan
+         * drawn on a board: it is what makes four boxes read as one idea */
+        out.push(seg(p, x + w / 2, 0.30, x + w / 2, 0.38,
+          { stroke: p.faint, strokeW: 1 }));
+        out.push(card(p, x, 0.38, w, 0.30, i + 1, "", { accent: p.blue }));
+      }
+      return out;
+    });
+
+  T("class", "cards-steps", "Numbered steps", "Five cards down the board",
+    function (p) {
+      var out = [text(p, 0.08, 0.05, 0.84, "Steps", { size: 0.07, bold: true })];
+      var n = 5, TP = 0.2, H = 0.13, gap = 0.025;
+      var cols = [p.blue, p.green, p.amber, p.violet, p.red];
+      for (var i = 0; i < n; i++) {
+        out.push(card(p, 0.12, TP + i * (H + gap), 0.76, H, i + 1, "",
+          { accent: cols[i % cols.length], size: 0.036 }));
+      }
+      return out;
+    });
+
   /* ================================ MATHS ============================= */
 
   T("maths", "number-line", "Number line", "0 to 10, with ticks", function (p) {

@@ -237,12 +237,16 @@
   });
 
   global.ChalkFigures = {
-    ids: ORDER.slice(),
+    /* The live array, not a copy: a second file of figures can register into
+     * this one after it has loaded, and everything reading `ids` sees them. */
+    ids: ORDER,
+    /* How that second file gets in. */
+    add: F,
     list: function () {
       return ORDER.map(function (id) {
         var f = FIGS[id];
         return { id: id, name: f.name, hint: f.hint, enter: f.enter,
-                 labels: f.labels.length };
+                 cat: f.cat || "Nature", labels: f.labels.length };
       });
     },
     get: function (id) { return FIGS[id] || null; },

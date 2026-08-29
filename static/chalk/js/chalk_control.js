@@ -1614,19 +1614,32 @@
     if (!window.ChalkFigures) return say("The figures did not load.");
     openSheet("Pick a figure", function (body) {
       body.appendChild(rowLabel("It draws itself, then labels itself"));
-      var grid = document.createElement("div");
-      grid.className = "pick-grid";
-      ChalkFigures.list().forEach(function (f) {
-        grid.appendChild(pickButton(figureThumb(f.id), f.name, function () {
-          closeSheet();
-          var el = ChalkEls.blank("figure", { kind: f.id, color: inkColor(),
-                                              stroke: inkColor() });
-          placeCentre(el, 0.56, 0.4);
-          pushEl(el);
-          say(f.hint + ". Tap Labels to put the names up.");
-        }));
+      /* Thirty plates in one grid is a scroll, not a choice. Grouped by
+       * subject, in the order they were registered, so a physics lesson is
+       * three taps from the top and stays there. */
+      var list = ChalkFigures.list();
+      var order = [], byCat = {};
+      list.forEach(function (f) {
+        var cat = f.cat || "Nature";
+        if (!byCat[cat]) { byCat[cat] = []; order.push(cat); }
+        byCat[cat].push(f);
       });
-      body.appendChild(grid);
+      order.forEach(function (cat) {
+        body.appendChild(rowLabel(cat));
+        var grid = document.createElement("div");
+        grid.className = "pick-grid";
+        byCat[cat].forEach(function (f) {
+          grid.appendChild(pickButton(figureThumb(f.id), f.name, function () {
+            closeSheet();
+            var el = ChalkEls.blank("figure", { kind: f.id, color: inkColor(),
+                                                stroke: inkColor() });
+            placeCentre(el, 0.56, 0.4);
+            pushEl(el);
+            say(f.hint + ". Tap Labels to put the names up.");
+          }));
+        });
+        body.appendChild(grid);
+      });
     });
   });
 

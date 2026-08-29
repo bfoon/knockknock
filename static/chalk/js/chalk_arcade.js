@@ -19,7 +19,7 @@
 (function (global) {
   "use strict";
 
-  var VERSION = "timeout 1.2";
+  var VERSION = "timeout 1.3";
   var B = null, IS_STAGE = false, IS_TEACHER = false;
   var heard = false, watch = null;
 
@@ -767,14 +767,24 @@
 
   /* Borrowing the page's socket only works if the page hands game frames
    * back — that is the `case "game"` line. Rather than trust it, ask: the
-   * server answers every join directly with {"act":"you"}. Silence means the
-   * frames go out and nothing comes back, so open a socket that does. */
+   * server answers every join directly with {"act":"you"}.
+   *
+   * Asking once was not enough. A socket that is still opening drops what it
+   * is given, so the first probe can vanish through no fault of anybody's,
+   * and version 1.2 called that a broken server. It now asks several times,
+   * changes socket halfway through, and only complains when it has run out
+   * of both patience and explanations. */
   function link() {
-    send({ t: "game", act: "join", who: (B.cfg && B.cfg.me && B.cfg.me.name) || "" });
-    watch = setTimeout(function () {
-      watch = null;
+    var tries = 0;
+
+    function probe() {
       if (heard) return;
-      if (!B.own) {
+      tries++;
+      send({ t: "game", act: "join",
+             who: (B.cfg && B.cfg.me && B.cfg.me.name) || "" });
+
+      /* Three unanswered asks: the page's socket is not passing them on. */
+      if (tries === 3 && !B.own) {
         var own = ownSocket();
         if (own) {
           B = own;
@@ -783,19 +793,20 @@
                          "frames on (the case \"game\" line is missing) — " +
                          "opened a second socket instead.");
           }
-          watch = setTimeout(serverSilent, 8000);
-          return;
         }
       }
-      serverSilent();
-    }, 4000);
+      if (tries >= 6) { watch = null; return serverSilent(); }
+      watch = setTimeout(probe, 1800);
+    }
+
+    probe();
   }
 
   function serverSilent() {
     if (heard) return;
     complain(
-      "Game frames are going out and nothing is coming back, so the server " +
-      "is dropping them.",
+      "Game frames have gone out six times over ten seconds and nothing has " +
+      "come back, so the server is dropping them.",
       "consumers.py needs the `elif t == \"game\":` branch — and the ASGI " +
       "server needs restarting afterwards, which the autoreloader does not " +
       "always do for Channels consumers."

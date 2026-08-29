@@ -44,6 +44,41 @@
    * on this page needs to know it exists. */
   window.ChalkBoard = { net: net, cfg: CFG, role: "stage" };
 
+  /* Movement, and whether this machine is allowed any.
+   *
+   * A projector PC with "show animations" switched off — which is most of
+   * them, because it makes an old machine feel quicker — reports
+   * prefers-reduced-motion, and the stylesheets honour it by holding every
+   * figure still. On a phone that is right. On a wall it means the circuit
+   * you drew to show current flowing does not flow, with nothing on screen
+   * to say why.
+   *
+   * So the board says so, and the M key overrides it either way. The choice
+   * is remembered on this machine, because whoever turns it on is standing
+   * in the same room next Tuesday. */
+  var REDUCED = window.matchMedia &&
+                window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function setMotion(on) {
+    document.body.classList.toggle("motion-anyway", !!on);
+    try { localStorage.setItem("chalk-motion", on ? "1" : "0"); } catch (e) {}
+  }
+
+  (function () {
+    var saved = null;
+    try { saved = localStorage.getItem("chalk-motion"); } catch (e) {}
+    if (saved !== null) {
+      document.body.classList.toggle("motion-anyway", saved === "1");
+    } else if (REDUCED) {
+      /* First time on a machine that asks for stillness: say it out loud
+       * rather than leaving a teacher wondering why nothing moves. */
+      if (window.console) {
+        console.info("[Chalk] This machine asks for reduced motion, so the " +
+                     "figures are being held still. Press M to override.");
+      }
+    }
+  })();
+
   function handle(m) {
     switch (m.t) {
       case "ready":
@@ -169,6 +204,12 @@
       if (document.fullscreenElement) document.exitFullscreen();
       else document.documentElement.requestFullscreen().catch(function () {});
     }
+    if (e.key === "m" || e.key === "M") {
+      var on = !document.body.classList.contains("motion-anyway");
+      setMotion(on);
+      flash(on ? "Movement on" : "Movement off" +
+            (REDUCED ? " — this machine asks for stillness" : ""));
+    }
     if ((e.key === "b" || e.key === "B") && boardsLink) {
       /* The page is saved continuously, so leaving is safe and needs no
        * confirmation. */
@@ -212,6 +253,20 @@
         btn.textContent = "Try again";
       });
   });
+
+  /* A word in the corner, for the two things that happen without a click. */
+  function flash(text) {
+    var el = document.getElementById("stage-flash");
+    if (!el) {
+      el = document.createElement("p");
+      el.id = "stage-flash";
+      document.body.appendChild(el);
+    }
+    el.textContent = text;
+    el.dataset.on = "1";
+    clearTimeout(flash._t);
+    flash._t = setTimeout(function () { el.dataset.on = "0"; }, 1800);
+  }
 
   /* Keep the projector awake and hide the mouse pointer while presenting. */
   function keepAwake() {

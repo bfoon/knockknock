@@ -154,6 +154,26 @@
 /* A stated preference, honoured. The entrances still happen — a thing has to
    arrive somehow — but nothing loops forever in the corner of the eye. */
 @media (prefers-reduced-motion: reduce) {
-  .chalk-el { animation: var(--anim-in, none); }
-  .chalk-el[data-loop] { filter: none; }
+  body:not(.motion-anyway) .chalk-el { animation: var(--anim-in, none); }
+  body:not(.motion-anyway) .chalk-el[data-loop] { filter: none; }
 }
+
+/* The word that appears in the corner when a key changed something. */
+#stage-flash {
+  position: fixed;
+  left: 50%;
+  bottom: 6vh;
+  transform: translateX(-50%);
+  z-index: 90;
+  margin: 0;
+  padding: 10px 18px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(16, 21, 27, .92);
+  color: var(--dust);
+  font: 400 18px/1 var(--hand);
+  opacity: 0;
+  transition: opacity .25s ease;
+  pointer-events: none;
+}
+#stage-flash[data-on="1"] { opacity: 1; }

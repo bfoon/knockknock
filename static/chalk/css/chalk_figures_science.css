@@ -398,10 +398,10 @@
 /* --- the stated preference ---------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
-  [data-alive="1"] .fig-part { animation: none !important; }
-  .fig-part.current,
-  .fig-part.flow,
-  .fig-part.packet { stroke-dasharray: none; }
-  .fig-part.step { opacity: 1; }
-  .fig-part.glow { opacity: 1; }
+  body:not(.motion-anyway) [data-alive="1"] .fig-part { animation: none !important; }
+  body:not(.motion-anyway) .fig-part.current,
+  body:not(.motion-anyway) .fig-part.flow,
+  body:not(.motion-anyway) .fig-part.packet { stroke-dasharray: none; }
+  body:not(.motion-anyway) .fig-part.step { opacity: 1; }
+  body:not(.motion-anyway) .fig-part.glow { opacity: 1; }
 }

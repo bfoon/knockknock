@@ -197,8 +197,16 @@
   to   { transform: rotate(8deg); }
 }
 
+/* A machine that asks for less motion gets less motion — but a projector is
+   not a phone in somebody's hand, and half the classroom machines in the
+   world have "show animations" turned off to make an old PC feel quicker.
+   That setting should not silently take the diagrams with it, so the board
+   can say otherwise: `motion-anyway` on the body, which the M key sets. */
 @media (prefers-reduced-motion: reduce) {
-  .chalk-figure * { animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+  body:not(.motion-anyway) .chalk-figure * {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 /* --- turning it round --------------------------------------------------- */

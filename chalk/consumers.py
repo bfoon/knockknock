@@ -438,8 +438,16 @@ def _history_items(stacks):
 
 EL_TYPES = {"text", "image", "shape", "freeform", "card", "figure"}
 NUM_AT = {"bottom", "top", "none"}
-FIGURE_KINDS = {"rabbit", "butterfly", "tree", "car", "flower", "fish"}
-FIGURE_ENTER = {"", "run", "drive", "fly", "swim", "grow"}
+# A figure's kind and its entrance are lookup keys into a JavaScript file:
+# "circuit", "saltwater", "draw", "pour". This side does not know what any of
+# them mean and has no business holding a list of them — every plate added to
+# chalk_figures*.js would need this file edited too, and the day that is
+# forgotten the board draws a rabbit instead of a circuit and saves it that
+# way. It was forgotten, and it did.
+#
+# So: shape and length, not membership. An unknown key renders a labelled
+# fallback on the board, which is the right failure and costs nothing here.
+FIGURE_KEY_RE = re.compile(r"^[a-z][a-z0-9_-]{0,23}$")
 # The four original keys stay: pages written before the handwriting fonts
 # existed have them saved, and a lesson from last term is not a thing to
 # break for a nicer list.
@@ -611,9 +619,11 @@ def clean_el_fields(raw, etype=None):
             out[k] = str(v if v is not None else "")[:4]
         elif k == "numAt" and v in NUM_AT:
             out[k] = v
-        elif k == "kind" and v in FIGURE_KINDS:
+        elif k == "kind" and isinstance(v, str) and FIGURE_KEY_RE.match(v):
             out[k] = v
-        elif k == "enter" and v in FIGURE_ENTER:
+        elif k == "enter" and isinstance(v, str) and (
+            v == "" or FIGURE_KEY_RE.match(v)
+        ):
             out[k] = v
         elif k == "show":
             # How many labels are up. -1 is all of them, which is a real

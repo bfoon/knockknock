@@ -71,7 +71,9 @@
    timing in chalk_els.js is what makes it read as a hand and not a wipe. */
 @keyframes chalk-in-write {
   from { clip-path: inset(0 100% 0 0); }
-  to   { clip-path: inset(0 -6% 0 0); }
+  /* Nought, not a negative inset: browsers disagree about negatives, and one
+     of them clamps the whole shape and clips the last letter off. */
+  to   { clip-path: inset(0 0 0 0); }
 }
 
 /* Drawn on. The box fades in fast; the work happens on the paths below. */
@@ -99,6 +101,12 @@
 .chalk-el[data-in="draw"][data-type="text"],
 .chalk-el[data-in="draw"][data-type="card"] {
   animation-name: chalk-in-write;
+}
+/* A figure is the exception: it already draws itself on, plate by plate, in
+   its own stylesheet. Drawing it again from out here is two hands on the same
+   stick of chalk, and they fight. */
+.chalk-el[data-in="draw"][data-type="figure"] {
+  animation-name: chalk-in-fade;
 }
 
 /* --- loops ------------------------------------------------------------- */

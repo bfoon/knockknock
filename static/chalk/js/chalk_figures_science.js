@@ -292,7 +292,7 @@
       { d: box(186, 46, 10, 52), cls: "chip" },
       { d: box(96, 108, 56, 34), cls: "case" },
       { d: ell(124, 125, 11, 11), cls: "disc spin" },
-      { d: "M124,116 V125 L132,129", cls: "disc spin" },
+      { d: "M116,120 L132,130", cls: "disc spin" },
       { d: box(166, 108, 44, 34), cls: "case" },
       { d: "M172,116 H204 M172,124 H204 M172,132 H190", cls: "faint" },
       { d: "M144,72 H158 M144,80 H158", cls: "trace flow" }
@@ -617,15 +617,15 @@
       { d: "M124,84 c8,6 44,6 52,0", cls: "surface wave" },
       { d: "M124,84 c2,4 6,5 8,2", cls: "meniscus" },
       { d: "M176,84 c-2,4 -6,5 -8,2", cls: "meniscus" },
-      { d: ell(140, 128, 3, 3), cls: "bubble rise" },
-      { d: ell(156, 138, 2.4, 2.4), cls: "bubble rise rise-b" },
-      { d: ell(148, 118, 2, 2), cls: "bubble rise rise-c" },
+      { d: ell(140, 140, 3, 3), cls: "bubble rise" },
+      { d: ell(156, 146, 2.4, 2.4), cls: "bubble rise rise-b" },
+      { d: ell(148, 134, 2, 2), cls: "bubble rise rise-c" },
       { d: "M132,52 c6,3 30,3 36,0", cls: "faint" }
     ],
     labels: [
       { t: "Glass", at: [116, 110], side: "l", y: 60 },
       { t: "Water", at: [140, 120], side: "l", y: 108 },
-      { t: "Bubbles of air", at: [148, 130], side: "l", y: 148 },
+      { t: "Bubbles of air", at: [148, 140], side: "l", y: 148 },
       { t: "Air above the water", at: [150, 56], side: "r", y: 42 },
       { t: "Surface", at: [162, 86], side: "r", y: 82 },
       { t: "Meniscus — it curves at the glass", at: [176, 86], side: "r", y: 122 }
@@ -679,14 +679,16 @@
       { d: "M150,52 h4 v4 h-4 Z", cls: "crystal sink sink-c" },
       { d: "M132,120 h3 v3 h-3 Z", cls: "crystal fade" },
       { d: "M166,132 h2.6 v2.6 h-2.6 Z", cls: "crystal fade fade-b" },
-      { d: "M198,40 V150", cls: "rod" },
-      { d: "M194,150 c8,4 8,-4 0,0", cls: "rod stir" }
+      /* In the water, where a stirring rod belongs. It was standing beside
+       * the beaker, next to a second part that was a curve back to where it
+       * started — a stir with nothing to stir and nothing to see. */
+      { d: "M172,44 L158,138", cls: "rod stir" }
     ],
     labels: [
       { t: "Salt — the solute", at: [150, 44], side: "l", y: 40 },
       { t: "It breaks up as it falls", at: [150, 66], side: "l", y: 78 },
       { t: "Water — the solvent", at: [122, 120], side: "l", y: 128 },
-      { t: "Stirring rod", at: [198, 60], side: "r", y: 46 },
+      { t: "Stirring rod", at: [170, 52], side: "r", y: 46 },
       { t: "The water stays clear", at: [178, 110], side: "r", y: 100 },
       { t: "Salt water — a solution", at: [150, 150], side: "r", y: 146 }
     ]
@@ -766,7 +768,7 @@
     enter: "draw",
     parts: [
       { d: "M74,150 h152", cls: "ground" },
-      { d: "M74,150 c26,-4 54,-4 80,0 c22,4 50,4 72,0", cls: "sea water fill" },
+      { d: "M74,150 c26,-4 54,-4 80,0 c22,4 50,4 72,0 V178 H74 Z", cls: "sea water fill" },
       { d: "M74,138 c20,-6 44,-6 64,0", cls: "surface wave" },
       { d: ell(94, 44, 11, 11), cls: "sun pulse" },
       { d: "M94,28 V20 M80,44 H72 M82,32 L76,26", cls: "ray pulse" },
@@ -799,21 +801,26 @@
       { d: ell(150, 96, 18, 18), cls: "sun pulse solid-faint" },
       { d: "M150,72 V64 M150,120 V128 M126,96 H118 M174,96 H182 M133,79 L127,73 M167,113 L173,119",
         cls: "ray pulse" },
-      { d: ell(150, 96, 34, 22), cls: "orbit-path" },
-      { d: ell(150, 96, 54, 34), cls: "orbit-path" },
-      { d: ell(150, 96, 74, 46), cls: "orbit-path" },
-      { d: ell(184, 96, 4, 4), cls: "planet orbit-a solid" },
-      { d: ell(204, 96, 6, 6), cls: "planet orbit-b solid" },
-      { d: ell(224, 96, 5, 5), cls: "planet orbit-c solid" },
-      { d: ell(232, 96, 2, 2), cls: "moon orbit-c" }
+      /* Circles, not ellipses. A planet moved by a CSS rotation travels a
+       * circle, so an ellipse drawn under it is a path the planet does not
+       * follow — it wandered off the line twice an orbit. */
+      { d: ell(150, 96, 32, 32), cls: "orbit-path" },
+      { d: ell(150, 96, 52, 52), cls: "orbit-path" },
+      { d: ell(150, 96, 72, 72), cls: "orbit-path" },
+      { d: ell(182, 96, 4, 4), cls: "planet orbit-a solid" },
+      { d: ell(202, 96, 6, 6), cls: "planet orbit-b solid" },
+      { d: ell(222, 96, 5, 5), cls: "planet orbit-c solid" },
+      /* The moon keeps its planet's class, so it travels with it rather than
+       * setting off round the sun on its own. */
+      { d: ell(212, 96, 2.4, 2.4), cls: "moon orbit-b" }
     ],
     labels: [
       { t: "The sun", at: [150, 96], side: "l", y: 60 },
-      { t: "Orbit", at: [96, 96], side: "l", y: 104 },
+      { t: "Orbit", at: [98, 96], side: "l", y: 104 },
       { t: "A planet takes its own time", at: [150, 142], side: "l", y: 146 },
-      { t: "Nearest — quickest", at: [184, 96], side: "r", y: 48 },
-      { t: "Earth", at: [204, 96], side: "r", y: 92 },
-      { t: "A moon goes round its planet", at: [232, 96], side: "r", y: 138 }
+      { t: "Nearest — quickest", at: [182, 96], side: "r", y: 48 },
+      { t: "Earth", at: [202, 96], side: "r", y: 92 },
+      { t: "Its moon travels with it", at: [212, 96], side: "r", y: 138 }
     ]
   });
 

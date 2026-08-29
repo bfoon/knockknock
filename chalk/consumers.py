@@ -436,8 +436,10 @@ def _history_items(stacks):
 # elements
 # ----------------------------------------------------------------------
 
-EL_TYPES = {"text", "image", "shape", "freeform", "card"}
+EL_TYPES = {"text", "image", "shape", "freeform", "card", "figure"}
 NUM_AT = {"bottom", "top", "none"}
+FIGURE_KINDS = {"rabbit", "butterfly", "tree", "car", "flower", "fish"}
+FIGURE_ENTER = {"", "run", "drive", "fly", "swim", "grow"}
 # The four original keys stay: pages written before the handwriting fonts
 # existed have them saved, and a lesson from last term is not a thing to
 # break for a nicer list.
@@ -469,6 +471,9 @@ PRESETS = {
 # storage, so a new client field cannot smuggle anything in.
 EL_NUM = {
     "x": (-0.5, 1.5, 0.3), "y": (-0.5, 1.5, 0.3),
+    # Figures: how fast it all happens, and which run of the entrance this
+    # is. `play` only ever arrives on a live frame, so it is never stored.
+    "speed": (0.25, 3.0, 1.0), "play": (0.0, 9999.0, 1.0),
     "w": (0.01, 2.0, 0.2), "h": (0.01, 2.0, 0.2),
     "rot": (-360.0, 360.0, 0.0),
     "size": (0.005, 0.6, 0.06),
@@ -480,7 +485,7 @@ EL_NUM = {
     "hole": (10.0, 70.0, 40.0),
 }
 EL_INT = {"sides", "dash", "degrees"}
-EL_BOOL = {"bold", "italic", "closed", "fillOn", "edited", "top"}
+EL_BOOL = {"bold", "italic", "closed", "fillOn", "edited", "top", "flip", "alive"}
 
 FX_NUM = {
     "sx": (-60.0, 60.0, 0.0), "sy": (-60.0, 60.0, 4.0), "blur": (0.0, 60.0, 8.0),
@@ -490,6 +495,35 @@ FX_NUM = {
     "opacity": (0.0, 1.0, 1.0),
 }
 FX_BOOL = {"shadow", "glow", "flipH", "flipV"}
+
+# How an element arrives, and what it does once it is there. Both are names
+# from a fixed list — the browser turns them into keyframes, so a value that
+# is not on the list is a value that does nothing at all.
+ANIM_IN = {"none", "fade", "rise", "pop", "draw", "write",
+           "unfold", "turnin", "popup"}
+ANIM_LOOP = {"none", "boil", "bob", "sway", "turn", "pulse"}
+ANIM_NUM = {"spd": (0.25, 4.0, 1.0), "delay": (0.0, 10.0, 0.0)}
+
+
+def clean_anim(raw):
+    if not isinstance(raw, dict):
+        return None
+    out = {}
+    if raw.get("in") in ANIM_IN:
+        out["in"] = raw["in"]
+    if raw.get("loop") in ANIM_LOOP:
+        out["loop"] = raw["loop"]
+    for k in ANIM_NUM:
+        if k in raw:
+            out[k] = _rng(raw.get(k), k, ANIM_NUM)
+    # Bumped to play an entrance again. It only has to differ from last time,
+    # so it is kept small and wrapped rather than trusted.
+    if "n" in raw:
+        try:
+            out["n"] = int(float(raw.get("n") or 0)) % 10000
+        except (TypeError, ValueError):
+            out["n"] = 0
+    return out
 FX_COLOR = {"shadowColor", "glowColor", "extrudeColor"}
 
 def _rng(v, key, table):
@@ -577,6 +611,14 @@ def clean_el_fields(raw, etype=None):
             out[k] = str(v if v is not None else "")[:4]
         elif k == "numAt" and v in NUM_AT:
             out[k] = v
+        elif k == "kind" and v in FIGURE_KINDS:
+            out[k] = v
+        elif k == "enter" and v in FIGURE_ENTER:
+            out[k] = v
+        elif k == "show":
+            # How many labels are up. -1 is all of them, which is a real
+            # answer and not a missing one.
+            out[k] = max(-1, min(24, int(_num(v, -1, 24, 0))))
         elif k == "by":
             v = str(v or "")
             out[k] = v if v.isdigit() and len(v) <= 12 else ""
@@ -596,6 +638,10 @@ def clean_el_fields(raw, etype=None):
             fx = clean_fx(v)
             if fx is not None:
                 out[k] = fx
+        elif k == "anim":
+            anim = clean_anim(v)
+            if anim is not None:
+                out[k] = anim
     for k in EL_INT:
         if k in out:
             out[k] = int(out[k])

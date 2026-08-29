@@ -1,0 +1,151 @@
+/* ==========================================================================
+   Chalk — animation.
+   Loaded after chalk.css.
+   ==========================================================================
+
+   Two rules run this file.
+
+   First: the element's own rotation lives in --rot and every keyframe carries
+   it. An object drawn on a slant has to spin about its own slant, not snap
+   flat the moment it starts moving.
+
+   Second: an element can be running two animations at once — an entrance and
+   a loop — and when two animations touch the same property the later one wins
+   outright. So chalk_els.js hands both in as variables and gives the loop a
+   delay equal to the entrance, and the shorthand below plays them in order.
+
+   The 3-D is real 3-D: perspective on the layer, transform-style preserved,
+   and rotations about X and Y. It is not a scale pretending.
+   ========================================================================== */
+
+.chalk-els { perspective: 1400px; }
+
+.chalk-el {
+  animation: var(--anim-in, none), var(--anim-loop, none);
+  transform-style: preserve-3d;
+}
+
+/* Everything an entrance does happens to a thing that is already rotated. */
+@keyframes chalk-in-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes chalk-in-rise {
+  from { opacity: 0; transform: rotate(var(--rot, 0deg)) translateY(9%); }
+  to   { opacity: 1; transform: rotate(var(--rot, 0deg)) translateY(0); }
+}
+
+/* The overshoot and the half-degree of tilt are the whole difference between
+   this and a slide transition. A hand puts a thing down slightly crooked and
+   straightens it. */
+@keyframes chalk-in-pop {
+  0%   { opacity: 0; transform: rotate(calc(var(--rot, 0deg) - 2.5deg)) scale(.72); }
+  70%  { opacity: 1; transform: rotate(calc(var(--rot, 0deg) + 1.2deg)) scale(1.04); }
+  100% { opacity: 1; transform: rotate(var(--rot, 0deg)) scale(1); }
+}
+
+/* Unfolding away from the board, like a card being stood up. */
+@keyframes chalk-in-unfold {
+  0%   { opacity: 0; transform: rotate(var(--rot, 0deg)) perspective(900px) rotateX(-82deg); }
+  100% { opacity: 1; transform: rotate(var(--rot, 0deg)) perspective(900px) rotateX(0); }
+}
+.chalk-el[data-in="unfold"] { transform-origin: 50% 100%; }
+
+/* Turning in from the side, with a little past-and-back so it settles. */
+@keyframes chalk-in-turnin {
+  0%   { opacity: 0; transform: rotate(var(--rot, 0deg)) perspective(1000px) rotateY(-94deg); }
+  72%  { opacity: 1; transform: rotate(var(--rot, 0deg)) perspective(1000px) rotateY(7deg); }
+  100% { opacity: 1; transform: rotate(var(--rot, 0deg)) perspective(1000px) rotateY(0); }
+}
+
+/* A pop-up book: hinged at the bottom, swinging up off the page. */
+@keyframes chalk-in-popup {
+  0%   { opacity: 0; transform: rotate(var(--rot, 0deg)) perspective(800px) rotateX(88deg) translateY(14%); }
+  78%  { opacity: 1; transform: rotate(var(--rot, 0deg)) perspective(800px) rotateX(-9deg) translateY(0); }
+  100% { opacity: 1; transform: rotate(var(--rot, 0deg)) perspective(800px) rotateX(0) translateY(0); }
+}
+.chalk-el[data-in="popup"] { transform-origin: 50% 100%; }
+
+/* Written on, left to right, in chunks rather than smoothly — the steps()
+   timing in chalk_els.js is what makes it read as a hand and not a wipe. */
+@keyframes chalk-in-write {
+  from { clip-path: inset(0 100% 0 0); }
+  to   { clip-path: inset(0 -6% 0 0); }
+}
+
+/* Drawn on. The box fades in fast; the work happens on the paths below. */
+@keyframes chalk-in-draw {
+  from { opacity: 1; }
+  to   { opacity: 1; }
+}
+
+/* The line draws itself, then the fill arrives — which is the order a person
+   does it in, and the reason this reads as drawing rather than revealing.
+   pathLength="1" is set in chalk_els.js so one dash length fits every path,
+   however long it really is. */
+.chalk-el[data-in="draw"] .chalk-svg path {
+  stroke-dasharray: 1;
+  animation: chalk-path-draw var(--draw-secs, 1.15s) cubic-bezier(.5,0,.35,1) var(--draw-delay, 0s) both;
+}
+@keyframes chalk-path-draw {
+  0%   { stroke-dashoffset: 1; fill-opacity: 0; }
+  68%  { stroke-dashoffset: 0; fill-opacity: 0; }
+  100% { stroke-dashoffset: 0; fill-opacity: 1; }
+}
+/* Anything without paths — a photo, a card, words — gets written on instead,
+   because "draw this photo on" has no honest meaning. */
+.chalk-el[data-in="draw"][data-type="image"],
+.chalk-el[data-in="draw"][data-type="text"],
+.chalk-el[data-in="draw"][data-type="card"] {
+  animation-name: chalk-in-write;
+}
+
+/* --- loops ------------------------------------------------------------- */
+
+/* Boil: three drawings, held. Nothing moves smoothly, which is the point. */
+@keyframes chalk-loop-boil {
+  0%   { filter: url(#chalk-boil-1); }
+  33%  { filter: url(#chalk-boil-2); }
+  66%  { filter: url(#chalk-boil-3); }
+  100% { filter: url(#chalk-boil-1); }
+}
+
+@keyframes chalk-loop-bob {
+  0%, 100% { transform: rotate(var(--rot, 0deg)) translateY(0); }
+  50%      { transform: rotate(var(--rot, 0deg)) translateY(-2.2%); }
+}
+
+/* A slow turn away and back, in perspective. Reads as a thing sitting in the
+   room rather than printed on the board. */
+@keyframes chalk-loop-sway {
+  0%, 100% { transform: rotate(var(--rot, 0deg)) perspective(1200px) rotateY(-7deg) rotateX(1.5deg); }
+  50%      { transform: rotate(var(--rot, 0deg)) perspective(1200px) rotateY(7deg) rotateX(-1.5deg); }
+}
+
+@keyframes chalk-loop-turn {
+  from { transform: rotate(var(--rot, 0deg)) perspective(1200px) rotateY(0); }
+  to   { transform: rotate(var(--rot, 0deg)) perspective(1200px) rotateY(360deg); }
+}
+
+@keyframes chalk-loop-pulse {
+  0%, 100% { transform: rotate(var(--rot, 0deg)) scale(1); }
+  50%      { transform: rotate(var(--rot, 0deg)) scale(1.028); }
+}
+
+/* --- the two places this must not run ---------------------------------- */
+
+/* Somebody is dragging the thing about. An element that is bobbing while you
+   try to put its corner on a gridline is an element you cannot place. */
+.chalk-el[data-editing="1"] {
+  animation: none !important;
+  filter: none;
+}
+.chalk-el[data-editing="1"] .chalk-svg path { animation: none; }
+
+/* A stated preference, honoured. The entrances still happen — a thing has to
+   arrive somehow — but nothing loops forever in the corner of the eye. */
+@media (prefers-reduced-motion: reduce) {
+  .chalk-el { animation: var(--anim-in, none); }
+  .chalk-el[data-loop] { filter: none; }
+}

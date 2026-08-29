@@ -9,6 +9,8 @@
 <link rel="stylesheet" href="{% static 'chalk/css/chalk_fonts.css' %}">
 <link rel="stylesheet" href="{% static 'chalk/css/chalk_select.css' %}">
 <link rel="stylesheet" href="{% static 'chalk/css/chalk_card.css' %}">
+<link rel="stylesheet" href="{% static 'chalk/css/chalk_anim.css' %}">
+<link rel="stylesheet" href="{% static 'chalk/css/chalk_figures.css' %}">
 <link rel="stylesheet" href="{% static 'chalk/css/chalk_games.css' %}">
 </head>
 <body class="chalk-control">
@@ -45,6 +47,7 @@
     <button class="icon-btn" id="add-photo" type="button">Photo</button>
     <button class="icon-btn" id="add-shape" type="button">Shape</button>
     <button class="icon-btn" id="add-card" type="button">Card</button>
+    <button class="icon-btn" id="add-figure" type="button">Figure</button>
     <button class="icon-btn" id="add-emoji" type="button">Emoji</button>
     <button class="icon-btn" id="add-icon" type="button">Icon</button>
     <button class="icon-btn" id="add-free" type="button">Free shape</button>
@@ -189,6 +192,7 @@
 {{ config|json_script:"chalk-config" }}
 <script src="{% static 'chalk/js/chalk_shapes.js' %}"></script>
 <script src="{% static 'chalk/js/chalk_ink.js' %}"></script>
+<script src="{% static 'chalk/js/chalk_figures.js' %}"></script>
 <script src="{% static 'chalk/js/chalk_els.js' %}"></script>
 <script src="{% static 'chalk/js/chalk_templates.js' %}"></script>
 <script src="{% static 'chalk/js/chalk_stickers.js' %}"></script>

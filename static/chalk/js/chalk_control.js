@@ -606,7 +606,12 @@
      * nothing is written until the finger lifts. */
     live: function (id, patch) { net.send({ t: "el_live", id: id, patch: patch }, true); },
     commit: function (id, patch) { net.send({ t: "el_update", id: id, patch: patch }); },
-    select: function () { renderInspector(); }
+    select: function (el) {
+      /* Hold the picked object still. Lining a bobbing corner up with a
+       * gridline is not something anybody should be asked to do. */
+      if (layer.setEditing) layer.setEditing(el ? el.id : null);
+      renderInspector();
+    }
   });
 
   /* Colouring in.
@@ -1571,6 +1576,82 @@
     }
   }
 
+  /* Replaying is deliberately not saved. It is the laser pointer, not the
+   * lesson: the class watches the rabbit run in again, and the page is
+   * exactly as it was afterwards — no undo entry, no write. */
+  function playFigure() {
+    var el = editor.selected && layer.get(editor.selected);
+    if (!el || el.type !== "figure") return;
+    var patch = { play: ((el.play || 1) % 999) + 1 };
+    layer.patch(el.id, patch);
+    editor.refresh();
+    net.send({ t: "el_live", id: el.id, patch: patch }, true);
+  }
+
+  /* One more label, then the next, then the next. The teacher asks the class
+   * what the part is called before each tap; that is the whole lesson, and
+   * it is why "all at once" is not the only option. */
+  function nextLabel() {
+    var el = editor.selected && layer.get(editor.selected);
+    if (!el || el.type !== "figure") return;
+    var fig = window.ChalkFigures && ChalkFigures.get(el.kind);
+    var total = fig ? fig.labels.length : 6;
+    var now = Number(el.show) === -1 ? total : (Number(el.show) || 0);
+    /* Round the houses: after the last one, the next tap clears them and the
+     * class starts again. */
+    var next = now >= total ? 0 : now + 1;
+    patchEl({ show: next === total ? -1 : next });
+    if (next) {
+      var lab = fig && fig.labels[next - 1];
+      if (lab) say(lab.t);
+    } else {
+      say("Labels off — ask them again.");
+    }
+  }
+
+  var addFigure = document.getElementById("add-figure");
+  if (addFigure) addFigure.addEventListener("click", function () {
+    if (!window.ChalkFigures) return say("The figures did not load.");
+    openSheet("Pick a figure", function (body) {
+      body.appendChild(rowLabel("It draws itself, then labels itself"));
+      var grid = document.createElement("div");
+      grid.className = "pick-grid";
+      ChalkFigures.list().forEach(function (f) {
+        grid.appendChild(pickButton(figureThumb(f.id), f.name, function () {
+          closeSheet();
+          var el = ChalkEls.blank("figure", { kind: f.id, color: inkColor(),
+                                              stroke: inkColor() });
+          placeCentre(el, 0.56, 0.4);
+          pushEl(el);
+          say(f.hint + ". Tap Labels to put the names up.");
+        }));
+      });
+      body.appendChild(grid);
+    });
+  });
+
+  /* A small still of the figure itself, drawn from the same paths. Nothing
+   * describes a rabbit like a rabbit. */
+  function figureThumb(id) {
+    var fig = ChalkFigures.get(id);
+    var NS = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "60 20 180 160");
+    svg.setAttribute("class", "thumb");
+    svg.setAttribute("aria-hidden", "true");
+    fig.parts.forEach(function (part) {
+      var p = document.createElementNS(NS, "path");
+      p.setAttribute("d", part.d);
+      p.setAttribute("fill", /solid/.test(part.cls || "") ? "currentColor" : "none");
+      p.setAttribute("stroke", "currentColor");
+      p.setAttribute("stroke-width", 3);
+      p.setAttribute("stroke-linecap", "round");
+      p.setAttribute("stroke-linejoin", "round");
+      svg.appendChild(p);
+    });
+    return svg;
+  }
+
   document.getElementById("add-text").addEventListener("click", function () {
     var el = ChalkEls.blank("text", { color: inkColor() });
     placeCentre(el, 0.36, 0.12);
@@ -1972,6 +2053,36 @@
         { k: "italic", type: "toggle", label: "Italic" }
       ];
     },
+    figure: function (el) {
+      var figs = (window.ChalkFigures ? ChalkFigures.list() : []).map(function (f) {
+        return [f.id, f.name];
+      });
+      var count = (window.ChalkFigures && ChalkFigures.get(el.kind))
+        ? ChalkFigures.get(el.kind).labels.length : 6;
+      var shows = [["0", "None"]];
+      for (var i = 1; i <= count; i++) shows.push([String(i), "First " + i]);
+      shows.push(["-1", "All of them"]);
+      return [
+        { k: "kind", type: "select", label: "Figure", opts: figs },
+        { k: "show", type: "select", label: "Labels", opts: shows },
+        { k: "show", type: "button", label: "One at a time", action: nextLabel,
+          cta: "Show the next one" },
+        { k: "play", type: "button", label: "Animation", action: playFigure,
+          cta: "Play it again" },
+        { k: "flip", type: "toggle", label: "Turn it round" },
+        { k: "alive", type: "toggle", label: "Keep it moving" },
+        { k: "enter", type: "select", label: "How it arrives",
+          opts: [["", "However it usually does"], ["run", "Runs in"],
+                 ["drive", "Drives in"], ["fly", "Flies in"],
+                 ["swim", "Swims in"], ["grow", "Grows up"]] },
+        { k: "speed", type: "range", min: 0.4, max: 2.5, step: 0.1, label: "Speed" },
+        { k: "color", type: "color", label: "Chalk" },
+        { k: "accent", type: "color", label: "Labels and leaders" },
+        { k: "size", type: "range", min: 0.012, max: 0.06, step: 0.002, label: "Label size" },
+        { k: "font", type: "font", label: "Written with" },
+        { k: "strokeW", type: "range", min: 1, max: 6, step: 0.5, label: "Line weight" }
+      ];
+    },
     card: function () {
       var nums = [["", "None"]];
       for (var i = 1; i <= 20; i++) nums.push([String(i), String(i)]);
@@ -2070,8 +2181,38 @@
     { k: "fx.flipV", type: "toggle", label: "Flip over" }
   ];
 
+  var ANIM_FIELDS = [
+    { k: "anim.in", type: "select", label: "How it arrives",
+      opts: [["none", "It is just there"], ["draw", "Draws itself on"],
+             ["write", "Written on"], ["fade", "Fades in"], ["rise", "Rises"],
+             ["pop", "Pops"], ["unfold", "Unfolds (3-D)"],
+             ["turnin", "Turns in (3-D)"], ["popup", "Stands up (3-D)"]] },
+    { k: "anim.loop", type: "select", label: "And then keeps",
+      opts: [["none", "Still"], ["boil", "Boiling — the drawn shimmer"],
+             ["bob", "Bobbing"], ["sway", "Swaying (3-D)"],
+             ["turn", "Turning (3-D)"], ["pulse", "Breathing"]] },
+    { k: "anim.spd", type: "range", min: 0.25, max: 3, step: 0.05, label: "Speed" },
+    { k: "anim.delay", type: "range", min: 0, max: 6, step: 0.1, label: "Wait first" },
+    { k: "anim.n", type: "button", label: "Try it", action: replayAnim, cta: "Play" }
+  ];
+
+  /* Play it again, here and on the board. The number is the whole mechanism:
+   * the element changes, so every screen showing it starts the entrance over.
+   * A separate "replay" message would have been one more thing to keep in
+   * step for no gain. */
+  function replayAnim() {
+    var el = editor.selected && layer.get(editor.selected);
+    if (!el) return;
+    var anim = {};
+    Object.keys(el.anim || {}).forEach(function (k) { anim[k] = el.anim[k]; });
+    anim.n = ((anim.n || 0) + 1) % 10000;
+    layer.patch(el.id, { anim: anim });
+    net.send({ t: "el_update", id: el.id, patch: { anim: anim } });
+  }
+
   function readVal(el, key) {
     if (key.indexOf("fx.") === 0) return (el.fx || {})[key.slice(3)];
+    if (key.indexOf("anim.") === 0) return (el.anim || {})[key.slice(5)];
     return el[key];
   }
 
@@ -2083,6 +2224,15 @@
       Object.keys(el.fx || {}).forEach(function (k) { fx[k] = el.fx[k]; });
       fx[key.slice(3)] = value;
       return { fx: fx };
+    }
+    if (key.indexOf("anim.") === 0) {
+      var anim = {};
+      Object.keys(el.anim || {}).forEach(function (k) { anim[k] = el.anim[k]; });
+      anim[key.slice(5)] = value;
+      /* Changing anything about it plays it, which is what anybody choosing
+       * an entrance from a list is trying to find out. */
+      anim.n = ((anim.n || 0) + 1) % 10000;
+      return { anim: anim };
     }
     var patch = {};
     patch[key] = value;
@@ -2143,7 +2293,8 @@
     inspector.hidden = false;
     document.body.classList.add("inspecting");
     inspectorName.textContent = {
-      text: "Text", image: "Photo", shape: "Shape", freeform: "Free shape"
+      text: "Text", image: "Photo", shape: "Shape", freeform: "Free shape",
+      card: "Card"
     }[el.type] || "Object";
     var band = document.getElementById("el-band");
     band.dataset.on = String(!!el.top);
@@ -2152,7 +2303,8 @@
 
     inspectorBody.textContent = "";
     (FIELDS[el.type] || FIELDS.shape)(el)
-      .concat([{ type: "heading", label: "Effects" }], FX_FIELDS)
+      .concat([{ type: "heading", label: "Movement" }], ANIM_FIELDS,
+              [{ type: "heading", label: "Effects" }], FX_FIELDS)
       .forEach(function (f) { inspectorBody.appendChild(buildField(el, f)); });
   }
 

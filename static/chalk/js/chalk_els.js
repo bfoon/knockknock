@@ -118,6 +118,24 @@
         align: "left", bold: false, italic: false, bg: ""
       });
     }
+    if (type === "figure") {
+      return Object.assign(base, {
+        w: 0.5, h: 0.34,
+        kind: opts.kind || "rabbit",
+        enter: opts.enter || "",          /* "" means the figure's own way in */
+        show: 0,                          /* labels up so far; -1 is all of them */
+        flip: false,
+        alive: true,
+        speed: 1,
+        play: 1,
+        size: 0.026,
+        color: opts.color || "#ffffff",
+        font: "print",
+        stroke: opts.stroke || opts.color || "#ffffff",
+        accent: opts.accent || "#d9a441",
+        strokeW: 2
+      });
+    }
     if (type === "card") {
       return Object.assign(base, {
         w: 0.21, h: 0.17,
@@ -157,6 +175,126 @@
       sides: 6, inset: 45,
       edited: false
     });
+  }
+
+  /* ---- animation ----------------------------------------------------- */
+
+  /* Hand-drawn animation has always been three drawings of the same thing,
+   * held for two frames each. The line never sits still, and that shimmer —
+   * animators call it boil — is most of what makes a drawing read as drawn
+   * rather than plotted. Three turbulence filters, cycled by CSS at eight
+   * frames a second, is the same trick with the same result.
+   *
+   * They live in one hidden SVG at the end of the page, made once, shared by
+   * every element on the board. */
+  var BOIL_ID = "chalk-boil-defs";
+
+  function ensureBoil() {
+    if (!global.document || document.getElementById(BOIL_ID)) return;
+    var svg = document.createElementNS(SVGNS, "svg");
+    svg.setAttribute("id", BOIL_ID);
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("width", "0");
+    svg.setAttribute("height", "0");
+    svg.style.cssText = "position:absolute;width:0;height:0;overflow:hidden";
+    var defs = document.createElementNS(SVGNS, "defs");
+    [[0.021, 7], [0.026, 19], [0.019, 41]].forEach(function (spec, i) {
+      var f = document.createElementNS(SVGNS, "filter");
+      f.setAttribute("id", "chalk-boil-" + (i + 1));
+      /* Room to wobble into: a displacement map clips at the filter box. */
+      f.setAttribute("x", "-12%"); f.setAttribute("y", "-12%");
+      f.setAttribute("width", "124%"); f.setAttribute("height", "124%");
+      var t = document.createElementNS(SVGNS, "feTurbulence");
+      t.setAttribute("type", "fractalNoise");
+      t.setAttribute("baseFrequency", spec[0]);
+      t.setAttribute("numOctaves", "2");
+      t.setAttribute("seed", spec[1]);
+      t.setAttribute("result", "n");
+      var d = document.createElementNS(SVGNS, "feDisplacementMap");
+      d.setAttribute("in", "SourceGraphic");
+      d.setAttribute("in2", "n");
+      d.setAttribute("scale", "2.4");
+      d.setAttribute("xChannelSelector", "R");
+      d.setAttribute("yChannelSelector", "G");
+      f.appendChild(t); f.appendChild(d);
+      defs.appendChild(f);
+    });
+    svg.appendChild(defs);
+    (document.body || document.documentElement).appendChild(svg);
+  }
+
+  /* name -> [seconds at normal speed, easing] */
+  var ANIM_IN = {
+    none: null,
+    draw: [1.15, "cubic-bezier(.5,0,.35,1)"],
+    write: [0.9, "steps(26, end)"],
+    fade: [0.55, "ease-out"],
+    rise: [0.7, "cubic-bezier(.2,.9,.3,1.25)"],
+    pop: [0.5, "cubic-bezier(.2,1.4,.4,1)"],
+    unfold: [0.85, "cubic-bezier(.25,.9,.3,1.1)"],
+    turnin: [0.9, "cubic-bezier(.2,.9,.3,1.05)"],
+    popup: [0.95, "cubic-bezier(.2,1.15,.35,1)"]
+  };
+  var ANIM_LOOP = {
+    none: null,
+    boil: [0.36, "step-end"],
+    bob: [3.2, "ease-in-out"],
+    sway: [5.5, "ease-in-out"],
+    turn: [9, "linear"],
+    pulse: [2.6, "ease-in-out"]
+  };
+
+  function applyAnim(node, el) {
+    var a = el.anim || {};
+    var into = ANIM_IN[a["in"]] ? a["in"] : "none";
+    var loop = ANIM_LOOP[a.loop] ? a.loop : "none";
+    var spd = a.spd > 0 ? Math.min(4, Math.max(0.25, a.spd)) : 1;
+    var delay = Math.min(10, Math.max(0, a.delay || 0));
+
+    node.dataset["in"] = into;
+    node.dataset.loop = loop;
+    /* The rotation the element already has, handed to the keyframes so a
+     * spin can happen to something that was drawn on a slant. */
+    node.style.setProperty("--rot", (el.rot || 0) + "deg");
+
+    var inSecs = 0;
+    if (into !== "none") {
+      var spec = ANIM_IN[into];
+      inSecs = spec[0] / spd;
+      /* The paths draw themselves on their own timer, in CSS, so it needs
+       * the same numbers the box is using. */
+      node.style.setProperty("--draw-secs", inSecs.toFixed(3) + "s");
+      node.style.setProperty("--draw-delay", delay.toFixed(2) + "s");
+      node.style.setProperty("--anim-in",
+        "chalk-in-" + into + " " + inSecs.toFixed(3) + "s " + spec[1] + " " +
+        delay.toFixed(2) + "s both");
+    } else {
+      node.style.removeProperty("--anim-in");
+    }
+
+    if (loop !== "none") {
+      var lspec = ANIM_LOOP[loop];
+      /* The loop waits for the entrance. Two animations touching the same
+       * property means the later one wins outright, so without the wait a
+       * bob would flatten the pop it was meant to follow. */
+      node.style.setProperty("--anim-loop",
+        "chalk-loop-" + loop + " " + (lspec[0] / spd).toFixed(3) + "s " +
+        lspec[1] + " " + (delay + inSecs).toFixed(3) + "s infinite");
+      if (loop === "boil") ensureBoil();
+    } else {
+      node.style.removeProperty("--anim-loop");
+    }
+
+    /* Playing it again: the counter changes, the animation is restarted. */
+    var n = Math.round(a.n || 0);
+    if (node.dataset.animN !== String(n)) {
+      node.dataset.animN = String(n);
+      if (into !== "none") {
+        node.style.animationName = "none";
+        void node.offsetWidth;
+        node.style.animationName = "";
+      }
+    }
   }
 
   /* ---- effects ------------------------------------------------------ */
@@ -284,6 +422,11 @@
     parts.forEach(function (part) {
       var p = document.createElementNS(SVGNS, "path");
       p.setAttribute("d", part.d);
+      /* Every path is one unit long as far as the dash array is concerned,
+       * so "draw yourself on" is one line of CSS and needs no measuring —
+       * which matters, because getTotalLength on twenty shapes at once is a
+       * layout stall on the projector. */
+      p.setAttribute("pathLength", "1");
       if (part.rule) p.setAttribute("fill-rule", part.rule);
 
       if (part.role === "line") {
@@ -384,9 +527,110 @@
       ((el.size || 0.035) * 0.8) + ")";
   }
 
+  /* A figure: a chalk drawing that arrives the way the thing itself would,
+   * and then puts its own labels up.
+   *
+   * The whole plate lives in one 300x190 viewBox — drawing in the middle,
+   * a gutter each side for the labels — so the leader lines are worked out
+   * once here and never collide, whatever the figure.
+   *
+   * The animation is entirely in CSS. This builds the nodes, hands the
+   * stylesheet its variables, and gets out of the way. The one thing it has
+   * to do in script is rebuild when `play` changes: a CSS animation will not
+   * run a second time on a node that has already finished it. */
+  function renderFigure(inner, el) {
+    var FIGS = global.ChalkFigures;
+    if (!FIGS) { inner.textContent = "figures not loaded"; return; }
+    var fig = FIGS.get(el.kind) || FIGS.get(FIGS.ids[0]);
+    if (!fig) return;
+
+    var V = FIGS.view;
+    var stamp = [el.kind, el.play, el.enter, fig.parts.length].join("|");
+    var root = inner.firstChild;
+
+    if (!root || root.dataset.stamp !== stamp) {
+      inner.textContent = "";
+      root = document.createElementNS(SVGNS, "svg");
+      root.setAttribute("viewBox", "0 0 " + V.w + " " + V.h);
+      root.setAttribute("preserveAspectRatio", "xMidYMid meet");
+      root.setAttribute("class", "chalk-figure");
+      root.dataset.stamp = stamp;
+
+      var art = document.createElementNS(SVGNS, "g");
+      art.setAttribute("class", "fig-art");
+      fig.parts.forEach(function (part) {
+        var path = document.createElementNS(SVGNS, "path");
+        path.setAttribute("d", part.d);
+        path.setAttribute("class", "fig-part " + (part.cls || ""));
+        art.appendChild(path);
+      });
+      root.appendChild(art);
+
+      var labels = document.createElementNS(SVGNS, "g");
+      labels.setAttribute("class", "fig-labels");
+      fig.labels.forEach(function (lab, i) {
+        var g = document.createElementNS(SVGNS, "g");
+        g.setAttribute("class", "fig-label");
+        g.style.setProperty("--i", i);
+        g.dataset.i = i;
+
+        var toX = lab.side === "l" ? V.gutterL + 10 : V.gutterR - 10;
+        var endX = lab.side === "l" ? V.gutterL + 2 : V.gutterR - 2;
+        var line = document.createElementNS(SVGNS, "path");
+        line.setAttribute("class", "fig-leader");
+        line.setAttribute("d", "M" + lab.at[0] + "," + lab.at[1] +
+          " L" + toX + "," + lab.y + " L" + endX + "," + lab.y);
+        g.appendChild(line);
+
+        var dot = document.createElementNS(SVGNS, "circle");
+        dot.setAttribute("class", "fig-dot");
+        dot.setAttribute("cx", lab.at[0]);
+        dot.setAttribute("cy", lab.at[1]);
+        dot.setAttribute("r", 2.4);
+        g.appendChild(dot);
+
+        var t = document.createElementNS(SVGNS, "text");
+        t.setAttribute("class", "fig-text");
+        t.setAttribute("x", lab.side === "l" ? V.gutterL : V.gutterR);
+        t.setAttribute("y", lab.y);
+        t.setAttribute("text-anchor", lab.side === "l" ? "end" : "start");
+        t.setAttribute("dominant-baseline", "middle");
+        t.textContent = lab.t;
+        g.appendChild(t);
+
+        labels.appendChild(g);
+      });
+      root.appendChild(labels);
+      inner.appendChild(root);
+    }
+
+    root.dataset.enter = el.enter || fig.enter;
+    root.dataset.alive = el.alive === false ? "0" : "1";
+    root.dataset.ground = fig.ground ? "1" : "0";
+    root.style.setProperty("--speed", el.speed || 1);
+    root.style.setProperty("--ink", el.stroke || el.color || "#ffffff");
+    root.style.setProperty("--accent", el.accent || "#d9a441");
+    root.style.setProperty("--sw", (el.strokeW == null ? 2 : el.strokeW));
+    root.style.setProperty("--label-size", (el.size || 0.026) * 380);
+    root.style.setProperty("--label-color", el.color || "#ffffff");
+    root.style.setProperty("--fig-font", FONTS[el.font] || FONTS.sans);
+    /* Turning it round is a rotation, so the labels have to be turned back
+     * or they read backwards from the far side of the room. */
+    root.dataset.flip = el.flip ? "1" : "0";
+
+    /* The picker hands this back as a string, so the number has to be made
+     * one before -1 can mean "all of them". */
+    var want = Number(el.show);
+    var upTo = want === -1 ? fig.labels.length : (want > 0 ? want : 0);
+    var list = root.querySelectorAll(".fig-label");
+    for (var i = 0; i < list.length; i++) {
+      list[i].dataset.on = i < upTo ? "1" : "0";
+    }
+  }
+
   var RENDER = {
     text: renderText, image: renderImage, shape: renderShape,
-    freeform: renderFreeform, card: renderCard
+    freeform: renderFreeform, card: renderCard, figure: renderFigure
   };
 
   /* ---- layer -------------------------------------------------------- */
@@ -410,6 +654,16 @@
 
   /* Text size is a fraction of board height, so the layer publishes its own
    * height as a CSS variable and font sizes follow it for free. */
+  /* Nothing animates while it is being dragged. An element that bobs as you
+   * line its corner up with a gridline is an element you cannot place. */
+  Layer.prototype.setEditing = function (id) {
+    var self = this;
+    Object.keys(this.nodes).forEach(function (key) {
+      if (key === id) self.nodes[key].dataset.editing = "1";
+      else delete self.nodes[key].dataset.editing;
+    });
+  };
+
   Layer.prototype.resize = function () {
     var r = this.host.getBoundingClientRect();
     this.W = r.width; this.H = r.height;
@@ -549,6 +803,7 @@
     /* Effects land on the inner node so the outer box keeps clean geometry for
      * dragging and handles; blend needs the outer node to have a backdrop. */
     applyFx(inner, el.fx);
+    applyAnim(node, el);
     if (el.fx && el.fx.blend && el.fx.blend !== "normal") {
       node.style.mixBlendMode = el.fx.blend;
       inner.style.mixBlendMode = "";

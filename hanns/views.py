@@ -527,6 +527,9 @@ def _deck_html_response(deck):
     css = _read_static("hanns/css/hanns.css")
     rich_css = _read_static("hanns/css/hanns_rich_data.css")
     core_js = _read_static("hanns/js/hanns_core.js")
+    # Actors must travel with the deck or every character in it degrades to
+    # a count grid in the downloaded file.
+    actors_js = _read_static("hanns/js/hanns_actors.js")
 
     if not core_js:
         return HttpResponseBadRequest(
@@ -537,6 +540,7 @@ def _deck_html_response(deck):
     css_combined = (css or "") + "\n\n" + (rich_css or "")
     html = export_deck_to_html(
         deck, css_text=css_combined, core_js_text=core_js,
+        actors_js_text=actors_js,
     )
 
     from django.http import HttpResponse

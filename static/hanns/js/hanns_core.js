@@ -644,6 +644,22 @@ const BG_FX = [
 
 /* ── creative object library: Canva-like visual data objects ─────── */
 const OBJECTS = [
+    {"kind": "fill_cow", "label": "Cow fill", "icon": "🐄", "count": 1, "level": 62, "w": 230, "h": 300, "accent": "#8b5a2b", "fill": true, "shape": "cow", "help": "Cow \u2014 fills to a percentage"},
+    {"kind": "fill_pig", "label": "Pig fill", "icon": "🐖", "count": 1, "level": 62, "w": 230, "h": 300, "accent": "#e8829b", "fill": true, "shape": "pig", "help": "Pig \u2014 fills to a percentage"},
+    {"kind": "fill_goat", "label": "Goat fill", "icon": "🐐", "count": 1, "level": 62, "w": 230, "h": 300, "accent": "#a1785a", "fill": true, "shape": "goat", "help": "Goat \u2014 fills to a percentage"},
+    {"kind": "fill_sheep", "label": "Sheep fill", "icon": "🐑", "count": 1, "level": 62, "w": 230, "h": 300, "accent": "#8fa3b8", "fill": true, "shape": "sheep", "help": "Sheep \u2014 fills to a percentage"},
+    {"kind": "fill_chicken", "label": "Chicken fill", "icon": "🐔", "count": 1, "level": 62, "w": 230, "h": 300, "accent": "#d97706", "fill": true, "shape": "chicken", "help": "Chicken \u2014 fills to a percentage"},
+    {"kind": "fill_human", "label": "Person fill", "icon": "🧍", "count": 1, "level": 62, "w": 230, "h": 300, "accent": "#2563eb", "fill": true, "shape": "human", "help": "Person \u2014 fills to a percentage"},
+    {"kind": "fill_heart", "label": "Heart fill", "icon": "❤️", "count": 1, "level": 62, "w": 230, "h": 300, "accent": "#dc2626", "fill": true, "shape": "heart", "help": "Heart \u2014 fills to a percentage"},
+    {"kind": "fill_lightbulb", "label": "Light bulb fill", "icon": "💡", "count": 1, "level": 62, "w": 230, "h": 300, "accent": "#f59e0b", "fill": true, "shape": "lightbulb", "help": "Light bulb \u2014 fills to a percentage"},
+    {"kind": "fill_tree", "label": "Tree fill", "icon": "🌲", "count": 1, "level": 62, "w": 230, "h": 300, "accent": "#16a34a", "fill": true, "shape": "tree", "help": "Tree \u2014 fills to a percentage"},
+    {"kind": "fill_house", "label": "House fill", "icon": "🏠", "count": 1, "level": 62, "w": 230, "h": 300, "accent": "#0d9488", "fill": true, "shape": "house", "help": "House \u2014 fills to a percentage"},
+    {"kind": "fill_droplet", "label": "Water drop fill", "icon": "💧", "count": 1, "level": 62, "w": 230, "h": 300, "accent": "#0284c7", "fill": true, "shape": "droplet", "help": "Water drop \u2014 fills to a percentage"},
+    {"kind": "fill_car", "label": "Car fill", "icon": "🚗", "count": 1, "level": 62, "w": 230, "h": 300, "accent": "#ef4444", "fill": true, "shape": "car", "help": "Car \u2014 fills to a percentage"},
+    {"kind": "fill_trophy", "label": "Trophy fill", "icon": "🏆", "count": 1, "level": 62, "w": 230, "h": 300, "accent": "#ca8a04", "fill": true, "shape": "trophy", "help": "Trophy \u2014 fills to a percentage"},
+    {"kind": "fill_factory", "label": "Factory fill", "icon": "🏭", "count": 1, "level": 62, "w": 230, "h": 300, "accent": "#64748b", "fill": true, "shape": "factory", "help": "Factory \u2014 fills to a percentage"},
+    {"kind": "fill_leaf", "label": "Leaf fill", "icon": "🍃", "count": 1, "level": 62, "w": 230, "h": 300, "accent": "#22c55e", "fill": true, "shape": "leaf", "help": "Leaf \u2014 fills to a percentage"},
+    {"kind": "fill_fuel", "label": "Fuel can fill", "icon": "⛽", "count": 1, "level": 62, "w": 230, "h": 300, "accent": "#f97316", "fill": true, "shape": "fuel", "help": "Fuel can \u2014 fills to a percentage"},
   {
     "kind": "water_glass",
     "label": "Water glass",
@@ -7294,6 +7310,30 @@ const VESSEL_PATHS = {
   beer:   "M20 7 L80 7 L71 136 L29 136 Z",
   coffee: "M20 22 L80 22 L71 136 L29 136 Z",
   bar:    "M16 6 L84 6 L84 134 L16 134 Z",
+
+  /* ── silhouettes ──────────────────────────────────────────────
+     Same clip-and-fill trick as the glasses, but the shape is the
+     subject: a herd figure that fills to 62% says "62% of the herd"
+     far faster than a bar does. Composed from overlapping primitives
+     (body, head, ears, legs) rather than one traced outline, so they
+     stay editable. Every subpath winds the same way — mixed winding
+     cancels under the nonzero fill rule and punches holes. */
+  cow: "M36 46 H72 A16 16 0 0 1 88 62 V80 A16 16 0 0 1 72 96 H36 A16 16 0 0 1 20 80 V62 A16 16 0 0 1 36 46 Z M-1 78 A16 17 0 1 1 31 78 A16 17 0 1 1 -1 78 Z M-1 89 A9 7 0 1 1 17 89 A9 7 0 1 1 -1 89 Z M2 62 L16 70 L0 74 Z M10 62 C4 54 4 44 10 44 C13 44 13 52 16 60 Z M22 60 C24 50 30 44 34 48 C37 51 30 54 27 62 Z M36 96 A16 8 0 1 1 68 96 A16 8 0 1 1 36 96 Z M28 94 H34 A2 2 0 0 1 36 96 V122 A2 2 0 0 1 34 124 H28 A2 2 0 0 1 26 122 V96 A2 2 0 0 1 28 94 Z M44 94 H50 A2 2 0 0 1 52 96 V122 A2 2 0 0 1 50 124 H44 A2 2 0 0 1 42 122 V96 A2 2 0 0 1 44 94 Z M62 94 H68 A2 2 0 0 1 70 96 V122 A2 2 0 0 1 68 124 H62 A2 2 0 0 1 60 122 V96 A2 2 0 0 1 62 94 Z M76 94 H82 A2 2 0 0 1 84 96 V122 A2 2 0 0 1 82 124 H76 A2 2 0 0 1 74 122 V96 A2 2 0 0 1 76 94 Z M86 52 C96 58 96 78 88 86 L82 82 C88 76 88 62 80 58 Z",
+  pig: "M40 50 H70 A20 20 0 0 1 90 70 V76 A20 20 0 0 1 70 96 H40 A20 20 0 0 1 20 76 V70 A20 20 0 0 1 40 50 Z M84 66 A10 10 0 1 1 104 66 A10 10 0 1 1 84 66 Z M78 44 L88 56 L70 54 Z M60 42 L70 56 L52 54 Z M30 94 H36 A2 2 0 0 1 38 96 V118 A2 2 0 0 1 36 120 H30 A2 2 0 0 1 28 118 V96 A2 2 0 0 1 30 94 Z M48 94 H54 A2 2 0 0 1 56 96 V118 A2 2 0 0 1 54 120 H48 A2 2 0 0 1 46 118 V96 A2 2 0 0 1 48 94 Z M64 94 H70 A2 2 0 0 1 72 96 V118 A2 2 0 0 1 70 120 H64 A2 2 0 0 1 62 118 V96 A2 2 0 0 1 64 94 Z M80 94 H86 A2 2 0 0 1 88 96 V118 A2 2 0 0 1 86 120 H80 A2 2 0 0 1 78 118 V96 A2 2 0 0 1 80 94 Z M18 60 C10 62 8 74 16 78 L18 72 C14 70 15 65 20 66 Z",
+  goat: "M38 50 H74 A14 14 0 0 1 88 64 V80 A14 14 0 0 1 74 94 H38 A14 14 0 0 1 24 80 V64 A14 14 0 0 1 38 50 Z M2 74 A14 15 0 1 1 30 74 A14 15 0 1 1 2 74 Z M2 86 A8 6 0 1 1 18 86 A8 6 0 1 1 2 86 Z M14 56 C10 44 18 32 30 30 C34 30 34 36 30 37 C21 39 17 47 20 58 Z M24 54 C22 44 30 36 40 35 C44 35 44 41 40 42 C33 43 29 48 30 56 Z M4 84 C0 92 2 102 6 100 C9 98 6 92 8 86 Z M32 92 H37 A2 2 0 0 1 39 94 V118 A2 2 0 0 1 37 120 H32 A2 2 0 0 1 30 118 V94 A2 2 0 0 1 32 92 Z M48 92 H53 A2 2 0 0 1 55 94 V118 A2 2 0 0 1 53 120 H48 A2 2 0 0 1 46 118 V94 A2 2 0 0 1 48 92 Z M64 92 H69 A2 2 0 0 1 71 94 V118 A2 2 0 0 1 69 120 H64 A2 2 0 0 1 62 118 V94 A2 2 0 0 1 64 92 Z M78 92 H83 A2 2 0 0 1 85 94 V118 A2 2 0 0 1 83 120 H78 A2 2 0 0 1 76 118 V94 A2 2 0 0 1 78 92 Z M90 50 L98 58 L86 60 Z",
+  sheep: "M18 64 A32 24 0 1 1 82 64 A32 24 0 1 1 18 64 Z M12 54 A18 16 0 1 1 48 54 A18 16 0 1 1 12 54 Z M52 54 A18 16 0 1 1 88 54 A18 16 0 1 1 52 54 Z M30 46 A20 17 0 1 1 70 46 A20 17 0 1 1 30 46 Z M67 78 A13 14 0 1 1 93 78 A13 14 0 1 1 67 78 Z M92 66 L100 76 L86 74 Z M34 86 H39 A2 2 0 0 1 41 88 V114 A2 2 0 0 1 39 116 H34 A2 2 0 0 1 32 114 V88 A2 2 0 0 1 34 86 Z M50 86 H55 A2 2 0 0 1 57 88 V114 A2 2 0 0 1 55 116 H50 A2 2 0 0 1 48 114 V88 A2 2 0 0 1 50 86 Z M64 86 H69 A2 2 0 0 1 71 88 V114 A2 2 0 0 1 69 116 H64 A2 2 0 0 1 62 114 V88 A2 2 0 0 1 64 86 Z M76 86 H81 A2 2 0 0 1 83 88 V114 A2 2 0 0 1 81 116 H76 A2 2 0 0 1 74 114 V88 A2 2 0 0 1 76 86 Z",
+  chicken: "M20 72 A26 26 0 1 1 72 72 A26 26 0 1 1 20 72 Z M49 44 A15 15 0 1 1 79 44 A15 15 0 1 1 49 44 Z M80 42 L92 48 L80 54 Z M55 28 A5 6 0 1 1 65 28 A5 6 0 1 1 55 28 Z M64 26 A5 6 0 1 1 74 26 A5 6 0 1 1 64 26 Z M62 58 A4 5 0 1 1 70 58 A4 5 0 1 1 62 58 Z M20 60 C6 52 4 76 18 84 L26 74 Z M45 96 H48 A1 1 0 0 1 49 97 V117 A1 1 0 0 1 48 118 H45 A1 1 0 0 1 44 117 V97 A1 1 0 0 1 45 96 Z M57 96 H60 A1 1 0 0 1 61 97 V117 A1 1 0 0 1 60 118 H57 A1 1 0 0 1 56 117 V97 A1 1 0 0 1 57 96 Z M38 116 H54 A2 2 0 0 1 56 118 V119 A2 2 0 0 1 54 121 H38 A2 2 0 0 1 36 119 V118 A2 2 0 0 1 38 116 Z M50 116 H66 A2 2 0 0 1 68 118 V119 A2 2 0 0 1 66 121 H50 A2 2 0 0 1 48 119 V118 A2 2 0 0 1 50 116 Z",
+  human: "M37 20 A13 13 0 1 1 63 20 A13 13 0 1 1 37 20 Z M38 38 H62 C70 38 76 44 77 52 L81 84 L70 87 L67 66 L67 134 H56 L53 98 H47 L44 134 H33 V66 L30 87 L19 84 L23 52 C24 44 30 38 38 38 Z",
+  heart: "M50 126 C22 104 8 84 8 58 C8 40 21 28 36 28 C43 28 48 32 50 38 C52 32 57 28 64 28 C79 28 92 40 92 58 C92 84 78 104 50 126 Z",
+  lightbulb: "M50 8 C68 8 82 22 82 40 C82 54 74 62 70 70 C67 76 66 82 66 88 H34 C34 82 33 76 30 70 C26 62 18 54 18 40 C18 22 32 8 50 8 Z M37 94 H63 A3 3 0 0 1 66 97 V99 A3 3 0 0 1 63 102 H37 A3 3 0 0 1 34 99 V97 A3 3 0 0 1 37 94 Z M37 106 H63 A3 3 0 0 1 66 109 V111 A3 3 0 0 1 63 114 H37 A3 3 0 0 1 34 111 V109 A3 3 0 0 1 37 106 Z M40 118 H60 L56 130 H44 Z",
+  tree: "M50 6 L74 46 H62 L84 84 H60 V132 H40 V84 H16 L38 46 H26 Z",
+  house: "M50 8 L94 48 H82 V126 H18 V48 H6 Z",
+  droplet: "M50 6 C50 6 84 52 84 82 C84 104 68 122 50 122 C32 122 16 104 16 82 C16 52 50 6 50 6 Z",
+  car: "M8 88 L12 66 C14 58 20 52 30 50 L38 34 C40 28 46 26 52 26 L70 26 C78 26 84 30 86 38 L90 54 C94 58 94 64 94 72 L94 92 H82 A10 10 0 0 0 62 92 H40 A10 10 0 0 0 20 92 H8 Z",
+  trophy: "M28 12 H72 V38 C72 56 64 68 56 72 V96 H68 V110 H32 V96 H44 V72 C36 68 28 56 28 38 Z M26 18 H14 V36 C14 46 20 52 28 54 V44 C24 42 22 38 22 32 V26 H26 Z M74 18 H86 V36 C86 46 80 52 72 54 V44 C76 42 78 38 78 32 V26 H74 Z",
+  factory: "M8 130 V64 L34 80 V64 L60 80 V44 H92 L94 130 Z",
+  leaf: "M50 6 C86 22 92 62 74 92 C62 112 50 122 50 130 C50 122 38 112 26 92 C8 62 14 22 50 6 Z",
+  fuel: "M26 34 H66 A10 10 0 0 1 76 44 V120 A10 10 0 0 1 66 130 H26 A10 10 0 0 1 16 120 V44 A10 10 0 0 1 26 34 Z M33 16 H59 A5 5 0 0 1 64 21 V31 A5 5 0 0 1 59 36 H33 A5 5 0 0 1 28 31 V21 A5 5 0 0 1 33 16 Z M78 52 H88 V96 C88 104 80 106 78 100 V60 H78 Z",
 };
 /* The liquid only occupies a shape's interior, which is not the full box
    (a wine bowl is just the top half). {top,bottom} are the y-bounds of the
@@ -7304,7 +7344,28 @@ const FILL_BOUNDS = {
   beer:   {top:10, bottom:134},
   coffee: {top:24, bottom:134},
   bar:    {top:9,  bottom:131},
+  cow: {top:46, bottom:124},
+  pig: {top:44, bottom:120},
+  goat: {top:36, bottom:120},
+  sheep: {top:30, bottom:116},
+  chicken: {top:22, bottom:121},
+  human: {top:8, bottom:134},
+  heart: {top:30, bottom:124},
+  lightbulb: {top:10, bottom:128},
+  tree: {top:8, bottom:130},
+  house: {top:10, bottom:124},
+  droplet: {top:8, bottom:120},
+  car: {top:28, bottom:100},
+  trophy: {top:14, bottom:108},
+  factory: {top:46, bottom:128},
+  leaf: {top:8, bottom:128},
+  fuel: {top:18, bottom:128},
 };
+/* Glassware may stretch to whatever box it is drawn in; a cow may not.
+   Silhouettes also skip the rising bubbles, which only make sense in a
+   liquid. */
+const SILHOUETTE_SHAPES = new Set(["cow", "pig", "goat", "sheep", "chicken", "human", "heart", "lightbulb", "tree", "house", "droplet", "car", "trophy", "factory", "leaf", "fuel"]);
+
 function isFillKind(kind){
   const d=objectDef(kind);
   return !!d.fill || kind==="water_glass" || kind==="sand_glass";
@@ -7330,19 +7391,20 @@ function renderVessel(el,shape){
   const fillH=(b.bottom-surfY);                          // visible column height
   const surfFrac=((140-surfY)/140*100).toFixed(2);       // surface as % from box bottom
   const bubRise=(-fillH*0.62).toFixed(1);
+  const sil=SILHOUETTE_SHAPES.has(shape);
   const wrap=document.createElement("div");
-  wrap.className="object-vessel vessel-"+shape;
+  wrap.className="object-vessel vessel-"+shape+(sil?" vessel-silhouette":"");
   wrap.style.setProperty("--level", surfFrac+"%");        // drives the HTML number overlay
   wrap.style.setProperty("--accent", accent);
   wrap.style.setProperty("--bub-rise", bubRise+"px");
   wrap.style.setProperty("--fill-origin", b.bottom.toFixed(0)+"px");
-  const bubbles = lvl>12
+  const bubbles = (lvl>12 && !sil)
     ? `<circle class="v-bub b1" cx="36" cy="${(b.bottom-4).toFixed(0)}" r="2.2"/>`+
       `<circle class="v-bub b2" cx="56" cy="${(b.bottom-2).toFixed(0)}" r="1.5"/>`+
       `<circle class="v-bub b3" cx="68" cy="${(b.bottom-5).toFixed(0)}" r="2.7"/>`
     : "";
   wrap.innerHTML=
-    `<svg class="vessel-svg" viewBox="0 0 100 140" preserveAspectRatio="none">`+
+    `<svg class="vessel-svg" viewBox="0 0 100 140" preserveAspectRatio="${sil?"xMidYMid meet":"none"}">`+
       `<defs><clipPath id="${cid}"><path d="${path}"/></clipPath></defs>`+
       `<path class="v-glass" d="${path}"/>`+
       `<g clip-path="url(#${cid})">`+
@@ -9177,6 +9239,222 @@ function renderSpeedometer(el){
   return box;
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   24. LIGHT BULB — comes on in proportion to the value
+   ────────────────────────────────────────────────────────────────────
+   Not a fill: the bulb BRIGHTENS. Filament heat, glass glow and the length
+   of the rays all scale with the number, so 30% reads as a dim bulb and
+   95% as one you would squint at. Above `onAt` it flicks on with a little
+   surge, the way a real one does.
+   ════════════════════════════════════════════════════════════════════ */
+function renderLightBulb(el){
+  const box=div("hs-box hs-bulbbox"+(el.dark?" hs-dark":"")+(el.hideContainer?" hs-bare":""));
+  const r=rows(el)[0]||{label:"",value:num(el.level,72)};
+  const lo=num(el.scaleMin,0), hi=num(el.scaleMax,100);
+  const t=hsClamp((r.value-lo)/Math.max(1e-9,hi-lo),0,1);
+  const on = t*100 >= num(el.onAt,1);
+  const glass=el.accent||"#f59e0b";
+  const running=el.objAnim!==false;
+  box.style.setProperty("--accent",glass);
+  box.style.setProperty("--lit",t.toFixed(3));
+  box.classList.toggle("is-on",on);
+  if(running)box.classList.add("bulb-live");
+
+  const S=svg("svg",{viewBox:"0 0 160 210",preserveAspectRatio:"xMidYMid meet",class:"hs-svg"});
+  // rays, length by brightness
+  const rays=svg("g",{class:"bulb-rays"});
+  for(let i=0;i<8;i++){
+    const a=(i/8)*Math.PI*2-Math.PI/2;
+    const r0=54, r1=54+10+t*26;
+    rays.appendChild(svg("line",{
+      x1:80+Math.cos(a)*r0, y1:72+Math.sin(a)*r0,
+      x2:80+Math.cos(a)*r1, y2:72+Math.sin(a)*r1,
+      stroke:glass,"stroke-width":4,"stroke-linecap":"round",
+      opacity:(0.08+t*0.85).toFixed(2), style:`--i:${i}`}));
+  }
+  S.appendChild(rays);
+  S.appendChild(svg("circle",{cx:80,cy:72,r:46+t*10,fill:glass,
+    opacity:(t*0.30).toFixed(3),class:"bulb-halo"}));
+  // glass
+  S.appendChild(svg("path",{class:"bulb-glass",
+    d:"M80 16 C104 16 122 34 122 58 C122 76 111 87 105 97 C101 105 100 112 100 120 H60 C60 112 59 105 55 97 C49 87 38 76 38 58 C38 34 56 16 80 16 Z",
+    fill:glass, opacity:(0.09+t*0.80).toFixed(3),
+    stroke:el.dark?"rgba(255,255,255,.45)":"rgba(15,23,42,.45)","stroke-width":3}));
+  // filament — brightens and, when live, flickers a touch
+  S.appendChild(svg("path",{class:"bulb-filament",
+    d:"M68 96 L68 74 C68 64 74 60 80 66 C86 72 92 68 92 58 L92 96",
+    fill:"none",stroke:on?"#fff7cc":"#94a3b8","stroke-width":3.4,"stroke-linecap":"round",
+    opacity:(0.35+t*0.65).toFixed(2)}));
+  // cap
+  const cap=el.dark?"#cbd5e1":"#475569";
+  S.appendChild(svg("rect",{x:60,y:122,width:40,height:10,rx:4,fill:cap}));
+  S.appendChild(svg("rect",{x:60,y:136,width:40,height:10,rx:4,fill:cap}));
+  S.appendChild(svg("path",{d:"M64 150 H96 L90 168 H70 Z",fill:cap}));
+
+  if(el.showValues!==false){
+    S.appendChild(svgText(80,196,fmtNum(r.value,el),
+      {"text-anchor":"middle","font-size":34,"font-weight":900,
+       fill:el.dark?"#f1f5f9":"#0f172a"}));
+  }
+  box.appendChild(S);
+  if(r.label) box.appendChild(div("hs-glass-cap",r.label));
+  return box;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   25. JOURNEY — a vehicle travels the track to the value
+   ────────────────────────────────────────────────────────────────────
+   "68% of the way there" as distance covered. The vehicle sits at the
+   value, the track behind it is filled, and on reveal it drives, flies or
+   climbs from the start line to its mark.
+   ════════════════════════════════════════════════════════════════════ */
+const JOURNEY_VEHICLES={
+  car:    {icon:"🚗", arc:false, path:"M2 26 L6 14 C8 8 12 5 18 5 L34 5 C40 5 44 8 47 14 L52 22 C57 24 60 28 60 33 L60 40 H52 A7 7 0 0 0 38 40 H24 A7 7 0 0 0 10 40 H2 Z M18 12 H32 L36 22 H14 Z"},
+  plane:  {icon:"✈️", arc:true,  path:"M2 30 L26 26 L40 6 L50 6 L44 24 L60 22 L66 14 L72 14 L68 26 L78 26 L78 34 L68 34 L72 46 L66 46 L60 38 L44 36 L50 54 L40 54 L26 34 Z"},
+  rocket: {icon:"🚀", arc:true,  path:"M40 2 C54 12 60 28 60 44 L60 52 H20 V44 C20 28 26 12 40 2 Z M20 44 L6 58 L20 56 Z M60 44 L74 58 L60 56 Z M32 56 H48 L40 74 Z"},
+  runner: {icon:"🏃", arc:false, path:"M46 6 A8 8 0 1 1 46 22 A8 8 0 1 1 46 6 Z M30 26 L48 24 C54 24 58 28 60 34 L68 44 L62 50 L52 42 L48 54 L60 68 L54 74 L38 60 L26 70 L18 64 L30 50 L26 36 L14 42 L10 34 Z"},
+  ship:   {icon:"🚢", arc:false, path:"M36 2 H44 V30 H70 L44 44 V30 H36 V44 L10 30 H36 Z M4 48 H76 L68 66 H12 Z"},
+  bike:   {icon:"🚲", arc:false, path:"M18 34 A14 14 0 1 0 18 62 A14 14 0 1 0 18 34 Z M62 34 A14 14 0 1 0 62 62 A14 14 0 1 0 62 34 Z M18 48 L34 24 H50 L62 48 M34 24 L44 48 M28 22 H40"},
+};
+function renderJourney(el){
+  const box=div("hs-box hs-journeybox"+(el.dark?" hs-dark":"")+(el.hideContainer?" hs-bare":""));
+  const r=rows(el)[0]||{label:"",value:num(el.level,68)};
+  const lo=num(el.scaleMin,0), hi=num(el.scaleMax,100);
+  const t=hsClamp((r.value-lo)/Math.max(1e-9,hi-lo),0,1);
+  const key=JOURNEY_VEHICLES[el.vehicle]?el.vehicle:"car";
+  const V=JOURNEY_VEHICLES[key];
+  const accent=el.accent||"#0d9488";
+  const running=el.objAnim!==false;
+  box.style.setProperty("--accent",accent);
+  box.style.setProperty("--journey",(t*100).toFixed(2)+"%");
+
+  const VW=1000, VH=Math.round(1000*hsClamp(num(el.h,240)/Math.max(1,num(el.w,700)),.22,.7));
+  const S=svg("svg",{viewBox:`0 0 ${VW} ${VH}`,preserveAspectRatio:"xMidYMid meet",class:"hs-svg"});
+  const M=70, x0=M, x1=VW-M, span=x1-x0;
+  const trackY=VH*(V.arc?0.74:0.70);
+  const stops=rampFor(el);
+
+  // track
+  S.appendChild(svg("line",{x1:x0,y1:trackY,x2:x1,y2:trackY,
+    stroke:el.dark?"rgba(255,255,255,.16)":"rgba(15,23,42,.12)","stroke-width":10,"stroke-linecap":"round"}));
+  const g=svg("g",{class:running?"journey-fill":""});
+  g.appendChild(svg("line",{x1:x0,y1:trackY,x2:x0+span*t,y2:trackY,
+    stroke:accent,"stroke-width":10,"stroke-linecap":"round"}));
+  S.appendChild(g);
+  // milestones
+  const ticks=hsClamp(num(el.ticks,5),0,11);
+  for(let i=0;i<ticks;i++){
+    const f=i/(ticks-1||1), tx=x0+span*f;
+    S.appendChild(svg("line",{x1:tx,y1:trackY+14,x2:tx,y2:trackY+26,
+      stroke:el.dark?"rgba(255,255,255,.28)":"rgba(15,23,42,.22)","stroke-width":3,"stroke-linecap":"round"}));
+    if(el.showScale!==false)
+      S.appendChild(svgText(tx,trackY+50,fmtNum(lo+(hi-lo)*f,el),
+        {"text-anchor":"middle","font-size":20,"font-weight":700,
+         fill:el.dark?"#94a3b8":"#5b7183"}));
+  }
+  // finish flag
+  S.appendChild(svg("rect",{x:x1-3,y:trackY-64,width:5,height:64,rx:2,
+    fill:el.dark?"#e2e8f0":"#334155"}));
+  for(let rr2=0;rr2<3;rr2++)for(let c=0;c<2;c++)
+    S.appendChild(svg("rect",{x:x1+2+c*13,y:trackY-62+rr2*13,width:13,height:13,
+      fill:((rr2+c)%2)?(el.dark?"#0b1220":"#ffffff"):accent}));
+
+  // the vehicle, parked on its value
+  const scale=num(el.vehicleScale,1)*(VH/260);
+  const vx=x0+span*t, arcLift=V.arc?Math.sin(Math.PI*t)*VH*0.20:0;
+  const vg=svg("g",{class:"journey-vehicle"+(running?" journey-live":"")});
+  vg.setAttribute("transform",
+    `translate(${(vx-40*scale).toFixed(1)},${(trackY-14-70*scale-arcLift).toFixed(1)}) scale(${scale.toFixed(3)})`);
+  vg.appendChild(svg("path",{d:V.path,fill:r.color||accent,
+    stroke:key==="bike"?(r.color||accent):"none","stroke-width":key==="bike"?6:0,
+    "stroke-linecap":"round","fill-opacity":key==="bike"?0:1}));
+  S.appendChild(vg);
+  // speed lines behind it
+  if(el.speedLines!==false && t>0.06){
+    for(let i=0;i<3;i++)
+      S.appendChild(svg("line",{x1:vx-70-i*26,y1:trackY-34-i*16,x2:vx-24-i*26,y2:trackY-34-i*16,
+        stroke:accent,opacity:.42-i*.1,"stroke-width":6,"stroke-linecap":"round",
+        class:running?"journey-whoosh":"",style:`--i:${i}`}));
+  }
+  if(el.showValues!==false)
+    S.appendChild(svgText(vx,trackY-16-90*scale-arcLift,fmtNum(r.value,el),
+      {"text-anchor":"middle","font-size":40,"font-weight":900,
+       fill:el.dark?"#f1f5f9":"#0f172a"}));
+  if(el.title) S.appendChild(svgText(x0,44,el.title,
+    {"font-size":26,"font-weight":800,fill:el.dark?"#f1f5f9":"#0f172a",class:"hs-title"}));
+  box.appendChild(S);
+  if(r.label) box.appendChild(div("hs-glass-cap",r.label));
+  return box;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   26. PLANT GROWTH — grows out of the ground to the value
+   ────────────────────────────────────────────────────────────────────
+   Height is the number. Leaves are added in pairs as it grows, so a small
+   value is a seedling and a large one is a full stem — the shape carries
+   the reading before anybody looks at the figure.
+   ════════════════════════════════════════════════════════════════════ */
+function renderPlantGrowth(el){
+  const box=div("hs-box hs-plantbox"+(el.dark?" hs-dark":"")+(el.hideContainer?" hs-bare":""));
+  const r=rows(el)[0]||{label:"",value:num(el.level,64)};
+  const lo=num(el.scaleMin,0), hi=num(el.scaleMax,100);
+  const t=hsClamp((r.value-lo)/Math.max(1e-9,hi-lo),0,1);
+  const accent=el.accent||"#16a34a";
+  const soil=el.soilColor||(el.dark?"#3f2f1c":"#6f5533");
+  const running=el.objAnim!==false;
+  box.style.setProperty("--accent",accent);
+
+  const VW=260, VH=340;
+  const S=svg("svg",{viewBox:`0 0 ${VW} ${VH}`,preserveAspectRatio:"xMidYMid meet",class:"hs-svg"});
+  const groundY=VH-52, cx=VW/2;
+  const maxH=groundY-46, stemH=Math.max(8,maxH*t);
+
+  if(el.showPot!==false){
+    S.appendChild(svg("path",{d:`M${cx-64} ${groundY} H${cx+64} L${cx+50} ${VH-6} H${cx-50} Z`,fill:soil}));
+    S.appendChild(svg("rect",{x:cx-70,y:groundY-14,width:140,height:18,rx:6,
+      fill:soil,opacity:.85}));
+  } else {
+    S.appendChild(svg("rect",{x:16,y:groundY,width:VW-32,height:10,rx:5,fill:soil}));
+  }
+
+  const grow=svg("g",{class:running?"plant-grow":""});
+  grow.appendChild(svg("path",{d:`M${cx} ${groundY} C${cx-10} ${groundY-stemH*0.4} ${cx+10} ${groundY-stemH*0.7} ${cx} ${groundY-stemH}`,
+    fill:"none",stroke:accent,"stroke-width":9,"stroke-linecap":"round"}));
+
+  // A pair of leaves for roughly every 22% of full height.
+  const pairs=Math.max(1,Math.round(t*4.2));
+  for(let i=0;i<pairs;i++){
+    const f=(i+1)/(pairs+0.6);
+    const ly=groundY-stemH*f, sz=26+16*(1-f);
+    const left=i%2===0;
+    const dir=left?-1:1;
+    const leaf=svg("path",{
+      d:`M${cx} ${ly} C${cx+dir*sz*0.5} ${ly-sz*0.72} ${cx+dir*sz*1.5} ${ly-sz*0.5} ${cx+dir*sz*1.7} ${ly+sz*0.10} `+
+        `C${cx+dir*sz*1.2} ${ly+sz*0.62} ${cx+dir*sz*0.4} ${ly+sz*0.42} ${cx} ${ly} Z`,
+      fill:accent, opacity:.92, class:"plant-leaf", style:`--i:${i}`});
+    grow.appendChild(leaf);
+  }
+  // a bloom once it is nearly there
+  if(t>0.82){
+    const by=groundY-stemH;
+    for(let i=0;i<6;i++){
+      const a=(i/6)*Math.PI*2;
+      grow.appendChild(svg("ellipse",{cx:cx+Math.cos(a)*15,cy:by+Math.sin(a)*15,rx:11,ry:11,
+        fill:el.bloomColor||"#fbbf24",opacity:.95,class:"plant-bloom",style:`--i:${i}`}));
+    }
+    grow.appendChild(svg("circle",{cx,cy:by,r:9,fill:el.bloomCenter||"#f59e0b"}));
+  }
+  S.appendChild(grow);
+
+  if(el.showValues!==false)
+    S.appendChild(svgText(cx,34,fmtNum(r.value,el),
+      {"text-anchor":"middle","font-size":40,"font-weight":900,
+       fill:el.dark?"#f1f5f9":"#0f172a"}));
+  box.appendChild(S);
+  if(r.label) box.appendChild(div("hs-glass-cap",r.label));
+  return box;
+}
+
 const STUDIO = {
 
   choropleth:{
@@ -9421,6 +9699,37 @@ const STUDIO = {
           rows:[{label:"Capacity used",value:68}]},
     render:renderSpeedometer,
     fields:["ramp","accent","scaleRange","numfmt","showValues","objAnim","dark","grid"]
+  },
+
+  light_bulb:{
+    def:{kind:"light_bulb",label:"Light bulb (comes on)",icon:"💡",group:"Meters",w:250,h:320,accent:"#f59e0b",
+         help:"Brightens in proportion to the value — dim at 20%, blazing at 95%"},
+    seed:{scaleMin:0,scaleMax:100,onAt:1,showValues:true,decimals:0,valueSuffix:"%",
+          objAnim:true,showLabel:false,hideContainer:true,
+          rows:[{label:"Electrification rate",value:72}]},
+    render:renderLightBulb,
+    fields:["accent","scaleRange","bulbOpts","numfmt","showValues","objAnim","dark","grid"]
+  },
+
+  journey:{
+    def:{kind:"journey",label:"Journey to a number",icon:"🚗",group:"Meters",w:720,h:250,accent:"#0d9488",
+         help:"A car, plane or rocket travels the track to the value"},
+    seed:{vehicle:"car",vehicleScale:1.5,ticks:5,showScale:true,speedLines:true,title:"",
+          scaleMin:0,scaleMax:100,showValues:true,decimals:0,valueSuffix:"%",
+          objAnim:true,showLabel:false,hideContainer:true,
+          rows:[{label:"Progress to target",value:68}]},
+    render:renderJourney,
+    fields:["title","journeyOpts","accent","scaleRange","numfmt","showValues","objAnim","dark","grid"]
+  },
+
+  plant_growth:{
+    def:{kind:"plant_growth",label:"Plant growth",icon:"🌱",group:"Meters",w:280,h:360,accent:"#16a34a",
+         help:"Grows out of the ground to the value — seedling to bloom"},
+    seed:{scaleMin:0,scaleMax:100,showPot:true,showValues:true,decimals:0,valueSuffix:"%",
+          soilColor:"",bloomColor:"",objAnim:true,showLabel:false,hideContainer:true,
+          rows:[{label:"Reforestation target",value:64}]},
+    render:renderPlantGrowth,
+    fields:["accent","scaleRange","plantOpts","numfmt","showValues","objAnim","dark","grid"]
   },
 };
 

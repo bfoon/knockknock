@@ -2290,3 +2290,47 @@ body.hanns-options-open .drawer{
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .auto-dot{position:absolute;right:5px;top:5px;width:9px;height:9px;border-radius:999px;
   box-shadow:0 0 0 2px rgba(255,255,255,.55);}
+
+/* ── silhouette fills (cow, person, bulb, tree …) ────────────────────
+   Unlike glassware, the empty part of a silhouette has to read on its own,
+   so it is tinted with the accent rather than left near-transparent. */
+.vessel-silhouette .v-glass{fill:color-mix(in srgb,var(--accent,#4cc9f0) 20%,transparent);}
+.vessel-silhouette .v-outline{stroke:color-mix(in srgb,var(--accent,#4cc9f0) 55%,transparent);stroke-width:2;}
+.vessel-silhouette .v-surface{opacity:.55;}
+
+/* ── light bulb ── */
+.hs-bulbbox,.hs-journeybox,.hs-plantbox{align-items:center;justify-content:center;container-type:inline-size;}
+.hs-bulbbox .bulb-halo{transition:r .5s ease,opacity .5s ease;}
+.bulb-live.is-on .bulb-filament{animation:bulbFlicker 4.5s ease-in-out infinite;}
+.bulb-live.is-on .bulb-rays line{animation:bulbRay 3.2s ease-in-out infinite;
+  animation-delay:calc(var(--i,0)*90ms);transform-box:fill-box;transform-origin:center;}
+.bulb-live.is-on .bulb-halo{animation:bulbHalo 3.6s ease-in-out infinite;}
+@keyframes bulbFlicker{0%,100%{opacity:1}47%{opacity:1}49%{opacity:.72}51%{opacity:1}}
+@keyframes bulbRay{0%,100%{opacity:var(--o,.7);transform:scale(1)}50%{transform:scale(1.09)}}
+@keyframes bulbHalo{0%,100%{opacity:.9}50%{opacity:1.25}}
+/* The bulb should look switched on the moment the slide arrives, not fade in. */
+.present .hs-bulbbox.is-on .bulb-glass{animation:bulbOn .9s cubic-bezier(.22,1,.36,1) both;}
+@keyframes bulbOn{0%{opacity:.12}60%{opacity:1}100%{opacity:inherit}}
+
+/* ── journey ── */
+.present .journey-fill line{animation:journeyRun 1.4s cubic-bezier(.3,.9,.3,1) both;
+  transform-box:fill-box;transform-origin:left center;}
+@keyframes journeyRun{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.present .journey-live{animation:journeyDrive 1.4s cubic-bezier(.3,.9,.3,1) both;}
+@keyframes journeyDrive{from{opacity:0;transform:translateX(-90px)}to{opacity:1;transform:translateX(0)}}
+.present .journey-whoosh{animation:whoosh 1.1s ease-out both;animation-delay:calc(.9s + var(--i,0)*90ms);}
+@keyframes whoosh{from{opacity:0;transform:translateX(30px)}to{opacity:.4;transform:translateX(0)}}
+
+/* ── plant ── */
+.present .plant-grow{animation:plantGrow 1.5s cubic-bezier(.22,1,.36,1) both;
+  transform-box:view-box;transform-origin:50% 100%;}
+@keyframes plantGrow{from{transform:scaleY(.04)}to{transform:scaleY(1)}}
+.present .plant-leaf{animation:leafOut .6s cubic-bezier(.34,1.4,.5,1) both;
+  animation-delay:calc(.5s + var(--i,0)*160ms);transform-box:fill-box;transform-origin:center;}
+@keyframes leafOut{from{opacity:0;transform:scale(.2)}to{opacity:.92;transform:scale(1)}}
+.present .plant-bloom{animation:leafOut .5s cubic-bezier(.34,1.5,.5,1) both;
+  animation-delay:calc(1.2s + var(--i,0)*70ms);transform-box:fill-box;transform-origin:center;}
+@media (prefers-reduced-motion:reduce){
+  .bulb-live .bulb-filament,.bulb-live .bulb-rays line,.bulb-live .bulb-halo,
+  .journey-live,.journey-whoosh,.plant-grow,.plant-leaf,.plant-bloom{animation:none!important;}
+}

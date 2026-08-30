@@ -3787,6 +3787,28 @@ function studioFields(el,keys){
     out.push(hEl("div",{class:"hs-hint",
       text:"Each row is one wheel; its value is the tooth count. More teeth turn slower, and neighbours turn opposite ways."}));
   }
+  if(has("bulbOpts")){
+    out.push(hField("Switches on above",hNum(el,"onAt",0,100,1)));
+    out.push(hEl("div",{class:"hs-hint",
+      text:"Below this the bulb stays dark. Brightness, glow and ray length all scale with the value."}));
+  }
+  if(has("journeyOpts")){
+    out.push(hField("Vehicle",hSelect(el,"vehicle",[
+      {v:"car",l:"🚗 Car"},{v:"plane",l:"✈️ Plane"},{v:"rocket",l:"🚀 Rocket"},
+      {v:"runner",l:"🏃 Runner"},{v:"ship",l:"🚢 Ship"},{v:"bike",l:"🚲 Bicycle"}])));
+    out.push(hEl("div",{class:"row2"},[hField("Size",hNum(el,"vehicleScale",.4,2.5,.05)),
+                                       hField("Scale ticks",hNum(el,"ticks",0,11,1))]));
+    out.push(hEl("div",{class:"row2"},[hField("Scale numbers",hToggle(el,"showScale","Show","Hide",true)),
+                                       hField("Speed lines",hToggle(el,"speedLines","Show","Hide",true))]));
+    out.push(hEl("div",{class:"hs-hint",text:"Plane and rocket arc over the track; the rest run along it."}));
+  }
+  if(has("plantOpts")){
+    out.push(hField("Pot",hToggle(el,"showPot","Show","Ground only",true)));
+    out.push(hEl("div",{class:"row2"},[hField("Soil",hColor(el,"soilColor","#6f5533")),
+                                       hField("Bloom",hColor(el,"bloomColor","#fbbf24"))]));
+    out.push(hEl("div",{class:"hs-hint",
+      text:"Leaves are added as it grows, and it flowers past about 82%."}));
+  }
   if(has("batteryOpts")){
     out.push(hField("Orientation",hSelect(el,"orient",[{v:"horizontal",l:"Horizontal"},{v:"vertical",l:"Vertical"}])));
     out.push(hField("Charging",hToggle(el,"charging","Charging","Idle",false)));

@@ -50,6 +50,15 @@ import re
 
 # CDNs for the optional rich renderers (charts / maps). Kept identical to what
 # the live app uses so exported decks match.
+# The SAME Google Fonts request present.html makes. Without it every deck
+# fell back to system serif/sans, which is why an export rarely matched
+# the live stage: almost every theme is built on Fraunces, Archivo
+# Expanded, Anton, Bebas and friends. Fonts are the single biggest
+# visual difference between the two, ahead of anything structural.
+GOOGLE_FONTS_CSS = (
+    "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Archivo:wght@400;500;600;700;800&family=Archivo+Expanded:wght@600;700;800&family=Spline+Sans+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800;900&family=Manrope:wght@300;400;500;600;700;800&family=Poppins:wght@300;400;500;600;700;800;900&family=Montserrat:wght@300;400;500;600;700;800;900&family=Roboto:wght@300;400;500;700;900&family=Open+Sans:wght@300;400;500;600;700;800&family=Lato:wght@300;400;700;900&family=Nunito+Sans:wght@300;400;600;700;800;900&family=Raleway:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=DM+Serif+Display:ital@0;1&family=Bebas+Neue&family=Oswald:wght@300;400;500;600;700&family=Merriweather:wght@300;400;700;900&family=Libre+Baskerville:wght@400;700&family=Lora:ital,wght@0,400..700;1,400..700&family=Cormorant+Garamond:ital,wght@0,300..700;1,300..700&family=Space+Grotesk:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Barlow+Condensed:wght@300;400;500;600;700;800&family=Rubik:wght@300;400;500;600;700;800;900&family=Quicksand:wght@300;400;500;600;700&family=Sora:wght@300;400;500;600;700;800&family=Exo+2:wght@300;400;500;600;700;800;900&family=Ubuntu:wght@300;400;500;700&family=Work+Sans:wght@300;400;500;600;700;800;900&family=Noto+Sans:wght@300;400;500;600;700;800;900&family=Noto+Serif:wght@400;500;600;700;800;900&family=Source+Serif+4:opsz,wght@8..60,300..900&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Serif:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700;800&family=Fira+Code:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Cinzel:wght@400;500;600;700;800;900&family=Abril+Fatface&family=Anton&family=Pacifico&family=Caveat:wght@400;500;600;700&family=Permanent+Marker&family=Righteous&family=Kanit:wght@300;400;500;600;700;800;900&family=Lexend:wght@300;400;500;600;700;800;900&family=Urbanist:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap"
+)
+
 PLOTLY_CDN = "https://cdn.plot.ly/plotly-2.35.2.min.js"
 LEAFLET_CSS = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
 LEAFLET_JS = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
@@ -305,10 +314,22 @@ _PLAYER_JS = """
 
 _PAGE_CSS = """
   html, body { margin: 0; padding: 0; height: 100%; background: #0a0a0a; overflow: hidden; }
+  /* The viewport also carries .present, because 17 rules in hanns.css are
+     scoped to it — the entrance animations for bullet bars, ranked bars,
+     ring gauges, the plant, the journey vehicle, the thermometer and the
+     speedometer, plus interactive maps and charts. Without the class an
+     exported deck rendered every one of those in its resting state and
+     looked flat next to the live stage.
+
+     .present itself is `position:fixed; background:#000; display:none`,
+     which would blank the page — but an ID selector outranks a class, so
+     the declarations below win. They are repeated here deliberately: this
+     rule is load-bearing, not cosmetic. */
   #hanns-viewport {
     position: fixed; inset: 0; display: block; cursor: pointer;
     background: radial-gradient(120% 120% at 50% 0%, #15151c, #07070a);
   }
+  #hanns-viewport.present { display: block; background: radial-gradient(120% 120% at 50% 0%, #15151c, #07070a); }
   #hanns-scaler {
     position: absolute; left: 50%; top: 50%;
     transform-origin: center center;
@@ -341,8 +362,15 @@ _PAGE_CSS = """
 """.replace("%W", str(DESIGN_W)).replace("%H", str(DESIGN_H))
 
 
-def export_deck_to_html(deck, *, css_text: str, core_js_text: str, request=None) -> str:
-    """Return a complete standalone HTML document string for ``deck``."""
+def export_deck_to_html(deck, *, css_text: str, core_js_text: str,
+                        actors_js_text: str = "", request=None) -> str:
+    """Return a complete standalone HTML document string for ``deck``.
+
+    ``actors_js_text`` is hanns_actors.js. renderObject() asks
+    window.HannsActors whether it owns a kind and, finding nothing, falls
+    back to a plain count grid — so without this an exported deck quietly
+    replaced every farm character with a row of emoji.
+    """
     payload = _deck_payload(deck)
     deck_json = json.dumps(payload, ensure_ascii=False)
     title = payload.get("title") or "Hanns deck"
@@ -350,6 +378,7 @@ def export_deck_to_html(deck, *, css_text: str, core_js_text: str, request=None)
     # Escape everything that gets inlined into <script> contexts.
     deck_json_safe = _esc_script(deck_json)
     core_js_safe = _esc_script(core_js_text or "")
+    actors_js_safe = _esc_script(actors_js_text or "")
     player_safe = _esc_script(_PLAYER_JS)
 
     # HTML-escape the visible <title>.
@@ -363,6 +392,9 @@ def export_deck_to_html(deck, *, css_text: str, core_js_text: str, request=None)
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{title_html}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="{GOOGLE_FONTS_CSS}" rel="stylesheet">
 <link rel="stylesheet" href="{LEAFLET_CSS}">
 <style>
 {css_text or ""}
@@ -372,7 +404,7 @@ def export_deck_to_html(deck, *, css_text: str, core_js_text: str, request=None)
 </style>
 </head>
 <body>
-<div id="hanns-viewport">
+<div id="hanns-viewport" class="present">
   <div id="hanns-scaler">
     <div id="hanns-stage" class="slide-stage"></div>
   </div>
@@ -388,6 +420,9 @@ def export_deck_to_html(deck, *, css_text: str, core_js_text: str, request=None)
 
 <!-- Deck data -->
 <script>window.__HANNS_DECK__ = {deck_json_safe};</script>
+
+<!-- Actor characters. Loaded BEFORE core, same order as present.html. -->
+<script>{actors_js_safe}</script>
 
 <!-- The real Hanns renderer (same code as the editor / live stage) -->
 <script>{core_js_safe}</script>

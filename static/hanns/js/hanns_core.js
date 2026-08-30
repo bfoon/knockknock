@@ -52,7 +52,14 @@ const ANIMS = {
 };
 const TRANSITIONS = {
   none:"None", fade:"Fade", slide:"Slide", push:"Push",
-  zoom:"Zoom", flip:"Flip", reveal:"Reveal"
+  zoom:"Zoom", flip:"Flip", reveal:"Reveal",
+  // Exit effects — these animate the OUTGOING slide away. See
+  // playTransition() below for how the outgoing slide survives long
+  // enough to be animated.
+  paper_grab:"Hand grabs the page", paper_pull:"Hand pulls it away",
+  shatter:"Glass shatters", burn:"Burns away", wind:"Blown away",
+  curtain:"Curtains part", fold:"Folds away", dissolve:"Dissolves",
+  swipe:"Hand swipes across"
 };
 
 /* ── background library (CSS backgrounds = magazine-grade, exportable) ─ */
@@ -10697,6 +10704,292 @@ function autoDesignStrip(slides){
   return n;
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   SLIDE TRANSITIONS
+   ────────────────────────────────────────────────────────────────────
+   The original transitions animated only the INCOMING slide, because
+   paintSlide() has already replaced the container's contents by the time
+   the animation runs. A hand pulling the paper away, glass shattering,
+   paper burning — those are all EXIT effects, so they need the outgoing
+   slide to still exist.
+
+   captureSlide() takes a DOM clone of the container BEFORE it is
+   repainted; playTransition() lays that ghost over the new slide and
+   animates it off while the new one arrives underneath.
+
+       const ghost = Hanns.captureSlide(wrap);
+       paintSlide(wrap, slide, {live:true});
+       Hanns.playTransition(wrap, kind, ghost);
+
+   It lives here rather than in hanns_present.js so the live stage and the
+   downloaded HTML run the identical code — the two had already drifted
+   apart once by keeping separate copies of the transition map.
+
+   COST. The shard effects clone the outgoing slide once per piece. On a
+   heavy slide that is a lot of DOM at once, so SHARD_BUDGET caps the
+   pieces and anything past MAX_CLONE_ELS degrades to a cheaper variant
+   rather than dropping frames in front of an audience.
+   ════════════════════════════════════════════════════════════════════ */
+const TRANSITION_DUR = {
+  none:0, fade:480, slide:480, push:520, zoom:520, flip:560, reveal:560,
+  paper_grab:1100, paper_pull:900, shatter:1200, burn:1400, wind:1100,
+  curtain:900, fold:1000, dissolve:900, swipe:800,
+};
+const SHARD_BUDGET = 14;
+const MAX_CLONE_ELS = 60;
+
+function captureSlide(container){
+  if(!container || !container.firstChild) return null;
+  const ghost=document.createElement("div");
+  ghost.className="slide-ghost";
+  ghost.style.cssText=
+    "position:absolute;inset:0;z-index:60;pointer-events:none;overflow:hidden;"+
+    "transform-origin:50% 50%;";
+  // A clone, not a screenshot: it keeps live text, SVG and CSS exactly as
+  // rendered, and costs one DOM copy.
+  // Skip any ghost still on its way out, or a fast run of slide changes
+  // would nest each effect inside the next.
+  for(let i=0;i<container.children.length;i++){
+    const child=container.children[i];
+    if(child.classList&&child.classList.contains("slide-ghost"))continue;
+    ghost.appendChild(child.cloneNode(true));
+  }
+  if(!ghost.firstChild)return null;
+  // Carry the outgoing slide's BACKGROUND across too. It lives on the
+  // container, not on any child, so a ghost built purely from children is
+  // transparent — and the incoming slide shows straight through the page
+  // that is supposed to be covering it.
+  try{
+    const inline=container.style;
+    const cs=(typeof getComputedStyle==="function")?getComputedStyle(container):null;
+    const bg=inline.background||inline.backgroundImage||(cs&&cs.backgroundImage);
+    const col=inline.backgroundColor||(cs&&cs.backgroundColor);
+    if(col&&col!=="rgba(0, 0, 0, 0)"&&col!=="transparent")ghost.style.backgroundColor=col;
+    if(bg&&bg!=="none")ghost.style.backgroundImage=(cs&&cs.backgroundImage!=="none")?cs.backgroundImage:bg;
+    const sz=inline.backgroundSize||(cs&&cs.backgroundSize);
+    const ps=inline.backgroundPosition||(cs&&cs.backgroundPosition);
+    if(sz)ghost.style.backgroundSize=sz;
+    if(ps)ghost.style.backgroundPosition=ps;
+  }catch(e){ /* a transparent ghost is still better than throwing */ }
+  ghost.dataset.els=String(container.querySelectorAll(".el").length||0);
+  return ghost;
+}
+
+/* Irregular polygon shards over the slide box, so glass never breaks into
+   a tidy grid. Deterministic per slide index so a rehearsal and the talk
+   look the same. */
+function shardPolys(n,seed){
+  let s=(seed||1)*9301+49297;
+  const rnd=()=>{ s=(s*9301+49297)%233280; return s/233280; };
+  const cols=Math.ceil(Math.sqrt(n*1.6)), rows=Math.ceil(n/cols);
+  const out=[];
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+    if(out.length>=n)break;
+    const x0=(c/cols)*100, x1=((c+1)/cols)*100;
+    const y0=(r/rows)*100, y1=((r+1)/rows)*100;
+    const j=()=>(rnd()-0.5)*Math.min(x1-x0,y1-y0)*0.55;
+    out.push({
+      poly:`polygon(${(x0+j()).toFixed(1)}% ${(y0+j()).toFixed(1)}%,`+
+           `${(x1+j()).toFixed(1)}% ${(y0+j()).toFixed(1)}%,`+
+           `${(x1+j()).toFixed(1)}% ${(y1+j()).toFixed(1)}%,`+
+           `${(x0+j()).toFixed(1)}% ${(y1+j()).toFixed(1)}%)`,
+      cx:(x0+x1)/2, cy:(y0+y1)/2, r:rnd(),
+    });
+  }
+  return out;
+}
+
+function transHand(dir){
+  // A simple grabbing hand, drawn rather than an emoji so it scales and
+  // colours consistently on any background.
+  const s=document.createElement("div");
+  s.className="trans-hand trans-hand-"+(dir||"right");
+  s.innerHTML=
+    '<svg viewBox="0 0 120 150" aria-hidden="true">'+
+    '<path fill="#f3c9a2" stroke="rgba(80,45,20,.35)" stroke-width="3" d="'+
+    'M34 62 V26 a9 9 0 0 1 18 0 v32 V18 a9 9 0 0 1 18 0 v40 V26 a9 9 0 0 1 18 0 v36 '+
+    'V40 a8 8 0 0 1 16 0 v46 c0 30-18 52-44 52 -22 0-34-14-42-30 '+
+    'L4 82 a10 10 0 0 1 14-13 z"/></svg>';
+  return s;
+}
+
+function playTransition(container,kind,ghost,opts){
+  opts=opts||{};
+  const k=TRANSITION_DUR[kind]!==undefined?kind:"fade";
+  const dur=TRANSITION_DUR[k];
+  const done=()=>{ if(ghost&&ghost.parentNode)ghost.parentNode.removeChild(ghost); };
+
+  // Entrance for the incoming slide — unchanged for the classic set.
+  const IN={
+    none:[{opacity:1}],
+    fade:[{opacity:0},{opacity:1}],
+    slide:[{transform:"translateX(60px)",opacity:0},{transform:"translateX(0)",opacity:1}],
+    push:[{transform:"translateX(100%)"},{transform:"translateX(0)"}],
+    zoom:[{transform:"scale(1.08)",opacity:0},{transform:"scale(1)",opacity:1}],
+    flip:[{transform:"perspective(1200px) rotateY(12deg)",opacity:0},
+          {transform:"perspective(1200px) rotateY(0)",opacity:1}],
+    reveal:[{clipPath:"inset(0 0 100% 0)"},{clipPath:"inset(0 0 0 0)"}],
+  };
+
+  if(IN[k]){
+    if(container.animate){
+      const a=container.animate(IN[k],{duration:dur||1,easing:"cubic-bezier(.22,1,.36,1)",fill:"both"});
+      a.addEventListener&&a.addEventListener("finish",()=>{
+        try{ a.commitStyles&&a.commitStyles(); a.cancel(); }catch(e){}
+        container.style.transform="";container.style.opacity="";container.style.clipPath="";
+      });
+    }
+    done();
+    return;
+  }
+
+  // ── exit effects ────────────────────────────────────────────────
+  if(!ghost){ // nothing to animate out (first slide) — just fade in
+    if(container.animate)container.animate(IN.fade,{duration:400,easing:"ease-out",fill:"both"});
+    return;
+  }
+  // The ghost goes INSIDE the slide container, not beside it.
+  //
+  // Appending to the parent let shards and strips fly past the slide edge:
+  // harmless on the live stage, which fills the screen, but in the exported
+  // file the slide is a card on a dark page and the debris spilled across
+  // the background. Inside the container, the stage's own overflow:hidden
+  // clips the effect to the slide, which is also where a shattering pane
+  // ought to stay.
+  const host=container;
+  try{
+    const cs=(typeof getComputedStyle==="function")?getComputedStyle(host):null;
+    if(cs&&cs.position==="static")host.style.position="relative";
+  }catch(e){ /* leave the host alone */ }
+  // Sit above every element on the incoming slide. paintSlide() gives each
+  // element its own z-index for layer order, and a fixed value here lost to
+  // anything stacked higher — the new slide's text painted straight over the
+  // page that was meant to be covering it. Computed, not guessed, and kept
+  // relative so the ghost never escapes past the projector chrome.
+  let topZ=60;
+  for(let i=0;i<host.children.length;i++){
+    const z=parseInt(host.children[i].style.zIndex,10);
+    if(isFinite(z)&&z>=topZ)topZ=z+1;
+  }
+  ghost.style.zIndex=String(topZ);
+  host.appendChild(ghost);
+
+  // The incoming slide eases up underneath the effect.
+  //
+  // This is applied to each incoming child, NOT to the container: the ghost
+  // now lives inside the container, so fading the container faded the
+  // outgoing slide too and the new one showed through it.
+  const rise=[{opacity:.25,transform:"scale(1.02)"},{opacity:1,transform:"scale(1)"}];
+  const riseOpts={duration:Math.round(dur*0.7),delay:Math.round(dur*0.25),
+                  easing:"cubic-bezier(.22,1,.36,1)",fill:"both"};
+  for(let i=0;i<container.children.length;i++){
+    const child=container.children[i];
+    if(child===ghost)continue;
+    if(child.animate){
+      const a=child.animate(rise,riseOpts);
+      a.addEventListener&&a.addEventListener("finish",()=>{
+        try{ a.cancel(); }catch(e){}
+        // Let the element's own entrance animation own these again.
+        child.style.opacity=""; child.style.transform="";
+      });
+    }
+  }
+
+  const heavy=Number(ghost.dataset.els||0)>MAX_CLONE_ELS;
+  const seed=(opts.seed||1);
+
+  function shardsInto(count,style){
+    // Reuse the ghost's markup for each piece, clipped to its own polygon.
+    const inner=ghost.innerHTML;
+    const polys=shardPolys(count,seed);
+    ghost.innerHTML="";
+    polys.forEach((p,i)=>{
+      const sh=document.createElement("div");
+      sh.className="slide-shard "+style;
+      sh.style.cssText="position:absolute;inset:0;overflow:hidden;clip-path:"+p.poly+
+        ";-webkit-clip-path:"+p.poly+";";
+      sh.style.setProperty("--i",i);
+      sh.style.setProperty("--dx",((p.cx-50)/50).toFixed(3));
+      sh.style.setProperty("--dy",((p.cy-50)/50).toFixed(3));
+      sh.style.setProperty("--rot",((p.r-0.5)*120).toFixed(1)+"deg");
+      sh.style.setProperty("--delay",(p.r*0.18).toFixed(3)+"s");
+      sh.innerHTML=inner;
+      ghost.appendChild(sh);
+    });
+  }
+
+  switch(k){
+    case "shatter": {
+      shardsInto(heavy?8:SHARD_BUDGET,"shard-glass");
+      const crack=document.createElement("div");
+      crack.className="trans-crack";
+      ghost.appendChild(crack);
+      ghost.classList.add("ghost-shatter");
+      break;
+    }
+    case "wind": {
+      // Vertical strips are cheaper than polygons and read better as air.
+      const n=heavy?7:12, inner=ghost.innerHTML;
+      ghost.innerHTML="";
+      for(let i=0;i<n;i++){
+        const st=document.createElement("div");
+        st.className="slide-strip";
+        const a=(i/n*100).toFixed(3), b=(100-(i+1)/n*100).toFixed(3);
+        st.style.cssText="position:absolute;inset:0;overflow:hidden;clip-path:inset(0 "+b+"% 0 "+a+"%);";
+        st.style.setProperty("--i",i);
+        st.innerHTML=inner;
+        ghost.appendChild(st);
+      }
+      ghost.classList.add("ghost-wind");
+      break;
+    }
+    case "burn":       ghost.classList.add("ghost-burn");
+                       ghost.appendChild(Object.assign(document.createElement("div"),
+                         {className:"trans-ember"})); break;
+    case "paper_grab": ghost.classList.add("ghost-grab");
+                       ghost.appendChild(transHand("right")); break;
+    case "paper_pull": ghost.classList.add("ghost-pull"); break;
+    case "curtain": {
+      const inner=ghost.innerHTML;
+      ghost.innerHTML="";
+      ["left","right"].forEach((side,i)=>{
+        const h=document.createElement("div");
+        h.className="curtain-half curtain-"+side;
+        h.style.cssText="position:absolute;inset:0;overflow:hidden;clip-path:inset(0 "+
+          (i?0:50)+"% 0 "+(i?50:0)+"%);";
+        h.innerHTML=inner;
+        ghost.appendChild(h);
+      });
+      ghost.classList.add("ghost-curtain");
+      break;
+    }
+    case "fold":     ghost.classList.add("ghost-fold"); break;
+    case "swipe":    ghost.classList.add("ghost-swipe");
+                     ghost.appendChild(transHand("left")); break;
+    case "dissolve": {
+      const n=heavy?24:48, inner=ghost.innerHTML;
+      const cols=8, rows=Math.ceil(n/cols);
+      ghost.innerHTML="";
+      let s=seed*7919;
+      for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+        s=(s*9301+49297)%233280;
+        const t=document.createElement("div");
+        t.className="slide-tile";
+        t.style.cssText="position:absolute;inset:0;overflow:hidden;clip-path:inset("+
+          (r/rows*100).toFixed(2)+"% "+(100-(c+1)/cols*100).toFixed(2)+"% "+
+          (100-(r+1)/rows*100).toFixed(2)+"% "+(c/cols*100).toFixed(2)+"%);";
+        t.style.setProperty("--delay",((s/233280)*0.5).toFixed(3)+"s");
+        t.innerHTML=inner;
+        ghost.appendChild(t);
+      }
+      ghost.classList.add("ghost-dissolve");
+      break;
+    }
+    default: ghost.classList.add("ghost-fade");
+  }
+  setTimeout(done,dur+260);
+}
+
 window.Hanns = {Deck,TEMPLATES,BACKGROUNDS,BG_FX,ANIMS,TRANSITIONS,PALETTE,FONTS,OBJECTS,SHAPES,
   newSlide,curSlide,selEl,paintSlide,renderElement,objectDef,
   // reveal-on-cue + animated readouts (used by hanns_present.js and the
@@ -10713,6 +11006,7 @@ window.Hanns = {Deck,TEMPLATES,BACKGROUNDS,BG_FX,ANIMS,TRANSITIONS,PALETTE,FONTS
   STUDIO,STUDIO_KINDS,STUDIO_RENDER,STUDIO_SEED,STUDIO_FIELDS,STUDIO_OBJECTS,
   isStudioObject,renderStudioObject,GEO,GEO_SETS,RAMPS,RAMP_KEYS,toIso,rampFor,rampAt,seriesColor,
   SHAPE_MOTIONS,SHAPE_MOTION_KEYS,SHAPE_MOTION_DEFAULT,MOTION_TYPES,motionOf,
+  captureSlide,playTransition,TRANSITION_DUR,
   AUTO_THEMES,AUTO_THEME_KEYS,autoTheme,autoClassify,autoDesignSlide,autoDesignDeck,autoDesignStrip,
   makeText,makeShape,makeLine,makeImage,makeVideo,makeLink,makeObject,makeCreativeShape,makeTable,makeChart,makeMap,makeGallery,W,H,$,$$,uid,clamp,genCode};
 

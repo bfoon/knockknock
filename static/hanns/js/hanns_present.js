@@ -143,16 +143,15 @@ function fit(){
   if(wrap){wrap.style.width=W+"px";wrap.style.height=H+"px";}
 }
 
-function transition(node,kind){
-  if(!node || !node.animate)return;
-  const map={none:[{opacity:1}],fade:[{opacity:0},{opacity:1}],slide:[{transform:"translateX(60px)",opacity:0},{transform:"translateX(0)",opacity:1}],push:[{transform:"translateX(100%)"},{transform:"translateX(0)"}],zoom:[{transform:"scale(1.08)",opacity:0},{transform:"scale(1)",opacity:1}],flip:[{transform:"perspective(1200px) rotateY(12deg)",opacity:0},{transform:"perspective(1200px) rotateY(0)",opacity:1}],reveal:[{clipPath:"inset(0 0 100% 0)"},{clipPath:"inset(0 0 0 0)"}]};
-  const anim=node.animate(map[kind]||map.fade,{duration:480,easing:"cubic-bezier(.22,1,.36,1)",fill:"both"});
-  // Hand the final state back to CSS so no fill:"both" transform lingers
-  // on the node and interferes with a later re-fit.
-  anim.addEventListener&&anim.addEventListener("finish",()=>{
-    try{ anim.commitStyles&&anim.commitStyles(); anim.cancel(); }catch(e){}
-    node.style.transform="";node.style.opacity="";node.style.clipPath="";
-  });
+/* Transitions now live in hanns_core.js so the live stage and the exported
+   HTML run identical code — keeping two copies of the map is exactly how
+   they drifted apart before. Exit effects (the hand, the shatter, the burn)
+   need the OUTGOING slide, so show() captures it before repainting. */
+function transition(node,kind,ghost,seed){
+  if(!node)return;
+  if(Hx.playTransition){ Hx.playTransition(node,kind,ghost||null,{seed:seed||1}); return; }
+  // Older core: fall back to a plain fade rather than nothing at all.
+  if(node.animate)node.animate([{opacity:0},{opacity:1}],{duration:420,fill:"both"});
 }
 function show(n,broadcast=true){
   if(!DECK.slides.length || !paintSlide || !pCanvas)return;
@@ -166,7 +165,11 @@ function show(n,broadcast=true){
   // the consumer, which clears the revealed set on every goto.
   revealedNow.clear();
   focusNow=null;
-  paintSlide(wrap,s,{live:true});transition(wrap,(s&&s.transition)||"fade");
+  // Clone the outgoing slide first; paintSlide() is about to destroy it and
+  // the exit effects animate that clone.
+  const ghost=Hx.captureSlide?Hx.captureSlide(wrap):null;
+  paintSlide(wrap,s,{live:true});
+  transition(wrap,(s&&s.transition)||"fade",ghost,i+1);
   const pos=$("#pp-pos");if(pos)pos.textContent=`${i+1} / ${DECK.slides.length}`;
   if(broadcast&&!suppressBroadcast)Live.goto(i);
 }

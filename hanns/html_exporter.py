@@ -210,6 +210,11 @@ _PLAYER_JS = """
     var slide = slides[idx];
     // Clear and repaint using the real Hanns renderer in "live" mode so
     // entrance animations and count-ups run exactly like the stage.
+    // Capture the outgoing slide before it is destroyed — exit effects
+    // animate this clone over the incoming one.
+    var ghost = null;
+    try { ghost = window.Hanns.captureSlide ? window.Hanns.captureSlide(stage) : null; }
+    catch (e) { ghost = null; }
     stage.className = "slide-stage";
     stage.innerHTML = "";
     pending = [];
@@ -224,35 +229,25 @@ _PLAYER_JS = """
         + 'Could not render this slide.</div>';
       if (window.console) console.error(e);
     }
-    playTransition(slide, lastDir);
+    playTransition(slide, ghost);
     updateChrome();
   }
 
-  // Slide-to-slide transition, mirroring the live stage. The deck stores the
-  // INCOMING slide's transition ({fade|slide|push|zoom|flip|reveal|none}).
-  var lastDir = 1;
-  function playTransition(slide, dir) {
+  // Slide-to-slide transition. Delegates to hanns_core.js so the download
+  // behaves exactly like the live stage, including the exit effects (hand,
+  // shatter, burn, wind) that animate the OUTGOING slide.
+  function playTransition(slide, ghost) {
     var t = (slide && slide.transition) || "fade";
-    if (t === "none" || !stage.animate) return;
-    var d = dir < 0 ? -1 : 1;
-    var frames = {
-      fade:  [{ opacity: 0 }, { opacity: 1 }],
-      slide: [{ opacity: 0, transform: "translateX(" + (60 * d) + "px)" },
-              { opacity: 1, transform: "translateX(0)" }],
-      push:  [{ transform: "translateX(" + (100 * d) + "%)" },
-              { transform: "translateX(0)" }],
-      zoom:  [{ opacity: 0, transform: "scale(.82)" },
-              { opacity: 1, transform: "scale(1)" }],
-      flip:  [{ opacity: 0, transform: "perspective(1400px) rotateY(" + (55 * d) + "deg)" },
-              { opacity: 1, transform: "perspective(1400px) rotateY(0deg)" }],
-      reveal:[{ clipPath: d > 0 ? "inset(0 100% 0 0)" : "inset(0 0 0 100%)" },
-              { clipPath: "inset(0 0 0 0)" }]
-    };
     try {
-      stage.animate(frames[t] || frames.fade,
-        { duration: t === "push" ? 460 : 520, easing: "cubic-bezier(.22,1,.36,1)", fill: "both" });
+      if (window.Hanns && window.Hanns.playTransition) {
+        window.Hanns.playTransition(stage, t, ghost || null, { seed: idx + 1 });
+        return;
+      }
+      if (stage.animate) stage.animate([{ opacity: 0 }, { opacity: 1 }],
+        { duration: 420, easing: "cubic-bezier(.22,1,.36,1)", fill: "both" });
     } catch (e) { /* transitions are a bonus */ }
   }
+
 
   // Forward first works through the slide's build, then moves on. Backward
   // always leaves the slide — stepping a build in reverse would mean

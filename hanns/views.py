@@ -530,6 +530,10 @@ def _deck_html_response(deck):
     # Actors must travel with the deck or every character in it degrades to
     # a count grid in the downloaded file.
     actors_js = _read_static("hanns/js/hanns_actors.js")
+    # These two wrap core rather than preceding it, so they are inlined
+    # after it. Same order as editor.html / present.html.
+    studio_js = _read_static("hanns/js/hanns_studio.js")
+    fluid_js = _read_static("hanns/js/hanns_fluid.js")
 
     if not core_js:
         return HttpResponseBadRequest(
@@ -541,6 +545,7 @@ def _deck_html_response(deck):
     html = export_deck_to_html(
         deck, css_text=css_combined, core_js_text=core_js,
         actors_js_text=actors_js,
+        post_core_js_text="\n".join(p for p in (studio_js, fluid_js) if p),
     )
 
     from django.http import HttpResponse

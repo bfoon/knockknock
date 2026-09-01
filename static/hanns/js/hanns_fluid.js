@@ -970,9 +970,18 @@ if(!Hx){
       } finally { painting=false; }
     }
 
-    new MutationObserver(()=>{ if(!painting) fluidPanels(); })
-      .observe(inspBody,{childList:true});
-    fluidPanels();
+    // Do not hear our own edits. The data-el check below already broke
+    // the cycle, but disconnecting for the paint is cheaper and stops the
+    // studio observer being woken for nothing.
+    const mo = new MutationObserver(()=>{ if(!painting) paintPanels(); });
+    const watch = ()=>mo.observe(inspBody,{childList:true});
+    function paintPanels(){
+      mo.disconnect();
+      try{ fluidPanels(); }
+      finally{ mo.takeRecords(); watch(); }
+    }
+    watch();
+    paintPanels();
   }
 }
 

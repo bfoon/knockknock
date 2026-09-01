@@ -2303,8 +2303,25 @@ function studioPanels(force){
   } finally { painting=false; }
 }
 
+/* The observer must not hear its own edits. A `painting` flag cannot do
+   that on its own: MutationObserver callbacks are delivered as microtasks
+   AFTER the synchronous block finishes, by which point `painting` is back
+   to false — so every panel appended here re-triggered a rebuild, and one
+   selection span an unbounded rebuild loop that pegged the tab.
+
+   Disconnecting for the duration of the paint is what actually works.
+   disconnect() also empties the pending record queue, and takeRecords()
+   before re-observing drops anything queued in between, so the records
+   this function generates are never delivered. */
 const mo=new MutationObserver(()=>{ if(!painting) studioPanels(); });
-mo.observe(inspBody,{childList:true});
+const moWatch=()=>mo.observe(inspBody,{childList:true});
+const _studioPanels=studioPanels;
+studioPanels=function(force){
+  mo.disconnect();
+  try{ return _studioPanels(force); }
+  finally{ mo.takeRecords(); moWatch(); }
+};
+moWatch();
 studioPanels();
 
 /* Selection can change without the inspector being rebuilt (clicking a

@@ -112,10 +112,20 @@ const numFmt= v=>Math.round(v).toLocaleString();
 const reduceMotion = ()=>!!(window.matchMedia &&
   window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
-/* Parse any CSS colour by leaning on the browser rather than a regex zoo. */
+/* Parse any CSS colour by leaning on the browser rather than a regex zoo.
+   getComputedStyle forces a style recalculation, so results are memoised —
+   a filmstrip rebuild would otherwise pay for it once per thumbnail. */
 const _probe = document.createElement("span");
 _probe.style.cssText = "position:absolute;left:-9999px;top:-9999px";
+const _rgbCache = new Map();
 function rgb(cssColor, fallback){
+  const key = String(cssColor);
+  if(_rgbCache.has(key)) return _rgbCache.get(key);
+  const out = _rgbParse(cssColor, fallback);
+  _rgbCache.set(key, out);
+  return out;
+}
+function _rgbParse(cssColor, fallback){
   try{
     _probe.style.color = "";
     _probe.style.color = cssColor;
@@ -129,6 +139,72 @@ function rgb(cssColor, fallback){
 }
 const mix  = (a,b,t)=>({r:a.r+(b.r-a.r)*t, g:a.g+(b.g-a.g)*t, b:a.b+(b.b-a.b)*t});
 const rgba = (c,a)=>`rgba(${c.r|0},${c.g|0},${c.b|0},${a==null?1:a})`;
+
+/* ════════════════════════════════════════════════════════════════════
+   3b. THE SCHEDULER — one rAF loop for every instance on the page
+   ────────────────────────────────────────────────────────────────────
+   hanns_editor.js rebuilds the filmstrip with innerHTML on every edit and
+   calls paintSlide() on each slide's thumbnail, so a deck with liquids on
+   several slides re-creates a lot of instances at once. One loop per
+   instance meant N loops competing every frame, and a layout read in each
+   constructor meant N forced reflows per rebuild.
+
+   So: one loop for everything, instances measure themselves inside it
+   rather than at construction, and anything drawn into a thumbnail paints
+   a single still frame and then leaves the loop entirely. When every
+   instance is still or off-screen the loop stops outright.
+   ════════════════════════════════════════════════════════════════════ */
+const LIVE = new Set();          // instances currently in the rAF loop
+const ALL  = new Set();          // every instance, including still ones
+const MAX_ANIMATED = 8;          // beyond this, extra instances go still
+let _raf = 0, _lastT = 0, _sweep = 0;
+
+/* A still instance has left the loop, so it would never notice its node
+   being discarded — and the filmstrip discards nodes constantly. This
+   prunes them, then stops itself once nothing is left. */
+function ensureSweep(){
+  if(_sweep) return;
+  _sweep = setInterval(()=>{
+    for(const f of Array.from(ALL)) if(!f.cv.isConnected) f.destroy();
+    if(!ALL.size){ clearInterval(_sweep); _sweep = 0; }
+  }, 3000);
+}
+
+function pump(now){
+  _raf = requestAnimationFrame(pump);
+  let dt = (now - _lastT)/1000;
+  _lastT = now;
+  if(dt > 0.1) dt = 0.1;         // came back from a background tab
+
+  let animated = 0;
+  for(const f of Array.from(LIVE)){
+    if(!f.cv.isConnected){ f.destroy(); continue; }
+
+    if(f.needsMeasure){
+      f._measure();
+      if(!f.w || !f.h) continue;              // not laid out yet — wait
+      f.needsMeasure = false;
+      if(f._isThumb()) f.frozenByHost = true; // a filmstrip mini: one frame
+    }
+
+    if(f.o.frozen || f.frozenByHost || reduceMotion() || animated >= MAX_ANIMATED){
+      f._still();
+      LIVE.delete(f);
+      continue;
+    }
+    animated++;
+    if(document.hidden || !f.visible) continue;
+    f.update(dt);
+    f.draw();
+  }
+
+  if(!LIVE.size){ cancelAnimationFrame(_raf); _raf = 0; }
+}
+function ensurePump(){
+  if(_raf) return;
+  _lastT = performance.now();
+  _raf = requestAnimationFrame(pump);
+}
 
 /* ════════════════════════════════════════════════════════════════════
    4. THE SURFACE — N coupled springs
@@ -207,13 +283,38 @@ function Fluid(canvas, opts){
   this.shown  = this.target;
   this.vel = 0;
   this.mask = null;
-  this.running=false; this.visible=true;
+  this.visible = true;
+  this.dead = false;
+  this.frozenByHost = false;
+  // No getBoundingClientRect here. Measuring in the constructor forces a
+  // synchronous reflow, and paintSlide() builds a detached tree anyway, so
+  // the numbers would be zero. The scheduler measures on the first frame
+  // after the node is actually in the document.
+  this.needsMeasure = true;
 
   this._colors();
-  this._measure();
   this._observe();
-  this.start();
+  ALL.add(this);
+  LIVE.add(this);
+  ensurePump();
+  ensureSweep();
 }
+
+/* Is this instance being drawn into a filmstrip thumbnail? Those are
+   rebuilt constantly and are far too small to read, so they get one still
+   frame rather than a place in the loop. */
+Fluid.prototype._isThumb = function(){
+  if(this.w && this.w < 150) return true;
+  return !!(this.cv.closest && this.cv.closest(".mini,.thumb,.gal-thumb"));
+};
+
+/* Bring a still instance back for one frame — after a colour, level or
+   shape change, or a resize. */
+Fluid.prototype.wake = function(){
+  if(this.dead) return;
+  LIVE.add(this);
+  ensurePump();
+};
 
 Fluid.prototype._colors = function(){
   const base = rgb(this.o.accent);
@@ -224,8 +325,11 @@ Fluid.prototype._colors = function(){
 
 Fluid.prototype._measure = function(){
   const r = this.cv.getBoundingClientRect();
-  const w = Math.max(1, Math.round(r.width  || this.cv.clientWidth  || 300));
-  const h = Math.max(1, Math.round(r.height || this.cv.clientHeight || 200));
+  const w = Math.round(r.width  || this.cv.clientWidth  || 0);
+  const h = Math.round(r.height || this.cv.clientHeight || 0);
+  // Detached, display:none, or a slide that hasn't been laid out yet.
+  // Report nothing rather than inventing a size and baking it in.
+  if(w < 1 || h < 1){ this.w = 0; this.h = 0; return false; }
   const d = dpr();
   if(w===this.w && h===this.h && this.cv.width===Math.round(w*d)) return false;
   this.w=w; this.h=h; this.d=d;
@@ -261,7 +365,9 @@ Fluid.prototype._buildMask = function(){
 
 Fluid.prototype._observe = function(){
   if(typeof ResizeObserver!=="undefined"){
-    this.ro = new ResizeObserver(()=>this._measure());
+    // Flag only — measuring here would read layout from inside a layout
+    // callback, which is exactly the thrash this module is avoiding.
+    this.ro = new ResizeObserver(()=>{ this.needsMeasure = true; this.wake(); });
     this.ro.observe(this.cv);
   }
   if(typeof IntersectionObserver!=="undefined"){
@@ -273,42 +379,26 @@ Fluid.prototype._observe = function(){
 Fluid.prototype.setLevel = function(pct, o){
   const pour = !o || o.pour !== false;
   this.target = clamp(Number(pct)||0, 0, 100);
-  if(!pour || this.o.frozen){
-    this.shown = this.target; this.vel = 0;
-    if(this.o.frozen) this._still();
-  }
+  if(!pour){ this.shown = this.target; this.vel = 0; }
+  this.wake();
 };
-Fluid.prototype.setAccent = function(c){ this.o.accent=c; this._colors(); if(this.o.frozen) this._still(); };
-Fluid.prototype.setShape  = function(s){ this.o.shape=s; this.mask=this._buildMask(); if(this.o.frozen) this._still(); };
+Fluid.prototype.setAccent = function(c){ this.o.accent=c; this._colors(); this.wake(); };
+Fluid.prototype.setShape  = function(s){ this.o.shape=s; this.mask=this._buildMask(); this.wake(); };
 
-Fluid.prototype.start = function(){
-  if(this.running) return;
-  this.running = true;
-  if(this.o.frozen || reduceMotion()){ this.shown=this.target; this._still(); return; }
-  this.last = performance.now();
-  const loop = (now)=>{
-    if(!this.cv.isConnected){ this.destroy(); return; }
-    this.raf = requestAnimationFrame(loop);
-    if(document.hidden || !this.visible){ this.last = now; return; }
-    let dt = (now - this.last)/1000;
-    this.last = now;
-    if(dt > 0.1) dt = 0.1;               // came back from a background tab
-    this.update(dt);
-    this.draw();
-  };
-  this.raf = requestAnimationFrame(loop);
-};
 Fluid.prototype.destroy = function(){
-  this.running=false;
-  if(this.raf) cancelAnimationFrame(this.raf);
+  if(this.dead) return;
+  this.dead = true;
+  LIVE.delete(this);
+  ALL.delete(this);
   if(this.ro) this.ro.disconnect();
   if(this.io) this.io.disconnect();
+  this.drops.length = this.spray.length = this.bubbles.length = this.foam.length = 0;
 };
 
 /* One frozen frame — reduced motion, or Animation: off in the inspector. */
 Fluid.prototype._still = function(){
-  this._measure();
-  const s=this.surface; if(!s) return;
+  const s=this.surface;
+  if(!s || !this.w || !this.h) return;   // the scheduler measures for us
   const restY=this._restY(); s.rest=restY;
   for(let i=0;i<s.n;i++){ s.h[i]=restY + Math.sin(i/s.n*Math.PI*2)*1.6; s.v[i]=0; }
   this.drops.length=this.spray.length=this.foam.length=0;
@@ -658,7 +748,8 @@ function renderFluid(el){
   // Click to pour — handy when rehearsing, harmless on the audience view.
   wrap.addEventListener("click", ()=>{
     if(frozen) return;
-    for(let i=0;i<7;i++) setTimeout(()=>f.spawnDrop(), i*70);
+    f.wake();                       // it may have gone still
+    for(let i=0;i<7;i++) setTimeout(()=>{ f.spawnDrop(); f.wake(); }, i*70);
   });
 
   return wrap;
@@ -710,7 +801,7 @@ if(!Hx){
         // "Play once" on a liquid means pour a splash.
         const w = node && node.closest ? node.closest(".fluid-obj") : null;
         const f = w && w._fluid;
-        if(f) for(let i=0;i<7;i++) setTimeout(()=>f.spawnDrop(), i*70);
+        if(f){ f.wake(); for(let i=0;i<7;i++) setTimeout(()=>{ f.spawnDrop(); f.wake(); }, i*70); }
         return;
       }
       if(prev.playActorOnce) prev.playActorOnce(node, kind, ms);

@@ -84,6 +84,59 @@
     .reaction-top-stack .present-exit{font-size:.82rem!important;padding:.45rem .65rem!important;}
   }
 
+  /* v36 — In browser fullscreen the ⛶ pill IS the exit control, and a red
+     pill parked on the projector for the whole talk is a distraction. So
+     it sits fully transparent and comes back when asked for.
+
+     Transparent, not hidden: opacity:0 still takes pointer events, so the
+     corner stays hoverable and the button keeps its place in the tab
+     order. display:none or visibility:hidden would break both.
+
+     It also reveals on any pointer movement, not on hover alone. A
+     control you cannot see is a control you cannot aim at, and hover
+     does not exist on a touch screen at all — so any movement, tap or
+     key brings it back for a couple of seconds. */
+  #present:fullscreen .fullscreen-pill,
+  .present:fullscreen .fullscreen-pill,
+  :fullscreen .fullscreen-pill{
+    opacity:0!important;
+    transform:translateY(-4px)!important;
+    pointer-events:auto!important;
+    transition:opacity .22s ease, transform .22s ease!important;
+  }
+  #present:fullscreen .fullscreen-pill:hover,
+  .present:fullscreen .fullscreen-pill:hover,
+  :fullscreen .fullscreen-pill:hover,
+  #present:fullscreen .fullscreen-pill:focus-visible,
+  .present:fullscreen .fullscreen-pill:focus-visible,
+  :fullscreen .fullscreen-pill:focus-visible,
+  body.hanns-pointer-live #present:fullscreen .fullscreen-pill,
+  body.hanns-pointer-live .present:fullscreen .fullscreen-pill,
+  body.hanns-pointer-live :fullscreen .fullscreen-pill{
+    opacity:.96!important;
+    transform:translateY(0)!important;
+  }
+  /* Hover keeps it up even after the movement timer lapses. */
+  #present:fullscreen .fullscreen-pill:hover,
+  .present:fullscreen .fullscreen-pill:hover,
+  :fullscreen .fullscreen-pill:hover{
+    opacity:1!important;
+    box-shadow:0 18px 50px rgba(0,0,0,.5)!important;
+  }
+  /* The cursor is the other thing left sitting on the projector. */
+  #present:fullscreen,
+  .present:fullscreen,
+  :fullscreen{ cursor:none!important; }
+  body.hanns-pointer-live #present:fullscreen,
+  body.hanns-pointer-live .present:fullscreen,
+  body.hanns-pointer-live :fullscreen{ cursor:default!important; }
+
+  @media (prefers-reduced-motion: reduce){
+    #present:fullscreen .fullscreen-pill,
+    .present:fullscreen .fullscreen-pill,
+    :fullscreen .fullscreen-pill{ transition:none!important; transform:none!important; }
+  }
+
   .present-modal-card h2,
   .modal-title-safe{
     max-width:100%;
@@ -256,8 +309,8 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="{% static 'hanns/js/hanns_actors.js' %}?v=1"></script>
 <script src="{% static 'hanns/js/hanns_core.js' %}?v=57"></script>
-<script src="{% static 'hanns/js/hanns_studio.js' %}?v=1"></script>
-<script src="{% static 'hanns/js/hanns_fluid.js' %}?v=1"></script>
+<script src="{% static 'hanns/js/hanns_studio.js' %}?v=2"></script>
+<script src="{% static 'hanns/js/hanns_fluid.js' %}?v=4"></script>
 <script src="{% static 'hanns/js/hanns_present.js' %}?v=40"></script>
 
 <script>
@@ -501,6 +554,41 @@
   }else{
     listen();
   }
+})();
+</script>
+
+<script>
+/* v36 — "the presenter is doing something" flag.
+
+   The fullscreen exit and the cursor both key off body.hanns-pointer-live.
+   Anything that counts as the presenter reaching for the screen puts the
+   class on; it comes off again after a short idle window.
+
+   pointermove covers mouse and pen. Touch has no hover at all, so
+   pointerdown/touchstart matter as much as movement. keydown is here so a
+   presenter driving from the keyboard — or a clicker, which arrives as
+   arrow keys — can still find the exit without touching the mouse. */
+(function(){
+  var IDLE_MS = 2200, timer = 0, body = document.body;
+
+  function live(){
+    if(!body) body = document.body;
+    if(!body) return;
+    body.classList.add("hanns-pointer-live");
+    clearTimeout(timer);
+    timer = setTimeout(function(){ body.classList.remove("hanns-pointer-live"); }, IDLE_MS);
+  }
+
+  ["pointermove","pointerdown","touchstart","keydown","wheel"].forEach(function(ev){
+    document.addEventListener(ev, live, {passive:true});
+  });
+
+  // Entering or leaving fullscreen is itself a deliberate act, so show the
+  // control briefly — that is what tells the presenter where it went.
+  document.addEventListener("fullscreenchange", live);
+  document.addEventListener("webkitfullscreenchange", live);
+
+  live();
 })();
 </script>
 

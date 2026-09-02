@@ -398,8 +398,13 @@ window.__HANNS_CONTROL__ = {
   wsUrl: (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/hanns/{{ deck.code }}/"
 };
 </script>
-<script src="{% static 'hanns/js/hanns_actors.js' %}?v=1"></script>
-<script src="{% static 'hanns/js/hanns_core.js' %}?v=56"></script>
+<script src="{% static 'hanns/js/hanns_actors.js' %}?v=60"></script>
+<script src="{% static 'hanns/js/hanns_core.js' %}?v=60"></script>
+<!-- Must load AFTER core: it reads window.Hanns and registers the liquid
+     kinds into OBJECTS. Without it objectDef() finds no match and falls
+     back to OBJECTS[0] — fill_cow — so every liquid in the preview draws
+     as a cow with a percentage. -->
+<script src="{% static 'hanns/js/hanns_fluid.js' %}?v=60"></script>
 
 <script>
 (function(){

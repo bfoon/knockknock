@@ -12,6 +12,32 @@ const canvas   = $("#canvas");
 const wrap     = $("#canvas-wrap");
 const stage    = $("#stage");
 const slidesEl = $("#slides");
+/* ── stale-build guard ───────────────────────────────────────────────
+   hanns_studio.js was an earlier standalone module; everything in it now
+   lives in hanns_core.js and hanns_editor.js. If a deployment still loads
+   the old file, its MutationObserver on #insp-body runs
+   `body.querySelectorAll(".hs-panel").forEach(n => n.remove())` on every
+   inspector rebuild — which silently deletes the Auto-design, Apply-to-all
+   and shape-movement panels the moment they are drawn. The symptom is
+   features that are present in the code but never appear on screen.
+
+   An observer only watches the exact node it was handed, so replacing
+   #insp-body with a clone leaves the stale observer pointed at a detached
+   element and makes it inert. The fix is still to delete the file; this
+   just means a leftover copy degrades loudly instead of invisibly. */
+(function dropStaleStudioObserver(){
+  if(!window.HannsStudio)return;
+  const old=document.getElementById("insp-body");
+  if(old&&old.parentNode){
+    const fresh=old.cloneNode(false);
+    old.parentNode.replaceChild(fresh,old);
+  }
+  console.warn("[hanns] hanns_studio.js is still being loaded. It was folded "+
+    "into hanns_core.js and is now redundant — remove the <script> tag and "+
+    "delete the file. Its inspector observer has been disabled for this session.");
+  window.__HANNS_STALE_STUDIO__=true;
+})();
+
 const inspBody = $("#insp-body");
 let inspTab = "element";
 let appReady = false;     // gates autosave until the deck has loaded
@@ -3990,6 +4016,10 @@ function arrangePanel(){
 /* Append the studio panels underneath whatever the inspector just drew. */
 function studioPanels(el){
   if(!inspBody)return;
+  if(window.__HANNS_STALE_STUDIO__ && !window.__HANNS_STALE_TOLD__){
+    window.__HANNS_STALE_TOLD__=true;
+    try{ toast("Old hanns_studio.js is still loaded — remove that script tag"); }catch(e){}
+  }
   const mp = shapeMotionPanel(el);
   if(mp) inspBody.appendChild(mp);
   if(el && el.type==="object" && isStudioObject(el.objectType)){

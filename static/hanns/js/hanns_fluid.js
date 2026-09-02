@@ -555,6 +555,42 @@ Fluid.prototype.poke = function(ev){
   this.wake();
 };
 
+/* ── remote control ───────────────────────────────────────────────────
+   What the phone controller sends lands here. Every action is applied to
+   the live instance rather than re-rendering the element, so a level
+   change pours in and a stir ripples out instead of snapping. */
+Fluid.prototype.remote = function(action, value){
+  const v = Number(value)||0;
+  switch(action){
+    case "pour":
+      this.poke(null);
+      break;
+    case "level":
+      this.setLevel(clamp(v,0,100));
+      break;
+    case "nudge":
+      this.setLevel(clamp(this.target + v, 0, 100));
+      break;
+    case "calm":
+      this.o.chop = Math.max(0, (this.o.chop||0) - 18);
+      this.o.whitecaps = Math.max(0, (this.o.whitecaps||0) - 20);
+      break;
+    case "wild":
+      this.o.chop = Math.min(100, (this.o.chop||0) + 18);
+      this.o.whitecaps = Math.min(100, (this.o.whitecaps||0) + 20);
+      // and give it a shove so the change is felt, not just configured
+      if(this.surface) for(let k=0;k<3;k++)
+        this.surface.disturb((Math.random()*this.surface.n)|0, rand(-2.2,2.2), 5);
+      break;
+    case "freeze":
+      this.o.frozen = v > 0;
+      this._styleReady = this._styleReady && !this.o.frozen;
+      break;
+    default: return;
+  }
+  this.wake();
+};
+
 Fluid.prototype.setStyle  = function(name){
   this.o.style = name;
   this.style = STYLES[name] || null;
@@ -2484,6 +2520,16 @@ window.HannsFluid = {
   Fluid, Surface,
   isFluid: kind => KIND_SET.has(kind),
   renderFluid,
+  /* Every live instance currently on the page — the stage uses this to
+     route a controller command to the right liquid. */
+  instances(){ return Array.from(ALL); },
+  /* The instance rendered for a given element node, if any. */
+  forNode(node){
+    if(!node) return null;
+    const w = node.classList && node.classList.contains("fluid-obj")
+      ? node : (node.querySelector ? node.querySelector(".fluid-obj") : null);
+    return (w && w._fluid) || null;
+  },
   /* Standalone: HannsFluid.mount(canvas, {level:0, accent:"#22b8f0"}) */
   mount(canvas, opts){ return new Fluid(canvas, opts); },
   /* Programmatic: HannsFluid.make("fluid_tank",{x:60,y:60,level:40}) */

@@ -101,6 +101,15 @@ ALLOWED_REACTIONS = {
 # table in hanns_actors.js — an unknown verb is dropped rather than passed
 # through, so a stale phone page can never inject a class name onto the
 # projector.
+# Whitelisted liquid commands from the phone controller.
+#   pour    splash into the surface
+#   level   set the fill percentage (value 0-100)
+#   nudge   add to the fill percentage (value may be negative)
+#   calm    settle the surface
+#   wild    stir it up
+#   freeze  stop the animation / thaw it again
+ALLOWED_FLUID_ACTIONS = {"pour", "level", "nudge", "calm", "wild", "freeze"}
+
 ALLOWED_ACTOR_ACTIONS = {
     "idle", "walk", "run", "jump", "grow", "shake", "wave", "spin",
     "fill", "drain", "harvest", "rain", "shine", "count",
@@ -201,6 +210,7 @@ class PresentConsumer(AsyncWebsocketConsumer):
                 current = await self._current_slide()
                 await self.send_json({
                     "type": "controller_ok",
+                    "seq": PresentConsumer._slide_seq.get(self.code, 0),
                     "current_slide": current,
                     # Send the latest slides from the DB so phone notes are fresh,
                     # even if the phone controller page was opened before the
@@ -272,6 +282,11 @@ class PresentConsumer(AsyncWebsocketConsumer):
             if self.is_presenter or self.is_controller:
                 await self._handle_actor_action(data)
 
+        elif mtype == "fluid":
+            # Drive a liquid object on the big screen from the phone.
+            if self.is_presenter or self.is_controller:
+                await self._handle_fluid(data)
+
         elif mtype == "end_show":
             # Controller ends the presentation on the big screen. The stage
             # then shows the download QR (when the owner enabled downloads).
@@ -323,19 +338,37 @@ class PresentConsumer(AsyncWebsocketConsumer):
         except (TypeError, ValueError):
             return
         index = max(0, index)
+
+        seq = PresentConsumer._slide_seq.get(self.code, 0) + 1
+        PresentConsumer._slide_seq[self.code] = seq
+
+        # A presenter reconnecting after an outage re-announces where it
+        # actually is. It navigated with the keyboard while the socket was
+        # down, so the stored slide is stale and the room must follow the
+        # stage rather than the other way round.
+        resync = bool(data.get("resync")) and self.is_presenter
+
         await self._set_current_slide(index)
         slide = await self._slide(index)
         # Arriving at a slide resets its cue-held elements, so stepping back
         # to a slide replays it from the top instead of showing every reveal
         # the presenter already spent.
-        self._clear_reveals(index)
-        # A callout belongs to the slide it was authored on — arriving
-        # anywhere (including back here) starts with a clean stage.
-        self._set_focus(index, None)
+        # A resync is not an arrival: the presenter has been sitting on this
+        # slide, possibly with cues already spent. Wiping them would undo
+        # reveals the room has already seen.
+        if not resync:
+            self._clear_reveals(index)
+            # A callout belongs to the slide it was authored on — arriving
+            # anywhere (including back here) starts with a clean stage.
+            self._set_focus(index, None)
+        revealed = sorted(
+            PresentConsumer._revealed.get(self.code, {}).get(index, set())
+        ) if resync else []
         await self.channel_layer.group_send(self.group, {
             "type": "fanout",
             "payload": {
-                "type": "goto", "index": index, "slide": slide, "revealed": [],
+                "type": "goto", "index": index, "slide": slide,
+                "revealed": revealed, "seq": seq, "resync": resync,
             },
         })
 
@@ -512,6 +545,34 @@ class PresentConsumer(AsyncWebsocketConsumer):
             },
         })
 
+    async def _handle_fluid(self, data):
+        """Drive a liquid object on the big screen.
+
+        {type:"fluid", index, elId, action, value}
+
+        Actions are whitelisted rather than passed through, because this
+        arrives from a phone on the open internet and the stage turns it
+        straight into a rendering instruction.
+        """
+        index = await self._index_arg(data)
+        el_id = str(data.get("elId") or "").strip()[:MAX_EL_ID]
+        action = str(data.get("action") or "").strip().lower()
+        if not el_id or action not in ALLOWED_FLUID_ACTIONS:
+            return
+        try:
+            value = float(data.get("value"))
+        except (TypeError, ValueError):
+            value = 0.0
+        value = max(-1000.0, min(1000.0, value))
+
+        await self.channel_layer.group_send(self.group, {
+            "type": "fanout",
+            "payload": {
+                "type": "fluid", "index": index, "elId": el_id,
+                "action": action, "value": value,
+            },
+        })
+
     async def _index_arg(self, data):
         """Slide index from a payload, falling back to the live slide."""
         try:
@@ -604,6 +665,11 @@ class PresentConsumer(AsyncWebsocketConsumer):
     # counter if you run multiple workers and need a global figure.
     _counts = {}
     _reaction_counts_memory = {}
+    # A monotonic per-deck counter stamped on every goto. Clients ignore
+    # any goto older than the last one they applied, which is what stops a
+    # reconnecting phone (or a queued message arriving late) from dragging
+    # the room back to a slide the presenter has already left.
+    _slide_seq = {}
 
     # {code: {slide_index: {el_id, …}}} — which cue-held elements are
     # currently on the big screen. Same per-process caveat as _counts.
@@ -894,6 +960,7 @@ class PresentConsumer(AsyncWebsocketConsumer):
             "code": d.code,
             "title": d.title,
             "current_slide": d.current_slide,
+            "seq": PresentConsumer._slide_seq.get(self.code, 0),
             "allow_reactions": d.allow_reactions,
             "live": d.state == "live",
             "count": PresentConsumer._counts.get(self.code, 0),

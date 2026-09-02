@@ -99,6 +99,70 @@
     margin-bottom:.7rem;font-size:.92rem}
   .panel-x{background:none;border:0;color:#8d84b5;font-size:1rem;cursor:pointer;padding:.2rem .35rem}
   .panel-x:hover{color:#fff}
+  /* ── liquids ─────────────────────────────────────────────────────── */
+  .fluid-level-row{
+    display:grid;
+    grid-template-columns:auto minmax(0,1fr);
+    align-items:center;
+    gap:12px;
+    margin:12px 0 10px;
+  }
+  .fluid-level-label{
+    font:700 .74rem/1 "Spline Sans Mono",ui-monospace,monospace;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    opacity:.72;
+    white-space:nowrap;
+  }
+  .fluid-level-label b{font-size:.92rem;opacity:1;}
+  /* A fat track and a big thumb: this gets dragged with a thumb, in the
+     dark, while talking. */
+  #fluid-level{
+    -webkit-appearance:none;appearance:none;
+    width:100%;height:34px;background:transparent;margin:0;
+  }
+  #fluid-level::-webkit-slider-runnable-track{
+    height:12px;border-radius:999px;
+    background:linear-gradient(90deg,rgba(34,211,238,.85),rgba(59,130,246,.5));
+    border:1px solid rgba(255,255,255,.16);
+  }
+  #fluid-level::-moz-range-track{
+    height:12px;border-radius:999px;
+    background:linear-gradient(90deg,rgba(34,211,238,.85),rgba(59,130,246,.5));
+    border:1px solid rgba(255,255,255,.16);
+  }
+  #fluid-level::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;
+    width:30px;height:30px;margin-top:-10px;
+    border-radius:50%;
+    background:radial-gradient(circle at 34% 30%,#fff,#7dd3fc 60%,#0ea5e9);
+    border:2px solid rgba(255,255,255,.85);
+    box-shadow:0 6px 18px rgba(0,0,0,.45);
+    cursor:pointer;
+  }
+  #fluid-level::-moz-range-thumb{
+    width:30px;height:30px;border-radius:50%;
+    background:radial-gradient(circle at 34% 30%,#fff,#7dd3fc 60%,#0ea5e9);
+    border:2px solid rgba(255,255,255,.85);
+    box-shadow:0 6px 18px rgba(0,0,0,.45);
+    cursor:pointer;
+  }
+  .fluid-grid{
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:8px;
+    margin-bottom:4px;
+  }
+  .fluid-grid .phone-btn{min-height:46px;padding:0 6px;}
+  .fluid-act[data-act="pour"]{
+    background:linear-gradient(135deg,rgba(34,211,238,.30),rgba(59,130,246,.22));
+    border-color:rgba(34,211,238,.45);
+  }
+  .fluid-act.on{
+    background:linear-gradient(135deg,rgba(34,211,238,.42),rgba(59,130,246,.32));
+    border-color:rgba(34,211,238,.6);
+  }
+
   .panel-hint{margin:.65rem 0 0;font-size:.74rem;line-height:1.55;color:#8d84b5}
   .zoom-row{display:flex;align-items:center;gap:.7rem;font-size:.8rem;color:#cfc8ea}
   .zoom-row b{color:#fff}
@@ -181,6 +245,7 @@
       <button class="phone-btn" id="toggle-teleprompter" type="button" hidden>Show teleprompter</button>
       <button class="phone-btn" id="toggle-reveal" type="button" hidden>Reveal objects</button>
       <button class="phone-btn" id="toggle-focus" type="button" hidden>Zoom regions</button>
+      <button class="phone-btn" id="toggle-fluid" type="button" hidden>Liquids</button>
       <button class="phone-btn" id="toggle-zoom" type="button">Magnify big screen</button>
       <button class="phone-btn" id="toggle-share" type="button">Share &amp; end</button>
     </div>
@@ -214,6 +279,34 @@
       <button class="phone-btn phone-btn-wide" id="focus-off" type="button" hidden>Back to the full slide</button>
       <p class="panel-hint">Tap a region and the slide dims behind an enlarged view
         of that area. Tap it again — or move slide — to drop it.</p>
+    </section>
+
+    <section class="phone-panel" id="fluid-panel" hidden>
+      <div class="panel-head">
+        <strong>💧 Liquids on this slide</strong>
+        <button class="panel-x" id="fluid-close" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="reveal-list" id="fluid-list"></div>
+      <p class="reveal-empty" id="fluid-empty" hidden>No liquid objects on this slide.
+        In the editor, add one from the <b>Liquid</b> group in the object drawer.</p>
+
+      <div id="fluid-controls" hidden>
+        <div class="fluid-level-row">
+          <span class="fluid-level-label">Fill <b id="fluid-level-val">50%</b></span>
+          <input type="range" id="fluid-level" min="0" max="100" value="50"
+                 aria-label="Fill level">
+        </div>
+        <div class="fluid-grid">
+          <button class="phone-btn fluid-act" data-act="nudge" data-val="-10" type="button">−10%</button>
+          <button class="phone-btn fluid-act" data-act="pour"  data-val="0"   type="button">Pour</button>
+          <button class="phone-btn fluid-act" data-act="nudge" data-val="10"  type="button">+10%</button>
+          <button class="phone-btn fluid-act" data-act="calm"  data-val="0"   type="button">Calmer</button>
+          <button class="phone-btn fluid-act" data-act="freeze" data-val="1"  type="button">Freeze</button>
+          <button class="phone-btn fluid-act" data-act="wild"  data-val="0"   type="button">Rougher</button>
+        </div>
+      </div>
+      <p class="panel-hint">Pick a liquid, then drive it live. The fill pours
+        rather than jumping, so you can raise it while you talk to it.</p>
     </section>
 
     <section class="phone-panel" id="zoom-panel" hidden>
@@ -337,6 +430,14 @@ let notesVisible=false;
    moving an inch. Nothing is sent to the projector until they tap
    "Go to this slide". */
 let peek=Number(D.current_slide)||0;
+/* Highest slide-clock value acted on. See the goto branch in the socket
+   handler for why this matters more than it looks. */
+let lastSlideSeq=0;
+/* Which liquid the fluid panel is currently driving, and whether its panel
+   is open. Declared here rather than beside the panel wiring because
+   updateButtons() reads them and `let` has no hoisting to fall back on. */
+let fluidSel="";
+let fluidVisible=false;
 
 // ── teleprompter state (presenter-only, runs locally on this phone) ──
 let tpVisible=false;
@@ -392,6 +493,17 @@ function updateButtons(){
     rv.textContent = revealVisible ? "Hide reveal list"
       : (shown ? `Reveal objects (${shown}/${held} shown)` : `Reveal objects (${held})`);
   }
+  const fl=$("#toggle-fluid");
+  if(fl){
+    const n=fluidElsForSlide().length;
+    fl.hidden = n===0;
+    if(n===0 && fluidVisible){        // slide has none — close the panel
+      fluidVisible=false;
+      const pnl=$("#fluid-panel"); if(pnl) pnl.hidden=true;
+    }
+    fl.textContent = fluidVisible ? "Hide liquids"
+      : (n===1 ? "Liquid" : `Liquids (${n})`);
+  }
 }
 function render(){
   const s=currentSlide();
@@ -405,6 +517,7 @@ function render(){
   refreshTeleprompter();
   renderRevealPanel();
   renderFocusPanel();
+  renderFluidPanel();
   updateButtons();
 }
 
@@ -547,6 +660,10 @@ function openSocket(){
     if(m.type==="controller_ok"){
       connected=true;
       if(Array.isArray(m.slides)){D.slides=m.slides;}
+      // Coming back from an outage, the room is wherever it is now. Adopt
+      // it wholesale rather than replaying what we last saw — the stage
+      // may have moved on by ten slides while this phone was in a pocket.
+      if(typeof m.seq==="number") lastSlideSeq=m.seq;
       i=clamp(Number(m.current_slide)||i,0,Math.max(((D.slides||[]).length)-1,0));
       if(Array.isArray(m.revealed)) revealedIds=new Set(m.revealed);
       peek=i;
@@ -558,6 +675,13 @@ function openSocket(){
     }else if(m.type==="controller_denied"){
       setStatus("WRONG PIN");try{sock.close()}catch(e){}
     }else if(m.type==="goto"&&typeof m.index==="number"){
+      // The server stamps every move with a monotonic number. A goto that
+      // was queued behind a flaky connection can arrive after a newer one;
+      // applying it would walk the phone backwards on its own.
+      if(typeof m.seq==="number"){
+        if(m.seq<=lastSlideSeq) return;
+        lastSlideSeq=m.seq;
+      }
       i=clamp(Number(m.index),0,Math.max(((D.slides||[]).length)-1,0));
       if(m.slide) mergeSlide(i,m.slide);
       // The consumer clears the revealed set on every goto, so a slide
@@ -998,6 +1122,64 @@ function renderFocusPanel(){
     list.appendChild(b);
   });
 }
+/* ── liquids ──────────────────────────────────────────────────────────
+   The kinds are read off the element rather than hard-coded, so any liquid
+   the editor gains later shows up here without touching this file. */
+function isFluidEl(e){
+  return !!(e && e.type==="object" && e.id &&
+            typeof e.objectType==="string" && e.objectType.indexOf("fluid_")===0);
+}
+function fluidElsForSlide(){
+  return (((currentSlide()||{}).els)||[]).filter(isFluidEl);
+}
+function fluidLabel(e){
+  const t=String(e.label||e.objectType.replace("fluid_","")||"Liquid")
+    .trim().replace(/\s+/g," ");
+  return t.length>34?t.slice(0,34)+"\u2026":t;
+}
+function selectedFluid(){
+  return fluidElsForSlide().find(e=>e.id===fluidSel)||null;
+}
+function renderFluidPanel(){
+  const list=$("#fluid-list"), empty=$("#fluid-empty"), ctrls=$("#fluid-controls");
+  if(!list)return;
+  const els=fluidElsForSlide();
+  // The selection cannot survive a slide that does not contain it.
+  if(!els.some(e=>e.id===fluidSel)) fluidSel = els.length===1 ? els[0].id : "";
+  list.innerHTML="";
+  if(empty) empty.hidden=els.length>0;
+  if(ctrls) ctrls.hidden=!fluidSel;
+  els.forEach(e=>{
+    const b=document.createElement("button");
+    b.type="button";
+    b.className="reveal-btn"+(fluidSel===e.id?" on":"");
+    b.innerHTML='<span class="rv-dot"></span><span class="rv-name"></span><span class="rv-kind"></span>';
+    b.querySelector(".rv-name").textContent=fluidLabel(e);
+    b.querySelector(".rv-kind").textContent=(Number(e.level)||0)+"%";
+    b.addEventListener("click",()=>{
+      fluidSel = (fluidSel===e.id && els.length>1) ? "" : e.id;
+      renderFluidPanel();
+    });
+    list.appendChild(b);
+  });
+  const sel=selectedFluid();
+  const slider=$("#fluid-level"), val=$("#fluid-level-val");
+  if(sel && slider){
+    const lvl=clamp(Number(sel.level)||0,0,100);
+    slider.value=lvl;
+    if(val) val.textContent=Math.round(lvl)+"%";
+  }
+}
+function sendFluid(action,value){
+  const sel=selectedFluid();
+  if(!connected||!sel)return;
+  send({type:"fluid",index:i,elId:sel.id,action:action,value:Number(value)||0});
+  // Track it locally so the slider and the chip agree with the big screen
+  // without waiting for a round trip.
+  if(action==="level") sel.level=clamp(Number(value)||0,0,100);
+  else if(action==="nudge") sel.level=clamp((Number(sel.level)||0)+(Number(value)||0),0,100);
+}
+
 function sendFocus(elId){
   if(!connected)return;
   const dropping=focusActive===elId;
@@ -1011,6 +1193,48 @@ function applyFocusState(elId,off){
   renderFocusPanel();
   updateButtons();
 }
+
+$("#toggle-fluid").addEventListener("click",()=>{
+  fluidVisible=!fluidVisible;
+  $("#fluid-panel").hidden=!fluidVisible;
+  if(fluidVisible) renderFluidPanel();
+  $("#toggle-fluid").textContent=fluidVisible?"Hide liquids":"Liquids";
+});
+$("#fluid-close").addEventListener("click",()=>{
+  fluidVisible=false;
+  $("#fluid-panel").hidden=true;
+  $("#toggle-fluid").textContent="Liquids";
+});
+(function(){
+  const slider=$("#fluid-level"), val=$("#fluid-level-val");
+  if(slider){
+    // Fire on every move: the stage pours toward whatever it last heard,
+    // so a continuous drag reads as a continuous pour rather than a jump
+    // at the end. Throttled so a fast drag cannot flood the socket.
+    let last=0;
+    slider.addEventListener("input",()=>{
+      if(val) val.textContent=slider.value+"%";
+      const now=Date.now();
+      if(now-last<90) return;
+      last=now;
+      sendFluid("level",slider.value);
+    });
+    slider.addEventListener("change",()=>{ sendFluid("level",slider.value); renderFluidPanel(); });
+  }
+  document.querySelectorAll(".fluid-act").forEach(b=>{
+    b.addEventListener("click",()=>{
+      const act=b.dataset.act;
+      if(act==="freeze"){
+        const on=b.classList.toggle("on");
+        b.textContent=on?"Thaw":"Freeze";
+        sendFluid("freeze",on?1:0);
+      }else{
+        sendFluid(act,b.dataset.val);
+      }
+      renderFluidPanel();
+    });
+  });
+})();
 
 $("#toggle-focus").addEventListener("click",()=>{
   focusVisible=!focusVisible;

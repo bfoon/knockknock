@@ -153,6 +153,11 @@ function transition(node,kind,ghost,seed){
   // Older core: fall back to a plain fade rather than nothing at all.
   if(node.animate)node.animate([{opacity:0},{opacity:1}],{duration:420,fill:"both"});
 }
+/* The highest slide-clock value this screen has acted on. The server
+   stamps every goto; anything at or below this has already been applied
+   or superseded. */
+let lastSlideSeq = 0;
+
 function show(n,broadcast=true){
   if(!DECK.slides.length || !paintSlide || !pCanvas)return;
   keepScreenAwake("slide-change");
@@ -311,6 +316,69 @@ function restoreRevealed(){
 }
 /* Play a one-off actor action triggered from the phone controller. This
    is the same path as clicking the character on the stage. */
+/* ── liquids driven from the phone ────────────────────────────────────
+   The controller sends {elId, action, value}; the stage finds the live
+   canvas instance and asks it to do the thing. Nothing is re-rendered,
+   so a level change pours rather than snapping. */
+function applyFluidCue(m){
+  const node = elNodeById(m.elId);
+  const wrap = node && node.querySelector(".fluid-obj");
+  const f = wrap && wrap._fluid;
+  if(!f || !f.remote) return;
+  f.remote(m.action, m.value);
+}
+
+/* ── background prefetch ──────────────────────────────────────────────
+   The deck itself is already in memory — CFG.deck carries every slide.
+   What is not local is the media those slides point at, and a projector
+   that loses the venue wifi mid-talk will render slide 12 as a grey box.
+
+   So once the first slide is up and the machine is otherwise idle, walk
+   the rest of the deck and pull every image through the browser cache,
+   nearest slides first. It is deliberately unhurried: one at a time, so
+   it can never compete with the slide the room is actually looking at. */
+function prefetchDeckMedia(){
+  if(!DECK || !Array.isArray(DECK.slides)) return;
+  const urls = [], seen = new Set();
+  const collect = (v)=>{
+    if(typeof v!=="string" || v.length<5 || seen.has(v)) return;
+    if(!/^(https?:|\/|data:image)/.test(v)) return;
+    if(v.slice(0,5)==="data:") return;              // already inline
+    if(!/\.(png|jpe?g|gif|webp|svg|avif)(\?|$)/i.test(v) && v.indexOf("/media/")<0) return;
+    seen.add(v); urls.push(v);
+  };
+  const walk = (o, depth)=>{
+    if(!o || depth>6) return;
+    if(Array.isArray(o)){ o.forEach(x=>walk(x,depth+1)); return; }
+    if(typeof o==="object"){
+      for(const k in o){
+        const v=o[k];
+        if(typeof v==="string") collect(v);
+        else walk(v, depth+1);
+      }
+      return;
+    }
+  };
+  // nearest slides first — the ones most likely to be needed next
+  const order = DECK.slides.map((s,idx)=>({s,idx}))
+    .sort((a,b)=>Math.abs(a.idx-i)-Math.abs(b.idx-i));
+  order.forEach(o=>walk(o.s,0));
+  if(!urls.length) return;
+
+  let n = 0;
+  const pull = ()=>{
+    if(n>=urls.length) return;
+    const url = urls[n++];
+    const img = new Image();
+    img.decoding = "async";
+    const next = ()=>{ (window.requestIdleCallback||setTimeout)(pull, 120); };
+    img.onload = next;
+    img.onerror = next;      // a 404 must not stall the queue
+    img.src = url;
+  };
+  (window.requestIdleCallback||setTimeout)(pull, 400);
+}
+
 function playActorFromCue(elId, action){
   const AC = window.HannsActors;
   if(!AC) return;
@@ -407,6 +475,11 @@ const Live={
       if(gen!==this.gen)return;
       this.retry=0; this.lastRx=Date.now();
       this.send({type:"presenter_hello"});
+      // The stage is the source of truth for where the talk is. If the
+      // socket was down while the presenter drove with the keyboard, the
+      // server's stored slide is stale — so say where we actually are
+      // instead of waiting to be told, and let the room catch up to us.
+      this.send({type:"goto", index:i, resync:true});
       keepScreenAwake("websocket-open");
       this.beat();
     });
@@ -416,7 +489,20 @@ const Live={
       let m; try{ m=JSON.parse(ev.data);}catch(e){return;}
       if(m.type==="ping"){ this.send({type:"pong"}); return; }
       if(m.type==="pong") return;
-      if(m.type==="reaction"){spawnEmoji(m.emoji);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);else incrementReactionCount(m.emoji);}else if(m.type==="participants")setCount(m.count);else if(m.type==="state"){if(typeof m.count==="number")setCount(m.count);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);if(Array.isArray(m.revealed)){revealedNow=new Set(m.revealed);restoreRevealed();}if(m.focus)setTimeout(()=>applyFocus(m.focus,false),60);}else if(m.type==="reveal"){keepScreenAwake("cue-reveal");applyReveal(m.ids,m.hide,false);}else if(m.type==="focus"){keepScreenAwake("zoom-region");applyFocus(m.elId,m.off,m.index);}else if(m.type==="actor_action"){keepScreenAwake("actor-cue");playActorFromCue(m.elId,m.action);}else if(m.type==="goto"&&typeof m.index==="number"){keepScreenAwake("phone-controller");if(m.index!==i){suppressBroadcast=true;show(m.index,false);suppressBroadcast=false;}}else if(m.type==="pointer"){showPointer(m.x,m.y);}
+      if(m.type==="reaction"){spawnEmoji(m.emoji);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);else incrementReactionCount(m.emoji);}else if(m.type==="participants")setCount(m.count);else if(m.type==="state"){if(typeof m.seq==="number"&&m.seq>lastSlideSeq)lastSlideSeq=m.seq;if(typeof m.count==="number")setCount(m.count);if(m.reaction_counts)renderReactionCounts(m.reaction_counts);if(Array.isArray(m.revealed)){revealedNow=new Set(m.revealed);restoreRevealed();}if(m.focus)setTimeout(()=>applyFocus(m.focus,false),60);}else if(m.type==="reveal"){keepScreenAwake("cue-reveal");applyReveal(m.ids,m.hide,false);}else if(m.type==="focus"){keepScreenAwake("zoom-region");applyFocus(m.elId,m.off,m.index);}else if(m.type==="actor_action"){keepScreenAwake("actor-cue");playActorFromCue(m.elId,m.action);}else if(m.type==="goto"&&typeof m.index==="number"){
+        keepScreenAwake("phone-controller");
+        // Ignore anything older than the last move we applied. Without this
+        // a goto that was queued behind a dead socket can land after the
+        // presenter has moved on and drag the room backwards.
+        if(typeof m.seq==="number"){
+          if(m.seq<=lastSlideSeq) return;
+          lastSlideSeq=m.seq;
+        }
+        // Our own resync echo: we are already there, so do not repaint and
+        // do not wipe the cues that are currently up.
+        if(m.resync && m.index===i) return;
+        if(m.index!==i){suppressBroadcast=true;show(m.index,false);suppressBroadcast=false;}
+      }else if(m.type==="fluid"){keepScreenAwake("fluid-cue");applyFluidCue(m);}else if(m.type==="pointer"){showPointer(m.x,m.y);}
     });
     sock.addEventListener("close",()=>{
       if(gen!==this.gen)return;              // superseded by a reconnect
@@ -576,6 +662,9 @@ function init(){
   const cPin=$("#controller-pin");if(cPin)cPin.textContent=CFG.controlPin||"----";
   const cUrl=$("#controller-url");if(cUrl)cUrl.textContent=(CFG.controlUrl||"").replace(/^https?:\/\//,"");
   drawQRs();ensureControllerQrFallback();renderReactionCounts(CFG.reactionCounts || DECK.reaction_counts || {});fit();show(i,false);wireActorClicks();Live.start();keepScreenAwake("presentation-start");
+  // Only once the first slide is actually up — the opening frame is the
+  // one moment in a talk where nothing else may compete for bandwidth.
+  prefetchDeckMedia();
   $("#pp-prev")?.addEventListener("click",()=>show(i-1));
   $("#pp-next")?.addEventListener("click",()=>show(i+1));
   $("#present-exit")?.addEventListener("click",endPresent);

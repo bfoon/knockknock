@@ -35,8 +35,8 @@
           <span class="p-listrow-body">
             <span class="p-listrow-title">{{ q.title }}</span>
             <span class="p-listrow-meta">
-              {# num_questions is annotated in the view. This used to call
-                 {{ q.questions.count }} — one COUNT query per row. #}
+<!--              {# num_questions is annotated in the view. This used to call-->
+<!--                 {{ q.questions.count }} — one COUNT query per row. #}-->
               <span>{{ q.num_questions }} question{{ q.num_questions|pluralize }}</span>
               <span>·</span>
               <span>{{ q.get_mode_display }}</span>

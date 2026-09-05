@@ -7,6 +7,20 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://api.fontshare.com/v2/css?f[]=clash-display@600,700&f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+
+{% comment %}
+  The question-styling shim below maps GameQuestion.font_family onto a
+  FONT_STACK containing Space Grotesk, Playfair Display, JetBrains Mono,
+  Comic Neue and Press Start 2P. None of them were loaded here, so every
+  choice except Clash Display and the Inter default silently fell back to a
+  system face — while question_edit.html, which does load them, showed the
+  author exactly what they thought they were getting. Same list as the editor.
+{% endcomment %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&family=JetBrains+Mono:wght@500;700&family=Playfair+Display:wght@500;800&family=Press+Start+2P&family=Space+Grotesk:wght@500;700&display=swap">
+
 <link rel="stylesheet" href="{% static 'css/app.css' %}?v=3">
 <style>
   body {
@@ -823,6 +837,28 @@
     touch-action: none;
   }
 
+  /* Column count follows the piece count. Set by renderSlotPuzzleHtml. */
+  .kk-puzzle-slots[data-count="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kk-puzzle-slots[data-count="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .kk-puzzle-slots[data-count="5"],
+  .kk-puzzle-slots[data-count="6"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .kk-puzzle-slots[data-count="7"],
+  .kk-puzzle-slots[data-count="8"] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+  /* Past four pieces, square tiles stack too tall to reach the submit
+     button without scrolling. Flatten them instead. */
+  .kk-puzzle-slots[data-count="5"] .kk-puzzle-slot,
+  .kk-puzzle-slots[data-count="6"] .kk-puzzle-slot,
+  .kk-puzzle-slots[data-count="7"] .kk-puzzle-slot,
+  .kk-puzzle-slots[data-count="8"] .kk-puzzle-slot { aspect-ratio: 1 / 0.78; }
+
+  @media (max-width: 460px) {
+    .kk-puzzle-slots[data-count="5"],
+    .kk-puzzle-slots[data-count="6"],
+    .kk-puzzle-slots[data-count="7"],
+    .kk-puzzle-slots[data-count="8"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
   .kk-puzzle-slot {
     position: relative;
     aspect-ratio: 1 / 1;
@@ -1082,10 +1118,14 @@
     <h2 class="mb-2">Pick a name & avatar</h2>
     <input type="text" id="nick-input" class="form-control form-control-lg mb-3" placeholder="Your nickname" maxlength="40">
     <div class="text-secondary small mb-2">Choose your fighter:</div>
-    <div class="kk-avatar-grid mb-3" id="avatar-grid">
+    <div class="kk-avatar-grid mb-3" id="avatar-grid" role="group" aria-label="Choose your avatar">
       {% for a in avatars %}
-        <div class="kk-avatar-tile{% if forloop.first %} selected{% endif %}"
-             data-avatar-id="{{ a.id }}" title="{{ a.label }}">{{ a.emoji }}</div>
+        <button type="button"
+                class="kk-avatar-tile{% if forloop.first %} selected{% endif %}"
+                data-avatar-id="{{ a.id }}"
+                aria-pressed="{% if forloop.first %}true{% else %}false{% endif %}"
+                aria-label="{{ a.label }}"
+                title="{{ a.label }}">{{ a.emoji }}</button>
       {% endfor %}
     </div>
     <button class="kk-btn kk-btn-primary kk-btn-lg w-100" id="nick-go">Enter the arena <i class="bi bi-fire"></i></button>
@@ -1132,6 +1172,48 @@
 
 <script>
 /* ─────────────────────────────────────────────────────────────────────
+   ENTRY-SCREEN ACCESSIBILITY
+   ─────────────────────────────────────────────────────────────────────
+   Two small gaps on the first screen a player ever sees. The avatar tiles
+   are now real buttons (see the markup above); this keeps `aria-pressed` in
+   sync with whatever flips the `.selected` class, so it stays correct
+   whether that is play.js or a tap here. And Enter now joins: the nickname
+   input is not inside a <form>, so pressing it did nothing at all, which on
+   a phone means staring at a keyboard wondering what to press.
+──────────────────────────────────────────────────────────────────── */
+(function () {
+  "use strict";
+
+  var grid = document.getElementById("avatar-grid");
+  if (grid) {
+    var tiles = grid.querySelectorAll(".kk-avatar-tile");
+    var syncPressed = function () {
+      tiles.forEach(function (t) {
+        t.setAttribute("aria-pressed", t.classList.contains("selected") ? "true" : "false");
+      });
+    };
+    grid.addEventListener("click", function () { setTimeout(syncPressed, 0); });
+    new MutationObserver(syncPressed).observe(grid, {
+      subtree: true, attributes: true, attributeFilter: ["class"],
+    });
+    syncPressed();
+  }
+
+  var nick = document.getElementById("nick-input");
+  var go = document.getElementById("nick-go");
+  if (nick && go) {
+    nick.setAttribute("autocomplete", "nickname");
+    nick.setAttribute("autocapitalize", "words");
+    nick.setAttribute("enterkeyhint", "go");
+    nick.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); go.click(); }
+    });
+  }
+})();
+</script>
+
+<script>
+/* ─────────────────────────────────────────────────────────────────────
    ROOMS SHIM — WebSocket-wrapping approach
    ─────────────────────────────────────────────────────────────────────
    We wrap window.WebSocket BEFORE play.js loads. When play.js opens
@@ -1160,7 +1242,10 @@
   const AVATARS = window.kkAvatarsById || {};
   function emojiFor(id, fallbackEmoji) {
     const key = String(id || "");
-    return (AVATARS[key] && AVATARS[key].emoji) || fallbackEmoji || "🐉";
+    const known = AVATARS[key] && AVATARS[key].emoji;
+    // The catalog is ours. `fallbackEmoji` arrives over the socket and is
+    // written into innerHTML below, so it gets the same treatment as r.name.
+    return known || escapeHtml(fallbackEmoji) || "🐉";
   }
 
   function escapeHtml(s) {
@@ -1231,7 +1316,7 @@
       if (r.is_full) door.classList.add("is-full");
       door.dataset.slug = r.slug;
       door.innerHTML = `
-        <span class="kk-door-cap ${r.is_full ? "is-full" : ""}">${r.occupancy}/${r.capacity}</span>
+        <span class="kk-door-cap ${r.is_full ? "is-full" : ""}">${escapeHtml(r.occupancy)}/${escapeHtml(r.capacity)}</span>
         <div class="kk-door-avatar kk-anim-bob">${emojiFor(r.avatar_id, r.emoji)}</div>
         <div class="kk-door-panel"></div>
         <span class="kk-door-player">${emojiFor(myCurrentAvatar || selectedAvatar(), "🐉")}</span>
@@ -1601,21 +1686,22 @@
    and "puzzle" and skips its own paint for those types — but we still
    guard against double-rendering by tracking the current question ID.
 
-   PUZZLE LAYOUT POLICY
-   ────────────────────
-   • If every piece's text fits comfortably (≤ ~18 chars), render the
-     interlocking 2x2 jigsaw grid (matches the screenshot).
-   • If any piece's text is longer, fall back to the vertical "stacked
-     tiles" layout — full-width rows reordered via drag handles.
+   PUZZLE LAYOUT
+   ─────────────
+   One numbered slot per piece, between 2 and 8 of them. (This used to
+   describe a second "stacked tiles" layout chosen by text length, and a
+   PIECE_TEXT_FIT_LIMIT constant to pick between them. Neither was ever
+   reachable — renderPuzzle only builds slots — so both are gone.)
 
    ORDERING + SUBMIT
    ─────────────────
-   Pieces are shuffled on display and assigned a visible "position"
-   0..n-1. The participant drag-and-drop OR taps to swap pieces. On
-   submit we send `puzzle_order: [choice_id, choice_id, …]` in the
-   current display order. The server compares against each choice's
-   `correct_position` (1-based) to decide correctness, then awards
-   points the same way as MCQ (with the active scoring + late policy).
+   The server sends the pieces already scrambled; we shuffle again for
+   good measure and assign a visible position 0..n-1. The participant
+   drags or taps to swap. On submit we send `puzzle_order:
+   [choice_id, …]` in the current display order. The server compares it
+   against each choice's `correct_position` — which it holds and never
+   sends — then awards points as it would for MCQ, applying the active
+   scoring and late-answer policy.
 
    CORRECT SPARKLE
    ───────────────
@@ -1635,9 +1721,6 @@
   let currentChoices = [];
 
   const RealWS = window.WebSocket;
-  // Threshold above which a single piece's text is considered "long"
-  // and we switch to stacked layout. Tuned for ~14pt font on phones.
-  const PIECE_TEXT_FIT_LIMIT = 18;
 
   function send(obj) {
     if (wsRef && wsRef.readyState === RealWS.OPEN) wsRef.send(JSON.stringify(obj));
@@ -1702,19 +1785,22 @@
 
   /* ──────────────────────── PUZZLE ───────────────────────────────── */
 
+  //: Matches GameChoice max_num in forms.py and the :nth-child rules above.
+  const MAX_PUZZLE_PIECES = 8;
+
   function puzzleChoiceSet(q) {
+    // Every choice the server sent is a piece. The old version filtered on
+    // `correct_position > 0` and then sliced to 4 — which meant a 5-piece
+    // puzzle submitted 4 ids against a 5-id correct order and could never
+    // be solved, while pieces 5-8 never rendered at all.
+    //
+    // It also relied on `correct_position` being present in the payload.
+    // That field is the answer: sending it to the player let anyone with
+    // devtools read the solution off the socket frame. The server no longer
+    // ships it (see serialize_game_question), and this no longer wants it —
+    // the server scrambles the pieces before sending them.
     const all = Array.isArray(q.choices) ? q.choices.filter(c => c && c.id) : [];
-
-    // Puzzle mode is a four-slot activity. Use the choices that have a
-    // correct_position first because those are the pieces the server grades.
-    // This keeps old questions safe while making new puzzle questions feel
-    // consistent: positions 1, 2, 3, 4.
-    const positioned = all
-      .filter(c => Number(c.correct_position || 0) > 0)
-      .sort((a, b) => Number(a.correct_position || 0) - Number(b.correct_position || 0));
-
-    const base = positioned.length ? positioned : all;
-    return base.slice(0, 4);
+    return all.slice(0, MAX_PUZZLE_PIECES);
   }
 
   function renderPuzzle(q) {
@@ -1741,9 +1827,10 @@
   }
 
   function renderSlotPuzzleHtml(pieces) {
-    const slots = [0, 1, 2, 3];
+    // One slot per piece, not four.
+    const slots = pieces.map((_, i) => i);
     return `
-      <div class="kk-puzzle-slots" id="kk-puzzle-slots" role="list" aria-label="Puzzle answer positions">
+      <div class="kk-puzzle-slots" id="kk-puzzle-slots" data-count="${pieces.length}" role="list" aria-label="Puzzle answer positions">
         ${slots.map((slotIndex) => {
           const p = pieces[slotIndex];
           return `
@@ -1764,7 +1851,7 @@
     return `
       <div class="kk-puzzle-tile"
            data-choice-id="${piece.id}"
-           data-color="${displayIndex % 4}"
+           data-color="${displayIndex % 8}"
            role="button"
            tabindex="0"
            aria-label="Move ${escapeHtml(label)}">
@@ -2069,7 +2156,7 @@
         if (msg && msg.type === "answer_ack")      { onAnswerAck(msg);      return; }
         if (msg && msg.type === "answer_rejected") { onAnswerRejected(msg); return; }
 
-        const q = msg.question || (msg.type === "question" ? msg : null);
+        const q = msg && (msg.question || (msg.type === "question" ? msg : null));
         if (!q) return;
         const incomingId = String(q.id || "");
         if (incomingId && incomingId === currentQuestionId) return;

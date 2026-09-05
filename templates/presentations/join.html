@@ -1,27 +1,159 @@
 {% extends "base.html" %}
+{% load static %}
+
 {% block title %}Join a session · Knock-Knock{% endblock %}
+
+{% comment %}
+  Four things were wrong with the previous version:
+
+  1. The form had no `action` and no `method`, and the only route to the
+     session was `location.href = "/live/join/" + code + "/"` built by hand in
+     JavaScript. With JS blocked or still loading, submitting did nothing —
+     it just reloaded the page with the code in the query string. The URL was
+     also hardcoded, so renaming that route in urls.py broke joining with no
+     error anywhere.
+  2. A bad code produced `alert("Please enter a valid 6-digit code.")`. On a
+     phone that is a modal the person has to dismiss before they can even see
+     the field they got wrong.
+  3. The input accepted any characters and was only checked on submit, so you
+     could type six letters and be told off afterwards.
+  4. Nothing handled a pasted join link, which is the most common way someone
+     gets a code — they copy the whole URL out of a chat message.
+
+  This version posts to a named URL and works with JavaScript disabled. The
+  script is enhancement only: it filters input, accepts a pasted link, and
+  shows the error inline.
+
+  Set `join_code_url` to whatever your route is actually called. The view
+  should read `code` from POST, and re-render with `error` on a bad code.
+{% endcomment %}
 
 {% block content %}
 <div class="kk-main-narrow mx-auto">
   <h1 class="text-center mb-3">Join a session</h1>
-  <p class="text-center text-secondary mb-4">Enter the 6-digit session code.</p>
+  <p class="text-center text-secondary mb-4">Enter the 6-digit code from the presenter’s screen.</p>
 
-  {% if error %}<div class="kk-flash kk-flash-error mb-3">{{ error }}</div>{% endif %}
+  {% comment %}
+    `presentations:join_code` takes the code in its path, so there is no
+    codeless URL to post to. The action is reversed with a placeholder that
+    the script swaps for the typed code — which still survives a urls.py
+    rename, unlike the hardcoded "/live/join/" + code the old version built.
 
-  <form id="join-form" class="kk-card">
-    <input type="text" id="code-input" class="form-control form-control-lg text-center"
-           maxlength="6" inputmode="numeric" placeholder="123456" autofocus
-           style="letter-spacing: .3em; font-family: var(--kk-font-mono); font-size: 2rem;">
-    <button class="kk-btn kk-btn-primary kk-btn-lg w-100 mt-3" type="submit">Knock knock <i class="bi bi-arrow-right"></i></button>
+    Without JavaScript this falls back to a GET of the join landing page with
+    ?code=… on it. Three lines in `join_landing` make that work too:
+
+        def join_landing(request):
+            code = (request.GET.get("code") or "").strip()
+            if code.isdigit() and len(code) == 6:
+                return redirect("presentations:join_code", code=code)
+            return render(request, "presentations/join.html")
+  {% endcomment %}
+  <form id="join-form" class="kk-card" method="get"
+        action="{% url 'presentations:join' %}"
+        data-join-template="{% url 'presentations:join_code' '000000' %}"
+        novalidate>
+
+    <div id="join-error"
+         class="kk-flash kk-flash-error mb-3{% if not error %} d-none{% endif %}"
+         role="alert" aria-live="assertive">{{ error }}</div>
+
+    <label for="code-input" class="form-label visually-hidden">Session code</label>
+    <input type="text"
+           id="code-input"
+           name="code"
+           class="form-control form-control-lg text-center"
+           value="{{ code|default:'' }}"
+           maxlength="6"
+           minlength="6"
+           required
+           inputmode="numeric"
+           pattern="[0-9]{6}"
+           autocomplete="one-time-code"
+           autocorrect="off"
+           autocapitalize="off"
+           spellcheck="false"
+           enterkeyhint="go"
+           placeholder="123456"
+           aria-describedby="join-error"
+           autofocus
+           style="letter-spacing:.3em; font-family:var(--kk-font-mono); font-size:2rem;">
+
+    <button class="kk-btn kk-btn-primary kk-btn-lg w-100 mt-3" type="submit" id="join-submit">
+      Knock knock <i class="bi bi-arrow-right"></i>
+    </button>
   </form>
 </div>
 
 <script>
-  document.getElementById("join-form").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const code = document.getElementById("code-input").value.trim();
-    if (/^\d{6}$/.test(code)) location.href = "/live/join/" + code + "/";
-    else alert("Please enter a valid 6-digit code.");
+(function () {
+  "use strict";
+
+  var form = document.getElementById("join-form");
+  var input = document.getElementById("code-input");
+  var errorBox = document.getElementById("join-error");
+  if (!form || !input) return;
+
+  function showError(message) {
+    if (!errorBox) return;
+    errorBox.textContent = message;
+    errorBox.classList.remove("d-none");
+    input.setAttribute("aria-invalid", "true");
+  }
+
+  function clearError() {
+    if (!errorBox) return;
+    errorBox.textContent = "";
+    errorBox.classList.add("d-none");
+    input.removeAttribute("aria-invalid");
+  }
+
+  /* People paste the whole join link out of a chat message far more often
+     than they type six digits. Pull the last run of six digits out of
+     whatever landed in the field. */
+  function extractCode(raw) {
+    var digits = String(raw || "").replace(/\D/g, "");
+    if (digits.length <= 6) return digits;
+    return digits.slice(-6);
+  }
+
+  input.addEventListener("input", function () {
+    var cleaned = extractCode(input.value);
+    if (cleaned !== input.value) input.value = cleaned;
+    if (cleaned.length) clearError();
   });
+
+  input.addEventListener("paste", function (e) {
+    var text = (e.clipboardData || window.clipboardData);
+    if (!text) return;
+    var code = extractCode(text.getData("text"));
+    if (code.length === 6) {
+      e.preventDefault();
+      input.value = code;
+      clearError();
+    }
+  });
+
+  form.addEventListener("submit", function (e) {
+    var code = extractCode(input.value);
+    input.value = code;
+    if (/^\d{6}$/.test(code)) {
+      clearError();
+      var target = form.dataset.joinTemplate;
+      if (target) {
+        e.preventDefault();
+        location.href = target.replace("000000", code);
+      }
+      return;                       /* otherwise fall through to the GET */
+    }
+    e.preventDefault();
+    showError(
+      code.length
+        ? "That code is " + code.length + " digit" + (code.length === 1 ? "" : "s") + " long. Session codes have 6."
+        : "Enter the 6-digit code shown on the presenter’s screen."
+    );
+    input.focus();
+    input.select();
+  });
+})();
 </script>
 {% endblock %}

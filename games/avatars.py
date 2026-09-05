@@ -1,12 +1,19 @@
 """
-Catalog of avatars participants can choose. Stored as emoji + label so we don't
-need image assets; swap to SVGs in static/img later if desired.
+Catalog of avatars participants can choose.
 
-Each avatar has an `anim` field that matches a CSS keyframe name in
-`avatar_anim.css` (kk-float, kk-bounce, kk-swing, kk-spin, kk-flutter, kk-zoom,
-kk-blastoff, kk-stomp, kk-dash, kk-wobble, kk-tilt). Apply the class
-`kk-anim-<anim>` to any element to give it the avatar's signature movement.
+Stored as emoji + label so we don't need image assets; swap to SVGs in
+static/img later if desired. The public contract used by templates, the
+WebSocket consumer and the exports is:
+
+    {"id", "label", "emoji", "color", "category", "anim"}
+
+`anim` matches a CSS keyframe name in `avatar_anim.css` (kk-float,
+kk-bounce, kk-swing, kk-spin, kk-flutter, kk-zoom, kk-blastoff, kk-stomp,
+kk-dash, kk-wobble, kk-tilt). Apply `kk-anim-<anim>` to any element to give
+it the avatar's signature movement.
 """
+
+DEFAULT_AVATAR_ID = "dragon"
 
 AVATARS = [
     # ── Classic ──
@@ -17,7 +24,7 @@ AVATARS = [
     {"id": "spacecraft", "label": "Spacecraft",  "emoji": "🚀", "color": "#7c3aed", "category": "classic", "anim": "kk-blastoff"},
     {"id": "trex",       "label": "T-Rex",       "emoji": "🦖", "color": "#16a34a", "category": "classic", "anim": "kk-stomp"},
     {"id": "stego",      "label": "Stegosaurus", "emoji": "🦕", "color": "#0d9488", "category": "classic", "anim": "kk-stomp"},
-    {"id": "joker",      "label": "Joker Mask",  "emoji": "🃏", "color": "#a855f7", "category": "classic", "anim": "kk-wobble"},
+    {"id": "joker",      "label": "Joker Card",  "emoji": "🃏", "color": "#a855f7", "category": "classic", "anim": "kk-wobble"},
     {"id": "unicorn",    "label": "Unicorn",     "emoji": "🦄", "color": "#ec4899", "category": "classic", "anim": "kk-bounce"},
     {"id": "wizard",     "label": "Wizard",      "emoji": "🧙", "color": "#6366f1", "category": "classic", "anim": "kk-tilt"},
     {"id": "ninja",      "label": "Ninja",       "emoji": "🥷", "color": "#1f2937", "category": "classic", "anim": "kk-dash"},
@@ -31,7 +38,7 @@ AVATARS = [
     {"id": "panda",      "label": "Panda",       "emoji": "🐼", "color": "#27272a", "category": "classic", "anim": "kk-tilt"},
     {"id": "wolf",       "label": "Wolf",        "emoji": "🐺", "color": "#475569", "category": "classic", "anim": "kk-tilt"},
 
-    # ── Anime ── (emoji-only, no copyrighted IP)
+    # ── Anime ── (emoji-only; no character or franchise references)
     {"id": "anime_hero",         "label": "Hero",          "emoji": "🦸", "color": "#3b82f6", "category": "anime", "anim": "kk-blastoff"},
     {"id": "anime_star",         "label": "Star",          "emoji": "⭐", "color": "#fbbf24", "category": "anime", "anim": "kk-spin"},
     {"id": "anime_sparkle",      "label": "Sparkle",       "emoji": "✨", "color": "#fde047", "category": "anime", "anim": "kk-flutter"},
@@ -53,7 +60,7 @@ AVATARS = [
     {"id": "anime_heart",        "label": "Heart",         "emoji": "💖", "color": "#ec4899", "category": "anime", "anim": "kk-bounce"},
     {"id": "anime_skull",        "label": "Skull",         "emoji": "💀", "color": "#1f2937", "category": "anime", "anim": "kk-tilt"},
     {"id": "anime_crown",        "label": "Crown",         "emoji": "👑", "color": "#fbbf24", "category": "anime", "anim": "kk-float"},
-    {"id": "anime_eye",          "label": "Sharingan-ish", "emoji": "👁️", "color": "#dc2626", "category": "anime", "anim": "kk-spin"},
+    {"id": "anime_eye",          "label": "Third Eye",     "emoji": "👁️", "color": "#dc2626", "category": "anime", "anim": "kk-spin"},
     {"id": "anime_yokai",        "label": "Yokai",         "emoji": "👘", "color": "#7c3aed", "category": "anime", "anim": "kk-flutter"},
     {"id": "anime_panda",        "label": "Anime Panda",   "emoji": "🐼", "color": "#27272a", "category": "anime", "anim": "kk-tilt"},
 ]
@@ -64,12 +71,32 @@ CATEGORY_LABELS = [
     ("anime",   "Anime"),
 ]
 
+# Built once at import. `avatar_by_id` used to be a linear scan, which the
+# leaderboard called once per participant — O(n·m) on every export.
+AVATARS_BY_ID = {a["id"]: a for a in AVATARS}
+
+_FALLBACK = AVATARS_BY_ID[DEFAULT_AVATAR_ID]
+
 
 def avatar_by_id(avatar_id):
-    for a in AVATARS:
-        if a["id"] == avatar_id:
-            return a
-    return AVATARS[0]
+    """Return the avatar dict for `avatar_id`, or the default dragon.
+
+    Never raises: stored ids can go stale when the catalog changes, and a
+    missing avatar should degrade to a dragon rather than 500 a results page.
+    """
+    if not avatar_id:
+        return _FALLBACK
+    return AVATARS_BY_ID.get(str(avatar_id), _FALLBACK)
+
+
+def is_valid_avatar_id(avatar_id):
+    return str(avatar_id or "") in AVATARS_BY_ID
+
+
+def normalize_avatar_id(avatar_id):
+    """Coerce anything to a real catalog id. Use before writing to the DB."""
+    key = str(avatar_id or "").strip()
+    return key if key in AVATARS_BY_ID else DEFAULT_AVATAR_ID
 
 
 def avatars_grouped():

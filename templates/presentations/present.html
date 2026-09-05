@@ -2035,7 +2035,9 @@
         <i class="bi bi-arrows-fullscreen"></i>
       </button>
 
-      <button class="kk-btn kk-btn-danger btn-sm" id="btn-end" title="End session">
+      <button class="kk-btn kk-btn-danger btn-sm" id="btn-end"
+              title="End session" aria-label="End this session"
+              data-confirm="End this session for everyone? Scores and answers are kept.">
         <i class="bi bi-stop-fill"></i>
       </button>
     </div>
@@ -2315,7 +2317,7 @@
           <h3 style="font-size:1rem;">
             <i class="bi bi-trophy-fill"></i> Leaderboard
           </h3>
-          <div id="leaderboard"></div>
+          <div id="leaderboard" aria-live="polite" aria-atomic="false"></div>
         </div>
       {% endif %}
     </aside>
@@ -2337,12 +2339,17 @@
     <i class="bi bi-chevron-right"></i>
   </button>
 
-<!--  {# ──────── Live countdown progress bar ──────────────────────────-->
-<!--     Pinned across the bottom of the stage. CSS hides it for non-game-->
-<!--     sessions and when the timer isn't running. The JS in present.js-->
-<!--     drives the width/colour with sub-second smoothness — see the-->
-<!--     renderPresenterTimer function. The aria attrs let assistive tech-->
-<!--     read the remaining seconds without us repeating the chip text. #}-->
+{% comment %}
+  Live countdown progress bar, pinned across the bottom of the stage. CSS
+  hides it for non-game sessions and when the timer isn't running. The JS in
+  present.js drives the width and colour with sub-second smoothness — see
+  renderPresenterTimer. The aria attributes let assistive tech read the
+  remaining seconds without repeating the chip text.
+
+  This was written as `<!--{# ... -->` because a bare multi-line {# #} leaks
+  its contents into the page: Django's comment syntax only closes on the
+  line it opened. {% comment %} is the tag that spans lines.
+{% endcomment %}
   <div class="kk-stage-time-bar"
        id="kk-stage-time-bar"
        role="progressbar"
@@ -2361,7 +2368,7 @@
 <script src="{% static 'js/chart_extra.js' %}?v=1"></script>
 <script src="{% static 'js/draw_overlay.js' %}?v=9"></script>
 
-<!--{# Avatar catalog — must load BEFORE the room leaderboard shim and present.js. #}-->
+{# Avatar catalog — must load BEFORE the room leaderboard shim and present.js. #}
 {% include "games/partials/avatar_data.html" with avatars=avatars %}
 
 
@@ -2477,7 +2484,11 @@
   const AVATARS = window.kkAvatarsById || {};
   function emojiFor(id, fallbackEmoji) {
     const key = String(id || "");
-    return (AVATARS[key] && AVATARS[key].emoji) || fallbackEmoji || "🐉";
+    const found = AVATARS[key] && AVATARS[key].emoji;
+    // The catalog is ours and safe, but `fallbackEmoji` arrives over the
+    // socket and lands in innerHTML below. Everything else in that row is
+    // escaped; this was the one hole.
+    return found || escapeHtml(fallbackEmoji) || "🐉";
   }
   function escapeHtml(s) {
     return String(s || "").replace(/[&<>"']/g, c => ({
@@ -2541,6 +2552,24 @@
 })();
 </script>
 {% endif %}
+
+<script>
+/* present.js owns the #btn-end handler, so `data-confirm` needs something to
+   act on it. A capture-phase listener registered before present.js loads sees
+   the click first and can stop it reaching the handler. Nothing else on the
+   page changes, and if present.js ever grows its own confirm this becomes a
+   no-op rather than a conflict. */
+(function () {
+  "use strict";
+  document.addEventListener("click", function (e) {
+    var el = e.target.closest("[data-confirm]");
+    if (!el) return;
+    if (window.confirm(el.dataset.confirm)) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }, true);
+})();
+</script>
 
 <script src="{% static 'js/present.js' %}?v=18"></script>
 </body>

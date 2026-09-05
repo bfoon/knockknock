@@ -926,12 +926,15 @@
     {% if logo_url %}<img src="{{ logo_url }}" alt="" style="height:32px; border-radius:6px;">{% endif %}
     <span class="kk-stage-code">{{ session.code }}</span>
     <span class="text-secondary small flex-grow-1">{{ session.title }}</span>
-    <span class="text-secondary small" id="status-dot">●</span>
+    <span class="text-secondary small" id="status-dot" role="status"
+          aria-label="Connection status" title="Connection status">●</span>
   </header>
 
   <div id="step-nick" class="kk-play-card">
     <h2 class="mb-3">What's your name?</h2>
-    <input type="text" id="nick-input" class="form-control form-control-lg mb-3" placeholder="Your nickname" maxlength="40">
+    <input type="text" id="nick-input" class="form-control form-control-lg mb-3"
+           placeholder="Your nickname" maxlength="40"
+           autocomplete="nickname" autocapitalize="words" enterkeyhint="go">
     <button class="kk-btn kk-btn-primary kk-btn-lg w-100" id="nick-go">Join <i class="bi bi-arrow-right"></i></button>
   </div>
 
@@ -953,7 +956,7 @@
       <i class="bi bi-check2-circle"></i> Answer submitted — waiting for the next question…
     </div>
     {% if session.mode == "open" %}
-    <div id="self-nav" class="d-flex gap-2 mt-3" style="display:none !important;">
+    <div id="self-nav" class="d-flex gap-2 mt-3" hidden>
       <button class="kk-btn kk-btn-ghost" id="self-back" style="flex:1;">
         <i class="bi bi-chevron-left"></i> Back
       </button>
@@ -983,18 +986,16 @@
       <p class="text-secondary">Thanks for participating!</p>
       <p class="small text-secondary mb-3">Send a final emoji to the presentation screen.</p>
       <div class="kk-final-emoji-buttons" id="final-emoji-buttons">
-        <button type="button" data-emoji="🎉">🎉</button>
-        <button type="button" data-emoji="👏">👏</button>
-        <button type="button" data-emoji="🔥">🔥</button>
-        <button type="button" data-emoji="🚀">🚀</button>
-        <button type="button" data-emoji="❤️">❤️</button>
-        <button type="button" data-emoji="😂">😂</button>
+        <button type="button" data-emoji="🎉" aria-label="Celebrate">🎉</button>
+        <button type="button" data-emoji="👏" aria-label="Applaud">👏</button>
+        <button type="button" data-emoji="🔥" aria-label="Fire">🔥</button>
+        <button type="button" data-emoji="🚀" aria-label="Rocket">🚀</button>
+        <button type="button" data-emoji="❤️" aria-label="Love">❤️</button>
+        <button type="button" data-emoji="😂" aria-label="Laugh">😂</button>
       </div>
     </div>
   </div>
 </div>
-
-<script src="{% static 'js/play.js' %}?v=13"></script>
 
 <script>
 /* ────────────────────────────────────────────────────────────────────
@@ -1057,8 +1058,27 @@
     TITLE_CANVAS.innerHTML = html;
   }
 
-  function showTitle()    { if (STEP_TITLE)    STEP_TITLE.style.display    = "block"; }
-  function hideTitle()    { if (STEP_TITLE)    STEP_TITLE.style.display    = "none";  }
+  function showTitle() {
+    if (STEP_QUESTION) STEP_QUESTION.style.display = "none";
+    if (STEP_TITLE) STEP_TITLE.style.display = "block";
+  }
+
+  /* Restoring #step-question is the whole point of hiding it, and the old
+     version never did. Once a poll showed one title slide, every question
+     after it rendered into a card that was still display:none — the player
+     sat looking at a blank screen for the rest of the session. We only
+     restore when we were the ones who hid it, so we never fight play.js
+     during the nick / wait / ended steps. */
+  var weHidTheQuestion = false;
+
+  function hideTitle() {
+    if (STEP_TITLE) STEP_TITLE.style.display = "none";
+    if (weHidTheQuestion && STEP_QUESTION) {
+      STEP_QUESTION.style.display = "block";
+      weHidTheQuestion = false;
+    }
+  }
+
   function isTitleShown() { return STEP_TITLE && STEP_TITLE.style.display !== "none"; }
 
   function handleState(state) {
@@ -1069,8 +1089,8 @@
     }
     const isTitle = String(state.question.type || "").toLowerCase() === "title";
     if (isTitle) {
-      // Hide normal question card and surface the title slide.
-      if (STEP_QUESTION) STEP_QUESTION.style.display = "none";
+      // Hide the normal question card and surface the title slide.
+      if (STEP_QUESTION && STEP_QUESTION.style.display !== "none") weHidTheQuestion = true;
       renderTitle(state);
       showTitle();
     } else {
@@ -1100,5 +1120,23 @@
   window.WebSocket = WrappedWS;
 })();
 </script>
+
+<script>
+/* Pressing Enter in the nickname field did nothing: the input is not inside
+   a <form>, so there was no implicit submit, and only the button was wired.
+   On a phone this is the difference between joining and staring at a
+   keyboard wondering what to press. */
+(function () {
+  "use strict";
+  var input = document.getElementById("nick-input");
+  var go = document.getElementById("nick-go");
+  if (!input || !go) return;
+  input.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") { e.preventDefault(); go.click(); }
+  });
+})();
+</script>
+
+<script src="{% static 'js/play.js' %}?v=13"></script>
 </body>
 </html>

@@ -1,760 +1,624 @@
 {% extends "base.html" %}
 {% load static %}
-{% block title %}Edit question · Knock-Knock{% endblock %}
 
-{% block extra_head %}
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&family=JetBrains+Mono:wght@500;700&family=Playfair+Display:wght@500;800&family=Press+Start+2P&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
-<style>
-  /* ─── Live preview card ─── */
-  .qe-preview {
-    padding: 1.5rem 1.25rem;
-    border-radius: 14px;
-    background: linear-gradient(135deg, rgba(124,58,237,.12), rgba(34,211,238,.08));
-    border: 1px solid rgba(255,255,255,.08);
-    min-height: 110px;
-    display: flex; align-items: center; justify-content: center;
-    text-align: center;
-    color: #f8fafc;
-    margin-bottom: 1rem;
-  }
-
-  /* ─── Toolbar groups: stacked labeled cards ─── */
-  .qe-toolbar { display: block; margin-bottom: 1rem; }
-  .qe-group {
-    padding: .65rem .8rem;
-    background: rgba(255,255,255,.04);
-    border-radius: 10px;
-    border: 1px solid rgba(255,255,255,.06);
-    margin-bottom: .55rem;
-  }
-  .qe-group-label {
-    display: block;
-    color: #94a3b8;
-    font-size: .72rem;
-    text-transform: uppercase;
-    letter-spacing: .05em;
-    margin-bottom: .5rem;
-  }
-  .qe-row {
-    display: flex; align-items: center; flex-wrap: wrap;
-    gap: .5rem;
-  }
-  .qe-row > select.form-select {
-    flex: 1 1 200px;
-    min-width: 0;
-    height: 36px;
-  }
-  .qe-size-row {
-    display: flex; align-items: center; gap: .5rem;
-    width: 100%;
-    margin-top: .35rem;
-  }
-  .qe-size-row input[type=range] { flex: 1; min-width: 0; }
-  .qe-size-row input[type=number] {
-    width: 70px !important;
-    max-width: 70px !important;
-    height: 32px !important;
-    padding: .25rem .4rem !important;
-    background: rgba(255,255,255,.06) !important;
-    border: 1px solid rgba(255,255,255,.10) !important;
-    border-radius: 6px !important;
-    color: #f8fafc !important;
-    text-align: center !important;
-  }
-  .qe-px { color: #94a3b8; font-size: .78rem; }
-
-  /* ─── Square toggle buttons (B/I/U + alignment) ─── */
-  .qe-btn {
-    display: inline-flex !important;
-    align-items: center !important; justify-content: center !important;
-    width: 34px !important; height: 34px !important;
-    min-width: 34px !important; max-width: 34px !important;
-    border-radius: 7px !important;
-    background: rgba(255,255,255,.06) !important;
-    border: 1px solid rgba(255,255,255,.10) !important;
-    color: #cbd5e1 !important;
-    font-weight: 700 !important;
-    cursor: pointer !important;
-    user-select: none;
-    padding: 0 !important;
-    flex: 0 0 34px !important;
-    line-height: 1 !important;
-  }
-  .qe-btn:hover { background: rgba(255,255,255,.10) !important; }
-  .qe-btn.is-active {
-    background: #fbbf24 !important; color: #422006 !important; border-color: #fbbf24 !important;
-  }
-  .qe-btn.is-italic    { font-style: italic !important; }
-  .qe-btn.is-underline { text-decoration: underline !important; }
-  .qe-divider {
-    width: 1px !important; height: 22px !important;
-    background: rgba(255,255,255,.10);
-    margin: 0 .25rem;
-    flex: 0 0 1px !important;
-  }
-
-  /* ─── Native color inputs — sized DIRECTLY on the input, no wrapper. ─── */
-  .qe-color-wrap {
-    display: inline-flex;
-    align-items: center;
-    gap: .45rem;
-    flex: 0 0 auto;
-  }
-  /* Reset every browser quirk on color inputs and force explicit size. */
-  input[type="color"].qe-color-input {
-    -webkit-appearance: none !important;
-    -moz-appearance: none !important;
-    appearance: none !important;
-    width: 32px !important;
-    min-width: 32px !important;
-    max-width: 32px !important;
-    height: 32px !important;
-    min-height: 32px !important;
-    max-height: 32px !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    border: 1px solid rgba(255,255,255,.20) !important;
-    border-radius: 6px !important;
-    background: transparent !important;
-    cursor: pointer !important;
-    flex: 0 0 32px !important;
-    box-shadow: none !important;
-    display: inline-block !important;
-  }
-  /* WebKit: the actual color swatch is the inner ::-webkit-color-swatch */
-  input[type="color"].qe-color-input::-webkit-color-swatch-wrapper {
-    padding: 0 !important;
-    border-radius: 5px !important;
-  }
-  input[type="color"].qe-color-input::-webkit-color-swatch {
-    border: 0 !important;
-    border-radius: 5px !important;
-  }
-  /* Firefox */
-  input[type="color"].qe-color-input::-moz-color-swatch {
-    border: 0 !important;
-    border-radius: 5px !important;
-  }
-
-  .qe-color-label {
-    color: #cbd5e1;
-    font-size: .8rem;
-    white-space: nowrap;
-  }
-  .qe-color-wrap.is-disabled { opacity: .4; }
-  .qe-color-wrap.is-disabled input[type="color"] { pointer-events: none; }
-
-  .qe-grad-toggle {
-    display: inline-flex; align-items: center; gap: .35rem;
-    padding: .35rem .55rem;
-    background: rgba(255,255,255,.04);
-    border: 1px solid rgba(255,255,255,.08);
-    border-radius: 7px;
-    color: #cbd5e1;
-    font-size: .8rem;
-    cursor: pointer;
-    margin: 0;
-    flex: 0 0 auto;
-  }
-  .qe-grad-toggle input { margin: 0; }
-
-  /* ─── Shape picker (explicit pixel sizing on every layer) ─── */
-  .qe-shape-row {
-    display: flex !important;
-    gap: .5rem !important;
-    flex-wrap: wrap !important;
-    margin: .35rem 0 1rem !important;
-  }
-  .qe-shape-btn {
-    display: inline-flex !important;
-    align-items: center !important; justify-content: center !important;
-    width: 56px !important;
-    height: 56px !important;
-    min-width: 56px !important;
-    min-height: 56px !important;
-    max-width: 56px !important;
-    max-height: 56px !important;
-    background: rgba(255,255,255,.04) !important;
-    border: 1px solid rgba(255,255,255,.10) !important;
-    border-radius: 10px !important;
-    cursor: pointer !important;
-    padding: 0 !important;
-    flex: 0 0 56px !important;
-  }
-  .qe-shape-btn:hover { background: rgba(255,255,255,.08) !important; }
-  .qe-shape-btn.is-active {
-    border-color: #fbbf24 !important;
-    box-shadow: 0 0 0 2px rgba(251,191,36,.3) !important;
-  }
-  .qe-shape-icon {
-    display: block !important;
-    width: 28px;
-    height: 28px;
-    background: #7c3aed;
-  }
-  .qe-shape-btn[data-shape="rounded"]  .qe-shape-icon { border-radius: 7px; }
-  .qe-shape-btn[data-shape="square"]   .qe-shape-icon { border-radius: 0; }
-  .qe-shape-btn[data-shape="circle"]   .qe-shape-icon { border-radius: 50%; }
-  .qe-shape-btn[data-shape="diamond"]  .qe-shape-icon {
-    transform: rotate(45deg);
-    width: 22px; height: 22px;
-    border-radius: 3px;
-  }
-  .qe-shape-btn[data-shape="triangle"] .qe-shape-icon {
-    background: transparent;
-    width: 0; height: 0;
-    border-left: 14px solid transparent;
-    border-right: 14px solid transparent;
-    border-bottom: 24px solid #7c3aed;
-  }
-
-  /* ─── Answer-tile preview (force the grid + tile sizes) ─── */
-  .qe-answer-grid {
-    display: grid !important;
-    grid-template-columns: repeat(2, 1fr) !important;
-    gap: .65rem !important;
-    margin: .35rem 0 1rem !important;
-    max-width: 460px !important;
-  }
-  .qe-tile {
-    display: flex !important;
-    align-items: center !important; justify-content: center !important;
-    min-height: 78px !important;
-    padding: .65rem .9rem !important;
-    background: #7c3aed !important;
-    color: #fff !important;
-    font-weight: 700 !important;
-    text-align: center !important;
-    box-shadow: 0 6px 14px rgba(0,0,0,.25) !important;
-    border-radius: 12px !important;
-    overflow: hidden !important;
-  }
-  .qe-tile.shape-square   { border-radius: 0 !important; }
-  .qe-tile.shape-circle   {
-    border-radius: 999px !important;
-    aspect-ratio: 1/1 !important;
-    min-height: 0 !important;
-  }
-  .qe-tile.shape-diamond  {
-    transform: rotate(45deg);
-    border-radius: 6px !important;
-    aspect-ratio: 1/1 !important;
-    min-height: 0 !important;
-    width: 72% !important;
-    justify-self: center !important;
-  }
-  .qe-tile.shape-diamond > span { transform: rotate(-45deg); display: inline-block; }
-  .qe-tile.shape-triangle {
-    clip-path: polygon(50% 8%, 96% 96%, 4% 96%);
-    border-radius: 0 !important;
-    aspect-ratio: 1/.85 !important;
-    min-height: 0 !important;
-    padding-top: 30% !important;
-    align-items: flex-start !important;
-  }
-  .qe-answer-grid .qe-tile:nth-child(1) { background: #ef4444 !important; }
-  .qe-answer-grid .qe-tile:nth-child(2) { background: #3b82f6 !important; }
-  .qe-answer-grid .qe-tile:nth-child(3) { background: #f59e0b !important; }
-  .qe-answer-grid .qe-tile:nth-child(4) { background: #22c55e !important; }
-
-  .qe-section-title {
-    font-size: .72rem;
-    color: #94a3b8;
-    margin: 1rem 0 .35rem;
-    text-transform: uppercase;
-    letter-spacing: .05em;
-  }
-
-
-  /* ─── Question type + picture/puzzle choice editor ─── */
-  .kk-question-type-help { color:#94a3b8; font-size:.82rem; margin-top:.35rem; }
-  .kk-choice-editor-row { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:16px; padding:1rem; }
-  /* Thumbnail of an already-uploaded choice image.
-     The <img> is wrapped in .kk-choice-thumb so we can guarantee a fixed
-     box regardless of the source image's aspect ratio. !important keeps
-     it bulletproof against any future styles, Bootstrap utilities, or
-     stray inline width/height attributes on the <img>. */
-  .kk-choice-thumb {
-    display: block !important;
-    width: 110px !important;
-    height: 84px !important;
-    max-width: 100% !important;
-    border-radius: 12px !important;
-    border: 1px solid rgba(255,255,255,.12) !important;
-    overflow: hidden !important;
-    background: rgba(255,255,255,.04) !important;
-    flex: 0 0 110px !important;
-  }
-  .kk-choice-thumb img {
-    display: block !important;
-    width: 100% !important;
-    height: 100% !important;
-    max-width: 100% !important;
-    max-height: 100% !important;
-    object-fit: cover !important;
-    object-position: center !important;
-    margin: 0 !important;
-    padding: 0 !important;
-  }
-  /* Belt-and-braces: cap ANY image inside the editor row at the
-     thumbnail size, even if it somehow renders without the wrapper. */
-  .kk-choice-editor-row .kk-choice-image-col img,
-  .kk-choice-editor-row img {
-    max-width: 110px !important;
-    max-height: 84px !important;
-    width: auto;
-    height: auto;
-    object-fit: cover;
-    border-radius: 12px;
-  }
-  /* And cap any image elsewhere on the page at the column width too,
-     so a question-level upload preview (if added later) can't break the
-     form layout. */
-  .kk-card img {
-    max-width: 100%;
-    height: auto;
-  }
-  .kk-choice-help-box { border-radius:16px; padding:.85rem 1rem; background:rgba(34,211,238,.08); border:1px solid rgba(34,211,238,.18); color:#cbd5e1; font-size:.9rem; margin-bottom:1rem; }
-</style>
-{% endblock %}
+{% block title %}Question {{ question_index }} · {{ quiz.title }} · Knock-Knock{% endblock %}
 
 {% block content %}
-<a href="{% url 'games:edit' quiz.pk %}" class="text-secondary text-decoration-none small">
-  <i class="bi bi-arrow-left"></i> Back to {{ quiz.title }}
-</a>
+<link rel="stylesheet" href="{% static 'css/games.css' %}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&family=JetBrains+Mono:wght@500;700&family=Playfair+Display:wght@500;800&family=Press+Start+2P&family=Space+Grotesk:wght@500;700&display=swap">
 
-<form method="post" enctype="multipart/form-data" class="mt-3 kk-main-narrow mx-auto">
-  {% csrf_token %}
+<div class="g kk-main-narrow mx-auto">
 
-  <div class="kk-card">
-    <label class="form-label">Question type</label>
-    {{ form.question_type }}
-    <div class="kk-question-type-help">
-      Classic = text answers. Picture choice = select the correct image. Puzzle = arrange pieces in order.
+  <div class="g-head">
+    <div>
+      <a href="{% url 'games:edit' quiz.pk %}" class="g-back">
+        <i class="bi bi-arrow-left"></i> {{ quiz.title }}
+      </a>
+      <h1 class="g-title">Question {{ question_index }}</h1>
+      <div class="g-meta">of {{ question_total }} in this game</div>
     </div>
+  </div>
 
-    <label class="form-label mt-3">Question</label>
+  {% if form.errors or formset.non_form_errors %}
+    <div class="g-error">
+      <strong>This question wasn’t saved.</strong>
+      <ul class="mt-1">
+        {% for field in form %}
+          {% for error in field.errors %}<li>{{ field.label }}: {{ error }}</li>{% endfor %}
+        {% endfor %}
+        {% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+        {% for error in formset.non_form_errors %}<li>{{ error }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
 
-    {# Live preview of the question text. #}
-    <div id="qe-preview" class="qe-preview">{{ question.text|default:"Your question will look like this" }}</div>
+  <form method="post" enctype="multipart/form-data" id="question-form" novalidate>
+    {% csrf_token %}
 
-    <div class="qe-toolbar">
+    {# ── The question itself ──────────────────────────────── #}
+    <div class="g-panel">
+      <div class="mb-3">
+        <label class="form-label" for="{{ form.question_type.id_for_label }}">Question type</label>
+        {{ form.question_type }}
+        <div class="form-text" id="type-help"></div>
+      </div>
 
-      {# Font + Size #}
-      <div class="qe-group">
-        <span class="qe-group-label"><i class="bi bi-fonts"></i> Font</span>
-        <div class="qe-row">{{ form.font_family }}</div>
-        <div class="qe-size-row">
-          <input type="range" min="16" max="96" step="2" id="qe-size-range" value="{{ question.font_size|default:32 }}">
+      <h2 class="g-section">
+        <i class="bi bi-eye"></i> Preview
+        <span class="g-section-note">what players will see</span>
+      </h2>
+
+      <div id="qe-preview" class="g-preview">
+        <span class="g-preview-inner" id="qe-preview-text">{{ question.text|default:"Your question will look like this" }}</span>
+      </div>
+
+      {# ── Text styling ── #}
+      <div class="g-tool">
+        <span class="g-tool-label" id="font-label">Font</span>
+        <div class="g-tool-row" role="group" aria-labelledby="font-label">
+          {{ form.font_family }}
+        </div>
+        <div class="g-size-row">
+          <input type="range" min="16" max="96" step="2" id="qe-size-range"
+                 value="{{ question.font_size|default:32 }}" aria-label="Question text size">
           {{ form.font_size }}
-          <span class="qe-px">px</span>
+          <span class="g-unit">px</span>
         </div>
       </div>
 
-      {# Style + Alignment #}
-      <div class="qe-group">
-        <span class="qe-group-label">Style &amp; alignment</span>
-        <div class="qe-row">
-          <button type="button" id="qe-bold"
-                  class="qe-btn{% if question.font_bold %} is-active{% endif %}"
-                  title="Bold">B</button>
-          <button type="button" id="qe-italic"
-                  class="qe-btn is-italic{% if question.text_italic %} is-active{% endif %}"
-                  title="Italic">I</button>
-          <button type="button" id="qe-underline"
-                  class="qe-btn is-underline{% if question.text_underline %} is-active{% endif %}"
-                  title="Underline">U</button>
+      <div class="g-tool">
+        <span class="g-tool-label" id="style-label">Style and alignment</span>
+        <div class="g-tool-row" role="group" aria-labelledby="style-label">
+          <span class="g-seg">
+            <button type="button" id="qe-bold" class="g-toggle" title="Bold"
+                    aria-pressed="{% if question.font_bold %}true{% else %}false{% endif %}">B</button>
+            <button type="button" id="qe-italic" class="g-toggle g-toggle-italic" title="Italic"
+                    aria-pressed="{% if question.text_italic %}true{% else %}false{% endif %}">I</button>
+            <button type="button" id="qe-underline" class="g-toggle g-toggle-underline" title="Underline"
+                    aria-pressed="{% if question.text_underline %}true{% else %}false{% endif %}">U</button>
+          </span>
 
-          <span class="qe-divider"></span>
+          <span class="g-sep" aria-hidden="true"></span>
 
-          <button type="button" class="qe-btn qe-align-btn{% if question.text_align == 'left' %} is-active{% endif %}"
-                  data-align="left" title="Align left"><i class="bi bi-text-left"></i></button>
-          <button type="button" class="qe-btn qe-align-btn{% if not question.text_align or question.text_align == 'center' %} is-active{% endif %}"
-                  data-align="center" title="Align center"><i class="bi bi-text-center"></i></button>
-          <button type="button" class="qe-btn qe-align-btn{% if question.text_align == 'right' %} is-active{% endif %}"
-                  data-align="right" title="Align right"><i class="bi bi-text-right"></i></button>
+          <span class="g-seg">
+            <button type="button" class="g-toggle qe-align" data-align="left" title="Align left"
+                    aria-pressed="{% if question.text_align == 'left' %}true{% else %}false{% endif %}">
+              <i class="bi bi-text-left"></i></button>
+            <button type="button" class="g-toggle qe-align" data-align="center" title="Align centre"
+                    aria-pressed="{% if not question.text_align or question.text_align == 'center' %}true{% else %}false{% endif %}">
+              <i class="bi bi-text-center"></i></button>
+            <button type="button" class="g-toggle qe-align" data-align="right" title="Align right"
+                    aria-pressed="{% if question.text_align == 'right' %}true{% else %}false{% endif %}">
+              <i class="bi bi-text-right"></i></button>
+          </span>
         </div>
       </div>
 
-      {# Colors — native <input type="color"> sized directly. #}
-      <div class="qe-group">
-        <span class="qe-group-label"><i class="bi bi-droplet-half"></i> Colors</span>
-        <div class="qe-row">
-
-          <span class="qe-color-wrap">
-            <input type="color" id="qe-text-color-input" class="qe-color-input"
-                   value="{{ question.text_color|default:'#f8fafc' }}">
-            <span class="qe-color-label">Text</span>
+      <div class="g-tool">
+        <span class="g-tool-label" id="colour-label">Colours</span>
+        <div class="g-tool-row" role="group" aria-labelledby="colour-label">
+          <span class="g-swatch-wrap">
+            <input type="color" id="qe-text-color" class="g-swatch"
+                   value="{{ question.text_color|default:'#f8fafc' }}" aria-label="Text colour">
+            <span class="g-swatch-label">Text</span>
           </span>
 
-          <span class="qe-color-wrap">
-            <input type="color" id="qe-bg-color-input" class="qe-color-input"
-                   value="{{ question.background_color|default:'#1e293b' }}">
-            <span class="qe-color-label">Background</span>
+          <span class="g-swatch-wrap">
+            <input type="color" id="qe-bg-color" class="g-swatch"
+                   value="{{ question.background_color|default:'#1e293b' }}" aria-label="Background colour">
+            <span class="g-swatch-label">Background</span>
           </span>
 
-          <label class="qe-grad-toggle">
+          <label class="g-check">
             <input type="checkbox" id="qe-gradient-toggle"
                    {% if question.background_gradient_to %}checked{% endif %}>
-            <span>Gradient</span>
+            <span>Fade to a second colour</span>
           </label>
 
-          <span class="qe-color-wrap{% if not question.background_gradient_to %} is-disabled{% endif %}" id="qe-grad-wrap">
-            <input type="color" id="qe-bg-grad-input" class="qe-color-input"
-                   value="{{ question.background_gradient_to|default:'#7c3aed' }}">
-            <span class="qe-color-label">→ End</span>
+          <span class="g-swatch-wrap{% if not question.background_gradient_to %} is-off{% endif %}" id="qe-grad-wrap">
+            <input type="color" id="qe-bg-grad" class="g-swatch"
+                   value="{{ question.background_gradient_to|default:'#7c3aed' }}" aria-label="Gradient end colour">
+            <span class="g-swatch-label">End</span>
           </span>
-
         </div>
       </div>
 
-      {# Hidden form fields holding the actual values. #}
-      <div style="display:none;">
-        {{ form.font_bold }}
-        {{ form.text_italic }}
-        {{ form.text_underline }}
-        {{ form.text_align }}
-        {{ form.text_color }}
-        {{ form.background_color }}
-        {{ form.background_gradient_to }}
+      {# Hidden fields hold the values the buttons above manipulate. #}
+      <div hidden>
+        {{ form.font_bold }}{{ form.text_italic }}{{ form.text_underline }}
+        {{ form.text_align }}{{ form.text_color }}{{ form.background_color }}
+        {{ form.background_gradient_to }}{{ form.answer_shape }}
       </div>
-    </div>
 
-    {{ form.text }}
-
-    <div class="row g-3 mt-2">
-      <div class="col-md-4">
-        <label class="form-label">Time limit (s)</label>
-        {{ form.time_limit }}
+      <div class="mt-3">
+        <label class="form-label" for="{{ form.text.id_for_label }}">Question text</label>
+        {{ form.text }}
+        {% if form.text.errors %}<div class="g-field-error">{{ form.text.errors }}</div>{% endif %}
       </div>
-      <div class="col-md-4">
-        <label class="form-label">Points</label>
-        {{ form.points }}
-      </div>
-      <div class="col-md-4">
-        <label class="form-label kk-question-image-label">Image</label>
-        {{ form.image }}
-      </div>
-    </div>
-  </div>
 
-  <div class="kk-card mt-3">
-    <h2 class="kk-section-title" style="font-size:1.15rem;"><i class="bi bi-check2-square"></i> Answers / Pictures / Puzzle pieces</h2>
-    <div class="kk-choice-help-box" id="kk-choice-help">
-      Classic: type answers and tick the correct one. Picture choice: upload a picture for each answer and tick the correct picture. Puzzle: upload or label pieces and set their correct positions.
-    </div>
-
-    <div class="qe-section-title kk-classic-field">Answer tile shape</div>
-    <div class="qe-shape-row kk-classic-field" id="qe-shape-picker" style="display:flex; gap:.5rem; flex-wrap:wrap; margin:.5rem 0 1rem;">
-      {% for value, label in form.fields.answer_shape.choices %}
-        <button type="button" class="qe-shape-btn{% if question.answer_shape == value or not question.answer_shape and value == 'rounded' %} is-active{% endif %}" data-shape="{{ value }}" title="{{ label }}" style="width:56px; height:56px; min-width:56px; min-height:56px; flex:0 0 56px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.10); border-radius:10px; cursor:pointer; padding:0; display:inline-flex; align-items:center; justify-content:center;">
-          <span class="qe-shape-icon qe-shape-icon-{{ value }}" style="display:block; {% if value == 'rounded' %}width:28px; height:28px; background:#7c3aed; border-radius:7px; {% elif value == 'square' %}width:28px; height:28px; background:#7c3aed; border-radius:0; {% elif value == 'circle' %}width:28px; height:28px; background:#7c3aed; border-radius:50%; {% elif value == 'diamond' %}width:22px; height:22px; background:#7c3aed; transform:rotate(45deg); border-radius:3px; {% elif value == 'triangle' %}width:0; height:0; background:transparent; border-left:14px solid transparent; border-right:14px solid transparent; border-bottom:24px solid #7c3aed; {% endif %}"></span>
-        </button>
-      {% endfor %}
-    </div>
-
-    <div class="qe-section-title kk-classic-field">Preview</div>
-    <div class="qe-answer-grid kk-classic-field" id="qe-answer-preview" style="display:grid; grid-template-columns:repeat(2,1fr); gap:.65rem; margin:.5rem 0 1rem; max-width:460px;">
-      <div class="qe-tile" style="display:flex; align-items:center; justify-content:center; min-height:78px; padding:.65rem .9rem; background:#ef4444; color:#fff; font-weight:700; text-align:center; box-shadow:0 6px 14px rgba(0,0,0,.25); border-radius:12px; overflow:hidden;"><span>Answer 1</span></div>
-      <div class="qe-tile" style="display:flex; align-items:center; justify-content:center; min-height:78px; padding:.65rem .9rem; background:#3b82f6; color:#fff; font-weight:700; text-align:center; box-shadow:0 6px 14px rgba(0,0,0,.25); border-radius:12px; overflow:hidden;"><span>Answer 2</span></div>
-      <div class="qe-tile" style="display:flex; align-items:center; justify-content:center; min-height:78px; padding:.65rem .9rem; background:#f59e0b; color:#fff; font-weight:700; text-align:center; box-shadow:0 6px 14px rgba(0,0,0,.25); border-radius:12px; overflow:hidden;"><span>Answer 3</span></div>
-      <div class="qe-tile" style="display:flex; align-items:center; justify-content:center; min-height:78px; padding:.65rem .9rem; background:#22c55e; color:#fff; font-weight:700; text-align:center; box-shadow:0 6px 14px rgba(0,0,0,.25); border-radius:12px; overflow:hidden;"><span>Answer 4</span></div>
-    </div>
-    <div style="display:none;">{{ form.answer_shape }}</div>
-
-    {{ formset.management_form }}
-    <div class="mt-3" id="choice-editor" data-question-type="{{ question.question_type }}">
-      {% for cf in formset %}
-        <div class="kk-choice-editor-row mb-3">
-          {{ cf.id }}
-          <div class="d-flex align-items-center gap-2 mb-2">
-            <span class="kk-q-index">{{ forloop.counter }}</span>
-            <strong class="small text-secondary">Answer / Piece {{ forloop.counter }}</strong>
-          </div>
-          <div class="row g-2 align-items-end">
-            <div class="col-md-5 kk-choice-text-col">
-              <label class="form-label small text-secondary kk-choice-text-label">Answer text</label>
-              {{ cf.text }}
-            </div>
-            <div class="col-md-4 kk-picture-field kk-puzzle-field kk-choice-image-col">
-              <label class="form-label small text-secondary kk-choice-image-label">Image</label>
-              {{ cf.image }}
-              {% if cf.instance.image %}<div class="kk-choice-thumb mt-2" style="display:block; width:140px; height:100px; max-width:140px; max-height:100px; overflow:hidden; border-radius:12px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.04); flex:0 0 140px;"><img src="{{ cf.instance.image.url }}" alt="" style="display:block; width:140px; height:100px; max-width:140px; max-height:100px; object-fit:cover; object-position:center; margin:0; padding:0; border:0;"></div>{% endif %}
-            </div>
-            <div class="col-md-2 kk-correct-field"><label class="form-label small text-secondary">Correct</label><div>{{ cf.is_correct }}</div></div>
-            <div class="col-md-2 kk-puzzle-field"><label class="form-label small text-secondary">Correct position</label>{{ cf.correct_position }}</div>
-            <div class="col-md-2"><label class="form-label small text-secondary">Display order</label>{{ cf.order }}</div>
-            <div class="col-md-2"><label class="form-label small text-secondary">Delete</label><div>{{ cf.DELETE }}</div></div>
-          </div>
-          {% if cf.errors %}<div class="alert alert-danger mt-2 mb-0 small">{{ cf.errors }}</div>{% endif %}
+      <div class="row g-3 mt-1">
+        <div class="col-md-4">
+          <label class="form-label" for="{{ form.time_limit.id_for_label }}">Time limit (seconds)</label>
+          {{ form.time_limit }}
+          {% if form.time_limit.errors %}<div class="g-field-error">{{ form.time_limit.errors }}</div>{% endif %}
         </div>
-      {% endfor %}
+        <div class="col-md-4">
+          <label class="form-label" for="{{ form.points.id_for_label }}">Points</label>
+          {{ form.points }}
+          {% if form.points.errors %}<div class="g-field-error">{{ form.points.errors }}</div>{% endif %}
+        </div>
+        <div class="col-md-4">
+          <label class="form-label" for="{{ form.image.id_for_label }}" id="question-image-label">Image</label>
+          {{ form.image }}
+          {% if question.image %}
+            <span class="g-thumb"><img src="{{ question.image.url }}" alt="Current question image"></span>
+          {% endif %}
+        </div>
+      </div>
     </div>
-  </div>
 
-  <button class="kk-btn kk-btn-primary kk-btn-lg mt-4">Save question</button>
-  <button formaction="{% url 'games:question_delete' quiz.pk question.pk %}"
-          formnovalidate
-          onclick="return confirm('Delete this question?')"
-          class="kk-btn kk-btn-ghost ms-2">
-    <i class="bi bi-trash"></i> Delete
-  </button>
-</form>
+    {# ── Answers ──────────────────────────────────────────── #}
+    <div class="g-panel mt-3">
+      <h2 class="g-section"><i class="bi bi-check2-square"></i> Answers</h2>
+
+      <div class="g-note" id="answers-help"></div>
+
+      <div data-role="shape">
+        <h3 class="g-section" style="font-size:.88rem;">Answer tile shape</h3>
+        <div class="g-shapes" id="qe-shapes">
+          {% for value, label in form.fields.answer_shape.choices %}
+            <button type="button" class="g-shape" data-shape="{{ value }}" title="{{ label }}"
+                    aria-label="{{ label }}"
+                    aria-pressed="{% if question.answer_shape == value or not question.answer_shape and value == 'rounded' %}true{% else %}false{% endif %}">
+              <span class="g-shape-mark"></span>
+            </button>
+          {% endfor %}
+        </div>
+
+        <div class="g-tiles" id="qe-tiles" data-shape="{{ question.answer_shape|default:'rounded' }}" aria-hidden="true">
+          <div class="g-tile"><span>Answer 1</span></div>
+          <div class="g-tile"><span>Answer 2</span></div>
+          <div class="g-tile"><span>Answer 3</span></div>
+          <div class="g-tile"><span>Answer 4</span></div>
+        </div>
+      </div>
+
+      {{ formset.management_form }}
+
+      <div id="choice-list" data-prefix="{{ formset.prefix }}">
+        {% for cf in formset %}
+          <div class="g-choice{% if cf.instance.is_correct %} is-correct{% endif %}" data-choice-row>
+            {{ cf.id }}
+            <div class="g-choice-head">
+              <span class="g-choice-letter" data-letter>{{ forloop.counter }}</span>
+              <label class="g-correct-check" data-role="correct">
+                <span class="d-inline-flex">{{ cf.is_correct }}</span>
+                <span>Correct answer</span>
+              </label>
+              <span class="g-choice-head-tools">
+                <button type="button" class="g-icon-btn g-icon-btn-danger" data-remove-choice
+                        title="Remove this answer" aria-label="Remove this answer">
+                  <i class="bi bi-trash3"></i>
+                </button>
+              </span>
+              <span hidden>{{ cf.DELETE }}{{ cf.order }}</span>
+            </div>
+
+            <div class="g-choice-grid" data-type="{{ question.question_type }}">
+              <div class="g-field-text">
+                <label class="form-label" data-label="text">Answer text</label>
+                {{ cf.text }}
+              </div>
+
+              <div class="g-field-image" data-role="image">
+                <label class="form-label" data-label="image">Image</label>
+                {{ cf.image }}
+                {% if cf.instance.image %}
+                  <span class="g-thumb"><img src="{{ cf.instance.image.url }}" alt=""></span>
+                {% endif %}
+              </div>
+
+              <div class="g-field-position" data-role="position">
+                <label class="form-label">Position in the sequence</label>
+                {{ cf.correct_position }}
+              </div>
+            </div>
+
+            {% if cf.errors %}
+              <div class="g-field-error mt-2">{{ cf.errors }}</div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+
+      {% comment %} `extra` is 0 now, so the empty form is the source for new rows.
+         Rendering it inside a <template> keeps its `__prefix__` placeholders
+         out of the POST. {% endcomment %}
+      <template id="choice-row-template">
+        <div class="g-choice" data-choice-row>
+          <div class="g-choice-head">
+            <span class="g-choice-letter" data-letter></span>
+            <label class="g-correct-check" data-role="correct">
+              <span class="d-inline-flex">{{ formset.empty_form.is_correct }}</span>
+              <span>Correct answer</span>
+            </label>
+            <span class="g-choice-head-tools">
+              <button type="button" class="g-icon-btn g-icon-btn-danger" data-remove-choice
+                      title="Remove this answer" aria-label="Remove this answer">
+                <i class="bi bi-trash3"></i>
+              </button>
+            </span>
+            <span hidden>{{ formset.empty_form.DELETE }}{{ formset.empty_form.order }}</span>
+          </div>
+          <div class="g-choice-grid" data-type="{{ question.question_type }}">
+            <div class="g-field-text">
+              <label class="form-label" data-label="text">Answer text</label>
+              {{ formset.empty_form.text }}
+            </div>
+            <div class="g-field-image" data-role="image">
+              <label class="form-label" data-label="image">Image</label>
+              {{ formset.empty_form.image }}
+            </div>
+            <div class="g-field-position" data-role="position">
+              <label class="form-label">Position in the sequence</label>
+              {{ formset.empty_form.correct_position }}
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <button type="button" id="add-choice-btn" class="g-add-btn">
+        <i class="bi bi-plus-lg"></i> Add answer
+      </button>
+      <p class="g-hint mt-2" id="choice-count-hint"></p>
+    </div>
+
+    <div class="g-form-actions">
+      <button class="kk-btn kk-btn-primary kk-btn-lg g-btn-wide">
+        <i class="bi bi-check-lg"></i> Save question
+      </button>
+      <button name="save_and_new" value="1" class="kk-btn kk-btn-ghost">
+        Save and add another
+      </button>
+      <span class="g-spacer"></span>
+    </div>
+  </form>
+
+  {% comment %} Kept out of the main form: a delete button inside it would post every
+     file input along with the delete, and `formnovalidate` only silences
+     validation, it doesn't stop the upload. {% endcomment %}
+  <form method="post" action="{% url 'games:question_delete' quiz.pk question.pk %}"
+        class="mt-3"
+        onsubmit="return confirm('Delete this question and its answers?');">
+    {% csrf_token %}
+    <button class="kk-btn kk-btn-ghost text-danger">
+      <i class="bi bi-trash3"></i> Delete question
+    </button>
+  </form>
+</div>
 
 <script>
 (function () {
-  const FONT_STACK = {
+  "use strict";
+
+  var FONT_STACK = {
     default: "Inter, system-ui, sans-serif",
-    clash:   "'Clash Display', system-ui, sans-serif",
-    space:   "'Space Grotesk', system-ui, sans-serif",
-    serif:   "'Playfair Display', Georgia, serif",
-    mono:    "'JetBrains Mono', ui-monospace, monospace",
-    comic:   "'Comic Neue', 'Comic Sans MS', cursive",
-    press:   "'Press Start 2P', system-ui, monospace",
+    clash: "'Clash Display', system-ui, sans-serif",
+    space: "'Space Grotesk', system-ui, sans-serif",
+    serif: "'Playfair Display', Georgia, serif",
+    mono: "'JetBrains Mono', ui-monospace, monospace",
+    comic: "'Comic Neue', 'Comic Sans MS', cursive",
+    press: "'Press Start 2P', system-ui, monospace"
   };
-  const $ = (id) => document.getElementById(id);
 
-  const preview      = $("qe-preview");
-  const familySelect = $("id_font_family");
-  const sizeInput    = $("id_font_size");
-  const sizeRange    = $("qe-size-range");
-  const textInput    = $("id_question_text");
+  var TYPE_HELP = {
+    mcq: "Players see the question and tap one of the text answers.",
+    picture_choice: "Every answer is an image. Players tap the right picture.",
+    picture_prompt: "One image above the question, plain text answers below it.",
+    puzzle: "Players drag the pieces into order. The first to get it right takes the points."
+  };
 
-  const boldCheck      = $("id_font_bold");
-  const italicCheck    = $("id_text_italic");
-  const underlineCheck = $("id_text_underline");
-  const alignInput     = $("id_text_align");
-  const textColorInput = $("id_text_color");
-  const bgColorInput   = $("id_background_color");
-  const bgGradInput    = $("id_background_gradient_to");
-  const shapeInput     = $("id_answer_shape");
+  var ANSWER_HELP = {
+    mcq: "<strong>Classic:</strong> type the answers and tick the one that is correct.",
+    picture_choice: "<strong>Picture choice:</strong> upload an image for every answer, add a caption if it helps, and tick the correct picture. The presenter shows the pictures instead of a bar chart.",
+    picture_prompt: "<strong>Image prompt:</strong> upload the image on the question above, then type the text answers here and tick the correct one.",
+    puzzle: "<strong>Puzzle:</strong> each row is one piece. Number the positions 1, 2, 3… in the order they should end up. The presenter shows the first player to solve it."
+  };
 
-  const boldBtn      = $("qe-bold");
-  const italicBtn    = $("qe-italic");
-  const underlineBtn = $("qe-underline");
-  const alignButtons = Array.from(document.querySelectorAll(".qe-align-btn"));
-  const shapeButtons = Array.from(document.querySelectorAll(".qe-shape-btn"));
+  var TEXT_LABEL = {
+    mcq: "Answer text",
+    picture_prompt: "Answer text",
+    picture_choice: "Caption (optional)",
+    puzzle: "Piece label"
+  };
 
-  const textColorPicker = $("qe-text-color-input");
-  const bgColorPicker   = $("qe-bg-color-input");
-  const bgGradPicker    = $("qe-bg-grad-input");
-  const bgGradWrap      = $("qe-grad-wrap");
-  const gradientToggle  = $("qe-gradient-toggle");
+  var IMAGE_LABEL = {
+    picture_choice: "Picture",
+    puzzle: "Piece image"
+  };
 
-  const answerPreview = $("qe-answer-preview");
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* ── Live preview ────────────────────────────────────── */
+  var preview = $("qe-preview");
+  var previewText = $("qe-preview-text");
+  var tiles = $("qe-tiles");
+
+  var familySelect = $("id_font_family");
+  var sizeInput = $("id_font_size");
+  var sizeRange = $("qe-size-range");
+  var textInput = $("id_question_text");
+
+  var boldField = $("id_font_bold");
+  var italicField = $("id_text_italic");
+  var underlineField = $("id_text_underline");
+  var alignField = $("id_text_align");
+  var textColorField = $("id_text_color");
+  var bgColorField = $("id_background_color");
+  var bgGradField = $("id_background_gradient_to");
+  var shapeField = $("id_answer_shape");
+
+  var textColorPicker = $("qe-text-color");
+  var bgColorPicker = $("qe-bg-color");
+  var bgGradPicker = $("qe-bg-grad");
+  var gradWrap = $("qe-grad-wrap");
+  var gradToggle = $("qe-gradient-toggle");
+
+  /* The hidden fields are the source of truth on save, but they are only
+     populated once the author touches a control. Seed them from the
+     visible pickers on load so a question saved without touching the
+     colour controls keeps the colours it is currently showing. */
+  function seed() {
+    if (alignField && !alignField.value) alignField.value = "center";
+    if (shapeField && !shapeField.value) shapeField.value = "rounded";
+    if (textColorField && textColorPicker) textColorField.value = textColorPicker.value;
+    if (bgColorField && bgColorPicker) bgColorField.value = bgColorPicker.value;
+    if (bgGradField && bgGradPicker) {
+      bgGradField.value = gradToggle && gradToggle.checked ? bgGradPicker.value : "";
+    }
+  }
 
   function render() {
-    const fam  = FONT_STACK[familySelect.value] || FONT_STACK.default;
-    const size = Math.min(96, Math.max(16, parseInt(sizeInput.value || "32", 10)));
+    if (!preview) return;
+    var family = FONT_STACK[familySelect ? familySelect.value : "default"] || FONT_STACK.default;
+    var size = Math.min(96, Math.max(16, parseInt((sizeInput && sizeInput.value) || "32", 10) || 32));
+    var align = (alignField && alignField.value) || "center";
 
-    preview.style.fontFamily      = fam;
-    preview.style.fontSize        = size + "px";
-    preview.style.fontWeight      = boldCheck.checked ? "800" : "500";
-    preview.style.fontStyle       = italicCheck.checked ? "italic" : "normal";
-    preview.style.textDecoration  = underlineCheck.checked ? "underline" : "none";
-    preview.style.textAlign       = alignInput.value || "center";
-    preview.style.justifyContent  =
-      alignInput.value === "left"  ? "flex-start" :
-      alignInput.value === "right" ? "flex-end"   : "center";
-    preview.style.color           = textColorInput.value;
-    preview.style.lineHeight      = (familySelect.value === "press") ? "1.6" : "1.15";
+    preview.style.fontFamily = family;
+    preview.style.fontSize = size + "px";
+    preview.style.fontWeight = boldField && boldField.checked ? "800" : "500";
+    preview.style.fontStyle = italicField && italicField.checked ? "italic" : "normal";
+    preview.style.textDecoration = underlineField && underlineField.checked ? "underline" : "none";
+    preview.style.textAlign = align;
+    preview.style.color = textColorField ? textColorField.value : "#f8fafc";
+    preview.style.lineHeight = (familySelect && familySelect.value === "press") ? "1.6" : "1.15";
 
-    preview.style.background = (gradientToggle.checked && bgGradInput.value)
-      ? `linear-gradient(135deg, ${bgColorInput.value}, ${bgGradInput.value})`
-      : bgColorInput.value;
+    var base = bgColorField ? bgColorField.value : "#1e293b";
+    preview.style.background = (gradToggle && gradToggle.checked && bgGradField && bgGradField.value)
+      ? "linear-gradient(135deg, " + base + ", " + bgGradField.value + ")"
+      : base;
 
-    // Apply shape via inline styles (more reliable than CSS classes when
-    // the base tile styling is also inline).
-    const shape = shapeInput.value || "rounded";
-    answerPreview.querySelectorAll(".qe-tile").forEach((tile) => {
-      // Reset shape-specific styles first.
-      tile.style.transform = "";
-      tile.style.aspectRatio = "";
-      tile.style.width = "";
-      tile.style.justifySelf = "";
-      tile.style.clipPath = "";
-      tile.style.paddingTop = "";
-      tile.style.alignItems = "center";
-      tile.style.minHeight = "78px";
-
-      if (shape === "rounded") {
-        tile.style.borderRadius = "12px";
-      } else if (shape === "square") {
-        tile.style.borderRadius = "0";
-      } else if (shape === "circle") {
-        tile.style.borderRadius = "999px";
-        tile.style.aspectRatio = "1/1";
-        tile.style.minHeight = "0";
-      } else if (shape === "diamond") {
-        tile.style.borderRadius = "6px";
-        tile.style.transform = "rotate(45deg)";
-        tile.style.aspectRatio = "1/1";
-        tile.style.minHeight = "0";
-        tile.style.width = "72%";
-        tile.style.justifySelf = "center";
-      } else if (shape === "triangle") {
-        tile.style.borderRadius = "0";
-        tile.style.clipPath = "polygon(50% 8%, 96% 96%, 4% 96%)";
-        tile.style.aspectRatio = "1/.85";
-        tile.style.minHeight = "0";
-        tile.style.paddingTop = "30%";
-        tile.style.alignItems = "flex-start";
-      }
-
-      // Counter-rotate text inside diamonds so it stays upright.
-      const span = tile.querySelector("span");
-      if (span) {
-        span.style.transform = (shape === "diamond") ? "rotate(-45deg)" : "";
-        span.style.display = (shape === "diamond") ? "inline-block" : "";
-      }
-    });
-
-    bgGradWrap.classList.toggle("is-disabled", !gradientToggle.checked);
+    /* Shape is one attribute swap; the CSS owns the five variants. The old
+       version wrote fifteen inline styles per tile from JS and had to reset
+       each of them on every change. */
+    if (tiles && shapeField) tiles.dataset.shape = shapeField.value || "rounded";
+    if (gradWrap && gradToggle) gradWrap.classList.toggle("is-off", !gradToggle.checked);
   }
 
-  function wireToggle(btn, checkbox) {
-    if (!btn || !checkbox) return;
-    btn.addEventListener("click", () => {
-      checkbox.checked = !checkbox.checked;
-      btn.classList.toggle("is-active", checkbox.checked);
+  function bindToggle(button, field) {
+    if (!button || !field) return;
+    button.addEventListener("click", function () {
+      field.checked = !field.checked;
+      button.setAttribute("aria-pressed", field.checked ? "true" : "false");
       render();
     });
   }
-  wireToggle(boldBtn,      boldCheck);
-  wireToggle(italicBtn,    italicCheck);
-  wireToggle(underlineBtn, underlineCheck);
+  bindToggle($("qe-bold"), boldField);
+  bindToggle($("qe-italic"), italicField);
+  bindToggle($("qe-underline"), underlineField);
 
-  alignButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      alignButtons.forEach((b) => b.classList.remove("is-active"));
-      btn.classList.add("is-active");
-      alignInput.value = btn.dataset.align;
-      render();
-    });
-  });
-
-  shapeButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      shapeButtons.forEach((b) => {
-        b.classList.remove("is-active");
-        b.style.borderColor = "rgba(255,255,255,.10)";
-        b.style.boxShadow = "none";
+  function bindGroup(selector, apply) {
+    var buttons = Array.prototype.slice.call(document.querySelectorAll(selector));
+    buttons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        buttons.forEach(function (b) { b.setAttribute("aria-pressed", "false"); });
+        button.setAttribute("aria-pressed", "true");
+        apply(button);
+        render();
       });
-      btn.classList.add("is-active");
-      btn.style.borderColor = "#fbbf24";
-      btn.style.boxShadow = "0 0 0 2px rgba(251,191,36,.3)";
-      shapeInput.value = btn.dataset.shape;
-      render();
     });
-  });
+  }
+  bindGroup(".qe-align", function (b) { if (alignField) alignField.value = b.dataset.align; });
+  bindGroup("#qe-shapes .g-shape", function (b) { if (shapeField) shapeField.value = b.dataset.shape; });
 
-  // On page load, apply active border to whichever shape is pre-selected.
-  shapeButtons.forEach((b) => {
-    if (b.classList.contains("is-active")) {
-      b.style.borderColor = "#fbbf24";
-      b.style.boxShadow = "0 0 0 2px rgba(251,191,36,.3)";
-    }
-  });
+  function bindColor(picker, field) {
+    if (!picker || !field) return;
+    picker.addEventListener("input", function () { field.value = picker.value; render(); });
+  }
+  bindColor(textColorPicker, textColorField);
+  bindColor(bgColorPicker, bgColorField);
+  bindColor(bgGradPicker, bgGradField);
 
-  function wireColor(picker, hidden) {
-    if (!picker || !hidden) return;
-    picker.addEventListener("input", () => {
-      hidden.value = picker.value;
+  if (gradToggle) {
+    gradToggle.addEventListener("change", function () {
+      if (!bgGradField) return;
+      bgGradField.value = gradToggle.checked ? (bgGradPicker.value || "#7c3aed") : "";
       render();
     });
   }
-  wireColor(textColorPicker, textColorInput);
-  wireColor(bgColorPicker,   bgColorInput);
-  wireColor(bgGradPicker,    bgGradInput);
-
-  gradientToggle.addEventListener("change", () => {
-    if (!gradientToggle.checked) {
-      bgGradInput.value = "";
-    } else if (!bgGradInput.value) {
-      bgGradInput.value = bgGradPicker.value || "#7c3aed";
-    }
-    render();
-  });
 
   if (sizeRange && sizeInput) {
-    sizeRange.addEventListener("input", () => { sizeInput.value = sizeRange.value; render(); });
-    sizeInput.addEventListener("input", () => { sizeRange.value = sizeInput.value; render(); });
+    sizeRange.addEventListener("input", function () { sizeInput.value = sizeRange.value; render(); });
+    sizeInput.addEventListener("input", function () { sizeRange.value = sizeInput.value; render(); });
   }
-  familySelect.addEventListener("change", render);
-
-  if (textInput) {
-    textInput.addEventListener("input", () => {
-      preview.textContent = textInput.value || "Your question will look like this";
+  if (familySelect) familySelect.addEventListener("change", render);
+  if (textInput && previewText) {
+    textInput.addEventListener("input", function () {
+      previewText.textContent = textInput.value || "Your question will look like this";
     });
   }
 
-  if (alignInput && !alignInput.value) alignInput.value = "center";
-  if (shapeInput && !shapeInput.value) shapeInput.value = "rounded";
+  /* ── Type-driven field visibility ────────────────────── */
+  var typeSelect = $("id_question_type");
+  var typeHelp = $("type-help");
+  var answersHelp = $("answers-help");
+  var questionImageLabel = $("question-image-label");
+  var choiceList = $("choice-list");
 
+  function currentType() { return typeSelect ? typeSelect.value : "mcq"; }
 
-  const questionTypeSelect = $("id_question_type");
-  const choiceHelp = $("kk-choice-help");
+  function applyType() {
+    var type = currentType();
+    var isPuzzle = type === "puzzle";
+    var usesChoiceImages = type === "picture_choice" || isPuzzle;
+    /* Text-answer types are the ones whose buttons carry a shape. The old
+       code gated this on `mcq` alone, so image-prompt questions — which
+       also render text buttons — had no way to change their tile shape. */
+    var usesShape = type === "mcq" || type === "picture_prompt";
 
-  function syncChoiceFields() {
-    const qtype = questionTypeSelect ? questionTypeSelect.value : "mcq";
+    document.querySelectorAll('[data-role="shape"]').forEach(function (el) { el.hidden = !usesShape; });
+    document.querySelectorAll('[data-role="image"]').forEach(function (el) { el.hidden = !usesChoiceImages; });
+    document.querySelectorAll('[data-role="position"]').forEach(function (el) { el.hidden = !isPuzzle; });
+    document.querySelectorAll('[data-role="correct"]').forEach(function (el) { el.hidden = isPuzzle; });
 
-    // Decide visibility per-element. Some elements (notably the image
-    // column) carry BOTH .kk-picture-field and .kk-puzzle-field — running
-    // two independent passes would let the second pass clobber the first
-    // (the old bug: picture_choice was hiding the upload field). Compute
-    // the final answer once per element.
-    document.querySelectorAll(
-      ".kk-picture-field, .kk-puzzle-field, .kk-correct-field, .kk-classic-field"
-    ).forEach(el => {
-      const isPic     = el.classList.contains("kk-picture-field");
-      const isPuzzle  = el.classList.contains("kk-puzzle-field");
-      const isCorrect = el.classList.contains("kk-correct-field");
-      const isClassic = el.classList.contains("kk-classic-field");
-
-      let show = false;
-      // An element shows if ANY of its role-classes are active for this qtype.
-      if (isPic     && (qtype === "picture_choice" || qtype === "puzzle")) show = true;
-      if (isPuzzle  && qtype === "puzzle") show = true;
-      if (isCorrect && qtype !== "puzzle") show = true;
-      if (isClassic && qtype === "mcq") show = true;
-
-      el.style.display = show ? "" : "none";
+    document.querySelectorAll(".g-choice-grid").forEach(function (grid) { grid.dataset.type = type; });
+    document.querySelectorAll('[data-label="text"]').forEach(function (el) {
+      el.textContent = TEXT_LABEL[type] || "Answer text";
+    });
+    document.querySelectorAll('[data-label="image"]').forEach(function (el) {
+      el.textContent = IMAGE_LABEL[type] || "Image";
     });
 
-    // Re-label the first column so its purpose is obvious per question type.
-    document.querySelectorAll(".kk-choice-text-label").forEach(el => {
-      el.textContent =
-        qtype === "picture_choice" ? "Caption (optional)" :
-        qtype === "puzzle"         ? "Piece label"        :
-                                     "Answer text";
-    });
-    document.querySelectorAll(".kk-choice-image-label").forEach(el => {
-      el.textContent =
-        qtype === "picture_choice" ? "Picture" :
-        qtype === "puzzle"         ? "Piece image" :
-                                     "Image";
+    if (questionImageLabel) {
+      questionImageLabel.textContent = (type === "picture_prompt") ? "Prompt image" : "Image";
+    }
+    if (typeHelp) typeHelp.textContent = TYPE_HELP[type] || "";
+    if (answersHelp) answersHelp.innerHTML = ANSWER_HELP[type] || "";
+  }
+
+  if (typeSelect) typeSelect.addEventListener("change", applyType);
+
+  /* ── Answer rows: add, remove, relabel ───────────────── */
+  var prefix = choiceList ? choiceList.dataset.prefix : "choices";
+  var totalForms = $("id_" + prefix + "-TOTAL_FORMS");
+  var template = $("choice-row-template");
+  var addBtn = $("add-choice-btn");
+  var countHint = $("choice-count-hint");
+  var MAX_ROWS = 8;
+
+  function liveRows() {
+    if (!choiceList) return [];
+    return Array.prototype.slice.call(choiceList.querySelectorAll("[data-choice-row]"))
+      .filter(function (row) { return !row.classList.contains("is-removed"); });
+  }
+
+  function relabel() {
+    var letters = "ABCDEFGH";
+    var shown = 0;
+    Array.prototype.slice.call(choiceList.querySelectorAll("[data-choice-row]")).forEach(function (row) {
+      var mark = row.querySelector("[data-letter]");
+      if (row.classList.contains("is-removed")) {
+        if (mark) mark.textContent = "–";
+        return;
+      }
+      if (mark) {
+        mark.textContent = currentType() === "puzzle" ? String(shown + 1) : letters.charAt(shown);
+      }
+      var order = row.querySelector('input[name$="-order"]');
+      if (order) order.value = shown;
+      shown += 1;
     });
 
-    // For picture_prompt the question's OWN image field becomes the
-    // hero image shown to players, so relabel it to make that clear.
-    // Other types keep the generic "Image" label.
-    document.querySelectorAll(".kk-question-image-label").forEach(el => {
-      el.textContent = (qtype === "picture_prompt") ? "Prompt image" : "Image";
-    });
-
-    if (choiceHelp) {
-      if (qtype === "picture_choice") choiceHelp.innerHTML = "<strong>Picture choice:</strong> upload one image per answer, add a caption if needed, and tick the correct picture. The presenter will show the pictures in the chart area instead of a bar chart.";
-      else if (qtype === "puzzle") choiceHelp.innerHTML = "<strong>Puzzle:</strong> each row is one puzzle piece. Set Correct position as 1, 2, 3, 4... The presenter will show the first winner and avatar instead of a bar chart.";
-      else if (qtype === "picture_prompt") choiceHelp.innerHTML = "<strong>Image prompt:</strong> upload one image up top (under the question heading), then type plain-text answers below and tick the correct one. Players see a hero image with lettered (A/B/C…) text buttons.";
-      else choiceHelp.innerHTML = "<strong>Classic:</strong> type answers and tick the correct option. The presenter will show the normal live chart.";
+    var count = liveRows().length;
+    if (addBtn) addBtn.hidden = count >= MAX_ROWS;
+    if (countHint) {
+      countHint.textContent = count < 2
+        ? "A question needs at least two answers."
+        : count + " of " + MAX_ROWS + " answers used.";
     }
   }
 
-  if (questionTypeSelect) questionTypeSelect.addEventListener("change", syncChoiceFields);
+  function markCorrect(row) {
+    var box = row.querySelector('input[name$="-is_correct"]');
+    row.classList.toggle("is-correct", !!(box && box.checked && currentType() !== "puzzle"));
+  }
 
-  syncChoiceFields();
+  if (choiceList) {
+    choiceList.addEventListener("change", function (e) {
+      if (!e.target.name || e.target.name.indexOf("-is_correct") === -1) return;
+      /* Exactly one answer can be correct, so ticking one unticks the rest.
+         The server enforces this too — this just stops the author from
+         discovering the rule only after they hit save. */
+      if (e.target.checked && currentType() !== "puzzle") {
+        choiceList.querySelectorAll('input[name$="-is_correct"]').forEach(function (box) {
+          if (box !== e.target) box.checked = false;
+        });
+      }
+      choiceList.querySelectorAll("[data-choice-row]").forEach(markCorrect);
+    });
+
+    choiceList.addEventListener("click", function (e) {
+      var button = e.target.closest("[data-remove-choice]");
+      if (!button) return;
+
+      var row = button.closest("[data-choice-row]");
+      var del = row.querySelector('input[name$="-DELETE"]');
+      var saved = row.querySelector('input[name$="-id"]');
+
+      if (del && saved && saved.value) {
+        del.checked = !del.checked;                /* saved row: flag it */
+        row.classList.toggle("is-removed", del.checked);
+        button.title = del.checked ? "Keep this answer" : "Remove this answer";
+      } else {
+        row.remove();                              /* never saved: drop it */
+        if (totalForms) {
+          totalForms.value = String(choiceList.querySelectorAll("[data-choice-row]").length);
+        }
+        renumber();
+      }
+      relabel();
+    });
+  }
+
+  /* Rewrites every field name to its row position. Saved rows carry their
+     pk in the hidden `-id` field, so Django matches them by id and the
+     renumbering is safe. */
+  function renumber() {
+    if (!choiceList || !totalForms) return;
+    var rows = choiceList.querySelectorAll("[data-choice-row]");
+    rows.forEach(function (row, i) {
+      row.querySelectorAll("input, select, textarea").forEach(function (field) {
+        if (field.name) field.name = field.name.replace(new RegExp(prefix + "-(\\d+|__prefix__)-"), prefix + "-" + i + "-");
+        if (field.id) field.id = field.id.replace(new RegExp("id_" + prefix + "-(\\d+|__prefix__)-"), "id_" + prefix + "-" + i + "-");
+      });
+    });
+    totalForms.value = String(rows.length);
+  }
+
+  if (addBtn && template && choiceList && totalForms) {
+    addBtn.addEventListener("click", function () {
+      if (liveRows().length >= MAX_ROWS) return;
+      var index = choiceList.querySelectorAll("[data-choice-row]").length;
+      var holder = document.createElement("div");
+      holder.innerHTML = template.innerHTML.replace(/__prefix__/g, index).trim();
+      var row = holder.firstElementChild;
+      choiceList.appendChild(row);
+      totalForms.value = String(index + 1);
+
+      applyType();
+      relabel();
+      var field = row.querySelector('input[type="text"]');
+      if (field) field.focus();
+    });
+  }
+
+  seed();
+  applyType();
+  relabel();
+  if (choiceList) choiceList.querySelectorAll("[data-choice-row]").forEach(markCorrect);
   render();
 })();
 </script>

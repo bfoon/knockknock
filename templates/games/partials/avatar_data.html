@@ -1,32 +1,31 @@
-<!--{# Exposes the avatar catalog to JavaScript as `window.kkAvatarsById`.-->
-<!--   Include this partial BEFORE play.js / present.js / any room-rendering shim.-->
-<!--   Required context: `avatars` from games.avatars.AVATARS.-->
-<!--#}-->
+{% comment %} Exposes the avatar catalog to JavaScript as `window.kkAvatarsById`.
+
+   Include this partial BEFORE play.js / present.js / any room-rendering shim.
+   Required context: `avatars` from games.avatars.AVATARS.
+
+   The previous version wrapped this note in HTML comment markers around
+   Django comment tags, so `<!--` and `-->` leaked into the rendered page.{% endcomment %}
 {{ avatars|json_script:"kk-avatars-json" }}
 <script>
 (function () {
-  const el = document.getElementById("kk-avatars-json");
+  "use strict";
+  var el = document.getElementById("kk-avatars-json");
+  window.kkAvatarsById = {};
 
   if (!el) {
     console.warn("[knock-knock] avatar catalog element missing");
-    window.kkAvatarsById = {};
     return;
   }
 
   try {
-    const arr = JSON.parse(el.textContent || "[]");
-    const byId = {};
-
-    arr.forEach(a => {
-      if (a && a.id) {
-        byId[String(a.id)] = a;
-      }
+    var list = JSON.parse(el.textContent || "[]");
+    var byId = {};
+    list.forEach(function (a) {
+      if (a && a.id) byId[String(a.id)] = a;
     });
-
     window.kkAvatarsById = byId;
   } catch (e) {
     console.warn("[knock-knock] avatar catalog parse failed", e);
-    window.kkAvatarsById = {};
   }
 })();
 </script>

@@ -1,115 +1,104 @@
 {% extends "base.html" %}
 {% load static %}
+
 {% block title %}My games · Knock-Knock{% endblock %}
 
-{% block extra_head %}
-<link rel="stylesheet" href="{% static 'css/avatar_anim.css' %}">
-{% endblock %}
-
 {% block content %}
-<div class="d-flex align-items-center justify-content-between mb-4">
-  <h1 class="mb-0">My games 🎮</h1>
-  <a href="{% url 'games:create' %}" class="kk-btn kk-btn-primary"><i class="bi bi-plus-lg"></i> New</a>
-</div>
+{% comment %} The stylesheet is linked here rather than in a head block on purpose.
+   Three of these templates used {% block extra_head %} and one used
+   {% block head_extra %}; only one of those names can be right, and the
+   wrong one fails silently by dropping every style on the page. A <link>
+   in the body is valid HTML5 and cannot be mis-named. Move it into your
+   real head block once you have confirmed which name base.html defines. {% endcomment %}
+<link rel="stylesheet" href="{% static 'css/games.css' %}">
 
-{% for q in quizzes %}
-  {# Row layout: clickable title area on the left, action buttons on the right. #}
-  {# Same pattern as the polls list and the dashboard — keeps the feel consistent #}
-  {# while supporting inline duplicate / delete forms (which can't be nested in <a>). #}
-  <div class="kk-list-item kk-list-item-row">
-    <a class="kk-list-item-main" href="{% url 'games:edit' q.pk %}">
-      <span class="kk-q-index">{{ forloop.counter }}</span>
-      <div class="flex-grow-1">
-        <div class="kk-list-item-title">{{ q.title }}</div>
-        <div class="kk-list-item-meta">{{ q.questions.count }} questions · {{ q.get_scoring_display }}{% if q.use_rooms %} · rooms of {{ q.room_capacity }}{% endif %}</div>
+<div class="g">
+  <div class="g-head">
+    <div>
+      <h1 class="g-title">My games</h1>
+      <div class="g-meta">
+        {{ quizzes|length }} game{{ quizzes|length|pluralize }}
       </div>
-      <span class="kk-q-pill">{{ q.get_mode_display }}</span>
-      <i class="bi bi-chevron-right text-secondary"></i>
-    </a>
-
-    {# Duplicate — deep-copies questions, choices, rooms. #}
-    <form method="post"
-          action="{% url 'games:duplicate' q.pk %}"
-          class="kk-row-action-form"
-          onsubmit="return confirm('Duplicate “{{ q.title|escapejs }}”? The copy will include all questions and rooms.');">
-      {% csrf_token %}
-      <input type="hidden" name="next" value="{{ request.path }}">
-      <button type="submit"
-              class="kk-row-duplicate"
-              title="Duplicate game"
-              aria-label="Duplicate {{ q.title }}">
-        <i class="bi bi-files"></i>
-      </button>
-    </form>
-
-    <form method="post"
-          action="{% url 'games:delete' q.pk %}"
-          class="kk-row-delete-form"
-          onsubmit="return confirm('Delete “{{ q.title|escapejs }}”? This cannot be undone.');">
-      {% csrf_token %}
-      <input type="hidden" name="next" value="{{ request.path }}">
-      <button type="submit"
-              class="kk-row-delete"
-              title="Delete game"
-              aria-label="Delete {{ q.title }}">
-        <i class="bi bi-trash3-fill"></i>
-      </button>
-    </form>
+    </div>
+    <div class="g-actions">
+      <a href="{% url 'games:create' %}" class="kk-btn kk-btn-primary">
+        <i class="bi bi-plus-lg"></i> New game
+      </a>
+    </div>
   </div>
-{% empty %}
-  <div class="kk-empty">
-    <div class="em">🎮</div>
-    <p>No games yet.</p>
-    <a href="{% url 'games:create' %}" class="kk-btn kk-btn-primary mt-2">Create your first competition</a>
+
+  <div class="g-list">
+    {% for q in quizzes %}
+      {% comment %} Row layout: the clickable title area is an <a>, the actions are
+         separate forms. Forms cannot be nested inside an anchor, which is
+         why this is a flex row rather than one big link. {% endcomment %}
+      <div class="g-row">
+        <a class="g-row-main" href="{% url 'games:edit' q.pk %}">
+          <span class="g-q-num">{{ forloop.counter }}</span>
+          <span class="g-row-body">
+            <span class="g-row-title">{{ q.title }}</span>
+            <span class="g-row-meta">
+              <span>{{ q.num_questions }} question{{ q.num_questions|pluralize }}</span>
+              <span>·</span>
+              <span>{{ q.get_scoring_display }}</span>
+              {% if q.use_rooms %}
+                <span>·</span>
+                <span>rooms of {{ q.room_capacity }}</span>
+              {% endif %}
+            </span>
+          </span>
+          <span class="g-tag">{{ q.get_mode_display }}</span>
+          <i class="bi bi-chevron-right" style="color: var(--g-ink-faint);"></i>
+        </a>
+
+        <a href="{% url 'games:results' q.pk %}"
+           class="g-icon-btn g-icon-btn-accent"
+           title="Results for {{ q.title }}"
+           aria-label="Results for {{ q.title }}">
+          <i class="bi bi-bar-chart"></i>
+        </a>
+
+        {# Duplicate — deep-copies questions, choices and rooms. #}
+        <form method="post"
+              action="{% url 'games:duplicate' q.pk %}"
+              class="g-row-form"
+              onsubmit="return confirm('Duplicate “{{ q.title|escapejs }}”? The copy includes all questions and rooms.');">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button type="submit"
+                  class="g-icon-btn g-icon-btn-accent"
+                  title="Duplicate game"
+                  aria-label="Duplicate {{ q.title }}">
+            <i class="bi bi-files"></i>
+          </button>
+        </form>
+
+        <form method="post"
+              action="{% url 'games:delete' q.pk %}"
+              class="g-row-form"
+              onsubmit="return confirm('Delete “{{ q.title|escapejs }}” and every question in it? This cannot be undone.');">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button type="submit"
+                  class="g-icon-btn g-icon-btn-danger"
+                  title="Delete game"
+                  aria-label="Delete {{ q.title }}">
+            <i class="bi bi-trash3"></i>
+          </button>
+        </form>
+      </div>
+    {% empty %}
+      <div class="g-empty">
+        <div class="g-empty-mark">🎮</div>
+        <p class="g-empty-title">No games yet</p>
+        <p class="g-empty-note">
+          Build a quiz, pick how it scores, then start a session and share the code with the room.
+        </p>
+        <a href="{% url 'games:create' %}" class="kk-btn kk-btn-primary mt-2">
+          <i class="bi bi-plus-lg"></i> Create your first game
+        </a>
+      </div>
+    {% endfor %}
   </div>
-{% endfor %}
-
-<style>
-/* Same row-action styles as the polls list. Duplicated here so each list
-   page is self-contained — no shared partial yet. If you start adding
-   more list views, lift these into a shared base CSS file. */
-.kk-list-item-row { display: flex; align-items: center; gap: .5rem; }
-.kk-list-item-main {
-  display: flex; align-items: center; gap: .75rem;
-  flex: 1 1 auto; min-width: 0;
-  text-decoration: none; color: inherit;
-}
-.kk-list-item-main:hover { color: inherit; text-decoration: none; }
-
-.kk-row-action-form, .kk-row-delete-form {
-  margin: 0; padding: 0; flex: 0 0 auto;
-}
-.kk-row-duplicate, .kk-row-delete {
-  display: inline-grid; place-items: center;
-  width: 34px; height: 34px;
-  border-radius: 10px;
-  font-size: .95rem;
-  cursor: pointer;
-  transition: background .15s ease, border-color .15s ease,
-              color .15s ease, transform .15s ease;
-}
-.kk-row-duplicate {
-  border: 1px solid rgba(34, 211, 238, 0.22);
-  background: rgba(34, 211, 238, 0.08);
-  color: #67e8f9;
-}
-.kk-row-duplicate:hover, .kk-row-duplicate:focus-visible {
-  background: rgba(34, 211, 238, 0.18);
-  border-color: rgba(34, 211, 238, 0.55);
-  color: #a5f3fc;
-  transform: translateY(-1px); outline: none;
-}
-.kk-row-delete {
-  border: 1px solid rgba(248, 113, 113, 0.22);
-  background: rgba(248, 113, 113, 0.08);
-  color: #f87171;
-}
-.kk-row-delete:hover, .kk-row-delete:focus-visible {
-  background: rgba(248, 113, 113, 0.18);
-  border-color: rgba(248, 113, 113, 0.55);
-  color: #fecaca;
-  transform: translateY(-1px); outline: none;
-}
-.kk-row-duplicate:active, .kk-row-delete:active { transform: translateY(0); }
-</style>
+</div>
 {% endblock %}

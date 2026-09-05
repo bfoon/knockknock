@@ -1,22 +1,30 @@
-{# Avatar picker — 3D edition.
-   Drop-in replacement for the old emoji-only picker. Same required context:
-     `avatar_groups`  (list of (label, [avatar_dict, ...]))
-     `selected_id`    (optional)
-   Backwards-compatible contract for existing JS:
+{% comment %} Avatar picker — 3D edition.
+
+   Required context:
+     avatar_groups  — list of (label, [avatar_dict, ...]) from games.avatars
+     selected_id    — optional, the currently chosen avatar id
+
+   Contract kept for existing JS:
      • container is still #avatar-grid
      • tiles are still .kk-avatar-tile with data-avatar-id and a .selected class
-   New:
-     • a live 3D stage previews the selected character
-       — drag to spin, pinch / scroll to zoom, tap the character for its move
-     • ◀ ▶ buttons + keyboard arrows step through avatars, Space plays the move
-     • fires `kk:avatar-selected` (detail: {id}) and syncs any
-       input[name="avatar_id"] found in the same <form>
-     • falls back to the plain emoji grid when WebGL / three.js is missing
+     • fires `kk:avatar-selected` (detail: {id})
+     • syncs any input[name="avatar_id"] in the same <form>
+
+   Changes:
+     • tiles are real <button type="button"> elements. They were divs with
+       role="button" and a hand-rolled Enter/Space handler, which meant no
+       native focus behaviour and no announcement of pressed state. The
+       explicit type matters: a bare <button> inside a form submits it.
+     • aria-pressed replaces the visual-only .selected class (which is still
+       applied, for any CSS or JS that keys off it).
+     • the 3D controls are wired defensively — a missing button used to
+       throw and take the whole picker's script down with it.
+     • the form input is only seeded when it is empty, so opening the picker
+       no longer silently overwrites a saved choice.
 
    Requires (once per page, BEFORE this partial's script runs):
      <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-     <script src="{% static 'js/kk3d.js' %}"></script>
-#}
+     <script src="{% static 'js/kk3d.js' %}"></script>{% endcomment %}
 {% load static %}
 
 <div class="kk-avatar-picker kk-avatar-picker-3d" id="avatar-grid" data-selected-id="{{ selected_id|default:'' }}">
@@ -27,7 +35,7 @@
 
     <div class="kk-av3d-stage" id="kk-av3d-stage"
          role="img" aria-label="3D avatar preview. Drag to rotate, tap to play the move.">
-      <div class="kk-av3d-hint">drag to spin · tap for a trick</div>
+      <span class="kk-av3d-hint">drag to spin · tap for a trick</span>
     </div>
 
     <button type="button" class="kk-av3d-arrow" id="kk-av3d-next" aria-label="Next avatar">›</button>
@@ -36,24 +44,25 @@
   <div class="kk-av3d-meta" id="kk-av3d-meta" hidden>
     <span class="kk-av3d-name" id="kk-av3d-name"></span>
     <span class="kk-av3d-cat" id="kk-av3d-cat"></span>
-    <button type="button" class="kk-av3d-play" id="kk-av3d-play" aria-label="Play signature move">▶ move</button>
-    <button type="button" class="kk-av3d-play" id="kk-av3d-random" aria-label="Pick a random avatar">🎲 random</button>
+    <button type="button" class="kk-av3d-play" id="kk-av3d-play">Play move</button>
+    <button type="button" class="kk-av3d-play" id="kk-av3d-random">Surprise me</button>
   </div>
 
-  {# ── tile grid (also the no-WebGL fallback) ──────────────── #}
+  {# ── Tile grid, which is also the no-WebGL fallback ──────── #}
   {% for label, avs in avatar_groups %}
     <div class="kk-avatar-picker-section">
       <h4>{{ label }}</h4>
       <div class="kk-avatar-grid">
         {% for a in avs %}
-          <div class="kk-avatar-tile{% if selected_id == a.id %} selected{% endif %}"
-               data-avatar-id="{{ a.id }}"
-               data-avatar-label="{{ a.label }}"
-               data-avatar-category="{{ label }}"
-               role="button" tabindex="0"
-               title="{{ a.label }}">
-            <span class="kk-anim-{{ a.anim }}" style="display:inline-block;">{{ a.emoji }}</span>
-          </div>
+          <button type="button"
+                  class="kk-avatar-tile{% if selected_id == a.id %} selected{% endif %}"
+                  data-avatar-id="{{ a.id }}"
+                  data-avatar-label="{{ a.label }}"
+                  data-avatar-category="{{ label }}"
+                  aria-pressed="{% if selected_id == a.id %}true{% else %}false{% endif %}"
+                  title="{{ a.label }}">
+            <span class="kk-anim-{{ a.anim }}">{{ a.emoji }}</span>
+          </button>
         {% endfor %}
       </div>
     </div>
@@ -63,10 +72,7 @@
 <style>
   .kk-avatar-picker-3d { --kk-av3d-accent: #22d3ee; }
 
-  .kk-av3d-stage-wrap {
-    display: flex; align-items: stretch; gap: .5rem;
-    margin-bottom: .35rem;
-  }
+  .kk-av3d-stage-wrap { display: flex; align-items: stretch; gap: .5rem; margin-bottom: .35rem; }
   .kk-av3d-stage {
     position: relative; flex: 1 1 auto;
     height: clamp(200px, 34vh, 300px);
@@ -89,11 +95,10 @@
     flex: 0 0 40px; border-radius: 16px; font-size: 1.5rem; line-height: 1;
     color: #e2e8f0; cursor: pointer;
     background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1);
-    transition: background .15s ease, border-color .15s ease, transform .15s ease;
+    transition: background .15s ease, border-color .15s ease;
   }
   .kk-av3d-arrow:hover, .kk-av3d-arrow:focus-visible {
-    background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.5);
-    outline: none; transform: translateY(-1px);
+    background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.5); outline: none;
   }
   .kk-av3d-meta {
     display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
@@ -101,28 +106,41 @@
   }
   .kk-av3d-name { font-weight: 700; color: #f1f5f9; }
   .kk-av3d-cat {
-    font-size: .7rem; text-transform: uppercase; letter-spacing: .08em;
-    color: #94a3b8; border: 1px solid rgba(255,255,255,.14);
+    font-size: .72rem; color: #94a3b8; border: 1px solid rgba(255,255,255,.14);
     padding: .12rem .5rem; border-radius: 999px;
   }
   .kk-av3d-play {
-    margin-left: auto; font-size: .74rem; cursor: pointer; color: #a5f3fc;
+    font-size: .76rem; cursor: pointer; color: #a5f3fc;
     background: rgba(34,211,238,.08); border: 1px solid rgba(34,211,238,.25);
     padding: .28rem .7rem; border-radius: 999px;
     transition: background .15s ease, border-color .15s ease;
   }
-  .kk-av3d-play + .kk-av3d-play { margin-left: 0; }
+  #kk-av3d-play { margin-left: auto; }
   .kk-av3d-play:hover, .kk-av3d-play:focus-visible {
     background: rgba(34,211,238,.2); border-color: rgba(34,211,238,.6); outline: none;
   }
-  .kk-avatar-tile:focus-visible {
-    outline: 2px solid var(--kk-av3d-accent); outline-offset: 2px;
+
+  .kk-avatar-tile {
+    background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.08);
+    cursor: pointer;
+  }
+  .kk-avatar-tile > span { display: inline-block; }
+  .kk-avatar-tile:focus-visible { outline: 2px solid var(--kk-av3d-accent); outline-offset: 2px; }
+  .kk-avatar-tile[aria-pressed="true"], .kk-avatar-tile.selected {
+    background: rgba(34,211,238,.18);
+    border-color: rgba(34,211,238,.6);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .kk-avatar-tile > span { animation: none !important; }
   }
 </style>
 
 <script>
 (function () {
   "use strict";
+
   var root = document.getElementById("avatar-grid");
   if (!root || root.dataset.kk3dInit) return;
   root.dataset.kk3dInit = "1";
@@ -132,17 +150,22 @@
   var ids = tiles.map(function (t) { return t.dataset.avatarId; });
 
   var stageWrap = document.getElementById("kk-av3d-stage-wrap");
-  var stage     = document.getElementById("kk-av3d-stage");
-  var meta      = document.getElementById("kk-av3d-meta");
-  var nameEl    = document.getElementById("kk-av3d-name");
-  var catEl     = document.getElementById("kk-av3d-cat");
+  var stage = document.getElementById("kk-av3d-stage");
+  var meta = document.getElementById("kk-av3d-meta");
+  var nameEl = document.getElementById("kk-av3d-name");
+  var catEl = document.getElementById("kk-av3d-cat");
 
-  var selectedId = root.dataset.selectedId || ids[0];
-  if (ids.indexOf(selectedId) === -1) selectedId = ids[0];
+  var selectedId = root.dataset.selectedId || "";
+  var hadInitialSelection = ids.indexOf(selectedId) !== -1;
+  if (!hadInitialSelection) selectedId = ids[0];
+
   var handle = null;
 
   function tileFor(id) {
-    return tiles.filter(function (t) { return t.dataset.avatarId === id; })[0] || null;
+    for (var i = 0; i < tiles.length; i++) {
+      if (tiles[i].dataset.avatarId === id) return tiles[i];
+    }
+    return null;
   }
 
   function syncFormInput(id) {
@@ -155,12 +178,27 @@
   function select(id, opts) {
     opts = opts || {};
     selectedId = id;
-    tiles.forEach(function (t) { t.classList.toggle("selected", t.dataset.avatarId === id); });
+
+    tiles.forEach(function (t) {
+      var on = t.dataset.avatarId === id;
+      t.classList.toggle("selected", on);
+      t.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+
     var tile = tileFor(id);
     if (nameEl && tile) nameEl.textContent = tile.dataset.avatarLabel || id;
     if (catEl && tile) catEl.textContent = tile.dataset.avatarCategory || "";
-    if (handle) { handle.setAvatar(id); if (!opts.quiet) handle.playMove(); }
-    syncFormInput(id);
+
+    if (handle) {
+      handle.setAvatar(id);
+      if (!opts.quiet) handle.playMove();
+    }
+
+    /* On first paint, only seed an empty input. Writing unconditionally
+       meant that simply rendering the picker overwrote whatever the form
+       already held. */
+    if (!opts.quiet || hadInitialSelection) syncFormInput(id);
+
     if (tile && opts.scroll) tile.scrollIntoView({ block: "nearest", behavior: "smooth" });
     root.dispatchEvent(new CustomEvent("kk:avatar-selected", { bubbles: true, detail: { id: id } }));
   }
@@ -170,40 +208,43 @@
     select(ids[(i + dir + ids.length) % ids.length], { scroll: true });
   }
 
-  /* ── tile interactions (work with or without WebGL) ── */
   tiles.forEach(function (t) {
     t.addEventListener("click", function () { select(t.dataset.avatarId); });
-    t.addEventListener("keydown", function (e) {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(t.dataset.avatarId); }
-    });
   });
 
-  /* ── 3D stage (progressive enhancement) ── */
+  /* ── 3D stage: progressive enhancement ── */
   if (window.KK3D && KK3D.hasWebGL && stage) {
     try {
       handle = KK3D.mountAvatar(stage, selectedId, { distance: 4.4 });
     } catch (e) {
-      console.warn("[kk3d] avatar stage failed, falling back to emoji grid", e);
+      console.warn("[kk3d] avatar stage failed, falling back to the emoji grid", e);
       handle = null;
     }
   }
+
   if (handle) {
-    stageWrap.hidden = false;
-    meta.hidden = false;
-    document.getElementById("kk-av3d-prev").addEventListener("click", function () { step(-1); });
-    document.getElementById("kk-av3d-next").addEventListener("click", function () { step(1); });
-    document.getElementById("kk-av3d-play").addEventListener("click", function () { handle.playMove(); });
-    document.getElementById("kk-av3d-random").addEventListener("click", function () {
+    if (stageWrap) stageWrap.hidden = false;
+    if (meta) meta.hidden = false;
+
+    /* Each of these used to be addressed without a null check, so one
+       missing element threw and killed the tile handlers too. */
+    function on(id, fn) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener("click", fn);
+    }
+    on("kk-av3d-prev", function () { step(-1); });
+    on("kk-av3d-next", function () { step(1); });
+    on("kk-av3d-play", function () { handle.playMove(); });
+    on("kk-av3d-random", function () {
       var pick = ids[Math.floor(Math.random() * ids.length)];
       if (pick === selectedId) pick = ids[(ids.indexOf(pick) + 1) % ids.length];
       select(pick, { scroll: true });
     });
-    /* keyboard controls while the picker has focus */
+
     root.addEventListener("keydown", function (e) {
       if (e.target.closest && e.target.closest("input, textarea, select")) return;
-      if (e.key === "ArrowLeft")  { e.preventDefault(); step(-1); }
+      if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
       if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
-      if (e.key === " " && e.target === root) { e.preventDefault(); handle.playMove(); }
     });
   }
 

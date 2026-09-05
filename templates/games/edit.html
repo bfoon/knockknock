@@ -3,1016 +3,686 @@
 
 {% block title %}{{ quiz.title }} · Knock-Knock{% endblock %}
 
-{% block head_extra %}
+{% block content %}
+<link rel="stylesheet" href="{% static 'css/games.css' %}">
 <link rel="stylesheet" href="{% static 'css/avatar_anim.css' %}">
 <link rel="stylesheet" href="{% static 'css/chart_backgrounds.css' %}">
 
-<style>
-  /* ─────────────────────────────────────────────
-     PAGE HEADER
-  ───────────────────────────────────────────── */
-  .kk-game-page-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 1rem;
-    flex-wrap: wrap;
-    margin-bottom: 1.5rem;
-  }
+<div class="g">
 
-  .kk-game-title-area {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    min-width: 0;
-  }
-
-  .kk-game-logo-box {
-    width: 112px;
-    height: 72px;
-    border-radius: 16px;
-    border: 1px solid var(--kk-border);
-    background: #ffffff;
-    padding: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    box-shadow: 0 14px 34px rgba(0,0,0,.22);
-    overflow: hidden;
-  }
-
-  .kk-game-logo-box img {
-    max-width: 100% !important;
-    max-height: 100% !important;
-    width: auto !important;
-    height: auto !important;
-    object-fit: contain !important;
-    display: block;
-  }
-
-  .kk-game-actions {
-    display: flex;
-    gap: .5rem;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: flex-end;
-  }
-
-  .kk-dropdown-form-button {
-    width: 100%;
-    text-align: left;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    padding: .45rem 1rem;
-  }
-
-  .kk-dropdown-form-button:hover {
-    background: rgba(255,255,255,.08);
-  }
-
-  /* ─────────────────────────────────────────────
-     QUESTION ROW DRAG / REORDER
-  ───────────────────────────────────────────── */
-  .kk-q-row {
-    cursor: grab;
-    position: relative;
-    transition: transform .15s ease, box-shadow .15s ease;
-  }
-
-  .kk-q-row:active {
-    cursor: grabbing;
-  }
-
-  .kk-q-row .kk-q-drag {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    color: #94a3b8;
-    cursor: grab;
-    border-radius: 6px;
-  }
-
-  .kk-q-row .kk-q-drag:hover {
-    background: rgba(255,255,255,.06);
-    color: #f1f5f9;
-  }
-
-  .kk-q-row.kk-dragging {
-    opacity: .55;
-    transform: scale(.99);
-    box-shadow: 0 12px 30px rgba(0,0,0,.4);
-  }
-
-  .kk-q-row.kk-ghost {
-    background: rgba(124,58,237,.12) !important;
-    border: 2px dashed rgba(124,58,237,.6) !important;
-  }
-
-  .kk-reorder-status {
-    display: inline-flex;
-    align-items: center;
-    gap: .4rem;
-    font-size: .8rem;
-    color: #94a3b8;
-    margin-left: .6rem;
-    opacity: 0;
-    transition: opacity .25s ease;
-  }
-
-  .kk-reorder-status.visible {
-    opacity: 1;
-  }
-
-  .kk-reorder-status.saved {
-    color: #34d399;
-  }
-
-  /* ─────────────────────────────────────────────
-     LOGO PREVIEW FIX
-  ───────────────────────────────────────────── */
-  .kk-current-logo {
-    display: flex;
-    align-items: center;
-    gap: .85rem;
-    padding: .75rem;
-    border-radius: 16px;
-    background: rgba(255,255,255,.04);
-    border: 1px solid var(--kk-border);
-    margin-bottom: .75rem;
-    overflow: hidden;
-  }
-
-  .kk-current-logo-preview-box {
-    width: 170px;
-    height: 96px;
-    border-radius: 14px;
-    border: 1px solid var(--kk-border);
-    background: #ffffff;
-    padding: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    overflow: hidden;
-  }
-
-  .kk-current-logo-preview {
-    max-width: 100% !important;
-    max-height: 100% !important;
-    width: auto !important;
-    height: auto !important;
-    object-fit: contain !important;
-    display: block;
-  }
-
-  .kk-logo-url {
-    word-break: break-all;
-    max-width: 100%;
-  }
-
-  /* ─────────────────────────────────────────────
-     SETTINGS CARD
-  ───────────────────────────────────────────── */
-  .kk-sub-card {
-    background: rgba(255,255,255,.035);
-    border: 1px solid rgba(255,255,255,.08);
-    border-radius: var(--kk-radius, 18px);
-    padding: 1rem;
-  }
-
-  @media (max-width: 768px) {
-    .kk-game-page-header {
-      align-items: stretch;
-    }
-
-    .kk-game-title-area {
-      align-items: flex-start;
-    }
-
-    .kk-game-logo-box {
-      width: 86px;
-      height: 60px;
-    }
-
-    .kk-current-logo {
-      align-items: flex-start;
-      flex-direction: column;
-    }
-
-    .kk-current-logo-preview-box {
-      width: 100%;
-      max-width: 240px;
-      height: 110px;
-    }
-  }
-
-  /* ─────────────────────────────────────────────
-     ROOMS EDITOR
-  ───────────────────────────────────────────── */
-  .kk-rooms-list {
-    display: flex;
-    flex-direction: column;
-    gap: .55rem;
-    margin-bottom: .75rem;
-  }
-  .kk-room-row {
-    display: grid;
-    grid-template-columns: 56px 1fr auto;
-    gap: .65rem;
-    align-items: center;
-    padding: .55rem .7rem;
-    background: rgba(255,255,255,.04);
-    border: 1px solid rgba(255,255,255,.08);
-    border-radius: 14px;
-  }
-  .kk-room-row.kk-room-deleted {
-    opacity: .35;
-    text-decoration: line-through;
-  }
-  .kk-room-avatar-btn {
-    width: 56px; height: 56px;
-    display: inline-flex; align-items: center; justify-content: center;
-    font-size: 1.9rem;
-    background: rgba(124,58,237,.18);
-    border: 1px solid rgba(124,58,237,.45);
-    border-radius: 14px;
-    cursor: pointer;
-    transition: transform .12s ease, background .12s ease;
-  }
-  .kk-room-avatar-btn:hover {
-    background: rgba(124,58,237,.32);
-    transform: translateY(-1px);
-  }
-  .kk-room-remove {
-    background: transparent;
-    color: #f87171;
-    border: 1px solid rgba(248,113,113,.35);
-    border-radius: 10px;
-    padding: .35rem .6rem;
-    font-size: .85rem;
-    cursor: pointer;
-  }
-  .kk-room-remove:hover { background: rgba(248,113,113,.12); }
-  .kk-add-room {
-    width: 100%;
-    background: transparent;
-    border: 1px dashed rgba(255,255,255,.18);
-    color: #cbd5e1;
-    padding: .65rem;
-    border-radius: 14px;
-    cursor: pointer;
-  }
-  .kk-add-room:hover { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.35); }
-  .kk-rooms-hint {
-    color: #94a3b8; font-size: .82rem; margin-bottom: .6rem;
-  }
-
-  /* Avatar picker modal */
-  .kk-modal-backdrop {
-    position: fixed; inset: 0;
-    background: rgba(8,8,16,.72);
-    display: none;
-    align-items: center; justify-content: center;
-    z-index: 2000;
-    padding: 1rem;
-  }
-  .kk-modal-backdrop.open { display: flex; }
-  .kk-modal-panel {
-    background: #0f172a;
-    border: 1px solid rgba(255,255,255,.08);
-    border-radius: 18px;
-    max-width: 640px;
-    width: 100%;
-    max-height: 80vh;
-    overflow: auto;
-    padding: 1rem 1.1rem;
-  }
-  .kk-modal-panel h3 { margin-top: 0; }
-  .kk-modal-avatars {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
-    gap: .45rem;
-    margin-top: .75rem;
-  }
-  .kk-modal-avatar-tile {
-    aspect-ratio: 1 / 1;
-    font-size: 1.65rem;
-    display: flex; align-items: center; justify-content: center;
-    border-radius: 12px;
-    background: rgba(255,255,255,.04);
-    border: 1px solid rgba(255,255,255,.06);
-    cursor: pointer;
-    transition: transform .1s ease, background .1s ease;
-  }
-  .kk-modal-avatar-tile:hover { transform: scale(1.07); background: rgba(255,255,255,.09); }
-  .kk-modal-avatar-tile.selected {
-    background: rgba(124,58,237,.28);
-    border-color: rgba(124,58,237,.7);
-  }
-  .kk-modal-category {
-    margin-top: .9rem;
-    font-size: .8rem; color: #94a3b8; text-transform: uppercase;
-    letter-spacing: .08em;
-  }
-  .kk-modal-close {
-    float: right; background: transparent; border: 0; color: #cbd5e1; font-size: 1.4rem;
-    cursor: pointer; line-height: 1;
-  }
-
-  /* ─────────────────────────────────────────────
-     SCROLLABLE TEMPLATE PICKER
-     Caps the height of the embedded picker so a long list
-     of templates doesn't push the form off-screen. The
-     bottom fade hints there's more to scroll to.
-  ───────────────────────────────────────────── */
-  .kk-template-scroll {
-    position: relative;
-    max-height: 420px;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding-right: 6px;
-    -webkit-mask-image: linear-gradient(
-      to bottom,
-      #000 0,
-      #000 calc(100% - 32px),
-      transparent 100%
-    );
-            mask-image: linear-gradient(
-      to bottom,
-      #000 0,
-      #000 calc(100% - 32px),
-      transparent 100%
-    );
-  }
-  .kk-template-scroll.is-bottom {
-    -webkit-mask-image: none;
-            mask-image: none;
-  }
-  .kk-template-scroll::-webkit-scrollbar {
-    width: 8px;
-  }
-  .kk-template-scroll::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .kk-template-scroll::-webkit-scrollbar-thumb {
-    background: var(--kk-border);
-    border-radius: 4px;
-  }
-  .kk-template-scroll::-webkit-scrollbar-thumb:hover {
-    background: rgba(255,255,255,.25);
-  }
-  .kk-template-scroll {
-    scrollbar-width: thin;
-    scrollbar-color: var(--kk-border) transparent;
-  }
-</style>
-{% endblock %}
-
-{% block content %}
-<div class="kk-game-page-header">
-  <div class="kk-game-title-area">
-    {% if quiz.logo %}
-      <div class="kk-game-logo-box">
-        <img src="{{ quiz.logo.url }}"
-             alt="{{ quiz.title }} logo"
-             style="max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block;">
-      </div>
-    {% endif %}
-
-    <div>
-      <a href="{% url 'games:list' %}" class="text-secondary text-decoration-none small">
-        <i class="bi bi-arrow-left"></i> All games
-      </a>
-
-      <h1 class="mb-0 mt-2">{{ quiz.title }}</h1>
-
-      <div class="text-secondary mt-1">
-        {{ quiz.questions.count }} questions · {{ quiz.get_scoring_display }} · {{ quiz.get_mode_display }}
-        {% if quiz.use_rooms %}
-          · Rooms (cap {{ quiz.room_capacity }})
-        {% endif %}
-      </div>
-    </div>
-  </div>
-
-  <div class="kk-game-actions">
-    <div class="dropdown">
-      <button class="kk-btn kk-btn-ghost kk-btn-lg dropdown-toggle"
-              type="button"
-              data-bs-toggle="dropdown"
-              aria-expanded="false">
-        <i class="bi bi-stop-circle"></i> End Sessions
-      </button>
-
-      <ul class="dropdown-menu dropdown-menu-dark">
-        <li>
-          <form method="post"
-                action="{% url 'presentations:end_all_sessions' %}"
-                class="m-0"
-                onsubmit="return confirm('End all active GAME sessions? Saved scores and answers will remain.');">
-            {% csrf_token %}
-            <input type="hidden" name="kind" value="game">
-            <input type="hidden" name="next" value="{{ request.get_full_path }}">
-            <button type="submit" class="kk-dropdown-form-button text-warning">
-              <i class="bi bi-stop-circle"></i> End all game sessions
-            </button>
-          </form>
-        </li>
-
-        <li>
-          <hr class="dropdown-divider">
-        </li>
-
-        <li>
-          <form method="post"
-                action="{% url 'presentations:end_all_sessions' %}"
-                class="m-0"
-                onsubmit="return confirm('End all active POLL and GAME sessions? Saved results and scores will remain.');">
-            {% csrf_token %}
-            <input type="hidden" name="kind" value="all">
-            <input type="hidden" name="next" value="{{ request.get_full_path }}">
-            <button type="submit" class="kk-dropdown-form-button text-danger">
-              <i class="bi bi-exclamation-triangle"></i> End all poll & game sessions
-            </button>
-          </form>
-        </li>
-      </ul>
-    </div>
-
-    <form method="post" action="{% url 'games:start' quiz.pk %}">
-      {% csrf_token %}
-      <button class="kk-btn kk-btn-primary kk-btn-lg" {% if not quiz.questions.count %}disabled{% endif %}>
-        <i class="bi bi-controller"></i> Start game
-      </button>
-    </form>
-  </div>
-</div>
-
-<div class="row g-4">
-  <div class="col-lg-7">
-    <h2 class="kk-section-title">
-      <i class="bi bi-list-ol"></i> Questions
-      <span id="reorder-status" class="kk-reorder-status">Saving…</span>
-    </h2>
-
-    <div id="question-list" data-reorder-url="{% url 'games:question_reorder' quiz.pk %}">
-      {% for q in quiz.questions.all %}
-        <div class="kk-q-row" data-qpk="{{ q.pk }}">
-          <span class="kk-q-drag" title="Drag to reorder" aria-hidden="true">
-            <i class="bi bi-grip-vertical"></i>
-          </span>
-
-          <span class="kk-q-index">{{ forloop.counter }}</span>
-
-          <a class="kk-q-text text-decoration-none flex-grow-1"
-             href="{% url 'games:question_edit' quiz.pk q.pk %}"
-             style="color:inherit;">
-            {{ q.text }}
-          </a>
-
-          <span class="kk-q-pill">{{ q.get_question_type_display }}</span>
-          <span class="kk-q-pill">{{ q.time_limit }}s</span>
-          <span class="kk-q-pill">{{ q.points }}pts</span>
-        </div>
-      {% empty %}
-        <div class="kk-empty">
-          <div class="em">❓</div>
-          <p>No questions yet.</p>
-        </div>
-      {% endfor %}
-    </div>
-
-    <div class="d-grid gap-2 mt-3">
-      <a href="{% url 'games:question_create' quiz.pk %}?type=mcq" class="kk-btn kk-btn-ghost w-100">
-        <i class="bi bi-plus-lg"></i> Add classic question
-      </a>
-      <a href="{% url 'games:question_create' quiz.pk %}?type=picture_choice" class="kk-btn kk-btn-ghost w-100">
-        <i class="bi bi-image"></i> Add picture-choice question
-      </a>
-      {# picture_prompt: one prompt image + text answers (single correct).  #}
-      {# Distinct from picture_choice (where each answer carries its own    #}
-      {# image). Renders as a hero image with lettered text pills.          #}
-      <a href="{% url 'games:question_create' quiz.pk %}?type=picture_prompt" class="kk-btn kk-btn-ghost w-100">
-        <i class="bi bi-card-image"></i> Add image-prompt question
-      </a>
-      <a href="{% url 'games:question_create' quiz.pk %}?type=puzzle" class="kk-btn kk-btn-ghost w-100">
-        <i class="bi bi-puzzle"></i> Add puzzle question
-      </a>
-    </div>
-  </div>
-
-  <div class="col-lg-5">
-    <form method="post" enctype="multipart/form-data" class="kk-card">
-      {% csrf_token %}
-
-      {% if form.non_field_errors %}
-        <div class="alert alert-danger">
-          {{ form.non_field_errors }}
+  {# ── Header ─────────────────────────────────────────────── #}
+  <div class="g-head">
+    <div class="g-head-id">
+      {% if quiz.logo %}
+        <div class="g-logo">
+          <img src="{{ quiz.logo.url }}" alt="{{ quiz.title }} logo">
         </div>
       {% endif %}
 
-      <h2 class="kk-section-title" style="font-size:1.2rem;">
-        <i class="bi bi-gear"></i> Settings
+      <div style="min-width:0;">
+        <a href="{% url 'games:list' %}" class="g-back">
+          <i class="bi bi-arrow-left"></i> All games
+        </a>
+        <h1 class="g-title">{{ quiz.title }}</h1>
+        <div class="g-meta">
+          <span>{{ question_count }} question{{ question_count|pluralize }}</span>
+          <span class="g-meta-dot">·</span>
+          <span>{{ quiz.get_scoring_display }}</span>
+          <span class="g-meta-dot">·</span>
+          <span>{{ quiz.get_mode_display }}</span>
+          {% if quiz.use_rooms %}
+            <span class="g-meta-dot">·</span>
+            <span>rooms of {{ quiz.room_capacity }}</span>
+          {% endif %}
+        </div>
+        {% if top_three %}
+          <div class="mt-2">
+            {% include "games/partials/_top_three.html" with top_three=top_three %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="g-actions">
+      <a href="{% url 'games:results' quiz.pk %}" class="kk-btn kk-btn-ghost">
+        <i class="bi bi-bar-chart"></i> Results
+      </a>
+
+      <div class="dropdown">
+        <button class="kk-btn kk-btn-ghost dropdown-toggle" type="button"
+                data-bs-toggle="dropdown" aria-expanded="false">
+          <i class="bi bi-stop-circle"></i> End sessions
+        </button>
+        <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end">
+          <li>
+            <form method="post" action="{% url 'presentations:end_all_sessions' %}" class="m-0"
+                  onsubmit="return confirm('End every running game session? Scores and answers are kept.');">
+              {% csrf_token %}
+              <input type="hidden" name="kind" value="game">
+              <input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <button type="submit" class="dropdown-item text-warning">
+                <i class="bi bi-stop-circle"></i> End all game sessions
+              </button>
+            </form>
+          </li>
+          <li><hr class="dropdown-divider"></li>
+          <li>
+            <form method="post" action="{% url 'presentations:end_all_sessions' %}" class="m-0"
+                  onsubmit="return confirm('End every running poll AND game session? Results and scores are kept.');">
+              {% csrf_token %}
+              <input type="hidden" name="kind" value="all">
+              <input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <button type="submit" class="dropdown-item text-danger">
+                <i class="bi bi-exclamation-triangle"></i> End all poll &amp; game sessions
+              </button>
+            </form>
+          </li>
+        </ul>
+      </div>
+
+      <form method="post" action="{% url 'games:start' quiz.pk %}">
+        {% csrf_token %}
+        <button class="kk-btn kk-btn-primary kk-btn-lg"
+                {% if not question_count %}disabled title="Add a question first"{% endif %}>
+          <i class="bi bi-controller"></i> Start game
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div class="row g-4">
+
+    {# ── Questions ────────────────────────────────────────── #}
+    <div class="col-lg-7">
+      <h2 class="g-section">
+        <i class="bi bi-list-ol"></i> Questions
+        <span id="reorder-status" class="g-save-state" role="status" aria-live="polite"></span>
       </h2>
 
-      <div class="mb-3">
-        <label class="form-label">Title</label>
-        {{ form.title }}
-        {% if form.title.errors %}
-          <div class="text-danger small mt-1">{{ form.title.errors }}</div>
-        {% endif %}
-      </div>
+      {% if questions %}
+        <p class="g-hint">
+          Drag the handle to reorder, or focus a handle and press Alt with the arrow keys.
+        </p>
+      {% endif %}
 
-      <div class="mb-3">
-        <label class="form-label">Description</label>
-        {{ form.description }}
-        {% if form.description.errors %}
-          <div class="text-danger small mt-1">{{ form.description.errors }}</div>
-        {% endif %}
-      </div>
-
-      <div class="row g-2">
-        <div class="col-6 mb-3">
-          <label class="form-label">Scoring</label>
-          {{ form.scoring }}
-          {% if form.scoring.errors %}
-            <div class="text-danger small mt-1">{{ form.scoring.errors }}</div>
-          {% endif %}
-        </div>
-
-        <div class="col-6 mb-3">
-          <label class="form-label">Mode</label>
-          {{ form.mode }}
-          {% if form.mode.errors %}
-            <div class="text-danger small mt-1">{{ form.mode.errors }}</div>
-          {% endif %}
-        </div>
-      </div>
-
-      <div class="form-check mb-3">
-        {{ form.use_rooms }}
-        <label class="form-check-label" for="{{ form.use_rooms.id_for_label }}">
-          Use rooms
-        </label>
-        {% if form.use_rooms.errors %}
-          <div class="text-danger small mt-1">{{ form.use_rooms.errors }}</div>
-        {% endif %}
-      </div>
-
-      <div class="mb-3">
-        <label class="form-label">Room capacity</label>
-        {{ form.room_capacity }}
-        {% if form.room_capacity.errors %}
-          <div class="text-danger small mt-1">{{ form.room_capacity.errors }}</div>
-        {% endif %}
-      </div>
-
-      <div class="kk-sub-card mb-3">
-        <h2 class="kk-section-title" style="font-size:1rem;">
-          <i class="bi bi-stopwatch"></i> Timer policy
-        </h2>
-        <div class="form-check mb-2">
-          {{ form.allow_late_answers }}
-          <label class="form-check-label" for="{{ form.allow_late_answers.id_for_label }}">
-            Allow late answers after the timer ends
-          </label>
-        </div>
-        {% if form.allow_late_answers.errors %}
-          <div class="text-danger small mt-1">{{ form.allow_late_answers.errors }}</div>
-        {% endif %}
-        <label class="form-label small text-secondary" for="{{ form.late_answer_points_pct.id_for_label }}">
-          Late answer points percentage
-        </label>
-        {{ form.late_answer_points_pct }}
-        {% if form.late_answer_points_pct.errors %}
-          <div class="text-danger small mt-1">{{ form.late_answer_points_pct.errors }}</div>
-        {% endif %}
-        <div class="form-text">
-          If late answers are off, no answer is accepted after time reaches 0 unless the presenter uses +5s / +10s.
-        </div>
-      </div>
-
-      <div class="mb-3">
-        <label class="form-label">
-          <i class="bi bi-stars"></i> Chart background
-        </label>
-        {{ form.chart_background }}
-        <div class="form-text">
-          The scenery rendered behind the live chart during play.
-        </div>
-        {% if form.chart_background.errors %}
-          <div class="text-danger small mt-1">{{ form.chart_background.errors }}</div>
-        {% endif %}
-      </div>
-
-      <div class="mb-3">
-        <label class="form-label">Logo</label>
-
-        {% if quiz.logo %}
-          <div class="kk-current-logo">
-            <div class="kk-current-logo-preview-box">
-              <img src="{{ quiz.logo.url }}"
-                   alt="{{ quiz.title }} logo"
-                   class="kk-current-logo-preview"
-                   style="max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block;">
-            </div>
-
-            <div>
-              <div class="small text-light">Current logo uploaded</div>
-              <div class="small text-secondary kk-logo-url">
-                {{ quiz.logo.url }}
-              </div>
-            </div>
-          </div>
-        {% else %}
-          <div class="small text-secondary mb-2">No logo uploaded yet.</div>
-        {% endif %}
-
-        {{ form.logo }}
-        {% if form.logo.errors %}
-          <div class="text-danger small mt-1">{{ form.logo.errors }}</div>
-        {% endif %}
-      </div>
-
-      <div class="kk-sub-card mt-4 mb-3" id="rooms-card">
-        <h2 class="kk-section-title" style="font-size:1.2rem;">
-          <i class="bi bi-door-closed"></i> Rooms
-        </h2>
-        <div class="kk-rooms-hint">
-          Visible only when <b>Use rooms</b> is on. Each room is a door
-          participants tap to enter. Capacity per room is set above.
-        </div>
-
-        {{ room_formset.management_form }}
-
-        <div class="kk-rooms-list" id="rooms-list">
-          {% for rf in room_formset %}
-            <div class="kk-room-row" data-room-index="{{ forloop.counter0 }}">
-              {{ rf.id }}
-
-              <button type="button"
-                      class="kk-room-avatar-btn kk-pick-avatar"
-                      data-target="#{{ rf.avatar_id.id_for_label }}"
-                      title="Choose avatar">
-                <span class="kk-room-avatar-emoji">🐉</span>
-              </button>
-
-              <div>
-                {{ rf.name }}
-                {% if rf.name.errors %}
-                  <div class="text-danger small mt-1">{{ rf.name.errors }}</div>
-                {% endif %}
-                {{ rf.avatar_id }}
-                {{ rf.slug }}
-                {{ rf.order }}
-              </div>
-
-              <div class="d-flex align-items-center gap-2">
-                {# DELETE checkbox is hidden — the remove button toggles it. #}
-                <label style="display:none;">{{ rf.DELETE }}</label>
-                <button type="button" class="kk-room-remove" title="Remove room">
-                  <i class="bi bi-trash"></i>
-                </button>
-              </div>
-            </div>
-          {% endfor %}
-        </div>
-
-        <button type="button" id="add-room-btn" class="kk-add-room">
-          <i class="bi bi-plus-lg"></i> Add room
-        </button>
-
-        {# Empty template row, cloned on add. Hidden visually. #}
-        <template id="room-row-template">
-          <div class="kk-room-row" data-room-index="__INDEX__">
-            <input type="hidden" name="rooms-__INDEX__-id" id="id_rooms-__INDEX__-id">
-
-            <button type="button"
-                    class="kk-room-avatar-btn kk-pick-avatar"
-                    data-target="#id_rooms-__INDEX__-avatar_id"
-                    title="Choose avatar">
-              <span class="kk-room-avatar-emoji">🐉</span>
+      <div class="g-q-list" id="question-list"
+           data-reorder-url="{% url 'games:question_reorder' quiz.pk %}">
+        {% for q in questions %}
+          <div class="g-q" data-qpk="{{ q.pk }}" data-type="{{ q.question_type }}">
+            <button type="button" class="g-q-grip"
+                    aria-label="Reorder “{{ q.text|truncatechars:40 }}”. Hold Alt and press the up or down arrow.">
+              <i class="bi bi-grip-vertical" aria-hidden="true"></i>
             </button>
 
-            <div>
-              <input type="text"
-                     name="rooms-__INDEX__-name"
-                     id="id_rooms-__INDEX__-name"
-                     class="form-control"
-                     placeholder="Room name (e.g. Dragons)"
-                     maxlength="60">
-              <input type="hidden"
-                     name="rooms-__INDEX__-avatar_id"
-                     id="id_rooms-__INDEX__-avatar_id"
-                     class="kk-room-avatar-input"
-                     value="dragon">
-              <input type="hidden"
-                     name="rooms-__INDEX__-slug"
-                     id="id_rooms-__INDEX__-slug"
-                     value="">
-              <input type="hidden"
-                     name="rooms-__INDEX__-order"
-                     id="id_rooms-__INDEX__-order"
-                     class="kk-room-order-input"
-                     value="__INDEX__">
-            </div>
+            <span class="g-q-num">{{ forloop.counter }}</span>
 
-            <div class="d-flex align-items-center gap-2">
-              <label style="display:none;">
-                <input type="checkbox"
-                       name="rooms-__INDEX__-DELETE"
-                       id="id_rooms-__INDEX__-DELETE">
-              </label>
-              <button type="button" class="kk-room-remove" title="Remove room">
-                <i class="bi bi-trash"></i>
-              </button>
-            </div>
+            <a class="g-q-link" href="{% url 'games:question_edit' quiz.pk q.pk %}">
+              <span class="g-q-text">{{ q.text }}</span>
+              <span class="g-q-sub">
+                <span class="g-tag g-tag-type">{{ q.get_question_type_display }}</span>
+                <span class="g-tag"><i class="bi bi-clock"></i> {{ q.time_limit }}s</span>
+                <span class="g-tag"><i class="bi bi-star"></i> {{ q.points }}</span>
+                {% if q.question_type == 'picture_prompt' and not q.image %}
+                  <span class="g-tag g-tag-warn"><i class="bi bi-exclamation-triangle"></i> no prompt image</span>
+                {% endif %}
+              </span>
+            </a>
+
+            <span class="g-q-tools">
+              <form method="post" action="{% url 'games:question_duplicate' quiz.pk q.pk %}" class="m-0">
+                {% csrf_token %}
+                <button type="submit" class="g-icon-btn g-icon-btn-accent"
+                        title="Duplicate question" aria-label="Duplicate question {{ forloop.counter }}">
+                  <i class="bi bi-files"></i>
+                </button>
+              </form>
+              <form method="post" action="{% url 'games:question_delete' quiz.pk q.pk %}" class="m-0"
+                    onsubmit="return confirm('Delete this question and its answers?');">
+                {% csrf_token %}
+                <button type="submit" class="g-icon-btn g-icon-btn-danger"
+                        title="Delete question" aria-label="Delete question {{ forloop.counter }}">
+                  <i class="bi bi-trash3"></i>
+                </button>
+              </form>
+            </span>
           </div>
-        </template>
-      </div>
-
-      <div class="kk-sub-card mt-4 mb-3">
-        <h2 class="kk-section-title" style="font-size:1.2rem;">
-          <i class="bi bi-palette"></i> Template / Game background
-        </h2>
-
-        <div class="kk-template-scroll">
-          {% include "partials/template_picker.html" with templates=templates selected_id=quiz.template_id input_name="template_id" %}
-        </div>
-      </div>
-
-      <button class="kk-btn kk-btn-primary w-100">
-        <i class="bi bi-save"></i> Save game settings
-      </button>
-    </form>
-  </div>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-
-<script>
-(function () {
-  const list = document.getElementById("question-list");
-  if (!list || !window.Sortable) return;
-
-  const url = list.dataset.reorderUrl;
-  const status = document.getElementById("reorder-status");
-  const csrfInput = document.querySelector("input[name=csrfmiddlewaretoken]");
-  const csrf = csrfInput ? csrfInput.value : "";
-
-  function setStatus(text, ok) {
-    if (!status) return;
-
-    status.textContent = text;
-    status.classList.add("visible");
-    status.classList.toggle("saved", !!ok);
-
-    if (ok) {
-      setTimeout(() => status.classList.remove("visible"), 1800);
-    }
-  }
-
-  function reindex() {
-    list.querySelectorAll(".kk-q-row").forEach((row, i) => {
-      const idx = row.querySelector(".kk-q-index");
-      if (idx) {
-        idx.textContent = i + 1;
-      }
-    });
-  }
-
-  Sortable.create(list, {
-    animation: 180,
-    handle: ".kk-q-drag",
-    ghostClass: "kk-ghost",
-    dragClass: "kk-dragging",
-
-    onEnd: function () {
-      reindex();
-
-      const order = Array.from(list.querySelectorAll(".kk-q-row"))
-        .map(row => parseInt(row.dataset.qpk, 10))
-        .filter(Number.isFinite);
-
-      setStatus("Saving…", false);
-
-      fetch(url, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRFToken": csrf,
-        },
-        body: JSON.stringify({ order }),
-      })
-      .then(response => {
-        if (!response.ok) {
-          throw new Error("save failed");
-        }
-        return response.json();
-      })
-      .then(() => setStatus("Order saved ✓", true))
-      .catch(() => setStatus("Couldn't save — refresh to retry", false));
-    },
-  });
-})();
-</script>
-
-<!--{# ─────────────────────────────────────────────────────────-->
-<!--   Avatar picker modal (shared by all room rows)-->
-<!--───────────────────────────────────────────────────────── #}-->
-<div class="kk-modal-backdrop" id="avatar-modal">
-  <div class="kk-modal-panel">
-    <button type="button" class="kk-modal-close" aria-label="Close" id="avatar-modal-close">×</button>
-    <h3>Pick a door avatar</h3>
-    <p class="text-secondary small mb-0">Tap an emoji — it'll appear on the room's door.</p>
-
-    {% for label, avs in avatar_groups %}
-      <div class="kk-modal-category">{{ label }}</div>
-      <div class="kk-modal-avatars">
-        {% for a in avs %}
-          <div class="kk-modal-avatar-tile" data-avatar-id="{{ a.id }}" data-emoji="{{ a.emoji }}" title="{{ a.label }}">
-            {{ a.emoji }}
+        {% empty %}
+          <div class="g-empty">
+            <div class="g-empty-mark">❓</div>
+            <p class="g-empty-title">No questions yet</p>
+            <p class="g-empty-note">Pick a question type below to add the first one.</p>
           </div>
         {% endfor %}
       </div>
-    {% endfor %}
+
+      {% comment %} Four question types that look identical in a list of ghost buttons.
+         Each one gets a card with its own colour and a line explaining how
+         it differs — picture-choice and image-prompt are easy to confuse. {% endcomment %}
+      <div class="g-add-grid">
+        <a href="{% url 'games:question_create' quiz.pk %}?type=mcq"
+           class="g-add-card" data-type="mcq">
+          <span class="g-add-icon"><i class="bi bi-ui-radios"></i></span>
+          <span>
+            <span class="g-add-name">Classic</span>
+            <span class="g-add-desc">Text answers, one correct.</span>
+          </span>
+        </a>
+
+        <a href="{% url 'games:question_create' quiz.pk %}?type=picture_choice"
+           class="g-add-card" data-type="picture_choice">
+          <span class="g-add-icon"><i class="bi bi-images"></i></span>
+          <span>
+            <span class="g-add-name">Picture choice</span>
+            <span class="g-add-desc">Every answer is an image. Players pick the right picture.</span>
+          </span>
+        </a>
+
+        <a href="{% url 'games:question_create' quiz.pk %}?type=picture_prompt"
+           class="g-add-card" data-type="picture_prompt">
+          <span class="g-add-icon"><i class="bi bi-card-image"></i></span>
+          <span>
+            <span class="g-add-name">Image prompt</span>
+            <span class="g-add-desc">One image up top, text answers below.</span>
+          </span>
+        </a>
+
+        <a href="{% url 'games:question_create' quiz.pk %}?type=puzzle"
+           class="g-add-card" data-type="puzzle">
+          <span class="g-add-icon"><i class="bi bi-puzzle"></i></span>
+          <span>
+            <span class="g-add-name">Puzzle</span>
+            <span class="g-add-desc">Players drag pieces into the right order. First correct wins.</span>
+          </span>
+        </a>
+      </div>
+    </div>
+
+    {# ── Settings ─────────────────────────────────────────── #}
+    <div class="col-lg-5">
+      <form method="post" enctype="multipart/form-data" class="g-panel" novalidate>
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+          <div class="g-error">{{ form.non_field_errors }}</div>
+        {% endif %}
+
+        <h2 class="g-section"><i class="bi bi-gear"></i> Settings</h2>
+
+        <div class="mb-3">
+          <label class="form-label" for="{{ form.title.id_for_label }}">Title</label>
+          {{ form.title }}
+          {% if form.title.errors %}<div class="g-field-error">{{ form.title.errors }}</div>{% endif %}
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label" for="{{ form.description.id_for_label }}">Description</label>
+          {{ form.description }}
+          {% if form.description.errors %}<div class="g-field-error">{{ form.description.errors }}</div>{% endif %}
+        </div>
+
+        <div class="row g-2 mb-3">
+          <div class="col-6">
+            <label class="form-label" for="{{ form.scoring.id_for_label }}">Scoring</label>
+            {{ form.scoring }}
+            {% if form.scoring.errors %}<div class="g-field-error">{{ form.scoring.errors }}</div>{% endif %}
+          </div>
+          <div class="col-6">
+            <label class="form-label" for="{{ form.mode.id_for_label }}">Mode</label>
+            {{ form.mode }}
+            {% if form.mode.errors %}<div class="g-field-error">{{ form.mode.errors }}</div>{% endif %}
+          </div>
+        </div>
+
+        {# ── Timer policy ── #}
+        <div class="g-subpanel mb-3">
+          <h3 class="g-section" style="font-size:.88rem;"><i class="bi bi-stopwatch"></i> Timer</h3>
+          <div class="form-check mb-2">
+            {{ form.allow_late_answers }}
+            <label class="form-check-label" for="{{ form.allow_late_answers.id_for_label }}">
+              Accept answers after the timer ends
+            </label>
+          </div>
+          {% if form.allow_late_answers.errors %}<div class="g-field-error">{{ form.allow_late_answers.errors }}</div>{% endif %}
+
+          <label class="form-label small" for="{{ form.late_answer_points_pct.id_for_label }}">
+            Points a late answer keeps
+          </label>
+          {{ form.late_answer_points_pct }}
+          {% if form.late_answer_points_pct.errors %}<div class="g-field-error">{{ form.late_answer_points_pct.errors }}</div>{% endif %}
+          <div class="form-text">
+            With this off, nothing is accepted once the clock hits zero — unless you extend
+            time from the presenter screen.
+          </div>
+        </div>
+
+        {# ── Rooms ── #}
+        <div class="g-subpanel mb-3">
+          <h3 class="g-section" style="font-size:.88rem;"><i class="bi bi-door-closed"></i> Rooms</h3>
+
+          <div class="form-check mb-2">
+            {{ form.use_rooms }}
+            <label class="form-check-label" for="{{ form.use_rooms.id_for_label }}">
+              Split players into rooms
+            </label>
+          </div>
+          {% if form.use_rooms.errors %}<div class="g-field-error">{{ form.use_rooms.errors }}</div>{% endif %}
+
+          <div id="rooms-detail">
+            <div class="mb-3">
+              <label class="form-label small" for="{{ form.room_capacity.id_for_label }}">Players per room</label>
+              {{ form.room_capacity }}
+              {% if form.room_capacity.errors %}<div class="g-field-error">{{ form.room_capacity.errors }}</div>{% endif %}
+            </div>
+
+            <p class="g-hint">Each room is a door players tap to enter. Tap an avatar to change it.</p>
+
+            {{ room_formset.management_form }}
+            {% if room_formset.non_form_errors %}
+              <div class="g-error">{{ room_formset.non_form_errors }}</div>
+            {% endif %}
+
+            <div class="g-rooms" id="rooms-list">
+              {% for rf in room_formset %}
+                <div class="g-room" data-room-row>
+                  {{ rf.id }}
+                  <button type="button" class="g-room-avatar" data-pick-avatar
+                          data-target="#{{ rf.avatar_id.id_for_label }}"
+                          aria-label="Change the door avatar for this room">
+                    <span data-avatar-emoji>🐉</span>
+                  </button>
+
+                  <div style="min-width:0;">
+                    <span class="g-room-name">{{ rf.name }}</span>
+                    {% if rf.name.errors %}<div class="g-field-error">{{ rf.name.errors }}</div>{% endif %}
+                    {{ rf.avatar_id }}{{ rf.slug }}{{ rf.order }}
+                  </div>
+
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="d-none">{{ rf.DELETE }}</span>
+                    <button type="button" class="g-icon-btn g-icon-btn-danger" data-remove-room
+                            title="Remove room" aria-label="Remove this room">
+                      <i class="bi bi-trash3"></i>
+                    </button>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+
+            <button type="button" id="add-room-btn" class="g-add-btn">
+              <i class="bi bi-plus-lg"></i> Add room
+            </button>
+
+            {% comment %} Blank row cloned by "Add room". `__INDEX__` is replaced with the
+               next free formset index at insert time. {% endcomment %}
+            <template id="room-row-template">
+              <div class="g-room" data-room-row>
+                <input type="hidden" name="rooms-__INDEX__-id" id="id_rooms-__INDEX__-id">
+                <button type="button" class="g-room-avatar" data-pick-avatar
+                        data-target="#id_rooms-__INDEX__-avatar_id"
+                        aria-label="Change the door avatar for this room">
+                  <span data-avatar-emoji>🐉</span>
+                </button>
+                <div style="min-width:0;">
+                  <input type="text" name="rooms-__INDEX__-name" id="id_rooms-__INDEX__-name"
+                         class="form-control" placeholder="Room name" maxlength="60">
+                  <input type="hidden" name="rooms-__INDEX__-avatar_id"
+                         id="id_rooms-__INDEX__-avatar_id" value="dragon">
+                  <input type="hidden" name="rooms-__INDEX__-slug" id="id_rooms-__INDEX__-slug" value="">
+                  <input type="hidden" name="rooms-__INDEX__-order" id="id_rooms-__INDEX__-order" value="0">
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                  <button type="button" class="g-icon-btn g-icon-btn-danger" data-remove-room
+                          title="Remove room" aria-label="Remove this room">
+                    <i class="bi bi-trash3"></i>
+                  </button>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        {# ── Look ── #}
+        <div class="mb-3">
+          <label class="form-label" for="{{ form.chart_background.id_for_label }}">Chart background</label>
+          {{ form.chart_background }}
+          <div class="form-text">Scenery behind the live chart during play.</div>
+          {% if form.chart_background.errors %}<div class="g-field-error">{{ form.chart_background.errors }}</div>{% endif %}
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label" for="{{ form.logo.id_for_label }}">Logo</label>
+          {% if quiz.logo %}
+            <div class="g-logo-current">
+              <div class="g-logo">
+                <img src="{{ quiz.logo.url }}" alt="{{ quiz.title }} logo">
+              </div>
+              <div class="g-logo-current-body">
+                <div>Current logo</div>
+                <div class="g-break">{{ quiz.logo.name }}</div>
+              </div>
+            </div>
+          {% else %}
+            <p class="g-hint">No logo yet.</p>
+          {% endif %}
+          {{ form.logo }}
+          {% if form.logo.errors %}<div class="g-field-error">{{ form.logo.errors }}</div>{% endif %}
+        </div>
+
+        <div class="g-subpanel mb-3">
+          <h3 class="g-section" style="font-size:.88rem;"><i class="bi bi-palette"></i> Template</h3>
+          <div class="g-template-scroll">
+            {% include "partials/template_picker.html" with templates=templates selected_id=quiz.template_id input_name="template_id" %}
+          </div>
+          {{ form.template_id }}
+        </div>
+
+        <button class="kk-btn kk-btn-primary w-100">
+          <i class="bi bi-check-lg"></i> Save settings
+        </button>
+      </form>
+    </div>
   </div>
+
+  {# ── Avatar picker modal, shared by every room row ─────── #}
+  <div class="g-modal" id="avatar-modal" role="dialog" aria-modal="true"
+       aria-labelledby="avatar-modal-title">
+    <div class="g-modal-panel">
+      <div class="g-modal-head">
+        <div>
+          <h3 id="avatar-modal-title">Pick a door avatar</h3>
+          <p>It appears on the room’s door when players choose where to sit.</p>
+        </div>
+        <button type="button" class="g-modal-close" id="avatar-modal-close" aria-label="Close">×</button>
+      </div>
+      <div class="g-modal-body">
+        {% for label, avs in avatar_groups %}
+          <div class="g-av-group">
+            <div class="g-av-group-name">{{ label }}</div>
+            <div class="g-av-grid">
+              {% for a in avs %}
+                <button type="button" class="g-av" data-avatar-id="{{ a.id }}"
+                        data-emoji="{{ a.emoji }}" aria-pressed="false" title="{{ a.label }}">
+                  {{ a.emoji }}
+                </button>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {{ avatars|json_script:"kk-avatars-json" }}
 </div>
 
-{# Avatar catalog for emoji lookup. #}
-{{ avatars|json_script:"kk-avatars-json" }}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js" defer></script>
 
 <script>
+/* ── Question reordering ─────────────────────────────────────
+   Drag with Sortable, or Alt + arrow keys from the grip so the
+   list is reorderable without a pointer.                       */
 (function () {
-  // ───── Avatar catalog ─────
-  let AVATARS_BY_ID = {};
-  try {
-    const arr = JSON.parse(document.getElementById("kk-avatars-json").textContent);
-    arr.forEach(a => { AVATARS_BY_ID[a.id] = a; });
-  } catch (e) { /* noop */ }
+  "use strict";
+  var list = document.getElementById("question-list");
+  if (!list) return;
 
-  function emojiFor(id) {
-    return (AVATARS_BY_ID[id] && AVATARS_BY_ID[id].emoji) || "🐉";
-  }
+  var url = list.dataset.reorderUrl;
+  var status = document.getElementById("reorder-status");
+  var csrfInput = document.querySelector("input[name=csrfmiddlewaretoken]");
+  var csrf = csrfInput ? csrfInput.value : "";
+  var timer = null;
 
-  // ───── Show/hide rooms card based on use_rooms checkbox ─────
-  const roomsCard = document.getElementById("rooms-card");
-  const useRoomsCheckbox = document.getElementById("{{ form.use_rooms.id_for_label }}");
-
-  function syncRoomsVisibility() {
-    if (!roomsCard || !useRoomsCheckbox) return;
-    roomsCard.style.display = useRoomsCheckbox.checked ? "" : "none";
-  }
-  if (useRoomsCheckbox) {
-    useRoomsCheckbox.addEventListener("change", syncRoomsVisibility);
-    syncRoomsVisibility();
-  }
-
-  // ───── Initialise existing rows' avatar previews ─────
-  document.querySelectorAll("#rooms-list .kk-room-row").forEach(row => {
-    const input = row.querySelector(".kk-room-avatar-input");
-    const emojiSpan = row.querySelector(".kk-room-avatar-emoji");
-    if (input && emojiSpan) {
-      emojiSpan.textContent = emojiFor(input.value || "dragon");
+  function setStatus(text, kind) {
+    if (!status) return;
+    status.textContent = text;
+    status.classList.add("is-on");
+    status.classList.toggle("is-ok", kind === "ok");
+    status.classList.toggle("is-bad", kind === "bad");
+    clearTimeout(timer);
+    if (kind === "ok") {
+      timer = setTimeout(function () { status.classList.remove("is-on"); }, 1800);
     }
-  });
+  }
 
-  // ───── Remove (toggle DELETE) ─────
-  function wireRemoveButtons(scope) {
-    scope.querySelectorAll(".kk-room-remove").forEach(btn => {
-      if (btn.dataset.wired) return;
-      btn.dataset.wired = "1";
-      btn.addEventListener("click", () => {
-        const row = btn.closest(".kk-room-row");
-        const delCheck = row.querySelector("input[name$='-DELETE']");
-        if (!delCheck) {
-          // New unsaved row — just yank it.
-          row.remove();
-          recomputeManagementForm();
-          return;
-        }
-        // Toggle: clicking again un-deletes.
-        delCheck.checked = !delCheck.checked;
-        row.classList.toggle("kk-room-deleted", delCheck.checked);
-      });
+  function rows() {
+    return Array.prototype.slice.call(list.querySelectorAll(".g-q"));
+  }
+
+  function reindex() {
+    rows().forEach(function (row, i) {
+      var num = row.querySelector(".g-q-num");
+      if (num) num.textContent = i + 1;
     });
   }
-  wireRemoveButtons(document);
 
-  // ───── Avatar picker modal ─────
-  const modal = document.getElementById("avatar-modal");
-  let activeAvatarInput = null;
-  let activeAvatarEmojiSpan = null;
+  function persist() {
+    var order = rows()
+      .map(function (row) { return parseInt(row.dataset.qpk, 10); })
+      .filter(function (n) { return !isNaN(n); });
 
-  function openAvatarModal(input, emojiSpan) {
-    activeAvatarInput = input;
-    activeAvatarEmojiSpan = emojiSpan;
-    const currentId = input.value || "dragon";
-    modal.querySelectorAll(".kk-modal-avatar-tile").forEach(t => {
-      t.classList.toggle("selected", t.dataset.avatarId === currentId);
-    });
-    modal.classList.add("open");
+    setStatus("Saving…");
+    fetch(url, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
+      body: JSON.stringify({ order: order })
+    })
+      .then(function (r) {
+        if (r.status === 409) throw new Error("This list is out of date. Reload the page.");
+        if (!r.ok) throw new Error("Order not saved. Try again.");
+        return r.json();
+      })
+      .then(function () { setStatus("Order saved", "ok"); })
+      .catch(function (err) { setStatus(err.message, "bad"); });
   }
-  function closeAvatarModal() {
-    modal.classList.remove("open");
-    activeAvatarInput = null;
-    activeAvatarEmojiSpan = null;
-  }
 
-  document.getElementById("avatar-modal-close").addEventListener("click", closeAvatarModal);
-  modal.addEventListener("click", e => { if (e.target === modal) closeAvatarModal(); });
-
-  modal.querySelectorAll(".kk-modal-avatar-tile").forEach(tile => {
-    tile.addEventListener("click", () => {
-      if (!activeAvatarInput) return;
-      activeAvatarInput.value = tile.dataset.avatarId;
-      if (activeAvatarEmojiSpan) activeAvatarEmojiSpan.textContent = tile.dataset.emoji;
-      closeAvatarModal();
-    });
-  });
-
-  function wireAvatarPickButtons(scope) {
-    scope.querySelectorAll(".kk-pick-avatar").forEach(btn => {
-      if (btn.dataset.wired) return;
-      btn.dataset.wired = "1";
-      btn.addEventListener("click", () => {
-        const sel = btn.dataset.target;
-        const input = document.querySelector(sel);
-        const emojiSpan = btn.querySelector(".kk-room-avatar-emoji");
-        if (input) openAvatarModal(input, emojiSpan);
-      });
+  if (window.Sortable) {
+    Sortable.create(list, {
+      animation: 160,
+      handle: ".g-q-grip",
+      ghostClass: "g-ghost",
+      dragClass: "g-dragging",
+      onEnd: function () { reindex(); persist(); }
     });
   }
-  wireAvatarPickButtons(document);
 
-  // ───── Add room ─────
-  const totalForms = document.getElementById("id_rooms-TOTAL_FORMS");
-  const list = document.getElementById("rooms-list");
-  const tpl = document.getElementById("room-row-template");
+  list.addEventListener("keydown", function (e) {
+    if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+    var grip = e.target.closest(".g-q-grip");
+    if (!grip) return;
+    e.preventDefault();
 
-  function recomputeManagementForm() {
-    if (!totalForms) return;
-    const rows = list.querySelectorAll(".kk-room-row").length;
-    totalForms.value = String(rows);
-  }
+    var row = grip.closest(".g-q");
+    var sibling = e.key === "ArrowUp"
+      ? row.previousElementSibling
+      : row.nextElementSibling;
+    if (!sibling || !sibling.classList.contains("g-q")) return;
 
-  document.getElementById("add-room-btn").addEventListener("click", () => {
-    if (!totalForms || !tpl) return;
-    const idx = parseInt(totalForms.value, 10);
-    const html = tpl.innerHTML.replace(/__INDEX__/g, idx);
+    if (e.key === "ArrowUp") list.insertBefore(row, sibling);
+    else list.insertBefore(sibling, row);
 
-    const wrapper = document.createElement("div");
-    wrapper.innerHTML = html.trim();
-    const row = wrapper.firstElementChild;
-    list.appendChild(row);
-
-    totalForms.value = String(idx + 1);
-
-    // Default placeholder name.
-    const nameInput = row.querySelector("input[name$='-name']");
-    if (nameInput) nameInput.value = `Room ${idx + 1}`;
-
-    // Default avatar emoji preview.
-    const emojiSpan = row.querySelector(".kk-room-avatar-emoji");
-    if (emojiSpan) emojiSpan.textContent = emojiFor("dragon");
-
-    wireRemoveButtons(row);
-    wireAvatarPickButtons(row);
+    row.classList.remove("g-moved");
+    void row.offsetWidth;          /* restart the flash */
+    row.classList.add("g-moved");
+    grip.focus();
+    reindex();
+    persist();
   });
 })();
 </script>
+
 <script>
+/* ── Rooms editor + avatar modal ─────────────────────────── */
 (function () {
-  const allow = document.getElementById("id_allow_late_answers");
-  const pct = document.getElementById("id_late_answer_points_pct");
-  function syncLatePct() {
-    if (!allow || !pct) return;
-    pct.disabled = !allow.checked;
+  "use strict";
+
+  var byId = {};
+  var catalog = document.getElementById("kk-avatars-json");
+  if (catalog) {
+    try {
+      JSON.parse(catalog.textContent || "[]").forEach(function (a) {
+        if (a && a.id) byId[a.id] = a;
+      });
+    } catch (e) { /* fall through to the dragon */ }
   }
-  if (allow) allow.addEventListener("change", syncLatePct);
-  syncLatePct();
+  function emojiFor(id) { return (byId[id] && byId[id].emoji) || "🐉"; }
+
+  /* Rooms are only relevant when the switch is on. */
+  var roomsDetail = document.getElementById("rooms-detail");
+  var useRooms = document.getElementById("{{ form.use_rooms.id_for_label }}");
+  function syncRooms() {
+    if (roomsDetail && useRooms) roomsDetail.hidden = !useRooms.checked;
+  }
+  if (useRooms) { useRooms.addEventListener("change", syncRooms); syncRooms(); }
+
+  var list = document.getElementById("rooms-list");
+  var totalForms = document.getElementById("id_rooms-TOTAL_FORMS");
+  var tpl = document.getElementById("room-row-template");
+  var addBtn = document.getElementById("add-room-btn");
+
+  /* Renumber every row's field names to its position.
+
+     This is the fix for a silent data-loss bug: removing a newly added row
+     used to leave a gap in the index sequence (0,1,2,4) while TOTAL_FORMS
+     was set to the row count (4), so Django read indices 0–3 and the room
+     at index 4 vanished on save without a word. Saved rows keep their
+     hidden pk, so Django matches them by id rather than position and
+     renumbering is safe. */
+  function renumber() {
+    if (!list || !totalForms) return;
+    var rows = list.querySelectorAll("[data-room-row]");
+    rows.forEach(function (row, i) {
+      row.querySelectorAll("input, select, textarea").forEach(function (field) {
+        if (field.name) field.name = field.name.replace(/rooms-\d+-/, "rooms-" + i + "-");
+        if (field.id) field.id = field.id.replace(/id_rooms-\d+-/, "id_rooms-" + i + "-");
+      });
+      var picker = row.querySelector("[data-pick-avatar]");
+      if (picker && picker.dataset.target) {
+        picker.dataset.target = picker.dataset.target.replace(/id_rooms-\d+-/, "id_rooms-" + i + "-");
+      }
+    });
+    totalForms.value = String(rows.length);
+  }
+
+  /* Existing rows: show the avatar their hidden input already holds. */
+  function paintRow(row) {
+    var input = row.querySelector('input[name$="-avatar_id"]');
+    var mark = row.querySelector("[data-avatar-emoji]");
+    if (input && mark) mark.textContent = emojiFor(input.value || "dragon");
+  }
+  if (list) list.querySelectorAll("[data-room-row]").forEach(paintRow);
+
+  /* ── Modal ── */
+  var modal = document.getElementById("avatar-modal");
+  var activeInput = null;
+  var activeMark = null;
+  var lastFocus = null;
+
+  function openModal(input, mark, trigger) {
+    activeInput = input;
+    activeMark = mark;
+    lastFocus = trigger;
+    var current = input.value || "dragon";
+    modal.querySelectorAll(".g-av").forEach(function (tile) {
+      tile.setAttribute("aria-pressed", tile.dataset.avatarId === current ? "true" : "false");
+    });
+    modal.classList.add("is-open");
+    var selected = modal.querySelector('.g-av[aria-pressed="true"]') || modal.querySelector(".g-av");
+    if (selected) selected.focus();
+  }
+
+  function closeModal() {
+    modal.classList.remove("is-open");
+    activeInput = null;
+    activeMark = null;
+    if (lastFocus) lastFocus.focus();
+    lastFocus = null;
+  }
+
+  if (modal) {
+    document.getElementById("avatar-modal-close").addEventListener("click", closeModal);
+    modal.addEventListener("click", function (e) { if (e.target === modal) closeModal(); });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && modal.classList.contains("is-open")) closeModal();
+    });
+    modal.querySelectorAll(".g-av").forEach(function (tile) {
+      tile.addEventListener("click", function () {
+        if (!activeInput) return;
+        activeInput.value = tile.dataset.avatarId;
+        if (activeMark) activeMark.textContent = tile.dataset.emoji;
+        closeModal();
+      });
+    });
+  }
+
+  /* ── Delegated row actions: no re-wiring after every insert ── */
+  if (list) {
+    list.addEventListener("click", function (e) {
+      var picker = e.target.closest("[data-pick-avatar]");
+      if (picker) {
+        var input = list.querySelector(picker.dataset.target) ||
+                    document.querySelector(picker.dataset.target);
+        if (input) openModal(input, picker.querySelector("[data-avatar-emoji]"), picker);
+        return;
+      }
+
+      var remove = e.target.closest("[data-remove-room]");
+      if (!remove) return;
+
+      var row = remove.closest("[data-room-row]");
+      var del = row.querySelector('input[name$="-DELETE"]');
+      if (!del) {
+        row.remove();          /* never saved — just drop it */
+        renumber();
+        return;
+      }
+      del.checked = !del.checked;
+      row.classList.toggle("is-removed", del.checked);
+      remove.setAttribute("title", del.checked ? "Keep room" : "Remove room");
+    });
+  }
+
+  if (addBtn && tpl && list && totalForms) {
+    addBtn.addEventListener("click", function () {
+      var index = list.querySelectorAll("[data-room-row]").length;
+      var holder = document.createElement("div");
+      holder.innerHTML = tpl.innerHTML.replace(/__INDEX__/g, index).trim();
+      var row = holder.firstElementChild;
+      list.appendChild(row);
+
+      var nameField = row.querySelector('input[name$="-name"]');
+      if (nameField) { nameField.value = "Room " + (index + 1); nameField.focus(); nameField.select(); }
+      paintRow(row);
+      renumber();
+    });
+  }
+})();
+</script>
+
+<script>
+/* ── Late-answer percentage follows its switch ───────────── */
+(function () {
+  "use strict";
+  var allow = document.getElementById("id_allow_late_answers");
+  var pct = document.getElementById("id_late_answer_points_pct");
+  if (!allow || !pct) return;
+  function sync() { pct.disabled = !allow.checked; }
+  allow.addEventListener("change", sync);
+  sync();
 })();
 
-// Toggle the "fully scrolled" class on the template picker scroll container
-// so the bottom fade disappears when the user reaches the end.
+/* ── Drop the template picker's bottom fade once you reach the end ── */
 (function () {
-  const el = document.querySelector(".kk-template-scroll");
-  if (!el) return;
-  const update = () => {
-    const reachedBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
-    el.classList.toggle("is-bottom", reachedBottom);
-    if (el.scrollHeight <= el.clientHeight + 1) {
-      el.classList.add("is-bottom");
+  "use strict";
+  document.querySelectorAll(".g-template-scroll").forEach(function (el) {
+    function update() {
+      var atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
+      el.classList.toggle("is-bottom", atBottom || el.scrollHeight <= el.clientHeight + 1);
     }
-  };
-  el.addEventListener("scroll", update, { passive: true });
-  window.addEventListener("resize", update);
-  update();
+    el.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    update();
+  });
 })();
 </script>
 {% endblock %}

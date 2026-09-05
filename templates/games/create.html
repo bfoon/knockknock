@@ -1,68 +1,136 @@
 {% extends "base.html" %}
 {% load static %}
+
 {% block title %}New game · Knock-Knock{% endblock %}
 
-{% block extra_head %}
-<link rel="stylesheet" href="{% static 'css/avatar_anim.css' %}">
-{% endblock %}
-
 {% block content %}
-<div class="kk-main-narrow mx-auto">
-  <h1 class="mb-4">New game 🎮</h1>
-  <form method="post" enctype="multipart/form-data" class="kk-card">
+<link rel="stylesheet" href="{% static 'css/games.css' %}">
+<link rel="stylesheet" href="{% static 'css/avatar_anim.css' %}">
+
+<div class="g kk-main-narrow mx-auto">
+  <a href="{% url 'games:list' %}" class="g-back">
+    <i class="bi bi-arrow-left"></i> All games
+  </a>
+
+  <h1 class="g-title mb-4">New game</h1>
+
+  <form method="post" enctype="multipart/form-data" class="g-panel" novalidate>
     {% csrf_token %}
-    <div class="mb-3"><label class="form-label">Title</label>{{ form.title }}</div>
-    <div class="mb-3"><label class="form-label">Description</label>{{ form.description }}</div>
 
-    <div class="row g-3 mb-3">
-      <div class="col-md-6"><label class="form-label">Scoring</label>{{ form.scoring }}</div>
-      <div class="col-md-6"><label class="form-label">Mode</label>{{ form.mode }}</div>
-    </div>
-
-    <div class="form-check mb-3">
-      {{ form.use_rooms }}
-      <label class="form-check-label">Use rooms (cap members & score by room average)</label>
-    </div>
-    <div class="mb-3"><label class="form-label">Room capacity</label>{{ form.room_capacity }}</div>
-
-    <div class="mb-3 p-3 rounded-4" style="background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08);">
-      <div class="form-check mb-2">
-        {{ form.allow_late_answers }}
-        <label class="form-check-label" for="{{ form.allow_late_answers.id_for_label }}">
-          Allow late answers after the timer ends
-        </label>
+    {% if form.errors %}
+      <div class="g-error">
+        <strong>This game wasn’t created.</strong> Fix the fields marked below.
       </div>
-      <label class="form-label small text-secondary" for="{{ form.late_answer_points_pct.id_for_label }}">
-        Late answer points percentage
-      </label>
-      {{ form.late_answer_points_pct }}
-      <div class="form-text">Default is 0%. If this is off, the server blocks answers after time ends unless the presenter extends time.</div>
-    </div>
+    {% endif %}
 
     <div class="mb-3">
-      <label class="form-label"><i class="bi bi-stars"></i> Chart background</label>
+      <label class="form-label" for="{{ form.title.id_for_label }}">Title</label>
+      {{ form.title }}
+      {% if form.title.errors %}<div class="g-field-error">{{ form.title.errors }}</div>{% endif %}
+    </div>
+
+    <div class="mb-4">
+      <label class="form-label" for="{{ form.description.id_for_label }}">Description</label>
+      {{ form.description }}
+      {% if form.description.errors %}<div class="g-field-error">{{ form.description.errors }}</div>{% endif %}
+    </div>
+
+    <h2 class="g-section"><i class="bi bi-trophy"></i> How it scores</h2>
+
+    <div class="row g-3 mb-4">
+      <div class="col-md-6">
+        <label class="form-label" for="{{ form.scoring.id_for_label }}">Scoring</label>
+        {{ form.scoring }}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="{{ form.mode.id_for_label }}">Mode</label>
+        {{ form.mode }}
+      </div>
+    </div>
+
+    <h2 class="g-section"><i class="bi bi-door-closed"></i> Rooms</h2>
+
+    <div class="g-subpanel mb-4">
+      <div class="form-check mb-3">
+        {{ form.use_rooms }}
+        <label class="form-check-label" for="{{ form.use_rooms.id_for_label }}">
+          Split players into rooms
+        </label>
+      </div>
+      <label class="form-label" for="{{ form.room_capacity.id_for_label }}">Players per room</label>
+      {{ form.room_capacity }}
+      {% if form.room_capacity.errors %}<div class="g-field-error">{{ form.room_capacity.errors }}</div>{% endif %}
+      <div class="form-text">You can name the rooms and give each one a door avatar after the game is created.</div>
+    </div>
+
+    <h2 class="g-section"><i class="bi bi-stopwatch"></i> Timer</h2>
+
+    <div class="g-subpanel mb-4">
+      <div class="form-check mb-3">
+        {{ form.allow_late_answers }}
+        <label class="form-check-label" for="{{ form.allow_late_answers.id_for_label }}">
+          Accept answers after the timer ends
+        </label>
+      </div>
+      <label class="form-label" for="{{ form.late_answer_points_pct.id_for_label }}">
+        Points a late answer keeps
+      </label>
+      {{ form.late_answer_points_pct }}
+      {% if form.late_answer_points_pct.errors %}<div class="g-field-error">{{ form.late_answer_points_pct.errors }}</div>{% endif %}
+      <div class="form-text">
+        0% means a late answer is recorded but scores nothing. With this switch off, the server
+        rejects anything arriving after time runs out — unless you extend the clock during the game.
+      </div>
+    </div>
+
+    <h2 class="g-section"><i class="bi bi-palette"></i> Look</h2>
+
+    <div class="mb-3">
+      <label class="form-label" for="{{ form.chart_background.id_for_label }}">Chart background</label>
       {{ form.chart_background }}
       <div class="form-text">Scenery shown behind the live chart during play.</div>
     </div>
 
-    <div class="mb-3"><label class="form-label">Logo</label>{{ form.logo }}</div>
-    <div class="mb-4">
-      <label class="form-label mb-2">Pick a template</label>
-      {% include "partials/template_picker.html" with templates=templates selected_id="neon" %}
+    <div class="mb-3">
+      <label class="form-label" for="{{ form.logo.id_for_label }}">Logo</label>
+      {{ form.logo }}
+      {% if form.logo.errors %}<div class="g-field-error">{{ form.logo.errors }}</div>{% endif %}
     </div>
-    <button class="kk-btn kk-btn-primary kk-btn-lg">Create</button>
+
+    <div class="mb-4">
+      <label class="form-label mb-2">Template</label>
+      {% comment %} Two bugs here before: `selected_id="neon"` matched no template in the
+         registry, so nothing looked selected, and the partial was included
+         without `input_name`, so the picker's choice was never posted and
+         every new game silently fell back to the default. {% endcomment %}
+      <div class="g-template-scroll">
+        {% include "partials/template_picker.html" with templates=templates selected_id=selected_template_id input_name="template_id" %}
+      </div>
+      {{ form.template_id }}
+    </div>
+
+    <div class="g-form-actions">
+      <button class="kk-btn kk-btn-primary kk-btn-lg g-btn-wide">
+        <i class="bi bi-check-lg"></i> Create game
+      </button>
+      <a href="{% url 'games:list' %}" class="kk-btn kk-btn-ghost">Cancel</a>
+    </div>
   </form>
 </div>
+
 <script>
 (function () {
-  const allow = document.getElementById("id_allow_late_answers");
-  const pct = document.getElementById("id_late_answer_points_pct");
-  function syncLatePct() {
-    if (!allow || !pct) return;
+  "use strict";
+  var allow = document.getElementById("id_allow_late_answers");
+  var pct = document.getElementById("id_late_answer_points_pct");
+  if (!allow || !pct) return;
+
+  function sync() {
     pct.disabled = !allow.checked;
+    pct.closest(".g-subpanel").style.setProperty("--g-dim", allow.checked ? "1" : ".6");
   }
-  if (allow) allow.addEventListener("change", syncLatePct);
-  syncLatePct();
+  allow.addEventListener("change", sync);
+  sync();
 })();
 </script>
 {% endblock %}

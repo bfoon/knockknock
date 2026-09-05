@@ -1,39 +1,51 @@
-{# Animated 3D scenery behind the live chart.
-   Usage — wrap it around (or place it inside) the element that holds the
-   live chart on the present screen:
+{% comment %} Animated 3D scenery behind the live chart.
 
-     <div class="kk-chart-shell" id="kk-chart-shell">
+   Usage — place it inside the element that holds the live chart on the
+   present screen:
+
+     <div class="kk-chart-shell" style="position:relative;">
        {% include "games/partials/_env_3d.html" with chart_background=quiz.chart_background %}
        ... the chart / answer bars render above this ...
      </div>
+
+   The parent MUST be position:relative or the canvas will escape it.
 
    Requires (once per page):
      <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
      <script src="{% static 'js/kk3d.js' %}"></script>
 
-   The canvas is position:absolute, pointer-events:none and inserted as the
-   FIRST child of #kk-env-3d's parent-relative box, so it always sits behind
-   your chart content. Falls back silently (no canvas) without WebGL, and
-   renders a single static frame when the user prefers reduced motion.
-#}
-<div class="kk-env-3d" id="kk-env-3d" data-scene="{{ chart_background|default:'normal' }}"></div>
+   The canvas is absolutely positioned and pointer-transparent, so it always
+   sits behind the chart content. Falls back silently (no canvas) without
+   WebGL, and skips mounting entirely when the viewer prefers reduced motion.
+
+   Teardown: `window.kkEnv3d.destroy()` if your presenter screen swaps
+   questions without a page load. The old version exposed the handle but
+   never released the previous one, so navigating between five questions
+   left five WebGL contexts running — browsers cap these at around sixteen
+   and then start killing the oldest.{% endcomment %}
+<div class="kk-env-3d" id="kk-env-3d" data-scene="{{ chart_background|default:'normal' }}" aria-hidden="true"></div>
 
 <style>
-  .kk-env-3d { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; z-index: 0; }
+  .kk-env-3d { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; z-index: 0; pointer-events: none; }
   .kk-env-3d ~ * { position: relative; z-index: 1; }
 </style>
 
 <script>
 (function () {
+  "use strict";
   var el = document.getElementById("kk-env-3d");
   if (!el || el.dataset.kk3dInit) return;
   el.dataset.kk3dInit = "1";
+
   if (!window.KK3D || !KK3D.hasWebGL) return;
+  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+  if (window.kkEnv3d && typeof window.kkEnv3d.destroy === "function") {
+    try { window.kkEnv3d.destroy(); } catch (e) { /* already gone */ }
+  }
+
   try {
-    var handle = KK3D.mountEnvironment(el, el.dataset.scene || "normal");
-    /* Optional: expose for teardown when the presenter navigates between
-       questions in a SPA-ish way. */
-    window.kkEnv3d = handle;
+    window.kkEnv3d = KK3D.mountEnvironment(el, el.dataset.scene || "normal");
   } catch (e) {
     console.warn("[kk3d] environment failed", e);
   }

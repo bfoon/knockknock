@@ -38,6 +38,8 @@ import uuid
 
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from channels.db import database_sync_to_async
+from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 
 
@@ -1066,17 +1068,27 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
     def _game_choices_payload(self, question, role):
         """Serialize choices for a game question.
 
-        We send `image_url`, `correct_position`, and `order` so the
-        participant can render picture cards / puzzle pieces, and so the
-        presenter chart can use image thumbnails as X-axis labels.
+        `is_correct` goes to the presenter only — anything on the socket is
+        readable in devtools, so sending it would hand out the answer key.
 
-        We DO NOT leak `is_correct` to participants — only the presenter
-        gets that. (Anything sent over the socket is visible in the
-        browser's devtools, so a participant who looks at the JSON would
-        otherwise see the answer key.)
+        The same reasoning applies to `correct_position`, which this method
+        used to send to everyone. For a puzzle that field IS the answer: a
+        participant could read each piece's slot straight off the frame
+        before the timer started. It is now presenter-only too, and puzzle
+        pieces ship in a scrambled order, because the natural (order, id)
+        sequence is itself a strong hint. The scramble is seeded on the
+        question id so every client — and the presenter — sees the same one.
         """
+        import random
+
         rows = []
-        for c in question.choices.all().order_by("order", "id"):
+        choices = list(question.choices.all().order_by("order", "id"))
+        is_presenter = role == "presenter"
+
+        if not is_presenter and getattr(question, "question_type", "") == "puzzle":
+            random.Random(question.id).shuffle(choices)
+
+        for position, c in enumerate(choices):
             try:
                 image_url = c.image.url if c.image and c.image.name else ""
             except (ValueError, AttributeError):
@@ -1086,11 +1098,11 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 "id": c.id,
                 "text": c.text or "",
                 "image_url": image_url,
-                "order": c.order or 0,
-                "correct_position": c.correct_position or 0,
+                "order": position if not is_presenter else (c.order or 0),
             }
-            if role == "presenter":
+            if is_presenter:
                 row["is_correct"] = bool(c.is_correct)
+                row["correct_position"] = c.correct_position or 0
             rows.append(row)
         return rows
 
@@ -1978,23 +1990,40 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             },
         )
 
-        participant.score = (participant.score or 0) + points
-        participant.save(update_fields=["score"])
+        with transaction.atomic():
+            answer, created = GameAnswer.objects.get_or_create(
+                session=session,
+                question=q,
+                participant_id=uid,
+                defaults={
+                    "nickname": participant.nickname,
+                    "avatar_id": participant.avatar_id,
+                    "choice": choice,
+                    "puzzle_order": submitted_puzzle_order,
+                    "is_correct": is_correct,
+                    "time_taken_ms": time_taken_ms,
+                    "points_awarded": points,
+                    "was_late": was_late,
+                    "room_id": participant.room_id,
+                },
+            )
 
-        GameAnswer.objects.create(
-            question=q,
-            session=session,
-            participant_id=uid,
-            nickname=participant.nickname,
-            avatar_id=participant.avatar_id,
-            choice=choice,
-            puzzle_order=submitted_puzzle_order,
-            is_correct=is_correct,
-            time_taken_ms=time_taken_ms,
-            points_awarded=points,
-            was_late=was_late,
-            room_id=participant.room_id,
-        )
+            if created:
+                # F() rather than read-modify-write: two answers landing in
+                # different workers would otherwise each read the same score
+                # and one increment would be lost.
+                Participant.objects.filter(pk=participant.pk).update(
+                    score=F("score") + points
+                )
+            else:
+                # Lost the race — the first answer stands, exactly as the
+                # `prior` branch above would have reported it.
+                points = answer.points_awarded
+                is_correct = answer.is_correct
+                submitted_puzzle_order = answer.puzzle_order or []
+                was_late = answer.was_late
+
+        participant.refresh_from_db(fields=["score"])
 
         return {
             "kind": "game",

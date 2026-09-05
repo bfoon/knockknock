@@ -1173,7 +1173,7 @@ body.hanns-options-open .drawer{
 .object-glass{min-width:0}
 .object-grid{grid-template-columns:repeat(auto-fit,minmax(22px,1fr))}
 /* beer reads lighter/foamier at the top; coffee body keeps a warm rim */
-.vessel-beer .v-surface{fill:rgba(255,255,255,.85);ry:5}
+.vessel-beer .v-surface{fill:rgba(255,255,255,.85)}
 
 @keyframes vRise{from{transform:scaleY(0)}to{transform:scaleY(1)}}
 @keyframes vSheen{0%,100%{opacity:.3}50%{opacity:.6}}

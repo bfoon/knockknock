@@ -10780,6 +10780,12 @@ function captureSlide(container){
   try{
     ghost.dataset.rasterBg = /url\(/i.test(ghost.style.backgroundImage||"") ? "1" : "0";
   }catch(e){ ghost.dataset.rasterBg = "0"; }
+  // Full-frame pictures are usually rendered as .imgbox background images,
+  // not as the slide background. Count them too so expensive shatter/wind/
+  // dissolve effects automatically use the low-piece budget.
+  try{
+    ghost.dataset.rasterMedia = String(container.querySelectorAll(".imgbox").length||0);
+  }catch(e){ ghost.dataset.rasterMedia = "0"; }
   return ghost;
 }
 
@@ -10908,12 +10914,14 @@ function playTransition(container,kind,ghost,opts){
   // the old check could not see it at all.
   const heavyEls = Number(ghost.dataset.els||0) > MAX_CLONE_ELS;
   const heavyBg  = ghost.dataset.rasterBg === "1";
+  const heavyMedia = Number(ghost.dataset.rasterMedia||0) > 0;
   // A 4K projector rasterises ~4x the pixels of a laptop for the same layer.
   const bigStage = (typeof window !== "undefined") &&
     ((window.innerWidth||0) * (window.innerHeight||0) > 2400*1400);
-  const heavy = heavyEls || heavyBg || bigStage;
+  const heavy = heavyEls || heavyBg || heavyMedia || bigStage;
   // Past a certain layer count nothing looks better, it only gets slower.
-  const pieceCap = heavyBg ? 6 : (heavy ? 10 : 48);
+  // A raster image element is almost as expensive as a raster slide background.
+  const pieceCap = (heavyBg || heavyMedia) ? 6 : (heavy ? 10 : 48);
   const cap = n => Math.max(2, Math.min(n, pieceCap));
   const seed=(opts.seed||1);
 

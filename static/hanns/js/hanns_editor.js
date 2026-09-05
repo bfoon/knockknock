@@ -4,6 +4,7 @@
 (function(){
 "use strict";
 const Hx = window.Hanns;
+const StaticShapes = window.HannsShapes || null;
 const {Deck,TEMPLATES,BACKGROUNDS,BG_FX,ANIMS,TRANSITIONS,PALETTE,FONTS,OBJECTS,SHAPES,
   newSlide,curSlide,selEl,paintSlide,renderElement,isStudioObject,motionOf,SHAPE_MOTIONS,MOTION_TYPES,
   makeText,makeShape,makeLine,makeImage,makeVideo,makeLink,makeObject,makeCreativeShape,makeTable,makeChart,makeMap,makeGallery,W,H,$,$$,uid,clamp,genCode}=Hx;
@@ -594,6 +595,18 @@ function addElement(kind){
 }
 /* How many zoom regions this slide already has — only used to name the
    next one ("Zoom 1", "Zoom 2") so the phone list reads sensibly. */
+function addStaticShape(shapeKey){
+  if(!StaticShapes || typeof StaticShapes.defaults!=="function"){
+    toast("Basic 2D shapes are not loaded. Add hanns_shapes.js after hanns_core.js in editor.html.");
+    return;
+  }
+  const s=curSlide();
+  const el=StaticShapes.defaults(shapeKey,{x:W/2-120,y:H/2-80});
+  // Static means static: no entrance or idle animation is attached here.
+  el.anim="none"; el.animDelay=0; el.motion="none";
+  s.els.push(el); multiSel.clear(); Deck.sel=el.id; renderAll(); markDirty();
+}
+
 function focusCountOnSlide(){
   return currentElements().filter(e=>e&&e.type==="focus").length;
 }
@@ -1424,7 +1437,13 @@ function renderInspector(){
       Pick an element on the canvas, or add one from the left rail. Switch to <b>Slide</b> to style the background &amp; transition.</div>`;
     return;
   }
-  if(inspTab==="animate"){inspBody.innerHTML=animatePanel(el);bindAnimatePanel(el);return;}
+  if(inspTab==="animate"){
+    if(el.type==="shape"){
+      inspBody.innerHTML=`<div class="insp-empty"><span class="big">Static 2D shape</span>This shape behaves like a normal PowerPoint/Word shape and does not animate. Use Element to change its fill, outline, size and text.</div>`;
+      return;
+    }
+    inspBody.innerHTML=animatePanel(el);bindAnimatePanel(el);return;
+  }
   inspBody.innerHTML=elementPanel(el);bindElementPanel(el);
   studioPanels(el);
 }
@@ -1495,6 +1514,25 @@ function elementPanel(el){
         ${field("Stroke width "+(el.strokeW||0),`<input type="range" id="f-strokew" min="0" max="20" value="${el.strokeW||0}">`)}</div>`;
       if(el.type==="rect")h+=`<div class="group">${field("Corner radius "+(el.radius||0),`<input type="range" id="f-radius" min="0" max="120" value="${el.radius||0}">`)}</div>`;
     }
+  }
+
+  if(el.type==="shape"){
+    const cat=(StaticShapes&&StaticShapes.CATALOG)||[];
+    const label=String(el.text||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    h+=`<div class="group"><span class="glabel">Basic 2D shape</span>
+      ${field("Shape",`<select id="f-static-shape">${cat.map(x=>`<option value="${x.key}" ${el.shape===x.key?"selected":""}>${x.label}</option>`).join("")}</select>`)}
+      <span class="glabel" style="margin-top:.7rem;display:block">Fill</span>${swatchRow(el.fill||"none","fill")}
+      <span class="glabel" style="margin-top:.8rem;display:block">Outline</span>${swatchRow(el.stroke||"none","stroke")}
+      ${field("Outline width "+(el.strokeW||0),`<input type="range" id="f-static-strokew" min="0" max="20" step="1" value="${el.strokeW||0}">`)}
+      ${field("Outline style",`<div class="seg" id="f-static-dashed"><button data-on="0" class="${!el.dashed?"active":""}">Solid</button><button data-on="1" class="${el.dashed?"active":""}">Dashed</button></div>`)}
+      ${el.shape==="round_rect"?field("Corner radius "+(el.radius||0),`<input type="range" id="f-static-radius" min="0" max="50" value="${el.radius||0}">`):""}
+      ${field("Text",`<textarea id="f-static-text" rows="3">${label}</textarea>`)}
+      <div class="row2">
+        ${field("Text size",`<input type="number" id="f-static-textsize" min="8" max="120" value="${el.textSize||20}">`)}
+        ${field("Text colour",`<input type="color" id="f-static-textcolor" value="${(el.textColor&&/^#[0-9a-f]{6}$/i.test(el.textColor))?el.textColor:"#ffffff"}">`)}
+      </div>
+      <div class="insp-empty" style="padding-top:.2rem">Plain PowerPoint-style geometry. No entrance animation and no idle motion.</div>
+    </div>`;
   }
 
   if(el.type==="creative_shape"){
@@ -1998,6 +2036,24 @@ function bindElementPanel(el){
     const ac=$("#f-focus-accent");
     ac&&ac.addEventListener("input",()=>{el.accent=ac.value;renderCanvas();markDirty();});
     $("#f-focus-preview")&&$("#f-focus-preview").addEventListener("click",()=>previewFocus(el));
+  }
+
+  if(el.type==="shape"){
+    // Reassert the invariant whenever an old/imported shape is edited.
+    el.anim="none"; el.animDelay=0; el.motion="none";
+    const st=$("#f-static-shape");
+    st&&st.addEventListener("change",()=>{
+      el.shape=st.value;
+      const meta=StaticShapes&&StaticShapes.SHAPES&&StaticShapes.SHAPES[el.shape];
+      if(meta&&meta.open){el.fill="none";if(!el.stroke||el.stroke==="none")el.stroke="#1e293b";if(!el.strokeW)el.strokeW=4;}
+      renderCanvas();markDirty();renderInspector();
+    });
+    bindRange("f-static-strokew",v=>{el.strokeW=v;if(v>0&&(!el.stroke||el.stroke==="none"))el.stroke="#1e293b";renderCanvas();markDirty();},v=>v,"Outline width");
+    bindRange("f-static-radius",v=>{el.radius=v;renderCanvas();markDirty();},v=>v,"Corner radius");
+    seg("f-static-dashed","on",v=>{el.dashed=v==="1";renderCanvas();markDirty();});
+    const tx=$("#f-static-text");tx&&tx.addEventListener("input",()=>{el.text=tx.value;renderCanvas();markDirty();});
+    const ts=$("#f-static-textsize");ts&&ts.addEventListener("input",()=>{el.textSize=Math.max(8,Math.min(120,Number(ts.value)||20));renderCanvas();markDirty();});
+    const tc=$("#f-static-textcolor");tc&&tc.addEventListener("input",()=>{el.textColor=tc.value;renderCanvas();markDirty();});
   }
 
   if(el.type==="creative_shape"){
@@ -2726,6 +2782,36 @@ function buildObjGallery(){
 
 function buildShapeGallery(){
   const g=$("#shape-grid");if(!g)return;g.innerHTML="";
+
+  const heading=(text,sub)=>{
+    const h=document.createElement("div");
+    h.style.gridColumn="1 / -1";h.style.padding=".25rem .1rem .15rem";
+    h.innerHTML=`<div style="font-weight:800;color:var(--cream)">${text}</div><div style="font-size:.72rem;color:var(--fog);margin-top:.15rem">${sub}</div>`;
+    g.appendChild(h);
+  };
+
+  if(StaticShapes && Array.isArray(StaticShapes.CATALOG)){
+    heading("Basic 2D shapes","PowerPoint/Word-style · static · no animation");
+    StaticShapes.CATALOG.forEach(meta=>{
+      const card=document.createElement("button");card.type="button";card.className="shape-card";
+      card.title=meta.label+" — static shape";
+      try{
+        const preview=StaticShapes.defaults(meta.key,{w:100,h:100,fill:meta.group==="Lines"?"none":"#e8482b",stroke:meta.group==="Lines"?"#f6f1e7":"none",strokeW:meta.group==="Lines"?5:0});
+        const node=StaticShapes.render(preview);
+        node.style.width="54px";node.style.height="54px";
+        card.appendChild(node);
+      }catch(e){
+        const fallback=document.createElement("span");fallback.textContent="◇";fallback.style.fontSize="2rem";card.appendChild(fallback);
+      }
+      const lab=document.createElement("span");lab.textContent=meta.label;card.appendChild(lab);
+      card.addEventListener("click",()=>addStaticShape(meta.key));
+      g.appendChild(card);
+    });
+  }else{
+    heading("Basic 2D shapes unavailable","Load hanns_shapes.js after hanns_core.js in the editor template.");
+  }
+
+  heading("Creative shapes","Existing Hanns decorative shapes");
   (SHAPES||[]).forEach(s=>{
     const card=document.createElement("button");card.type="button";card.className="shape-card";
     card.style.setProperty("--accent",s.accent||"#e8482b");

@@ -170,11 +170,19 @@ function show(n,broadcast=true){
   // the consumer, which clears the revealed set on every goto.
   revealedNow.clear();
   focusNow=null;
-  // Clone the outgoing slide first; paintSlide() is about to destroy it and
-  // the exit effects animate that clone.
-  const ghost=Hx.captureSlide?Hx.captureSlide(wrap):null;
+  // Only the theatrical EXIT transitions need a copy of the outgoing slide.
+  // Normal fade/slide/push/zoom/flip/reveal transitions animate the incoming
+  // slide only. Cloning a 960x540 DOM tree containing a full-frame photo on
+  // every command was unnecessary work and could make image-heavy decks feel
+  // unresponsive on projectors and lower-powered laptops.
+  const kind=(s&&s.transition)||"fade";
+  const needsGhost=new Set([
+    "paper_grab","paper_pull","shatter","burn","wind",
+    "curtain","fold","dissolve","swipe"
+  ]).has(kind);
+  const ghost=(needsGhost&&Hx.captureSlide)?Hx.captureSlide(wrap):null;
   paintSlide(wrap,s,{live:true});
-  transition(wrap,(s&&s.transition)||"fade",ghost,i+1);
+  transition(wrap,kind,ghost,i+1);
   const pos=$("#pp-pos");if(pos)pos.textContent=`${i+1} / ${DECK.slides.length}`;
   if(broadcast&&!suppressBroadcast)Live.goto(i);
 }
@@ -337,6 +345,19 @@ function applyFluidCue(m){
    the rest of the deck and pull every image through the browser cache,
    nearest slides first. It is deliberately unhurried: one at a time, so
    it can never compete with the slide the room is actually looking at. */
+function scheduleIdle(fn, timeoutMs){
+  const ms=Math.max(0, Number(timeoutMs)||0);
+  if(typeof window.requestIdleCallback === "function"){
+    // requestIdleCallback(callback, options) — Firefox rejects a number as
+    // the second argument. `timeout` guarantees the job still runs even when
+    // the browser never becomes truly idle. If an older/quirky implementation
+    // still rejects the call, fall back without breaking presenter startup.
+    try{return window.requestIdleCallback(fn, {timeout: ms});}
+    catch(err){console.warn("[hanns] requestIdleCallback unavailable; using setTimeout", err);}
+  }
+  return window.setTimeout(fn, ms);
+}
+
 function prefetchDeckMedia(){
   if(!DECK || !Array.isArray(DECK.slides)) return;
   const urls = [], seen = new Set();
@@ -371,12 +392,12 @@ function prefetchDeckMedia(){
     const url = urls[n++];
     const img = new Image();
     img.decoding = "async";
-    const next = ()=>{ (window.requestIdleCallback||setTimeout)(pull, 120); };
+    const next = ()=>{ scheduleIdle(pull, 120); };
     img.onload = next;
     img.onerror = next;      // a 404 must not stall the queue
     img.src = url;
   };
-  (window.requestIdleCallback||setTimeout)(pull, 400);
+  scheduleIdle(pull, 400);
 }
 
 function playActorFromCue(elId, action){
@@ -664,7 +685,8 @@ function init(){
   drawQRs();ensureControllerQrFallback();renderReactionCounts(CFG.reactionCounts || DECK.reaction_counts || {});fit();show(i,false);wireActorClicks();Live.start();keepScreenAwake("presentation-start");
   // Only once the first slide is actually up — the opening frame is the
   // one moment in a talk where nothing else may compete for bandwidth.
-  prefetchDeckMedia();
+  try{prefetchDeckMedia();}
+  catch(err){console.warn("[hanns] media prefetch skipped; presentation remains active", err);}
   $("#pp-prev")?.addEventListener("click",()=>show(i-1));
   $("#pp-next")?.addEventListener("click",()=>show(i+1));
   $("#present-exit")?.addEventListener("click",endPresent);

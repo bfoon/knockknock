@@ -4,10 +4,13 @@ from collections import Counter
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
+from django.db.models import Count
 from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.encoding import iri_to_uri
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
@@ -38,6 +41,36 @@ from .question_types import QUESTION_TYPE_REGISTRY
 import logging
 logger = logging.getLogger(__name__)
 
+def _safe_next(request, fallback_url_name):
+    """Resolve a `next` parameter without opening a redirect hole.
+
+    The old check was `nxt.startswith("/")`, which accepts `//evil.example.com/`
+    — browsers read that as protocol-relative and leave the site.
+    """
+    nxt = request.POST.get("next") or ""
+    if nxt and url_has_allowed_host_and_scheme(
+        url=nxt, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ):
+        return redirect(iri_to_uri(nxt))
+    return redirect(fallback_url_name)
+
+
+def _jsonable(value):
+    """Coerce a config form's cleaned_data into something JSONField accepts."""
+    import datetime
+    import decimal
+
+    if isinstance(value, dict):
+        return {k: _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
+    if isinstance(value, decimal.Decimal):
+        return float(value)
+    if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
+        return value.isoformat()
+    return value
+
+
 def _seed_default_choices(question):
     """Seed a couple of starter choices for choice-storage types."""
     meta = QUESTION_TYPE_REGISTRY.get(question.type, {})
@@ -55,7 +88,11 @@ def _seed_default_choices(question):
 # ── List / create / edit (questionnaire-level) ─────────────────────────
 @login_required
 def list_view(request):
-    qs = Questionnaire.objects.filter(owner=request.user)
+    qs = (
+        Questionnaire.objects
+        .filter(owner=request.user)
+        .annotate(num_questions=Count("questions", distinct=True))
+    )
     return render(request, "polls/list.html", {"questionnaires": qs})
 
 
@@ -73,14 +110,18 @@ def create(request):
             return redirect("polls:edit", pk=q.pk)
     else:
         form = QuestionnaireForm()
-    return render(request, "polls/create.html", {"form": form, "templates": TEMPLATES})
+    return render(request, "polls/create.html", {
+        "form": form,
+        "templates": TEMPLATES,
+        "selected_template_id": request.POST.get("template_id") or "space_hud",
+    })
 
 
 @login_required
 def edit(request, pk):
     questionnaire = get_object_or_404(Questionnaire, pk=pk)
     if not questionnaire.can_edit(request.user):
-        return HttpResponseBadRequest("No access.")
+        return HttpResponseForbidden("You don't have access to this questionnaire.")
     is_owner = questionnaire.owner_id == request.user.id
 
     if request.method == "POST":
@@ -92,13 +133,25 @@ def edit(request, pk):
     else:
         form = QuestionnaireForm(instance=questionnaire)
 
+    from .question_types import grouped_for_picker
+
+    questions = list(questionnaire.questions.all())
+
     return render(request, "polls/edit.html", {
         "questionnaire": questionnaire,
         "form": form,
         "templates": TEMPLATES,
         "selected_template": get_template(questionnaire.template_id),
         "is_owner": is_owner,
-        "collaborators": questionnaire.collaborators.select_related("user"),
+        "collaborators": list(questionnaire.collaborators.select_related("user")),
+        # The template iterated `questionnaire.questions.all` directly and
+        # called `.count` three separate times, so the header alone cost
+        # three COUNT queries before the list was even rendered.
+        "questions": questions,
+        "question_count": len(questions),
+        # Drives the quick-add dropdown, which used to be a hand-maintained
+        # copy of the registry that had already fallen out of sync.
+        "grouped_qtypes": grouped_for_picker(),
     })
 
 
@@ -107,7 +160,7 @@ def edit(request, pk):
 def set_template(request, pk):
     q = get_object_or_404(Questionnaire, pk=pk)
     if not q.can_edit(request.user):
-        return HttpResponseBadRequest("No access.")
+        return HttpResponseForbidden("You don't have access to this questionnaire.")
     q.template_id = request.POST.get("template_id", q.template_id)
     q.save(update_fields=["template_id"])
     return JsonResponse({"ok": True})
@@ -118,18 +171,25 @@ def set_template(request, pk):
 def question_create(request, pk):
     questionnaire = get_object_or_404(Questionnaire, pk=pk)
     if not questionnaire.can_edit(request.user):
-        return HttpResponseBadRequest("No access.")
+        return HttpResponseForbidden("You don't have access to this questionnaire.")
+
+    qtype = request.GET.get("type") or "mcq"
+    if qtype not in QUESTION_TYPE_REGISTRY:
+        qtype = "mcq"
+    meta = QUESTION_TYPE_REGISTRY[qtype]
 
     q = Question.objects.create(
         questionnaire=questionnaire,
         text="New question",
         order=questionnaire.questions.count(),
-        type="mcq",
-        chart_type="bar",
+        type=qtype,
+        chart_type=meta.get("default_chart", "bar"),
     )
-    # Seed default choices for MCQ
-    for i, t in enumerate(["Option 1", "Option 2"]):
-        Choice.objects.create(question=q, text=t, order=i)
+    # This used to hardcode MCQ and write "Option 1"/"Option 2" inline,
+    # ignoring both `?type=` and _seed_default_choices — so creating a Yes/No
+    # question from the full editor gave you two blank options instead of
+    # Yes and No.
+    _seed_default_choices(q)
     return redirect("polls:question_edit", pk=questionnaire.pk, qpk=q.pk)
 
 
@@ -137,7 +197,7 @@ def question_create(request, pk):
 def question_edit(request, pk, qpk):
     questionnaire = get_object_or_404(Questionnaire, pk=pk)
     if not questionnaire.can_edit(request.user):
-        return HttpResponseBadRequest("No access.")
+        return HttpResponseForbidden("You don't have access to this questionnaire.")
     question = get_object_or_404(Question, pk=qpk, questionnaire=questionnaire)
     meta = QUESTION_TYPE_REGISTRY.get(question.type, {})
 
@@ -159,44 +219,28 @@ def question_edit(request, pk, qpk):
         matrix_ok = matrix_rows.is_valid() if matrix_rows is not None else True
         config_ok = config_form.is_valid() if config_form is not None else True
 
-        # ── DEBUG: dump every error to the terminal ──
-        if not form_ok:
-            print("\n=== QuestionForm errors ===")
-            for field, errs in form.errors.items():
-                print(f"  {field}: {errs}")
-            print(f"  non_field_errors: {form.non_field_errors()}")
-            messages.error(request, f"Question form errors: {form.errors.as_text()}")
-
-        if formset is not None and not formset_ok:
-            print("\n=== ChoiceFormSet errors ===")
-            print(f"  non_form_errors: {formset.non_form_errors()}")
-            for i, f in enumerate(formset.forms):
-                if f.errors:
-                    print(f"  Choice form #{i} (empty_permitted={f.empty_permitted}): {f.errors}")
-            messages.error(request, f"Choice errors: {formset.errors}")
-
-        if matrix_rows is not None and not matrix_ok:
-            print("\n=== MatrixRowFormSet errors ===")
-            for i, f in enumerate(matrix_rows.forms):
-                if f.errors:
-                    print(f"  Matrix row #{i}: {f.errors}")
-            messages.error(request, f"Matrix errors: {matrix_rows.errors}")
-
-        if config_form is not None and not config_ok:
-            print("\n=== Config form errors ===")
-            print(f"  {config_form.errors}")
-            messages.error(request, f"Config errors: {config_form.errors.as_text()}")
+        if not (form_ok and formset_ok and matrix_ok and config_ok):
+            # This block used to print() every error dict to stdout and push the
+            # raw `form.errors` structure into a messages.error banner, so a
+            # blank choice label showed the author something like
+            #   Choice errors: [{}, {'text': ['This field is required.']}]
+            # Each field renders its own error; this is only the summary.
+            logger.info(
+                "polls.question_edit rejected q=%s form=%s choices=%s matrix=%s config=%s",
+                question.pk, form_ok, formset_ok, matrix_ok, config_ok,
+            )
+            messages.error(request, "This question wasn\u2019t saved \u2014 see the notes below.")
 
         skip_rules = []
         if skip_rules_json.strip():
             try:
-                skip_rules = json.loads(skip_rules_json)
-                if not isinstance(skip_rules, list):
+                parsed = json.loads(skip_rules_json)
+                if not isinstance(parsed, list):
                     raise ValueError("skip_rules must be a list")
-            except (ValueError, json.JSONDecodeError) as e:
-                print(f"\n=== Skip rules JSON error: {e} ===")
+                skip_rules = parsed
+            except (ValueError, json.JSONDecodeError):
                 form_ok = False
-                messages.error(request, f"Invalid skip rules JSON: {e}")
+                messages.error(request, "The branching rules on this question are malformed.")
 
         forms_ok = form_ok and formset_ok and matrix_ok and config_ok
 
@@ -204,7 +248,10 @@ def question_edit(request, pk, qpk):
             q = form.save(commit=False)
             q.skip_rules = skip_rules
             if config_form is not None:
-                q.config = config_form.cleaned_data
+                # cleaned_data can hold date/time/Decimal objects and a
+                # JSONField cannot serialise those — the save would fail with
+                # "Object of type date is not JSON serializable".
+                q.config = _jsonable(config_form.cleaned_data)
             q.save()
             if formset is not None:
                 formset.save()
@@ -213,9 +260,6 @@ def question_edit(request, pk, qpk):
             _auto_seed_choices_if_empty(q)
             messages.success(request, "Question saved.")
             return redirect("polls:edit", pk=questionnaire.pk)
-        else:
-            print(f"\n=== Save BLOCKED. form_ok={form_ok} formset_ok={formset_ok} "
-                  f"matrix_ok={matrix_ok} config_ok={config_ok} ===\n")
     else:
         form = QuestionForm(instance=question)
         formset = ChoiceFormSet(instance=question) if meta.get("has_choices") else None
@@ -266,7 +310,7 @@ def change_type(request, pk, qpk):
     """
     questionnaire = get_object_or_404(Questionnaire, pk=pk)
     if not questionnaire.can_edit(request.user):
-        return HttpResponseBadRequest("No access.")
+        return HttpResponseForbidden("You don't have access to this questionnaire.")
     question = get_object_or_404(Question, pk=qpk, questionnaire=questionnaire)
 
     new_type = request.POST.get("type")
@@ -307,7 +351,7 @@ def change_type(request, pk, qpk):
 def question_delete(request, pk, qpk):
     questionnaire = get_object_or_404(Questionnaire, pk=pk)
     if not questionnaire.can_edit(request.user):
-        return HttpResponseBadRequest("No access.")
+        return HttpResponseForbidden("You don't have access to this questionnaire.")
     Question.objects.filter(pk=qpk, questionnaire=questionnaire).delete()
     return redirect("polls:edit", pk=pk)
 
@@ -317,7 +361,7 @@ def question_delete(request, pk, qpk):
 def reorder_questions(request, pk):
     questionnaire = get_object_or_404(Questionnaire, pk=pk)
     if not questionnaire.can_edit(request.user):
-        return HttpResponseBadRequest("No access.")
+        return HttpResponseForbidden("You don't have access to this questionnaire.")
     try:
         payload = json.loads(request.body.decode("utf-8") or "{}")
         ids = [int(x) for x in payload.get("order", [])]
@@ -326,15 +370,23 @@ def reorder_questions(request, pk):
 
     existing = {q.pk for q in questionnaire.questions.all()}
     if set(ids) != existing:
-        return HttpResponseBadRequest("ID set mismatch.")
+        # Usually means the deck was edited in another tab. 409 lets the
+        # client tell the user to reload instead of showing "Bad Request".
+        return JsonResponse(
+            {"ok": False, "error": "This list is out of date. Reload the page."},
+            status=409,
+        )
 
     by_id = {q.pk: q for q in questionnaire.questions.all()}
+    changed = []
     for new_order, qpk in enumerate(ids):
         q = by_id[qpk]
         if q.order != new_order:
             q.order = new_order
-            q.save(update_fields=["order"])
-    return JsonResponse({"ok": True})
+            changed.append(q)
+    if changed:
+        Question.objects.bulk_update(changed, ["order"])
+    return JsonResponse({"ok": True, "updated": len(changed)})
 
 
 # ── Live session ──────────────────────────────────────────────────────
@@ -343,7 +395,7 @@ def reorder_questions(request, pk):
 def start_session(request, pk):
     questionnaire = get_object_or_404(Questionnaire, pk=pk)
     if not questionnaire.can_edit(request.user):
-        return HttpResponseBadRequest("No access.")
+        return HttpResponseForbidden("You don't have access to this questionnaire.")
     session = LiveSession.objects.create(
         owner=request.user, kind="poll",
         questionnaire=questionnaire, mode=questionnaire.mode,
@@ -667,7 +719,7 @@ def _download_filename(questionnaire, selected_code, extension):
 def questionnaire_results(request, pk):
     questionnaire = get_object_or_404(Questionnaire, pk=pk)
     if not questionnaire.can_edit(request.user):
-        return HttpResponseBadRequest("No access.")
+        return HttpResponseForbidden("You don't have access to this questionnaire.")
 
     selected_session, selected_code, sessions = _selected_result_session(request, questionnaire)
     report = _build_report_data(questionnaire, selected_session)
@@ -687,7 +739,7 @@ def questionnaire_results(request, pk):
 def download_results_excel(request, pk):
     questionnaire = get_object_or_404(Questionnaire, pk=pk)
     if not questionnaire.can_edit(request.user):
-        return HttpResponseBadRequest("No access.")
+        return HttpResponseForbidden("You don't have access to this questionnaire.")
 
     selected_session, selected_code, _sessions = _selected_result_session(request, questionnaire)
     report = _build_report_data(questionnaire, selected_session)
@@ -707,7 +759,7 @@ def download_results_excel(request, pk):
 def download_results_word(request, pk):
     questionnaire = get_object_or_404(Questionnaire, pk=pk)
     if not questionnaire.can_edit(request.user):
-        return HttpResponseBadRequest("No access.")
+        return HttpResponseForbidden("You don't have access to this questionnaire.")
 
     selected_session, selected_code, _sessions = _selected_result_session(request, questionnaire)
     report = _build_report_data(questionnaire, selected_session)
@@ -728,7 +780,7 @@ def download_results_word(request, pk):
 def reset_results(request, pk):
     questionnaire = get_object_or_404(Questionnaire, pk=pk)
     if not questionnaire.can_edit(request.user):
-        return HttpResponseBadRequest("No access.")
+        return HttpResponseForbidden("You don't have access to this questionnaire.")
 
     selected_session, selected_code, sessions_qs = _selected_result_session(request, questionnaire)
     scope = (request.POST.get("scope") or "session").strip().lower()
@@ -761,7 +813,7 @@ def quick_add_question(request, pk):
     """Create a question with an optional initial text + type from the list page."""
     questionnaire = get_object_or_404(Questionnaire, pk=pk)
     if not questionnaire.can_edit(request.user):
-        return HttpResponseBadRequest("No access.")
+        return HttpResponseForbidden("You don't have access to this questionnaire.")
 
     text = (request.POST.get("text") or "").strip() or "New question"
     qtype = request.POST.get("type") or "mcq"
@@ -798,7 +850,7 @@ def quick_add_question(request, pk):
 def quick_delete_question(request, pk, qpk):
     questionnaire = get_object_or_404(Questionnaire, pk=pk)
     if not questionnaire.can_edit(request.user):
-        return HttpResponseBadRequest("No access.")
+        return HttpResponseForbidden("You don't have access to this questionnaire.")
     Question.objects.filter(pk=qpk, questionnaire=questionnaire).delete()
     if request.headers.get("X-Requested-With") == "fetch":
         return JsonResponse({"ok": True})
@@ -825,10 +877,7 @@ def delete(request, pk):
 
     # Where the user goes back to depends on where they came from.
     # The dashboard sends a `next` param; fall back to the questionnaire list.
-    nxt = request.POST.get("next") or ""
-    if nxt.startswith("/"):  # accept relative paths only — never open redirects
-        return redirect(nxt)
-    return redirect("polls:list")
+    return _safe_next(request, "polls:list")
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -891,6 +940,7 @@ def duplicate(request, pk):
         #    save() is Django's idiomatic "copy this row with a new id".
         copy = Questionnaire.objects.get(pk=original.pk)
         copy.pk = None
+        copy._state.adding = True
         copy.owner = request.user
         copy.title = _next_questionnaire_copy_title(request.user, original.title)
         # created_at / updated_at get reset by save() (auto_now_*).
@@ -902,6 +952,7 @@ def duplicate(request, pk):
         for q in original.questions.all():
             old_pk = q.pk
             q.pk = None
+            q._state.adding = True
             q.questionnaire = copy
             q.save()
             question_map[old_pk] = q
@@ -910,6 +961,7 @@ def duplicate(request, pk):
         for old_q_pk, new_q in question_map.items():
             for c in Choice.objects.filter(question_id=old_q_pk):
                 c.pk = None
+                c._state.adding = True
                 c.question = new_q
                 c.save()
 
@@ -917,6 +969,7 @@ def duplicate(request, pk):
         for old_q_pk, new_q in question_map.items():
             for row in MatrixRow.objects.filter(question_id=old_q_pk):
                 row.pk = None
+                row._state.adding = True
                 row.question = new_q
                 row.save()
 
@@ -925,7 +978,4 @@ def duplicate(request, pk):
         f"Duplicated “{original.title}” → “{copy.title}”. "
         f"Edit it from your menti list.",
     )
-    nxt = request.POST.get("next") or ""
-    if nxt.startswith("/"):
-        return redirect(nxt)
-    return redirect("polls:list")
+    return _safe_next(request, "polls:list")

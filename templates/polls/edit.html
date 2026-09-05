@@ -1,551 +1,347 @@
 {% extends "base.html" %}
 {% load static %}
+
 {% block title %}{{ questionnaire.title }} · Knock-Knock{% endblock %}
 
-{% block head_extra %}
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-{% endblock %}
-
 {% block content %}
-<div class="d-flex align-items-start justify-content-between gap-3 mb-4 flex-wrap">
-  <div class="d-flex align-items-center gap-3">
-    {% if questionnaire.logo %}
-      <img src="{{ questionnaire.logo.url }}" alt="" style="height:56px; width:56px; object-fit:cover; border-radius:12px; border:1px solid var(--kk-border);">
-    {% endif %}
-    <div>
-      <a href="{% url 'polls:list' %}" class="text-secondary text-decoration-none small">
-        <i class="bi bi-arrow-left"></i> All questionnaires
-      </a>
-      <h1 class="mb-0 mt-2">{{ questionnaire.title }}</h1>
-      <div class="text-secondary mt-1">
-        {{ questionnaire.questions.count }} questions · {{ questionnaire.get_mode_display }}
-        {% if not is_owner %}
-          · <span class="kk-q-pill"><i class="bi bi-people"></i> shared with you</span>
-        {% endif %}
+<link rel="stylesheet" href="{% static 'css/polls.css' %}">
+
+<div class="p">
+  <div class="p-head">
+    <div class="p-head-id">
+      {% if questionnaire.logo %}
+        <div class="p-logo"><img src="{{ questionnaire.logo.url }}" alt="{{ questionnaire.title }} logo"></div>
+      {% endif %}
+      <div style="min-width:0;">
+        <a href="{% url 'polls:list' %}" class="p-back"><i class="bi bi-arrow-left"></i> All questionnaires</a>
+        <h1 class="p-title">{{ questionnaire.title }}</h1>
+        <div class="p-meta">
+          <span>{{ question_count }} question{{ question_count|pluralize }}</span>
+          <span class="p-meta-dot">·</span>
+          <span>{{ questionnaire.get_mode_display }}</span>
+          {% if not is_owner %}
+            <span class="p-meta-dot">·</span>
+            <span class="p-tag"><i class="bi bi-people"></i> shared with you</span>
+          {% endif %}
+        </div>
       </div>
     </div>
-  </div>
 
-  <div class="d-flex gap-2 flex-wrap">
-    {% if is_owner %}
-      <button type="button" class="kk-btn kk-btn-ghost kk-btn-lg" data-bs-toggle="modal" data-bs-target="#collabModal">
-        <i class="bi bi-people"></i> Share
-        {% if collaborators %}<span class="kk-q-pill ms-1">{{ collaborators.count }}</span>{% endif %}
-      </button>
-    {% endif %}
-
-    <div class="dropdown">
-      <button class="kk-btn kk-btn-ghost kk-btn-lg dropdown-toggle"
-              type="button" data-bs-toggle="dropdown" aria-expanded="false">
-        <i class="bi bi-download"></i> Download Results
-      </button>
-      <ul class="dropdown-menu dropdown-menu-dark">
-        <li>
-          <a class="dropdown-item" href="{% url 'polls:results' questionnaire.pk %}">
-            <i class="bi bi-bar-chart"></i> View Results
-          </a>
-        </li>
-        <li><hr class="dropdown-divider"></li>
-        <li>
-          <a class="dropdown-item" href="{% url 'polls:download_results_excel' questionnaire.pk %}">
-            <i class="bi bi-file-earmark-excel"></i> Download Excel
-          </a>
-        </li>
-        <li>
-          <a class="dropdown-item" href="{% url 'polls:download_results_word' questionnaire.pk %}">
-            <i class="bi bi-file-earmark-word"></i> Download Word
-          </a>
-        </li>
-      </ul>
-    </div>
-
-    <div class="dropdown">
-      <button class="kk-btn kk-btn-ghost kk-btn-lg dropdown-toggle"
-              type="button"
-              data-bs-toggle="dropdown"
-              aria-expanded="false">
-        <i class="bi bi-stop-circle"></i> End Sessions
-      </button>
-
-      <ul class="dropdown-menu dropdown-menu-dark">
-        <li>
-          <form method="post"
-                action="{% url 'presentations:end_all_sessions' %}"
-                class="m-0"
-                onsubmit="return confirm('End all active POLL sessions? Saved results will remain.');">
-            {% csrf_token %}
-            <input type="hidden" name="kind" value="poll">
-            <input type="hidden" name="next" value="{{ request.get_full_path }}">
-            <button type="submit" class="kk-dropdown-form-button text-warning">
-              <i class="bi bi-stop-circle"></i> End all poll sessions
-            </button>
-          </form>
-        </li>
-
-        <li><hr class="dropdown-divider"></li>
-
-        <li>
-          <form method="post"
-                action="{% url 'presentations:end_all_sessions' %}"
-                class="m-0"
-                onsubmit="return confirm('End all active POLL and GAME sessions? Saved results and scores will remain.');">
-            {% csrf_token %}
-            <input type="hidden" name="kind" value="all">
-            <input type="hidden" name="next" value="{{ request.get_full_path }}">
-            <button type="submit" class="kk-dropdown-form-button text-danger">
-              <i class="bi bi-exclamation-triangle"></i> End all poll & game sessions
-            </button>
-          </form>
-        </li>
-      </ul>
-    </div>
-
-    <form method="post" action="{% url 'polls:start' questionnaire.pk %}">
-      {% csrf_token %}
-      <button class="kk-btn kk-btn-primary kk-btn-lg" {% if not questionnaire.questions.count %}disabled{% endif %}>
-        <i class="bi bi-play-fill"></i> Present live
-      </button>
-    </form>
-  </div>
-</div>
-
-<div class="row g-4">
-  <div class="col-lg-7">
-    <h2 class="kk-section-title">
-      <i class="bi bi-list-ol"></i> Questions
-      {% if questionnaire.questions.count > 1 %}
-        <span class="text-secondary small ms-2" style="font-weight:400;">drag <i class="bi bi-grip-vertical"></i> to reorder</span>
-      {% endif %}
-    </h2>
-
-    <form method="post" action="{% url 'polls:quick_add_question' questionnaire.pk %}"
-          class="kk-quick-add-bar d-flex gap-2 align-items-stretch mb-3" id="quick-add-form">
-      {% csrf_token %}
-      <input type="text" name="text" class="form-control" placeholder="Quick-add a question…"
-             autocomplete="off" required maxlength="500">
-
-      <select name="type" class="form-select" style="max-width: 200px;">
-        <optgroup label="Choice">
-          <option value="mcq">✅ Multiple Choice</option>
-          <option value="image_choice">🖼️ Image Choice</option>
-          <option value="yes_no">🟢 Yes / No</option>
-        </optgroup>
-        <optgroup label="Scale & rating">
-          <option value="scale">🌡️ Scale (default 1–10)</option>
-          <option value="rating">⭐ Star Rating</option>
-          <option value="nps">📊 NPS (0–10)</option>
-          <option value="likert">📏 Likert</option>
-          <option value="slider">🎚️ Slider</option>
-        </optgroup>
-        <optgroup label="Open">
-          <option value="word">☁️ Word Cloud</option>
-          <option value="open">📝 Open Text</option>
-          <option value="numeric">🔢 Numeric</option>
-          <option value="file_upload">📎 Upload</option>
-        </optgroup>
-        <optgroup label="Ranking & distribution">
-          <option value="ranking">🥇 Ranking</option>
-          <option value="matrix">📐 Matrix</option>
-          <option value="points_allocation">🪙 100 points</option>
-        </optgroup>
-        <optgroup label="Date & time">
-          <option value="date">📅 Date</option>
-          <option value="datetime">🕒 Date & time</option>
-          <option value="time">⏰ Time</option>
-        </optgroup>
-        <optgroup label="Spatial">
-          <option value="pin_image">📌 Pin image</option>
-          <option value="pin_map">🌍 Pin map</option>
-          <option value="two_by_two">🎯 2×2</option>
-        </optgroup>
-        <optgroup label="Live">
-          <option value="reaction">🔥 Reaction</option>
-        </optgroup>
-      </select>
-
-      <button class="kk-btn kk-btn-primary" type="submit" title="Add question">
-        <i class="bi bi-plus-lg"></i> Add
-      </button>
-
-      <a href="{% url 'polls:question_create' questionnaire.pk %}"
-         class="kk-btn kk-btn-ghost" title="Open full editor for new question">
-        <i class="bi bi-pencil-square"></i>
-      </a>
-    </form>
-
-    <div id="q-list" data-reorder-url="{% url 'polls:reorder' questionnaire.pk %}">
-      {% for q in questionnaire.questions.all %}
-        <div class="kk-q-row" data-qpk="{{ q.pk }}">
-          <span class="kk-drag-handle" title="Drag to reorder">
-            <i class="bi bi-grip-vertical"></i>
-          </span>
-
-          <span class="kk-q-index">{{ forloop.counter }}</span>
-
-          <a class="kk-q-text text-reset text-decoration-none flex-grow-1"
-             href="{% url 'polls:question_edit' questionnaire.pk q.pk %}">
-            {{ q.text }}
-          </a>
-
-          <span class="kk-q-pill">{{ q.get_type_display }}</span>
-          <span class="kk-q-pill">{{ q.chart_type }}</span>
-
-          <form method="post"
-                action="{% url 'polls:quick_delete_question' questionnaire.pk q.pk %}"
-                class="kk-q-delete-form m-0"
-                data-confirm="Delete “{{ q.text|escapejs }}”?">
-            {% csrf_token %}
-            <button class="kk-q-delete-btn" type="submit"
-                    title="Delete this question" aria-label="Delete question">
-              <i class="bi bi-x-lg"></i>
-            </button>
-          </form>
-        </div>
-      {% empty %}
-        <div class="kk-empty">
-          <div class="em">❓</div>
-          <p>No questions yet. Type one in the bar above to start.</p>
-        </div>
-      {% endfor %}
-    </div>
-
-    <a href="{% url 'polls:question_create' questionnaire.pk %}" class="kk-btn kk-btn-ghost w-100 mt-3">
-      <i class="bi bi-plus-lg"></i> Add a question (full editor)
-    </a>
-  </div>
-
-  <div class="col-lg-5">
-    <form method="post" enctype="multipart/form-data" class="kk-card">
-      {% csrf_token %}
-      {{ form.template_id }}
-
-      {% if form.non_field_errors %}
-        <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+    <div class="p-actions">
+      {% if is_owner %}
+        <a href="{% url 'polls:invite' questionnaire.pk %}" class="kk-btn kk-btn-ghost">
+          <i class="bi bi-people"></i> Share{% if collaborators %} ({{ collaborators|length }}){% endif %}
+        </a>
       {% endif %}
 
-      {% for hidden in form.hidden_fields %}
-        {% if hidden.errors %}
-          <div class="alert alert-danger">{{ hidden.name }}: {{ hidden.errors }}</div>
-        {% endif %}
-      {% endfor %}
+      <a href="{% url 'polls:results' questionnaire.pk %}" class="kk-btn kk-btn-ghost">
+        <i class="bi bi-bar-chart"></i> Results
+      </a>
 
-      <h2 class="kk-section-title" style="font-size:1.2rem;">
-        <i class="bi bi-gear"></i> Settings
-      </h2>
-
-      <div class="mb-3">
-        <label class="form-label">Title</label>
-        {{ form.title }}
-      </div>
-
-      <div class="mb-3">
-        <label class="form-label">Description</label>
-        {{ form.description }}
-      </div>
-
-      <div class="mb-3">
-        <label class="form-label">Mode</label>
-        {{ form.mode }}
-      </div>
-
-      <div class="mb-3">
-        <label class="form-label">Logo</label>
-
-        {% if questionnaire.logo %}
-          <div class="d-flex align-items-center gap-3 mb-3 p-2 rounded"
-               style="background:rgba(255,255,255,.04); border:1px solid var(--kk-border);">
-            <img src="{{ questionnaire.logo.url }}" alt="{{ questionnaire.title }} logo"
-                 style="height:56px; width:56px; object-fit:cover; border-radius:12px; border:1px solid var(--kk-border);">
-            <div>
-              <div class="small text-light">Current logo uploaded</div>
-              <div class="small text-secondary" style="word-break:break-all;">{{ questionnaire.logo.url }}</div>
-            </div>
-          </div>
-        {% else %}
-          <div class="small text-secondary mb-2">No logo uploaded yet.</div>
-        {% endif %}
-
-        {{ form.logo }}
-
-        {% if form.logo.errors %}
-          <div class="text-danger small mt-2">{{ form.logo.errors }}</div>
-        {% endif %}
-      </div>
-
-      <button class="kk-btn kk-btn-primary w-100">Save</button>
-    </form>
-
-    <div class="kk-card mt-4">
-      <h2 class="kk-section-title" style="font-size:1.2rem;">
-        <i class="bi bi-palette"></i> Template
-      </h2>
-
-      <div class="kk-template-scroll">
-        {% include "partials/template_picker.html" with templates=templates selected_id=questionnaire.template_id %}
-      </div>
-    </div>
-  </div>
-</div>
-
-{% if is_owner %}
-<div class="modal fade" id="collabModal" tabindex="-1">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content" style="background: var(--kk-surface); color: var(--kk-text); border:1px solid var(--kk-border);">
-      <div class="modal-header" style="border-color: var(--kk-border);">
-        <h5 class="modal-title"><i class="bi bi-people-fill"></i> Collaborators</h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-      </div>
-
-      <div class="modal-body">
-        <form method="post" action="{% url 'polls:invite' questionnaire.pk %}" class="d-flex gap-2 mb-3">
-          {% csrf_token %}
-          <div class="flex-grow-1">{{ invite_form.identifier }}</div>
-          <div style="min-width:140px;">{{ invite_form.role }}</div>
-          <button class="kk-btn kk-btn-primary">Invite</button>
-        </form>
-
-        <p class="text-secondary small">Invitee must have a Knock-Knock account already.</p>
-
-        <h6 class="text-secondary text-uppercase small mt-4">Has access</h6>
-
-        <div class="d-flex align-items-center gap-2 mb-2">
-          <span class="kk-q-index">👑</span>
-          <div class="flex-grow-1">
-            <div>{{ questionnaire.owner.profile.display_name|default:questionnaire.owner.username }}</div>
-            <div class="text-secondary small">Owner</div>
-          </div>
-        </div>
-
-        {% for c in collaborators %}
-          <div class="d-flex align-items-center gap-2 mb-2">
-            <span class="kk-q-index">{{ c.user.username|slice:":2"|upper }}</span>
-            <div class="flex-grow-1">
-              <div>{{ c.user.profile.display_name|default:c.user.username }}</div>
-              <div class="text-secondary small">{{ c.get_role_display }}</div>
-            </div>
-
-            <form method="post" action="{% url 'polls:collab_remove' questionnaire.pk c.pk %}">
+      <div class="dropdown">
+        <button class="kk-btn kk-btn-ghost dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+          <i class="bi bi-stop-circle"></i> End sessions
+        </button>
+        <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end">
+          <li>
+            <form method="post" action="{% url 'presentations:end_all_sessions' %}" class="m-0"
+                  onsubmit="return confirm('End every running poll session? Saved results are kept.');">
               {% csrf_token %}
-              <button class="kk-btn kk-btn-ghost btn-sm" onclick="return confirm('Remove {{ c.user.username }}?')">
-                <i class="bi bi-x-lg"></i>
+              <input type="hidden" name="kind" value="poll">
+              <input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <button type="submit" class="dropdown-item text-warning">
+                <i class="bi bi-stop-circle"></i> End all poll sessions
               </button>
             </form>
+          </li>
+          <li><hr class="dropdown-divider"></li>
+          <li>
+            <form method="post" action="{% url 'presentations:end_all_sessions' %}" class="m-0"
+                  onsubmit="return confirm('End every running poll AND game session? Results and scores are kept.');">
+              {% csrf_token %}
+              <input type="hidden" name="kind" value="all">
+              <input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <button type="submit" class="dropdown-item text-danger">
+                <i class="bi bi-exclamation-triangle"></i> End all poll &amp; game sessions
+              </button>
+            </form>
+          </li>
+        </ul>
+      </div>
+
+      <form method="post" action="{% url 'polls:start' questionnaire.pk %}">
+        {% csrf_token %}
+        <button class="kk-btn kk-btn-primary kk-btn-lg"
+                {% if not question_count %}disabled title="Add a question first"{% endif %}>
+          <i class="bi bi-play-fill"></i> Present live
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-7">
+      <h2 class="p-section">
+        <i class="bi bi-list-ol"></i> Questions
+        <span id="reorder-status" class="p-save-state" role="status" aria-live="polite"></span>
+      </h2>
+
+      <form method="post" action="{% url 'polls:quick_add_question' questionnaire.pk %}" class="p-quickadd">
+        {% csrf_token %}
+        <input type="text" name="text" class="form-control" placeholder="Quick-add a question…"
+               autocomplete="off" required maxlength="500" aria-label="New question text">
+        {% comment %}
+          The 24 <option> tags here were a hand-maintained copy of the registry,
+          already missing "title". They are generated from grouped_qtypes now,
+          so adding a type to question_types.py shows up here automatically.
+        {% endcomment %}
+        <select name="type" class="form-select" aria-label="Question type">
+          {% for group_label, group_slug, entries in grouped_qtypes %}
+            <optgroup label="{{ group_label }}">
+              {% for t in entries %}<option value="{{ t.id }}">{{ t.icon }} {{ t.label }}</option>{% endfor %}
+            </optgroup>
+          {% endfor %}
+        </select>
+        <button class="kk-btn kk-btn-primary" type="submit"><i class="bi bi-plus-lg"></i> Add</button>
+        <a href="{% url 'polls:question_create' questionnaire.pk %}" class="kk-btn kk-btn-ghost"
+           title="Open the full editor for a new question" aria-label="Open the full editor">
+          <i class="bi bi-pencil-square"></i>
+        </a>
+      </form>
+
+      {% if questions %}
+        <p class="p-hint">Drag the handle to reorder, or focus a handle and press Alt with the arrow keys.</p>
+      {% endif %}
+
+      <div class="p-q-list" id="q-list" data-reorder-url="{% url 'polls:reorder' questionnaire.pk %}">
+        {% for q in questions %}
+          <div class="p-q" data-qpk="{{ q.pk }}" data-group="{{ q.meta.group_slug }}">
+            <button type="button" class="p-q-grip"
+                    aria-label="Reorder “{{ q.text|truncatechars:40 }}”. Hold Alt and press the up or down arrow.">
+              <i class="bi bi-grip-vertical" aria-hidden="true"></i>
+            </button>
+            <span class="p-q-num">{{ forloop.counter }}</span>
+            <a class="p-q-link" href="{% url 'polls:question_edit' questionnaire.pk q.pk %}">
+              <span class="p-q-text">{{ q.text }}</span>
+              <span class="p-q-sub">
+                <span class="p-tag p-tag-type">{{ q.meta.icon }} {{ q.get_type_display }}</span>
+                {% if q.is_static %}
+                  <span class="p-tag p-tag-static">no audience input</span>
+                {% else %}
+                  <span class="p-tag"><i class="bi bi-bar-chart"></i> {{ q.chart_type }}</span>
+                {% endif %}
+                {% if q.time_limit_seconds %}
+                  <span class="p-tag"><i class="bi bi-clock"></i> {{ q.time_limit_seconds }}s</span>
+                {% endif %}
+                {% if not q.is_required %}<span class="p-tag">optional</span>{% endif %}
+                {% if q.skip_rules %}
+                  <span class="p-tag"><i class="bi bi-signpost-split"></i> branching</span>
+                {% endif %}
+                {% if q.type == "pin_image" and not q.image %}
+                  <span class="p-tag p-tag-warn"><i class="bi bi-exclamation-triangle"></i> needs an image</span>
+                {% endif %}
+              </span>
+            </a>
+            <span class="p-q-tools">
+              <form method="post" action="{% url 'polls:quick_delete_question' questionnaire.pk q.pk %}" class="m-0"
+                    onsubmit="return confirm('Delete “{{ q.text|escapejs }}”?');">
+                {% csrf_token %}
+                <button class="p-icon-btn p-icon-btn-danger" type="submit"
+                        title="Delete question" aria-label="Delete question {{ forloop.counter }}">
+                  <i class="bi bi-trash3"></i>
+                </button>
+              </form>
+            </span>
           </div>
         {% empty %}
-          <p class="text-secondary small mt-3">No collaborators yet.</p>
+          <div class="p-empty">
+            <div class="p-empty-mark">❓</div>
+            <p class="p-empty-title">No questions yet</p>
+            <p class="p-empty-note">Use the bar above to add one, or open the full editor for more control.</p>
+          </div>
         {% endfor %}
       </div>
     </div>
+
+    <div class="col-lg-5">
+      <form method="post" enctype="multipart/form-data" class="p-panel" novalidate>
+        {% csrf_token %}
+        <h2 class="p-section"><i class="bi bi-gear"></i> Settings</h2>
+
+        {% if form.non_field_errors %}<div class="p-error">{{ form.non_field_errors }}</div>{% endif %}
+
+        <div class="mb-3">
+          <label class="form-label" for="{{ form.title.id_for_label }}">Title</label>
+          {{ form.title }}
+          {% if form.title.errors %}<div class="p-field-error">{{ form.title.errors }}</div>{% endif %}
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label" for="{{ form.description.id_for_label }}">Description</label>
+          {{ form.description }}
+          {% if form.description.errors %}<div class="p-field-error">{{ form.description.errors }}</div>{% endif %}
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label" for="{{ form.mode.id_for_label }}">Mode</label>
+          {{ form.mode }}
+          {% if form.mode.errors %}<div class="p-field-error">{{ form.mode.errors }}</div>{% endif %}
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label" for="{{ form.logo.id_for_label }}">Logo</label>
+          {% if questionnaire.logo %}
+            <div class="d-flex align-items-center gap-3 mb-2">
+              <div class="p-logo"><img src="{{ questionnaire.logo.url }}" alt="" data-logo-probe></div>
+              <div style="min-width:0;font-size:.8rem;">
+                <div>Current logo</div>
+                <div style="color:var(--p-ink-faint);word-break:break-all;">{{ questionnaire.logo.url }}</div>
+                <p class="p-field-error mt-1" data-logo-error hidden>
+                  This file didn’t load — either it is missing from storage or
+                  <code>MEDIA_URL</code> isn’t being served.
+                </p>
+              </div>
+            </div>
+          {% else %}
+            <p class="p-hint">No logo yet.</p>
+          {% endif %}
+          {{ form.logo }}
+          {% if form.logo.errors %}<div class="p-field-error">{{ form.logo.errors }}</div>{% endif %}
+        </div>
+
+        {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
+
+        <div class="p-subpanel mb-3">
+          <h3 class="p-section" style="font-size:.88rem;"><i class="bi bi-palette"></i> Template</h3>
+          <div class="p-template-scroll">
+            {% include "partials/template_picker.html" with templates=templates selected_id=questionnaire.template_id input_name="template_id" %}
+          </div>
+        </div>
+
+        <button class="kk-btn kk-btn-primary w-100"><i class="bi bi-check-lg"></i> Save settings</button>
+      </form>
+
+      {% if is_owner %}
+        <div class="p-panel mt-3">
+          <h2 class="p-section">
+            <i class="bi bi-people"></i> Collaborators
+            <span class="p-section-note">{{ collaborators|length }}</span>
+          </h2>
+          {% for c in collaborators %}
+            <div class="p-collab">
+              <span class="p-collab-avatar">{{ c.user.username|slice:":2" }}</span>
+              <span class="p-collab-body">
+                <span class="p-collab-name">{{ c.user.get_full_name|default:c.user.username }}</span>
+                <span class="p-collab-role">{{ c.get_role_display }}</span>
+              </span>
+              <form method="post" action="{% url 'polls:collab_remove' questionnaire.pk c.pk %}" class="m-0"
+                    onsubmit="return confirm('Remove {{ c.user.username|escapejs }} from this questionnaire?');">
+                {% csrf_token %}
+                <button class="p-icon-btn p-icon-btn-danger" type="submit"
+                        title="Remove" aria-label="Remove {{ c.user.username }}">
+                  <i class="bi bi-x-lg"></i>
+                </button>
+              </form>
+            </div>
+          {% empty %}
+            <p class="p-hint mb-0">Only you can edit this deck right now.</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
   </div>
 </div>
-{% endif %}
 
-<style>
-  .kk-quick-add-bar {
-    background: var(--kk-surface-2);
-    border: 1px solid var(--kk-border);
-    border-radius: var(--kk-radius);
-    padding: .5rem;
-  }
-
-  .kk-dropdown-form-button {
-    width: 100%;
-    text-align: left;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    padding: .45rem 1rem;
-  }
-
-  .kk-dropdown-form-button:hover {
-    background: rgba(255,255,255,.08);
-  }
-
-  .kk-q-delete-btn {
-    background: transparent;
-    border: 1px solid transparent;
-    color: var(--kk-text-dim, #94a3b8);
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition: all .15s ease;
-    cursor: pointer;
-  }
-
-  .kk-q-delete-btn:hover {
-    color: #fff;
-    background: rgba(244,63,94,.18);
-    border-color: rgba(244,63,94,.4);
-  }
-
-  .kk-q-row {
-    position: relative;
-  }
-
-  /* ─────────────────────────────────────────────
-     SCROLLABLE TEMPLATE PICKER
-     Caps the height of the embedded picker so a long list
-     of templates doesn't push the form off-screen. The
-     bottom fade hints there's more to scroll to.
-  ───────────────────────────────────────────── */
-  .kk-template-scroll {
-    position: relative;
-    max-height: 420px;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding-right: 6px;  /* breathing room for the scrollbar */
-    /* The mask creates a soft fade at the bottom edge — disappears
-       when the user scrolls to the very bottom. */
-    -webkit-mask-image: linear-gradient(
-      to bottom,
-      #000 0,
-      #000 calc(100% - 32px),
-      transparent 100%
-    );
-            mask-image: linear-gradient(
-      to bottom,
-      #000 0,
-      #000 calc(100% - 32px),
-      transparent 100%
-    );
-  }
-  /* When fully scrolled, remove the fade so the last row is fully readable. */
-  .kk-template-scroll.is-bottom {
-    -webkit-mask-image: none;
-            mask-image: none;
-  }
-  .kk-template-scroll::-webkit-scrollbar {
-    width: 8px;
-  }
-  .kk-template-scroll::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .kk-template-scroll::-webkit-scrollbar-thumb {
-    background: var(--kk-border);
-    border-radius: 4px;
-  }
-  .kk-template-scroll::-webkit-scrollbar-thumb:hover {
-    background: rgba(255,255,255,.25);
-  }
-  /* Firefox */
-  .kk-template-scroll {
-    scrollbar-width: thin;
-    scrollbar-color: var(--kk-border) transparent;
-  }
-</style>
-
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js" defer></script>
 <script>
-  document.querySelectorAll(".kk-q-delete-form").forEach(form => {
-    form.addEventListener("submit", async (e) => {
-      const msg = form.dataset.confirm || "Delete this question?";
+(function () {
+  "use strict";
+  var list = document.getElementById("q-list");
+  if (!list) return;
+  var url = list.dataset.reorderUrl;
+  var status = document.getElementById("reorder-status");
+  var tokenEl = document.querySelector("input[name=csrfmiddlewaretoken]");
+  var csrf = tokenEl ? tokenEl.value : "";
+  var timer = null;
 
-      if (!confirm(msg)) {
-        e.preventDefault();
-        return;
-      }
-
-      e.preventDefault();
-
-      try {
-        const res = await fetch(form.action, {
-          method: "POST",
-          credentials: "same-origin",
-          headers: {
-            "X-CSRFToken": form.querySelector("input[name=csrfmiddlewaretoken]").value,
-            "X-Requested-With": "fetch",
-          },
-        });
-
-        if (res.ok) {
-          const row = form.closest(".kk-q-row");
-          row.style.transition = "opacity .15s ease, transform .15s ease";
-          row.style.opacity = "0";
-          row.style.transform = "translateX(8px)";
-          setTimeout(() => row.remove(), 160);
-        } else {
-          form.submit();
-        }
-      } catch (err) {
-        form.submit();
-      }
-    });
-  });
-
-  if (sessionStorage.getItem("kk_quick_add_focus")) {
-    sessionStorage.removeItem("kk_quick_add_focus");
-    document.querySelector("#quick-add-form input[name=text]")?.focus();
+  function setStatus(text, kind) {
+    if (!status) return;
+    status.textContent = text;
+    status.classList.add("is-on");
+    status.classList.toggle("is-ok", kind === "ok");
+    status.classList.toggle("is-bad", kind === "bad");
+    clearTimeout(timer);
+    if (kind === "ok") timer = setTimeout(function () { status.classList.remove("is-on"); }, 1800);
   }
 
-  document.getElementById("quick-add-form")?.addEventListener("submit", () => {
-    sessionStorage.setItem("kk_quick_add_focus", "1");
-  });
+  function rows() { return Array.prototype.slice.call(list.querySelectorAll(".p-q")); }
+  function reindex() {
+    rows().forEach(function (row, i) {
+      var n = row.querySelector(".p-q-num");
+      if (n) n.textContent = i + 1;
+    });
+  }
 
-  window.addEventListener("kk:template-change", async (e) => {
-    const fd = new FormData();
-    fd.append("template_id", e.detail);
-    fd.append("csrfmiddlewaretoken", "{{ csrf_token }}");
-
-    await fetch("{% url 'polls:set_template' questionnaire.pk %}", {
+  function persist() {
+    var order = rows().map(function (r) { return parseInt(r.dataset.qpk, 10); })
+                      .filter(function (n) { return !isNaN(n); });
+    setStatus("Saving…");
+    fetch(url, {
       method: "POST",
-      body: fd
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
+      body: JSON.stringify({ order: order })
+    }).then(function (r) {
+      if (r.status === 409) throw new Error("This list is out of date. Reload the page.");
+      if (!r.ok) throw new Error("Order not saved. Try again.");
+      return r.json();
+    }).then(function () { setStatus("Order saved", "ok"); })
+      .catch(function (e) { setStatus(e.message, "bad"); });
+  }
+
+  if (window.Sortable) {
+    Sortable.create(list, {
+      animation: 160, handle: ".p-q-grip", ghostClass: "p-ghost", dragClass: "p-dragging",
+      onEnd: function () { reindex(); persist(); }
     });
+  }
+
+  /* Keyboard reordering — a drag handle is unusable without a pointer. */
+  list.addEventListener("keydown", function (e) {
+    if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+    var grip = e.target.closest(".p-q-grip");
+    if (!grip) return;
+    e.preventDefault();
+    var row = grip.closest(".p-q");
+    var sib = e.key === "ArrowUp" ? row.previousElementSibling : row.nextElementSibling;
+    if (!sib || !sib.classList.contains("p-q")) return;
+    if (e.key === "ArrowUp") list.insertBefore(row, sib); else list.insertBefore(sib, row);
+    row.classList.remove("p-moved"); void row.offsetWidth; row.classList.add("p-moved");
+    grip.focus(); reindex(); persist();
+  });
+})();
+
+(function () {
+  "use strict";
+  document.querySelectorAll("[data-logo-probe]").forEach(function (img) {
+    function flag() {
+      var box = img.closest(".p-logo");
+      if (box) box.style.display = "none";
+      document.querySelectorAll("[data-logo-error]").forEach(function (el) { el.hidden = false; });
+    }
+    if (img.complete && img.naturalWidth === 0) flag();
+    img.addEventListener("error", flag);
   });
 
-  (function () {
-    const list = document.getElementById("q-list");
-
-    if (!list || !window.Sortable) return;
-
-    const url = list.dataset.reorderUrl;
-
-    Sortable.create(list, {
-      handle: ".kk-drag-handle",
-      animation: 180,
-      ghostClass: "kk-q-ghost",
-
-      onEnd: async () => {
-        const order = Array.from(list.querySelectorAll(".kk-q-row")).map(row => row.dataset.qpk);
-
-        list.querySelectorAll(".kk-q-row").forEach((row, i) => {
-          const idx = row.querySelector(".kk-q-index");
-          if (idx) idx.textContent = i + 1;
-        });
-
-        try {
-          await fetch(url, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-CSRFToken": "{{ csrf_token }}"
-            },
-            body: JSON.stringify({ order }),
-          });
-        } catch (err) {
-          console.error(err);
-        }
-      },
-    });
-  })();
-
-  // Toggle the "fully scrolled" class on the template picker scroll container
-  // so the bottom fade disappears when the user reaches the end.
-  (function () {
-    const el = document.querySelector(".kk-template-scroll");
-    if (!el) return;
-    const update = () => {
-      const reachedBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
-      el.classList.toggle("is-bottom", reachedBottom);
-      // Also collapse the fade when the content doesn't actually overflow.
-      if (el.scrollHeight <= el.clientHeight + 1) {
-        el.classList.add("is-bottom");
-      }
-    };
+  document.querySelectorAll(".p-template-scroll").forEach(function (el) {
+    function update() {
+      el.classList.toggle("is-bottom",
+        el.scrollTop + el.clientHeight >= el.scrollHeight - 2 || el.scrollHeight <= el.clientHeight + 1);
+    }
     el.addEventListener("scroll", update, { passive: true });
     window.addEventListener("resize", update);
     update();
-  })();
+  });
+})();
 </script>
 {% endblock %}

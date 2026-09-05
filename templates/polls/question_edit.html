@@ -3,6 +3,7 @@
 {% block title %}Edit question · {{ questionnaire.title }}{% endblock %}
 
 {% block content %}
+<link rel="stylesheet" href="{% static 'css/polls.css' %}">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <div class="mb-4">
   <a href="{% url 'polls:edit' questionnaire.pk %}" class="text-secondary text-decoration-none small">
@@ -137,7 +138,7 @@
           <i class="bi bi-grid-3x3-gap"></i> Question type
         </h3>
         <select name="type" id="id_question_type" class="form-select form-select-lg">
-          {% for group_label, entries in grouped_qtypes %}
+          {% for group_label, group_slug, entries in grouped_qtypes %}
             <optgroup label="{{ group_label }}">
               {% for e in entries %}
                 <option value="{{ e.id }}" {% if e.id == question.type %}selected{% endif %}>
@@ -152,8 +153,10 @@
         </p>
       </div>
 
-<!--      {# Chart picker (hidden for static slides like title — but we keep the-->
-<!--         hidden chart_type select in the DOM so the existing value round-trips). #}-->
+      {% comment %}
+        Chart picker, hidden for static slides like title — but the hidden
+        chart_type select stays in the DOM so the existing value round-trips.
+      {% endcomment %}
       <div class="kk-card mb-4 {% if question.type == 'title' %}d-none{% endif %}">
         <div class="d-flex align-items-center justify-content-between mb-2">
           <h3 class="kk-section-title mb-0" style="font-size:1rem;">

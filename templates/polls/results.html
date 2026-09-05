@@ -1,196 +1,189 @@
 {% extends "base.html" %}
 {% load static %}
+
 {% block title %}Results · {{ questionnaire.title }} · Knock-Knock{% endblock %}
 
-{% block extra_head %}
-<style>
-  .kk-results-hero {
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    margin-bottom: 1.5rem;
-  }
-  .kk-results-actions {
-    display: flex;
-    gap: .6rem;
-    flex-wrap: wrap;
-  }
-  .kk-results-kpi {
-    font-size: 2rem;
-    font-weight: 900;
-    line-height: 1;
-  }
-  .kk-result-bar {
-    height: 10px;
-    border-radius: 999px;
-    background: rgba(255,255,255,.08);
-    overflow: hidden;
-    min-width: 120px;
-  }
-  .kk-result-bar span {
-    display: block;
-    height: 100%;
-    border-radius: inherit;
-    background: linear-gradient(90deg, var(--kk-primary, #7c3aed), #22d3ee);
-  }
-  .kk-result-answer-card {
-    background: rgba(255,255,255,.045);
-    border: 1px solid rgba(255,255,255,.08);
-    border-radius: 16px;
-    padding: 1rem;
-    height: 100%;
-    white-space: pre-wrap;
-  }
-  .kk-result-word {
-    display: inline-flex;
-    align-items: center;
-    gap: .35rem;
-    padding: .45rem .7rem;
-    border-radius: 999px;
-    background: rgba(124,58,237,.16);
-    border: 1px solid rgba(124,58,237,.32);
-    margin: .25rem;
-    font-weight: 700;
-  }
-  .kk-danger-zone {
-    border-color: rgba(248,113,113,.28) !important;
-    background: rgba(127,29,29,.14) !important;
-  }
-</style>
-{% endblock %}
-
 {% block content %}
-<div class="kk-results-hero">
-  <div>
-    <a href="{% url 'polls:edit' questionnaire.pk %}" class="text-secondary text-decoration-none small">
-      <i class="bi bi-arrow-left"></i> Back to questionnaire
-    </a>
-    <h1 class="mb-1 mt-2">Results · {{ questionnaire.title }}</h1>
-    <div class="text-secondary">
-      {% if selected_code == "all" %}
-        Viewing all sessions combined
-      {% elif selected_session %}
-        Session {{ selected_session.code }} · {{ selected_session.get_state_display }} · {{ selected_session.created_at|date:"M d, Y H:i" }}
-      {% else %}
-        No live session yet
-      {% endif %}
+<link rel="stylesheet" href="{% static 'css/polls.css' %}">
+
+<div class="p">
+  <div class="p-head">
+    <div>
+      <a href="{% url 'polls:edit' questionnaire.pk %}" class="p-back">
+        <i class="bi bi-arrow-left"></i> {{ questionnaire.title }}
+      </a>
+      <h1 class="p-title">Results</h1>
+      <div class="p-meta">
+        {% if selected_code == "all" %}All sessions combined
+        {% elif selected_session %}
+          Session <code>{{ selected_session.code }}</code>
+          <span class="p-meta-dot">·</span> {{ selected_session.get_state_display }}
+          <span class="p-meta-dot">·</span> {{ selected_session.created_at|date:"j M Y, H:i" }}
+        {% else %}No live session yet{% endif %}
+      </div>
+    </div>
+    <div class="p-actions">
+      <a class="kk-btn kk-btn-ghost"
+         href="{% url 'polls:download_results_excel' questionnaire.pk %}?session={{ selected_code|default:'' }}">
+        <i class="bi bi-file-earmark-spreadsheet"></i> Excel
+      </a>
+      <a class="kk-btn kk-btn-ghost"
+         href="{% url 'polls:download_results_word' questionnaire.pk %}?session={{ selected_code|default:'' }}">
+        <i class="bi bi-file-earmark-word"></i> Word
+      </a>
     </div>
   </div>
 
-  <div class="kk-results-actions">
-    <a class="kk-btn kk-btn-ghost" href="{% url 'polls:download_results_excel' questionnaire.pk %}?session={{ selected_code|default:'' }}">
-      <i class="bi bi-file-earmark-excel"></i> Excel
-    </a>
-    <a class="kk-btn kk-btn-ghost" href="{% url 'polls:download_results_word' questionnaire.pk %}?session={{ selected_code|default:'' }}">
-      <i class="bi bi-file-earmark-word"></i> Word
-    </a>
-  </div>
-</div>
-
-<div class="kk-card mb-4">
-  <form method="get" class="row g-3 align-items-end">
-    <div class="col-lg-7">
-      <label class="form-label">Select session</label>
-      <select name="session" class="form-select">
-        <option value="all" {% if selected_code == "all" %}selected{% endif %}>All sessions combined</option>
-        {% for session in sessions %}
-          <option value="{{ session.code }}" {% if selected_code == session.code %}selected{% endif %}>
-            {{ session.code }} · {{ session.get_state_display }} · {{ session.created_at|date:"M d, Y H:i" }}
-          </option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-lg-3">
-      <button class="kk-btn kk-btn-primary w-100"><i class="bi bi-bar-chart"></i> Load results</button>
-    </div>
-    <div class="col-lg-2">
-      <a class="kk-btn kk-btn-ghost w-100" href="{% url 'polls:results' questionnaire.pk %}">Latest</a>
+  <form method="get" class="p-panel mb-3">
+    <div class="row g-2 align-items-end">
+      <div class="col-lg-8">
+        <label class="form-label" for="session-select">Session</label>
+        <select name="session" id="session-select" class="form-select">
+          <option value="all" {% if selected_code == "all" %}selected{% endif %}>All sessions combined</option>
+          {% for s in sessions %}
+            <option value="{{ s.code }}" {% if selected_code == s.code %}selected{% endif %}>
+              {{ s.code }} · {{ s.get_state_display }} · {{ s.created_at|date:"j M Y, H:i" }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-lg-2">
+        <button class="kk-btn kk-btn-primary w-100"><i class="bi bi-bar-chart"></i> Load</button>
+      </div>
+      <div class="col-lg-2">
+        <a class="kk-btn kk-btn-ghost w-100" href="{% url 'polls:results' questionnaire.pk %}">Latest</a>
+      </div>
     </div>
   </form>
-</div>
 
-<div class="row g-3 mb-4">
-  <div class="col-md-4"><div class="kk-card h-100"><div class="text-secondary small">Participants</div><div class="kk-results-kpi">{{ report.participant_count }}</div></div></div>
-  <div class="col-md-4"><div class="kk-card h-100"><div class="text-secondary small">Questions</div><div class="kk-results-kpi">{{ report.questions|length }}</div></div></div>
-  <div class="col-md-4"><div class="kk-card h-100"><div class="text-secondary small">Responses</div><div class="kk-results-kpi">{{ total_responses }}</div></div></div>
-</div>
-
-{% if not selected_session and selected_code != "all" %}
-  <div class="kk-empty"><div class="em">📭</div><h3>No session data yet</h3><p>Start a live presentation and let participants answer. Results will appear here immediately and remain available after the session ends.</p></div>
-{% else %}
-  {% for card in cards %}
-    {% with q=card.result %}
-      <div class="kk-card mb-4">
-        <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap mb-3">
-          <div>
-            <div class="text-secondary small">Question {{ card.number }} · {{ q.qtype|upper }}</div>
-            <h2 class="kk-section-title mb-0" style="font-size:1.25rem;">{{ q.text }}</h2>
-          </div>
-          <span class="kk-q-pill">{{ q.total_responses }} responses</span>
-        </div>
-
-        {% if q.qtype == "mcq" or q.qtype == "ranking" %}
-          <div class="table-responsive">
-            <table class="table table-dark table-hover align-middle mb-0">
-              <thead><tr><th>Answer</th><th style="width:110px;">Count</th><th style="width:230px;">Share</th></tr></thead>
-              <tbody>
-                {% for row in card.rows %}
-                  <tr>
-                    <td>{{ row.label }}</td>
-                    <td><strong>{{ row.count }}</strong></td>
-                    <td><div class="kk-result-bar"><span style="width:{{ row.percent|floatformat:0 }}%;"></span></div><span class="small text-secondary">{{ row.percent|floatformat:1 }}%</span></td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% elif q.qtype == "scale" %}
-          {% if card.scale_counts %}
-            <div class="row g-3 mb-3">
-              <div class="col-md-4"><div class="kk-card"><div class="small text-secondary">Average</div><strong>{{ q.average|floatformat:2 }}</strong></div></div>
-              <div class="col-md-4"><div class="kk-card"><div class="small text-secondary">Total responses</div><strong>{{ q.total_responses }}</strong></div></div>
-            </div>
-            <div class="table-responsive">
-              <table class="table table-dark table-hover align-middle mb-0">
-                <thead><tr><th>Value</th><th>Count</th></tr></thead>
-                <tbody>{% for row in card.scale_counts %}<tr><td>{{ row.value }}</td><td>{{ row.count }}</td></tr>{% endfor %}</tbody>
-              </table>
-            </div>
-          {% else %}
-            <div class="kk-empty"><p>No scale responses yet.</p></div>
-          {% endif %}
-        {% elif q.qtype == "word" %}
-          {% if card.words %}
-            <div>{% for word in card.words %}<span class="kk-result-word">{{ word.label }} <span class="text-secondary">{{ word.count }}</span></span>{% endfor %}</div>
-          {% else %}
-            <div class="kk-empty"><p>No word responses yet.</p></div>
-          {% endif %}
-        {% else %}
-          {% if card.texts %}
-            <div class="row g-3">{% for text in card.texts %}<div class="col-md-6"><div class="kk-result-answer-card">{{ text }}</div></div>{% endfor %}</div>
-          {% else %}
-            <div class="kk-empty"><p>No text responses yet.</p></div>
-          {% endif %}
-        {% endif %}
-      </div>
-    {% endwith %}
-  {% endfor %}
-{% endif %}
-
-<div class="kk-card kk-danger-zone mt-4">
-  <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
-    <div>
-      <h2 class="kk-section-title mb-1" style="font-size:1.15rem;color:#fecaca;"><i class="bi bi-exclamation-triangle"></i> Reset data</h2>
-      <p class="text-secondary mb-0">This deletes saved participant answers for the selected session. It does not delete your questionnaire or questions.</p>
+  <div class="p-stats">
+    <div class="p-stat">
+      <div class="p-stat-value">{{ report.participant_count }}</div>
+      <div class="p-stat-label">Participants</div>
     </div>
-    <form method="post" action="{% url 'polls:reset_results' questionnaire.pk %}" onsubmit="return confirm('Reset selected result data? This cannot be undone.');">
-      {% csrf_token %}
-      <input type="hidden" name="session" value="{{ selected_code|default:'' }}">
-      <input type="hidden" name="scope" value="{% if selected_code == 'all' %}all{% else %}session{% endif %}">
-      <button class="kk-btn kk-btn-danger"><i class="bi bi-arrow-counterclockwise"></i> Reset selected data</button>
-    </form>
+    <div class="p-stat">
+      <div class="p-stat-value">{{ report.questions|length }}</div>
+      <div class="p-stat-label">Questions</div>
+    </div>
+    <div class="p-stat">
+      <div class="p-stat-value">{{ total_responses }}</div>
+      <div class="p-stat-label">Responses</div>
+    </div>
+  </div>
+
+  {% if not selected_session and selected_code != "all" %}
+    <div class="p-empty">
+      <div class="p-empty-mark">📭</div>
+      <p class="p-empty-title">No session data yet</p>
+      <p class="p-empty-note">
+        Present this deck and let participants answer. Results appear here immediately
+        and stay available after the session ends.
+      </p>
+      <form method="post" action="{% url 'polls:start' questionnaire.pk %}" class="mt-2">
+        {% csrf_token %}
+        <button class="kk-btn kk-btn-primary"><i class="bi bi-play-fill"></i> Present live</button>
+      </form>
+    </div>
+  {% else %}
+    {% for card in cards %}
+      {% with q=card.result %}
+        <div class="p-panel p-result">
+          <div class="p-result-head">
+            <div style="min-width:0;">
+              <div class="p-tag">Question {{ card.number }} · {{ q.qtype }}</div>
+              <h2 class="p-result-title">{{ q.text }}</h2>
+            </div>
+            <span class="p-tag">{{ q.total_responses }} response{{ q.total_responses|pluralize }}</span>
+          </div>
+
+          {% if q.qtype == "mcq" or q.qtype == "ranking" %}
+            {% if card.rows %}
+              <div class="p-bars">
+                {% for row in card.rows %}
+                  <div class="p-bar-row">
+                    <span class="p-bar-label">{{ row.label }}</span>
+                    <span class="p-bar-value">{{ row.count }} · {{ row.percent|floatformat:1 }}%</span>
+                    <span class="p-bar-track">
+                      <span class="p-bar-fill" style="width: {{ row.percent|floatformat:0 }}%;"></span>
+                    </span>
+                  </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <p class="p-hint mb-0">No answers yet.</p>
+            {% endif %}
+
+          {% elif q.qtype == "scale" %}
+            {% if card.scale_counts %}
+              <div class="p-stats" style="margin-bottom:1rem;">
+                <div class="p-stat">
+                  <div class="p-stat-value">{{ q.average|floatformat:2 }}</div>
+                  <div class="p-stat-label">Average</div>
+                </div>
+                <div class="p-stat">
+                  <div class="p-stat-value">{{ q.total_responses }}</div>
+                  <div class="p-stat-label">Responses</div>
+                </div>
+              </div>
+              <div class="p-bars">
+                {% for row in card.scale_counts %}
+                  <div class="p-bar-row">
+                    <span class="p-bar-label">{{ row.value }}</span>
+                    <span class="p-bar-value">{{ row.count }}</span>
+                  </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <p class="p-hint mb-0">No scale answers yet.</p>
+            {% endif %}
+
+          {% elif q.qtype == "word" %}
+            {% if card.words %}
+              <div class="p-words">
+                {% for word in card.words %}
+                  <span class="p-word">{{ word.label }} <span class="p-word-count">{{ word.count }}</span></span>
+                {% endfor %}
+              </div>
+            {% else %}
+              <p class="p-hint mb-0">No words yet.</p>
+            {% endif %}
+
+          {% else %}
+            {% if card.texts %}
+              <div class="p-answers">
+                {% for text in card.texts %}<div class="p-answer">{{ text }}</div>{% endfor %}
+              </div>
+            {% else %}
+              <p class="p-hint mb-0">No written answers yet.</p>
+            {% endif %}
+          {% endif %}
+        </div>
+      {% endwith %}
+    {% endfor %}
+  {% endif %}
+
+  <div class="p-panel p-danger mt-4">
+    <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
+      <div style="min-width:0;">
+        <h2 class="p-section" style="color:#fecaca;">
+          <i class="bi bi-exclamation-triangle"></i> Reset data
+        </h2>
+        <p class="p-empty-note" style="text-align:left;">
+          Deletes saved answers <em>and the participant list</em> for
+          {% if selected_code == "all" %}every session{% else %}the selected session{% endif %}.
+          Your questions are untouched. This cannot be undone.
+        </p>
+      </div>
+      <form method="post" action="{% url 'polls:reset_results' questionnaire.pk %}"
+            onsubmit="return confirm('Reset the selected result data? This cannot be undone.');">
+        {% csrf_token %}
+        <input type="hidden" name="session" value="{{ selected_code|default:'' }}">
+        <input type="hidden" name="scope" value="{% if selected_code == 'all' %}all{% else %}session{% endif %}">
+        <button class="kk-btn kk-btn-danger">
+          <i class="bi bi-arrow-counterclockwise"></i> Reset
+        </button>
+      </form>
+    </div>
   </div>
 </div>
 {% endblock %}

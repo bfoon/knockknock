@@ -1,35 +1,71 @@
 {% extends "base.html" %}
+{% load static %}
+
 {% block title %}New questionnaire · Knock-Knock{% endblock %}
 
 {% block content %}
-<div class="kk-main-narrow mx-auto">
-  <h1 class="mb-4">New questionnaire 🎤</h1>
-  <form method="post" enctype="multipart/form-data" class="kk-card">
+<link rel="stylesheet" href="{% static 'css/polls.css' %}">
+
+<div class="p kk-main-narrow mx-auto">
+  <a href="{% url 'polls:list' %}" class="p-back"><i class="bi bi-arrow-left"></i> All questionnaires</a>
+  <h1 class="p-title mb-4">New questionnaire</h1>
+
+  <form method="post" enctype="multipart/form-data" class="p-panel" novalidate>
     {% csrf_token %}
+
+    {% if form.errors %}
+      <div class="p-error"><strong>This wasn’t created.</strong> Fix the fields marked below.</div>
+    {% endif %}
+
     <div class="mb-3">
-      <label class="form-label">Title</label>
+      <label class="form-label" for="{{ form.title.id_for_label }}">Title</label>
       {{ form.title }}
+      {% if form.title.errors %}<div class="p-field-error">{{ form.title.errors }}</div>{% endif %}
     </div>
-    <div class="mb-3">
-      <label class="form-label">Description (optional)</label>
+
+    <div class="mb-4">
+      <label class="form-label" for="{{ form.description.id_for_label }}">Description</label>
       {{ form.description }}
+      {% if form.description.errors %}<div class="p-field-error">{{ form.description.errors }}</div>{% endif %}
     </div>
-    <div class="mb-3">
-      <label class="form-label">Mode</label>
+
+    <h2 class="p-section"><i class="bi bi-people"></i> How it runs</h2>
+
+    <div class="mb-4">
+      <label class="form-label" for="{{ form.mode.id_for_label }}">Mode</label>
       {{ form.mode }}
-      <div class="text-secondary small mt-1">
-        <b>Orchestra</b>: presenter controls the slides — participants follow. <b>Open</b>: participants self-pace.
+      <div class="form-text">
+        <strong>Orchestra</strong> — you control the slides and everyone follows.
+        <strong>Open</strong> — participants move at their own pace.
       </div>
     </div>
+
+    <h2 class="p-section"><i class="bi bi-palette"></i> Look</h2>
+
     <div class="mb-3">
-      <label class="form-label">Logo (optional)</label>
+      <label class="form-label" for="{{ form.logo.id_for_label }}">Logo</label>
       {{ form.logo }}
+      {% if form.logo.errors %}<div class="p-field-error">{{ form.logo.errors }}</div>{% endif %}
     </div>
+
     <div class="mb-4">
-      <label class="form-label mb-2">Pick a template</label>
-      {% include "partials/template_picker.html" with templates=templates selected_id="midnight" %}
+      <label class="form-label mb-2">Template</label>
+      {% comment %}
+        selected_id was "midnight", which matches nothing in the registry, so
+        no template ever appeared selected. The partial was also included
+        without `input_name`, so the picker's choice was never posted — the
+        view reads request.POST["template_id"], which was never set, and every
+        new deck silently got the model default.
+      {% endcomment %}
+      <div class="p-template-scroll">
+        {% include "partials/template_picker.html" with templates=templates selected_id=selected_template_id input_name="template_id" %}
+      </div>
     </div>
-    <button class="kk-btn kk-btn-primary kk-btn-lg">Create</button>
+
+    <div class="d-flex gap-2 flex-wrap">
+      <button class="kk-btn kk-btn-primary kk-btn-lg"><i class="bi bi-check-lg"></i> Create</button>
+      <a href="{% url 'polls:list' %}" class="kk-btn kk-btn-ghost">Cancel</a>
+    </div>
   </form>
 </div>
 {% endblock %}

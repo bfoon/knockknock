@@ -219,6 +219,29 @@ QUESTION_TYPE_REGISTRY = {
 }
 
 
+# Slugs for the group colours in polls.css. Kept next to the GROUP_*
+# constants so the two can't drift: every group needs exactly one slug, and
+# the assertion below fails loudly at import if a new group is added without
+# one, rather than silently rendering an uncoloured row.
+GROUP_SLUGS = {
+    GROUP_CHOICE:  "choice",
+    GROUP_SCALE:   "scale",
+    GROUP_OPEN:    "open",
+    GROUP_RANKING: "ranking",
+    GROUP_TIME:    "time",
+    GROUP_SPATIAL: "spatial",
+    GROUP_LIVE:    "live",
+    GROUP_STATIC:  "slides",
+}
+
+_missing = {m["group"] for m in QUESTION_TYPE_REGISTRY.values()} - set(GROUP_SLUGS)
+assert not _missing, f"question_types: no GROUP_SLUGS entry for {_missing}"
+
+for _tid, _meta in QUESTION_TYPE_REGISTRY.items():
+    _meta["id"] = _tid
+    _meta["group_slug"] = GROUP_SLUGS[_meta["group"]]
+
+
 # Helpers
 def get_meta(type_id):
     """Return the registry entry for a type, or None."""
@@ -235,12 +258,21 @@ def type_choices():
     return [(k, v["label"]) for k, v in QUESTION_TYPE_REGISTRY.items()]
 
 
+#: Display order for the picker, matching the GROUP_* constants above.
+PICKER_GROUP_ORDER = [GROUP_STATIC, GROUP_CHOICE, GROUP_SCALE, GROUP_OPEN,
+                      GROUP_RANKING, GROUP_TIME, GROUP_SPATIAL, GROUP_LIVE]
+
+
 def grouped_for_picker():
-    """For the editor's grouped picker. Returns list of (group_label, [entries])."""
+    """For the editor's grouped picker.
+
+    Returns [(group_label, group_slug, [entries]), ...] — the slug drives the
+    per-group colour in polls.css.
+    """
     groups = {}
     for tid, meta in QUESTION_TYPE_REGISTRY.items():
-        groups.setdefault(meta["group"], []).append(dict(id=tid, **meta))
-    # Stable order matching the GROUP_* constants order above
-    order = [GROUP_STATIC, GROUP_CHOICE, GROUP_SCALE, GROUP_OPEN, GROUP_RANKING,
-             GROUP_TIME, GROUP_SPATIAL, GROUP_LIVE]
-    return [(g, groups[g]) for g in order if g in groups]
+        groups.setdefault(meta["group"], []).append(dict(meta))
+    return [
+        (g, GROUP_SLUGS[g], groups[g])
+        for g in PICKER_GROUP_ORDER if g in groups
+    ]

@@ -1,110 +1,89 @@
 {% extends "base.html" %}
+{% load static %}
+
 {% block title %}My questionnaires · Knock-Knock{% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-center justify-content-between mb-4">
-  <h1 class="mb-0">My questionnaires 🎤</h1>
-  <a href="{% url 'polls:create' %}" class="kk-btn kk-btn-primary"><i class="bi bi-plus-lg"></i> New</a>
-</div>
+{% comment %}
+  The stylesheet is linked here rather than in a head block on purpose.
+  results/list/create used {% block extra_head %} while edit.html used
+  {% block head_extra %}. Only one of those names can match base.html, and
+  the wrong one fails silently by dropping every style on the page. A <link>
+  in the body is valid HTML5 and cannot be mis-named. Move it into your real
+  head block once you've confirmed which name base.html defines.
+{% endcomment %}
+<link rel="stylesheet" href="{% static 'css/polls.css' %}">
 
-{% for q in questionnaires %}
-  {# Row layout: clickable title area on the left, action buttons on the right. #}
-  {# Replacing the previous single wrapping <a> with a flex container so the #}
-  {# duplicate / delete buttons can sit alongside the row without nested forms. #}
-  <div class="kk-list-item kk-list-item-row">
-    <a class="kk-list-item-main" href="{% url 'polls:edit' q.pk %}">
-      <span class="kk-q-index">{{ forloop.counter }}</span>
-      <div class="flex-grow-1">
-        <div class="kk-list-item-title">{{ q.title }}</div>
-        <div class="kk-list-item-meta">{{ q.questions.count }} questions · template: {{ q.template_id }} · {{ q.updated_at|timesince }} ago</div>
+<div class="p">
+  <div class="p-head">
+    <div>
+      <h1 class="p-title">My questionnaires</h1>
+      <div class="p-meta">{{ questionnaires|length }} deck{{ questionnaires|length|pluralize }}</div>
+    </div>
+    <div class="p-actions">
+      <a href="{% url 'polls:create' %}" class="kk-btn kk-btn-primary">
+        <i class="bi bi-plus-lg"></i> New questionnaire
+      </a>
+    </div>
+  </div>
+
+  <div class="p-list">
+    {% for q in questionnaires %}
+      <div class="p-listrow">
+        <a class="p-listrow-main" href="{% url 'polls:edit' q.pk %}">
+          <span class="p-q-num">{{ forloop.counter }}</span>
+          <span class="p-listrow-body">
+            <span class="p-listrow-title">{{ q.title }}</span>
+            <span class="p-listrow-meta">
+              {# num_questions is annotated in the view. This used to call
+                 {{ q.questions.count }} — one COUNT query per row. #}
+              <span>{{ q.num_questions }} question{{ q.num_questions|pluralize }}</span>
+              <span>·</span>
+              <span>{{ q.get_mode_display }}</span>
+              <span>·</span>
+              <span>edited {{ q.updated_at|timesince }} ago</span>
+            </span>
+          </span>
+          <i class="bi bi-chevron-right" style="color: var(--p-ink-faint);"></i>
+        </a>
+
+        <a href="{% url 'polls:results' q.pk %}" class="p-icon-btn p-icon-btn-accent"
+           title="Results" aria-label="Results for {{ q.title }}">
+          <i class="bi bi-bar-chart"></i>
+        </a>
+
+        <form method="post" action="{% url 'polls:duplicate' q.pk %}" class="p-listrow-form"
+              onsubmit="return confirm('Duplicate “{{ q.title|escapejs }}”? The copy includes every question.');">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button type="submit" class="p-icon-btn p-icon-btn-accent"
+                  title="Duplicate" aria-label="Duplicate {{ q.title }}">
+            <i class="bi bi-files"></i>
+          </button>
+        </form>
+
+        <form method="post" action="{% url 'polls:delete' q.pk %}" class="p-listrow-form"
+              onsubmit="return confirm('Delete “{{ q.title|escapejs }}” and every question in it? This cannot be undone.');">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button type="submit" class="p-icon-btn p-icon-btn-danger"
+                  title="Delete" aria-label="Delete {{ q.title }}">
+            <i class="bi bi-trash3"></i>
+          </button>
+        </form>
       </div>
-      <span class="kk-q-pill">{{ q.get_mode_display }}</span>
-      <i class="bi bi-chevron-right text-secondary"></i>
-    </a>
-
-    {# Duplicate — deep-copies questions, choices, matrix rows. #}
-    <form method="post"
-          action="{% url 'polls:duplicate' q.pk %}"
-          class="kk-row-action-form"
-          onsubmit="return confirm('Duplicate “{{ q.title|escapejs }}”? The copy will include all questions.');">
-      {% csrf_token %}
-      <input type="hidden" name="next" value="{{ request.path }}">
-      <button type="submit"
-              class="kk-row-duplicate"
-              title="Duplicate questionnaire"
-              aria-label="Duplicate {{ q.title }}">
-        <i class="bi bi-files"></i>
-      </button>
-    </form>
-
-    <form method="post"
-          action="{% url 'polls:delete' q.pk %}"
-          class="kk-row-delete-form"
-          onsubmit="return confirm('Delete “{{ q.title|escapejs }}”? This cannot be undone.');">
-      {% csrf_token %}
-      <input type="hidden" name="next" value="{{ request.path }}">
-      <button type="submit"
-              class="kk-row-delete"
-              title="Delete questionnaire"
-              aria-label="Delete {{ q.title }}">
-        <i class="bi bi-trash3-fill"></i>
-      </button>
-    </form>
+    {% empty %}
+      <div class="p-empty">
+        <div class="p-empty-mark">🎤</div>
+        <p class="p-empty-title">No questionnaires yet</p>
+        <p class="p-empty-note">
+          Build a deck of questions, then present it live and watch the answers land in real time.
+        </p>
+        <a href="{% url 'polls:create' %}" class="kk-btn kk-btn-primary mt-2">
+          <i class="bi bi-plus-lg"></i> Create your first one
+        </a>
+      </div>
+    {% endfor %}
   </div>
-{% empty %}
-  <div class="kk-empty">
-    <div class="em">🎤</div>
-    <p>No questionnaires yet.</p>
-    <a href="{% url 'polls:create' %}" class="kk-btn kk-btn-primary mt-2">Create your first one</a>
-  </div>
-{% endfor %}
-
-<style>
-/* Action buttons next to each list row. Mirror the dashboard pattern so
-   both pages feel identical — same 34×34 square, same hover lift, cyan
-   for "duplicate" (constructive) and red for "delete" (destructive). */
-.kk-list-item-row { display: flex; align-items: center; gap: .5rem; }
-.kk-list-item-main {
-  display: flex; align-items: center; gap: .75rem;
-  flex: 1 1 auto; min-width: 0;
-  text-decoration: none; color: inherit;
-}
-.kk-list-item-main:hover { color: inherit; text-decoration: none; }
-
-.kk-row-action-form, .kk-row-delete-form {
-  margin: 0; padding: 0; flex: 0 0 auto;
-}
-.kk-row-duplicate, .kk-row-delete {
-  display: inline-grid; place-items: center;
-  width: 34px; height: 34px;
-  border-radius: 10px;
-  font-size: .95rem;
-  cursor: pointer;
-  transition: background .15s ease, border-color .15s ease,
-              color .15s ease, transform .15s ease;
-}
-.kk-row-duplicate {
-  border: 1px solid rgba(34, 211, 238, 0.22);
-  background: rgba(34, 211, 238, 0.08);
-  color: #67e8f9;
-}
-.kk-row-duplicate:hover, .kk-row-duplicate:focus-visible {
-  background: rgba(34, 211, 238, 0.18);
-  border-color: rgba(34, 211, 238, 0.55);
-  color: #a5f3fc;
-  transform: translateY(-1px); outline: none;
-}
-.kk-row-delete {
-  border: 1px solid rgba(248, 113, 113, 0.22);
-  background: rgba(248, 113, 113, 0.08);
-  color: #f87171;
-}
-.kk-row-delete:hover, .kk-row-delete:focus-visible {
-  background: rgba(248, 113, 113, 0.18);
-  border-color: rgba(248, 113, 113, 0.55);
-  color: #fecaca;
-  transform: translateY(-1px); outline: none;
-}
-.kk-row-duplicate:active, .kk-row-delete:active { transform: translateY(0); }
-</style>
+</div>
 {% endblock %}

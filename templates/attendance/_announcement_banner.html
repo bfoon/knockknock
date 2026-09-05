@@ -1,22 +1,25 @@
-<!--{# ───────────────────────────────────────────────────────────────-->
-<!--   Sticky announcement banner for public attendee pages.-->
+{% comment %}
+  Sticky announcement banner for public attendee pages.
 
-<!--   Renders any pre-existing announcements (passed in as-->
-<!--   `recent_announcements`, an iterable of EventAnnouncement) on-->
-<!--   load, then opens a WebSocket to the event's group so new-->
-<!--   announcements appear live without a refresh.-->
+  Renders any pre-existing announcements (`recent_announcements`) on load,
+  then opens a WebSocket to the event's group so new ones appear live.
 
-<!--   Required context:-->
-<!--     event                    — AttendanceEvent-->
-<!--     recent_announcements     — queryset / list, can be empty-->
-<!--   ─────────────────────────────────────────────────────────────── #}-->
+  Required context:
+    event                 — AttendanceEvent
+    recent_announcements  — queryset / list, may be empty
 
+  The socket now only carries announcements and event_ended. It used to carry
+  new_registration and check_in too — with attendee names — and this page was
+  expected to ignore them. See attendance/consumers.py.
+{% endcomment %}
 <div class="kk-announce-bar" id="kk-announce-bar"
      data-event-id="{{ event.pk }}"
+     role="region" aria-label="Announcements"
      {% if not recent_announcements %}hidden{% endif %}>
   <div class="kk-announce-inner">
     <div class="kk-announce-icon"><i class="bi bi-megaphone-fill"></i></div>
-    <div class="kk-announce-list" id="kk-announce-list">
+    <div class="kk-announce-list" id="kk-announce-list"
+         role="status" aria-live="polite" aria-atomic="false">
       {% for a in recent_announcements %}
         <div class="kk-announce-item">
           {% if a.subject %}<div class="kk-announce-subj">{{ a.subject }}</div>{% endif %}
@@ -93,7 +96,7 @@
   const bar = document.getElementById('kk-announce-bar');
   const list = document.getElementById('kk-announce-list');
   const closeBtn = document.getElementById('kk-announce-close');
-  if (!bar) return;
+  if (!bar || !list) return;
 
   const eventId = bar.dataset.eventId;
 
@@ -161,10 +164,31 @@
     ws.onerror = () => { try { ws.close(); } catch(e) {} };
   }
 
+  var reconnectTimer = null;
   function scheduleReconnect() {
-    setTimeout(connect, reconnectDelay);
+    // Guard against onerror -> close() -> onclose queueing two timers.
+    if (reconnectTimer) return;
+    reconnectTimer = setTimeout(function () {
+      reconnectTimer = null;
+      connect();
+    }, reconnectDelay);
     reconnectDelay = Math.min(reconnectDelay * 2, 30000);
   }
+
+  // A backgrounded tab does not need to keep retrying; coming back to the
+  // page is the moment to reconnect, and the moment the user cares.
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) return;
+    if (ws && ws.readyState === WebSocket.OPEN) return;
+    reconnectDelay = 1000;
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    connect();
+  });
+
+  window.addEventListener("pagehide", function () {
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    if (ws) { ws.onclose = null; try { ws.close(); } catch (e) {} }
+  });
 
   connect();
 })();

@@ -1,0 +1,150 @@
+/* ============================================================
+   Knock-Knock · attendance
+   ------------------------------------------------------------
+   Hosts the rules that used to live in <style> blocks inside
+   partials. Two of those were being emitted once per rendered
+   item — _venue_card.html shipped a full copy of its stylesheet
+   for every venue in the grid, and _agenda_day_header.html
+   worked around the same problem with {% if is_first %}, which
+   ties styling to loop position.
+
+   Namespaced kk- to match the existing app. Every colour reads
+   from the --kk-* tokens the event pages already declare, so
+   this file works unchanged in the dark app shell, in
+   agenda_preview.html's iframe and in agenda_print.html's light
+   theme — those three re-declare the same variables.
+   ============================================================ */
+
+/* ── Agenda day headers ───────────────────────────────────── */
+
+.kk-agenda-day-header {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 28px 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--kk-border, rgba(148, 163, 184, .22));
+}
+.kk-agenda-day-header--first { margin-top: 0; }
+.kk-agenda-day-header-label {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--kk-text, #f1f5f9);
+}
+.kk-agenda-day-header-date {
+  font-size: .82rem;
+  color: var(--kk-text-dim, #94a3b8);
+}
+
+.kk-agenda-now-host { position: relative; }
+.kk-agenda-fallback p { margin: 0 0 .75rem; }
+
+/* ── Venue cards ──────────────────────────────────────────── */
+
+.kk-venue-card {
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+  padding: 1rem 1.1rem;
+  background: var(--kk-surface, #111827);
+  border: 1px solid var(--kk-border, rgba(148, 163, 184, .18));
+  border-radius: var(--kk-radius, 12px);
+}
+.kk-venue-card.is-inactive { opacity: .5; }
+.kk-venue-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: .5rem;
+}
+.kk-venue-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: .7rem;
+  font-weight: 600;
+  white-space: nowrap;
+  background: rgba(124, 58, 237, .15);
+  color: #c4b5fd;
+}
+.kk-venue-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .85rem;
+  font-size: .8rem;
+  color: var(--kk-text-dim, #94a3b8);
+  font-variant-numeric: tabular-nums;
+}
+.kk-venue-warn { color: #fbbf24; }
+.kk-venue-actions {
+  display: flex;
+  gap: .5rem;
+  margin-top: auto;
+  padding-top: .6rem;
+}
+
+/* ── Form builder rows ────────────────────────────────────── */
+
+.kk-fb-row {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .55rem .7rem;
+  background: var(--kk-surface-2, #1e293b);
+  border: 1px solid var(--kk-border, rgba(148, 163, 184, .18));
+  border-radius: 10px;
+  margin-bottom: .4rem;
+}
+.kk-fb-handle { color: var(--kk-text-dim, #94a3b8); cursor: grab; }
+.kk-fb-handle:active { cursor: grabbing; }
+.kk-fb-main { min-width: 0; }
+.kk-fb-label {
+  font-weight: 600;
+  font-size: .9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kk-fb-type { font-size: .74rem; color: var(--kk-text-dim, #94a3b8); }
+.kk-fb-req {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: .68rem;
+  font-weight: 600;
+  color: #fca5a5;
+  background: rgba(248, 113, 113, .12);
+  border: 1px solid rgba(248, 113, 113, .3);
+}
+.kk-fb-row-actions { display: flex; gap: .25rem; flex: 0 0 auto; }
+.kk-fb-edit,
+.kk-fb-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--kk-border, rgba(148, 163, 184, .18));
+  background: transparent;
+  color: var(--kk-text-dim, #94a3b8);
+  cursor: pointer;
+  transition: color .12s ease, border-color .12s ease, background .12s ease;
+}
+.kk-fb-edit:hover { color: #22d3ee; border-color: rgba(34, 211, 238, .5); }
+.kk-fb-remove:hover { color: #f87171; border-color: rgba(248, 113, 113, .5); background: rgba(248, 113, 113, .1); }
+
+.kk-fb-edit:focus-visible,
+.kk-fb-remove:focus-visible,
+.kk-venue-card a:focus-visible,
+.kk-venue-card button:focus-visible {
+  outline: 2px solid #22d3ee;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kk-fb-edit, .kk-fb-remove { transition: none; }
+}

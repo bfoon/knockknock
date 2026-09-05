@@ -188,28 +188,44 @@ def send_announcement(event, *, subject, body, channel, audience, sender):
 # ───────────────────── WebSocket broadcasts ─────────────────────
 
 def _event_group_name(event):
+    """Public channel. Anyone with the event id can listen — assume they do."""
     return f"attendance_event_{event.pk}"
 
 
-def broadcast_to_event(event, payload):
-    """
-    Push a JSON message to everyone subscribed to this event's group.
-    No-op if Channels isn't configured.
+def _event_staff_group_name(event):
+    """Organizer-only channel. Joined after ownership is verified."""
+    return f"attendance_event_{event.pk}_staff"
 
-    Mirrors `_broadcast_ended_to_sessions` in presentations/views.py.
-    """
+
+def _send(group, payload):
     layer = get_channel_layer()
     if not layer:
         return
-    async_to_sync(layer.group_send)(
-        _event_group_name(event),
-        {"type": "broadcast", "payload": payload},
-    )
+    async_to_sync(layer.group_send)(group, {"type": "broadcast", "payload": payload})
+
+
+def broadcast_to_event(event, payload):
+    """Push a JSON message to every listener, including public ticket pages.
+
+    Anything passed here is readable by anyone who knows the event id, so it
+    must not contain attendee names, emails or anything else personal. Use
+    `broadcast_to_event_staff` for that.
+    """
+    _send(_event_group_name(event), payload)
+
+
+def broadcast_to_event_staff(event, payload):
+    """Push a JSON message to verified organizer sockets only."""
+    _send(_event_staff_group_name(event), payload)
 
 
 def broadcast_check_in(registration):
-    """Fire-and-forget — used right after a check-in flips."""
-    broadcast_to_event(registration.event, {
+    """Fire-and-forget — used right after a check-in flips.
+
+    Staff-only: this payload names the attendee. It previously went to the
+    same group the public ticket pages sit on.
+    """
+    broadcast_to_event_staff(registration.event, {
         "type": "check_in",
         "registration_id": registration.pk,
         "name": registration.display_name(),
@@ -221,7 +237,8 @@ def broadcast_check_in(registration):
 
 
 def broadcast_new_registration(registration):
-    broadcast_to_event(registration.event, {
+    """Staff-only — carries the registrant's display name."""
+    broadcast_to_event_staff(registration.event, {
         "type": "new_registration",
         "registration_id": registration.pk,
         "name": registration.display_name(),

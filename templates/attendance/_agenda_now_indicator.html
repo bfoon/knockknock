@@ -128,8 +128,23 @@
         var rows = findRows();
         if (!rows.length) return null;
         if (rows.length !== data.items.length) {
-          // Document order is out of sync with the JSON sidecar.
-          // Bail rather than mis-anchor.
+          // The JSON sidecar is built from event.agenda_days, while the rows
+          // come from whichever of the ten style partials is active. Any
+          // partial that emits a header row, a spacer, or omits the
+          // kk-ag-status-* class breaks the 1:1 index mapping and the
+          // indicator silently disappears — with no clue why.
+          //
+          // The real fix is for each style partial to put data-start /
+          // data-end on its own rows so position comes from the row itself.
+          // Until then, at least say so out loud.
+          if (window.console && console.debug) {
+            console.debug(
+              "[kk-agenda-now] " + rows.length + " rows but " +
+              data.items.length + " agenda items — indicator disabled. " +
+              "The active agenda style partial is not emitting one " +
+              ".kk-ag-status-* element per item."
+            );
+          }
           return null;
         }
 
@@ -202,7 +217,19 @@
         if (document.readyState === "loading") {
           document.addEventListener("DOMContentLoaded", position, { once: true });
         } else {
-          (window.requestAnimationFrame || setTimeout)(position);
+          // `var f = window.requestAnimationFrame; f(cb)` throws
+          // "Illegal invocation" in Chrome — rAF requires `this` to be the
+          // Window. Because schedule() is called ABOVE the resize listener,
+          // the 30s interval and the visibilitychange handler, that throw
+          // took all three registrations down with it, and the indicator
+          // never recovered. Only reachable when this partial renders into
+          // an already-loaded document (an injected or re-rendered preview),
+          // which is exactly where the editor uses it.
+          if (window.requestAnimationFrame) {
+            window.requestAnimationFrame(position);
+          } else {
+            setTimeout(position, 0);
+          }
         }
       }
       schedule();
@@ -213,7 +240,9 @@
         resizeTimer = setTimeout(position, 100);
       });
 
-      setInterval(position, 30 * 1000);
+      // Held so a re-render can stop the old one instead of stacking timers.
+      var tick = setInterval(position, 30 * 1000);
+      window.addEventListener("pagehide", function () { clearInterval(tick); });
 
       document.addEventListener("visibilitychange", function () {
         if (!document.hidden) position();

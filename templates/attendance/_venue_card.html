@@ -1,4 +1,13 @@
-{# Single venue card — used by venue_list.html grid. #}
+{% comment %}
+  Single venue card — used by venue_list.html's grid.
+
+  The <style> block that used to sit at the bottom of this file was emitted
+  once per card, so a page showing twenty venues shipped twenty identical
+  copies of the same rules. It lives in attendance.css now.
+  (_agenda_day_header.html had the same problem and worked around it with
+  {% if is_first %} — which is a hint that the pattern was already known to
+  be wrong.)
+{% endcomment %}
 <div class="kk-venue-card {% if not v.is_active %}is-inactive{% endif %}">
   <div class="kk-venue-card-head">
     <div class="fw-semibold">{{ v.name }}</div>
@@ -10,46 +19,30 @@
       {% endif %}
     </span>
   </div>
+
   {% if v.address %}<p class="kk-text-dim small mb-2">{{ v.address }}</p>{% endif %}
+
   <div class="kk-venue-meta">
-    <span><i class="bi bi-pin-map"></i> {{ v.latitude|floatformat:5 }}, {{ v.longitude|floatformat:5 }}</span>
+    {% if v.latitude is not None and v.longitude is not None %}
+      <span><i class="bi bi-pin-map"></i> {{ v.latitude|floatformat:5 }}, {{ v.longitude|floatformat:5 }}</span>
+    {% else %}
+      {# Rendered as a bare comma before — "  ,  " with nothing either side. #}
+      <span class="kk-venue-warn"><i class="bi bi-exclamation-triangle"></i> No coordinates set</span>
+    {% endif %}
     <span><i class="bi bi-circle-half"></i> {{ v.default_radius_m }} m radius</span>
   </div>
-  <div class="d-flex gap-2 mt-2">
+
+  <div class="kk-venue-actions">
     <a href="{% url 'attendance:venue_edit' v.pk %}" class="kk-btn kk-btn-ghost btn-sm">
       <i class="bi bi-pencil"></i> Edit
     </a>
-    <form method="post" action="{% url 'attendance:venue_delete' v.pk %}"
+    <form method="post" action="{% url 'attendance:venue_delete' v.pk %}" class="m-0"
           onsubmit="return confirm('Deactivate {{ v.name|escapejs }}? Events already using it keep their copy of the coordinates.');">
       {% csrf_token %}
-      <button class="kk-btn kk-btn-ghost btn-sm text-danger" type="submit">
-        <i class="bi bi-trash"></i>
+      <button class="kk-btn kk-btn-ghost btn-sm text-danger" type="submit"
+              title="Deactivate venue" aria-label="Deactivate {{ v.name }}">
+        <i class="bi bi-trash3"></i>
       </button>
     </form>
   </div>
 </div>
-
-<style>
-.kk-venue-card {
-  background: var(--kk-surface);
-  border: 1px solid var(--kk-border);
-  border-radius: 12px;
-  padding: 1rem 1.1rem;
-}
-.kk-venue-card.is-inactive { opacity: 0.5; }
-.kk-venue-card-head {
-  display: flex; justify-content: space-between; align-items: center;
-  gap: .5rem; margin-bottom: .35rem;
-}
-.kk-venue-scope {
-  font-size: .7rem; font-weight: 600;
-  padding: 2px 8px; border-radius: 999px;
-  background: rgba(124, 58, 237, 0.15); color: #c4b5fd;
-  display: inline-flex; align-items: center; gap: .3rem;
-}
-.kk-venue-meta {
-  display: flex; flex-wrap: wrap; gap: .85rem;
-  font-size: .8rem; color: var(--kk-text-dim);
-  font-variant-numeric: tabular-nums;
-}
-</style>

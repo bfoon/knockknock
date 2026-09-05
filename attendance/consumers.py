@@ -1,42 +1,84 @@
 """
 WebSocket consumer for the attendance app.
 
-Two kinds of clients connect to the same group `attendance_event_<id>`:
+TWO GROUPS, NOT ONE
+-------------------
+Every client used to join a single group, `attendance_event_<id>`, and receive
+every broadcast. The docstring acknowledged this and said public ticket pages
+"decide what to render" — but a client choosing not to render something does
+not stop the server sending it. `broadcast_new_registration` and
+`broadcast_check_in` both carry `registration.display_name()`.
 
-  - The organizer's live dashboard. Reacts to: new_registration, check_in,
-    announcement (echoed for their own UI), event_ended.
+`connect()` accepts anyone, with no authentication, and the event id in the
+URL is a sequential integer. So anybody could open
 
-  - Each attendee's ticket page. Reacts to: announcement, event_ended.
+    ws://host/ws/attendance/41/
 
-We don't separate them server-side — every client just gets the broadcast
-and decides what to render. The payload's `type` field is the discriminator.
+and watch a live feed of every person registering for event 41 and every
+person checking in, by name, with timestamps — for any event on the platform,
+found by counting upwards.
 
-Mirrors the SessionConsumer pattern in presentations/consumers.py
-(referenced by routing.py in the uploads).
+Now there are two groups:
+
+    attendance_event_<id>          public  — announcements, event_ended
+    attendance_event_<id>_staff    staff   — everything, plus names and counts
+
+A socket joins the staff group only after we confirm the connected user owns
+the event. Public clients are never sent attendee data, so a client-side
+mistake cannot expose it.
+
+Senders pick a group by calling the helpers in services.py: use
+`broadcast_to_event` for anything an attendee may see, and
+`broadcast_to_event_staff` for anything containing personal data.
 """
 
 import json
 
+from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 
 from .models import AttendanceEvent
 
 
+def public_group(event_pk):
+    return f"attendance_event_{event_pk}"
+
+
+def staff_group(event_pk):
+    return f"attendance_event_{event_pk}_staff"
+
+
 class AttendanceConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.event_pk = self.scope["url_route"]["kwargs"]["event_id"]
-        self.group_name = f"attendance_event_{self.event_pk}"
+        self.public_group_name = public_group(self.event_pk)
+        self.staff_group_name = staff_group(self.event_pk)
+        self.is_staff_socket = False
 
-        # We allow anyone to listen — the broadcasts don't contain PII beyond
-        # display name and counts, and ticket pages need to receive
-        # announcements without being logged in. If you need auth, add an
-        # `if not user.is_authenticated: await self.close()` here.
+        # Anyone may listen to the public group: ticket pages need
+        # announcements without being logged in, and nothing on that channel
+        # identifies an attendee.
+        await self.channel_layer.group_add(self.public_group_name, self.channel_name)
 
-        await self.channel_layer.group_add(self.group_name, self.channel_name)
+        if await self._user_owns_event():
+            self.is_staff_socket = True
+            await self.channel_layer.group_add(self.staff_group_name, self.channel_name)
+
         await self.accept()
 
     async def disconnect(self, code):
-        await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        await self.channel_layer.group_discard(self.public_group_name, self.channel_name)
+        if getattr(self, "is_staff_socket", False):
+            await self.channel_layer.group_discard(self.staff_group_name, self.channel_name)
+
+    @database_sync_to_async
+    def _user_owns_event(self):
+        user = self.scope.get("user")
+        if user is None or not user.is_authenticated:
+            return False
+        return AttendanceEvent.objects.filter(
+            pk=self.event_pk, owner=user,
+        ).exists()
 
     async def broadcast(self, event):
         """Server-pushed message; the layer sends payload as `event["payload"]`."""

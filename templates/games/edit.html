@@ -15,7 +15,7 @@
     <div class="g-head-id">
       {% if quiz.logo %}
         <div class="g-logo">
-          <img src="{{ quiz.logo.url }}" alt="{{ quiz.title }} logo">
+          <img src="{{ quiz.logo.url }}" alt="{{ quiz.title }} logo" data-logo-probe>
         </div>
       {% endif %}
 
@@ -354,11 +354,15 @@
           {% if quiz.logo %}
             <div class="g-logo-current">
               <div class="g-logo">
-                <img src="{{ quiz.logo.url }}" alt="{{ quiz.title }} logo">
+                <img src="{{ quiz.logo.url }}" alt="{{ quiz.title }} logo" data-logo-probe>
               </div>
               <div class="g-logo-current-body">
                 <div>Current logo</div>
-                <div class="g-break">{{ quiz.logo.name }}</div>
+                <div class="g-break">{{ quiz.logo.url }}</div>
+                <p class="g-field-error mt-1" data-logo-error hidden>
+                  This file didn’t load. The record exists, so either the file is
+                  missing from storage or <code>MEDIA_URL</code> isn’t being served.
+                </p>
               </div>
             </div>
           {% else %}
@@ -656,6 +660,26 @@
       renumber();
     });
   }
+})();
+</script>
+
+<script>
+/* ── Tell the author when a logo record points at a file the browser
+      cannot fetch. A broken <img> is indistinguishable from "no logo",
+      which sends people looking in the wrong place. ── */
+(function () {
+  "use strict";
+  document.querySelectorAll("[data-logo-probe]").forEach(function (img) {
+    function flag() {
+      img.closest(".g-logo").style.display = "none";
+      document.querySelectorAll("[data-logo-error]").forEach(function (el) {
+        el.hidden = false;
+      });
+      console.warn("[knock-knock] logo failed to load:", img.getAttribute("src"));
+    }
+    if (img.complete && img.naturalWidth === 0) flag();
+    img.addEventListener("error", flag);
+  });
 })();
 </script>
 

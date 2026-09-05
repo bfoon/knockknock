@@ -5624,6 +5624,9 @@ function renderElement(el,{live=false}={}){
     t.textContent=el.text;
     if(!live){t.dataset.textInner="1";t.setAttribute("contenteditable","false");t.spellcheck=false;}
     inner.appendChild(t);
+  } else if(el.type==="shape"){
+    // Plain static shapes — see hanns_shapes.js. No animation by design.
+    if(window.HannsShapes) inner.appendChild(window.HannsShapes.render(el));
   } else if(el.type==="rect"||el.type==="ellipse"){
     const s=document.createElement("div");s.className="shape";
     s.style.background=el.fill;s.style.borderRadius=el.type==="ellipse"?"50%":(el.radius||0)+"px";
@@ -10741,7 +10744,7 @@ const MAX_CLONE_ELS = 60;
 function captureSlide(container){
   if(!container || !container.firstChild) return null;
   const ghost=document.createElement("div");
-  ghost.className="slide-ghost";
+  ghost.className="slide-ghost is-animating";
   ghost.style.cssText=
     "position:absolute;inset:0;z-index:60;pointer-events:none;overflow:hidden;"+
     "transform-origin:50% 50%;";
@@ -10772,6 +10775,11 @@ function captureSlide(container){
     if(ps)ghost.style.backgroundPosition=ps;
   }catch(e){ /* a transparent ghost is still better than throwing */ }
   ghost.dataset.els=String(container.querySelectorAll(".el").length||0);
+  // url(...) means a bitmap the compositor must hold once per layer.
+  // Gradients are cheap and are deliberately not counted.
+  try{
+    ghost.dataset.rasterBg = /url\(/i.test(ghost.style.backgroundImage||"") ? "1" : "0";
+  }catch(e){ ghost.dataset.rasterBg = "0"; }
   return ghost;
 }
 
@@ -10895,7 +10903,18 @@ function playTransition(container,kind,ghost,opts){
     }
   }
 
-  const heavy=Number(ghost.dataset.els||0)>MAX_CLONE_ELS;
+  // Cost is DOM count *and* pixels. A single big background image is far
+  // more expensive to composite 48 times than sixty small text boxes, and
+  // the old check could not see it at all.
+  const heavyEls = Number(ghost.dataset.els||0) > MAX_CLONE_ELS;
+  const heavyBg  = ghost.dataset.rasterBg === "1";
+  // A 4K projector rasterises ~4x the pixels of a laptop for the same layer.
+  const bigStage = (typeof window !== "undefined") &&
+    ((window.innerWidth||0) * (window.innerHeight||0) > 2400*1400);
+  const heavy = heavyEls || heavyBg || bigStage;
+  // Past a certain layer count nothing looks better, it only gets slower.
+  const pieceCap = heavyBg ? 6 : (heavy ? 10 : 48);
+  const cap = n => Math.max(2, Math.min(n, pieceCap));
   const seed=(opts.seed||1);
 
   function shardsInto(count,style){
@@ -10920,7 +10939,7 @@ function playTransition(container,kind,ghost,opts){
 
   switch(k){
     case "shatter": {
-      shardsInto(heavy?8:SHARD_BUDGET,"shard-glass");
+      shardsInto(cap(heavy?8:SHARD_BUDGET),"shard-glass");
       const crack=document.createElement("div");
       crack.className="trans-crack";
       ghost.appendChild(crack);
@@ -10929,7 +10948,7 @@ function playTransition(container,kind,ghost,opts){
     }
     case "wind": {
       // Vertical strips are cheaper than polygons and read better as air.
-      const n=heavy?7:12, inner=ghost.innerHTML;
+      const n=cap(heavy?7:12), inner=ghost.innerHTML;
       ghost.innerHTML="";
       for(let i=0;i<n;i++){
         const st=document.createElement("div");
@@ -10967,7 +10986,7 @@ function playTransition(container,kind,ghost,opts){
     case "swipe":    ghost.classList.add("ghost-swipe");
                      ghost.appendChild(transHand("left")); break;
     case "dissolve": {
-      const n=heavy?24:48, inner=ghost.innerHTML;
+      const n=cap(heavy?24:48), inner=ghost.innerHTML;
       const cols=8, rows=Math.ceil(n/cols);
       ghost.innerHTML="";
       let s=seed*7919;

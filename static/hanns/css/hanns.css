@@ -393,7 +393,13 @@ input[type=range]{width:100%;accent-color:var(--signal)}
    .present-anim owns the slide transition. Keeping them on separate nodes
    stops a transform-based transition (slide/push/zoom/flip) from replacing
    the fit scale and shrinking the slide to centered 960x540 in fullscreen. */
-.present-anim{position:absolute;inset:0;width:100%;height:100%;transform-origin:center center;will-change:transform,opacity}
+.present-anim{position:absolute;inset:0;width:100%;height:100%;transform-origin:center center}
+/* will-change used to live here permanently. It tells the browser to keep a
+   full-resolution texture of this layer alive for as long as it exists — and
+   with a large background image on a projector that is tens of megabytes of
+   GPU memory held for the whole talk, per layer. Applied only while a
+   transition is actually running now. */
+.present-anim.is-animating{will-change:transform,opacity}
 .present-badge{
   position:absolute;bottom:22px;right:22px;z-index:210;display:flex;align-items:center;gap:.8rem;
   background:rgba(20,18,14,.82);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.12);
@@ -2342,11 +2348,18 @@ body.hanns-options-open .drawer{
    clone off the stage. All effects are composited (transform / opacity /
    filter) so a projector on a tired laptop still holds frame rate.
    ════════════════════════════════════════════════════════════════════ */
-.slide-ghost{will-change:transform,opacity;backface-visibility:hidden;}
+.slide-ghost{backface-visibility:hidden;}
 .slide-ghost .slide-shard,
 .slide-ghost .slide-strip,
 .slide-ghost .slide-tile,
-.slide-ghost .curtain-half{will-change:transform,opacity;backface-visibility:hidden;}
+.slide-ghost .curtain-half{backface-visibility:hidden;}
+/* Promotion only for the ~1s the pieces are moving. Forty-eight permanently
+   promoted full-stage layers is what locks up a projector on a photo slide. */
+.slide-ghost.is-animating,
+.slide-ghost.is-animating .slide-shard,
+.slide-ghost.is-animating .slide-strip,
+.slide-ghost.is-animating .slide-tile,
+.slide-ghost.is-animating .curtain-half{will-change:transform,opacity;}
 
 /* ── glass shatter ── */
 .ghost-shatter .shard-glass{
@@ -2470,4 +2483,18 @@ body.hanns-options-open .drawer{
   .slide-ghost,.slide-ghost *{animation:none!important;}
   .slide-ghost{animation:ghostFade .3s linear both!important;}
   .trans-hand,.trans-crack,.trans-ember{display:none!important;}
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   STATIC 2D SHAPES  (.shape-2d)  — see hanns_shapes.js
+   PowerPoint/Word-style shapes. Deliberately inert: no animation, no
+   will-change, no filters. A shape drawn on a slide stays put.
+   ════════════════════════════════════════════════════════════════════ */
+.el.shape .el-inner{width:100%;height:100%}
+.shape-2d{position:relative;width:100%;height:100%;display:block}
+.shape-2d > svg{display:block;width:100%;height:100%;overflow:visible}
+.shape-2d-label{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  text-align:center;padding:.4em .6em;line-height:1.25;
+  pointer-events:none;white-space:pre-wrap;overflow-wrap:anywhere;
 }

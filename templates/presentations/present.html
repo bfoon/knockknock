@@ -13,9 +13,8 @@
 <link rel="stylesheet" href="{% static 'css/app.css' %}?v=6">
 <link rel="stylesheet" href="{% static 'css/chart_backgrounds.css' %}?v=1">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-<!--{# Wraps and ellipsises long axis tick labels. Must come after Chart.js and-->
-<!--   before any script that builds a chart. #}-->
-<script src="{% static 'js/chart_labels.js' %}?v=1"></script>
+{# Wraps long axis tick labels. Must load after Chart.js, before any chart. #}
+<script src="{% static 'js/chart_labels.js' %}?v=2"></script>
 
 <style>
   html,

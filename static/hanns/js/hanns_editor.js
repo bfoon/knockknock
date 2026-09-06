@@ -299,8 +299,22 @@ function fitZoom(){
   const z=Math.min(aw/W, ah/H);
   return clamp(z,0.2,2);
 }
+/* The scale that should be on screen right now.
+
+   zoomMode is the intent ("fit", or a number the user dialled in); zoom is
+   the result of the last applyZoom. Reading zoom here instead of zoomMode
+   is what used to make + and − do nothing: they wrote the new level into
+   zoomMode, and applyZoom then ignored it and re-applied the old scale. */
+function zoomLevel(){
+  return zoomMode==="fit" ? fitZoom() : clamp(Number(zoomMode)||1,0.2,2);
+}
+/* Step from whatever is on screen, and land on a round 5% so the readout
+   says 80% rather than 79.99999%. */
+function stepZoom(delta){
+  return clamp(Math.round((zoomLevel()+delta)*20)/20,0.2,2);
+}
 function applyZoom(){
-  const z = zoomMode==="fit"?fitZoom():zoom;
+  const z = zoomLevel();
   zoom=z;
   wrap.style.width=(W*z)+"px";wrap.style.height=(H*z)+"px";
   canvas.style.transform=`scale(${z})`;
@@ -3348,9 +3362,16 @@ function init(){
   $$(".insp-tab").forEach(t=>t.addEventListener("click",()=>{inspTab=t.dataset.tab;renderInspector();}));
 
   // zoom
-  $("#zoom-in").addEventListener("click",()=>{zoomMode=clamp((zoomMode==="fit"?fitZoom():zoom)+0.1,0.2,2);applyZoom();});
-  $("#zoom-out").addEventListener("click",()=>{zoomMode=clamp((zoomMode==="fit"?fitZoom():zoom)-0.1,0.2,2);applyZoom();});
+  $("#zoom-in").addEventListener("click",()=>{zoomMode=stepZoom(+0.1);applyZoom();});
+  $("#zoom-out").addEventListener("click",()=>{zoomMode=stepZoom(-0.1);applyZoom();});
   $("#zoom-val").addEventListener("click",()=>{zoomMode="fit";applyZoom();});
+  // Ctrl/⌘ + wheel over the stage, the way every other canvas tool works.
+  stage.addEventListener("wheel",e=>{
+    if(!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    zoomMode=stepZoom(e.deltaY<0 ? +0.1 : -0.1);
+    applyZoom();
+  },{passive:false});
 
   // title
   $("#deck-title").addEventListener("input",e=>{Deck.title=e.target.value||"Untitled deck";if(appReady)scheduleSave();});

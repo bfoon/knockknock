@@ -235,8 +235,48 @@ button{font-family:inherit}
     var(--ink);
   display:grid;place-items:center;min-height:0;overflow:hidden;
 }
+/* The drag-and-drop hint. It had no rules anywhere, so it rendered as a
+   plain grid item of the stage — a line of loose text sitting under the
+   slide at all times instead of an overlay that appears while dragging. */
+.hanns-drop-overlay{
+  position:absolute;inset:0;z-index:30;display:grid;place-items:center;
+  opacity:0;pointer-events:none;transition:opacity .18s ease;
+  background:rgba(10,9,6,.72);
+  backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);
+}
+.hanns-drop-overlay.on{opacity:1}
+.hanns-drop-overlay>div{
+  display:grid;gap:.45rem;justify-items:center;text-align:center;
+  padding:1.4rem 1.8rem;border-radius:16px;max-width:min(420px,80%);
+  border:2px dashed rgba(255,255,255,.28);background:rgba(22,20,15,.88);
+  box-shadow:var(--shadow);
+}
+.hanns-drop-overlay b{
+  font-family:var(--font-display);font-weight:600;font-size:1.05rem;color:var(--cream);
+}
+.hanns-drop-overlay span{font-size:.82rem;color:var(--fog-2);line-height:1.5}
 .stage-grain{position:absolute;inset:0;opacity:.04;pointer-events:none;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+/* The scroll layer sits between the stage and the canvas so that zooming
+   past Fit can be panned to. It cannot be the stage itself: the drawers,
+   the slide nav, the zoom bar and the drop overlay are absolutely
+   positioned against the stage, and would scroll away with the slide.
+
+   place-items uses `safe` centring — a canvas smaller than the stage is
+   centred, and one larger than it aligns to the start instead of being
+   cut off at the top and left with no way to scroll back. */
+.stage-scroll{
+  position:absolute;inset:0;z-index:1;
+  display:grid;place-items:safe center;
+  overflow:auto;overscroll-behavior:contain;
+  scrollbar-width:thin;scrollbar-color:var(--line) transparent;
+}
+.stage-scroll::-webkit-scrollbar{width:10px;height:10px}
+.stage-scroll::-webkit-scrollbar-thumb{
+  background:var(--line);border-radius:999px;border:3px solid transparent;
+  background-clip:content-box;
+}
+.stage-scroll::-webkit-scrollbar-track{background:transparent}
 .canvas-wrap{position:relative;box-shadow:var(--shadow);border-radius:6px}
 .canvas{
   position:relative;width:960px;height:540px;border-radius:6px;overflow:hidden;
@@ -285,6 +325,9 @@ button{font-family:inherit}
 .zoombar button{background:transparent;border:0;color:var(--fog-2);cursor:pointer;
   width:24px;height:24px;border-radius:6px;font-size:1rem}
 .zoombar button:hover{background:var(--ink-3);color:var(--cream)}
+#zoom-val{cursor:pointer;border-radius:6px;padding:.15rem .35rem;min-width:38px;text-align:center}
+#zoom-val:hover{background:var(--ink-3);color:var(--cream)}
+#zoom-val:focus-visible{outline:2px solid var(--signal);outline-offset:1px}
 .slidenav{
   position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
   display:flex;align-items:center;gap:.6rem;background:var(--ink-2);

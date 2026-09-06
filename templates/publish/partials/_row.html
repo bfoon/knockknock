@@ -1,0 +1,23 @@
+{% load publish_extras %}
+<li class="pub-row pub-row-{{ p.kind }}">
+  <div class="pub-row-mark" title="{{ p.kind_label }}"><i class="bi {{ p.kind|kind_icon }}"></i></div>
+  <div class="pub-row-main">
+    <h3><a href="{{ p.get_absolute_url }}">{{ p.title }}</a></h3>
+    {% if p.subtitle %}<p class="pub-row-sub">{{ p.subtitle }}</p>{% endif %}
+    <p class="pub-row-abstract">{{ p.abstract|truncatewords:30 }}</p>
+    <p class="pub-row-meta">
+      <span>{{ p.author_line }}</span>
+      <span>{{ p.published_at|date:"j M Y" }}</span>
+      {% if p.version > 1 %}<span>Version {{ p.version }}</span>{% endif %}
+      {% if p.kind == 'dataset' and p.meta.rows %}<span>{{ p.meta.rows }} rows</span>{% endif %}
+      {% if p.kind == 'deck' and p.meta.slides %}<span>{{ p.meta.slides }} slides</span>{% endif %}
+      {% if p.kind == 'board' and p.meta.pages %}<span>{{ p.meta.pages }} pages</span>{% endif %}
+      {% if p.kind == 'article' %}<span>{{ p.reading_seconds|reading_time }}</span>{% endif %}
+    </p>
+  </div>
+  <div class="pub-row-stats">
+    <span title="Reads">{{ p.views_count|compact }} read</span>
+    {% if p.downloads_count %}<span title="Downloads">{{ p.downloads_count|compact }} downloaded</span>{% endif %}
+    <span class="pub-row-key">{{ p.citation_key }}</span>
+  </div>
+</li>

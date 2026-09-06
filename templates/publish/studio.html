@@ -1,0 +1,55 @@
+{% extends "publish/base.html" %}
+{% load publish_extras %}
+
+{% block title %}My publications · KnockKnock{% endblock %}
+
+{% block content %}
+<main class="pub-studio">
+
+  <div class="pub-masthead">
+    <h1>My publications</h1>
+    <p class="pub-masthead-note">{{ gate.explainer }}</p>
+  </div>
+
+  <div class="pub-startrow">
+    {% for a in adapters %}
+      <a class="pub-start pub-seal-{{ a.kind }}" href="{% url 'publish:new' %}?kind={{ a.kind }}">
+        <i class="bi {{ a.icon }}"></i>
+        <strong>{{ a.label }}</strong>
+        <span>{{ a.blurb }}</span>
+      </a>
+    {% endfor %}
+  </div>
+
+  {% if publications %}
+  <table class="pub-worktable">
+    <thead><tr><th>Title</th><th>Kind</th><th>State</th><th>Reads</th><th>Downloads</th><th>Updated</th><th></th></tr></thead>
+    <tbody>
+      {% for p in publications %}
+      <tr>
+        <td>
+          <a href="{% url 'publish:edit' p.pk %}">{{ p.title }}</a>
+          {% if p.version > 1 %}<span class="pub-vtag">v{{ p.version }}</span>{% endif %}
+        </td>
+        <td><i class="bi {{ p.kind|kind_icon }}"></i> {{ p.kind_label }}</td>
+        <td><span class="pub-state pub-state-{{ p.status }}">{{ p.get_status_display }}</span></td>
+        <td>{{ p.views_count|compact }}</td>
+        <td>{{ p.downloads_count|compact }}</td>
+        <td>{{ p.updated_at|date:"j M Y" }}</td>
+        <td>
+          {% if p.is_live %}<a class="pub-btn pub-btn-small" href="{{ p.get_absolute_url }}">View</a>{% endif %}
+          <a class="pub-btn pub-btn-small" href="{% url 'publish:edit' p.pk %}">Edit</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="pub-empty">
+    <h2>You have not published anything yet</h2>
+    <p>Pick one of the six above. A Kura dataset takes about a minute: it brings its own codebook.</p>
+  </div>
+  {% endif %}
+
+</main>
+{% endblock %}

@@ -1,0 +1,91 @@
+{% extends "publish/base.html" %}
+{% load publish_extras %}
+
+{% block title %}Publications · KnockKnock{% endblock %}
+
+{% block content %}
+<main class="pub-index">
+
+  <div class="pub-masthead">
+    <h1>What people have published</h1>
+    <p class="pub-masthead-note">Field data, decks, lesson boards and writing, released with a
+      permanent address and a citation you can paste into a report.</p>
+  </div>
+
+  <form class="pub-filters" method="get" action="{% url 'publish:feed' %}">
+    <div class="pub-filter-kinds">
+      <a class="pub-chip{% if not active_kind %} is-on{% endif %}" href="{% url 'publish:feed' %}">Everything</a>
+      {% for value, label in kinds %}
+        <a class="pub-chip{% if active_kind == value %} is-on{% endif %}"
+           href="{% url 'publish:feed' %}?kind={{ value }}">
+          <i class="bi {{ value|kind_icon }}"></i> {{ label }}
+        </a>
+      {% endfor %}
+    </div>
+    <div class="pub-filter-right">
+      <input type="search" name="q" value="{{ query }}" placeholder="Search titles and summaries"
+             aria-label="Search publications">
+      {% if active_kind %}<input type="hidden" name="kind" value="{{ active_kind }}">{% endif %}
+      <select name="sort" onchange="this.form.submit()" aria-label="Sort">
+        <option value="recent"{% if sort == 'recent' %} selected{% endif %}>Newest</option>
+        <option value="read"{% if sort == 'read' %} selected{% endif %}>Most read</option>
+        <option value="downloaded"{% if sort == 'downloaded' %} selected{% endif %}>Most downloaded</option>
+      </select>
+      <button class="pub-btn" type="submit">Search</button>
+    </div>
+  </form>
+
+  {% if lead %}
+  <article class="pub-lead">
+    <div class="pub-lead-body">
+      <p class="pub-seal pub-seal-{{ lead.kind }}"><i class="bi {{ lead.kind|kind_icon }}"></i> {{ lead.kind_label }}</p>
+      <h2><a href="{{ lead.get_absolute_url }}">{{ lead.title }}</a></h2>
+      {% if lead.subtitle %}<p class="pub-lead-sub">{{ lead.subtitle }}</p>{% endif %}
+      <p class="pub-lead-abstract">{{ lead.abstract|truncatewords:48 }}</p>
+      <p class="pub-byline">{{ lead.author_line }} · {{ lead.published_at|date:"j F Y" }}
+        {% if lead.kind == 'dataset' and lead.meta.rows %} · {{ lead.meta.rows }} rows{% endif %}
+        {% if lead.kind == 'article' %} · {{ lead.reading_seconds|reading_time }}{% endif %}
+      </p>
+    </div>
+    {% if lead.cover %}
+      <div class="pub-lead-figure"><img src="{{ lead.cover.url }}" alt=""></div>
+    {% else %}
+      <div class="pub-lead-figure pub-lead-figure-plate">
+        <span class="pub-plate-key">{{ lead.citation_key }}</span>
+        <span class="pub-plate-kind">{{ lead.kind_label }}</span>
+      </div>
+    {% endif %}
+  </article>
+  {% endif %}
+
+  {% if publications %}
+  <ol class="pub-list">
+    {% for p in publications %}
+      {% include "publish/partials/_row.html" with p=p %}
+    {% endfor %}
+  </ol>
+  {% elif not lead %}
+  <div class="pub-empty">
+    <h2>Nothing published yet</h2>
+    <p>The first release will sit here. A cleaned Kura dataset with its codebook is a good one to start with.</p>
+    <a class="pub-btn pub-btn-solid" href="{% url 'publish:new' %}">Publish something</a>
+  </div>
+  {% endif %}
+
+  {% if popular_tags %}
+  <div class="pub-tagrail">
+    <span>Browse by subject</span>
+    {% for t in popular_tags %}<a href="{% url 'publish:feed' %}?tag={{ t.slug }}">{{ t.name }}</a>{% endfor %}
+  </div>
+  {% endif %}
+
+  {% if page > 1 or has_next %}
+  <nav class="pub-pager">
+    {% if page > 1 %}<a href="{% querystring request %}{% if request.GET %}&{% else %}?{% endif %}page={{ page|add:-1 }}">Newer</a>{% endif %}
+    <span>Page {{ page }}</span>
+    {% if has_next %}<a href="{% querystring request %}{% if request.GET %}&{% else %}?{% endif %}page={{ page|add:1 }}">Older</a>{% endif %}
+  </nav>
+  {% endif %}
+
+</main>
+{% endblock %}

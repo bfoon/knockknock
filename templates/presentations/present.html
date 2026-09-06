@@ -13,6 +13,9 @@
 <link rel="stylesheet" href="{% static 'css/app.css' %}?v=6">
 <link rel="stylesheet" href="{% static 'css/chart_backgrounds.css' %}?v=1">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+{# Wraps and ellipsises long axis tick labels. Must come after Chart.js and
+   before any script that builds a chart. #}
+<script src="{% static 'js/chart_labels.js' %}?v=1"></script>
 
 <style>
   html,
@@ -1691,6 +1694,120 @@
 
 
   /* ─────────────────────────────────────────────
+     LOBBY FIT — nothing runs off the screen
+     .kk-lobby-big centred its children inside a height:100% box with
+     overflow:hidden, so on anything shorter than about 900px the title,
+     the code card and the start button were clipped rather than scaled
+     down. Sizes below are bounded by viewport HEIGHT as well as width,
+     and the panel scrolls as a last resort.
+
+     `safe center` matters: with plain centring, overflow spills past the
+     top edge where scrolling cannot reach it, which is the usual way a
+     centred flex column loses its first line.
+  ───────────────────────────────────────────── */
+  .kk-lobby-big {
+    justify-content: center;
+    justify-content: safe center;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+  }
+
+  .kk-lobby-title {
+    font-size: clamp(1.65rem, min(5vw, 6.4vh), 4.4rem);
+    overflow-wrap: anywhere;
+  }
+
+  .kk-lobby-sub {
+    font-size: clamp(.9rem, min(1.5vw, 2.1vh), 1.25rem);
+  }
+
+  /* Six digits at a height-aware size, and a hard clip so a longer code
+     can never push out of the card. */
+  .kk-lobby-code {
+    font-size: clamp(1.8rem, min(3.5vw, 5.2vh), 3.6rem);
+    overflow: hidden;
+  }
+
+  .kk-lobby-url {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .kk-lobby-qr-shell {
+    width: min(42vh, 32vw, 400px);
+  }
+
+  .kk-lobby-tip {
+    max-width: 240px;
+  }
+
+  /* ── Participants: a number, not just chips ── */
+  .kk-lobby-people-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: .75rem;
+    margin-bottom: .35rem;
+  }
+
+  .kk-lobby-people-count {
+    font-family: var(--kk-font-mono, ui-monospace, "JetBrains Mono", monospace);
+    font-size: clamp(1.4rem, min(2.4vw, 3.4vh), 2.3rem);
+    font-weight: 1000;
+    line-height: 1;
+    color: #22d3ee;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 26px rgba(34,211,238,.35);
+  }
+
+  .kk-lobby-participants {
+    max-height: clamp(2.6rem, 12vh, 6rem);
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+
+  .kk-lobby-people-empty {
+    color: rgba(255,255,255,.55);
+    font-size: .86rem;
+    line-height: 1.3;
+  }
+
+  .kk-lobby-people-card:has(.kk-lobby-chip) .kk-lobby-people-empty {
+    display: none;
+  }
+
+  /* Short screens drop the explanatory copy before they drop anything
+     the audience actually needs: the code, the QR and the start button. */
+  @media (max-height: 860px) {
+    .kk-lobby-sub,
+    .kk-lobby-tip,
+    .kk-lobby-qr-text,
+    .kk-lobby-people-empty {
+      display: none;
+    }
+    .kk-lobby-kicker,
+    .kk-lobby-qr-badge {
+      margin-bottom: .55rem;
+    }
+  }
+
+  @media (max-height: 700px) {
+    .kk-lobby-qr-title { display: none; }
+    .kk-lobby-big,
+    .kk-lobby-qr-card { padding: 1rem 1.15rem; }
+    .kk-lobby-actions { margin-top: .9rem; }
+  }
+
+  /* Phones are width-constrained, not height-constrained — put the size
+     back so the hero does not shrink to nothing on a tall narrow screen. */
+  @media (max-width: 760px) {
+    .kk-lobby-title { font-size: clamp(1.9rem, 8vw, 3rem); }
+    .kk-lobby-code { font-size: clamp(2rem, 12vw, 3.4rem); }
+    .kk-lobby-sub { display: none; }
+  }
+
+  /* ─────────────────────────────────────────────
      POLL SIDEBAR STATS FIX
      Polls do not use the game leaderboard, so make the QR card compact
      and give the participant/control card more useful space. Shows:
@@ -2074,9 +2191,15 @@
               </div>
             </div>
 
-            <div class="kk-lobby-meta-card" style="margin-top:.7rem;">
-              <div class="kk-lobby-meta-label">Participants joined</div>
+            <div class="kk-lobby-meta-card kk-lobby-people-card" style="margin-top:.7rem;">
+              <div class="kk-lobby-people-head">
+                <div class="kk-lobby-meta-label" style="margin:0;">Participants joined</div>
+                <div class="kk-lobby-people-count" id="lobby-participant-count">0</div>
+              </div>
               <div class="kk-lobby-participants" id="participant-chips"></div>
+              <div class="kk-lobby-people-empty" id="lobby-participants-empty">
+                No one has joined yet — the count updates as people scan the code.
+              </div>
             </div>
 
             <div class="kk-lobby-actions">
@@ -2568,6 +2691,100 @@
     e.preventDefault();
     e.stopImmediatePropagation();
   }, true);
+})();
+</script>
+
+<script>
+/* ────────────────────────────────────────────────────────────────
+   PARTICIPANT COUNT
+   present.js reads the count as `Number(s.participants || 0)`. That is
+   fine when the consumer sends a number, but Number([a, b]) is NaN, and
+   NaN is why the lobby and the side panel could sit there blank while
+   people were visibly joining. This reads whichever shape actually
+   arrives, paints the lobby number, and keeps the chips in sync.
+
+   It wraps window.WebSocket the same way the poll stats shim above does;
+   wrapping is cumulative, so both see every message.
+──────────────────────────────────────────────────────────────── */
+(function () {
+  "use strict";
+
+  var chips = document.getElementById("participant-chips");
+  var lobbyCount = document.getElementById("lobby-participant-count");
+  var sideCount = document.getElementById("participant-count");
+
+  function countFrom(state) {
+    if (!state) return 0;
+    var raw = state.participants;
+    if (raw === undefined || raw === null) raw = state.participant_count;
+    if (raw === undefined || raw === null) raw = state.participants_count;
+    if (Array.isArray(raw)) return raw.length;
+    if (raw && typeof raw === "object") return Object.keys(raw).length;
+    var n = Number(raw);
+    return isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  }
+
+  function namesFrom(state) {
+    var list = (state && (state.participant_names || state.people || state.participant_list)) || null;
+    if (!Array.isArray(list)) return [];
+    return list.map(function (p) {
+      if (p && typeof p === "object") return p.nickname || p.name || p.display_name || "";
+      return String(p || "");
+    }).filter(Boolean);
+  }
+
+  var emptyNote = document.getElementById("lobby-participants-empty");
+
+  function paint(n, names) {
+    if (lobbyCount) lobbyCount.textContent = String(n);
+    if (sideCount) sideCount.textContent = String(n);
+    // CSS hides this with :has(); do it here too for browsers without it.
+    if (emptyNote) emptyNote.style.display = n ? "none" : "";
+    if (!chips) return;
+
+    while (chips.children.length > n) chips.removeChild(chips.lastChild);
+    while (chips.children.length < n) {
+      var chip = document.createElement("span");
+      chip.className = "kk-lobby-chip";
+      chips.appendChild(chip);
+    }
+    for (var i = 0; i < chips.children.length; i++) {
+      chips.children[i].textContent = "\uD83D\uDC64 " + (names[i] || "guest");
+    }
+  }
+
+  /* present.js renders chips too. If it wins a race and adds one, mirror
+     that into the number rather than letting the two disagree. */
+  if (chips && window.MutationObserver) {
+    new MutationObserver(function () {
+      var n = chips.children.length;
+      if (lobbyCount && lobbyCount.textContent !== String(n)) lobbyCount.textContent = String(n);
+      if (sideCount) {
+        var shown = parseInt(sideCount.textContent, 10);
+        if (!isFinite(shown) || shown < n) sideCount.textContent = String(n);
+      }
+    }).observe(chips, { childList: true });
+  }
+
+  var RealWS = window.WebSocket;
+  function WrappedWS(url, protocols) {
+    var ws = protocols ? new RealWS(url, protocols) : new RealWS(url);
+    if (typeof url === "string" && url.indexOf("/ws/session/") !== -1) {
+      ws.addEventListener("message", function (ev) {
+        try {
+          var msg = JSON.parse(ev.data);
+          if (msg && msg.type === "state") paint(countFrom(msg), namesFrom(msg));
+        } catch (_) {}
+      });
+    }
+    return ws;
+  }
+  WrappedWS.prototype = RealWS.prototype;
+  WrappedWS.CONNECTING = RealWS.CONNECTING;
+  WrappedWS.OPEN = RealWS.OPEN;
+  WrappedWS.CLOSING = RealWS.CLOSING;
+  WrappedWS.CLOSED = RealWS.CLOSED;
+  window.WebSocket = WrappedWS;
 })();
 </script>
 

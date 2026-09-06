@@ -1,0 +1,36 @@
+{% load static publish_extras %}<!doctype html>
+<html lang="{{ pub.language|default:'en' }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ pub.title }}</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'publish/css/publish.css' %}?v=1">
+</head>
+<body class="pub-embedbody">
+<article class="pub-embedcard">
+  <p class="pub-seal pub-seal-{{ pub.kind }}">{{ pub.kind_label }}</p>
+  <h1><a href="{{ canonical }}" target="_blank" rel="noopener">{{ pub.title }}</a></h1>
+  {% if pub.subtitle %}<p class="pub-embed-sub">{{ pub.subtitle }}</p>{% endif %}
+  <p class="pub-embed-abstract">{{ pub.abstract|truncatewords:44 }}</p>
+
+  {% if pub.kind == 'board' and board_svg %}
+    <div class="pub-embed-art">{{ board_svg|safe }}</div>
+  {% elif pub.kind == 'dataset' and preview.columns %}
+    <div class="pub-tablewrap pub-embed-art">
+      <table class="pub-datatable">
+        <thead><tr>{% for c in preview.columns|slice:":6" %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+        <tbody>{% for row in preview.rows|slice:":6" %}<tr>{% for cell in row|slice:":6" %}<td>{{ cell|truncatechars:26 }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+      </table>
+    </div>
+  {% endif %}
+
+  <footer class="pub-embed-foot">
+    <span>{{ pub.author_line }}</span>
+    <span>{{ pub.published_at|date:"j M Y" }}</span>
+    <span>{{ pub.citation_key }}</span>
+    <a href="{{ canonical }}" target="_blank" rel="noopener">Read on KnockKnock</a>
+  </footer>
+</article>
+</body>
+</html>

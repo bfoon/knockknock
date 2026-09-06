@@ -1,0 +1,46 @@
+<section class="pub-share" id="share" data-share-root
+         data-slug="{{ pub.slug }}" data-url="{{ canonical }}" data-title="{{ pub.title }}">
+  <h2>Share it</h2>
+
+  <div class="pub-share-row">
+    <button class="pub-share-btn pub-share-native" data-share-native hidden>
+      <i class="bi bi-share"></i> Share
+    </button>
+    <a class="pub-share-btn pub-x" href="{% url 'publish:share' pub.slug 'x' %}" rel="noopener" target="_blank">
+      <i class="bi bi-twitter-x"></i> X</a>
+    <a class="pub-share-btn pub-li" href="{% url 'publish:share' pub.slug 'linkedin' %}" rel="noopener" target="_blank">
+      <i class="bi bi-linkedin"></i> LinkedIn</a>
+    <a class="pub-share-btn pub-fb" href="{% url 'publish:share' pub.slug 'facebook' %}" rel="noopener" target="_blank">
+      <i class="bi bi-facebook"></i> Facebook</a>
+    <a class="pub-share-btn pub-wa" href="{% url 'publish:share' pub.slug 'whatsapp' %}" rel="noopener" target="_blank">
+      <i class="bi bi-whatsapp"></i> WhatsApp</a>
+    <a class="pub-share-btn pub-tg" href="{% url 'publish:share' pub.slug 'telegram' %}" rel="noopener" target="_blank">
+      <i class="bi bi-telegram"></i> Telegram</a>
+    <a class="pub-share-btn pub-em" href="{% url 'publish:share' pub.slug 'email' %}">
+      <i class="bi bi-envelope"></i> Email</a>
+  </div>
+
+  <div class="pub-share-link">
+    <label for="pub-share-url">Link</label>
+    <input id="pub-share-url" type="text" readonly value="{{ canonical }}">
+    <button class="pub-btn pub-btn-small" data-copy-link>Copy link</button>
+    <button class="pub-btn pub-btn-small" data-show-qr>QR code</button>
+  </div>
+
+  {% if pub.allow_embed %}
+  <details class="pub-share-embed">
+    <summary>Put it on another site</summary>
+    <textarea readonly rows="3">{{ embed_code }}</textarea>
+    <button class="pub-btn pub-btn-small" data-copy-embed>Copy embed code</button>
+  </details>
+  {% endif %}
+
+  <div class="pub-qr" data-qr hidden>
+    <img alt="QR code for this publication" data-qr-img data-qr-src="{% url 'publish:qr' pub.slug %}">
+    <p>{{ canonical }}</p>
+  </div>
+
+  {% if pub.shares_count %}
+  <p class="pub-share-count">Shared {{ pub.shares_count }} times.</p>
+  {% endif %}
+</section>

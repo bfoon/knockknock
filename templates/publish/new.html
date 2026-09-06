@@ -1,0 +1,73 @@
+{% extends "publish/base.html" %}
+{% load publish_extras %}
+
+{% block title %}Publish something · KnockKnock{% endblock %}
+
+{% block content %}
+<main class="pub-studio">
+
+  {% if not adapter %}
+  <div class="pub-masthead">
+    <h1>What are you publishing?</h1>
+    <p class="pub-masthead-note">{{ gate.explainer }}</p>
+  </div>
+  <div class="pub-startrow pub-startrow-wide">
+    {% for a in adapters %}
+      <a class="pub-start pub-seal-{{ a.kind }}" href="{% url 'publish:new' %}?kind={{ a.kind }}">
+        <i class="bi {{ a.icon }}"></i>
+        <strong>{{ a.label }}</strong>
+        <span>{{ a.blurb }}</span>
+      </a>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <div class="pub-masthead">
+    <p class="pub-back"><a href="{% url 'publish:new' %}">All kinds</a></p>
+    <h1>{{ adapter.label }}</h1>
+    <p class="pub-masthead-note">{{ adapter.blurb }}</p>
+  </div>
+
+  <form method="post" class="pub-picker">
+    {% csrf_token %}
+    <input type="hidden" name="kind" value="{{ adapter.kind }}">
+
+    {% if adapter.needs_source %}
+      {% if items %}
+        <div class="pub-picklist">
+          {% for item in items %}
+          <label class="pub-pick">
+            <input type="radio" name="ref" value="{{ item.ref }}"{% if forloop.first %} checked{% endif %}>
+            <span class="pub-pick-title">{{ item.title }}</span>
+            <span class="pub-pick-sub">{{ item.subtitle }}</span>
+          </label>
+          {% endfor %}
+        </div>
+
+        {% if adapter.variants %}
+        <fieldset class="pub-variants">
+          <legend>Which copy of the data?</legend>
+          {% for value, label in adapter.variants %}
+          <label><input type="radio" name="variant" value="{{ value }}"{% if forloop.first %} checked{% endif %}> {{ label }}</label>
+          {% endfor %}
+          <p class="pub-note">Published exactly as you choose here. Nothing is stripped for you, so
+            check the columns before you release something with GPS points or names in it.</p>
+        </fieldset>
+        {% endif %}
+
+        <button class="pub-btn pub-btn-solid" type="submit">Start the publication</button>
+      {% else %}
+        <div class="pub-empty">
+          <h2>Nothing here to publish</h2>
+          <p>You have no {{ adapter.noun }} yet, or the app is not switched on for this account.</p>
+        </div>
+      {% endif %}
+    {% else %}
+      <p class="pub-note">You will write this one here, in the editor.</p>
+      <button class="pub-btn pub-btn-solid" type="submit">Start writing</button>
+    {% endif %}
+  </form>
+  {% endif %}
+
+</main>
+{% endblock %}

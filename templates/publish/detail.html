@@ -1,0 +1,262 @@
+{% extends "publish/base.html" %}
+{% load static publish_extras %}
+
+{% block title %}{{ pub.title }} · KnockKnock{% endblock %}
+{% block body_class %} pub-reading{% endblock %}
+
+{% block head %}
+<link rel="canonical" href="{{ canonical }}">
+<meta name="description" content="{{ pub.abstract|striptags|truncatewords:32 }}">
+<meta property="og:type" content="article">
+<meta property="og:title" content="{{ pub.title }}">
+<meta property="og:description" content="{{ pub.abstract|striptags|truncatewords:32 }}">
+<meta property="og:url" content="{{ canonical }}">
+<meta property="og:site_name" content="KnockKnock">
+<meta property="og:image" content="{{ request.scheme }}://{{ request.get_host }}{{ pub.og_url }}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ pub.title }}">
+<meta name="twitter:description" content="{{ pub.abstract|striptags|truncatewords:24 }}">
+<meta name="twitter:image" content="{{ request.scheme }}://{{ request.get_host }}{{ pub.og_url }}">
+<link rel="alternate" type="application/json+oembed"
+      href="{% url 'publish:oembed' %}?url={{ canonical|urlencode }}" title="{{ pub.title }}">
+<script type="application/ld+json">{{ json_ld|safe }}</script>
+{% endblock %}
+
+{% block content %}
+<main class="pub-article" id="top">
+
+  {% if not pub.is_live %}
+  <div class="pub-statusbar pub-statusbar-{{ pub.status }}">
+    This is a {{ pub.get_status_display|lower }}. Only you and the editors can see it.
+    {% if can_edit %}<a href="{% url 'publish:edit' pub.pk %}">Open in the editor</a>{% endif %}
+  </div>
+  {% endif %}
+
+  <div class="pub-article-grid">
+
+    <aside class="pub-rail">
+      <div class="pub-plate">
+        <span class="pub-plate-kind pub-seal-{{ pub.kind }}">{{ pub.kind_label }}</span>
+        <dl>
+          <dt>Reference</dt><dd>{{ pub.citation_key }}</dd>
+          <dt>Version</dt><dd>{{ pub.version }}{% if pub.first_published_at %} · first released {{ pub.first_published_at|date:"j M Y" }}{% endif %}</dd>
+          <dt>Licence</dt>
+          <dd>{% if pub.license_url %}<a href="{{ pub.license_url }}" rel="license noopener">{{ pub.license_label }}</a>{% else %}{{ pub.license_label }}{% endif %}</dd>
+          {% if pub.coverage_area %}<dt>Covers</dt><dd>{{ pub.coverage_area }}</dd>{% endif %}
+          {% if pub.collected_between %}<dt>Collected</dt><dd>{{ pub.collected_between }}</dd>{% endif %}
+          {% if pub.source_label %}<dt>Made from</dt><dd>{{ pub.source_label }}{% if pub.source_variant %} ({{ pub.source_variant }}){% endif %}</dd>{% endif %}
+        </dl>
+      </div>
+
+      {% if toc %}
+      <nav class="pub-toc">
+        <p>On this page</p>
+        <ol>{% for h in toc %}<li><a href="#{{ h.anchor }}">{{ h.text }}</a></li>{% endfor %}</ol>
+      </nav>
+      {% endif %}
+
+      {% if versions|length > 1 %}
+      <div class="pub-versions">
+        <p>Versions</p>
+        <ul>{% for v in versions %}
+          <li{% if v.number == pub.version %} class="is-current"{% endif %}>
+            <strong>v{{ v.number }}</strong> {{ v.published_at|date:"j M Y" }}
+            {% if v.changelog %}<span>{{ v.changelog }}</span>{% endif %}
+          </li>
+        {% endfor %}</ul>
+      </div>
+      {% endif %}
+    </aside>
+
+    <div class="pub-column">
+
+      <header class="pub-head">
+        <h1>{{ pub.title }}</h1>
+        {% if pub.subtitle %}<p class="pub-subtitle">{{ pub.subtitle }}</p>{% endif %}
+        <div class="pub-byline">
+          <ul class="pub-authors">
+            {% for a in authors %}
+              <li>
+                <span class="pub-author-name">{{ a.display_name }}</span>
+                {% if a.affiliation %}<span class="pub-author-aff">{{ a.affiliation }}</span>{% endif %}
+                {% if a.is_corresponding and a.email %}<a href="mailto:{{ a.email }}" title="Corresponding author"><i class="bi bi-envelope"></i></a>{% endif %}
+              </li>
+            {% empty %}
+              <li><span class="pub-author-name">{{ pub.owner.get_full_name|default:pub.owner.username }}</span></li>
+            {% endfor %}
+          </ul>
+          <p class="pub-dateline">
+            {% if pub.published_at %}{{ pub.published_at|date:"j F Y" }}{% endif %}
+            {% if pub.kind == 'article' %} · {{ pub.reading_seconds|reading_time }}{% endif %}
+            · {{ pub.views_count|compact }} reads
+          </p>
+        </div>
+        {% if pub.abstract %}<div class="pub-abstract">{{ pub.abstract|richtext }}</div>{% endif %}
+        {% if can_edit %}
+          <p class="pub-owner-actions"><a href="{% url 'publish:edit' pub.pk %}">Edit this publication</a></p>
+        {% endif %}
+      </header>
+
+      {% if pub.cover %}
+      <figure class="pub-cover">
+        <img src="{{ pub.cover.url }}" alt="">
+        {% if pub.cover_credit %}<figcaption>{{ pub.cover_credit }}</figcaption>{% endif %}
+      </figure>
+      {% endif %}
+
+      {# ---- the thing itself ------------------------------------------- #}
+
+      {% if pub.kind == 'dataset' and preview.columns %}
+      <section class="pub-artifact pub-dataset">
+        <div class="pub-artifact-head">
+          <h2>What is in the file</h2>
+          <p>{{ pub.meta.rows }} rows, {{ pub.meta.columns }} columns. The first 25 rows are shown.</p>
+        </div>
+        <div class="pub-tablewrap">
+          <table class="pub-datatable">
+            <thead><tr>{% for c in preview.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+            <tbody>
+              {% for row in preview.rows %}<tr>{% for cell in row %}<td>{{ cell|truncatechars:60 }}</td>{% endfor %}</tr>{% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      {% endif %}
+
+      {% if pub.kind == 'deck' and player_asset %}
+      <section class="pub-artifact pub-deck">
+        <div class="pub-player">
+          <iframe src="{% url 'publish:player' pub.slug %}" title="{{ pub.title }}"
+                  loading="lazy" allowfullscreen></iframe>
+        </div>
+        <p class="pub-artifact-note">Click the deck and use the arrow keys. Press F for full screen.</p>
+      </section>
+      {% endif %}
+
+      {% if pub.kind == 'board' and board_svg %}
+      <section class="pub-artifact pub-board">
+        <div class="pub-boardframe">{{ board_svg|safe }}</div>
+        {% if pub.meta.pages > 1 %}
+        <p class="pub-artifact-note">Page 1 of {{ pub.meta.pages }}. The rest are in the downloads below.</p>
+        {% endif %}
+      </section>
+      {% endif %}
+
+      {% if pub.kind == 'card' and card_messages %}
+      <section class="pub-artifact pub-cardwall">
+        <h2>{{ pub.meta.message_count }} messages</h2>
+        <ul>{% for m in card_messages %}
+          <li><p>{{ m.text }}</p><span>{{ m.from }}</span></li>
+        {% endfor %}</ul>
+      </section>
+      {% endif %}
+
+      {% if pub.kind == 'show' and show %}
+      <section class="pub-artifact pub-show">
+        <dl class="pub-showfacts">
+          {% for key, value in show.items %}<dt>{{ key|title }}</dt><dd>{{ value }}</dd>{% endfor %}
+        </dl>
+      </section>
+      {% endif %}
+
+      {# ---- written body ------------------------------------------------ #}
+
+      {% if blocks %}
+      <div class="pub-body">
+        {% for b in blocks %}
+          {% if b.type == 'heading' %}
+            <h2 id="{{ b.anchor }}">{{ b.text }}</h2>
+          {% elif b.type == 'text' %}
+            {{ b.text|richtext }}
+          {% elif b.type == 'figure' %}
+            <figure class="pub-figure">
+              {% if b.image %}<img src="{{ b.image.url }}" alt="{{ b.caption }}">{% endif %}
+              {% if b.caption %}<figcaption><b>Figure {{ b.figure_number }}.</b> {{ b.caption }}</figcaption>{% endif %}
+            </figure>
+          {% elif b.type == 'quote' %}
+            <blockquote>{{ b.text|richtext }}{% if b.caption %}<cite>{{ b.caption }}</cite>{% endif %}</blockquote>
+          {% elif b.type == 'list' %}
+            <ul class="pub-blocklist">{% for line in b.text.splitlines %}{% if line.strip %}<li>{{ line }}</li>{% endif %}{% endfor %}</ul>
+          {% elif b.type == 'code' %}
+            <pre class="pub-code"><code>{{ b.text }}</code></pre>
+          {% elif b.type == 'callout' %}
+            <aside class="pub-callout">{{ b.text|richtext }}</aside>
+          {% elif b.type == 'table' %}
+            <div class="pub-tablewrap"><table class="pub-datatable">
+              {% for row in b.text|tsv_rows %}
+                {% if forloop.first %}<thead><tr>{% for cell in row %}<th>{{ cell }}</th>{% endfor %}</tr></thead><tbody>
+                {% else %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endif %}
+              {% endfor %}</tbody>
+            </table></div>
+            {% if b.caption %}<p class="pub-caption">{{ b.caption }}</p>{% endif %}
+          {% elif b.type == 'embed' and b.url %}
+            <div class="pub-embed"><iframe src="{{ b.url }}" loading="lazy" title="{{ b.caption }}"></iframe></div>
+            {% if b.caption %}<p class="pub-caption">{{ b.caption }}</p>{% endif %}
+          {% elif b.type == 'divider' %}
+            <hr class="pub-divider">
+          {% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {# ---- downloads ----------------------------------------------------- #}
+
+      {% if assets %}
+      <section class="pub-downloads" id="files">
+        <h2>Files</h2>
+        <p class="pub-downloads-note">These files were written when version {{ pub.version }} was released
+          and have not changed since. The checksum lets you prove that.</p>
+        <table class="pub-filetable">
+          <thead><tr><th>File</th><th>Size</th><th>Contents</th><th>sha256</th><th></th></tr></thead>
+          <tbody>
+          {% for a in assets %}
+            <tr>
+              <td><span class="pub-ext">{{ a.extension|upper }}</span> {{ a.label }}</td>
+              <td>{{ a.size_human }}</td>
+              <td>{% if a.row_count %}{{ a.row_count }} rows × {{ a.column_count }} cols{% else %}—{% endif %}</td>
+              <td><code title="{{ a.checksum }}">{{ a.short_checksum }}</code></td>
+              <td><a class="pub-btn pub-btn-small" href="{{ a.download_url }}">Download</a></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </section>
+      {% endif %}
+
+      {# ---- cite ---------------------------------------------------------- #}
+
+      <section class="pub-cite" id="cite">
+        <h2>Cite this</h2>
+        <div class="pub-cite-tabs" data-cite-tabs>
+          <button class="is-on" data-cite="apa">Reference</button>
+          <button data-cite="bibtex">BibTeX</button>
+          <button data-cite="ris">RIS</button>
+        </div>
+        <pre class="pub-cite-body" data-cite-body="apa">{{ apa }}</pre>
+        <pre class="pub-cite-body" data-cite-body="bibtex" hidden>{{ bibtex }}</pre>
+        <pre class="pub-cite-body" data-cite-body="ris" hidden>{{ ris }}</pre>
+        <div class="pub-cite-actions">
+          <button class="pub-btn pub-btn-small" data-copy-cite>Copy</button>
+          <a class="pub-btn pub-btn-small" href="{% url 'publish:cite' pub.slug 'bib' %}">Download .bib</a>
+          <a class="pub-btn pub-btn-small" href="{% url 'publish:cite' pub.slug 'ris' %}">Download .ris</a>
+        </div>
+      </section>
+
+      {% include "publish/partials/_share.html" %}
+
+      {% if pub.tags.all %}
+      <p class="pub-tags">{% for t in pub.tags.all %}<a href="{% url 'publish:feed' %}?tag={{ t.slug }}">{{ t.name }}</a>{% endfor %}</p>
+      {% endif %}
+
+      {% if pub.funding %}<p class="pub-funding">Funding: {{ pub.funding }}</p>{% endif %}
+
+    </div>
+  </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'publish/js/publish_reader.js' %}?v=1" defer></script>
+{% endblock %}

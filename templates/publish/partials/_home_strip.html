@@ -1,0 +1,19 @@
+{% load publish_extras %}
+{% if publications %}
+<section class="kk-section kk-publications">
+  <div class="kk-section-head">
+    <h2>Published on KnockKnock</h2>
+    <a href="{% url 'publish:feed' %}">See everything</a>
+  </div>
+  <div class="pub-homestrip">
+    {% for p in publications %}
+      <a class="pub-homecard pub-seal-{{ p.kind }}" href="{{ p.get_absolute_url }}">
+        <span class="pub-seal pub-seal-{{ p.kind }}"><i class="bi {{ p.kind|kind_icon }}"></i> {{ p.kind_label }}</span>
+        <h3>{{ p.title }}</h3>
+        <p>{{ p.abstract|truncatewords:18 }}</p>
+        <p>{{ p.author_line }} · {{ p.published_at|date:"j M Y" }}</p>
+      </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}

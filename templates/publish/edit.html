@@ -1,0 +1,208 @@
+{% extends "publish/base.html" %}
+{% load static publish_extras %}
+
+{% block title %}Editing {{ pub.title }} · KnockKnock{% endblock %}
+
+{% block content %}
+<main class="pub-editor" data-editor
+     data-figure-url="{% url 'publish:figure' pub.pk %}"
+     data-kind="{{ pub.kind }}">
+
+  <form method="post" enctype="multipart/form-data" id="pub-form" data-save-url="{% url 'publish:edit' pub.pk %}">
+    {% csrf_token %}
+
+    <div class="pub-editbar">
+      <div>
+        <p class="pub-back"><a href="{% url 'publish:studio' %}">My publications</a></p>
+        <span class="pub-state pub-state-{{ pub.status }}">{{ pub.get_status_display }}</span>
+        <span class="pub-vtag">v{{ pub.version }}</span>
+        <span class="pub-key">{{ pub.citation_key }}</span>
+      </div>
+      <div class="pub-editbar-actions">
+        <span class="pub-saved" data-saved hidden>Saved</span>
+        <button class="pub-btn" type="submit">Save draft</button>
+        {% if pub.is_live %}
+          <a class="pub-btn" href="{{ pub.get_absolute_url }}">View live</a>
+        {% endif %}
+        <button class="pub-btn pub-btn-solid" type="submit" formaction="{% url 'publish:action' pub.pk 'publish' %}">
+          {{ gate.button_label }}
+        </button>
+      </div>
+    </div>
+
+    {% if pub.status == 'changes' and notes %}
+      <div class="pub-statusbar pub-statusbar-changes">
+        <strong>An editor asked for changes.</strong>
+        {% for n in notes %}{% if n.decision == 'changes' %}<p>{{ n.body }}</p>{% endif %}{% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="pub-editgrid">
+
+      <section class="pub-editcol">
+        <h2>The basics</h2>
+
+        <label class="pub-field">
+          <span>Title</span>
+          <input type="text" name="title" value="{{ pub.title }}" maxlength="220" required>
+        </label>
+
+        <label class="pub-field">
+          <span>Subtitle</span>
+          <input type="text" name="subtitle" value="{{ pub.subtitle }}" maxlength="300">
+        </label>
+
+        <label class="pub-field">
+          <span>Summary</span>
+          <textarea name="abstract" rows="5" maxlength="4000"
+                    placeholder="Two or three sentences. This is what appears in the index and in link previews.">{{ pub.abstract }}</textarea>
+        </label>
+
+        <label class="pub-field">
+          <span>Subjects</span>
+          <input type="text" name="tags" value="{{ tag_string }}"
+                 placeholder="health, Upper River Region, water">
+        </label>
+
+        <div class="pub-field-row">
+          <label class="pub-field">
+            <span>Where it covers</span>
+            <input type="text" name="coverage_area" value="{{ pub.coverage_area }}" placeholder="e.g. Central River Region">
+          </label>
+          <label class="pub-field">
+            <span>When it was collected</span>
+            <input type="text" name="collected_between" value="{{ pub.collected_between }}" placeholder="e.g. March to June 2026">
+          </label>
+        </div>
+
+        <label class="pub-field">
+          <span>Funding or commissioning body</span>
+          <input type="text" name="funding" value="{{ pub.funding }}">
+        </label>
+
+        <h2>Cover</h2>
+        <div class="pub-coverbox">
+          {% if pub.cover %}<img src="{{ pub.cover.url }}" alt="">{% endif %}
+          <input type="file" name="cover" accept="image/*">
+          <label class="pub-field">
+            <span>Credit</span>
+            <input type="text" name="cover_credit" value="{{ pub.cover_credit }}">
+          </label>
+          <p class="pub-note">If you leave this empty, the link preview image is drawn for you from the
+            title, the authors and the reference number.</p>
+        </div>
+
+        <h2>Authors</h2>
+        <div class="pub-authors-edit" data-authors></div>
+        <button class="pub-btn pub-btn-small" type="button" data-add-author>Add an author</button>
+        <input type="hidden" name="authors_json" data-authors-json>
+
+        <h2>Release</h2>
+        <label class="pub-field">
+          <span>Licence</span>
+          <select name="license">
+            {% for value, label in licenses %}
+              <option value="{{ value }}"{% if pub.license == value %} selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label class="pub-field">
+          <span>Who can find it</span>
+          <select name="visibility">
+            {% for value, label in visibilities %}
+              <option value="{{ value }}"{% if pub.visibility == value %} selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        {% if adapter.variants %}
+        <label class="pub-field">
+          <span>Which copy of the data</span>
+          <select name="variant">
+            {% for value, label in adapter.variants %}
+              <option value="{{ value }}"{% if pub.source_variant == value %} selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <p class="pub-note">Published as chosen. Check for GPS columns, phone numbers and enumerator
+          names before you release a raw file.</p>
+        {% endif %}
+
+        <label class="pub-check">
+          <input type="checkbox" name="allow_embed"{% if pub.allow_embed %} checked{% endif %}>
+          <span>Let other sites embed this</span>
+        </label>
+
+        {% if assets %}
+        <h2>Files in this version</h2>
+        <ul class="pub-assetlist">
+          {% for a in assets %}<li><span class="pub-ext">{{ a.extension|upper }}</span> {{ a.label }} · {{ a.size_human }}</li>{% endfor %}
+        </ul>
+        <p class="pub-note">Rebuilt from the source each time you press {{ gate.button_label|lower }}.</p>
+        {% endif %}
+      </section>
+
+      <section class="pub-editcol pub-editcol-body">
+        <h2>{% if pub.kind == 'article' %}The article{% else %}Notes and context{% endif %}</h2>
+        <p class="pub-note">
+          {% if pub.kind == 'article' %}Write it in blocks. **Bold**, *italic*, `code` and [links](https://example.com) work in paragraphs.
+          {% else %}Anything you add here appears underneath the {{ adapter.noun }} — methods, caveats, how to read the columns.{% endif %}
+        </p>
+        <div class="pub-blocks" data-blocks></div>
+        <div class="pub-blockadd">
+          <button type="button" class="pub-btn pub-btn-small" data-add="heading">Heading</button>
+          <button type="button" class="pub-btn pub-btn-small" data-add="text">Paragraph</button>
+          <button type="button" class="pub-btn pub-btn-small" data-add="figure">Figure</button>
+          <button type="button" class="pub-btn pub-btn-small" data-add="table">Table</button>
+          <button type="button" class="pub-btn pub-btn-small" data-add="list">List</button>
+          <button type="button" class="pub-btn pub-btn-small" data-add="quote">Quote</button>
+          <button type="button" class="pub-btn pub-btn-small" data-add="callout">Callout</button>
+          <button type="button" class="pub-btn pub-btn-small" data-add="code">Code</button>
+          <button type="button" class="pub-btn pub-btn-small" data-add="embed">Embed</button>
+          <button type="button" class="pub-btn pub-btn-small" data-add="divider">Divider</button>
+        </div>
+        <input type="hidden" name="blocks_json" data-blocks-json>
+      </section>
+    </div>
+  </form>
+
+  <div class="pub-dangerzone">
+    {% if pub.is_live %}
+      <form method="post" action="{% url 'publish:action' pub.pk 'new-version' %}">
+        {% csrf_token %}
+        <h3>Release a new version</h3>
+        <p>The current version stays exactly as it is, at the same address. Version {{ pub.version|add:1 }}
+          becomes a draft you publish when it is ready.</p>
+        <input type="text" name="changelog" placeholder="What changed?" maxlength="2000">
+        <button class="pub-btn" type="submit">Start version {{ pub.version|add:1 }}</button>
+      </form>
+      <form method="post" action="{% url 'publish:action' pub.pk 'unpublish' %}">
+        {% csrf_token %}
+        <h3>Take it down</h3>
+        <p>Goes back to being a draft. Anyone holding the link will get a 404.</p>
+        <button class="pub-btn" type="submit">Unpublish</button>
+      </form>
+    {% else %}
+      <form method="post" action="{% url 'publish:action' pub.pk 'delete' %}"
+            onsubmit="return confirm('Delete this draft for good?')">
+        {% csrf_token %}
+        <h3>Delete this draft</h3>
+        <p>Only possible while it has never been published.</p>
+        <button class="pub-btn" type="submit">Delete</button>
+      </form>
+    {% endif %}
+  </div>
+
+  <script type="application/json" data-initial-blocks>{{ blocks_json|safe }}</script>
+  <script type="application/json" data-initial-authors>[
+    {% for a in authors %}{"name": "{{ a.display_name|escapejs }}", "affiliation": "{{ a.affiliation|escapejs }}",
+     "email": "{{ a.email|escapejs }}", "orcid": "{{ a.orcid|escapejs }}", "role": "{{ a.role|escapejs }}",
+     "corresponding": {% if a.is_corresponding %}true{% else %}false{% endif %}}{% if not forloop.last %},{% endif %}{% endfor %}
+  ]</script>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'publish/js/publish_editor.js' %}?v=1" defer></script>
+{% endblock %}

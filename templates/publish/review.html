@@ -1,0 +1,70 @@
+{% extends "publish/base.html" %}
+{% load publish_extras %}
+
+{% block title %}Review queue · KnockKnock{% endblock %}
+
+{% block content %}
+<main class="pub-studio">
+
+  <div class="pub-masthead">
+    <h1>Review queue</h1>
+    <p class="pub-masthead-note">Free-plan publications wait here. Paid plans go straight out.</p>
+  </div>
+
+  {% if waiting %}
+    {% for p in waiting %}
+    <article class="pub-reviewcard">
+      <div class="pub-reviewcard-main">
+        <p class="pub-seal pub-seal-{{ p.kind }}"><i class="bi {{ p.kind|kind_icon }}"></i> {{ p.kind_label }}</p>
+        <h2><a href="{{ p.get_absolute_url }}" target="_blank" rel="noopener">{{ p.title }}</a></h2>
+        <p class="pub-row-meta">
+          <span>{{ p.author_line }}</span>
+          <span>waiting since {{ p.submitted_at|date:"j M Y, H:i" }}</span>
+          <span>{{ p.citation_key }}</span>
+        </p>
+        <p class="pub-row-abstract">{{ p.abstract|truncatewords:60 }}</p>
+      </div>
+      <form class="pub-reviewcard-actions" method="post">
+        {% csrf_token %}
+        <input type="hidden" name="pk" value="{{ p.pk }}">
+        <textarea name="note" rows="3" placeholder="A note for the author"></textarea>
+        <button class="pub-btn pub-btn-solid" name="decision" value="approve" type="submit">Approve and publish</button>
+        <button class="pub-btn" name="decision" value="changes" type="submit">Ask for changes</button>
+      </form>
+    </article>
+    {% endfor %}
+  {% else %}
+    <div class="pub-empty">
+      <h2>Nothing waiting</h2>
+      <p>The queue is clear.</p>
+    </div>
+  {% endif %}
+
+  <h2 class="pub-subhead">Recently published</h2>
+  <table class="pub-worktable">
+    <thead><tr><th>Title</th><th>Author</th><th>Published</th><th>Reads</th><th>Featured</th></tr></thead>
+    <tbody>
+    {% for p in recent %}
+      <tr>
+        <td><a href="{{ p.get_absolute_url }}">{{ p.title }}</a></td>
+        <td>{{ p.author_line }}</td>
+        <td>{{ p.published_at|date:"j M Y" }}</td>
+        <td>{{ p.views_count|compact }}</td>
+        <td>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="pk" value="{{ p.pk }}">
+            {% if p.featured %}
+              <button class="pub-btn pub-btn-small" name="decision" value="unfeature" type="submit">Unfeature</button>
+            {% else %}
+              <button class="pub-btn pub-btn-small" name="decision" value="feature" type="submit">Feature</button>
+            {% endif %}
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+</main>
+{% endblock %}

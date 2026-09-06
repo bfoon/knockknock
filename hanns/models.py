@@ -110,6 +110,42 @@ class Deck(models.Model):
         """True when the review link should still open."""
         return bool(self.allow_review) and not self.review_expired
 
+    @property
+    def link_editor_count(self):
+        """How many editors came in through the review link."""
+        return DeckCollaborator.objects.filter(
+            deck=self, source=DeckCollaborator.SOURCE_REVIEW_LINK,
+        ).count()
+
+    def revoke_link_editors(self, by_user=None):
+        """Remove everyone who got edit rights through the review link.
+
+        Deleting the DeckCollaborator row is the whole revocation: the
+        dashboard query, the editor view, the save endpoint and the
+        WebSocket all read that one table, so the deck stops appearing and
+        stops opening for them. Their old request is marked revoked rather
+        than deleted, so the history survives and they can ask again.
+
+        People invited by email are untouched. Switching off a share link
+        should not evict someone the owner let in personally.
+        """
+        editors = DeckCollaborator.objects.filter(
+            deck=self, source=DeckCollaborator.SOURCE_REVIEW_LINK,
+        )
+        user_ids = list(editors.values_list("user_id", flat=True))
+        removed = editors.count()
+        editors.delete()
+        if user_ids:
+            DeckAccessRequest.objects.filter(
+                deck=self, user_id__in=user_ids,
+                status=DeckAccessRequest.STATUS_APPROVED,
+            ).update(
+                status=DeckAccessRequest.STATUS_REVOKED,
+                decided_by=by_user,
+                decided_at=timezone.now(),
+            )
+        return removed
+
     # The slide the presenter is currently on. Lets a (re)connecting
     # audience phone or a second presenter screen sync to the right slide.
     current_slide = models.PositiveIntegerField(default=0)
@@ -185,6 +221,16 @@ class DeckCollaborator(models.Model):
         (PERMISSION_EDIT, "Can edit"),
     ]
 
+    # How they got in. This matters when the owner switches the review
+    # link off: people who walked in through that link leave with it,
+    # while people invited by email were let in personally and stay.
+    SOURCE_INVITE = "invite"
+    SOURCE_REVIEW_LINK = "review_link"
+    SOURCE_CHOICES = [
+        (SOURCE_INVITE, "Invited by email"),
+        (SOURCE_REVIEW_LINK, "Asked from the review link"),
+    ]
+
     deck = models.ForeignKey(
         Deck, on_delete=models.CASCADE, related_name="deck_collaborators",
     )
@@ -194,6 +240,9 @@ class DeckCollaborator(models.Model):
     )
     permission = models.CharField(
         max_length=20, choices=PERMISSION_CHOICES, default=PERMISSION_EDIT,
+    )
+    source = models.CharField(
+        max_length=16, choices=SOURCE_CHOICES, default=SOURCE_INVITE,
     )
     invited_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
@@ -304,10 +353,12 @@ class DeckAccessRequest(models.Model):
     STATUS_PENDING = "pending"
     STATUS_APPROVED = "approved"
     STATUS_DECLINED = "declined"
+    STATUS_REVOKED = "revoked"      # was approved, then taken back
     STATUS_CHOICES = [
         (STATUS_PENDING, "Pending"),
         (STATUS_APPROVED, "Approved"),
         (STATUS_DECLINED, "Declined"),
+        (STATUS_REVOKED, "Revoked"),
     ]
 
     deck = models.ForeignKey(
@@ -355,6 +406,7 @@ class DeckAccessRequest(models.Model):
             user=self.user,
             defaults={
                 "permission": DeckCollaborator.PERMISSION_EDIT,
+                "source": DeckCollaborator.SOURCE_REVIEW_LINK,
                 "invited_by": by_user or self.deck.owner,
                 "accepted_at": timezone.now(),
             },
@@ -368,6 +420,19 @@ class DeckAccessRequest(models.Model):
     def decline(self, by_user=None):
         """Turn the request down. The review link keeps working."""
         self.status = self.STATUS_DECLINED
+        self.decided_by = by_user
+        self.decided_at = timezone.now()
+        self.save(update_fields=["status", "decided_by", "decided_at", "updated_at"])
+        return self
+
+    def revoke(self, by_user=None):
+        """Take back edit rights that were granted earlier.
+
+        Drops the DeckCollaborator row — that is what actually removes the
+        deck from their dashboard and closes the editor to them.
+        """
+        DeckCollaborator.objects.filter(deck=self.deck, user=self.user).delete()
+        self.status = self.STATUS_REVOKED
         self.decided_by = by_user
         self.decided_at = timezone.now()
         self.save(update_fields=["status", "decided_by", "decided_at", "updated_at"])

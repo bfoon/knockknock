@@ -159,6 +159,22 @@ body.hanns-options-open .drawer{
   .dl-share-meta{width:100%}
 }
 
+/* ── Collaborators and invites: one row each, with a way out ─────── */
+.collab-rows{display:grid;gap:.4rem;margin:.35rem 0 .6rem}
+.collab-row{
+  display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.6rem;align-items:center;
+  padding:.45rem .6rem;border:1px solid rgba(255,255,255,.10);border-radius:11px;
+  background:rgba(255,255,255,.035);
+}
+.collab-name{font-size:.82rem;color:var(--cream);overflow-wrap:anywhere}
+.collab-name em{
+  font-style:normal;font-size:.7rem;color:var(--fog);
+  border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:.05rem .4rem;
+  margin-left:.3rem;white-space:nowrap;
+}
+.collab-row.done{opacity:.5}
+.collab-row.done .tbtn{display:none}
+
 /* ── Review link: deadline picker ─────────────────────────────────── */
 .rv-expiry{display:grid;gap:.3rem;margin:.2rem 1.3rem .9rem}
 .rv-expiry label{font-size:.8rem;color:var(--fog-2)}
@@ -431,17 +447,29 @@ body.hanns-options-open .drawer{
     <div class="collab-result" id="invite-result" hidden></div>
     <div class="collab-list">
       <strong>Current collaborators</strong>
-      {% for c in collaborators %}
-        <span>{{ c.user.get_full_name|default:c.user.username }} · {{ c.user.email }}</span>
-      {% empty %}
-        <span>No collaborators yet.</span>
-      {% endfor %}
+      <div class="collab-rows" id="collab-rows">
+        {% for c in collaborators %}
+        <div class="collab-row" data-collab="{{ c.pk }}">
+          <span class="collab-name">{{ c.user.get_full_name|default:c.user.username }} · {{ c.user.email }}{% if c.source == "review_link" %}<em>joined by link</em>{% endif %}</span>
+          <button class="tbtn ghost compact" data-remove-collab="{{ c.pk }}" type="button"
+                  title="Take back their editing rights and remove the deck from their account">Remove</button>
+        </div>
+        {% endfor %}
+      </div>
+      <span id="collab-none"{% if collaborators %} hidden{% endif %}>No collaborators yet.</span>
       {% if pending_invites %}
         <strong>Pending invites</strong>
-        {% for inv in pending_invites %}
-          <span>{{ inv.email }}</span>
-        {% endfor %}
+        <div class="collab-rows" id="invite-rows">
+          {% for inv in pending_invites %}
+          <div class="collab-row" data-invite="{{ inv.pk }}">
+            <span class="collab-name">{{ inv.email }}</span>
+            <button class="tbtn ghost compact" data-revoke-invite="{{ inv.pk }}" type="button"
+                    title="Cancel this invite before it is accepted">Cancel</button>
+          </div>
+          {% endfor %}
+        </div>
       {% endif %}
+      <div class="collab-result" id="collab-remove-result" hidden></div>
     </div>
   </div>
 </div>
@@ -600,6 +628,9 @@ body.hanns-options-open .drawer{
     allowReview: {{ deck.allow_review|yesno:"true,false" }},
     reviewUrl: "{{ review_url|default:'' }}",
     reviewStateLabel: "{{ review_state_label|escapejs }}",
+    collabRemoveUrlBase: "{% url 'hanns:collaborator_remove' deck.code 0 %}",
+    inviteRevokeUrlBase: "{% url 'hanns:invite_revoke' deck.code 0 %}",
+    linkEditorCount: {{ link_editor_count|default:0 }},
     csrftoken: "{{ csrf_token }}"
   };
 </script>
@@ -918,8 +949,34 @@ body.hanns-options-open .drawer{
     }
 
     if(toggle) toggle.addEventListener("change", function(){
-      post("allow_review=" + (toggle.checked ? "1" : "0")).then(function(j){
-        if(j) say(j.allow_review ? "Review link is on." : "Review link is off.");
+      var body = "allow_review=" + (toggle.checked ? "1" : "0");
+      var cascade = false;
+
+      // Switching off closes the link. Whether it also evicts the people
+      // who walked in through it is the owner's call, not the toggle's.
+      if(!toggle.checked && (CFG.linkEditorCount || 0) > 0){
+        var n = CFG.linkEditorCount;
+        cascade = window.confirm(
+          n + (n === 1 ? " person has" : " people have") +
+          " editing rights from this review link.\n\n" +
+          "OK — switch the link off and remove them. The deck disappears " +
+          "from their account.\n" +
+          "Cancel — switch the link off but leave them as editors."
+        );
+        if(cascade) body += "&revoke_editors=1";
+      }
+
+      post(body).then(function(j){
+        if(!j) return;
+        CFG.linkEditorCount = (typeof j.link_editors === "number")
+          ? j.link_editors : (CFG.linkEditorCount || 0);
+        if(j.removed){
+          say("Review link is off. " + j.removed +
+              (j.removed === 1 ? " person was removed" : " people were removed") +
+              " and emailed.");
+        }else{
+          say(j.allow_review ? "Review link is on." : "Review link is off.");
+        }
       });
     });
 
@@ -1045,6 +1102,78 @@ body.hanns-options-open .drawer{
 
     if(empty) empty.hidden = list.querySelectorAll(".req-row").length > 0;
     refreshPill();
+  })();
+
+  /* ── taking rights back ──────────────────────────────────────────── */
+  (function(){
+    var rows    = document.getElementById("collab-rows");
+    var invites = document.getElementById("invite-rows");
+    var none    = document.getElementById("collab-none");
+    var result  = document.getElementById("collab-remove-result");
+    if(!rows && !invites) return;
+
+    function say(msg, bad){
+      if(!result) return;
+      result.hidden = !msg;
+      result.textContent = msg || "";
+      result.style.color = bad ? "#fca5a5" : "";
+    }
+
+    function post(url, row, onOk){
+      Array.prototype.forEach.call(row.querySelectorAll("button"), function(b){ b.disabled = true; });
+      fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-CSRFToken": CFG.csrftoken || ""
+        },
+        credentials: "same-origin",
+        body: ""
+      }).then(function(r){ return r.json(); })
+        .then(function(j){
+          if(!j || !j.ok) throw new Error((j && j.error) || "Could not do that.");
+          row.classList.add("done");
+          onOk(j, row);
+        })
+        .catch(function(err){
+          Array.prototype.forEach.call(row.querySelectorAll("button"), function(b){ b.disabled = false; });
+          say(err.message || "Could not reach the server.", true);
+        });
+    }
+
+    if(rows) rows.addEventListener("click", function(e){
+      var btn = e.target.closest && e.target.closest("[data-remove-collab]");
+      if(!btn) return;
+      var row  = btn.closest(".collab-row");
+      var name = row.querySelector(".collab-name");
+      name = name ? name.textContent.split(" · ")[0] : "this person";
+      if(!window.confirm(
+        "Remove " + name + " from this deck?\n\n" +
+        "They lose editing rights and the deck disappears from their " +
+        "Knock-Knock account. You can invite them again later."
+      )) return;
+
+      post(CFG.collabRemoveUrlBase.replace(/0\/remove\/$/, btn.getAttribute("data-remove-collab") + "/remove/"),
+           row, function(j, r){
+        r.querySelector(".collab-name").insertAdjacentHTML("beforeend", " <em>removed</em>");
+        CFG.linkEditorCount = (typeof j.link_editors === "number") ? j.link_editors : CFG.linkEditorCount;
+        if(none && j.collaborators === 0) none.hidden = false;
+        say(j.person + " no longer has access, and has been emailed.");
+      });
+    });
+
+    if(invites) invites.addEventListener("click", function(e){
+      var btn = e.target.closest && e.target.closest("[data-revoke-invite]");
+      if(!btn) return;
+      var row = btn.closest(".collab-row");
+      if(!window.confirm("Cancel this invite? The link in that email stops working.")) return;
+
+      post(CFG.inviteRevokeUrlBase.replace(/0\/revoke\/$/, btn.getAttribute("data-revoke-invite") + "/revoke/"),
+           row, function(j, r){
+        r.querySelector(".collab-name").insertAdjacentHTML("beforeend", " <em>cancelled</em>");
+        say("Invite to " + j.email + " cancelled.");
+      });
+    });
   })();
 })();
 </script>

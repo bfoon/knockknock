@@ -16,6 +16,8 @@ Review links (view-only sharing):
   • deck_request_access(token)  — reviewer asks the owner for edit rights
   • deck_review_settings(code)  — owner: switch on/off, rotate, set a deadline
   • deck_access_decide(code,pk) — owner: approve or decline one request
+  • deck_collaborator_remove(code,pk) — owner: take back one person's rights
+  • deck_invite_revoke(code,pk)       — owner: cancel a pending email invite
 
 The editor and present screens are server-rendered shells; all the live
 behaviour (reactions, slide sync) runs through consumers.PresentConsumer.
@@ -36,6 +38,7 @@ from django.core.mail import send_mail
 from django.core.files.storage import default_storage
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError, RequestDataTooBig
+from django.db import IntegrityError
 from django.db.models import Q
 from django.http import JsonResponse, HttpResponseBadRequest, HttpResponseForbidden, Http404
 from django.shortcuts import get_object_or_404, redirect, render
@@ -291,6 +294,31 @@ def _send_access_decision_email(*, request, deck, access_request, approved):
     )
 
 
+def _send_access_revoked_email(*, request, deck, user):
+    """Tell someone their editing rights were taken back.
+
+    Sent because the alternative is a collaborator discovering it when the
+    deck vanishes mid-sentence.
+    """
+    to = getattr(user, "email", "") or ""
+    if not to:
+        return
+    send_mail(
+        f"Your access to “{deck.title}” has ended",
+        (
+            f"Hello,\n\n"
+            f"You no longer have editing access to the Hanns presentation "
+            f"“{deck.title}”. It has been removed from your Knock-Knock decks.\n\n"
+            f"If you think this was a mistake, contact "
+            f"{_deck_owner_label(deck)}.\n\n"
+            f"Thank you."
+        ),
+        getattr(settings, "DEFAULT_FROM_EMAIL", None) or "no-reply@knockknock.local",
+        [to],
+        fail_silently=True,
+    )
+
+
 # ── owner-facing ─────────────────────────────────────────────────────
 @login_required
 def deck_list(request):
@@ -359,6 +387,7 @@ def deck_edit(request, code):
         "download_url": download_url,
         "review_url": review_url,
         "review_state_label": _expiry_label(deck),
+        "link_editor_count": deck.link_editor_count if is_owner else 0,
         # Only the owner answers requests, so only the owner is handed them.
         "access_requests": (
             deck.access_requests.select_related("user").filter(
@@ -975,6 +1004,30 @@ def deck_review_settings(request, code):
         else:
             deck.save(update_fields=["allow_review"])
 
+        # Switching the link off can take its editors with it, but only
+        # when the owner asks. Silently evicting someone who has been
+        # editing for a week is not something a toggle should do on its
+        # own, so the editor puts the question before sending this flag.
+        if not on and request.POST.get("revoke_editors") in ("1", "true", "on"):
+            people = list(
+                get_user_model().objects.filter(
+                    hanns_collaborations__deck=deck,
+                    hanns_collaborations__source=DeckCollaborator.SOURCE_REVIEW_LINK,
+                )
+            )
+            removed = deck.revoke_link_editors(by_user=request.user)
+            for person in people:
+                _send_access_revoked_email(request=request, deck=deck, user=person)
+            return JsonResponse({
+                "ok": True,
+                "allow_review": deck.allow_review,
+                "review_url": "",
+                "expires_at": "",
+                "expires_label": _expiry_label(deck),
+                "removed": removed,
+                "link_editors": 0,
+            })
+
     return JsonResponse({
         "ok": True,
         "allow_review": deck.allow_review,
@@ -983,6 +1036,8 @@ def deck_review_settings(request, code):
             deck.review_expires_at.isoformat() if deck.review_expires_at else ""
         ),
         "expires_label": _expiry_label(deck),
+        "removed": 0,
+        "link_editors": deck.link_editor_count,
     })
 
 
@@ -1012,4 +1067,75 @@ def deck_access_decide(request, code, pk):
         "person": _person_label(req.user),
         "pending": deck.access_requests.filter(
             status=DeckAccessRequest.STATUS_PENDING).count(),
+    })
+
+
+@login_required
+@require_POST
+def deck_collaborator_remove(request, code, pk):
+    """Owner takes back one person's editing rights.
+
+    Deleting the DeckCollaborator row is the entire revocation. deck_list
+    finds shared decks through that table, _can_edit_deck reads it,
+    deck_save enforces it and PresentConsumer._can_edit_current_user
+    checks it on connect — so the deck leaves their dashboard and stops
+    opening for them.
+    """
+    deck = get_object_or_404(Deck, code=code.upper(), owner=request.user)
+    collab = get_object_or_404(
+        DeckCollaborator.objects.select_related("user"), pk=pk, deck=deck,
+    )
+    person = collab.user
+    label = _person_label(person)
+    collab.delete()
+
+    # Keep the request history honest: an approved ask that has been taken
+    # back is revoked, not still approved.
+    DeckAccessRequest.objects.filter(
+        deck=deck, user=person, status=DeckAccessRequest.STATUS_APPROVED,
+    ).update(
+        status=DeckAccessRequest.STATUS_REVOKED,
+        decided_by=request.user,
+        decided_at=timezone.now(),
+    )
+
+    if request.POST.get("notify", "1") in ("1", "true", "on"):
+        _send_access_revoked_email(request=request, deck=deck, user=person)
+
+    return JsonResponse({
+        "ok": True,
+        "id": pk,
+        "person": label,
+        "collaborators": deck.deck_collaborators.count(),
+        "link_editors": deck.link_editor_count,
+    })
+
+
+@login_required
+@require_POST
+def deck_invite_revoke(request, code, pk):
+    """Owner cancels an email invite that has not been accepted yet.
+
+    A pending invite is a standing grant of future access, so it needs
+    taking back the same way a live one does.
+    """
+    deck = get_object_or_404(Deck, code=code.upper(), owner=request.user)
+    inv = get_object_or_404(
+        DeckInvite, pk=pk, deck=deck, status=DeckInvite.STATUS_PENDING,
+    )
+    email = inv.email
+    try:
+        inv.status = DeckInvite.STATUS_REVOKED
+        inv.save(update_fields=["status"])
+    except IntegrityError:
+        # unique_together is (deck, email, status), so a second revoked
+        # invite to the same address would collide. One tombstone per
+        # address is enough — drop this row instead.
+        inv.delete()
+    return JsonResponse({
+        "ok": True,
+        "id": pk,
+        "email": email,
+        "pending": deck.deck_invites.filter(
+            status=DeckInvite.STATUS_PENDING).count(),
     })

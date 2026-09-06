@@ -55,6 +55,8 @@ urlpatterns = [
     path("<str:code>/download-settings/", views.deck_download_settings, name="download_settings"),
     path("<str:code>/review-settings/", views.deck_review_settings, name="review_settings"),
     path("<str:code>/access-requests/<int:pk>/decide/", views.deck_access_decide, name="access_decide"),
+    path("<str:code>/collaborators/<int:pk>/remove/", views.deck_collaborator_remove, name="collaborator_remove"),
+    path("<str:code>/invites/<int:pk>/revoke/", views.deck_invite_revoke, name="invite_revoke"),
     # PUBLIC — the end-of-show QR points here. The uuid token is the
     # credential, so this route must stay above the <str:code>/ catch-all.
     path("<str:code>/d/<uuid:token>/", views.deck_audience_download, name="audience_download"),

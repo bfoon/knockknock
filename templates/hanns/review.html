@@ -1,0 +1,368 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>{{ deck.title }} · review</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+{# Same family list as the editor: a deck can use any of them, and a review
+   copy that renders in fallback type is not a review of the same deck. #}
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Archivo:wght@400;500;600;700;800&family=Archivo+Expanded:wght@600;700;800&family=Spline+Sans+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800;900&family=Manrope:wght@300;400;500;600;700;800&family=Poppins:wght@300;400;500;600;700;800;900&family=Montserrat:wght@300;400;500;600;700;800;900&family=Roboto:wght@300;400;500;700;900&family=Open+Sans:wght@300;400;500;600;700;800&family=Lato:wght@300;400;700;900&family=Nunito+Sans:wght@300;400;600;700;800;900&family=Raleway:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=DM+Serif+Display:ital@0;1&family=Bebas+Neue&family=Oswald:wght@300;400;500;600;700&family=Merriweather:wght@300;400;700;900&family=Libre+Baskerville:wght@400;700&family=Lora:ital,wght@0,400..700;1,400..700&family=Cormorant+Garamond:ital,wght@0,300..700;1,300..700&family=Space+Grotesk:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Barlow+Condensed:wght@300;400;500;600;700;800&family=Rubik:wght@300;400;500;600;700;800;900&family=Quicksand:wght@300;400;500;600;700&family=Sora:wght@300;400;500;600;700;800&family=Exo+2:wght@300;400;500;600;700;800;900&family=Ubuntu:wght@300;400;500;700&family=Work+Sans:wght@300;400;500;600;700;800;900&family=Noto+Sans:wght@300;400;500;600;700;800;900&family=Noto+Serif:wght@400;500;600;700;800;900&family=Source+Serif+4:opsz,wght@8..60,300..900&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Serif:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700;800&family=Fira+Code:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Cinzel:wght@400;500;600;700;800;900&family=Abril+Fatface&family=Anton&family=Pacifico&family=Caveat:wght@400;500;600;700&family=Permanent+Marker&family=Righteous&family=Kanit:wght@300;400;500;600;700;800;900&family=Lexend:wght@300;400;500;600;700;800;900&family=Urbanist:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=61">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="{% static 'hanns/css/hanns_rich_data.css' %}?v=61">
+
+<style>
+/* Review chrome. Quieter than the studio on purpose: the slide is the
+   whole point of this page, so everything around it stays out of its way
+   and only the one action a reviewer can take carries any colour. */
+.rv{display:grid;grid-template-rows:auto minmax(0,1fr) auto;height:100vh;min-height:0;overflow:hidden}
+
+.rv-bar{
+  display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:1rem;
+  padding:.6rem 1.1rem;background:var(--ink-2);border-bottom:1px solid var(--line);
+}
+.rv-id{min-width:0}
+.rv-title{
+  margin:0;font-family:var(--font-display);font-weight:600;font-size:1.12rem;
+  line-height:1.2;color:var(--cream);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.rv-meta{margin:.15rem 0 0;font-size:.78rem;color:var(--fog);line-height:1.3}
+.rv-readonly{
+  display:inline-flex;align-items:center;gap:.35rem;
+  color:var(--fog-2);border:1px solid var(--line);border-radius:999px;
+  padding:.12rem .5rem;font-size:.7rem;margin-left:.4rem;vertical-align:1px;
+}
+.rv-actions{display:flex;align-items:center;gap:.5rem;flex:0 0 auto}
+.rv-btn{
+  border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--cream);
+  border-radius:10px;padding:.5rem .85rem;font:600 .84rem/1 var(--font-body);
+  cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:.4rem;
+}
+.rv-btn:hover{background:rgba(255,255,255,.09)}
+.rv-btn:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+.rv-btn.primary{background:var(--signal);border-color:var(--signal);color:#fff}
+.rv-btn.primary:hover{background:var(--signal-2);border-color:var(--signal-2)}
+.rv-btn[disabled]{opacity:.55;cursor:default}
+
+.rv-stage{position:relative;display:grid;place-items:center;min-height:0;overflow:hidden;
+  background:radial-gradient(1200px 600px at 70% -10%,#221f18 0%,transparent 60%),var(--ink)}
+.rv-fit{position:relative}
+.rv-fit .canvas{position:absolute;left:0;top:0;transform-origin:0 0;cursor:default}
+.rv-fit .canvas .el{cursor:default}
+
+.rv-nav{
+  position:absolute;top:50%;transform:translateY(-50%);
+  width:44px;height:44px;border-radius:50%;display:grid;place-items:center;
+  border:1px solid var(--line);background:rgba(22,20,15,.72);color:var(--cream);
+  cursor:pointer;backdrop-filter:blur(8px);
+}
+.rv-nav:hover{background:rgba(44,40,31,.9)}
+.rv-nav:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+.rv-nav[disabled]{opacity:.25;cursor:default}
+.rv-nav.prev{left:14px}
+.rv-nav.next{right:14px}
+
+.rv-foot{
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:.9rem;
+  padding:.5rem .9rem;background:var(--ink-2);border-top:1px solid var(--line);
+}
+.rv-count{font:600 .78rem/1 var(--font-mono);color:var(--fog-2);white-space:nowrap}
+.rv-strip{display:flex;gap:.45rem;overflow-x:auto;padding:.15rem 0;scrollbar-width:thin}
+.rv-thumb{
+  flex:0 0 auto;position:relative;width:112px;height:63px;border-radius:6px;overflow:hidden;
+  border:1px solid var(--line);background:var(--paper);padding:0;cursor:pointer;
+}
+.rv-thumb .canvas{position:absolute;left:0;top:0;transform:scale(.11667);transform-origin:0 0;pointer-events:none}
+.rv-thumb.on{border-color:var(--signal);box-shadow:0 0 0 1px var(--signal)}
+.rv-thumb:focus-visible{outline:2px solid var(--signal);outline-offset:1px}
+
+/* Ask panel */
+.rv-modal{position:fixed;inset:0;display:none;place-items:center;background:rgba(10,9,6,.72);z-index:9000;padding:1rem}
+.rv-modal.on{display:grid}
+.rv-card{
+  width:min(460px,100%);background:var(--ink-2);border:1px solid var(--line);
+  border-radius:var(--r);padding:1.4rem;box-shadow:var(--shadow);position:relative;
+}
+.rv-card h2{margin:0 0 .4rem;font-family:var(--font-display);font-weight:600;font-size:1.25rem;color:var(--cream)}
+.rv-card p{margin:0 0 1rem;color:var(--fog-2);font-size:.88rem;line-height:1.55;max-width:56ch}
+.rv-card label{display:block;font-size:.8rem;color:var(--fog);margin-bottom:.35rem}
+.rv-card textarea{
+  width:100%;min-height:88px;resize:vertical;border-radius:10px;padding:.6rem .7rem;
+  background:var(--ink);border:1px solid var(--line);color:var(--paper);
+  font:400 .88rem/1.5 var(--font-body);
+}
+.rv-card textarea:focus{outline:none;border-color:var(--signal)}
+.rv-row{display:flex;gap:.5rem;margin-top:1rem;flex-wrap:wrap}
+.rv-x{position:absolute;right:.7rem;top:.6rem;background:none;border:0;color:var(--fog);
+  font-size:1.1rem;cursor:pointer;line-height:1;padding:.25rem}
+.rv-x:hover{color:var(--cream)}
+
+.rv-flash{
+  position:fixed;left:50%;bottom:5.6rem;transform:translateX(-50%);z-index:9500;
+  display:grid;gap:.4rem;width:min(520px,calc(100vw - 2rem));
+}
+.rv-flash div{
+  background:var(--ink-3);border:1px solid var(--line);border-left:3px solid var(--ok);
+  color:var(--cream);border-radius:10px;padding:.6rem .8rem;font-size:.85rem;
+}
+.rv-flash div.error{border-left-color:var(--signal)}
+
+.rv-note{font-size:.78rem;color:var(--fog);margin:.9rem 0 0}
+
+@media (max-width:720px){
+  .rv-bar{grid-template-columns:1fr;gap:.5rem}
+  .rv-actions{justify-content:flex-start}
+  .rv-title{white-space:normal}
+  .rv-strip{display:none}
+  .rv-foot{grid-template-columns:auto 1fr}
+  .rv-nav{width:38px;height:38px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+}
+</style>
+</head>
+<body>
+
+<div class="rv">
+
+  <header class="rv-bar">
+    <div class="rv-id">
+      <h1 class="rv-title">{{ deck.title }}<span class="rv-readonly" title="You can read this deck, not change it">Read-only</span></h1>
+      <p class="rv-meta">Shared by {{ owner_label }} · {{ slide_count }} slide{{ slide_count|pluralize }}{% if expires_at %} · open until {{ expires_at|date:"j M, H:i" }}{% endif %}</p>
+    </div>
+
+    <div class="rv-actions">
+      {% if can_edit %}
+        <a class="rv-btn primary" href="{{ edit_url }}">Open in the editor</a>
+      {% elif signed_in %}
+        {% if access_request and access_request.is_pending %}
+          <button class="rv-btn" type="button" disabled>Request sent</button>
+        {% else %}
+          <button class="rv-btn primary" type="button" id="rv-ask">Ask for editing rights</button>
+        {% endif %}
+      {% else %}
+        <button class="rv-btn primary" type="button" id="rv-ask">Ask for editing rights</button>
+      {% endif %}
+    </div>
+  </header>
+
+  <main class="rv-stage" id="rv-stage">
+    <div class="rv-fit" id="rv-fit">
+      <div class="canvas" id="rv-canvas"></div>
+    </div>
+    <button class="rv-nav prev" id="rv-prev" type="button" aria-label="Previous slide">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 5-7 7 7 7"/></svg>
+    </button>
+    <button class="rv-nav next" id="rv-next" type="button" aria-label="Next slide">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 5 7 7-7 7"/></svg>
+    </button>
+  </main>
+
+  <footer class="rv-foot">
+    <span class="rv-count" id="rv-count">1 / {{ slide_count }}</span>
+    <div class="rv-strip" id="rv-strip"></div>
+    <button class="rv-btn" id="rv-full" type="button" title="Fill the screen (F)">Full screen</button>
+  </footer>
+</div>
+
+{% if messages %}
+<div class="rv-flash" id="rv-flash">
+  {% for message in messages %}<div class="{{ message.tags }}">{{ message }}</div>{% endfor %}
+</div>
+{% endif %}
+
+<div class="rv-modal" id="rv-modal" role="dialog" aria-modal="true" aria-labelledby="rv-modal-title">
+  <div class="rv-card">
+    <button class="rv-x" type="button" data-rv-close aria-label="Close">✕</button>
+
+    {% if signed_in %}
+      <h2 id="rv-modal-title">Ask for editing rights</h2>
+      <p>{{ owner_label }} decides who can change this deck. Say what you would
+        like to work on, and they will get your request by email.</p>
+      <form method="post" action="{{ request_access_url }}">
+        {% csrf_token %}
+        <label for="rv-msg">Your message (optional)</label>
+        <textarea id="rv-msg" name="message" maxlength="500"
+                  placeholder="I can rewrite the pricing slides and fix the charts."></textarea>
+        <div class="rv-row">
+          <button class="rv-btn primary" type="submit">Send request</button>
+          <button class="rv-btn" type="button" data-rv-close>Cancel</button>
+        </div>
+      </form>
+      {% if access_request and access_request.status == "declined" %}
+        <p class="rv-note">Your last request was declined. You can ask again.</p>
+      {% endif %}
+    {% else %}
+      <h2 id="rv-modal-title">Editing needs an account</h2>
+      <p>Anyone with this link can read the deck. Changing it means a
+        Knock-Knock account, so {{ owner_label }} knows who edited what.
+        Sign in and you will land back here to send your request.</p>
+      <div class="rv-row">
+        <a class="rv-btn primary" href="{{ login_url }}">Sign in</a>
+        <a class="rv-btn" href="{{ signup_url }}">Create an account</a>
+      </div>
+      <p class="rv-note">Reading the deck stays free — no account needed for that.</p>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+  window.__HANNS_REVIEW__ = {
+    deck: {{ deck_json|safe }},
+    openAsk: {{ open_ask|yesno:"true,false" }}
+  };
+</script>
+
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="{% static 'hanns/js/hanns_actors.js' %}?v=61"></script>
+<script src="{% static 'hanns/js/hanns_core.js' %}?v=61"></script>
+<script src="{% static 'hanns/js/hanns_shapes.js' %}?v=61"></script>
+<script src="{% static 'hanns/js/hanns_fluid.js' %}?v=61"></script>
+
+<script>
+/* ── Review player ────────────────────────────────────────────────────
+   Read-only by construction: this file loads the renderer and nothing
+   from the editor, and the payload it renders already had the deck code,
+   speaker notes and teleprompter elements stripped server-side.        */
+(function(){
+  "use strict";
+  var CFG    = window.__HANNS_REVIEW__ || {};
+  var deck   = CFG.deck || {};
+  var slides = Array.isArray(deck.slides) ? deck.slides : [];
+  var W = 960, H = 540;
+
+  var stage  = document.getElementById("rv-stage");
+  var fit    = document.getElementById("rv-fit");
+  var canvas = document.getElementById("rv-canvas");
+  var count  = document.getElementById("rv-count");
+  var strip  = document.getElementById("rv-strip");
+  var prev   = document.getElementById("rv-prev");
+  var next   = document.getElementById("rv-next");
+  var i = 0;
+
+  function paint(el, slide, live){
+    if(!window.Hanns || !window.Hanns.paintSlide) return;
+    // revealAll: cue-triggered elements have no presenter here, so a
+    // reviewer would otherwise stare at a half-empty slide.
+    window.Hanns.paintSlide(el, slide, {live:!!live, revealAll:true});
+  }
+
+  function scale(){
+    var pad = 32;
+    var availW = Math.max(120, stage.clientWidth  - pad * 2);
+    var availH = Math.max(90,  stage.clientHeight - pad * 2);
+    var k = Math.min(availW / W, availH / H);
+    canvas.style.transform = "scale(" + k + ")";
+    fit.style.width  = (W * k) + "px";
+    fit.style.height = (H * k) + "px";
+  }
+
+  function show(n){
+    if(!slides.length) return;
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    paint(canvas, slides[i], true);
+    scale();
+    count.textContent = (i + 1) + " / " + slides.length;
+    prev.disabled = i === 0;
+    next.disabled = i === slides.length - 1;
+    var on = strip.querySelector(".rv-thumb.on");
+    if(on) on.classList.remove("on");
+    var me = strip.children[i];
+    if(me){
+      me.classList.add("on");
+      me.scrollIntoView({block:"nearest", inline:"nearest"});
+    }
+  }
+
+  function buildStrip(){
+    slides.forEach(function(slide, n){
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "rv-thumb";
+      b.setAttribute("aria-label", "Slide " + (n + 1));
+      var c = document.createElement("div");
+      c.className = "canvas";
+      c.style.width = W + "px";
+      c.style.height = H + "px";
+      b.appendChild(c);
+      strip.appendChild(b);
+      paint(c, slide, false);
+      b.addEventListener("click", function(){ show(n); });
+    });
+  }
+
+  if(!slides.length){
+    canvas.style.display = "none";
+    var empty = document.createElement("p");
+    empty.style.cssText = "color:var(--fog);font-size:.9rem";
+    empty.textContent = "This deck has no slides yet.";
+    stage.appendChild(empty);
+  }else{
+    buildStrip();
+    show(0);
+  }
+
+  prev.addEventListener("click", function(){ show(i - 1); });
+  next.addEventListener("click", function(){ show(i + 1); });
+  window.addEventListener("resize", scale);
+
+  document.addEventListener("keydown", function(e){
+    if(document.querySelector(".rv-modal.on")) return;
+    var t = e.target;
+    if(t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT")) return;
+    if(e.key === "ArrowRight" || e.key === "PageDown" || e.key === " "){ e.preventDefault(); show(i + 1); }
+    else if(e.key === "ArrowLeft" || e.key === "PageUp"){ e.preventDefault(); show(i - 1); }
+    else if(e.key === "Home"){ e.preventDefault(); show(0); }
+    else if(e.key === "End"){ e.preventDefault(); show(slides.length - 1); }
+    else if(e.key === "f" || e.key === "F"){ toggleFull(); }
+  });
+
+  function toggleFull(){
+    if(document.fullscreenElement) document.exitFullscreen();
+    else if(document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+  }
+  var fullBtn = document.getElementById("rv-full");
+  if(fullBtn) fullBtn.addEventListener("click", toggleFull);
+  document.addEventListener("fullscreenchange", function(){
+    if(fullBtn) fullBtn.textContent = document.fullscreenElement ? "Exit full screen" : "Full screen";
+    setTimeout(scale, 60);
+  });
+
+  // Swipe on phones.
+  var x0 = null;
+  stage.addEventListener("touchstart", function(e){ x0 = e.touches[0].clientX; }, {passive:true});
+  stage.addEventListener("touchend", function(e){
+    if(x0 === null) return;
+    var dx = e.changedTouches[0].clientX - x0;
+    if(Math.abs(dx) > 45) show(dx < 0 ? i + 1 : i - 1);
+    x0 = null;
+  }, {passive:true});
+
+  // ── ask-for-access panel ───────────────────────────────────────────
+  var modal = document.getElementById("rv-modal");
+  var ask   = document.getElementById("rv-ask");
+  function openAsk(){ modal.classList.add("on"); var f = modal.querySelector("textarea,a,button"); if(f) f.focus(); }
+  function closeAsk(){ modal.classList.remove("on"); }
+  if(ask) ask.addEventListener("click", openAsk);
+  modal.addEventListener("click", function(e){
+    if(e.target === modal || (e.target.closest && e.target.closest("[data-rv-close]"))) closeAsk();
+  });
+  document.addEventListener("keydown", function(e){
+    if(e.key === "Escape" && modal.classList.contains("on")) closeAsk();
+  });
+  // Coming back from a login or signup bounce: pick up where they left off.
+  if(CFG.openAsk) openAsk();
+
+  var flash = document.getElementById("rv-flash");
+  if(flash) setTimeout(function(){ flash.remove(); }, 7000);
+})();
+</script>
+</body>
+</html>

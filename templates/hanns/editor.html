@@ -145,7 +145,7 @@ body.hanns-options-open .drawer{
   font:700 .58rem/1 var(--font-mono,ui-monospace,monospace);
   letter-spacing:.12em;text-transform:uppercase;color:var(--fog-2);
 }
-#dl-url{
+#dl-url,#rv-url{
   width:100%;background:rgba(0,0,0,.3);border:1px solid var(--line);
   border-radius:9px;color:inherit;padding:.45rem .55rem;
   font:500 .7rem/1.4 var(--font-mono,ui-monospace,monospace);
@@ -157,6 +157,37 @@ body.hanns-options-open .drawer{
 @media(max-width:560px){
   .dl-share{flex-direction:column;align-items:center;text-align:center}
   .dl-share-meta{width:100%}
+}
+
+/* ── Review link: deadline picker ─────────────────────────────────── */
+.rv-expiry{display:grid;gap:.3rem;margin:.2rem 1.3rem .9rem}
+.rv-expiry label{font-size:.8rem;color:var(--fog-2)}
+.rv-expiry select{
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);
+  color:var(--cream);border-radius:10px;padding:.5rem .6rem;
+  font:600 .84rem/1 var(--font-body);
+}
+.rv-expiry select:focus{outline:none;border-color:var(--signal)}
+
+/* ── Contributor requests list ────────────────────────────────────── */
+.req-list{
+  display:grid;gap:.55rem;margin:.2rem 1.3rem .4rem;
+  max-height:46vh;overflow:auto;
+}
+.req-row{
+  display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.6rem;align-items:center;
+  padding:.6rem .7rem;border:1px solid rgba(255,255,255,.10);border-radius:12px;
+  background:rgba(255,255,255,.04);
+}
+.req-who{min-width:0;display:grid;gap:.15rem}
+.req-who b{font-size:.88rem;color:var(--cream);overflow-wrap:anywhere}
+.req-who small{font-size:.75rem;color:var(--fog);overflow-wrap:anywhere}
+.req-msg{font-size:.8rem;color:var(--fog-2);line-height:1.45;margin-top:.15rem}
+.req-btns{display:flex;gap:.35rem;flex:0 0 auto;font-size:.8rem;color:var(--fog-2)}
+.req-row.done{opacity:.55}
+.req-empty{font-size:.85rem;color:var(--fog);margin:.2rem 1.3rem 1rem}
+@media(max-width:560px){
+  .req-row{grid-template-columns:1fr}
 }
 </style>
 
@@ -249,6 +280,16 @@ body.hanns-options-open .drawer{
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v3M17 20h4M14 20h.01"/></svg>
             <span>Audience download</span>
             <span class="option-pill" id="audience-download-pill" hidden>On</span>
+          </button>
+          <button class="option-item" id="btn-review-link" type="button" role="menuitem" title="Share a read-only link so people can review this deck">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M1.5 12s3.8-7 10.5-7 10.5 7 10.5 7-3.8 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/></svg>
+            <span>Review link</span>
+            <span class="option-pill" id="review-link-pill" hidden>On</span>
+          </button>
+          <button class="option-item" id="btn-access-requests" type="button" role="menuitem" title="People who reviewed this deck and asked to edit it">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-8 0v2"/><circle cx="12" cy="7" r="4"/><path d="M19.5 14v3.5M19.5 20.5h.01"/></svg>
+            <span>Contributor requests</span>
+            <span class="option-pill" id="access-requests-pill" hidden>0</span>
           </button>
           {% endif %}
           <button class="option-item" id="btn-import-powerpoint" type="button" role="menuitem" title="Import a PowerPoint file into this Hanns deck">
@@ -444,6 +485,86 @@ body.hanns-options-open .drawer{
       before — use it if a deck went out to the wrong room.</p>
   </div>
 </div>
+
+<div class="modal" id="review-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="review-modal-title">
+  <div class="modal-card collab-card">
+    <button class="modal-x" data-close-review type="button" aria-label="Close">✕</button>
+    <div class="collab-icon">👀</div>
+    <h3 id="review-modal-title">Review link</h3>
+    <p>Send this to anyone who should read the deck without changing it. It
+      opens the slides in a browser — no account and no editing, and your
+      speaker notes and prompter stay behind.</p>
+
+    <label class="dl-switch" for="rv-toggle">
+      <input type="checkbox" id="rv-toggle">
+      <span class="dl-switch-track"><span class="dl-switch-thumb"></span></span>
+      <span class="dl-switch-text">
+        <b>Let people review this deck from a link</b>
+        <small id="rv-state">Off — the link does not open.</small>
+      </span>
+    </label>
+
+    <div class="rv-expiry" id="rv-expiry" hidden>
+      <label for="rv-expires">Close the link automatically</label>
+      <select id="rv-expires">
+        <option value="never">No deadline</option>
+        <option value="24h">In 24 hours</option>
+        <option value="7d">In 7 days</option>
+        <option value="30d">In 30 days</option>
+      </select>
+    </div>
+
+    <div class="dl-share" id="rv-share" hidden>
+      <div class="dl-qr" id="rv-qr"></div>
+      <div class="dl-share-meta">
+        <span class="dl-label">Review link</span>
+        <input type="text" id="rv-url" readonly>
+        <div class="dl-actions">
+          <button class="tbtn compact" id="rv-copy" type="button">Copy link</button>
+          <button class="tbtn ghost compact" id="rv-rotate" type="button"
+                  title="Stop every review link you have already shared">New link</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="collab-result" id="rv-result" hidden></div>
+    <p class="dl-note">Reviewers who want to edit can ask from that page, and
+      their requests arrive under <b>Contributor requests</b>. <b>New link</b>
+      stops every link already shared — use it when a deck reached the wrong
+      people.</p>
+  </div>
+</div>
+
+<div class="modal" id="requests-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="requests-modal-title">
+  <div class="modal-card collab-card">
+    <button class="modal-x" data-close-requests type="button" aria-label="Close">✕</button>
+    <div class="collab-icon">🙋</div>
+    <h3 id="requests-modal-title">Contributor requests</h3>
+    <p>People who read the review link and asked to edit. Approving adds them
+      as a live editor, exactly as inviting them by email would.</p>
+
+    <div class="req-list" id="req-list">
+      {% for r in access_requests %}
+      <div class="req-row" data-req="{{ r.pk }}">
+        <div class="req-who">
+          <b>{{ r.user.get_full_name|default:r.user.get_username }}</b>
+          <small>{{ r.user.email }}</small>
+          {% if r.message %}<span class="req-msg">{{ r.message }}</span>{% endif %}
+        </div>
+        <div class="req-btns">
+          <button class="tbtn primary compact" data-approve="{{ r.pk }}" type="button">Approve</button>
+          <button class="tbtn ghost compact" data-decline="{{ r.pk }}" type="button">Decline</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% if not access_requests %}
+    <p class="req-empty" id="req-empty">No one has asked yet. Share the review
+      link and requests will show up here.</p>
+    {% endif %}
+    <div class="collab-result" id="req-result" hidden></div>
+  </div>
+</div>
 {% endif %}
 
 
@@ -474,6 +595,11 @@ body.hanns-options-open .drawer{
     downloadSettingsUrl: "{% url 'hanns:download_settings' deck.code %}",
     allowDownload: {{ deck.allow_download|yesno:"true,false" }},
     downloadUrl: "{{ download_url|default:'' }}",
+    reviewSettingsUrl: "{% url 'hanns:review_settings' deck.code %}",
+    accessDecideUrlBase: "{% url 'hanns:access_decide' deck.code 0 %}",
+    allowReview: {{ deck.allow_review|yesno:"true,false" }},
+    reviewUrl: "{{ review_url|default:'' }}",
+    reviewStateLabel: "{{ review_state_label|escapejs }}",
     csrftoken: "{{ csrf_token }}"
   };
 </script>
@@ -698,6 +824,228 @@ body.hanns-options-open .drawer{
 
   // Reflect whatever the server already has.
   render(CFG.allowDownload, CFG.downloadUrl);
+})();
+</script>
+
+<script>
+/* ── Review link + contributor requests ───────────────────────────────
+   Owner-only. Same shape as the audience-download panel above: the server
+   owns the state, the UI only ever reflects what came back from it.    */
+(function(){
+  "use strict";
+  var CFG = window.__HANNS__ || {};
+
+  /* ── the link itself ─────────────────────────────────────────────── */
+  (function(){
+    var modal = document.getElementById("review-modal");
+    if(!modal || !CFG.reviewSettingsUrl) return;
+
+    var toggle  = document.getElementById("rv-toggle");
+    var state   = document.getElementById("rv-state");
+    var expiry  = document.getElementById("rv-expiry");
+    var expires = document.getElementById("rv-expires");
+    var share   = document.getElementById("rv-share");
+    var qrBox   = document.getElementById("rv-qr");
+    var urlBox  = document.getElementById("rv-url");
+    var result  = document.getElementById("rv-result");
+    var pill    = document.getElementById("review-link-pill");
+    var busy    = false;
+
+    function say(msg, bad){
+      if(!result) return;
+      result.hidden = !msg;
+      result.textContent = msg || "";
+      result.style.color = bad ? "#fca5a5" : "";
+    }
+
+    function drawQR(url){
+      if(!qrBox) return;
+      qrBox.innerHTML = "";
+      if(!url || typeof window.QRCode !== "function") return;
+      try{
+        new window.QRCode(qrBox, {
+          text: url, width: 96, height: 96,
+          colorDark: "#111827", colorLight: "#ffffff",
+          correctLevel: window.QRCode.CorrectLevel.H
+        });
+      }catch(e){ qrBox.innerHTML = ""; }
+    }
+
+    function render(on, url, label){
+      if(toggle) toggle.checked = !!on;
+      if(state){
+        state.textContent = label || (on
+          ? "On — open until you switch it off."
+          : "Off — the link does not open.");
+      }
+      if(pill) pill.hidden = !on;
+      if(expiry) expiry.hidden = !on;
+      if(share) share.hidden = !on || !url;
+      if(on && url){
+        if(urlBox) urlBox.value = url;
+        drawQR(url);
+      }
+      CFG.allowReview = !!on;
+      CFG.reviewUrl = url || "";
+      CFG.reviewStateLabel = label || "";
+    }
+
+    function post(body){
+      if(busy) return Promise.resolve(null);
+      busy = true;
+      say("");
+      return fetch(CFG.reviewSettingsUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-CSRFToken": CFG.csrftoken || ""
+        },
+        credentials: "same-origin",
+        body: body
+      }).then(function(r){ return r.json(); })
+        .then(function(j){
+          if(!j || !j.ok) throw new Error((j && j.error) || "Could not save that.");
+          render(j.allow_review, j.review_url, j.expires_label);
+          return j;
+        })
+        .catch(function(err){
+          say(err.message || "Could not reach the server.", true);
+          // Put the switch back where the server actually left it.
+          render(CFG.allowReview, CFG.reviewUrl, CFG.reviewStateLabel);
+          return null;
+        })
+        .then(function(j){ busy = false; return j; });
+    }
+
+    if(toggle) toggle.addEventListener("change", function(){
+      post("allow_review=" + (toggle.checked ? "1" : "0")).then(function(j){
+        if(j) say(j.allow_review ? "Review link is on." : "Review link is off.");
+      });
+    });
+
+    if(expires) expires.addEventListener("change", function(){
+      post("expires_in=" + encodeURIComponent(expires.value)).then(function(j){
+        if(!j) return;
+        say(expires.value === "never"
+          ? "The link stays open until you switch it off."
+          : j.expires_label);
+      });
+    });
+
+    var rotateBtn = document.getElementById("rv-rotate");
+    if(rotateBtn) rotateBtn.addEventListener("click", function(){
+      if(!window.confirm("Create a new review link?\n\nEvery link you have already shared will stop working.")) return;
+      post("rotate=1").then(function(j){ if(j) say("New link created — the old one no longer opens."); });
+    });
+
+    var copyBtn = document.getElementById("rv-copy");
+    if(copyBtn) copyBtn.addEventListener("click", function(){
+      if(!urlBox || !urlBox.value) return;
+      var done = function(){ copyBtn.textContent = "Copied"; setTimeout(function(){ copyBtn.textContent = "Copy link"; }, 1600); };
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(urlBox.value).then(done, function(){ urlBox.select(); done(); });
+      }else{
+        urlBox.select();
+        try{ document.execCommand("copy"); }catch(e){}
+        done();
+      }
+    });
+
+    function open(){ modal.classList.add("on"); modal.setAttribute("aria-hidden","false"); }
+    function close(){ modal.classList.remove("on"); modal.setAttribute("aria-hidden","true"); say(""); }
+
+    var openBtn = document.getElementById("btn-review-link");
+    if(openBtn) openBtn.addEventListener("click", open);
+    modal.addEventListener("click", function(e){
+      if(e.target === modal || (e.target.closest && e.target.closest("[data-close-review]"))) close();
+    });
+    document.addEventListener("keydown", function(e){
+      if(e.key === "Escape" && modal.classList.contains("on")) close();
+    });
+
+    render(CFG.allowReview, CFG.reviewUrl, CFG.reviewStateLabel);
+  })();
+
+  /* ── requests to edit ────────────────────────────────────────────── */
+  (function(){
+    var modal = document.getElementById("requests-modal");
+    if(!modal || !CFG.accessDecideUrlBase) return;
+
+    var list   = document.getElementById("req-list");
+    var empty  = document.getElementById("req-empty");
+    var result = document.getElementById("req-result");
+    var pill   = document.getElementById("access-requests-pill");
+
+    function say(msg, bad){
+      if(!result) return;
+      result.hidden = !msg;
+      result.textContent = msg || "";
+      result.style.color = bad ? "#fca5a5" : "";
+    }
+
+    function refreshPill(n){
+      if(!pill) return;
+      var v = (typeof n === "number")
+        ? n
+        : list.querySelectorAll(".req-row:not(.done)").length;
+      pill.hidden = v < 1;
+      pill.textContent = String(v);
+    }
+
+    function decide(id, action, row){
+      // The server hands us the route with a placeholder id of 0.
+      var url = CFG.accessDecideUrlBase.replace(/0\/decide\/$/, id + "/decide/");
+      Array.prototype.forEach.call(row.querySelectorAll("button"), function(b){ b.disabled = true; });
+      fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-CSRFToken": CFG.csrftoken || ""
+        },
+        credentials: "same-origin",
+        body: "action=" + action
+      }).then(function(r){ return r.json(); })
+        .then(function(j){
+          if(!j || !j.ok) throw new Error((j && j.error) || "Could not save that.");
+          row.classList.add("done");
+          row.querySelector(".req-btns").textContent =
+            j.status === "approved" ? "Approved" : "Declined";
+          refreshPill(j.pending);
+          say(j.status === "approved"
+            ? j.person + " can now edit this deck, and has been emailed."
+            : "Request declined. They can still read the deck.");
+        })
+        .catch(function(err){
+          Array.prototype.forEach.call(row.querySelectorAll("button"), function(b){ b.disabled = false; });
+          say(err.message || "Could not reach the server.", true);
+        });
+    }
+
+    list.addEventListener("click", function(e){
+      var a = e.target.closest && e.target.closest("[data-approve]");
+      var d = e.target.closest && e.target.closest("[data-decline]");
+      if(!a && !d) return;
+      var btn = a || d;
+      var id  = btn.getAttribute(a ? "data-approve" : "data-decline");
+      var row = btn.closest(".req-row");
+      if(row) decide(id, a ? "approve" : "decline", row);
+    });
+
+    function open(){ modal.classList.add("on"); modal.setAttribute("aria-hidden","false"); }
+    function close(){ modal.classList.remove("on"); modal.setAttribute("aria-hidden","true"); say(""); }
+
+    var openBtn = document.getElementById("btn-access-requests");
+    if(openBtn) openBtn.addEventListener("click", open);
+    modal.addEventListener("click", function(e){
+      if(e.target === modal || (e.target.closest && e.target.closest("[data-close-requests]"))) close();
+    });
+    document.addEventListener("keydown", function(e){
+      if(e.key === "Escape" && modal.classList.contains("on")) close();
+    });
+
+    if(empty) empty.hidden = list.querySelectorAll(".req-row").length > 0;
+    refreshPill();
+  })();
 })();
 </script>
 {% endif %}

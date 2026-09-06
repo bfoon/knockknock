@@ -11,6 +11,12 @@ Roles:
   • deck_set_state(code)   — POST {state} → live | ended
   • deck_delete(code)      — delete a deck (owner, POST only)
 
+Review links (view-only sharing):
+  • deck_review(token)          — PUBLIC read-only deck viewer
+  • deck_request_access(token)  — reviewer asks the owner for edit rights
+  • deck_review_settings(code)  — owner: switch on/off, rotate, set a deadline
+  • deck_access_decide(code,pk) — owner: approve or decline one request
+
 The editor and present screens are server-rendered shells; all the live
 behaviour (reactions, slide sync) runs through consumers.PresentConsumer.
 The deck content itself is plain HTTP: the editor loads JSON, edits in the
@@ -20,6 +26,7 @@ browser, and POSTs the whole deck back to deck_save.
 import json
 import os
 import uuid
+from urllib.parse import quote
 
 from django.conf import settings
 from django.contrib import messages
@@ -36,7 +43,9 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 from django.utils import timezone
 
-from .models import Deck, Slide, DeckCollaborator, DeckInvite, DeckReaction
+from .models import (
+    Deck, Slide, DeckCollaborator, DeckInvite, DeckReaction, DeckAccessRequest,
+)
 from .onboarding import ensure_hanns_starter_deck
 from .powerpoint_importer import import_powerpoint_into_deck
 from .powerpoint_exporter import export_deck_to_pptx, export_filename
@@ -74,6 +83,113 @@ def _editable_deck_or_403(request, code):
     if not _can_edit_deck(request.user, deck):
         return deck, JsonResponse({"ok": False, "error": "You do not have edit access to this deck."}, status=403)
     return deck, None
+
+
+# ── review links ─────────────────────────────────────────────────────
+# Durations the owner can pick from the editor. Held server-side so a
+# hand-edited request cannot set itself a ten-year link.
+REVIEW_EXPIRY_CHOICES = {
+    "24h": 24,
+    "7d": 24 * 7,
+    "30d": 24 * 30,
+    "never": None,
+}
+
+
+def _review_url(request, deck):
+    """Absolute view-only link. Token only — never the deck code."""
+    return request.build_absolute_uri(
+        reverse("hanns:review", args=[str(deck.review_token)])
+    )
+
+
+def _review_deck_or_404(token):
+    """Resolve a deck from a review token, or 404.
+
+    Deliberately returns the SAME 404 for a wrong token, a switched-off
+    link, an expired one and a deck that never existed, so a stale link
+    cannot be used to probe what is here.
+    """
+    deck = Deck.objects.filter(review_token=token).first()
+    if deck is None or not deck.review_link_active():
+        raise Http404("This review link is no longer valid.")
+    return deck
+
+
+def _is_presenter_only_element(el):
+    """Elements a reviewer must never receive — they are the speaker's crib."""
+    if not isinstance(el, dict):
+        return True
+    return el.get("type") == "object" and el.get("objectType") == "teleprompter"
+
+
+def _review_payload(deck):
+    """deck.as_dict() cut down to what a reviewer is allowed to see.
+
+    Dropped: the join code (which would unlock the audience phone page and
+    the presenter controller), the live state, speaker notes and
+    teleprompter elements. This happens server-side, so nothing private is
+    ever sent to the browser for someone to find in devtools.
+    """
+    data = deck.as_dict()
+    for key in ("code", "state", "current_slide", "allow_reactions", "allow_download"):
+        data.pop(key, None)
+
+    slides = []
+    for raw in data.get("slides", []):
+        slide = dict(raw)
+        slide.pop("notes", None)
+        els = slide.get("els")
+        slide["els"] = [
+            el for el in (els if isinstance(els, list) else [])
+            if not _is_presenter_only_element(el)
+        ]
+        slides.append(slide)
+    data["slides"] = slides
+    return data
+
+
+def _expiry_label(deck):
+    """One line of plain English about the state of the review link."""
+    if not deck.allow_review:
+        return "Off — the link does not open."
+    if not deck.review_expires_at:
+        return "On — open until you switch it off."
+    if deck.review_expired:
+        return "Closed — the deadline passed."
+    when = timezone.localtime(deck.review_expires_at).strftime("%d %b %Y, %H:%M")
+    return f"On — closes {when}."
+
+
+def _deck_owner_label(deck):
+    owner = deck.owner
+    if not owner:
+        return "Knock-Knock"
+    full = ""
+    if hasattr(owner, "get_full_name"):
+        full = (owner.get_full_name() or "").strip()
+    return full or owner.get_username()
+
+
+def _person_label(user):
+    full = ""
+    if hasattr(user, "get_full_name"):
+        full = (user.get_full_name() or "").strip()
+    return full or user.get_username()
+
+
+def _login_url():
+    try:
+        return reverse("accounts:login")
+    except Exception:
+        return str(getattr(settings, "LOGIN_URL", "/accounts/login/"))
+
+
+def _signup_url():
+    try:
+        return reverse("accounts:signup_individual")
+    except Exception:
+        return _login_url()
 
 
 def _split_emails(raw):
@@ -120,6 +236,58 @@ def _send_hanns_invite_email(*, request, deck, email, link, has_account):
         getattr(settings, "DEFAULT_FROM_EMAIL", None) or "no-reply@knockknock.local",
         [email],
         fail_silently=True,
+    )
+
+
+def _send_access_request_email(*, request, deck, access_request):
+    """Tell the owner that someone is asking to edit."""
+    owner_email = getattr(deck.owner, "email", "") or ""
+    if not owner_email:
+        return
+    asker = _person_label(access_request.user)
+    link = request.build_absolute_uri(reverse("hanns:edit", args=[deck.code]))
+    note = f"\n\nThey wrote:\n{access_request.message}\n" if access_request.message else "\n"
+    send_mail(
+        f"{asker} wants to edit “{deck.title}”",
+        (
+            f"Hello {_deck_owner_label(deck)},\n\n"
+            f"{asker} ({access_request.user.email}) reviewed “{deck.title}” "
+            f"and is asking for editing rights.{note}\n"
+            f"Approve or decline from the deck's Options menu:\n{link}\n\n"
+            f"Thank you."
+        ),
+        getattr(settings, "DEFAULT_FROM_EMAIL", None) or "no-reply@knockknock.local",
+        [owner_email],
+        fail_silently=True,
+    )
+
+
+def _send_access_decision_email(*, request, deck, access_request, approved):
+    """Tell the reviewer what the owner decided."""
+    to = getattr(access_request.user, "email", "") or ""
+    if not to:
+        return
+    if approved:
+        link = request.build_absolute_uri(reverse("hanns:edit", args=[deck.code]))
+        subject = f"You can now edit “{deck.title}”"
+        body = (
+            f"Hello,\n\n"
+            f"Your request to edit the Hanns presentation “{deck.title}” was approved.\n\n"
+            f"Open the editor here:\n{link}\n\n"
+            f"Thank you."
+        )
+    else:
+        subject = f"About your request to edit “{deck.title}”"
+        body = (
+            f"Hello,\n\n"
+            f"Your request to edit the Hanns presentation “{deck.title}” was "
+            f"declined. You can still open the review link to read the deck.\n\n"
+            f"Thank you."
+        )
+    send_mail(
+        subject, body,
+        getattr(settings, "DEFAULT_FROM_EMAIL", None) or "no-reply@knockknock.local",
+        [to], fail_silently=True,
     )
 
 
@@ -178,15 +346,25 @@ def deck_edit(request, code):
                 "code": deck.code, "token": str(deck.download_token),
             })
         )
+    is_owner = deck.owner_id == request.user.id
+    review_url = _review_url(request, deck) if deck.review_link_active() else ""
     return render(request, "hanns/editor.html", {
         "deck": deck,
         "deck_json": json.dumps(deck.as_dict()),
         "present_url": request.build_absolute_uri(
             reverse("hanns:present", args=[deck.code])),
-        "is_deck_owner": deck.owner_id == request.user.id,
+        "is_deck_owner": is_owner,
         "collaborators": deck.deck_collaborators.select_related("user").all(),
         "pending_invites": deck.deck_invites.filter(status=DeckInvite.STATUS_PENDING),
         "download_url": download_url,
+        "review_url": review_url,
+        "review_state_label": _expiry_label(deck),
+        # Only the owner answers requests, so only the owner is handed them.
+        "access_requests": (
+            deck.access_requests.select_related("user").filter(
+                status=DeckAccessRequest.STATUS_PENDING)
+            if is_owner else []
+        ),
     })
 
 
@@ -664,3 +842,174 @@ def deck_delete(request, code):
     messages.success(request, f"Deleted “{title}”.")
     nxt = request.POST.get("next") or request.GET.get("next")
     return redirect(nxt or reverse("hanns:list"))
+
+
+# ── review links ─────────────────────────────────────────────────────
+def deck_review(request, token):
+    """PUBLIC read-only deck viewer. The token is the credential.
+
+    No login is needed to read. Read-only is enforced by what is served
+    rather than by the interface: the page receives a stripped payload and
+    none of the editor JavaScript, so there is nothing here that could
+    write back even if it tried.
+    """
+    deck = _review_deck_or_404(token)
+
+    user = request.user
+    signed_in = bool(getattr(user, "is_authenticated", False))
+    can_edit = _can_edit_deck(user, deck)
+
+    my_request = None
+    if signed_in and not can_edit:
+        my_request = DeckAccessRequest.objects.filter(deck=deck, user=user).first()
+
+    review_path = reverse("hanns:review", args=[str(deck.review_token)])
+    bounce = quote(review_path + "?ask=1")
+
+    return render(request, "hanns/review.html", {
+        "deck": deck,
+        "deck_json": json.dumps(_review_payload(deck)),
+        "slide_count": deck.slides.count(),
+        "owner_label": _deck_owner_label(deck),
+        "expires_at": deck.review_expires_at,
+        "signed_in": signed_in,
+        "can_edit": can_edit,
+        "is_owner": signed_in and deck.owner_id == user.id,
+        "access_request": my_request,
+        "request_access_url": reverse(
+            "hanns:request_access", args=[str(deck.review_token)]),
+        "edit_url": reverse("hanns:edit", args=[deck.code]) if can_edit else "",
+        "login_url": f"{_login_url()}?next={bounce}",
+        "signup_url": f"{_signup_url()}?next={bounce}",
+        # ?ask=1 comes back from the login/signup bounce — reopen the form
+        # so nobody has to find their place again.
+        "open_ask": request.GET.get("ask") == "1",
+    })
+
+
+def deck_request_access(request, token):
+    """A reviewer asks the owner for contributor rights.
+
+    Signed out, they go through login (or signup) and land back on the same
+    review page with the form open. Signed in, the request reaches the
+    owner by email and in the editor.
+    """
+    deck = _review_deck_or_404(token)
+    review_path = reverse("hanns:review", args=[str(deck.review_token)])
+
+    if not getattr(request.user, "is_authenticated", False):
+        # Mirrors deck_accept_invite: a signup flow that drops ?next can
+        # read this back after the account exists and finish the journey.
+        request.session["pending_hanns_review_token"] = str(deck.review_token)
+        request.session.setdefault("pending_plan_tier", "free")
+        messages.info(request, "Sign in to Knock-Knock to ask for editing rights.")
+        bounce = quote(review_path + "?ask=1")
+        return redirect(f"{_login_url()}?next={bounce}")
+
+    if request.method != "POST":
+        return redirect(f"{review_path}?ask=1")
+
+    if _can_edit_deck(request.user, deck):
+        messages.info(request, "You already have editing rights on this deck.")
+        return redirect("hanns:edit", code=deck.code)
+
+    note = (request.POST.get("message") or "").strip()[:500]
+    req, created = DeckAccessRequest.objects.get_or_create(
+        deck=deck, user=request.user, defaults={"message": note},
+    )
+    if not created:
+        if req.status == DeckAccessRequest.STATUS_APPROVED:
+            messages.info(request, "You already have editing rights on this deck.")
+            return redirect("hanns:edit", code=deck.code)
+        if req.is_pending:
+            messages.info(
+                request,
+                f"{_deck_owner_label(deck)} already has your request. "
+                f"You will get an email when they answer.",
+            )
+            return redirect(review_path)
+        # Declined before — same row, asked again.
+        req.reopen(message=note)
+
+    _send_access_request_email(request=request, deck=deck, access_request=req)
+    messages.success(
+        request,
+        f"Your request went to {_deck_owner_label(deck)}. "
+        f"You will get an email when they answer.",
+    )
+    return redirect(review_path)
+
+
+@login_required
+@require_POST
+def deck_review_settings(request, code):
+    """Owner switches the review link on/off, rotates it, or sets a deadline."""
+    deck = get_object_or_404(Deck, code=code.upper(), owner=request.user)
+
+    if request.POST.get("rotate") == "1":
+        deck.rotate_review_token()
+
+    elif "expires_in" in request.POST:
+        key = request.POST.get("expires_in")
+        if key not in REVIEW_EXPIRY_CHOICES:
+            return JsonResponse(
+                {"ok": False, "error": "Pick one of the offered durations."},
+                status=400,
+            )
+        hours = REVIEW_EXPIRY_CHOICES[key]
+        deck.review_expires_at = (
+            None if hours is None
+            else timezone.now() + timezone.timedelta(hours=hours)
+        )
+        deck.save(update_fields=["review_expires_at"])
+
+    else:
+        on = request.POST.get("allow_review") in ("1", "true", "on")
+        was_expired = deck.review_expired
+        deck.allow_review = on
+        if on and was_expired:
+            # Switching back on after the deadline passed should reopen the
+            # link, not hand back one that 404s.
+            deck.review_expires_at = None
+            deck.save(update_fields=["allow_review", "review_expires_at"])
+        else:
+            deck.save(update_fields=["allow_review"])
+
+    return JsonResponse({
+        "ok": True,
+        "allow_review": deck.allow_review,
+        "review_url": _review_url(request, deck) if deck.review_link_active() else "",
+        "expires_at": (
+            deck.review_expires_at.isoformat() if deck.review_expires_at else ""
+        ),
+        "expires_label": _expiry_label(deck),
+    })
+
+
+@login_required
+@require_POST
+def deck_access_decide(request, code, pk):
+    """Owner approves or declines one contributor request."""
+    deck = get_object_or_404(Deck, code=code.upper(), owner=request.user)
+    req = get_object_or_404(DeckAccessRequest, pk=pk, deck=deck)
+
+    action = (request.POST.get("action") or "").lower()
+    if action == "approve":
+        req.approve(by_user=request.user)
+    elif action in ("decline", "deny"):
+        req.decline(by_user=request.user)
+    else:
+        return JsonResponse({"ok": False, "error": "Unknown action."}, status=400)
+
+    _send_access_decision_email(
+        request=request, deck=deck, access_request=req,
+        approved=(req.status == DeckAccessRequest.STATUS_APPROVED),
+    )
+    return JsonResponse({
+        "ok": True,
+        "id": req.pk,
+        "status": req.status,
+        "person": _person_label(req.user),
+        "pending": deck.access_requests.filter(
+            status=DeckAccessRequest.STATUS_PENDING).count(),
+    })

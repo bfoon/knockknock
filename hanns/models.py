@@ -1,7 +1,7 @@
 """
 hanns/models.py — data model for the Hanns presentation studio.
 
-Two tables: a Deck (one presentation, owner + join code, mirrors the shape
+The core two tables: a Deck (one presentation, owner + join code, mirrors the shape
 of BoardSession so it can share the same dashboard / session-code
 machinery) and ordered Slides. A slide's visual content lives in a single
 JSON ``data`` blob whose shape is exactly what the editor and the live
@@ -26,6 +26,7 @@ import uuid
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 def _gen_code(length=6):
@@ -69,6 +70,45 @@ class Deck(models.Model):
         self.download_token = uuid.uuid4()
         self.save(update_fields=["download_token"])
         return self.download_token
+
+    # ── review link (view-only share) ────────────────────────────────
+    # A reviewer opens the deck read-only from an unguessable token URL:
+    # no account, no editing, no presenter material. Same reasoning as
+    # download_token — the deck code is short and shoulder-surfable, so
+    # the token is the credential and rotating it kills every old link.
+    #
+    # The review URL carries ONLY the token, never the code. The code is
+    # the key to the audience page and the presenter controller, so a link
+    # handed to an outside reviewer must not contain it.
+    allow_review = models.BooleanField(
+        default=False,
+        help_text="Let anyone with the review link open this deck read-only.",
+    )
+    review_token = models.UUIDField(default=uuid.uuid4, editable=False)
+
+    # Optional deadline. Null means "until I say otherwise" — the switch
+    # and the token are the hard stops; this is the one that does not need
+    # the owner to remember.
+    review_expires_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="When the review link stops opening. Blank means no deadline.",
+    )
+
+    def rotate_review_token(self):
+        """Invalidate every review link shared so far."""
+        self.review_token = uuid.uuid4()
+        self.save(update_fields=["review_token"])
+        return self.review_token
+
+    @property
+    def review_expired(self):
+        return bool(
+            self.review_expires_at and self.review_expires_at <= timezone.now()
+        )
+
+    def review_link_active(self):
+        """True when the review link should still open."""
+        return bool(self.allow_review) and not self.review_expired
 
     # The slide the presenter is currently on. Lets a (re)connecting
     # audience phone or a second presenter screen sync to the right slide.
@@ -250,3 +290,97 @@ class DeckReaction(models.Model):
 
     def __str__(self):
         return f"{self.emoji} on {self.deck} at slide {self.slide_index + 1}"
+
+
+class DeckAccessRequest(models.Model):
+    """A signed-in reviewer asking the owner for contributor (edit) rights.
+
+    The mirror image of DeckInvite: there the owner reaches out, here the
+    reviewer does. One row per (deck, user) — asking again after a decline
+    reuses the row and flips it back to pending, so a deck never collects a
+    pile of duplicate asks from the same person.
+    """
+
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_DECLINED = "declined"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_APPROVED, "Approved"),
+        (STATUS_DECLINED, "Declined"),
+    ]
+
+    deck = models.ForeignKey(
+        Deck, on_delete=models.CASCADE, related_name="access_requests",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name="hanns_access_requests",
+    )
+    message = models.CharField(max_length=500, blank=True)
+    status = models.CharField(
+        max_length=12, choices=STATUS_CHOICES,
+        default=STATUS_PENDING, db_index=True,
+    )
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="hanns_access_decisions",
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [("deck", "user")]
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["deck", "status"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user} requested edit access to {self.deck}"
+
+    @property
+    def is_pending(self):
+        return self.status == self.STATUS_PENDING
+
+    def approve(self, by_user=None):
+        """Grant edit rights. Idempotent — approving twice is harmless.
+
+        Produces exactly the DeckCollaborator row an email invite would, so
+        the dashboard query and _can_edit_deck need no special case.
+        """
+        collab, _ = DeckCollaborator.objects.update_or_create(
+            deck=self.deck,
+            user=self.user,
+            defaults={
+                "permission": DeckCollaborator.PERMISSION_EDIT,
+                "invited_by": by_user or self.deck.owner,
+                "accepted_at": timezone.now(),
+            },
+        )
+        self.status = self.STATUS_APPROVED
+        self.decided_by = by_user
+        self.decided_at = timezone.now()
+        self.save(update_fields=["status", "decided_by", "decided_at", "updated_at"])
+        return collab
+
+    def decline(self, by_user=None):
+        """Turn the request down. The review link keeps working."""
+        self.status = self.STATUS_DECLINED
+        self.decided_by = by_user
+        self.decided_at = timezone.now()
+        self.save(update_fields=["status", "decided_by", "decided_at", "updated_at"])
+        return self
+
+    def reopen(self, message=""):
+        """Ask again after a decline — same row, back to pending."""
+        self.status = self.STATUS_PENDING
+        self.decided_by = None
+        self.decided_at = None
+        if message:
+            self.message = message
+        self.save(update_fields=[
+            "status", "decided_by", "decided_at", "message", "updated_at",
+        ])
+        return self

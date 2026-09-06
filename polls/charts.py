@@ -88,22 +88,34 @@ ALL_CHARTS = OrderedDict([
     ("packed_circles", _c("Packed circles", "🫧", "Creative", "Polished circle-pack sized by share.")),
     ("hero_number", _c("Hero number", "🔢", "Creative", "Giant animated count-up of the leading answer.")),
     ("stream_graph", _c("Stream graph", "🌊", "Creative", "Flowing themeriver of the top answers.")),
+
+    # ── Animated live charts (v5) — rendered by static/js/chart_fx.js ──
+    # Each of these keeps one on-screen object per *individual* answer, so a
+    # new response pops in on its own instead of restarting the whole chart.
+    ("answer_bubbles", _c("Answer bubbles", "🫧", "Animated",
+                          "Every single answer is its own floating bubble.")),
+    ("bubble_groups", _c("Bubble swarm", "🎈", "Animated",
+                         "The same bubbles, swarming into a column per option.")),
+    ("racing_bars", _c("Racing bars", "🏁", "Animated",
+                       "Bars overtake each other live as votes land.")),
+    ("liquid_fill", _c("Liquid fill", "💧", "Animated",
+                       "Pillars that fill with a moving wave.")),
 ])
 
 
 CURATED_BY_TYPE = {
-    "mcq": ["bar", "donut", "ranked_bar", "dot_matrix", "packed_circles", "radial_bar", "plotly_bar", "plotly_donut", "plotly_treemap"],
-    "image_choice": ["bar", "gallery", "dot_matrix", "packed_circles", "plotly_bar", "plotly_donut"],
-    "yes_no": ["hero_number", "donut", "split_card", "dot_matrix", "plotly_donut", "plotly_gauge"],
-    "likert": ["comparison_bars", "stacked_bar", "heatmap", "radial_bar", "plotly_stacked", "plotly_heatmap"],
-    "ranking": ["ranked_bar", "radial_bar", "flow", "plotly_hbar", "plotly_treemap"],
-    "word": ["wordcloud", "packed_circles", "stream_graph", "tags", "frequency_list", "plotly_bar"],
-    "open": ["responses_list", "quotes_carousel", "stream_graph", "tags", "plotly_bar"],
-    "scale": ["histogram", "bee_swarm", "gauge", "distribution", "plotly_gauge", "plotly_line", "plotly_heatmap"],
-    "rating": ["avg_marker", "radial_bar", "gauge", "histogram", "plotly_gauge", "plotly_bar"],
-    "nps": ["nps_segments", "hero_number", "gauge", "bee_swarm", "plotly_gauge", "plotly_bar"],
-    "slider": ["histogram", "bee_swarm", "gauge", "plotly_gauge", "plotly_line"],
-    "numeric": ["histogram", "bee_swarm", "distribution", "plotly_bar", "plotly_line"],
+    "mcq": ["answer_bubbles", "bubble_groups", "racing_bars", "bar", "donut", "liquid_fill", "ranked_bar", "dot_matrix", "packed_circles", "radial_bar", "plotly_bar", "plotly_donut", "plotly_treemap"],
+    "image_choice": ["answer_bubbles", "bar", "gallery", "dot_matrix", "packed_circles", "plotly_bar", "plotly_donut"],
+    "yes_no": ["hero_number", "answer_bubbles", "liquid_fill", "donut", "split_card", "dot_matrix", "plotly_donut", "plotly_gauge"],
+    "likert": ["comparison_bars", "bubble_groups", "stacked_bar", "heatmap", "radial_bar", "plotly_stacked", "plotly_heatmap"],
+    "ranking": ["racing_bars", "ranked_bar", "radial_bar", "flow", "plotly_hbar", "plotly_treemap"],
+    "word": ["answer_bubbles", "wordcloud", "packed_circles", "stream_graph", "tags", "frequency_list", "plotly_bar"],
+    "open": ["answer_bubbles", "responses_list", "quotes_carousel", "stream_graph", "tags", "plotly_bar"],
+    "scale": ["bee_swarm", "histogram", "liquid_fill", "gauge", "distribution", "plotly_gauge", "plotly_line", "plotly_heatmap"],
+    "rating": ["bee_swarm", "avg_marker", "radial_bar", "gauge", "histogram", "plotly_gauge", "plotly_bar"],
+    "nps": ["nps_segments", "hero_number", "bee_swarm", "gauge", "bee_swarm", "plotly_gauge", "plotly_bar"],
+    "slider": ["bee_swarm", "histogram", "liquid_fill", "gauge", "plotly_gauge", "plotly_line"],
+    "numeric": ["bee_swarm", "histogram", "distribution", "plotly_bar", "plotly_line"],
     "date": ["timeline", "line", "stream_graph", "plotly_line"],
     "datetime": ["timeline", "line", "stream_graph", "plotly_line"],
     "time": ["timeline", "line", "radial_bar", "plotly_line"],
@@ -111,8 +123,8 @@ CURATED_BY_TYPE = {
     "pin_map": ["folium_map", "plotly_geo", "map", "heatmap", "scatter"],
     "two_by_two": ["scatter", "heatmap", "plotly_scatter", "plotly_heatmap"],
     "matrix": ["heatmap", "comparison_bars", "plotly_heatmap", "stacked_bar"],
-    "points_allocation": ["ranked_bar", "treemap", "dot_matrix", "progress_bars", "plotly_treemap", "plotly_hbar"],
-    "reaction": ["live_burst", "bubble_count", "packed_circles", "tags", "plotly_bubble"],
+    "points_allocation": ["liquid_fill", "racing_bars", "ranked_bar", "treemap", "dot_matrix", "progress_bars", "plotly_treemap", "plotly_hbar"],
+    "reaction": ["answer_bubbles", "live_burst", "bubble_count", "packed_circles", "tags", "plotly_bubble"],
 }
 
 DEFAULT_CURATED = ["bar", "line", "donut", "plotly_bar", "plotly_line", "plotly_donut"]

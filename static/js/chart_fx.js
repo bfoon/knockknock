@@ -133,6 +133,120 @@
     return lo <= 1 ? "" : s.slice(0, lo - 1) + "…";
   }
 
+  /* ── text fitting ─────────────────────────────────────────────
+     Every scene shares this. Wrap into as many lines as the box allows,
+     shrink the font until the words fit, and ellipsise only when even the
+     smallest size cannot hold them. A single hard truncation like
+     "c) To in…" tells the room nothing, so it is the last resort rather
+     than the first move. */
+
+  function wrapToLines(g, text, maxWidth, maxLines) {
+    var words = String(text == null ? "" : text).split(/\s+/).filter(Boolean);
+    if (!words.length) return { lines: [], clipped: false };
+
+    var lines = [], line = "", clipped = false;
+
+    for (var i = 0; i < words.length; i++) {
+      var word = words[i];
+      var cand = line ? line + " " + word : word;
+
+      if (g.measureText(cand).width <= maxWidth) { line = cand; continue; }
+
+      if (line) {
+        lines.push(line);
+        line = "";
+        if (lines.length >= maxLines) { clipped = true; break; }
+      }
+
+      if (g.measureText(word).width > maxWidth) {
+        lines.push(fitLabel(g, word, maxWidth));
+        clipped = true;
+        if (lines.length >= maxLines) break;
+        continue;
+      }
+      line = word;
+    }
+
+    if (line) {
+      if (lines.length < maxLines) lines.push(line);
+      else clipped = true;
+    }
+    if (clipped && lines.length && !/…$/.test(lines[lines.length - 1])) {
+      lines[lines.length - 1] = fitLabel(g, lines[lines.length - 1] + " …", maxWidth);
+    }
+    return { lines: lines, clipped: clipped };
+  }
+
+  function fitTextBlock(g, text, boxW, boxH, opts) {
+    opts = opts || {};
+    var weight = opts.weight || "700";
+    var family = opts.family || "sans-serif";
+    var lh = opts.lineHeight || 1.16;
+    var max = Math.floor(opts.maxSize || 20);
+    var min = Math.floor(opts.minSize || 9);
+    var hardMax = opts.maxLines || 6;
+
+    for (var size = max; size >= min; size--) {
+      g.font = weight + " " + size + "px " + family;
+      var allowed = Math.min(hardMax, Math.max(1, Math.floor(boxH / (size * lh))));
+      var w = wrapToLines(g, text, boxW, allowed);
+      if (w.lines.length && !w.clipped) {
+        return { lines: w.lines, size: size, lineHeight: size * lh,
+                 weight: weight, family: family, clipped: false };
+      }
+    }
+
+    g.font = weight + " " + min + "px " + family;
+    var allowedMin = Math.min(hardMax, Math.max(1, Math.floor(boxH / (min * lh))));
+    var wm = wrapToLines(g, text, boxW, allowedMin);
+    return { lines: wm.lines, size: min, lineHeight: min * lh,
+             weight: weight, family: family, clipped: true };
+  }
+
+  function drawTextBlock(g, block, x, cy, align) {
+    if (!block || !block.lines.length) return;
+    g.font = block.weight + " " + block.size + "px " + block.family;
+    g.textAlign = align || "center";
+    g.textBaseline = "middle";
+    var y = cy - (block.lines.length * block.lineHeight) / 2 + block.lineHeight / 2;
+    for (var i = 0; i < block.lines.length; i++) {
+      g.fillText(block.lines[i], x, y);
+      y += block.lineHeight;
+    }
+  }
+
+  /* "c) To increase procurement requirements" → "c)". When a bubble is too
+     small for real words it still has to be identifiable; the legend or the
+     column heading carries the full text. */
+  function shortLabel(text) {
+    var t = String(text == null ? "" : text).trim();
+    var m = t.match(/^([A-Za-z0-9]{1,3})\s*[).:\]\-]/);
+    if (m) return m[1] + ")";
+    var first = t.split(/\s+/)[0] || "";
+    return first.length > 7 ? first.slice(0, 6) + "…" : first;
+  }
+
+  /* Only options that carry their own marker — "a)", "3.", "B:" — have a
+     short form worth falling back to. A free-text answer does not, so it
+     keeps its wrapped text however small rather than being reduced to a
+     meaningless stub. */
+  function hasMarker(text) {
+    return /^([A-Za-z0-9]{1,3})\s*[).:\]\-]/.test(String(text == null ? "" : text).trim());
+  }
+
+  // Below this the text is on a projector at the back of a room: unreadable.
+  var MIN_LEGIBLE_PX = 11;
+
+  /* Memoised per object: re-fitting a block every frame for every bubble
+     would mean thousands of measureText calls a second. */
+  function cachedBlock(obj, key, text, boxW, boxH, opts, g) {
+    var sig = text + "|" + Math.round(boxW) + "|" + Math.round(boxH) + "|" + (opts.maxSize | 0);
+    if (!obj[key] || obj[key].sig !== sig) {
+      obj[key] = { sig: sig, block: fitTextBlock(g, text, boxW, boxH, opts) };
+    }
+    return obj[key].block;
+  }
+
   function escapeHtml(s) {
     return String(s == null ? "" : s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -175,8 +289,10 @@
       ".kk-fx-canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}",
       ".kk-fx-overlay{position:absolute;inset:0;pointer-events:none;}",
       ".kk-fx-legend{position:absolute;left:0;right:0;bottom:10px;display:flex;",
-      "  flex-wrap:wrap;justify-content:center;gap:.4rem .55rem;padding:0 1rem;}",
-      ".kk-fx-chip{display:inline-flex;align-items:center;gap:.45rem;",
+      "  flex-wrap:wrap;justify-content:center;gap:.35rem .5rem;padding:0 1rem;",
+      "  max-height:34%;overflow:hidden;}",
+      ".kk-fx-chip{display:inline-flex;align-items:center;gap:.45rem;max-width:22ch;",
+      "  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;",
       "  padding:.3rem .7rem;border-radius:999px;font-size:.85rem;font-weight:600;",
       "  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);",
       "  backdrop-filter:blur(6px);white-space:nowrap;}",
@@ -473,13 +589,20 @@
       this.overlay.appendChild(this.legendEl);
     }
     var self = this;
-    this.legendEl.innerHTML = items.map(function (s) {
+    var shown = items.slice(0, 8);
+    var rest = items.length - shown.length;
+    this.legendEl.innerHTML = shown.map(function (s) {
       var pct = self.data.total ? Math.round(s.value / self.data.total * 100) : 0;
       return '<span class="kk-fx-chip"><i style="background:' +
         (s.color || self.theme.colorFor(s.index)) + '"></i>' +
         escapeHtml(s.label) + ' <b>' + s.value + '</b>' +
         '<span style="opacity:.6">' + pct + '%</span></span>';
-    }).join("");
+    }).join("") + (rest > 0
+      ? '<span class="kk-fx-chip" style="opacity:.6">+' + rest + ' more</span>' : "");
+
+    /* Scenes lay out around the legend rather than under it — this is the
+       strip they must keep clear. */
+    this.legendH = this.legendEl.offsetHeight || 0;
   };
 
   Scene.prototype.emptyState = function (msg) {
@@ -535,8 +658,17 @@
       if (this.bubbles) this.relayout();
     },
 
+    /* Height of the strip at the bottom that belongs to labels, not
+       bubbles. In group layout that is the column headings; in free layout
+       it is however tall the chip legend turned out to be. */
+    bandHeight: function () {
+      if (this.layout === "groups") return clamp(this.h * 0.20, 58, 124);
+      return this.legendH ? this.legendH + 14 : 18;
+    },
+
     relayout: function () {
       var self = this;
+      this.bandH = this.bandHeight();
       this.groupCount = Math.max(1, this.data.series.length);
       this.baseR = this.radiusFor(Math.max(1, this.bubbles.length));
       this.bubbles.forEach(function (b) { b.tr = self.baseR * b.sizeJitter; });
@@ -583,11 +715,21 @@
 
       this.bubbles = next;
       this.byKey = nextByKey;
-      this.relayout();
 
-      this.legend(data.series.filter(function (s) { return s.value > 0 || data.series.length <= 8; })
-        .slice(0, 12)
-        .map(function (s, i) { return { label: s.label, value: s.value, index: s.index != null ? s.index : i }; }));
+      /* Group layout draws a heading under each column, so a chip legend
+         would repeat every label a second time — which is what was
+         colliding with the headings. */
+      if (this.layout === "groups") {
+        if (this.legendEl) { this.legendEl.innerHTML = ""; this.legendH = 0; }
+      } else {
+        this.legend(data.series
+          .filter(function (s) { return s.value > 0 || data.series.length <= 8; })
+          .map(function (s, i) {
+            return { label: s.label, value: s.value, index: s.index != null ? s.index : i };
+          }));
+      }
+
+      this.relayout();
 
       this.emptyState(data.total ? "" : "Waiting for the first answer…");
     },
@@ -599,7 +741,7 @@
       if (!n) return;
 
       var pad = 8;
-      var floorY = this.h - (this.legendEl ? 52 : 16);
+      var floorY = this.h - (this.bandH || this.bandHeight());
       var groupW = this.w / Math.max(1, this.data.series.length);
 
       for (var i = 0; i < n; i++) {
@@ -696,18 +838,28 @@
         g.fill();
 
         // label
-        if (r > 17 && b.label) {
-          var fs = clamp(r * 0.42, 9, 20);
-          g.font = "700 " + fs + "px " + this.theme.font;
-          g.textAlign = "center";
-          g.textBaseline = "middle";
-          var txt = fitLabel(g, b.label, r * 1.7);
-          if (txt) {
-            g.fillStyle = "#0b0b16";
-            g.fillText(txt, b.x, b.y + 0.5);
-            g.fillStyle = "rgba(255,255,255,.95)";
-            g.fillText(txt, b.x, b.y - 0.5);
+        if (r > 14 && b.label) {
+          // Text has to sit inside the circle, so fit it to the inscribed
+          // square rather than the diameter.
+          var box = r * 1.38;
+          var block = cachedBlock(b, "_lbl", b.label, box, box, {
+            family: this.theme.font, weight: "700",
+            maxSize: clamp(r * 0.44, 9, 21), minSize: 9, maxLines: 4,
+          }, g);
+
+          // Cut off, or shrunk past the point anyone can read it? Show the
+          // option letter instead — legible beats a meaningless fragment.
+          if ((block.clipped || block.size < MIN_LEGIBLE_PX) && hasMarker(b.label)) {
+            block = cachedBlock(b, "_lblShort", shortLabel(b.label), box, box, {
+              family: this.theme.font, weight: "800",
+              maxSize: clamp(r * 0.78, 11, 30), minSize: 10, maxLines: 1,
+            }, g);
           }
+
+          g.fillStyle = "rgba(8,8,18,.35)";
+          drawTextBlock(g, block, b.x, b.y + 1);
+          g.fillStyle = "rgba(255,255,255,.97)";
+          drawTextBlock(g, block, b.x, b.y);
         }
       }
 
@@ -724,15 +876,39 @@
     drawGroupLabels: function (g) {
       var series = this.data.series;
       if (!series.length || series.length > 10) return;
+
       var groupW = this.w / series.length;
-      var y = this.h - (this.legendEl ? 58 : 22);
+      var band = this.bandH || this.bandHeight();
+      var top = this.h - band;
+      var countH = 22;
+      var textH = band - countH - 10;
+
+      g.strokeStyle = rgba(this.theme.text, 0.10);
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(12, top);
+      g.lineTo(this.w - 12, top);
+      g.stroke();
+
       for (var i = 0; i < series.length; i++) {
+        var s = series[i];
         var x = (i + 0.5) * groupW;
-        g.font = "700 " + clamp(groupW * 0.11, 11, 18) + "px " + this.theme.font;
+        var color = this.theme.colorFor(s.index != null ? s.index : i);
+
+        var block = cachedBlock(s, "_hdr", s.label, groupW - 18, textH, {
+          family: this.theme.font, weight: "600",
+          maxSize: clamp(groupW * 0.095, 11, 17), minSize: 10, maxLines: 3,
+        }, g);
+
+        g.fillStyle = rgba(this.theme.text, 0.78);
+        drawTextBlock(g, block, x, top + 8 + textH / 2);
+
+        var pct = this.data.total ? Math.round(s.value / this.data.total * 100) : 0;
+        g.font = "800 " + clamp(groupW * 0.09, 12, 17) + "px " + this.theme.font;
         g.textAlign = "center";
         g.textBaseline = "alphabetic";
-        g.fillStyle = rgba(this.theme.text, 0.62);
-        g.fillText(fitLabel(g, series[i].label, groupW - 16), x, y);
+        g.fillStyle = color;
+        g.fillText(s.value + "  ·  " + pct + "%", x, this.h - 8);
       }
     },
   });
@@ -777,7 +953,7 @@
     layoutDots: function () {
       var n = this.dots.length;
       if (!n || !this.w) return;
-      var padX = 40, padTop = 46, padBottom = this.legendEl ? 70 : 30;
+      var padX = 40, padTop = 46, padBottom = this.legendH ? this.legendH + 24 : 30;
       var availW = this.w - padX * 2;
       var availH = this.h - padTop - padBottom;
       // Choose a column count whose cell aspect is closest to square.
@@ -1038,11 +1214,14 @@
         var mid = (a0 + a1) / 2;
         var lx = cx + Math.cos(mid) * (r + 16);
         var ly = cy + Math.sin(mid) * (r + 16);
-        g.font = "600 13px " + this.theme.font;
+        var align = Math.cos(mid) > 0.15 ? "left" : (Math.cos(mid) < -0.15 ? "right" : "center");
+        var budget = Math.max(70, (this.w / 2) - outer - 24);
+        var block = cachedBlock(a, "_lbl", a.label, budget, 44, {
+          family: this.theme.font, weight: "600",
+          maxSize: 13, minSize: 10, maxLines: 3,
+        }, g);
         g.fillStyle = rgba(this.theme.text, 0.72);
-        g.textAlign = Math.cos(mid) > 0.15 ? "left" : (Math.cos(mid) < -0.15 ? "right" : "center");
-        g.textBaseline = "middle";
-        g.fillText(fitLabel(g, a.label, this.w * 0.22), lx, ly);
+        drawTextBlock(g, block, lx, ly, align);
       }
 
       // core total
@@ -1150,14 +1329,25 @@
         g.lineWidth = 1;
         g.stroke();
 
-        if (r > 26) {
-          g.textAlign = "center"; g.textBaseline = "middle";
-          g.font = "700 " + clamp(r * 0.3, 11, 26) + "px " + this.theme.font;
+        if (r > 24) {
+          var box = r * 1.35;
+          var block = cachedBlock(n, "_lbl", n.label, box, box * 0.55, {
+            family: this.theme.font, weight: "700",
+            maxSize: clamp(r * 0.3, 10, 24), minSize: 9, maxLines: 3,
+          }, g);
+          if ((block.clipped || block.size < MIN_LEGIBLE_PX) && hasMarker(n.label)) {
+            block = cachedBlock(n, "_lblShort", shortLabel(n.label), box, box * 0.55, {
+              family: this.theme.font, weight: "800",
+              maxSize: clamp(r * 0.5, 11, 30), minSize: 10, maxLines: 1,
+            }, g);
+          }
           g.fillStyle = "rgba(255,255,255,.96)";
-          g.fillText(fitLabel(g, n.label, r * 1.6), n.x, n.y - r * 0.12);
-          g.font = "800 " + clamp(r * 0.34, 12, 30) + "px " + this.theme.font;
+          drawTextBlock(g, block, n.x, n.y - r * 0.16);
+
+          g.font = "800 " + clamp(r * 0.32, 12, 28) + "px " + this.theme.font;
+          g.textAlign = "center"; g.textBaseline = "middle";
           g.fillStyle = "rgba(10,10,20,.55)";
-          g.fillText(String(n.value), n.x, n.y + r * 0.3);
+          g.fillText(String(n.value), n.x, n.y + r * 0.42);
         }
       }
     },
@@ -1227,15 +1417,20 @@
       g.fillStyle = rgba(this.theme.text, 0.55);
       g.fillText(Math.round(this.shown.pct * 100) + "% of answers", cx, cy + R * 0.42);
 
-      g.font = "700 " + clamp(this.w * 0.035, 16, 40) + "px " + this.theme.font;
+      var lead = cachedBlock(this, "_leadLbl", this.leader.label, this.w * 0.78,
+        Math.max(30, this.h - (cy + R) - 74), {
+          family: this.theme.font, weight: "700",
+          maxSize: clamp(this.w * 0.035, 16, 40), minSize: 13, maxLines: 3,
+        }, g);
       g.fillStyle = color;
-      g.fillText(fitLabel(g, this.leader.label, this.w * 0.8), cx, cy + R + 46);
+      drawTextBlock(g, lead, cx, cy + R + 34 + (lead.lines.length * lead.lineHeight) / 2);
 
       // runners-up
-      var y = cy + R + 90;
+      var y = cy + R + 46 + lead.lines.length * lead.lineHeight + 22;
       for (var i = 0; i < this.runners.length; i++) {
         var r = this.runners[i];
         g.font = "600 14px " + this.theme.font;
+        g.textAlign = "center"; g.textBaseline = "middle";
         g.fillStyle = rgba(this.theme.text, 0.45);
         g.fillText(fitLabel(g, r.label + " · " + r.value, this.w * 0.7), cx, y + i * 22);
       }
@@ -1324,12 +1519,13 @@
           g.restore();
         }
 
-        // label
-        g.textAlign = "right";
-        g.textBaseline = "middle";
-        g.font = (leading ? "700 " : "600 ") + clamp(barH * 0.42, 12, 22) + "px " + this.theme.font;
+        // label — right-aligned in the gutter, wrapped rather than cut
+        var block = cachedBlock(b, "_lbl", b.label, padL - 20, Math.max(barH, rowH * 0.9), {
+          family: this.theme.font, weight: leading ? "700" : "600",
+          maxSize: clamp(barH * 0.42, 11, 21), minSize: 10, maxLines: 2,
+        }, g);
         g.fillStyle = leading ? this.theme.text : rgba(this.theme.text, 0.72);
-        g.fillText(fitLabel(g, b.label, padL - 18), padL - 14, y + barH / 2);
+        drawTextBlock(g, block, padL - 14, y + barH / 2, "right");
 
         // value
         g.textAlign = "left";
@@ -1376,7 +1572,7 @@
     draw: function (g) {
       var n = this.cols.length;
       if (!n) return;
-      var padT = 56, padB = 62;
+      var padT = 56, padB = 78;
       var gap = clamp(this.w * 0.02, 8, 28);
       var colW = (this.w - gap * (n + 1)) / n;
       var colH = this.h - padT - padB;
@@ -1426,14 +1622,18 @@
         var vy = c.fill > 0.22 ? level + 34 : level - 26;
         g.fillText(String(Math.round(c.shown)), x + colW / 2, clamp(vy, padT + 24, padT + colH - 20));
 
-        g.font = "600 " + clamp(colW * 0.15, 11, 19) + "px " + this.theme.font;
+        var block = cachedBlock(c, "_lbl", c.label, colW + gap * 0.6, 40, {
+          family: this.theme.font, weight: "600",
+          maxSize: clamp(colW * 0.14, 11, 18), minSize: 10, maxLines: 2,
+        }, g);
         g.fillStyle = rgba(this.theme.text, 0.7);
-        g.fillText(fitLabel(g, c.label, colW + gap * 0.7), x + colW / 2, this.h - 36);
+        drawTextBlock(g, block, x + colW / 2, this.h - 44);
 
         var pct = this.data.total ? Math.round(c.value / this.data.total * 100) : 0;
         g.font = "700 12px " + this.theme.font;
+        g.textAlign = "center"; g.textBaseline = "middle";
         g.fillStyle = rgba(this.theme.text, 0.42);
-        g.fillText(pct + "%", x + colW / 2, this.h - 16);
+        g.fillText(pct + "%", x + colW / 2, this.h - 14);
       }
     },
   });
@@ -1506,6 +1706,8 @@
   };
 
   window.kkChartFx = {
+    // exposed for debugging label fitting from the console
+    text: { wrap: wrapToLines, fit: fitTextBlock, short: shortLabel },
     scenes: Object.keys(SCENES),
     teardown: teardown,
     version: 1,

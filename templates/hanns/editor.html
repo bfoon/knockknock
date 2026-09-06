@@ -386,8 +386,10 @@ body.hanns-options-open .drawer{
         <div class="drawer-body"><div class="shape-grid" id="shape-grid"></div></div>
       </div>
 
-      <div class="canvas-wrap" id="canvas-wrap">
-        <div class="canvas" id="canvas"></div>
+      <div class="stage-scroll" id="stage-scroll">
+        <div class="canvas-wrap" id="canvas-wrap">
+          <div class="canvas" id="canvas"></div>
+        </div>
       </div>
 
       <div class="slidenav">
@@ -396,9 +398,9 @@ body.hanns-options-open .drawer{
         <button id="nav-next" title="Next" type="button">›</button>
       </div>
       <div class="zoombar">
-        <button id="zoom-out" type="button">−</button>
-        <span id="zoom-val">Fit</span>
-        <button id="zoom-in" type="button">+</button>
+        <button id="zoom-out" type="button" title="Zoom out">−</button>
+        <span id="zoom-val" role="button" tabindex="0" title="Back to Fit">Fit</span>
+        <button id="zoom-in" type="button" title="Zoom in (⌘/Ctrl + scroll)">+</button>
       </div>
     </section>
 

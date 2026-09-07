@@ -3,29 +3,46 @@
 This module creates a polished editable slideshow that teaches the user how
 Hanns works using the same slide JSON structure that the editor already saves:
 {bg, bgSize, bgFx, transition, notes, els}. No migration is required.
+
+The last three slides before the closing card are hands-on rather than
+explanatory: real elements the user can pull apart. A telling slide can be
+read and forgotten; a slide that asks you to double-click something teaches
+the gesture itself. Everything on them is ordinary deck JSON, so breaking
+them costs nothing and undo puts them back.
 """
 
 from .models import Deck, Slide
 
 STARTER_TITLE = "Start Here: How to Use Hanns"
-STARTER_TAG = "hanns_starter_v1"
+STARTER_TAG = "hanns_starter_v2"
+
+# Older starter decks are still starter decks. Anything that needs to
+# recognise one (analytics, a "replace my tutorial" button) should test
+# against this rather than the current tag alone.
+STARTER_TAGS = frozenset({"hanns_starter_v1", "hanns_starter_v2"})
 
 
 def _text(i, x, y, w, h, text, *, size=36, color="#16140f", font='"Inter",sans-serif',
-          weight=700, align="left", anim="fade", delay=0, lh=1.15, italic=False, ls=0):
+          weight=700, align="left", anim="fade", delay=0, lh=1.15, italic=False, ls=0,
+          reveal_on="entry"):
     return {
         "id": f"starter_{i}", "type": "text", "x": x, "y": y, "w": w, "h": h,
         "rot": 0, "anim": anim, "animDelay": delay, "text": text,
         "font": font, "size": size, "weight": weight, "italic": italic,
         "color": color, "align": align, "lh": lh, "ls": ls, "fill": "none",
+        # "entry" appears with the slide; "cue" is held back on the live
+        # stage until the presenter taps it in from the phone.
+        "revealOn": reveal_on,
     }
 
 
-def _rect(i, x, y, w, h, *, fill="#e8482b", radius=18, anim="fade", delay=0, opacity=None):
+def _rect(i, x, y, w, h, *, fill="#e8482b", radius=18, anim="fade", delay=0, opacity=None,
+          stroke="none", stroke_w=0, dashed=False, reveal_on="entry"):
     d = {
         "id": f"starter_{i}", "type": "rect", "x": x, "y": y, "w": w, "h": h,
         "rot": 0, "anim": anim, "animDelay": delay, "fill": fill,
-        "stroke": "none", "strokeW": 0, "radius": radius,
+        "stroke": stroke, "strokeW": stroke_w, "dashed": dashed, "radius": radius,
+        "revealOn": reveal_on,
     }
     if opacity is not None:
         d["opacity"] = opacity
@@ -110,6 +127,72 @@ def _map(i, x, y, w, h, *, title="Gambia map", anim="rise", delay=0):
             {"label": "Soma", "lon": -15.53, "lat": 13.43, "value": 18},
             {"label": "Basse", "lon": -14.21, "lat": 13.31, "value": 10},
         ],
+    }
+
+
+def _actor(i, kind, x, y, w, h, *, label=None, action="idle", mood="happy", level=0,
+           accent="#22c55e", show_count=False, hide_container=True, anim="rise", delay=0):
+    """One of the animated characters (farmer, cow, goat, chicken, plant,
+    tree, seed, water_tank, sun_rain). ``action`` is what it does on stage;
+    ``level`` fills the ones that fill."""
+    return {
+        "id": f"starter_{i}", "type": "object", "x": x, "y": y, "w": w, "h": h,
+        "rot": 0, "anim": anim, "animDelay": delay, "objectType": kind,
+        "label": label or kind.replace("_", " ").title(), "count": 1,
+        "level": level, "accent": accent, "showCount": show_count,
+        "hideContainer": hide_container, "action": action, "mood": mood,
+        "revealOn": "entry",
+    }
+
+
+def _freeform(i, x, y, w, h, *, kind="star", sides=6, inset=.45, corner=0, smooth=False,
+              fill="#e8482b", fill2="#f2c14e", fill_mode="solid", grad_angle=135,
+              rot=0, anim="pop", delay=0):
+    """A free shape. Its points are editable — drag any vertex on the canvas
+    and the dragged points are stored on the element from then on."""
+    return {
+        "id": f"starter_{i}", "type": "freeform", "x": x, "y": y, "w": w, "h": h,
+        "rot": rot, "anim": anim, "animDelay": delay,
+        "shapeKind": kind, "sides": sides, "inset": inset, "corner": corner,
+        "smooth": smooth, "points": None, "closed": True,
+        "fillMode": fill_mode, "fill": fill, "fill2": fill2, "gradAngle": grad_angle,
+        "stroke": "none", "strokeW": 0, "dash": 0, "revealOn": "entry",
+    }
+
+
+def _focus(i, x, y, w, h, *, label="Zoom 1", shape="circle", zoom=2.4, place="auto",
+           dim=.55, accent="#1d4e89", caption="", anim="zoom", delay=0):
+    """A zoom region. Invisible on stage until the presenter taps its name on
+    the phone, at which point the area under it is magnified."""
+    return {
+        "id": f"starter_{i}", "type": "focus", "x": x, "y": y, "w": w, "h": h,
+        "rot": 0, "anim": anim, "animDelay": delay,
+        "label": label, "focusShape": shape, "zoom": zoom, "place": place,
+        "dim": dim, "accent": accent, "leaders": True, "focusCaption": caption,
+        "revealOn": "entry",
+    }
+
+
+def _teleprompter(i, x, y, w, h, *, script="", label="Teleprompter script", delay=0):
+    """The presenter's script. Renders as a card in the editor and as nothing
+    at all on stage — the audience never receives it."""
+    return {
+        "id": f"starter_{i}", "type": "object", "x": x, "y": y, "w": w, "h": h,
+        "rot": 0, "anim": "fade", "animDelay": delay, "objectType": "teleprompter",
+        "label": label, "icon": "🎤", "count": 1, "level": 0, "accent": "#6d5cff",
+        "showCount": False, "hideContainer": False, "script": script,
+        "revealOn": "entry",
+    }
+
+
+def _link(i, x, y, w, h, *, url, label, description="", style="button",
+          accent="#2563eb", bg="#2563eb", text_color="#ffffff", radius=22,
+          anim="rise", delay=0):
+    return {
+        "id": f"starter_{i}", "type": "link", "x": x, "y": y, "w": w, "h": h,
+        "rot": 0, "anim": anim, "animDelay": delay, "url": url, "label": label,
+        "description": description, "linkStyle": style, "accent": accent,
+        "textColor": text_color, "bg": bg, "radius": radius, "revealOn": "entry",
     }
 
 
@@ -288,13 +371,98 @@ def starter_slides():
             notes="Mention Ctrl+S, Ctrl+Z, Ctrl+C, Ctrl+V and live collaboration.",
         ),
         _slide(
+            "linear-gradient(135deg,#f8fafc,#eef2ff)",
+            [
+                _text(120, 58, 50, 830, 64, "11. Share it for review", size=46, font='"Fraunces",serif', anim="rise"),
+                _text(121, 62, 112, 780, 48, "Send a read-only link to anyone. They read the deck without an account, and without touching it.", size=22, color="#334155", weight=600, anim="fade", delay=.15),
+                _rect(122, 72, 195, 250, 165, fill="linear-gradient(135deg,#1d4e89,#2563eb)", radius=24, anim="left", delay=.2),
+                _text(123, 96, 225, 205, 46, "You share", size=30, color="#ffffff", font='"Poppins",sans-serif', weight=700, anim="fade", delay=.35),
+                _text(124, 96, 275, 205, 70, "Options › Review link. Set a deadline if it should close by itself.", size=16, color="#dbeafe", weight=500, anim="fade", delay=.4, lh=1.3),
+                _rect(125, 355, 195, 250, 165, fill="linear-gradient(135deg,#2f6f4f,#5b8c5a)", radius=24, anim="rise", delay=.3),
+                _text(126, 379, 225, 205, 46, "They ask", size=30, color="#ffffff", font='"Poppins",sans-serif', weight=700, anim="fade", delay=.45),
+                _text(127, 379, 275, 205, 70, "One button on that page asks you for editing rights.", size=16, color="#dcfce7", weight=500, anim="fade", delay=.5, lh=1.3),
+                _rect(128, 638, 195, 250, 165, fill="linear-gradient(135deg,#b45309,#f59e0b)", radius=24, anim="right", delay=.4),
+                _text(129, 662, 225, 205, 46, "You decide", size=30, color="#ffffff", font='"Poppins",sans-serif', weight=700, anim="fade", delay=.55),
+                _text(130, 662, 275, 205, 70, "Approve makes them an editor. Decline keeps reading open, editing shut.", size=16, color="#fef3c7", weight=500, anim="fade", delay=.6, lh=1.3),
+                _text(131, 90, 395, 780, 60, "Switch the link off, set it a deadline, or issue a new one — every link you already sent stops working.", size=20, color="#16140f", weight=700, align="center", anim="fade", delay=.7, lh=1.3),
+            ],
+            bg_fx="drift",
+            transition="slide",
+            notes="Speaker notes and the teleprompter are stripped out of a review link, and so is the join code.",
+        ),
+        _slide(
+            "linear-gradient(140deg,#fffbeb,#fef2f2)",
+            [
+                _text(140, 58, 44, 840, 62, "Try it here", size=52, font='"Fraunces",serif', anim="rise"),
+                _text(141, 62, 108, 800, 44, "Nothing on this slide is precious. Break it — Ctrl/Cmd + Z puts it back.", size=22, color="#7c2d12", weight=600, anim="fade", delay=.15),
+
+                # 1 — the editing gesture, taught by asking for it
+                _rect(142, 62, 175, 268, 148, fill="rgba(255,255,255,.72)", radius=20,
+                      stroke="#e8482b", stroke_w=3, dashed=True, anim="fade", delay=.2),
+                _text(143, 84, 202, 226, 100, "Double-click me and type something else.", size=24, color="#16140f", weight=700, anim="fade", delay=.3, lh=1.25),
+                _text(144, 62, 336, 268, 74, "Click away and I go back to being a normal object you can drag, resize and rotate.", size=16, color="#7c2d12", weight=500, anim="fade", delay=.4, lh=1.35),
+
+                # 2 — the free shape, which only makes sense once you drag one
+                _freeform(145, 372, 178, 176, 168, kind="star", sides=6, inset=.46,
+                          fill="#f59e0b", delay=.3),
+                _text(146, 356, 336, 210, 74, "Select me, then drag any of my points. The shape is yours after that.", size=16, color="#7c2d12", weight=500, anim="fade", delay=.45, lh=1.35),
+
+                # 3 — an actor, so "objects move" stops being an abstract claim
+                _actor(147, "plant", 620, 158, 170, 195, label="Growing plant",
+                       action="grow", level=55, accent="#22c55e", delay=.4),
+                _text(148, 600, 336, 230, 74, "I am an actor. Pick a different action in the inspector and watch me change.", size=16, color="#14532d", weight=500, anim="fade", delay=.55, lh=1.35),
+
+                _text(149, 62, 432, 836, 66, "Then try: recolour something · give it an entrance · duplicate the slide · undo the lot.", size=21, color="#16140f", weight=700, align="center", anim="fade", delay=.65, lh=1.3),
+            ],
+            bg_fx="noise",
+            transition="fade",
+            notes="Let the user play here before moving on. Everything is real: the star's points are draggable, the plant is a live actor, and the dashed box is an ordinary rectangle.",
+        ),
+        _slide(
+            "radial-gradient(70% 80% at 80% 15%,#6d5cff 0%,transparent 55%),linear-gradient(140deg,#0b1020,#16140f)",
+            [
+                _text(150, 58, 42, 840, 62, "Try it live", size=52, color="#ffffff", font='"Fraunces",serif', anim="rise"),
+                _text(151, 62, 106, 800, 46, "Press Present, open the phone controller, and pick these three up from there.", size=22, color="#c7d2fe", weight=600, anim="fade", delay=.15),
+
+                # 1 — a zoom region with something worth magnifying under it
+                _object(152, "water_glass", 108, 196, 150, 186, label="Water level", level=68, accent="#38bdf8", delay=.25),
+                _focus(153, 88, 178, 192, 218, label="Zoom 1", shape="circle", zoom=2.6,
+                       accent="#38bdf8", caption="Tapped in from the phone", delay=.35),
+                _text(154, 74, 400, 232, 72, "A zoom region. Invisible until you tap Zoom 1 on your phone — then the room sees it magnified.", size=16, color="#bae6fd", weight=500, anim="fade", delay=.5, lh=1.35),
+
+                # 2 — a cue reveal: both parts wait for the presenter
+                _rect(155, 356, 186, 250, 152, fill="linear-gradient(135deg,#e8482b,#f59e0b)",
+                      radius=22, anim="pop", delay=0, reveal_on="cue"),
+                _text(156, 378, 222, 206, 90, "I waited for your cue.", size=26, color="#ffffff", font='"Poppins",sans-serif', weight=700, align="center", anim="fade", delay=.1, lh=1.25, reveal_on="cue"),
+                _text(157, 348, 352, 266, 96, "Both of these are set to reveal on cue. On stage they stay hidden until you tap Reveal; here in the editor you always see them.", size=16, color="#fecaca", weight=500, anim="fade", delay=.55, lh=1.35),
+
+                # 3 — the script the audience never gets
+                _teleprompter(158, 648, 186, 268, 132, label="Your script",
+                              script=(
+                                  "This is a teleprompter. Only you can see it. "
+                                  "On the phone controller it scrolls by itself, and you can "
+                                  "change the speed and the type size while you talk. "
+                                  "Paste your own words over mine to try it."
+                              ), delay=.4),
+                _text(159, 648, 330, 268, 106, "Presenter-only. It is stripped out of review links, exports and anything the audience can reach.", size=16, color="#ddd6fe", weight=500, anim="fade", delay=.6, lh=1.35),
+
+                _text(160, 62, 480, 836, 46, "Your phone is also the pointer: touch the screen and the room sees where you mean.", size=20, color="#ffffff", weight=700, align="center", anim="fade", delay=.7),
+            ],
+            bg_fx="orbit",
+            transition="push",
+            notes="Present this slide and drive it from the phone: tap Zoom 1, tap the cue element in, and scroll the script. Nothing here needs setting up first.",
+        ),
+        _slide(
             "radial-gradient(70% 80% at 15% 20%,#5b8c5a 0%,transparent 55%),radial-gradient(60% 70% at 80% 20%,#e8482b 0%,transparent 55%),#16140f",
             [
-                _text(110, 72, 82, 825, 90, "You are ready", size=76, color="#fbf8f1", font='"Fraunces",serif', weight=700, align="center", anim="zoom"),
-                _text(111, 115, 190, 730, 80, "Duplicate this deck, edit the slides, and use it as your first presentation.", size=30, color="#f6d5cc", weight=600, align="center", anim="fade", delay=.2, lh=1.25),
-                _object(112, "people", 150, 315, 180, 160, label="Audience", count=12, accent="#38bdf8", hide_container=True, delay=.3),
-                _object(113, "tree", 390, 315, 180, 160, label="Ideas", count=5, accent="#22c55e", hide_container=True, delay=.45),
-                _object(114, "glass_cup", 625, 305, 190, 175, label="Create", count=1, accent="#f59e0b", hide_container=True, delay=.6),
+                _text(110, 72, 72, 825, 88, "You are ready", size=72, color="#fbf8f1", font='"Fraunces",serif', weight=700, align="center", anim="zoom"),
+                _text(111, 115, 172, 730, 76, "Keep this deck to practise on, or start a clean one. Deleting it costs you nothing.", size=28, color="#f6d5cc", weight=600, align="center", anim="fade", delay=.2, lh=1.25),
+                _object(112, "people", 118, 268, 170, 150, label="Audience", count=12, accent="#38bdf8", hide_container=True, delay=.3),
+                _object(113, "tree", 352, 268, 170, 150, label="Ideas", count=5, accent="#22c55e", hide_container=True, delay=.45),
+                _object(114, "glass_cup", 590, 258, 180, 165, label="Create", count=1, accent="#f59e0b", hide_container=True, delay=.6),
+                _link(115, 300, 432, 360, 76, url="/hanns/", label="Open your decks",
+                      description="Every deck you own or have been invited to edit.",
+                      bg="#e8482b", accent="#e8482b", delay=.7),
             ],
             bg_fx="rays",
             transition="zoom",
@@ -325,3 +493,30 @@ def ensure_hanns_starter_deck(user):
     if owned.exists():
         return None
     return create_starter_deck(user)
+
+
+def refresh_starter_deck(deck):
+    """Rewrite an existing starter deck's slides from the current definition.
+
+    For working on the tutorial itself: edit ``starter_slides()``, call this,
+    reload the editor. Slides are replaced wholesale, so anything the user
+    typed into this deck is lost — check ``is_starter_deck`` before offering
+    it, and never run it over a deck someone is actually presenting.
+    """
+    deck.slides.all().delete()
+    Slide.objects.bulk_create([
+        Slide(deck=deck, position=i, data=slide)
+        for i, slide in enumerate(starter_slides())
+    ])
+    return deck
+
+
+def is_starter_deck(deck):
+    """True when every slide carries a starter tag — i.e. it is untouched
+    tutorial content rather than a deck the user built on top of one."""
+    slides = list(deck.slides.all())
+    if not slides:
+        return False
+    return all(
+        (s.data or {}).get("starterTag") in STARTER_TAGS for s in slides
+    )

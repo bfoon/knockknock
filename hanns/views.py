@@ -106,17 +106,51 @@ def _review_url(request, deck):
     )
 
 
-def _review_deck_or_404(token):
-    """Resolve a deck from a review token, or 404.
+def _review_deck_or_none(token):
+    """The deck this review token opens, or None when it opens nothing.
 
-    Deliberately returns the SAME 404 for a wrong token, a switched-off
-    link, an expired one and a deck that never existed, so a stale link
-    cannot be used to probe what is here.
+    None covers all four cases without distinguishing them — wrong token,
+    sharing switched off, deadline passed, deck deleted — because the
+    caller renders one identical page for every one of them. A stale link
+    must not become a way to probe what exists here.
     """
     deck = Deck.objects.filter(review_token=token).first()
     if deck is None or not deck.review_link_active():
-        raise Http404("This review link is no longer valid.")
+        return None
     return deck
+
+
+def _review_closed(request, token):
+    """The page a dead review link lands on.
+
+    Rendered rather than raised. Http404 hands the visitor Django's error
+    page — the debug traceback with DEBUG on, the bare site-wide 404 with
+    it off — and neither says anything useful to someone who was sent a
+    link in good faith. The status stays 404 so crawlers and monitoring
+    still read it correctly.
+
+    One exception to the identical-page rule: if the signed-in visitor can
+    already edit this deck, they are told the link is switched off and
+    pointed at the setting. That leaks nothing, because they can see the
+    deck anyway.
+    """
+    deck = Deck.objects.filter(review_token=token).first()
+    viewer_owns = bool(
+        deck is not None
+        and getattr(request.user, "is_authenticated", False)
+        and _can_edit_deck(request.user, deck)
+    )
+    return render(request, "hanns/review_closed.html", {
+        "viewer_owns": viewer_owns,
+        "deck": deck if viewer_owns else None,
+        "expired": bool(viewer_owns and deck.review_expired),
+        "edit_url": (
+            reverse("hanns:edit", args=[deck.code]) if viewer_owns else ""
+        ),
+        "decks_url": reverse("hanns:list"),
+        "signed_in": bool(getattr(request.user, "is_authenticated", False)),
+        "login_url": _login_url(),
+    }, status=404)
 
 
 def _is_presenter_only_element(el):
@@ -882,7 +916,9 @@ def deck_review(request, token):
     none of the editor JavaScript, so there is nothing here that could
     write back even if it tried.
     """
-    deck = _review_deck_or_404(token)
+    deck = _review_deck_or_none(token)
+    if deck is None:
+        return _review_closed(request, token)
 
     user = request.user
     signed_in = bool(getattr(user, "is_authenticated", False))
@@ -923,7 +959,9 @@ def deck_request_access(request, token):
     review page with the form open. Signed in, the request reaches the
     owner by email and in the editor.
     """
-    deck = _review_deck_or_404(token)
+    deck = _review_deck_or_none(token)
+    if deck is None:
+        return _review_closed(request, token)
     review_path = reverse("hanns:review", args=[str(deck.review_token)])
 
     if not getattr(request.user, "is_authenticated", False):

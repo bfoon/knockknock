@@ -1,0 +1,144 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>This review link isn’t open</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+/* Deliberately self-contained: this page has to render even when the
+   deck's stylesheets or fonts are unreachable, because it is the page
+   someone sees when something has already gone wrong. */
+:root{
+  --ink:#16140f; --ink-2:#211e18; --line:#3a352a;
+  --cream:#fbf8f1; --fog:#a59c88; --fog-2:#cfc6b2;
+  --signal:#e8482b; --signal-2:#ff6a4d; --gold:#d8a23a;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;display:grid;place-items:center;padding:1.5rem;
+  background:
+    radial-gradient(900px 520px at 78% -8%,#2c281f 0%,transparent 62%),
+    var(--ink);
+  color:var(--cream);
+  font:400 16px/1.6 "Archivo",system-ui,-apple-system,"Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.card{
+  width:min(560px,100%);
+  background:var(--ink-2);
+  border:1px solid var(--line);
+  border-radius:18px;
+  padding:2.4rem 2.2rem;
+  box-shadow:0 30px 80px rgba(0,0,0,.5);
+}
+.mark{
+  width:46px;height:46px;border-radius:50%;
+  display:grid;place-items:center;margin-bottom:1.3rem;
+  background:rgba(232,72,43,.16);border:1px solid rgba(232,72,43,.4);
+}
+.mark svg{display:block}
+h1{
+  margin:0 0 .7rem;
+  font-family:"Fraunces",Georgia,serif;font-weight:600;
+  font-size:clamp(1.5rem,4.2vw,1.95rem);line-height:1.2;
+  letter-spacing:-.01em;
+}
+p{margin:0 0 1rem;color:var(--fog-2);font-size:.98rem;max-width:46ch}
+p.quiet{color:var(--fog);font-size:.9rem}
+ul{margin:0 0 1.2rem;padding-left:1.1rem;color:var(--fog);font-size:.92rem}
+li{margin:.3rem 0}
+li::marker{color:var(--signal)}
+.row{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:1.5rem}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;
+  padding:.62rem 1.05rem;border-radius:11px;
+  font-weight:600;font-size:.92rem;text-decoration:none;
+  border:1px solid var(--line);color:var(--cream);
+  background:rgba(255,255,255,.04);
+  transition:background .15s ease,border-color .15s ease;
+}
+.btn:hover{background:rgba(255,255,255,.09)}
+.btn:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+.btn.primary{background:var(--signal);border-color:var(--signal);color:#fff}
+.btn.primary:hover{background:var(--signal-2);border-color:var(--signal-2)}
+.owner{
+  margin:1.3rem 0 0;padding:.9rem 1rem;border-radius:12px;
+  background:rgba(216,162,58,.09);border:1px solid rgba(216,162,58,.3);
+  color:#f0e0bd;font-size:.9rem;
+}
+.owner b{color:var(--gold)}
+.sig{
+  margin-top:1.9rem;padding-top:1.1rem;border-top:1px solid var(--line);
+  color:var(--fog);font-size:.8rem;
+}
+</style>
+</head>
+<body>
+
+<main class="card">
+  <div class="mark" aria-hidden="true">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none"
+         stroke="#ff6a4d" stroke-width="2" stroke-linecap="round">
+      <path d="M10.5 13.5 8 16a4 4 0 0 1-5.66-5.66l2.5-2.5"/>
+      <path d="M13.5 10.5 16 8a4 4 0 0 1 5.66 5.66l-2.5 2.5"/>
+      <path d="m3 3 18 18"/>
+    </svg>
+  </div>
+
+  {% if viewer_owns %}
+    <h1>Your review link is closed</h1>
+    {% if expired %}
+      <p>The deadline on this link has passed, so it no longer opens for
+        anyone you sent it to.</p>
+      <p class="quiet">Open the deck and clear or extend the deadline under
+        Options › Review link, and the same link starts working again.</p>
+    {% else %}
+      <p>Sharing is switched off for this deck, so the link no longer opens
+        for anyone you sent it to.</p>
+      <p class="quiet">Switch it back on under Options › Review link and the
+        same link works again — you do not need to resend it.</p>
+    {% endif %}
+
+    <div class="owner">
+      You are seeing this detail because you can edit <b>{{ deck.title }}</b>.
+      Anyone else who follows this link is simply told it is closed.
+    </div>
+
+    <div class="row">
+      <a class="btn primary" href="{{ edit_url }}">Open the deck</a>
+      <a class="btn" href="{{ decks_url }}">All your decks</a>
+    </div>
+  {% else %}
+    <h1>This review link isn’t open</h1>
+    <p>Whoever shared this deck has closed the link. That happens for
+      ordinary reasons:</p>
+    <ul>
+      <li>Sharing was switched off after the review finished</li>
+      <li>The link was set to close on a date that has passed</li>
+      <li>A new link was issued, which replaced this one</li>
+    </ul>
+    <p>Ask them for a fresh link and it will open straight away. Nothing has
+      been lost at your end.</p>
+
+    <div class="row">
+      {% if signed_in %}
+        <a class="btn primary" href="{{ decks_url }}">Go to your decks</a>
+      {% else %}
+        <a class="btn primary" href="/">Go to Knock-Knock</a>
+        <a class="btn" href="{{ login_url }}">Sign in</a>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <p class="sig">Hanns · Knock-Knock</p>
+</main>
+
+</body>
+</html>

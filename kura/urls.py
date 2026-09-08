@@ -15,6 +15,9 @@ Resulting URLs:
     /kura/<code>/state/             → set_state (POST)
     /kura/<code>/data/              → data workbench (clean/export)
     /kura/<code>/data/*             → workbench JSON endpoints
+    /kura/<code>/dash/              → live dashboards (Tableau-style builder)
+    /kura/<code>/dash/<id>/         → one board; /data/ /fields/ /save/ …
+    /kura/d/<token>/                → public read-only board (share link)
     /kura/<code>/qr.png             → share QR PNG (?variant=web|app, ?download=1)
     /kura/<code>/present-export/    → build a Hanns results deck (POST)
     /kura/<code>/submit/            → web runner submit (POST, public)
@@ -36,7 +39,7 @@ every longer-suffixed route must precede the bare <str:code>/ catch-all.
 
 from django.urls import path
 
-from . import api, team_views, views, studio_views
+from . import api, dashboard_views, team_views, views, studio_views
 
 app_name = "kura"
 
@@ -44,6 +47,11 @@ urlpatterns = [
     # ── Literal routes first ─────────────────────────────────────────
     path("", views.survey_list, name="list"),
     path("new/", views.survey_create, name="create"),
+
+    # Public live-dashboard share link. MUST sit here: "d" would otherwise
+    # be captured by the <str:code>/ catch-all at the bottom.
+    path("d/<str:token>/", dashboard_views.public_dashboard, name="public_dashboard"),
+    path("d/<str:token>/data/", dashboard_views.public_dashboard_data, name="public_dashboard_data"),
 
     # Mobile sync API (token auth — see kura/api.py docstring)
     path("api/devices/register/", api.device_register, name="api_device_register"),
@@ -79,6 +87,17 @@ urlpatterns = [
     path("<str:code>/studio/run/<int:run_id>/timeseries/", studio_views.run_timeseries, name="run_timeseries"),
     path("<str:code>/studio/run/<int:run_id>/timeline/", studio_views.run_timeline, name="run_timeline"),
     path("<str:code>/studio/run/<int:run_id>/export/<str:fmt>/", studio_views.run_export, name="run_export"),
+    # ── Live dashboards (kura/dashboard_views.py) ────────────────────
+    path("<str:code>/dash/", dashboard_views.dashboard_list, name="dashboards"),
+    path("<str:code>/dash/new/", dashboard_views.dashboard_create, name="dashboard_create"),
+    path("<str:code>/dash/<int:dashboard_id>/", dashboard_views.dashboard, name="dashboard"),
+    path("<str:code>/dash/<int:dashboard_id>/data/", dashboard_views.dashboard_data, name="dashboard_data"),
+    path("<str:code>/dash/<int:dashboard_id>/fields/", dashboard_views.dashboard_fields, name="dashboard_fields"),
+    path("<str:code>/dash/<int:dashboard_id>/save/", dashboard_views.dashboard_save, name="dashboard_save"),
+    path("<str:code>/dash/<int:dashboard_id>/duplicate/", dashboard_views.dashboard_duplicate, name="dashboard_duplicate"),
+    path("<str:code>/dash/<int:dashboard_id>/delete/", dashboard_views.dashboard_delete, name="dashboard_delete"),
+    path("<str:code>/dash/<int:dashboard_id>/rotate/", dashboard_views.dashboard_rotate_token, name="dashboard_rotate"),
+
     path("<str:code>/monitor/", views.monitor, name="monitor"),
     path("<str:code>/monitor/device-access/", views.device_access_update, name="device_access_update"),
     path("<str:code>/monitor/feed/", views.monitor_feed, name="monitor_feed"),

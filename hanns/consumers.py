@@ -86,6 +86,7 @@ client.
 
 import asyncio
 import json
+import secrets
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
@@ -205,7 +206,10 @@ class PresentConsumer(AsyncWebsocketConsumer):
 
         elif mtype == "controller_hello":
             pin = str(data.get("pin") or "").strip()
-            if pin and pin == await self._control_pin():
+            real = await self._control_pin()
+            # compare_digest so a wrong code takes the same time to reject
+            # however much of it was right.
+            if pin and real and secrets.compare_digest(pin, real):
                 self.is_controller = True
                 current = await self._current_slide()
                 await self.send_json({
@@ -914,8 +918,16 @@ class PresentConsumer(AsyncWebsocketConsumer):
 
     @sync_to_async
     def _control_pin(self):
-        total = sum((i + 1) * ord(ch) for i, ch in enumerate(self.code or "HANNS"))
-        return str(1000 + (total % 9000))
+        """The deck's stored controller code.
+
+        This used to recompute the old arithmetic from the deck code. That
+        left the socket accepting the derived value even after the owner
+        rotated the PIN, which would have made the rotate button a lie:
+        the page would lock, and the socket would keep letting people in.
+        """
+        from .models import Deck
+        d = Deck.objects.filter(code=self.code).first()
+        return d.ensure_control_pin() if d else ""
 
     @sync_to_async
     def _can_edit_current_user(self):

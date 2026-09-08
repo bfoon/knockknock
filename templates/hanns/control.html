@@ -225,12 +225,12 @@
 <body class="phone-control">
 <main class="phone-card">
     <div class="phone-brandline"><span class="mark">Hanns<span class="dot">.</span></span><small>Knock-Knock controller</small></div>
-    <div class="phone-status" id="status">ENTER PIN TO CONNECT</div>
+    <div class="phone-status" id="status">CONNECTING…</div>
     <h1 id="control-deck-title" class="title-safe" title="{{ deck.title|escape }}">{% if deck.title|length > 26 %}{{ deck.title|slice:":26" }}....{% else %}{{ deck.title }}{% endif %}</h1>
     <div class="phone-slide-title" id="slide-title">Slide 1</div>
 
     <div class="pin-row" id="pin-row">
-      <input id="pin" inputmode="numeric" maxlength="4" autocomplete="one-time-code" placeholder="PIN">
+      <input id="pin" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="CODE">
       <button id="connect" type="button">Connect</button>
     </div>
 
@@ -395,7 +395,11 @@
 <script>
 window.__HANNS_CONTROL__ = {
   deck: {{ deck_json|safe }},
-  wsUrl: (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/hanns/{{ deck.code }}/"
+  wsUrl: (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/hanns/{{ deck.code }}/",
+  // The server only reaches this template once the code has been checked
+  // and this browser's session marked good, so handing the page the code
+  // for the socket handshake tells it nothing it has not already proved.
+  pin: "{{ control_pin|escapejs }}"
 };
 </script>
 <script src="{% static 'hanns/js/hanns_actors.js' %}?v=60"></script>
@@ -459,7 +463,6 @@ function scriptForSlide(s){
   return tp?String(tp.script):"";
 }
 
-function params(){return new URLSearchParams(location.search)}
 function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
 function setStatus(t){const el=$("#status"); if(el) el.textContent=t;}
 function send(o){
@@ -632,7 +635,7 @@ let ctlPin="", sockGen=0, hbTimer=null, lastRx=0, stopped=false, retry=0;
 
 function connect(){
   const pin=$("#pin").value.trim();
-  if(!pin){setStatus("ENTER THE PIN SHOWN ON THE PRESENTER SCREEN");return;}
+  if(!pin){setStatus("ENTER THE CODE SHOWN ON THE PRESENTER SCREEN");return;}
   ctlPin=pin;
   stopped=false; retry=0;
   openSocket();
@@ -678,7 +681,13 @@ function openSocket(){
       setStatus("CONNECTED · PHONE CONTROLLER READY");
       render();
     }else if(m.type==="controller_denied"){
-      setStatus("WRONG PIN");try{sock.close()}catch(e){}
+      // Almost always a rotated code: this phone unlocked the page earlier
+      // and the owner has since issued a new one. Reloading lands on the
+      // lock screen, which is where it should be asked again.
+      setStatus("CODE NO LONGER VALID · RELOADING…");
+      stopped=true;
+      try{sock.close()}catch(e){}
+      setTimeout(()=>location.reload(),1400);
     }else if(m.type==="goto"&&typeof m.index==="number"){
       // The server stamps every move with a monotonic number. A goto that
       // was queued behind a flaky connection can arrive after a newer one;
@@ -1356,8 +1365,24 @@ $("#end-show").addEventListener("click",()=>{
   setStatus("ENDING PRESENTATION…");
 });
 
-const qp=params().get("pin");
-if(qp){$("#pin").value=qp;setTimeout(connect,250);}
+/* The page is served only to a browser that has already entered the code
+   on the lock screen, so connect straight away rather than asking again.
+   The PIN row stays in the markup as a fallback for the case where the
+   socket rejects us and the page has not reloaded yet.
+
+   The old ?pin= query parameter is gone on purpose: it put the code into
+   browser history, autocomplete and any Referer header the page emitted,
+   which is a poor home for the one credential protecting the controller. */
+if(CFG.pin){
+  $("#pin-row").hidden=true;
+  ctlPin=CFG.pin;
+  stopped=false; retry=0;
+  setStatus("CONNECTING…");
+  openSocket();
+}else{
+  $("#pin-row").hidden=false;
+  setStatus("ENTER THE CODE SHOWN ON THE PRESENTER SCREEN");
+}
 render();
 })();
 </script>

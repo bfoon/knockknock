@@ -1,0 +1,920 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ board.name }} · {{ survey.title }}</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Fraunces:wght@600;800&family=Spline+Sans+Mono:wght@500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root{--bg:#07081a;--panel:#10122c;--line:rgba(255,255,255,.12);--text:#f8fbff;--muted:#aeb7dc;--cyan:#22d3ee;--pink:#ff3f98;--orange:#ff8a1f;--violet:#8b5cf6;--green:#22c55e;--red:#e8482b;--gap:12px;--rowh:92px}
+body.theme-ops{--bg:#000208;--panel:#080b18;--line:rgba(255,255,255,.2);--muted:#c6cdf0}
+body.theme-light{--bg:#eef1f8;--panel:#ffffff;--line:rgba(10,14,40,.14);--text:#0b0e26;--muted:#4a5378}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(900px 600px at 100% 0,rgba(139,92,246,.24),transparent),var(--bg);color:var(--text);font-family:Archivo,sans-serif}
+body.theme-light{background:var(--bg)}
+a{color:var(--cyan)}
+/* ── chrome ─────────────────────────────────────────────────────── */
+.top{position:sticky;top:0;z-index:40;display:flex;gap:.7rem;align-items:center;padding:.65rem 1rem;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(16px);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.brand{font-weight:900;font-size:1.1rem;letter-spacing:-.02em}
+.boardname{font:600 1.05rem Fraunces;background:none;border:1px solid transparent;color:inherit;padding:.25rem .4rem;border-radius:8px;min-width:180px;flex:1}
+.boardname:hover,.boardname:focus{border-color:var(--line);outline:none;background:rgba(255,255,255,.05)}
+.btn{border:1px solid var(--line);border-radius:9px;padding:.45rem .75rem;color:#fff;background:linear-gradient(135deg,var(--orange),var(--pink),var(--violet));font-weight:700;cursor:pointer;text-decoration:none;font-size:.78rem;white-space:nowrap}
+.btn.ghost{background:rgba(255,255,255,.07);color:var(--text)}
+body.theme-light .btn.ghost{background:rgba(10,14,40,.05)}
+.btn.small{font-size:.7rem;padding:.3rem .5rem}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+select,input,textarea{background:color-mix(in srgb,var(--panel) 80%,#000);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:.4rem .5rem;font-size:.78rem;font-family:inherit}
+body.theme-light select,body.theme-light input,body.theme-light textarea{background:#fff}
+/* live pulse */
+.pulse{display:flex;align-items:center;gap:.45rem;font:600 .72rem "Spline Sans Mono";color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:.28rem .65rem}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.pulse.on .dot{background:var(--green);box-shadow:0 0 0 0 rgba(34,197,94,.7);animation:beat 2s infinite}
+.pulse.stale .dot{background:var(--orange)}
+.pulse.off .dot{background:var(--red)}
+@keyframes beat{70%{box-shadow:0 0 0 9px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+@media (prefers-reduced-motion:reduce){.pulse.on .dot{animation:none}}
+/* ── layout ─────────────────────────────────────────────────────── */
+.shell{display:grid;grid-template-columns:224px minmax(0,1fr) 300px;gap:1rem;padding:1rem;align-items:start}
+.rail{position:sticky;top:64px;background:color-mix(in srgb,var(--panel) 92%,transparent);border:1px solid var(--line);border-radius:14px;max-height:calc(100vh - 84px);display:flex;flex-direction:column;overflow:hidden}
+.rail h3{font:700 .66rem "Spline Sans Mono";letter-spacing:.12em;text-transform:uppercase;color:var(--cyan);margin:0;padding:.7rem .75rem;border-bottom:1px solid var(--line)}
+.rail .body{padding:.7rem;overflow:auto}
+.palette{display:grid;grid-template-columns:1fr 1fr;gap:.4rem}
+.chip{padding:.5rem .35rem;border:1px solid var(--line);border-radius:9px;background:rgba(255,255,255,.05);cursor:grab;font-size:.68rem;font-weight:600;text-align:center;line-height:1.3}
+body.theme-light .chip{background:rgba(10,14,40,.04)}
+.chip:hover{border-color:var(--cyan)}
+.chip .ic{display:block;font-size:1.1rem;margin-bottom:.15rem}
+.fieldlist{display:grid;gap:.25rem;margin-top:.4rem}
+.field{display:flex;gap:.4rem;align-items:center;font-size:.7rem;padding:.3rem .4rem;border-radius:7px;border:1px solid transparent}
+.field:hover{border-color:var(--line);background:rgba(255,255,255,.04)}
+.field b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.ftype{font:700 .56rem "Spline Sans Mono";padding:.1rem .3rem;border-radius:4px;background:rgba(139,92,246,.2);color:#cdbdfd}
+.ftype.numeric{background:rgba(34,211,238,.18);color:#9beefc}
+.ftype.datetime{background:rgba(255,138,31,.18);color:#ffc793}
+/* ── grid ───────────────────────────────────────────────────────── */
+.canvas{min-height:60vh}
+.filterbar{display:flex;gap:.45rem;align-items:center;flex-wrap:wrap;margin-bottom:.7rem;padding:.5rem .6rem;border:1px dashed var(--line);border-radius:11px}
+.pill{display:inline-flex;align-items:center;gap:.35rem;font-size:.7rem;background:rgba(34,211,238,.13);border:1px solid rgba(34,211,238,.4);color:var(--text);border-radius:999px;padding:.22rem .55rem}
+.pill button{background:none;border:0;color:var(--muted);cursor:pointer;font-size:.8rem;line-height:1;padding:0}
+.grid{display:grid;grid-template-columns:repeat(12,1fr);grid-auto-rows:var(--rowh);gap:var(--gap);position:relative}
+.grid.dropping{outline:2px dashed var(--cyan);outline-offset:6px;border-radius:14px}
+.tile{position:relative;background:color-mix(in srgb,var(--panel) 94%,transparent);border:1px solid var(--line);border-radius:13px;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+body.theme-light .tile{box-shadow:0 1px 3px rgba(10,14,40,.08)}
+.tile.selected{border-color:var(--cyan);box-shadow:0 0 0 1px var(--cyan)}
+.tile.alarm{border-color:var(--red);box-shadow:0 0 0 1px var(--red),0 0 26px rgba(232,72,43,.25)}
+.tile.warn{border-color:var(--orange);box-shadow:0 0 0 1px var(--orange)}
+.tile.ghost{opacity:.4}
+.thead{display:flex;align-items:center;gap:.4rem;padding:.45rem .6rem;border-bottom:1px solid var(--line);cursor:grab;flex:0 0 auto}
+.thead b{flex:1;font-size:.74rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thead .sub{font:500 .62rem "Spline Sans Mono";color:var(--muted)}
+.thead button{background:none;border:0;color:var(--muted);cursor:pointer;font-size:.75rem;padding:0 .15rem}
+.thead button:hover{color:var(--pink)}
+.tbody{flex:1;min-height:0;padding:.6rem;overflow:hidden;position:relative}
+.tbody.scroll{overflow:auto}
+.resize{position:absolute;right:2px;bottom:2px;width:16px;height:16px;cursor:nwse-resize;opacity:.5;background:linear-gradient(135deg,transparent 45%,var(--muted) 45%,var(--muted) 55%,transparent 55%,transparent 70%,var(--muted) 70%,var(--muted) 80%,transparent 80%)}
+.terr{font-size:.72rem;color:var(--muted);display:flex;height:100%;align-items:center;justify-content:center;text-align:center;padding:.5rem}
+/* number tiles */
+.big{display:flex;flex-direction:column;justify-content:center;height:100%;gap:.15rem}
+.big .v{font:800 clamp(1.7rem,4.4vw,3rem) Archivo;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.big .lbl{font-size:.7rem;color:var(--muted)}
+.big .chg{font:700 .78rem "Spline Sans Mono"}
+.up{color:var(--green)}.down{color:var(--red)}
+.bar{height:9px;border-radius:999px;background:rgba(255,255,255,.1);overflow:hidden;margin-top:.5rem}
+body.theme-light .bar{background:rgba(10,14,40,.08)}
+.bar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--cyan),var(--violet))}
+.bar i.hot{background:linear-gradient(90deg,var(--orange),var(--red))}
+/* leaderboard */
+.lb{display:grid;gap:.3rem;height:100%;overflow:auto;align-content:start}
+.lbrow{display:grid;grid-template-columns:1.4rem 1fr auto;gap:.45rem;align-items:center;font-size:.75rem}
+.lbrow .rank{font:700 .65rem "Spline Sans Mono";color:var(--muted)}
+.lbrow .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lbrow .val{font:700 .78rem "Spline Sans Mono";font-variant-numeric:tabular-nums}
+.lbbar{grid-column:2/4;height:5px;border-radius:999px;background:rgba(255,255,255,.09);overflow:hidden;margin-top:-.15rem}
+.lbbar i{display:block;height:100%;background:linear-gradient(90deg,var(--pink),var(--violet))}
+/* table */
+table{border-collapse:collapse;width:100%;font-size:.7rem}
+th,td{padding:.35rem .45rem;border-bottom:1px solid rgba(255,255,255,.07);white-space:nowrap;max-width:190px;overflow:hidden;text-overflow:ellipsis}
+body.theme-light th,body.theme-light td{border-bottom-color:rgba(10,14,40,.08)}
+th{position:sticky;top:0;background:var(--panel);color:var(--cyan);text-align:left;z-index:1}
+/* inspector */
+.insp label{display:block;font-size:.66rem;color:var(--muted);margin:.6rem 0 .2rem}
+.insp input,.insp select,.insp textarea{width:100%}
+.insp .two{display:grid;grid-template-columns:1fr 1fr;gap:.4rem}
+.hint{font-size:.66rem;color:var(--muted);line-height:1.45;margin:.5rem 0 0}
+.cond{border:1px solid var(--line);border-radius:9px;padding:.4rem;margin-top:.4rem;display:grid;gap:.3rem}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);display:none;background:#171a3e;color:#fff;border:1px solid var(--line);border-radius:10px;padding:.65rem 1rem;z-index:200;font-size:.8rem}
+/* present mode */
+body.presenting .top,body.presenting .rail,body.presenting .filterbar{display:none}
+body.presenting .shell{grid-template-columns:1fr;padding:.6rem}
+body.presenting{--rowh:min(11vh,120px)}
+body.presenting .thead button,body.presenting .resize{display:none}
+body.presenting .thead{cursor:default}
+.exitpresent{display:none;position:fixed;top:10px;right:12px;z-index:60}
+body.presenting .exitpresent{display:block}
+@media(max-width:1150px){.shell{grid-template-columns:1fr}.rail{position:static;max-height:none}.palette{grid-template-columns:repeat(4,1fr)}}
+@media(max-width:760px){.grid{grid-template-columns:1fr;grid-auto-rows:minmax(150px,auto)}.tile{grid-area:auto !important}.palette{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body class="theme-{{ board.theme }}{% if public %} presenting{% endif %}">
+
+<div class="top">
+  <span class="brand">Kura</span>
+  {% if can_edit %}<input class="boardname" id="boardName" value="{{ board.name }}">{% else %}<span class="boardname">{{ board.name }}</span>{% endif %}
+  <span class="pulse" id="pulse"><span class="dot"></span><span id="pulseText">connecting…</span></span>
+  {% if can_edit %}
+  <select id="sourceSel" title="Where this board reads its data"></select>
+  <button class="btn ghost small" id="btnFilters">Filters</button>
+  <button class="btn ghost small" id="btnShare">Share</button>
+  <button class="btn ghost small" id="btnPresent">Present</button>
+  <span class="pulse" id="saveState" style="border:0"><span id="saveText">saved</span></span>
+  <button class="btn small" id="btnSave">Save</button>
+  <a class="btn ghost small" href="/kura/{{ survey.code }}/studio/">Studio</a>
+  {% endif %}
+</div>
+
+<button class="btn ghost exitpresent" id="btnExit">Exit</button>
+
+<div class="shell">
+  {% if can_edit %}
+  <aside class="rail">
+    <h3>Cards</h3>
+    <div class="body">
+      <div class="palette" id="palette"></div>
+      <h3 style="border:0;padding:.9rem 0 .3rem">Fields</h3>
+      <input id="fieldSearch" placeholder="Search fields…" style="width:100%">
+      <div class="fieldlist" id="fieldList"><p class="hint">Loading fields…</p></div>
+    </div>
+  </aside>
+  {% endif %}
+
+  <main class="canvas">
+    <div class="filterbar" id="filterBar"></div>
+    <div class="grid" id="grid"></div>
+  </main>
+
+  {% if can_edit %}
+  <aside class="rail insp">
+    <h3>Card settings</h3>
+    <div class="body" id="inspector"><p class="hint">Select a card to edit it, or drag one in from the left.</p></div>
+  </aside>
+  {% endif %}
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const BOOT = {{ bootstrap_json|safe }};
+const CAN_EDIT = {{ can_edit|yesno:"true,false" }};
+const IS_PUBLIC = {{ public|yesno:"true,false" }};
+const CODE = "{{ survey.code }}";
+const URLS = IS_PUBLIC
+  ? {data:"/kura/d/{{ board.public_token }}/data/"}
+  : {data:`/kura/${CODE}/dash/{{ board.id }}/data/`,
+     fields:`/kura/${CODE}/dash/{{ board.id }}/fields/`,
+     save:`/kura/${CODE}/dash/{{ board.id }}/save/`,
+     rotate:`/kura/${CODE}/dash/{{ board.id }}/rotate/`};
+
+let board = BOOT.dashboard;
+let tiles = board.tiles || [];
+let fields = [];
+let selectedId = null;
+let dirty = false;
+let lastStamp = null;
+let charts = {}, maps = {};
+let uid = -1;                       // client ids for unsaved tiles
+
+const $  = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const did = id => "t" + String(id).replace("-", "n");   // DOM-safe element id
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+function toast(msg){const t=$("#toast");t.textContent=msg;t.style.display="block";
+  clearTimeout(t._h);t._h=setTimeout(()=>t.style.display="none",3200);}
+
+function csrf(){return (document.cookie.match(/csrftoken=([^;]+)/)||[])[1]||"";}
+
+async function api(url, opts={}){
+  const r = await fetch(url, {headers:{"Content-Type":"application/json",
+    "X-CSRFToken":csrf()}, ...opts});
+  const j = await r.json().catch(()=>({ok:false,error:"Server did not return JSON."}));
+  if(!r.ok && j.error) throw new Error(j.error);
+  return j;
+}
+
+function fmt(v){
+  if(v===null||v===undefined) return "—";
+  if(typeof v!=="number") return String(v);
+  if(Number.isInteger(v)) return v.toLocaleString();
+  return (Math.abs(v)<10 ? v.toFixed(2) : v.toFixed(1));
+}
+
+/* ── card catalogue ─────────────────────────────────────────────── */
+const KINDS = [
+  {k:"kpi",        ic:"#", n:"Big number",  w:3, h:2},
+  {k:"delta",      ic:"±", n:"Change",      w:3, h:2},
+  {k:"progress",   ic:"▮", n:"Progress",    w:3, h:2},
+  {k:"gauge",      ic:"◔", n:"Gauge",       w:3, h:2},
+  {k:"bar",        ic:"▊", n:"Bar",         w:6, h:3},
+  {k:"hbar",       ic:"▤", n:"Ranked bar",  w:6, h:3},
+  {k:"donut",      ic:"◍", n:"Donut",       w:4, h:3},
+  {k:"pie",        ic:"◐", n:"Pie",         w:4, h:3},
+  {k:"line",       ic:"╱", n:"Line",        w:6, h:3},
+  {k:"area",       ic:"◣", n:"Area",        w:6, h:3},
+  {k:"timeseries", ic:"⏱", n:"Over time",   w:8, h:3},
+  {k:"leaderboard",ic:"≣", n:"Leaderboard", w:4, h:4},
+  {k:"histogram",  ic:"▁", n:"Spread",      w:6, h:3},
+  {k:"scatter",    ic:"⁘", n:"Scatter",     w:6, h:3},
+  {k:"map",        ic:"◎", n:"Map",         w:6, h:4},
+  {k:"table",      ic:"▦", n:"Table",       w:8, h:4},
+  {k:"text",       ic:"¶", n:"Note",        w:4, h:2},
+];
+const KIND_BY = Object.fromEntries(KINDS.map(k=>[k.k,k]));
+
+const AGGS = [["count","Count of rows"],["sum","Sum"],["mean","Average"],
+  ["median","Median"],["min","Minimum"],["max","Maximum"],
+  ["distinct","Distinct values"],["filled","Answered"],["missing","Missing"]];
+
+function fieldsOf(kind){
+  if(kind==="numeric") return fields.filter(f=>f.kind==="numeric");
+  if(kind==="datetime") return fields.filter(f=>f.kind==="datetime");
+  return fields;
+}
+
+/* Pick sensible defaults so a dropped card shows something immediately
+   instead of an empty configuration form. */
+function defaultSpec(kind){
+  const cat = fields.find(f=>f.kind==="categorical" && !f.meta) || fields[0];
+  const num = fields.find(f=>f.kind==="numeric" && !f.meta);
+  const dt  = fields.find(f=>f.kind==="datetime");
+  switch(kind){
+    case "kpi": case "gauge": return {agg:"count"};
+    case "delta": return {agg:"count", window_minutes:60, date:dt?dt.name:null};
+    case "progress": return {agg:"count", target:1000};
+    case "leaderboard": return {group_by:cat?cat.name:null, agg:"count", limit:10};
+    case "timeseries": return {date:dt?dt.name:null, freq:"D", agg:"count",
+                               cumulative:false};
+    case "histogram": return {x:num?num.name:null};
+    case "scatter": return {x:num?num.name:null, y:num?num.name:null};
+    case "table": return {limit:20};
+    case "map": return {};
+    case "text": return {body:"Double-click to write a note."};
+    default: return {x:cat?cat.name:null, agg:"count", sort:"value", limit:12};
+  }
+}
+
+/* ── layout ─────────────────────────────────────────────────────── */
+function place(el, t){
+  el.style.gridArea = `${(t.y|0)+1} / ${(t.x|0)+1} / span ${t.h} / span ${t.w}`;
+}
+
+function nextFreeRow(){
+  return tiles.reduce((m,t)=>Math.max(m,(t.y|0)+(t.h|0)),0);
+}
+
+function addTile(kind, at){
+  const meta = KIND_BY[kind];
+  const t = {id:uid--, kind, title:"", subtitle:"",
+             x:at?at.x:0, y:at?at.y:nextFreeRow(), w:meta.w, h:meta.h,
+             spec:defaultSpec(kind), filters:[], filter_match:"all", alert:{}};
+  t.x = Math.max(0, Math.min(12-t.w, t.x));
+  tiles.push(t);
+  selectedId = t.id;
+  markDirty();
+  renderGrid();
+  refresh(true);
+}
+
+/* ── render ─────────────────────────────────────────────────────── */
+function renderGrid(){
+  const grid = $("#grid");
+  Object.values(charts).forEach(c=>{try{c.destroy()}catch(e){}});
+  Object.values(maps).forEach(m=>{try{m.remove()}catch(e){}});
+  charts={};maps={};
+
+  if(!tiles.length){
+    grid.innerHTML = `<p class="hint" style="grid-column:1/-1;padding:2rem;text-align:center">
+      ${CAN_EDIT ? "Drag a card in from the left to start building." : "This board has no cards yet."}</p>`;
+    return;
+  }
+
+  grid.innerHTML = tiles.map(t=>{
+    const meta = KIND_BY[t.kind]||{n:t.kind};
+    return `<section class="tile${t.id===selectedId?" selected":""}" data-id="${t.id}">
+      <header class="thead">
+        <b>${esc(t.title || meta.n)}</b>
+        ${t.subtitle?`<span class="sub">${esc(t.subtitle)}</span>`:""}
+        ${CAN_EDIT?`<button data-act="dup" title="Duplicate">⧉</button>
+        <button data-act="rm" title="Remove">✕</button>`:""}
+      </header>
+      <div class="tbody" data-body="${t.id}"><div class="terr">loading…</div></div>
+      ${CAN_EDIT?'<div class="resize"></div>':""}
+    </section>`;
+  }).join("");
+
+  $$("#grid .tile").forEach(el=>{
+    const t = tiles.find(x=>String(x.id)===el.dataset.id);
+    if(t) place(el, t);
+  });
+  renderInspector();
+}
+
+function paint(results){
+  (results||[]).forEach(res=>{
+    const body = $(`[data-body="${res.id}"]`);
+    const tile = tiles.find(t=>String(t.id)===String(res.id));
+    if(!body || !tile) return;
+    const card = body.closest(".tile");
+    card.classList.remove("alarm","warn");
+    if(res.status==="alarm") card.classList.add("alarm");
+    if(res.status==="warn")  card.classList.add("warn");
+
+    if(!res.ok){
+      body.className="tbody";
+      body.innerHTML = `<div class="terr">${esc(res.error||"No data.")}</div>`;
+      return;
+    }
+    try{ drawTile(body, tile, res); }
+    catch(err){ body.innerHTML = `<div class="terr">${esc(err.message)}</div>`; }
+  });
+}
+
+function drawTile(body, tile, res){
+  // The body is about to be replaced; drop whatever was rendered into it or
+  // Chart.js and Leaflet keep the detached canvases alive for the session.
+  if(charts[tile.id]){ try{charts[tile.id].destroy()}catch(e){} delete charts[tile.id]; }
+  if(maps[tile.id]){ try{maps[tile.id].remove()}catch(e){} delete maps[tile.id]; }
+  body.className = "tbody";
+  const k = tile.kind;
+
+  if(k==="text"){
+    body.innerHTML = `<div style="font-size:.85rem;line-height:1.5">${esc(res.body||"")}</div>`;
+    return;
+  }
+
+  if(k==="kpi"){
+    body.innerHTML = `<div class="big"><span class="v">${fmt(res.value)}</span>
+      <span class="lbl">${esc(tile.subtitle||label(tile))}</span></div>`;
+    return;
+  }
+
+  if(k==="delta"){
+    const c = res.change;
+    const arrow = c===null?"":(c>0?"▲":(c<0?"▼":"■"));
+    const cls = c>0?"up":(c<0?"down":"");
+    body.innerHTML = `<div class="big"><span class="v">${fmt(res.value)}</span>
+      <span class="chg ${cls}">${arrow} ${c===null?"—":fmt(Math.abs(c))}
+        ${res.percent_change!==null&&res.percent_change!==undefined?`(${res.percent_change>0?"+":""}${res.percent_change}%)`:""}</span>
+      <span class="lbl">last ${res.window_minutes} min vs the ${res.window_minutes} before</span></div>`;
+    return;
+  }
+
+  if(k==="progress"||k==="gauge"){
+    const pct = res.percent ?? (res.target ? (res.value/res.target*100) : null);
+    const clamped = pct===null?0:Math.max(0,Math.min(100,pct));
+    body.innerHTML = `<div class="big"><span class="v">${fmt(res.value)}</span>
+      <span class="lbl">${res.target?`of ${fmt(res.target)} target · ${pct===null?"—":pct.toFixed(1)}%`:label(tile)}</span>
+      <div class="bar"><i class="${clamped<50?"hot":""}" style="width:${clamped}%"></i></div>
+      ${res.remaining!==null&&res.remaining!==undefined?`<span class="lbl">${fmt(res.remaining)} to go</span>`:""}
+      </div>`;
+    return;
+  }
+
+  if(k==="leaderboard"){
+    body.className="tbody scroll";
+    body.innerHTML = `<div class="lb">${(res.rows||[]).map((r,i)=>`
+      <div class="lbrow"><span class="rank">${i+1}</span>
+        <span class="nm" title="${esc(r.label)}">${esc(r.label)}</span>
+        <span class="val">${fmt(r.value)}</span></div>
+      <div class="lbbar"><i style="width:${r.share||0}%"></i></div>`).join("")
+      || '<p class="hint">Nothing to rank yet.</p>'}</div>`;
+    return;
+  }
+
+  if(k==="table"){
+    body.className="tbody scroll";
+    body.innerHTML = `<table><thead><tr>${(res.columns||[]).map(c=>`<th>${esc(c)}</th>`).join("")}</tr></thead>
+      <tbody>${(res.rows||[]).map(r=>`<tr>${res.columns.map(c=>`<td>${esc(r[c])}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+    return;
+  }
+
+  if(k==="map"){
+    body.innerHTML = `<div id="map_${did(tile.id)}" style="position:absolute;inset:0"></div>`;
+    const pts = res.points||[];
+    if(!pts.length){ body.innerHTML = `<div class="terr">No locations in this data.</div>`; return; }
+    const m = L.map(`map_${did(tile.id)}`, {attributionControl:false});
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+      {subdomains:"abcd",maxZoom:19}).addTo(m);
+    const palette = ["#22d3ee","#ff3f98","#ff8a1f","#8b5cf6","#22c55e","#e8482b"];
+    const groups = [...new Set(pts.map(p=>p.group).filter(Boolean))];
+    pts.forEach(p=>{
+      const i = groups.indexOf(p.group);
+      L.circleMarker([p.lat,p.lng],{radius:5,weight:1,color:"#fff",
+        fillColor:palette[(i<0?0:i)%palette.length],fillOpacity:.85})
+        .addTo(m).bindPopup(p.group?esc(p.group):`Row ${p.row}`);
+    });
+    m.fitBounds(pts.map(p=>[p.lat,p.lng]), {padding:[24,24], maxZoom:14});
+    maps[tile.id]=m;
+    setTimeout(()=>m.invalidateSize(),60);
+    return;
+  }
+
+  /* Chart.js kinds */
+  body.innerHTML = `<canvas id="cv_${did(tile.id)}"></canvas>`;
+  const ctx = $(`#cv_${did(tile.id)}`);
+  const light = document.body.classList.contains("theme-light");
+  const tick = light ? "#4a5378" : "#aeb7dc";
+  const gridc = light ? "rgba(10,14,40,.09)" : "rgba(255,255,255,.08)";
+  const palette = ["#22d3ee","#ff3f98","#ff8a1f","#8b5cf6","#22c55e","#e8482b",
+                   "#38bdf8","#f472b6"];
+  const many = (res.series||[]).length>1 || ["pie","donut"].includes(k);
+
+  if(k==="scatter"){
+    charts[tile.id] = new Chart(ctx,{type:"scatter",
+      data:{datasets:[{label:res.series[0].name,data:res.series[0].data,
+        backgroundColor:"#22d3ee"}]},
+      options:baseOpts(false,tick,gridc)});
+    return;
+  }
+
+  const type = ({hbar:"bar",area:"line",donut:"doughnut",timeseries:"line",
+                 histogram:"bar"})[k] || k;
+  const datasets = (res.series||[]).map((s,i)=>({
+    label:s.name,
+    data:s.data,
+    borderColor:palette[i%palette.length],
+    backgroundColor: ["pie","doughnut"].includes(type)
+      ? res.labels.map((_,j)=>palette[j%palette.length])
+      : (k==="area" ? palette[i%palette.length]+"44" : palette[i%palette.length]),
+    borderWidth: type==="line" ? 2.4 : 0,
+    fill: k==="area",
+    tension:.3,
+    borderDash: s.dashed?[6,4]:undefined,
+    pointRadius: (res.labels||[]).length>40 ? 0 : 2.5,
+  }));
+
+  const opts = baseOpts(many, tick, gridc);
+  if(k==="hbar") opts.indexAxis="y";
+  if(["pie","doughnut"].includes(type)){ delete opts.scales; opts.plugins.legend.display=true; }
+
+  charts[tile.id] = new Chart(ctx,{type,data:{labels:res.labels,datasets},options:opts});
+}
+
+function baseOpts(legend,tick,gridc){
+  return {responsive:true, maintainAspectRatio:false, animation:{duration:280},
+    plugins:{legend:{display:legend,labels:{color:tick,boxWidth:10,font:{size:10}}}},
+    scales:{x:{ticks:{color:tick,font:{size:10},maxRotation:45,autoSkip:true},
+                grid:{color:gridc}},
+            y:{ticks:{color:tick,font:{size:10}},grid:{color:gridc},
+               beginAtZero:true}}};
+}
+
+function label(t){
+  const s = t.spec||{};
+  if(s.agg==="count"||!s.column) return "responses";
+  return `${s.agg} of ${s.column}`;
+}
+
+/* ── data refresh ───────────────────────────────────────────────── */
+let refreshing = false, queued = false;
+
+async function refresh(force){
+  if(refreshing){ queued = true; return; }
+  refreshing = true;
+  try{
+    const q = force ? "?fresh=1" : (lastStamp ? `?since=${encodeURIComponent(lastStamp)}` : "");
+    const j = await api(URLS.data + q);
+    if(j.pulse) drawPulse(j.pulse, j.meta);
+    if(j.unchanged){ return; }
+    lastStamp = j.stamp;
+    paint(j.tiles);
+  }catch(err){
+    setPulse("off", err.message.slice(0,60));
+  }finally{
+    refreshing = false;
+    if(queued){ queued=false; refresh(false); }
+  }
+}
+
+function setPulse(state, text){
+  const p = $("#pulse"); p.className = "pulse "+state; $("#pulseText").textContent = text;
+}
+
+function drawPulse(pulse, meta){
+  if(!pulse) return;
+  const rows = (meta && meta.filtered_rows!==undefined) ? meta.filtered_rows : pulse.rows;
+  if(!pulse.streaming){ setPulse("", `${rows.toLocaleString()} rows · static source`); return; }
+  const secs = pulse.seconds_since;
+  const ago = secs===undefined ? "—"
+    : secs<90 ? `${secs}s ago`
+    : secs<5400 ? `${Math.round(secs/60)}m ago` : `${Math.round(secs/3600)}h ago`;
+  const state = secs===undefined ? "" : (secs<600 ? "on" : "stale");
+  setPulse(state, `${rows.toLocaleString()} rows · ${pulse.last_hour}/hr · last ${ago}`);
+}
+
+/* WebSocket nudge, polling fallback. */
+function connect(){
+  if(!board.is_streaming) { setPulse("", "static source"); return; }
+  const scheme = location.protocol==="https:" ? "wss" : "ws";
+  const path = IS_PUBLIC
+    ? `${scheme}://${location.host}/ws/kura/d/{{ board.public_token }}/dashboard/`
+    : `${scheme}://${location.host}/ws/kura/${CODE}/dashboard/`;
+  let sock;
+  try{ sock = new WebSocket(path); }catch(e){ return; }
+  sock.onmessage = e => {
+    let d={}; try{ d=JSON.parse(e.data);}catch(err){return;}
+    if(d.type==="data_changed"||d.type==="submission") refresh(false);
+  };
+  sock.onclose = () => setTimeout(connect, 5000);
+  setInterval(()=>{ try{ sock.readyState===1 && sock.send('{"type":"ping"}'); }catch(e){} }, 25000);
+}
+
+/* ── palette + drag/drop ────────────────────────────────────────── */
+if(CAN_EDIT){
+  $("#palette").innerHTML = KINDS.map(k=>
+    `<div class="chip" draggable="true" data-kind="${k.k}"><span class="ic">${k.ic}</span>${k.n}</div>`
+  ).join("");
+
+  $("#palette").addEventListener("click", e=>{
+    const chip = e.target.closest(".chip"); if(chip) addTile(chip.dataset.kind);
+  });
+  $("#palette").addEventListener("dragstart", e=>{
+    const chip = e.target.closest(".chip");
+    if(chip) e.dataTransfer.setData("text/kura-kind", chip.dataset.kind);
+  });
+
+  const grid = $("#grid");
+  grid.addEventListener("dragover", e=>{ e.preventDefault(); grid.classList.add("dropping"); });
+  grid.addEventListener("dragleave", ()=>grid.classList.remove("dropping"));
+  grid.addEventListener("drop", e=>{
+    e.preventDefault(); grid.classList.remove("dropping");
+    const kind = e.dataTransfer.getData("text/kura-kind");
+    if(kind) addTile(kind, cellAt(e.clientX, e.clientY));
+  });
+
+  grid.addEventListener("click", e=>{
+    const card = e.target.closest(".tile"); if(!card) return;
+    const id = card.dataset.id;
+    const act = e.target.dataset.act;
+    if(act==="rm"){
+      tiles = tiles.filter(t=>String(t.id)!==id);
+      if(String(selectedId)===id) selectedId=null;
+      markDirty(); renderGrid(); refresh(true); return;
+    }
+    if(act==="dup"){
+      const t = tiles.find(x=>String(x.id)===id);
+      tiles.push({...structuredClone(t), id:uid--, y:nextFreeRow()});
+      markDirty(); renderGrid(); refresh(true); return;
+    }
+    selectedId = tiles.find(t=>String(t.id)===id)?.id ?? null;
+    $$("#grid .tile").forEach(c=>c.classList.toggle("selected", c.dataset.id===id));
+    renderInspector();
+  });
+
+  /* pointer-driven move & resize on the 12-column grid */
+  let drag = null;
+  grid.addEventListener("pointerdown", e=>{
+    const card = e.target.closest(".tile"); if(!card) return;
+    const onHead = e.target.closest(".thead");
+    const onGrip = e.target.classList.contains("resize");
+    if(!onHead && !onGrip) return;
+    if(e.target.dataset.act) return;
+    const t = tiles.find(x=>String(x.id)===card.dataset.id); if(!t) return;
+    drag = {t, card, mode:onGrip?"size":"move", sx:e.clientX, sy:e.clientY,
+            ox:t.x, oy:t.y, ow:t.w, oh:t.h};
+    card.setPointerCapture(e.pointerId);
+    card.classList.add("ghost");
+    e.preventDefault();
+  });
+  grid.addEventListener("pointermove", e=>{
+    if(!drag) return;
+    const {cw, ch} = cellSize();
+    const dx = Math.round((e.clientX-drag.sx)/cw);
+    const dy = Math.round((e.clientY-drag.sy)/ch);
+    const t = drag.t;
+    if(drag.mode==="move"){
+      t.x = Math.max(0, Math.min(12-t.w, drag.ox+dx));
+      t.y = Math.max(0, drag.oy+dy);
+    }else{
+      t.w = Math.max(2, Math.min(12-t.x, drag.ow+dx));
+      t.h = Math.max(1, Math.min(10, drag.oh+dy));
+    }
+    place(drag.card, t);
+  });
+  const endDrag = () => {
+    if(!drag) return;
+    drag.card.classList.remove("ghost");
+    const wasSize = drag.mode==="size", t = drag.t;
+    drag = null; markDirty();
+    if(wasSize){ // charts need a redraw at the new box size
+      const c = charts[t.id]; if(c) c.resize();
+      const m = maps[t.id]; if(m) setTimeout(()=>m.invalidateSize(),50);
+    }
+  };
+  grid.addEventListener("pointerup", endDrag);
+  grid.addEventListener("pointercancel", endDrag);
+
+  function cellSize(){
+    const r = $("#grid").getBoundingClientRect();
+    const gap = parseFloat(getComputedStyle(document.body).getPropertyValue("--gap"))||12;
+    const rowh = parseFloat(getComputedStyle(document.body).getPropertyValue("--rowh"))||92;
+    return {cw:(r.width-gap*11)/12+gap, ch:rowh+gap};
+  }
+  function cellAt(px,py){
+    const r = $("#grid").getBoundingClientRect(), {cw,ch} = cellSize();
+    return {x:Math.max(0,Math.min(11,Math.floor((px-r.left)/cw))),
+            y:Math.max(0,Math.floor((py-r.top)/ch))};
+  }
+}
+
+/* ── inspector ──────────────────────────────────────────────────── */
+function opts(list, value, blank){
+  return (blank?`<option value="">${blank}</option>`:"") + list.map(f=>{
+    const v = f.name ?? f[0], l = f.label ?? f[1] ?? v;
+    return `<option value="${esc(v)}"${String(value)===String(v)?" selected":""}>${esc(l)}</option>`;
+  }).join("");
+}
+
+function renderInspector(){
+  if(!CAN_EDIT) return;
+  const box = $("#inspector");
+  const t = tiles.find(x=>x.id===selectedId);
+  if(!t){ box.innerHTML = `<p class="hint">Select a card to edit it, or drag one in from the left.</p>`; return; }
+  const s = t.spec || {};
+  const num = fieldsOf("numeric"), dt = fieldsOf("datetime"), all = fields;
+  let html = `
+    <label>Card type</label>
+    <select data-t="kind">${opts(KINDS.map(k=>[k.k,k.n]), t.kind)}</select>
+    <label>Title</label>
+    <input data-t="title" value="${esc(t.title)}" placeholder="${esc(KIND_BY[t.kind].n)}">
+    <label>Caption</label>
+    <input data-t="subtitle" value="${esc(t.subtitle)}" placeholder="optional">`;
+
+  const numberish = ["kpi","delta","progress","gauge"].includes(t.kind);
+  if(numberish || t.kind==="leaderboard"){
+    if(t.kind==="leaderboard"){
+      html += `<label>Rank by</label><select data-s="group_by">${opts(all, s.group_by)}</select>`;
+    }
+    html += `<label>Measure</label><select data-s="agg">${opts(AGGS, s.agg||"count")}</select>
+      <label>Of column</label><select data-s="column">${opts(all, s.column, "— row count —")}</select>`;
+  }
+  if(t.kind==="delta"){
+    html += `<div class="two"><div><label>Window (min)</label>
+      <input type="number" min="1" data-s="window_minutes" value="${s.window_minutes||60}"></div>
+      <div><label>Time column</label><select data-s="date">${opts(dt, s.date, "auto")}</select></div></div>`;
+  }
+  if(t.kind==="progress"||t.kind==="gauge"){
+    html += `<label>Target</label><input type="number" data-s="target" value="${s.target??""}" placeholder="e.g. 1200">`;
+  }
+  if(t.kind==="leaderboard"){
+    html += `<label>Show top</label><input type="number" min="1" max="50" data-s="limit" value="${s.limit||10}">`;
+  }
+  if(["bar","hbar","pie","donut","line","area"].includes(t.kind)){
+    html += `<label>Break down by</label><select data-s="x">${opts(all, s.x)}</select>
+      <label>Measure</label><select data-s="agg">${opts(AGGS, s.agg||"count")}</select>
+      <label>Of column</label><select data-s="y">${opts(num, s.y, "— row count —")}</select>
+      <label>Split into series</label><select data-s="group_by">${opts(all, s.group_by, "— none —")}</select>
+      <div class="two"><div><label>Sort</label>
+        <select data-s="sort">${opts([["value","Biggest first"],["label","By name"],["","Natural"]], s.sort??"value")}</select></div>
+        <div><label>Max categories</label><input type="number" min="2" max="60" data-s="limit" value="${s.limit||12}"></div></div>`;
+  }
+  if(t.kind==="timeseries"){
+    html += `<label>Time column</label><select data-s="date">${opts(dt, s.date, "auto-detect")}</select>
+      <div class="two"><div><label>Bucket</label>
+        <select data-s="freq">${opts([["MIN","Minute"],["H","Hour"],["D","Day"],["W","Week"],["M","Month"],["Q","Quarter"],["Y","Year"]], s.freq||"D")}</select></div>
+        <div><label>Measure</label><select data-s="agg">${opts(AGGS.slice(0,6), s.agg||"count")}</select></div></div>
+      <label>Of column</label><select data-s="y">${opts(num, s.y, "— row count —")}</select>
+      <label>Split into series</label><select data-s="group_by">${opts(all, s.group_by, "— none —")}</select>
+      <div class="two"><div><label>Rolling average</label>
+        <input type="number" min="0" max="60" data-s="rolling" value="${s.rolling||0}"></div>
+        <div><label>Running total</label>
+        <select data-s="cumulative">${opts([["","No"],["1","Yes"]], s.cumulative?"1":"")}</select></div></div>`;
+  }
+  if(t.kind==="histogram"){
+    html += `<label>Numeric column</label><select data-s="x">${opts(num, s.x)}</select>
+      <label>Buckets</label><input type="number" min="3" max="60" data-s="bins" value="${s.bins||""}" placeholder="auto">`;
+  }
+  if(t.kind==="scatter"){
+    html += `<div class="two"><div><label>X</label><select data-s="x">${opts(num, s.x)}</select></div>
+      <div><label>Y</label><select data-s="y">${opts(num, s.y)}</select></div></div>`;
+  }
+  if(t.kind==="table"){
+    html += `<label>Columns (leave empty for the first eight)</label>
+      <select data-s="columns" multiple size="7">${opts(all, null)}</select>
+      <div class="two"><div><label>Rows</label><input type="number" min="1" max="300" data-s="limit" value="${s.limit||20}"></div>
+      <div><label>Sort by</label><select data-s="sort_by">${opts(all, s.sort_by, "newest first")}</select></div></div>`;
+  }
+  if(t.kind==="map"){
+    html += `<label>Colour points by</label><select data-s="color_by">${opts(all, s.color_by, "— single colour —")}</select>`;
+  }
+  if(t.kind==="text"){
+    html += `<label>Text</label><textarea data-s="body" rows="5">${esc(s.body||"")}</textarea>`;
+  }
+
+  if(numberish){
+    const a = t.alert||{};
+    html += `<label>Turn the card red when the value is…</label>
+      <div class="two">
+        <select data-a="op">${opts([["","never"],["lt","below"],["gt","above"]], a.op||"")}</select>
+        <input type="number" data-a="value" value="${a.value??""}" placeholder="threshold">
+      </div>
+      <p class="hint">An alert card stays red on every open copy of this board — the point is that nobody has to be watching the right tile at the right moment.</p>`;
+  }
+
+  html += `<label>Card filter</label><div id="tileFilters"></div>
+    <button class="btn ghost small" id="addTileFilter" style="margin-top:.4rem">+ condition</button>`;
+
+  box.innerHTML = html;
+  renderConditions($("#tileFilters"), t.filters, () => { markDirty(); refresh(true); });
+  $("#addTileFilter").onclick = () => {
+    t.filters.push({field:fields[0]?.name, operator:"eq", value:""});
+    renderInspector();
+  };
+
+  box.querySelectorAll("[data-t]").forEach(el=>{
+    el.onchange = () => {
+      const key = el.dataset.t;
+      if(key==="kind"){ t.kind = el.value; t.spec = defaultSpec(el.value); }
+      else t[key] = el.value;
+      markDirty(); renderGrid(); refresh(true);
+    };
+  });
+  box.querySelectorAll("[data-s]").forEach(el=>{
+    el.onchange = () => {
+      const key = el.dataset.s;
+      let v = el.multiple ? [...el.selectedOptions].map(o=>o.value)
+            : (el.type==="number" ? (el.value===""?null:Number(el.value)) : el.value);
+      if(key==="cumulative") v = v==="1";
+      if(v==="") v = null;
+      t.spec[key] = v;
+      markDirty(); refresh(true);
+    };
+  });
+  box.querySelectorAll("[data-a]").forEach(el=>{
+    el.onchange = () => {
+      t.alert = t.alert||{};
+      t.alert[el.dataset.a] = el.type==="number" ? Number(el.value) : el.value;
+      if(!t.alert.op) t.alert = {};
+      markDirty(); refresh(true);
+    };
+  });
+}
+
+const OPERATORS = [["eq","is"],["ne","is not"],["contains","contains"],
+  ["in","is any of"],["gt","greater than"],["gte","at least"],["lt","less than"],
+  ["lte","at most"],["between","between"],["answered","is answered"],
+  ["not_answered","is blank"]];
+
+function renderConditions(host, list, onChange){
+  if(!host) return;
+  host.innerHTML = (list||[]).map((c,i)=>`
+    <div class="cond" data-i="${i}">
+      <select data-c="field">${opts(fields, c.field)}</select>
+      <select data-c="operator">${opts(OPERATORS, c.operator)}</select>
+      ${["answered","not_answered"].includes(c.operator)?"":
+        `<input data-c="value" value="${esc(c.value??"")}" placeholder="value">`}
+      <button class="btn ghost small" data-c="rm">Remove</button>
+    </div>`).join("") || `<p class="hint">No conditions — this card sees all rows.</p>`;
+
+  host.querySelectorAll(".cond").forEach(row=>{
+    const i = +row.dataset.i;
+    row.querySelectorAll("[data-c]").forEach(el=>{
+      if(el.dataset.c==="rm"){ el.onclick = () => { list.splice(i,1); onChange(); renderConditions(host,list,onChange); }; return; }
+      el.onchange = () => { list[i][el.dataset.c] = el.value; onChange();
+        if(el.dataset.c==="operator") renderConditions(host,list,onChange); };
+    });
+  });
+}
+
+/* ── board-level controls ───────────────────────────────────────── */
+function markDirty(){ dirty = true; const s=$("#saveText"); if(s){s.textContent="unsaved changes";s.style.color="var(--orange)";} }
+function markClean(){ dirty = false; const s=$("#saveText"); if(s){s.textContent="saved";s.style.color="var(--muted)";} }
+
+async function save(){
+  if(!CAN_EDIT) return;
+  const payload = {
+    name: $("#boardName").value,
+    filters: board.filters, filter_match: board.filter_match,
+    source: board.source, pipeline_id: board.pipeline_id,
+    dataset_id: board.dataset_id, run_id: board.run_id,
+    theme: board.theme, is_live: board.is_live,
+    is_public: board.is_public, refresh_seconds: board.refresh_seconds,
+    tiles: tiles.map(t=>({kind:t.kind,title:t.title,subtitle:t.subtitle,
+      x:t.x,y:t.y,w:t.w,h:t.h,spec:t.spec,filters:t.filters,
+      filter_match:t.filter_match,alert:t.alert})),
+  };
+  try{
+    const j = await api(URLS.save, {method:"POST", body:JSON.stringify(payload)});
+    // Adopt the server ids so per-tile refreshes and alerts line up.
+    const keep = selectedId, index = tiles.findIndex(t=>t.id===keep);
+    board = j.dashboard; tiles = board.tiles;
+    selectedId = index>=0 && tiles[index] ? tiles[index].id : null;
+    markClean(); renderGrid(); refresh(true);
+    toast("Board saved");
+  }catch(err){ toast(err.message); }
+}
+
+if(CAN_EDIT){
+  $("#btnSave").onclick = save;
+  $("#boardName").oninput = markDirty;
+
+  /* source switcher — this is the "plug in a pipeline" control */
+  const src = $("#sourceSel");
+  const options = [`<option value="submissions">Live submissions (raw)</option>`];
+  BOOT.pipelines.forEach(p=>options.push(
+    `<option value="pipeline:${p.id}">Live → ${esc(p.name)} (${p.steps} steps)</option>`));
+  BOOT.datasets.forEach(d=>options.push(
+    `<option value="dataset:${d.id}">File · ${esc(d.name)}</option>`));
+  BOOT.runs.forEach(r=>options.push(
+    `<option value="run:${r.id}">Snapshot · ${esc(r.label)}</option>`));
+  src.innerHTML = options.join("");
+  src.value = board.source==="submissions" ? "submissions"
+    : `${board.source}:${board.pipeline_id||board.dataset_id||board.run_id}`;
+  src.onchange = async () => {
+    const [kind, id] = src.value.split(":");
+    board.source = kind;
+    board.pipeline_id = kind==="pipeline" ? +id : null;
+    board.dataset_id  = kind==="dataset"  ? +id : null;
+    board.run_id      = kind==="run"      ? +id : null;
+    await save();                       // source changes must persist at once
+    const f = await api(URLS.fields); fields = f.fields||[];
+    renderFields(); lastStamp=null; refresh(true);
+    toast(kind==="pipeline"
+      ? "Every card now reads pipeline-cleaned data — layout untouched"
+      : "Source switched");
+  };
+
+  $("#btnPresent").onclick = () => {
+    document.body.classList.add("presenting");
+    document.documentElement.requestFullscreen?.().catch(()=>{});
+    setTimeout(()=>{Object.values(charts).forEach(c=>c.resize());
+      Object.values(maps).forEach(m=>m.invalidateSize());},250);
+  };
+  $("#btnShare").onclick = async () => {
+    board.is_public = !board.is_public;
+    await save();
+    if(board.is_public){
+      const url = `${location.origin}/kura/d/${board.public_token}/`;
+      navigator.clipboard?.writeText(url);
+      toast("Link copied — anyone with it can watch this board (read-only)");
+    } else toast("Share link switched off");
+  };
+  $("#btnFilters").onclick = () => {
+    board.filters = board.filters||[];
+    board.filters.push({field:fields[0]?.name, operator:"eq", value:""});
+    renderBoardFilters();
+  };
+  $("#fieldSearch").oninput = renderFields;
+}
+
+$("#btnExit").onclick = () => {
+  document.body.classList.remove("presenting");
+  document.exitFullscreen?.().catch(()=>{});
+  setTimeout(()=>Object.values(charts).forEach(c=>c.resize()),250);
+};
+
+function renderBoardFilters(){
+  const bar = $("#filterBar");
+  if(!CAN_EDIT){ bar.style.display = "none"; return; }
+  bar.innerHTML = `<span class="hint" style="margin:0">Board filter</span>`;
+  const host = document.createElement("div");
+  host.style.flex="1";
+  bar.appendChild(host);
+  renderConditions(host, board.filters||[], ()=>{ markDirty(); lastStamp=null; refresh(true); });
+}
+
+function renderFields(){
+  const host = $("#fieldList"); if(!host) return;
+  const q = ($("#fieldSearch")?.value||"").toLowerCase();
+  const shown = fields.filter(f=>!q || f.name.toLowerCase().includes(q)
+    || (f.label||"").toLowerCase().includes(q));
+  host.innerHTML = shown.slice(0,150).map(f=>`
+    <div class="field" title="${esc(f.label)}">
+      <span class="ftype ${f.kind}">${f.kind[0].toUpperCase()}</span>
+      <b>${esc(f.name)}</b></div>`).join("")
+    || `<p class="hint">No fields — publish the form and collect a response, or pick another source.</p>`;
+}
+
+/* ── boot ───────────────────────────────────────────────────────── */
+(async function start(){
+  renderGrid();
+  renderBoardFilters();
+  if(CAN_EDIT){
+    try{ const f = await api(URLS.fields); fields = f.fields||[]; }catch(e){ fields=[]; }
+    renderFields(); renderInspector();
+  }
+  await refresh(true);
+  connect();
+  const every = (board.refresh_seconds||0)*1000;
+  if(every) setInterval(()=>refresh(false), every);
+  window.addEventListener("resize", () => {
+    clearTimeout(window._rz);
+    window._rz = setTimeout(()=>{Object.values(charts).forEach(c=>c.resize());
+      Object.values(maps).forEach(m=>m.invalidateSize());}, 200);
+  });
+  window.addEventListener("beforeunload", e => { if(dirty){ e.preventDefault(); e.returnValue=""; } });
+})();
+</script>
+</body>
+</html>

@@ -20,7 +20,9 @@ keeps the live WebSocket layer thin — the socket only carries slide-sync
 and audience reactions, never element edits.
 """
 
+import hashlib
 import random
+import secrets
 import string
 import uuid
 
@@ -33,6 +35,17 @@ def _gen_code(length=6):
     """Short, unambiguous join code (no 0/O/1/I) — same alphabet as Boardly."""
     alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
     return "".join(random.choice(alphabet) for _ in range(length))
+
+
+def _gen_pin(length=6):
+    """Presenter-controller PIN.
+
+    secrets, not random: this one is a credential. Six digits rather than
+    four, because the controller page is reachable by anyone who has the
+    join code from the QR, so the PIN is the only thing standing between a
+    curious guest and the Next button.
+    """
+    return "".join(secrets.choice(string.digits) for _ in range(length))
 
 
 class Deck(models.Model):
@@ -145,6 +158,42 @@ class Deck(models.Model):
                 decided_at=timezone.now(),
             )
         return removed
+
+    # ── presenter controller ─────────────────────────────────────────
+    # The PIN that unlocks the phone controller. Stored rather than derived
+    # from the deck code, because a derived PIN can never be changed: the
+    # moment it leaks, the only remedy would be a new deck. Blank means
+    # "not generated yet" — ensure_control_pin() fills it in on first use,
+    # so existing decks need no data migration.
+    control_pin = models.CharField(max_length=8, blank=True)
+    control_pin_rotated_at = models.DateTimeField(null=True, blank=True)
+
+    def ensure_control_pin(self):
+        """The current PIN, generating one the first time it is asked for."""
+        if not self.control_pin:
+            self.control_pin = _gen_pin()
+            self.control_pin_rotated_at = timezone.now()
+            self.save(update_fields=["control_pin", "control_pin_rotated_at"])
+        return self.control_pin
+
+    def rotate_control_pin(self):
+        """Issue a new PIN. Every phone already holding the controller is
+        dropped back to the lock screen — see control_fingerprint."""
+        self.control_pin = _gen_pin()
+        self.control_pin_rotated_at = timezone.now()
+        self.save(update_fields=["control_pin", "control_pin_rotated_at"])
+        return self.control_pin
+
+    def control_fingerprint(self):
+        """An opaque stamp of the current PIN.
+
+        This is what an unlocked phone keeps in its session, never the PIN
+        itself. Two things follow: a stolen session cookie yields no PIN,
+        and rotating the PIN changes the stamp, so every phone that was
+        already in is locked out on its next request.
+        """
+        raw = f"{self.pk}:{self.control_pin}".encode()
+        return hashlib.sha256(raw).hexdigest()[:32]
 
     # The slide the presenter is currently on. Lets a (re)connecting
     # audience phone or a second presenter screen sync to the right slide.

@@ -19,6 +19,10 @@ Review links (view-only sharing):
   • deck_collaborator_remove(code,pk) — owner: take back one person's rights
   • deck_invite_revoke(code,pk)       — owner: cancel a pending email invite
 
+Presenter controller:
+  • deck_control_unlock(code)     — POST {pin}; unlocks the phone controller
+  • deck_control_pin_rotate(code) — owner: issue a new PIN, drop every phone
+
 The editor and present screens are server-rendered shells; all the live
 behaviour (reactions, slide sync) runs through consumers.PresentConsumer.
 The deck content itself is plain HTTP: the editor loads JSON, edits in the
@@ -27,6 +31,8 @@ browser, and POSTs the whole deck back to deck_save.
 
 import json
 import os
+import secrets
+import time
 import uuid
 from urllib.parse import quote
 
@@ -61,9 +67,70 @@ def _join_url(request, deck):
 
 
 def _control_pin(deck):
-    """Deterministic 4-digit presenter-controller PIN. No migration needed."""
-    total = sum((i + 1) * ord(ch) for i, ch in enumerate(deck.code or "HANNS"))
-    return str(1000 + (total % 9000))
+    """The deck's controller PIN, generated on first use.
+
+    This used to be derived arithmetically from the deck code, which meant
+    it could never be changed and was identical for every deck sharing a
+    code pattern. It is now a stored, rotatable secret.
+    """
+    return deck.ensure_control_pin()
+
+
+# Where a phone records that it got the PIN right. Holds the fingerprint,
+# never the PIN, and is keyed by deck code so one phone can hold several.
+CONTROL_SESSION_KEY = "hanns_control"
+CONTROL_ATTEMPT_KEY = "hanns_control_tries"
+CONTROL_MAX_TRIES = 8
+CONTROL_LOCKOUT_SECONDS = 10 * 60
+
+
+def _control_unlocked(request, deck):
+    """Has this browser proved it knows the current PIN?"""
+    store = request.session.get(CONTROL_SESSION_KEY) or {}
+    return store.get(deck.code) == deck.control_fingerprint()
+
+
+def _control_grant(request, deck):
+    store = dict(request.session.get(CONTROL_SESSION_KEY) or {})
+    store[deck.code] = deck.control_fingerprint()
+    request.session[CONTROL_SESSION_KEY] = store
+    request.session.modified = True
+
+
+def _control_attempts(request, deck):
+    """Wrong guesses so far, and whether this browser is locked out.
+
+    Six digits is a million combinations, but a script does not care about
+    that unless something slows it down. Eight tries per ten minutes turns
+    a brute force into a job measured in years.
+    """
+    store = request.session.get(CONTROL_ATTEMPT_KEY) or {}
+    rec = store.get(deck.code) or {}
+    started = rec.get("at", 0)
+    count = rec.get("n", 0)
+    if not started or (time.time() - started) > CONTROL_LOCKOUT_SECONDS:
+        return 0, False
+    return count, count >= CONTROL_MAX_TRIES
+
+
+def _control_record_miss(request, deck):
+    store = dict(request.session.get(CONTROL_ATTEMPT_KEY) or {})
+    rec = dict(store.get(deck.code) or {})
+    started = rec.get("at", 0)
+    if not started or (time.time() - started) > CONTROL_LOCKOUT_SECONDS:
+        rec = {"n": 0, "at": time.time()}
+    rec["n"] = rec.get("n", 0) + 1
+    store[deck.code] = rec
+    request.session[CONTROL_ATTEMPT_KEY] = store
+    request.session.modified = True
+    return rec["n"]
+
+
+def _control_clear_attempts(request, deck):
+    store = dict(request.session.get(CONTROL_ATTEMPT_KEY) or {})
+    if store.pop(deck.code, None) is not None:
+        request.session[CONTROL_ATTEMPT_KEY] = store
+        request.session.modified = True
 
 
 def _control_url(request, deck):
@@ -421,6 +488,9 @@ def deck_edit(request, code):
         "download_url": download_url,
         "review_url": review_url,
         "review_state_label": _expiry_label(deck),
+        # Owner-only: the editor shows this so the PIN can be rotated
+        # without starting a presentation first.
+        "control_pin": deck.ensure_control_pin() if is_owner else "",
         "link_editor_count": deck.link_editor_count if is_owner else 0,
         # Only the owner answers requests, so only the owner is handed them.
         "access_requests": (
@@ -858,15 +928,101 @@ def deck_download_settings(request, code):
 
 
 def deck_control(request, code):
-    """
-    Hidden presenter phone controller. Public page, protected by the PIN shown
-    only from the presenter screen controller modal.
+    """The presenter's phone controller.
+
+    The page is public — the presenter needs to reach it from a phone that
+    is not logged in — so the PIN is what protects it. That means the PIN
+    must be checked here, on the server, and must never be written into
+    the page. Previously it was rendered into the template for anyone who
+    knew the deck code, which the QR hands to the whole room; the check
+    was therefore only as good as the audience's willingness not to open
+    view-source.
+
+    Until the PIN is entered, this route serves a lock screen and no deck
+    data at all.
     """
     deck = get_object_or_404(Deck, code=code.upper())
+    deck.ensure_control_pin()
+
+    if not _control_unlocked(request, deck):
+        tries, locked = _control_attempts(request, deck)
+        return render(request, "hanns/control_lock.html", {
+            "deck_title": deck.title,
+            "unlock_url": reverse("hanns:control_unlock", args=[deck.code]),
+            "locked_out": locked,
+            "tries_left": max(0, CONTROL_MAX_TRIES - tries),
+        }, status=200)
+
     return render(request, "hanns/control.html", {
         "deck": deck,
         "deck_json": json.dumps(deck.as_dict()),
-        "control_pin": _control_pin(deck),
+        # Handed over only now, once this browser has proved it knows the
+        # code. The page needs it to authenticate the WebSocket, and a
+        # presenter should type the code once, not once for the page and
+        # again for the socket. Before the unlock this route serves the
+        # lock screen and no deck data at all.
+        "control_pin": deck.control_pin,
+        "control_unlocked": True,
+    })
+
+
+@require_POST
+def deck_control_unlock(request, code):
+    """Check a PIN and, if it is right, remember it for this browser."""
+    deck = get_object_or_404(Deck, code=code.upper())
+    deck.ensure_control_pin()
+
+    tries, locked = _control_attempts(request, deck)
+    if locked:
+        return JsonResponse({
+            "ok": False,
+            "locked": True,
+            "error": "Too many attempts. Wait ten minutes and try again.",
+        }, status=429)
+
+    given = (request.POST.get("pin") or "").strip()
+    # compare_digest rather than ==, so the time taken to fail says nothing
+    # about how much of the PIN was right.
+    if given and secrets.compare_digest(given, deck.control_pin):
+        _control_clear_attempts(request, deck)
+        _control_grant(request, deck)
+        return JsonResponse({"ok": True})
+
+    used = _control_record_miss(request, deck)
+    left = max(0, CONTROL_MAX_TRIES - used)
+    return JsonResponse({
+        "ok": False,
+        "locked": left == 0,
+        "tries_left": left,
+        "error": "That code is not right." if left else
+                 "Too many attempts. Wait ten minutes and try again.",
+    }, status=403)
+
+
+@login_required
+@require_POST
+def deck_control_pin_rotate(request, code):
+    """Owner issues a new controller PIN.
+
+    Every phone that was already unlocked is dropped back to the lock
+    screen on its next request, because their session holds a fingerprint
+    of the old PIN. That is the point: rotating is what you do when a
+    phone has walked off, or the code was read over your shoulder.
+    """
+    deck = get_object_or_404(Deck, code=code.upper(), owner=request.user)
+    pin = deck.rotate_control_pin()
+
+    # Including this browser, if the owner had unlocked a controller here.
+    store = dict(request.session.get(CONTROL_SESSION_KEY) or {})
+    if store.pop(deck.code, None) is not None:
+        request.session[CONTROL_SESSION_KEY] = store
+        request.session.modified = True
+
+    return JsonResponse({
+        "ok": True,
+        "control_pin": pin,
+        "rotated_at": deck.control_pin_rotated_at.isoformat()
+        if deck.control_pin_rotated_at else "",
     })
 
 

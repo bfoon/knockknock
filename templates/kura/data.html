@@ -175,6 +175,10 @@
   .studio-launch p{margin:0;color:var(--muted);font-size:.78rem;line-height:1.55;max-width:850px}
   .studio-launch .studio-btn{font-size:.86rem;padding:.68rem 1rem;white-space:nowrap;
     box-shadow:0 10px 28px rgba(139,92,246,.28)}
+  .dash-launch{border-color:rgba(255,63,152,.35);padding:.8rem 1.1rem;margin:0 0 1rem;
+    background:linear-gradient(135deg,rgba(255,63,152,.12),rgba(139,92,246,.14),rgba(255,138,31,.08))}
+  .dash-launch h2{font-size:1.05rem}
+  .dash-launch .studio-btn{box-shadow:0 10px 28px rgba(255,63,152,.28)}
   .legacy-label{display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.14);
     border-radius:999px;padding:.2rem .48rem;margin-bottom:.5rem;color:var(--dim);
     font-family:"Spline Sans Mono",monospace;font-size:.54rem;letter-spacing:.11em;text-transform:uppercase}
@@ -212,6 +216,7 @@
   <a class="btn ghost" href="{% url 'kura:builder' survey.code %}">Builder</a>
   <a class="btn ghost" href="{% url 'kura:monitor' survey.code %}">📡 Live monitor</a>
   <a class="btn ghost" href="{% url 'kura:live_map' survey.code %}">🗺 Live map</a>
+  <a class="btn ghost" href="{% url 'kura:dashboards' survey.code %}">📈 Live dashboard</a>
   <a class="btn" href="{% url 'kura:studio' survey.code %}">📊 Open Data Studio</a>
   <span class="dlmenu">
     <button class="btn ghost" id="export-menu" type="button">⬇ Download CSV</button>
@@ -245,6 +250,22 @@
     </div>
     <a class="btn studio-btn" href="{% url 'kura:studio' survey.code %}">
       Open Data Studio →
+    </a>
+  </section>
+
+  <section class="studio-launch dash-launch" aria-label="Open the live dashboard">
+    <div>
+      <span class="legacy-label">Watch the data arrive</span>
+      <h2>Build a dashboard that updates itself</h2>
+      <p>
+        Drag number cards, charts, leaderboards and a map onto a grid, then leave it on a
+        screen — it refreshes as submissions land. Point it at raw submissions while data is
+        thin, or at one of your saved pipelines to watch cleaned numbers instead; the cards
+        keep their layout either way. Share a read-only link for the wall display.
+      </p>
+    </div>
+    <a class="btn studio-btn" href="{% url 'kura:dashboards' survey.code %}">
+      Open live dashboard →
     </a>
   </section>
 

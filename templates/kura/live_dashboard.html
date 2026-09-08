@@ -1,4 +1,4 @@
-{% load static %}<!doctype html>
+{% load static kura_maps %}<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+{% kura_basemap %}
 <style>
 :root{--bg:#07081a;--panel:#10122c;--line:rgba(255,255,255,.12);--text:#f8fbff;--muted:#aeb7dc;--cyan:#22d3ee;--pink:#ff3f98;--orange:#ff8a1f;--violet:#8b5cf6;--green:#22c55e;--red:#e8482b;--gap:12px;--rowh:92px}
 body.theme-ops{--bg:#000208;--panel:#080b18;--line:rgba(255,255,255,.2);--muted:#c6cdf0}
@@ -404,8 +405,11 @@ function drawTile(body, tile, res){
     const pts = res.points||[];
     if(!pts.length){ body.innerHTML = `<div class="terr">No locations in this data.</div>`; return; }
     const m = L.map(`map_${did(tile.id)}`, {attributionControl:false});
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
-      {subdomains:"abcd",maxZoom:19}).addTo(m);
+    KURA_BASEMAP.addTo(m);
+    // A light-themed board keeps light tiles even when the install darkens
+    // keyless OpenStreetMap imagery for the dark themes.
+    if(document.body.classList.contains("theme-light"))
+      m.getContainer().classList.remove("kura-dark-tiles");
     const palette = ["#22d3ee","#ff3f98","#ff8a1f","#8b5cf6","#22c55e","#e8482b"];
     const groups = [...new Set(pts.map(p=>p.group).filter(Boolean))];
     pts.forEach(p=>{

@@ -574,10 +574,31 @@
       !Hx.STUDIO_OBJECTS.some(function (o) { return o.kind === "bars_3d"; })) {
     Hx.STUDIO_OBJECTS.push(DEF);
   }
+  /* buildObjectGallery() in hanns_editor.js renders OBJECTS as one flat
+     grid and ignores `group` entirely, so position in this array IS the
+     position in the drawer. Pushing put the card dead last, behind every
+     liquid — findable only by scrolling to the bottom. Splice it in
+     beside the other bar charts instead, and fall back to the end only
+     if neither neighbour is present. */
+  var slot = -1;
   if (Array.isArray(Hx.OBJECTS) &&
       !Hx.OBJECTS.some(function (o) { return o.kind === "bars_3d"; })) {
-    Hx.OBJECTS.push(DEF);
+    ["rank_bars", "bullet_bars", "kpi_grid"].some(function (near) {
+      var i = Hx.OBJECTS.findIndex(function (o) { return o.kind === near; });
+      if (i < 0) return false;
+      slot = i + 1;
+      return true;
+    });
+    if (slot < 0) slot = Hx.OBJECTS.length;
+    Hx.OBJECTS.splice(slot, 0, DEF);
   }
 
-  console.info("[hanns-bars3d] 3D bar chart registered as objectType \"bars_3d\".");
+  if (slot < 0) {
+    console.info("[hanns-bars3d] already registered — nothing to do.");
+  } else {
+    console.info("[hanns-bars3d] registered as objectType \"bars_3d\" — " +
+                 "card #" + (slot + 1) + " of " + Hx.OBJECTS.length +
+                 " in the Objects drawer" +
+                 (slot > 0 ? ", right after \"" + Hx.OBJECTS[slot - 1].label + "\"." : "."));
+  }
 })();

@@ -3942,6 +3942,27 @@ function studioFields(el,keys){
     out.push(hEl("div",{class:"hs-hint",
       text:"Leaves are added as it grows, and it flowers past about 82%."}));
   }
+  /* 3D bars — the only control the chart needs that the shared list above
+     does not already provide. Everything else it uses (title, ramp,
+     accent, max, sort, numfmt, showValues, objAnim, dark, grid) is a
+     standard field. See hanns_bars3d.js. */
+  if(has("bars3dOpts")){
+    out.push(hField("Bar style",hSelect(el,"barSkin",[
+      {v:"solid",l:"Solid blocks"},
+      {v:"coins",l:"Stacks of coins"},
+    ])));
+    if(el.barSkin==="coins"){
+      out.push(hField("Coin symbol (blank for none)",hText(el,"coinSymbol","D")));
+    }
+    out.push(hEl("div",{class:"row2"},[
+      hField("Grow time (ms)",hNum(el,"growMs",120,6000,50)),
+      hField("Stagger (ms)",hNum(el,"stagger",0,2000,10)),
+    ]));
+    out.push(hEl("div",{class:"hs-hint",
+      text:"The bars stand still in the editor and grow on the stage. Coins draw one coin "+
+           "per unit of value, so the tallest bar caps at sixteen \u2014 use solid blocks when "+
+           "the exact number matters more than the metaphor."}));
+  }
   if(has("batteryOpts")){
     out.push(hField("Orientation",hSelect(el,"orient",[{v:"horizontal",l:"Horizontal"},{v:"vertical",l:"Vertical"}])));
     out.push(hField("Charging",hToggle(el,"charging","Charging","Idle",false)));

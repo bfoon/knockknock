@@ -1,0 +1,57 @@
+/* ════════════════════════════════════════════════════════════════════
+   3D BAR CHART — objectType "bars_3d"          (hanns_bars3d.js)
+   ────────────────────────────────────────────────────────────────────
+   Append to hanns/static/hanns/css/hanns.css, after the studio-object
+   block that ends with the heat grid and quote card.
+
+   There is deliberately no `.present .hs-bars3d-…` entrance rule here.
+   An extruded bar cannot grow with a CSS transform: the front face would
+   scale correctly, but the right face is a parallelogram whose bottom
+   edge is not horizontal, so scaleY shears it off the ground plane. The
+   module rewrites the path geometry per frame instead, and gates itself
+   on `.present` in JavaScript so the editor still shows a resting chart.
+
+   Everything below is colour and type only, and inherits `color` from
+   .hs-box / .hs-box.hs-dark so one rule set covers both modes.
+   ════════════════════════════════════════════════════════════════════ */
+
+.hs-bars3d { padding: 10px 12px; }
+.hs-bars3d .hs-bars3d-svg { flex: 1 1 auto; min-height: 0; }
+
+.hs-bars3d-empty {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  font-size: clamp(13px, 1.8cqw, 17px); font-weight: 600; opacity: .55;
+}
+
+/* ground plane — currentColor, so it sits at the same weight on a light
+   slide and a dark one without a second rule */
+.hs-bars3d-plate { fill: currentColor; fill-opacity: .05; }
+.hs-bars3d-depth { stroke: currentColor; stroke-opacity: .11; stroke-width: 1; }
+.hs-bars3d-base  { stroke: currentColor; stroke-opacity: .28; stroke-width: 1.5; }
+
+.hs-bars3d-shadow { fill: #000; }
+.hs-dark .hs-bars3d-shadow { fill: #000; }
+
+/* Values are monospaced because they count up during the grow — a
+   proportional face makes the number jitter sideways as digits change. */
+.hs-bars3d-value {
+  font-family: "Spline Sans Mono", ui-monospace, monospace;
+  font-size: 22px; font-weight: 700; fill: #0f172a;
+}
+.hs-dark .hs-bars3d-value { fill: #f1f5f9; }
+
+.hs-bars3d-label {
+  font-family: Archivo, Inter, system-ui, sans-serif;
+  font-size: 20px; font-weight: 600; fill: #0f172a; fill-opacity: .72;
+}
+.hs-dark .hs-bars3d-label { fill: #f1f5f9; fill-opacity: .74; }
+
+/* The coin face value is drawn with an explicit fill derived from the
+   bar colour, so it must not inherit the label colour above. */
+.hs-bars3d-bar text[transform] { font-family: Archivo, Inter, system-ui, sans-serif; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* The module already skips the grow and paints the resting state; this
+     only covers a chart that was mid-flight when the setting changed. */
+  .hs-bars3d-bar { transition: none !important; }
+}

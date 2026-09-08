@@ -235,6 +235,7 @@
 window.__KURA_MON__ = {
   code: "{{ survey.code }}",
   feedUrl: "{{ feed_url }}",
+  cartoKey: "{{ carto_key|default:''|escapejs }}",
   accessUrl: "{% url 'kura:device_access_update' survey.code %}",
   csrf: "{{ csrf_token }}",
   wsUrl: (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/kura/{{ survey.code }}/monitor/"
@@ -251,20 +252,42 @@ let lastSeen = null;        // ISO of the newest submission we've displayed
 const seen = new Set();     // submission ids already in the feed (WS + poll overlap guard)
 const totals = {total:0, web:0, api:0, with_gps:0, last_hour:0, today:0};
 
-/* ── map ── */
+/* ── map ──
+   CARTO began watermarking raster tiles requested without an API key in Aug 2026.
+   Set the `carto_key` template context variable to a free key from
+   carto.com/basemaps/apikey to keep the CARTO cartography; leave it empty and
+   Streets/Light/Dark fall back to Esri's keyless basemaps instead. */
 const map = L.map("map", {zoomControl:true, attributionControl:true}).setView([13.44, -16.6], 8);
-const _carto = s=>L.tileLayer("https://{s}.basemaps.cartocdn.com/"+s+"/{z}/{x}/{y}{r}.png",
-  {maxZoom:20, subdomains:"abcd", crossOrigin:true, attribution:"&copy; OpenStreetMap contributors &copy; CARTO"});
+
+const CARTO_KEY = String((CFG && CFG.cartoKey) || "").trim();
+const CARTO_Q   = CARTO_KEY ? "?key=" + encodeURIComponent(CARTO_KEY) : "";
+const OSM_ATTR  = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+
+const _carto = style=>L.tileLayer(
+  "https://{s}.basemaps.cartocdn.com/"+style+"/{z}/{x}/{y}{r}.png"+CARTO_Q,
+  {maxZoom:20, subdomains:"abcd", crossOrigin:true,
+   attribution: OSM_ATTR + ' &copy; <a href="https://carto.com/attributions">CARTO</a>'});
+
+/* Esri ArcGIS Online basemaps — keyless. maxNativeZoom keeps deep zooms
+   upscaling the last available tile instead of going blank. */
+const _esri = (service, attr, nativeZoom)=>L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/"+service+"/MapServer/tile/{z}/{y}/{x}",
+  {maxZoom:20, maxNativeZoom:nativeZoom, crossOrigin:true, attribution:attr});
+
+const ESRI_CANVAS_ATTR  = "Tiles &copy; Esri — Esri, HERE, Garmin, " + OSM_ATTR;
+const ESRI_STREETS_ATTR = "Tiles &copy; Esri — Esri, HERE, Garmin, INCREMENT P, " + OSM_ATTR;
+
 const baseLayers = {
-  "🛣 Streets":   _carto("rastertiles/voyager"),
-  "🌕 Light":     _carto("light_all"),
-  "🌑 Dark":      _carto("dark_all"),
-  "🛰 Satellite": L.tileLayer(
-    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    {maxZoom:19, crossOrigin:true, attribution:"Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics"}),
-  "🏔 Terrain":   L.tileLayer(
-    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
-    {maxZoom:19, crossOrigin:true, attribution:"Tiles &copy; Esri — Source: Esri, HERE, Garmin, OpenStreetMap contributors"})
+  "🛣 Streets":   CARTO_KEY ? _carto("rastertiles/voyager")
+                          : _esri("World_Street_Map", ESRI_STREETS_ATTR, 19),
+  "🌕 Light":     CARTO_KEY ? _carto("light_all")
+                          : _esri("Canvas/World_Light_Gray_Base", ESRI_CANVAS_ATTR, 16),
+  "🌑 Dark":      CARTO_KEY ? _carto("dark_all")
+                          : _esri("Canvas/World_Dark_Gray_Base", ESRI_CANVAS_ATTR, 16),
+  "🛰 Satellite": _esri("World_Imagery",
+                          "Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics", 19),
+  "🏔 Terrain":   _esri("World_Topo_Map",
+                          "Tiles &copy; Esri — Source: Esri, HERE, Garmin, OpenStreetMap contributors", 19)
 };
 let monBase = "🛣 Streets";
 try{ monBase = localStorage.getItem("kura_monitor_base") || monBase; }catch(e){}

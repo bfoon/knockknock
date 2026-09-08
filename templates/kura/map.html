@@ -131,6 +131,7 @@
 window.__KURA_MAP__ = {
   code: "{{ survey.code }}",
   feedUrl: "{{ feed_url }}",
+  cartoKey: "{{ carto_key|default:''|escapejs }}",
   wsUrl: (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/kura/{{ survey.code }}/monitor/"
 };
 </script>
@@ -147,25 +148,45 @@ const seen = new Set();
 const totals = {total:0, web:0, api:0, last_hour:0};
 let follow = true, heatOn = false;
 
-/* ── map with switchable basemaps (Dark / Light / Streets / Satellite / OSM) ── */
+/* ── map with switchable basemaps (Dark / Light / Streets / Satellite / Terrain) ──
+   CARTO began watermarking raster tiles requested without an API key in Aug 2026,
+   so the keyless CARTO endpoints now render "API KEY REQUIRED" across the basemap.
+   Two supported paths, no other code changes needed:
+     1. Supply a free CARTO key (carto.com/basemaps/apikey — no account) via the
+        `carto_key` template context variable, and the CARTO styles are used as before.
+     2. Leave it empty, and Dark/Light/Streets fall back to Esri's keyless basemaps,
+        which need no key and match the styles closely enough. */
 const map = L.map("map", {zoomControl:true, worldCopyJump:true}).setView([13.44, -16.6], 8);
 
+const CARTO_KEY = String((CFG && CFG.cartoKey) || "").trim();
+const CARTO_Q   = CARTO_KEY ? "?key=" + encodeURIComponent(CARTO_KEY) : "";
+const OSM_ATTR  = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+
 const carto = (style)=>L.tileLayer(
-  "https://{s}.basemaps.cartocdn.com/"+style+"/{z}/{x}/{y}{r}.png",
+  "https://{s}.basemaps.cartocdn.com/"+style+"/{z}/{x}/{y}{r}.png"+CARTO_Q,
   {maxZoom:20, subdomains:"abcd", crossOrigin:true,
-   attribution:"&copy; OpenStreetMap contributors &copy; CARTO"});
+   attribution: OSM_ATTR + ' &copy; <a href="https://carto.com/attributions">CARTO</a>'});
+
+/* Esri ArcGIS Online basemaps — keyless, and already used below for imagery.
+   maxNativeZoom keeps deep zooms upscaling instead of going blank. */
+const esri = (service, attr, nativeZoom)=>L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/"+service+"/MapServer/tile/{z}/{y}/{x}",
+  {maxZoom:20, maxNativeZoom:nativeZoom, crossOrigin:true, attribution:attr});
+
+const ESRI_CANVAS_ATTR  = "Tiles &copy; Esri — Esri, HERE, Garmin, " + OSM_ATTR;
+const ESRI_STREETS_ATTR = "Tiles &copy; Esri — Esri, HERE, Garmin, INCREMENT P, " + OSM_ATTR;
+
 const BASEMAPS = {
-  dark:      {label:"🌑 Dark",      make:()=>carto("dark_all")},
-  light:     {label:"🌕 Light",     make:()=>carto("light_all")},
-  streets:   {label:"🛣 Streets",   make:()=>carto("rastertiles/voyager")},
-  satellite: {label:"🛰 Satellite", make:()=>L.tileLayer(
-    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    {maxZoom:19, crossOrigin:true,
-     attribution:"Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics"})},
-  terrain:   {label:"🏔 Terrain",   make:()=>L.tileLayer(
-    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
-    {maxZoom:19, crossOrigin:true,
-     attribution:"Tiles &copy; Esri — Source: Esri, HERE, Garmin, OpenStreetMap contributors"})}
+  dark:      {label:"🌑 Dark",      make:()=> CARTO_KEY ? carto("dark_all")
+                 : esri("Canvas/World_Dark_Gray_Base", ESRI_CANVAS_ATTR, 16)},
+  light:     {label:"🌕 Light",     make:()=> CARTO_KEY ? carto("light_all")
+                 : esri("Canvas/World_Light_Gray_Base", ESRI_CANVAS_ATTR, 16)},
+  streets:   {label:"🛣 Streets",   make:()=> CARTO_KEY ? carto("rastertiles/voyager")
+                 : esri("World_Street_Map", ESRI_STREETS_ATTR, 19)},
+  satellite: {label:"🛰 Satellite", make:()=> esri("World_Imagery",
+                 "Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics", 19)},
+  terrain:   {label:"🏔 Terrain",   make:()=> esri("World_Topo_Map",
+                 "Tiles &copy; Esri — Source: Esri, HERE, Garmin, OpenStreetMap contributors", 19)}
 };
 const BASE_ORDER = Object.keys(BASEMAPS);
 let baseKey = null, baseLayer = null;

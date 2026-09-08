@@ -18,7 +18,7 @@ import json
 from django import template
 from django.utils.safestring import mark_safe
 
-from ..basemap import basemap_config
+from basemap import basemap_config
 
 register = template.Library()
 

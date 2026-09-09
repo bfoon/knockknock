@@ -1452,6 +1452,245 @@
   });
   document.getElementById("ink-done").addEventListener("click", clearInk);
 
+  /* ---- make it real --------------------------------------------------
+   *
+   * What is picked, read as a shape, and swapped for the real thing. The
+   * reading is arithmetic and happens here on the phone; only handwriting
+   * ever leaves the building, and only if a reader is configured.
+   *
+   * It never decides on its own. A board that silently replaces a drawing
+   * with the wrong shape in front of a class is worse than one that does
+   * nothing, so the guesses are a list and the teacher taps one.
+   */
+  var selReal = document.getElementById("sel-real");
+  if (selReal) selReal.addEventListener("click", function () {
+    if (!window.ChalkRecognise) {
+      return say("This board cannot read drawings yet.");
+    }
+    if (!inkIds.length) {
+      return say("Lasso a drawing or some writing first.");
+    }
+    var strokes = inkIds.map(function (id) { return surface.byId(id); })
+                        .filter(Boolean);
+    var r = surface.rect();
+    var guess = ChalkRecognise.read(strokes, {
+      aspect: r.height / Math.max(1, r.width)
+    });
+    if (!guess || (!guess.picks.length && !guess.writing)) {
+      return say("There is not enough there to read.");
+    }
+    openGuessSheet(strokes, guess);
+  });
+
+  function openGuessSheet(strokes, guess) {
+    openSheet("Make it real", function (body) {
+      var list = document.createElement("div");
+      list.className = "guess-list";
+
+      if (guess.writing && CFG.readUrl) {
+        list.appendChild(guessRow(
+          textThumb(), "Typed words",
+          "Reads the handwriting and puts it on the board as text.",
+          true,
+          function (row) { readWords(strokes, guess, row); }
+        ));
+      }
+
+      guess.picks.forEach(function (pick, i) {
+        list.appendChild(guessRow(
+          pickThumb(pick), pick.name, pick.note,
+          !guess.writing && i === 0,
+          function () { closeSheet(); swapIn(pick); }
+        ));
+      });
+
+      body.appendChild(list);
+
+      var note = document.createElement("p");
+      note.className = "guess-none";
+      note.textContent = guess.writing && !CFG.readUrl
+        ? "That looks like writing. This board has no handwriting reader set " +
+          "up, so only the shape options are offered."
+        : "Nothing here is right? Close this and the drawing stays as it is.";
+      body.appendChild(note);
+    });
+  }
+
+  function guessRow(thumb, name, note, best, onPick) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "guess" + (best ? " is-best" : "");
+    b.appendChild(thumb);
+    var text = document.createElement("span");
+    var n = document.createElement("strong");
+    n.className = "guess-name";
+    n.textContent = name;
+    var d = document.createElement("span");
+    d.className = "guess-note";
+    d.textContent = note || "";
+    text.appendChild(n);
+    text.appendChild(d);
+    b.appendChild(text);
+    b.addEventListener("click", function () { onPick(b); });
+    return b;
+  }
+
+  /* A picture of what you are about to get. The shape thumbnails already
+   * exist for the shape picker; free shapes draw their own points. */
+  function pickThumb(pick) {
+    if (pick.type === "shape") {
+      /* shapeThumb builds with default options, which would offer a
+       * seven-sided shape and draw a hexagon. Build it with the numbers the
+       * guess actually came up with. */
+      var built = ChalkShapes.build(pick.props.shape, pick.props);
+      return svgThumb(built.parts.map(function (p) { return p.d; }).join(" "),
+                      !built.open);
+    }
+    return svgThumb(
+      ChalkShapes.pathFromPoints(pick.props.pts, pick.props.closed,
+                                 pick.props.edge, pick.props.radius),
+      pick.props.closed
+    );
+  }
+
+  function textThumb() {
+    var NS = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 100 100");
+    svg.setAttribute("class", "thumb");
+    svg.setAttribute("aria-hidden", "true");
+    [[14, 34, 86, 34], [14, 54, 72, 54], [14, 74, 58, 74]].forEach(function (l) {
+      var p = document.createElementNS(NS, "line");
+      p.setAttribute("x1", l[0]); p.setAttribute("y1", l[1]);
+      p.setAttribute("x2", l[2]); p.setAttribute("y2", l[3]);
+      p.setAttribute("stroke", "currentColor");
+      p.setAttribute("stroke-width", 7);
+      p.setAttribute("stroke-linecap", "round");
+      svg.appendChild(p);
+    });
+    return svg;
+  }
+
+  /* The swap. Ink out, object in, and the selection cleared so the panel is
+   * not still describing marks that no longer exist.
+   *
+   * The add and the erase are two server operations, so they are two undo
+   * entries, and the toast says so rather than pretending otherwise. Making
+   * it one means a message that carries both halves the way a wipe already
+   * does — see the paired `also` entry in consumers.py. */
+  function swapIn(pick, extra) {
+    var el = ChalkEls.blank(pick.type, pick.props);
+    if (extra) Object.keys(extra).forEach(function (k) { el[k] = extra[k]; });
+    el.x = pick.box.x;
+    el.y = pick.box.y;
+    el.w = pick.box.w;
+    el.h = pick.box.h;
+    el.rot = pick.box.rot || 0;
+
+    var ids = inkIds.slice();
+    layer.upsert(el);
+    net.send({ t: "el_add", el: el });
+    if (ids.length) {
+      surface.remove(ids);
+      net.send({ t: "erase", ids: ids });
+    }
+    clearInk();
+    setTool("select");
+    editor.select(el.id);
+    renderInspector();
+    say("Done. Undo twice to put the drawing back.");
+  }
+
+  /* Handwriting is the one thing arithmetic cannot do. The strokes are drawn
+   * to a small black-on-white picture here and that picture — nothing else,
+   * no board title, no page, no account, no other writing on the board —
+   * goes to the server to be read. */
+  function inkToPng(strokes, box) {
+    var rct = surface.rect();
+    var aspect = rct.height / Math.max(1, rct.width);
+    var padX = Math.max(0.02, box.w * 0.08), padY = padX / aspect;
+    var x0 = box.x - padX, y0 = box.y - padY;
+    var bw = box.w + padX * 2, bh = box.h + padY * 2;
+
+    var W = 720, H = Math.round(W * (bh * aspect) / bw);
+    if (H > 720) { H = 720; W = Math.round(H * bw / (bh * aspect)); }
+    W = Math.max(32, W); H = Math.max(32, H);
+
+    var c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    var g = c.getContext("2d");
+    g.fillStyle = "#ffffff";
+    g.fillRect(0, 0, W, H);
+    g.strokeStyle = "#101010";
+    g.lineCap = "round";
+    g.lineJoin = "round";
+    strokes.forEach(function (s) {
+      var pts = s.pts || [];
+      if (pts.length < 4) return;
+      g.lineWidth = Math.max(2, ((s.w || 0.0035) / bw) * W);
+      g.beginPath();
+      for (var i = 0; i + 1 < pts.length; i += 2) {
+        var px = ((pts[i] - x0) / bw) * W;
+        var py = ((pts[i + 1] - y0) / bh) * H;
+        if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+      }
+      g.stroke();
+    });
+    return c.toDataURL("image/png");
+  }
+
+  function readWords(strokes, guess, row) {
+    var note = row.querySelector(".guess-note");
+    row.dataset.busy = "1";
+    note.textContent = "Reading…";
+    fetch(CFG.readUrl, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": CFG.csrf,
+        "X-Requested-With": "XMLHttpRequest"
+      },
+      body: JSON.stringify({ png: inkToPng(strokes, guess.box) })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || !d.ok) {
+          row.dataset.busy = "0";
+          note.textContent = (d && d.reason === "off")
+            ? "This board has no handwriting reader set up."
+            : "Could not read that. Try writing it a little bigger.";
+          return;
+        }
+        closeSheet();
+        /* A text element in the same place, in the colour it was written in,
+         * sized so the typed line fills the space the writing filled. */
+        swapIn({
+          type: "text",
+          props: { color: guess.ink.color, font: "print", align: "left" },
+          box: guess.box
+        }, { text: d.text, size: sizeForBox(d.text, guess.box) });
+        say("Read as: " + String(d.text).split("\n")[0].slice(0, 40));
+      })
+      .catch(function () {
+        row.dataset.busy = "0";
+        note.textContent = "That did not go through.";
+      });
+  }
+
+  /* Rough, and deliberately so: the teacher will drag the corner if it is
+   * out. Fitting text exactly needs a measure pass, and a measure pass needs
+   * the font to have loaded, which on a cold board it has not. */
+  function sizeForBox(text, box) {
+    var lines = String(text).split("\n");
+    var longest = lines.reduce(function (n, l) {
+      return Math.max(n, l.length);
+    }, 1);
+    var byWidth = (box.w * 1.8) / longest;
+    var byHeight = (box.h * 0.62) / lines.length;
+    return Math.max(0.012, Math.min(0.2, Math.min(byWidth, byHeight)));
+  }
+
   function pushEl(el) {
     layer.upsert(el);
     net.send({ t: "el_add", el: el });
@@ -2183,8 +2422,13 @@
     { k: "fx.glow", type: "toggle", label: "Glow" },
     { k: "fx.glowColor", type: "color", label: "Glow colour" },
     { k: "fx.extrude", type: "range", min: 0, max: 24, step: 1, label: "3-D depth" },
-    { k: "fx.tiltX", type: "range", min: -60, max: 60, step: 1, label: "Tilt up / down" },
-    { k: "fx.tiltY", type: "range", min: -60, max: 60, step: 1, label: "Tilt left / right" },
+    /* Two sliders labelled "up / down" and "left / right" are not a way to
+     * turn an object; they are a way to find out, one nudge at a time, that
+     * you wanted the other one. The pad writes the same two fields, so
+     * anything already saved still reads back correctly. */
+    { k: "__space", type: "space", label: "Turn it" },
+    { k: "fx.perspective", type: "range", min: 200, max: 2000, step: 50,
+      label: "How strong the 3-D is" },
     { k: "fx.opacity", type: "range", min: 0.1, max: 1, step: 0.05, label: "See-through" },
     { k: "fx.blend", type: "select", label: "Blend with the board",
       opts: [["normal", "Off"], ["multiply", "Multiply"], ["screen", "Screen"],
@@ -2265,6 +2509,26 @@
   function writeVal(key, value) {
     var el = layer.get(editor.selected);
     if (el) patchEl(buildPatch(el, key, value));
+  }
+
+  /* One drag of the orbit pad, one patch. `done` is the finger coming off:
+   * everything before it is a live frame the board follows and nobody
+   * stores, and only the last one becomes an undo entry. */
+  function sendTilt(tilt, done) {
+    var el = editor.selected && layer.get(editor.selected);
+    if (!el) return;
+    var fx = {};
+    Object.keys(el.fx || {}).forEach(function (k) { fx[k] = el.fx[k]; });
+    fx.tiltX = tilt.tiltX;
+    fx.tiltY = tilt.tiltY;
+    var patch = { fx: fx };
+    if (done) {
+      patchEl(patch);
+      return;
+    }
+    layer.patch(el.id, patch);
+    net.send({ t: "el_live", id: el.id, patch: patch }, true);
+    editor.refresh();
   }
 
   /* The details are a drawer, not a wall.
@@ -2409,6 +2673,16 @@
         }
         writeVal(f.k, input.value);
         renderInspector();
+      });
+    } else if (f.type === "space") {
+      /* Turning something in space. Both axes move together on one drag, so
+       * they go out as one patch — sending tiltX and tiltY as two messages
+       * would put the object through an orientation it was never in. */
+      input = ChalkSpace.pad({
+        el: el,
+        read: readVal,
+        live: function (tilt) { sendTilt(tilt, false); },
+        commit: function (tilt) { sendTilt(tilt, true); }
       });
     } else {
       input = document.createElement("input");

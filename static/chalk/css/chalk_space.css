@@ -1,0 +1,137 @@
+/* ==========================================================================
+   Chalk — turning things, and reading what was drawn.
+   Loaded after chalk.css.
+   ========================================================================== */
+
+/* --- the orbit pad ------------------------------------------------------ */
+
+.space-pad {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+
+.space-surface {
+  position: relative;
+  height: 148px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background:
+    radial-gradient(120% 100% at 50% 0%, rgba(86, 183, 230, .07), transparent 65%),
+    rgba(232, 238, 244, .03);
+  /* A pad you drag on must not also scroll the panel underneath it. */
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: grab;
+}
+.space-surface:active { cursor: grabbing; }
+.space-surface:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+
+/* The floor line, so a tilt has something to be tilted against. */
+.space-surface::after {
+  content: "";
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  top: 62%;
+  border-top: 1px dashed var(--line);
+}
+
+.space-box {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.space-edge {
+  stroke: var(--dust);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  opacity: .55;
+  vector-effect: non-scaling-stroke;
+}
+.space-face {
+  fill: color-mix(in srgb, var(--sky) 22%, transparent);
+  stroke: var(--sky);
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+}
+
+.space-read {
+  margin: 0;
+  font: 500 12px/1.3 var(--sans);
+  color: var(--muted);
+  text-align: center;
+}
+
+.space-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.space-views .icon-btn {
+  flex: 1 1 88px;
+  min-height: 40px;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+/* --- what it thinks you drew -------------------------------------------- */
+
+.guess-list {
+  display: grid;
+  gap: 8px;
+}
+
+.guess {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: rgba(232, 238, 244, .03);
+  color: var(--dust);
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+/* The best guess first and marked as such, because the whole point is that
+   one tap is usually enough. */
+.guess.is-best {
+  border-color: var(--brass);
+  background: rgba(217, 164, 65, .12);
+}
+
+.guess .thumb {
+  flex: 0 0 46px;
+  width: 46px;
+  height: 46px;
+  color: var(--sky);
+}
+.guess.is-best .thumb { color: var(--brass); }
+
+.guess-name {
+  display: block;
+  font: 600 15px/1.2 var(--sans);
+}
+.guess-note {
+  display: block;
+  margin-top: 2px;
+  font: 400 12px/1.35 var(--sans);
+  color: var(--muted);
+}
+
+.guess-none {
+  margin: 4px 0 0;
+  font: 400 13px/1.4 var(--sans);
+  color: var(--muted);
+}
+
+/* Reading handwriting is a round trip to the server, and on a school network
+   that is not always instant. Say so rather than looking broken. */
+.guess[data-busy="1"] { opacity: .6; pointer-events: none; }

@@ -1,0 +1,394 @@
+/* ============================================================
+   Boardly · board list
+   Scoped to .bl-* so it cannot collide with existing kk-* rules.
+   Colours come from Bootstrap 5.3 CSS vars, so light/dark themes
+   and any brand overrides carry through automatically.
+   ============================================================ */
+
+.bl-page {
+  --bl-line: var(--bs-border-color, rgba(0, 0, 0, .13));
+  --bl-surface: var(--bs-body-bg, #fff);
+  --bl-raised: var(--bs-tertiary-bg, rgba(0, 0, 0, .03));
+  --bl-muted: var(--bs-secondary-color, rgba(0, 0, 0, .6));
+  --bl-accent: var(--bs-primary, #4c6ef5);
+  --bl-radius: 14px;
+}
+
+/* ---------- toolbar ---------------------------------------- */
+
+.bl-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .75rem;
+  margin: 1.5rem 0 .5rem;
+}
+
+.bl-search {
+  position: relative;
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.bl-search .bi {
+  position: absolute;
+  left: .85rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--bl-muted);
+  pointer-events: none;
+  font-size: .95rem;
+}
+
+.bl-search input {
+  width: 100%;
+  padding: .6rem .9rem .6rem 2.3rem;
+  border: 1px solid var(--bl-line);
+  border-radius: 999px;
+  background: var(--bl-surface);
+  color: inherit;
+  font-size: .95rem;
+}
+
+.bl-search input::placeholder { color: var(--bl-muted); }
+
+.bl-search input:focus {
+  outline: none;
+  border-color: var(--bl-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--bl-accent) 18%, transparent);
+}
+
+.bl-count {
+  font-size: .85rem;
+  color: var(--bl-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---------- section heads ---------------------------------- */
+
+.bl-section { margin-top: 2rem; }
+
+.bl-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: .6rem;
+  margin-bottom: .85rem;
+}
+
+.bl-section-head h2 {
+  font-size: 1.02rem;
+  font-weight: 650;
+  letter-spacing: -.01em;
+  margin: 0;
+}
+
+.bl-section-head span {
+  font-size: .82rem;
+  color: var(--bl-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- flow card -------------------------------------- */
+
+.bl-flow {
+  border: 1px solid var(--bl-line);
+  border-radius: var(--bl-radius);
+  background: var(--bl-surface);
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+.bl-flow-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1.05rem 1.15rem;
+}
+
+.bl-flow-name {
+  color: inherit;
+  text-decoration: none;
+  min-width: 0;
+}
+
+.bl-flow-name strong {
+  display: block;
+  font-size: 1.06rem;
+  font-weight: 640;
+  letter-spacing: -.015em;
+  line-height: 1.3;
+}
+
+.bl-flow-name:hover strong,
+.bl-flow-name:focus-visible strong { text-decoration: underline; }
+
+.bl-flow-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem .85rem;
+  margin-top: .3rem;
+  font-size: .84rem;
+  color: var(--bl-muted);
+}
+
+.bl-flow-meta b { font-weight: 600; color: inherit; }
+
+/* page rail — pages really are a sequence, so they are numbered */
+
+.bl-rail {
+  display: flex;
+  gap: .5rem;
+  padding: 0 1.15rem 1.1rem;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+
+.bl-rail::-webkit-scrollbar { height: 6px; }
+.bl-rail::-webkit-scrollbar-thumb {
+  background: var(--bl-line);
+  border-radius: 99px;
+}
+
+.bl-step {
+  position: relative;
+  flex: 0 0 13.5rem;
+  scroll-snap-align: start;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: .1rem .6rem;
+  padding: .65rem .75rem;
+  border: 1px solid var(--bl-line);
+  border-radius: 10px;
+  background: var(--bl-raised);
+  color: inherit;
+  text-decoration: none;
+}
+
+/* connector between consecutive steps */
+.bl-step + .bl-step::before {
+  content: "";
+  position: absolute;
+  left: -.5rem;
+  top: 1.42rem;
+  width: .5rem;
+  border-top: 1px dashed var(--bl-line);
+}
+
+.bl-step:hover,
+.bl-step:focus-visible {
+  border-color: var(--bl-accent);
+  background: color-mix(in srgb, var(--bl-accent) 7%, var(--bl-surface));
+}
+
+.bl-step-n {
+  grid-row: 1 / span 2;
+  align-self: start;
+  width: 1.5rem;
+  height: 1.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--bl-accent);
+  color: #fff;
+  font-size: .74rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.bl-step-label {
+  font-size: .68rem;
+  font-weight: 650;
+  color: var(--bl-muted);
+  letter-spacing: .02em;
+}
+
+.bl-step-title {
+  font-size: .84rem;
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* ---------- single board cards ----------------------------- */
+
+.bl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  gap: .85rem;
+}
+
+.bl-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--bl-line);
+  border-radius: var(--bl-radius);
+  background: var(--bl-surface);
+  padding: 1rem 1.05rem .85rem;
+}
+
+.bl-card:hover,
+.bl-card:focus-within { border-color: color-mix(in srgb, var(--bl-accent) 45%, var(--bl-line)); }
+
+/* the join code is the thing people read aloud and type in — make it the anchor */
+.bl-code {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  align-self: flex-start;
+  padding: .28rem .5rem .28rem .6rem;
+  border: 1px solid var(--bl-line);
+  border-radius: 8px;
+  background: var(--bl-raised);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 1.02rem;
+  font-weight: 600;
+  letter-spacing: .09em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: inherit;
+  cursor: pointer;
+}
+
+.bl-code:hover { border-color: var(--bl-accent); }
+
+.bl-code .bi {
+  font-size: .8rem;
+  color: var(--bl-muted);
+  opacity: 0;
+  transition: opacity .12s ease;
+}
+
+.bl-code:hover .bi,
+.bl-code:focus-visible .bi { opacity: 1; }
+
+.bl-code[data-copied] { border-color: var(--bs-success, #198754); }
+.bl-code[data-copied] .bi { opacity: 1; color: var(--bs-success, #198754); }
+
+@media (hover: none) {
+  .bl-code .bi { opacity: 1; }
+}
+
+.bl-card-title {
+  display: block;
+  margin: .7rem 0 0;
+  font-size: 1rem;
+  font-weight: 620;
+  line-height: 1.35;
+  letter-spacing: -.01em;
+  color: inherit;
+  text-decoration: none;
+}
+
+/* whole card is clickable, but the code, buttons and delete stay separate */
+.bl-card-title::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--bl-radius);
+}
+
+.bl-card-title:hover { text-decoration: underline; }
+
+.bl-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .4rem .7rem;
+  margin-top: .4rem;
+  font-size: .82rem;
+  color: var(--bl-muted);
+}
+
+.bl-card-foot {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  margin-top: .9rem;
+  padding-top: .75rem;
+  border-top: 1px solid var(--bl-line);
+}
+
+.bl-card-foot .bl-spacer { margin-left: auto; }
+
+.bl-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--bl-muted);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.bl-icon-btn:hover {
+  color: var(--bs-danger, #dc3545);
+  border-color: color-mix(in srgb, var(--bs-danger, #dc3545) 40%, transparent);
+  background: color-mix(in srgb, var(--bs-danger, #dc3545) 8%, transparent);
+}
+
+.bl-delete-form { display: inline; }
+
+/* ---------- empty + no-results ----------------------------- */
+
+.bl-empty {
+  border: 1px dashed var(--bl-line);
+  border-radius: var(--bl-radius);
+  padding: 2.75rem 1.5rem;
+  text-align: center;
+}
+
+.bl-empty p {
+  max-width: 34ch;
+  margin: .4rem auto 1.1rem;
+  color: var(--bl-muted);
+  font-size: .92rem;
+  line-height: 1.5;
+}
+
+.bl-empty h3 {
+  font-size: 1.05rem;
+  font-weight: 640;
+  margin: 0;
+}
+
+.bl-noresults {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--bl-muted);
+  font-size: .92rem;
+}
+
+[hidden] { display: none !important; }
+
+/* ---------- focus + motion --------------------------------- */
+
+.bl-page a:focus-visible,
+.bl-page button:focus-visible,
+.bl-page input:focus-visible {
+  outline: 2px solid var(--bl-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bl-page * { transition: none !important; }
+}
+
+@media (max-width: 575.98px) {
+  .bl-flow-head { padding: .9rem 1rem; }
+  .bl-rail { padding: 0 1rem 1rem; }
+  .bl-step { flex-basis: 12rem; }
+}

@@ -2,119 +2,218 @@
 {% block title %}My boards · Boardly{% endblock %}
 
 {% block content %}
-<div class="kk-flyer-card kk-flyer-hero-main mb-4">
-  <div class="d-flex align-items-start justify-content-between flex-wrap gap-3">
-    <div>
-      <span class="kk-flyer-kicker"><i class="bi bi-layout-split"></i> Boardly</span>
-      <h1 class="kk-flyer-title mb-1">My <span class="kk-flyer-gradient">boards</span></h1>
-      <p class="text-secondary mb-0">
-        {% if boards_total %}
-          {{ boards_total }} saved board project{{ boards_total|pluralize }} — linked flows open like PDF pages.
-        {% else %}
-          Your saved Boardly boards will appear here.
-        {% endif %}
-      </p>
-    </div>
-    <div class="d-flex flex-wrap gap-2 align-items-center">
-      <a href="{% url 'core:dashboard' %}" class="kk-return-chip">
-        <i class="bi bi-grid-1x2"></i> <span>Back to main dashboard</span>
-      </a>
-      <a href="{% url 'boardly:create' %}" class="kk-btn kk-btn-primary">
-        <i class="bi bi-plus-lg"></i> New board
-      </a>
-    </div>
-  </div>
-</div>
+<div class="bl-page">
 
-{% if flow_cards %}
-  <h2 class="kk-section-title"><i class="bi bi-diagram-3"></i> Linked board flows</h2>
-{% endif %}
-
-{% for card in flow_cards %}
-  <article class="kk-flow-list-card kk-flow-list-card--clean">
-    <div class="kk-flow-list-head kk-flow-list-head--clean">
-      <a href="{% url 'boardly:stage' card.first_page.code %}" class="kk-flow-list-main">
-        <span class="kk-flow-list-icon"><i class="bi bi-diagram-3"></i></span>
-        <span>
-          <strong>{{ card.flow.name }}</strong>
-          <small>
-            {{ card.flow.get_template_key_display }} ·
-            {{ card.page_count }} page{{ card.page_count|pluralize }} ·
-            {{ card.notes_total }} note{{ card.notes_total|pluralize }} ·
-            {{ card.flow.created_at|timesince }} ago
-          </small>
-        </span>
-      </a>
-      <a href="{% url 'boardly:stage' card.first_page.code %}" class="kk-btn kk-btn-primary btn-sm">
-        Present flow <i class="bi bi-arrow-right"></i>
-      </a>
-    </div>
-
-    <div class="kk-flow-list-map" role="list" aria-label="{{ card.flow.name }} pages">
-      {% for page in card.pages %}
-        <a role="listitem" href="{% url 'boardly:stage' page.code %}" class="kk-flow-list-node">
-          <span class="kk-flow-list-node-dot">{{ forloop.counter }}</span>
-          <span class="kk-flow-list-node-copy">
-            <b>{{ page.module_label|default:"PAGE" }}</b>
-            <small>{{ page.title|truncatechars:42 }}</small>
-          </span>
-          <em>{{ page.code }}</em>
-        </a>
-      {% endfor %}
-    </div>
-  </article>
-{% endfor %}
-
-{% if boards %}
-  <h2 class="kk-section-title mt-4"><i class="bi bi-sticky"></i> Single boards</h2>
-{% endif %}
-
-{% for b in boards %}
-  <div class="kk-list-item kk-list-item-row">
-    <a href="{% url 'boardly:stage' b.code %}" class="kk-list-item-main">
-      <span class="kk-q-index">{{ forloop.counter }}</span>
-      <div class="flex-grow-1">
-        <div class="kk-list-item-title">{{ b.title }}</div>
-        <div class="kk-list-item-meta">
-          Code <strong>{{ b.code }}</strong> ·
-          {{ b.note_total }} note{{ b.note_total|pluralize }} ·
-          <span class="kk-status-mini kk-status-mini-{{ b.state }}">{{ b.get_state_display }}</span> ·
-          {{ b.created_at|timesince }} ago
-        </div>
+  <div class="kk-flyer-card kk-flyer-hero-main">
+    <div class="d-flex align-items-start justify-content-between flex-wrap gap-3">
+      <div>
+        <span class="kk-flyer-kicker"><i class="bi bi-layout-split"></i> Boardly</span>
+        <h1 class="kk-flyer-title mb-1">My <span class="kk-flyer-gradient">boards</span></h1>
+        <p class="text-secondary mb-0">
+          {% if boards_total %}
+            Open a board to present it, or share its code so people can join.
+          {% else %}
+            Boards you create will be saved here.
+          {% endif %}
+        </p>
       </div>
-      <i class="bi bi-arrow-right text-secondary"></i>
-    </a>
-
-    <a href="{% url 'boardly:play' b.code %}"
-       class="kk-btn kk-btn-ghost btn-sm ms-2"
-       title="Open the participant join screen">
-      <i class="bi bi-box-arrow-up-right"></i> Join view
-    </a>
-
-    <form method="post"
-          action="{% url 'boardly:delete' b.code %}"
-          class="kk-row-delete-form ms-1"
-          onsubmit="return confirm('Delete “{{ b.title|escapejs }}”? This cannot be undone.');">
-      {% csrf_token %}
-      <input type="hidden" name="next" value="{% url 'boardly:list' %}">
-      <button type="submit"
-              class="kk-row-delete"
-              title="Delete board"
-              aria-label="Delete {{ b.title }}">
-        <i class="bi bi-trash3-fill"></i>
-      </button>
-    </form>
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <a href="{% url 'core:dashboard' %}" class="kk-return-chip">
+          <i class="bi bi-grid-1x2"></i> <span>Back to main dashboard</span>
+        </a>
+        <a href="{% url 'boardly:create' %}" class="kk-btn kk-btn-primary">
+          <i class="bi bi-plus-lg"></i> New board
+        </a>
+      </div>
+    </div>
   </div>
-{% empty %}
-  {% if not flow_cards %}
-    <div class="kk-empty">
-      <div class="em">📌</div>
-      <p>No boards yet.</p>
-      <a href="{% url 'boardly:create' %}" class="kk-btn kk-btn-primary btn-sm mt-2">
-        Create your first board <i class="bi bi-arrow-right"></i>
+
+  {% if flow_cards or boards %}
+    <div class="bl-toolbar">
+      <label class="bl-search">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input type="search"
+               id="bl-filter"
+               placeholder="Filter by name or code"
+               autocomplete="off"
+               aria-label="Filter boards by name or code">
+      </label>
+      <span class="bl-count" id="bl-count" aria-live="polite">
+        {{ boards_total }} board{{ boards_total|pluralize }}
+      </span>
+    </div>
+  {% endif %}
+
+  {# ---------- linked flows: pages open in sequence ---------- #}
+  {% if flow_cards %}
+    <section class="bl-section" data-group>
+      <div class="bl-section-head">
+        <h2>Linked flows</h2>
+        <span>Pages advance in order, like slides</span>
+      </div>
+
+      {% for card in flow_cards %}
+        <article class="bl-flow"
+                 data-item
+                 data-search="{{ card.flow.name|lower }} {% for page in card.pages %}{{ page.code|lower }} {{ page.title|lower }} {% endfor %}">
+          <div class="bl-flow-head">
+            <a href="{% url 'boardly:stage' card.first_page.code %}" class="bl-flow-name">
+              <strong>{{ card.flow.name }}</strong>
+              <span class="bl-flow-meta">
+                <span>{{ card.flow.get_template_key_display }}</span>
+                <span><b>{{ card.page_count }}</b> page{{ card.page_count|pluralize }}</span>
+                <span><b>{{ card.notes_total }}</b> note{{ card.notes_total|pluralize }}</span>
+                <span>Created {{ card.flow.created_at|timesince }} ago</span>
+              </span>
+            </a>
+            <a href="{% url 'boardly:stage' card.first_page.code %}" class="kk-btn kk-btn-primary btn-sm">
+              <i class="bi bi-play-fill"></i> Present flow
+            </a>
+          </div>
+
+          <ol class="bl-rail" aria-label="Pages in {{ card.flow.name }}">
+            {% for page in card.pages %}
+              <li style="display:contents">
+                <a href="{% url 'boardly:stage' page.code %}" class="bl-step">
+                  <span class="bl-step-n" aria-hidden="true">{{ forloop.counter }}</span>
+                  <span class="bl-step-label">{{ page.module_label|default:"Page" }} · {{ page.code }}</span>
+                  <span class="bl-step-title">{{ page.title }}</span>
+                </a>
+              </li>
+            {% endfor %}
+          </ol>
+        </article>
+      {% endfor %}
+    </section>
+  {% endif %}
+
+  {# ---------- single boards ---------- #}
+  {% if boards %}
+    <section class="bl-section" data-group>
+      <div class="bl-section-head">
+        <h2>Single boards</h2>
+        <span>{{ boards|length }} board{{ boards|length|pluralize }}</span>
+      </div>
+
+      <div class="bl-grid">
+        {% for b in boards %}
+          <div class="bl-card" data-item data-search="{{ b.title|lower }} {{ b.code|lower }}">
+            <button type="button"
+                    class="bl-code"
+                    data-copy="{{ b.code }}"
+                    title="Copy join code"
+                    aria-label="Copy join code {{ b.code }}">
+              <span>{{ b.code }}</span>
+              <i class="bi bi-clipboard" aria-hidden="true"></i>
+            </button>
+
+            <a href="{% url 'boardly:stage' b.code %}" class="bl-card-title">{{ b.title }}</a>
+
+            <div class="bl-card-meta">
+              <span class="kk-status-mini kk-status-mini-{{ b.state }}">{{ b.get_state_display }}</span>
+              <span>{{ b.note_total }} note{{ b.note_total|pluralize }}</span>
+              <span>{{ b.created_at|timesince }} ago</span>
+            </div>
+
+            <div class="bl-card-foot">
+              <a href="{% url 'boardly:stage' b.code %}" class="kk-btn kk-btn-primary btn-sm">
+                <i class="bi bi-play-fill"></i> Present
+              </a>
+              <a href="{% url 'boardly:play' b.code %}" class="kk-btn kk-btn-ghost btn-sm">
+                <i class="bi bi-box-arrow-up-right"></i> Join view
+              </a>
+
+              <form method="post"
+                    action="{% url 'boardly:delete' b.code %}"
+                    class="bl-delete-form bl-spacer"
+                    onsubmit="return confirm('Delete “{{ b.title|escapejs }}”? Its notes go with it and this cannot be undone.');">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{% url 'boardly:list' %}">
+                <button type="submit"
+                        class="bl-icon-btn"
+                        title="Delete board"
+                        aria-label="Delete {{ b.title }}">
+                  <i class="bi bi-trash3" aria-hidden="true"></i>
+                </button>
+              </form>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
+  {% if flow_cards or boards %}
+    <p class="bl-noresults" id="bl-noresults" hidden>
+      Nothing matches that. Try part of a board title or a code.
+    </p>
+  {% else %}
+    <div class="bl-empty">
+      <h3>No boards yet</h3>
+      <p>Create a board, share its code, and notes appear as people add them.</p>
+      <a href="{% url 'boardly:create' %}" class="kk-btn kk-btn-primary btn-sm">
+        <i class="bi bi-plus-lg"></i> Create your first board
       </a>
     </div>
   {% endif %}
-{% endfor %}
+</div>
 
+<script>
+(function () {
+  var page = document.querySelector('.bl-page');
+  if (!page) return;
+
+  /* copy a join code without leaving the page */
+  page.addEventListener('click', function (e) {
+    var btn = e.target.closest('.bl-code');
+    if (!btn) return;
+    var code = btn.dataset.copy, icon = btn.querySelector('.bi');
+    var done = function () {
+      btn.dataset.copied = '1';
+      icon.className = 'bi bi-check-lg';
+      setTimeout(function () {
+        delete btn.dataset.copied;
+        icon.className = 'bi bi-clipboard';
+      }, 1400);
+    };
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(code).then(done, function () {});
+    } else {
+      var t = document.createElement('textarea');
+      t.value = code; document.body.appendChild(t); t.select();
+      try { document.execCommand('copy'); done(); } catch (err) {}
+      document.body.removeChild(t);
+    }
+  });
+
+  /* client-side filter across both sections */
+  var input = document.getElementById('bl-filter');
+  if (!input) return;
+  var items = [].slice.call(page.querySelectorAll('[data-item]'));
+  var groups = [].slice.call(page.querySelectorAll('[data-group]'));
+  var none = document.getElementById('bl-noresults');
+  var count = document.getElementById('bl-count');
+  var total = items.length;
+
+  var apply = function () {
+    var q = input.value.trim().toLowerCase();
+    var shown = 0;
+    items.forEach(function (el) {
+      var hit = !q || el.dataset.search.indexOf(q) !== -1;
+      el.hidden = !hit;
+      if (hit) shown++;
+    });
+    groups.forEach(function (g) {
+      g.hidden = !g.querySelector('[data-item]:not([hidden])');
+    });
+    none.hidden = shown > 0;
+    count.textContent = q
+      ? shown + ' of ' + total + ' shown'
+      : total + ' board' + (total === 1 ? '' : 's');
+  };
+
+  input.addEventListener('input', apply);
+  apply();
+})();
+</script>
 {% endblock %}

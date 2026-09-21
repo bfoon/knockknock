@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Big screens · Hanns{% endblock %}
+{% block body_class %}kk-standard-page{% endblock %}
+
+{% block head_extra %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500..700&family=Spline+Sans+Mono:wght@500;600&family=Inter:wght@400;500;600;700;800&family=Poppins:wght@400;600;700&family=Montserrat:wght@400;600;700&family=Playfair+Display:wght@400;700&family=Bebas+Neue&family=Archivo:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  /* Page-local layout; colours and radii come from the app.css tokens. */
+  .bs-head{display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.6rem}
+  .bs-head h1{font-size:clamp(1.9rem,4vw,2.6rem);line-height:1.05;margin:0}
+  .bs-head .sub{color:var(--kk-text-dim);font-size:.86rem;margin:.45rem 0 0;max-width:42em}
+
+  .bs-new{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;padding:1rem;margin-bottom:1.6rem}
+  .bs-new input{
+    flex:1;min-width:220px;padding:.75rem .95rem;border-radius:12px;
+    background:rgba(0,0,0,.28);border:1px solid var(--kk-border);color:var(--kk-text);font-size:.95rem;
+  }
+  .bs-new input:focus{outline:none;border-color:var(--kk-accent)}
+  .bs-new .lbl{font:600 .7rem/1 var(--kk-font-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--kk-text-dim);width:100%}
+
+  .bs-how{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.8rem;margin:0 0 1.8rem}
+  .bs-how div{padding:.9rem 1rem;border-radius:14px;border:1px solid var(--kk-border);background:rgba(255,255,255,.025);font-size:.86rem;color:var(--kk-text-dim)}
+  .bs-how b{display:block;color:var(--kk-text);font-size:.92rem;margin-bottom:.2rem}
+  .bs-how .n{font:700 .7rem/1 var(--kk-font-mono);color:var(--kk-accent-2);letter-spacing:.12em}
+
+  .bs-screen{padding:0;overflow:hidden;margin-bottom:1.4rem}
+  .bs-screen.is-fresh{box-shadow:0 0 0 2px var(--kk-accent-2),var(--kk-shadow-glow)}
+  .bs-top{display:flex;flex-wrap:wrap;gap:1rem;align-items:center;padding:1.1rem 1.2rem;border-bottom:1px solid var(--kk-border)}
+  .bs-title{flex:1;min-width:200px}
+  .bs-title .k{display:flex;align-items:center;gap:.45rem;font:600 .66rem/1 var(--kk-font-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--kk-text-dim)}
+  .bs-title .k .dot{width:8px;height:8px;border-radius:50%;background:var(--kk-success);box-shadow:0 0 0 3px rgba(52,211,153,.18)}
+  .bs-title .k .dot.idle{background:var(--kk-warn);box-shadow:0 0 0 3px rgba(251,191,36,.15)}
+  .bs-title h2{margin:.35rem 0 0;font-family:"Fraunces",Georgia,serif;font-size:1.45rem;font-weight:600}
+  .bs-code{display:flex;align-items:center;gap:.4rem;padding:.5rem .55rem .5rem .9rem;border-radius:14px;background:rgba(0,0,0,.25);border:1px solid var(--kk-border)}
+  .bs-code .l{font:600 .6rem/1.2 var(--kk-font-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--kk-text-dim)}
+  .bs-code .v{font:700 1.5rem/1 "Spline Sans Mono",var(--kk-font-mono);letter-spacing:.16em}
+  .bs-ic{
+    width:34px;height:34px;border-radius:10px;display:inline-grid;place-items:center;cursor:pointer;
+    border:1px solid transparent;background:transparent;color:var(--kk-text-dim);
+  }
+  .bs-ic:hover{background:rgba(255,255,255,.08);color:var(--kk-text)}
+
+  .bs-link{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;padding:.9rem 1.2rem;border-bottom:1px solid var(--kk-border);background:rgba(0,0,0,.14)}
+  .bs-link code{
+    flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font:500 .8rem/1 var(--kk-font-mono);color:var(--kk-text-dim);padding:.6rem .75rem;border-radius:10px;
+    background:rgba(0,0,0,.25);border:1px solid var(--kk-border);
+  }
+  .bs-link .warn{width:100%;font-size:.76rem;color:var(--kk-text-dim)}
+  .bs-link .warn i{color:var(--kk-warn)}
+
+  .bs-body{padding:1rem 1.2rem 1.2rem}
+  .bs-sec{display:flex;justify-content:space-between;align-items:center;margin-bottom:.7rem}
+  .bs-sec h3{margin:0;font:600 .7rem/1 var(--kk-font-mono);letter-spacing:.18em;text-transform:uppercase;color:var(--kk-text-dim)}
+  .bs-queue{display:flex;flex-direction:column;gap:.6rem}
+  .bs-row{
+    display:flex;align-items:center;gap:.9rem;padding:.6rem;border-radius:14px;
+    border:1px solid var(--kk-border);background:rgba(255,255,255,.025);
+  }
+  .bs-row.is-live{border-color:rgba(255,59,92,.5);background:rgba(255,59,92,.06)}
+  .bs-th{position:relative;width:128px;aspect-ratio:16/9;border-radius:9px;overflow:hidden;background:#0c0b14;flex:0 0 auto}
+  .bs-mini{position:absolute;left:0;top:0;width:960px;height:540px;transform-origin:top left;pointer-events:none}
+  .bs-info{flex:1;min-width:0}
+  .bs-info .t{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bs-info .m{font-size:.78rem;color:var(--kk-text-dim)}
+  .bs-state{font:700 .6rem/1 var(--kk-font-mono);letter-spacing:.14em;text-transform:uppercase;padding:.25rem .5rem;border-radius:999px;border:1px solid var(--kk-border);color:var(--kk-text-dim)}
+  .bs-state.live{background:#ff3b5c;color:#fff;border-color:transparent}
+  .bs-acts{display:flex;gap:.4rem;flex-wrap:wrap}
+  .bs-acts .kk-btn{padding:.45rem .7rem;font-size:.8rem}
+  .bs-empty{padding:1.4rem;text-align:center;border:1px dashed var(--kk-border);border-radius:14px;color:var(--kk-text-dim);font-size:.9rem}
+  .bs-foot{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:1rem}
+  .bs-foot .sp{flex:1}
+  .bs-foot form{display:inline}
+  .bs-cc{margin-top:.5rem;padding:.7rem .85rem;border-radius:12px;background:rgba(34,211,238,.07);border:1px solid rgba(34,211,238,.25);font-size:.84rem;color:var(--kk-text-dim)}
+  .bs-cc b{font:700 1.15rem/1 var(--kk-font-mono);letter-spacing:.2em;color:var(--kk-text)}
+
+  .bs-ended{display:flex;flex-direction:column;gap:.4rem;margin-top:2rem}
+  .bs-ended .row{display:flex;justify-content:space-between;gap:1rem;padding:.65rem .9rem;border-radius:12px;border:1px solid var(--kk-border);color:var(--kk-text-dim);font-size:.85rem}
+  @media (max-width:640px){
+    .bs-row{flex-wrap:wrap}
+    .bs-th{width:100%}
+    .bs-acts{width:100%}
+    .bs-acts .kk-btn{flex:1;justify-content:center}
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<header class="bs-head">
+  <div>
+    <h1 class="kk-gradient-text">Big screens</h1>
+    <p class="sub">Open one link on the projector, go full screen, and let presenters share their Hanns decks to it with a six-digit code. You pick what plays — without ever leaving full screen.</p>
+  </div>
+  <a class="kk-btn kk-btn-ghost" href="{% url 'hanns:list' %}"><i class="bi bi-easel2"></i> Your decks</a>
+</header>
+
+<form class="kk-card bs-new" method="post" action="{% url 'hanns:screen_create' %}">
+  {% csrf_token %}
+  <span class="lbl">Open a new big screen</span>
+  <input name="name" maxlength="80" placeholder="Name it for the room — e.g. Main hall, Conference room A" required>
+  <button class="kk-btn kk-btn-primary" type="submit"><i class="bi bi-cast"></i> Create screen</button>
+</form>
+
+{% if not cards %}
+<div class="bs-how">
+  <div><span class="n">01</span><b>Create a screen</b>You get a private link and a six-digit share code.</div>
+  <div><span class="n">02</span><b>Open it on the projector</b>Go full screen once. The room sees a lobby with the code.</div>
+  <div><span class="n">03</span><b>Presenters share</b>In Hanns they tap <i class="bi bi-cast"></i> Big screen and type the code. You get a quiet alert.</div>
+  <div><span class="n">04</span><b>Pull down the arrow</b>Pick the next deck. They present and scan their controller — or you give them a control code.</div>
+</div>
+{% endif %}
+
+{% for c in cards %}
+<section class="kk-card bs-screen{% if fresh == c.screen.id|stringformat:'s' %} is-fresh{% endif %}"
+         data-screen data-token="{{ c.screen.token }}" data-ws="{{ c.ws_path }}">
+  <script type="application/json" data-state>{{ c.state_json|safe }}</script>
+  <div class="bs-top">
+    <div class="bs-title">
+      <div class="k"><span class="dot" data-dot></span><span data-seen>Big screen</span></div>
+      <h2 data-name>{{ c.screen.name }}</h2>
+    </div>
+    <div class="bs-code" title="Presenters type this in Hanns to share a deck here">
+      <div><div class="l">Share code</div><div class="v" data-code>{{ c.screen.share_code|slice:":3" }} {{ c.screen.share_code|slice:"3:" }}</div></div>
+      <button class="bs-ic" type="button" data-copy-code title="Copy code"><i class="bi bi-copy"></i></button>
+      <button class="bs-ic" type="button" data-rotate title="New share code"><i class="bi bi-arrow-repeat"></i></button>
+    </div>
+  </div>
+
+  <div class="bs-link">
+    <code data-url>{{ c.url }}</code>
+    <button class="kk-btn kk-btn-ghost" type="button" data-copy-url><i class="bi bi-link-45deg"></i> Copy link</button>
+    <a class="kk-btn kk-btn-primary" href="{{ c.url }}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i> Open on this device</a>
+    <div class="warn"><i class="bi bi-shield-lock"></i> Anyone with this link can run the screen. Open it on the projector only — share the <b>code</b> with presenters, never the link.</div>
+  </div>
+
+  <div class="bs-body">
+    <div class="bs-sec"><h3>Remote · shared decks</h3><span class="kk-text-dim" style="font-size:.78rem" data-count></span></div>
+    <div class="bs-queue" data-queue></div>
+    <div class="bs-foot">
+      <button class="kk-btn kk-btn-ghost" type="button" data-lobby><i class="bi bi-house"></i> Back to lobby</button>
+      <button class="kk-btn kk-btn-ghost" type="button" data-showcode><i class="bi bi-display"></i> <span>Code on lobby</span></button>
+      <span class="sp"></span>
+      <button class="kk-btn kk-btn-danger" type="button" data-stop><i class="bi bi-power"></i> Stop screen</button>
+    </div>
+  </div>
+</section>
+{% endfor %}
+
+{% if ended %}
+<div class="bs-ended">
+  <h3 class="kk-section-title" style="font-size:.95rem">Recently stopped</h3>
+  {% for s in ended %}
+  <div class="row"><span>{{ s.name }}</span><span>{{ s.created_at|date:"M j, H:i" }} → {{ s.ended_at|date:"H:i" }}</span></div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if cards %}
+<script src="{% static 'hanns/js/hanns_actors.js' %}?v=62"></script>
+<script src="{% static 'hanns/js/hanns_core.js' %}?v=62"></script>
+<script>
+/* The dashboard doubles as a REMOTE for each running screen: it listens on
+   the same ws/hanns/screen/<token>/ snapshot stream as the projector and
+   uses the same endpoints, so the host can drive the room from a phone. */
+(function(){
+  "use strict";
+  const CSRF = "{{ csrf_token }}";
+  const ENTRY = "{{ control_entry_url|escapejs }}";
+  const W = 960;
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const group = c => (c && c.length === 6) ? c.slice(0,3) + " " + c.slice(3) : (c || "");
+
+  document.querySelectorAll("[data-screen]").forEach(root=>{
+    const token = root.dataset.token;
+    const base = `/hanns/screen/s/${token}/`;
+    let state = JSON.parse(root.querySelector("[data-state]").textContent || "{}");
+    const thumbs = new Map();
+    const codes = {};   // share id → code this remote has revealed
+
+    async function post(path, data){
+      const r = await fetch(base + path, {method:"POST", credentials:"same-origin",
+        headers:{"Content-Type":"application/json","X-CSRFToken":CSRF}, body:JSON.stringify(data||{})});
+      let j = {}; try{ j = await r.json(); }catch(e){}
+      if(r.status === 410 || j.stopped) location.reload();
+      return j;
+    }
+    function thumb(s){
+      if(thumbs.has(s.id)) return thumbs.get(s.id);
+      const n = document.createElement("div"); n.className = "bs-mini";
+      try{ if(s.first && window.Hanns) window.Hanns.paintSlide(n, s.first, {live:false}); }catch(e){}
+      thumbs.set(s.id, n); return n;
+    }
+    function render(){
+      if(state.active === false){ location.reload(); return; }
+      root.querySelector("[data-name]").textContent = state.name;
+      root.querySelector("[data-code]").textContent = group(state.share_code);
+      const sc = root.querySelector("[data-showcode]");
+      sc.querySelector("span").textContent = state.show_code ? "Code on lobby" : "Code hidden";
+      root.querySelector("[data-lobby]").disabled = !state.current;
+      const shares = state.shares || [];
+      root.querySelector("[data-count]").textContent = shares.length ? `${shares.length} shared` : "";
+      const q = root.querySelector("[data-queue]");
+      if(!shares.length){
+        q.innerHTML = `<div class="bs-empty">Nothing shared yet. Give presenters the code <b style="font-family:var(--kk-font-mono);letter-spacing:.14em">${esc(group(state.share_code))}</b>.</div>`;
+        return;
+      }
+      q.innerHTML = shares.map(s=>{
+        const live = s.id === state.current;
+        return `<div class="bs-row${live?" is-live":""}" data-id="${esc(s.id)}">
+          <div class="bs-th"></div>
+          <div class="bs-info">
+            <div class="t">${esc(s.title)}</div>
+            <div class="m">${esc(s.sharer)} · ${s.slides} slide${s.slides===1?"":"s"} · ${esc(s.age)}</div>
+            ${codes[s.id] ? `<div class="bs-cc">Control code <b>${esc(group(codes[s.id]))}</b><br>They open <span style="font-family:var(--kk-font-mono)">${esc(ENTRY.replace(/^https?:\/\//,""))}</span> on their phone.</div>` : ""}
+          </div>
+          <span class="bs-state${live?" live":""}">${live ? "On screen" : esc(s.status_label)}</span>
+          <div class="bs-acts">
+            ${live ? "" : `<button class="kk-btn kk-btn-primary" type="button" data-act="play"><i class="bi bi-play-fill"></i> Put on screen</button>`}
+            <button class="kk-btn kk-btn-ghost" type="button" data-act="code" title="Control code for a presenter without a laptop"><i class="bi bi-phone"></i> ${codes[s.id] ? "New code" : "Control code"}</button>
+            <button class="kk-btn kk-btn-ghost" type="button" data-act="remove" title="Remove"><i class="bi bi-x-lg"></i></button>
+          </div>
+        </div>`;
+      }).join("");
+      q.querySelectorAll(".bs-row").forEach(row=>{
+        const s = shares.find(x=>x.id === row.dataset.id);
+        const host = row.querySelector(".bs-th"), n = thumb(s);
+        host.appendChild(n);
+        requestAnimationFrame(()=>{ n.style.transform = `scale(${host.clientWidth / W})`; });
+      });
+      const seen = root.querySelector("[data-seen]");
+      seen.textContent = state.current ? "On air" : "Lobby";
+    }
+
+    root.addEventListener("click", async ev=>{
+      const b = ev.target.closest("button"); if(!b) return;
+      const row = b.closest(".bs-row"); const id = row && row.dataset.id;
+      if(b.dataset.act === "play") await post("select/", {share:id});
+      else if(b.dataset.act === "code"){
+        const j = await post(`share/${id}/control-code/`, codes[id] ? {reissue:true} : {});
+        if(j.ok){ codes[id] = j.code; render(); }
+      }else if(b.dataset.act === "remove"){
+        if(confirm("Remove this deck from the screen?")) await post(`share/${id}/remove/`, {});
+      }else if(b.hasAttribute("data-lobby")) await post("lobby/", {});
+      else if(b.hasAttribute("data-showcode")) await post("settings/", {show_code: !state.show_code});
+      else if(b.hasAttribute("data-rotate")){ if(confirm("Issue a new share code? Decks already shared stay in the queue.")) await post("rotate-code/", {}); }
+      else if(b.hasAttribute("data-stop")){
+        if(confirm("Stop this big screen? The link stops working, every shared deck is released and every control code dies.")){
+          await post("stop/", {}); location.reload();
+        }
+      }else if(b.hasAttribute("data-copy-code")) navigator.clipboard && navigator.clipboard.writeText(state.share_code);
+      else if(b.hasAttribute("data-copy-url")){
+        navigator.clipboard && navigator.clipboard.writeText(root.querySelector("[data-url]").textContent.trim());
+        b.innerHTML = '<i class="bi bi-check2"></i> Copied'; setTimeout(()=>{ b.innerHTML = '<i class="bi bi-link-45deg"></i> Copy link'; }, 1400);
+      }
+    });
+
+    // Live snapshot stream, with a poll behind it.
+    let sock = null, lastRx = 0;
+    function connect(){
+      try{ sock = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + root.dataset.ws); }
+      catch(e){ setTimeout(connect, 3000); return; }
+      sock.onmessage = ev=>{
+        lastRx = Date.now();
+        let m; try{ m = JSON.parse(ev.data); }catch(e){ return; }
+        if(m.type === "ping"){ try{ sock.send('{"type":"pong"}'); }catch(e){} return; }
+        if(m.type === "screen_state"){ state = m.state; render(); }
+        else if(m.type === "screen_stopped") location.reload();
+      };
+      sock.onclose = ()=>setTimeout(connect, 3000);
+    }
+    connect();
+    setInterval(async ()=>{
+      if(sock && sock.readyState === 1 && Date.now() - lastRx < 50000) return;
+      try{ const r = await fetch(base + "state/", {credentials:"same-origin"}); const j = await r.json(); if(j.state){ state = j.state; render(); } }catch(e){}
+    }, 8000);
+    setInterval(()=>{ if(sock && sock.readyState === 1){ try{ sock.send('{"type":"ping"}'); }catch(e){} } }, 20000);
+    render();
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

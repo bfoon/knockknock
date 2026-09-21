@@ -498,3 +498,189 @@ class DeckAccessRequest(models.Model):
             "status", "decided_by", "decided_at", "message", "updated_at",
         ])
         return self
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Big Screen — a room display that many presenters can share decks to
+# ═════════════════════════════════════════════════════════════════════
+#
+# The host opens one tokenised link on the projector, goes full screen and
+# never has to leave it. Presenters type the screen's six-digit SHARE CODE
+# into Hanns to drop their deck into the screen's queue; the host pulls the
+# queue down from a small arrow at the top of the screen and picks what
+# plays next.
+#
+# Three separate secrets, on purpose:
+#
+#   token         the screen URL itself. Long and unguessable, because
+#                 whoever holds it can run the room. It lives only in the
+#                 projector's address bar (hidden in full screen) and on the
+#                 host's own dashboard.
+#   share_code    six digits the host reads out or texts to presenters. It
+#                 can only ADD a deck to the queue — never put one on air —
+#                 so a leaked code costs the host one "remove" tap.
+#   control_code  six digits per shared deck, issued by the host to a
+#                 presenter who has no laptop in the room. It unlocks the
+#                 phone controller for THAT deck only, for as long as the
+#                 share is open, and dies the moment it is removed or the
+#                 screen is stopped. It is never the deck owner's own PIN.
+
+
+def _gen_digits(length=6):
+    """Six digits from a CSPRNG — these are credentials, not labels."""
+    return "".join(secrets.choice(string.digits) for _ in range(length))
+
+
+def _gen_screen_token():
+    return secrets.token_urlsafe(24)
+
+
+class BigScreen(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name="hanns_screens",
+    )
+    name = models.CharField(max_length=80, default="Big screen")
+    token = models.CharField(max_length=64, unique=True, db_index=True, editable=False)
+    share_code = models.CharField(max_length=8, db_index=True, editable=False)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    # The lobby shows the share code in large type so the room can see how
+    # to join. A host who would rather hand the code out privately turns
+    # this off and the lobby shows only the screen name.
+    show_code_on_screen = models.BooleanField(default=True)
+
+    current_share = models.ForeignKey(
+        "ScreenShare", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="+",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-is_active", "-created_at"]
+
+    def __str__(self):
+        return f"{self.name} ({'live' if self.is_active else 'stopped'})"
+
+    @staticmethod
+    def _free_share_code():
+        # Unique among ACTIVE screens only — a stopped screen's old code can
+        # be handed out again without anyone being able to reach it.
+        for _ in range(40):
+            code = _gen_digits()
+            if not BigScreen.objects.filter(is_active=True, share_code=code).exists():
+                return code
+        raise RuntimeError("Could not allocate a free screen share code.")
+
+    def save(self, *args, **kwargs):
+        if not self.token:
+            self.token = _gen_screen_token()
+        if not self.share_code:
+            self.share_code = self._free_share_code()
+        super().save(*args, **kwargs)
+
+    def rotate_share_code(self):
+        """New share code. Decks already in the queue stay in the queue."""
+        self.share_code = self._free_share_code()
+        self.save(update_fields=["share_code"])
+        return self.share_code
+
+    def open_shares(self):
+        return self.shares.filter(status__in=ScreenShare.OPEN_STATES).select_related(
+            "deck", "shared_by",
+        )
+
+    def stop(self):
+        """End the screen. Every open share closes and every control code
+        dies with it. Returns the ids of the shares that were closed so the
+        caller can drop their phone controllers."""
+        now = timezone.now()
+        closing = list(self.shares.filter(status__in=ScreenShare.OPEN_STATES))
+        ids = [s.id for s in closing]
+        ScreenShare.objects.filter(id__in=ids).update(
+            status=ScreenShare.STATUS_ENDED, closed_at=now,
+            control_code="", control_code_at=None,
+        )
+        self.is_active = False
+        self.ended_at = now
+        self.current_share = None
+        self.save(update_fields=["is_active", "ended_at", "current_share"])
+        return closing
+
+
+class ScreenShare(models.Model):
+    """One deck sitting in a big screen's queue."""
+
+    STATUS_WAITING = "waiting"      # shared, the host has not played it yet
+    STATUS_LIVE = "live"            # on the big screen right now
+    STATUS_SHOWN = "shown"          # was on screen; still in the list
+    STATUS_REMOVED = "removed"      # host took it out
+    STATUS_WITHDRAWN = "withdrawn"  # the presenter took it back
+    STATUS_ENDED = "ended"          # the screen was stopped
+    STATUS_CHOICES = [
+        (STATUS_WAITING, "Waiting"),
+        (STATUS_LIVE, "On screen"),
+        (STATUS_SHOWN, "Shown"),
+        (STATUS_REMOVED, "Removed by host"),
+        (STATUS_WITHDRAWN, "Withdrawn"),
+        (STATUS_ENDED, "Screen stopped"),
+    ]
+    OPEN_STATES = (STATUS_WAITING, STATUS_LIVE, STATUS_SHOWN)
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    screen = models.ForeignKey(BigScreen, on_delete=models.CASCADE, related_name="shares")
+    deck = models.ForeignKey(Deck, on_delete=models.CASCADE, related_name="screen_shares")
+    shared_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="hanns_screen_shares",
+    )
+    # Snapshot, so the queue still says who shared it if the account is
+    # renamed or deleted mid-event.
+    sharer_name = models.CharField(max_length=120, blank=True)
+    note = models.CharField(max_length=140, blank=True)
+    status = models.CharField(
+        max_length=12, choices=STATUS_CHOICES, default=STATUS_WAITING, db_index=True,
+    )
+
+    control_code = models.CharField(max_length=8, blank=True, db_index=True)
+    control_code_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    went_live_at = models.DateTimeField(null=True, blank=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        indexes = [models.Index(fields=["screen", "status"])]
+
+    def __str__(self):
+        return f"{self.deck} → {self.screen} [{self.status}]"
+
+    @property
+    def is_open(self):
+        return self.status in self.OPEN_STATES
+
+    def issue_control_code(self):
+        """A fresh six-digit code, unique among open shares. Issuing a new
+        one invalidates the old one — the caller drops phones holding it."""
+        for _ in range(40):
+            code = _gen_digits()
+            if not ScreenShare.objects.filter(
+                control_code=code, status__in=self.OPEN_STATES,
+            ).exclude(pk=self.pk).exists():
+                break
+        else:
+            raise RuntimeError("Could not allocate a free control code.")
+        self.control_code = code
+        self.control_code_at = timezone.now()
+        self.save(update_fields=["control_code", "control_code_at"])
+        return code
+
+    def control_fingerprint(self):
+        """What an unlocked phone keeps in its session — never the code."""
+        raw = f"screen:{self.pk}:{self.control_code}".encode()
+        return hashlib.sha256(raw).hexdigest()[:32]

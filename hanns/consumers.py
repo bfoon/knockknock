@@ -48,6 +48,10 @@ Server → client (fanned out to the whole deck group):
     {type:"actor_action", index,    play a one-off actor action
           elId, action, mood}
 
+Server → group (from the Big Screen views, not from a client):
+    {type:"screen.control_revoked", shares:[id,…]}  drop phones that came in
+                                            through those shares' control codes
+
 Server → the calling controller only:
     {type:"reveal_state", index, elements, revealed}
     {type:"focus_state", index, regions, active}
@@ -155,6 +159,9 @@ class PresentConsumer(AsyncWebsocketConsumer):
         self.is_presenter = False
         self.is_controller = False
         self.is_editor = False
+        # Set when this phone unlocked with a Big Screen control code rather
+        # than the deck PIN, so a revoke can find exactly those phones.
+        self.ctrl_share = None
 
         self.deck = await self._get_deck(self.code)
         if self.deck is None:
@@ -209,7 +216,17 @@ class PresentConsumer(AsyncWebsocketConsumer):
             real = await self._control_pin()
             # compare_digest so a wrong code takes the same time to reject
             # however much of it was right.
-            if pin and real and secrets.compare_digest(pin, real):
+            granted = bool(pin and real and secrets.compare_digest(pin, real))
+            self.ctrl_share = None
+            if not granted and pin:
+                # A control code the Big Screen host issued for this deck.
+                # It works only while that share is open, and only for this
+                # deck — see screen.share_for_control_code.
+                share_id = await self._screen_share_for_pin(pin)
+                if share_id:
+                    granted = True
+                    self.ctrl_share = share_id
+            if granted:
                 self.is_controller = True
                 current = await self._current_slide()
                 await self.send_json({
@@ -634,6 +651,16 @@ class PresentConsumer(AsyncWebsocketConsumer):
     async def fanout(self, event):
         await self.send_json(event["payload"])
 
+    async def screen_control_revoked(self, event):
+        """The Big Screen host removed a share, reissued its control code or
+        stopped the screen. Phones that came in through that code lose the
+        controller at once; phones on the deck owner's own PIN keep it."""
+        mine = getattr(self, "ctrl_share", None)
+        if self.is_controller and mine and mine in set(event.get("shares") or []):
+            self.is_controller = False
+            self.ctrl_share = None
+            await self.send_json({"type": "controller_denied"})
+
     async def _broadcast_participants(self):
         count = await self._participant_count()
         await self.channel_layer.group_send(self.group, {
@@ -928,6 +955,11 @@ class PresentConsumer(AsyncWebsocketConsumer):
         from .models import Deck
         d = Deck.objects.filter(code=self.code).first()
         return d.ensure_control_pin() if d else ""
+
+    @sync_to_async
+    def _screen_share_for_pin(self, pin):
+        from .screen import share_for_control_code
+        return share_for_control_code(self.code, pin)
 
     @sync_to_async
     def _can_edit_current_user(self):

@@ -1,0 +1,138 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0b0a14">
+<title>Big screen · take control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500..700&family=Inter:wght@400;500;600;700&family=Spline+Sans+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+/* Self-contained, like control_lock.html: this is what a presenter meets on
+   a phone, on someone else's wifi, moments before they go on. */
+:root{
+  --ink:#0b0a14;--ink-2:#15132a;--line:rgba(255,255,255,.12);
+  --text:#f6f4ff;--dim:#a9a6c2;--violet:#8b5cf6;--cyan:#22d3ee;--bad:#fda4af;--good:#6ee7b7;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;display:grid;place-items:center;padding:1.3rem;color:var(--text);
+  font:400 16px/1.55 "Inter",system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;
+  background:
+    radial-gradient(600px 380px at 85% -5%,rgba(34,211,238,.18),transparent 60%),
+    radial-gradient(700px 460px at 0% 0%,rgba(139,92,246,.28),transparent 60%),var(--ink);
+}
+.card{
+  width:min(410px,100%);padding:2rem 1.6rem 1.6rem;border-radius:24px;
+  background:linear-gradient(180deg,rgba(35,30,64,.9),rgba(21,19,42,.95));
+  border:1px solid var(--line);box-shadow:0 30px 90px -20px rgba(0,0,0,.8);
+}
+.eyebrow{display:flex;align-items:center;gap:.5rem;margin:0 0 .7rem;
+  font:600 11px/1 "Spline Sans Mono",monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--cyan)}
+h1{margin:0 0 .45rem;font:600 1.7rem/1.15 "Fraunces",Georgia,serif}
+.lead{margin:0 0 1.5rem;color:var(--dim);font-size:.93rem}
+.boxes{display:flex;justify-content:space-between;gap:.4rem;margin-bottom:.3rem}
+.boxes input{
+  width:100%;min-width:0;aspect-ratio:3/4;text-align:center;border-radius:14px;
+  background:rgba(0,0,0,.35);border:1px solid var(--line);color:var(--text);
+  font:600 1.6rem/1 "Spline Sans Mono",monospace;caret-color:var(--violet);
+  transition:border-color .15s,background .15s,transform .15s;
+}
+.boxes input:nth-child(4){margin-left:.5rem}
+.boxes input:focus{outline:none;border-color:var(--violet);background:rgba(139,92,246,.12);transform:translateY(-1px)}
+.boxes.bad input{border-color:rgba(253,164,175,.6);animation:shake .38s}
+@keyframes shake{20%,60%{transform:translateX(-4px)}40%,80%{transform:translateX(4px)}}
+button{
+  width:100%;margin-top:1rem;padding:.95rem 1rem;border-radius:14px;border:0;cursor:pointer;
+  font:700 1rem/1 "Inter",sans-serif;color:#fff;
+  background:linear-gradient(135deg,var(--violet),#6d28d9 60%,#0891b2);
+  box-shadow:0 14px 40px -12px rgba(139,92,246,.8);
+}
+button:disabled{opacity:.55;cursor:default}
+.msg{margin-top:.9rem;min-height:1.4rem;font-size:.88rem;color:var(--dim);text-align:center}
+.msg.bad{color:var(--bad)}.msg.good{color:var(--good)}
+.hint{margin:1.4rem 0 0;padding-top:1rem;border-top:1px solid var(--line);color:var(--dim);font-size:.82rem}
+.ended{margin:0 0 1.2rem;padding:.7rem .85rem;border-radius:12px;font-size:.86rem;
+  background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3);color:#fde68a}
+</style>
+</head>
+<body>
+<main class="card">
+  <p class="eyebrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Big screen</p>
+  <h1>Take control of your slides</h1>
+  <p class="lead">Enter the six-digit code the host gave you. Your phone becomes the clicker for your deck on the big screen.</p>
+  {% if ended %}<p class="ended">That code has ended — the deck was taken off the screen or the host issued a new code. Ask the host for the current one.</p>{% endif %}
+
+  <div class="boxes" id="boxes" role="group" aria-label="Control code">
+    {% for i in "123456" %}<input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="{% if forloop.first %}one-time-code{% else %}off{% endif %}" aria-label="Digit {{ forloop.counter }}"{% if locked_out %} disabled{% endif %}>{% endfor %}
+  </div>
+  <button id="go" type="button"{% if locked_out %} disabled{% endif %}>Take control</button>
+  <p class="msg{% if locked_out %} bad{% endif %}" id="msg" role="status" aria-live="polite">{% if locked_out %}Too many attempts. Wait ten minutes and try again.{% endif %}</p>
+  <p class="hint">The code is for one deck only and stops working when the host removes it or ends the screen. It is not your Hanns password.</p>
+</main>
+<script>
+(function(){
+  "use strict";
+  var inputs = Array.prototype.slice.call(document.querySelectorAll("#boxes input"));
+  var boxes = document.getElementById("boxes");
+  var go = document.getElementById("go");
+  var msg = document.getElementById("msg");
+  var busy = false;
+  function csrf(){ var m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/); return m ? decodeURIComponent(m[1]) : ""; }
+  function say(t, k){ msg.textContent = t || ""; msg.className = "msg" + (k ? " " + k : ""); }
+  function value(){ return inputs.map(function(i){ return i.value; }).join(""); }
+  function fill(str){
+    var d = String(str || "").replace(/\D/g, "").slice(0, 6).split("");
+    inputs.forEach(function(inp, n){ inp.value = d[n] || ""; });
+    var next = inputs[Math.min(d.length, 5)]; if(next) next.focus();
+    if(d.length === 6) submit();
+  }
+  inputs.forEach(function(inp, n){
+    inp.addEventListener("input", function(){
+      var v = inp.value.replace(/\D/g, "");
+      if(v.length > 1){ fill(value().slice(0, n) + v); return; }
+      inp.value = v;
+      boxes.classList.remove("bad");
+      if(v && n < 5) inputs[n+1].focus();
+      if(value().length === 6) submit();
+    });
+    inp.addEventListener("keydown", function(e){
+      if(e.key === "Backspace" && !inp.value && n > 0){ inputs[n-1].focus(); inputs[n-1].value = ""; e.preventDefault(); }
+      else if(e.key === "ArrowLeft" && n > 0) inputs[n-1].focus();
+      else if(e.key === "ArrowRight" && n < 5) inputs[n+1].focus();
+      else if(e.key === "Enter") submit();
+    });
+    inp.addEventListener("paste", function(e){
+      var t = (e.clipboardData || window.clipboardData).getData("text");
+      if(t){ e.preventDefault(); fill(t); }
+    });
+  });
+  function submit(){
+    if(busy || go.disabled) return;
+    var code = value();
+    if(code.length !== 6){ say("Enter all six digits.", "bad"); return; }
+    busy = true; go.disabled = true; say("Checking…");
+    fetch(window.location.pathname, {
+      method: "POST", credentials: "same-origin",
+      headers: {"Content-Type": "application/x-www-form-urlencoded", "X-CSRFToken": csrf()},
+      body: "code=" + encodeURIComponent(code)
+    }).then(function(r){ return r.json(); }).then(function(j){
+      if(j.ok){ say("You're in. Opening " + (j.title || "your controller") + "…", "good"); window.location.href = j.redirect; return; }
+      boxes.classList.add("bad");
+      var t = j.error || "That code is not right.";
+      if(typeof j.tries_left === "number" && j.tries_left > 0 && j.tries_left <= 3) t += " " + j.tries_left + " attempt" + (j.tries_left === 1 ? "" : "s") + " left.";
+      say(t, "bad");
+      if(j.locked){ inputs.forEach(function(i){ i.disabled = true; }); return; }
+      inputs.forEach(function(i){ i.value = ""; }); inputs[0].focus();
+      busy = false; go.disabled = false;
+    }).catch(function(){ say("Could not reach the server. Check your connection.", "bad"); busy = false; go.disabled = false; });
+  }
+  go.addEventListener("click", submit);
+  if(!inputs[0].disabled) inputs[0].focus();
+})();
+</script>
+</body>
+</html>

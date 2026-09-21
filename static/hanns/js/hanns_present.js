@@ -6,6 +6,14 @@ const Hx = window.Hanns || {};
 const {paintSlide, clamp, W = 960, H = 540} = Hx;
 const CFG = window.__HANNS_PRESENT__ || {};
 const DECK = CFG.deck || {slides:[], code:"------", title:"Untitled"};
+/* Big Screen embed: this stage is running inside the room's Big Screen
+   shell. The shell owns full screen, the wake lock and leaving; this page
+   only plays the deck and reports where it is. */
+const EMBED = !!CFG.embed;
+function tellScreen(msg){
+  if(!EMBED || window.parent === window) return;
+  try{ window.parent.postMessage(Object.assign({hannsScreen:true}, msg), location.origin); }catch(e){}
+}
 const $ = (s)=>document.querySelector(s);
 const pCanvas = $("#present-canvas");
 const emojiLayer = $("#emoji-layer");
@@ -117,7 +125,9 @@ const MAX_DISTORTION = 0.14;
 function fit(){
   if(!pCanvas)return;
   const vw = window.innerWidth, vh = window.innerHeight;
-  const isFull = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  // Inside the Big Screen the PARENT is full screen, which this document
+  // cannot see — so an embedded stage always fills its frame.
+  const isFull = EMBED || !!(document.fullscreenElement || document.webkitFullscreenElement);
 
   let sx, sy;
   if(isFull){
@@ -185,6 +195,7 @@ function show(n,broadcast=true){
   transition(wrap,kind,ghost,i+1);
   const pos=$("#pp-pos");if(pos)pos.textContent=`${i+1} / ${DECK.slides.length}`;
   if(broadcast&&!suppressBroadcast)Live.goto(i);
+  tellScreen({type:"slide", index:i, total:DECK.slides.length});
 }
 function spawnEmoji(em){
   if(!emojiLayer)return;
@@ -633,6 +644,15 @@ function roundRect(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+
    only return to the editor when the presenter dismisses it. With
    downloads off the behaviour is unchanged: end and leave.            */
 async function endPresent(){
+  if(EMBED){
+    // Never flips the deck's state from here — the screen may not even be
+    // signed in. Show the download card if the owner allows it, otherwise
+    // hand the room straight back to the Big Screen lobby.
+    let showed=false;
+    try{ if(typeof window.__hannsShowEndShare==="function") showed=window.__hannsShowEndShare(); }catch(e){}
+    if(!showed) tellScreen({type:"ended"});
+    return;
+  }
   await releaseWakeLock();
   if(CFG.stateUrl){
     try{
@@ -661,6 +681,7 @@ async function endPresent(){
 
 /* Leave for real — used by the end-of-show overlay's Close button. */
 function finishPresent(){
+  if(EMBED){ tellScreen({type:"ended"}); return; }
   Live.stop();
   if(CFG.editUrl)window.location.href=CFG.editUrl;
 }
@@ -698,9 +719,40 @@ function init(){
   document.querySelectorAll("[data-close-present-modal]").forEach(b=>b.addEventListener("click",closeModals));
   document.addEventListener("pointerdown",()=>keepScreenAwake("user-pointer"),{passive:true});
   window.addEventListener("resize",fit);
+  if(EMBED){
+    // Keys typed while the frame has focus: slides stay here, everything
+    // that belongs to the room (full screen, the queue) goes to the shell.
+    document.addEventListener("keydown",e=>{
+      const k=e.key;
+      if(k==="ArrowRight"||k===" "||k==="PageDown"){show(i+1);e.preventDefault();}
+      else if(k==="ArrowLeft"||k==="PageUp"){show(i-1);e.preventDefault();}
+      else if(k.toLowerCase()==="z"){cycleFocus();e.preventDefault();}
+      else if(k==="Escape"||["f","q","l"].includes(k.toLowerCase())){tellScreen({type:"key",key:k});e.preventDefault();}
+    });
+    // Mouse movement over the slide lands in THIS document, not the
+    // shell's, so tell the shell — that is what wakes its queue arrow.
+    let lastAct=0;
+    ["pointermove","pointerdown","touchstart","wheel"].forEach(ev=>document.addEventListener(ev,()=>{
+      const now=Date.now(); if(now-lastAct<350)return; lastAct=now; tellScreen({type:"activity"});
+    },{passive:true}));
+    // And keys the shell forwards when IT has focus.
+    window.addEventListener("message",ev=>{
+      if(ev.origin!==location.origin||!ev.data||!ev.data.hannsScreenCmd)return;
+      const d=ev.data;
+      if(d.hannsScreenCmd==="next")show(i+1);
+      else if(d.hannsScreenCmd==="prev")show(i-1);
+      else if(d.hannsScreenCmd==="zoom")cycleFocus();
+      else if(d.hannsScreenCmd==="refit")fit();
+    });
+  }else{
   document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(document.querySelector(".present-modal.on"))closeModals();else endPresent();}else if(e.key.toLowerCase()==="c")openModal("#controller-modal");else if(e.key.toLowerCase()==="f")toggleFullscreen();else if(e.key.toLowerCase()==="z"){cycleFocus();e.preventDefault();}else if(e.key==="ArrowRight"||e.key===" ")show(i+1);else if(e.key==="ArrowLeft")show(i-1);});
+  // Arriving from "Present & take control" (Big Screen share card): open
+  // the phone-controller QR straight away so the presenter can scan it.
+  try{ if(new URLSearchParams(location.search).get("controller")==="1") setTimeout(()=>openModal("#controller-modal"),350); }catch(e){}
+  }
   window.addEventListener("beforeunload",()=>{Live.stop();releaseWakeLock();});
   updateFullscreenButton();
+  tellScreen({type:"ready", index:i, total:DECK.slides.length, title:DECK.title});
 }
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init);else init();
 })();

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex, nofollow">
+<title>Not on screen</title>
+<style>
+  html,body{margin:0;height:100%;background:#07060d;color:#a9a6c2;
+    font:500 15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;display:grid;place-items:center}
+</style>
+</head>
+<body>
+  {# Shown inside the Big Screen frame when a deck was taken off air (or the
+     screen stopped) between the host clicking and the frame loading. The
+     shell's next snapshot replaces it within a moment. #}
+  <div>This deck is no longer on {{ screen.name }}.</div>
+</body>
+</html>

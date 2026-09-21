@@ -208,24 +208,41 @@
     padding:.6rem 1.2rem;font-weight:700;cursor:pointer;font-size:.86rem;
   }
   .end-close:hover{background:rgba(255,255,255,.16)}
+
+  /* ── Big Screen embed ───────────────────────────────────────────────
+     This same stage runs inside the Big Screen shell. The shell owns full
+     screen, the wake lock and "leave", and the room is looking at it, so
+     nothing that belongs to the presenter alone may appear here: no PIN,
+     no controller QR, no exit, no full-screen pill. The audience QR and
+     the reaction counter stay — they are part of the show. */
+  body.hanns-embed .fullscreen-pill,
+  body.hanns-embed .wake-pill,
+  body.hanns-embed .controller-pill,
+  body.hanns-embed .present-exit{display:none!important}
+  body.hanns-embed .present-stage,
+  body.hanns-embed .present-stage *{cursor:none}
+  body.hanns-embed.hanns-pointer-live .present-stage,
+  body.hanns-embed.hanns-pointer-live .present-stage *{cursor:default}
   @media (max-width:640px){
     .end-share{padding:1.2rem}
     .end-qr img,.end-qr canvas{width:min(210px,38vh)}
   }
 </style>
 </head>
-<body>
+<body{% if embed %} class="hanns-embed"{% endif %}>
 <div class="present on" id="present">
   <div class="present-stage" id="present-stage">
+{% if not embed %}
 <button class="fullscreen-pill" id="present-fullscreen" type="button" title="Full screen (press F)">⛶ Full screen</button>
     <div class="wake-pill" id="wake-pill" title="Screen wake lock status">☀ Keep screen awake</div>
+{% endif %}
     <div class="present-canvas" id="present-canvas"></div>
     <div class="zoom-pill" id="zoom-pill">🔍 <span id="zoom-pill-val">1.0×</span></div>
     <div class="emoji-layer" id="emoji-layer"></div>
     <div class="pointer-layer" id="pointer-layer" aria-hidden="true"></div>
     <div class="reaction-top-stack" id="reaction-top-stack" aria-label="Presenter reaction tools">
       <div class="reaction-counter" id="reaction-counter" aria-live="polite" title="Live reaction totals"></div>
-      <button class="present-exit" id="present-exit" type="button">✕ End &amp; exit (Esc)</button>
+      {% if not embed %}<button class="present-exit" id="present-exit" type="button">✕ End &amp; exit (Esc)</button>{% endif %}
     </div>
 
     <div class="present-controls">
@@ -234,7 +251,9 @@
       <button id="pp-next">›</button>
     </div>
 
+    {% if not embed %}
     <button class="controller-pill" id="open-controller" type="button" title="Phone controller (press C)">📱 Phone Controller</button>
+    {% endif %}
 
 
     <div class="present-badge">
@@ -279,6 +298,7 @@
   </div>
 </div>
 
+{% if not embed %}
 <div class="present-modal" id="controller-modal" aria-hidden="true">
   <div class="present-modal-card">
     <button class="modal-close" data-close-present-modal type="button">✕</button>
@@ -289,16 +309,28 @@
     <p id="controller-url"></p>
   </div>
 </div>
+{% endif %}
 
 <script>
   window.__HANNS_PRESENT__ = {
     deck: {{ deck_json|safe }},
     wsUrl: (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/hanns/{{ deck.code }}/",
     joinUrl: "{{ join_url }}",
+{% if embed %}
+    // Big Screen embed: no presenter credentials in a page the room sees,
+    // and no owner-only endpoints (the screen may not be signed in).
+    embed: true,
+    controlUrl: "",
+    controlPin: "",
+    stateUrl: "",
+    editUrl: "",
+{% else %}
+    embed: false,
     controlUrl: "{{ control_url }}",
     controlPin: "{{ control_pin }}",
     stateUrl: "{% url 'hanns:set_state' deck.code %}",
     editUrl: "{% url 'hanns:edit' deck.code %}",
+{% endif %}
     allowDownload: {{ deck.allow_download|yesno:"true,false" }},
     downloadUrl: "{{ download_url|default:'' }}",
     csrftoken: "{{ csrf_token }}"
@@ -316,7 +348,7 @@
      isStudioObject() says no, objectDef() finds no match and falls back
      to OBJECTS[0] — fill_cow — so every 3D bar chart draws as a cow. -->
 <script src="{% static 'hanns/js/hanns_bars3d.js' %}?v=62"></script>
-<script src="{% static 'hanns/js/hanns_present.js' %}?v=62"></script>
+<script src="{% static 'hanns/js/hanns_present.js' %}?v=63"></script>
 
 <script>
 (function(){

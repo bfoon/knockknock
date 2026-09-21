@@ -19,6 +19,10 @@ Review links (view-only sharing):
   • deck_collaborator_remove(code,pk) — owner: take back one person's rights
   • deck_invite_revoke(code,pk)       — owner: cancel a pending email invite
 
+Big Screen (room display many presenters share to): see screen_views.py.
+deck_control() below also accepts a control code issued by a Big Screen
+host, so a presenter without a laptop can still drive their deck.
+
 Presenter controller:
   • deck_control_unlock(code)     — POST {pin}; unlocks the phone controller
   • deck_control_pin_rotate(code) — owner: issue a new PIN, drop every phone
@@ -945,6 +949,24 @@ def deck_control(request, code):
     deck.ensure_control_pin()
 
     if not _control_unlocked(request, deck):
+        # A presenter with no laptop in the room, holding a control code the
+        # Big Screen host issued for this deck. They get the controller with
+        # THAT code — never the deck owner's PIN, which they were not given.
+        from .screen import share_control_pin, had_share_grant
+        share_pin = share_control_pin(request, deck)
+        if share_pin:
+            return render(request, "hanns/control.html", {
+                "deck": deck,
+                "deck_json": json.dumps(deck.as_dict()),
+                "control_pin": share_pin,
+                "control_unlocked": True,
+            })
+        if had_share_grant(request, deck):
+            # Their code has ended (share removed, code reissued, screen
+            # stopped). The deck PIN lock screen would only confuse them —
+            # send them back to the door they came in by.
+            return redirect(reverse("hanns:screen_control_entry") + "?ended=1")
+
         tries, locked = _control_attempts(request, deck)
         return render(request, "hanns/control_lock.html", {
             "deck_title": deck.title,

@@ -68,6 +68,7 @@
     color:#fb7185;border-color:rgba(244,63,94,.4);background:rgba(244,63,94,.08);
   }
   .hanns-acts .kk-btn.is-del:hover{background:var(--kk-danger);color:#fff}
+  .hanns-acts .kk-btn.is-cast{flex:0 0 auto;min-width:0;padding:.5rem .7rem}
 </style>
 {% endblock %}
 
@@ -81,6 +82,9 @@
   <div class="hanns-actions">
     <a class="kk-btn kk-btn-ghost" href="{% url 'core:dashboard' %}">
       <i class="bi bi-grid-1x2"></i> Dashboard
+    </a>
+    <a class="kk-btn kk-btn-ghost" href="{% url 'hanns:screen_home' %}" title="Host a room display presenters can share to">
+      <i class="bi bi-display"></i> Host a big screen
     </a>
     <form class="inline" method="post" action="{% url 'hanns:create' %}">
       {% csrf_token %}
@@ -107,6 +111,13 @@
       <div class="hanns-acts">
         <a class="kk-btn kk-btn-ghost" href="{% url 'hanns:edit' d.code %}">Edit</a>
         <a class="kk-btn kk-btn-primary" href="{% url 'hanns:present' d.code %}">Present</a>
+        <button class="kk-btn kk-btn-ghost is-cast" type="button" title="Share to a big screen"
+                data-screen-share
+                data-share-url="{% url 'hanns:screen_share' d.code %}"
+                data-deck-code="{{ d.code }}"
+                data-deck-title="{{ d.title }}">
+          <i class="bi bi-cast"></i>
+        </button>
         <form class="inline" method="post" action="{% url 'hanns:delete' d.code %}"
               onsubmit="return confirm('Delete “{{ d.title|escapejs }}”? This cannot be undone.');">
           {% csrf_token %}
@@ -140,6 +151,7 @@
 {% block scripts %}
 <!--{# Thumbnails: render each deck's first slide live via the shared core renderer. #}-->
 {% if decks %}
+<script src="{% static 'hanns/js/hanns_screen_share.js' %}?v=1"></script>
 <script id="deck-firsts" type="application/json">{{ firsts_json|safe }}</script>
 <script src="{% static 'hanns/js/hanns_core.js' %}?v=4"></script>
 <script>

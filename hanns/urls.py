@@ -18,6 +18,7 @@ Resulting URLs:
     /hanns/<code>/state/        → set_state (POST; live | ended)
     /hanns/<code>/delete/       → delete  (POST only)
     /hanns/<code>/              → join    (audience phone; encoded in the QR)
+    /hanns/screen/…             → Big Screen (see screen_views.py)
 
 ORDERING MATTERS — same rule as boardly/urls.py. ``<str:code>`` matches any
 string including "new", so every literal route and every route with a
@@ -33,6 +34,7 @@ controller, so a link you hand to an outside reviewer must not contain it.
 from django.urls import path
 
 from . import views
+from . import screen_views
 
 app_name = "hanns"
 
@@ -45,6 +47,29 @@ urlpatterns = [
     # PUBLIC — view-only review link. Token only, no deck code.
     path("review/<uuid:token>/", views.deck_review, name="review"),
     path("review/<uuid:token>/ask/", views.deck_request_access, name="request_access"),
+
+    # ── Big Screen ───────────────────────────────────────────────────
+    # All under the literal "screen/" prefix and all ABOVE every
+    # <str:code>/… route: "screen/control/" would otherwise be swallowed
+    # by <str:code>/control/ looking for a deck coded "SCREEN".
+    path("screen/", screen_views.screen_home, name="screen_home"),
+    path("screen/new/", screen_views.screen_create, name="screen_create"),
+    # PUBLIC — a presenter with no laptop types the host-issued code here.
+    path("screen/control/", screen_views.screen_control_entry, name="screen_control_entry"),
+    path("screen/share/<uuid:share_id>/", screen_views.screen_share_status, name="screen_share_status"),
+    path("screen/share/<uuid:share_id>/withdraw/", screen_views.screen_share_withdraw, name="screen_share_withdraw"),
+    # PUBLIC — the token is the credential; it is the screen's own URL.
+    path("screen/s/<str:token>/", screen_views.screen_stage, name="screen_stage"),
+    path("screen/s/<str:token>/state/", screen_views.screen_state, name="screen_state"),
+    path("screen/s/<str:token>/select/", screen_views.screen_select, name="screen_select"),
+    path("screen/s/<str:token>/lobby/", screen_views.screen_lobby, name="screen_lobby"),
+    path("screen/s/<str:token>/settings/", screen_views.screen_settings, name="screen_settings"),
+    path("screen/s/<str:token>/rotate-code/", screen_views.screen_rotate_code, name="screen_rotate_code"),
+    path("screen/s/<str:token>/stop/", screen_views.screen_stop, name="screen_stop"),
+    path("screen/s/<str:token>/share/<uuid:share_id>/remove/", screen_views.screen_share_remove, name="screen_share_remove"),
+    path("screen/s/<str:token>/share/<uuid:share_id>/control-code/", screen_views.screen_control_code, name="screen_control_code"),
+    path("screen/s/<str:token>/deck/<uuid:share_id>/", screen_views.screen_frame, name="screen_frame"),
+
 
     path("<str:code>/edit/", views.deck_edit, name="edit"),
     path("<str:code>/save/", views.deck_save, name="save"),
@@ -61,6 +86,7 @@ urlpatterns = [
     # credential, so this route must stay above the <str:code>/ catch-all.
     path("<str:code>/d/<uuid:token>/", views.deck_audience_download, name="audience_download"),
     path("invite/<uuid:token>/accept/", views.deck_accept_invite, name="accept_invite"),
+    path("<str:code>/screen-share/", screen_views.deck_screen_share, name="screen_share"),
     path("<str:code>/present/", views.deck_present, name="present"),
     path("<str:code>/control/", views.deck_control, name="control"),
     path("<str:code>/control/unlock/", views.deck_control_unlock, name="control_unlock"),

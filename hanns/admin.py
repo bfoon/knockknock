@@ -1,6 +1,8 @@
 from django.contrib import admin
 
-from .models import Deck, Slide, DeckCollaborator, DeckInvite, DeckReaction
+from .models import (
+    Deck, Slide, DeckCollaborator, DeckInvite, DeckReaction, BigScreen, ScreenShare,
+)
 
 
 class SlideInline(admin.TabularInline):
@@ -47,3 +49,30 @@ class DeckReactionAdmin(admin.ModelAdmin):
     list_filter = ("emoji", "created_at")
     search_fields = ("deck__title", "deck__code", "emoji", "nick")
     readonly_fields = ("created_at",)
+
+
+class ScreenShareInline(admin.TabularInline):
+    model = ScreenShare
+    extra = 0
+    fields = ("deck", "sharer_name", "status", "created_at", "went_live_at", "closed_at")
+    readonly_fields = fields
+    can_delete = False
+    show_change_link = True
+
+
+@admin.register(BigScreen)
+class BigScreenAdmin(admin.ModelAdmin):
+    list_display = ("name", "owner", "is_active", "share_code", "current_share", "created_at", "ended_at")
+    list_filter = ("is_active",)
+    search_fields = ("name", "owner__username", "owner__email", "share_code")
+    # The token IS the screen's key. Readable here for support, never editable.
+    readonly_fields = ("token", "share_code", "created_at", "ended_at", "last_seen_at")
+    inlines = [ScreenShareInline]
+
+
+@admin.register(ScreenShare)
+class ScreenShareAdmin(admin.ModelAdmin):
+    list_display = ("deck", "screen", "sharer_name", "status", "created_at", "went_live_at")
+    list_filter = ("status",)
+    search_fields = ("deck__title", "deck__code", "sharer_name", "screen__name")
+    readonly_fields = ("control_code", "control_code_at", "created_at", "went_live_at", "closed_at")

@@ -62,9 +62,24 @@ def _age_label(dt):
     return f"{h} h ago"
 
 
-def share_dict(share, *, include_control=True):
+def share_dict(share, *, include_control=True, include_live_preview=False):
     deck = share.deck
     slides = list(deck.slides.all())
+
+    current_index = 0
+    current_slide = None
+
+    if slides:
+        try:
+            current_index = int(deck.current_slide or 0)
+        except (TypeError, ValueError):
+            current_index = 0
+
+        current_index = max(0, min(current_index, len(slides) - 1))
+
+        if include_live_preview:
+            current_slide = slides[current_index].as_dict()
+
     return {
         "id": str(share.id),
         "title": deck.title,
@@ -74,6 +89,14 @@ def share_dict(share, *, include_control=True):
         "status_label": share.get_status_display(),
         "slides": len(slides),
         "first": slides[0].as_dict() if slides else None,
+
+        # Only the deck that is actually on the projector carries the
+        # current slide payload. The host dashboard polls this lightweight
+        # screen snapshot while a talk is live so its monitor mirrors the
+        # projector without opening a second presentation/player socket.
+        "current_index": current_index if include_live_preview else 0,
+        "current_slide": current_slide,
+
         "created": share.created_at.isoformat() if share.created_at else "",
         "age": _age_label(share.created_at),
         "control_code": share.control_code if include_control else "",
@@ -84,6 +107,7 @@ def share_dict(share, *, include_control=True):
 def screen_state(screen):
     """The single snapshot every screen client renders from."""
     shares = list(screen.open_shares().order_by("created_at")) if screen.is_active else []
+
     return {
         "id": str(screen.id),
         "name": screen.name,
@@ -91,7 +115,15 @@ def screen_state(screen):
         "share_code": screen.share_code if screen.is_active else "",
         "show_code": screen.show_code_on_screen,
         "current": str(screen.current_share_id) if screen.current_share_id else None,
-        "shares": [share_dict(s) for s in shares],
+        "shares": [
+            share_dict(
+                s,
+                include_live_preview=bool(
+                    screen.current_share_id and s.id == screen.current_share_id
+                ),
+            )
+            for s in shares
+        ],
         "waiting": sum(1 for s in shares if s.status == s.STATUS_WAITING),
         "control_entry_url": reverse("hanns:screen_control_entry"),
     }

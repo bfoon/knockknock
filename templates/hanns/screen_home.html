@@ -28,12 +28,87 @@
 
   .bs-screen{padding:0;overflow:hidden;margin-bottom:1.4rem}
   .bs-screen.is-fresh{box-shadow:0 0 0 2px var(--kk-accent-2),var(--kk-shadow-glow)}
-  .bs-top{display:flex;flex-wrap:wrap;gap:1rem;align-items:center;padding:1.1rem 1.2rem;border-bottom:1px solid var(--kk-border)}
-  .bs-title{flex:1;min-width:200px}
+
+  /* ── Top control strip + live monitor ─────────────────────────── */
+  .bs-top{
+    display:grid;
+    grid-template-columns:minmax(210px,1fr) minmax(260px,420px) auto;
+    gap:1rem;
+    align-items:center;
+    padding:1rem 1.2rem;
+    border-bottom:1px solid var(--kk-border);
+  }
+  .bs-title{min-width:0}
   .bs-title .k{display:flex;align-items:center;gap:.45rem;font:600 .66rem/1 var(--kk-font-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--kk-text-dim)}
   .bs-title .k .dot{width:8px;height:8px;border-radius:50%;background:var(--kk-success);box-shadow:0 0 0 3px rgba(52,211,153,.18)}
   .bs-title .k .dot.idle{background:var(--kk-warn);box-shadow:0 0 0 3px rgba(251,191,36,.15)}
   .bs-title h2{margin:.35rem 0 0;font-family:"Fraunces",Georgia,serif;font-size:1.45rem;font-weight:600}
+
+  .bs-monitor{
+    position:relative;
+    display:grid;
+    grid-template-columns:minmax(150px,220px) minmax(0,1fr);
+    gap:.8rem;
+    align-items:center;
+    min-width:0;
+    padding:.55rem;
+    border-radius:16px;
+    border:1px solid rgba(99,102,241,.26);
+    background:
+      radial-gradient(180px 80px at 15% 0%,rgba(34,211,238,.09),transparent 65%),
+      linear-gradient(135deg,rgba(255,255,255,.045),rgba(255,255,255,.018));
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  .bs-monitor-screen{
+    position:relative;
+    aspect-ratio:16/9;
+    overflow:hidden;
+    border-radius:10px;
+    background:#06050b;
+    border:1px solid rgba(255,255,255,.12);
+    box-shadow:0 8px 28px rgba(0,0,0,.34);
+  }
+  .bs-monitor-canvas{
+    position:absolute;left:0;top:0;width:960px;height:540px;
+    transform-origin:top left;pointer-events:none;
+  }
+  .bs-monitor-lobby{
+    position:absolute;inset:0;display:grid;place-items:center;text-align:center;
+    padding:.6rem;color:#8f8aa8;
+    background:
+      radial-gradient(circle at 30% 25%,rgba(139,92,246,.18),transparent 42%),
+      radial-gradient(circle at 70% 70%,rgba(34,211,238,.12),transparent 46%),
+      #090713;
+  }
+  .bs-monitor-lobby i{display:block;font-size:1.35rem;color:#b9b4d1;margin-bottom:.25rem}
+  .bs-monitor-lobby b{display:block;color:#e7e3f5;font-size:.75rem}
+  .bs-monitor-lobby small{font-size:.62rem}
+  .bs-monitor-meta{min-width:0}
+  .bs-monitor-k{
+    display:flex;align-items:center;gap:.4rem;
+    font:700 .58rem/1 var(--kk-font-mono);letter-spacing:.15em;text-transform:uppercase;
+    color:#8f8aa8;
+  }
+  .bs-monitor-k .pulse{
+    width:7px;height:7px;border-radius:50%;background:#64748b;
+  }
+  .bs-monitor.live .bs-monitor-k{color:#ff9aaa}
+  .bs-monitor.live .bs-monitor-k .pulse{
+    background:#ff3b5c;box-shadow:0 0 0 0 rgba(255,59,92,.5);
+    animation:bsMonitorPulse 1.5s infinite;
+  }
+  @keyframes bsMonitorPulse{
+    0%{box-shadow:0 0 0 0 rgba(255,59,92,.45)}
+    70%{box-shadow:0 0 0 8px rgba(255,59,92,0)}
+    100%{box-shadow:0 0 0 0 rgba(255,59,92,0)}
+  }
+  .bs-monitor-title{
+    margin:.35rem 0 .2rem;font-weight:750;font-size:.9rem;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .bs-monitor-pos{font:600 .68rem/1.4 var(--kk-font-mono);color:var(--kk-text-dim)}
+  .bs-monitor-note{margin-top:.35rem;font-size:.7rem;line-height:1.35;color:#77738f}
+
   .bs-code{display:flex;align-items:center;gap:.4rem;padding:.5rem .55rem .5rem .9rem;border-radius:14px;background:rgba(0,0,0,.25);border:1px solid var(--kk-border)}
   .bs-code .l{font:600 .6rem/1.2 var(--kk-font-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--kk-text-dim)}
   .bs-code .v{font:700 1.5rem/1 "Spline Sans Mono",var(--kk-font-mono);letter-spacing:.16em}
@@ -74,16 +149,86 @@
   .bs-foot{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:1rem}
   .bs-foot .sp{flex:1}
   .bs-foot form{display:inline}
-  .bs-cc{margin-top:.5rem;padding:.7rem .85rem;border-radius:12px;background:rgba(34,211,238,.07);border:1px solid rgba(34,211,238,.25);font-size:.84rem;color:var(--kk-text-dim)}
-  .bs-cc b{font:700 1.15rem/1 var(--kk-font-mono);letter-spacing:.2em;color:var(--kk-text)}
+
+  /* ── Presenter phone pass / QR ────────────────────────────────── */
+  .bs-cc{
+    margin-top:.6rem;
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    gap:.8rem;
+    align-items:center;
+    padding:.75rem;
+    border-radius:14px;
+    background:
+      radial-gradient(180px 100px at 0% 0%,rgba(34,211,238,.10),transparent 62%),
+      linear-gradient(135deg,rgba(34,211,238,.055),rgba(99,102,241,.055));
+    border:1px solid rgba(34,211,238,.24);
+  }
+  .bs-cc-main{min-width:0}
+  .bs-cc-k{
+    display:flex;align-items:center;gap:.4rem;
+    font:700 .58rem/1 var(--kk-font-mono);
+    letter-spacing:.16em;text-transform:uppercase;color:#73e6f6;
+  }
+  .bs-cc-k i{font-size:.82rem}
+  .bs-cc-code{
+    margin:.38rem 0 .28rem;
+    font:750 1.28rem/1 "Spline Sans Mono",var(--kk-font-mono);
+    letter-spacing:.21em;color:var(--kk-text);
+  }
+  .bs-cc-help{
+    font-size:.74rem;color:var(--kk-text-dim);line-height:1.45;
+    overflow-wrap:anywhere;
+  }
+  .bs-cc-help code{
+    color:#d6d1ee;background:transparent;border:0;padding:0;
+    font:600 .72rem/1.4 var(--kk-font-mono);
+  }
+  .bs-cc-actions{display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.55rem}
+  .bs-cc-actions button{
+    display:inline-flex;align-items:center;gap:.35rem;
+    padding:.36rem .55rem;border-radius:8px;border:1px solid var(--kk-border);
+    background:rgba(255,255,255,.045);color:var(--kk-text-dim);
+    font-size:.68rem;cursor:pointer;
+  }
+  .bs-cc-actions button:hover{color:var(--kk-text);background:rgba(255,255,255,.08)}
+  .bs-cc-qr-shell{
+    width:118px;
+    padding:7px;
+    border-radius:12px;
+    background:#fff;
+    box-shadow:0 10px 28px rgba(0,0,0,.28);
+    text-align:center;
+  }
+  .bs-cc-qr-shell[hidden]{display:none!important}
+  .bs-cc-qr{width:104px;height:104px;line-height:0}
+  .bs-cc-qr img,.bs-cc-qr canvas{display:block;width:104px!important;height:104px!important}
+  .bs-cc-qr-label{
+    margin-top:4px;color:#111827;font:800 .52rem/1.2 var(--kk-font-mono);
+    letter-spacing:.08em;text-transform:uppercase;
+  }
 
   .bs-ended{display:flex;flex-direction:column;gap:.4rem;margin-top:2rem}
   .bs-ended .row{display:flex;justify-content:space-between;gap:1rem;padding:.65rem .9rem;border-radius:12px;border:1px solid var(--kk-border);color:var(--kk-text-dim);font-size:.85rem}
+
+  @media (max-width:1100px){
+    .bs-top{grid-template-columns:minmax(200px,1fr) minmax(240px,360px)}
+    .bs-code{grid-column:1/-1;justify-self:end}
+  }
+  @media (max-width:760px){
+    .bs-top{grid-template-columns:1fr}
+    .bs-monitor{grid-template-columns:160px minmax(0,1fr)}
+    .bs-code{grid-column:auto;justify-self:stretch;justify-content:space-between}
+  }
   @media (max-width:640px){
     .bs-row{flex-wrap:wrap}
     .bs-th{width:100%}
     .bs-acts{width:100%}
     .bs-acts .kk-btn{flex:1;justify-content:center}
+    .bs-monitor{grid-template-columns:1fr}
+    .bs-monitor-screen{max-width:280px}
+    .bs-cc{grid-template-columns:1fr}
+    .bs-cc-qr-shell{justify-self:start}
   }
 </style>
 {% endblock %}
@@ -117,11 +262,32 @@
 <section class="kk-card bs-screen{% if fresh == c.screen.id|stringformat:'s' %} is-fresh{% endif %}"
          data-screen data-token="{{ c.screen.token }}" data-ws="{{ c.ws_path }}">
   <script type="application/json" data-state>{{ c.state_json|safe }}</script>
+
   <div class="bs-top">
     <div class="bs-title">
       <div class="k"><span class="dot" data-dot></span><span data-seen>Big screen</span></div>
       <h2 data-name>{{ c.screen.name }}</h2>
     </div>
+
+    {# Live host monitor: rendered by JS from the current slide snapshot. #}
+    <div class="bs-monitor" data-monitor>
+      <div class="bs-monitor-screen" data-monitor-screen>
+        <div class="bs-monitor-lobby" data-monitor-lobby>
+          <div>
+            <i class="bi bi-display"></i>
+            <b>Lobby</b>
+            <small>Nothing is on screen yet</small>
+          </div>
+        </div>
+      </div>
+      <div class="bs-monitor-meta">
+        <div class="bs-monitor-k"><span class="pulse"></span><span data-monitor-k>Lobby preview</span></div>
+        <div class="bs-monitor-title" data-monitor-title>{{ c.screen.name }}</div>
+        <div class="bs-monitor-pos" data-monitor-pos>Waiting for a deck</div>
+        <div class="bs-monitor-note">This mirrors the slide currently shown on the projector.</div>
+      </div>
+    </div>
+
     <div class="bs-code" title="Presenters type this in Hanns to share a deck here">
       <div><div class="l">Share code</div><div class="v" data-code>{{ c.screen.share_code|slice:":3" }} {{ c.screen.share_code|slice:"3:" }}</div></div>
       <button class="bs-ic" type="button" data-copy-code title="Copy code"><i class="bi bi-copy"></i></button>
@@ -163,122 +329,599 @@
 {% if cards %}
 <script src="{% static 'hanns/js/hanns_actors.js' %}?v=62"></script>
 <script src="{% static 'hanns/js/hanns_core.js' %}?v=62"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script>
 /* The dashboard doubles as a REMOTE for each running screen: it listens on
    the same ws/hanns/screen/<token>/ snapshot stream as the projector and
-   uses the same endpoints, so the host can drive the room from a phone. */
+   uses the same endpoints, so the host can drive the room from a phone.
+
+   v2 adds:
+   • a top live monitor that mirrors the current projector slide
+   • a polished presenter phone-pass with QR + control code
+   • a lightweight ~1.2 second preview refresh only while a deck is live
+*/
 (function(){
   "use strict";
+
   const CSRF = "{{ csrf_token }}";
   const ENTRY = "{{ control_entry_url|escapejs }}";
   const W = 960;
-  const esc = s => String(s ?? "").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-  const group = c => (c && c.length === 6) ? c.slice(0,3) + " " + c.slice(3) : (c || "");
+
+  const esc = s => String(s ?? "").replace(
+    /[&<>"']/g,
+    c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])
+  );
+
+  const group = c => (c && c.length === 6)
+    ? c.slice(0,3) + " " + c.slice(3)
+    : (c || "");
 
   document.querySelectorAll("[data-screen]").forEach(root=>{
     const token = root.dataset.token;
     const base = `/hanns/screen/s/${token}/`;
-    let state = JSON.parse(root.querySelector("[data-state]").textContent || "{}");
+
+    let state = JSON.parse(
+      root.querySelector("[data-state]").textContent || "{}"
+    );
+
     const thumbs = new Map();
-    const codes = {};   // share id → code this remote has revealed
+    const codes = {};
+    const qrVisible = {};
+
+    let monitorNode = null;
+    let monitorKey = "";
+    let previewBusy = false;
 
     async function post(path, data){
-      const r = await fetch(base + path, {method:"POST", credentials:"same-origin",
-        headers:{"Content-Type":"application/json","X-CSRFToken":CSRF}, body:JSON.stringify(data||{})});
-      let j = {}; try{ j = await r.json(); }catch(e){}
-      if(r.status === 410 || j.stopped) location.reload();
+      const r = await fetch(base + path, {
+        method:"POST",
+        credentials:"same-origin",
+        headers:{
+          "Content-Type":"application/json",
+          "X-CSRFToken":CSRF
+        },
+        body:JSON.stringify(data || {})
+      });
+
+      let j = {};
+      try{ j = await r.json(); }catch(e){}
+
+      if(r.status === 410 || j.stopped){
+        location.reload();
+      }
+
       return j;
     }
+
     function thumb(s){
-      if(thumbs.has(s.id)) return thumbs.get(s.id);
-      const n = document.createElement("div"); n.className = "bs-mini";
-      try{ if(s.first && window.Hanns) window.Hanns.paintSlide(n, s.first, {live:false}); }catch(e){}
-      thumbs.set(s.id, n); return n;
+      if(thumbs.has(s.id)){
+        return thumbs.get(s.id);
+      }
+
+      const n = document.createElement("div");
+      n.className = "bs-mini";
+
+      try{
+        if(s.first && window.Hanns){
+          window.Hanns.paintSlide(
+            n,
+            s.first,
+            {live:false}
+          );
+        }
+      }catch(e){}
+
+      thumbs.set(s.id, n);
+
+      return n;
     }
-    function render(){
-      if(state.active === false){ location.reload(); return; }
-      root.querySelector("[data-name]").textContent = state.name;
-      root.querySelector("[data-code]").textContent = group(state.share_code);
-      const sc = root.querySelector("[data-showcode]");
-      sc.querySelector("span").textContent = state.show_code ? "Code on lobby" : "Code hidden";
-      root.querySelector("[data-lobby]").disabled = !state.current;
-      const shares = state.shares || [];
-      root.querySelector("[data-count]").textContent = shares.length ? `${shares.length} shared` : "";
-      const q = root.querySelector("[data-queue]");
-      if(!shares.length){
-        q.innerHTML = `<div class="bs-empty">Nothing shared yet. Give presenters the code <b style="font-family:var(--kk-font-mono);letter-spacing:.14em">${esc(group(state.share_code))}</b>.</div>`;
+
+    function currentShare(){
+      return (state.shares || []).find(
+        s => s.id === state.current
+      ) || null;
+    }
+
+    function clearMonitorCanvas(){
+      const screen = root.querySelector("[data-monitor-screen]");
+      if(!screen) return;
+
+      if(monitorNode){
+        try{ monitorNode.remove(); }catch(e){}
+        monitorNode = null;
+      }
+
+      monitorKey = "";
+    }
+
+    function renderMonitor(){
+      const monitor = root.querySelector("[data-monitor]");
+      const screen = root.querySelector("[data-monitor-screen]");
+      const lobby = root.querySelector("[data-monitor-lobby]");
+      const kicker = root.querySelector("[data-monitor-k]");
+      const title = root.querySelector("[data-monitor-title]");
+      const pos = root.querySelector("[data-monitor-pos]");
+
+      if(!monitor || !screen || !lobby || !kicker || !title || !pos){
         return;
       }
+
+      const share = currentShare();
+
+      if(!share){
+        monitor.classList.remove("live");
+        lobby.hidden = false;
+        kicker.textContent = "Lobby preview";
+        title.textContent = state.name || "Big screen";
+        pos.textContent = state.waiting
+          ? `${state.waiting} deck${state.waiting === 1 ? "" : "s"} waiting`
+          : "Waiting for a deck";
+
+        clearMonitorCanvas();
+        return;
+      }
+
+      monitor.classList.add("live");
+      lobby.hidden = true;
+      kicker.textContent = "Live · projector";
+
+      const index = Number.isFinite(Number(share.current_index))
+        ? Number(share.current_index)
+        : 0;
+
+      title.textContent = share.title || "Presentation";
+      pos.textContent = `Slide ${index + 1} / ${share.slides || 1}`;
+
+      const slide = share.current_slide || share.first;
+      if(!slide || !window.Hanns || typeof window.Hanns.paintSlide !== "function"){
+        clearMonitorCanvas();
+        return;
+      }
+
+      const key = `${share.id}:${index}:${JSON.stringify(slide).length}`;
+      if(key === monitorKey && monitorNode){
+        return;
+      }
+
+      clearMonitorCanvas();
+      monitorKey = key;
+
+      const n = document.createElement("div");
+      n.className = "bs-monitor-canvas";
+
+      try{
+        window.Hanns.paintSlide(n, slide, {live:false});
+      }catch(e){
+        return;
+      }
+
+      screen.appendChild(n);
+      monitorNode = n;
+
+      requestAnimationFrame(()=>{
+        const width = screen.clientWidth || 220;
+        n.style.transform = `scale(${width / W})`;
+      });
+    }
+
+    function controllerCard(s){
+      const code = codes[s.id];
+      if(!code){
+        return "";
+      }
+
+      const showQr = qrVisible[s.id] !== false;
+
+      return `
+        <div class="bs-cc" data-controller-card="${esc(s.id)}">
+          <div class="bs-cc-main">
+            <div class="bs-cc-k">
+              <i class="bi bi-phone"></i>
+              Presenter phone controller
+            </div>
+
+            <div class="bs-cc-code">
+              ${esc(group(code))}
+            </div>
+
+            <div class="bs-cc-help">
+              Scan the QR or open
+              <code>${esc(ENTRY.replace(/^https?:\/\//,""))}</code>
+              on the presenter’s phone, then enter this code.
+              It controls <b>${esc(s.title)}</b> only.
+            </div>
+
+            <div class="bs-cc-actions">
+              <button type="button" data-act="copy-control">
+                <i class="bi bi-copy"></i>
+                Copy code
+              </button>
+
+              <button type="button" data-act="toggle-qr">
+                <i class="bi ${showQr ? "bi-eye-slash" : "bi-qr-code"}"></i>
+                ${showQr ? "Hide QR" : "Show QR"}
+              </button>
+            </div>
+          </div>
+
+          <div class="bs-cc-qr-shell" data-qr-shell ${showQr ? "" : "hidden"}>
+            <div class="bs-cc-qr" data-controller-qr></div>
+            <div class="bs-cc-qr-label">Scan to open</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function drawControllerQrs(){
+      root.querySelectorAll("[data-controller-card]").forEach(card=>{
+        const id = card.dataset.controllerCard;
+        const host = card.querySelector("[data-controller-qr]");
+        const shell = card.querySelector("[data-qr-shell]");
+
+        if(!host || !shell || shell.hidden || !codes[id]){
+          return;
+        }
+
+        host.innerHTML = "";
+
+        try{
+          if(window.QRCode){
+            new QRCode(host, {
+              text:ENTRY,
+              width:104,
+              height:104,
+              colorDark:"#111827",
+              colorLight:"#ffffff",
+              correctLevel:QRCode.CorrectLevel.M
+            });
+          }
+        }catch(e){}
+      });
+    }
+
+    function render(){
+      if(state.active === false){
+        location.reload();
+        return;
+      }
+
+      root.querySelector("[data-name]").textContent = state.name;
+      root.querySelector("[data-code]").textContent = group(state.share_code);
+
+      const sc = root.querySelector("[data-showcode]");
+      sc.querySelector("span").textContent = state.show_code
+        ? "Code on lobby"
+        : "Code hidden";
+
+      root.querySelector("[data-lobby]").disabled = !state.current;
+
+      const shares = state.shares || [];
+
+      /* The server already returns control_code to the signed-in host.
+         Populate our local display map after reload too. */
+      shares.forEach(s=>{
+        if(s.control_code && !codes[s.id]){
+          codes[s.id] = s.control_code;
+          if(qrVisible[s.id] === undefined){
+            qrVisible[s.id] = true;
+          }
+        }
+      });
+
+      root.querySelector("[data-count]").textContent = shares.length
+        ? `${shares.length} shared`
+        : "";
+
+      const q = root.querySelector("[data-queue]");
+
+      if(!shares.length){
+        q.innerHTML = `
+          <div class="bs-empty">
+            Nothing shared yet. Give presenters the code
+            <b style="font-family:var(--kk-font-mono);letter-spacing:.14em">
+              ${esc(group(state.share_code))}
+            </b>.
+          </div>`;
+
+        root.querySelector("[data-seen]").textContent = "Lobby";
+        renderMonitor();
+        return;
+      }
+
       q.innerHTML = shares.map(s=>{
         const live = s.id === state.current;
-        return `<div class="bs-row${live?" is-live":""}" data-id="${esc(s.id)}">
-          <div class="bs-th"></div>
-          <div class="bs-info">
-            <div class="t">${esc(s.title)}</div>
-            <div class="m">${esc(s.sharer)} · ${s.slides} slide${s.slides===1?"":"s"} · ${esc(s.age)}</div>
-            ${codes[s.id] ? `<div class="bs-cc">Control code <b>${esc(group(codes[s.id]))}</b><br>They open <span style="font-family:var(--kk-font-mono)">${esc(ENTRY.replace(/^https?:\/\//,""))}</span> on their phone.</div>` : ""}
+
+        return `
+          <div class="bs-row${live ? " is-live" : ""}" data-id="${esc(s.id)}">
+            <div class="bs-th"></div>
+
+            <div class="bs-info">
+              <div class="t">${esc(s.title)}</div>
+              <div class="m">
+                ${esc(s.sharer)} ·
+                ${s.slides} slide${s.slides === 1 ? "" : "s"} ·
+                ${esc(s.age)}
+              </div>
+
+              ${controllerCard(s)}
+            </div>
+
+            <span class="bs-state${live ? " live" : ""}">
+              ${live ? "On screen" : esc(s.status_label)}
+            </span>
+
+            <div class="bs-acts">
+              ${
+                live
+                  ? ""
+                  : `<button class="kk-btn kk-btn-primary" type="button" data-act="play">
+                       <i class="bi bi-play-fill"></i>
+                       Put on screen
+                     </button>`
+              }
+
+              <button
+                class="kk-btn kk-btn-ghost"
+                type="button"
+                data-act="code"
+                title="Issue or replace the presenter phone control code">
+
+                <i class="bi bi-phone"></i>
+                ${codes[s.id] ? "New code" : "Phone control"}
+              </button>
+
+              <button
+                class="kk-btn kk-btn-ghost"
+                type="button"
+                data-act="remove"
+                title="Remove">
+
+                <i class="bi bi-x-lg"></i>
+              </button>
+            </div>
           </div>
-          <span class="bs-state${live?" live":""}">${live ? "On screen" : esc(s.status_label)}</span>
-          <div class="bs-acts">
-            ${live ? "" : `<button class="kk-btn kk-btn-primary" type="button" data-act="play"><i class="bi bi-play-fill"></i> Put on screen</button>`}
-            <button class="kk-btn kk-btn-ghost" type="button" data-act="code" title="Control code for a presenter without a laptop"><i class="bi bi-phone"></i> ${codes[s.id] ? "New code" : "Control code"}</button>
-            <button class="kk-btn kk-btn-ghost" type="button" data-act="remove" title="Remove"><i class="bi bi-x-lg"></i></button>
-          </div>
-        </div>`;
+        `;
       }).join("");
+
       q.querySelectorAll(".bs-row").forEach(row=>{
         const s = shares.find(x=>x.id === row.dataset.id);
-        const host = row.querySelector(".bs-th"), n = thumb(s);
+        const host = row.querySelector(".bs-th");
+        const n = thumb(s);
+
         host.appendChild(n);
-        requestAnimationFrame(()=>{ n.style.transform = `scale(${host.clientWidth / W})`; });
+
+        requestAnimationFrame(()=>{
+          n.style.transform = `scale(${host.clientWidth / W})`;
+        });
       });
-      const seen = root.querySelector("[data-seen]");
-      seen.textContent = state.current ? "On air" : "Lobby";
+
+      drawControllerQrs();
+
+      root.querySelector("[data-seen]").textContent = state.current
+        ? "On air"
+        : "Lobby";
+
+      renderMonitor();
     }
 
     root.addEventListener("click", async ev=>{
-      const b = ev.target.closest("button"); if(!b) return;
-      const row = b.closest(".bs-row"); const id = row && row.dataset.id;
-      if(b.dataset.act === "play") await post("select/", {share:id});
+      const b = ev.target.closest("button");
+      if(!b) return;
+
+      const row = b.closest(".bs-row");
+      const id = row && row.dataset.id;
+
+      if(b.dataset.act === "play"){
+        await post("select/", {share:id});
+      }
+
       else if(b.dataset.act === "code"){
-        const j = await post(`share/${id}/control-code/`, codes[id] ? {reissue:true} : {});
-        if(j.ok){ codes[id] = j.code; render(); }
-      }else if(b.dataset.act === "remove"){
-        if(confirm("Remove this deck from the screen?")) await post(`share/${id}/remove/`, {});
-      }else if(b.hasAttribute("data-lobby")) await post("lobby/", {});
-      else if(b.hasAttribute("data-showcode")) await post("settings/", {show_code: !state.show_code});
-      else if(b.hasAttribute("data-rotate")){ if(confirm("Issue a new share code? Decks already shared stay in the queue.")) await post("rotate-code/", {}); }
-      else if(b.hasAttribute("data-stop")){
-        if(confirm("Stop this big screen? The link stops working, every shared deck is released and every control code dies.")){
-          await post("stop/", {}); location.reload();
+        const j = await post(
+          `share/${id}/control-code/`,
+          codes[id] ? {reissue:true} : {}
+        );
+
+        if(j.ok){
+          codes[id] = j.code;
+          qrVisible[id] = true;
+          render();
         }
-      }else if(b.hasAttribute("data-copy-code")) navigator.clipboard && navigator.clipboard.writeText(state.share_code);
+      }
+
+      else if(b.dataset.act === "copy-control"){
+        const code = codes[id] || "";
+
+        try{
+          if(navigator.clipboard){
+            await navigator.clipboard.writeText(code);
+          }
+        }catch(e){}
+
+        const old = b.innerHTML;
+        b.innerHTML = '<i class="bi bi-check2"></i> Copied';
+        setTimeout(()=>{ b.innerHTML = old; }, 1200);
+      }
+
+      else if(b.dataset.act === "toggle-qr"){
+        qrVisible[id] = !(qrVisible[id] !== false);
+        render();
+      }
+
+      else if(b.dataset.act === "remove"){
+        if(confirm("Remove this deck from the screen?")){
+          delete codes[id];
+          delete qrVisible[id];
+          await post(`share/${id}/remove/`, {});
+        }
+      }
+
+      else if(b.hasAttribute("data-lobby")){
+        await post("lobby/", {});
+      }
+
+      else if(b.hasAttribute("data-showcode")){
+        await post("settings/", {show_code: !state.show_code});
+      }
+
+      else if(b.hasAttribute("data-rotate")){
+        if(confirm("Issue a new share code? Decks already shared stay in the queue.")){
+          await post("rotate-code/", {});
+        }
+      }
+
+      else if(b.hasAttribute("data-stop")){
+        if(confirm(
+          "Stop this big screen? The link stops working, every shared deck is released and every control code dies."
+        )){
+          await post("stop/", {});
+          location.reload();
+        }
+      }
+
+      else if(b.hasAttribute("data-copy-code")){
+        if(navigator.clipboard){
+          navigator.clipboard.writeText(state.share_code);
+        }
+      }
+
       else if(b.hasAttribute("data-copy-url")){
-        navigator.clipboard && navigator.clipboard.writeText(root.querySelector("[data-url]").textContent.trim());
-        b.innerHTML = '<i class="bi bi-check2"></i> Copied'; setTimeout(()=>{ b.innerHTML = '<i class="bi bi-link-45deg"></i> Copy link'; }, 1400);
+        if(navigator.clipboard){
+          navigator.clipboard.writeText(
+            root.querySelector("[data-url]").textContent.trim()
+          );
+        }
+
+        b.innerHTML = '<i class="bi bi-check2"></i> Copied';
+
+        setTimeout(()=>{
+          b.innerHTML = '<i class="bi bi-link-45deg"></i> Copy link';
+        }, 1400);
       }
     });
 
-    // Live snapshot stream, with a poll behind it.
-    let sock = null, lastRx = 0;
+    /* Live screen snapshot stream. */
+    let sock = null;
+    let lastRx = 0;
+
     function connect(){
-      try{ sock = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + root.dataset.ws); }
-      catch(e){ setTimeout(connect, 3000); return; }
+      try{
+        sock = new WebSocket(
+          (location.protocol === "https:" ? "wss://" : "ws://")
+          + location.host
+          + root.dataset.ws
+        );
+      }catch(e){
+        setTimeout(connect, 3000);
+        return;
+      }
+
       sock.onmessage = ev=>{
         lastRx = Date.now();
-        let m; try{ m = JSON.parse(ev.data); }catch(e){ return; }
-        if(m.type === "ping"){ try{ sock.send('{"type":"pong"}'); }catch(e){} return; }
-        if(m.type === "screen_state"){ state = m.state; render(); }
-        else if(m.type === "screen_stopped") location.reload();
+
+        let m;
+        try{
+          m = JSON.parse(ev.data);
+        }catch(e){
+          return;
+        }
+
+        if(m.type === "ping"){
+          try{
+            sock.send('{"type":"pong"}');
+          }catch(e){}
+          return;
+        }
+
+        if(m.type === "screen_state"){
+          state = m.state;
+          render();
+        }
+
+        else if(m.type === "screen_stopped"){
+          location.reload();
+        }
       };
+
       sock.onclose = ()=>setTimeout(connect, 3000);
     }
+
     connect();
+
+    /* Existing reconnect/backstop poll. */
     setInterval(async ()=>{
-      if(sock && sock.readyState === 1 && Date.now() - lastRx < 50000) return;
-      try{ const r = await fetch(base + "state/", {credentials:"same-origin"}); const j = await r.json(); if(j.state){ state = j.state; render(); } }catch(e){}
+      if(
+        sock
+        &&
+        sock.readyState === 1
+        &&
+        Date.now() - lastRx < 50000
+      ){
+        return;
+      }
+
+      try{
+        const r = await fetch(base + "state/", {
+          credentials:"same-origin",
+          cache:"no-store"
+        });
+
+        const j = await r.json();
+
+        if(j.state){
+          state = j.state;
+          render();
+        }
+      }catch(e){}
     }, 8000);
-    setInterval(()=>{ if(sock && sock.readyState === 1){ try{ sock.send('{"type":"ping"}'); }catch(e){} } }, 20000);
+
+    setInterval(()=>{
+      if(sock && sock.readyState === 1){
+        try{
+          sock.send('{"type":"ping"}');
+        }catch(e){}
+      }
+    }, 20000);
+
+    /* While a deck is live, the deck socket updates Deck.current_slide.
+       The Big Screen screen socket does not broadcast every slide move,
+       so the host monitor asks only for the lightweight screen snapshot.
+       This gives the remote a near-live monitor without opening a second
+       presenter/player connection. */
+    setInterval(async ()=>{
+      if(
+        !state.current
+        ||
+        document.hidden
+        ||
+        previewBusy
+      ){
+        return;
+      }
+
+      previewBusy = true;
+
+      try{
+        const r = await fetch(base + "state/", {
+          credentials:"same-origin",
+          cache:"no-store"
+        });
+
+        if(r.ok){
+          const j = await r.json();
+
+          if(j.state){
+            state = j.state;
+            renderMonitor();
+          }
+        }
+      }catch(e){}
+      finally{
+        previewBusy = false;
+      }
+    }, 1200);
+
+    window.addEventListener("resize", renderMonitor);
+
     render();
   });
 })();

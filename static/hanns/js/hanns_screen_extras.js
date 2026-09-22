@@ -1,18 +1,19 @@
 /* ═══════════════════════════════════════════════════════════════════
    HANNS · BIG SCREEN EXTRAS
 
-   Purpose:
-   1) Keep the projector slide clean:
-      - page number, audience/join QR and reaction stack appear briefly
-      - they fade away again after a few seconds
-   2) Let the host show the presenter phone-controller QR on the LOBBY only
+   Big screen behavior:
+   1) Keep the projector slide clean
+      - page number / slide HUD appears briefly, then hides
+      - reaction stack appears briefly, then hides
+   2) Hide the audience react QR card by default
+      - show only a subtle transparent arrow
+      - clicking the arrow reveals the react QR card for a few seconds
+      - then it hides again automatically
+   3) Presenter phone-controller QR card stays on the lobby only
       - never on top of a live slide
       - it auto-hides after a few seconds
 
-   Important:
-   - The earlier host-side preview block has been removed completely.
-   - This file only enhances the Big Screen shell; it does not change the
-     normal Hanns presenter / control pages.
+   This file enhances only the Big Screen shell / embedded frame.
    ═══════════════════════════════════════════════════════════════════ */
 (function(){
 "use strict";
@@ -28,9 +29,8 @@ const CFG = (()=>{
 })();
 
 const CONTROLLER_LOBBY_SHOW_MS = 6000;
+const REACT_BADGE_SHOW_MS = 6000;
 
-let liveIndex = 0;
-let liveTotal = 0;
 let currentRoomFrame = null;
 let controllerLobbyVisible = false;
 let controllerLobbyTimer = 0;
@@ -42,7 +42,7 @@ let controllerLobbyData = {
 };
 
 /* ──────────────────────────────────────────────────────────────────
-   CSS for the additions that live in the Big Screen shell.
+   CSS for Big Screen shell additions.
    ────────────────────────────────────────────────────────────────── */
 function installShellStyles(){
   if($("#hanns-screen-extras-style")) return;
@@ -180,7 +180,7 @@ function groupedCode(value){
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   CLEAN PROJECTOR HUD
+   CLEAN PROJECTOR HUD + REACT BADGE ARROW
    Injected only into the embedded presentation iframe used by Big Screen.
    ────────────────────────────────────────────────────────────────── */
 function installCleanHud(frame){
@@ -188,6 +188,7 @@ function installCleanHud(frame){
 
   let doc;
   try{ doc = frame.contentDocument; }catch(e){ return; }
+
   if(!doc || !doc.head || !doc.body){
     setTimeout(()=>installCleanHud(frame), 80);
     return;
@@ -198,17 +199,14 @@ function installCleanHud(frame){
     const style = doc.createElement("style");
     style.id = styleId;
     style.textContent = `
+      /* Slide/page HUD appears briefly, then hides */
       body.hanns-embed .present-controls,
-      body.hanns-embed .present-badge,
       body.hanns-embed .reaction-top-stack{
         opacity:0!important;
         pointer-events:none!important;
         transition:opacity .32s ease,transform .32s ease!important;
       }
       body.hanns-embed .present-controls{
-        transform:translateY(8px)!important;
-      }
-      body.hanns-embed .present-badge{
         transform:translateY(8px)!important;
       }
       body.hanns-embed .reaction-top-stack{
@@ -218,13 +216,78 @@ function installCleanHud(frame){
         display:none!important;
       }
       body.hanns-embed.hanns-room-hud .present-controls,
-      body.hanns-embed.hanns-room-hud .present-badge,
       body.hanns-embed.hanns-room-hud .reaction-top-stack{
         opacity:1!important;
         transform:none!important;
       }
+
+      /* React QR card: hidden by default, shown only when explicitly opened */
+      body.hanns-embed .present-badge{
+        opacity:0!important;
+        pointer-events:none!important;
+        transform:translateY(8px)!important;
+        transition:opacity .24s ease,transform .24s ease!important;
+      }
+      body.hanns-embed.hanns-room-badge-open .present-badge{
+        opacity:1!important;
+        pointer-events:auto!important;
+        transform:none!important;
+      }
+
+      /* Small transparent reveal arrow */
+      #hanns-react-reveal{
+        position:fixed;
+        right:16px;
+        bottom:18px;
+        width:38px;
+        height:38px;
+        border-radius:999px;
+        display:grid;
+        place-items:center;
+        background:rgba(7,9,20,.12);
+        border:1px solid rgba(255,255,255,.14);
+        color:rgba(255,255,255,.58);
+        backdrop-filter:blur(8px);
+        -webkit-backdrop-filter:blur(8px);
+        box-shadow:0 8px 22px rgba(0,0,0,.18);
+        z-index:9998;
+        cursor:pointer;
+        user-select:none;
+        transition:background .2s ease,color .2s ease,opacity .2s ease,transform .2s ease;
+      }
+      #hanns-react-reveal:hover{
+        background:rgba(7,9,20,.22);
+        color:rgba(255,255,255,.9);
+      }
+      #hanns-react-reveal svg{
+        display:block;
+        width:16px;
+        height:16px;
+      }
+      body.hanns-embed.hanns-room-badge-open #hanns-react-reveal{
+        opacity:.75;
+        transform:translateX(-2px);
+      }
     `;
     doc.head.appendChild(style);
+  }
+
+  if(!doc.getElementById("hanns-react-reveal")){
+    const btn = doc.createElement("button");
+    btn.type = "button";
+    btn.id = "hanns-react-reveal";
+    btn.setAttribute("aria-label", "Show react QR");
+    btn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"
+           aria-hidden="true">
+        <path d="M9 6l6 6-6 6"/>
+      </svg>
+    `;
+    btn.addEventListener("click", ()=>{
+      showReactBadge(frame, REACT_BADGE_SHOW_MS);
+    });
+    doc.body.appendChild(btn);
   }
 
   if(frame.__hannsCleanHudInstalled) return;
@@ -246,7 +309,7 @@ function installCleanHud(frame){
         const b = frame.contentDocument && frame.contentDocument.body;
         if(b) b.classList.remove("hanns-room-hud");
       }catch(e){}
-    }, Number(ms) || 3000);
+    }, Number(ms) || 2800);
   }
 
   frame.__hannsFlashRoomHud = flash;
@@ -258,22 +321,29 @@ function installCleanHud(frame){
     frame.__hannsReactionObserver = reactionObserver;
   }
 
-  const audience = doc.getElementById("aud-count");
-  if(audience && window.MutationObserver){
-    const audienceObserver = new MutationObserver(()=>flash(1800));
-    audienceObserver.observe(audience,{childList:true,subtree:true,characterData:true});
-    frame.__hannsAudienceObserver = audienceObserver;
-  }
-
-  /* Initial join QR / slide number: appear briefly, then go away. */
-  flash(4200);
+  /* Do not auto-show the react QR card anymore. Only the arrow reveals it. */
+  flash(3000);
 }
 
-function flashRoomHud(ms=2800){
-  const frame = visibleRoomFrame();
-  if(frame && typeof frame.__hannsFlashRoomHud === "function"){
-    frame.__hannsFlashRoomHud(ms);
+function showReactBadge(frame, ms){
+  if(!frame) return;
+
+  let body;
+  try{
+    body = frame.contentDocument && frame.contentDocument.body;
+  }catch(e){
+    return;
   }
+  if(!body) return;
+
+  body.classList.add("hanns-room-badge-open");
+  clearTimeout(frame.__hannsBadgeTimer);
+  frame.__hannsBadgeTimer = setTimeout(()=>{
+    try{
+      const b = frame.contentDocument && frame.contentDocument.body;
+      if(b) b.classList.remove("hanns-room-badge-open");
+    }catch(e){}
+  }, Number(ms) || REACT_BADGE_SHOW_MS);
 }
 
 function prepareCurrentRoomFrame(){
@@ -391,8 +461,6 @@ function showControllerLobby(data){
   );
   controllerLobbyVisible = true;
 
-  /* If a slide is on air, deliberately return to the lobby first.
-     The presenter QR must never cover part of the slide. */
   const lobbyButton = $("#scr-lobby-btn");
   if(!isLobbyVisible() && lobbyButton && !lobbyButton.disabled){
     lobbyButton.click();
@@ -462,23 +530,8 @@ function enhanceControlDialog(){
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   EVENTS / OBSERVERS
+   OBSERVERS
    ────────────────────────────────────────────────────────────────── */
-window.addEventListener("message", event=>{
-  if(event.origin !== location.origin || !event.data || !event.data.hannsScreen) return;
-
-  const roomFrame = visibleRoomFrame();
-  if(roomFrame && event.source !== roomFrame.contentWindow) return;
-
-  const msg = event.data;
-  if(msg.type === "slide" || msg.type === "ready"){
-    liveIndex = Number(msg.index) || 0;
-    liveTotal = Number(msg.total) || liveTotal || 1;
-    prepareCurrentRoomFrame();
-    flashRoomHud(msg.type === "ready" ? 4200 : 2800);
-  }
-});
-
 const stage = $("#scr-stage");
 if(stage && window.MutationObserver){
   new MutationObserver(()=>{

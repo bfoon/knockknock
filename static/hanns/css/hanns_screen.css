@@ -135,10 +135,27 @@ body.scr-fs .scr-go-fs{display:none}
   position:absolute;right:clamp(1rem,3vw,2.4rem);bottom:clamp(1rem,3vh,2rem);
   font:500 clamp(.9rem,1.4vw,1.2rem)/1 var(--scr-mono);color:var(--scr-faint);letter-spacing:.08em;
 }
-.scr-brand{
+/* ── bottom-left: scan to join Knock-Knock ───────────────────────────
+   Sized off the viewport so it reads from the back of a room on a
+   projector, yet stays out of the way of the centred lobby card. */
+.scr-join{
   position:absolute;left:clamp(1rem,3vw,2.4rem);bottom:clamp(1rem,3vh,2rem);
+  display:flex;align-items:flex-end;gap:clamp(.7rem,1.2vw,1.1rem);
+}
+.scr-join-qr{
+  width:clamp(88px,9.5vw,190px);aspect-ratio:1;flex:0 0 auto;
+  padding:clamp(5px,.55vw,10px);background:#fff;border-radius:clamp(8px,.9vw,14px);
+  box-shadow:0 10px 30px -12px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.08);
+}
+.scr-join-qr[hidden]{display:none}
+.scr-join-qr img,.scr-join-qr canvas{display:block;width:100%!important;height:100%!important;image-rendering:pixelated}
+.scr-join-txt{display:flex;flex-direction:column;gap:.35rem;padding-bottom:.15rem}
+.scr-brand{
   font:600 .78rem/1 var(--scr-mono);letter-spacing:.24em;color:var(--scr-faint);text-transform:uppercase;
 }
+.scr-join-lead{font:600 clamp(.95rem,1.35vw,1.35rem)/1.1 var(--scr-body);color:var(--scr-dim)}
+.scr-join-url{font:700 clamp(1.05rem,1.7vw,1.7rem)/1 var(--scr-mono);letter-spacing:.02em;color:var(--scr-text)}
+@media (max-height:520px){ .scr-join-qr{width:72px} .scr-join-lead{display:none} }
 
 /* ── the queue handle — nearly invisible until wanted ───────────────── */
 .scr-hotzone{position:fixed;left:25%;right:25%;top:0;height:56px;z-index:40}

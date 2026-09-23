@@ -8,8 +8,8 @@
 <title>{{ screen.name }} · Big Screen · Hanns</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-{# Thumbnails are painted with each author's own fonts, so the full Hanns
-   font set loads here too — same list as present.html. #}
+<!--{# Thumbnails are painted with each author's own fonts, so the full Hanns-->
+<!--   font set loads here too — same list as present.html. #}-->
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Archivo:wght@400;500;600;700;800&family=Archivo+Expanded:wght@600;700;800&family=Spline+Sans+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800;900&family=Manrope:wght@300;400;500;600;700;800&family=Poppins:wght@300;400;500;600;700;800;900&family=Montserrat:wght@300;400;500;600;700;800;900&family=Roboto:wght@300;400;500;700;900&family=Open+Sans:wght@300;400;500;600;700;800&family=Lato:wght@300;400;700;900&family=Nunito+Sans:wght@300;400;600;700;800;900&family=Raleway:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=DM+Serif+Display:ital@0;1&family=Bebas+Neue&family=Oswald:wght@300;400;500;600;700&family=Merriweather:wght@300;400;700;900&family=Libre+Baskerville:wght@400;700&family=Lora:ital,wght@0,400..700;1,400..700&family=Cormorant+Garamond:ital,wght@0,300..700;1,300..700&family=Space+Grotesk:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Barlow+Condensed:wght@300;400;500;600;700;800&family=Rubik:wght@300;400;500;600;700;800;900&family=Quicksand:wght@300;400;500;600;700&family=Sora:wght@300;400;500;600;700;800&family=Exo+2:wght@300;400;500;600;700;800;900&family=Ubuntu:wght@300;400;500;700&family=Work+Sans:wght@300;400;500;600;700;800;900&family=Noto+Sans:wght@300;400;500;600;700;800;900&family=Noto+Serif:wght@400;500;600;700;800;900&family=Source+Serif+4:opsz,wght@8..60,300..900&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Serif:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700;800&family=Fira+Code:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Cinzel:wght@400;500;600;700;800;900&family=Abril+Fatface&family=Anton&family=Pacifico&family=Caveat:wght@400;500;600;700&family=Permanent+Marker&family=Righteous&family=Kanit:wght@300;400;500;600;700;800;900&family=Lexend:wght@300;400;500;600;700;800;900&family=Urbanist:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=62">
@@ -41,8 +41,8 @@
     <div><span class="scr-waiting" id="scr-waiting" hidden><span class="pip"></span><span id="scr-waiting-txt"></span></span></div>
     <button class="scr-go-fs" id="scr-go-fs" type="button"><i class="bi bi-arrows-fullscreen"></i> Go full screen</button>
   </div>
-  {# Bottom-left: invite the room onto Knock-Knock. The QR is drawn from
-     this page's own origin, so it follows the domain the screen runs on. #}
+<!--  {# Bottom-left: invite the room onto Knock-Knock. The QR is drawn from-->
+<!--     this page's own origin, so it follows the domain the screen runs on. #}-->
   <div class="scr-join" id="scr-join" aria-label="Scan to join Knock-Knock">
     <div class="scr-join-qr" id="scr-join-qr" aria-hidden="true"></div>
     <div class="scr-join-txt">
@@ -138,8 +138,8 @@
   }catch(e){ box.hidden = true; }
 })();
 </script>
-{# Only for painting slide thumbnails. The deck on air loads its own full
-   player inside the frame. #}
+<!--{# Only for painting slide thumbnails. The deck on air loads its own full-->
+<!--   player inside the frame. #}-->
 <script src="{% static 'hanns/js/hanns_actors.js' %}?v=62"></script>
 <script src="{% static 'hanns/js/hanns_core.js' %}?v=62"></script>
 <script src="{% static 'hanns/js/hanns_shapes.js' %}?v=62"></script>

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{% if reason == "expired" %}Link expired{% else %}Dashboard not available{% endif %} · Kura</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=Fraunces:wght@600&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#07081a;--panel:#10122c;--text:#f8fbff;--muted:#aeb7dc;--line:rgba(255,255,255,.12);--accent:#22d3ee}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:grid;place-items:center;padding:1.5rem;
+       background:radial-gradient(700px 500px at 85% 0,rgba(139,92,246,.22),transparent),var(--bg);
+       color:var(--text);font-family:Archivo,system-ui,sans-serif}
+  .card{max-width:30rem;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:2rem 2rem 1.6rem}
+  .mark{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;margin-bottom:1.1rem;
+        background:rgba(34,211,238,.12);color:var(--accent)}
+  h1{font:600 1.55rem/1.2 Fraunces,Georgia,serif;margin:0 0 .6rem}
+  p{color:var(--muted);line-height:1.6;margin:0 0 .8rem;font-size:.95rem}
+  small{display:block;margin-top:1.4rem;color:var(--muted);font-size:.75rem}
+</style>
+</head>
+<body>
+  <main class="card" role="main">
+    <div class="mark" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        {% if reason == "expired" %}<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>{% else %}<rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>{% endif %}
+      </svg>
+    </div>
+    {% if reason == "expired" %}
+      <h1>This dashboard link has expired</h1>
+      <p>The owner set this link to stop working after a certain date{% if board.share_expires_at %} — it closed on {{ board.share_expires_at|date:"j M Y, H:i" }}{% endif %}.</p>
+      <p>Ask the person who shared it for a new link.</p>
+    {% else %}
+      <h1>This dashboard isn’t available</h1>
+      <p>The link may have been switched off or replaced with a new one.</p>
+      <p>Ask the person who shared it for the current link.</p>
+    {% endif %}
+    <small>Kura live dashboards</small>
+  </main>
+</body>
+</html>

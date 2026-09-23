@@ -2,922 +2,2090 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{{ board.name }} · {{ survey.title }}</title>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Fraunces:wght@600;800&family=Spline+Sans+Mono:wght@500;700&display=swap" rel="stylesheet">
+{% if public %}<meta name="robots" content="noindex">{% endif %}
+<title>{% if public %}{{ board_name }}{% else %}{{ board.name }} · {{ survey.title }}{% endif %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 {% kura_basemap %}
+{{ boot|json_script:"kura-boot" }}
+<script>
+/* Paint the base colours before first render so a light board never
+   flashes dark. applyTheme() below repeats this with every knob. */
+(function(){try{
+  var B=JSON.parse(document.getElementById("kura-boot").textContent);
+  var t=B.themes[B.dashboard.theme]||B.themes.studio, r=document.documentElement.style;
+  r.setProperty("--bg",t.bg);r.setProperty("--panel",t.panel);r.setProperty("--text",t.text);
+}catch(e){}})();
+</script>
 <style>
-:root{--bg:#07081a;--panel:#10122c;--line:rgba(255,255,255,.12);--text:#f8fbff;--muted:#aeb7dc;--cyan:#22d3ee;--pink:#ff3f98;--orange:#ff8a1f;--violet:#8b5cf6;--green:#22c55e;--red:#e8482b;--gap:12px;--rowh:92px}
-body.theme-ops{--bg:#000208;--panel:#080b18;--line:rgba(255,255,255,.2);--muted:#c6cdf0}
-body.theme-light{--bg:#eef1f8;--panel:#ffffff;--line:rgba(10,14,40,.14);--text:#0b0e26;--muted:#4a5378}
+/* ── tokens (overwritten per theme by applyTheme) ───────────────── */
+:root{
+  --bg:#07081a;--panel:#10122c;--text:#f8fbff;--muted:#aeb7dc;--line:rgba(255,255,255,.12);
+  --glow:rgba(139,92,246,.24);--accent:#22d3ee;--accent-2:#ff3f98;--on-accent:#06121a;
+  --ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;
+  --radius:14px;--gap:12px;--rowh:92px;--pad:13px;
+  --font:'Archivo',system-ui,sans-serif;--font-display:'Archivo',system-ui,sans-serif;
+  --chrome:color-mix(in srgb,var(--panel) 86%,var(--bg));
+  --field:color-mix(in srgb,var(--panel) 70%,var(--bg));
+  --hover:color-mix(in srgb,var(--text) 6%,transparent);
+  --guide:color-mix(in srgb,var(--accent) 7%,transparent);
+}
 *{box-sizing:border-box}
-body{margin:0;background:radial-gradient(900px 600px at 100% 0,rgba(139,92,246,.24),transparent),var(--bg);color:var(--text);font-family:Archivo,sans-serif}
-body.theme-light{background:var(--bg)}
-a{color:var(--cyan)}
-/* ── chrome ─────────────────────────────────────────────────────── */
-.top{position:sticky;top:0;z-index:40;display:flex;gap:.7rem;align-items:center;padding:.65rem 1rem;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(16px);border-bottom:1px solid var(--line);flex-wrap:wrap}
-.brand{font-weight:900;font-size:1.1rem;letter-spacing:-.02em}
-.boardname{font:600 1.05rem Fraunces;background:none;border:1px solid transparent;color:inherit;padding:.25rem .4rem;border-radius:8px;min-width:180px;flex:1}
-.boardname:hover,.boardname:focus{border-color:var(--line);outline:none;background:rgba(255,255,255,.05)}
-.btn{border:1px solid var(--line);border-radius:9px;padding:.45rem .75rem;color:#fff;background:linear-gradient(135deg,var(--orange),var(--pink),var(--violet));font-weight:700;cursor:pointer;text-decoration:none;font-size:.78rem;white-space:nowrap}
-.btn.ghost{background:rgba(255,255,255,.07);color:var(--text)}
-body.theme-light .btn.ghost{background:rgba(10,14,40,.05)}
-.btn.small{font-size:.7rem;padding:.3rem .5rem}
-.btn:disabled{opacity:.45;cursor:not-allowed}
-select,input,textarea{background:color-mix(in srgb,var(--panel) 80%,#000);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:.4rem .5rem;font-size:.78rem;font-family:inherit}
-body.theme-light select,body.theme-light input,body.theme-light textarea{background:#fff}
-/* live pulse */
-.pulse{display:flex;align-items:center;gap:.45rem;font:600 .72rem "Spline Sans Mono";color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:.28rem .65rem}
-.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
-.pulse.on .dot{background:var(--green);box-shadow:0 0 0 0 rgba(34,197,94,.7);animation:beat 2s infinite}
-.pulse.stale .dot{background:var(--orange)}
-.pulse.off .dot{background:var(--red)}
-@keyframes beat{70%{box-shadow:0 0 0 9px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
-@media (prefers-reduced-motion:reduce){.pulse.on .dot{animation:none}}
+html,body{min-height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;
+     -webkit-font-smoothing:antialiased;font-feature-settings:"tnum" 1}
+body.bd-glow{background:radial-gradient(1000px 640px at 100% -10%,var(--glow),transparent 70%),
+  radial-gradient(800px 520px at -10% 110%,color-mix(in srgb,var(--accent-2) 10%,transparent),transparent 70%),var(--bg);background-attachment:fixed}
+body.bd-mesh{background:
+  radial-gradient(600px 400px at 15% 10%,color-mix(in srgb,var(--accent) 16%,transparent),transparent 70%),
+  radial-gradient(700px 500px at 85% 20%,var(--glow),transparent 70%),
+  radial-gradient(700px 500px at 50% 110%,color-mix(in srgb,var(--accent-2) 14%,transparent),transparent 70%),var(--bg);background-attachment:fixed}
+body.bd-grid{background:
+  linear-gradient(color-mix(in srgb,var(--text) 5%,transparent) 1px,transparent 1px) 0 0/32px 32px,
+  linear-gradient(90deg,color-mix(in srgb,var(--text) 5%,transparent) 1px,transparent 1px) 0 0/32px 32px,var(--bg);background-attachment:fixed}
+a{color:var(--accent)}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
+[hidden]{display:none!important}
+
+/* ── controls ───────────────────────────────────────────────────── */
+.btn{display:inline-flex;align-items:center;gap:.4rem;border:1px solid var(--line);border-radius:10px;
+     padding:.45rem .75rem;background:var(--field);cursor:pointer;font-size:.8rem;font-weight:600;
+     white-space:nowrap;text-decoration:none;color:var(--text);transition:background .15s,border-color .15s}
+.btn:hover{background:var(--hover);border-color:color-mix(in srgb,var(--text) 22%,transparent)}
+.btn.primary{background:var(--accent);border-color:transparent;color:var(--on-accent)}
+.btn.primary:hover{filter:brightness(1.08);background:var(--accent)}
+.btn.danger{color:var(--bad)}
+.btn.icon{padding:.42rem;border-color:transparent;background:transparent}
+.btn.icon:hover{background:var(--hover)}
+.btn.on{border-color:var(--accent);color:var(--accent)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+input,select,textarea{font:inherit;font-size:.8rem;color:var(--text);background:var(--field);
+     border:1px solid var(--line);border-radius:9px;padding:.45rem .55rem;width:100%}
+input[type=color]{padding:2px;height:34px;width:48px;cursor:pointer;flex:0 0 auto}
+input[type=range]{padding:0;accent-color:var(--accent)}
+input[type=checkbox]{width:auto;accent-color:var(--accent);flex:0 0 auto}
+textarea{resize:vertical;line-height:1.45}
+select option{background:var(--panel);color:var(--text)}
+label.f{display:block;font-size:.72rem;font-weight:600;color:var(--muted);margin:.85rem 0 .3rem}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}
+.hint{font-size:.72rem;color:var(--muted);line-height:1.5;margin:.45rem 0 0}
+.seg{display:flex;background:var(--field);border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px}
+.seg button{flex:1;border:0;background:none;border-radius:7px;padding:.35rem .3rem;font-size:.72rem;font-weight:600;cursor:pointer;color:var(--muted)}
+.seg button[aria-pressed=true]{background:var(--panel);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:.8rem;padding:.55rem 0;font-size:.8rem;border-bottom:1px solid var(--line)}
+.switch:last-child{border-bottom:0}
+.switch small{display:block;color:var(--muted);font-size:.7rem;margin-top:.1rem}
+
+/* ── top bar ────────────────────────────────────────────────────── */
+.top{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:.5rem;padding:.55rem .9rem;
+     background:color-mix(in srgb,var(--bg) 78%,transparent);backdrop-filter:blur(18px) saturate(1.2);
+     border-bottom:1px solid var(--line);min-height:56px}
+.brand{display:flex;align-items:center;gap:.5rem;font-weight:800;letter-spacing:-.02em;text-decoration:none;color:var(--text)}
+.brand .mk{width:26px;height:26px;border-radius:8px;background:conic-gradient(from 200deg,var(--accent),var(--accent-2),var(--accent));display:grid;place-items:center}
+.brand .mk::after{content:"";width:10px;height:10px;border-radius:50%;background:var(--bg)}
+.crumb{color:var(--muted);font-size:.8rem;max-width:18ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:none}
+.crumb:hover{color:var(--text)}
+.sep{color:var(--line);font-size:1.1rem}
+.boardpick{display:flex;align-items:center;gap:.1rem;min-width:0;flex:0 1 auto}
+.boardname{font:600 1rem var(--font-display);background:none;border:1px solid transparent;color:inherit;
+           padding:.3rem .45rem;border-radius:8px;width:auto;min-width:8ch;max-width:34ch}
+.boardname:hover,.boardname:focus{border-color:var(--line);background:var(--field);outline:none}
+.spacer{flex:1}
+.pulse{display:flex;align-items:center;gap:.5rem;font-size:.75rem;color:var(--muted);border:1px solid var(--line);
+       border-radius:999px;padding:.3rem .7rem;white-space:nowrap;background:var(--field)}
+.pulse .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:0 0 auto}
+.pulse.on .dot{background:var(--ok);animation:beat 2s infinite}
+.pulse.stale .dot{background:var(--warn)}
+.pulse.off .dot{background:var(--bad)}
+@keyframes beat{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--ok) 70%,transparent)}70%{box-shadow:0 0 0 8px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.savestate{font-size:.72rem;color:var(--muted);white-space:nowrap;min-width:6.5rem;text-align:right}
+.savestate.err{color:var(--bad)}
+.pubdot{width:7px;height:7px;border-radius:50%;background:transparent;flex:0 0 auto}
+.pubbtn[data-state=live] .pubdot{background:#fff;box-shadow:0 0 0 2px color-mix(in srgb,var(--ok) 80%,transparent)}
+.pubbtn[data-state=outdated] .pubdot{background:var(--warn)}
+.pubbtn[data-state=expired] .pubdot,.pubbtn[data-state=off] .pubdot{background:var(--bad)}
+.pubbtn[data-state=draft] .pubdot{display:none}
+.feedcount{min-width:18px;height:18px;border-radius:9px;background:var(--accent);color:var(--on-accent);font-size:.66rem;font-weight:800;display:inline-grid;place-items:center;padding:0 5px}
+
 /* ── layout ─────────────────────────────────────────────────────── */
-.shell{display:grid;grid-template-columns:224px minmax(0,1fr) 300px;gap:1rem;padding:1rem;align-items:start}
-.rail{position:sticky;top:64px;background:color-mix(in srgb,var(--panel) 92%,transparent);border:1px solid var(--line);border-radius:14px;max-height:calc(100vh - 84px);display:flex;flex-direction:column;overflow:hidden}
-.rail h3{font:700 .66rem "Spline Sans Mono";letter-spacing:.12em;text-transform:uppercase;color:var(--cyan);margin:0;padding:.7rem .75rem;border-bottom:1px solid var(--line)}
-.rail .body{padding:.7rem;overflow:auto}
-.palette{display:grid;grid-template-columns:1fr 1fr;gap:.4rem}
-.chip{padding:.5rem .35rem;border:1px solid var(--line);border-radius:9px;background:rgba(255,255,255,.05);cursor:grab;font-size:.68rem;font-weight:600;text-align:center;line-height:1.3}
-body.theme-light .chip{background:rgba(10,14,40,.04)}
-.chip:hover{border-color:var(--cyan)}
-.chip .ic{display:block;font-size:1.1rem;margin-bottom:.15rem}
-.fieldlist{display:grid;gap:.25rem;margin-top:.4rem}
-.field{display:flex;gap:.4rem;align-items:center;font-size:.7rem;padding:.3rem .4rem;border-radius:7px;border:1px solid transparent}
-.field:hover{border-color:var(--line);background:rgba(255,255,255,.04)}
-.field b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-.ftype{font:700 .56rem "Spline Sans Mono";padding:.1rem .3rem;border-radius:4px;background:rgba(139,92,246,.2);color:#cdbdfd}
-.ftype.numeric{background:rgba(34,211,238,.18);color:#9beefc}
-.ftype.datetime{background:rgba(255,138,31,.18);color:#ffc793}
-/* ── grid ───────────────────────────────────────────────────────── */
-.canvas{min-height:60vh}
-.filterbar{display:flex;gap:.45rem;align-items:center;flex-wrap:wrap;margin-bottom:.7rem;padding:.5rem .6rem;border:1px dashed var(--line);border-radius:11px}
-.pill{display:inline-flex;align-items:center;gap:.35rem;font-size:.7rem;background:rgba(34,211,238,.13);border:1px solid rgba(34,211,238,.4);color:var(--text);border-radius:999px;padding:.22rem .55rem}
-.pill button{background:none;border:0;color:var(--muted);cursor:pointer;font-size:.8rem;line-height:1;padding:0}
-.grid{display:grid;grid-template-columns:repeat(12,1fr);grid-auto-rows:var(--rowh);gap:var(--gap);position:relative}
-.grid.dropping{outline:2px dashed var(--cyan);outline-offset:6px;border-radius:14px}
-.tile{position:relative;background:color-mix(in srgb,var(--panel) 94%,transparent);border:1px solid var(--line);border-radius:13px;overflow:hidden;display:flex;flex-direction:column;min-width:0}
-body.theme-light .tile{box-shadow:0 1px 3px rgba(10,14,40,.08)}
-.tile.selected{border-color:var(--cyan);box-shadow:0 0 0 1px var(--cyan)}
-.tile.alarm{border-color:var(--red);box-shadow:0 0 0 1px var(--red),0 0 26px rgba(232,72,43,.25)}
-.tile.warn{border-color:var(--orange);box-shadow:0 0 0 1px var(--orange)}
-.tile.ghost{opacity:.4}
-.thead{display:flex;align-items:center;gap:.4rem;padding:.45rem .6rem;border-bottom:1px solid var(--line);cursor:grab;flex:0 0 auto}
-.thead b{flex:1;font-size:.74rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.thead .sub{font:500 .62rem "Spline Sans Mono";color:var(--muted)}
-.thead button{background:none;border:0;color:var(--muted);cursor:pointer;font-size:.75rem;padding:0 .15rem}
-.thead button:hover{color:var(--pink)}
-.tbody{flex:1;min-height:0;padding:.6rem;overflow:hidden;position:relative}
+.shell{display:grid;grid-template-columns:236px minmax(0,1fr) 312px;gap:1rem;padding:1rem;align-items:start}
+body.viewer .shell,body.public .shell{grid-template-columns:minmax(0,1fr)}
+body.feed-open .shell{margin-right:360px}
+.rail{position:sticky;top:72px;background:var(--chrome);border:1px solid var(--line);border-radius:16px;
+      max-height:calc(100vh - 88px);display:flex;flex-direction:column;overflow:hidden}
+.rail .rh3{font-size:.78rem;font-weight:700;margin:0;padding:.8rem .9rem .3rem}
+.rail .body{padding:0 .8rem .9rem;overflow:auto}
+.pgroup{font-size:.7rem;color:var(--muted);margin:.8rem 0 .35rem;font-weight:600}
+.palette{display:grid;grid-template-columns:1fr 1fr;gap:.35rem}
+.chip{display:flex;align-items:center;gap:.45rem;padding:.48rem .5rem;border:1px solid var(--line);border-radius:10px;
+      background:var(--field);cursor:grab;font-size:.74rem;font-weight:600;user-select:none;text-align:left}
+.chip:hover{border-color:var(--accent);background:var(--hover)}
+.chip svg{color:var(--accent)}
+.fieldlist{display:grid;gap:.15rem;margin-top:.45rem}
+.field{display:flex;gap:.45rem;align-items:center;font-size:.74rem;padding:.35rem .45rem;border-radius:8px;cursor:pointer;border:0;background:none;text-align:left;width:100%}
+.field:hover{background:var(--hover)}
+.field b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.field .add{opacity:0;color:var(--accent);font-size:.7rem;font-weight:700}
+.field:hover .add{opacity:1}
+.ftype{width:18px;height:18px;border-radius:5px;display:grid;place-items:center;font-size:.6rem;font-weight:800;
+       background:color-mix(in srgb,var(--accent-2) 18%,transparent);color:var(--accent-2);flex:0 0 auto}
+.ftype.numeric{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
+.ftype.datetime{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+.tabs{display:flex;gap:.2rem;padding:.55rem .6rem 0;border-bottom:1px solid var(--line)}
+.tabs button{border:0;background:none;padding:.5rem .7rem;font-size:.78rem;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs button[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent)}
+.cond{border:1px solid var(--line);border-radius:10px;padding:.5rem;margin-top:.45rem;display:grid;gap:.35rem}
+.swatches{display:grid;grid-template-columns:repeat(2,1fr);gap:.45rem}
+.sw{border:1px solid var(--line);border-radius:11px;padding:0;overflow:hidden;cursor:pointer;background:none;text-align:left}
+.sw[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 40%,transparent)}
+.sw .pv{height:46px;padding:7px;display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.sw .pv i{border-radius:4px;display:block}
+.sw .pv i:first-child{grid-row:span 2;display:flex;align-items:flex-end;gap:2px;padding:4px}
+.sw .pv b{display:block;width:5px;border-radius:2px}
+.sw span{display:block;font-size:.7rem;font-weight:600;padding:.35rem .5rem;border-top:1px solid var(--line)}
+.box{border:1px solid var(--line);border-radius:12px;padding:.2rem .8rem;margin-top:.9rem}
+
+/* ── canvas / grid ──────────────────────────────────────────────── */
+.canvas{min-width:0}
+.filterbar{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin-bottom:.8rem}
+.filterbar:empty{display:none}
+.pill{display:inline-flex;align-items:center;gap:.4rem;font-size:.74rem;background:color-mix(in srgb,var(--accent) 12%,transparent);
+      border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;padding:.25rem .35rem .25rem .65rem;cursor:pointer}
+.pill button{background:none;border:0;color:var(--muted);cursor:pointer;padding:0 .2rem;line-height:1}
+.pill.add{background:none;border-style:dashed;color:var(--muted);padding-right:.65rem}
+.grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));grid-auto-rows:var(--rowh);gap:var(--gap);position:relative;min-height:40vh}
+body.editing .grid.active{background:repeating-linear-gradient(90deg,var(--guide) 0 calc((100% - 11 * var(--gap)) / 12),transparent calc((100% - 11 * var(--gap)) / 12) calc((100% - 11 * var(--gap)) / 12 + var(--gap)));border-radius:12px}
+.grid.dropping{outline:2px dashed var(--accent);outline-offset:6px;border-radius:14px}
+.ph{border:2px dashed var(--accent);border-radius:var(--radius);background:color-mix(in srgb,var(--accent) 8%,transparent);pointer-events:none;z-index:1}
+
+/* The outer <section> is not clipped, so resize handles can hang off its
+   edges; .tframe does the clipping and carries the card style. */
+.tile{position:relative;min-width:0;min-height:0;z-index:2;--card-accent:var(--accent)}
+.tile:focus{outline:none}
+.tframe{position:absolute;inset:0;display:flex;flex-direction:column;border-radius:var(--radius);overflow:hidden;
+        border:1px solid var(--line);background:var(--panel)}
+body.card-glass .tframe{background:color-mix(in srgb,var(--panel) 78%,transparent);backdrop-filter:blur(14px)}
+body.card-outline .tframe{background:transparent;border-color:color-mix(in srgb,var(--text) 18%,transparent)}
+body.card-raised .tframe{border-color:transparent;box-shadow:0 1px 0 color-mix(in srgb,var(--text) 6%,transparent) inset,0 12px 32px -14px rgba(0,0,0,.55)}
+body.is-light.card-raised .tframe{box-shadow:0 1px 2px rgba(10,20,50,.06),0 10px 28px -12px rgba(10,20,50,.18)}
+.tile.selected .tframe{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.tile.alarm .tframe{border-color:var(--bad);box-shadow:0 0 0 1px var(--bad),0 0 28px color-mix(in srgb,var(--bad) 30%,transparent)}
+.tile.warn .tframe{border-color:var(--warn);box-shadow:0 0 0 1px var(--warn)}
+.tile.moving{z-index:30;cursor:grabbing}
+.tile.moving .tframe{box-shadow:0 24px 50px -16px rgba(0,0,0,.6);opacity:.92}
+.tile.sizing .tframe{border-color:var(--accent)}
+/* the "new data just landed" moment: one sweep along the card's top edge */
+.tframe::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,transparent,var(--card-accent),transparent);transform:scaleX(0);opacity:0;z-index:3}
+.tile.fresh .tframe::before{animation:sweep 1.4s ease-out}
+@keyframes sweep{0%{transform:scaleX(0);opacity:1}60%{transform:scaleX(1);opacity:1}100%{transform:scaleX(1);opacity:0}}
+.thead{display:flex;align-items:center;gap:.5rem;padding:.55rem .55rem .35rem var(--pad);flex:0 0 auto;min-height:38px}
+body.editing .thead{cursor:grab}
+.tic{color:var(--card-accent);display:grid;place-items:center;opacity:.9}
+.tic svg{width:15px;height:15px}
+.ttl{flex:1;min-width:0;line-height:1.2}
+.ttl b{display:block;font-size:.8rem;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ttl span{display:block;font-size:.7rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+.tact{display:flex;gap:1px;opacity:0;transition:opacity .15s}
+.tile:hover .tact,.tile.selected .tact,.tile:focus-within .tact{opacity:1}
+@media (hover:none){.tact{opacity:1}}
+.tact button{border:0;background:none;border-radius:7px;padding:.28rem;cursor:pointer;color:var(--muted);display:grid;place-items:center}
+.tact button:hover{background:var(--hover);color:var(--text)}
+.tbody{flex:1;min-height:0;position:relative;padding:.1rem var(--pad) var(--pad);container-type:size}
 .tbody.scroll{overflow:auto}
-.resize{position:absolute;right:2px;bottom:2px;width:16px;height:16px;cursor:nwse-resize;opacity:.5;background:linear-gradient(135deg,transparent 45%,var(--muted) 45%,var(--muted) 55%,transparent 55%,transparent 70%,var(--muted) 70%,var(--muted) 80%,transparent 80%)}
-.terr{font-size:.72rem;color:var(--muted);display:flex;height:100%;align-items:center;justify-content:center;text-align:center;padding:.5rem}
-/* number tiles */
-.big{display:flex;flex-direction:column;justify-content:center;height:100%;gap:.15rem}
-.big .v{font:800 clamp(1.7rem,4.4vw,3rem) Archivo;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
-.big .lbl{font-size:.7rem;color:var(--muted)}
-.big .chg{font:700 .78rem "Spline Sans Mono"}
-.up{color:var(--green)}.down{color:var(--red)}
-.bar{height:9px;border-radius:999px;background:rgba(255,255,255,.1);overflow:hidden;margin-top:.5rem}
-body.theme-light .bar{background:rgba(10,14,40,.08)}
-.bar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--cyan),var(--violet))}
-.bar i.hot{background:linear-gradient(90deg,var(--orange),var(--red))}
-/* leaderboard */
-.lb{display:grid;gap:.3rem;height:100%;overflow:auto;align-content:start}
-.lbrow{display:grid;grid-template-columns:1.4rem 1fr auto;gap:.45rem;align-items:center;font-size:.75rem}
-.lbrow .rank{font:700 .65rem "Spline Sans Mono";color:var(--muted)}
+.cv{position:absolute;inset:.15rem var(--pad) var(--pad)}
+.terr{height:100%;display:flex;flex-direction:column;gap:.35rem;align-items:center;justify-content:center;text-align:center;color:var(--muted);font-size:.78rem;padding:.5rem}
+.skel{position:absolute;inset:.2rem var(--pad) var(--pad);border-radius:10px;
+      background:linear-gradient(100deg,transparent 30%,var(--hover) 50%,transparent 70%) 0 0/300% 100%,color-mix(in srgb,var(--text) 3%,transparent);animation:shimmer 1.4s linear infinite}
+@keyframes shimmer{to{background-position:-150% 0,0 0}}
+
+/* resize handles: 4 edges + 4 corners */
+.rz{position:absolute;z-index:6;touch-action:none}
+.rz.n,.rz.s{left:18px;right:18px;height:10px;cursor:ns-resize}
+.rz.e,.rz.w{top:18px;bottom:18px;width:10px;cursor:ew-resize}
+.rz.n{top:-5px}.rz.s{bottom:-5px}.rz.e{right:-5px}.rz.w{left:-5px}
+.rz.nw,.rz.ne,.rz.sw,.rz.se{width:18px;height:18px}
+.rz.nw{top:-6px;left:-6px;cursor:nwse-resize}.rz.se{bottom:-6px;right:-6px;cursor:nwse-resize}
+.rz.ne{top:-6px;right:-6px;cursor:nesw-resize}.rz.sw{bottom:-6px;left:-6px;cursor:nesw-resize}
+.rz.nw::after,.rz.ne::after,.rz.sw::after,.rz.se::after{content:"";position:absolute;width:9px;height:9px;border:2px solid var(--accent);opacity:0;transition:opacity .15s}
+.rz.nw::after{top:5px;left:5px;border-right:0;border-bottom:0;border-top-left-radius:4px}
+.rz.ne::after{top:5px;right:5px;border-left:0;border-bottom:0;border-top-right-radius:4px}
+.rz.sw::after{bottom:5px;left:5px;border-right:0;border-top:0;border-bottom-left-radius:4px}
+.rz.se::after{bottom:5px;right:5px;border-left:0;border-top:0;border-bottom-right-radius:4px}
+.rz.n::after,.rz.s::after,.rz.e::after,.rz.w::after{content:"";position:absolute;background:var(--accent);border-radius:2px;opacity:0;transition:opacity .15s}
+.rz.n::after,.rz.s::after{left:50%;width:26px;height:3px;margin-left:-13px;top:3.5px}
+.rz.e::after,.rz.w::after{top:50%;height:26px;width:3px;margin-top:-13px;left:3.5px}
+.tile:hover .rz::after,.tile.selected .rz::after{opacity:.75}
+.rz:hover::after{opacity:1!important}
+.tsize{position:absolute;right:10px;bottom:10px;z-index:8;font-size:.7rem;font-weight:700;padding:.2rem .45rem;border-radius:6px;background:var(--accent);color:var(--on-accent);display:none}
+.tile.sizing .tsize,.tile.moving .tsize{display:block}
+
+/* number cards scale with the card — a resize changes the type size too */
+.big{display:flex;flex-direction:column;justify-content:center;height:100%;gap:.25rem;min-width:0}
+.big .v{font:700 clamp(1.5rem,min(36cqh,17cqw),6rem)/1 var(--font-display);letter-spacing:-.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.big .lbl{font-size:.74rem;color:var(--muted)}
+.chg{display:inline-flex;align-items:center;gap:.25rem;font-size:.74rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;width:max-content;background:color-mix(in srgb,var(--muted) 14%,transparent)}
+.chg.up{color:var(--ok);background:color-mix(in srgb,var(--ok) 14%,transparent)}
+.chg.down{color:var(--bad);background:color-mix(in srgb,var(--bad) 14%,transparent)}
+.bar{height:8px;border-radius:999px;background:color-mix(in srgb,var(--text) 9%,transparent);overflow:hidden;margin-top:.35rem}
+.bar i{display:block;height:100%;width:0;border-radius:999px;background:var(--card-accent);transition:width .6s cubic-bezier(.2,.8,.2,1)}
+.gauge{height:100%;display:grid;place-items:center;min-height:0}
+.gauge svg{width:100%;height:100%;overflow:visible}
+.gtrack{stroke:color-mix(in srgb,var(--text) 10%,transparent)}
+.gfill{stroke:var(--card-accent);transition:stroke-dasharray .7s cubic-bezier(.2,.8,.2,1)}
+.gauge .gv{font:700 26px var(--font-display);fill:var(--text)}
+.gauge .gs{font-size:10px;fill:var(--muted)}
+.lb{display:grid;gap:.45rem;align-content:start}
+.lbrow{display:grid;grid-template-columns:1.5rem 1fr auto;gap:.1rem .5rem;align-items:center;font-size:.78rem}
+.lbrow .rk{font-size:.7rem;font-weight:700;color:var(--muted);text-align:center}
+.lbrow:nth-child(-n+3) .rk{color:var(--card-accent)}
 .lbrow .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.lbrow .val{font:700 .78rem "Spline Sans Mono";font-variant-numeric:tabular-nums}
-.lbbar{grid-column:2/4;height:5px;border-radius:999px;background:rgba(255,255,255,.09);overflow:hidden;margin-top:-.15rem}
-.lbbar i{display:block;height:100%;background:linear-gradient(90deg,var(--pink),var(--violet))}
-/* table */
-table{border-collapse:collapse;width:100%;font-size:.7rem}
-th,td{padding:.35rem .45rem;border-bottom:1px solid rgba(255,255,255,.07);white-space:nowrap;max-width:190px;overflow:hidden;text-overflow:ellipsis}
-body.theme-light th,body.theme-light td{border-bottom-color:rgba(10,14,40,.08)}
-th{position:sticky;top:0;background:var(--panel);color:var(--cyan);text-align:left;z-index:1}
-/* inspector */
-.insp label{display:block;font-size:.66rem;color:var(--muted);margin:.6rem 0 .2rem}
-.insp input,.insp select,.insp textarea{width:100%}
-.insp .two{display:grid;grid-template-columns:1fr 1fr;gap:.4rem}
-.hint{font-size:.66rem;color:var(--muted);line-height:1.45;margin:.5rem 0 0}
-.cond{border:1px solid var(--line);border-radius:9px;padding:.4rem;margin-top:.4rem;display:grid;gap:.3rem}
-.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);display:none;background:#171a3e;color:#fff;border:1px solid var(--line);border-radius:10px;padding:.65rem 1rem;z-index:200;font-size:.8rem}
-/* present mode */
-body.presenting .top,body.presenting .rail,body.presenting .filterbar{display:none}
-body.presenting .shell{grid-template-columns:1fr;padding:.6rem}
-body.presenting{--rowh:min(11vh,120px)}
-body.presenting .thead button,body.presenting .resize{display:none}
+.lbrow .val{font-weight:700}
+.lbrow .track{grid-column:2/4;height:4px;border-radius:999px;background:color-mix(in srgb,var(--text) 8%,transparent);overflow:hidden}
+.lbrow .track i{display:block;height:100%;background:var(--card-accent);border-radius:999px}
+table.dt{border-collapse:separate;border-spacing:0;width:100%;font-size:.74rem}
+.dt th,.dt td{padding:.42rem .55rem;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid color-mix(in srgb,var(--text) 7%,transparent);text-align:left}
+.dt th{position:sticky;top:0;background:var(--panel);color:var(--muted);font-weight:600;z-index:1}
+.dt td.n{text-align:right}
+.dt tbody tr:hover td{background:var(--hover)}
+.txt{height:100%;overflow:auto;font-size:.88rem;line-height:1.55}
+.txt.heading{display:flex;align-items:center;font:700 clamp(1.1rem,min(30cqh,7cqw),2.6rem)/1.1 var(--font-display);letter-spacing:-.02em}
+.txt.banner{display:flex;align-items:center;padding:.4rem .9rem;border-radius:10px;font-weight:600;
+            background:linear-gradient(120deg,color-mix(in srgb,var(--card-accent) 26%,transparent),color-mix(in srgb,var(--accent-2) 14%,transparent))}
+/* text cards have no header clutter: the text is the card */
+.tile.kind-text .thead{position:absolute;right:0;top:0;z-index:4;padding:.35rem;min-height:0}
+.tile.kind-text .thead .tic,.tile.kind-text .thead .ttl{display:none}
+.tile.kind-text .tbody{padding:var(--pad)}
+.mapbox{position:absolute;inset:0}
+.tbody.map{padding:0}
+.maplegend{position:absolute;left:10px;bottom:10px;z-index:500;display:flex;flex-wrap:wrap;gap:.3rem .6rem;max-width:calc(100% - 70px);
+           font-size:.68rem;background:color-mix(in srgb,var(--panel) 88%,transparent);backdrop-filter:blur(6px);border:1px solid var(--line);border-radius:8px;padding:.3rem .5rem}
+.maplegend:empty{display:none}
+.maplegend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:.3rem;vertical-align:middle}
+.mapfit{position:absolute;right:10px;bottom:10px;z-index:500;background:var(--panel)!important;border-color:var(--line)!important}
+.leaflet-container{background:var(--bg);font-family:var(--font)}
+.leaflet-bar a{background:var(--panel)!important;color:var(--text)!important;border-color:var(--line)!important}
+
+/* live feed — used by both the card and the drawer */
+.feed{list-style:none;margin:0;padding:0;display:grid;gap:.35rem;align-content:start}
+.fi{display:grid;grid-template-columns:auto 1fr auto;gap:.15rem .6rem;align-items:start;padding:.5rem .55rem;border-radius:10px;
+    background:color-mix(in srgb,var(--text) 3%,transparent);border:1px solid transparent}
+.fi .fd{width:8px;height:8px;border-radius:50%;background:var(--card-accent,var(--accent));margin-top:.35rem}
+.fi .fh{font-size:.8rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fi .ft{font-size:.68rem;color:var(--muted);white-space:nowrap}
+.fi .fx{grid-column:2/4;display:flex;flex-wrap:wrap;gap:.2rem .7rem;font-size:.7rem;color:var(--muted)}
+.fi .fx b{color:var(--text);font-weight:500}
+.fi .tag{font-size:.62rem;font-weight:700;padding:.05rem .4rem;border-radius:999px;background:var(--hover);color:var(--muted)}
+.fi .tag.flagged{color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent)}
+.fi .tag.excluded{color:var(--bad);background:color-mix(in srgb,var(--bad) 14%,transparent)}
+.fi.new{border-color:color-mix(in srgb,var(--card-accent,var(--accent)) 55%,transparent);animation:arrive .9s cubic-bezier(.2,.8,.2,1)}
+@keyframes arrive{from{transform:translateY(-8px);opacity:0;background:color-mix(in srgb,var(--card-accent,var(--accent)) 20%,transparent)}}
+.drawer{position:fixed;top:57px;right:0;bottom:0;width:360px;z-index:45;background:var(--chrome);border-left:1px solid var(--line);
+        display:flex;flex-direction:column;transform:translateX(100%);transition:transform .25s cubic-bezier(.2,.8,.2,1)}
+body.feed-open .drawer{transform:none}
+.drawer header{display:flex;align-items:center;gap:.5rem;padding:.8rem .9rem;border-bottom:1px solid var(--line)}
+.drawer header h2{font-size:.9rem;margin:0;flex:1}
+.drawer .dctl{display:flex;gap:.5rem;align-items:center;padding:.6rem .9rem;border-bottom:1px solid var(--line)}
+.drawer .dlist{flex:1;overflow:auto;padding:.7rem .9rem}
+.drawer .dfoot{padding:.55rem .9rem;border-top:1px solid var(--line);font-size:.7rem;color:var(--muted)}
+
+/* ── overlays ───────────────────────────────────────────────────── */
+.menu{position:fixed;z-index:300;min-width:200px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:.3rem;box-shadow:0 20px 50px -12px rgba(0,0,0,.55)}
+.menu button,.menu a{display:flex;align-items:center;gap:.55rem;width:100%;border:0;background:none;padding:.5rem .6rem;border-radius:8px;font-size:.8rem;cursor:pointer;text-align:left;color:var(--text);text-decoration:none}
+.menu button:hover,.menu a:hover{background:var(--hover)}
+.menu .danger{color:var(--bad)}
+.menu hr{border:0;border-top:1px solid var(--line);margin:.3rem 0}
+.menu .cur{color:var(--accent)}
+.menu small{margin-left:auto;color:var(--muted);font-size:.68rem}
+.scrim{position:fixed;inset:0;z-index:200;background:color-mix(in srgb,var(--bg) 60%,transparent);backdrop-filter:blur(6px);display:grid;place-items:center;padding:1.2rem}
+.modal{width:min(580px,100%);max-height:calc(100vh - 2.4rem);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:0 30px 80px -20px rgba(0,0,0,.6)}
+.modal header{display:flex;align-items:center;gap:.6rem;padding:1.1rem 1.2rem .4rem}
+.modal header h2{font:600 1.2rem var(--font-display);margin:0;flex:1}
+.modal .mb{padding:.2rem 1.2rem 1.2rem}
+.modal footer{display:flex;flex-wrap:wrap;gap:.5rem;padding:1rem 1.2rem;border-top:1px solid var(--line);justify-content:flex-end}
+.modal footer .left{margin-right:auto;display:flex;gap:.5rem;flex-wrap:wrap}
+.state{display:inline-flex;align-items:center;gap:.4rem;font-size:.72rem;font-weight:700;padding:.2rem .55rem;border-radius:999px;background:var(--field);border:1px solid var(--line)}
+.state i{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.state.live i{background:var(--ok)}.state.outdated i{background:var(--warn)}.state.off i,.state.expired i{background:var(--bad)}
+.linkbox{display:flex;gap:.4rem;margin-top:.3rem}
+.linkbox input{font-family:ui-monospace,Menlo,monospace;font-size:.74rem}
+.sharegrid{display:grid;grid-template-columns:1fr 132px;gap:1rem;align-items:start}
+.qr{background:#fff;border-radius:12px;padding:8px;aspect-ratio:1;display:grid;place-items:center}
+.qr img{width:100%;height:100%}
+.stats{display:flex;gap:1.2rem;margin-top:.8rem;font-size:.74rem;color:var(--muted);flex-wrap:wrap}
+.stats b{display:block;font-size:1rem;color:var(--text)}
+.focus-card{width:min(1200px,100%);height:min(780px,calc(100vh - 2.4rem));display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.focus-card header{display:flex;align-items:center;gap:.6rem;padding:.9rem 1rem;border-bottom:1px solid var(--line)}
+.focus-card header b{flex:1;font:600 1.05rem var(--font-display)}
+.focus-card .tbody{--pad:18px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translate(-50%,20px);opacity:0;pointer-events:none;transition:all .25s;
+       background:var(--text);color:var(--bg);border-radius:10px;padding:.65rem 1rem;z-index:400;font-size:.82rem;font-weight:600}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.empty{grid-column:1/-1;grid-row:1/span 4;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border:1px dashed var(--line);border-radius:18px;padding:2rem}
+.empty h2{font:600 1.35rem var(--font-display);margin:0 0 .4rem}
+.empty p{color:var(--muted);margin:0 0 1.2rem;max-width:46ch;line-height:1.55}
+.starters{display:flex;gap:.6rem;flex-wrap:wrap;justify-content:center}
+.starter{width:190px;text-align:left;border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:.8rem;cursor:pointer}
+.starter:hover{border-color:var(--accent)}
+.starter b{display:block;font-size:.84rem;margin:.5rem 0 .2rem}
+.starter span{font-size:.72rem;color:var(--muted);line-height:1.4}
+.starter .mini{display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:9px;gap:3px}
+.starter .mini i{background:color-mix(in srgb,var(--accent) 30%,transparent);border-radius:2px}
+
+/* ── public page ────────────────────────────────────────────────── */
+.pubhead{display:flex;align-items:flex-end;gap:1rem;padding:1.3rem 1.3rem .4rem;flex-wrap:wrap}
+.pubhead .who{display:flex;align-items:center;gap:.5rem;font-size:.78rem;font-weight:700;color:var(--muted);margin-bottom:.45rem}
+.pubhead h1{font:700 clamp(1.4rem,3vw,2.2rem)/1.1 var(--font-display);margin:0;letter-spacing:-.02em}
+.pubhead p{margin:.35rem 0 0;color:var(--muted);max-width:70ch;line-height:1.5}
+.pubhead .meta{margin-left:auto;display:flex;align-items:center;gap:.5rem}
+.clock{font:600 .95rem var(--font-display);padding:.25rem .6rem;border-radius:9px;border:1px solid var(--line);background:var(--field)}
+.pubfoot{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;padding:.4rem 1.3rem 1.2rem;color:var(--muted);font-size:.72rem}
+body.public .shell{padding:1rem 1.3rem}
+body.embed .shell{padding:.6rem}
+.expired{position:fixed;inset:0;z-index:500;display:grid;place-items:center;background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:blur(8px);text-align:center;padding:2rem}
+.expired h2{font:600 1.4rem var(--font-display);margin:0 0 .5rem}
+
+/* ── present / tv ───────────────────────────────────────────────── */
+body.presenting .top,body.presenting .rail,body.presenting .filterbar,body.presenting .pubfoot,body.presenting .drawer{display:none}
+body.presenting .shell{grid-template-columns:1fr;padding:.8rem;margin-right:0}
+body.presenting .tact,body.presenting .rz{display:none}
 body.presenting .thead{cursor:default}
-.exitpresent{display:none;position:fixed;top:10px;right:12px;z-index:60}
-body.presenting .exitpresent{display:block}
-@media(max-width:1150px){.shell{grid-template-columns:1fr}.rail{position:static;max-height:none}.palette{grid-template-columns:repeat(4,1fr)}}
-@media(max-width:760px){.grid{grid-template-columns:1fr;grid-auto-rows:minmax(150px,auto)}.tile{grid-area:auto !important}.palette{grid-template-columns:1fr 1fr}}
+.exitpresent{display:none;position:fixed;top:12px;right:14px;z-index:60;opacity:.3;transition:opacity .2s}
+.exitpresent:hover{opacity:1}
+body.presenting .exitpresent{display:inline-flex}
+
+@media (max-width:1180px){
+  .shell{grid-template-columns:1fr}
+  body.feed-open .shell{margin-right:0}
+  .rail{position:static;max-height:none}
+  .palette{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}
+  .crumb,.sep{display:none}
+  .drawer{width:min(360px,100%)}
+}
+@media (max-width:760px){
+  .grid{grid-template-columns:1fr;grid-auto-rows:auto}
+  .tile{grid-area:auto!important;height:calc(var(--h,3) * 80px + 40px);min-height:120px}
+  .rz,.tsize{display:none!important}
+  body.editing .thead{cursor:default}
+  .savestate,.pulse .ptext,.hide-sm{display:none}
+  .sharegrid{grid-template-columns:1fr}
+  .pubhead .meta{margin-left:0}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
 </style>
 </head>
-<body class="theme-{{ board.theme }}{% if public %} presenting{% endif %}">
+<body class="{% if public %}public{% if embed %} embed{% endif %}{% elif can_edit %}editing{% else %}viewer{% endif %}">
 
-<div class="top">
-  <span class="brand">Kura</span>
-  {% if can_edit %}<input class="boardname" id="boardName" value="{{ board.name }}">{% else %}<span class="boardname">{{ board.name }}</span>{% endif %}
-  <span class="pulse" id="pulse"><span class="dot"></span><span id="pulseText">connecting…</span></span>
+{% if not public %}
+<header class="top">
+  <a class="brand" href="/kura/" title="All surveys"><span class="mk"></span>Kura</a>
+  <span class="sep">/</span>
+  <a class="crumb" href="/kura/{{ survey.code }}/studio/" title="{{ survey.title }}">{{ survey.title }}</a>
+  <span class="sep">/</span>
+  <div class="boardpick">
+    {% if can_edit %}<input class="boardname" id="boardName" value="{{ board.name }}" aria-label="Dashboard name" maxlength="140">
+    {% else %}<span class="boardname">{{ board.name }}</span>{% endif %}
+    <button class="btn icon" id="btnBoards" title="Switch dashboard" aria-haspopup="menu">
+      <svg class="i" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+  </div>
+  <span class="spacer"></span>
+  <span class="pulse" id="pulse" title="Data status"><span class="dot"></span><span class="ptext" id="pulseText">Connecting…</span></span>
   {% if can_edit %}
-  <select id="sourceSel" title="Where this board reads its data"></select>
-  <button class="btn ghost small" id="btnFilters">Filters</button>
-  <button class="btn ghost small" id="btnShare">Share</button>
-  <button class="btn ghost small" id="btnPresent">Present</button>
-  <span class="pulse" id="saveState" style="border:0"><span id="saveText">saved</span></span>
-  <button class="btn small" id="btnSave">Save</button>
-  <a class="btn ghost small" href="/kura/{{ survey.code }}/studio/">Studio</a>
+  <button class="btn icon" id="btnUndo" title="Undo (Ctrl+Z)" disabled><svg class="i" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-4"/></svg></button>
+  <button class="btn icon" id="btnRedo" title="Redo (Ctrl+Shift+Z)" disabled><svg class="i" viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h4"/></svg></button>
+  <span class="savestate" id="saveState">Loading…</span>
   {% endif %}
-</div>
+  <button class="btn" id="btnFeed" title="Watch responses arrive (L)" aria-pressed="false">
+    <svg class="i" viewBox="0 0 24 24"><path d="M5 11a8 8 0 0 1 8 8M5 5a14 14 0 0 1 14 14"/><circle cx="6" cy="18" r="1.4"/></svg><span class="hide-sm">Live feed</span><span class="feedcount" id="feedCount" hidden>0</span></button>
+  <button class="btn" id="btnPresent" title="Full screen, fitted to one screen (P)"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><span class="hide-sm">Present</span></button>
+  {% if can_edit %}
+  <button class="btn primary pubbtn" id="btnPublish" data-state="draft"><span class="pubdot"></span><span id="pubLabel">Publish</span></button>
+  {% endif %}
+</header>
+{% else %}
+<header class="pubhead" id="pubHead">
+  <div>
+    <div class="who"><span class="brand"><span class="mk"></span></span><span id="pubWho">Kura</span></div>
+    <h1 id="pubTitle">{{ board_name }}</h1>
+    <p id="pubDesc" hidden></p>
+  </div>
+  <div class="meta">
+    <span class="pulse" id="pulse"><span class="dot"></span><span class="ptext" id="pulseText">Connecting…</span></span>
+    <span class="clock" id="clock" hidden></span>
+    <button class="btn icon" id="btnPresent" title="Full screen (F)"><svg class="i" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+  </div>
+</header>
+{% endif %}
 
-<button class="btn ghost exitpresent" id="btnExit">Exit</button>
+<button class="btn exitpresent" id="btnExit">Exit full screen</button>
 
 <div class="shell">
   {% if can_edit %}
-  <aside class="rail">
-    <h3>Cards</h3>
+  <aside class="rail" aria-label="Add cards">
+    <h2 class="rh3">Add a card</h2>
     <div class="body">
-      <div class="palette" id="palette"></div>
-      <h3 style="border:0;padding:.9rem 0 .3rem">Fields</h3>
-      <input id="fieldSearch" placeholder="Search fields…" style="width:100%">
-      <div class="fieldlist" id="fieldList"><p class="hint">Loading fields…</p></div>
+      <div id="palette"></div>
+      <div class="pgroup" style="margin-top:1.1rem">Your questions</div>
+      <input id="fieldSearch" placeholder="Search questions…" aria-label="Search questions">
+      <div class="fieldlist" id="fieldList"><p class="hint">Loading questions…</p></div>
+      <p class="hint">Click a question — or drag it onto the board — to add the chart that suits it.</p>
     </div>
   </aside>
   {% endif %}
 
   <main class="canvas">
     <div class="filterbar" id="filterBar"></div>
-    <div class="grid" id="grid"></div>
+    <div class="grid" id="grid" aria-label="Dashboard"></div>
   </main>
 
   {% if can_edit %}
-  <aside class="rail insp">
-    <h3>Card settings</h3>
-    <div class="body" id="inspector"><p class="hint">Select a card to edit it, or drag one in from the left.</p></div>
+  <aside class="rail insp" aria-label="Settings">
+    <div class="tabs" role="tablist">
+      <button role="tab" data-tab="card" aria-selected="true">Card</button>
+      <button role="tab" data-tab="board" aria-selected="false">Board</button>
+      <button role="tab" data-tab="theme" aria-selected="false">Theme</button>
+    </div>
+    <div class="body" id="inspector"></div>
   </aside>
   {% endif %}
 </div>
 
-<div class="toast" id="toast"></div>
+{% if not public %}
+<aside class="drawer" id="drawer" aria-label="Live feed" aria-hidden="true">
+  <header><h2>Live feed</h2>
+    <button class="btn icon" id="feedClose" title="Close (L)"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></header>
+  <div class="dctl">
+    {% if can_edit %}<select id="feedHeadline" aria-label="Answer to show for each response" title="Answer to show for each response"></select>{% endif %}
+    <button class="btn" id="feedPause" aria-pressed="false" title="Stop new responses from moving the list">Pause</button>
+  </div>
+  <div class="dlist"><ul class="feed" id="feedList"></ul></div>
+  <div class="dfoot" id="feedFoot">Waiting for responses…</div>
+</aside>
+{% endif %}
+
+{% if public %}
+<footer class="pubfoot" id="pubFoot"><span id="pubFootL"></span><span>Live dashboard by Kura</span></footer>
+{% endif %}
+
+<div class="menu" id="menu" role="menu" hidden></div>
+<div class="scrim" id="focus" hidden><div class="focus-card" role="dialog" aria-modal="true" aria-labelledby="focusTitle">
+  <header><b id="focusTitle"></b>
+    <button class="btn icon" id="focusPng" title="Download image"><svg class="i" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></button>
+    <button class="btn icon" id="focusClose" title="Close (Esc)"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></header>
+  <div class="tbody" id="focusBody"></div>
+</div></div>
+<div class="scrim" id="pubModal" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
-const BOOT = {{ bootstrap_json|safe }};
-const CAN_EDIT = {{ can_edit|yesno:"true,false" }};
+"use strict";
+/* ═══════════════════════════════════════════════════════════════════
+   Kura live dashboard
+   themes   tokens from THEME_PRESETS (server) + theme_config knobs
+   layout   12-col grid; move by the title bar, resize from any edge or
+            corner; live push-down collisions; Tidy; undo/redo
+   data     editors compute their in-memory layout via /preview/ (new
+            cards show numbers at once); viewers use /data/; the public
+            link computes from the frozen published version
+   saving   debounced autosave; publishing is a separate, explicit act
+   feed     a "Live feed" card (publishable) + a drawer for the team
+   ═══════════════════════════════════════════════════════════════════ */
+const BOOT = JSON.parse(document.getElementById("kura-boot").textContent);
+const CAN_EDIT  = {{ can_edit|yesno:"true,false" }};
 const IS_PUBLIC = {{ public|yesno:"true,false" }};
-const CODE = "{{ survey.code }}";
-const URLS = IS_PUBLIC
-  ? {data:"/kura/d/{{ board.public_token }}/data/"}
-  : {data:`/kura/${CODE}/dash/{{ board.id }}/data/`,
-     fields:`/kura/${CODE}/dash/{{ board.id }}/fields/`,
-     save:`/kura/${CODE}/dash/{{ board.id }}/save/`,
-     rotate:`/kura/${CODE}/dash/{{ board.id }}/rotate/`};
-
+const THEMES = BOOT.themes;
+const CODE = BOOT.survey.code;
 let board = BOOT.dashboard;
-let tiles = board.tiles || [];
+const BOARD_ID = board.id;
+const BASE = `/kura/${CODE}/dash/${BOARD_ID}/`;
+const URLS = IS_PUBLIC ? {data:`/kura/d/${board.public_token}/data/`} : {
+  data:BASE+"data/", preview:BASE+"preview/", fields:BASE+"fields/", save:BASE+"save/",
+  publish:BASE+"publish/", unpublish:BASE+"unpublish/", qr:BASE+"qr.svg",
+  duplicate:BASE+"duplicate/", remove:BASE+"delete/", create:`/kura/${CODE}/dash/new/`,
+  board:id=>`/kura/${CODE}/dash/${id}/`,
+};
+
+const norm = t => ({...t, spec:t.spec||{}, filters:t.filters||[], alert:t.alert||{},
+                    filter_match:t.filter_match||"all", title:t.title||"", subtitle:t.subtitle||""});
+let tiles = (board.tiles||[]).map(norm);
+board.filters = board.filters||[];
+board.theme_config = board.theme_config||{};
 let fields = [];
 let selectedId = null;
-let dirty = false;
-let lastStamp = null;
-let charts = {}, maps = {};
-let uid = -1;                       // client ids for unsaved tiles
+let tab = "card";
+let uid = -1;
+const results = {}, sigs = {}, prev = {}, charts = {}, maps = {}, seen = {};
 
-const $  = s => document.querySelector(s);
-const $$ = s => [...document.querySelectorAll(s)];
-const did = id => "t" + String(id).replace("-", "n");   // DOM-safe element id
+const $  = (s,r=document) => r.querySelector(s);
+const $$ = (s,r=document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const byId = id => tiles.find(t => String(t.id) === String(id));
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-function toast(msg){const t=$("#toast");t.textContent=msg;t.style.display="block";
-  clearTimeout(t._h);t._h=setTimeout(()=>t.style.display="none",3200);}
-
+function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");
+  clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("show"),2800);}
 function csrf(){return (document.cookie.match(/csrftoken=([^;]+)/)||[])[1]||"";}
-
 async function api(url, opts={}){
-  const r = await fetch(url, {headers:{"Content-Type":"application/json",
-    "X-CSRFToken":csrf()}, ...opts});
-  const j = await r.json().catch(()=>({ok:false,error:"Server did not return JSON."}));
-  if(!r.ok && j.error) throw new Error(j.error);
+  const r = await fetch(url, {credentials:"same-origin",
+    headers:{"Content-Type":"application/json","X-CSRFToken":csrf()}, ...opts});
+  const j = await r.json().catch(()=>({ok:false,error:`The server answered ${r.status} without data.`}));
+  if(!r.ok || j.ok===false){ const e = new Error(j.error||`Request failed (${r.status})`); e.status=r.status; throw e; }
   return j;
 }
 
-function fmt(v){
-  if(v===null||v===undefined) return "—";
-  if(typeof v!=="number") return String(v);
-  if(Number.isInteger(v)) return v.toLocaleString();
-  return (Math.abs(v)<10 ? v.toFixed(2) : v.toFixed(1));
-}
+/* ── icons ──────────────────────────────────────────────────────── */
+const IC = {
+  kpi:'<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 15h4M7 10.5h10"/>',
+  delta:'<path d="M4 17l5-5 4 3 7-8"/><path d="M15 7h5v5"/>',
+  progress:'<rect x="3" y="9.5" width="18" height="5" rx="2.5"/><path d="M5.5 12h8"/>',
+  gauge:'<path d="M4 17a8 8 0 0 1 16 0"/><path d="M12 17l4-5"/>',
+  bar:'<path d="M5 20v-8M10 20V5M15 20v-6M20 20V9"/>',
+  hbar:'<path d="M4 5h11M4 10h16M4 15h8M4 20h13"/>',
+  donut:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/><path d="M12 4v4.5"/>',
+  pie:'<circle cx="12" cy="12" r="8"/><path d="M12 4v8h8"/>',
+  line:'<path d="M3 17l5-6 4 3 5-7 4 4"/>',
+  area:'<path d="M3 19l5-7 4 3 5-7 4 4v7z"/>',
+  timeseries:'<circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/>',
+  leaderboard:'<path d="M9 6h11M9 12h8M9 18h5"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>',
+  histogram:'<path d="M3 20h18M5 20v-4h3v4M8 20v-9h3v9M11 20V6h3v14M14 20v-8h3v8M17 20v-3h3v3"/>',
+  scatter:'<path d="M4 4v16h16"/><circle cx="9" cy="14" r="1.3"/><circle cx="13" cy="10" r="1.3"/><circle cx="17" cy="7" r="1.3"/><circle cx="15.5" cy="14.5" r="1.3"/>',
+  feed:'<path d="M5 11a8 8 0 0 1 8 8M5 5a14 14 0 0 1 14 14"/><circle cx="6" cy="18" r="1.4"/>',
+  map:'<path d="M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/>',
+  table:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9.5h18M3 15h18M9 4v16"/>',
+  text:'<path d="M5 6h14M5 11h14M5 16h9"/>',
+  expand:'<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+  more:'<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',
+  copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
+  trash:'<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  img:'<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
+  csv:'<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+  tidy:'<path d="M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z"/>',
+  open:'<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+};
+const icon = k => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${IC[k]||IC.kpi}</svg>`;
 
 /* ── card catalogue ─────────────────────────────────────────────── */
 const KINDS = [
-  {k:"kpi",        ic:"#", n:"Big number",  w:3, h:2},
-  {k:"delta",      ic:"±", n:"Change",      w:3, h:2},
-  {k:"progress",   ic:"▮", n:"Progress",    w:3, h:2},
-  {k:"gauge",      ic:"◔", n:"Gauge",       w:3, h:2},
-  {k:"bar",        ic:"▊", n:"Bar",         w:6, h:3},
-  {k:"hbar",       ic:"▤", n:"Ranked bar",  w:6, h:3},
-  {k:"donut",      ic:"◍", n:"Donut",       w:4, h:3},
-  {k:"pie",        ic:"◐", n:"Pie",         w:4, h:3},
-  {k:"line",       ic:"╱", n:"Line",        w:6, h:3},
-  {k:"area",       ic:"◣", n:"Area",        w:6, h:3},
-  {k:"timeseries", ic:"⏱", n:"Over time",   w:8, h:3},
-  {k:"leaderboard",ic:"≣", n:"Leaderboard", w:4, h:4},
-  {k:"histogram",  ic:"▁", n:"Spread",      w:6, h:3},
-  {k:"scatter",    ic:"⁘", n:"Scatter",     w:6, h:3},
-  {k:"map",        ic:"◎", n:"Map",         w:6, h:4},
-  {k:"table",      ic:"▦", n:"Table",       w:8, h:4},
-  {k:"text",       ic:"¶", n:"Note",        w:4, h:2},
+  {k:"kpi",n:"Big number",w:3,h:2,g:"Numbers",mw:2,mh:1},
+  {k:"delta",n:"Change",w:3,h:2,g:"Numbers",mw:2,mh:1},
+  {k:"progress",n:"Progress",w:3,h:2,g:"Numbers",mw:2,mh:1},
+  {k:"gauge",n:"Gauge",w:3,h:3,g:"Numbers",mw:2,mh:2},
+  {k:"bar",n:"Bar",w:6,h:4,g:"Compare",mw:3,mh:2},
+  {k:"hbar",n:"Ranked bar",w:6,h:4,g:"Compare",mw:3,mh:2},
+  {k:"donut",n:"Donut",w:4,h:4,g:"Compare",mw:2,mh:2},
+  {k:"pie",n:"Pie",w:4,h:4,g:"Compare",mw:2,mh:2},
+  {k:"leaderboard",n:"Leaderboard",w:4,h:4,g:"Compare",mw:2,mh:2},
+  {k:"timeseries",n:"Over time",w:8,h:4,g:"Trends",mw:3,mh:2},
+  {k:"line",n:"Line",w:6,h:4,g:"Trends",mw:3,mh:2},
+  {k:"area",n:"Area",w:6,h:4,g:"Trends",mw:3,mh:2},
+  {k:"histogram",n:"Spread",w:6,h:4,g:"Distribution",mw:3,mh:2},
+  {k:"scatter",n:"Scatter",w:6,h:4,g:"Distribution",mw:3,mh:2},
+  {k:"feed",n:"Live feed",w:4,h:5,g:"Live & places",mw:3,mh:2},
+  {k:"map",n:"Map",w:6,h:5,g:"Live & places",mw:2,mh:2},
+  {k:"table",n:"Table",w:8,h:4,g:"Live & places",mw:3,mh:2},
+  {k:"text",n:"Text",w:12,h:1,g:"Live & places",mw:1,mh:1},
 ];
-const KIND_BY = Object.fromEntries(KINDS.map(k=>[k.k,k]));
+const KIND = Object.fromEntries(KINDS.map(k=>[k.k,k]));
+const CHARTISH = new Set(["bar","hbar","donut","pie","line","area","timeseries","histogram","scatter"]);
+const AGGS = [["count","Number of responses"],["sum","Sum"],["mean","Average"],["median","Median"],
+  ["min","Lowest"],["max","Highest"],["distinct","Different answers"],["filled","Answered"],["missing","Left blank"]];
+const OPERATORS = [["eq","is"],["ne","is not"],["contains","contains"],["in","is any of"],
+  ["gt","greater than"],["gte","at least"],["lt","less than"],["lte","at most"],
+  ["between","between"],["answered","is answered"],["not_answered","is blank"]];
+const fieldLabel = name => (fields.find(f=>f.name===name)||{}).label || name;
+const fieldsOf = kind => kind ? fields.filter(f=>f.kind===kind) : fields;
+const firstCat = () => fields.find(f=>f.kind==="categorical" && !f.meta && (f.unique||0)>1);
 
-const AGGS = [["count","Count of rows"],["sum","Sum"],["mean","Average"],
-  ["median","Median"],["min","Minimum"],["max","Maximum"],
-  ["distinct","Distinct values"],["filled","Answered"],["missing","Missing"]];
-
-function fieldsOf(kind){
-  if(kind==="numeric") return fields.filter(f=>f.kind==="numeric");
-  if(kind==="datetime") return fields.filter(f=>f.kind==="datetime");
-  return fields;
-}
-
-/* Pick sensible defaults so a dropped card shows something immediately
-   instead of an empty configuration form. */
-function defaultSpec(kind){
-  const cat = fields.find(f=>f.kind==="categorical" && !f.meta) || fields[0];
-  const num = fields.find(f=>f.kind==="numeric" && !f.meta);
-  const dt  = fields.find(f=>f.kind==="datetime");
+function defaultSpec(kind, field){
+  const cat = field && field.kind==="categorical" ? field : (firstCat() || fields.find(f=>!f.meta));
+  const nums = fields.filter(f=>f.kind==="numeric" && !f.meta);
+  const num = field && field.kind==="numeric" ? field : nums[0];
+  const dt  = field && field.kind==="datetime" ? field : fields.find(f=>f.kind==="datetime");
   switch(kind){
-    case "kpi": case "gauge": return {agg:"count"};
+    case "kpi": return {agg:"count"};
+    case "gauge": return {agg:"count", target:500};
     case "delta": return {agg:"count", window_minutes:60, date:dt?dt.name:null};
     case "progress": return {agg:"count", target:1000};
     case "leaderboard": return {group_by:cat?cat.name:null, agg:"count", limit:10};
-    case "timeseries": return {date:dt?dt.name:null, freq:"D", agg:"count",
-                               cumulative:false};
+    case "timeseries": return {date:dt?dt.name:null, freq:"D", agg:"count", cumulative:false};
     case "histogram": return {x:num?num.name:null};
-    case "scatter": return {x:num?num.name:null, y:num?num.name:null};
-    case "table": return {limit:20};
-    case "map": return {};
-    case "text": return {body:"Double-click to write a note."};
+    case "scatter": return {x:num?num.name:null, y:(nums[1]||num||{}).name||null};
+    case "table": return {limit:25};
+    case "feed": return {limit:12, headline:cat?cat.name:null, columns:[], show_status:true};
+    case "map": return {point_size:6};
+    case "text": return {body:"Section title", style:"heading"};
     default: return {x:cat?cat.name:null, agg:"count", sort:"value", limit:12};
   }
 }
 
-/* ── layout ─────────────────────────────────────────────────────── */
-function place(el, t){
-  el.style.gridArea = `${(t.y|0)+1} / ${(t.x|0)+1} / span ${t.h} / span ${t.w}`;
+/* ═══════════════════════════ THEME ═════════════════════════════════ */
+const FONTS = {
+  archivo:{b:"'Archivo',system-ui,sans-serif", d:"'Archivo',system-ui,sans-serif", n:"Archivo"},
+  jakarta:{b:"'Plus Jakarta Sans',system-ui,sans-serif", d:"'Plus Jakarta Sans',system-ui,sans-serif", n:"Plus Jakarta Sans"},
+  plex:{b:"'IBM Plex Sans',system-ui,sans-serif", d:"'IBM Plex Sans',system-ui,sans-serif", n:"IBM Plex Sans"},
+  grotesk:{b:"'Space Grotesk',system-ui,sans-serif", d:"'Space Grotesk',system-ui,sans-serif", n:"Space Grotesk"},
+  fraunces:{b:"'Archivo',system-ui,sans-serif", d:"'Fraunces',Georgia,serif", n:"Fraunces headings"},
+};
+const DENSITY = {compact:{gap:8,rowh:76,pad:10}, cozy:{gap:12,rowh:92,pad:13}, roomy:{gap:18,rowh:108,pad:17}};
+const VIVID = ["#3b82f6","#ef4444","#f59e0b","#10b981","#8b5cf6","#ec4899","#14b8a6","#f97316"];
+const CALM_D = ["#7dd3fc","#c4b5fd","#fcd34d","#86efac","#fda4af","#a5b4fc","#99f6e4","#fdba74"];
+const CALM_L = ["#0369a1","#6d28d9","#b45309","#15803d","#be123c","#4338ca","#0f766e","#c2410c"];
+
+function hexRgb(h){h=String(h||"#000").replace("#","");if(h.length===3)h=h.split("").map(c=>c+c).join("");
+  const n=parseInt(h.slice(0,6),16)||0;return [(n>>16)&255,(n>>8)&255,n&255];}
+function mix(a,b,t){const x=hexRgb(a),y=hexRgb(b);
+  return "#"+x.map((v,i)=>Math.round(v+(y[i]-v)*t).toString(16).padStart(2,"0")).join("");}
+function alpha(hex,a){const [r,g,b]=hexRgb(hex);return `rgba(${r},${g},${b},${a})`;}
+function luminance(hex){const c=hexRgb(hex).map(v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4);});
+  return .2126*c[0]+.7152*c[1]+.0722*c[2];}
+
+function theme(){
+  const p = THEMES[board.theme] || THEMES.studio;
+  const c = board.theme_config || {};
+  const accent = c.accent || p.palette[0];
+  let pal;
+  switch(c.palette){
+    case "vivid": pal = VIVID.slice(); break;
+    case "calm":  pal = (p.dark?CALM_D:CALM_L).slice(); break;
+    case "mono":  pal = [0,.22,.4,.55,.68,.78,.86,.92].map(t=>mix(accent,p.bg,t)); break;
+    default:      pal = p.palette.slice();
+  }
+  if(c.accent && c.palette!=="mono") pal = [accent, ...pal.filter(x=>x.toLowerCase()!==accent)].slice(0,8);
+  return {...p, accent, accent2: pal[1]||p.palette[1], pal, c};
 }
 
-function nextFreeRow(){
-  return tiles.reduce((m,t)=>Math.max(m,(t.y|0)+(t.h|0)),0);
+function applyTheme(){
+  const T = theme(), c = T.c, r = document.documentElement.style;
+  const d = DENSITY[c.density] || DENSITY.cozy, f = FONTS[c.font] || FONTS.archivo;
+  const set = (k,v)=>r.setProperty(k,v);
+  set("--bg",T.bg); set("--panel",T.panel); set("--text",T.text); set("--muted",T.muted);
+  set("--line",T.line); set("--glow",T.glow); set("--accent",T.accent); set("--accent-2",T.accent2);
+  set("--on-accent", luminance(T.accent) > .45 ? "#07101c" : "#ffffff");
+  set("--radius",(c.radius ?? 14)+"px"); set("--font",f.b); set("--font-display",f.d);
+  set("--gap",d.gap+"px"); set("--pad",d.pad+"px");
+  if(!document.body.classList.contains("presenting")) set("--rowh",d.rowh+"px");
+  const b = document.body.classList;
+  [...b].filter(x=>/^(card|bd)-|^is-(light|dark)$/.test(x)).forEach(x=>b.remove(x));
+  b.add("card-"+(c.card||"solid"), "bd-"+(c.backdrop||"glow"), T.dark?"is-dark":"is-light");
+  let m = document.querySelector('meta[name="theme-color"]');
+  if(!m){ m=document.createElement("meta"); m.name="theme-color"; document.head.appendChild(m); }
+  m.content = T.bg;
+  Chart.defaults.font.family = f.b; Chart.defaults.color = T.muted;
+  const who = $("#pubWho"); if(who) who.textContent = c.logo_text || BOOT.survey.title || "Kura";
 }
 
-function addTile(kind, at){
-  const meta = KIND_BY[kind];
-  const t = {id:uid--, kind, title:"", subtitle:"",
-             x:at?at.x:0, y:at?at.y:nextFreeRow(), w:meta.w, h:meta.h,
-             spec:defaultSpec(kind), filters:[], filter_match:"all", alert:{}};
-  t.x = Math.max(0, Math.min(12-t.w, t.x));
-  tiles.push(t);
-  selectedId = t.id;
-  markDirty();
-  renderGrid();
-  refresh(true);
+/* ═══════════════════════════ LAYOUT ════════════════════════════════ */
+const overlap = (a,b) => a.x < b.x+b.w && b.x < a.x+a.w && a.y < b.y+b.h && b.y < a.y+a.h;
+const bottomRow = () => tiles.reduce((m,t)=>Math.max(m,t.y+t.h),0);
+
+/* Push anything the active card now overlaps straight down, cascading.
+   The active card never moves, and cards it doesn't touch stay put. */
+function resolve(active){
+  const others = tiles.filter(t=>t!==active).sort((a,b)=>a.y-b.y||a.x-b.x);
+  const placed = active ? [active] : [];
+  for(const t of others){
+    let hit;
+    while((hit = placed.find(p=>overlap(p,t)))) t.y = hit.y + hit.h;
+    placed.push(t);
+  }
+}
+/* Tidy: float every card up as far as it will go. */
+function compact(){
+  const order = tiles.slice().sort((a,b)=>a.y-b.y||a.x-b.x), placed=[];
+  for(const t of order){
+    while(t.y>0 && !placed.some(p=>overlap(p,{...t,y:t.y-1}))) t.y--;
+    placed.push(t);
+  }
+}
+function place(el,t){
+  el.style.gridArea = `${t.y+1} / ${t.x+1} / span ${t.h} / span ${t.w}`;
+  el.style.setProperty("--h", t.h);
+}
+function placeAll(){ $$("#grid .tile").forEach(el=>{const t=byId(el.dataset.id); if(t) place(el,t);}); sizeGrid(); }
+function cssNum(name, dflt){ return parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name)) || dflt; }
+function sizeGrid(extra){
+  const g=$("#grid"), rh=cssNum("--rowh",92), gap=cssNum("--gap",12);
+  const rows = bottomRow() + (CAN_EDIT && !document.body.classList.contains("presenting") ? (extra ?? 2) : 0);
+  g.style.minHeight = tiles.length ? `${rows*(rh+gap)}px` : "";
 }
 
-/* ── render ─────────────────────────────────────────────────────── */
+/* ═══════════════════════════ RENDER ════════════════════════════════ */
+function tileHTML(t){
+  const meta = KIND[t.kind] || {n:t.kind};
+  const handles = CAN_EDIT ? ["n","s","e","w","nw","ne","sw","se"].map(d=>`<span class="rz ${d}" data-rz="${d}"></span>`).join("") : "";
+  return `<section class="tile kind-${t.kind}${t.id===selectedId?" selected":""}" data-id="${t.id}" tabindex="0"
+      aria-label="${esc(t.title||meta.n)}" style="${t.spec.color?`--card-accent:${esc(t.spec.color)}`:""}">
+    <div class="tframe">
+      <header class="thead">
+        <span class="tic">${icon(t.kind)}</span>
+        <div class="ttl"><b>${esc(t.title || meta.n)}</b>${t.subtitle?`<span>${esc(t.subtitle)}</span>`:""}</div>
+        <div class="tact">
+          ${t.kind!=="text"?`<button data-act="expand" title="Expand">${icon("expand")}</button>`:""}
+          <button data-act="menu" title="More" aria-haspopup="menu">${icon("more")}</button>
+        </div>
+      </header>
+      <div class="tbody" data-body="${t.id}"><div class="skel"></div></div>
+    </div>${handles}<span class="tsize"></span>
+  </section>`;
+}
+
+function destroyKey(key){
+  if(charts[key]){ try{charts[key].destroy()}catch(e){} delete charts[key]; }
+  if(maps[key]){ try{maps[key].map.remove()}catch(e){} delete maps[key]; }
+}
+
 function renderGrid(){
   const grid = $("#grid");
-  Object.values(charts).forEach(c=>{try{c.destroy()}catch(e){}});
-  Object.values(maps).forEach(m=>{try{m.remove()}catch(e){}});
-  charts={};maps={};
+  Object.keys(charts).concat(Object.keys(maps)).forEach(k=>{ if(k!=="focus") destroyKey(k); });
+  ro.disconnect();
+  if(focusId!==null) ro.observe($("#focusBody"));
+  if(!tiles.length){ grid.innerHTML = emptyHTML(); grid.style.minHeight=""; return; }
+  grid.innerHTML = tiles.map(tileHTML).join("");
+  placeAll();
+  tiles.forEach(t=>paintOne(t.id));
+  $$("#grid .tbody").forEach(b=>ro.observe(b));
+}
 
-  if(!tiles.length){
-    grid.innerHTML = `<p class="hint" style="grid-column:1/-1;padding:2rem;text-align:center">
-      ${CAN_EDIT ? "Drag a card in from the left to start building." : "This board has no cards yet."}</p>`;
+function emptyHTML(){
+  if(!CAN_EDIT) return `<div class="empty"><h2>Nothing on this board yet</h2><p>The owner hasn't added any cards.</p></div>`;
+  const mini = cells => `<div class="mini">${cells.map(([c,r])=>`<i style="grid-column:span ${c};grid-row:span ${r}"></i>`).join("")}</div>`;
+  return `<div class="empty">
+    <h2>Build your live board</h2>
+    <p>Start from a layout that fits your survey, or drag cards in from the left. Every card updates on its own as responses arrive.</p>
+    <div class="starters">
+      <button class="starter" data-starter="tracker">${mini([[1,1],[1,1],[1,1],[1,1],[3,3],[1,3],[1,2],[3,2]])}
+        <b>Collection tracker</b><span>Responses, pace, target, a map, a live feed and the latest rows.</span></button>
+      <button class="starter" data-starter="results">${mini([[4,1],[1,1],[1,1],[2,3],[2,3],[2,2]])}
+        <b>Survey results</b><span>A chart for each key question, picked from your data.</span></button>
+      <button class="starter" data-starter="blank">${mini([[4,1],[2,2],[2,2]])}
+        <b>Blank board</b><span>A heading, then build it yourself.</span></button>
+    </div></div>`;
+}
+
+/* ── painting results into cards ────────────────────────────────── */
+function paint(list){
+  (list||[]).forEach(res=>{
+    const sig = JSON.stringify(res);
+    const changed = sigs[res.id]!==undefined && sigs[res.id]!==sig;
+    sigs[res.id]=sig; results[res.id]=res;
+    paintOne(res.id, changed);
+  });
+}
+
+function paintOne(id, flash){
+  const res = results[id], tile = byId(id);
+  const body = $(`[data-body="${CSS.escape(String(id))}"]`);
+  if(!body || !tile || !res) return;
+  const card = body.closest(".tile");
+  card.classList.toggle("alarm", res.status==="alarm");
+  card.classList.toggle("warn", res.status==="warn");
+  if(flash && !reduced){ card.classList.remove("fresh"); void card.offsetWidth; card.classList.add("fresh"); }
+  draw(body, tile, res, String(id));
+}
+
+function draw(body, tile, res, key){
+  if(!res.ok){
+    destroyKey(key); body.className="tbody";
+    body.innerHTML = `<div class="terr">${esc(res.error||"No data yet.")}${CAN_EDIT&&key!=="focus"?`<span style="font-size:.7rem">Select the card to change its settings.</span>`:""}</div>`;
     return;
   }
+  try{
+    const k = tile.kind;
+    if(k==="map") return drawMap(body,tile,res,key);
+    if(CHARTISH.has(k)) return drawChart(body,tile,res,key);
+    destroyKey(key);
+    body.className = "tbody";
+    if(k==="text") return drawText(body,tile,res);
+    if(k==="kpi"||k==="delta"||k==="progress") return drawNumber(body,tile,res,key);
+    if(k==="gauge") return drawGauge(body,tile,res,key);
+    if(k==="leaderboard") return drawLeaderboard(body,tile,res);
+    if(k==="table") return drawTable(body,tile,res);
+    if(k==="feed") return drawFeedCard(body,tile,res,key);
+  }catch(err){ destroyKey(key); body.innerHTML = `<div class="terr">${esc(err.message)}</div>`; }
+}
 
-  grid.innerHTML = tiles.map(t=>{
-    const meta = KIND_BY[t.kind]||{n:t.kind};
-    return `<section class="tile${t.id===selectedId?" selected":""}" data-id="${t.id}">
-      <header class="thead">
-        <b>${esc(t.title || meta.n)}</b>
-        ${t.subtitle?`<span class="sub">${esc(t.subtitle)}</span>`:""}
-        ${CAN_EDIT?`<button data-act="dup" title="Duplicate">⧉</button>
-        <button data-act="rm" title="Remove">✕</button>`:""}
-      </header>
-      <div class="tbody" data-body="${t.id}"><div class="terr">loading…</div></div>
-      ${CAN_EDIT?'<div class="resize"></div>':""}
-    </section>`;
-  }).join("");
+/* ── number formatting ──────────────────────────────────────────── */
+function fmt(v, s={}){
+  if(v===null||v===undefined||v==="") return "—";
+  if(typeof v!=="number"){ const n=Number(v); if(!isFinite(n)) return String(v); v=n; }
+  const d = s.decimals!==undefined && s.decimals!==null && s.decimals!=="" ? +s.decimals
+          : (Number.isInteger(v) ? 0 : (Math.abs(v)<10 ? 2 : 1));
+  const out = (s.compact && Math.abs(v)>=1000)
+    ? new Intl.NumberFormat(undefined,{notation:"compact",maximumFractionDigits:1}).format(v)
+    : v.toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});
+  return `${s.prefix||""}${out}${s.suffix||""}`;
+}
+function countUp(el, from, to, s){
+  if(reduced || typeof to!=="number" || typeof from!=="number" || from===to){ el.textContent = fmt(to,s); return; }
+  const t0 = performance.now(), dur = 700;
+  const step = now => {
+    const p = Math.min(1,(now-t0)/dur), e = 1-Math.pow(1-p,3), v = from+(to-from)*e;
+    el.textContent = fmt(p<1 && Number.isInteger(to) ? Math.round(v) : (p<1?v:to), s);
+    if(p<1 && el.isConnected) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+function measureLabel(t){
+  const s=t.spec||{};
+  if(!s.column || s.agg==="count") return "responses";
+  const a = (AGGS.find(x=>x[0]===s.agg)||[0,s.agg])[1].toLowerCase();
+  return `${a} of ${fieldLabel(s.column)}`;
+}
+function ago(iso){
+  if(!iso) return "";
+  const s = Math.max(0, Math.round((Date.now()-new Date(iso).getTime())/1000));
+  if(isNaN(s)) return "";
+  if(s<10) return "just now"; if(s<60) return `${s}s ago`;
+  if(s<3600) return `${Math.floor(s/60)} min ago`; if(s<86400) return `${Math.floor(s/3600)} h ago`;
+  return new Date(iso).toLocaleDateString([], {day:"numeric",month:"short"});
+}
 
-  $$("#grid .tile").forEach(el=>{
-    const t = tiles.find(x=>String(x.id)===el.dataset.id);
-    if(t) place(el, t);
+function drawNumber(body, tile, res, key){
+  const s = tile.spec, k = tile.kind;
+  body.innerHTML = `<div class="big"><span class="v"></span><span class="xtra"></span><span class="lbl"></span></div>`;
+  const v = $(".v",body), x = $(".xtra",body), l = $(".lbl",body);
+  countUp(v, prev[key], res.value, s); prev[key] = res.value;
+  if(k==="kpi"){ l.textContent = tile.subtitle ? "" : measureLabel(tile); x.remove(); return; }
+  if(k==="delta"){
+    const c = res.change, cls = c>0?"up":(c<0?"down":"");
+    const pc = res.percent_change!==null && res.percent_change!==undefined ? ` (${res.percent_change>0?"+":""}${res.percent_change}%)` : "";
+    x.outerHTML = `<span class="chg ${cls}">${c>0?"▲":c<0?"▼":"■"} ${c===null?"no earlier data":esc(fmt(Math.abs(c),{...s,prefix:"",suffix:""}))+pc}</span>`;
+    l.textContent = `last ${res.window_minutes} min, compared with the ${res.window_minutes} before`;
+    return;
+  }
+  const pct = res.percent ?? (res.target ? res.value/res.target*100 : null);
+  const w = pct===null ? 0 : Math.max(0,Math.min(100,pct));
+  x.outerHTML = `<div class="bar"><i></i></div>`;
+  requestAnimationFrame(()=>{ const i=$(".bar i",body); if(i) i.style.width=w+"%"; });
+  l.textContent = res.target
+    ? `${pct===null?"—":pct.toFixed(1)+"%"} of ${fmt(res.target,s)} · ${res.remaining>0?`${fmt(res.remaining,s)} to go`:"target reached"}`
+    : "Set a target in the card settings";
+}
+
+function drawGauge(body, tile, res, key){
+  const s = tile.spec, target = Number(s.target)||0;
+  const pct = target ? Math.max(0,Math.min(100,(res.value||0)/target*100)) : 0;
+  const was = prev[key+":g"] ?? 0; prev[key+":g"] = pct;
+  body.innerHTML = `<div class="gauge"><svg viewBox="0 0 200 118" role="img" aria-label="${esc(fmt(res.value,s))}${target?` of ${esc(fmt(target,s))}`:""}">
+      <path d="M18 106 A82 82 0 0 1 182 106" class="gtrack" fill="none" stroke-width="16" stroke-linecap="round" pathLength="100"/>
+      <path d="M18 106 A82 82 0 0 1 182 106" class="gfill" fill="none" stroke-width="16" stroke-linecap="round" pathLength="100" stroke-dasharray="${was} 100"/>
+      <text x="100" y="92" text-anchor="middle" class="gv"></text>
+      <text x="100" y="114" text-anchor="middle" class="gs">${target?`${pct.toFixed(0)}% of ${esc(fmt(target,s))}`:"Set a target"}</text>
+    </svg></div>`;
+  countUp($(".gv",body), prev[key], res.value, s); prev[key]=res.value;
+  requestAnimationFrame(()=>{ const f=$(".gfill",body); if(f) f.setAttribute("stroke-dasharray",`${pct} 100`); });
+}
+
+function drawLeaderboard(body, tile, res){
+  body.className = "tbody scroll";
+  body.innerHTML = `<div class="lb">${(res.rows||[]).map((r,i)=>`<div class="lbrow">
+      <span class="rk">${i+1}</span><span class="nm" title="${esc(r.label)}">${esc(r.label)}</span>
+      <span class="val">${esc(fmt(r.value,tile.spec))}</span>
+      <span class="track"><i style="width:${Math.max(2,r.share||0)}%"></i></span></div>`).join("")
+    || `<div class="terr">Nothing to rank yet.</div>`}</div>`;
+}
+
+function drawTable(body, tile, res){
+  body.className = "tbody scroll";
+  const cols = res.columns||[];
+  body.innerHTML = `<table class="dt"><thead><tr>${cols.map(c=>`<th title="${esc(c)}">${esc(fieldLabel(c))}</th>`).join("")}</tr></thead>
+    <tbody>${(res.rows||[]).map(r=>`<tr>${cols.map(c=>{const v=r[c];return `<td class="${typeof v==="number"?"n":""}" title="${esc(v)}">${esc(typeof v==="number"?fmt(v):v)}</td>`;}).join("")}</tr>`).join("")}</tbody></table>
+    ${(res.rows||[]).length?"":`<div class="terr">No rows yet.</div>`}`;
+}
+
+function drawText(body, tile, res){
+  const style = tile.spec.style || "note";
+  const text = esc(res.body ?? tile.spec.body ?? "").replace(/\n/g,"<br>");
+  body.innerHTML = `<div class="txt ${style}">${text}</div>`;
+}
+
+/* ── live feed (card) ───────────────────────────────────────────── */
+function valueText(v){ if(v===null||v===undefined||v==="") return "—"; if(Array.isArray(v)) return `${v.length} items`;
+  if(typeof v==="object") return "…"; return typeof v==="number" ? fmt(v) : String(v); }
+function feedItemHTML(it, isNew, headLabel){
+  const status = it.status && it.status!=="received" && it.status!=="valid" ? it.status : "";
+  return `<li class="fi${isNew?" new":""}"><span class="fd"></span>
+    <span class="fh">${esc(it.headline!==null && it.headline!==undefined ? valueText(it.headline) : (headLabel||"New response"))}</span>
+    <span class="ft" data-at="${esc(it.at||"")}">${esc(ago(it.at))}</span>
+    ${(it.fields||[]).length || status || it.source ? `<span class="fx">${(it.fields||[]).map(f=>`<span>${esc(fieldLabel(f.name))} <b>${esc(valueText(f.value))}</b></span>`).join("")}
+      ${it.source?`<span class="tag">${esc(it.source)}</span>`:""}${status?`<span class="tag ${esc(status)}">${esc(status)}</span>`:""}</span>`:""}</li>`;
+}
+function drawFeedCard(body, tile, res, key){
+  body.className = "tbody scroll";
+  const items = res.items||[];
+  const known = seen[key]; const first = !known;
+  seen[key] = new Set(items.map(i=>i.key));
+  if(!items.length){ body.innerHTML = `<div class="terr">Waiting for the first response.<span style="font-size:.7rem">New responses appear here as they arrive.</span></div>`; return; }
+  const headLabel = tile.spec.headline ? null : "Response";
+  body.innerHTML = `<ul class="feed">${items.map(it=>feedItemHTML(it, !first && !known.has(it.key), headLabel)).join("")}</ul>`;
+}
+/* relative times tick on their own — "just now" should not stay just now */
+setInterval(()=>$$("[data-at]").forEach(el=>{ if(el.dataset.at) el.textContent = ago(el.dataset.at); }), 15000);
+
+/* ── charts ─────────────────────────────────────────────────────── */
+function fmtTime(iso, freq){
+  const d = new Date(iso); if(isNaN(d)) return iso;
+  const f = String(freq||"D").toUpperCase();
+  if(f==="MIN"||f==="H") return d.toLocaleString([], {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
+  if(f==="M"||f==="Q") return d.toLocaleDateString([], {month:"short",year:"numeric"});
+  if(f==="Y") return String(d.getFullYear());
+  return d.toLocaleDateString([], {month:"short",day:"numeric"});
+}
+const centerText = {id:"kuraCenter", afterDraw(chart, _a, o){
+  if(!o || o.text===undefined || !chart.chartArea) return;
+  const {ctx, chartArea:a} = chart, cx=(a.left+a.right)/2, cy=(a.top+a.bottom)/2;
+  const size = Math.max(12, Math.min(34, (a.right-a.left)/6));
+  ctx.save(); ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillStyle=o.color; ctx.font=`700 ${size}px ${o.font}`; ctx.fillText(o.text,cx,cy-size*.25);
+  ctx.fillStyle=o.sub; ctx.font=`500 ${Math.max(9,size*.36)}px ${o.font}`; ctx.fillText(o.label,cx,cy+size*.55);
+  ctx.restore();
+}};
+const cut = (l,n) => { l=String(l); return l.length>n ? l.slice(0,n-1)+"…" : l; };
+
+function chartConfig(tile, res){
+  const T = theme(), k = tile.kind, s = tile.spec||{};
+  const pal = s.color ? [s.color, ...T.pal.filter(c=>c!==s.color)] : T.pal;
+  const grid = alpha(T.text, T.dark?.07:.08);
+  const type = ({hbar:"bar",area:"line",donut:"doughnut",timeseries:"line",histogram:"bar"})[k] || k;
+  const round = type==="pie"||type==="doughnut";
+  const labels = k==="timeseries" ? (res.labels||[]).map(l=>fmtTime(l,s.freq)) : (res.labels||[]);
+  const nSeries = (res.series||[]).length;
+  const fontB = (FONTS[T.c.font]||FONTS.archivo).b;
+  const fillGrad = col => ctx => {
+    const a = ctx.chart.chartArea; if(!a) return alpha(col,.2);
+    const g = ctx.chart.ctx.createLinearGradient(0,a.top,0,a.bottom);
+    g.addColorStop(0,alpha(col,.38)); g.addColorStop(1,alpha(col,0)); return g;
+  };
+
+  let datasets;
+  if(k==="scatter"){
+    datasets = (res.series||[]).map((sr,i)=>({label:sr.name,data:sr.data,backgroundColor:alpha(pal[i%pal.length],.75),
+      borderColor:pal[i%pal.length],pointRadius:3.5,pointHoverRadius:6}));
+  } else {
+    datasets = (res.series||[]).map((sr,i)=>{
+      const col = pal[i%pal.length], line = type==="line";
+      const fill = line && !sr.dashed && (k==="area" || (k==="timeseries" && nSeries<=2 && i===0));
+      const perBar = nSeries===1 && type==="bar" && k!=="histogram" && s.multicolor;
+      return {
+        label: sr.name, data: sr.data,
+        borderColor: round ? T.panel : col,
+        backgroundColor: round ? labels.map((_,j)=>pal[j%pal.length])
+                       : line ? (fill ? fillGrad(col) : col)
+                       : perBar ? labels.map((_,j)=>pal[j%pal.length]) : col,
+        borderWidth: line ? 2.4 : (round ? 2 : 0),
+        borderRadius: type==="bar" ? (k==="histogram"?2:6) : 0,
+        borderSkipped: false, maxBarThickness: 56,
+        categoryPercentage: k==="histogram" ? 1 : .8, barPercentage: k==="histogram" ? .96 : .85,
+        fill: fill ? "origin" : false,
+        tension: .35, borderDash: sr.dashed ? [6,4] : undefined,
+        pointRadius: line ? (labels.length>30 ? 0 : 2.5) : undefined,
+        pointHoverRadius: 5, pointBackgroundColor: col,
+        hoverOffset: round ? 6 : undefined,
+      };
+    });
+  }
+
+  const opts = {
+    responsive:true, maintainAspectRatio:false,
+    animation: reduced ? false : {duration:500, easing:"easeOutCubic"},
+    interaction:{mode: round||k==="scatter" ? "nearest" : "index", intersect: round||k==="scatter"},
+    layout:{padding:{top:4,right:4}},
+    plugins:{
+      legend:{display: nSeries>1 || round, position: round ? "right" : "bottom", align: round ? "center" : "start",
+        labels:{color:T.muted, boxWidth:9, boxHeight:9, usePointStyle:true, pointStyle:"circle", padding:12, font:{size:11},
+                generateLabels: round ? (c => Chart.overrides.doughnut.plugins.legend.labels.generateLabels(c).map(l=>({...l,text:cut(l.text,22)}))) : undefined}},
+      tooltip:{backgroundColor:T.dark?"rgba(0,0,0,.88)":"rgba(255,255,255,.96)", titleColor:T.text, bodyColor:T.text,
+        borderColor:T.line, borderWidth:1, padding:10, cornerRadius:8, boxPadding:4, usePointStyle:true,
+        callbacks:{label:c=>{
+          const v = c.raw && typeof c.raw==="object" ? `${fmt(c.raw.x)}, ${fmt(c.raw.y)}` : fmt(c.raw, s);
+          const pct = round && res.percent ? ` (${res.percent[c.dataIndex]}%)` : "";
+          return ` ${nSeries>1 ? c.dataset.label+": " : (round?c.label+": ":"")}${v}${pct}`;
+        }}},
+      kuraCenter: type==="doughnut" ? {text:fmt(res.total ?? (res.series?.[0]?.data||[]).reduce((a,b)=>a+(+b||0),0), {...s,compact:true}),
+        label:"total", color:T.text, sub:T.muted, font:fontB} : false,
+    },
+    scales: round ? undefined : {
+      x:{ticks:{color:T.muted,font:{size:10.5},maxRotation:0,autoSkip:true,autoSkipPadding:14,
+               callback: k==="hbar"||k==="scatter" ? (v=>fmt(v,{compact:true})) : function(v){return cut(this.getLabelForValue(v),18);}},
+         grid:{display:k==="hbar"||k==="scatter",color:grid}, border:{display:false}, stacked: !!s.stacked},
+      y:{ticks:{color:T.muted,font:{size:10.5},padding:6,
+               callback: k==="hbar" ? function(v){return cut(this.getLabelForValue(v),22);} : (v=>fmt(v,{compact:true}))},
+         grid:{display:k!=="hbar",color:grid}, border:{display:false}, beginAtZero:true, stacked: !!s.stacked},
+    },
+  };
+  if(type==="doughnut") opts.cutout = "68%";
+  if(k==="hbar") opts.indexAxis = "y";
+  return {type, data:{labels, datasets}, options:opts, plugins:[centerText]};
+}
+
+function drawChart(body, tile, res, key){
+  const cfg = chartConfig(tile, res);
+  const ex = charts[key];
+  // Update in place when possible: live data then animates instead of the
+  // card blinking, and the canvas keeps its size mid-resize.
+  if(ex && ex.config.type===cfg.type && body.contains(ex.canvas)){
+    ex.data = cfg.data; ex.options = cfg.options; ex.update(); return;
+  }
+  destroyKey(key);
+  body.className = "tbody";
+  body.innerHTML = `<div class="cv"><canvas aria-label="${esc(tile.title||KIND[tile.kind].n)}" role="img"></canvas></div>`;
+  charts[key] = new Chart($("canvas",body), cfg);
+}
+
+/* ── map ────────────────────────────────────────────────────────── */
+function drawMap(body, tile, res, key){
+  const T = theme(), s = tile.spec||{}, pts = res.points||[];
+  let e = maps[key];
+  if(!e || !body.contains(e.el)){
+    destroyKey(key);
+    body.className = "tbody map";
+    body.innerHTML = `<div class="mapbox"></div><div class="maplegend"></div>
+      <button class="btn icon mapfit" data-act="fit" title="Fit all points">${icon("expand")}</button>`;
+    const el = $(".mapbox",body);
+    const m = L.map(el, {attributionControl:false, zoomControl:true, scrollWheelZoom:false, zoomSnap:.25});
+    // Wheel-zoom only once the viewer clicks in: the board is a scrolling
+    // page, and a map that grabs the wheel traps people mid-scroll.
+    m.on("click focus", ()=>m.scrollWheelZoom.enable());
+    m.on("mouseout blur", ()=>m.scrollWheelZoom.disable());
+    KURA_BASEMAP.addTo(m);
+    if(!T.dark) el.classList.remove("kura-dark-tiles");
+    e = maps[key] = {map:m, el, layer:L.featureGroup().addTo(m), fitted:false};
+  }
+  e.layer.clearLayers();
+  const counts = {}; pts.forEach(p=>{ if(p.group!==undefined && p.group!==null && p.group!=="") counts[p.group]=(counts[p.group]||0)+1; });
+  const groups = Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
+  const colour = g => { const i = groups.indexOf(String(g)); return T.pal[(i<0?0:i)%T.pal.length]; };
+  const r = +s.point_size || 6;
+  pts.forEach(p=>{
+    L.circleMarker([p.lat,p.lng], {radius:r, weight:1.5, color:T.dark?"#ffffff":"#0b0e26", opacity:.7,
+      fillColor: !groups.length ? (s.color||T.accent) : colour(p.group), fillOpacity:.85})
+      .bindPopup(`<b>${esc(p.group ?? "Response")}</b>${p.row?`<br><span style="opacity:.7">Row ${p.row}</span>`:""}`)
+      .addTo(e.layer);
   });
+  const lg = $(".maplegend",body);
+  lg.innerHTML = groups.length
+    ? groups.slice(0,8).map(g=>`<span><i style="background:${colour(g)}"></i>${esc(g)} <span style="opacity:.6">${counts[g]}</span></span>`).join("")
+      + (groups.length>8?`<span style="opacity:.6">+${groups.length-8} more</span>`:"")
+    : (pts.length ? `<span>${pts.length.toLocaleString()} locations</span>` : `<span>No locations in this data yet</span>`);
+  if(pts.length && (!e.fitted || s.autofit)){ fitMap(key); e.fitted = true; }
+  else if(!pts.length) e.map.setView([12,-2], 3);
+  requestAnimationFrame(()=>e.map.invalidateSize({pan:false}));
+}
+function fitMap(key){
+  const e = maps[key]; if(!e) return;
+  const b = e.layer.getBounds(); if(!b.isValid()) return;
+  e.map.invalidateSize({pan:false});
+  e.map.fitBounds(b, {padding:[28,28], maxZoom:14, animate:!reduced});
+}
+
+/* Charts follow their box on their own (Chart.js watches the canvas
+   parent); Leaflet has to be told. One observer covers every card, so a
+   map re-flows continuously while any of its eight handles is dragged. */
+const ro = new ResizeObserver(entries=>{
+  for(const en of entries){
+    const key = en.target.dataset.body || (en.target.id==="focusBody" ? "focus" : null);
+    const m = key && maps[key];
+    if(m){ cancelAnimationFrame(m._raf); m._raf = requestAnimationFrame(()=>m.map.invalidateSize({pan:false})); }
+  }
+});
+
+/* ═══════════════════════════ DATA ══════════════════════════════════ */
+let lastStamp = null, lastCfg = null, busy = false, again = null;
+const draftConfig = () => ({tiles, filters:board.filters, filter_match:board.filter_match});
+
+async function refresh(force, onlyIds){
+  if(busy){ again = {force: force || (again && again.force)}; return; }
+  busy = true;
+  try{
+    let j;
+    if(CAN_EDIT){
+      const cfg = draftConfig(), sig = JSON.stringify(cfg), same = sig===lastCfg;
+      j = await api(URLS.preview, {method:"POST", body:JSON.stringify({
+        ...cfg, fresh:!!force, tile_ids:onlyIds||null,
+        since: (!force && same && !onlyIds) ? lastStamp : null})});
+      if(!onlyIds) lastCfg = sig;
+    } else {
+      const q = force ? "?fresh=1" : (lastStamp ? `?since=${encodeURIComponent(lastStamp)}` : "");
+      j = await api(URLS.data + q);
+    }
+    if(j.pulse) drawPulse(j.pulse, j.meta);
+    if(!j.unchanged){ lastStamp = j.stamp; paint(j.tiles); }
+  }catch(err){
+    if(err.status===410){ showExpired(); return; }
+    setPulse("off", "Can't reach the server — retrying");
+  }finally{
+    busy = false;
+    if(again){ const a=again; again=null; refresh(a.force); }
+  }
+}
+
+function setPulse(state, text){ const p=$("#pulse"); if(!p) return; p.className="pulse "+state; $("#pulseText").textContent=text; }
+function drawPulse(pulse, meta){
+  if(IS_PUBLIC && (board.publish_options||{}).show_pulse===false) return;
+  const rows = (meta && meta.filtered_rows!==undefined && meta.filtered_rows!==null) ? meta.filtered_rows : pulse.rows;
+  const n = (rows||0).toLocaleString();
+  if(!pulse.streaming){ setPulse("", `${n} rows · fixed data`); return; }
+  const s = pulse.seconds_since;
+  const when = s===undefined ? "no responses yet" : s<60 ? "latest just now" : s<3600 ? `latest ${Math.round(s/60)} min ago` : s<86400 ? `latest ${Math.round(s/3600)} h ago` : `latest ${Math.round(s/86400)} d ago`;
+  setPulse(s===undefined?"":(s<600?"on":"stale"), `${n} rows · ${pulse.last_hour} in the last hour · ${when}`);
+}
+
+let sock=null, sockTimer=null;
+function connect(){
+  if(!board.is_streaming || (sock && sock.readyState<2)) return;
+  const scheme = location.protocol==="https:" ? "wss" : "ws";
+  const path = IS_PUBLIC ? `/ws/kura/d/${board.public_token}/dashboard/` : `/ws/kura/${CODE}/dashboard/`;
+  try{ sock = new WebSocket(`${scheme}://${location.host}${path}`); }catch(e){ return; }
+  sock.onmessage = e => {
+    let d={}; try{d=JSON.parse(e.data)}catch(x){return}
+    if(d.type==="submission" && d.sub) feedPush(d.sub);
+    if(d.type==="data_changed"||d.type==="submission"){
+      clearTimeout(sockTimer); sockTimer=setTimeout(()=>{ refresh(false); feedReload(); },250);
+    }
+  };
+  sock.onclose = () => { sock=null; setTimeout(connect, 5000); };
+}
+setInterval(()=>{ try{ sock && sock.readyState===1 && sock.send('{"type":"ping"}'); }catch(e){} }, 25000);
+
+function showExpired(){
+  if($(".expired")) return;
+  const d=document.createElement("div"); d.className="expired";
+  d.innerHTML=`<div><h2>This dashboard link is no longer active</h2><p class="hint">Ask the person who shared it for a new link.</p></div>`;
+  document.body.appendChild(d);
+}
+
+/* ═══════════════════════════ LIVE FEED DRAWER ══════════════════════
+   Editors load the newest rows through /preview/ with a throwaway feed
+   card, so each entry can show the answer they pick. Every socket
+   "submission" event is also dropped in straight away with who/how —
+   the owner's socket carries that; a public one never does.            */
+const feed = {open:false, paused:false, unseen:0, items:[], keys:new Set(), headline:null, queued:[]};
+function feedToggle(on){
+  feed.open = on ?? !feed.open;
+  document.body.classList.toggle("feed-open", feed.open);
+  $("#drawer")?.setAttribute("aria-hidden", String(!feed.open));
+  $("#btnFeed")?.setAttribute("aria-pressed", String(feed.open));
+  $("#btnFeed")?.classList.toggle("on", feed.open);
+  if(feed.open){ feed.unseen = 0; feedBadge(); feedReload(); }
+  setTimeout(()=>Object.values(maps).forEach(m=>m.map.invalidateSize({pan:false})), 280);
+}
+function feedBadge(){ const b=$("#feedCount"); if(!b) return; b.hidden = !feed.unseen; b.textContent = feed.unseen>99?"99+":feed.unseen; }
+async function feedReload(){
+  if(!feed.open || !CAN_EDIT || feed.paused) return;
+  try{
+    const j = await api(URLS.preview, {method:"POST", body:JSON.stringify({
+      tiles:[{id:-99999, kind:"feed", x:0, y:0, w:4, h:4,
+        spec:{limit:40, headline:feed.headline, columns:[], show_status:true}}],
+      filters:board.filters, filter_match:board.filter_match})});
+    const res = (j.tiles||[])[0];
+    if(res && res.ok) feedRender(res.items||[]);
+  }catch(e){}
+}
+function feedRender(items){
+  const known = feed.keys, first = !known.size;
+  feed.items = items; feed.keys = new Set(items.map(i=>i.key));
+  const head = feed.headline ? null : "New response";
+  $("#feedList").innerHTML = items.map(it=>feedItemHTML(it, !first && !known.has(it.key), head)).join("")
+    || `<li class="hint">No responses yet. They'll appear here the moment they arrive.</li>`;
+  $("#feedFoot").textContent = items.length ? `Showing the newest ${items.length}.` : "Waiting for responses…";
+}
+function feedPush(sub){
+  if(!feed.open){ feed.unseen++; feedBadge(); return; }
+  if(feed.paused){ feed.queued.push(sub); $("#feedPause").textContent = `Resume (${feed.queued.length} new)`; return; }
+  if(CAN_EDIT) return;                       // editors get the richer reload
+  const who = [sub.enumerator, sub.device].filter(Boolean).join(" · ") || (sub.source==="web" ? "Web form" : "New response");
+  const it = {key:"s"+sub.id, at:sub.received_at, headline:who, fields:[], source:sub.source,
+              status:sub.status && sub.status!=="received" ? sub.status : null};
+  feed.items.unshift(it); feed.items = feed.items.slice(0,40);
+  const li = document.createElement("div"); li.innerHTML = feedItemHTML(it, true, "");
+  const list = $("#feedList"); if(list.firstElementChild && list.firstElementChild.classList.contains("hint")) list.innerHTML="";
+  list.prepend(li.firstElementChild);
+  while(list.children.length>40) list.lastElementChild.remove();
+}
+
+/* ═══════════════════════════ EDITING ═══════════════════════════════ */
+const hist = {stack:[], i:-1};
+const snapshot = () => JSON.stringify({tiles, filters:board.filters, filter_match:board.filter_match,
+  theme:board.theme, theme_config:board.theme_config, name:board.name, description:board.description});
+function commit(){
+  if(!CAN_EDIT) return;
+  const s = snapshot(); if(hist.stack[hist.i]===s) return;
+  hist.stack = hist.stack.slice(0, hist.i+1); hist.stack.push(s);
+  if(hist.stack.length>100) hist.stack.shift();
+  hist.i = hist.stack.length-1; undoState(); markDirty();
+}
+function restore(s){
+  const o = JSON.parse(s);
+  tiles = o.tiles.map(norm);
+  Object.assign(board, {filters:o.filters, filter_match:o.filter_match, theme:o.theme,
+    theme_config:o.theme_config, name:o.name, description:o.description});
+  if(selectedId!==null && !byId(selectedId)) selectedId=null;
+  const bn=$("#boardName"); if(bn) bn.value = board.name;
+  applyTheme(); renderGrid(); renderInspector(); renderFilterBar(); refresh(false);
+  undoState(); markDirty();
+}
+function undo(){ if(hist.i>0){ hist.i--; restore(hist.stack[hist.i]); } }
+function redo(){ if(hist.i<hist.stack.length-1){ hist.i++; restore(hist.stack[hist.i]); } }
+function undoState(){ const u=$("#btnUndo"), r=$("#btnRedo"); if(u) u.disabled = hist.i<=0; if(r) r.disabled = hist.i>=hist.stack.length-1; }
+
+/* autosave — persistence only; the share link never sees a save */
+let saveTimer=null, saving=false, editSeq=0, savedSeq=0;
+function setSave(state, msg){
+  const el=$("#saveState"); if(!el) return;
+  el.classList.toggle("err", state==="error");
+  el.textContent = state==="saving" ? "Saving…" : state==="dirty" ? "Unsaved changes"
+    : state==="error" ? (msg||"Couldn't save") : `Saved ${new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`;
+}
+function markDirty(){ editSeq++; setSave("dirty"); clearTimeout(saveTimer); saveTimer=setTimeout(save,1200); }
+function payload(){
+  return {
+    name: board.name, description: board.description,
+    filters: board.filters, filter_match: board.filter_match,
+    source: board.source, pipeline_id: board.pipeline_id, dataset_id: board.dataset_id, run_id: board.run_id,
+    theme: board.theme, theme_config: board.theme_config,
+    is_live: board.is_live, refresh_seconds: board.refresh_seconds, include_excluded: board.include_excluded,
+    tiles: tiles.map(t=>({kind:t.kind,title:t.title,subtitle:t.subtitle,x:t.x,y:t.y,w:t.w,h:t.h,
+      spec:t.spec,filters:t.filters,filter_match:t.filter_match,alert:t.alert})),
+  };
+}
+async function save(){
+  if(!CAN_EDIT) return;
+  if(saving){ clearTimeout(saveTimer); saveTimer=setTimeout(save,400); return; }
+  if(editSeq===savedSeq) return;
+  saving = true; const seq = editSeq; setSave("saving");
+  try{
+    const j = await api(URLS.save, {method:"POST", body:JSON.stringify(payload())});
+    savedSeq = seq;
+    const d = j.dashboard;
+    // Adopt server-side facts only; the client stays the owner of the layout.
+    Object.assign(board, {publish_state:d.publish_state, source_label:d.source_label,
+      is_streaming:d.is_streaming, updated_at:d.updated_at, public_token:d.public_token});
+    setSave(editSeq===savedSeq ? "saved" : "dirty");
+    pubButton();
+  }catch(err){ setSave("error", err.message.slice(0,60)); }
+  finally{ saving=false; if(editSeq!==savedSeq){ clearTimeout(saveTimer); saveTimer=setTimeout(save,800); } }
+}
+async function flushSave(){
+  clearTimeout(saveTimer);
+  for(let i=0;i<40 && (saving || editSeq!==savedSeq);i++){
+    if(!saving) await save(); else await new Promise(r=>setTimeout(r,150));
+  }
+  return editSeq===savedSeq;
+}
+
+function addTile(kind, at, field, extra){
+  const meta = KIND[kind];
+  const t = norm({id:uid--, kind, title:"", subtitle:"", w:meta.w, h:meta.h,
+    x:at?at.x:0, y:at?at.y:bottomRow(), spec:defaultSpec(kind, field), ...(extra||{})});
+  if(field && !t.title) t.title = field.label || field.name;
+  t.x = Math.max(0, Math.min(12-t.w, t.x));
+  tiles.push(t); resolve(t);
+  selectedId = t.id; tab = "card";
+  renderGrid(); renderInspector(); commit(); refresh(false);
+  requestAnimationFrame(()=>$(`.tile[data-id="${t.id}"]`)?.scrollIntoView({block:"nearest",behavior:reduced?"auto":"smooth"}));
+}
+function removeTile(id){
+  tiles = tiles.filter(t=>String(t.id)!==String(id)); destroyKey(String(id));
+  if(String(selectedId)===String(id)) selectedId=null;
+  renderGrid(); renderInspector(); commit();
+}
+function duplicateTile(id){
+  const t = byId(id); if(!t) return;
+  const c = norm({...structuredClone(t), id:uid--, y:t.y+t.h});
+  tiles.push(c); resolve(c); selectedId=c.id;
+  results[c.id] = results[t.id]; renderGrid(); renderInspector(); commit(); refresh(false);
+}
+function select(id){
+  selectedId = id===null ? null : (byId(id)?.id ?? null);
+  $$("#grid .tile").forEach(c=>c.classList.toggle("selected", String(c.dataset.id)===String(selectedId)));
+  if(selectedId!==null) tab="card";
   renderInspector();
 }
 
-function paint(results){
-  (results||[]).forEach(res=>{
-    const body = $(`[data-body="${res.id}"]`);
-    const tile = tiles.find(t=>String(t.id)===String(res.id));
-    if(!body || !tile) return;
-    const card = body.closest(".tile");
-    card.classList.remove("alarm","warn");
-    if(res.status==="alarm") card.classList.add("alarm");
-    if(res.status==="warn")  card.classList.add("warn");
-
-    if(!res.ok){
-      body.className="tbody";
-      body.innerHTML = `<div class="terr">${esc(res.error||"No data.")}</div>`;
-      return;
-    }
-    try{ drawTile(body, tile, res); }
-    catch(err){ body.innerHTML = `<div class="terr">${esc(err.message)}</div>`; }
-  });
+function smartAdd(f, at){
+  if(f.kind==="numeric") return addTile("histogram", at, f, {spec:{x:f.name}});
+  if(f.kind==="datetime") return addTile("timeseries", at, f, {spec:{date:f.name,freq:"D",agg:"count"}});
+  const few = (f.unique||99) <= 6;
+  return addTile(few?"donut":"hbar", at, f, {spec:{x:f.name,agg:"count",sort:"value",limit:few?6:12}});
 }
 
-function drawTile(body, tile, res){
-  // The body is about to be replaced; drop whatever was rendered into it or
-  // Chart.js and Leaflet keep the detached canvases alive for the session.
-  if(charts[tile.id]){ try{charts[tile.id].destroy()}catch(e){} delete charts[tile.id]; }
-  if(maps[tile.id]){ try{maps[tile.id].remove()}catch(e){} delete maps[tile.id]; }
-  body.className = "tbody";
-  const k = tile.kind;
-
-  if(k==="text"){
-    body.innerHTML = `<div style="font-size:.85rem;line-height:1.5">${esc(res.body||"")}</div>`;
-    return;
-  }
-
-  if(k==="kpi"){
-    body.innerHTML = `<div class="big"><span class="v">${fmt(res.value)}</span>
-      <span class="lbl">${esc(tile.subtitle||label(tile))}</span></div>`;
-    return;
-  }
-
-  if(k==="delta"){
-    const c = res.change;
-    const arrow = c===null?"":(c>0?"▲":(c<0?"▼":"■"));
-    const cls = c>0?"up":(c<0?"down":"");
-    body.innerHTML = `<div class="big"><span class="v">${fmt(res.value)}</span>
-      <span class="chg ${cls}">${arrow} ${c===null?"—":fmt(Math.abs(c))}
-        ${res.percent_change!==null&&res.percent_change!==undefined?`(${res.percent_change>0?"+":""}${res.percent_change}%)`:""}</span>
-      <span class="lbl">last ${res.window_minutes} min vs the ${res.window_minutes} before</span></div>`;
-    return;
-  }
-
-  if(k==="progress"||k==="gauge"){
-    const pct = res.percent ?? (res.target ? (res.value/res.target*100) : null);
-    const clamped = pct===null?0:Math.max(0,Math.min(100,pct));
-    body.innerHTML = `<div class="big"><span class="v">${fmt(res.value)}</span>
-      <span class="lbl">${res.target?`of ${fmt(res.target)} target · ${pct===null?"—":pct.toFixed(1)}%`:label(tile)}</span>
-      <div class="bar"><i class="${clamped<50?"hot":""}" style="width:${clamped}%"></i></div>
-      ${res.remaining!==null&&res.remaining!==undefined?`<span class="lbl">${fmt(res.remaining)} to go</span>`:""}
-      </div>`;
-    return;
-  }
-
-  if(k==="leaderboard"){
-    body.className="tbody scroll";
-    body.innerHTML = `<div class="lb">${(res.rows||[]).map((r,i)=>`
-      <div class="lbrow"><span class="rank">${i+1}</span>
-        <span class="nm" title="${esc(r.label)}">${esc(r.label)}</span>
-        <span class="val">${fmt(r.value)}</span></div>
-      <div class="lbbar"><i style="width:${r.share||0}%"></i></div>`).join("")
-      || '<p class="hint">Nothing to rank yet.</p>'}</div>`;
-    return;
-  }
-
-  if(k==="table"){
-    body.className="tbody scroll";
-    body.innerHTML = `<table><thead><tr>${(res.columns||[]).map(c=>`<th>${esc(c)}</th>`).join("")}</tr></thead>
-      <tbody>${(res.rows||[]).map(r=>`<tr>${res.columns.map(c=>`<td>${esc(r[c])}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
-    return;
-  }
-
-  if(k==="map"){
-    body.innerHTML = `<div id="map_${did(tile.id)}" style="position:absolute;inset:0"></div>`;
-    const pts = res.points||[];
-    if(!pts.length){ body.innerHTML = `<div class="terr">No locations in this data.</div>`; return; }
-    const m = L.map(`map_${did(tile.id)}`, {attributionControl:false});
-    KURA_BASEMAP.addTo(m);
-    // A light-themed board keeps light tiles even when the install darkens
-    // keyless OpenStreetMap imagery for the dark themes.
-    if(document.body.classList.contains("theme-light"))
-      m.getContainer().classList.remove("kura-dark-tiles");
-    const palette = ["#22d3ee","#ff3f98","#ff8a1f","#8b5cf6","#22c55e","#e8482b"];
-    const groups = [...new Set(pts.map(p=>p.group).filter(Boolean))];
-    pts.forEach(p=>{
-      const i = groups.indexOf(p.group);
-      L.circleMarker([p.lat,p.lng],{radius:5,weight:1,color:"#fff",
-        fillColor:palette[(i<0?0:i)%palette.length],fillOpacity:.85})
-        .addTo(m).bindPopup(p.group?esc(p.group):`Row ${p.row}`);
+function starter(name){
+  const cats = fields.filter(f=>f.kind==="categorical" && !f.meta && (f.unique||0)>1 && (f.unique||0)<=40);
+  const nums = fields.filter(f=>f.kind==="numeric" && !f.meta);
+  const dt = fields.find(f=>f.kind==="datetime");
+  const T = (kind,x,y,w,h,title,spec) => ({kind,x,y,w,h,title,subtitle:"",spec:spec||defaultSpec(kind),filters:[],filter_match:"all",alert:{}});
+  let list = [];
+  if(name==="tracker"){
+    list = [
+      T("kpi",0,0,3,2,"Responses",{agg:"count"}),
+      T("delta",3,0,3,2,"Last hour",{agg:"count",window_minutes:60,date:null}),
+      T("progress",6,0,3,2,"Progress to target",{agg:"count",target:1000}),
+      T("gauge",9,0,3,2,"Daily goal",{agg:"count",target:200}),
+      T("timeseries",0,2,7,4,"Responses over time",{date:dt?dt.name:null,freq:"D",agg:"count",cumulative:true}),
+      T("map",7,2,5,4,"Where responses come from",{point_size:6}),
+      T("feed",0,6,4,5,"Live feed",defaultSpec("feed")),
+      T("table",4,6,8,5,"Latest responses",{limit:25}),
+    ];
+    if(cats[0]) list.push(T("leaderboard",0,11,4,4,`Most common: ${cats[0].label||cats[0].name}`.slice(0,140),{group_by:cats[0].name,agg:"count",limit:10}));
+  } else if(name==="results"){
+    list = [T("text",0,0,12,1,"",{body:"Survey results",style:"heading"}), T("kpi",0,1,3,2,"Responses",{agg:"count"})];
+    if(nums[0]) list.push(T("kpi",3,1,3,2,`Average ${nums[0].label||nums[0].name}`.slice(0,140),{agg:"mean",column:nums[0].name,decimals:1}));
+    let x=0, y=3;
+    cats.slice(0,4).forEach(f=>{
+      const few=(f.unique||99)<=6;
+      list.push(T(few?"donut":"hbar",x,y,6,4,f.label||f.name,{x:f.name,agg:"count",sort:"value",limit:few?6:10}));
+      x = x ? 0 : 6; if(!x) y += 4;
     });
-    m.fitBounds(pts.map(p=>[p.lat,p.lng]), {padding:[24,24], maxZoom:14});
-    maps[tile.id]=m;
-    setTimeout(()=>m.invalidateSize(),60);
-    return;
+    if(x) y += 4;
+    nums.slice(0,2).forEach((f,i)=>list.push(T("histogram",i*6,y,6,4,`Spread of ${f.label||f.name}`.slice(0,140),{x:f.name})));
+  } else {
+    list = [T("text",0,0,12,1,"",{body:board.name||"My dashboard",style:"heading"})];
   }
+  tiles = list.map(t=>norm({...t,id:uid--}));
+  selectedId = null; renderGrid(); renderInspector(); commit(); refresh(true);
+  toast(name==="blank" ? "Blank board ready — add cards from the left" : "Layout added — every card is editable");
+}
 
-  /* Chart.js kinds */
-  body.innerHTML = `<canvas id="cv_${did(tile.id)}"></canvas>`;
-  const ctx = $(`#cv_${did(tile.id)}`);
-  const light = document.body.classList.contains("theme-light");
-  const tick = light ? "#4a5378" : "#aeb7dc";
-  const gridc = light ? "rgba(10,14,40,.09)" : "rgba(255,255,255,.08)";
-  const palette = ["#22d3ee","#ff3f98","#ff8a1f","#8b5cf6","#22c55e","#e8482b",
-                   "#38bdf8","#f472b6"];
-  const many = (res.series||[]).length>1 || ["pie","donut"].includes(k);
+/* ── pointer: move by the title bar, resize from any edge or corner ─ */
+function cell(){
+  const r = $("#grid").getBoundingClientRect(), gap = cssNum("--gap",12), rowh = cssNum("--rowh",92);
+  return {r, cw:(r.width-gap*11)/12+gap, ch:rowh+gap};
+}
+function cellAt(px,py){ const {r,cw,ch}=cell();
+  return {x:Math.max(0,Math.min(11,Math.floor((px-r.left)/cw))), y:Math.max(0,Math.floor((py-r.top)/ch))}; }
 
-  if(k==="scatter"){
-    charts[tile.id] = new Chart(ctx,{type:"scatter",
-      data:{datasets:[{label:res.series[0].name,data:res.series[0].data,
-        backgroundColor:"#22d3ee"}]},
-      options:baseOpts(false,tick,gridc)});
-    return;
+let drag = null;
+function beginDrag(e){
+  if(!CAN_EDIT || matchMedia("(max-width:760px)").matches || e.button>0) return;
+  const card = e.target.closest(".tile"); if(!card) return;
+  const dir = e.target.dataset.rz;
+  const onHead = e.target.closest(".thead") && !e.target.closest("button");
+  if(!dir && !onHead) return;
+  const t = byId(card.dataset.id); if(!t) return;
+  if(selectedId!==t.id) select(t.id);
+  drag = {t, card, dir, sx:e.clientX, sy:e.clientY, o:{x:t.x,y:t.y,w:t.w,h:t.h},
+          before: tiles.map(x=>({x:x.x,y:x.y})), moved:false, ph:null};
+  card.setPointerCapture(e.pointerId);
+  e.preventDefault();
+}
+function moveDrag(e){
+  if(!drag) return;
+  const {cw,ch} = cell(), t = drag.t, o = drag.o, mk = KIND[t.kind]||{mw:1,mh:1};
+  const px = e.clientX-drag.sx, py = e.clientY-drag.sy;
+  if(!drag.moved && Math.abs(px)+Math.abs(py) < 4) return;
+  if(!drag.moved){
+    drag.moved = true; $("#grid").classList.add("active");
+    drag.card.classList.add(drag.dir ? "sizing" : "moving");
+    if(!drag.dir){ drag.ph = document.createElement("div"); drag.ph.className="ph"; $("#grid").appendChild(drag.ph); }
   }
-
-  const type = ({hbar:"bar",area:"line",donut:"doughnut",timeseries:"line",
-                 histogram:"bar"})[k] || k;
-  const datasets = (res.series||[]).map((s,i)=>({
-    label:s.name,
-    data:s.data,
-    borderColor:palette[i%palette.length],
-    backgroundColor: ["pie","doughnut"].includes(type)
-      ? res.labels.map((_,j)=>palette[j%palette.length])
-      : (k==="area" ? palette[i%palette.length]+"44" : palette[i%palette.length]),
-    borderWidth: type==="line" ? 2.4 : 0,
-    fill: k==="area",
-    tension:.3,
-    borderDash: s.dashed?[6,4]:undefined,
-    pointRadius: (res.labels||[]).length>40 ? 0 : 2.5,
-  }));
-
-  const opts = baseOpts(many, tick, gridc);
-  if(k==="hbar") opts.indexAxis="y";
-  if(["pie","doughnut"].includes(type)){ delete opts.scales; opts.plugins.legend.display=true; }
-
-  charts[tile.id] = new Chart(ctx,{type,data:{labels:res.labels,datasets},options:opts});
-}
-
-function baseOpts(legend,tick,gridc){
-  return {responsive:true, maintainAspectRatio:false, animation:{duration:280},
-    plugins:{legend:{display:legend,labels:{color:tick,boxWidth:10,font:{size:10}}}},
-    scales:{x:{ticks:{color:tick,font:{size:10},maxRotation:45,autoSkip:true},
-                grid:{color:gridc}},
-            y:{ticks:{color:tick,font:{size:10}},grid:{color:gridc},
-               beginAtZero:true}}};
-}
-
-function label(t){
-  const s = t.spec||{};
-  if(s.agg==="count"||!s.column) return "responses";
-  return `${s.agg} of ${s.column}`;
-}
-
-/* ── data refresh ───────────────────────────────────────────────── */
-let refreshing = false, queued = false;
-
-async function refresh(force){
-  if(refreshing){ queued = true; return; }
-  refreshing = true;
-  try{
-    const q = force ? "?fresh=1" : (lastStamp ? `?since=${encodeURIComponent(lastStamp)}` : "");
-    const j = await api(URLS.data + q);
-    if(j.pulse) drawPulse(j.pulse, j.meta);
-    if(j.unchanged){ return; }
-    lastStamp = j.stamp;
-    paint(j.tiles);
-  }catch(err){
-    setPulse("off", err.message.slice(0,60));
-  }finally{
-    refreshing = false;
-    if(queued){ queued=false; refresh(false); }
-  }
-}
-
-function setPulse(state, text){
-  const p = $("#pulse"); p.className = "pulse "+state; $("#pulseText").textContent = text;
-}
-
-function drawPulse(pulse, meta){
-  if(!pulse) return;
-  const rows = (meta && meta.filtered_rows!==undefined) ? meta.filtered_rows : pulse.rows;
-  if(!pulse.streaming){ setPulse("", `${rows.toLocaleString()} rows · static source`); return; }
-  const secs = pulse.seconds_since;
-  const ago = secs===undefined ? "—"
-    : secs<90 ? `${secs}s ago`
-    : secs<5400 ? `${Math.round(secs/60)}m ago` : `${Math.round(secs/3600)}h ago`;
-  const state = secs===undefined ? "" : (secs<600 ? "on" : "stale");
-  setPulse(state, `${rows.toLocaleString()} rows · ${pulse.last_hour}/hr · last ${ago}`);
-}
-
-/* WebSocket nudge, polling fallback. */
-function connect(){
-  if(!board.is_streaming) { setPulse("", "static source"); return; }
-  const scheme = location.protocol==="https:" ? "wss" : "ws";
-  const path = IS_PUBLIC
-    ? `${scheme}://${location.host}/ws/kura/d/{{ board.public_token }}/dashboard/`
-    : `${scheme}://${location.host}/ws/kura/${CODE}/dashboard/`;
-  let sock;
-  try{ sock = new WebSocket(path); }catch(e){ return; }
-  sock.onmessage = e => {
-    let d={}; try{ d=JSON.parse(e.data);}catch(err){return;}
-    if(d.type==="data_changed"||d.type==="submission") refresh(false);
-  };
-  sock.onclose = () => setTimeout(connect, 5000);
-  setInterval(()=>{ try{ sock.readyState===1 && sock.send('{"type":"ping"}'); }catch(e){} }, 25000);
-}
-
-/* ── palette + drag/drop ────────────────────────────────────────── */
-if(CAN_EDIT){
-  $("#palette").innerHTML = KINDS.map(k=>
-    `<div class="chip" draggable="true" data-kind="${k.k}"><span class="ic">${k.ic}</span>${k.n}</div>`
-  ).join("");
-
-  $("#palette").addEventListener("click", e=>{
-    const chip = e.target.closest(".chip"); if(chip) addTile(chip.dataset.kind);
-  });
-  $("#palette").addEventListener("dragstart", e=>{
-    const chip = e.target.closest(".chip");
-    if(chip) e.dataTransfer.setData("text/kura-kind", chip.dataset.kind);
-  });
-
-  const grid = $("#grid");
-  grid.addEventListener("dragover", e=>{ e.preventDefault(); grid.classList.add("dropping"); });
-  grid.addEventListener("dragleave", ()=>grid.classList.remove("dropping"));
-  grid.addEventListener("drop", e=>{
-    e.preventDefault(); grid.classList.remove("dropping");
-    const kind = e.dataTransfer.getData("text/kura-kind");
-    if(kind) addTile(kind, cellAt(e.clientX, e.clientY));
-  });
-
-  grid.addEventListener("click", e=>{
-    const card = e.target.closest(".tile"); if(!card) return;
-    const id = card.dataset.id;
-    const act = e.target.dataset.act;
-    if(act==="rm"){
-      tiles = tiles.filter(t=>String(t.id)!==id);
-      if(String(selectedId)===id) selectedId=null;
-      markDirty(); renderGrid(); refresh(true); return;
-    }
-    if(act==="dup"){
-      const t = tiles.find(x=>String(x.id)===id);
-      tiles.push({...structuredClone(t), id:uid--, y:nextFreeRow()});
-      markDirty(); renderGrid(); refresh(true); return;
-    }
-    selectedId = tiles.find(t=>String(t.id)===id)?.id ?? null;
-    $$("#grid .tile").forEach(c=>c.classList.toggle("selected", c.dataset.id===id));
-    renderInspector();
-  });
-
-  /* pointer-driven move & resize on the 12-column grid */
-  let drag = null;
-  grid.addEventListener("pointerdown", e=>{
-    const card = e.target.closest(".tile"); if(!card) return;
-    const onHead = e.target.closest(".thead");
-    const onGrip = e.target.classList.contains("resize");
-    if(!onHead && !onGrip) return;
-    if(e.target.dataset.act) return;
-    const t = tiles.find(x=>String(x.id)===card.dataset.id); if(!t) return;
-    drag = {t, card, mode:onGrip?"size":"move", sx:e.clientX, sy:e.clientY,
-            ox:t.x, oy:t.y, ow:t.w, oh:t.h};
-    card.setPointerCapture(e.pointerId);
-    card.classList.add("ghost");
-    e.preventDefault();
-  });
-  grid.addEventListener("pointermove", e=>{
-    if(!drag) return;
-    const {cw, ch} = cellSize();
-    const dx = Math.round((e.clientX-drag.sx)/cw);
-    const dy = Math.round((e.clientY-drag.sy)/ch);
-    const t = drag.t;
-    if(drag.mode==="move"){
-      t.x = Math.max(0, Math.min(12-t.w, drag.ox+dx));
-      t.y = Math.max(0, drag.oy+dy);
-    }else{
-      t.w = Math.max(2, Math.min(12-t.x, drag.ow+dx));
-      t.h = Math.max(1, Math.min(10, drag.oh+dy));
-    }
+  const dx = Math.round(px/cw), dy = Math.round(py/ch);
+  // Restore everyone and re-resolve from the original layout, so cards you
+  // pushed aside slide back if you change your mind mid-drag.
+  tiles.forEach((x,i)=>{ if(x!==t){ x.x=drag.before[i].x; x.y=drag.before[i].y; } });
+  if(!drag.dir){
+    t.x = Math.max(0, Math.min(12-o.w, o.x+dx)); t.y = Math.max(0, o.y+dy);
+    drag.card.style.transform = `translate(${px}px,${py}px)`;
+    place(drag.ph, t);
+  } else {
+    const d = drag.dir;
+    let x=o.x, y=o.y, w=o.w, h=o.h;
+    if(d.includes("e")) w = Math.min(12-o.x, Math.max(mk.mw, o.w+dx));
+    if(d.includes("w")){ x = Math.max(0, Math.min(o.x+o.w-mk.mw, o.x+dx)); w = o.w+(o.x-x); }
+    if(d.includes("s")) h = Math.min(16, Math.max(mk.mh, o.h+dy));
+    if(d.includes("n")){ y = Math.max(0, Math.min(o.y+o.h-mk.mh, o.y+dy)); h = Math.min(16, o.h+(o.y-y)); }
+    Object.assign(t,{x,y,w,h});
     place(drag.card, t);
-  });
-  const endDrag = () => {
-    if(!drag) return;
-    drag.card.classList.remove("ghost");
-    const wasSize = drag.mode==="size", t = drag.t;
-    drag = null; markDirty();
-    if(wasSize){ // charts need a redraw at the new box size
-      const c = charts[t.id]; if(c) c.resize();
-      const m = maps[t.id]; if(m) setTimeout(()=>m.invalidateSize(),50);
-    }
-  };
-  grid.addEventListener("pointerup", endDrag);
-  grid.addEventListener("pointercancel", endDrag);
-
-  function cellSize(){
-    const r = $("#grid").getBoundingClientRect();
-    const gap = parseFloat(getComputedStyle(document.body).getPropertyValue("--gap"))||12;
-    const rowh = parseFloat(getComputedStyle(document.body).getPropertyValue("--rowh"))||92;
-    return {cw:(r.width-gap*11)/12+gap, ch:rowh+gap};
   }
-  function cellAt(px,py){
-    const r = $("#grid").getBoundingClientRect(), {cw,ch} = cellSize();
-    return {x:Math.max(0,Math.min(11,Math.floor((px-r.left)/cw))),
-            y:Math.max(0,Math.floor((py-r.top)/ch))};
-  }
+  resolve(t);
+  $$("#grid .tile").forEach(el=>{ if(el!==drag.card){ const x=byId(el.dataset.id); if(x) place(el,x);} });
+  sizeGrid(4);
+  $(".tsize",drag.card).textContent = drag.dir ? `${t.w} × ${t.h}` : `column ${t.x+1}, row ${t.y+1}`;
+}
+function endDrag(){
+  if(!drag) return;
+  const d = drag; drag = null;
+  $("#grid").classList.remove("active");
+  d.card.classList.remove("moving","sizing"); d.card.style.transform="";
+  d.ph?.remove();
+  if(!d.moved) return;
+  place(d.card, d.t); sizeGrid();
+  const m = maps[String(d.t.id)]; if(m) setTimeout(()=>m.map.invalidateSize({pan:false}),30);
+  commit();
 }
 
-/* ── inspector ──────────────────────────────────────────────────── */
+/* ═══════════════════════════ INSPECTOR ═════════════════════════════ */
 function opts(list, value, blank){
-  return (blank?`<option value="">${blank}</option>`:"") + list.map(f=>{
+  return (blank!==undefined?`<option value="">${esc(blank)}</option>`:"") + list.map(f=>{
     const v = f.name ?? f[0], l = f.label ?? f[1] ?? v;
-    return `<option value="${esc(v)}"${String(value)===String(v)?" selected":""}>${esc(l)}</option>`;
+    const sel = Array.isArray(value) ? value.includes(v) : String(value??"")===String(v);
+    return `<option value="${esc(v)}"${sel?" selected":""}>${esc(l)}</option>`;
   }).join("");
 }
+const seg = (key, list, value, attr="data-th") =>
+  `<div class="seg" role="group">${list.map(([v,l])=>`<button type="button" ${attr}="${key}" data-v="${v}" aria-pressed="${String(value)===String(v)}">${l}</button>`).join("")}</div>`;
 
 function renderInspector(){
   if(!CAN_EDIT) return;
-  const box = $("#inspector");
-  const t = tiles.find(x=>x.id===selectedId);
-  if(!t){ box.innerHTML = `<p class="hint">Select a card to edit it, or drag one in from the left.</p>`; return; }
-  const s = t.spec || {};
-  const num = fieldsOf("numeric"), dt = fieldsOf("datetime"), all = fields;
-  let html = `
-    <label>Card type</label>
-    <select data-t="kind">${opts(KINDS.map(k=>[k.k,k.n]), t.kind)}</select>
-    <label>Title</label>
-    <input data-t="title" value="${esc(t.title)}" placeholder="${esc(KIND_BY[t.kind].n)}">
-    <label>Caption</label>
-    <input data-t="subtitle" value="${esc(t.subtitle)}" placeholder="optional">`;
+  $$(".tabs [data-tab]").forEach(b=>b.setAttribute("aria-selected", String(b.dataset.tab===tab)));
+  if(tab==="board") return renderBoardTab();
+  if(tab==="theme") return renderThemeTab();
+  renderCardTab();
+}
 
-  const numberish = ["kpi","delta","progress","gauge"].includes(t.kind);
-  if(numberish || t.kind==="leaderboard"){
-    if(t.kind==="leaderboard"){
-      html += `<label>Rank by</label><select data-s="group_by">${opts(all, s.group_by)}</select>`;
-    }
-    html += `<label>Measure</label><select data-s="agg">${opts(AGGS, s.agg||"count")}</select>
-      <label>Of column</label><select data-s="column">${opts(all, s.column, "— row count —")}</select>`;
-  }
-  if(t.kind==="delta"){
-    html += `<div class="two"><div><label>Window (min)</label>
-      <input type="number" min="1" data-s="window_minutes" value="${s.window_minutes||60}"></div>
-      <div><label>Time column</label><select data-s="date">${opts(dt, s.date, "auto")}</select></div></div>`;
-  }
-  if(t.kind==="progress"||t.kind==="gauge"){
-    html += `<label>Target</label><input type="number" data-s="target" value="${s.target??""}" placeholder="e.g. 1200">`;
-  }
-  if(t.kind==="leaderboard"){
-    html += `<label>Show top</label><input type="number" min="1" max="50" data-s="limit" value="${s.limit||10}">`;
-  }
-  if(["bar","hbar","pie","donut","line","area"].includes(t.kind)){
-    html += `<label>Break down by</label><select data-s="x">${opts(all, s.x)}</select>
-      <label>Measure</label><select data-s="agg">${opts(AGGS, s.agg||"count")}</select>
-      <label>Of column</label><select data-s="y">${opts(num, s.y, "— row count —")}</select>
-      <label>Split into series</label><select data-s="group_by">${opts(all, s.group_by, "— none —")}</select>
-      <div class="two"><div><label>Sort</label>
-        <select data-s="sort">${opts([["value","Biggest first"],["label","By name"],["","Natural"]], s.sort??"value")}</select></div>
-        <div><label>Max categories</label><input type="number" min="2" max="60" data-s="limit" value="${s.limit||12}"></div></div>`;
-  }
-  if(t.kind==="timeseries"){
-    html += `<label>Time column</label><select data-s="date">${opts(dt, s.date, "auto-detect")}</select>
-      <div class="two"><div><label>Bucket</label>
-        <select data-s="freq">${opts([["MIN","Minute"],["H","Hour"],["D","Day"],["W","Week"],["M","Month"],["Q","Quarter"],["Y","Year"]], s.freq||"D")}</select></div>
-        <div><label>Measure</label><select data-s="agg">${opts(AGGS.slice(0,6), s.agg||"count")}</select></div></div>
-      <label>Of column</label><select data-s="y">${opts(num, s.y, "— row count —")}</select>
-      <label>Split into series</label><select data-s="group_by">${opts(all, s.group_by, "— none —")}</select>
-      <div class="two"><div><label>Rolling average</label>
-        <input type="number" min="0" max="60" data-s="rolling" value="${s.rolling||0}"></div>
-        <div><label>Running total</label>
-        <select data-s="cumulative">${opts([["","No"],["1","Yes"]], s.cumulative?"1":"")}</select></div></div>`;
-  }
-  if(t.kind==="histogram"){
-    html += `<label>Numeric column</label><select data-s="x">${opts(num, s.x)}</select>
-      <label>Buckets</label><input type="number" min="3" max="60" data-s="bins" value="${s.bins||""}" placeholder="auto">`;
-  }
-  if(t.kind==="scatter"){
-    html += `<div class="two"><div><label>X</label><select data-s="x">${opts(num, s.x)}</select></div>
-      <div><label>Y</label><select data-s="y">${opts(num, s.y)}</select></div></div>`;
-  }
-  if(t.kind==="table"){
-    html += `<label>Columns (leave empty for the first eight)</label>
-      <select data-s="columns" multiple size="7">${opts(all, null)}</select>
-      <div class="two"><div><label>Rows</label><input type="number" min="1" max="300" data-s="limit" value="${s.limit||20}"></div>
-      <div><label>Sort by</label><select data-s="sort_by">${opts(all, s.sort_by, "newest first")}</select></div></div>`;
-  }
-  if(t.kind==="map"){
-    html += `<label>Colour points by</label><select data-s="color_by">${opts(all, s.color_by, "— single colour —")}</select>`;
-  }
-  if(t.kind==="text"){
-    html += `<label>Text</label><textarea data-s="body" rows="5">${esc(s.body||"")}</textarea>`;
-  }
+const COSMETIC = new Set(["color","prefix","suffix","decimals","compact","style","point_size","multicolor","stacked","autofit"]);
 
+function renderCardTab(){
+  const box = $("#inspector"), t = byId(selectedId);
+  if(!t){
+    box.innerHTML = `<p class="hint" style="margin-top:1rem">Select a card to change what it shows.</p>
+      <p class="hint"><b>Move</b> a card by its title bar. <b>Resize</b> from any edge or corner — other cards make room.
+      With a card selected: arrow keys move it, Shift + arrows resize, Delete removes, Ctrl+D duplicates.</p>
+      <button class="btn" id="btnTidy" style="margin-top:1rem">${icon("tidy")}Tidy layout</button>
+      <p class="hint">Slides every card up to close the gaps.</p>`;
+    $("#btnTidy").onclick = () => { compact(); placeAll(); commit(); toast("Layout tidied"); };
+    return;
+  }
+  const s = t.spec||{}, num = fieldsOf("numeric"), dt = fieldsOf("datetime"), all = fields;
+  const k = t.kind, numberish = ["kpi","delta","progress","gauge"].includes(k);
+  let h = `<label class="f">Card type</label><select data-t="kind">${KINDS.map(x=>`<option value="${x.k}"${x.k===k?" selected":""}>${x.n}</option>`).join("")}</select>`;
+  if(k!=="text") h += `<label class="f">Title</label><input data-t="title" value="${esc(t.title)}" placeholder="${esc(KIND[k].n)}" maxlength="140">
+    <label class="f">Caption</label><input data-t="subtitle" value="${esc(t.subtitle)}" placeholder="Optional" maxlength="200">`;
+
+  if(numberish || k==="leaderboard"){
+    if(k==="leaderboard") h += `<label class="f">Rank by</label><select data-s="group_by">${opts(all, s.group_by)}</select>`;
+    h += `<label class="f">Measure</label><select data-s="agg">${opts(AGGS, s.agg||"count")}</select>
+      <label class="f">Of question</label><select data-s="column">${opts(all, s.column, "— count every response —")}</select>`;
+  }
+  if(k==="delta") h += `<div class="row2"><div><label class="f">Window (minutes)</label><input type="number" min="1" data-s="window_minutes" value="${s.window_minutes||60}"></div>
+      <div><label class="f">Time column</label><select data-s="date">${opts(dt, s.date, "Automatic")}</select></div></div>`;
+  if(k==="progress"||k==="gauge") h += `<label class="f">Target</label><input type="number" data-s="target" value="${s.target??""}" placeholder="e.g. 1200">`;
+  if(k==="leaderboard") h += `<label class="f">Show top</label><input type="number" min="1" max="50" data-s="limit" value="${s.limit||10}">`;
+  if(["bar","hbar","pie","donut","line","area"].includes(k)){
+    h += `<label class="f">Break down by</label><select data-s="x">${opts(all, s.x)}</select>
+      <label class="f">Measure</label><select data-s="agg">${opts(AGGS.slice(0,6), s.agg||"count")}</select>
+      <label class="f">Of question</label><select data-s="y">${opts(num, s.y, "— count every response —")}</select>
+      <label class="f">Split into series</label><select data-s="group_by">${opts(all, s.group_by, "— none —")}</select>
+      <div class="row2"><div><label class="f">Order</label><select data-s="sort">${opts([["value","Biggest first"],["label","A to Z"],["","As collected"]], s.sort??"value")}</select></div>
+        <div><label class="f">Max categories</label><input type="number" min="2" max="60" data-s="limit" value="${s.limit||12}"></div></div>`;
+    if(k==="bar"||k==="hbar") h += `<div class="box"><label class="switch">One colour per bar<input type="checkbox" data-s="multicolor"${s.multicolor?" checked":""}></label>
+      <label class="switch">Stack series<input type="checkbox" data-s="stacked"${s.stacked?" checked":""}></label></div>`;
+  }
+  if(k==="timeseries") h += `<label class="f">Time column</label><select data-s="date">${opts(dt, s.date, "Automatic")}</select>
+      <div class="row2"><div><label class="f">Group by</label><select data-s="freq">${opts([["MIN","Minute"],["H","Hour"],["D","Day"],["W","Week"],["M","Month"],["Q","Quarter"],["Y","Year"]], s.freq||"D")}</select></div>
+        <div><label class="f">Measure</label><select data-s="agg">${opts(AGGS.slice(0,6), s.agg||"count")}</select></div></div>
+      <label class="f">Of question</label><select data-s="y">${opts(num, s.y, "— count every response —")}</select>
+      <label class="f">Split into series</label><select data-s="group_by">${opts(all, s.group_by, "— none —")}</select>
+      <div class="row2"><div><label class="f">Rolling average</label><input type="number" min="0" max="60" data-s="rolling" value="${s.rolling||0}"></div>
+        <div><label class="f">Running total</label><select data-s="cumulative">${opts([["","No"],["1","Yes"]], s.cumulative?"1":"")}</select></div></div>`;
+  if(k==="histogram") h += `<label class="f">Numeric question</label><select data-s="x">${opts(num, s.x)}</select>
+      <label class="f">Buckets</label><input type="number" min="3" max="60" data-s="bins" value="${s.bins||""}" placeholder="Automatic">`;
+  if(k==="scatter") h += `<div class="row2"><div><label class="f">Across (X)</label><select data-s="x">${opts(num, s.x)}</select></div>
+      <div><label class="f">Up (Y)</label><select data-s="y">${opts(num, s.y)}</select></div></div>`;
+  if(k==="table") h += `<label class="f">Columns <span style="font-weight:400">(none selected = first eight)</span></label>
+      <select data-s="columns" multiple size="7">${opts(all, s.columns||[])}</select>
+      <div class="row2"><div><label class="f">Rows</label><input type="number" min="1" max="300" data-s="limit" value="${s.limit||25}"></div>
+      <div><label class="f">Sort by</label><select data-s="sort_by">${opts(all, s.sort_by, "Newest first")}</select></div></div>`;
+  if(k==="feed") h += `<label class="f">Main line for each response</label><select data-s="headline">${opts(all.filter(f=>!f.meta), s.headline, "— just “Response” —")}</select>
+      <label class="f">Also show <span style="font-weight:400">(up to four)</span></label>
+      <select data-s="columns" multiple size="6">${opts(all.filter(f=>!f.meta), s.columns||[])}</select>
+      <label class="f">How many</label><input type="number" min="3" max="50" data-s="limit" value="${s.limit||12}">
+      <div class="box"><label class="switch"><span>Show flagged / excluded status</span><input type="checkbox" data-s="show_status"${s.show_status!==false?" checked":""}></label></div>
+      <p class="hint">Only the questions you pick here are shown — never who collected a response or where. Safe to publish.</p>`;
+  if(k==="map") h += `<label class="f">Colour points by</label><select data-s="color_by">${opts(all, s.color_by, "— one colour —")}</select>
+      <label class="f">Point size</label><input type="range" min="3" max="14" data-s="point_size" value="${s.point_size||6}">
+      <div class="box"><label class="switch">Re-fit when new points arrive<input type="checkbox" data-s="autofit"${s.autofit?" checked":""}></label></div>`;
+  if(k==="text") h += `<label class="f">Style</label>${seg("style",[["heading","Heading"],["banner","Banner"],["note","Note"]], s.style||"note","data-sv")}
+      <label class="f">Text</label><textarea data-s="body" rows="5">${esc(s.body||"")}</textarea>`;
+
+  if(numberish || k==="leaderboard"){
+    h += `<label class="f">Number format</label><div class="row2">
+      <input data-s="prefix" value="${esc(s.prefix||"")}" placeholder="Before, e.g. GMD " maxlength="8">
+      <input data-s="suffix" value="${esc(s.suffix||"")}" placeholder="After, e.g. %" maxlength="8"></div>
+      <div class="row2" style="margin-top:.45rem;align-items:center"><select data-s="decimals">${opts([["","Auto decimals"],["0","0 decimals"],["1","1 decimal"],["2","2 decimals"]], s.decimals??"")}</select>
+      <label style="display:flex;gap:.4rem;align-items:center;font-size:.76rem"><input type="checkbox" data-s="compact"${s.compact?" checked":""}>Short (12.4k)</label></div>`;
+  }
+  h += `<label class="f">Card colour</label><div style="display:flex;gap:.5rem;align-items:center">
+      <input type="color" data-s="color" value="${esc(s.color||theme().accent)}">
+      <button class="btn" data-clear="color"${s.color?"":" disabled"}>Use theme colour</button></div>`;
   if(numberish){
     const a = t.alert||{};
-    html += `<label>Turn the card red when the value is…</label>
-      <div class="two">
-        <select data-a="op">${opts([["","never"],["lt","below"],["gt","above"]], a.op||"")}</select>
-        <input type="number" data-a="value" value="${a.value??""}" placeholder="threshold">
-      </div>
-      <p class="hint">An alert card stays red on every open copy of this board — the point is that nobody has to be watching the right tile at the right moment.</p>`;
+    h += `<label class="f">Alert</label><div class="row2">
+        <select data-a="op">${opts([["","No alert"],["lt","Red when below"],["gt","Red when above"]], a.op||"")}</select>
+        <input type="number" data-a="value" value="${a.value??""}" placeholder="Threshold"></div>
+      <p class="hint">An alert card turns red on every open copy of the board, including the published link.</p>`;
   }
+  if(k!=="text") h += `<label class="f">Only count responses where…</label><div id="tileFilters"></div>
+    <button class="btn" id="addTileFilter" style="margin-top:.45rem">${icon("plus")}Add condition</button>`;
+  h += `<div style="display:flex;gap:.5rem;margin-top:1.3rem;border-top:1px solid var(--line);padding-top:1rem">
+      <button class="btn" data-do="dup">${icon("copy")}Duplicate</button>
+      <button class="btn danger" data-do="rm">${icon("trash")}Remove</button></div>`;
+  box.innerHTML = h;
 
-  html += `<label>Card filter</label><div id="tileFilters"></div>
-    <button class="btn ghost small" id="addTileFilter" style="margin-top:.4rem">+ condition</button>`;
+  if(k!=="text"){
+    renderConditions($("#tileFilters"), t.filters, () => { commit(); refresh(false,[t.id]); });
+    $("#addTileFilter").onclick = () => { t.filters.push({field:fields[0]?.name, operator:"eq", value:""}); renderInspector(); };
+  }
+  $("[data-do=dup]",box).onclick = () => duplicateTile(t.id);
+  $("[data-do=rm]",box).onclick = () => removeTile(t.id);
 
-  box.innerHTML = html;
-  renderConditions($("#tileFilters"), t.filters, () => { markDirty(); refresh(true); });
-  $("#addTileFilter").onclick = () => {
-    t.filters.push({field:fields[0]?.name, operator:"eq", value:""});
-    renderInspector();
-  };
-
-  box.querySelectorAll("[data-t]").forEach(el=>{
-    el.onchange = () => {
-      const key = el.dataset.t;
-      if(key==="kind"){ t.kind = el.value; t.spec = defaultSpec(el.value); }
-      else t[key] = el.value;
-      markDirty(); renderGrid(); refresh(true);
-    };
+  const redrawHead = () => { const el=$(`.tile[data-id="${t.id}"]`); if(!el) return;
+    $(".ttl",el).innerHTML = `<b>${esc(t.title||KIND[t.kind].n)}</b>${t.subtitle?`<span>${esc(t.subtitle)}</span>`:""}`; };
+  $$("[data-t]",box).forEach(el=>{
+    if(el.dataset.t==="kind"){
+      el.onchange = () => {
+        const old = t.kind; t.kind = el.value;
+        const keep = (CHARTISH.has(old)&&CHARTISH.has(t.kind)) ? t.spec : {};
+        t.spec = {...defaultSpec(t.kind), ...keep}; if(keep.color===undefined && t.spec.color===undefined) delete t.spec.color;
+        const m = KIND[t.kind]; t.w = Math.max(t.w, m.mw); t.h = Math.max(t.h, m.mh); t.x = Math.min(t.x, 12-t.w);
+        resolve(t); destroyKey(String(t.id)); delete results[t.id]; delete sigs[t.id];
+        renderGrid(); renderInspector(); commit(); refresh(false,[t.id]);
+      };
+      return;
+    }
+    el.oninput = () => { t[el.dataset.t] = el.value; redrawHead(); if(t.kind==="kpi") paintOne(t.id); };
+    el.onchange = commit;
   });
-  box.querySelectorAll("[data-s]").forEach(el=>{
-    el.onchange = () => {
-      const key = el.dataset.s;
+  $$("[data-s]",box).forEach(el=>{
+    const key = el.dataset.s;
+    const read = () => {
       let v = el.multiple ? [...el.selectedOptions].map(o=>o.value)
-            : (el.type==="number" ? (el.value===""?null:Number(el.value)) : el.value);
+            : el.type==="checkbox" ? el.checked
+            : (el.type==="number"||el.type==="range") ? (el.value===""?null:Number(el.value)) : el.value;
       if(key==="cumulative") v = v==="1";
+      if(key==="decimals") v = v===""||v===null ? null : Number(v);
+      if(key==="columns" && t.kind==="feed") v = v.slice(0,4);
       if(v==="") v = null;
-      t.spec[key] = v;
-      markDirty(); refresh(true);
+      return v;
     };
+    const apply = (final) => {
+      t.spec[key] = read();
+      if(key==="color"){ $(`.tile[data-id="${t.id}"]`)?.style.setProperty("--card-accent", t.spec.color); const c=$("[data-clear=color]",box); if(c) c.disabled=false; }
+      if(key==="body"){ results[t.id] = {...(results[t.id]||{ok:true,id:t.id}), ok:true, body:t.spec.body}; paintOne(t.id); if(final) commit(); return; }
+      if(COSMETIC.has(key)){ paintOne(t.id); if(final) commit(); return; }
+      if(final){ commit(); refresh(false,[t.id]); }
+    };
+    const textish = el.tagName==="TEXTAREA" || (el.tagName==="INPUT" && !["checkbox","number","range","color"].includes(el.type));
+    if(textish || el.type==="color" || el.type==="range"){ el.oninput = () => apply(false); el.onchange = () => apply(true); }
+    else el.onchange = () => apply(true);
   });
-  box.querySelectorAll("[data-a]").forEach(el=>{
+  $$("[data-sv]",box).forEach(b=>b.onclick=()=>{ t.spec[b.dataset.sv]=b.dataset.v; renderInspector(); paintOne(t.id); commit(); });
+  $$("[data-clear]",box).forEach(b=>b.onclick=()=>{ delete t.spec[b.dataset.clear]; $(`.tile[data-id="${t.id}"]`)?.style.removeProperty("--card-accent"); renderInspector(); paintOne(t.id); commit(); });
+  $$("[data-a]",box).forEach(el=>{
     el.onchange = () => {
       t.alert = t.alert||{};
-      t.alert[el.dataset.a] = el.type==="number" ? Number(el.value) : el.value;
+      t.alert[el.dataset.a] = el.type==="number" ? (el.value===""?null:Number(el.value)) : el.value;
       if(!t.alert.op) t.alert = {};
-      markDirty(); refresh(true);
+      commit(); refresh(false,[t.id]);
     };
   });
 }
 
-const OPERATORS = [["eq","is"],["ne","is not"],["contains","contains"],
-  ["in","is any of"],["gt","greater than"],["gte","at least"],["lt","less than"],
-  ["lte","at most"],["between","between"],["answered","is answered"],
-  ["not_answered","is blank"]];
-
 function renderConditions(host, list, onChange){
   if(!host) return;
-  host.innerHTML = (list||[]).map((c,i)=>`
-    <div class="cond" data-i="${i}">
-      <select data-c="field">${opts(fields, c.field)}</select>
-      <select data-c="operator">${opts(OPERATORS, c.operator)}</select>
-      ${["answered","not_answered"].includes(c.operator)?"":
-        `<input data-c="value" value="${esc(c.value??"")}" placeholder="value">`}
-      <button class="btn ghost small" data-c="rm">Remove</button>
-    </div>`).join("") || `<p class="hint">No conditions — this card sees all rows.</p>`;
-
-  host.querySelectorAll(".cond").forEach(row=>{
+  host.innerHTML = (list||[]).map((c,i)=>`<div class="cond" data-i="${i}">
+      <select data-c="field" aria-label="Question">${opts(fields, c.field)}</select>
+      <div class="row2"><select data-c="operator" aria-label="Condition">${opts(OPERATORS, c.operator)}</select>
+      ${["answered","not_answered"].includes(c.operator)?"<span></span>":`<input data-c="value" value="${esc(c.value??"")}" placeholder="Value" aria-label="Value">`}</div>
+      <button class="btn danger" data-c="rm" style="justify-self:start">Remove</button></div>`).join("")
+    || `<p class="hint">No conditions — all responses are counted.</p>`;
+  $$(".cond",host).forEach(row=>{
     const i = +row.dataset.i;
-    row.querySelectorAll("[data-c]").forEach(el=>{
+    $$("[data-c]",row).forEach(el=>{
       if(el.dataset.c==="rm"){ el.onclick = () => { list.splice(i,1); onChange(); renderConditions(host,list,onChange); }; return; }
-      el.onchange = () => { list[i][el.dataset.c] = el.value; onChange();
-        if(el.dataset.c==="operator") renderConditions(host,list,onChange); };
+      el.onchange = () => { list[i][el.dataset.c] = el.value; onChange(); if(el.dataset.c==="operator") renderConditions(host,list,onChange); };
     });
   });
 }
 
-/* ── board-level controls ───────────────────────────────────────── */
-function markDirty(){ dirty = true; const s=$("#saveText"); if(s){s.textContent="unsaved changes";s.style.color="var(--orange)";} }
-function markClean(){ dirty = false; const s=$("#saveText"); if(s){s.textContent="saved";s.style.color="var(--muted)";} }
-
-async function save(){
-  if(!CAN_EDIT) return;
-  const payload = {
-    name: $("#boardName").value,
-    filters: board.filters, filter_match: board.filter_match,
-    source: board.source, pipeline_id: board.pipeline_id,
-    dataset_id: board.dataset_id, run_id: board.run_id,
-    theme: board.theme, is_live: board.is_live,
-    is_public: board.is_public, refresh_seconds: board.refresh_seconds,
-    tiles: tiles.map(t=>({kind:t.kind,title:t.title,subtitle:t.subtitle,
-      x:t.x,y:t.y,w:t.w,h:t.h,spec:t.spec,filters:t.filters,
-      filter_match:t.filter_match,alert:t.alert})),
+function renderBoardTab(){
+  const box = $("#inspector");
+  const src = [`<option value="submissions">Live responses (as collected)</option>`]
+    .concat(BOOT.pipelines.map(p=>`<option value="pipeline:${p.id}">Live responses, cleaned by “${esc(p.name)}”</option>`))
+    .concat(BOOT.datasets.map(d=>`<option value="dataset:${d.id}">Uploaded file: ${esc(d.name)}</option>`))
+    .concat(BOOT.runs.map(r=>`<option value="run:${r.id}">Snapshot: ${esc(r.label)}</option>`)).join("");
+  const cur = board.source==="submissions" ? "submissions" : `${board.source}:${board.pipeline_id||board.dataset_id||board.run_id}`;
+  box.innerHTML = `
+    <label class="f">Dashboard name</label><input id="bName" value="${esc(board.name)}" maxlength="140">
+    <label class="f">Description <span style="font-weight:400">(shown on the published page)</span></label>
+    <textarea id="bDesc" rows="2" placeholder="What this board tracks">${esc(board.description||"")}</textarea>
+    <label class="f">Data</label><select id="bSource">${src}</select>
+    <p class="hint">Changing the data keeps every card — they simply read the new source.</p>
+    <div class="box">
+      <label class="switch"><span>Live updates<small>New responses appear by themselves</small></span><input type="checkbox" id="bLive"${board.is_live?" checked":""}></label>
+      <label class="switch"><span>Include excluded responses<small>Ones the cleaning rules set aside</small></span><input type="checkbox" id="bExcl"${board.include_excluded?" checked":""}></label>
+      <label class="switch"><span>Backup refresh<small>Used if the live connection drops</small></span>
+        <select id="bRefresh" style="width:auto">${opts([["0","Off"],["10","10 s"],["20","20 s"],["30","30 s"],["60","1 min"],["300","5 min"]], String(board.refresh_seconds))}</select></label>
+    </div>
+    <label class="f">Only show responses where…</label>
+    <div class="seg" style="margin-bottom:.3rem">${[["all","All conditions match"],["any","Any condition matches"]].map(([v,l])=>`<button type="button" data-fm="${v}" aria-pressed="${board.filter_match===v}">${l}</button>`).join("")}</div>
+    <div id="boardFilters"></div>
+    <button class="btn" id="addBoardFilter" style="margin-top:.45rem">${icon("plus")}Add condition</button>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1rem">
+      <button class="btn" id="bTidy">${icon("tidy")}Tidy layout</button>
+      <button class="btn" id="bDup">${icon("copy")}Duplicate board</button>
+      <button class="btn danger" id="bDel">${icon("trash")}Delete board</button></div>`;
+  $("#bSource").value = cur;
+  $("#bName").oninput = e => { board.name = e.target.value; $("#boardName").value = board.name; };
+  $("#bName").onchange = commit;
+  $("#bDesc").oninput = e => { board.description = e.target.value; };
+  $("#bDesc").onchange = commit;
+  $("#bLive").onchange = e => { board.is_live = e.target.checked; markDirty(); flushSave().then(()=>{ if(board.is_streaming) connect(); }); };
+  $("#bExcl").onchange = e => { board.include_excluded = e.target.checked; markDirty(); flushSave().then(()=>refresh(true)); };
+  $("#bRefresh").onchange = e => { board.refresh_seconds = +e.target.value; markDirty(); schedulePoll(); };
+  $("#bSource").onchange = async e => {
+    const [kind,id] = e.target.value.split(":");
+    Object.assign(board,{source:kind, pipeline_id:kind==="pipeline"?+id:null, dataset_id:kind==="dataset"?+id:null, run_id:kind==="run"?+id:null});
+    markDirty(); await flushSave();
+    try{ const f = await api(URLS.fields); fields = f.fields||[]; }catch(err){}
+    renderFields(); feedHeadlineOptions(); lastStamp=null; lastCfg=null; refresh(true); connect();
+    toast(kind==="pipeline" ? "Cards now read cleaned data — layout unchanged" : "Data source changed");
   };
-  try{
-    const j = await api(URLS.save, {method:"POST", body:JSON.stringify(payload)});
-    // Adopt the server ids so per-tile refreshes and alerts line up.
-    const keep = selectedId, index = tiles.findIndex(t=>t.id===keep);
-    board = j.dashboard; tiles = board.tiles;
-    selectedId = index>=0 && tiles[index] ? tiles[index].id : null;
-    markClean(); renderGrid(); refresh(true);
-    toast("Board saved");
-  }catch(err){ toast(err.message); }
+  $$("[data-fm]",box).forEach(b=>b.onclick=()=>{ board.filter_match=b.dataset.fm; renderBoardTab(); commit(); refresh(false); });
+  renderConditions($("#boardFilters"), board.filters, ()=>{ renderFilterBar(); commit(); refresh(false); });
+  $("#addBoardFilter").onclick = () => { board.filters.push({field:fields[0]?.name, operator:"eq", value:""}); renderBoardTab(); };
+  $("#bTidy").onclick = () => { compact(); placeAll(); commit(); toast("Layout tidied"); };
+  $("#bDup").onclick = duplicateBoard;
+  $("#bDel").onclick = deleteBoard;
 }
 
-if(CAN_EDIT){
-  $("#btnSave").onclick = save;
-  $("#boardName").oninput = markDirty;
-
-  /* source switcher — this is the "plug in a pipeline" control */
-  const src = $("#sourceSel");
-  const options = [`<option value="submissions">Live submissions (raw)</option>`];
-  BOOT.pipelines.forEach(p=>options.push(
-    `<option value="pipeline:${p.id}">Live → ${esc(p.name)} (${p.steps} steps)</option>`));
-  BOOT.datasets.forEach(d=>options.push(
-    `<option value="dataset:${d.id}">File · ${esc(d.name)}</option>`));
-  BOOT.runs.forEach(r=>options.push(
-    `<option value="run:${r.id}">Snapshot · ${esc(r.label)}</option>`));
-  src.innerHTML = options.join("");
-  src.value = board.source==="submissions" ? "submissions"
-    : `${board.source}:${board.pipeline_id||board.dataset_id||board.run_id}`;
-  src.onchange = async () => {
-    const [kind, id] = src.value.split(":");
-    board.source = kind;
-    board.pipeline_id = kind==="pipeline" ? +id : null;
-    board.dataset_id  = kind==="dataset"  ? +id : null;
-    board.run_id      = kind==="run"      ? +id : null;
-    await save();                       // source changes must persist at once
-    const f = await api(URLS.fields); fields = f.fields||[];
-    renderFields(); lastStamp=null; refresh(true);
-    toast(kind==="pipeline"
-      ? "Every card now reads pipeline-cleaned data — layout untouched"
-      : "Source switched");
-  };
-
-  $("#btnPresent").onclick = () => {
-    document.body.classList.add("presenting");
-    document.documentElement.requestFullscreen?.().catch(()=>{});
-    setTimeout(()=>{Object.values(charts).forEach(c=>c.resize());
-      Object.values(maps).forEach(m=>m.invalidateSize());},250);
-  };
-  $("#btnShare").onclick = async () => {
-    board.is_public = !board.is_public;
-    await save();
-    if(board.is_public){
-      const url = `${location.origin}/kura/d/${board.public_token}/`;
-      navigator.clipboard?.writeText(url);
-      toast("Link copied — anyone with it can watch this board (read-only)");
-    } else toast("Share link switched off");
-  };
-  $("#btnFilters").onclick = () => {
-    board.filters = board.filters||[];
-    board.filters.push({field:fields[0]?.name, operator:"eq", value:""});
-    renderBoardFilters();
-  };
-  $("#fieldSearch").oninput = renderFields;
+function renderThemeTab(){
+  const box = $("#inspector"), c = board.theme_config||{}, T = theme();
+  box.innerHTML = `
+    <label class="f">Theme</label>
+    <div class="swatches">${Object.entries(THEMES).map(([key,p])=>`<button class="sw" data-theme="${key}" aria-pressed="${board.theme===key}">
+      <div class="pv" style="background:${p.bg}"><i style="background:${p.panel}">${p.palette.slice(0,4).map((col,i)=>`<b style="background:${col};height:${[14,22,10,18][i]}px"></b>`).join("")}</i>
+        <i style="background:${p.panel}"></i><i style="background:${p.palette[0]}"></i></div><span>${esc(p.label)}</span></button>`).join("")}</div>
+    <label class="f">Accent colour</label>
+    <div style="display:flex;gap:.5rem;align-items:center"><input type="color" id="thAccent" value="${esc(c.accent||T.accent)}">
+      <button class="btn" id="thAccentReset"${c.accent?"":" disabled"}>Use theme accent</button></div>
+    <label class="f">Chart colours</label>${seg("palette",[["theme","Theme"],["vivid","Vivid"],["calm","Calm"],["mono","One hue"]], c.palette||"theme")}
+    <label class="f">Typeface</label><select id="thFont">${Object.entries(FONTS).map(([k,f])=>`<option value="${k}"${(c.font||"archivo")===k?" selected":""}>${esc(f.n)}</option>`).join("")}</select>
+    <label class="f">Cards</label>${seg("card",[["solid","Solid"],["glass","Glass"],["raised","Raised"],["outline","Outline"]], c.card||"solid")}
+    <label class="f">Background</label>${seg("backdrop",[["glow","Glow"],["mesh","Mesh"],["grid","Grid"],["plain","Plain"]], c.backdrop||"glow")}
+    <label class="f">Spacing</label>${seg("density",[["compact","Compact"],["cozy","Standard"],["roomy","Roomy"]], c.density||"cozy")}
+    <label class="f">Corner roundness <span id="thRadiusV" style="font-weight:400">${c.radius ?? 14}px</span></label>
+    <input type="range" id="thRadius" min="0" max="28" value="${c.radius ?? 14}">
+    <label class="f">Name on the published page</label>
+    <input id="thLogo" value="${esc(c.logo_text||"")}" placeholder="${esc(BOOT.survey.title||"Kura")}" maxlength="40">
+    <p class="hint">Theme changes show here straight away and reach the public link when you publish.</p>`;
+  const tc = (k,v) => { board.theme_config = {...board.theme_config, [k]:v}; };
+  const full = () => { applyTheme(); sizeGrid(); repaintAll(); };
+  $$("[data-theme]",box).forEach(b=>b.onclick=()=>{ board.theme=b.dataset.theme; full(); renderThemeTab(); commit(); });
+  $$("[data-th]",box).forEach(b=>b.onclick=()=>{ tc(b.dataset.th, b.dataset.v); full(); renderThemeTab(); commit(); });
+  let raf;
+  $("#thAccent").oninput = e => { tc("accent", e.target.value); cancelAnimationFrame(raf); raf=requestAnimationFrame(full); };
+  $("#thAccent").onchange = () => { renderThemeTab(); commit(); };
+  $("#thAccentReset").onclick = () => { const n={...board.theme_config}; delete n.accent; board.theme_config=n; full(); renderThemeTab(); commit(); };
+  $("#thFont").onchange = e => { tc("font", e.target.value); full(); commit(); };
+  $("#thRadius").oninput = e => { tc("radius", +e.target.value); $("#thRadiusV").textContent=e.target.value+"px"; applyTheme(); };
+  $("#thRadius").onchange = commit;
+  $("#thLogo").oninput = e => tc("logo_text", e.target.value);
+  $("#thLogo").onchange = commit;
 }
 
-$("#btnExit").onclick = () => {
-  document.body.classList.remove("presenting");
-  document.exitFullscreen?.().catch(()=>{});
-  setTimeout(()=>Object.values(charts).forEach(c=>c.resize()),250);
-};
-
-function renderBoardFilters(){
-  const bar = $("#filterBar");
-  if(!CAN_EDIT){ bar.style.display = "none"; return; }
-  bar.innerHTML = `<span class="hint" style="margin:0">Board filter</span>`;
-  const host = document.createElement("div");
-  host.style.flex="1";
-  bar.appendChild(host);
-  renderConditions(host, board.filters||[], ()=>{ markDirty(); lastStamp=null; refresh(true); });
+function repaintAll(){
+  Object.keys(charts).concat(Object.keys(maps)).forEach(k=>{ if(k!=="focus") destroyKey(k); });
+  tiles.forEach(t=>paintOne(t.id));
+  if(focusId!==null) openFocus(focusId);
 }
 
+function renderFilterBar(){
+  const bar = $("#filterBar"); if(!bar) return;
+  if(!CAN_EDIT){ bar.innerHTML=""; return; }
+  const f = (board.filters||[]).filter(c=>c.field);
+  const op = o => (OPERATORS.find(x=>x[0]===o)||[0,o])[1];
+  bar.innerHTML = f.map(c=>`<span class="pill">${esc(fieldLabel(c.field))} ${esc(op(c.operator))}${["answered","not_answered"].includes(c.operator)?"":` <b>${esc(c.value)}</b>`}
+      <button data-frm="${board.filters.indexOf(c)}" aria-label="Remove filter">✕</button></span>`).join("")
+    + (f.length ? `<span class="pill add">${icon("plus")}Filter</span>` : "");
+  bar.onclick = e => {
+    const rm = e.target.closest("[data-frm]");
+    if(rm){ board.filters.splice(+rm.dataset.frm,1); renderFilterBar(); if(tab==="board") renderBoardTab(); commit(); refresh(false); return; }
+    if(e.target.closest(".pill")){ tab="board"; renderInspector(); }
+  };
+}
+
+function renderPalette(){
+  const groups = [...new Set(KINDS.map(k=>k.g))];
+  $("#palette").innerHTML = groups.map(g=>`<div class="pgroup">${g}</div><div class="palette">${
+    KINDS.filter(k=>k.g===g).map(k=>`<div class="chip" draggable="true" data-kind="${k.k}" role="button" tabindex="0" title="Click to add, or drag onto the board">${icon(k.k)}${k.n}</div>`).join("")}</div>`).join("");
+}
 function renderFields(){
   const host = $("#fieldList"); if(!host) return;
   const q = ($("#fieldSearch")?.value||"").toLowerCase();
-  const shown = fields.filter(f=>!q || f.name.toLowerCase().includes(q)
-    || (f.label||"").toLowerCase().includes(q));
-  host.innerHTML = shown.slice(0,150).map(f=>`
-    <div class="field" title="${esc(f.label)}">
-      <span class="ftype ${f.kind}">${f.kind[0].toUpperCase()}</span>
-      <b>${esc(f.name)}</b></div>`).join("")
-    || `<p class="hint">No fields — publish the form and collect a response, or pick another source.</p>`;
+  const shown = fields.filter(f=>!f.meta && (!q || f.name.toLowerCase().includes(q) || (f.label||"").toLowerCase().includes(q)));
+  host.innerHTML = shown.slice(0,150).map(f=>`<button class="field" draggable="true" data-field="${esc(f.name)}" title="${esc(f.label)} (${esc(f.name)})">
+      <span class="ftype ${f.kind}">${{numeric:"#",datetime:"◷",categorical:"A"}[f.kind]||"A"}</span><b>${esc(f.label||f.name)}</b><span class="add">Add</span></button>`).join("")
+    || `<p class="hint">${fields.length ? "No match." : "No questions yet. Publish the form and collect a response, or choose other data in the Board tab."}</p>`;
+}
+function feedHeadlineOptions(){
+  const sel = $("#feedHeadline"); if(!sel) return;
+  if(feed.headline===null){ const c = firstCat(); feed.headline = c ? c.name : null; }
+  sel.innerHTML = opts(fields.filter(f=>!f.meta), feed.headline, "Show: time only");
 }
 
-/* ── boot ───────────────────────────────────────────────────────── */
+/* ═══════════════════════════ MENUS & DIALOGS ═══════════════════════ */
+function openMenu(anchor, html, onClick){
+  const m = $("#menu"); m.innerHTML = html; m.hidden = false;
+  const r = anchor.getBoundingClientRect(), mw = m.offsetWidth, mh = m.offsetHeight;
+  m.style.left = Math.max(8, Math.min(innerWidth-mw-8, r.right-mw))+"px";
+  m.style.top  = (r.bottom+mh+8 > innerHeight ? Math.max(8, r.top-mh-6) : r.bottom+6)+"px";
+  m.onclick = e => { const b = e.target.closest("[data-m]"); if(!b) return; closeMenu(); onClick(b.dataset.m, b); };
+  const outside = e => { if(m.hidden) return; if(!m.contains(e.target)) closeMenu(); else document.addEventListener("pointerdown", outside, {once:true}); };
+  setTimeout(()=>document.addEventListener("pointerdown", outside, {once:true}),0);
+  $("button,a",m)?.focus();
+}
+function closeMenu(){ $("#menu").hidden = true; }
+
+function tileMenu(anchor, id){
+  const t = byId(id), res = results[id], chart = !!charts[String(id)];
+  const items = [];
+  if(t.kind!=="text") items.push(`<button data-m="expand">${icon("expand")}Expand</button>`);
+  if(chart) items.push(`<button data-m="png">${icon("img")}Download image</button>`);
+  if(res && res.ok && t.kind!=="text") items.push(`<button data-m="csv">${icon("csv")}Download data (CSV)</button>`);
+  if(CAN_EDIT) items.push(`<hr><button data-m="dup">${icon("copy")}Duplicate<small>Ctrl+D</small></button>`,
+                         `<button data-m="rm" class="danger">${icon("trash")}Remove<small>Del</small></button>`);
+  openMenu(anchor, items.join(""), a=>{
+    if(a==="expand") openFocus(id);
+    if(a==="png") downloadPng(String(id), t);
+    if(a==="csv") downloadCsv(t, res);
+    if(a==="dup") duplicateTile(id);
+    if(a==="rm") removeTile(id);
+  });
+}
+
+function slug(s){ return (String(s||"card").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"card").slice(0,60); }
+function download(name, blob){ const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000); }
+function downloadPng(key, t){
+  const c = charts[key]; if(!c) return;
+  const cv = c.canvas, out = document.createElement("canvas"); out.width=cv.width; out.height=cv.height;
+  const x = out.getContext("2d"); x.fillStyle = theme().panel; x.fillRect(0,0,out.width,out.height); x.drawImage(cv,0,0);
+  out.toBlob(b=>download(`${slug(t.title||KIND[t.kind].n)}.png`, b));
+}
+function downloadCsv(t, res){
+  const q = v => { const s = v===null||v===undefined ? "" : (typeof v==="object" ? JSON.stringify(v) : String(v)); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; };
+  let rows;
+  if(res.columns && res.rows) rows = [res.columns, ...res.rows.map(r=>res.columns.map(c=>r[c]))];
+  else if(res.items) { const cols = (t.spec.columns||[]); rows = [["received_at","headline",...cols], ...res.items.map(i=>[i.at, i.headline, ...cols.map(c=>(i.fields.find(f=>f.name===c)||{}).value)])]; }
+  else if(res.points) rows = [["lat","lng","group"], ...res.points.map(p=>[p.lat,p.lng,p.group??""])];
+  else if(t.kind==="leaderboard") rows = [["rank","label","value"], ...(res.rows||[]).map((r,i)=>[i+1,r.label,r.value])];
+  else if(t.kind==="scatter") rows = [["x","y"], ...(res.series?.[0]?.data||[]).map(p=>[p.x,p.y])];
+  else if(res.labels) rows = [["label", ...res.series.map(s=>s.name)], ...res.labels.map((l,i)=>[l, ...res.series.map(s=>s.data[i])])];
+  else rows = [["value","target"],[res.value, res.target??""]];
+  download(`${slug(t.title||KIND[t.kind].n)}.csv`, new Blob([rows.map(r=>r.map(q).join(",")).join("\n")], {type:"text/csv"}));
+}
+
+/* expand a card to near-full screen */
+let focusId = null;
+function openFocus(id){
+  const t = byId(id), res = results[id]; if(!t) return;
+  focusId = t.id; destroyKey("focus"); delete seen.focus;
+  $("#focusTitle").textContent = t.title || KIND[t.kind].n;
+  const b = $("#focusBody"); b.innerHTML = ""; b.className = "tbody";
+  const f = $("#focus"); f.hidden = false; f.querySelector(".focus-card").style.setProperty("--card-accent", t.spec.color||"var(--accent)");
+  $("#focusPng").hidden = !CHARTISH.has(t.kind);
+  ro.observe(b);
+  requestAnimationFrame(()=>{ if(res) draw(b, t, res, "focus"); });
+  $("#focusClose").focus();
+}
+function closeFocus(){ $("#focus").hidden = true; destroyKey("focus"); focusId = null; }
+
+/* board switcher */
+function boardsMenu(anchor){
+  const list = BOOT.dashboards.map(d=>`<a href="${URLS.board(d.id)}" class="${d.id===BOARD_ID?"cur":""}">${d.public?icon("globe"):icon("tidy")}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(d.id===BOARD_ID?board.name:d.name)}</span>${d.public?"<small>published</small>":""}</a>`).join("");
+  openMenu(anchor, list + (CAN_EDIT?`<hr><button data-m="new">${icon("plus")}New dashboard</button><button data-m="dup">${icon("copy")}Duplicate this one</button>`:""), a=>{
+    if(a==="new") newBoard();
+    if(a==="dup") duplicateBoard();
+  });
+}
+async function newBoard(){
+  try{ await flushSave(); const j = await api(URLS.create, {method:"POST", body:JSON.stringify({name:"New dashboard"})}); location.href = URLS.board(j.dashboard.id); }
+  catch(e){ toast(e.message); }
+}
+async function duplicateBoard(){
+  await flushSave();
+  try{ const j = await api(URLS.duplicate, {method:"POST"}); location.href = URLS.board(j.dashboard.id); }
+  catch(e){ toast(e.message); }
+}
+async function deleteBoard(){
+  if(!confirm(`Delete “${board.name}”? This removes the board and switches off its published link. Your survey data is not affected.`)) return;
+  try{ await api(URLS.remove, {method:"POST"}); editSeq=savedSeq; location.href = `/kura/${CODE}/dash/`; }
+  catch(e){ toast(e.message); }
+}
+
+/* ── publish ────────────────────────────────────────────────────── */
+const PUB = {
+  draft:{label:"Publish", state:"Not published", cls:""},
+  live:{label:"Published", state:"Live", cls:"live"},
+  outdated:{label:"Update", state:"Live — unpublished changes", cls:"outdated"},
+  off:{label:"Publish", state:"Link switched off", cls:"off"},
+  expired:{label:"Publish", state:"Link expired", cls:"expired"},
+};
+function pubButton(){
+  const b = $("#btnPublish"); if(!b) return;
+  const st = board.publish_state || "draft";
+  b.dataset.state = st; $("#pubLabel").textContent = PUB[st].label; b.title = PUB[st].state;
+}
+const shareUrl = () => `${location.origin}/kura/d/${board.public_token}/`;
+
+function openPublish(){
+  const m = $("#pubModal"), st = board.publish_state || "draft", P = PUB[st];
+  const live = st==="live"||st==="outdated";
+  const o = {show_header:true, show_pulse:true, show_clock:true, show_footer:true, ...(board.publish_options||{})};
+  const exp = board.share_expires_at ? new Date(board.share_expires_at) : null;
+  const local = d => new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  const url = shareUrl();
+  const embed = `<iframe src="${url}?embed=1" width="100%" height="720" style="border:0;border-radius:12px" loading="lazy" title="${esc(board.name)}"></iframe>`;
+  const hasLink = !!board.published_at;
+  m.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="pubTitle">
+    <header><h2 id="pubTitle">Publish dashboard</h2><span class="state ${P.cls}"><i></i>${P.state}</span>
+      <button class="btn icon" data-x title="Close"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></header>
+    <div class="mb">
+      <p class="hint" style="margin-top:0;font-size:.8rem">${live
+        ? "Anyone with this link can watch the board, read-only, with live numbers. They see the version you last published — your edits stay private until you update it."
+        : "Publishing creates a private link that anyone can open to watch this board, read-only, with live numbers. Later edits stay private until you publish again."}</p>
+      ${hasLink ? `
+      <div class="sharegrid" style="margin-top:.9rem">
+        <div>
+          <label class="f" style="margin-top:0">Share link</label>
+          <div class="linkbox"><input readonly value="${esc(url)}" id="pubUrl" aria-label="Share link">
+            <button class="btn" data-copy="url">${icon("copy")}Copy</button></div>
+          <div style="display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap">
+            <a class="btn" href="${esc(url)}" target="_blank" rel="noopener">${icon("open")}Open</a>
+            <a class="btn" href="${esc(url)}?tv=1" target="_blank" rel="noopener">${icon("expand")}Open for a TV</a></div>
+          <div class="stats"><span><b>${(board.public_views||0).toLocaleString()}</b>views</span>
+            <span><b>${new Date(board.published_at).toLocaleDateString([], {day:"numeric",month:"short"})}</b>last published${board.published_by?` by ${esc(board.published_by)}`:""}</span>
+            ${exp?`<span><b>${exp.toLocaleDateString([], {day:"numeric",month:"short"})}</b>${exp<new Date()?"expired":"expires"}</span>`:""}</div>
+        </div>
+        <div><div class="qr"><img src="${URLS.qr}?t=${encodeURIComponent(board.public_token)}" alt="QR code for the share link"></div>
+          <a class="btn" style="width:100%;justify-content:center;margin-top:.4rem" href="${URLS.qr}?download=1">${icon("img")}QR code</a></div>
+      </div>` : ""}
+      <div class="box">
+        <label class="switch"><span>Link expires</span>
+          <select id="pExp" style="width:auto">${opts([["never","Never"],["1h","In 1 hour"],["24h","In 24 hours"],["7d","In 7 days"],["30d","In 30 days"],["custom","On a date…"]], exp?"custom":"never")}</select></label>
+        <div id="pExpAt" ${exp?"":"hidden"} style="padding:.2rem 0 .6rem"><input type="datetime-local" id="pExpAtIn" value="${exp?local(exp):""}"></div>
+        <label class="switch"><span>Allow embedding<small>Put the board inside another website</small></span><input type="checkbox" id="pEmbed"${board.allow_embed?" checked":""}></label>
+        <div id="pEmbedBox" ${board.allow_embed && hasLink ?"":"hidden"} style="padding:.2rem 0 .7rem">
+          <textarea readonly rows="3" id="pEmbedCode" style="font-family:ui-monospace,Menlo,monospace;font-size:.7rem">${esc(embed)}</textarea>
+          <button class="btn" data-copy="embed" style="margin-top:.35rem">${icon("copy")}Copy embed code</button>
+          <p class="hint">Embedding takes effect when you save these settings.</p></div>
+      </div>
+      <div class="box">
+        <label class="switch"><span>Title and description</span><input type="checkbox" data-po="show_header"${o.show_header?" checked":""}></label>
+        <label class="switch"><span>Live status</span><input type="checkbox" data-po="show_pulse"${o.show_pulse?" checked":""}></label>
+        <label class="switch"><span>Clock</span><input type="checkbox" data-po="show_clock"${o.show_clock?" checked":""}></label>
+        <label class="switch"><span>Footer</span><input type="checkbox" data-po="show_footer"${o.show_footer?" checked":""}></label>
+      </div>
+    </div>
+    <footer>
+      <div class="left">${live?`<button class="btn danger" data-do="unpub">Unpublish</button>`:""}
+        ${hasLink?`<button class="btn" data-do="rotate" title="The old link and QR code stop working">New link</button>`:""}</div>
+      <button class="btn" data-x>Cancel</button>
+      <button class="btn primary" data-do="pub">${st==="outdated"?"Update published version":live?"Save link settings":"Publish"}</button>
+    </footer></div>`;
+  m.hidden = false;
+  const close = () => { m.hidden = true; m.innerHTML = ""; };
+  $$("[data-x]",m).forEach(b=>b.onclick=close);
+  m.onclick = e => { if(e.target===m) close(); };
+  $("#pExp").onchange = e => $("#pExpAt").hidden = e.target.value!=="custom";
+  $("#pEmbed").onchange = e => $("#pEmbedBox").hidden = !(e.target.checked && hasLink);
+  $$("[data-copy]",m).forEach(b=>b.onclick=()=>{ const v=b.dataset.copy==="url"?$("#pubUrl").value:$("#pEmbedCode").value;
+    navigator.clipboard?.writeText(v).then(()=>toast(b.dataset.copy==="url"?"Link copied":"Embed code copied")); });
+  const primary = $("[data-do=pub]",m), label = primary.textContent;
+  const publish = async (rotate) => {
+    primary.disabled = true; primary.textContent = "Publishing…";
+    if(!(await flushSave())){ primary.disabled=false; primary.textContent=label; toast("Couldn't save your latest changes — try again"); return; }
+    const options = {}; $$("[data-po]",m).forEach(c=>options[c.dataset.po]=c.checked);
+    const expAt = $("#pExpAtIn")?.value;
+    try{
+      const j = await api(URLS.publish, {method:"POST", body:JSON.stringify({
+        expires:$("#pExp").value, expires_at: expAt ? new Date(expAt).toISOString() : "",
+        allow_embed:$("#pEmbed").checked, options, rotate:!!rotate})});
+      adoptBoard(j.dashboard);
+      navigator.clipboard?.writeText(j.url).catch(()=>{});
+      toast(rotate ? "New link published and copied — the old one no longer works" : "Published — link copied");
+      openPublish();
+    }catch(e){ primary.disabled=false; primary.textContent=label; toast(e.message); }
+  };
+  primary.onclick = () => publish(false);
+  const rot = $("[data-do=rotate]",m);
+  if(rot) rot.onclick = () => { if(confirm("Create a new link? The current link and any printed QR codes will stop working.")) publish(true); };
+  const un = $("[data-do=unpub]",m);
+  if(un) un.onclick = async () => {
+    try{ const j = await api(URLS.unpublish, {method:"POST"}); adoptBoard(j.dashboard); toast("Unpublished — the link is switched off"); openPublish(); }
+    catch(e){ toast(e.message); }
+  };
+  primary.focus();
+}
+function adoptBoard(d){
+  ["publish_state","public_token","published_at","published_by","share_expires_at","allow_embed","public_views","publish_options","is_public"]
+    .forEach(k=>board[k]=d[k]);
+  const me = BOOT.dashboards.find(x=>x.id===BOARD_ID); if(me) me.public = d.publish_state==="live"||d.publish_state==="outdated";
+  pubButton();
+}
+
+/* ── present / tv: fit the whole board on one screen ────────────── */
+function fitToScreen(){
+  if(!document.body.classList.contains("presenting")) return;
+  const rows = Math.max(1, bottomRow());
+  const head = IS_PUBLIC && !$("#pubHead").hidden ? $("#pubHead").offsetHeight : 0;
+  const gap = cssNum("--gap",12);
+  const avail = innerHeight - head - 26 - gap*(rows-1);
+  document.documentElement.style.setProperty("--rowh", Math.max(44, Math.floor(avail/rows))+"px");
+}
+function present(on){
+  document.body.classList.toggle("presenting", on);
+  if(on){ closeMenu(); document.documentElement.requestFullscreen?.().catch(()=>{}); }
+  else if(document.fullscreenElement) document.exitFullscreen?.().catch(()=>{});
+  applyTheme(); fitToScreen(); sizeGrid();
+  setTimeout(()=>{ Object.values(maps).forEach(m=>m.map.invalidateSize({pan:false})); }, 280);
+}
+
+/* ═══════════════════════════ WIRING ════════════════════════════════ */
+function wire(){
+  const grid = $("#grid");
+  grid.addEventListener("click", e=>{
+    const st = e.target.closest("[data-starter]"); if(st){ starter(st.dataset.starter); return; }
+    const card = e.target.closest(".tile"); if(!card) return;
+    const t = byId(card.dataset.id); if(!t) return;
+    const actEl = e.target.closest("[data-act]"), act = actEl?.dataset.act;
+    if(act==="expand") return openFocus(t.id);
+    if(act==="menu") return tileMenu(actEl, t.id);
+    if(act==="fit") return fitMap(String(t.id));
+    if(CAN_EDIT && selectedId!==t.id) select(t.id);
+  });
+  grid.addEventListener("dblclick", e=>{
+    const card = e.target.closest(".tile"); if(!card || e.target.closest(".mapbox")) return;
+    const t = byId(card.dataset.id); if(t && t.kind!=="text") openFocus(t.id);
+  });
+  $("#focusClose").onclick = closeFocus;
+  $("#focus").onclick = e => { if(e.target.id==="focus") closeFocus(); };
+  $("#focusPng").onclick = () => { const t=byId(focusId); if(t) downloadPng("focus", t); };
+  $("#btnPresent").onclick = () => present(!document.body.classList.contains("presenting"));
+  $("#btnExit").onclick = () => present(false);
+  document.addEventListener("fullscreenchange", ()=>{ if(!document.fullscreenElement && document.body.classList.contains("presenting") && !BOOT.tv) present(false); });
+  $("#btnBoards")?.addEventListener("click", e=>boardsMenu(e.currentTarget));
+  $("#btnFeed")?.addEventListener("click", ()=>feedToggle());
+  $("#feedClose")?.addEventListener("click", ()=>feedToggle(false));
+  $("#feedPause")?.addEventListener("click", e=>{
+    feed.paused = !feed.paused; e.currentTarget.setAttribute("aria-pressed", String(feed.paused));
+    e.currentTarget.textContent = feed.paused ? "Resume" : "Pause";
+    if(!feed.paused){ const q = feed.queued.splice(0); if(CAN_EDIT) feedReload(); else q.forEach(feedPush); }
+  });
+  $("#feedHeadline")?.addEventListener("change", e=>{ feed.headline = e.target.value || null; feed.keys = new Set(); feedReload(); });
+  window.addEventListener("resize", ()=>{ clearTimeout(window._rz); window._rz=setTimeout(()=>{ fitToScreen(); sizeGrid(); },120); });
+
+  document.addEventListener("keydown", e=>{
+    const tgt = e.target instanceof Element ? e.target : null;
+    const typing = tgt && tgt.closest("input,textarea,select,[contenteditable]");
+    if(e.key==="Escape"){
+      if(!$("#menu").hidden) return closeMenu();
+      if(!$("#focus").hidden) return closeFocus();
+      if(!$("#pubModal").hidden){ $("#pubModal").hidden=true; return; }
+      if(document.body.classList.contains("presenting")) return present(false);
+      if(feed.open) return feedToggle(false);
+      if(CAN_EDIT && selectedId!==null) return select(null);
+    }
+    if(typing || e.altKey) return;
+    const mod = e.ctrlKey || e.metaKey;
+    if(!mod && (e.key==="f"||e.key==="F"||e.key==="p"||e.key==="P")){ present(!document.body.classList.contains("presenting")); return; }
+    if(!mod && (e.key==="l"||e.key==="L") && !IS_PUBLIC){ feedToggle(); return; }
+    if(!CAN_EDIT) return;
+    if(mod && e.key.toLowerCase()==="z"){ e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+    if(mod && e.key.toLowerCase()==="y"){ e.preventDefault(); redo(); return; }
+    if(mod && e.key.toLowerCase()==="s"){ e.preventDefault(); flushSave().then(ok=>toast(ok?"Saved":"Couldn't save — check your connection")); return; }
+    const t = byId(selectedId); if(!t) return;
+    if(mod && e.key.toLowerCase()==="d"){ e.preventDefault(); duplicateTile(t.id); return; }
+    if(e.key==="Delete" || e.key==="Backspace"){ e.preventDefault(); removeTile(t.id); return; }
+    const arrows = {ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key];
+    if(!arrows) return;
+    e.preventDefault();
+    const m = KIND[t.kind];
+    if(e.shiftKey){ t.w = Math.max(m.mw, Math.min(12-t.x, t.w+arrows[0])); t.h = Math.max(m.mh, Math.min(16, t.h+arrows[1])); }
+    else { t.x = Math.max(0, Math.min(12-t.w, t.x+arrows[0])); t.y = Math.max(0, t.y+arrows[1]); }
+    resolve(t); placeAll(); clearTimeout(window._kc); window._kc=setTimeout(commit,350);
+  });
+
+  if(!CAN_EDIT) return;
+  grid.addEventListener("pointerdown", beginDrag);
+  grid.addEventListener("pointermove", moveDrag);
+  grid.addEventListener("pointerup", endDrag);
+  grid.addEventListener("pointercancel", endDrag);
+
+  const pal = $("#palette");
+  pal.addEventListener("click", e=>{ const c=e.target.closest(".chip"); if(c) addTile(c.dataset.kind); });
+  pal.addEventListener("keydown", e=>{ const c=e.target.closest(".chip"); if(c && (e.key==="Enter"||e.key===" ")){ e.preventDefault(); addTile(c.dataset.kind); } });
+  pal.addEventListener("dragstart", e=>{ const c=e.target.closest(".chip"); if(c) e.dataTransfer.setData("text/kura-kind", c.dataset.kind); });
+  const fl = $("#fieldList");
+  fl.addEventListener("click", e=>{ const b=e.target.closest("[data-field]"); if(b){ const f=fields.find(x=>x.name===b.dataset.field); if(f) smartAdd(f); } });
+  fl.addEventListener("dragstart", e=>{ const b=e.target.closest("[data-field]"); if(b) e.dataTransfer.setData("text/kura-field", b.dataset.field); });
+  grid.addEventListener("dragover", e=>{ if([...e.dataTransfer.types].some(t=>t.startsWith("text/kura"))){ e.preventDefault(); grid.classList.add("dropping"); } });
+  grid.addEventListener("dragleave", e=>{ if(!grid.contains(e.relatedTarget)) grid.classList.remove("dropping"); });
+  grid.addEventListener("drop", e=>{
+    e.preventDefault(); grid.classList.remove("dropping");
+    const at = cellAt(e.clientX, e.clientY);
+    const kind = e.dataTransfer.getData("text/kura-kind");
+    if(kind) return addTile(kind, at);
+    const fname = e.dataTransfer.getData("text/kura-field");
+    const f = fname && fields.find(x=>x.name===fname);
+    if(f) smartAdd(f, at);
+  });
+  $("#fieldSearch").oninput = renderFields;
+  $$(".tabs [data-tab]").forEach(b=>b.onclick=()=>{ tab=b.dataset.tab; renderInspector(); });
+  $("#btnUndo").onclick = undo; $("#btnRedo").onclick = redo;
+  $("#btnPublish").onclick = openPublish;
+  const bn = $("#boardName");
+  bn.oninput = () => { board.name = bn.value; const n=$("#bName"); if(n) n.value=board.name; };
+  bn.onchange = commit;
+  bn.onkeydown = e => { if(e.key==="Enter") bn.blur(); };
+  window.addEventListener("beforeunload", e=>{ if(editSeq!==savedSeq){ save(); e.preventDefault(); e.returnValue=""; } });
+}
+
+function setupPublic(){
+  const o = {show_header:true, show_pulse:true, show_clock:true, show_footer:true, ...(board.publish_options||{})};
+  if(board.description){ const d=$("#pubDesc"); d.textContent=board.description; d.hidden=false; }
+  if(BOOT.embed || !o.show_header){ $("#pubTitle").hidden = true; $("#pubDesc").hidden = true; $(".who",$("#pubHead")).hidden = true; }
+  if(!o.show_pulse) $("#pulse").hidden = true;
+  if(o.show_clock && !BOOT.embed){
+    const c=$("#clock"); c.hidden=false;
+    const tick=()=>c.textContent=new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+    tick(); setInterval(tick, 10000);
+  }
+  if(BOOT.embed && !o.show_pulse) $("#pubHead").hidden = true;
+  if(!o.show_footer || BOOT.embed) $("#pubFoot").hidden = true;
+  else if(board.published_at) $("#pubFootL").textContent = `Published ${new Date(board.published_at).toLocaleDateString([], {day:"numeric",month:"long",year:"numeric"})}`;
+  if(BOOT.tv) present(true);
+}
+
+let pollTimer=null;
+function schedulePoll(){ clearInterval(pollTimer); const s=(board.refresh_seconds||0)*1000; if(s) pollTimer=setInterval(()=>refresh(false), s); }
+
+/* ═══════════════════════════ BOOT ══════════════════════════════════ */
 (async function start(){
-  renderGrid();
-  renderBoardFilters();
+  applyTheme();
+  if(IS_PUBLIC) setupPublic();
+  if(CAN_EDIT) renderPalette();
+  wire();
+  renderGrid(); renderFilterBar();
   if(CAN_EDIT){
     try{ const f = await api(URLS.fields); fields = f.fields||[]; }catch(e){ fields=[]; }
-    renderFields(); renderInspector();
+    renderFields(); renderInspector(); renderFilterBar(); feedHeadlineOptions();
+    hist.stack=[snapshot()]; hist.i=0; undoState(); pubButton();
+    if(!tiles.length) renderGrid();
+    setSave("saved");
   }
+  if(!board.is_streaming) setPulse("", "Fixed data");
   await refresh(true);
-  connect();
-  const every = (board.refresh_seconds||0)*1000;
-  if(every) setInterval(()=>refresh(false), every);
-  window.addEventListener("resize", () => {
-    clearTimeout(window._rz);
-    window._rz = setTimeout(()=>{Object.values(charts).forEach(c=>c.resize());
-      Object.values(maps).forEach(m=>m.invalidateSize());}, 200);
-  });
-  window.addEventListener("beforeunload", e => { if(dirty){ e.preventDefault(); e.returnValue=""; } });
+  connect(); schedulePoll();
+  document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) refresh(false); });
 })();
 </script>
 </body>

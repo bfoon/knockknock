@@ -398,6 +398,45 @@ def frame_timeseries(df, spec):
 #  Tile computation
 # ─────────────────────────────────────────────────────────────────────
 
+def frame_feed(df, spec):
+    """Newest responses first, for the Live feed card.
+
+    Only the question(s) the owner picked are shown — nothing about who
+    collected it or where — because a feed card is exactly the kind of card
+    that ends up on a published link. The row key is a short hash of the
+    submission id: stable enough to spot "this one is new" in the browser,
+    without putting internal ids on a public page.
+    """
+    limit = max(1, min(50, int(spec.get("limit") or 12)))
+    if df.empty:
+        return {"items": [], "total": 0}
+
+    work = df
+    _col, parsed = _time_column(work, "_received_at")
+    if parsed is not None:
+        work = work.assign(_feed_ts=parsed).sort_values("_feed_ts", ascending=False)
+    head = work.head(limit)
+
+    headline = spec.get("headline")
+    columns = [c for c in (spec.get("columns") or []) if c in head.columns][:4]
+    show_status = spec.get("show_status", True)
+    items = []
+    for _, row in head.iterrows():
+        ts = row.get("_feed_ts") if "_feed_ts" in head.columns else None
+        raw_key = row.get("_submission_id", row.get("_uuid", _))
+        items.append({
+            "key": hashlib.md5(str(raw_key).encode()).hexdigest()[:10],
+            "at": ts.isoformat() if ts is not None and not pd.isna(ts) else None,
+            "headline": (_safe(row.get(headline))
+                         if headline and headline in head.columns else None),
+            "fields": [{"name": c, "value": _safe(row.get(c))} for c in columns],
+            "source": _safe(row.get("_source")) if "_source" in head.columns else None,
+            "status": (_safe(row.get("_status"))
+                       if show_status and "_status" in head.columns else None),
+        })
+    return {"items": items, "total": int(len(df))}
+
+
 def _evaluate_alert(value, alert):
     """Return 'ok' | 'warn' | 'alarm' for a tile's headline value."""
     if not alert or value is None:
@@ -518,6 +557,10 @@ def compute_tile(df, tile, ctx):
             })
             return out
 
+        if kind == "feed":
+            out.update(frame_feed(data, spec))
+            return out
+
         if kind == "map":
             points, source = map_points(None, data, ctx.get("schema"),
                                         limit=MAX_MAP_POINTS)
@@ -580,14 +623,30 @@ def pulse(df, dashboard):
     return info
 
 
-def dashboard_payload(dashboard, schema=None, tile_ids=None, use_cache=True):
-    """Compute the whole board in one pass over one resolved frame."""
-    df, meta = resolve_frame(dashboard, use_cache=use_cache)
-    df = apply_conditions(df, dashboard.filters, dashboard.filter_match)
+def dashboard_payload(dashboard, schema=None, tile_ids=None, use_cache=True,
+                      config=None):
+    """Compute the whole board in one pass over one resolved frame.
 
-    tiles = dashboard.tiles.all()
+    ``config`` lets the public link compute from its *published* layout
+    (``LiveDashboard.public_config()``) instead of the working copy: tiles,
+    board filters and match mode come from the frozen version, while the
+    data source is always the board's current one. The source is data, not
+    presentation — switching it is deliberately instant everywhere.
+    """
+    df, meta = resolve_frame(dashboard, use_cache=use_cache)
+
+    if config is not None:
+        filters = config.get("filters") or []
+        match = config.get("filter_match") or "all"
+        tiles = list(config.get("tiles") or [])
+    else:
+        filters, match = dashboard.filters, dashboard.filter_match
+        tiles = [t.as_dict() for t in dashboard.tiles.all()]
+
+    df = apply_conditions(df, filters, match)
     if tile_ids:
-        tiles = [t for t in tiles if t.id in set(tile_ids)]
+        wanted = set(tile_ids)
+        tiles = [t for t in tiles if t.get("id") in wanted]
 
     ctx = {"schema": schema or {}}
     return {
@@ -595,7 +654,7 @@ def dashboard_payload(dashboard, schema=None, tile_ids=None, use_cache=True):
         "stamp": meta["stamp"],
         "meta": {**meta, "filtered_rows": int(len(df))},
         "pulse": pulse(df, dashboard),
-        "tiles": [compute_tile(df, t.as_dict(), ctx) for t in tiles],
+        "tiles": [compute_tile(df, t, ctx) for t in tiles],
         "generated_at": timezone.now().isoformat(),
     }
 

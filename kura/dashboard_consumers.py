@@ -13,7 +13,14 @@ Pushing computed tiles down the socket would invert all three properties.
 
 Auth mirrors MonitorConsumer: the survey owner and collaborators always;
 an anonymous viewer only on a board the owner has explicitly published,
-and then only via its share token.
+and then only via its share token — and never after the link has expired.
+
+Privacy: ``kura.live.broadcast()`` sends the SAME group message to the
+monitor and to every board, and a ``submission`` event carries the
+enumerator's username, the device name and GPS. Owners may see that; an
+anonymous viewer on a share link must not. So on a token socket every
+event is reduced to its ``type`` before it leaves the server — the page
+only ever used it as a "go and refresh" nudge anyway.
 """
 
 import json
@@ -54,7 +61,10 @@ class DashboardConsumer(AsyncWebsocketConsumer):
             await self.send_json({"type": "pong"})
 
     async def fanout(self, event):
-        await self.send_json(event["payload"])
+        payload = event.get("payload") or {}
+        if self.token:
+            payload = {"type": payload.get("type", "data_changed")}
+        await self.send_json(payload)
 
     async def send_json(self, obj):
         await self.send(text_data=json.dumps(obj))
@@ -69,7 +79,9 @@ class DashboardConsumer(AsyncWebsocketConsumer):
             board = LiveDashboard.objects.filter(
                 public_token=self.token, is_public=True,
             ).select_related("survey").first()
-            return board.survey.code if board else None
+            if board is None or board.share_expired:
+                return None
+            return board.survey.code
 
         user = self.scope.get("user")
         if not user or not getattr(user, "is_authenticated", False):

@@ -638,11 +638,52 @@ function pointerFromTap(ev){
 const HEARTBEAT_MS=20000, STALE_MS=50000;
 let ctlPin="", sockGen=0, hbTimer=null, lastRx=0, stopped=false, retry=0;
 
+/* ── keep the phone awake ─────────────────────────────────────────────
+   While the controller is on, the phone must not dim or lock: a sleeping
+   phone drops the socket and the presenter loses the deck mid-talk. The
+   Screen Wake Lock is held from the moment we start connecting until the
+   show ends or the code is refused.
+
+   Browsers release the lock on their own whenever the page is hidden
+   (screen off, app switch, tab change), and some only grant it after a
+   tap, so it is re-requested on return to the page, on any touch, and
+   shortly after an unexpected release.                                  */
+let wakeLock=null, wakeWanted=false, wakePending=false;
+async function keepAwake(){
+  wakeWanted=true;
+  if(!("wakeLock" in navigator)||wakeLock||wakePending) return;
+  if(document.visibilityState!=="visible") return;
+  wakePending=true;
+  try{
+    const l=await navigator.wakeLock.request("screen");
+    if(!wakeWanted){ l.release().catch(()=>{}); return; }
+    wakeLock=l;
+    l.addEventListener("release",()=>{
+      if(wakeLock===l) wakeLock=null;
+      // Released by the browser, not by us: take it back once visible.
+      if(wakeWanted) setTimeout(keepAwake,800);
+    });
+  }catch(e){ /* denied, unsupported or needs a gesture: retried below */ }
+  finally{ wakePending=false; }
+}
+function releaseAwake(){
+  wakeWanted=false;
+  const l=wakeLock; wakeLock=null;
+  if(l){ try{ l.release().catch(()=>{}); }catch(e){} }
+}
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="visible"&&wakeWanted) keepAwake();
+});
+["pointerdown","keydown"].forEach(evt=>document.addEventListener(evt,()=>{
+  if(wakeWanted&&!wakeLock) keepAwake();
+},{capture:true,passive:true}));
+
 function connect(){
   const pin=$("#pin").value.trim();
   if(!pin){setStatus("ENTER THE CODE SHOWN ON THE PRESENTER SCREEN");return;}
   ctlPin=pin;
   stopped=false; retry=0;
+  keepAwake();
   openSocket();
 }
 
@@ -684,6 +725,7 @@ function openSocket(){
       $("#controls").hidden=false;
       $("#phone-secondary-actions").hidden=false;
       setStatus("CONNECTED · PHONE CONTROLLER READY");
+      keepAwake();
       render();
     }else if(m.type==="controller_denied"){
       // Almost always a rotated code: this phone unlocked the page earlier
@@ -691,6 +733,7 @@ function openSocket(){
       // lock screen, which is where it should be asked again.
       setStatus("CODE NO LONGER VALID · RELOADING…");
       stopped=true;
+      releaseAwake();
       try{sock.close()}catch(e){}
       setTimeout(()=>location.reload(),1400);
     }else if(m.type==="goto"&&typeof m.index==="number"){
@@ -736,6 +779,7 @@ function openSocket(){
       canDownload=!!m.allow_download;
       applyDownloadAvailability();
       $("#controls").hidden=true;
+      releaseAwake();
       setStatus(m.allow_download
         ? "PRESENTATION ENDED · QR ON THE BIG SCREEN"
         : "PRESENTATION ENDED");
@@ -879,23 +923,11 @@ function toggleTeleprompter(){
 
 // ── fullscreen + controls visibility ───────────────────────────────
 let tpCtlHidden=false;
-let tpWakeLock=null;
-
-async function tpKeepAwake(){
-  // Presenter is reading — don't let the phone sleep mid-speech.
-  try{
-    if("wakeLock" in navigator && !tpWakeLock && document.visibilityState==="visible"){
-      tpWakeLock=await navigator.wakeLock.request("screen");
-      tpWakeLock.addEventListener("release",()=>{tpWakeLock=null;});
-    }
-  }catch(e){/* blocked or unsupported — not fatal */}
-}
-async function tpReleaseAwake(){
-  try{ if(tpWakeLock){await tpWakeLock.release();tpWakeLock=null;} }catch(e){}
-}
-document.addEventListener("visibilitychange",()=>{
-  if(document.visibilityState==="visible" && tpIsFullscreen()) tpKeepAwake();
-});
+// The whole controller holds the screen wake lock now (see "keep the phone
+// awake" above), so the teleprompter just makes sure it is held and never
+// gives it up — leaving fullscreen must not let the phone sleep mid-show.
+function tpKeepAwake(){ keepAwake(); }
+function tpReleaseAwake(){ /* controller-wide lock stays on */ }
 
 function tpIsFullscreen(){
   const sec=$("#teleprompter");
@@ -1383,6 +1415,7 @@ if(CFG.pin){
   ctlPin=CFG.pin;
   stopped=false; retry=0;
   setStatus("CONNECTING…");
+  keepAwake();
   openSocket();
 }else{
   $("#pin-row").hidden=false;

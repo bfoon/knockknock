@@ -614,6 +614,11 @@ def form_sync(request, code):
             rejected=rejected,
         )
 
+    # One auto-clean per sync batch (not per row), after commit.
+    if created:
+        from .autoclean import schedule as schedule_autoclean
+        schedule_autoclean(survey, reason="sync")
+
     broadcast(survey.code, {
         "type": "sync",
         "device": device.name,

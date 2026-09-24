@@ -1267,5 +1267,41 @@ renderRules();
 load();
 })();
 </script>
+<!-- Auto-clean notice: quick rules + active pipelines re-run on new data (kura/autoclean.py) -->
+<div id="kuraAutoToast" role="status" aria-live="polite" style="position:fixed;right:18px;bottom:18px;z-index:9999;max-width:360px;display:none;background:#0f1a2b;color:#e6eefc;border:1px solid rgba(34,211,238,.45);border-radius:12px;padding:12px 14px;box-shadow:0 12px 32px rgba(0,0,0,.45);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
+  <div style="font-weight:600;margin-bottom:4px">⚡ New data cleaned automatically</div>
+  <div id="kuraAutoToastBody" style="opacity:.85"></div>
+  <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end">
+    <button type="button" id="kuraAutoToastLater" style="background:transparent;color:inherit;border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:5px 10px;cursor:pointer">Later</button>
+    <button type="button" id="kuraAutoToastReload" style="background:#22d3ee;color:#04111d;border:0;border-radius:8px;padding:5px 12px;font-weight:600;cursor:pointer">Refresh</button>
+  </div>
+</div>
+<script>
+(function(){
+  var code="{{ survey.code|escapejs }}", toast=document.getElementById("kuraAutoToast");
+  if(!toast||!window.WebSocket)return;
+  var body=document.getElementById("kuraAutoToastBody"), tries=0, pending=0;
+  document.getElementById("kuraAutoToastLater").onclick=function(){toast.style.display="none";pending=0};
+  document.getElementById("kuraAutoToastReload").onclick=function(){location.reload()};
+  function show(a){
+    pending+=1;
+    var parts=[];
+    if(a.rules_run){parts.push(a.rules_run+" quick rule"+(a.rules_run>1?"s":"")+" · "+(a.flags||0)+" flagged"+(a.excluded?" · "+a.excluded+" excluded":"")+(a.recoded?" · "+a.recoded+" tidied":""))}
+    if(a.rules_error){parts.push("Quick rules hit a problem: "+a.rules_error)}
+    (a.pipelines||[]).forEach(function(p){parts.push((p.ok?"✓ ":"✕ ")+p.pipeline+(p.ok?" · "+p.result_count+" rows":" failed: "+(p.error||"")))});
+    if(pending>1){parts.push(pending+" updates since you opened this page")}
+    body.textContent="";
+    parts.forEach(function(t){var d=document.createElement("div");d.textContent=t;body.appendChild(d)});
+    toast.style.display="block";
+  }
+  function connect(){
+    var ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws/kura/"+code+"/dashboard/");
+    ws.onopen=function(){tries=0};
+    ws.onmessage=function(e){try{var m=JSON.parse(e.data);if(m.type==="data_changed"&&m.reason==="autoclean"&&m.autoclean)show(m.autoclean)}catch(_){}};
+    ws.onclose=function(){tries+=1;if(tries<8)setTimeout(connect,Math.min(30000,1500*tries))};
+  }
+  connect();
+})();
+</script>
 </body>
 </html>

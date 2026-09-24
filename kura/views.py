@@ -369,6 +369,10 @@ def collect_submit(request, code):
     sub.save()
     # Live monitor: web submissions appear instantly too.
     broadcast(survey.code, {"type": "submission", "sub": submission_summary(sub)})
+    # Quick flag rules + active Data Studio pipelines re-run in the
+    # background after commit; never delays or fails the submit.
+    from .autoclean import schedule as schedule_autoclean
+    schedule_autoclean(survey, reason="web")
     return JsonResponse({"ok": True, "id": sub.id})
 
 

@@ -597,9 +597,16 @@ def deck_image_upload(request, code):
     rel_path = f"hanns/decks/{deck.code}/images/{uuid.uuid4().hex}{ext}"
     saved_path = default_storage.save(rel_path, image)
     url = default_storage.url(saved_path)
+    # Root-relative "/media/…" (same rule as powerpoint_importer._media_url).
+    # build_absolute_uri() behind nginx can yield http:// or an internal host
+    # (127.0.0.1:8001) that the browser can't load, and that absolute URL
+    # would then be frozen into the slide JSON forever. Remote storages
+    # (S3/GCS) already return a full URL and are passed through untouched.
+    if not url.startswith(("http://", "https://", "//", "data:")):
+        url = url if url.startswith("/") else "/" + url
     return JsonResponse({
         "ok": True,
-        "url": request.build_absolute_uri(url),
+        "url": url,
         "path": saved_path,
     })
 

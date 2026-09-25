@@ -1,4 +1,4 @@
-{% load static %}<!doctype html>
+{% load static kura_maps %}<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -209,6 +209,7 @@
   }
   @media(max-width:1080px){.layout{grid-template-columns:1fr}.leftcol,.inspector{position:static;max-height:none}}
 </style>
+{% kura_basemap %}
 </head>
 <body>
 <div class="bar">
@@ -685,14 +686,7 @@ function initialiseGeoMap(){
   if(geoMap) return;
 
   geoMap = L.map("geo-big-map",{zoomControl:true}).setView([13.4549,-16.5790],9);
-  L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
-    {
-      subdomains:"abcd",
-      maxZoom:20,
-      attribution:"&copy; OpenStreetMap contributors &copy; CARTO"
-    }
-  ).addTo(geoMap);
+  KURA_BASEMAP.layer().addTo(geoMap);
 
   geoOtherLayers = L.featureGroup().addTo(geoMap);
   geoEditable = L.featureGroup().addTo(geoMap);

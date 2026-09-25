@@ -1,4 +1,4 @@
-{% load static %}<!doctype html>
+{% load static kura_maps %}<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -119,6 +119,7 @@ input[type=range]{accent-color:var(--pink)}
 .boardstate.dirty{color:var(--orange)}
 .mapnote{font:500 .64rem "Spline Sans Mono";color:var(--muted);text-transform:none;letter-spacing:0}
 </style>
+{% kura_basemap %}
 </head>
 <body>
 <div class="top"><a class="brand" href="{% url 'kura:list' %}" style="text-decoration:none;color:inherit">Kura.</a><h1>{{ survey.title }} — Data Studio</h1>
@@ -1169,7 +1170,7 @@ function updateMainMap(){
   }
   panel.style.display="";
   $("#mapSource").textContent=mapSourceText(dashPayload.map_source);
-  if(!map){map=L.map("map").setView([13.45,-16.58],8);L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",{subdomains:"abcd",maxZoom:20,attribution:"© OSM © CARTO"}).addTo(map);}
+  if(!map){map=L.map("map").setView([13.45,-16.58],8);KURA_BASEMAP.layer().addTo(map);}
   setTimeout(()=>map.invalidateSize(),120);
   if(mapLayer)map.removeLayer(mapLayer);
   mapLayer=L.featureGroup(pts.map(p=>L.circleMarker([p.lat,p.lng],{radius:5,color:"#22d3ee",weight:1}).bindTooltip("Row "+p.row))).addTo(map);
@@ -1324,7 +1325,7 @@ async function hydrateBoardCard(it,i){
     const pts=dashPayload?.maps||[];
     if(!pts.length){host.outerHTML=`<div class="kpiv"><b style="font-size:1.2rem">No location data</b><span>this run has no GPS question answers or device locations</span></div>`;return}
     const m=L.map(host,{zoomControl:false,attributionControl:false});
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",{subdomains:"abcd",maxZoom:20}).addTo(m);
+    KURA_BASEMAP.layer().addTo(m);
     const layer=L.featureGroup(pts.map(p=>L.circleMarker([p.lat,p.lng],{radius:4,color:"#22d3ee",weight:1}).bindTooltip("Row "+p.row))).addTo(m);
     m.fitBounds(layer.getBounds().pad(.12));
     setTimeout(()=>m.invalidateSize(),150);
@@ -1396,7 +1397,7 @@ async function loadTimeline(){
   $("#tlPlayer").style.display="block";
   $("#tlScrub").max=res.frames.length-1; $("#tlScrub").value=0;
   $("#tlMapBox").style.display=res.has_gps?"":"none";
-  if(res.has_gps&&!tlMap){tlMap=L.map("tlMap").setView([13.45,-16.58],8);L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",{subdomains:"abcd",maxZoom:20,attribution:"© OSM © CARTO"}).addTo(tlMap);}
+  if(res.has_gps&&!tlMap){tlMap=L.map("tlMap").setView([13.45,-16.58],8);KURA_BASEMAP.layer().addTo(tlMap);}
   if(tlMap)setTimeout(()=>tlMap.invalidateSize(),120);
   showFrame(0);
 }

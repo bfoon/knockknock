@@ -1,4 +1,4 @@
-{% load static %}<!doctype html>
+{% load static kura_maps %}<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -7,10 +7,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900&family=Archivo:wght@400;500;600;700;800;900&family=Spline+Sans+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+{% kura_basemap %}
 <style>
   :root{--line:rgba(255,255,255,.12);--muted:#b9c2e7;--dim:rgba(248,251,255,.45);
     --orange:#ff8a1f;--pink:#ff3f98;--cyan:#22d3ee;--violet:#8b5cf6;--green:#22c55e;--red:#e8482b;--amber:#fbbf24}
   *{box-sizing:border-box}
+  html{background:#050616}
   body{margin:0;min-height:100vh;color:#f8fbff;font-family:"Archivo",sans-serif;-webkit-font-smoothing:antialiased;
     background:radial-gradient(900px 560px at 86% -8%,rgba(255,138,31,.2),transparent 60%),
       radial-gradient(780px 520px at 5% 5%,rgba(139,92,246,.3),transparent 60%),
@@ -55,7 +57,13 @@
   .pad{padding:0 1rem 1rem}
   .grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,1fr);gap:1rem;align-items:start}
   @media(max-width:1000px){.grid{grid-template-columns:1fr}}
+  .mapwrap{position:relative}
   #map{height:420px;background:#0b0d26}
+  .overlay-empty{position:absolute;inset:0;display:none;align-items:center;justify-content:center;z-index:500;
+    pointer-events:none;text-align:center;padding:1rem}
+  .overlay-empty span{pointer-events:auto;background:rgba(6,7,24,.82);border:1px solid var(--line);border-radius:12px;
+    padding:.7rem 1rem;color:var(--muted);font-size:.8rem;max-width:320px;line-height:1.45}
+  .chartbox .overlay-empty span{font-size:.76rem}
   .leaflet-container{font-family:"Archivo",sans-serif}
   .leaflet-popup-content-wrapper,.leaflet-popup-tip{background:#11142e;color:#f8fbff;border:1px solid var(--line)}
   .chartbox{padding:.4rem 1rem 1rem;height:210px;position:relative}
@@ -182,16 +190,20 @@
     <div class="panel">
       <h3>Where the data is coming from <span class="sp"></span>
         <span style="font-size:.62rem;color:var(--dim)" id="map-count"></span></h3>
-      <div id="map"></div>
+      <div class="mapwrap"><div id="map"></div>
+        <div class="overlay-empty" id="map-empty"><span>No GPS locations for this period yet. Pins appear here as phones send responses with a location.</span></div></div>
     </div>
     <div>
       <div class="panel">
         <h3>Who is submitting</h3>
-        <div class="chartbox"><canvas id="c-members"></canvas></div>
+        <div class="chartbox" id="members-box"><canvas id="c-members"></canvas>
+          <div class="overlay-empty" id="members-empty"><span></span></div></div>
       </div>
       <div class="panel">
-        <h3>Activity through the period</h3>
-        <div class="chartbox"><canvas id="c-hourly"></canvas></div>
+        <h3>Activity through the period <span class="sp"></span>
+          <span style="font-size:.6rem;color:var(--dim)" id="activity-unit"></span></h3>
+        <div class="chartbox"><canvas id="c-hourly"></canvas>
+          <div class="overlay-empty" id="activity-empty"><span>No responses in this period.</span></div></div>
       </div>
     </div>
   </div>
@@ -311,9 +323,15 @@ async function post(url, body){
   return j;
 }
 
+function isoLocal(d){
+  // toISOString() is UTC: east of Greenwich after midnight it named
+  // yesterday, so the board loaded the wrong day's data.
+  const p = n => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
 function qs(){
   if (day === null) return "?range=all";
-  return "?day=" + day.toISOString().slice(0, 10);
+  return "?day=" + isoLocal(day);
 }
 
 function fmtDay(d){
@@ -329,25 +347,30 @@ function fmtTime(iso){
 /* ── period controls ──────────────────────────────────────── */
 
 function shiftDay(n){
-  if (day === null) day = new Date();
-  day = new Date(day.getTime() + n * 86400000);
-  refresh();
+  // setDate keeps local midnight through daylight-saving changes, where
+  // adding 86 400 000 ms could land on the same day or skip one.
+  const d = day === null ? new Date() : new Date(day);
+  d.setDate(d.getDate() + n);
+  day = d;
+  refresh({periodChanged: true});
 }
 $("#p-prev").onclick = () => shiftDay(-1);
 $("#p-next").onclick = () => shiftDay(1);
-$("#p-today").onclick = () => { day = new Date(); refresh(); };
-$("#p-all").onclick = () => { day = null; refresh(); };
+$("#p-today").onclick = () => { day = new Date(); refresh({periodChanged: true}); };
+$("#p-all").onclick = () => { day = null; refresh({periodChanged: true}); };
 
 /* ── map ──────────────────────────────────────────────────── */
 
 const map = L.map("map", {zoomControl:true}).setView([13.44, -16.6], 8);
-L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-  {maxZoom:20, subdomains:"abcd",
-   attribution:"&copy; OpenStreetMap contributors &copy; CARTO"}).addTo(map);
+// Tiles come from {% kura_basemap %} (settings.KURA_BASEMAP*). The CARTO
+// URL that was hardcoded here now needs a key and stamped every tile
+// "API KEY REQUIRED".
+KURA_BASEMAP.addTo(map);
 const pinLayer = L.layerGroup().addTo(map);
 let areaCircle = null;
+let mapFitted = false;   // only re-frame on first load / period change
 
-function drawMap(stats){
+function drawMap(stats, reframe){
   pinLayer.clearLayers();
   const bounds = [];
   (stats.points || []).forEach(p => {
@@ -373,8 +396,16 @@ function drawMap(stats){
     }).addTo(map);
     bounds.push([area.lat, area.lng]);
   }
-  if (bounds.length) map.fitBounds(bounds, {padding:[36,36], maxZoom:14});
-  $("#map-count").textContent = (stats.points || []).length + " with GPS";
+  // The board refreshes every minute; re-fitting each time yanked the map
+  // back while the supervisor was zoomed in on a pin.
+  if (bounds.length && (reframe || !mapFitted)) {
+    map.fitBounds(bounds, {padding:[36,36], maxZoom:14});
+    mapFitted = true;
+  }
+  const withGps = (stats.totals && stats.totals.with_gps != null)
+    ? stats.totals.with_gps : (stats.points || []).length;
+  $("#map-count").textContent = withGps + " with GPS";
+  $("#map-empty").style.display = (stats.points || []).length ? "none" : "flex";
 }
 
 /* ── charts ───────────────────────────────────────────────── */
@@ -390,6 +421,19 @@ function drawCharts(stats){
   const labels = rows.map(r => r.name);
   const data = rows.map(r => r.submissions);
   const issues = rows.map(r => r.open_issues);
+
+  const memEmpty = $("#members-empty");
+  if (!rows.length) {
+    memEmpty.querySelector("span").textContent =
+      "No members in this team yet. The survey owner adds them on the Teams page.";
+  } else if (!data.some(n => n > 0) && !issues.some(n => n > 0)) {
+    memEmpty.querySelector("span").textContent = "No one on this team has submitted in this period.";
+  }
+  memEmpty.style.display = (!rows.length || (!data.some(n => n > 0) && !issues.some(n => n > 0)))
+    ? "flex" : "none";
+  // One bar pair per member: grow the box so a big team does not squash
+  // every label into an unreadable sliver.
+  $("#members-box").style.height = Math.max(210, 70 + rows.length * 34) + "px";
 
   if (cMembers) cMembers.destroy();
   cMembers = new Chart($("#c-members"), {
@@ -410,11 +454,16 @@ function drawCharts(stats){
   });
 
   const series = stats.hourly || [];
+  const byHour = stats.activity_bucket !== "day";
+  $("#activity-unit").textContent = series.length ? (byHour ? "per hour" : "per day") : "";
+  $("#activity-empty").style.display = series.length ? "none" : "flex";
+  const label = t => byHour ? t.slice(11, 16)
+    : new Date(t + "T00:00:00").toLocaleDateString(undefined, {day:"numeric", month:"short"});
   if (cHourly) cHourly.destroy();
   cHourly = new Chart($("#c-hourly"), {
     type: "line",
     data: {
-      labels: series.map(p => p.t.slice(11, 16)),
+      labels: series.map(p => label(p.t)),
       datasets: [{
         label:"Responses", data: series.map(p => p.n),
         borderColor:"#ff8a1f", backgroundColor:"rgba(255,138,31,.2)",
@@ -435,6 +484,12 @@ function drawCharts(stats){
 
 function drawChecks(checks, last){
   const box = $("#checks");
+  const run = $("#b-run");
+  if (!run.dataset.busy) {
+    run.disabled = !checks.length;
+    run.title = checks.length ? "Run the owner's data checks over this team's data"
+                              : "The survey owner has not set any data checks yet";
+  }
   if (!checks.length) {
     box.innerHTML = '<span class="chk">The owner has not set any data checks on this survey yet.</span>';
     return;
@@ -531,8 +586,10 @@ $("#so-sign").onclick = async () => {
 $("#b-run").onclick = async () => {
   const btn = $("#b-run");
   btn.disabled = true;
+  btn.dataset.busy = "1";
   btn.textContent = "⏳ Running the checks…";
   const j = await post(CFG.runUrl, {team_id: CFG.teamId});
+  delete btn.dataset.busy;
   btn.disabled = false;
   btn.textContent = "✔ Run data checks";
   if (j.run && j.run.status === "failed") toast("A check failed: " + (j.run.error || ""), "bad");
@@ -776,8 +833,14 @@ $("#chat-input").addEventListener("keydown", e => {
 
 /* ── refresh ──────────────────────────────────────────────── */
 
-async function refresh(){
+let refreshSeq = 0;
+async function refresh(opts){
+  opts = opts || {};
+  const seq = ++refreshSeq;
   const j = await fetch(CFG.boardUrl + qs()).then(r => r.json()).catch(() => null);
+  // Clicking ‹ › quickly fires several loads; a slow earlier one must not
+  // land last and paint the wrong day under the new label.
+  if (seq !== refreshSeq) return;
   if (!j || !j.ok) { toast("Could not load the board.", "bad"); return; }
   lastBoard = j;
 
@@ -803,7 +866,7 @@ async function refresh(){
     members.map(m => '<option value="' + m.user_id + '">' + esc(m.name) + "</option>").join("");
   sel.value = keep;
 
-  drawMap(j.stats);
+  drawMap(j.stats, !!opts.periodChanged);
   drawCharts(j.stats);
   drawChecks(j.checks || [], j.last_validation);
   drawIssues(j.issues || []);
@@ -812,8 +875,16 @@ async function refresh(){
   loadThreads();
 }
 
-refresh();
-setInterval(refresh, 60000);
+refresh({periodChanged: true});
+setInterval(() => {
+  if (document.hidden) return;
+  // Re-rendering the issues table while a supervisor has an "Assigned to"
+  // dropdown open closed it and threw their choice away.
+  const a = document.activeElement;
+  if (a && a.closest && a.closest("#issue-rows, #f-member, #so-note, #chat")) return;
+  refresh();
+}, 60000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 })();
 </script>
 </body>

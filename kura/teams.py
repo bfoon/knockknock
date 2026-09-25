@@ -660,13 +660,30 @@ def team_stats(team, start=None, end=None, gps_limit=500) -> dict:
         }))
     per_member.sort(key=lambda r: -r["submissions"])
 
-    # Hourly activity across the window (local hours).
-    hourly = {}
-    for received in subs.values_list("received_at", flat=True):
-        bucket = timezone.localtime(received).strftime("%Y-%m-%d %H:00")
-        hourly[bucket] = hourly.get(bucket, 0) + 1
-    series = [{"t": k, "n": hourly[k]} for k in sorted(hourly)]
+    # Activity across the window, in local time. A single day is bucketed
+    # by hour; anything longer (a week, "All time") by day — hourly buckets
+    # over many days produced a chart whose "09:00" labels repeated for
+    # every date with nothing to tell them apart.
+    received = [timezone.localtime(r) for r in
+                subs.order_by().values_list("received_at", flat=True) if r]
+    span_days = ((end - start).total_seconds() / 86400.0) if (start and end) else None
+    if span_days is None and received:
+        span_days = (max(received) - min(received)).total_seconds() / 86400.0
+    bucket_by = "hour" if (span_days is not None and span_days <= 1.01) else "day"
+    fmt = "%Y-%m-%d %H:00" if bucket_by == "hour" else "%Y-%m-%d"
+    activity = {}
+    for r in received:
+        key = r.strftime(fmt)
+        activity[key] = activity.get(key, 0) + 1
+    series = [{"t": k, "n": activity[k]} for k in sorted(activity)]
 
+    # Open-flag count annotated in the query: the old per-row
+    # s.flags.filter(...).count() bypassed the prefetch and ran one query
+    # per map pin (up to 500 per board refresh).
+    gps_subs = (subs.filter(gps_lat__isnull=False, gps_lng__isnull=False)
+                    .select_related("enumerator")
+                    .annotate(open_flags=Count("flags", filter=Q(flags__resolved=False)))
+                    .order_by("-received_at"))
     points = [
         {
             "id": s.id,
@@ -677,13 +694,11 @@ def team_stats(team, start=None, end=None, gps_limit=500) -> dict:
             "enumerator": (s.enumerator.get_username()
                            if s.enumerator_id else None),
             "received_at": s.received_at.isoformat() if s.received_at else None,
-            "flags": s.flags.filter(resolved=False).count(),
+            "flags": s.open_flags,
         }
-        for s in subs.filter(gps_lat__isnull=False, gps_lng__isnull=False)
-                     .select_related("enumerator")
-                     .prefetch_related("flags")
-                     .order_by("-received_at")[:gps_limit]
+        for s in gps_subs[:gps_limit]
     ]
+    with_gps = gps_subs.count() if len(points) >= gps_limit else len(points)
 
     total = subs.count()
     flagged = subs.filter(flags__resolved=False).distinct().count()
@@ -695,12 +710,13 @@ def team_stats(team, start=None, end=None, gps_limit=500) -> dict:
             "clean": max(0, total - flagged),
             "excluded": subs.filter(status="excluded").count(),
             "target": team.target,
-            "with_gps": len(points),
+            "with_gps": with_gps,
             "members": len(members),
             "active_members": sum(1 for r in per_member if r["submissions"]),
         },
         "per_member": per_member,
         "hourly": series,
+        "activity_bucket": bucket_by,
         "points": points,
         "area": team.area or {},
     }

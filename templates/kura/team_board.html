@@ -362,7 +362,8 @@ $("#p-all").onclick = () => { day = null; refresh({periodChanged: true}); };
 /* ── map ──────────────────────────────────────────────────── */
 
 const map = L.map("map", {zoomControl:true}).setView([13.44, -16.6], 8);
-// Tiles come from {% kura_basemap %} (settings.KURA_BASEMAP*). The CARTO
+// Tiles come from the kura_basemap template tag in <head>
+// (settings.KURA_BASEMAP*). The CARTO
 // URL that was hardcoded here now needs a key and stamped every tile
 // "API KEY REQUIRED".
 KURA_BASEMAP.addTo(map);

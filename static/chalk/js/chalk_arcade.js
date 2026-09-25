@@ -12,16 +12,18 @@
  * Needs window.ChalkBoard = { net, cfg, role } — three lines added to
  * chalk_stage.js and chalk_control.js. See the notes at the end of this file.
  *
- * If any of that is missing this file says so, out loud, in the console and
- * on the screen. The first version returned quietly and a missing script tag
- * looked exactly like a broken button.
+ * If any of that is missing this file says so in the console. It never
+ * puts a warning box on the screen: the projector is in front of a class,
+ * and a red panel over the lesson is worse than a game that is not ready
+ * yet. The teacher's phone gets one quiet line inside the Timeout menu,
+ * and only while there is actually something wrong.
  */
 (function (global) {
   "use strict";
 
-  var VERSION = "timeout 1.3";
+  var VERSION = "timeout 1.4";
   var B = null, IS_STAGE = false, IS_TEACHER = false;
-  var heard = false, watch = null;
+  var heard = false, watch = null, problem = "";
 
   function send(frame) { if (B && B.net) B.net.send(frame, true); }
 
@@ -29,26 +31,21 @@
    * See link() at the bottom: this flag is what stops the fallback. */
   function heardOne() {
     heard = true;
+    problem = "";
     if (watch) { clearTimeout(watch); watch = null; }
+    var warn = document.querySelector(".pad-menu .menu-warn");
+    if (warn) warn.hidden = true;
   }
 
   /* --- saying what went wrong --------------------------------------- */
 
-  function complain(what, fix) {
+  /* Console only. `short` is the one plain line the teacher's phone may show
+   * inside the Timeout menu; the projector never shows anything. */
+  function complain(what, fix, short) {
     if (global.console) {
-      console.error("[Chalk Timeout] " + what + "\n" + fix);
+      console.warn("[Chalk Timeout] " + what + "\n" + fix);
     }
-    var box = document.createElement("div");
-    box.className = "timeout-broken";
-    box.setAttribute("role", "alert");
-    box.innerHTML = '<strong></strong><span></span>' +
-      '<button type="button">Close</button>';
-    box.querySelector("strong").textContent = "Timeout is not wired up";
-    box.querySelector("span").textContent = what + " " + fix;
-    box.querySelector("button").addEventListener("click", function () {
-      box.remove();
-    });
-    (document.body || document.documentElement).appendChild(box);
+    problem = short || "Games are not available on this board right now.";
   }
 
   /* ==================================================================
@@ -616,6 +613,14 @@
     function openMenu() {
       if (!IS_TEACHER) return;
       if (!menu) menu = buildMenu();
+      var warn = menu.querySelector(".menu-warn");
+      if (warn) {
+        warn.textContent = problem;
+        warn.hidden = heard || !problem;
+      }
+      /* Opening the menu is a good moment to ask again: a server that has
+       * just been restarted answers straight away. */
+      if (!heard) send({ t: "game", act: "join", who: myName });
       menu.hidden = false;
     }
 
@@ -629,6 +634,7 @@
           'The lesson stays exactly as it is.</span>' +
           '<span class="spacer"></span>' +
           '<button class="icon-btn" data-act="shut" type="button">Close</button></header>' +
+          '<p class="pad-note menu-warn" role="status" hidden></p>' +
           '<div class="menu-list"></div>' +
         '</div>';
       document.body.appendChild(m);
@@ -712,7 +718,8 @@
       onDenied: function (m) {
         complain("The board refused the game connection: " +
                  ((m && m.reason) || "not paired."),
-                 "Rescan the board number and try again.");
+                 "Rescan the board number and try again.",
+                 "Rescan the board number to play games.");
       },
       onMessage: function (m) {
         if (m && m.t === "game" && global.ChalkArcade) global.ChalkArcade.frame(m);
@@ -765,52 +772,42 @@
     link();
   }
 
-  /* Borrowing the page's socket only works if the page hands game frames
-   * back — that is the `case "game"` line. Rather than trust it, ask: the
-   * server answers every join directly with {"act":"you"}.
+  /* Is anybody answering? The server replies to every join with
+   * {"act":"you"}, so a join is the probe.
    *
-   * Asking once was not enough. A socket that is still opening drops what it
-   * is given, so the first probe can vanish through no fault of anybody's,
-   * and version 1.2 called that a broken server. It now asks several times,
-   * changes socket halfway through, and only complains when it has run out
-   * of both patience and explanations. */
+   * Version 1.3 switched to a second socket of its own after three silent
+   * probes. stage.html and control.html both pass game frames on (the
+   * `case "game"` line), so that second socket was never the fix — it only
+   * doubled everything: both sockets were in the room, both handed each
+   * phone's input to the arcade, and every button press counted twice. It
+   * also put a red box over the projector after ten seconds.
+   *
+   * Now: the page's socket is the only socket when the page provides one.
+   * Six quick asks to cover a socket still opening, then one every fifteen
+   * seconds for as long as it takes — so after a deploy restarts the server
+   * the games come back by themselves, with nothing on screen either way. */
   function link() {
-    var tries = 0;
+    var tries = 0, said = false;
 
     function probe() {
       if (heard) return;
       tries++;
       send({ t: "game", act: "join",
              who: (B.cfg && B.cfg.me && B.cfg.me.name) || "" });
-
-      /* Three unanswered asks: the page's socket is not passing them on. */
-      if (tries === 3 && !B.own) {
-        var own = ownSocket();
-        if (own) {
-          B = own;
-          if (global.console && console.info) {
-            console.info("[Chalk Timeout] the page's socket does not pass game " +
-                         "frames on (the case \"game\" line is missing) — " +
-                         "opened a second socket instead.");
-          }
-        }
+      if (tries === 6 && !said) {
+        said = true;
+        complain(
+          "No reply to game frames yet — the server is not relaying them.",
+          "Check that chalk/consumers.py has the `elif t == \"game\":` branch and " +
+          "restart the ASGI server (docker compose restart web). This keeps " +
+          "retrying quietly and will recover on its own.",
+          "Games are starting up — give it a moment."
+        );
       }
-      if (tries >= 6) { watch = null; return serverSilent(); }
-      watch = setTimeout(probe, 1800);
+      watch = setTimeout(probe, tries < 6 ? 1800 : 15000);
     }
 
     probe();
-  }
-
-  function serverSilent() {
-    if (heard) return;
-    complain(
-      "Game frames have gone out six times over ten seconds and nothing has " +
-      "come back, so the server is dropping them.",
-      "consumers.py needs the `elif t == \"game\":` branch — and the ASGI " +
-      "server needs restarting afterwards, which the autoreloader does not " +
-      "always do for Channels consumers."
-    );
   }
 
   if (document.readyState === "loading") {

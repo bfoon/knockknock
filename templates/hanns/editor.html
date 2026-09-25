@@ -207,6 +207,87 @@ body.hanns-options-open .drawer{
 }
 </style>
 
+<style id="hanns-topbar-responsive">
+/* ── Responsive top bar ───────────────────────────────────────────────
+   The bar used to clip its middle group (INSERT → "ERT", "Notes" cut in
+   half) whenever the window was narrower than everything laid out flat.
+   Now a small script (hanns-topbar-fit, bottom of the page) measures the
+   bar and adds fit-1 … fit-6 one step at a time until it fits:
+     fit-1  drop the INSERT / VIEW labels and "studio"
+     fit-2  View buttons → icons
+     fit-3  Options + Big screen → icons
+     fit-4  Insert buttons → icons
+     fit-5  Insert + View fold into a ☰ Menu sheet
+     fit-6  phone: Present + duplicate-slide → icon / menu, tighter bar
+   Every icon keeps its tooltip and aria-label.                          */
+.topbar-center{justify-content:flex-start}
+.topbar-center>.tbtn-group:first-child{margin-left:auto}
+.topbar-center>.tbtn-group:last-child{margin-right:auto}
+.topbar .file-name{text-overflow:ellipsis}
+.tb-more{display:none!important}
+.topbar.fit-1 .tbtn-group-label,
+.topbar.fit-1 .brand-sub{display:none}
+.topbar.fit-2 .tbtn-group[aria-label="View panels"] .tbtn.compact,
+.topbar.fit-3 .topbar-right .option-summary,
+.topbar.fit-3 #btn-screen-share,
+.topbar.fit-4 .tbtn-group[aria-label="Insert"] .tbtn.compact,
+.topbar.fit-6 #btn-present{font-size:0!important;gap:0!important;padding:.42rem .5rem!important}
+.topbar.fit-2 .topbar-center .tbtn.compact svg,
+.topbar.fit-3 .topbar-right .tbtn svg,
+.topbar.fit-3 .option-summary svg{display:block;width:16px;height:16px}
+.topbar.fit-2 .file-name{max-width:16ch}
+.topbar.fit-4 .file-name{max-width:12ch}
+.topbar.fit-5{grid-template-columns:minmax(0,1fr) auto!important;gap:.5rem}
+.topbar.fit-5 .topbar-center{display:none!important}
+.topbar.fit-5 .topbar-left{min-width:0;overflow:hidden}
+.topbar.fit-5 .file-name{min-width:4ch;max-width:none;flex:1 1 auto;width:auto}
+.topbar.fit-5 .tb-more{display:inline-flex!important}
+.topbar.fit-6{padding:.35rem .5rem}
+.topbar.fit-6 .topbar-left,.topbar.fit-6 .topbar-right{gap:.3rem}
+.topbar.fit-6 .topbar-divider,
+.topbar.fit-6 #btn-duplicate-slide,
+.topbar.fit-6 #btn-screen-share{display:none!important}
+.topbar.fit-6 .brand-mark{font-size:1.12rem}
+.topbar.fit-6 .file-name{font-size:.88rem;padding:.2rem .3rem}
+.topbar.fit-6 .tb-more{font-size:0!important;gap:0!important;padding:.42rem .5rem!important}
+@media (pointer:coarse){
+  .topbar .tbtn,.topbar .option-summary{min-height:40px;min-width:40px;justify-content:center}
+  .topbar-edit-cluster .tbtn{min-width:38px}
+}
+
+/* ☰ Menu sheet (portaled to <body>) */
+.tb-sheet{
+  position:fixed;z-index:2147483645;top:var(--tb-sheet-top,56px);right:10px;
+  width:min(320px,calc(100vw - 20px));max-height:calc(100vh - var(--tb-sheet-top,56px) - 12px);
+  overflow:auto;display:none;flex-direction:column;gap:.9rem;padding:.9rem;
+  border-radius:16px;border:1px solid rgba(255,255,255,.14);
+  background:linear-gradient(145deg,rgba(33,30,24,.98),rgba(14,13,10,.98));
+  box-shadow:0 28px 80px rgba(0,0,0,.62),0 0 0 1px rgba(232,72,43,.13);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+}
+.tb-sheet.is-open{display:flex;animation:tbSheetIn .16s ease-out}
+@keyframes tbSheetIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.tb-sheet-sec{display:grid;gap:.45rem}
+.tb-sheet-sec[hidden]{display:none}
+.tb-sheet-title{font:600 .56rem/1 var(--font-mono,ui-monospace,monospace);letter-spacing:.18em;text-transform:uppercase;color:var(--fog,#8a8373)}
+.tb-sheet-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.45rem}
+.tb-sheet-item{
+  display:flex;align-items:center;gap:.55rem;min-height:46px;padding:.6rem .7rem;
+  border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.045);
+  color:var(--cream,#fbf8f1);font:700 .82rem/1.15 var(--font-body,Arial,sans-serif);
+  text-align:left;cursor:pointer;
+}
+.tb-sheet-item[hidden]{display:none}
+.tb-sheet-item svg{flex:0 0 auto;width:17px;height:17px}
+.tb-sheet-item:hover,.tb-sheet-item:focus-visible{outline:none;background:rgba(232,72,43,.18);border-color:rgba(232,72,43,.52)}
+.tb-sheet-item.is-active{color:var(--signal-2,#ff6a4d);border-color:rgba(232,72,43,.55);background:rgba(232,72,43,.12)}
+.tb-sheet-item.ai{background:linear-gradient(135deg,rgba(232,72,43,.28),rgba(244,194,78,.18));border-color:rgba(244,194,78,.4)}
+.tb-sheet-item.has-notes::after{content:"";width:7px;height:7px;border-radius:50%;background:#e8482b;margin-left:auto;box-shadow:0 0 10px rgba(232,72,43,.7)}
+@media (max-width:520px){
+  .tb-sheet{right:8px;left:8px;width:auto}
+}
+</style>
+
 </head>
 <body>
 <div class="app">
@@ -281,6 +362,10 @@ body.hanns-options-open .drawer{
 
     <!-- RIGHT: Options + Save + Present -->
     <div class="topbar-right">
+      <button class="tbtn ghost compact tb-more" id="tb-more" type="button" title="Insert &amp; view tools" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="tb-sheet">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        Menu
+      </button>
       <details class="top-options-menu" id="top-options-menu">
         <summary class="tbtn ghost compact option-summary" title="More actions">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
@@ -733,6 +818,168 @@ body.hanns-options-open .drawer{
 
   // Safe initial state: hidden until Options is clicked.
   closeOptions();
+})();
+</script>
+
+<script id="hanns-topbar-fit">
+/* ── Responsive top bar: measure → collapse one step at a time ───────
+   Breakpoints can't know how long the deck title is, whether the owner-
+   only items exist, or which fonts loaded, so instead of guessing we try
+   level 0, measure, and step up (fit-1 … fit-6) until nothing is clipped.
+   Runs on resize, when the bar itself resizes, and once fonts are ready. */
+(function(){
+  "use strict";
+  var bar=document.querySelector(".topbar");
+  if(!bar)return;
+  var left=bar.querySelector(".topbar-left");
+  var center=bar.querySelector(".topbar-center");
+  var right=bar.querySelector(".topbar-right");
+  var moreBtn=document.getElementById("tb-more");
+  var MAX=6, level=-1;
+
+  // Icon-only buttons still need a spoken name.
+  bar.querySelectorAll(".tbtn,.option-summary").forEach(function(b){
+    if(!b.getAttribute("aria-label")){
+      var t=(b.textContent||"").replace(/\s+/g," ").trim();
+      if(t)b.setAttribute("aria-label",t);
+    }
+  });
+
+  function setLevel(n){
+    for(var i=1;i<=MAX;i++)bar.classList.toggle("fit-"+i,i<=n);
+    level=n;
+  }
+  function clipped(box){
+    if(!box||box.offsetParent===null)return false;
+    var kids=[].filter.call(box.children,function(k){return k.offsetParent!==null;});
+    if(!kids.length)return false;
+    var r=box.getBoundingClientRect();
+    var a=kids[0].getBoundingClientRect(),z=kids[kids.length-1].getBoundingClientRect();
+    return a.left<r.left-1||z.right>r.right+1||box.scrollWidth>box.clientWidth+1;
+  }
+  function fits(n){
+    if(bar.scrollWidth>bar.clientWidth+1)return false;
+    if(n<5&&clipped(center))return false;
+    // Keep the deck title readable (≥ ~7 characters) before hiding more.
+    var title=document.getElementById("deck-title");
+    if(n<5&&title&&title.getBoundingClientRect().width<70)return false;
+    var lr=left.getBoundingClientRect(),rr=right.getBoundingClientRect();
+    if(lr.right>rr.left+1)return false;
+    return true;
+  }
+  function fit(){
+    var phone=window.innerWidth<=520;
+    for(var n=phone?6:0;n<=MAX;n++){
+      setLevel(n);
+      if(fits(n))break;
+    }
+    if(level<5)closeSheet();
+    else syncSheet();
+  }
+  var raf=0;
+  function schedule(){cancelAnimationFrame(raf);raf=requestAnimationFrame(fit);}
+  window.addEventListener("resize",schedule);
+  window.addEventListener("orientationchange",schedule);
+  if(window.ResizeObserver){
+    var lastW=0;
+    new ResizeObserver(function(entries){
+      var w=Math.round(entries[0].contentRect.width);
+      if(w!==lastW){lastW=w;schedule();}
+    }).observe(bar);
+  }
+  if(document.fonts&&document.fonts.ready)document.fonts.ready.then(schedule);
+  var title=document.getElementById("deck-title");
+  if(title)title.addEventListener("change",schedule);
+
+  /* ── ☰ Menu sheet: proxies to the real buttons ─────────────────────
+     Items are thin copies that .click() the original, so every existing
+     listener (drawers, AI modal, panel toggles, notes, big screen) runs
+     unchanged and nothing has to be rewired.                            */
+  var sheet=document.createElement("div");
+  sheet.className="tb-sheet";sheet.id="tb-sheet";sheet.setAttribute("role","menu");
+  sheet.setAttribute("aria-label","Insert and view tools");
+  document.body.appendChild(sheet);
+
+  var SECTIONS=[
+    {title:"Insert",ids:["btn-ai-design","btn-templates","btn-shapes","btn-objects"]},
+    {title:"View",ids:["btn-toggle-slides","btn-toggle-inspector","btn-notes"]},
+    {title:"Slide & share",ids:["btn-duplicate-slide","btn-screen-share"],phoneOnly:true}
+  ];
+  var items=[];
+  SECTIONS.forEach(function(sec){
+    var wrap=document.createElement("div");wrap.className="tb-sheet-sec";
+    var h=document.createElement("div");h.className="tb-sheet-title";h.textContent=sec.title;
+    var grid=document.createElement("div");grid.className="tb-sheet-grid";
+    wrap.appendChild(h);wrap.appendChild(grid);
+    var any=false;
+    sec.ids.forEach(function(id){
+      var src=document.getElementById(id);if(!src)return;
+      any=true;
+      var it=document.createElement("button");
+      it.type="button";it.className="tb-sheet-item";it.setAttribute("role","menuitem");
+      if(id==="btn-ai-design")it.classList.add("ai");
+      var svg=src.querySelector("svg");if(svg)it.appendChild(svg.cloneNode(true));
+      var label=document.createElement("span");
+      label.textContent=(src.getAttribute("aria-label")||src.textContent||"").replace(/\s+/g," ").trim();
+      it.appendChild(label);
+      it.title=src.title||label.textContent;
+      it.addEventListener("click",function(){
+        closeSheet();
+        // After the sheet is gone, so anything the button opens lands on top.
+        setTimeout(function(){if(!src.disabled)src.click();schedule();},30);
+      });
+      grid.appendChild(it);
+      items.push({it:it,src:src});
+    });
+    if(any){wrap.dataset.phoneOnly=sec.phoneOnly?"1":"";sheet.appendChild(wrap);}
+  });
+
+  function syncSheet(){
+    items.forEach(function(x){
+      x.it.classList.toggle("is-active",x.src.classList.contains("active"));
+      x.it.classList.toggle("has-notes",x.src.classList.contains("has-notes"));
+      x.it.disabled=!!x.src.disabled;
+    });
+    [].forEach.call(sheet.querySelectorAll(".tb-sheet-sec"),function(sec){
+      sec.hidden=sec.dataset.phoneOnly==="1"&&level<6;
+    });
+    // Inspector panel is hidden by the layout on phones, so the toggle would do nothing.
+    items.forEach(function(x){
+      if(x.src.id==="btn-toggle-inspector")x.it.hidden=window.innerWidth<=760;
+    });
+  }
+  function placeSheet(){
+    var r=bar.getBoundingClientRect();
+    sheet.style.setProperty("--tb-sheet-top",Math.round(r.bottom+6)+"px");
+  }
+  function openSheet(){
+    syncSheet();placeSheet();
+    sheet.classList.add("is-open");
+    moreBtn.setAttribute("aria-expanded","true");
+    var first=sheet.querySelector(".tb-sheet-item:not([hidden])");
+    if(first)first.focus({preventScroll:true});
+  }
+  function closeSheet(){
+    if(!sheet.classList.contains("is-open"))return;
+    sheet.classList.remove("is-open");
+    moreBtn.setAttribute("aria-expanded","false");
+  }
+  if(moreBtn){
+    moreBtn.addEventListener("click",function(e){
+      e.stopPropagation();
+      sheet.classList.contains("is-open")?closeSheet():openSheet();
+    });
+  }
+  document.addEventListener("pointerdown",function(e){
+    if(!sheet.classList.contains("is-open"))return;
+    if(sheet.contains(e.target)||(moreBtn&&moreBtn.contains(e.target)))return;
+    closeSheet();
+  },true);
+  document.addEventListener("keydown",function(e){
+    if(e.key==="Escape"&&sheet.classList.contains("is-open")){closeSheet();moreBtn&&moreBtn.focus();}
+  });
+
+  fit();
 })();
 </script>
 

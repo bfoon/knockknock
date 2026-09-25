@@ -1160,8 +1160,77 @@ function startRotate(e,node,id){
   const up=()=>{document.removeEventListener("pointermove",mv);document.removeEventListener("pointerup",up);renderInspector();markDirty();};
   document.addEventListener("pointermove",mv);document.addEventListener("pointerup",up);
 }
-// click empty canvas → deselect
-canvas.addEventListener("pointerdown",e=>{if(e.target===canvas){clearSelection();}});
+/* ════════════════════════════════════════════════════════════════════
+   DRAG-TO-SELECT (marquee)
+   ────────────────────────────────────────────────────────────────────
+   Press on an empty part of the slide — or the dark stage around it —
+   and drag a box: every object FULLY inside the box is selected (the
+   PowerPoint rule, so a full-bleed background picture is not swept up
+   with everything else). Hold Alt to also take objects the box merely
+   touches. Shift/Ctrl/Cmd adds to the current selection. A plain click
+   with no drag deselects, exactly as before.
+   ════════════════════════════════════════════════════════════════════ */
+function setSelectionIds(ids){
+  const list=[...new Set(ids)];
+  multiSel=new Set(list.length>1?list:[]);
+  Deck.sel=list.length?list[list.length-1]:null;
+  applySelectionDom();
+}
+function marqueeHits(r,touch){
+  const pad=1;
+  return currentElements().filter(e=>{
+    if(!e||e.locked||e.hidden)return false;
+    const x=Number(e.x)||0,y=Number(e.y)||0,w=Number(e.w)||0,h=Number(e.h)||0;
+    if(touch)return x<r.x+r.w&&x+w>r.x&&y<r.y+r.h&&y+h>r.y;
+    return x>=r.x-pad&&y>=r.y-pad&&x+w<=r.x+r.w+pad&&y+h<=r.y+r.h+pad;
+  }).map(e=>e.id);
+}
+function startMarquee(e){
+  const additive=e.shiftKey||e.metaKey||e.ctrlKey;
+  const base=additive?selectedIds():[];
+  const p0=canvasPointFromEvent(e);
+  let box=null,moved=false;
+  const mv=ev=>{
+    if(!moved&&Math.abs(ev.clientX-e.clientX)+Math.abs(ev.clientY-e.clientY)<4)return;
+    moved=true;
+    const p=canvasPointFromEvent(ev);
+    const r={x:Math.min(p0.x,p.x),y:Math.min(p0.y,p.y),w:Math.abs(p.x-p0.x),h:Math.abs(p.y-p0.y)};
+    if(!box){box=document.createElement("div");box.className="hanns-marquee";canvas.appendChild(box);}
+    const z=zoom||1;
+    box.style.left=r.x+"px";box.style.top=r.y+"px";
+    box.style.width=r.w+"px";box.style.height=r.h+"px";
+    box.style.borderWidth=(1/z)+"px";
+    setSelectionIds(base.concat(marqueeHits(r,ev.altKey)));
+  };
+  const up=()=>{
+    document.removeEventListener("pointermove",mv);
+    document.removeEventListener("pointerup",up);
+    document.removeEventListener("pointercancel",up);
+    if(box)box.remove();
+    if(!moved){if(!additive)clearSelection();return;}
+    renderInspector();
+    const n=selectedIds().length;
+    if(n>1)toast(n+" objects selected");
+  };
+  document.addEventListener("pointermove",mv);
+  document.addEventListener("pointerup",up);
+  document.addEventListener("pointercancel",up);
+}
+ensureSwatchPickerCss();
+stage.addEventListener("pointerdown",e=>{
+  if(e.button!==0)return;
+  const t=e.target;
+  const scroller=$("#stage-scroll");
+  const bare=t===canvas||t===wrap||t===stage||t===scroller||(t.classList&&t.classList.contains("stage-grain"));
+  if(!bare)return;
+  // Pressing a scrollbar must still scroll.
+  if(t===scroller&&(e.offsetX>=t.clientWidth||e.offsetY>=t.clientHeight))return;
+  // Commit any inline text edit first (preventDefault below would stop the blur).
+  const ae=document.activeElement;
+  if(ae&&ae.isContentEditable)ae.blur();
+  e.preventDefault();
+  startMarquee(e);
+});
 
 /* ════════════════════════════════════════════════════════════════════
    INSPECTOR
@@ -1188,10 +1257,144 @@ function hexWithAlpha(hex,prev){
 }
 function field(label,inner){return `<div class="field"><label>${label}</label>${inner}</div>`;}
 function swatchRow(current,onAttr){
+  ensureSwatchPickerCss();
+  const cur=String(current==null?"":current);
+  const inPalette=PALETTE.some(c=>sameColor(c,cur));
   let h='<div class="swatches">';
-  h+=`<div class="sw none ${current==="none"?"active":""}" data-${onAttr}="none" title="None"></div>`;
-  PALETTE.forEach(c=>{h+=`<div class="sw ${current===c?"active":""}" style="background:${c}" data-${onAttr}="${c}"></div>`;});
+  h+=`<div class="sw none ${cur==="none"?"active":""}" data-${onAttr}="none" title="None"></div>`;
+  PALETTE.forEach(c=>{h+=`<div class="sw ${sameColor(c,cur)?"active":""}" style="background:${c}" data-${onAttr}="${c}" title="${c} · double-click to fine-tune"></div>`;});
+  // A colour that is not in the palette (picked, imported from PowerPoint,
+  // pasted style…) still gets a visible, active chip instead of no highlight.
+  if(cur&&cur!=="none"&&!inPalette){
+    h+=`<div class="sw custom active" style="background:${escapeAttr(cur)}" data-${onAttr}="${escapeAttr(cur)}" title="${escapeAttr(cur)} · double-click to fine-tune"></div>`;
+  }
+  h+=`<div class="sw pick" data-pick="${onAttr}" title="Custom colour…"></div>`;
   h+="</div>";return h;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   SWATCH → FULL COLOUR PICKER
+   ────────────────────────────────────────────────────────────────────
+   Single-click a swatch applies it (as before). Double-click opens the
+   system colour picker already sitting ON that colour, so you can nudge
+   it lighter/darker instead of starting from black. The rainbow "+" chip
+   opens the picker on the element's current colour.
+
+   One hidden <input type=color> is reused, parked at the swatch so the
+   browser anchors its popup there. Dragging in the picker repaints the
+   canvas live; the history entry + autosave happen once, on "change",
+   so one pick is one undo step rather than dozens.
+   ════════════════════════════════════════════════════════════════════ */
+let swatchPickerInput=null;
+function colorToHex(c){
+  const s=String(c==null?"":c).trim();
+  if(!s||s==="none"||s==="transparent")return null;
+  let m=s.match(/^#([0-9a-f]{3}|[0-9a-f]{6})(?:[0-9a-f]{2})?$/i);
+  if(m){let h=m[1];if(h.length===3)h=h.split("").map(x=>x+x).join("");return "#"+h.toLowerCase();}
+  m=s.match(/^rgba?\(([^)]+)\)/i);
+  if(m){
+    const p=m[1].split(/[,\s/]+/).filter(Boolean).map(parseFloat);
+    if(p.length>=3&&p.slice(0,3).every(isFinite))
+      return "#"+p.slice(0,3).map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,"0")).join("");
+    return null;
+  }
+  // Named colours, hsl() … let the browser resolve them.
+  try{
+    const cx=document.createElement("canvas").getContext("2d");
+    cx.fillStyle="#010203";cx.fillStyle=s;
+    const r=String(cx.fillStyle);
+    if(r==="#010203"&&s.toLowerCase()!=="#010203")return null;
+    if(/^#[0-9a-f]{6}$/i.test(r))return r.toLowerCase();
+    if(/^rgba?\(/i.test(r))return colorToHex(r);
+  }catch(_){}
+  return null;
+}
+function sameColor(a,b){
+  if(a===b)return true;
+  const x=colorToHex(a),y=colorToHex(b);
+  return !!x&&x===y&&!/rgba|hsla/i.test(String(b||""));
+}
+/* Keep the swatch row honest after a picker change: highlight the palette
+   chip if the pick landed on one, otherwise show/refresh the custom chip. */
+function markCustomSwatch(row,attr,el,value){
+  if(!row)return;
+  row.querySelectorAll(".sw").forEach(x=>x.classList.remove("active"));
+  const hit=[...row.querySelectorAll(`.sw[data-${attr}]:not(.custom)`)].find(x=>sameColor(x.dataset[attr],value));
+  let custom=row.querySelector(".sw.custom");
+  if(hit){hit.classList.add("active");if(custom)custom.remove();return;}
+  if(!custom){
+    custom=document.createElement("div");
+    custom.className="sw custom";
+    const pick=row.querySelector(".sw.pick");
+    row.insertBefore(custom,pick||null);
+    wireSwatch(custom,attr,el);
+  }
+  custom.style.background=value;
+  custom.dataset[attr]=value;
+  custom.title=value+" · double-click to fine-tune";
+  custom.classList.add("active");
+}
+function openSwatchPicker(anchor,attr,el,startColor){
+  if(!swatchPickerInput){
+    const inp=document.createElement("input");
+    inp.type="color";inp.tabIndex=-1;inp.setAttribute("aria-hidden","true");
+    inp.style.cssText="position:fixed;width:24px;height:24px;opacity:0;pointer-events:none;border:0;padding:0;margin:0;z-index:2147483000";
+    document.body.appendChild(inp);
+    swatchPickerInput=inp;
+  }
+  const inp=swatchPickerInput;
+  const r=anchor.getBoundingClientRect();
+  inp.style.left=Math.round(r.left)+"px";
+  inp.style.top=Math.round(r.top)+"px";
+  inp.value=colorToHex(startColor)||colorToHex(el[attr])||"#ffffff";
+  const row=anchor.closest(".swatches");
+  const prev=el[attr];                       // keeps an rgba() alpha if there was one
+  const apply=commit=>{
+    el[attr]=hexWithAlpha(inp.value,prev);
+    markCustomSwatch(row,attr,el,el[attr]);
+    renderCanvas();
+    if(commit)markDirty();
+  };
+  inp.oninput=()=>apply(false);
+  inp.onchange=()=>apply(true);
+  try{
+    if(typeof inp.showPicker==="function")inp.showPicker();
+    else inp.click();
+  }catch(_){try{inp.click();}catch(__){}}
+}
+function wireSwatch(node,attr,el){
+  node.addEventListener("click",()=>{
+    el[attr]=node.dataset[attr];
+    activateSwatch(node,attr);
+    renderCanvas();markDirty();
+  });
+  node.addEventListener("dblclick",e=>{
+    e.preventDefault();
+    const v=node.dataset[attr];
+    // Double-clicking "None" opens on the element's last real colour.
+    openSwatchPicker(node,attr,el,v&&v!=="none"?v:(el[attr]!=="none"?el[attr]:"#ffffff"));
+  });
+}
+function bindSwatches(el,root){
+  ["color","fill","stroke"].forEach(attr=>{
+    $$(`.sw[data-${attr}]`,root).forEach(s=>wireSwatch(s,attr,el));
+    $$(`.sw.pick[data-pick="${attr}"]`,root).forEach(s=>s.addEventListener("click",()=>{
+      openSwatchPicker(s,attr,el,el[attr]&&el[attr]!=="none"?el[attr]:"#ffffff");
+    }));
+  });
+}
+function ensureSwatchPickerCss(){
+  if(document.getElementById("hanns-swatch-picker-css"))return;
+  const st=document.createElement("style");st.id="hanns-swatch-picker-css";
+  st.textContent=`
+.swatches .sw.pick{background:conic-gradient(#e8482b,#f4c24e,#5b8f5a,#3a86a4,#7b4fa8,#b25da6,#e8482b);display:flex;align-items:center;justify-content:center}
+.swatches .sw.pick::after{content:"+";font:700 15px/1 system-ui,sans-serif;color:#fff;text-shadow:0 1px 2px #0009}
+.swatches .sw.custom::after{content:"";position:absolute;right:2px;bottom:2px;width:6px;height:6px;border-radius:50%;background:#fff;box-shadow:0 0 0 1px #0006}
+.hanns-marquee{position:absolute;z-index:99999;pointer-events:none;border:1px dashed var(--signal,#e8482b);background:rgba(232,72,43,.08);box-sizing:border-box}
+.hs-auto-align{width:100%;margin:.1rem 0 .55rem;padding:.55rem .7rem;border-radius:9px;border:1px solid var(--signal,#e8482b);background:rgba(232,72,43,.14);color:inherit;font-weight:600;cursor:pointer}
+.hs-auto-align:hover{background:rgba(232,72,43,.26)}
+.insp-empty .hs-auto-align{margin-top:1rem}`;
+  document.head.appendChild(st);
 }
 
 function escapeTA(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
@@ -1448,7 +1651,10 @@ function renderInspector(){
   }
   if(!el){
     inspBody.innerHTML=`<div class="insp-empty"><span class="big">Nothing selected</span>
-      Pick an element on the canvas, or add one from the left rail. Switch to <b>Slide</b> to style the background &amp; transition.</div>`;
+      Pick an element on the canvas, or add one from the left rail. Switch to <b>Slide</b> to style the background &amp; transition.
+      <br><br>Drag a box on an empty part of the slide to select several objects (<b>Ctrl/Cmd+A</b> selects all).
+      <button class="hs-auto-align" id="f-auto-align-slide" type="button">✨ Auto-align this slide</button></div>`;
+    $("#f-auto-align-slide")?.addEventListener("click",autoAlign);
     return;
   }
   if(inspTab==="animate"){
@@ -1468,7 +1674,7 @@ function multiSelectionPanel(els){
       <button class="tbtn primary" id="f-bind-selected" type="button">🔗 Bind selected</button>
       <button class="tbtn" id="f-clear-selection" type="button">Clear</button>
     </div>
-    <div class="insp-empty" style="padding-top:.8rem">Tip: hold Shift/Ctrl/Cmd and click objects to add or remove them from the selection.</div>
+    <div class="insp-empty" style="padding-top:.8rem">Tip: drag a box on an empty part of the slide to select, or hold Shift/Ctrl/Cmd and click objects to add or remove them.</div>
   </div>`;
 }
 function bindMultiSelectionPanel(){
@@ -2289,9 +2495,7 @@ function bindElementPanel(el){
     seg("f-dropstyle","ds",v=>{el.dropStyle=v;renderCanvas();markDirty();});
   }
   // swatches
-  $$(".sw[data-color]",inspBody).forEach(s=>s.addEventListener("click",()=>{el.color=s.dataset.color;activateSwatch(s,"color");renderCanvas();markDirty();}));
-  $$(".sw[data-fill]",inspBody).forEach(s=>s.addEventListener("click",()=>{el.fill=s.dataset.fill;activateSwatch(s,"fill");renderCanvas();markDirty();}));
-  $$(".sw[data-stroke]",inspBody).forEach(s=>s.addEventListener("click",()=>{el.stroke=s.dataset.stroke;activateSwatch(s,"stroke");renderCanvas();markDirty();}));
+  bindSwatches(el,inspBody);   // click = apply, double-click = picker on that colour
   $("#f-del")&&$("#f-del").addEventListener("click",()=>deleteEl(el.id));
 }
 function activateSwatch(node,attr){node.parentElement.querySelectorAll(".sw").forEach(x=>x.classList.remove("active"));node.classList.add("active");}
@@ -3447,6 +3651,13 @@ function init(){
       return;
     }
 
+    if(mod&&key==="a"){
+      e.preventDefault();
+      setSelectionIds(currentElements().filter(x=>x&&!x.locked&&!x.hidden).map(x=>x.id));
+      renderInspector();
+      return;
+    }
+    if(e.key==="Escape"&&selectedIds().length){clearSelection();return;}
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="g"){e.preventDefault(); if(e.shiftKey)unbindSelected(); else bindSelected(); return;}
     if((e.key==="Delete"||e.key==="Backspace")&&selectedIds().length){e.preventDefault();deleteSelected();return;}
     if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)){
@@ -4107,10 +4318,135 @@ function pasteSelectionStyle(){
   pushHistory();renderAll();markDirty();renderInspector();
   toast("Style applied to "+list.length+" object"+(list.length>1?"s":""));
 }
+/* ════════════════════════════════════════════════════════════════════
+   AUTO-ALIGN — "tidy up" in one click
+   ────────────────────────────────────────────────────────────────────
+   Works on the selection (2+ objects) or, with 0–1 selected, on the
+   whole slide minus full-bleed backdrops and locked objects.
+
+   1. UNITS. Objects stacked mostly on top of each other (a label on a
+      coloured bar, a number in a circle) are glued into one unit and
+      move together, so the text never slides off its box.
+   2. ROWS & COLUMNS. Units are grouped into rows (overlapping in y) and
+      columns (overlapping in x). A list is n rows × 1 column, a row of
+      cards is 1 × n, a card grid is r × c.
+   3. ALIGN. In every column, units snap to whichever edge they already
+      most nearly share (left, centre or right, taken from the median so
+      one stray object doesn't drag the rest). Rows do the same with
+      top / middle / bottom.
+   4. SPACE. Rows get equal gaps between them and columns get equal gaps,
+      keeping the first and last where they are — so the block does not
+      jump across the slide.
+   Nothing is resized. One click is one undo step.
+   ════════════════════════════════════════════════════════════════════ */
+function aaBox(list){
+  const x=Math.min(...list.map(e=>Number(e.x)||0)),y=Math.min(...list.map(e=>Number(e.y)||0));
+  return {x,y,w:Math.max(...list.map(e=>(Number(e.x)||0)+(Number(e.w)||0)))-x,
+               h:Math.max(...list.map(e=>(Number(e.y)||0)+(Number(e.h)||0)))-y};
+}
+function aaMedian(a){const s=a.slice().sort((p,q)=>p-q);const m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2;}
+function aaIsBackdrop(e){return (Number(e.w)||0)*(Number(e.h)||0)>=0.8*W*H;}
+function aaUnits(list){
+  const n=list.length,parent=list.map((_,i)=>i);
+  const find=i=>parent[i]===i?i:(parent[i]=find(parent[i]));
+  for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){
+    const a=aaBox([list[i]]),b=aaBox([list[j]]);
+    const ix=Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x);
+    const iy=Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y);
+    if(ix<=0||iy<=0)continue;
+    const small=Math.max(1,Math.min(a.w*a.h,b.w*b.h));
+    if(ix*iy>=0.5*small)parent[find(i)]=find(j);   // one sits mostly on the other
+  }
+  const map=new Map();
+  list.forEach((e,i)=>{const r=find(i);if(!map.has(r))map.set(r,[]);map.get(r).push(e);});
+  return [...map.values()].map(members=>({members,box:aaBox(members)}));
+}
+function aaMove(u,dx,dy){
+  dx=Math.round(dx);dy=Math.round(dy);
+  if(!dx&&!dy)return;
+  u.members.forEach(e=>{e.x=Math.round((Number(e.x)||0)+dx);e.y=Math.round((Number(e.y)||0)+dy);});
+  u.box.x+=dx;u.box.y+=dy;
+}
+/* Group units into bands along one axis ("y" → rows, "x" → columns). */
+function aaBands(units,axis){
+  const p=axis==="y"?"y":"x",s=axis==="y"?"h":"w";
+  const sorted=units.slice().sort((a,b)=>(a.box[p]+a.box[s]/2)-(b.box[p]+b.box[s]/2));
+  const bands=[];
+  sorted.forEach(u=>{
+    const band=bands[bands.length-1];
+    if(band){
+      const lo=Math.max(band.lo,u.box[p]),hi=Math.min(band.hi,u.box[p]+u.box[s]);
+      const need=0.5*Math.min(band.hi-band.lo,u.box[s]);
+      if(hi-lo>=need&&hi-lo>0){band.units.push(u);band.lo=Math.min(band.lo,u.box[p]);band.hi=Math.max(band.hi,u.box[p]+u.box[s]);return;}
+    }
+    bands.push({units:[u],lo:u.box[p],hi:u.box[p]+u.box[s]});
+  });
+  return bands;
+}
+/* Snap every unit in a band to the edge they already most nearly share. */
+function aaAlignBand(band,axis){
+  if(band.units.length<2)return;
+  const p=axis==="x"?"x":"y",s=axis==="x"?"w":"h";
+  const anchors=[
+    u=>u.box[p],                       // left / top
+    u=>u.box[p]+u.box[s]/2,            // centre / middle
+    u=>u.box[p]+u.box[s],              // right / bottom
+  ];
+  let best=0,bestSpread=Infinity;
+  anchors.forEach((f,i)=>{
+    const v=band.units.map(f);const spread=Math.max(...v)-Math.min(...v);
+    if(spread<bestSpread-0.5){bestSpread=spread;best=i;}
+  });
+  const f=anchors[best],target=aaMedian(band.units.map(f));
+  band.units.forEach(u=>{const d=target-f(u);aaMove(u,axis==="x"?d:0,axis==="y"?d:0);});
+}
+/* Equal gaps between bands, first and last band stay put. */
+function aaSpaceBands(bands,axis){
+  if(bands.length<2)return;
+  const p=axis==="y"?"y":"x",s=axis==="y"?"h":"w";
+  const boxes=bands.map(b=>{const bx=aaBox(b.units.flatMap(u=>u.members));return {band:b,lo:bx[p],size:bx[s]};})
+    .sort((a,b)=>a.lo-b.lo);
+  if(boxes.length<2)return;
+  const first=boxes[0],last=boxes[boxes.length-1];
+  const total=(last.lo+last.size)-first.lo;
+  const gap=(total-boxes.reduce((t,b)=>t+b.size,0))/(boxes.length-1);
+  if(gap<0)return;                     // they overlap — leave spacing alone
+  let cur=first.lo;
+  boxes.forEach(b=>{
+    const d=cur-b.lo;
+    b.band.units.forEach(u=>aaMove(u,axis==="x"?d:0,axis==="y"?d:0));
+    cur+=b.size+gap;
+  });
+}
+function autoAlign(){
+  let list=selectedElements();
+  const onSelection=list.length>1;
+  if(!onSelection)list=currentElements().filter(e=>e&&!e.locked&&!e.hidden&&!aaIsBackdrop(e));
+  if(list.length<2){toast("Add or select at least two objects to line up");return;}
+  const units=aaUnits(list);
+  if(units.length<2){toast("These objects already sit together as one block");return;}
+  const before=JSON.stringify(list.map(e=>[e.x,e.y]));
+  // Columns first (fixes ragged left edges), then rows, then spacing.
+  aaBands(units,"x").forEach(b=>aaAlignBand(b,"x"));
+  aaBands(units,"y").forEach(b=>aaAlignBand(b,"y"));
+  const rows=aaBands(units,"y"),cols=aaBands(units,"x");
+  aaSpaceBands(rows,"y");
+  aaSpaceBands(cols,"x");
+  if(JSON.stringify(list.map(e=>[e.x,e.y]))===before){toast("Already neatly aligned");return;}
+  pushHistory();renderAll();markDirty();
+  const shape=rows.length>1&&cols.length>1?`${rows.length} rows × ${cols.length} columns`
+    :rows.length>1?`a column of ${rows.length}`:`a row of ${cols.length}`;
+  toast(`Lined up ${units.length} ${onSelection?"selected ":""}items as ${shape} — Ctrl+Z to undo`);
+}
+
 function arrangePanel(){
   const n=arrangeTargets().length;
   const b=(label,title,fn)=>hEl("button",{type:"button",title,text:label,onclick:fn});
+  ensureSwatchPickerCss();
   return hGroup("Align & distribute",[
+    hEl("button",{class:"hs-auto-align",type:"button",
+      title:"Snap objects into neat rows/columns with equal spacing. Labels stay on their boxes.",
+      text:n>1?"✨ Auto-align selection":"✨ Auto-align whole slide",onclick:autoAlign}),
     hEl("div",{class:"hs-arrange"},[
       b("⭰","Align left",()=>alignSelection("left")),
       b("⭶","Align horizontal centres",()=>alignSelection("center")),
@@ -4130,7 +4466,7 @@ function arrangePanel(){
     ]),
     hEl("div",{class:"hs-hint",text: n>1
       ? n+" objects selected — alignment uses their combined bounds."
-      : "One object selected — alignment uses the slide. Shift-click more objects to align them to each other."}),
+      : "One object selected — alignment uses the slide. Drag a box or Shift-click to pick more objects and align them to each other."}),
     hEl("div",{class:"hs-row-btns"},[
       hEl("button",{class:"hs-mini",type:"button",text:"⧉ Copy style",onclick:copySelectionStyle}),
       hEl("button",{class:"hs-mini",type:"button",text:"⧉ Paste style",onclick:pasteSelectionStyle}),

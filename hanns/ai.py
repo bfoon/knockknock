@@ -84,6 +84,20 @@ def model_chain():
     return [m.strip() for m in str(raw).split(",") if m.strip()]
 
 
+def fallback_provider():
+    """Optional OpenAI-compatible provider tried after Gemini (Groq, OpenRouter,
+    Mistral, Together, a local Ollama…). Set in .env:
+        HANNS_AI_FALLBACK_URL=https://api.groq.com/openai/v1/chat/completions
+        HANNS_AI_FALLBACK_KEY=…
+        HANNS_AI_FALLBACK_MODEL=llama-3.3-70b-versatile
+    """
+    url = (_setting("HANNS_AI_FALLBACK_URL") or "").strip()
+    model = (_setting("HANNS_AI_FALLBACK_MODEL") or "").strip()
+    if not url or not model:
+        return None
+    return {"url": url, "key": (_setting("HANNS_AI_FALLBACK_KEY") or "").strip(), "model": model}
+
+
 def hourly_limit():
     try:
         return max(1, int(_setting("HANNS_AI_HOURLY_LIMIT", "40")))
@@ -150,9 +164,13 @@ def _post(model, payload, timeout=90):
 
 def _extract_text(data):
     out = []
+    if not isinstance(data, dict):
+        return ""
     for cand in data.get("candidates") or []:
+        if not isinstance(cand, dict):
+            continue
         for part in ((cand.get("content") or {}).get("parts") or []):
-            if part.get("thought"):
+            if not isinstance(part, dict) or part.get("thought"):
                 continue
             if isinstance(part.get("text"), str):
                 out.append(part["text"])
@@ -179,6 +197,28 @@ def _parse_json(text):
     raise AIError("The AI returned something that wasn't valid slide data. Try again — it usually works on a second go.")
 
 
+def _error_message(data, status):
+    """Google's error body is usually {"error": {"message": …}}, but be ready
+    for a list, a bare string or HTML from a proxy."""
+    if isinstance(data, list) and data:
+        data = data[0]
+    if isinstance(data, dict):
+        err = data.get("error")
+        if isinstance(err, dict):
+            return str(err.get("message") or f"HTTP {status}")
+        if isinstance(err, str):
+            return err
+    return f"HTTP {status}"
+
+
+def _cooling(model):
+    return bool(cache.get(f"hanns-ai:cool:{model}"))
+
+
+def _cool(model, seconds):
+    cache.set(f"hanns-ai:cool:{model}", 1, seconds)
+
+
 def gemini_json(system, user, temperature=0.9, max_tokens=8192):
     """Ask Gemini for JSON, walking the model chain. Returns (data, model)."""
     if not is_enabled():
@@ -202,40 +242,103 @@ def gemini_json(system, user, temperature=0.9, max_tokens=8192):
     timed_out = False
     status = None
     started = time.monotonic()
-    for model in model_chain():
+    chain = model_chain()
+    # Models that just said "quota used up" are skipped for a couple of
+    # minutes. If ALL of them are cooling down, don't waste the user's time
+    # re-asking Gemini — go straight to the next fallback layer.
+    live = [m for m in chain if not _cooling(m)]
+    if not live:
+        raise AIError("Gemini's free quota is used up for now on every model. Try again in a minute, "
+                      "or tomorrow if the daily limit was reached.", status=429)
+    for model in live:
+        retried = False
         for cfg in shapes:
             remaining = TIME_BUDGET - (time.monotonic() - started)
             if remaining < 8:
                 timed_out = True
                 break
             status, data = _post(model, dict(base, generationConfig=cfg), timeout=min(120, remaining))
+            if status in (500, 502, 503) and not retried and remaining > 20:
+                # "The model is overloaded" is common on the free tier and
+                # usually clears within seconds.
+                retried = True
+                time.sleep(2)
+                status, data = _post(model, dict(base, generationConfig=cfg), timeout=min(120, remaining - 2))
             if status == 200:
                 text = _extract_text(data)
                 if not text:
-                    reason = ((data.get("candidates") or [{}])[0].get("finishReason") or
-                              (data.get("promptFeedback") or {}).get("blockReason") or "empty")
+                    cand = ((data or {}).get("candidates") or [{}]) if isinstance(data, dict) else [{}]
+                    reason = ((cand[0] if isinstance(cand[0], dict) else {}).get("finishReason")
+                              or ((data or {}).get("promptFeedback") or {}).get("blockReason") if isinstance(data, dict) else None) or "empty"
                     last_error = f"The AI returned no content ({reason})."
                     break  # try the next model
-                return _parse_json(text), model
-            msg = ((data or {}).get("error") or {}).get("message", "") or f"HTTP {status}"
-            last_error = msg
+                try:
+                    return _parse_json(text), model
+                except AIError as e:
+                    last_error = str(e)
+                    break  # malformed JSON from this model: try the next one
+            last_error = _error_message(data, status)
             if status == 400:
                 continue          # simpler request shape, same model
             if status == 429:
                 quota_hit = True
+                _cool(model, 120)
+            elif status == 404:
+                _cool(model, 6 * 3600)   # retired model name
             break                 # 401/403/404/429/5xx/network → next model
         if status in (401, 403):
             raise AIError("Gemini rejected the API key. Check GEMINI_API_KEY in the .env file.", status=503)
         if timed_out:
             break
 
-    logger.warning("Hanns AI: every model failed — %s", last_error)
+    logger.warning("Hanns AI: every Gemini model failed — %s", last_error)
     if timed_out or (status == 0 and "timed out" in last_error.lower()):
         raise AIError("Gemini is taking too long right now. Try again, or ask for fewer slides.", status=504)
     if quota_hit:
         raise AIError("Gemini's free quota is used up for now on every model. Try again in a minute, "
                       "or tomorrow if the daily limit was reached.", status=429)
     raise AIError("The AI service didn't answer: " + last_error[:200])
+
+
+def openai_compatible_json(system, user, temperature=0.9, max_tokens=8192):
+    """The optional second provider (any OpenAI-compatible chat endpoint)."""
+    fb = fallback_provider()
+    if not fb:
+        raise AIError("No fallback AI provider configured.", status=503)
+    body = {"model": fb["model"], "temperature": temperature, "max_tokens": min(max_tokens, 8000),
+            "messages": [{"role": "system", "content": system + "\nReply with ONE JSON object only."},
+                         {"role": "user", "content": user}]}
+    headers = {"Content-Type": "application/json"}
+    if fb["key"]:
+        headers["Authorization"] = f"Bearer {fb['key']}"
+    req = urllib.request.Request(fb["url"], data=json.dumps(body).encode("utf-8"), headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=min(90, TIME_BUDGET)) as resp:
+            data = json.loads(resp.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as e:
+        raise AIError(f"Fallback AI answered HTTP {e.code}.", status=502)
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+        raise AIError(f"Fallback AI unreachable: {e}", status=502)
+    try:
+        text = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError):
+        raise AIError("Fallback AI returned no content.", status=502)
+    return _parse_json(text), "fallback:" + fb["model"]
+
+
+def ai_json(system, user, temperature=0.9, max_tokens=8192):
+    """Gemini first, then the optional second provider."""
+    try:
+        return gemini_json(system, user, temperature, max_tokens)
+    except AIError as first:
+        if first.status == 400 or not fallback_provider():
+            raise
+        logger.warning("Hanns AI: Gemini failed (%s) — trying the fallback provider", first)
+        try:
+            return openai_compatible_json(system, user, temperature, max_tokens)
+        except AIError as second:
+            logger.warning("Hanns AI: fallback provider failed too — %s", second)
+            raise first
 
 
 # ─────────────────────────── shared design brief ───────────────────────────
@@ -438,6 +541,24 @@ def deck_outline(slides, limit=30):
 
 # ─────────────────────────── actions ───────────────────────────
 
+def _list(v):
+    return [x for x in v if isinstance(x, dict) or isinstance(x, str)] if isinstance(v, list) else []
+
+
+def _obj(data, key):
+    """Models sometimes return a bare list (or wrap the object one level
+    deeper). Normalise to a dict that has `key`."""
+    if isinstance(data, list):
+        return {key: data}
+    if isinstance(data, dict):
+        if key in data:
+            return data
+        for v in data.values():
+            if isinstance(v, dict) and key in v:
+                return v
+        return data
+    return {}
+
 TONES = {"bold": "bold, confident, high-energy", "elegant": "elegant, editorial, refined",
          "playful": "playful, warm, colourful", "corporate": "clean, corporate, trustworthy",
          "minimal": "minimal, calm, lots of whitespace", "dark": "dramatic, cinematic, dark-mode"}
@@ -464,8 +585,9 @@ where you invent illustrative numbers, keep them plausible and say so in that sl
 """
     user = (f"Topic: {topic}\nAudience: {audience}\nStyle: {_tone(p)}\nNumber of slides: exactly {n}\n"
             "Make it look like it was designed by a top agency.")
-    data, model = gemini_json(system, user, temperature=0.95, max_tokens=16000)
-    slides = data.get("slides") if isinstance(data, dict) else None
+    data, model = ai_json(system, user, temperature=0.95, max_tokens=16000)
+    data = _obj(data, "slides")
+    slides = data.get("slides")
     if not isinstance(slides, list) or not slides:
         raise AIError("The AI didn't return any slides. Try rephrasing the topic.")
     return {"theme": data.get("theme") or {}, "slides": slides[:n]}, model
@@ -485,7 +607,7 @@ If CURRENT SLIDE content is given and the request is about improving it, keep it
         user += "CURRENT SLIDE: " + json.dumps(digest_slide(ctx, with_ids=False))[:6000]
     if p.get("outline"):
         user += "\nDECK SO FAR (for context and consistent style):\n" + str(p["outline"])[:3000]
-    data, model = gemini_json(system, user, temperature=0.95, max_tokens=8192)
+    data, model = ai_json(system, user, temperature=0.95, max_tokens=8192)
     slide = data.get("slide") if isinstance(data, dict) else None
     if not isinstance(slide, dict):
         slide = data if isinstance(data, dict) and "els" in data else None
@@ -513,8 +635,9 @@ favour a few elegant shapes over hundreds of tiny ones. It must look premium, li
     user = f"Mood / subject: {mood}\nArt style: {style}\n"
     if content:
         user += f"The deck is about:\n{content}\n"
-    data, model = gemini_json(system, user, temperature=1.0, max_tokens=16000)
-    raw = (data or {}).get("variants") if isinstance(data, dict) else None
+    data, model = ai_json(system, user, temperature=1.0, max_tokens=16000)
+    data = _obj(data, "variants")
+    raw = data.get("variants")
     if not isinstance(raw, list) or not raw:
         raise AIError("The AI didn't paint any backgrounds. Try again.")
     out = []
@@ -559,8 +682,8 @@ Return: {{"slides": [{{"index": int, "els": [{{"id": same id, ...only the fields
 - {"You MAY fix typos, grammar and tighten wording in 'text' (keep meaning, keep language)." if fix_text else "Do NOT change any 'text' field."}
 """
     digests = [digest_slide(s.get("slide") or s, s.get("index")) for s in slides[:12]]
-    data, model = gemini_json(system, "SLIDES:\n" + json.dumps(digests)[:30000], temperature=0.4, max_tokens=16000)
-    return {"slides": (data or {}).get("slides") or [], "fixText": fix_text}, model
+    data, model = ai_json(system, "SLIDES:\n" + json.dumps(digests)[:30000], temperature=0.4, max_tokens=16000)
+    return {"slides": _list(_obj(data, "slides").get("slides")), "fixText": fix_text}, model
 
 
 def action_decorate(p):
@@ -579,8 +702,8 @@ Return: {"slides": [{"index": int, "add": [ELEMENT...], "bgFx": optional, "bg": 
 """
     digests = [digest_slide(s.get("slide") or s, s.get("index")) for s in slides[:12]]
     user = f"Decoration style: {style}\nSLIDES:\n" + json.dumps(digests)[:30000]
-    data, model = gemini_json(system, user, temperature=0.9, max_tokens=16000)
-    return {"slides": (data or {}).get("slides") or []}, model
+    data, model = ai_json(system, user, temperature=0.9, max_tokens=16000)
+    return {"slides": _list(_obj(data, "slides").get("slides"))}, model
 
 
 def action_animate(p):
@@ -598,8 +721,8 @@ Return: {{"slides": [{{"index": int, "transition": one of {TRANSITIONS}, "bgFx":
 - Keep total build per slide under ~2.5 s. Use bgFx sparingly and only where it adds mood.
 """
     digests = [digest_slide(s.get("slide") or s, s.get("index")) for s in slides[:20]]
-    data, model = gemini_json(system, "SLIDES:\n" + json.dumps(digests)[:30000], temperature=0.7, max_tokens=12000)
-    return {"slides": (data or {}).get("slides") or []}, model
+    data, model = ai_json(system, "SLIDES:\n" + json.dumps(digests)[:30000], temperature=0.7, max_tokens=12000)
+    return {"slides": _list(_obj(data, "slides").get("slides"))}, model
 
 
 def action_ideas(p):
@@ -616,8 +739,8 @@ Ideas should be surprising and specific: a striking stat slide, an interactive q
 a before/after, a story moment, a visual metaphor, a strong closing.
 """
     user = f"DECK OUTLINE:\n{outline or '(empty deck)'}\n" + (f"\nThe author wants: {focus}" if focus else "")
-    data, model = gemini_json(system, user, temperature=1.0, max_tokens=6000)
-    return data if isinstance(data, dict) else {}, model
+    data, model = ai_json(system, user, temperature=1.0, max_tokens=6000)
+    return _obj(data, "ideas"), model
 
 
 def action_notes(p):
@@ -631,9 +754,9 @@ Return: {"slides": [{"index": int, "notes": "3-6 natural spoken sentences, with 
 Expand on what's on the slide — add the story, the "why", a transition line into the next slide. Don't just read the slide back.
 """
     digests = [digest_slide(s.get("slide") or s, s.get("index"), with_ids=False) for s in slides[:25]]
-    data, model = gemini_json(system, f"Tone: {style}\nSLIDES:\n" + json.dumps(digests)[:30000],
+    data, model = ai_json(system, f"Tone: {style}\nSLIDES:\n" + json.dumps(digests)[:30000],
                               temperature=0.8, max_tokens=12000)
-    return {"slides": (data or {}).get("slides") or []}, model
+    return {"slides": _list(_obj(data, "slides").get("slides"))}, model
 
 
 def action_rewrite(p):
@@ -644,8 +767,8 @@ def action_rewrite(p):
     system = ("You are Hanns AI, an expert copywriter for presentation slides. Return ONLY JSON: "
               '{"options": ["rewrite 1", "rewrite 2", "rewrite 3"]}. Each option must fit on a slide '
               "(similar length or shorter than the original unless asked), keep line breaks sensible, keep facts.")
-    data, model = gemini_json(system, f"Rewrite this slide text — {how}:\n\n{text}", temperature=1.0, max_tokens=2000)
-    opts = [str(o)[:2000] for o in ((data or {}).get("options") or []) if isinstance(o, (str, int, float))]
+    data, model = ai_json(system, f"Rewrite this slide text — {how}:\n\n{text}", temperature=1.0, max_tokens=2000)
+    opts = [str(o)[:2000] for o in _list(_obj(data, "options").get("options")) if isinstance(o, (str, int, float))]
     if not opts:
         raise AIError("The AI didn't return any rewrites. Try again.")
     return {"options": opts[:4]}, model
@@ -657,10 +780,69 @@ ACTIONS = {
 }
 
 
-def run(action, payload, deck_code):
+def _validate(action, p):
+    """Things only the user can fix — reported, never replaced by a fallback."""
+    if action in ("deck", "slide") and len(str(p.get("prompt") or "").strip()) < 3:
+        raise AIError("Tell the AI what you want first." if action == "deck" else "Describe the slide you want.", status=400)
+    if action == "rewrite" and not str(p.get("text") or "").strip():
+        raise AIError("Select a text box first.", status=400)
+    if action in ("polish", "decorate", "animate", "notes") and not (p.get("slides") or []):
+        raise AIError("There are no slides to work on.", status=400)
+
+
+def _builtin(action, payload, deck_code):
+    from . import ai_fallback as fb
     if action == "background":
-        return action_background(payload, deck_code)
-    fn = ACTIONS.get(action)
+        return fb.fb_background(payload, deck_code, sanitize_svg, save_svg)
+    fn = fb.FALLBACKS.get(action)
     if not fn:
         raise AIError("Unknown AI action.", status=400)
     return fn(payload)
+
+
+def run(action, payload, deck_code, use_ai=True):
+    """Run one Studio action. Returns (result, model, notice).
+
+    Layers, each tried only if the previous one fails:
+      1. Gemini model chain (retry on overload, cool down exhausted models)
+      2. the optional OpenAI-compatible provider (HANNS_AI_FALLBACK_*)
+      3. Hanns' built-in designer (hanns/ai_fallback.py) — always works
+    A request the user must fix (status 400: empty prompt, no text
+    selected) is reported, never papered over.
+    """
+    if action != "background" and action not in ACTIONS:
+        raise AIError("Unknown AI action.", status=400)
+    _validate(action, payload)
+
+    reason = None
+    if use_ai and is_enabled():
+        try:
+            if action == "background":
+                result, model = action_background(payload, deck_code)
+            else:
+                result, model = ACTIONS[action](payload)
+            return result, model, None
+        except AIError as e:
+            if e.status == 400:
+                raise
+            reason = str(e)
+        except Exception:
+            logger.exception("Hanns AI: unexpected error in action %s — using the built-in designer", action)
+            reason = "The AI hit an unexpected problem"
+    elif not is_enabled():
+        reason = "AI isn't set up on this server yet"
+    else:
+        reason = "You've used your AI requests for this hour"
+
+    try:
+        result = _builtin(action, payload, deck_code)
+    except AIError:
+        raise
+    except Exception:
+        logger.exception("Hanns AI: built-in designer failed for %s", action)
+        raise AIError("Something went wrong — try again in a moment.", status=500)
+    notice = (reason.rstrip(".") + " — so Hanns' built-in designer made this instead. "
+              "Edit the text, or try again later for an AI version.")
+    if isinstance(result, dict) and result.get("notice"):
+        notice = result.pop("notice") + " " + notice
+    return result, "hanns-builtin", notice

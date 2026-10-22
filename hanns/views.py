@@ -608,19 +608,28 @@ async def deck_ai(request, code):
     if not isinstance(payload, dict):
         return JsonResponse({"ok": False, "error": "Malformed request."}, status=400)
     action = str(payload.get("action") or "")
+    # Hourly AI limit reached → still answer, using the built-in designer.
+    use_ai = True
+    left = 0
+    if ai.is_enabled():
+        try:
+            left = await sync_to_async(ai.take_quota)(user.pk)
+        except ai.AIError:
+            use_ai = False
     try:
-        if not ai.is_enabled():
-            raise ai.AIError("AI isn't switched on for this server yet. Add GEMINI_API_KEY to the .env file.", status=503)
-        left = await sync_to_async(ai.take_quota)(user.pk)
-        result, model = await sync_to_async(ai.run, thread_sensitive=False)(action, payload, deck.code)
+        result, model, notice = await sync_to_async(ai.run, thread_sensitive=False)(
+            action, payload, deck.code, use_ai=use_ai)
     except ai.AIError as e:
         left = await sync_to_async(ai.quota_left)(user.pk)
         return JsonResponse({"ok": False, "error": str(e), "quotaLeft": left}, status=e.status)
     except Exception:
         import logging
         logging.getLogger(__name__).exception("Hanns AI action %s failed", action)
-        return JsonResponse({"ok": False, "error": "Something went wrong talking to the AI. Try again."}, status=500)
-    return JsonResponse({"ok": True, "action": action, "model": model, "quotaLeft": left, "result": result})
+        return JsonResponse({"ok": False, "error": "Something went wrong — try again in a moment."}, status=500)
+    if not use_ai:
+        left = 0
+    return JsonResponse({"ok": True, "action": action, "model": model, "quotaLeft": left,
+                         "result": result, "notice": notice, "fallback": model == "hanns-builtin"})
 
 
 @login_required

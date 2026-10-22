@@ -212,3 +212,7 @@
 @media (prefers-reduced-motion: reduce) {
   .kai, .kai-pane, .kai-mini, .kai-go::after, .kai-glow, .kai-logo, .kai-orb i, .kai-burst i { animation: none !important; transition: none !important; }
 }
+
+/* A fallback (backup AI or the built-in designer) produced this result. */
+.kai-notice { padding: 10px 12px; margin-bottom: 12px; border-radius: 12px; font-size: 12.5px; line-height: 1.4;
+  background: rgba(242,193,78,.12); border: 1px solid rgba(242,193,78,.4); color: #fde68a; }

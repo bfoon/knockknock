@@ -185,10 +185,12 @@
 
   // ───────────────────────── server calls ─────────────────────────
   let busy = null;
+  let lastNotice = null;   // set when a fallback produced the result
   async function call(action, payload, label) {
     if (busy) { toast("The AI is still working on the last request"); return null; }
     const ctrl = new AbortController();
     busy = ctrl;
+    lastNotice = null;
     // The server gives up after ~150 s and answers with a clear message;
     // this is only a backstop so the panel can never spin forever.
     const giveUp = setTimeout(() => { ctrl.timedOut = true; ctrl.abort(); }, 175000);
@@ -202,7 +204,22 @@
       let data = null; try { data = await r.json(); } catch (_) { /* html error page */ }
       if (data && typeof data.quotaLeft === "number") setQuota(data.quotaLeft);
       if (!r.ok || !data || !data.ok) throw new Error((data && data.error) || ("The AI request failed (" + r.status + ")"));
-      if (data.model) $("#kai-model").textContent = "via " + data.model;
+      if (data.model) {
+        $("#kai-model").textContent = data.model === "hanns-builtin" ? "built-in designer (AI unavailable)"
+          : data.model.indexOf("fallback:") === 0 ? "via backup AI · " + data.model.slice(9) : "via " + data.model;
+      }
+      lastNotice = data.notice || null;
+      if (lastNotice) {
+        // After the caller has painted its result, make sure the notice
+        // sits at the top of the active tab's output (once).
+        const note = lastNotice;
+        setTimeout(() => {
+          const pane = root.querySelector(".kai-pane.on .kai-out");
+          if (pane && pane.children.length && !pane.querySelector(".kai-notice")) {
+            pane.insertAdjacentHTML("afterbegin", `<div class="kai-notice">🛟 ${esc(note)}</div>`);
+          }
+        }, 0);
+      }
       return data.result;
     } catch (e) {
       if (e.name === "AbortError" && !ctrl.timedOut) { toast("AI request cancelled"); return null; }
@@ -470,7 +487,11 @@
     showLoading.t = setInterval(() => { i = (i + 1) % lines.length; msg.textContent = lines[i]; }, 2200);
   }
   function hideLoading() { clearInterval(showLoading.t); const b = $("#kai-loading"); if (b) b.hidden = true; }
-  function out(id) { const o = $(id); o.innerHTML = ""; return o; }
+  function out(id) {
+    const o = $(id);
+    o.innerHTML = lastNotice ? `<div class="kai-notice">🛟 ${esc(lastNotice)}</div>` : "";
+    return o;
+  }
   function showError(m) {
     const pane = $(".kai-pane.on .kai-out");
     if (pane) pane.innerHTML = `<div class="kai-err">⚠️ ${esc(m)}</div>`;
@@ -503,8 +524,8 @@
       const slides = (res.slides || []).map(s => normSlide(s)).filter(s => s.els.length);
       if (!slides.length) { showError("The AI's slides came back empty. Try again."); return; }
       const th = res.theme || {};
-      o.innerHTML = `<div class="kai-res-head"><b>${esc(th.name || "Your new deck")}</b>
-        <span class="kai-swatches">${(th.palette || []).slice(0, 6).map(c => `<i style="background:${esc(color(c, "#888"))}"></i>`).join("")}</span></div>`;
+      o.insertAdjacentHTML("beforeend", `<div class="kai-res-head"><b>${esc(th.name || "Your new deck")}</b>
+        <span class="kai-swatches">${(th.palette || []).slice(0, 6).map(c => `<i style="background:${esc(color(c, "#888"))}"></i>`).join("")}</span></div>`);
       const grid = document.createElement("div"); grid.className = "kai-grid";
       slides.forEach((s, i) => { const m = mini(s); m.style.animationDelay = (i * 0.07) + "s"; m.dataset.n = i + 1; grid.appendChild(m); });
       o.appendChild(grid);

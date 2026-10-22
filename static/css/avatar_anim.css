@@ -1,0 +1,29 @@
+/* Avatar idle animations — companion to games/avatars.py.
+ *
+ * templates/games/edit.html and templates/games/create.html link this file,
+ * but it was missing from the repository. With DEBUG=False and whitenoise's
+ * CompressedManifestStaticFilesStorage, a {% static %} reference to a file
+ * that isn't in the manifest raises ValueError, so both pages returned
+ * "Server Error (500)".
+ *
+ * The keyframes (kk-float, kk-bounce, kk-swing, kk-spin, kk-flutter,
+ * kk-zoom, kk-blastoff, kk-stomp, kk-dash, kk-wobble, kk-tilt) and the
+ * `.kk-anim-<name>` classes that apply them live in app.css, which every page
+ * loads — they are deliberately not duplicated here.
+ *
+ * This file adds what app.css doesn't: respect for the OS "reduce motion"
+ * setting, so the avatar picker doesn't bounce for people who've asked
+ * their device to keep still.
+ */
+
+@media (prefers-reduced-motion: reduce) {
+  [class*="kk-anim-"] {
+    animation: none !important;
+  }
+}
+
+/* Pause idle loops while a tile is being pressed, so the tap target holds
+   still under the finger (helps on phones). */
+.kk-avatar-tile:active[class*="kk-anim-"] {
+  animation-play-state: paused;
+}

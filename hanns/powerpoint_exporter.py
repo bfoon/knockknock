@@ -40,6 +40,7 @@ the PPTX at a real 10in × 5.625in so 1 design px = 1/96 in.
 from __future__ import annotations
 
 import io
+import math
 import re
 import os
 from urllib.parse import urlparse, unquote
@@ -122,6 +123,178 @@ def _num(value, default=0.0):
         return float(value)
     except Exception:
         return default
+
+
+def _alpha_of(value) -> float:
+    """Opacity carried by a CSS colour (rgba()/hsla() 4th channel, #RRGGBBAA)."""
+    if value is None:
+        return 1.0
+    s = str(value).strip()
+    m = re.match(r"^rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*,\s*([\d.]+%?)\s*\)", s)
+    if m:
+        raw = m.group(1)
+        try:
+            a = float(raw.rstrip("%")) / (100.0 if raw.endswith("%") else 1.0)
+            return max(0.0, min(1.0, a))
+        except ValueError:
+            return 1.0
+    m = re.match(r"^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})$", s)
+    if m:
+        return int(m.group(1), 16) / 255.0
+    return 1.0
+
+
+def _add_alpha(clr_el, alpha):
+    """Append <a:alpha> to a colour element when the colour is translucent."""
+    if clr_el is None or alpha >= 0.995:
+        return
+    try:
+        for old in clr_el.findall(qn("a:alpha")):
+            clr_el.remove(old)
+        clr_el.append(parse_xml(f'<a:alpha {nsdecls("a")} val="{int(round(alpha * 100000))}"/>'))
+    except Exception:
+        pass
+
+
+def _solid_alpha(xpr, alpha):
+    """Translucency for the solidFill directly under ``xpr`` (spPr / rPr / tcPr)."""
+    try:
+        sf = xpr.find(qn("a:solidFill"))
+        if sf is not None and len(sf):
+            _add_alpha(sf[0], alpha)
+    except Exception:
+        pass
+
+
+def _set_font_color(font, value, default="16140F"):
+    font.color.rgb = _rgb(value, default)
+    _solid_alpha(font._rPr, _alpha_of(value))
+
+
+def _grad_xml(css):
+    """CSS linear/radial gradient → <a:gradFill> XML (or None)."""
+    grad = _parse_css_gradient(css)
+    if not grad:
+        return None
+    angle, stops = grad
+    gs = "".join(
+        f'<a:gs pos="{int(round(p * 1000))}"><a:srgbClr val="{_clean_hex(c)}"/></a:gs>'
+        for p, c in stops if _clean_hex(c)
+    )
+    if not gs:
+        return None
+    if "radial-gradient" in str(css):
+        shade = ('<a:path path="circle"><a:fillToRect l="50000" t="50000" '
+                 'r="50000" b="50000"/></a:path>')
+    else:
+        shade = f'<a:lin ang="{int(round(((angle - 90) % 360) * 60000))}" scaled="0"/>'
+    return f'<a:gradFill {nsdecls("a")} rotWithShape="1"><a:gsLst>{gs}</a:gsLst>{shade}</a:gradFill>'
+
+
+def _apply_fill(shp, value) -> bool:
+    """Solid (with alpha) or gradient fill from a Hanns CSS colour value.
+
+    Returns False — and leaves the shape unfilled — for "none"/unparseable.
+    """
+    css = str(value or "").strip()
+    try:
+        if "gradient" in css:
+            xml = _grad_xml(css)
+            if xml:
+                shp.fill.solid()               # puts a fill node in the right slot
+                sppr = shp.fill._xPr
+                sf = sppr.find(qn("a:solidFill"))
+                sf.addprevious(parse_xml(xml))
+                sppr.remove(sf)
+                return True
+        hexv = _clean_hex(css)
+        if hexv:
+            shp.fill.solid()
+            shp.fill.fore_color.rgb = RGBColor.from_string(hexv)
+            _solid_alpha(shp.fill._xPr, _alpha_of(css))
+            return True
+    except Exception:
+        pass
+    try:
+        shp.fill.background()
+    except Exception:
+        pass
+    return False
+
+
+_SPPR_BEFORE_EFFECTS = {"xfrm", "custGeom", "prstGeom", "noFill", "solidFill", "gradFill",
+                        "blipFill", "pattFill", "grpFill", "ln"}
+
+
+def _px_emu_raw(px):
+    try:
+        return int(round(float(px) / PX_PER_IN * EMU_PER_IN))
+    except Exception:
+        return 0
+
+
+def _apply_fx(shp, el):
+    """Hanns el.fx → PowerPoint outer shadow, glow and flips."""
+    fx = el.get("fx") or {}
+    if not isinstance(fx, dict):
+        fx = {}
+    try:
+        sppr = shp._element.spPr
+    except Exception:
+        return
+    try:
+        xfrm = sppr.find(qn("a:xfrm"))
+        if xfrm is not None:
+            if fx.get("flipH"):
+                xfrm.set("flipH", "1")
+            if fx.get("flipV"):
+                xfrm.set("flipV", "1")
+    except Exception:
+        pass
+    parts = []
+    if fx.get("glow"):
+        col = fx.get("gcolor") or "#7dd3fc"
+        parts.append(
+            f'<a:glow rad="{_px_emu_raw(fx.get("gsize", 12))}">'
+            f'<a:srgbClr val="{_clean_hex(col) or "7DD3FC"}">'
+            f'<a:alpha val="{int(round(min(_alpha_of(col), 0.6) * 100000))}"/></a:srgbClr></a:glow>'
+        )
+    if fx.get("shadow"):
+        sx = _num(fx.get("sx", 0), 0)
+        sy = _num(fx.get("sy", 6), 6)
+        col = fx.get("scolor") or "rgba(0,0,0,.38)"
+        dist = _px_emu_raw(math.hypot(sx, sy))
+        ang = int(round((math.degrees(math.atan2(sy, sx)) % 360) * 60000))
+        parts.append(
+            f'<a:outerShdw blurRad="{_px_emu_raw(fx.get("sblur", 14))}" dist="{dist}" dir="{ang}" '
+            f'algn="ctr" rotWithShape="0"><a:srgbClr val="{_clean_hex(col) or "000000"}">'
+            f'<a:alpha val="{int(round(_alpha_of(col) * 100000))}"/></a:srgbClr></a:outerShdw>'
+        )
+    # No effects still writes an EMPTY <a:effectLst/>: python-pptx's
+    # autoshapes carry <p:style><a:effectRef idx="2"> which points at the
+    # theme's drop shadow, so without this every exported rectangle and
+    # ellipse gained a shadow it never had in Hanns.
+    try:
+        old = sppr.find(qn("a:effectLst"))
+        if old is not None:
+            sppr.remove(old)
+        eff = parse_xml(f'<a:effectLst {nsdecls("a")}>{"".join(parts)}</a:effectLst>')
+        idx = 0
+        for i, child in enumerate(sppr):
+            tag = child.tag.rsplit("}", 1)[-1]
+            if tag in _SPPR_BEFORE_EFFECTS:
+                idx = i + 1
+        sppr.insert(idx, eff)
+    except Exception:
+        pass
+    # Belt and braces: LibreOffice / Google Slides ignore an empty effectLst
+    # and still apply the style's effectRef, so point that at "no effect".
+    try:
+        ref = shp._element.find(qn("p:style") + "/" + qn("a:effectRef"))
+        if ref is not None:
+            ref.set("idx", "0")
+    except Exception:
+        pass
 
 
 # ───────────────────────── CSS gradient parsing ─────────────────────────
@@ -478,6 +651,50 @@ def _set_letter_spacing(run, px):
         pass
 
 
+_RUN_KEYS = ("color", "weight", "italic", "size", "font", "ls")
+
+
+def _text_runs(el):
+    """Python twin of hanns_core.js textRuns(): the per-run overrides that
+    still apply, or None when the runs no longer describe the element."""
+    runs = el.get("runs")
+    if not isinstance(runs, list) or not runs:
+        return None
+    if any(not isinstance(r, dict) or not isinstance(r.get("t"), str) for r in runs):
+        return None
+    if "".join(r["t"] for r in runs) != str(el.get("text", "") or ""):
+        return None
+    base = el.get("runsBase") if isinstance(el.get("runsBase"), dict) else None
+    live = {k: (base is None or base.get(k) == el.get(k)) for k in _RUN_KEYS}
+    out = []
+    for r in runs:
+        o = {"t": r["t"]}
+        for k in _RUN_KEYS:
+            if r.get(k) is not None and live[k]:
+                o[k] = r[k]
+        if r.get("u") is not None:
+            o["u"] = r["u"]
+        out.append(o)
+    return out
+
+
+def _text_paragraphs(el):
+    """[[(text, overrides), …], …] — one list per paragraph."""
+    runs = _text_runs(el)
+    if runs is None:
+        return [[(line, {})] for line in str(el.get("text", "") or "").split("\n")]
+    paras = [[]]
+    for r in runs:
+        ov = {k: v for k, v in r.items() if k != "t"}
+        chunks = r["t"].split("\n")
+        for i, chunk in enumerate(chunks):
+            if i:
+                paras.append([])
+            if chunk:
+                paras[-1].append((chunk, ov))
+    return paras
+
+
 def _add_text(slide, el):
     box = slide.shapes.add_textbox(
         _px_to_emu(el.get("x", 0)), _px_to_emu(el.get("y", 0)),
@@ -486,56 +703,62 @@ def _add_text(slide, el):
     tf = box.text_frame
     tf.word_wrap = True
     try:
-        # The Hanns renderer top-aligns text inside its box.
-        tf.vertical_anchor = MSO_ANCHOR.TOP
+        tf.vertical_anchor = {"middle": MSO_ANCHOR.MIDDLE, "bottom": MSO_ANCHOR.BOTTOM}.get(
+            str(el.get("valign") or "top"), MSO_ANCHOR.TOP)
         tf.margin_left = tf.margin_right = Emu(int(0.02 * EMU_PER_IN))
         tf.margin_top = tf.margin_bottom = Emu(int(0.01 * EMU_PER_IN))
     except Exception:
         pass
 
-    fill_hex = _clean_hex(el.get("fill"))
-    if fill_hex:
-        try:
-            box.fill.solid()
-            box.fill.fore_color.rgb = RGBColor.from_string(fill_hex)
-            box.line.fill.background()
-        except Exception:
-            pass
+    fill = el.get("fill")
+    if fill and str(fill).lower() not in ("none", "transparent"):
+        if _apply_fill(box, fill):
+            try:
+                box.line.fill.background()
+            except Exception:
+                pass
 
-    text = str(el.get("text", "") or "")
-    lines = text.split("\n")
     align = {"center": PP_ALIGN.CENTER, "right": PP_ALIGN.RIGHT}.get(
         str(el.get("align", "left")).lower(), PP_ALIGN.LEFT
     )
-    size_pt = max(6, int(round(_num(el.get("size", 24), 24) / 1.333)))
-    color = _rgb(el.get("color", "#16140f"), "16140F")
-    bold = _num(el.get("weight", 500), 500) >= 600
-    italic = bool(el.get("italic", False))
-    font_name = _css_font_to_name(el.get("font"))
+    base_size = _num(el.get("size", 24), 24)
+    base_color = el.get("color", "#16140f")
+    base_weight = _num(el.get("weight", 500), 500)
+    base_italic = bool(el.get("italic", False))
+    base_font = el.get("font")
+    base_ls = _num(el.get("ls", 0), 0)
+    base_u = bool(el.get("underline", False))
     lh = _num(el.get("lh", 1.15), 1.15)
-    ls = _num(el.get("ls", 0), 0)
 
-    for i, line in enumerate(lines):
+    for i, pieces in enumerate(_text_paragraphs(el)):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.alignment = align
         try:
-            p.line_spacing = max(0.5, min(3.0, lh))
+            # Hanns lh is a CSS line-height; PowerPoint "single" is ~1.2×.
+            p.line_spacing = max(0.5, min(3.0, lh / 1.2))
         except Exception:
             pass
-        run = p.add_run()
-        run.text = line
-        f = run.font
-        f.size = Pt(size_pt)
-        f.bold = bold
-        f.italic = italic
-        f.color.rgb = color
-        if font_name:
-            f.name = font_name
-        if ls:
-            _set_letter_spacing(run, ls)
+        if not pieces:
+            pieces = [("", {})]
+        for text, ov in pieces:
+            run = p.add_run()
+            run.text = text
+            f = run.font
+            f.size = Pt(max(6, int(round(_num(ov.get("size", base_size), base_size) / 1.333))))
+            f.bold = _num(ov.get("weight", base_weight), base_weight) >= 600
+            f.italic = bool(ov.get("italic", base_italic))
+            f.underline = bool(ov.get("u", base_u))
+            _set_font_color(f, ov.get("color", base_color))
+            name = _css_font_to_name(ov.get("font", base_font))
+            if name:
+                f.name = name
+            ls = _num(ov.get("ls", base_ls), base_ls)
+            if ls:
+                _set_letter_spacing(run, ls)
     rot = _num(el.get("rot", 0), 0)
     if rot:
         box.rotation = rot
+    _apply_fx(box, el)
     return box
 
 
@@ -571,6 +794,7 @@ def _add_image(slide, el):
             rot = _num(el.get("rot", 0), 0)
             if rot:
                 pic.rotation = rot
+            _apply_fx(pic, el)
             return pic
         except Exception:
             pass
@@ -627,17 +851,13 @@ def _add_shape(slide, el, kind):
     if auto == MSO_SHAPE.ROUNDED_RECTANGLE:
         _set_rounded_radius(shp, radius, min(_num(el.get("w", 40)), _num(el.get("h", 40))))
 
-    fill_hex = _clean_hex(el.get("fill"))
-    if fill_hex:
-        shp.fill.solid()
-        shp.fill.fore_color.rgb = RGBColor.from_string(fill_hex)
-    else:
-        shp.fill.background()
+    _apply_fill(shp, el.get("fill"))
 
     stroke_hex = _clean_hex(el.get("stroke"))
     stroke_w = _num(el.get("strokeW", 0), 0)
     if stroke_hex and stroke_w > 0:
         shp.line.color.rgb = RGBColor.from_string(stroke_hex)
+        _solid_alpha(shp.line._get_or_add_ln(), _alpha_of(el.get("stroke")))
         shp.line.width = Pt(max(0.5, stroke_w / 1.333))
         if el.get("dashed"):
             _set_dashed(shp)
@@ -647,6 +867,7 @@ def _add_shape(slide, el, kind):
     rot = _num(el.get("rot", 0), 0)
     if rot:
         shp.rotation = rot
+    _apply_fx(shp, el)
 
     txt = el.get("text")
     if txt:
@@ -662,31 +883,101 @@ def _add_shape(slide, el, kind):
 
 
 def _add_line(slide, el):
-    """Lines are stored as a thin box; draw a real PPTX connector."""
-    x = _px_to_emu(el.get("x", 0))
-    y = _px_to_emu(el.get("y", 0))
-    w = _px_to_emu(max(2, el.get("w", 100)))
-    h = _px_to_emu(max(1, el.get("h", 2)))
+    """Lines are stored as a thin box rotated about its centre; draw a real
+    PPTX connector between the two true end points."""
+    x, y = _num(el.get("x", 0)), _num(el.get("y", 0))
+    w, h = max(1.0, _num(el.get("w", 100), 100)), max(1.0, _num(el.get("h", 2), 2))
+    rot = math.radians(_num(el.get("rot", 0), 0))
+    vertical = h > w
+    length = h if vertical else w
+    thickness = w if vertical else h
+    ang = rot + (math.pi / 2 if vertical else 0.0)
+    cx, cy = x + w / 2.0, y + h / 2.0
+    dx, dy = math.cos(ang) * length / 2.0, math.sin(ang) * length / 2.0
     try:
         from pptx.enum.shapes import MSO_CONNECTOR
-        vertical = _num(el.get("h", 2)) > _num(el.get("w", 100))
-        if vertical:
-            conn = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, x + w // 2, y, x + w // 2, y + h)
-            width_pt = max(0.75, _num(el.get("w", 2)) / 1.333)
-        else:
-            conn = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, x, y + h // 2, x + w, y + h // 2)
-            width_pt = max(0.75, _num(el.get("h", 2)) / 1.333)
+        conn = slide.shapes.add_connector(
+            MSO_CONNECTOR.STRAIGHT,
+            _px_to_emu(cx - dx), _px_to_emu(cy - dy), _px_to_emu(cx + dx), _px_to_emu(cy + dy),
+        )
         conn.line.color.rgb = _rgb(el.get("fill", "#16140f"), "16140F")
-        conn.line.width = Pt(min(20.0, width_pt))
+        _solid_alpha(conn.line._get_or_add_ln(), _alpha_of(el.get("fill")))
+        conn.line.width = Pt(min(20.0, max(0.75, thickness / 1.333)))
         if el.get("dashed"):
             _set_dashed(conn)
         return conn
     except Exception:
         pass
-    shp = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, w, max(_px_to_emu(2), h))
-    shp.fill.solid()
-    shp.fill.fore_color.rgb = _rgb(el.get("fill", "#16140f"), "16140F")
+    shp = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, _px_to_emu(x), _px_to_emu(y),
+                                 _px_to_emu(w), max(_px_to_emu(2), _px_to_emu(h)))
+    _apply_fill(shp, el.get("fill", "#16140f"))
     shp.line.fill.background()
+    if el.get("rot"):
+        shp.rotation = _num(el.get("rot", 0), 0)
+    return shp
+
+
+# ───────────────────────── freeform shapes ─────────────────────────
+
+def _freeform_points(el):
+    """The element's own points, or a regular polygon / star seeded from its
+    preset when the vertices were never edited (points is null)."""
+    pts = el.get("points")
+    if isinstance(pts, list) and len(pts) >= 2:
+        out = []
+        for p in pts:
+            if isinstance(p, dict):
+                out.append((_num(p.get("x", 0)), _num(p.get("y", 0))))
+        if len(out) >= 2:
+            return out
+    kind = str(el.get("shapeKind") or "polygon")
+    n = int(max(3, min(24, _num(el.get("sides", 6), 6))))
+    if kind in ("star", "burst"):
+        inset = max(0.1, min(0.95, _num(el.get("inset", 0.45), 0.45)))
+        return [(50 + 50 * (1 if i % 2 == 0 else inset) * math.cos(-math.pi / 2 + i * math.pi / n),
+                 50 + 50 * (1 if i % 2 == 0 else inset) * math.sin(-math.pi / 2 + i * math.pi / n))
+                for i in range(n * 2)]
+    return [(50 + 50 * math.cos(-math.pi / 2 + i * 2 * math.pi / n),
+             50 + 50 * math.sin(-math.pi / 2 + i * 2 * math.pi / n)) for i in range(n)]
+
+
+def _add_freeform(slide, el):
+    x, y = _num(el.get("x", 0)), _num(el.get("y", 0))
+    w, h = max(1.0, _num(el.get("w", 100), 100)), max(1.0, _num(el.get("h", 100), 100))
+    pts = _freeform_points(el)
+    if len(pts) < 2:
+        return None
+    absolute = [(_px_to_emu(x + px / 100.0 * w), _px_to_emu(y + py / 100.0 * h)) for px, py in pts]
+    closed = el.get("closed") is not False
+    builder = slide.shapes.build_freeform(absolute[0][0], absolute[0][1], scale=1.0)
+    builder.add_line_segments(absolute[1:], close=closed)
+    shp = builder.convert_to_shape()
+
+    mode = str(el.get("fillMode") or "solid")
+    if mode == "none" or not closed:
+        shp.fill.background()
+    elif mode in ("linear", "radial"):
+        a, b = el.get("fill") or "#e8482b", el.get("fill2") or "#f2c14e"
+        css = (f"radial-gradient(circle,{a} 0%,{b} 100%)" if mode == "radial"
+               else f"linear-gradient({_num(el.get('gradAngle', 135), 135)}deg,{a} 0%,{b} 100%)")
+        _apply_fill(shp, css)
+    else:
+        _apply_fill(shp, el.get("fill") or "#e8482b")
+
+    stroke_hex = _clean_hex(el.get("stroke"))
+    stroke_w = _num(el.get("strokeW", 0), 0)
+    if stroke_hex and stroke_w > 0:
+        shp.line.color.rgb = RGBColor.from_string(stroke_hex)
+        _solid_alpha(shp.line._get_or_add_ln(), _alpha_of(el.get("stroke")))
+        shp.line.width = Pt(max(0.5, stroke_w / 1.333))
+        if _num(el.get("dash", 0), 0) > 0:
+            _set_dashed(shp)
+    else:
+        shp.line.fill.background()
+    rot = _num(el.get("rot", 0), 0)
+    if rot:
+        shp.rotation = rot
+    _apply_fx(shp, el)
     return shp
 
 
@@ -709,24 +1000,38 @@ def _add_table(slide, el):
     font_name = _css_font_to_name(el.get("font")) or "Archivo"
     header = el.get("header", True)
 
+    head_bg = el.get("headerColor") or ("#" + accent)
+    head_fg = el.get("headerTextColor") or "#FFFFFF"
+    body_fg = el.get("textColor") or "#16140F"
+    alt_bg = el.get("rowAltColor") or "#F4F6F8"
+    striped = el.get("striped", True) is not False
+    cs = el.get("cellStyles")
+    cs = cs if isinstance(cs, list) and len(cs) == rows else None
+
     for r in range(rows):
         row_data = data[r]
+        srow = cs[r] if cs and isinstance(cs[r], list) and len(cs[r]) == len(row_data) else None
         for c in range(cols):
             cell = tbl.cell(r, c)
             cell.text = str(row_data[c]) if c < len(row_data) else ""
+            st = (srow[c] if srow and c < len(srow) and isinstance(srow[c], dict) else {}) or {}
+            is_head = r == 0 and header
             para = cell.text_frame.paragraphs[0]
+            if st.get("align"):
+                para.alignment = {"center": PP_ALIGN.CENTER, "right": PP_ALIGN.RIGHT}.get(
+                    st["align"], PP_ALIGN.LEFT)
             for run in (para.runs or [para.add_run()]):
                 run.font.size = Pt(size_pt)
                 run.font.name = font_name
-                if r == 0 and header:
-                    run.font.bold = True
-                    run.font.color.rgb = RGBColor.from_string("FFFFFF")
-            if r == 0 and header:
+                run.font.bold = bool(st.get("bold", is_head))
+                _set_font_color(run.font, st.get("color") or (head_fg if is_head else body_fg))
+            bg = st.get("bg") or (head_bg if is_head else (alt_bg if striped and r % 2 == 0 else None))
+            if bg and _clean_hex(bg):
                 cell.fill.solid()
-                cell.fill.fore_color.rgb = RGBColor.from_string(accent)
-            elif r % 2 == 0:
-                cell.fill.solid()
-                cell.fill.fore_color.rgb = RGBColor.from_string("F4F6F8")
+                cell.fill.fore_color.rgb = RGBColor.from_string(_clean_hex(bg))
+                _solid_alpha(cell._tc.get_or_add_tcPr(), _alpha_of(bg))
+            elif not is_head:
+                cell.fill.background()
     return gframe
 
 
@@ -768,6 +1073,13 @@ def _chart_series(el):
         if not isinstance(row, dict):
             continue
         cats.append(str(row.get("label", "")))
+        series = row.get("series")
+        if isinstance(series, list) and len(series) >= 2:
+            # Hanns-native grouped/stacked data: series[0] is the base value.
+            base_vals.append(_num(series[0], 0))
+            for j, val in enumerate(series[1:6], start=2):
+                extra_cols.setdefault(j, []).append(_num(val, 0))
+            continue
         base_vals.append(_num(row.get("value", 0), 0))
         for key, val in row.items():
             m = re.match(r"^value(\d+)$", str(key))
@@ -1844,6 +2156,8 @@ def _render_element(slide, el, fx: _AnimFx):
             shp = _add_studio_object(slide, el)
         else:
             shp = _add_rich_placeholder(slide, el, "Infographic")
+    elif etype == "freeform":
+        shp = _add_freeform(slide, el)
     elif etype == "creative_shape":
         shp = _add_shape(slide, {**el, "type": "ellipse", "radius": 0}, "ellipse")
     elif etype == "group":

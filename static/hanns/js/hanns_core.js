@@ -5605,6 +5605,55 @@ function applyShapeMotion(el,inner){
   if(el.motionDelay)inner.style.setProperty("--motion-delay",Number(el.motionDelay)+"s");
 }
 
+/* ── RICH TEXT RUNS ──────────────────────────────────────────────────
+   A text element may carry `runs`: [{t, color?, weight?, italic?, size?,
+   font?, u?, ls?}] — per-run overrides of the element's own style, written
+   by the PowerPoint importer so a sentence with three coloured phrases
+   imports with three colours. Only properties that DIFFER from the element
+   are stored.
+
+   The runs are only trusted while they still describe the element:
+     • joined run text must equal el.text — the moment the text is edited
+       in place, the runs silently retire and the box renders plain;
+     • per property, an override applies only while the element's own value
+       still equals `runsBase` (the snapshot taken at import). Change the
+       box colour in the inspector and the run colours step aside, so
+       "make all of this white" does what it says. */
+const TEXT_VALIGN={top:"flex-start",middle:"center",bottom:"flex-end"};
+const RUN_PROPS=[["color","color"],["weight","weight"],["italic","italic"],["size","size"],["font","font"],["ls","ls"]];
+function textRuns(el){
+  if(!el||!Array.isArray(el.runs)||!el.runs.length)return null;
+  let joined="";
+  for(const r of el.runs){if(!r||typeof r.t!=="string")return null;joined+=r.t;}
+  if(joined!==String(el.text==null?"":el.text))return null;
+  const base=el.runsBase||null;
+  const live={};
+  RUN_PROPS.forEach(([rk,ek])=>{live[rk]=!base||base[ek]===el[ek];});
+  return el.runs.map(r=>{
+    const o={t:r.t};
+    RUN_PROPS.forEach(([rk])=>{if(r[rk]!=null&&live[rk])o[rk]=r[rk];});
+    if(r.u!=null)o.u=r.u;
+    return o;
+  });
+}
+function paintTextRuns(t,el){
+  const runs=textRuns(el);
+  if(!runs){t.textContent=el.text;return;}
+  t.textContent="";
+  runs.forEach(r=>{
+    const sp=document.createElement("span");
+    sp.textContent=r.t;
+    if(r.color)sp.style.color=r.color;
+    if(r.weight!=null)sp.style.fontWeight=String(r.weight);
+    if(r.italic!=null)sp.style.fontStyle=r.italic?"italic":"normal";
+    if(r.size!=null)sp.style.fontSize=r.size+"px";
+    if(r.font)sp.style.fontFamily=r.font;
+    if(r.u!=null)sp.style.textDecoration=r.u?"underline":"none";
+    if(r.ls!=null)sp.style.letterSpacing=r.ls+"px";
+    t.appendChild(sp);
+  });
+}
+
 function renderElement(el,{live=false}={}){
   const node=document.createElement("div");
   node.className="el "+el.type;
@@ -5620,8 +5669,12 @@ function renderElement(el,{live=false}={}){
     t.style.font=`${el.italic?"italic ":""}${el.weight} ${el.size}px/${el.lh} ${el.font}`;
     t.style.color=el.color;t.style.textAlign=el.align;t.style.letterSpacing=(el.ls||0)+"px";
     t.style.width="100%";t.style.whiteSpace="pre-wrap";
+    if(el.underline)t.style.textDecoration="underline";
     if(el.fill&&el.fill!=="none"){node.style.background=el.fill;}
-    t.textContent=el.text;
+    paintTextRuns(t,el);
+    // Vertical anchor (PowerPoint top / middle / bottom). .el-inner is a flex box.
+    const va=TEXT_VALIGN[el.valign];
+    if(va)inner.style.alignItems=va;
     if(!live){t.dataset.textInner="1";t.setAttribute("contenteditable","false");t.spellcheck=false;}
     inner.appendChild(t);
   } else if(el.type==="shape"){
@@ -5732,13 +5785,28 @@ function renderTable(el){
   const data=normTableData(el);
   const table=document.createElement("table");
   if(el.striped!==false)table.classList.add("striped");
+  // Per-cell colours (PowerPoint import). Only applied while the grid
+  // still has the shape they were captured for — after rows/columns are
+  // added or removed the indices no longer line up, so they step aside.
+  const cs=(Array.isArray(el.cellStyles)&&el.cellStyles.length===data.length)?el.cellStyles:null;
   data.forEach((row,ri)=>{
     const tr=document.createElement("tr");
-    row.forEach(cell=>{
+    const srow=cs&&Array.isArray(cs[ri])&&cs[ri].length===row.length?cs[ri]:null;
+    row.forEach((cell,ci)=>{
       const tag=(el.header!==false&&ri===0)?"th":"td";
       const td=document.createElement(tag);td.textContent=cell;
       td.style.fontFamily=el.font||'"Archivo",sans-serif';td.style.fontSize=(el.size||18)+"px";
       td.style.color=tag==="th"?(el.headerTextColor||"#ffffff"):(el.textColor||"#16140f");
+      // PowerPoint headers are not shouted: the importer sets headerPlain so
+      // the theme's uppercase + tracking (hanns.css .data-table th) steps aside.
+      if(tag==="th"&&el.headerPlain){td.style.textTransform="none";td.style.letterSpacing="normal";}
+      const st=srow&&srow[ci];
+      if(st){
+        if(st.bg)td.style.background=st.bg;
+        if(st.color)td.style.color=st.color;
+        if(st.bold!=null)td.style.fontWeight=st.bold?"700":"400";
+        if(st.align)td.style.textAlign=st.align;
+      }
       tr.appendChild(td);
     });
     table.appendChild(tr);

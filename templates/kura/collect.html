@@ -133,6 +133,7 @@
   .calc-out{font-family:"Spline Sans Mono",monospace;font-size:1.35rem;font-weight:700;color:var(--cyan);
     padding:.2rem 0 .1rem}
 </style>
+<link rel="stylesheet" href="{% static 'kura/kura_mapper.css' %}?v=2">
 </head>
 <body>
 <div class="wrap">
@@ -168,6 +169,8 @@
 </div>
 
 {% if open %}
+{# Map question (GPS track / walked area / drawn shapes). Leaflet loads lazily, only when a form has one. #}
+<script src="{% static 'kura/kura_mapper.js' %}?v=2"></script>
 <script>window.__KURA_RUN__ = {
   payload: {{ payload|safe }},
   preview: {{ preview|yesno:"true,false" }},
@@ -435,6 +438,10 @@ function inputHtml(q, v, ns, ctx){
       for(let i=1;i<=maxStars;i++) s+='<span data-star="'+esc(dq)+'" data-n="'+i+'" class="'+(i<=cur?"on":"")+'">★</span>';
       return s+"</div>";
     }
+    case "mapper":
+      // The live map is mounted by KuraMapper.hydrate() after render() and
+      // re-attached (not rebuilt) on every re-render, so recording never stops.
+      return '<div class="kmapper-slot" data-mapper="'+esc(dq)+'" data-cfg="'+esc(JSON.stringify(q.mapper||{}))+'"></div>';
     case "gps":
       return '<button type="button" class="gpsbtn" data-gps="'+esc(dq)+'">📍 '+(v?("Captured: "+esc(v)):"Capture my location")+'</button>';
     case "photo": case "audio": case "signature":
@@ -577,6 +584,14 @@ function render(){
     form.appendChild(div);
   });
   $("#prog").style.width=(visible?Math.round(answered/visible*100):0)+"%";
+  if(window.KuraMapper){
+    KuraMapper.hydrate(form,{
+      get:getPath,
+      set:(p,v)=>{ setPath(p,v); delete errors[p.startsWith("r|")?p.split("|").slice(1).join("."):p]; },
+      zones:(P.schema&&P.schema.zones)||[],
+      surveyCode:location.pathname
+    });
+  }
   window.scrollTo(0,scrollY);
 }
 
@@ -737,7 +752,23 @@ form.addEventListener("input",e=>{
   }
   if(t.type==="radio"||t.type==="checkbox") render();
 });
-form.addEventListener("focusout",()=>render());
+// Re-render on blur. Two guards:
+//  • never from inside a map question (re-rendering moves the live map);
+//  • if the blur came from tapping something (finger/mouse still down), wait
+//    until it lifts — re-rendering mid-tap swaps the tapped button/option out
+//    of the page and the tap is lost ("first tap after typing does nothing").
+let pointerIsDown=false, renderAfterTap=false;
+document.addEventListener("pointerdown",()=>{ pointerIsDown=true; },true);
+document.addEventListener("pointerup",()=>{
+  pointerIsDown=false;
+  if(renderAfterTap){ renderAfterTap=false; setTimeout(render,0); }
+},true);
+document.addEventListener("pointercancel",()=>{ pointerIsDown=false; if(renderAfterTap){ renderAfterTap=false; setTimeout(render,0); } },true);
+form.addEventListener("focusout",e=>{
+  if(e.target.closest&&e.target.closest(".kmp")) return;
+  if(pointerIsDown){ renderAfterTap=true; return; }
+  render();
+});
 form.addEventListener("click",e=>{
   const t=e.target;
   if(t.dataset.star){ setPath(t.dataset.star,Number(t.dataset.n)); render(); }

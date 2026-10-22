@@ -347,6 +347,9 @@ def collect_submit(request, code):
                 and gps_in[0] is not None else None)
     clean, calcs, score, errors = validate_submission(
         version.schema, data.get("answers") or {}, gps=gps_pair)
+    if not gps_pair:
+        from .geo import first_position
+        gps_pair = first_position(clean, version.schema)
     if errors:
         return JsonResponse({"ok": False, "errors": errors}, status=422)
 
@@ -610,6 +613,8 @@ def export_csv(request, code):
         mode = "clean"
 
     with_flags = request.GET.get("flags") == "1" or mode == "flagged"
+    from .geo import csv_columns, csv_values, mapper_names
+    map_names = set(mapper_names(schema))
 
     rule_id = request.GET.get("rule")
     try:
@@ -641,7 +646,10 @@ def export_csv(request, code):
               "duration_s", "score", "gps_lat", "gps_lng"]
     if with_flags:
         header += ["flag_count", "flagged_by", "flag_details"]
-    writer.writerow(header + names)
+    cols = []
+    for n in names:
+        cols += csv_columns(n) if n in map_names else [n]
+    writer.writerow(header + cols)
 
     for s in subs:
         row = [
@@ -662,7 +670,9 @@ def export_csv(request, code):
         merged = {**s.answers, **s.calculations}
         for n in names:
             v = merged.get(n)
-            if isinstance(v, list) and v and isinstance(v[0], dict):
+            if n in map_names:
+                row += csv_values(v)                             # map answer
+            elif isinstance(v, list) and v and isinstance(v[0], dict):
                 row.append(json.dumps(v, ensure_ascii=False))   # repeat group
             elif isinstance(v, list):
                 row.append("|".join(str(x) for x in v))
@@ -756,7 +766,55 @@ def live_map(request, code):
     return render(request, "kura/map.html", {
         "survey": survey,
         "feed_url": f"/kura/{survey.code}/monitor/feed/",
+        "geo_url": f"/kura/{survey.code}/map/features.geojson",
+        "live_url": f"/kura/{survey.code}/map/live-traces/",
     })
+
+
+@login_required
+def live_traces(request, code):
+    """Snapshot of phones currently streaming GPS traces (for the live map)."""
+    from .livetrace import active
+    survey = _own(request, code)
+    return JsonResponse({"traces": active(survey.code)})
+
+
+@login_required
+def geo_features(request, code):
+    """Every mapped shape (mapper answers) + the survey's zones as one GeoJSON
+    FeatureCollection — drawn on the live map, and downloadable for QGIS /
+    ArcGIS / Google Earth (?download=1)."""
+    from .geo import mapper_names, zone_feature
+    survey = _own(request, code)
+    schema = (survey.current_version.schema if survey.current_version
+              else survey.draft_schema) or {}
+    names = mapper_names(schema)
+    labels = {q["name"]: q.get("label") or q["name"] for q in schema.get("questions", []) if q.get("name")}
+    feats = []
+    if names:
+        subs = survey.submissions.exclude(status="excluded").only(
+            "client_uuid", "answers", "received_at", "status").order_by("-received_at")[:2000]
+        for s in subs:
+            for n in names:
+                v = (s.answers or {}).get(n)
+                if not isinstance(v, dict):
+                    continue
+                for f in v.get("features", [])[:25]:
+                    if not isinstance(f, dict) or not f.get("geometry"):
+                        continue
+                    props = dict(f.get("properties") or {})
+                    props.update(layer="answer", question=n, question_label=labels.get(n, n),
+                                 submission=str(s.client_uuid), received_at=s.received_at.isoformat())
+                    feats.append({"type": "Feature", "geometry": f["geometry"], "properties": props})
+    for z in schema.get("zones") or []:
+        zf = zone_feature(z)
+        if zf:
+            feats.append(zf)
+    resp = JsonResponse({"type": "FeatureCollection", "features": feats,
+                         "survey": survey.code, "questions": names})
+    if request.GET.get("download") == "1":
+        resp["Content-Disposition"] = f'attachment; filename="{survey.code}_map.geojson"'
+    return resp
 
 
 @login_required

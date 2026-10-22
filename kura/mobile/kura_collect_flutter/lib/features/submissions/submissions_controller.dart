@@ -2,17 +2,33 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/database/app_database.dart';
 import '../../core/models/submission_model.dart';
-import '../../core/services/api_client.dart';
-import '../../core/services/sync_service.dart';
+import '../../core/services/sync_engine.dart';
 
+/// Local records list. Sync itself lives in [SyncEngine]; this controller
+/// keeps its old API (sync / syncing / pending) so existing screens work,
+/// and reloads automatically whenever the engine changes records.
 class SubmissionsController extends ChangeNotifier {
-  SubmissionsController(this.database);
+  SubmissionsController(this.database) {
+    SyncEngine.instance.addListener(_onEngine);
+  }
 
   final AppDatabase database;
 
   List<LocalSubmission> submissions = <LocalSubmission>[];
-  bool syncing = false;
   int pending = 0;
+  int _seenRevision = -1;
+
+  bool get syncing => SyncEngine.instance.busy;
+
+  void _onEngine() {
+    final rev = SyncEngine.instance.revision;
+    if (rev != _seenRevision) {
+      _seenRevision = rev;
+      load();
+    } else {
+      notifyListeners(); // progress / phase changed
+    }
+  }
 
   Future<void> load() async {
     try {
@@ -29,40 +45,32 @@ class SubmissionsController extends ChangeNotifier {
   Future<void> save(LocalSubmission submission) async {
     await database.saveSubmission(submission);
     await load();
+    // A finished form syncs straight away when the phone is online.
+    await SyncEngine.instance
+        .recordsChanged(justFinished: submission.status != 'draft');
   }
 
   Future<void> delete(String uuid) async {
     await database.deleteSubmission(uuid);
     await load();
+    await SyncEngine.instance.recordsChanged();
   }
 
+  /// Manual "Sync now" — returns how many records were sent.
   Future<int> sync() async {
-    if (syncing) {
-      return 0;
-    }
+    final report = await SyncEngine.instance.syncNow();
+    await load();
+    return report?.synced ?? 0;
+  }
 
-    syncing = true;
-    notifyListeners();
+  Future<void> retry(String uuid) async {
+    await SyncEngine.instance.retry(uuid: uuid);
+    await load();
+  }
 
-    try {
-      final syncService = SyncService(
-        database: database,
-        api: ApiClient(),
-      );
-
-      final count = await syncService.syncAll();
-
-      await load();
-
-      return count;
-    } catch (error, stackTrace) {
-      debugPrint('Submission synchronization failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
-
-      rethrow;
-    } finally {
-      syncing = false;
-      notifyListeners();
-    }
+  @override
+  void dispose() {
+    SyncEngine.instance.removeListener(_onEngine);
+    super.dispose();
   }
 }

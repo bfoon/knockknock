@@ -74,6 +74,9 @@ urlpatterns = [
     path("<str:code>/edit/", views.deck_edit, name="edit"),
     path("<str:code>/save/", views.deck_save, name="save"),
     path("<str:code>/image-upload/", views.deck_image_upload, name="image_upload"),
+    # Hanns AI Studio (Gemini, server-side key)
+    path("<str:code>/ai/", views.deck_ai, name="ai"),
+    path("<str:code>/ai/status/", views.deck_ai_status, name="ai_status"),
     path("<str:code>/powerpoint-import/", views.deck_powerpoint_import, name="powerpoint_import"),
     path("<str:code>/powerpoint-export/", views.deck_export_powerpoint, name="powerpoint_export"),
     path("<str:code>/html-export/", views.deck_export_html, name="html_export"),

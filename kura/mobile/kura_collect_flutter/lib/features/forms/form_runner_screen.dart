@@ -14,6 +14,7 @@ import 'package:uuid/uuid.dart';
 import '../../core/models/form_model.dart';
 import '../../core/models/submission_model.dart';
 import '../submissions/submissions_controller.dart';
+import 'mapper_page.dart';
 
 /// Kobo/ODK-Collect-style runner: one question per page, swipe or tap to
 /// navigate, section breadcrumbs, a jump-to-question sheet, and a review
@@ -123,6 +124,10 @@ String _normalizeType(dynamic raw) {
     'info': 'note',
     'calculate': 'calculate',
     'calc': 'calculate',
+    'mapper': 'mapper',
+    'map': 'mapper',
+    'geotrace': 'mapper',
+    'geoshape': 'mapper',
     'calculated': 'calculate',
     'hidden': 'calculate',
     'repeat': 'repeat',
@@ -1168,6 +1173,10 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
   @override
   void initState() {
     super.initState();
+    // Map questions need the form code (live streaming, crash recovery)
+    // and the survey's geofence zones (shown as a guide on the map).
+    MapperContext.formCode = widget.form.code;
+    MapperContext.zones = (widget.form.schema?['zones'] as List?) ?? const [];
     final draft = widget.draft;
     if (draft != null) {
       answers.addAll(draft.answers);
@@ -2358,6 +2367,15 @@ class _AnswerFieldState extends State<_AnswerField> {
           onPressed: _captureSignature,
         );
       }
+
+      case 'mapper':
+        // Native map: GPS trace, walked area or drawn shapes (GeoJSON,
+        // same format as the web runner; the server re-measures it).
+        return MapperField(
+          question: widget.question,
+          value: widget.value,
+          onChanged: widget.onChanged,
+        );
 
       default: { // 'text' and anything unknown
         return _textInput(

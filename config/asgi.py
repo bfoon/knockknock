@@ -17,6 +17,12 @@ import boardly.routing
 import hanns.routing
 import quest_rpg.routing
 import chalk.routing
+# Kura (live monitor / live map with phone GPS streaming / chat / live
+# dashboards) and Attendance had routing modules that were never
+# registered here — their WebSockets failed with "No route found" and the
+# pages silently fell back to polling.
+import kura.routing
+import attendance.routing
 
 
 websocket_urlpatterns = (
@@ -25,6 +31,8 @@ websocket_urlpatterns = (
     + hanns.routing.websocket_urlpatterns
     + quest_rpg.routing.websocket_urlpatterns
     + chalk.routing.websocket_urlpatterns
+    + kura.routing.websocket_urlpatterns
+    + attendance.routing.websocket_urlpatterns
 )
 
 

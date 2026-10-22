@@ -485,6 +485,11 @@ def _check_value(q, val, ctx, gps, zones):
     v = q.get("validate") or {}
     name = q.get("name")
 
+    if qtype == "mapper":
+        # GeoJSON from the live mapper: rebuilt and re-measured server-side.
+        from .geo import clean_mapper
+        return clean_mapper(val, q)
+
     def _constraint(final_val):
         expr = v.get("expr")
         if not expr:

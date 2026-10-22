@@ -558,6 +558,71 @@ def deck_save(request, code):
                          "updated_at": deck.updated_at.isoformat()})
 
 
+# ── Hanns AI Studio (Gemini) ─────────────────────────────────────────
+# The browser never talks to Gemini directly: the key stays in .env and
+# every call is permission-checked against the deck and rate-limited per
+# user. See hanns/ai.py for the model fallback chain and the action briefs.
+
+@login_required
+def deck_ai_status(request, code):
+    deck, denied = _editable_deck_or_403(request, code)
+    if denied:
+        return denied
+    from . import ai
+    return JsonResponse({
+        "ok": True,
+        "enabled": ai.is_enabled(),
+        "quotaLeft": ai.quota_left(request.user.pk),
+        "hourlyLimit": ai.hourly_limit(),
+    })
+
+
+async def deck_ai(request, code):
+    """AI Studio endpoint (async on purpose).
+
+    Under Daphne, Django runs every *sync* view on one shared thread
+    (thread_sensitive=True). A Gemini call can take a minute, so a sync view
+    here froze the whole site — page loads, autosave, other users — until it
+    finished, and long waits ended in dropped connections ("NetworkError when
+    attempting to fetch resource"). The slow Gemini call now runs on its own
+    worker thread; quick DB/cache steps still use Django's normal thread.
+
+    login_required/require_POST can't wrap async views on Django 5.0, so both
+    checks are done by hand.
+    """
+    from asgiref.sync import sync_to_async
+    from . import ai
+
+    if request.method != "POST":
+        return JsonResponse({"ok": False, "error": "POST only."}, status=405)
+    user = await request.auser()
+    if not user.is_authenticated:
+        return JsonResponse({"ok": False, "error": "Please sign in again."}, status=401)
+    deck, denied = await sync_to_async(_editable_deck_or_403)(request, code)
+    if denied:
+        return denied
+    try:
+        payload = json.loads(request.body or "{}")
+    except (ValueError, RequestDataTooBig):
+        return JsonResponse({"ok": False, "error": "That request was too large or malformed."}, status=400)
+    if not isinstance(payload, dict):
+        return JsonResponse({"ok": False, "error": "Malformed request."}, status=400)
+    action = str(payload.get("action") or "")
+    try:
+        if not ai.is_enabled():
+            raise ai.AIError("AI isn't switched on for this server yet. Add GEMINI_API_KEY to the .env file.", status=503)
+        left = await sync_to_async(ai.take_quota)(user.pk)
+        result, model = await sync_to_async(ai.run, thread_sensitive=False)(action, payload, deck.code)
+    except ai.AIError as e:
+        left = await sync_to_async(ai.quota_left)(user.pk)
+        return JsonResponse({"ok": False, "error": str(e), "quotaLeft": left}, status=e.status)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("Hanns AI action %s failed", action)
+        return JsonResponse({"ok": False, "error": "Something went wrong talking to the AI. Try again."}, status=500)
+    return JsonResponse({"ok": True, "action": action, "model": model, "quotaLeft": left, "result": result})
+
+
 @login_required
 @require_POST
 def deck_image_upload(request, code):

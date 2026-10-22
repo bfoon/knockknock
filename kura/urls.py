@@ -59,6 +59,7 @@ urlpatterns = [
     path("api/forms/", api.forms_manifest, name="api_forms"),
     path("api/forms/<str:code>/", api.form_detail, name="api_form_detail"),
     path("api/forms/<str:code>/sync/", api.form_sync, name="api_form_sync"),
+    path("api/forms/<str:code>/live/", api.form_live, name="api_form_live"),
     path("api/forms/<str:code>/lookups/", api.form_lookups, name="api_form_lookups"),
 
     # ── Coded routes with literal suffixes ───────────────────────────
@@ -107,6 +108,8 @@ urlpatterns = [
     path("<str:code>/monitor/feed/", views.monitor_feed, name="monitor_feed"),
     path("<str:code>/qr.png", views.qr_code, name="qr"),
     path("<str:code>/map/", views.live_map, name="live_map"),
+    path("<str:code>/map/features.geojson", views.geo_features, name="geo_features"),
+    path("<str:code>/map/live-traces/", views.live_traces, name="live_traces"),
     path("<str:code>/data/rows/", views.data_rows, name="data_rows"),
     path("<str:code>/data/edit/", views.edit_answer, name="edit_answer"),
     path("<str:code>/data/status/", views.set_row_status, name="row_status"),

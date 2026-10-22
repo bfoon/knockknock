@@ -123,6 +123,9 @@
   <button class="cbtn on" id="b-follow" type="button" title="Pan to new arrivals (P)">🎯 Follow</button>
   <button class="cbtn" id="b-heat" type="button" title="Heatmap (H)">🔥 Heat</button>
   <button class="cbtn" id="b-fit" type="button" title="Fit all points">⤢ Fit</button>
+  <button class="cbtn on" id="b-shapes" type="button" title="Mapped routes, areas &amp; zones (M)" hidden>🗺 Shapes <b id="shape-count"></b></button>
+  <span class="cbtn" id="live-count" title="Phones streaming GPS right now" hidden>📡 <b>0</b> live</span>
+  <a class="cbtn" id="b-geojson" href="{{ geo_url }}?download=1" title="Download every mapped shape + zones as GeoJSON (QGIS, ArcGIS, Google Earth)" hidden>⬇ GeoJSON</a>
   <button class="cbtn" id="b-full" type="button" title="Fullscreen (F)">⛶</button>
   <a class="cbtn" href="{% url 'kura:monitor' survey.code %}" title="Back to the monitor">✕</a>
 </div>
@@ -131,12 +134,15 @@
 window.__KURA_MAP__ = {
   code: "{{ survey.code }}",
   feedUrl: "{{ feed_url }}",
+  geoUrl: "{{ geo_url }}",
+  liveUrl: "{{ live_url }}",
   cartoKey: "{{ carto_key|default:''|escapejs }}",
   wsUrl: (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/kura/{{ survey.code }}/monitor/"
 };
 </script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script src="{% static 'kura/kura_mapper.js' %}?v=2"></script>
 <script>
 (function(){
 "use strict";
@@ -351,6 +357,7 @@ function connectWS(){
     if(m.type==="monitor_ok"){ wsHealthy=true; clearTimeout(guard); stopPolling(); setLive("ws","Live · realtime"); }
     else if(m.type==="submission"&&m.sub){ addSubmission(m.sub,true); }
     else if(m.type==="sync"){ addSync(m); }
+    else if(m.type==="live_trace"){ liveTrace(m, false); }
   });
   sock.addEventListener("close",()=>{ wsHealthy=false; startPolling(); setTimeout(connectWS,8000); });
   sock.addEventListener("error",()=>{ try{sock.close();}catch(e){} });
@@ -367,6 +374,130 @@ function connectWS(){
   }catch(e){ setLive("off","Could not load feed"); }
   connectWS();
 })();
+
+/* ── Mapped shapes: routes, walked areas and drawn shapes from `mapper`
+   answers, plus the survey's coloured zones. Refreshed every 30 s. ── */
+const shapesLayer = L.featureGroup().addTo(map);
+let shapesOn = true, shapesFitted = false;
+function shapePopup(p){
+  const bits = [];
+  if(p.layer === "zone") return "<b>Zone: "+esc(p.label||p.id)+"</b>";
+  bits.push("<b>"+esc(p.label || (p.kind==="track"?"Route":p.kind==="area"?"Area":"Shape"))+"</b>");
+  bits.push('<span style="opacity:.75">'+esc(p.question_label||p.question||"")+'</span>');
+  if(p.distance_m) bits.push("📏 "+KuraMapper.fmtDist(p.distance_m));
+  if(p.area_m2) bits.push("⬡ "+KuraMapper.fmtArea(p.area_m2));
+  if(p.duration_s) bits.push("⏱ "+Math.round(p.duration_s/60)+" min");
+  if(p.received_at) bits.push('<span style="opacity:.6">'+esc(new Date(p.received_at).toLocaleString())+'</span>');
+  return bits.join("<br>");
+}
+async function loadShapes(){
+  if(!CFG.geoUrl || !window.KuraMapper) return;
+  try{
+    const r = await fetch(CFG.geoUrl, {credentials:"same-origin"});
+    if(!r.ok) return;
+    const fc = await r.json();
+    shapesLayer.clearLayers();
+    let answers = 0;
+    (fc.features||[]).forEach(f=>{
+      const p = f.properties||{};
+      let l;
+      try{
+        if(p.layer === "zone"){
+          const zs = {color:p.color, weight:2, dashArray:"6 6", fillColor:p.color, fillOpacity:.08};
+          l = f.geometry.type === "Polygon"
+            ? L.polygon(f.geometry.coordinates[0].map(c=>[c[1],c[0]]), zs)
+            : L.circle([f.geometry.coordinates[1], f.geometry.coordinates[0]], Object.assign({radius:p.radius_m||1000}, zs));
+        } else { l = KuraMapper.featureLayer(f); answers++; }
+      }catch(e){ return; }
+      l.bindPopup(shapePopup(p));
+      shapesLayer.addLayer(l);
+    });
+    const has = (fc.features||[]).length > 0;
+    $("#b-shapes").hidden = !has; $("#b-geojson").hidden = !has;
+    $("#shape-count").textContent = answers ? answers : "";
+    if(has && !shapesFitted && shapesLayer.getBounds().isValid() && !seen.size){
+      shapesFitted = true; map.fitBounds(shapesLayer.getBounds().pad(.15), {maxZoom:17});
+    }
+  }catch(e){ /* offline: keep what we have */ }
+}
+$("#b-shapes").addEventListener("click", ()=>{
+  shapesOn = !shapesOn;
+  $("#b-shapes").classList.toggle("on", shapesOn);
+  shapesOn ? shapesLayer.addTo(map) : map.removeLayer(shapesLayer);
+});
+document.addEventListener("keydown", e=>{
+  if((e.key==="m"||e.key==="M") && !e.ctrlKey && !e.metaKey && document.activeElement.tagName!=="INPUT") $("#b-shapes").click();
+});
+loadShapes();
+setInterval(loadShapes, 30000);
+
+/* ── Live GPS traces streamed from Kura Collect phones ──
+   Grows in real time over the WebSocket (type "live_trace"); a snapshot on
+   load and a 10 s poll keep it right when the socket is down. */
+const liveLayer = L.featureGroup().addTo(map);
+const live = {};   // session → {line, head, data}
+const liveCss = document.createElement("style");
+liveCss.textContent = ".kk-live-head{width:18px;height:18px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 0 rgba(255,255,255,.7);animation:kkLive 1.6s infinite}"+
+  "@keyframes kkLive{70%{box-shadow:0 0 0 16px rgba(255,255,255,0)}100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}}"+
+  ".kk-live-tag{background:rgba(10,12,35,.88)!important;color:#fff!important;border:1px solid rgba(255,255,255,.2)!important;border-radius:999px!important;font:800 11px Archivo,sans-serif!important;padding:3px 9px!important}"+
+  ".kk-live-tag:before{display:none}";
+document.head.appendChild(liveCss);
+function liveLabel(t){
+  const who = t.enumerator || t.device || "Enumerator";
+  const icon = t.kind === "area" ? "⬡" : "🚶";
+  const what = t.kind === "area" && t.area_m2 ? KuraMapper.fmtArea(t.area_m2) : KuraMapper.fmtDist(t.distance_m || 0);
+  const st = t.status === "paused" ? " · ⏸" : t.status === "finished" ? " · ✔" : "";
+  return icon + " " + esc(who) + " · " + what + st;
+}
+function liveTrace(m, snapshot){
+  if(!window.KuraMapper) return;
+  let t = live[m.session];
+  if(m.status === "discarded"){ if(t){ liveLayer.removeLayer(t.line); liveLayer.removeLayer(t.head); delete live[m.session]; } paintLiveCount(); return; }
+  const color = /^#[0-9a-f]{3,8}$/i.test(m.color||"") ? m.color : "#fbbf24";
+  if(!t){
+    const style = {color, weight:5, opacity:.95, fillColor:color, fillOpacity:.18, lineCap:"round"};
+    const line = m.kind === "area" ? L.polygon([], style) : L.polyline([], style);
+    const head = L.marker([0,0], {icon:L.divIcon({className:"", html:'<div class="kk-live-head" style="background:'+color+'"></div>', iconSize:[18,18], iconAnchor:[9,9]}), interactive:false});
+    t = live[m.session] = {line, head, pts:[], data:{}};
+    liveLayer.addLayer(line);
+  }
+  const add = (m.points||[]).map(p=>[p[1],p[0]]);
+  t.pts = snapshot ? add : t.pts.concat(add);
+  Object.assign(t.data, m);
+  t.line.setLatLngs(t.pts);
+  if(t.pts.length){
+    const last = t.pts[t.pts.length-1];
+    t.head.setLatLng(last);
+    if(!liveLayer.hasLayer(t.head)) liveLayer.addLayer(t.head);
+    t.head.unbindTooltip().bindTooltip(liveLabel(t.data), {permanent:true, direction:"top", offset:[0,-10], className:"kk-live-tag"});
+    if(!snapshot && follow && t.data.status === "recording"){
+      // First sight of a new walker: jump to street level so the trace is
+      // visible; afterwards just keep them in view.
+      if(!t.zoomed){ t.zoomed = true; map.setView(last, Math.max(map.getZoom(), 17), {animate:true}); }
+      else map.panTo(last, {animate:true});
+    }
+  }
+  const done = t.data.status === "finished";
+  t.line.setStyle({dashArray: done ? "6 8" : null, opacity: done ? .6 : .95});
+  const el = t.head.getElement && t.head.getElement();
+  if(el && el.firstChild) el.firstChild.style.animation = t.data.status === "recording" ? "" : "none";
+  paintLiveCount();
+}
+function paintLiveCount(){
+  const n = Object.values(live).filter(t=>t.data.status === "recording" || t.data.status === "paused").length;
+  const el = $("#live-count");
+  el.hidden = !Object.keys(live).length;
+  el.querySelector("b").textContent = n;
+}
+async function loadLiveTraces(){
+  if(!CFG.liveUrl) return;
+  try{
+    const j = await fetch(CFG.liveUrl, {credentials:"same-origin"}).then(r=>r.json());
+    (j.traces||[]).forEach(t=>liveTrace(t, true));
+  }catch(e){ /* offline */ }
+}
+loadLiveTraces();
+setInterval(()=>{ if(!wsHealthy) loadLiveTraces(); }, 10000);
 })();
 </script>
 </body>

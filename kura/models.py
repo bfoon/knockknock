@@ -72,6 +72,7 @@ QUESTION_TYPES = [
     ("time", "Time"),
     ("datetime", "Date & time"),
     ("gps", "GPS location"),
+    ("mapper", "Map: GPS track, walked area or drawn shapes"),
     ("photo", "Photo"),
     ("audio", "Audio"),
     ("signature", "Signature"),

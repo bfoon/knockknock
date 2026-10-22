@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../auth/auth_controller.dart';
+import '../../core/services/sync_engine.dart';
 import '../submissions/submissions_controller.dart';
+import '../sync/sync_center.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -26,10 +28,14 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(Icons.sync_rounded),
-                  title: const Text('Synchronize data'),
-                  subtitle: Text('${submissions.pending} pending records'),
-                  onTap: submissions.syncing ? null : submissions.sync,
+                  leading: const Icon(Icons.cloud_sync_rounded),
+                  title: const Text('Sync center'),
+                  subtitle: Text(
+                    '${submissions.pending} not yet on the server · '
+                    'auto-sync ${context.watch<SyncEngine>().settings.autoSync ? 'on' : 'off'}',
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => SyncCenterSheet.show(context),
                 ),
               ],
             ),

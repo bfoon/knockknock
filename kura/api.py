@@ -557,6 +557,9 @@ def form_sync(request, code):
                 answers,
                 gps=gps_pair,
             )
+            if not gps_pair:
+                from .geo import first_position
+                gps_pair = first_position(clean, form_version.schema)
 
             requested_status = str(item.get("status") or "complete").lower()
             status = (
@@ -640,3 +643,40 @@ def form_sync(request, code):
         "current_version": current.version if current else None,
         "results": results,
     })
+
+
+@csrf_exempt
+@require_POST
+def form_live(request, code):
+    """Live GPS stream from a phone that is recording a map question.
+
+    Body: {"session": "<uuid>", "seq": 7, "question": "plot", "kind": "track"|"area",
+           "label": "", "color": "#22d3ee", "status": "recording"|"paused"|"finished"|"discarded",
+           "points": [[lng, lat, t_ms, accuracy_m], …]}
+    Same auth and access rules as /sync/. Idempotent per (session, seq).
+    """
+    device = _device(request)
+    if not device:
+        return _bad("Missing or invalid device token.", status=401)
+    survey = _published_survey(code)
+    if not survey:
+        return _bad("Form not found.", status=404)
+    if _access_record(device, survey, create=False) is None:
+        return _bad("Scan the form QR code or enter the form code first.", status=403,
+                    access_status="not_requested")
+    allowed, access_status, _ = _device_access(device, survey, create_pending=False)
+    if not allowed:
+        return _access_denied(access_status)
+    data = _body(request)
+    if data is None:
+        return _bad("Body must be a JSON object.")
+
+    from .livetrace import ingest
+    from .live import monitor_broadcast
+    result, payload = ingest(survey.code, device, data)
+    if not result.get("ok"):
+        return _bad(result.get("error") or "Invalid live trace.")
+    if payload:
+        monitor_broadcast(survey.code, payload)
+    return JsonResponse(result)
+

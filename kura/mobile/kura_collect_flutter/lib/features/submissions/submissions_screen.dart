@@ -40,7 +40,10 @@ class _SubmissionsScreenState extends State<SubmissionsScreen> {
       body: controller.submissions.isEmpty
           ? const Center(child: Text('No locally saved records yet.'))
           : RefreshIndicator(
-              onRefresh: controller.load,
+              // Pull down = sync now.
+              onRefresh: () async {
+                await controller.sync();
+              },
               child: ListView.separated(
                 padding: const EdgeInsets.all(16),
                 itemCount: controller.submissions.length,
@@ -52,8 +55,11 @@ class _SubmissionsScreenState extends State<SubmissionsScreen> {
                     'synced' => (Icons.cloud_done_rounded, Colors.green),
                     'failed' => (Icons.error_outline_rounded, Colors.red),
                     'draft' => (Icons.edit_note_rounded, Colors.orange),
+                    'retry' => (Icons.schedule_rounded, Colors.amber.shade800),
                     _ => (Icons.cloud_upload_outlined, Colors.blue),
                   };
+                  final canRetry = !isDraft &&
+                      (item.syncStatus == 'failed' || item.syncStatus == 'retry');
                   return Card(
                     child: ListTile(
                       contentPadding:
@@ -67,7 +73,9 @@ class _SubmissionsScreenState extends State<SubmissionsScreen> {
                       subtitle: Text(
                         isDraft
                             ? 'Draft · started ${_fmt(item.startedAt)}\nTap to continue filling'
-                            : '${item.status} · ${_fmt(item.startedAt)}\n${item.syncStatus}',
+                            : '${item.status} · ${_fmt(item.startedAt)}\n${_syncLine(item)}',
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       isThreeLine: true,
                       trailing: isDraft
@@ -97,7 +105,15 @@ class _SubmissionsScreenState extends State<SubmissionsScreen> {
                                     )),
                               ],
                             )
-                          : null,
+                          : canRetry
+                              ? IconButton(
+                                  tooltip: 'Send again now',
+                                  icon: const Icon(Icons.replay_rounded),
+                                  onPressed: controller.syncing
+                                      ? null
+                                      : () => controller.retry(item.uuid),
+                                )
+                              : null,
                       onTap: isDraft ? () => _openDraft(item) : null,
                     ),
                   );
@@ -109,6 +125,27 @@ class _SubmissionsScreenState extends State<SubmissionsScreen> {
 
   String _fmt(DateTime dt) =>
       DateFormat('d MMM yyyy, HH:mm').format(dt.toLocal());
+
+  /// Human sync status for one record.
+  String _syncLine(LocalSubmission s) {
+    switch (s.syncStatus) {
+      case 'synced':
+        return s.syncedAt == null ? '✓ Sent' : '✓ Sent ${_fmt(s.syncedAt!)}';
+      case 'failed':
+        return 'Rejected: ${s.error ?? 'the server refused this record'}';
+      case 'retry':
+        final next = s.nextRetryAt;
+        final wait = next == null ? null : next.toLocal().difference(DateTime.now());
+        final when = wait == null || wait.inSeconds < 30
+            ? 'retrying soon'
+            : wait.inMinutes < 60
+                ? 'retry in ${wait.inMinutes + 1} min'
+                : 'retry in ${wait.inHours} h';
+        return 'Waiting · $when${s.error == null ? '' : ' — ${s.error}'}';
+      default:
+        return 'Queued — sends automatically when online';
+    }
+  }
 
   Future<void> _openDraft(LocalSubmission submission) async {
     final database = context.read<SubmissionsController>().database;

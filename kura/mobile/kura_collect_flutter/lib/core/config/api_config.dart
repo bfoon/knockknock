@@ -27,6 +27,9 @@ class ApiConfig {
   static String lookups(String baseUrl, String code) =>
       '$baseUrl/kura/api/forms/${code.toUpperCase()}/lookups/';
 
+  static String live(String baseUrl, String code) =>
+      '$baseUrl/kura/api/forms/${code.toUpperCase()}/live/';
+
   static String sync(String baseUrl, String code) =>
       '$baseUrl/kura/api/forms/${code.toUpperCase()}/sync/';
 }

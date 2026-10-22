@@ -1,0 +1,105 @@
+/* Kura Mapper (kura_mapper.js) — field-ready, high-contrast, thumb-sized. */
+/* Anything toggled with the `hidden` attribute must really hide, even where a
+   rule below sets display:flex/grid (that override caused ghost banners). */
+.kmp [hidden] { display: none !important; }
+.kmp { --kc: #22d3ee; --kp: #f472b6; --kg: #a3e635; --kw: #fbbf24; --kline: rgba(255,255,255,.14);
+  margin-top: .55rem; color: #f8fbff; font-family: "Archivo", system-ui, sans-serif; }
+.kmp-modes { display: flex; gap: .35rem; padding: .3rem; border-radius: 14px; background: rgba(0,0,0,.28); margin-bottom: .55rem; }
+.kmp-modes button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: .1rem; padding: .55rem .3rem; border: 0; border-radius: 10px;
+  background: transparent; color: rgba(248,251,255,.7); font: 700 .78rem "Archivo", sans-serif; cursor: pointer; transition: background .15s, color .15s; }
+.kmp-modes button span { font-size: 1.25rem; line-height: 1; }
+.kmp-modes button.on { background: linear-gradient(135deg, rgba(34,211,238,.28), rgba(244,114,182,.22)); color: #fff; box-shadow: inset 0 0 0 1px rgba(34,211,238,.5); }
+.kmp-modes button:disabled { opacity: .35; cursor: not-allowed; }
+.kmp-modes button:focus-visible, .kmp button:focus-visible { outline: 2px solid var(--kw); outline-offset: 2px; }
+
+.kmp-resume { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; padding: .6rem .7rem; margin-bottom: .55rem; border-radius: 12px;
+  background: rgba(251,191,36,.12); border: 1px solid rgba(251,191,36,.4); font-size: .86rem; }
+.kmp-resume button { border: 0; border-radius: 9px; padding: .4rem .7rem; font-weight: 800; cursor: pointer; background: var(--kw); color: #1a1200; }
+.kmp-resume button + button { background: rgba(255,255,255,.12); color: #fff; }
+
+.kmp-mapwrap { position: relative; height: min(62vh, 460px); border-radius: 16px; overflow: hidden; border: 1px solid var(--kline); background: #0b0d26;
+  box-shadow: 0 12px 30px rgba(0,0,0,.35); }
+.kmp-map { position: absolute; inset: 0; }
+.kmp-loading { display: grid; place-items: center; height: 100%; color: rgba(248,251,255,.6); font-size: .9rem; }
+.kmp .leaflet-container { font-family: "Archivo", system-ui, sans-serif; background: #0b0d26; }
+.kmp .leaflet-bar a { color: #111; }
+
+.kmp-hud { position: absolute; z-index: 600; left: .5rem; right: .5rem; bottom: 1.6rem; display: grid; grid-template-columns: repeat(4, 1fr); gap: .3rem;
+  padding: .45rem; border-radius: 14px; background: rgba(6,8,24,.82); backdrop-filter: blur(8px); border: 1px solid var(--kline); pointer-events: none; }
+.kmp-hud > div { text-align: center; }
+.kmp-hud > div[hidden] { display: none; }
+.kmp-hud b { display: block; font: 800 1.15rem "Archivo", sans-serif; font-variant-numeric: tabular-nums; }
+.kmp-hud small { font-size: .62rem; text-transform: uppercase; letter-spacing: .08em; color: rgba(248,251,255,.6); }
+.kmp-hud:has(> div[hidden]) { grid-template-columns: repeat(3, 1fr); }
+
+.kmp-gps { position: absolute; z-index: 600; top: .55rem; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: .35rem;
+  padding: .3rem .65rem; border-radius: 999px; background: rgba(6,8,24,.82); font: 800 .74rem "Archivo", sans-serif; pointer-events: none; }
+.kmp-gps i { width: 9px; height: 9px; border-radius: 50%; background: #64748b; box-shadow: 0 0 0 3px rgba(100,116,139,.3); }
+.kmp-gps.great i, .kmp-gps.good i { background: var(--kg); box-shadow: 0 0 0 3px rgba(163,230,53,.3); animation: kmp-blink 1.6s infinite; }
+.kmp-gps.fair i { background: var(--kw); box-shadow: 0 0 0 3px rgba(251,191,36,.3); }
+.kmp-gps.weak i { background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.35); animation: kmp-blink .8s infinite; }
+.kmp-gps.weak { color: #fecaca; }
+@keyframes kmp-blink { 50% { opacity: .35; } }
+
+.kmp-tools { position: absolute; z-index: 600; top: .55rem; right: .55rem; display: flex; flex-direction: column; gap: .3rem; }
+.kmp-tools button { width: 40px; height: 40px; border-radius: 11px; border: 1px solid var(--kline); background: rgba(6,8,24,.82); color: #fff;
+  font-size: 1.05rem; cursor: pointer; display: grid; place-items: center; }
+.kmp-tools button.on { background: var(--kc); color: #062530; }
+.kmp-tools button[hidden] { display: none; }
+
+.kmp-toast { position: absolute; z-index: 650; left: 50%; top: 3rem; transform: translateX(-50%); max-width: 88%; padding: .5rem .85rem; border-radius: 12px;
+  background: rgba(6,8,24,.92); border: 1px solid rgba(34,211,238,.45); font: 700 .84rem "Archivo", sans-serif; text-align: center; animation: kmp-in .25s both; }
+.kmp-toast[hidden] { display: none; }
+@keyframes kmp-in { from { opacity: 0; transform: translate(-50%, -6px); } }
+
+/* your position */
+.kmp-me { position: relative; }
+.kmp-me i { position: absolute; inset: 3px; border-radius: 50%; background: #38bdf8; border: 3px solid #fff; box-shadow: 0 0 0 0 rgba(56,189,248,.6); animation: kmp-ping 1.8s infinite; }
+.kmp-me b { position: absolute; left: 50%; top: -12px; width: 0; height: 0; margin-left: -6px; border: 6px solid transparent; border-bottom: 10px solid #38bdf8;
+  opacity: 0; transform-origin: 6px 23px; }
+@keyframes kmp-ping { 70% { box-shadow: 0 0 0 14px rgba(56,189,248,0); } 100% { box-shadow: 0 0 0 0 rgba(56,189,248,0); } }
+
+.kmp-ctrl { margin-top: .6rem; }
+.kmp-start { position: relative; width: 100%; padding: 1rem; border: 0; border-radius: 16px; cursor: pointer; overflow: hidden;
+  font: 800 1.05rem "Archivo", sans-serif; color: #04121a; background: linear-gradient(135deg, var(--kc), var(--kg)); box-shadow: 0 10px 26px rgba(34,211,238,.35); }
+.kmp-start:disabled { opacity: .45; cursor: not-allowed; }
+.kmp-pulse { position: absolute; inset: 0; border-radius: inherit; box-shadow: 0 0 0 0 rgba(255,255,255,.55); animation: kmp-pulse 2.2s infinite; pointer-events: none; }
+@keyframes kmp-pulse { 70% { box-shadow: 0 0 0 18px rgba(255,255,255,0); } 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0); } }
+.kmp-tip { margin: .5rem 0 0; font-size: .82rem; color: rgba(248,251,255,.68); line-height: 1.4; }
+.kmp-warn { margin: .45rem 0 0; font-size: .82rem; color: #fde68a; }
+.kmp-recbar { display: flex; align-items: center; gap: .5rem; padding: .55rem .75rem; border-radius: 12px; background: rgba(239,68,68,.14); border: 1px solid rgba(239,68,68,.45); }
+.kmp-recbar small { margin-left: auto; color: rgba(248,251,255,.65); font-variant-numeric: tabular-nums; }
+.kmp-recbar.paused { background: rgba(251,191,36,.12); border-color: rgba(251,191,36,.45); }
+.kmp-dot { width: 11px; height: 11px; border-radius: 50%; background: #ef4444; animation: kmp-blink 1s infinite; }
+.kmp-recbar.paused .kmp-dot { background: var(--kw); animation: none; }
+.kmp-btnrow { display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: .4rem; margin-top: .45rem; }
+.kmp-btnrow button { padding: .8rem .4rem; border-radius: 12px; border: 1px solid var(--kline); background: rgba(255,255,255,.08); color: #fff;
+  font: 800 .92rem "Archivo", sans-serif; cursor: pointer; }
+.kmp-btnrow .kmp-finish { background: var(--kg); color: #10200a; border-color: transparent; }
+.kmp-btnrow .kmp-cancel { color: #fecaca; }
+
+.kmp-palette { display: flex; gap: .35rem; margin-top: .6rem; flex-wrap: wrap; }
+.kmp-palette[hidden] { display: none; }
+.kmp-palette button { width: 30px; height: 30px; border-radius: 50%; border: 3px solid rgba(255,255,255,.18); background: var(--c); cursor: pointer; padding: 0; }
+.kmp-palette button.on { border-color: #fff; transform: scale(1.12); box-shadow: 0 0 0 3px rgba(255,255,255,.18); }
+
+.kmp-list { margin-top: .65rem; display: flex; flex-direction: column; gap: .4rem; }
+.kmp-total { font: 800 .84rem "Archivo", sans-serif; color: var(--kc); }
+.kmp-item { display: flex; align-items: center; gap: .45rem; padding: .45rem .5rem; border-radius: 12px; background: rgba(255,255,255,.05); border: 1px solid var(--kline); animation: kmp-in2 .3s both; }
+@keyframes kmp-in2 { from { opacity: 0; transform: translateY(6px); } }
+.kmp-sw { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 8px; border: 2px solid rgba(255,255,255,.35); background: var(--c); cursor: pointer; padding: 0; }
+.kmp-item-main { flex: 1; min-width: 0; }
+.kmp-item-main input { width: 100%; background: transparent; border: 0; border-bottom: 1px dashed rgba(255,255,255,.2); color: #fff; font: 700 .9rem "Archivo", sans-serif; padding: .1rem 0; outline: none; }
+.kmp-item-main input:focus { border-bottom-color: var(--kc); }
+.kmp-item-main small { display: block; margin-top: .15rem; font-size: .74rem; color: rgba(248,251,255,.65); }
+.kmp-item > button:not(.kmp-sw) { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--kline); background: rgba(255,255,255,.06); color: #fff; cursor: pointer; }
+
+/* full-screen mapping */
+.kmp.kmp-full { position: fixed; inset: 0; z-index: 9000; margin: 0; padding: .6rem; background: #070918; overflow-y: auto; }
+.kmp.kmp-full .kmp-mapwrap { height: 68vh; }
+body.kmp-noscroll { overflow: hidden; }
+
+/* read-only map (data views) */
+.kmp-view { height: 320px; border-radius: 14px; overflow: hidden; border: 1px solid var(--kline, rgba(255,255,255,.14)); }
+
+@media (prefers-reduced-motion: reduce) { .kmp *, .kmp-me i { animation: none !important; } }

@@ -43,6 +43,27 @@ def broadcast(code: str, payload: dict) -> None:
         pass
 
 
+def monitor_broadcast(code: str, payload: dict) -> None:
+    """Send to the live monitor/map ONLY.
+
+    For high-frequency streams (live GPS traces from phones, every few
+    seconds): dashboards recompute every tile on any message, so they must
+    not be woken by each GPS batch.
+    """
+    try:
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+
+        layer = get_channel_layer()
+        if layer is None:
+            return
+        async_to_sync(layer.group_send)(
+            monitor_group(code), {"type": "fanout", "payload": payload}
+        )
+    except Exception:
+        pass
+
+
 def dashboard_changed(code: str, reason: str = "data") -> None:
     """Nudge dashboards without touching the monitor.
 

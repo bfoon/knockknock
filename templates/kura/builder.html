@@ -383,7 +383,7 @@ const TYPES = [
   ["integer","#","Whole number"],["decimal","#.#","Decimal"],["select_one","◉","Choose one"],
   ["select_multiple","☑","Choose many"],["rank","⇅","Rank options"],["likert","⚖","Likert scale"],
   ["rating","★","Rating"],["date","📅","Date"],["time","🕐","Time"],["datetime","🗓","Date & time"],
-  ["gps","📍","GPS location"],["photo","📷","Photo"],["barcode","▮▯","Barcode / QR"],
+  ["gps","📍","GPS location"],["mapper","🗺","Map: track / area / draw"],["photo","📷","Photo"],["barcode","▮▯","Barcode / QR"],
   ["calculate","ƒ","Calculated (hidden)"],["repeat","⟳","Repeat group"]
 ];
 const CHOICE_TYPES = ["select_one","select_multiple","rank","likert"];
@@ -561,11 +561,14 @@ function zoneHasGeometry(z){
     && Number.isFinite(Number(z.radius_km)) && Number(z.radius_km) > 0;
 }
 
+const ZONE_COLORS = ["#22d3ee","#f472b6","#a3e635","#fbbf24","#f97316","#a78bfa","#ef4444","#38bdf8"];
+function zoneColor(z){ return /^#[0-9a-f]{3,8}$/i.test(z&&z.color||"") ? z.color : "#22d3ee"; }
 function zoneToLayer(z, editable){
   if(!zoneHasGeometry(z)) return null;
+  const c = zoneColor(z);
   const style = editable
-    ? {color:"#22d3ee",weight:4,fillOpacity:.2}
-    : {color:"#8b5cf6",weight:2,fillOpacity:.09,dashArray:"6 5"};
+    ? {color:c,weight:4,fillColor:c,fillOpacity:.25}
+    : {color:c,weight:2,fillColor:c,fillOpacity:.12,dashArray:"6 5"};
 
   if(z.kind === "polygon"){
     return L.polygon(
@@ -702,7 +705,9 @@ function initialiseGeoMap(){
       circle:{
         shapeOptions:{color:"#22d3ee",weight:4,fillOpacity:.2}
       },
-      rectangle:false,
+      rectangle:{
+        shapeOptions:{color:"#22d3ee",weight:4,fillOpacity:.2}
+      },
       polyline:false,
       marker:false,
       circlemarker:false
@@ -855,6 +860,7 @@ function renderZones(){
     }
     div.innerHTML =
       '<div class="zrow"><span class="zid">'+esc(z.id)+'</span>'+
+      '<input type="color" data-zc="'+zi+'" value="'+esc(zoneColor(z))+'" title="Zone colour" style="width:30px;height:26px;padding:0;border-radius:6px;flex:0 0 auto">'+
       '<input type="text" data-zn="'+zi+'" value="'+esc(z.name||"")+'" placeholder="Zone name" style="flex:1">'+
       '<select data-zk="'+zi+'"><option value="circle"'+(z.kind!=="polygon"?" selected":"")+'>circle</option>'+
       '<option value="polygon"'+(z.kind==="polygon"?" selected":"")+'>polygon</option></select>'+
@@ -866,12 +872,14 @@ function renderZones(){
 $("#add-zone").addEventListener("click",()=>{
   let n=1; const ids=new Set(schema.zones.map(z=>z.id));
   while(ids.has("z"+n)) n++;
-  schema.zones.push({id:"z"+n,name:"Zone "+n,kind:"circle",lat:null,lng:null,radius_km:10});
+  schema.zones.push({id:"z"+n,name:"Zone "+n,kind:"circle",lat:null,lng:null,radius_km:10,
+                     color:ZONE_COLORS[(n-1)%ZONE_COLORS.length]});
   markDirty(); renderZones(); renderInspector();
 });
 $("#zones").addEventListener("input",e=>{
   const t=e.target, z=zi=>schema.zones[+zi];
   if(t.dataset.zn!=null) z(t.dataset.zn).name=t.value;
+  else if(t.dataset.zc!=null){ z(t.dataset.zc).color=t.value; markDirty(); if(geoMap) renderGeoMap(false); return; }
   else if(t.dataset.zlat!=null) z(t.dataset.zlat).lat=t.value===""?null:Number(t.value);
   else if(t.dataset.zlng!=null) z(t.dataset.zlng).lng=t.value===""?null:Number(t.value);
   else if(t.dataset.zrad!=null) z(t.dataset.zrad).radius_km=t.value===""?null:Number(t.value);
@@ -1090,7 +1098,7 @@ const FRIENDLY_TYPES = {
   long_text:"Paragraph", integer:"Whole number", decimal:"Decimal number",
   select_one:"Choose one", select_multiple:"Choose many", rank:"Rank options",
   likert:"Likert scale", rating:"Rating", date:"Date", time:"Time",
-  datetime:"Date & time", gps:"GPS location", photo:"Photo",
+  datetime:"Date & time", gps:"GPS location", mapper:"Map (track / area / draw)", photo:"Photo",
   barcode:"Barcode / QR", calculate:"Calculated (hidden)", repeat:"Repeat group"
 };
 const TYPE_ALIASES = (function(){
@@ -1110,6 +1118,7 @@ const TYPE_ALIASES = (function(){
   add("rating",["stars","star rating","score"]);
   add("datetime",["date and time","date time"]);
   add("gps",["location","geopoint","coordinates","gps point"]);
+  add("mapper",["map","geotrace","geoshape","trace","track","route","area","polygon","geofence","boundary","plot boundary"]);
   add("photo",["image","picture","camera"]);
   add("barcode",["qr","qr code","scan","barcode"]);
   add("calculate",["calculated","calculation","formula","hidden calculation"]);
@@ -2214,6 +2223,33 @@ function renderInspector(){
         '<button class="addline" data-add="lkfill">+ Auto-fill an answer from a column</button>';
     }
   }
+  if(q.type==="mapper"){
+    const m = q.mapper||{};
+    const modes = m.modes||["track","area","draw"];
+    const tools = m.draw_tools||["polygon","rectangle","circle","polyline","marker"];
+    const chk = (attr,val,on,label)=>'<label class="check" style="margin-right:.6rem"><input type="checkbox" '+attr+'="'+val+'" '+(on?"checked":"")+'> '+label+'</label>';
+    html += '<div class="divider casc">🗺 Map answer</div>'+
+      '<div class="hint-text">Respondents answer on a live map. <b>Trace a route</b> records GPS as they walk or drive; <b>Walk an area</b> closes their path into a geofence with its area; <b>Draw on map</b> lets them draw shapes. Distance and area are recomputed on the server.</div>'+
+      '<div class="field"><label>Allowed ways to answer</label><div>'+
+        chk("data-mmode","track",modes.includes("track"),"🚶 Trace a route")+
+        chk("data-mmode","area",modes.includes("area"),"⬡ Walk an area")+
+        chk("data-mmode","draw",modes.includes("draw"),"✏️ Draw on map")+'</div></div>'+
+      field("Opens in", '<select data-m="default_mode">'+[["","First allowed"],["track","Trace a route"],["area","Walk an area"],["draw","Draw on map"]]
+        .map(([k,l])=>'<option value="'+k+'"'+((m.default_mode||"")===k?" selected":"")+'>'+l+'</option>').join("")+'</select>')+
+      (modes.includes("draw") ? '<div class="field"><label>Drawing tools</label><div>'+
+        chk("data-mtool","polygon",tools.includes("polygon"),"Polygon")+chk("data-mtool","rectangle",tools.includes("rectangle"),"Rectangle")+
+        chk("data-mtool","circle",tools.includes("circle"),"Circle")+chk("data-mtool","polyline",tools.includes("polyline"),"Line")+
+        chk("data-mtool","marker",tools.includes("marker"),"Pin")+'</div></div>' : '')+
+      '<div class="field" style="display:flex;gap:.5rem"><span style="flex:1"><label>Max shapes</label><input type="number" min="1" max="25" data-m="max_features" value="'+esc(m.max_features??10)+'"></span>'+
+        '<span style="flex:1"><label>Start map as</label><select data-m="basemap">'+[["satellite","🛰 Satellite"],["streets","🛣 Streets"],["terrain","🏔 Terrain"]]
+        .map(([k,l])=>'<option value="'+k+'"'+((m.basemap||"satellite")===k?" selected":"")+'>'+l+'</option>').join("")+'</select></span></div>'+
+      '<div class="field" style="display:flex;gap:.5rem"><span style="flex:1"><label>GPS accuracy needed (m)</label><input type="number" min="3" max="200" data-m="accuracy_m" value="'+esc(m.accuracy_m??30)+'"></span>'+
+        '<span style="flex:1"><label>Record every (m)</label><input type="number" min="1" max="100" data-m="step_m" value="'+esc(m.step_m??3)+'"></span></div>'+
+      '<div class="field" style="display:flex;gap:.5rem"><span style="flex:1"><label>Min area (m²)</label><input type="number" min="0" data-m="min_area_m2" value="'+esc(m.min_area_m2??"")+'" placeholder="none"></span>'+
+        '<span style="flex:1"><label>Min distance (m)</label><input type="number" min="0" data-m="min_distance_m" value="'+esc(m.min_distance_m??"")+'" placeholder="none"></span></div>'+
+      '<div class="field"><label class="check"><input type="checkbox" data-m="show_zones" '+(m.show_zones!==false?"checked":"")+'> Show the survey\'s geofence zones on the map as a guide</label></div>'+
+      '<div class="hint-text">📱 Works in the phone\'s browser via the web form link (GPS needs the https site). The current Kura Collect Android app shows this question as a text box — typed coordinates like <code>13.45, -16.57</code> are saved as a point.</div>';
+  }
   if(q.type==="calculate"){
     html += '<div class="divider">Calculation</div>'+
       field("Expression", '<input type="text" data-k="calc" value="'+esc(q.calc||"")+'" placeholder="weight / ((height/100)^2)">')+
@@ -2401,6 +2437,23 @@ function wireInspectorOnce(){
       q.validate = q.validate||{};
       const v = t.value===""?null:(t.type==="number"?Number(t.value):t.value);
       if(v===null) delete q.validate[t.dataset.v]; else q.validate[t.dataset.v]=v;
+      markDirty(); return;
+    }
+    if(t.dataset.m!==undefined || t.dataset.mmode!==undefined || t.dataset.mtool!==undefined){
+      q.mapper = q.mapper||{};
+      if(t.dataset.mmode!==undefined || t.dataset.mtool!==undefined){
+        const key = t.dataset.mmode!==undefined ? "modes" : "draw_tools";
+        const attr = t.dataset.mmode!==undefined ? "data-mmode" : "data-mtool";
+        const vals = [...body.querySelectorAll("["+attr+"]")].filter(x=>x.checked).map(x=>x.getAttribute(attr));
+        if(key==="modes" && !vals.length){ t.checked = true; return; }   // keep at least one way to answer
+        q.mapper[key] = vals;
+        markDirty();
+        if(key==="modes") renderInspector();
+        return;
+      }
+      const k = t.dataset.m;
+      let v = t.type==="checkbox" ? t.checked : (t.type==="number" ? (t.value===""?null:Number(t.value)) : t.value);
+      if(v===null || v==="") delete q.mapper[k]; else q.mapper[k] = v;
       markDirty(); return;
     }
     if(t.dataset.rep!==undefined){

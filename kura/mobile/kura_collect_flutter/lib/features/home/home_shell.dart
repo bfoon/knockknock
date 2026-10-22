@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../../core/services/sync_engine.dart';
 import '../forms/forms_screen.dart';
-import '../submissions/submissions_screen.dart';
 import '../settings/settings_screen.dart';
+import '../submissions/submissions_screen.dart';
+import '../sync/sync_center.dart';
 import 'overview_screen.dart';
 
 class HomeShell extends StatefulWidget {
@@ -24,25 +27,51 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    final engine = context.watch<SyncEngine>();
+    final waiting = engine.waiting + engine.rejected;
     return Scaffold(
-      body: IndexedStack(index: index, children: screens),
+      body: Column(
+        children: [
+          // Always-visible sync status (tap → Sync Center).
+          const SyncStatusBar(),
+          Expanded(
+            // The status bar already handles the top inset; stop the tab
+            // screens' AppBars from adding it a second time.
+            child: MediaQuery.removePadding(
+              context: context,
+              removeTop: true,
+              child: IndexedStack(index: index, children: screens),
+            ),
+          ),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: index,
         onDestinationSelected: (value) => setState(() => index = value),
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
               icon: Icon(Icons.dashboard_outlined),
               selectedIcon: Icon(Icons.dashboard_rounded),
               label: 'Home'),
-          NavigationDestination(
+          const NavigationDestination(
               icon: Icon(Icons.assignment_outlined),
               selectedIcon: Icon(Icons.assignment_rounded),
               label: 'Forms'),
           NavigationDestination(
-              icon: Icon(Icons.sync_alt_outlined),
-              selectedIcon: Icon(Icons.sync_alt_rounded),
+              icon: Badge(
+                isLabelVisible: waiting > 0,
+                backgroundColor: engine.rejected > 0 ? Theme.of(context).colorScheme.error : null,
+                label: Text('$waiting'),
+                child: const Icon(Icons.sync_alt_outlined),
+              ),
+              selectedIcon: Badge(
+                isLabelVisible: waiting > 0,
+                backgroundColor: engine.rejected > 0 ? Theme.of(context).colorScheme.error : null,
+                label: Text('$waiting'),
+                child: const Icon(Icons.sync_alt_rounded),
+              ),
               label: 'Records'),
-          NavigationDestination(
+          const NavigationDestination(
               icon: Icon(Icons.settings_outlined),
               selectedIcon: Icon(Icons.settings_rounded),
               label: 'Settings'),

@@ -70,6 +70,24 @@ class ApiClient {
     return KuraForm.fromJson(Map<String, dynamic>.from(response.data as Map));
   }
 
+  /// One batch of live GPS points for a recording in progress.
+  /// Short timeouts: a stuck request is worse than queuing the batch.
+  Future<Map<String, dynamic>> postLive(
+    String code,
+    Map<String, dynamic> payload,
+  ) async {
+    final baseUrl = await SessionStore.baseUrl;
+    final response = await _dio.post(
+      ApiConfig.live(baseUrl!, code),
+      data: payload,
+      options: (await _authOptions()).copyWith(
+        sendTimeout: const Duration(seconds: 12),
+        receiveTimeout: const Duration(seconds: 12),
+      ),
+    );
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
   Future<Map<String, dynamic>> syncBatch(
     String code,
     List<LocalSubmission> submissions,

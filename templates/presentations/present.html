@@ -2094,10 +2094,7 @@
      data-code="{{ session.code }}"
      data-kind="{{ session.kind }}"
      data-mode="{{ session.mode }}"
-     data-chart-bg="{{ chart_background|default:'normal' }}"
-     data-theme="{{ template.id }}"{% if session.kind == "poll" and session.questionnaire %}
-     data-theme-url="{% url 'polls:set_template' session.questionnaire.pk %}"
-     data-slide-theme-url="{% url 'polls:question_theme' session.questionnaire.pk 0 %}"{% endif %}>
+     data-chart-bg="{{ chart_background|default:'normal' }}">
 
   <header class="kk-stage-header">
     <a href="{% if session.kind == 'poll' %}{% url 'polls:edit' session.questionnaire.pk %}{% else %}{% url 'games:edit' session.quiz.pk %}{% endif %}"
@@ -2496,16 +2493,6 @@
 <script src="{% static 'js/chart_fx.js' %}?v=3"></script>
 {# Avatar catalog — must load BEFORE the room leaderboard shim and present.js. #}
 {% include "games/partials/avatar_data.html" with avatars=avatars %}
-
-{% if session.kind == "poll" %}
-{% comment %}
-  Live themes for polls: per-slide themes, instant deck-theme changes and
-  the 🎨 switcher (press T). Wraps the WebSocket, so it loads before present.js.
-{% endcomment %}
-{{ themes|json_script:"kk-themes-json" }}
-<input type="hidden" id="kkt-csrf" value="{{ csrf_token }}">
-<script src="{% static 'js/kk_theme.js' %}?v=1"></script>
-{% endif %}
 
 {% if session.kind == "game" %}
 {% comment %}

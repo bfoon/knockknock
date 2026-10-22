@@ -135,6 +135,23 @@ def _field_catalog(schema):
 
 # ── build ────────────────────────────────────────────────────────────
 
+def _ts(iso):
+    """Sort key for an ISO timestamp (0 when missing)."""
+    if not iso:
+        return 0
+    dt = parse_datetime(iso)
+    return dt.timestamp() if dt else 0
+
+
+def pending_device_count(survey):
+    """Phones that asked for access to this survey and wait for a decision."""
+    if survey.device_policy != "manual":
+        return 0
+    return SurveyDeviceAccess.objects.filter(
+        survey=survey, allowed=False, decided_at__isnull=True,
+    ).count()
+
+
 @login_required
 def survey_list(request):
     surveys = Survey.objects.filter(owner=request.user)
@@ -142,6 +159,7 @@ def survey_list(request):
     for s in surveys:
         rows.append({
             "obj": s,
+            "pending_devices": pending_device_count(s),
             "responses": s.submissions.exclude(status="excluded").count(),
             "version": s.current_version.version if s.current_version else 0,
         })
@@ -172,6 +190,7 @@ def builder(request, code):
         "survey_json": json.dumps(survey.as_dict()),
         "lookups_json": json.dumps(lookups),
         "collect_url": request.build_absolute_uri(f"/kura/{survey.code}/"),
+        "pending_devices": pending_device_count(survey),
     })
 
 
@@ -847,6 +866,17 @@ def device_access_update(request, code):
     device_id = data.get("device_id")
     action = str(data.get("action") or "").strip().lower()
 
+    # "Approve all waiting phones" in one click.
+    if action == "allow_all_pending":
+        waiting = SurveyDeviceAccess.objects.filter(
+            survey=survey, allowed=False, decided_at__isnull=True)
+        n = 0
+        for access in waiting:
+            access.allow(request.user)
+            n += 1
+        return JsonResponse({"ok": True, "approved": n, "device_policy": survey.device_policy,
+                             "mode": survey.device_policy})
+
     # Backward compatibility with the earlier monitor JavaScript, which sent
     # {"allow": true} or {"allow": false}.
     if not action and "allow" in data:
@@ -958,13 +988,25 @@ def monitor_feed(request, code):
             "last_hour": base.filter(received_at__gte=now - timedelta(hours=1)).count(),
             "today": base.filter(received_at__date=now.date()).count(),
         }
-        # Devices that have ever pushed to this survey, plus every device
-        # registered by the owner (so a phone shows up before its first sync).
+        # Every phone relevant to this survey:
+        #   • phones that REQUESTED access (scanned the QR / typed the code) —
+        #     this was missing, so an enumerator's phone waiting for approval
+        #     never appeared and could never be approved (it can't submit
+        #     until approved, and only submitters were listed);
+        #   • phones that have pushed data;
+        #   • the owner's own phones (visible before their first sync).
+        # IDs are collected first so the per-device counts below aren't
+        # inflated by joining several relations at once.
+        device_ids = set(
+            SurveyDeviceAccess.objects.filter(survey=survey).values_list("device_id", flat=True)
+        ) | set(
+            survey.submissions.exclude(device__isnull=True).values_list("device_id", flat=True)
+        ) | set(
+            Device.objects.filter(user=survey.owner).values_list("id", flat=True)
+        )
         devices = (
-            Device.objects.filter(
-                Q(user=survey.owner) | Q(submissions__survey=survey)
-            )
-            .distinct()
+            Device.objects.filter(id__in=device_ids)
+            .select_related("user")
             .annotate(
                 pushed=Count("submissions", filter=Q(submissions__survey=survey)),
                 last_push=Max("submissions__received_at",
@@ -1030,6 +1072,11 @@ def monitor_feed(request, code):
                 "last_seen": d.last_seen.isoformat() if d.last_seen else None,
                 "last_push": d.last_push.isoformat() if d.last_push else None,
             })
+        # Phones waiting for a decision first, then most recently seen.
+        _order = {"pending": 0, "allowed": 1, "not_requested": 2, "blocked": 3}
+        payload["devices"].sort(key=lambda x: (_order.get(x["access_status"], 9),
+                                               -(_ts(x["last_seen"]))))
+        payload["pending_devices"] = sum(1 for x in payload["devices"] if x["access_status"] == "pending")
         payload["syncs"] = [{
             "device": log.device.name,
             "enumerator": log.device.user.get_username(),

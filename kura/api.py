@@ -272,6 +272,17 @@ def form_access(request):
         "device_policy": survey.device_policy,
     })
 
+    if access_status == "pending":
+        # Pop the request up on the owner's open monitor straight away.
+        from .live import monitor_broadcast
+        monitor_broadcast(survey.code, {
+            "type": "device_request",
+            "device_id": device.id,
+            "device": device.name,
+            "enumerator": device.user.get_username(),
+            "platform": device.platform,
+        })
+
     # Return form metadata even when pending/blocked so the phone can display
     # the correct title and access message. The schema remains protected.
     return JsonResponse(payload, status=200 if allowed else 202)

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../core/database/app_database.dart';
@@ -12,17 +14,50 @@ class FormsController extends ChangeNotifier {
   bool loading = false;
   String? error;
 
-  FormsController(this.database);
+  /// "Form X was approved" — shown once on the Forms screen.
+  String? approvedNotice;
+  Timer? _approvalWatch;
+
+  FormsController(this.database) {
+    // While any form is waiting for the supervisor's approval, re-check
+    // every minute so it downloads by itself the moment it's approved —
+    // no need for the enumerator to keep pulling to refresh.
+    _approvalWatch = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (!loading && forms.any((f) => f.accessStatus == 'pending')) {
+        refresh(silent: true);
+      }
+    });
+  }
+
+  int get pendingApproval => forms.where((f) => f.accessStatus == 'pending').length;
+
+  void clearApprovedNotice() {
+    approvedNotice = null;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _approvalWatch?.cancel();
+    super.dispose();
+  }
 
   Future<void> loadLocal() async {
     forms = await database.getForms();
     notifyListeners();
   }
 
-  Future<void> refresh() async {
-    loading = true;
-    error = null;
-    notifyListeners();
+  /// [silent]: background re-check (no spinner, no error banner).
+  Future<void> refresh({bool silent = false}) async {
+    final wasPending = {
+      for (final f in forms)
+        if (f.accessStatus == 'pending') f.code: f.title
+    };
+    if (!silent) {
+      loading = true;
+      error = null;
+      notifyListeners();
+    }
     try {
       final remote = await _api.fetchManifest();
       for (final form in remote) {
@@ -76,8 +111,19 @@ class FormsController extends ChangeNotifier {
         );
       }
       forms = await database.getForms();
+      final nowApproved = [
+        for (final f in forms)
+          if (wasPending.containsKey(f.code) && f.allowed) f.title
+      ];
+      if (nowApproved.isNotEmpty) {
+        approvedNotice = nowApproved.length == 1
+            ? '✅ "${nowApproved.first}" was approved — ready to fill.'
+            : '✅ ${nowApproved.length} forms were approved — ready to fill.';
+      }
     } catch (e) {
-      error = 'Unable to refresh forms. Offline forms remain available.';
+      if (!silent) {
+        error = 'Unable to refresh forms. Offline forms remain available.';
+      }
       forms = await database.getForms();
     } finally {
       loading = false;

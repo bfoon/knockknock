@@ -222,7 +222,9 @@
   <input type="file" id="imp-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none">
   <input type="file" id="ch-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none">
   <a class="btn ghost" href="{% url 'kura:data' survey.code %}">Data</a>
-  <a class="btn ghost" href="{% url 'kura:monitor' survey.code %}">Live</a>
+  <a class="btn ghost" href="{% url 'kura:monitor' survey.code %}"
+     {% if pending_devices %}style="border-color:#f59e0b;color:#fbbf24" title="Phones are waiting for your approval"{% endif %}>
+    Live{% if pending_devices %} · 📱 {{ pending_devices }} waiting{% endif %}</a>
   <a class="btn ghost" href="{% url 'kura:teams' survey.code %}"
      title="Teams, supervisors, sharing and the validation check suite">Teams</a>
   <a class="btn ghost" href="{% url 'kura:preview' survey.code %}" target="_blank" rel="noopener" title="Live preview of the DRAFT — no publish needed">Preview</a>

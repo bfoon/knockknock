@@ -83,6 +83,20 @@
   .dev .acts button{border:1px solid var(--line);border-radius:7px;padding:.28rem .5rem;background:rgba(255,255,255,.05);color:var(--muted);font-size:.65rem;font-weight:700;cursor:pointer}
   .dev .acts button.allow{color:#86efac;border-color:rgba(34,197,94,.4)}
   .dev .acts button.block{color:#f0a397;border-color:rgba(232,72,43,.4)}
+  /* phones waiting for approval */
+  .dev.is-pending{background:linear-gradient(90deg,rgba(251,191,36,.14),transparent 70%);box-shadow:inset 3px 0 0 #fbbf24}
+  .dev .st{display:inline-block;margin-left:.15rem;font-weight:800}
+  .dev .st.pending{color:#fde68a}.dev .st.allowed{color:#86efac}.dev .st.blocked{color:#f0a397}.dev .st.idle{color:var(--muted)}
+  .dev.is-pending .acts button.allow{background:#22c55e;color:#062b12;border-color:#22c55e;font-size:.72rem;padding:.38rem .7rem}
+  .dev-wait{display:flex;align-items:center;gap:.6rem;margin:.2rem 1rem .6rem;padding:.6rem .8rem;border-radius:10px;
+    background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.45);color:#fde68a;font-size:.8rem;font-weight:700}
+  .dev-wait[hidden]{display:none}
+  .dev-wait button{margin-left:auto;border:0;border-radius:8px;padding:.4rem .75rem;background:#fbbf24;color:#2a1c00;font-weight:800;cursor:pointer}
+  .dev-flash{animation:devflash 1.2s ease 2}
+  @keyframes devflash{50%{background:rgba(251,191,36,.35)}}
+  .dev-toast{position:fixed;right:18px;bottom:18px;z-index:9999;max-width:360px;padding:.8rem 1rem;border-radius:12px;
+    background:#1c1a33;border:1px solid rgba(251,191,36,.6);color:#fff;font-size:.85rem;box-shadow:0 14px 40px rgba(0,0,0,.45)}
+  .dev-toast b{color:#fde68a}
   .dev .acts button:disabled{opacity:.45;cursor:default}
   .policy{display:flex;align-items:center;gap:.55rem;padding:.55rem 1rem;border-bottom:1px solid rgba(255,255,255,.06);font-size:.75rem;color:var(--muted)}
   .policy select{margin-left:auto;background:#0b0d26;color:#fff;border:1px solid var(--line);border-radius:8px;padding:.4rem .55rem}
@@ -170,11 +184,12 @@
       <h3>Devices &amp; enumerators</h3>
       <div class="policy">Default phone access
         <select id="device-policy" aria-label="Default device access policy">
-          <option value="approval">Approve each device</option>
+          <option value="manual">Approve each device</option>
           <option value="allow_all">Automatically allow all</option>
           <option value="block_all">Block all</option>
         </select>
       </div>
+      <div id="dev-wait" class="dev-wait" hidden></div>
       <div id="devices"><div class="empty-inline">No devices registered yet — phones appear here after they register with the sync API.</div></div>
     </div>
     <div class="panel">
@@ -406,10 +421,16 @@ qrBack.addEventListener("click", async e=>{
 
 /* ── devices panel ── */
 function effectiveLabel(d){
-  if(!d.active) return "Device disabled";
-  if(d.can_submit) return "Allowed to submit";
-  return "Blocked from submitting";
+  if(!d.active) return ["Device disabled", "blocked"];
+  switch(d.access_status){
+    case "pending": return ["⏳ Waiting for your approval", "pending"];
+    case "allowed": return ["✅ Approved — can download & submit", "allowed"];
+    case "blocked": return ["⛔ Blocked", "blocked"];
+    case "not_requested": return ["Hasn't opened this form yet", "idle"];
+  }
+  return d.can_submit ? ["✅ Allowed", "allowed"] : ["⛔ Blocked", "blocked"];
 }
+let pendingRefresh = null;
 async function saveDeviceAccess(payload){
   const r = await fetch(CFG.accessUrl, {
     method:"POST", headers:{"Content-Type":"application/json","X-CSRFToken":CFG.csrf},
@@ -422,6 +443,16 @@ async function saveDeviceAccess(payload){
 function paintDevices(devs, mode){
   const host = $("#devices");
   if(mode) $("#device-policy").value = mode;
+  // Banner + faster refresh while phones are waiting for a decision.
+  const waiting = (devs||[]).filter(d=>d.access_status==="pending");
+  const wait = $("#dev-wait");
+  wait.hidden = !waiting.length;
+  if(waiting.length){
+    wait.innerHTML = "📱 "+waiting.length+" phone"+(waiting.length>1?"s are":" is")+" waiting for your approval"+
+      (waiting.length>1 ? '<button type="button" id="approve-all">Approve all</button>' : "");
+  }
+  clearInterval(pendingRefresh);
+  if(waiting.length) pendingRefresh = setInterval(refreshDevices, 15000);
   if(!devs || !devs.length){
     host.innerHTML = '<div class="empty-inline">No devices registered yet — phones appear here after registration.</div>';
     return;
@@ -429,18 +460,40 @@ function paintDevices(devs, mode){
   host.innerHTML = "";
   devs.forEach(d=>{
     const row = document.createElement("div");
-    row.className = "dev";
+    row.className = "dev" + (d.access_status==="pending" ? " is-pending" : "");
+    row.dataset.dev = d.id;
+    const [label, cls] = effectiveLabel(d);
     row.innerHTML =
       '<span class="ic">'+(String(d.platform).toLowerCase().includes("ios")?"📱":"🤖")+'</span>'+
       '<span class="nm">'+esc(d.name)+'<small>'+esc(d.enumerator)+(d.platform?" · "+esc(d.platform):"")+
-        ' · '+esc(effectiveLabel(d))+'</small></span>'+
+        ' · <span class="st '+cls+'">'+esc(label)+'</span></small></span>'+
       '<span class="cnt">'+d.pushed+' pushed</span>'+
       '<span class="seen">'+(d.last_seen ? "seen "+fmtTime(d.last_seen) : "never seen")+'</span>'+
-      '<span class="acts"><button class="allow" data-device="'+d.id+'" data-allow="1"'+(d.can_submit?' disabled':'')+'>Allow</button>'+
-      '<button class="block" data-device="'+d.id+'" data-allow="0"'+(!d.can_submit?' disabled':'')+'>Block</button></span>';
+      '<span class="acts"><button class="allow" data-device="'+d.id+'" data-allow="1"'+(d.can_submit?' disabled':'')+'>'+
+        (d.access_status==="pending" ? "✓ Approve" : "Allow")+'</button>'+
+      '<button class="block" data-device="'+d.id+'" data-allow="0"'+(d.access_status==="blocked"?' disabled':'')+'>'+
+        (d.access_status==="pending" ? "Decline" : "Block")+'</button></span>';
     host.appendChild(row);
   });
 }
+async function refreshDevices(flashId){
+  try{
+    const j = await fetch(CFG.feedUrl).then(r=>r.json());
+    paintDevices(j.devices, j.device_access_mode);
+    if(flashId){ const row = document.querySelector('.dev[data-dev="'+flashId+'"]'); if(row){ row.classList.add("dev-flash"); row.scrollIntoView({block:"nearest"}); } }
+  }catch(e){}
+}
+function devToast(html){
+  const t = document.createElement("div"); t.className = "dev-toast"; t.innerHTML = html;
+  document.body.appendChild(t); setTimeout(()=>t.remove(), 7000);
+}
+$("#dev-wait").addEventListener("click", async e=>{
+  if(!e.target.closest("#approve-all")) return;
+  e.target.disabled = true;
+  try{ const j = await saveDeviceAccess({action:"allow_all_pending"}); devToast("✅ Approved <b>"+j.approved+"</b> phone"+(j.approved===1?"":"s")+". Their forms download automatically."); }
+  catch(err){ alert(err.message); }
+  refreshDevices();
+});
 $("#devices").addEventListener("click", async e=>{
   const b=e.target.closest("button[data-device]"); if(!b) return;
   b.disabled=true;
@@ -489,6 +542,11 @@ function connectWS(){
     if(m.type === "monitor_ok"){ wsHealthy = true; clearTimeout(guard); stopPolling(); setLive("ws", "Live · realtime"); }
     else if(m.type === "submission" && m.sub){ addSubmission(m.sub, true); }
     else if(m.type === "sync"){ addSyncEvent(m); }
+    else if(m.type === "device_request"){
+      // A phone just scanned the QR / typed the code — show it now.
+      devToast("📱 <b>"+esc(m.enumerator||"An enumerator")+"</b> ("+esc(m.device||"phone")+") is asking to use this form.");
+      refreshDevices(m.device_id);
+    }
   });
   sock.addEventListener("close", ()=>{ wsHealthy = false; startPolling(); setTimeout(connectWS, 8000); });
   sock.addEventListener("error", ()=>{ try{ sock.close(); }catch(e){} });

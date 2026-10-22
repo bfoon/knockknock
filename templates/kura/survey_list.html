@@ -107,13 +107,20 @@
     <div class="kura-name">{{ r.obj.title }}</div>
     <div class="kura-meta">
       {{ r.obj.code }} · <b>{{ r.responses }}</b> response{{ r.responses|pluralize }} · {{ r.obj.updated_at|date:"M j" }}
+      {% if r.pending_devices %}
+        · <a href="{% url 'kura:monitor' r.obj.code %}" style="color:#d97706;font-weight:800;text-decoration:none"
+             title="Open the live monitor to approve">📱 {{ r.pending_devices }} phone{{ r.pending_devices|pluralize }} waiting for approval</a>
+      {% endif %}
     </div>
 
     <div class="kura-acts">
       <a class="kk-btn kk-btn-ghost" href="{% url 'kura:builder' r.obj.code %}">Build</a>
       <a class="kk-btn kk-btn-ghost" href="{% url 'kura:data' r.obj.code %}">Data</a>
-      <a class="kk-btn kk-btn-ghost is-icon" href="{% url 'kura:monitor' r.obj.code %}" title="Live monitor">
+      <a class="kk-btn kk-btn-ghost is-icon" href="{% url 'kura:monitor' r.obj.code %}"
+         title="{% if r.pending_devices %}{{ r.pending_devices }} phone{{ r.pending_devices|pluralize }} waiting — approve in the live monitor{% else %}Live monitor{% endif %}"
+         style="position:relative">
         <i class="bi bi-broadcast"></i>
+        {% if r.pending_devices %}<span style="position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:#f59e0b;color:#1f1300;font:800 11px/18px system-ui;text-align:center">{{ r.pending_devices }}</span>{% endif %}
       </a>
       <a class="kk-btn kk-btn-primary" href="{% url 'kura:collect' r.obj.code %}" target="_blank" rel="noopener">Collect</a>
       <form class="inline" method="post" action="{% url 'kura:delete' r.obj.code %}"

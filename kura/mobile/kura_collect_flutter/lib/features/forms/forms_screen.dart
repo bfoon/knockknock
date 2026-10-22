@@ -54,7 +54,23 @@ class _FormsScreenState extends State<FormsScreen> {
                 ),
               ),
             )
-          : RefreshIndicator(
+          : Column(children: [
+              if (controller.approvedNotice != null)
+                _Notice(
+                  color: Colors.green,
+                  icon: Icons.verified_rounded,
+                  text: controller.approvedNotice!,
+                  onClose: controller.clearApprovedNotice,
+                )
+              else if (controller.pendingApproval > 0)
+                _Notice(
+                  color: Colors.orange,
+                  icon: Icons.hourglass_top_rounded,
+                  text: '${controller.pendingApproval} form${controller.pendingApproval == 1 ? ' is' : 's are'} '
+                      'waiting for your supervisor to approve this phone in Kura → Live monitor. '
+                      'This screen checks every minute and downloads it automatically.',
+                ),
+              Expanded(child: RefreshIndicator(
               onRefresh: controller.refresh,
               child: ListView.separated(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
@@ -92,7 +108,15 @@ class _FormsScreenState extends State<FormsScreen> {
                       ),
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () async {
-                        if (!form.allowed) return;
+                        if (!form.allowed) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text(form.accessStatus == 'pending'
+                                ? 'Waiting for approval. Ask your supervisor to approve '
+                                    'this phone in Kura → Live monitor → Devices.'
+                                : 'This phone is blocked from this form. Contact your supervisor.'),
+                          ));
+                          return;
+                        }
                         var selected = form;
                         if (selected.schema == null) {
                           final downloaded =
@@ -112,7 +136,34 @@ class _FormsScreenState extends State<FormsScreen> {
                   );
                 },
               ),
-            ),
+            )),
+            ]),
     );
   }
+}
+
+class _Notice extends StatelessWidget {
+  const _Notice({required this.color, required this.icon, required this.text, this.onClose});
+  final Color color;
+  final IconData icon;
+  final String text;
+  final VoidCallback? onClose;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: .45)),
+        ),
+        child: Row(children: [
+          Icon(icon, color: color),
+          const SizedBox(width: 10),
+          Expanded(child: Text(text, style: const TextStyle(fontWeight: FontWeight.w600))),
+          if (onClose != null)
+            IconButton(icon: const Icon(Icons.close_rounded), onPressed: onClose),
+        ]),
+      );
 }

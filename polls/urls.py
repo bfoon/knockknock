@@ -30,6 +30,8 @@ urlpatterns = [
     path("<int:pk>/q/<int:qpk>/", views.question_edit, name="question_edit"),
     path("<int:pk>/q/<int:qpk>/delete/", views.question_delete, name="question_delete"),
     path("<int:pk>/q/<int:qpk>/change-type/", views.change_type, name="change_type"),
+    # Per-slide theme (JSON {template_id}; blank = inherit the deck theme).
+    path("<int:pk>/q/<int:qpk>/theme/", views.question_theme, name="question_theme"),
 
     # collaboration
     path("<int:pk>/invite/", views.invite_collaborator, name="invite"),

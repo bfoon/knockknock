@@ -11,7 +11,22 @@ WebSocket consumer and the exports is:
 kk-bounce, kk-swing, kk-spin, kk-flutter, kk-zoom, kk-blastoff, kk-stomp,
 kk-dash, kk-wobble, kk-tilt). Apply `kk-anim-<anim>` to any element to give
 it the avatar's signature movement.
+
+ARENA CHARACTERS (built avatars)
+────────────────────────────────
+Players can also build their own SVG character on the join screen
+(static/js/kk_avatars.js). The whole character lives in the id itself:
+
+    kk-<species>-<colour>-<accessory>-<face>      e.g. kk-cat-8-crown-wink
+
+so it rides Participant.avatar_id / GameAnswer.avatar_id (max 30 chars,
+longest built id is 23) with no migration. `avatar_by_id` resolves a built
+id to a synthetic catalog dict so exports, results pages and leaderboards
+show the species emoji and label instead of degrading to the dragon.
+Keep BUILT_SPECIES / BUILT_ACCESSORIES / BUILT_FACES in step with the JS.
 """
+
+import re
 
 DEFAULT_AVATAR_ID = "dragon"
 
@@ -78,25 +93,86 @@ AVATARS_BY_ID = {a["id"]: a for a in AVATARS}
 _FALLBACK = AVATARS_BY_ID[DEFAULT_AVATAR_ID]
 
 
+# ── Built (arena) characters ──
+BUILT_SPECIES = {
+    "blob": ("Bloop", "🫧"), "cat": ("Whisk", "🐱"), "bear": ("Bruno", "🐻"),
+    "bun": ("Hopper", "🐰"), "bird": ("Pip", "🐤"), "bot": ("Bolt", "🤖"),
+    "boo": ("Boo", "👻"), "dino": ("Rexy", "🦖"), "octo": ("Inky", "🐙"),
+    "zeep": ("Zeep", "👽"), "peng": ("Waddles", "🐧"), "drak": ("Ember", "🐉"),
+}
+BUILT_COLORS = [
+    "#ff6b6b", "#ff9f43", "#feca57", "#1dd1a1", "#10ac84", "#48dbfb",
+    "#2e86de", "#5f27cd", "#f368e0", "#a29bfe", "#576574", "#dfe6ee",
+]
+BUILT_ACCESSORIES = {
+    "none": "", "crown": "crown", "cap": "cap", "party": "party hat", "top": "top hat",
+    "wiz": "wizard hat", "halo": "halo", "flwr": "flower", "bow": "bow",
+    "head": "headset", "glas": "glasses", "band": "headband",
+}
+BUILT_FACES = {"happy", "cute", "wink", "cool", "star", "tongue"}
+
+_BUILT_RE = re.compile(r"^kk-([a-z]{2,6})-(\d{1,2})-([a-z]{2,6})-([a-z]{2,8})$")
+
+
+def parse_built_avatar(avatar_id):
+    """Return (species, colour_index, accessory, face) for a built id, else None."""
+    m = _BUILT_RE.match(str(avatar_id or ""))
+    if not m:
+        return None
+    species, colour, acc, face = m.group(1), int(m.group(2)), m.group(3), m.group(4)
+    if species not in BUILT_SPECIES or colour >= len(BUILT_COLORS):
+        return None
+    if acc not in BUILT_ACCESSORIES or face not in BUILT_FACES:
+        return None
+    return species, colour, acc, face
+
+
+def _built_meta(avatar_id):
+    parsed = parse_built_avatar(avatar_id)
+    if not parsed:
+        return None
+    species, colour, acc, _face = parsed
+    label, emoji = BUILT_SPECIES[species]
+    if BUILT_ACCESSORIES[acc]:
+        label = f"{label} with {BUILT_ACCESSORIES[acc]}"
+    return {
+        "id": str(avatar_id),
+        "label": label,
+        "emoji": emoji,
+        "color": BUILT_COLORS[colour],
+        "category": "arena",
+        "anim": "kk-bounce",
+    }
+
+
 def avatar_by_id(avatar_id):
     """Return the avatar dict for `avatar_id`, or the default dragon.
 
-    Never raises: stored ids can go stale when the catalog changes, and a
-    missing avatar should degrade to a dragon rather than 500 a results page.
+    Built arena characters resolve to a synthetic dict (species emoji,
+    label, body colour). Never raises: stored ids can go stale when the
+    catalog changes, and a missing avatar should degrade to a dragon rather
+    than 500 a results page.
     """
     if not avatar_id:
         return _FALLBACK
-    return AVATARS_BY_ID.get(str(avatar_id), _FALLBACK)
+    key = str(avatar_id)
+    if key in AVATARS_BY_ID:
+        return AVATARS_BY_ID[key]
+    return _built_meta(key) or _FALLBACK
 
 
 def is_valid_avatar_id(avatar_id):
-    return str(avatar_id or "") in AVATARS_BY_ID
+    key = str(avatar_id or "")
+    return key in AVATARS_BY_ID or parse_built_avatar(key) is not None
 
 
 def normalize_avatar_id(avatar_id):
-    """Coerce anything to a real catalog id. Use before writing to the DB."""
+    """Coerce anything to a real catalog id. Use before writing to the DB.
+
+    Built arena ids are kept as-is when well-formed.
+    """
     key = str(avatar_id or "").strip()
-    return key if key in AVATARS_BY_ID else DEFAULT_AVATAR_ID
+    return key if is_valid_avatar_id(key) else DEFAULT_AVATAR_ID
 
 
 def avatars_grouped():

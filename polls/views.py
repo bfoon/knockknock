@@ -14,7 +14,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
-from core.templates_registry import TEMPLATES, get_template
+from core.templates_registry import TEMPLATES, get_template, is_valid_template_id, public_themes, resolve_template_id
 from presentations.models import LiveSession, Participant
 
 from .charts import ALL_CHARTS, curated_charts_for
@@ -127,7 +127,19 @@ def edit(request, pk):
     if request.method == "POST":
         form = QuestionnaireForm(request.POST, request.FILES, instance=questionnaire)
         if form.is_valid():
-            form.save()
+            obj = form.save(commit=False)
+            # QuestionnaireForm doesn't list template_id (the picker posts it
+            # as a bare hidden input), so form.save() used to drop it and the
+            # theme never changed after the one chosen at creation.
+            posted = (request.POST.get("template_id") or "").strip()
+            theme_changed = False
+            if posted and is_valid_template_id(posted) and posted != obj.template_id:
+                obj.template_id = posted
+                theme_changed = True
+            obj.save()
+            form.save_m2m()
+            if theme_changed:
+                _broadcast_to_live_sessions(obj, {"type": "theme", "template_id": obj.template_id})
             messages.success(request, "Saved.")
             return redirect("polls:edit", pk=pk)
     else:
@@ -152,18 +164,80 @@ def edit(request, pk):
         # Drives the quick-add dropdown, which used to be a hand-maintained
         # copy of the registry that had already fallen out of sync.
         "grouped_qtypes": grouped_for_picker(),
+        # Theme Studio + per-slide theme picker (JSON for the client).
+        "themes": public_themes(),
+        "active_theme_id": resolve_template_id(questionnaire.template_id),
     })
+
+
+def _broadcast_to_live_sessions(questionnaire, payload):
+    """Push a message to every open presenter/phone of this questionnaire."""
+    try:
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+        layer = get_channel_layer()
+    except Exception:  # channels not configured (tests, management shells)
+        return
+    if not layer:
+        return
+    codes = LiveSession.objects.filter(
+        questionnaire=questionnaire, state__in=["lobby", "running"],
+    ).values_list("code", flat=True)
+    for code in codes:
+        try:
+            async_to_sync(layer.group_send)(f"session_{code}", {"type": "broadcast", "payload": payload})
+        except Exception:
+            logger.warning("theme broadcast to session %s failed", code, exc_info=True)
 
 
 @login_required
 @require_POST
 def set_template(request, pk):
+    """Instant theme save from the Theme Studio / presenter theme switcher.
+
+    Accepts form-encoded or JSON {template_id}. Validates against the theme
+    registry (it used to store any string it was handed) and pushes the new
+    theme to running sessions so the big screen and phones restyle live.
+    """
     q = get_object_or_404(Questionnaire, pk=pk)
     if not q.can_edit(request.user):
         return HttpResponseForbidden("You don't have access to this questionnaire.")
-    q.template_id = request.POST.get("template_id", q.template_id)
-    q.save(update_fields=["template_id"])
-    return JsonResponse({"ok": True})
+    template_id = request.POST.get("template_id")
+    if template_id is None and request.body:
+        try:
+            template_id = (json.loads(request.body.decode("utf-8") or "{}") or {}).get("template_id")
+        except (ValueError, json.JSONDecodeError):
+            template_id = None
+    template_id = (template_id or "").strip()
+    if not is_valid_template_id(template_id):
+        return JsonResponse({"ok": False, "error": "Unknown theme."}, status=400)
+    q.template_id = template_id
+    q.save(update_fields=["template_id", "updated_at"])
+    _broadcast_to_live_sessions(q, {"type": "theme", "template_id": template_id})
+    return JsonResponse({"ok": True, "template_id": template_id, "name": get_template(template_id)["name"]})
+
+
+@login_required
+@require_POST
+def question_theme(request, pk, qpk):
+    """Set or clear one slide's theme (Question.template_id_override)."""
+    questionnaire = get_object_or_404(Questionnaire, pk=pk)
+    if not questionnaire.can_edit(request.user):
+        return HttpResponseForbidden("You don't have access to this questionnaire.")
+    question = get_object_or_404(Question, pk=qpk, questionnaire=questionnaire)
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except (ValueError, json.JSONDecodeError):
+        return HttpResponseBadRequest("Invalid payload.")
+    template_id = (payload.get("template_id") or "").strip()
+    if template_id and not is_valid_template_id(template_id):
+        return JsonResponse({"ok": False, "error": "Unknown theme."}, status=400)
+    question.template_id_override = template_id
+    question.save(update_fields=["template_id_override"])
+    _broadcast_to_live_sessions(questionnaire, {
+        "type": "slide_theme", "question_id": question.pk, "template_id": template_id,
+    })
+    return JsonResponse({"ok": True, "template_id": template_id})
 
 
 # ── Questions ─────────────────────────────────────────────────────────

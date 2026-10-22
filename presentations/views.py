@@ -12,7 +12,7 @@ from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_GET, require_POST
 
-from core.templates_registry import get_template
+from core.templates_registry import get_template, public_themes
 from games.avatars import AVATARS, avatars_grouped
 from .models import LiveSession, Participant
 
@@ -109,6 +109,7 @@ def present(request, code):
         "join_url": join_url,
         "avatars": AVATARS,
         "avatar_groups": avatars_grouped(),
+        "themes": public_themes(),
     })
 
 
@@ -216,6 +217,7 @@ def join_code(request, code):
         "chart_background": _chart_background_for(session),
         "avatars": AVATARS,
         "avatar_groups": avatars_grouped(),
+        "themes": public_themes(),
     }
 
     if session.kind == "game":

@@ -4,7 +4,7 @@
 {% block title %}{{ questionnaire.title }} · Knock-Knock{% endblock %}
 
 {% block content %}
-<link rel="stylesheet" href="{% static 'css/polls.css' %}">
+<link rel="stylesheet" href="{% static 'css/polls.css' %}?v=2">
 
 <div class="p">
   <div class="p-head">
@@ -110,7 +110,7 @@
       </form>
 
       {% if questions %}
-        <p class="p-hint">Drag the handle to reorder, or focus a handle and press Alt with the arrow keys.</p>
+        <p class="p-hint">Drag <i class="bi bi-grip-vertical"></i> to reorder (works with touch too), or focus a handle and press Alt + ↑/↓. Every move can be undone.</p>
       {% endif %}
 
       <div class="p-q-list" id="q-list" data-reorder-url="{% url 'polls:reorder' questionnaire.pk %}">
@@ -143,6 +143,12 @@
               </span>
             </a>
             <span class="p-q-tools">
+              <button type="button" class="p-icon-btn p-q-theme"
+                      data-theme="{{ q.template_id_override }}"
+                      data-url="{% url 'polls:question_theme' questionnaire.pk q.pk %}"
+                      aria-haspopup="dialog" title="Slide theme">
+                <span class="p-swatch"><span class="ov"></span></span>
+              </button>
               <form method="post" action="{% url 'polls:quick_delete_question' questionnaire.pk q.pk %}" class="m-0"
                     onsubmit="return confirm('Delete “{{ q.text|escapejs }}”?');">
                 {% csrf_token %}
@@ -211,11 +217,40 @@
 
         {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
 
-        <div class="p-subpanel mb-3">
-          <h3 class="p-section" style="font-size:.88rem;"><i class="bi bi-palette"></i> Template</h3>
-          <div class="p-template-scroll">
-            {% include "partials/template_picker.html" with templates=templates selected_id=questionnaire.template_id input_name="template_id" %}
+        {% comment %}
+          Theme Studio. Clicking a theme saves it instantly through
+          polls:set_template (and restyles any live session); the hidden input
+          keeps "Save settings" consistent. polls_editor.js builds the tiles.
+        {% endcomment %}
+        <div class="p-subpanel mb-3 p-studio" id="theme-studio"
+             data-save-url="{% url 'polls:set_template' questionnaire.pk %}">
+          <h3 class="p-section" style="font-size:.88rem;">
+            <i class="bi bi-palette"></i> Theme studio
+            <span id="theme-status" class="p-save-state" role="status" aria-live="polite"></span>
+          </h3>
+          <div class="p-sp" aria-hidden="true">
+            <span class="p-sp-bg"></span><span class="p-sp-ov"></span>
+            <span class="p-sp-top"><span class="p-sp-code">Join at <b>knock-knock</b> · 123 456</span><span class="p-sp-name"></span></span>
+            <span class="p-sp-q">{% firstof questions.0.text "How are you feeling today?" %}</span>
+            <span class="p-sp-bars">
+              <i style="--h:46%"><b>A</b></i><i style="--h:88%"><b>B</b></i><i style="--h:64%"><b>C</b></i><i style="--h:30%"><b>D</b></i>
+            </span>
           </div>
+          <div class="p-st-tools">
+            <input type="search" class="form-control form-control-sm p-st-search" placeholder="Search {{ themes|length }} themes…" aria-label="Search themes">
+            <button type="button" class="p-icon-btn p-st-dice" title="Surprise me" aria-label="Pick a random theme">🎲</button>
+          </div>
+          <div class="p-st-chips" role="group" aria-label="Filter themes">
+            <button type="button" class="p-st-chip is-on" data-f="all" aria-pressed="true">All</button>
+            <button type="button" class="p-st-chip" data-f="dark" aria-pressed="false">Dark</button>
+            <button type="button" class="p-st-chip" data-f="light" aria-pressed="false">Light</button>
+            <button type="button" class="p-st-chip" data-f="photo" aria-pressed="false">Photo</button>
+            <button type="button" class="p-st-chip" data-f="pattern" aria-pressed="false">Pattern</button>
+          </div>
+          <div class="p-st-grid"></div>
+          <p class="p-st-empty p-hint" hidden>No theme matches that search.</p>
+          <p class="p-hint mb-0 mt-2">Click to apply — it saves instantly and restyles live screens. Use the swatch on a question to give one slide its own theme.</p>
+          <input type="hidden" name="template_id" id="template-id-input" value="{{ active_theme_id }}">
         </div>
 
         <button class="kk-btn kk-btn-primary w-100"><i class="bi bi-check-lg"></i> Save settings</button>
@@ -252,96 +287,11 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js" defer></script>
-<script>
-(function () {
-  "use strict";
-  var list = document.getElementById("q-list");
-  if (!list) return;
-  var url = list.dataset.reorderUrl;
-  var status = document.getElementById("reorder-status");
-  var tokenEl = document.querySelector("input[name=csrfmiddlewaretoken]");
-  var csrf = tokenEl ? tokenEl.value : "";
-  var timer = null;
-
-  function setStatus(text, kind) {
-    if (!status) return;
-    status.textContent = text;
-    status.classList.add("is-on");
-    status.classList.toggle("is-ok", kind === "ok");
-    status.classList.toggle("is-bad", kind === "bad");
-    clearTimeout(timer);
-    if (kind === "ok") timer = setTimeout(function () { status.classList.remove("is-on"); }, 1800);
-  }
-
-  function rows() { return Array.prototype.slice.call(list.querySelectorAll(".p-q")); }
-  function reindex() {
-    rows().forEach(function (row, i) {
-      var n = row.querySelector(".p-q-num");
-      if (n) n.textContent = i + 1;
-    });
-  }
-
-  function persist() {
-    var order = rows().map(function (r) { return parseInt(r.dataset.qpk, 10); })
-                      .filter(function (n) { return !isNaN(n); });
-    setStatus("Saving…");
-    fetch(url, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
-      body: JSON.stringify({ order: order })
-    }).then(function (r) {
-      if (r.status === 409) throw new Error("This list is out of date. Reload the page.");
-      if (!r.ok) throw new Error("Order not saved. Try again.");
-      return r.json();
-    }).then(function () { setStatus("Order saved", "ok"); })
-      .catch(function (e) { setStatus(e.message, "bad"); });
-  }
-
-  if (window.Sortable) {
-    Sortable.create(list, {
-      animation: 160, handle: ".p-q-grip", ghostClass: "p-ghost", dragClass: "p-dragging",
-      onEnd: function () { reindex(); persist(); }
-    });
-  }
-
-  /* Keyboard reordering — a drag handle is unusable without a pointer. */
-  list.addEventListener("keydown", function (e) {
-    if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
-    var grip = e.target.closest(".p-q-grip");
-    if (!grip) return;
-    e.preventDefault();
-    var row = grip.closest(".p-q");
-    var sib = e.key === "ArrowUp" ? row.previousElementSibling : row.nextElementSibling;
-    if (!sib || !sib.classList.contains("p-q")) return;
-    if (e.key === "ArrowUp") list.insertBefore(row, sib); else list.insertBefore(sib, row);
-    row.classList.remove("p-moved"); void row.offsetWidth; row.classList.add("p-moved");
-    grip.focus(); reindex(); persist();
-  });
-})();
-
-(function () {
-  "use strict";
-  document.querySelectorAll("[data-logo-probe]").forEach(function (img) {
-    function flag() {
-      var box = img.closest(".p-logo");
-      if (box) box.style.display = "none";
-      document.querySelectorAll("[data-logo-error]").forEach(function (el) { el.hidden = false; });
-    }
-    if (img.complete && img.naturalWidth === 0) flag();
-    img.addEventListener("error", flag);
-  });
-
-  document.querySelectorAll(".p-template-scroll").forEach(function (el) {
-    function update() {
-      el.classList.toggle("is-bottom",
-        el.scrollTop + el.clientHeight >= el.scrollHeight - 2 || el.scrollHeight <= el.clientHeight + 1);
-    }
-    el.addEventListener("scroll", update, { passive: true });
-    window.addEventListener("resize", update);
-    update();
-  });
-})();
-</script>
+{{ themes|json_script:"kk-themes-json" }}
+{% comment %}
+  Reorder (native drag & drop + undo), Theme Studio and slide themes.
+  This replaces SortableJS, which was loaded with `defer` but initialised by
+  an inline script that ran first — so drag-and-drop never switched on.
+{% endcomment %}
+<script src="{% static 'js/polls_editor.js' %}?v=1"></script>
 {% endblock %}

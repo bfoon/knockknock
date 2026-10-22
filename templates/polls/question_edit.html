@@ -260,9 +260,9 @@
         {% endif %}
 
         <div class="mt-2">
-          <label class="form-label small">Template override</label>
+          <label class="form-label small" for="{{ form.template_id_override.id_for_label }}">Slide theme</label>
           {{ form.template_id_override }}
-          <div class="form-text">Leave blank to inherit "{{ questionnaire.template_id }}".</div>
+          <div class="form-text">Give just this slide its own look. It switches live on the big screen and every phone when the slide comes up.</div>
         </div>
       </div>
 

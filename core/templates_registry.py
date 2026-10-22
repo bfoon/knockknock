@@ -539,9 +539,77 @@ _TEMPLATE_ALIASES = {
 }
 
 
+# ── De-duplicate ─────────────────────────────────────────────────────
+# Five themes (arcade_energy, fantasy_ruins, holo_code, space_station,
+# voxel_world) were listed twice with slightly different opacities. The
+# picker showed both tiles, but get_template() always returned the FIRST,
+# so choosing the second copy put a different look on the live screen than
+# the tile you clicked. Keep the first definition of each id.
+def _dedupe(items):
+    seen, out = set(), []
+    for t in items:
+        if t["id"] in seen:
+            continue
+        seen.add(t["id"])
+        out.append(t)
+    return out
+
+
+TEMPLATES = _dedupe(TEMPLATES)
+TEMPLATES_BY_ID = {t["id"]: t for t in TEMPLATES}
+
+
+def _luminance(hex_color: str) -> float:
+    h = (hex_color or "#000000").lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    try:
+        r, g, b = (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    except ValueError:
+        return 0.0
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+# Light/dark tone and visual kind, used by the poll Theme Studio filters.
+for _t in TEMPLATES:
+    _t.setdefault("tone", "light" if _luminance(_t.get("fg", "#fff")) < 0.45 else "dark")
+    _t.setdefault("kind", "photo" if "url(" in (_t.get("bg_css") or "") else ("pattern" if _t.get("overlay") else "plain"))
+
+
+def resolve_template_id(template_id: str) -> str:
+    """Map a stored id to a real theme id.
+
+    A real theme id always wins over an alias. `space_hud` used to be aliased
+    to `space_station` even though "Space HUD" is a real theme with its own
+    artwork — so picking Space HUD (and the model default, which IS
+    space_hud) silently presented as Space Station.
+    """
+    template_id = (template_id or "").strip()
+    if template_id in TEMPLATES_BY_ID:
+        return template_id
+    alias = _TEMPLATE_ALIASES.get(template_id)
+    if alias in TEMPLATES_BY_ID:
+        return alias
+    return TEMPLATES[0]["id"]
+
+
+def is_valid_template_id(template_id: str) -> bool:
+    template_id = (template_id or "").strip()
+    return template_id in TEMPLATES_BY_ID or template_id in _TEMPLATE_ALIASES
+
+
 def get_template(template_id: str) -> dict:
-    lookup_id = _TEMPLATE_ALIASES.get(template_id, template_id)
-    for template in TEMPLATES:
-        if template["id"] == lookup_id:
-            return template
-    return TEMPLATES[0]
+    return TEMPLATES_BY_ID[resolve_template_id(template_id)]
+
+
+PUBLIC_KEYS = ("id", "name", "bg", "fg", "accent", "accent2", "font", "bg_css", "overlay", "tone", "kind")
+
+
+def public_themes():
+    """JSON-safe theme list for the live theme engine and the Theme Studio."""
+    return [{k: t.get(k, "") for k in PUBLIC_KEYS} for t in TEMPLATES]
+
+
+def theme_choices(blank_label="Use the questionnaire theme"):
+    """(value, label) pairs for a <select>; blank means inherit."""
+    return [("", blank_label)] + [(t["id"], t["name"]) for t in TEMPLATES]

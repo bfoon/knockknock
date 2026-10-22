@@ -22,6 +22,7 @@
       href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&family=JetBrains+Mono:wght@500;700&family=Playfair+Display:wght@500;800&family=Press+Start+2P&family=Space+Grotesk:wght@500;700&display=swap">
 
 <link rel="stylesheet" href="{% static 'css/app.css' %}?v=3">
+<link rel="stylesheet" href="{% static 'css/kk_arena.css' %}?v=1">
 <style>
   body {
     background: {{ template.bg_css|default:template.bg|safe }};
@@ -1169,6 +1170,16 @@
 
 {# Avatar catalog — must load BEFORE the rooms shim and play.js. #}
 {% include "games/partials/avatar_data.html" with avatars=avatars %}
+
+{% comment %}
+  KnockKnock Arena: character builder, animated SVG avatars, optional sound,
+  full-screen answer results and the personal finale. Loads after the avatar
+  catalog and before the rooms shim / play.js (it wraps window.WebSocket and
+  proxies kkAvatarsById the same way the other shims do).
+{% endcomment %}
+<script src="{% static 'js/kk_avatars.js' %}?v=1"></script>
+<script src="{% static 'js/kk_sound.js' %}?v=1"></script>
+<script src="{% static 'js/kk_arena.js' %}?v=1"></script>
 
 <script>
 /* ─────────────────────────────────────────────────────────────────────

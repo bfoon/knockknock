@@ -85,9 +85,10 @@ class QuestionForm(forms.ModelForm):
             "max_selections": forms.NumberInput(attrs={
                 "class": "form-control", "min": 1, "placeholder": "Unlimited",
             }),
-            "template_id_override": forms.TextInput(attrs={
-                "class": "form-control", "placeholder": "Inherit from questionnaire",
-            }),
+            # Was a free-text box: you had to know and type an internal id
+            # like "neon_geometry", and a typo saved silently. Choices are
+            # filled from the theme registry in __init__.
+            "template_id_override": forms.Select(attrs={"class": "form-select"}),
             # Title-slide widgets
             "subtitle": forms.TextInput(attrs={
                 "class": "form-control",
@@ -111,6 +112,15 @@ class QuestionForm(forms.ModelForm):
         # (curated vs all) so we just set the available options to ALL here
         # and rely on data attributes for the curated subset filtering.
         self.fields["chart_type"].choices = chart_choice_field_choices()
+
+        # Slide theme: a real picker instead of a free-text id box. A stored
+        # id that no longer exists stays selectable so saving doesn't wipe it.
+        from core.templates_registry import theme_choices
+        choices = theme_choices()
+        current = (getattr(self.instance, "template_id_override", "") or "").strip()
+        if current and current not in {c[0] for c in choices}:
+            choices.append((current, f"{current} (legacy)"))
+        self.fields["template_id_override"].widget.choices = choices
 
     def clean(self):
         cleaned = super().clean()

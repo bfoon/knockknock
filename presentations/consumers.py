@@ -46,6 +46,11 @@ from django.utils import timezone
 from .models import LiveSession, Participant
 
 
+def _resolve_theme(template_id):
+    from core.templates_registry import resolve_template_id
+    return resolve_template_id(template_id)
+
+
 class SessionConsumer(AsyncJsonWebsocketConsumer):
 
     async def connect(self):
@@ -121,6 +126,10 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             else:
                 nickname = (msg.get("nickname") or "Guest").strip()[:40]
                 avatar_id = msg.get("avatar_id") or "dragon"
+            # Participant.avatar_id is varchar(30). Built arena characters
+            # (kk-<species>-<colour>-<gear>-<face>) top out at 23 chars, but
+            # never let an oversized client value reach the database.
+            avatar_id = str(avatar_id).strip()[:30] or "dragon"
 
             requested_room = msg.get("room_id") or ""
 
@@ -151,6 +160,13 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 )
 
         session = await self._get_session(self.code)
+
+        # A (re)connecting presenter screen gets the current standings right
+        # away, so the arena lobby floor, scoreboard and podium can paint
+        # after a page refresh instead of waiting for the next join/answer.
+        if session and self.role == "presenter" and session.kind == "game":
+            lb = await self._leaderboard(self.session_pk)
+            await self.send_json({"type": "leaderboard", "data": lb})
 
         # In OPEN (self-paced) mode, seed this participant's personal cursor so
         # they begin at wherever the session currently is, then pace themselves.
@@ -1254,6 +1270,10 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                     "title_layout": getattr(current, "title_layout", "clean") or "clean",
                     "title_image_url": title_image_url,
                     "title_author": getattr(current, "title_author", "") or "",
+                    # Per-slide theme ("" = inherit the questionnaire theme).
+                    # The live theme engine (static/js/kk_theme.js) restyles
+                    # the stage and phones as slides change.
+                    "template_id": (getattr(current, "template_id_override", "") or "").strip(),
                 }
             else:
                 # Game question — now includes the styling fields, the
@@ -1306,7 +1326,9 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             "state": session.state,
             "mode": session.mode,
             "title": session.title,
-            "template_id": session.template_id,
+            # Resolved to a real theme id (aliases like "neon_gaming" map to
+            # their current theme) so live clients can look it up directly.
+            "template_id": _resolve_theme(session.template_id),
             "index": idx,
             "total": len(questions),
             # Self-pace awareness for the participant client:

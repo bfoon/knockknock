@@ -920,7 +920,8 @@
 <div class="kk-play" id="play"
      data-code="{{ session.code }}"
      data-kind="poll"
-     data-mode="{{ session.mode }}">
+     data-mode="{{ session.mode }}"
+     data-theme="{{ template.id }}">
 
   <header class="d-flex align-items-center gap-3 mb-3">
     {% if logo_url %}<img src="{{ logo_url }}" alt="" style="height:32px; border-radius:6px;">{% endif %}
@@ -1137,6 +1138,12 @@
 })();
 </script>
 
+{% comment %}
+  Live themes: per-slide themes and instant deck-theme changes from the
+  presenter. Wraps the WebSocket, so it must load before play.js.
+{% endcomment %}
+{{ themes|json_script:"kk-themes-json" }}
+<script src="{% static 'js/kk_theme.js' %}?v=1"></script>
 <script src="{% static 'js/play.js' %}?v=13"></script>
 </body>
 </html>

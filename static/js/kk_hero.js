@@ -736,7 +736,7 @@ window.KKHero = (function () {
   document.head.appendChild(css);
 
   return {
-    ready: ready, isHero: isHero, parse: parse, encode: encode, random: random,
+    ready: ready, isReady: function () { return !!parts; }, isHero: isHero, parse: parse, encode: encode, random: random,
     labelFor: labelFor, emojiFor: emojiFor, build: build, snapshot: snapshot,
     html: html, mount: mount, forge: forge, patch: patchKKAvatar,
     SLOTS: SLOTS, OPTIONS: OPTIONS, hasWebGL: HAS_WEBGL,

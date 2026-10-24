@@ -42,6 +42,20 @@ button { font: inherit; color: inherit; }
 .tt-react-n { font-size: .75rem; background: #0009; padding: .05rem .45rem; border-radius: 99px; }
 @keyframes ttRise { 0% { transform: translateY(0) scale(.4); opacity: 0; } 15% { transform: translateY(-40px) scale(1.15); opacity: 1; }
   100% { transform: translateY(-50vh) scale(1) rotate(12deg); opacity: 0; } }
+/* new games: phone extras */
+.tt-slither { animation: ttSlither 1.2s linear infinite; }
+@keyframes ttSlither { to { stroke-dashoffset: -72; } }
+.tt-tongue { animation: ttTongue 2.4s ease-in-out infinite; transform-box: fill-box; transform-origin: top; }
+@keyframes ttTongue { 0%, 70%, 100% { transform: scaleY(0); } 78%, 92% { transform: scaleY(1); } }
+.tt-quest-card { background: rgba(255,255,255,.05); border: 1px solid var(--tt-line); border-radius: 14px; padding: .5rem .7rem; }
+.tt-quest-hp { display: flex; gap: 3px; justify-content: center; margin-bottom: .35rem; }
+.tt-heart { width: 20px; height: 18px; background: #ef4444; clip-path: path("M10 18 C-6 6 2 -4 10 4 C18 -4 26 6 10 18Z"); }
+.tt-heart.is-empty { background: #475569; }
+.tt-quest-stats { display: flex; justify-content: space-around; font-size: .9rem; flex-wrap: wrap; gap: .3rem; }
+.tt-games { grid-template-columns: repeat(4, 1fr); }
+.tt-game { padding: .7rem .5rem; }
+.tt-game .tt-game-e { font-size: 2.1rem; }
+
 /* big-screen reaction cards */
 .tt-rx { position: absolute; bottom: 20%; transform: translateX(-50%); z-index: 45; pointer-events: none;
   display: flex; flex-direction: column; align-items: center; gap: .35rem;

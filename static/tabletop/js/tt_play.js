@@ -12,6 +12,7 @@
   if (!root) return;
   var CODE = root.dataset.code, ROLE = root.dataset.role, TOKEN = root.dataset.token;
 
+  var UI = TT.phoneUI = TT.phoneUI || {};   // per-game controls from tt_games_more.js
   var me = null, night = null, players = [], matches = {}, priv = {};
   var watching = null;          // match id on screen
   var pinnedWatch = false;      // user chose to watch another table
@@ -168,6 +169,7 @@
       if (x.game === "dam") extra = i === 0 ? "Light" : "Dark";
       if (x.game === "ludo") extra = '<i class="tt-dot" style="background:' + TT.LUDO_COLORS[st.colours[i]] + '"></i>' + TT.LUDO_NAMES[st.colours[i]];
       if (x.game === "words") extra = "<b>" + st.scores[i] + "</b> pts";
+      if (UI[x.game] && UI[x.game].seat) extra = UI[x.game].seat(x, i);
       return '<div class="tt-seat' + (turn ? " is-turn" : "") + (i === seat ? " is-me" : "") + '">' + TT.avatar(s.avatar, 34) +
         '<span><b>' + esc(s.name) + "</b><small>" + extra + "</small></span></div>";
     }).join("");
@@ -180,7 +182,7 @@
         "🏆 " + w.map(function (s) { return esc(seatName(x, s)); }).join(" & ") + " won · " + esc(res.reason || "");
     } else if (seat >= 0 && st.turn === seat) {
       banner.className = "tt-turn is-mine";
-      banner.textContent = x.game === "ludo" ? (st.phase === "roll" ? "Your turn — roll!" : "Tap a glowing token") :
+      banner.textContent = UI[x.game] && UI[x.game].banner ? UI[x.game].banner(x, seat) : x.game === "ludo" ? (st.phase === "roll" ? "Your turn — roll!" : "Tap a glowing token") :
         x.game === "words" ? "Your turn — place tiles" : x.game === "dam" && st.legal.length && st.legal[0].caps.length ? "Your turn — you must capture!" :
         st.check ? "Check! Your move" : "Your move";
     } else {
@@ -197,6 +199,7 @@
         (mineTurn && st.phase === "roll" ? "" : " disabled") + ">" + dieFace(st.dice) + "<span>" + (mineTurn && st.phase === "roll" ? "Roll" : st.dice ? "Rolled " + st.dice : "Wait") + "</span></button>";
     }
     if (x.game === "words" && canAct) html += wordsControls(x, seat);
+    if (UI[x.game] && UI[x.game].controls) html += UI[x.game].controls(x, seat, canAct, { dieFace: dieFace, esc: esc });
     if (canAct && x.game !== "words") html += '<button type="button" class="tt-btn tt-btn-ghost" id="tt-resign">🏳️ Resign</button>';
     if (x.game === "words" && x.state.last && x.state.last.words && x.state.last.words.length) {
       html += '<p class="tt-dim tt-lastword">Last: <b>' + esc(x.state.last.words.join(", ")) + "</b> +" + x.state.last.score + " · bag " + st.bag + "</p>";
@@ -248,6 +251,10 @@
   root.addEventListener("click", function (e) {
     var b, x = matches[watching];
     if ((b = e.target.closest("#tt-roll"))) { send({ type: "roll" }); TT.sfx("dice"); TT.vibrate(30); }
+    else if ((b = e.target.closest("[data-act]"))) {
+      var a; try { a = JSON.parse(b.dataset.act); } catch (er) { a = null; }
+      if (a) { send(a); TT.sfx(a.type === "roll" ? "dice" : "tap"); TT.vibrate(25); }
+    }
     else if ((b = e.target.closest("#tt-resign"))) { if (confirm("Resign this game?")) send({ type: "resign" }); }
     else if ((b = e.target.closest("[data-rack]"))) {
       var i = +b.dataset.rack;

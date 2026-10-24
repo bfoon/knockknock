@@ -195,8 +195,9 @@ window.TT = (function () {
     keepAwake: keepAwake, awakeBadge: awakeBadge,
     esc: esc, $: $, el: el, vibrate: vibrate, connect: connect, avatar: avatar,
     sfx: sfx, setMuted: setMuted, isMuted: function () { return muted; },
-    GAME_LABEL: { chess: "Chess", dam: "Dam", ludo: "Ludo", words: "Scramble" },
-    GAME_EMOJI: { chess: "♞", dam: "⛀", ludo: "🎲", words: "🔤" },
+    GAME_LABEL: { chess: "Chess", dam: "Dam", ludo: "Ludo", words: "Scramble",
+                  oware: "Oware", snakes: "Snakes & Ladders", four: "Four in a Row", quest: "Dragon's Hoard" },
+    GAME_EMOJI: { chess: "♞", dam: "⛀", ludo: "🎲", words: "🔤", oware: "🌰", snakes: "🐍", four: "🔴", quest: "🐉" },
     LUDO_COLORS: ["#ef4444", "#22c55e", "#facc15", "#3b82f6"],
     LUDO_NAMES: ["Red", "Green", "Yellow", "Blue"],
   };

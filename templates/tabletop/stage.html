@@ -4,11 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ night.title }} · Live Tables</title>
-<link rel="stylesheet" href="{% static 'tabletop/css/tabletop.css' %}?v=3">
+<link rel="stylesheet" href="{% static 'tabletop/css/tabletop.css' %}?v=4">
 </head>
 <body>
 <div id="tt-stage" class="is-lobby" data-code="{{ night.code }}" data-view="{{ night.view }}"
-     data-pieces="{% static 'tabletop/models/kk_pieces.glb' %}">
+     data-pieces="{% static 'tabletop/models/kk_pieces.glb' %}"
+     data-world="{% static 'tabletop/models/kk_world.glb' %}">
 
   <header class="tt-top">
     <span id="tt-net" data-state="connecting" title="Connection"></span>
@@ -102,7 +103,7 @@
 </div>
 
 {% include "tabletop/_scripts.html" %}
-<script src="{% static 'tabletop/js/tt_stage3d.js' %}?v=2"></script>
-<script src="{% static 'tabletop/js/tt_stage.js' %}?v=3"></script>
+<script src="{% static 'tabletop/js/tt_stage3d.js' %}?v=5"></script>
+<script src="{% static 'tabletop/js/tt_stage.js' %}?v=4"></script>
 </body>
 </html>

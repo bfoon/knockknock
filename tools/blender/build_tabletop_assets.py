@@ -6,6 +6,11 @@ from code, and exports two GLB files:
 
     static/tabletop/models/kk_pieces.glb   chess set, dam men & crown,
                                             ludo pawn, die, slash sword
+    static/tabletop/models/kk_world.glb    adventure cast & props: dragon,
+                                            troll, skeleton, goblin, bat, slime,
+                                            chest, campfire, portal, spikes,
+                                            trees, snake head, Oware board,
+                                            Four-in-a-Row frame & coin
     static/tabletop/models/kk_hero.glb     modular chibi character kit:
                                             body parts, 10 outfits, 9 hair
                                             styles, 11 headwear, 9 props
@@ -50,7 +55,9 @@ PALETTE = {
     "metal": (0.75, 0.78, 0.82), "gold": (1.0, 0.78, 0.2), "wood": (0.55, 0.35, 0.18),
     "dark": (0.06, 0.06, 0.08), "white": (0.97, 0.97, 0.97), "glow": (0.4, 0.95, 1.0),
     "body": (0.92, 0.88, 0.8), "accent": (1.0, 0.78, 0.2), "pip": (0.08, 0.08, 0.1),
-    "string": (0.9, 0.9, 0.85),
+    "string": (0.9, 0.9, 0.85), "belly": (0.95, 0.8, 0.4), "horn": (0.95, 0.92, 0.85),
+    "bone": (0.93, 0.9, 0.82), "leaf": (0.2, 0.6, 0.3), "stone": (0.5, 0.5, 0.55),
+    "flame": (1.0, 0.55, 0.1), "glass": (0.7, 0.9, 1.0), "membrane": (0.55, 0.15, 0.2),
 }
 
 
@@ -778,8 +785,222 @@ def build_hero():
     export(os.path.join(OUT, "kk_hero.glb"))
 
 
+# ─────────────────────────── adventure world ───────────────────────────
+# Monsters face -Y (toward the viewer) and stand on Z = 0. Parts that the
+# browser animates separately (wings, jaw, chest lid) are their own objects
+# with the origin at the joint.
+
+def monsters():
+    # Slime: a wobbly drop with a glowing core
+    blob = sphere("slime_body", 0.42, loc=(0, 0, 0.34), scale=(1.0, 1.0, 0.82), mat="body", seg=28, rings=16)
+    tip = cyl("slime_tip", 0.16, 0.0, 0.32, loc=(0, 0.04, 0.72), mat="body", seg=20)
+    core = sphere("slime_core", 0.14, loc=(0, 0.02, 0.3), mat="glow", seg=14, rings=10)
+    join("mon_slime", [blob, tip, core], 70)
+
+    # Bat: round body, big ears, wing separate (right wing; mirrored in JS)
+    body = sphere("bat_b", 0.28, loc=(0, 0, 0), mat="body", seg=20, rings=12)
+    ears = [cyl("bat_ear", 0.09, 0.0, 0.24, loc=(sx * 0.14, 0, 0.3), mat="body", seg=8) for sx in (-1, 1)]
+    fangs = [cyl("fang", 0.025, 0.0, 0.08, loc=(sx * 0.06, -0.26, -0.08), rot=("X", math.pi), mat="white", seg=6) for sx in (-1, 1)]
+    feet = [sphere("bat_f", 0.05, loc=(sx * 0.08, 0, -0.28), mat="dark", seg=8, rings=6) for sx in (-1, 1)]
+    join("mon_bat", [body] + ears + fangs + feet, 60)
+    wing = extrude_poly("bat_wing", [(0.0, 0.05), (0.35, 0.22), (0.75, 0.1), (0.7, -0.1), (0.55, -0.02),
+                                     (0.45, -0.18), (0.3, -0.06), (0.15, -0.16), (0.0, -0.08)], 0.02, mat="membrane")
+    join("mon_bat_wing", [wing], 20)
+
+    # Goblin: big head, long pointed ears, little club
+    torso = sphere("gob_t", 0.26, loc=(0, 0, 0.45), scale=(1, 0.85, 1.05), mat="cloth")
+    head = sphere("gob_h", 0.3, loc=(0, -0.02, 0.92), mat="body", seg=24, rings=14)
+    ears = []
+    for sx in (-1, 1):
+        e = cyl("gob_ear", 0.08, 0.0, 0.42, loc=(0, 0, 0.21), mat="body", seg=10)
+        e.data.transform(Matrix.Rotation(sx * 1.25, 4, "Y"))
+        e.data.transform(Matrix.Translation((sx * 0.27, 0.0, 0.98)))
+        ears.append(e)
+    nose = cyl("gob_n", 0.06, 0.0, 0.22, loc=(0, -0.38, 0.88), rot=("X", -math.pi / 2), mat="body", seg=10)
+    legs = [cyl("gob_l", 0.08, 0.07, 0.3, loc=(sx * 0.12, 0, 0.15), mat="dark", seg=10) for sx in (-1, 1)]
+    arm = cyl("gob_a", 0.06, 0.05, 0.32, loc=(0.3, -0.05, 0.5), rot=("Y", 0.6), mat="body", seg=10)
+    club = cyl("gob_club", 0.05, 0.11, 0.5, loc=(0.46, -0.12, 0.72), rot=("X", -0.3), mat="wood", seg=10)
+    join("mon_goblin", [torso, head, nose, arm, club] + ears + legs, 50)
+
+    # Skeleton: skull, ribcage, bony limbs, rusty sword
+    skull = sphere("sk_s", 0.24, loc=(0, 0, 1.1), scale=(1, 1, 1.05), mat="bone", seg=24, rings=14)
+    jaw = box("sk_j", (0.26, 0.2, 0.1), loc=(0, -0.05, 0.9), mat="bone", bevel=0.03)
+    sockets = [sphere("sk_e", 0.065, loc=(sx * 0.09, -0.2, 1.12), mat="dark", seg=10, rings=6) for sx in (-1, 1)]
+    spine = cyl("sk_sp", 0.035, 0.035, 0.5, loc=(0, 0.04, 0.6), mat="bone", seg=8)
+    ribs = [torus("sk_r", 0.16 - 0.015 * k, 0.022, loc=(0, 0, 0.78 - 0.08 * k), mat="bone", seg=20, ring=6) for k in range(4)]
+    pelvis = sphere("sk_p", 0.13, loc=(0, 0, 0.38), scale=(1.2, 0.8, 0.6), mat="bone", seg=14, rings=8)
+    bones = [cyl("sk_l", 0.035, 0.03, 0.36, loc=(sx * 0.09, 0, 0.17), mat="bone", seg=8) for sx in (-1, 1)]
+    bones += [cyl("sk_a", 0.03, 0.03, 0.4, loc=(sx * 0.24, 0, 0.62), rot=("Y", sx * 0.3), mat="bone", seg=8) for sx in (-1, 1)]
+    blade = box("sk_sw", (0.05, 0.02, 0.5), loc=(0.34, -0.1, 0.7), rot=("Y", 0.25), mat="metal", bevel=0.01)
+    join("mon_skeleton", [skull, jaw, spine, pelvis, blade] + sockets + ribs + bones, 40)
+
+    # Troll: hunched giant with tusks and a log club
+    tb = sphere("tr_b", 0.55, loc=(0, 0.05, 0.75), scale=(1.1, 0.9, 1.0), mat="body", seg=28, rings=16)
+    belly = sphere("tr_belly", 0.42, loc=(0, -0.2, 0.62), scale=(1, 0.6, 0.9), mat="belly", seg=24, rings=14)
+    th = sphere("tr_h", 0.25, loc=(0, -0.3, 1.25), mat="body", seg=20, rings=12)
+    tusks = [cyl("tr_t", 0.04, 0.0, 0.16, loc=(sx * 0.1, -0.48, 1.2), rot=("X", -0.3), mat="horn", seg=8) for sx in (-1, 1)]
+    tlegs = [cyl("tr_l", 0.16, 0.14, 0.4, loc=(sx * 0.25, 0, 0.2), mat="body", seg=12) for sx in (-1, 1)]
+    tarms = [cyl("tr_a", 0.13, 0.12, 0.7, loc=(sx * 0.62, -0.1, 0.62), rot=("Y", sx * 0.25), mat="body", seg=12) for sx in (-1, 1)]
+    log = cyl("tr_club", 0.1, 0.18, 0.9, loc=(0.8, -0.3, 0.75), rot=("X", -0.5), mat="wood", seg=12)
+    loin = cyl("tr_cloth", 0.5, 0.52, 0.2, loc=(0, 0.02, 0.38), mat="cloth", seg=24)
+    join("mon_troll", [tb, belly, th, log, loin] + tusks + tlegs + tarms, 50)
+
+    # Dragon: body, long neck, horned head with snout, tail, legs; wing separate
+    db = sphere("dr_body", 0.7, loc=(0, 0.2, 0.9), scale=(0.9, 1.3, 0.85), mat="body", seg=32, rings=18)
+    belly = sphere("dr_belly", 0.6, loc=(0, -0.05, 0.8), scale=(0.75, 1.1, 0.75), mat="belly", seg=28, rings=16)
+    neck = [sphere("dr_n", 0.3 - 0.025 * k, loc=(0, -0.55 - 0.18 * k, 1.25 + 0.2 * k), mat="body", seg=18, rings=10) for k in range(5)]
+    head = sphere("dr_h", 0.34, loc=(0, -1.38, 2.15), scale=(0.9, 1.25, 0.8), mat="body", seg=24, rings=14)
+    snout = box("dr_sn", (0.36, 0.42, 0.24), loc=(0, -1.72, 2.05), mat="body", bevel=0.09)
+    nostrils = [sphere("dr_ns", 0.04, loc=(sx * 0.09, -1.93, 2.12), mat="dark", seg=8, rings=6) for sx in (-1, 1)]
+    horns = []
+    for sx in (-1, 1):
+        hn = cyl("dr_horn", 0.07, 0.0, 0.45, loc=(0, 0, 0.22), mat="horn", seg=10)
+        hn.data.transform(Matrix.Rotation(-0.7, 4, "X"))
+        hn.data.transform(Matrix.Rotation(sx * 0.35, 4, "Y"))
+        hn.data.transform(Matrix.Translation((sx * 0.17, -1.2, 2.35)))
+        horns.append(hn)
+    spikes = [cyl("dr_sp", 0.08, 0.0, 0.22, loc=(0, 0.5 - 0.3 * k, 1.62 - 0.05 * abs(k - 1)), mat="horn", seg=6) for k in range(4)]
+    tail = [sphere("dr_t", 0.28 - 0.04 * k, loc=(0, 1.1 + 0.32 * k, 0.6 - 0.07 * k), mat="body", seg=16, rings=10) for k in range(6)]
+    tip = cyl("dr_tip", 0.16, 0.0, 0.3, loc=(0, 3.1, 0.2), rot=("X", -math.pi / 2), mat="horn", seg=4)
+    dlegs = [cyl("dr_l", 0.17, 0.13, 0.55, loc=(sx * 0.42, y, 0.28), mat="body", seg=12) for sx in (-1, 1) for y in (-0.25, 0.6)]
+    claws = [sphere("dr_c", 0.13, loc=(sx * 0.42, y - 0.06, 0.06), scale=(1, 1.3, 0.6), mat="dark", seg=10, rings=6) for sx in (-1, 1) for y in (-0.25, 0.6)]
+    join("mon_dragon", [db, belly, head, snout, tip] + neck + nostrils + horns + spikes + tail + dlegs + claws, 50)
+    # right wing, origin at the shoulder joint
+    bones = [cyl("dw_bone", 0.04, 0.025, 1.4, loc=(0, 0, 0.7), mat="horn", seg=6) for _ in range(3)]
+    for k, b in enumerate(bones):
+        b.data.transform(Matrix.Rotation(-0.5 - 0.42 * k, 4, "Y"))
+    memb = extrude_poly("dw_m", [(0.0, 0.0), (0.6, 1.2), (1.2, 0.9), (1.35, 0.4), (1.1, -0.1), (0.7, 0.05), (0.3, -0.25)],
+                        0.03, mat="membrane")
+    memb.data.transform(Matrix.Rotation(-0.2, 4, "Y"))
+    join("mon_dragon_wing", bones + [memb], 20)
+
+
+def props():
+    # Treasure chest: base and a lid hinged at the back edge
+    base = box("ch_base", (0.7, 0.48, 0.38), loc=(0, 0, 0.19), mat="wood", bevel=0.03)
+    bands = [box("ch_band", (0.06, 0.5, 0.4), loc=(x, 0, 0.19), mat="gold") for x in (-0.26, 0.26)]
+    coins = [cyl("coin", 0.06, 0.06, 0.02, loc=(-0.2 + 0.1 * (i % 5), -0.1 + 0.1 * (i // 5), 0.37 + 0.01 * (i % 3)), mat="gold", seg=12) for i in range(10)]
+    join("prop_chest", [base] + bands + coins, 30)
+    lid = cyl("ch_lid", 0.24, 0.24, 0.7, loc=(0, 0, 0), rot=("Y", math.pi / 2), mat="wood", seg=20)
+    cut = box("ch_cut", (0.8, 0.6, 0.3), loc=(0, 0, -0.15), mat="wood")
+    m = lid.modifiers.new("c", "BOOLEAN"); m.object = cut; m.operation = "DIFFERENCE"
+    bpy.context.view_layer.objects.active = lid
+    bpy.ops.object.modifier_apply(modifier="c")
+    bpy.data.objects.remove(cut, do_unlink=True)
+    lid.data.transform(Matrix.Translation((0, -0.24, 0)))     # hinge on the back edge
+    lid.data.transform(Matrix.Scale(1.0, 4))
+    lock = box("ch_lock", (0.1, 0.04, 0.12), loc=(0, -0.49, 0.0), mat="gold", bevel=0.01)
+    join("prop_chest_lid", [lid, lock], 40)
+
+    # Campfire: stones, crossed logs and a flame (animated in the browser)
+    stones = [sphere("cf_s", 0.1, loc=(0.32 * math.cos(a), 0.32 * math.sin(a), 0.05), scale=(1.2, 1, 0.7), mat="stone", seg=10, rings=6)
+              for a in [i * 2 * math.pi / 9 for i in range(9)]]
+    logs = [cyl("cf_log", 0.05, 0.05, 0.55, loc=(0, 0, 0.1), rot=("Z", a), mat="wood", seg=8) for a in (0.3, 1.4, 2.5)]
+    for lg in logs:
+        lg.data.transform(Matrix.Rotation(math.pi / 2, 4, "X"))
+    join("prop_campfire", stones + logs, 30)
+    flame = sphere("cf_fl", 0.16, loc=(0, 0, 0.26), scale=(1, 1, 1.9), mat="flame", seg=16, rings=10)
+    inner = sphere("cf_in", 0.09, loc=(0, -0.02, 0.22), scale=(1, 1, 1.7), mat="glow", seg=12, rings=8)
+    join("prop_flame", [flame, inner], 70)
+
+    # Portal: a ring of standing stones (the swirl is drawn in the browser)
+    ring = torus("pt_ring", 0.42, 0.08, loc=(0, 0, 0.5), rot=("X", math.pi / 2), mat="stone", seg=36, ring=10)
+    runes = [box("pt_rune", (0.06, 0.1, 0.06), loc=(0.42 * math.cos(a), -0.06, 0.5 + 0.42 * math.sin(a)), mat="glow")
+             for a in [i * 2 * math.pi / 8 for i in range(8)]]
+    feet = [box("pt_foot", (0.18, 0.2, 0.12), loc=(sx * 0.32, 0, 0.06), mat="stone", bevel=0.03) for sx in (-1, 1)]
+    join("prop_portal", [ring] + runes + feet, 40)
+
+    # Spike trap: plate plus spikes (spikes pop up in the browser)
+    plate = box("sp_plate", (0.62, 0.62, 0.04), loc=(0, 0, 0.02), mat="metal", bevel=0.01)
+    join("prop_trapplate", [plate], 30)
+    spikes = [cyl("spk", 0.04, 0.0, 0.22, loc=(-0.2 + 0.2 * (i % 3), -0.2 + 0.2 * (i // 3), 0.11), mat="metal", seg=6) for i in range(9)]
+    join("prop_spikes", spikes, 20)
+
+    # Potion bottle
+    bottle = lathe("pot_b", [(0, 0), (0.1, 0), (0.12, 0.04), (0.12, 0.14), (0.05, 0.2), (0.045, 0.26), (0.055, 0.28), (0, 0.28)], mat="glass", seg=20)
+    liquid = lathe("pot_l", [(0, 0.01), (0.105, 0.01), (0.11, 0.04), (0.11, 0.12), (0, 0.12)], mat="glow", seg=20)
+    cork = cyl("pot_c", 0.04, 0.04, 0.05, loc=(0, 0, 0.3), mat="wood", seg=10)
+    join("prop_potion", [bottle, liquid, cork], 40)
+
+    # Island scenery
+    trunk = cyl("tr_tr", 0.07, 0.1, 0.6, loc=(0, 0, 0.3), mat="wood", seg=8)
+    leaves = [cyl("tr_lf", 0.42 - 0.1 * k, 0.0, 0.55, loc=(0, 0, 0.6 + 0.3 * k), mat="leaf", seg=9) for k in range(3)]
+    join("prop_tree", [trunk] + leaves, 25)
+    palm_t = [cyl("pm_t", 0.07 - 0.005 * k, 0.065 - 0.005 * k, 0.25, loc=(0.03 * k * k * 0.3, 0, 0.12 + 0.24 * k), mat="wood", seg=8) for k in range(6)]
+    fronds = []
+    for i in range(6):
+        a = i * math.pi / 3
+        f = extrude_poly("pm_f", [(0, 0), (0.25, 0.06), (0.55, 0.0), (0.25, -0.06)], 0.015, mat="leaf", plane="XY")
+        f.data.transform(Matrix.Rotation(-0.35, 4, "Y"))
+        f.data.transform(Matrix.Rotation(a, 4, "Z"))
+        f.data.transform(Matrix.Translation((0.3, 0, 1.5)))
+        fronds.append(f)
+    join("prop_palm", palm_t + fronds, 25)
+    rock = sphere("rk", 0.3, loc=(0, 0, 0.12), scale=(1.3, 1, 0.7), mat="stone", seg=8, rings=6)
+    join("prop_rock", [rock], 15)
+
+    # Snake head with a separate lower jaw (for swallowing heroes)
+    sh = sphere("sn_h", 0.26, loc=(0, -0.1, 0.04), scale=(0.95, 1.4, 0.55), mat="body", seg=24, rings=14)
+    eyes = [sphere("sn_e", 0.07, loc=(sx * 0.15, -0.2, 0.15), mat="belly", seg=12, rings=8) for sx in (-1, 1)]
+    pupils = [box("sn_p", (0.02, 0.02, 0.09), loc=(sx * 0.17, -0.25, 0.17), mat="dark") for sx in (-1, 1)]
+    join("snake_head", [sh] + eyes + pupils, 60)
+    jaw = sphere("sn_j", 0.22, loc=(0, -0.12, -0.02), scale=(0.9, 1.35, 0.3), mat="belly", seg=20, rings=10)
+    tongue = extrude_poly("sn_t", [(-0.02, 0), (0.02, 0), (0.02, -0.25), (0.06, -0.33), (0.0, -0.28), (-0.06, -0.33), (-0.02, -0.25)], 0.01, mat="membrane", plane="XY")
+    tongue.data.transform(Matrix.Translation((0, -0.3, 0.0)))
+    join("snake_jaw", [jaw, tongue], 50)
+
+    # Oware board: carved wooden board, 2 rows of 6 pits plus two stores
+    board = box("ow_board", (3.4, 1.25, 0.24), loc=(0, 0, 0.12), mat="wood", bevel=0.08)
+    cutters = []
+    for r, y in enumerate((-0.28, 0.28)):
+        for c in range(6):
+            cutters.append(sphere("ow_pit", 0.22, loc=(-1.1 + 0.44 * c, y, 0.26), scale=(1, 1, 0.75), mat="wood", seg=20, rings=12))
+    for x in (-1.5, 1.5):
+        cutters.append(sphere("ow_store", 0.24, loc=(x, 0, 0.26), scale=(0.75, 2.0, 0.75), mat="wood", seg=20, rings=12))
+    for ct in cutters:
+        mm = board.modifiers.new("c", "BOOLEAN"); mm.object = ct; mm.operation = "DIFFERENCE"
+    bpy.context.view_layer.objects.active = board
+    for mm in list(board.modifiers):
+        bpy.ops.object.modifier_apply(modifier=mm.name)
+    for ct in cutters:
+        bpy.data.objects.remove(ct, do_unlink=True)
+    join("oware_board", [board], 35)
+    seed = sphere("ow_seed", 0.055, loc=(0, 0, 0.04), scale=(1.2, 0.9, 0.75), mat="belly", seg=10, rings=6)
+    join("oware_seed", [seed], 60)
+
+    # Four-in-a-Row: frame with 7x6 holes, and a ridged coin
+    frame = box("fr", (3.6, 0.3, 3.2), loc=(0, 0, 1.6), mat="body", bevel=0.05)
+    holes = [cyl("fh", 0.2, 0.2, 0.6, loc=(-1.5 + 0.5 * c, 0, 0.35 + 0.5 * r), rot=("X", math.pi / 2), mat="body", seg=24)
+             for r in range(6) for c in range(7)]
+    for hh in holes:
+        mm = frame.modifiers.new("c", "BOOLEAN"); mm.object = hh; mm.operation = "DIFFERENCE"
+    bpy.context.view_layer.objects.active = frame
+    for mm in list(frame.modifiers):
+        bpy.ops.object.modifier_apply(modifier=mm.name)
+    for hh in holes:
+        bpy.data.objects.remove(hh, do_unlink=True)
+    legs = [box("fl", (0.18, 0.7, 0.3), loc=(sx * 1.75, 0, 0.0), mat="body", bevel=0.04) for sx in (-1, 1)]
+    join("four_frame", [frame] + legs, 30)
+    coin = cyl("fc", 0.19, 0.19, 0.12, loc=(0, 0, 0), rot=("X", math.pi / 2), mat="body", seg=28)
+    rim = torus("fcr", 0.13, 0.02, loc=(0, -0.06, 0), rot=("X", math.pi / 2), mat="accent", seg=24, ring=6)
+    rim2 = torus("fcr2", 0.13, 0.02, loc=(0, 0.06, 0), rot=("X", math.pi / 2), mat="accent", seg=24, ring=6)
+    join("four_coin", [coin, rim, rim2], 40)
+
+
+def build_world():
+    reset()
+    monsters()
+    props()
+    export(os.path.join(OUT, "kk_world.glb"))
+
+
 if __name__ == "__main__":
-    build_pieces()
-    build_hero()
+    only = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    if not only or "pieces" in only:
+        build_pieces()
+    if not only or "hero" in only:
+        build_hero()
+    if not only or "world" in only:
+        build_world()
     names = sorted(o.name for o in bpy.data.objects)
     print("hero parts:", ", ".join(names))

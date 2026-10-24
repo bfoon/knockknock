@@ -85,11 +85,18 @@ window.TTStage3D = (function () {
 
     /* ───────────────────────── assets ───────────────────────── */
     var lib = null;
-    var libReady = new Promise(function (res) {
-      if (!T.GLTFLoader || !opts.pieces) { res(null); return; }
-      new T.GLTFLoader().load(opts.pieces, function (g) {
-        lib = {}; g.scene.children.slice().forEach(function (o) { lib[o.name] = o; }); res(lib);
-      }, undefined, function () { res(null); });
+    function loadGlb(url) {
+      return new Promise(function (res) {
+        if (!T.GLTFLoader || !url) { res({}); return; }
+        new T.GLTFLoader().load(url, function (g) {
+          var out = {}; g.scene.children.slice().forEach(function (o) { out[o.name] = o; }); res(out);
+        }, undefined, function () { res({}); });
+      });
+    }
+    var libReady = Promise.all([loadGlb(opts.pieces), loadGlb(opts.world)]).then(function (all) {
+      lib = {};
+      all.forEach(function (part) { for (var k in part) lib[k] = part[k]; });
+      return lib;
     });
 
     var M = {};
@@ -308,6 +315,7 @@ window.TTStage3D = (function () {
       return s;
     }
     function seatSpots(game, n) {
+      if (PLUGINS[game] && PLUGINS[game].spots) return PLUGINS[game].spots(n);
       if (game === "ludo") return [[-6.3, -3.8], [6.3, -3.8], [6.1, 2.6], [-6.1, 2.6]];   // by colour corner
       if (game === "words") {
         return [[-6.1, 2.3], [6.1, -3.0], [6.1, 2.3], [-6.1, -3.0]].slice(0, n);
@@ -316,6 +324,7 @@ window.TTStage3D = (function () {
       return [[-half, 2.4], [half, -2.4]];
     }
     function seatColor(game, seat, st) {
+      if (PLUGINS[game] && PLUGINS[game].color) return PLUGINS[game].color(seat, st);
       if (game === "ludo") return TT.LUDO_COLORS[st.colours[seat]];
       if (game === "chess") return seat === 0 ? "#f5e9cf" : "#5eead4";
       if (game === "dam") return seat === 0 ? "#f1e1bd" : "#e2b25a";
@@ -374,8 +383,11 @@ window.TTStage3D = (function () {
     /* ───────────────────────── build a whole table ───────────────────────── */
     function buildBoard(match) {
       clearGroup(boardG);
+      ticks = [];
       var st = match.state;
-      if (match.game === "chess") {
+      if (PLUGINS[match.game]) {
+        PLUGINS[match.game].build(ctx, match);
+      } else if (match.game === "chess") {
         boardG.add(plinth(8, 8)); boardG.add(checker(8, "#d8c093", "#6e4a2e"));
         addCoords(8);
       } else if (match.game === "dam") {
@@ -400,6 +412,15 @@ window.TTStage3D = (function () {
     function syncPieces(match) {
       clearGroup(piecesG); pieces = {};
       var st = match.state;
+      if (PLUGINS[match.game]) {
+        PLUGINS[match.game].sync(ctx, match);
+        heroes.forEach(function (h) {
+          var on = st.turn === h.seat && !st.over;
+          h.glow.material.opacity = on ? 0.95 : 0.25;
+          h.glow.scale.setScalar(on ? 1.08 : 1);
+        });
+        return;
+      }
       if (match.game === "chess") {
         for (var i = 0; i < 64; i++) {
           var p = st.board.charAt(i);
@@ -915,8 +936,13 @@ window.TTStage3D = (function () {
     }
 
     /* ───────────────────────── public: show / play ───────────────────────── */
-    var queue = Promise.resolve(), camIntro = 0;
+    var queue = Promise.resolve(), camIntro = 0, backlog = 0;
     function framing(game, st) {
+      if (PLUGINS[game] && PLUGINS[game].camera) {
+        var cam = PLUGINS[game].camera(st);
+        camBase.set(cam[0], cam[1], cam[2]); camLook.set(cam[3] || 0, cam[4] || 0, cam[5] || 0);
+        return;
+      }
       if (game === "chess") { camBase.set(0, 11.2, 11.6); camLook.set(0, 0, 0.5); }
       else if (game === "dam") { var k = st.size === 10 ? 1.22 : 1; camBase.set(0, 11 * k, 11 * k); camLook.set(0, 0, 0.8); }
       else { camBase.set(0, 12.4, 11.8); camLook.set(0, 0, 0.6); }
@@ -944,15 +970,21 @@ window.TTStage3D = (function () {
     function play(match, events) {
       if (!cur || cur.id !== match.id || !events || !events.length || document.hidden) return show(match);
       var prev = cur;
+      backlog++;
       queue = queue.then(function () {
         return libReady.then(function () {
+          // Fallen behind (fast players, slow projector)? Skip ahead instead
+          // of replaying a long queue of animations.
+          if (backlog > 2) return null;
           var p;
           if (match.game === "chess") p = playChess(events, match.state);
           else if (match.game === "dam") p = playDam(events, prev.state);
           else if (match.game === "ludo") p = playLudo(events, match.state);
+          else if (PLUGINS[match.game]) p = PLUGINS[match.game].play(ctx, events, match, prev) || Promise.resolve();
           else p = playWords(events, match.state);
           return p.catch(function (err) { console.warn("[tt3d]", err); });
         }).then(function () {
+          backlog = Math.max(0, backlog - 1);
           cur = match;
           syncPieces(match);
           if (events.some(function (e) { return e.type === "over"; })) celebrate(match);
@@ -1037,6 +1069,7 @@ window.TTStage3D = (function () {
         }
         if (u.crown) u.crown.rotation.y += dt * 0.8;
       });
+      for (var ti = 0; ti < ticks.length; ti++) { try { ticks[ti](dt, elapsed); } catch (e) { /* keep rendering */ } }
       heroes.forEach(function (h) {
         if (h.hero && h.hero.update) h.hero.update(dt, elapsed);
         if (h.hero && h.hero.isSprite) h.hero.obj.position.y = 1.0 + Math.abs(Math.sin(elapsed * 2.5)) * 0.15;
@@ -1061,6 +1094,20 @@ window.TTStage3D = (function () {
     }
     requestAnimationFrame(loop);
 
+    /* ───────────────────────── plugin context ───────────────────────── */
+    var ticks = [];
+    var ctx = {
+      T: T, scene: scene, world: world, boardG: boardG, piecesG: piecesG, fxG: fxG,
+      pieces: function () { return pieces; }, setPiece: function (k, o) { pieces[k] = o; },
+      heroes: function () { return heroes; }, heroPlay: heroPlay, heroFor: heroFor,
+      anim: anim, delay: delay, ease: ease, easeOut: easeOut, hop: hop, ring: ring, sparks: sparks,
+      swordSlash: swordSlash, splitPiece: splitPiece, floatText: floatText, confetti: confetti,
+      cloneNamed: cloneNamed, makePiece: makePiece, addEyes: addEyes, smat: smat, misc: misc,
+      canvasTex: canvasTex, plinth: plinth, texturedBoard: texturedBoard, showDie: showDie,
+      lookAll: lookAll, clearGroup: clearGroup, onTick: function (f) { ticks.push(f); },
+      shake: function (v) { shake = Math.max(shake, v); }, flash: flash, elapsed: function () { return elapsed; },
+    };
+
     return {
       show: show, play: play, react: react, celebrate: celebrate,
       current: function () { return cur; },
@@ -1068,5 +1115,6 @@ window.TTStage3D = (function () {
     };
   }
 
-  return { create: create };
+  var PLUGINS = window.TTStagePlugins = window.TTStagePlugins || {};
+  return { create: create, plugins: PLUGINS };
 })();

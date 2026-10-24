@@ -21,7 +21,8 @@ from .models import GameNight, Match, Player
 RNG = random.SystemRandom()
 
 # Preferred table size for each game (min is always 2).
-TABLE_SIZE = {"chess": 2, "dam": 2, "ludo": 4, "words": 3}
+TABLE_SIZE = {"chess": 2, "dam": 2, "ludo": 4, "words": 3,
+              "oware": 2, "four": 2, "snakes": 4, "quest": 4}
 POINTS_2 = [3, 0]
 POINTS_N = [3, 2, 1, 0]
 DRAW_POINTS = 1

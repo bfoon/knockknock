@@ -114,7 +114,7 @@
     var ds = $("tt-damsize"); if (ds) ds.value = String(night.dam_size);
     renderPlayers(); renderBoard(); renderTables(); renderFeaturedHead();
     if (hasTables && !stage3d && window.TTStage3D) {
-      stage3d = TTStage3D.create($("tt-3d"), { pieces: root.dataset.pieces });
+      stage3d = TTStage3D.create($("tt-3d"), { pieces: root.dataset.pieces, world: root.dataset.world });
       showFeatured(false);
     }
   }
@@ -272,6 +272,7 @@
         var turn = st.turn === i && x.status === "active";
         var extra = "";
         if (x.game === "words") extra = " <b>" + st.scores[i] + "</b>";
+        if (TT.phoneUI && TT.phoneUI[x.game] && TT.phoneUI[x.game].head) extra = TT.phoneUI[x.game].head(x, i);
         if (x.game === "ludo") extra = ' <i style="background:' + TT.LUDO_COLORS[st.colours[i]] + '"></i>';
         return '<span class="tt-feat-p' + (turn ? " is-turn" : "") + '">' + TT.avatar(s.avatar, 34) + esc(s.name) + extra + "</span>";
       }).join('<span class="tt-vs">vs</span>');

@@ -10,7 +10,7 @@ from django.urls import reverse
 from games.avatars import is_valid_avatar_id, normalize_avatar_id, parse_hero_avatar
 
 from . import services
-from .engines import Illegal, chess, draughts, ludo, words
+from .engines import Illegal, chess, draughts, four, ludo, oware, quest, snakes, words
 from .models import GameNight, Match, Player
 from .routing import websocket_urlpatterns
 
@@ -164,6 +164,143 @@ class WordsEngineTests(TestCase):
         self.assertEqual(len(words.private(st, 0)["rack"]), 7)
 
 
+class FixedRng:
+    """Feeds scripted dice so adventure / snakes tests are deterministic."""
+    def __init__(self, rolls):
+        self.rolls = list(rolls)
+
+    def randint(self, a, b):
+        return self.rolls.pop(0)
+
+
+class OwareTests(TestCase):
+    def test_sow_and_capture_chain(self):
+        st = oware.new_game()
+        st["pits"] = [0, 0, 0, 0, 0, 3,   1, 2, 4, 4, 4, 4]
+        # seat 0 sows pit 5: seeds land in 6, 7, 8 -> 8 has 5 (no capture)
+        ev = oware.apply(st, 0, {"pit": 5})
+        self.assertEqual(ev[0]["path"], [6, 7, 8])
+        st = oware.new_game()
+        st["pits"] = [0, 0, 0, 0, 0, 2,   1, 2, 4, 4, 4, 4]
+        ev = oware.apply(st, 0, {"pit": 5})          # lands 6 (->2) and 7 (->3): capture both
+        cap = [e for e in ev if e["type"] == "capture"][0]
+        self.assertEqual((sorted(cap["pits"]), cap["count"]), ([6, 7], 5))
+        self.assertEqual(st["store"][0], 5)
+
+    def test_grand_slam_captures_nothing(self):
+        st = oware.new_game()
+        st["pits"] = [0, 0, 0, 0, 0, 2,   1, 1, 0, 0, 0, 0]
+        ev = oware.apply(st, 0, {"pit": 5})
+        self.assertIn("grandslam", [e["type"] for e in ev])
+        self.assertEqual(st["store"][0], 0)
+
+    def test_must_feed_an_empty_opponent(self):
+        st = oware.new_game()
+        st["pits"] = [1, 0, 0, 0, 0, 1,   0, 0, 0, 0, 0, 0]
+        self.assertEqual(oware.legal(st), [5])      # only pit 5 reaches the other side
+        with self.assertRaises(Illegal):
+            oware.apply(st, 0, {"pit": 0})
+
+    def test_seeds_are_conserved(self):
+        r = random.Random(5)
+        for seed in range(40):
+            st, r = oware.new_game(), random.Random(seed)
+            while not st["over"]:
+                oware.apply(st, st["turn"], {"pit": r.choice(oware.legal(st))})
+            self.assertEqual(sum(st["store"]) + sum(st["pits"]), 48)
+
+
+class SnakesTests(TestCase):
+    def test_ladder_snake_and_bounce(self):
+        st = snakes.new_game(2)
+        st["pos"][0] = 1
+        ev = snakes.apply(st, 0, {"type": "roll"}, FixedRng([3]))     # 1 -> 4 -> ladder to 25
+        self.assertIn("ladder", [e["type"] for e in ev])
+        self.assertEqual(st["pos"][0], 25)
+        st["pos"][1] = 24
+        ev = snakes.apply(st, 1, {"type": "roll"}, FixedRng([3]))     # 24 -> 27 -> snake to 5
+        self.assertIn("snake", [e["type"] for e in ev])
+        self.assertEqual(st["pos"][1], 5)
+        st["pos"][0] = 97
+        ev = snakes.apply(st, 0, {"type": "roll"}, FixedRng([5]))     # 97 + 5 bounces back to 98
+        self.assertTrue(ev[1]["bounce"])
+        self.assertEqual(st["pos"][0], 98)
+
+    def test_reaching_100_wins(self):
+        st = snakes.new_game(3)
+        st["pos"] = [95, 10, 20]
+        ev = snakes.apply(st, 0, {"type": "roll"}, FixedRng([5]))
+        self.assertTrue(st["over"])
+        self.assertEqual(st["result"]["ranking"][0], [0])
+        self.assertEqual(st["result"]["ranking"][1], [2])              # then by position
+
+
+class FourTests(TestCase):
+    def test_vertical_win_and_full_column(self):
+        st = four.new_game()
+        for i in range(3):
+            four.apply(st, 0, {"col": 3}); four.apply(st, 1, {"col": 4})
+        ev = four.apply(st, 0, {"col": 3})
+        self.assertTrue(st["over"])
+        self.assertEqual([e["type"] for e in ev][:2], ["drop", "line"])
+        st = four.new_game()
+        for i in range(6):
+            four.apply(st, i % 2, {"col": 0})
+        with self.assertRaises(Illegal):
+            four.apply(st, 0, {"col": 0})
+
+
+class QuestTests(TestCase):
+    def test_monster_blocks_and_is_slain(self):
+        st = quest.new_game(2)
+        # roll 4 from 0: tile 2 holds a slime, so the hero stops there and fights
+        ev = quest.apply(st, 0, {"type": "roll"}, FixedRng([4, 6]))
+        walk = [e for e in ev if e["type"] == "walk"][0]
+        self.assertEqual((walk["path"], walk["blocked"]), ([1, 2], "slime"))
+        fight = [e for e in ev if e["type"] == "fight"][0]
+        self.assertEqual(fight["result"], "win")
+        self.assertNotIn("2", st["monsters"])
+        self.assertEqual(st["heroes"][0]["gold"], 2)
+
+    def test_knockout_sends_you_to_camp_and_costs_gold(self):
+        st = quest.new_game(2)
+        h = st["heroes"][1]
+        h.update(pos=15, hp=1, gold=10, camp=14)
+        st["turn"] = 1
+        # roll 1 -> skeleton on 16; hero misses (1), skeleton hits (6) -> KO
+        ev = quest.apply(st, 1, {"type": "roll"}, FixedRng([1, 1, 6]))
+        self.assertIn("ko", [e["type"] for e in ev])
+        self.assertEqual((h["pos"], h["hp"], h["gold"]), (14, quest.MAX_HP, 5))
+
+    def test_potion_is_a_free_action_and_rest_heals(self):
+        st = quest.new_game(2)
+        st["heroes"][0]["hp"] = 4
+        quest.apply(st, 0, {"type": "potion"}, FixedRng([]))
+        self.assertEqual((st["heroes"][0]["hp"], st["turn"]), (9, 0))   # still your turn
+        quest.apply(st, 0, {"type": "rest"}, FixedRng([]))
+        self.assertEqual((st["heroes"][0]["hp"], st["turn"]), (10, 1))
+        with self.assertRaises(Illegal):
+            quest.apply(st, 1, {"type": "rest"}, FixedRng([]))           # already full
+
+    def test_final_blow_on_the_dragon_ends_the_quest(self):
+        st = quest.new_game(2)
+        st["heroes"][0].update(pos=quest.LAST, gold=4)
+        st["heroes"][1]["gold"] = 30
+        st["monsters"][str(quest.LAST)]["hp"] = 1
+        ev = quest.apply(st, 0, {"type": "roll"}, FixedRng([6]))
+        self.assertIn("slay", [e["type"] for e in ev])
+        self.assertTrue(st["over"])
+        self.assertEqual(st["heroes"][0]["gold"], 29)
+        self.assertEqual(st["result"]["ranking"][0], [1])                # still ranked by gold
+
+    def test_random_quests_finish(self):
+        for seed in range(25):
+            r = random.Random(seed)
+            st = quest.new_game(4, r)
+            while not st["over"]:
+                quest.apply(st, st["turn"], {"type": "roll"}, r)
+
+
 class HeroAvatarTests(TestCase):
     def test_hero_ids(self):
         self.assertTrue(is_valid_avatar_id("kh-0350241520"))
@@ -217,6 +354,14 @@ class ServiceTests(TestCase):
         outsider = Player.objects.exclude(id__in=m.seats).get()
         with self.assertRaises(Illegal):
             services.apply_action(m.id, outsider.id, {"move": "e2e4"})
+
+    def test_new_games_deal_tables(self):
+        self._players(5)
+        for game, sizes in (("oware", [2, 2]), ("four", [2, 2]), ("snakes", [2, 3]), ("quest", [2, 3])):
+            Match.objects.filter(night=self.night).update(status="void")
+            night, created = services.deal(self.night, game)
+            self.assertEqual(sorted(len(m.seats) for m in created), sizes, game)
+            self.assertTrue(all(m.game == game for m in created))
 
     def test_duplicate_names_get_numbers(self):
         a = services.join(self.night, "Ama", "dragon")

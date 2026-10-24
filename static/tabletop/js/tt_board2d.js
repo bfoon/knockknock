@@ -178,7 +178,11 @@ window.TTBoard2D = (function () {
     var damSel = null, wordsSel = null, words = { placed: [] };
     var busy = false, deferred = [];   // taps made mid-animation replay afterwards
 
-    function flip() { return cur && (cur.game === "chess" || cur.game === "dam") && seat === 1; }
+    function flip() {
+      if (cur && PLUGINS[cur.game]) return !!(PLUGINS[cur.game].flip && PLUGINS[cur.game].flip(seat));
+      return cur && (cur.game === "chess" || cur.game === "dam") && seat === 1;
+    }
+    function plug() { return cur && PLUGINS[cur.game]; }
 
     function setViewBox(n) { root.setAttribute("viewBox", "0 0 " + n * S + " " + n * S); }
 
@@ -456,6 +460,8 @@ window.TTBoard2D = (function () {
           if (d < bd) { bd = d; best = t; }
         });
         if (best && bd < Math.pow(S * 1.2, 2)) act({ type: "move", token: best.token });
+      } else if (plug()) {
+        plug().tap(api, loc);
       } else if (cur.game === "words") {
         if (c < 0 || c > 14 || r < 0 || r > 14) return;
         wordsTap(r * 15 + c);
@@ -598,6 +604,7 @@ window.TTBoard2D = (function () {
       if (cur.game === "chess") drawChess(st);
       else if (cur.game === "dam") drawDam(st);
       else if (cur.game === "ludo") drawLudo(st);
+      else if (plug()) plug().draw(api, st);
       else drawWords(st);
     }
 
@@ -618,6 +625,7 @@ window.TTBoard2D = (function () {
           if (match.game === "chess") anim = animateChess(events, match.state);
           else if (match.game === "dam") anim = animateDam(events, prev.state);
           else if (match.game === "ludo") anim = animateLudo(events, match.state, prev.state);
+          else if (PLUGINS[match.game]) anim = PLUGINS[match.game].animate(api, events, match.state, prev.state) || Promise.resolve();
           else anim = animateWords(events);
         }
         return anim.catch(function () { /* never block the board */ }).then(function () {
@@ -642,6 +650,14 @@ window.TTBoard2D = (function () {
       var taps = deferred; deferred = []; taps.forEach(handleTap);
     }
 
+    // what game plugins (tt_games_more.js) get to work with
+    var api = {
+      S: S, svg: svg, root: root, defs: defs, gBoard: gBoard, gMarks: gMarks, gPieces: gPieces, gFx: gFx,
+      setViewBox: setViewBox, act: act, seat: function () { return seat; }, cur: function () { return cur; },
+      tween: tween, wait: wait, ease: ease, slideTo: slideTo, sliceAway: sliceAway, burst: burst,
+      ludoPawn: ludoPawn, eyes: eyes, flip: flip, container: container,
+    };
+
     return {
       render: render,
       words: {
@@ -655,5 +671,6 @@ window.TTBoard2D = (function () {
     };
   }
 
-  return { create: create, CHESS_ART: CHESS_ART };
+  var PLUGINS = window.TTBoardPlugins = window.TTBoardPlugins || {};
+  return { create: create, CHESS_ART: CHESS_ART, plugins: PLUGINS };
 })();

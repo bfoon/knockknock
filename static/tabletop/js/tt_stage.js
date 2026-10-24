@@ -296,15 +296,77 @@
     $("tt-toasts").appendChild(t);
     setTimeout(function () { t.remove(); }, 4000);
   }
+  /* Reactions: a big card in the middle of the screen — who sent it (avatar +
+   * name) and the emoji popping, wiggling and spraying mini copies — that
+   * drifts up and fades. Cards take separate lanes so a room full of 🔥 stays
+   * readable, and repeats from the same player within ~2 s grow a ×N combo on
+   * their card instead of stacking new ones. */
+  var RX_LANES = [50, 30, 70, 18, 82, 40, 60];   // % across the screen, centre first
+  var rxLive = [];                                // {lane, key, el, t, count, timer}
   function floatReact(pid, emoji) {
-    if (stage3d && matches[featured] && matches[featured].seats.some(function (s) { return s.id === pid; })) {
-      stage3d.react(pid, emoji); return;
-    }
     var p = players.filter(function (x) { return x.id === pid; })[0];
-    var f = TT.el("div", "tt-react", '<span class="tt-react-e">' + esc(emoji) + "</span>" + (p ? '<span class="tt-react-n">' + esc(p.name) + "</span>" : ""));
-    f.style.left = (8 + Math.random() * 80) + "%";
-    root.appendChild(f);
-    setTimeout(function () { f.remove(); }, 3200);
+    // the sender's 3D hero waves on the featured table too
+    if (stage3d && matches[featured] && matches[featured].seats.some(function (s) { return s.id === pid; })) {
+      stage3d.react(pid, emoji);
+    }
+    var now = Date.now(), key = pid + "|" + emoji;
+    var same = rxLive.filter(function (r) { return r.key === key && now - r.t < 2200 && !r.out; })[0];
+    if (same) {                                  // combo!
+      same.count++; same.t = now;
+      var c = same.el.querySelector(".tt-rx-combo");
+      c.textContent = "×" + same.count; c.hidden = false;
+      same.el.classList.remove("is-bump"); void same.el.offsetWidth; same.el.classList.add("is-bump");
+      spray(same.el.querySelector(".tt-rx-emoji"), emoji, 4);
+      schedule(same);
+      return;
+    }
+    var used = {};
+    rxLive.forEach(function (r) { if (!r.out) used[r.lane] = true; });
+    var lane = RX_LANES.filter(function (l) { return !used[l]; })[0];
+    if (lane == null) {                          // all busy: retire the oldest
+      var oldest = rxLive.filter(function (r) { return !r.out; }).sort(function (x, y) { return x.t - y.t; })[0];
+      if (oldest) { retire(oldest); lane = oldest.lane; } else lane = 50;
+    }
+    var meta = p ? ((window.kkAvatarsById || {})[p.avatar] || {}) : {};
+    var el = TT.el("div", "tt-rx");
+    el.style.left = (lane + (Math.random() * 4 - 2)) + "%";
+    el.style.setProperty("--rx-col", meta.color || "#facc15");
+    el.innerHTML =
+      '<div class="tt-rx-emoji"><span class="tt-rx-e">' + esc(emoji) + '</span><b class="tt-rx-combo" hidden>×1</b></div>' +
+      '<div class="tt-rx-who">' + (p ? TT.avatar(p.avatar, 52) : "") + "<span>" + esc(p ? p.name : "Someone") + "</span></div>";
+    root.appendChild(el);
+    var rec = { lane: lane, key: key, el: el, t: now, count: 1, timer: null, out: false };
+    rxLive.push(rec);
+    spray(el.querySelector(".tt-rx-emoji"), emoji, 7);
+    TT.sfx("tap");
+    schedule(rec);
+  }
+  function schedule(r) {
+    clearTimeout(r.timer);
+    r.timer = setTimeout(function () { retire(r); }, 3600);
+  }
+  function retire(r) {
+    if (r.out) return;
+    r.out = true;
+    clearTimeout(r.timer);
+    r.el.classList.add("is-out");
+    setTimeout(function () {
+      r.el.remove();
+      rxLive = rxLive.filter(function (x) { return x !== r; });
+    }, 900);
+  }
+  function spray(anchor, emoji, n) {
+    for (var i = 0; i < n; i++) {
+      var m = TT.el("span", "tt-rx-mini", esc(emoji));
+      var a = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.4;
+      var d = 70 + Math.random() * 90;
+      m.style.setProperty("--dx", Math.round(Math.cos(a) * d) + "px");
+      m.style.setProperty("--dy", Math.round(Math.sin(a) * d) + "px");
+      m.style.setProperty("--rot", Math.round((Math.random() - 0.5) * 120) + "deg");
+      m.style.animationDelay = (i * 40) + "ms";
+      anchor.appendChild(m);
+      (function (x) { setTimeout(function () { x.remove(); }, 1400); })(m);
+    }
   }
 
   /* ───────────────────────── host dock ───────────────────────── */

@@ -72,7 +72,7 @@
       toast(m.msg);
     } else if (m.t === "react") {
       var p = players.filter(function (q) { return q.id === m.player; })[0];
-      flyEmoji(m.emoji, p && p.name);
+      flyEmoji(m.emoji, p && (me && p.id === me.id ? "You" : p.name), p && p.avatar);
     } else if (m.t === "kicked") {
       root.innerHTML = '<div class="tt-card tt-center"><h2>You were removed from this game night.</h2></div>';
     } else if (m.t === "denied") {
@@ -332,8 +332,9 @@
     $("tt-toasts").appendChild(t);
     setTimeout(function () { t.remove(); }, 3500);
   }
-  function flyEmoji(emoji, name) {
-    var f = TT.el("div", "tt-react", '<span class="tt-react-e">' + esc(emoji) + "</span>" + (name ? '<span class="tt-react-n">' + esc(name) + "</span>" : ""));
+  function flyEmoji(emoji, name, avatar) {
+    var f = TT.el("div", "tt-react", '<span class="tt-react-e">' + esc(emoji) + "</span>" +
+      (name ? '<span class="tt-react-who">' + (avatar ? TT.avatar(avatar, 22) : "") + esc(name) + "</span>" : ""));
     f.style.left = (10 + Math.random() * 75) + "%";
     document.body.appendChild(f);
     setTimeout(function () { f.remove(); }, 3000);

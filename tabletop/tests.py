@@ -327,6 +327,23 @@ class ConsumerTests(TransactionTestCase):
         for c in (stage, a, b):
             await c.disconnect()
 
+    async def test_reactions_reach_stage_with_sender_and_are_rate_limited(self):
+        p1 = await sync_to_async(services.join)(self.night, "Awa", "dragon")
+        stage = await self._sock("stage", user=self.user)
+        await self._until(stage, "snapshot")
+        a = await self._sock("player", p1.token)
+        await self._until(a, "snapshot")
+        await self._until(stage, "players")
+        for _ in range(3):                        # a burst faster than the cooldown
+            await a.send_json_to({"t": "react", "emoji": "🔥"})
+        r = await self._until(stage, "react")
+        self.assertEqual((r["player"], r["emoji"]), (p1.id, "🔥"))
+        self.assertTrue(await stage.receive_nothing(timeout=0.3))   # the rest were dropped
+        await a.send_json_to({"t": "react", "emoji": "not-allowed"})
+        self.assertTrue(await stage.receive_nothing(timeout=0.3))
+        await stage.disconnect()
+        await a.disconnect()
+
     async def test_stage_needs_owner_and_bad_token_denied(self):
         c = await self._sock("stage")  # anonymous
         self.assertEqual((await c.receive_json_from())["t"], "denied")

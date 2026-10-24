@@ -38,6 +38,7 @@ from .models import GameNight, Match, Player
 
 REACTIONS = {"👏", "🔥", "😂", "😱", "🤯", "👑", "💀", "🎉", "😎", "🙏"}
 MAX_MSGS_PER_SEC = 12
+REACT_COOLDOWN = 0.35   # seconds between one phone's reactions
 
 
 def room(code):
@@ -240,6 +241,10 @@ class TabletopConsumer(AsyncJsonWebsocketConsumer):
         emoji = str(msg.get("emoji") or "")
         if emoji not in REACTIONS:
             return
+        now = time.monotonic()
+        if now - getattr(self, "_last_react", 0) < REACT_COOLDOWN:
+            return                          # tapping faster than this just builds the combo
+        self._last_react = now
         await self.broadcast({"t": "react", "player": self.player_id, "emoji": emoji})
 
     # ───────────────────────── host actions ─────────────────────────

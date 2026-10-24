@@ -198,6 +198,14 @@
       Open Chalk <i class="bi bi-arrow-right"></i>
     </span>
   </a>
+  <a href="{% url 'tabletop:list' %}" class="kk-action-tile tabletop">
+    <span class="kk-tile-icon">🎲</span>
+    <h2>New Live Tables Night</h2>
+    <p>Chess, Dam, Ludo &amp; Scramble on the big screen &mdash; everyone plays from their phone, 3D heroes and a live leaderboard.</p>
+    <span class="kk-btn kk-btn-primary btn-sm">
+      Open Live Tables <i class="bi bi-arrow-right"></i>
+    </span>
+  </a>
   <a href="{% url 'cards:create' %}" class="kk-action-tile cards">
     <span class="kk-tile-icon">💌</span>
     <h2>New Group Card</h2>
@@ -751,6 +759,17 @@
 .kk-action-tile.boardly::before {
   content: ""; position: absolute; inset: 0;
   background: radial-gradient(400px 200px at 100% 0%, rgba(236, 72, 153, 0.25), transparent);
+  pointer-events: none;
+}
+
+/* Live Tables tile — felt green with a gold glow. */
+.kk-action-tile.tabletop {
+  background: linear-gradient(135deg, #0b2a1d, #12402c);
+  border-color: rgba(250, 204, 21, 0.3);
+}
+.kk-action-tile.tabletop::before {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(400px 200px at 100% 0%, rgba(250, 204, 21, 0.22), transparent);
   pointer-events: none;
 }
 

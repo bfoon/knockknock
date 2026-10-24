@@ -720,11 +720,15 @@
       try { parts = JSON.parse(localStorage.getItem("kka-build") || "null"); } catch (e) { parts = null; }
       if (!parts || !A.isBuilt(A.encode(parts))) parts = A.random();
     }
-    var mode = stored && !A.isBuilt(stored) && window.kkAvatarsById[stored] ? "classic" : "build";
+    var H = window.KKHero && KKHero.hasWebGL ? KKHero : null;   // 3D Hero Forge, if loaded
+    var mode = stored && H && H.isHero(stored) ? "hero"
+      : stored && !A.isBuilt(stored) && window.kkAvatarsById[stored] ? "classic" : "build";
+    var forge = null;
 
     var wrap = el("div", "kka-builder");
     wrap.innerHTML =
       '<div class="kka-tabs" role="tablist">' +
+        (H ? '<button type="button" class="kka-tab" data-tab="hero" role="tab">🦸 3D Hero</button>' : "") +
         '<button type="button" class="kka-tab" data-tab="build" role="tab">✨ Create character</button>' +
         '<button type="button" class="kka-tab" data-tab="classic" role="tab">😀 Classic</button>' +
       "</div>" +
@@ -735,6 +739,7 @@
         '<div class="kka-sect">Gear</div><div class="kka-strip" data-k="acc"></div>' +
         '<div class="kka-sect">Face</div><div class="kka-strip" data-k="face"></div>' +
       "</div>" +
+      (H ? '<div class="kka-panel" data-panel="hero"><div class="kka-hero"></div></div>' : "") +
       '<div class="kka-classic-note" data-panel="classic">Pick a classic emoji fighter instead:</div>';
     nickCard.insertBefore(wrap, label || grid);
 
@@ -801,6 +806,17 @@
         t.setAttribute("aria-selected", on ? "true" : "false");
       });
       wrap.querySelector('[data-panel="build"]').style.display = m === "build" ? "" : "none";
+      var heroPanel = wrap.querySelector('[data-panel="hero"]');
+      if (heroPanel) heroPanel.style.display = m === "hero" ? "" : "none";
+      if (m === "hero" && H) {
+        if (!forge) {
+          forge = H.forge(wrap.querySelector(".kka-hero"), {
+            value: stored && H.isHero(stored) ? stored : null,
+            onChange: function (id) { if (mode === "hero") select(id); },
+          });
+        }
+        select(forge.get());
+      }
       wrap.querySelector('[data-panel="classic"]').style.display = m === "classic" ? "" : "none";
       if (label) label.style.display = "none";
       grid.style.display = m === "classic" ? "" : "none";
@@ -832,7 +848,7 @@
     // but if another script shows it, follow the user's choice.
     grid.addEventListener("click", function (e) {
       var tile = e.target.closest(".kk-avatar-tile");
-      if (tile && !tile.classList.contains("kka-built-tile") && mode === "build") setMode("classic");
+      if (tile && !tile.classList.contains("kka-built-tile") && (mode === "build" || mode === "hero")) setMode("classic");
     });
 
     renderStrips();

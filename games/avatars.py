@@ -24,6 +24,18 @@ longest built id is 23) with no migration. `avatar_by_id` resolves a built
 id to a synthetic catalog dict so exports, results pages and leaderboards
 show the species emoji and label instead of degrading to the dragon.
 Keep BUILT_SPECIES / BUILT_ACCESSORIES / BUILT_FACES in step with the JS.
+
+HERO FORGE (3D characters)
+──────────────────────────
+Full-body 3D heroes modelled in Blender (tools/blender/build_tabletop_assets.py
+→ static/tabletop/models/kk_hero.glb) and assembled by static/js/kk_hero.js.
+The whole character is again in the id, one base-36 digit per slot:
+
+    kh-<body><skin><hair><hairColour><eyes><outfit><outfitColour><hat><prop><aura>
+    e.g. kh-0350241520
+
+13 chars, so it fits every avatar_id column. HERO_SLOTS must match SLOTS in
+kk_hero.js.
 """
 
 import re
@@ -114,6 +126,49 @@ BUILT_FACES = {"happy", "cute", "wink", "cool", "star", "tongue"}
 _BUILT_RE = re.compile(r"^kk-([a-z]{2,6})-(\d{1,2})-([a-z]{2,6})-([a-z]{2,8})$")
 
 
+# ── Hero Forge (3D) characters ──
+HERO_SLOTS = [  # (slot, number of options)
+    ("body", 4), ("skin", 14), ("hair", 10), ("hairColor", 12), ("eyes", 6),
+    ("outfit", 10), ("outfitColor", 12), ("hat", 12), ("prop", 10), ("aura", 6),
+]
+HERO_OUTFITS = ["hoodie", "armour", "wizard robe", "suit", "kaftan", "jersey",
+                "space suit", "ninja gi", "pirate coat", "overalls"]
+HERO_EMOJI = ["🧑", "🛡️", "🧙", "🕴️", "👳", "⚽", "🧑‍🚀", "🥷", "🏴‍☠️", "🧑‍🌾"]
+HERO_COLORS = [
+    "#ef4444", "#f97316", "#facc15", "#22c55e", "#14b8a6", "#06b6d4",
+    "#3b82f6", "#6366f1", "#a855f7", "#ec4899", "#f8fafc", "#1f2937",
+]
+_HERO_RE = re.compile(r"^kh-[0-9a-z]{10}$")
+
+
+def parse_hero_avatar(avatar_id):
+    """Return {slot: index} for a valid Hero Forge id, else None."""
+    key = str(avatar_id or "")
+    if not _HERO_RE.match(key):
+        return None
+    out = {}
+    for ch, (slot, count) in zip(key[3:], HERO_SLOTS):
+        v = int(ch, 36)
+        if v >= count:
+            return None
+        out[slot] = v
+    return out
+
+
+def _hero_meta(avatar_id):
+    h = parse_hero_avatar(avatar_id)
+    if not h:
+        return None
+    return {
+        "id": str(avatar_id),
+        "label": "Hero in " + HERO_OUTFITS[h["outfit"]],
+        "emoji": HERO_EMOJI[h["outfit"]],
+        "color": HERO_COLORS[h["outfitColor"]],
+        "category": "hero",
+        "anim": "kk-bounce",
+    }
+
+
 def parse_built_avatar(avatar_id):
     """Return (species, colour_index, accessory, face) for a built id, else None."""
     m = _BUILT_RE.match(str(avatar_id or ""))
@@ -158,18 +213,19 @@ def avatar_by_id(avatar_id):
     key = str(avatar_id)
     if key in AVATARS_BY_ID:
         return AVATARS_BY_ID[key]
-    return _built_meta(key) or _FALLBACK
+    return _built_meta(key) or _hero_meta(key) or _FALLBACK
 
 
 def is_valid_avatar_id(avatar_id):
     key = str(avatar_id or "")
-    return key in AVATARS_BY_ID or parse_built_avatar(key) is not None
+    return (key in AVATARS_BY_ID or parse_built_avatar(key) is not None
+            or parse_hero_avatar(key) is not None)
 
 
 def normalize_avatar_id(avatar_id):
     """Coerce anything to a real catalog id. Use before writing to the DB.
 
-    Built arena ids are kept as-is when well-formed.
+    Built arena ids and Hero Forge ids are kept as-is when well-formed.
     """
     key = str(avatar_id or "").strip()
     return key if is_valid_avatar_id(key) else DEFAULT_AVATAR_ID

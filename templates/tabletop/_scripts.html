@@ -1,0 +1,12 @@
+{% load static %}{% comment %}
+  Shared script stack for Live Tables pages. Needs `avatars` in context
+  (games.avatars.AVATARS) so emoji and built avatars resolve.
+{% endcomment %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+{% include "games/partials/avatar_data.html" with avatars=avatars %}
+<script src="{% static 'js/kk_avatars.js' %}?v=1"></script>
+<script src="{% static 'js/kk_hero.js' %}?v=1" data-glb="{% static 'tabletop/models/kk_hero.glb' %}"></script>
+<script src="{% static 'tabletop/js/tt_common.js' %}?v=1"></script>
+<script src="{% static 'tabletop/js/tt_geo.js' %}?v=1"></script>
+<script src="{% static 'tabletop/js/tt_board2d.js' %}?v=1"></script>

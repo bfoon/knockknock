@@ -23,6 +23,20 @@ A real-time interactive presentation & quiz platform — think **Mentimeter** me
 - Live leaderboard with full-screen projection mode
 - QR code join
 
+### 🎲 Live Tables (board-game nights) — `/tabletop/`
+- **Chess, Dam, Ludo and Scramble** played from phones, with the featured table in **3D on the big screen** next to a live leaderboard
+- Host deals everyone into tables (random or **by leaderboard rank**); points carry across rounds — win 3 · draw 1, or 3/2/1 in 3–4 player games — plus a ⚔️ count of pieces cut down
+- Server-authoritative rules in `tabletop/engines/` (full chess incl. castling/en passant/promotion; international 10×10 Dam with flying kings and the majority-capture rule; Ludo with server dice; Scramble checked against the public-domain ENABLE word list)
+- Captures are a little duel: the attacker leaps in, a glowing sword swings and the victim is **sliced in two** along the blade (real clipping planes); every piece breathes, blinks and watches the action
+- Phones: tap-to-move boards that face the player, dice / tile rack controls, spectate any table, emoji reactions on the projector
+- Big-screen views: split · board · ranks podium · all tables (keys 1–4, ← → to change table, auto-camera cuts to the action)
+
+### 🦸 Hero Forge (3D avatars)
+- Full-body game-style characters: 4 bodies × 14 skins × 10 hair × 12 hair colours × 6 eyes × 10 outfits (incl. kaftan) × 12 colours × 12 headwear (incl. kufi & headwrap) × 10 items (incl. kora) × 6 auras
+- Modelled in Blender from code: `tools/blender/build_tabletop_assets.py` → `static/tabletop/models/*.glb`
+  (`blender -b -P tools/blender/build_tabletop_assets.py`, then commit the .glb files)
+- Works in the quiz game too (new **🦸 3D Hero** tab on the join screen); ids look like `kh-0350241520` and fit the existing avatar columns
+
 ## 🧱 Stack
 
 | Layer | Tech |
@@ -65,6 +79,7 @@ static/         # CSS, JS, images
 - `ws/present/<session_code>/` — presenter control channel
 - `ws/play/<session_code>/` — participant channel
 - `ws/draw/<session_code>/` — drawing overlay broadcast
+- `ws/tabletop/<code>/` — Live Tables (stage, phones, spectators)
 
 ## 📐 Modes
 

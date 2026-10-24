@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     "community",
     "chalk",
     "icebreakers.apps.IcebreakersConfig",
+    "tabletop",
 ]
 
 MIDDLEWARE = [

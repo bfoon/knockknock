@@ -23,6 +23,7 @@ import chalk.routing
 # pages silently fell back to polling.
 import kura.routing
 import attendance.routing
+import tabletop.routing
 
 
 websocket_urlpatterns = (
@@ -33,6 +34,7 @@ websocket_urlpatterns = (
     + chalk.routing.websocket_urlpatterns
     + kura.routing.websocket_urlpatterns
     + attendance.routing.websocket_urlpatterns
+    + tabletop.routing.websocket_urlpatterns
 )
 
 

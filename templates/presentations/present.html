@@ -2503,6 +2503,14 @@
   captures when it starts.
 {% endcomment %}
 <script src="{% static 'js/kk_avatars.js' %}?v=1"></script>
+{# Hero Forge (3D characters from the Blender kit). three.js may already be on the page. #}
+<script>
+  if (!window.THREE) document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');
+</script>
+<script>
+  if (!window.THREE || !THREE.GLTFLoader) document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"><\/script>');
+</script>
+<script src="{% static 'js/kk_hero.js' %}?v=1" data-glb="{% static 'tabletop/models/kk_hero.glb' %}"></script>
 <script src="{% static 'js/kk_sound.js' %}?v=1"></script>
 <script src="{% static 'js/kk_arena.js' %}?v=1"></script>
 {% endif %}

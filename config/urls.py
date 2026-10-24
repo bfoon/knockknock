@@ -21,6 +21,7 @@ urlpatterns = [
     path("icebreakers/", include("icebreakers.urls", namespace="icebreakers")),
     path("community/", include("community.urls")),
     path("chalk/", include("chalk.urls", namespace="chalk")),
+    path("tabletop/", include("tabletop.urls", namespace="tabletop")),
 ]
 
 # ── User-uploaded media (/media/…) ─────────────────────────────────────

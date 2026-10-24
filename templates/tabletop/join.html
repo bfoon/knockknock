@@ -1,0 +1,96 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1020">
+<title>{% if night %}Join {{ night.title }}{% else %}Join a game night{% endif %} · Live Tables</title>
+<link rel="stylesheet" href="{% static 'tabletop/css/tabletop.css' %}?v=1">
+</head>
+<body>
+<main class="tt-join">
+  {% for m in messages %}<div class="tt-msg">{{ m }}</div>{% endfor %}
+
+  {% if not night %}
+    <div class="tt-card tt-center">
+      <div class="tt-gamesmall">{% for g in games %}<span>{{ g.emoji }}</span>{% endfor %}</div>
+      <h1>Join a game night</h1>
+      <p class="tt-dim">Type the six digits on the big screen.</p>
+      <form method="post" action="{% url 'tabletop:join' %}">
+        {% csrf_token %}
+        <input class="tt-codein" name="code" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" autocomplete="off" placeholder="000 000" value="{{ code }}" autofocus required>
+        <button class="tt-btn tt-btn-primary" type="submit" style="width:100%;padding:.9rem;font-size:1.1rem">Next →</button>
+      </form>
+    </div>
+  {% else %}
+    <form method="post" action="{% url 'tabletop:join_code' night.code %}" id="tt-joinform">
+      {% csrf_token %}
+      <input type="hidden" name="code" value="{{ night.code }}">
+      <input type="hidden" name="avatar_id" id="tt-avatar-id" value="dragon">
+      <div class="tt-card">
+        <p class="tt-dim" style="margin:0">{{ night.title }} · {{ night.pretty_code }}</p>
+        <h1>Make your player</h1>
+        <input type="text" name="name" maxlength="40" placeholder="Your name" required autocomplete="nickname" id="tt-name">
+
+        <div class="tt-tabs2" role="tablist">
+          <button type="button" class="is-on" data-tab="hero" role="tab">🦸 3D Hero</button>
+          <button type="button" data-tab="classic" role="tab">😀 Classic</button>
+        </div>
+        <div data-panel="hero"><div id="tt-forge"></div></div>
+        <div data-panel="classic" hidden>
+          <div class="tt-classic">
+            {% for label, avs in avatar_groups %}{% for a in avs %}
+              <button type="button" data-av="{{ a.id }}" title="{{ a.label }}" aria-label="{{ a.label }}">{{ a.emoji }}</button>
+            {% endfor %}{% endfor %}
+          </div>
+        </div>
+      </div>
+      <button class="tt-btn tt-btn-primary" type="submit" style="width:100%;padding:1rem;font-size:1.2rem">Enter the game night 🔥</button>
+    </form>
+  {% endif %}
+</main>
+
+{% if night %}
+{% include "tabletop/_scripts.html" %}
+<script>
+(function () {
+  "use strict";
+  var input = document.getElementById("tt-avatar-id");
+  var mode = "hero", heroId = null, classicId = "dragon";
+  var forge = null;
+  if (window.KKHero && KKHero.hasWebGL) {
+    forge = KKHero.forge(document.getElementById("tt-forge"), { onChange: function (id) { heroId = id; if (mode === "hero") input.value = id; } });
+    heroId = forge.get(); input.value = heroId;
+  } else {
+    // no 3D on this phone: classic avatars only
+    mode = "classic";
+    document.querySelector('[data-tab="hero"]').hidden = true;
+    document.querySelector('[data-panel="hero"]').hidden = true;
+    document.querySelector('[data-panel="classic"]').hidden = false;
+    document.querySelector('[data-tab="classic"]').classList.add("is-on");
+  }
+  document.querySelector(".tt-tabs2").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    mode = b.dataset.tab;
+    [].forEach.call(this.children, function (c) { c.classList.toggle("is-on", c === b); });
+    document.querySelector('[data-panel="hero"]').hidden = mode !== "hero";
+    document.querySelector('[data-panel="classic"]').hidden = mode !== "classic";
+    input.value = mode === "hero" ? heroId : classicId;
+  });
+  document.querySelector(".tt-classic").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    classicId = b.dataset.av; input.value = classicId;
+    [].forEach.call(this.children, function (c) { c.classList.toggle("is-on", c === b); });
+  });
+  try {
+    var n = localStorage.getItem("tt-name");
+    if (n) document.getElementById("tt-name").value = n;
+  } catch (e) { /* ignore */ }
+  document.getElementById("tt-joinform").addEventListener("submit", function () {
+    try { localStorage.setItem("tt-name", document.getElementById("tt-name").value); } catch (e) { /* ignore */ }
+  });
+})();
+</script>
+{% endif %}
+</body>
+</html>

@@ -1,0 +1,104 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ night.title }} · Live Tables</title>
+<link rel="stylesheet" href="{% static 'tabletop/css/tabletop.css' %}?v=1">
+</head>
+<body>
+<div id="tt-stage" class="is-lobby" data-code="{{ night.code }}" data-view="{{ night.view }}"
+     data-pieces="{% static 'tabletop/models/kk_pieces.glb' %}">
+
+  <header class="tt-top">
+    <span id="tt-net" data-state="connecting" title="Connection"></span>
+    <h1>{{ night.title }}</h1>
+    <span id="tt-round">Lobby</span>
+    <div class="tt-joinpill">
+      <div><small>Join on your phone</small><b>{{ night.pretty_code }}</b></div>
+      {% if qr %}<img src="{{ qr }}" alt="QR code to join">{% endif %}
+    </div>
+  </header>
+
+  {# ── lobby ── #}
+  <section class="tt-lobby">
+    <div class="tt-lobby-join">
+      {% if qr %}<img src="{{ qr }}" alt="Scan to join">{% endif %}
+      <p class="tt-bigcode">{{ night.pretty_code }}</p>
+      <p>Scan, or open <b>{{ request.get_host }}/tabletop/join</b></p>
+      <p>and type the code.</p>
+    </div>
+    <div class="tt-lobby-right">
+      <div class="tt-games">
+        {% for g in games %}
+          <button type="button" class="tt-game{% if g.key == night.game %} is-on{% endif %}" data-game="{{ g.key }}">
+            <span class="tt-game-e">{{ g.emoji }}</span><b>{{ g.label }}</b>
+            <small>{{ g.min }}{% if g.max != g.min %}–{{ g.max }}{% endif %} per table</small>
+          </button>
+        {% endfor %}
+      </div>
+      <button type="button" class="tt-btn tt-btn-primary tt-deal-big tt-deal">🎲 Deal tables &amp; start</button>
+      <div id="tt-count">0 players here</div>
+      <div id="tt-lobby-players" aria-live="polite"></div>
+    </div>
+  </section>
+
+  {# ── live ── #}
+  <section class="tt-main">
+    <div class="tt-featured">
+      <div id="tt-3d"></div>
+      <div id="tt-feat-head"></div>
+    </div>
+    <aside class="tt-side">
+      <div id="tt-podium"></div>
+      <div id="tt-grid"></div>
+      <div class="tt-panel tt-lb">
+        <h2>🏆 Leaderboard</h2>
+        <ol id="tt-leaders"></ol>
+      </div>
+      <div class="tt-panel tt-tables-panel">
+        <h2>Tables</h2>
+        <div id="tt-tables"></div>
+      </div>
+    </aside>
+  </section>
+
+  {# ── host dock ── #}
+  <nav class="tt-dock" aria-label="Host controls">
+    <button type="button" class="tt-live-only" data-view-btn="split" title="Board + leaderboard (1)">🎯 Split</button>
+    <button type="button" class="tt-live-only" data-view-btn="board" title="Board only (2)">♟️ Board</button>
+    <button type="button" class="tt-live-only" data-view-btn="leaderboard" title="Leaderboard (3)">🏆 Ranks</button>
+    <button type="button" class="tt-live-only" data-view-btn="tables" title="All tables (4)">🧩 Tables</button>
+    <span class="tt-sep"></span>
+    <button type="button" class="tt-live-only" id="tt-prev" title="Previous table (←)">◀</button>
+    <button type="button" id="tt-auto" class="tt-live-only is-on" title="Cut to the action automatically">🎥 Auto</button>
+    <button type="button" class="tt-live-only" id="tt-next" title="Next table (→)">▶</button>
+    <span class="tt-sep"></span>
+    {% for g in games %}<button type="button" data-game="{{ g.key }}" title="Next round: {{ g.label }}">{{ g.emoji }}</button>{% endfor %}
+    <select id="tt-pairing" aria-label="Pairing">
+      <option value="random">🔀 Random tables</option>
+      <option value="ranked">📈 By rank</option>
+    </select>
+    <button type="button" id="tt-deal">Deal round</button>
+    <button type="button" class="tt-live-only" id="tt-end">⏹ End round</button>
+    <span class="tt-sep"></span>
+    <label title="Check Scramble words against the dictionary"><input type="checkbox" id="tt-wordcheck"> 📖 Words</label>
+    <select id="tt-damsize" aria-label="Dam board"><option value="10">Dam 10×10</option><option value="8">Dam 8×8</option></select>
+    <button type="button" id="tt-people-btn">👥 Players</button>
+    <button type="button" id="tt-mute">🔊</button>
+    <button type="button" id="tt-fs" title="Full screen">⛶</button>
+    <a href="{% url 'tabletop:list' %}" style="color:inherit;text-decoration:none;padding:.45rem .5rem">✕</a>
+  </nav>
+  <div id="tt-people" class="tt-panel" hidden>
+    <h2>Players</h2>
+    <ul id="tt-people-list"></ul>
+    <button type="button" id="tt-reset" class="tt-btn" style="margin-top:.6rem">Reset all scores</button>
+  </div>
+  <div id="tt-toasts"></div>
+</div>
+
+{% include "tabletop/_scripts.html" %}
+<script src="{% static 'tabletop/js/tt_stage3d.js' %}?v=1"></script>
+<script src="{% static 'tabletop/js/tt_stage.js' %}?v=1"></script>
+</body>
+</html>

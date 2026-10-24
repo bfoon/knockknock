@@ -1,0 +1,59 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1020">
+<title>{{ night.title }} · Live Tables</title>
+<link rel="stylesheet" href="{% static 'tabletop/css/tabletop.css' %}?v=1">
+</head>
+<body>
+<div id="tt-play" data-code="{{ night.code }}" data-role="{{ role }}" data-token="{{ token }}" data-mode="lobby">
+  <header class="tt-phead">
+    <div id="tt-me"></div>
+    <span class="tt-code">{{ night.pretty_code }}</span>
+    <span id="tt-net" data-state="connecting"></span>
+    <button type="button" id="tt-mute" class="tt-btn tt-btn-ghost" style="padding:.3rem .5rem">🔊</button>
+  </header>
+
+  <div class="tt-watchbar" id="tt-watch-list" aria-label="Tables"></div>
+
+  {# lobby #}
+  <section class="tt-only-lobby">
+    <div class="tt-card tt-center">
+      {% if player %}
+        <div id="tt-lobby-hero"></div>
+        <p class="tt-dim" style="margin:.4rem 0 0;font-size:.8rem">Tap your character up top to restyle it</p>
+      {% endif %}
+      <p id="tt-wait-msg">Connecting…</p>
+    </div>
+    <div class="tt-card">
+      <h3 style="margin:.1rem 0 .6rem;font-size:.85rem;letter-spacing:.12em;text-transform:uppercase;color:var(--tt-dim)">🏆 Leaderboard</h3>
+      <ul id="tt-lobby-board"></ul>
+    </div>
+  </section>
+
+  {# table #}
+  <section class="tt-only-table">
+    <div id="tt-seats"></div>
+    <div id="tt-turn" class="tt-turn"></div>
+    <div id="tt-board"></div>
+    <div id="tt-controls"></div>
+    <div class="tt-row" style="margin-top:.6rem">
+      <button type="button" class="tt-btn tt-btn-ghost" id="tt-back-mine" hidden>↩︎ Back to my table</button>
+      <button type="button" class="tt-btn tt-btn-ghost" id="tt-to-lobby">🏆 Leaderboard</button>
+    </div>
+  </section>
+
+  {% if player %}
+  <div class="tt-reacts" aria-label="Send a reaction to the big screen">
+    {% for e in "👏🔥😂😱🤯👑💀🎉" %}<button type="button" data-react="{{ e }}">{{ e }}</button>{% endfor %}
+  </div>
+  {% endif %}
+  <div id="tt-toasts"></div>
+</div>
+
+{% include "tabletop/_scripts.html" %}
+<script src="{% static 'tabletop/js/tt_play.js' %}?v=1"></script>
+</body>
+</html>

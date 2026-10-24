@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Live Tables — Knock-Knock{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4">
+  <div>
+    <h1 class="mb-1">🎲 Live Tables</h1>
+    <p class="kk-text-dim mb-0">Game nights on the big screen: Chess, Dam, Ludo and Scramble, played from everyone's phone, with a live leaderboard.</p>
+  </div>
+  <a href="{% url 'core:dashboard' %}" class="kk-btn kk-btn-ghost"><i class="bi bi-grid-1x2"></i> Dashboard</a>
+</div>
+
+<form class="kk-card mb-4 tt-new" method="post" action="{% url 'tabletop:list' %}">
+  {% csrf_token %}
+  <input type="text" name="title" class="tt-new-input" placeholder="Name your game night (e.g. Friday Office Battle)" maxlength="120" aria-label="Game night name">
+  <div class="tt-new-games" role="radiogroup" aria-label="First game">
+    {% for g in games %}
+      <label class="tt-new-game">
+        <input type="radio" name="game" value="{{ g.key }}" {% if forloop.first %}checked{% endif %}>
+        <span><em>{{ g.emoji }}</em>{{ g.label }}<small>{{ g.min }}{% if g.max != g.min %}–{{ g.max }}{% endif %} per table</small></span>
+      </label>
+    {% endfor %}
+  </div>
+  <button class="kk-btn kk-btn-primary" type="submit"><i class="bi bi-play-fill"></i> Open game night</button>
+</form>
+
+<div class="kk-card">
+  <h2 class="h5 mb-3">Your game nights</h2>
+  {% for n in nights %}
+    <div class="tt-night-row">
+      <a href="{% url 'tabletop:stage' n.pk %}" class="tt-night-main">
+        <strong>{{ n.title }}</strong>
+        <span class="kk-text-dim">Code {{ n.pretty_code }} · {{ n.get_game_display }} · {{ n.players.count }} players · round {{ n.round }} · {{ n.created_at|date:"j M Y" }}</span>
+      </a>
+      <form method="post" action="{% url 'tabletop:delete' n.pk %}" onsubmit="return confirm('Delete this game night and its scores?')">
+        {% csrf_token %}
+        <button class="kk-btn kk-btn-ghost btn-sm text-danger" type="submit" aria-label="Delete"><i class="bi bi-trash"></i></button>
+      </form>
+    </div>
+  {% empty %}
+    <p class="kk-text-dim mb-0">No game nights yet — open one above, put it on the projector and let people scan in.</p>
+  {% endfor %}
+</div>
+
+<style>
+  .tt-new { display: flex; flex-direction: column; gap: .9rem; }
+  .tt-new-input { width: 100%; padding: .7rem 1rem; border-radius: 12px; border: 1px solid var(--kk-border); background: transparent; color: inherit; font-size: 1.05rem; }
+  .tt-new-games { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .6rem; }
+  .tt-new-game input { position: absolute; opacity: 0; }
+  .tt-new-game span { display: flex; flex-direction: column; align-items: center; gap: .15rem; padding: .8rem; border-radius: 14px; border: 2px solid var(--kk-border); cursor: pointer; font-weight: 700; }
+  .tt-new-game em { font-style: normal; font-size: 2rem; }
+  .tt-new-game small { font-weight: 400; opacity: .7; }
+  .tt-new-game input:checked + span { border-color: #facc15; background: rgba(250, 204, 21, .1); }
+  .tt-new-game input:focus-visible + span { outline: 2px solid #22d3ee; }
+  .tt-night-row { display: flex; align-items: center; gap: .5rem; padding: .6rem 0; border-bottom: 1px solid var(--kk-border); }
+  .tt-night-main { flex: 1; display: flex; flex-direction: column; text-decoration: none; color: inherit; }
+</style>
+{% endblock %}

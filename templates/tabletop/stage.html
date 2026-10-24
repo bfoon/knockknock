@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ night.title }} · Live Tables</title>
-<link rel="stylesheet" href="{% static 'tabletop/css/tabletop.css' %}?v=1">
+<link rel="stylesheet" href="{% static 'tabletop/css/tabletop.css' %}?v=2">
 </head>
 <body>
 <div id="tt-stage" class="is-lobby" data-code="{{ night.code }}" data-view="{{ night.view }}"
@@ -14,6 +14,8 @@
     <span id="tt-net" data-state="connecting" title="Connection"></span>
     <h1>{{ night.title }}</h1>
     <span id="tt-round">Lobby</span>
+    <span id="tt-awake" class="tt-awake" data-state="off" aria-live="polite"></span>
+    <button type="button" class="tt-fs-btn" data-fs title="Full screen (F)">⛶ <span class="tt-fs-label">Full screen</span></button>
     <div class="tt-joinpill">
       <div><small>Join on your phone</small><b>{{ night.pretty_code }}</b></div>
       {% if qr %}<img src="{{ qr }}" alt="QR code to join">{% endif %}
@@ -27,6 +29,7 @@
       <p class="tt-bigcode">{{ night.pretty_code }}</p>
       <p>Scan, or open <b>{{ request.get_host }}/tabletop/join</b></p>
       <p>and type the code.</p>
+      <p class="tt-fs-hint">Tip: press <kbd>F</kbd> or click ⛶ to fill the projector.</p>
     </div>
     <div class="tt-lobby-right">
       <div class="tt-games">
@@ -86,7 +89,7 @@
     <select id="tt-damsize" aria-label="Dam board"><option value="10">Dam 10×10</option><option value="8">Dam 8×8</option></select>
     <button type="button" id="tt-people-btn">👥 Players</button>
     <button type="button" id="tt-mute">🔊</button>
-    <button type="button" id="tt-fs" title="Full screen">⛶</button>
+    <button type="button" id="tt-fs" data-fs title="Full screen (F)">⛶</button>
     <a href="{% url 'tabletop:list' %}" style="color:inherit;text-decoration:none;padding:.45rem .5rem">✕</a>
   </nav>
   <div id="tt-people" class="tt-panel" hidden>
@@ -95,10 +98,11 @@
     <button type="button" id="tt-reset" class="tt-btn" style="margin-top:.6rem">Reset all scores</button>
   </div>
   <div id="tt-toasts"></div>
+  <button type="button" id="tt-fs-resume" class="tt-fs-resume" data-fs hidden>⛶ Click to return to full screen</button>
 </div>
 
 {% include "tabletop/_scripts.html" %}
-<script src="{% static 'tabletop/js/tt_stage3d.js' %}?v=1"></script>
-<script src="{% static 'tabletop/js/tt_stage.js' %}?v=1"></script>
+<script src="{% static 'tabletop/js/tt_stage3d.js' %}?v=2"></script>
+<script src="{% static 'tabletop/js/tt_stage.js' %}?v=2"></script>
 </body>
 </html>

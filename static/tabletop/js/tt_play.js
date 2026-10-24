@@ -17,6 +17,16 @@
   var pinnedWatch = false;      // user chose to watch another table
   var board = null, lobbyHero = null, rackOrder = null, swapMode = false, swapSel = {};
 
+  // the phone must not dim or lock mid-game (players wait between turns)
+  TT.awakeBadge($("tt-awake"));
+  var awakeWarned = false;
+  setTimeout(function () {
+    if (!awakeWarned && TT.keepAwake().state() === "off") {
+      awakeWarned = true;
+      toast("Tap the screen once so it stays on during the game ☀️");
+    }
+  }, 2500);
+
   var net = TT.connect(CODE, { t: "hello", role: ROLE, token: TOKEN }, onMsg, function (s) {
     $("tt-net").dataset.state = s;
   });

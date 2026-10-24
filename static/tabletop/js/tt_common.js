@@ -128,7 +128,71 @@ window.TT = (function () {
   function sfx(name) { if (!muted && SOUNDS[name]) { try { SOUNDS[name](); } catch (e) { /* ignore */ } } }
   function setMuted(m) { muted = !!m; try { localStorage.setItem("tt-mute", muted ? "1" : "0"); } catch (e) { /* ignore */ } }
 
+  /* ---------------- keep the screen awake ----------------
+   * 1. Screen Wake Lock API (Chrome/Edge/Android, Safari 16.4+). The browser
+   *    drops the lock whenever the page is hidden, so it is re-requested each
+   *    time the page becomes visible again, and on the first tap if the very
+   *    first request was refused.
+   * 2. Older phones: a 3 KB silent looping video, muted and invisible, which
+   *    browsers treat as "media playing" and so don't dim the screen.
+   * onChange(state) reports "on" | "fallback" | "off" for the little sun icon.
+   */
+  var awake = null;
+  function keepAwake(onChange) {
+    if (awake) { if (onChange) awake.listeners.push(onChange); awake.report(); return awake; }
+    var state = "off", lock = null, video = null, listeners = onChange ? [onChange] : [];
+    function set(s) { state = s; listeners.forEach(function (f) { try { f(s); } catch (e) { /* ignore */ } }); }
+    function startVideo() {
+      var m = window.TT_MEDIA || {};
+      if (!m.awakeMp4) return;
+      if (!video) {
+        video = document.createElement("video");
+        video.setAttribute("playsinline", ""); video.setAttribute("muted", ""); video.muted = true; video.loop = true;
+        video.setAttribute("aria-hidden", "true");
+        video.style.cssText = "position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0.01;pointer-events:none;z-index:-1";
+        [["awakeWebm", "video/webm"], ["awakeMp4", "video/mp4"]].forEach(function (src) {
+          if (!m[src[0]]) return;
+          var so = document.createElement("source"); so.src = m[src[0]]; so.type = src[1]; video.appendChild(so);
+        });
+        document.body.appendChild(video);
+      }
+      var pr = video.play();
+      if (pr && pr.then) pr.then(function () { if (state !== "on") set("fallback"); }).catch(function () { /* needs a tap */ });
+    }
+    function request() {
+      if (document.visibilityState !== "visible") return;
+      if ("wakeLock" in navigator) {
+        if (lock) return;
+        navigator.wakeLock.request("screen").then(function (l) {
+          lock = l; set("on");
+          l.addEventListener("release", function () { lock = null; if (state === "on") set("off"); });
+        }).catch(function () { startVideo(); });   // refused (no tap yet / battery saver)
+      } else {
+        startVideo();
+      }
+    }
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "visible") { request(); if (video && state === "fallback") video.play().catch(function () {}); }
+    });
+    ["pointerdown", "keydown", "touchend"].forEach(function (ev) {
+      document.addEventListener(ev, function () { if (!lock && state !== "fallback") request(); }, { passive: true });
+    });
+    request();
+    awake = { state: function () { return state; }, listeners: listeners, report: function () { set(state); }, request: request };
+    return awake;
+  }
+  function awakeBadge(el) {
+    if (!el) return;
+    keepAwake(function (s) {
+      el.dataset.state = s;
+      el.textContent = s === "off" ? "😴" : "☀️";
+      el.title = s === "off" ? "This screen may go to sleep — tap anywhere to keep it on"
+                             : "Screen stays on during the game";
+    });
+  }
+
   return {
+    keepAwake: keepAwake, awakeBadge: awakeBadge,
     esc: esc, $: $, el: el, vibrate: vibrate, connect: connect, avatar: avatar,
     sfx: sfx, setMuted: setMuted, isMuted: function () { return muted; },
     GAME_LABEL: { chess: "Chess", dam: "Dam", ludo: "Ludo", words: "Scramble" },

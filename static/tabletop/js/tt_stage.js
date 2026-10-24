@@ -130,6 +130,7 @@
         el = TT.el("div", "tt-lobby-p tt-pop");
         el.dataset.pid = p.id;
         box.appendChild(el);
+        (function (n) { setTimeout(function () { n.classList.remove("tt-pop"); }, 650); })(el);
         TT.sfx("tap");
       }
       delete seen[p.id];
@@ -151,9 +152,10 @@
     var rows = players.slice(0, 30);
     var byId = {};
     [].forEach.call(list.children, function (c) { byId[c.dataset.pid] = c; });
-    var frag = document.createDocumentFragment();
+    var ordered = [], fresh = {};
     rows.forEach(function (p) {
-      var el = byId[p.id] || TT.el("li", "tt-lb-row");
+      var el = byId[p.id];
+      if (!el) { el = TT.el("li", "tt-lb-row"); fresh[p.id] = true; }
       el.dataset.pid = p.id;
       var medal = p.rank === 1 ? "🥇" : p.rank === 2 ? "🥈" : p.rank === 3 ? "🥉" : p.rank;
       var html =
@@ -171,13 +173,25 @@
         el.classList.remove("tt-flash"); void el.offsetWidth; el.classList.add("tt-flash");
       }
       prevPoints[p.id] = p.points;
-      frag.appendChild(el);
+      ordered.push(el);
     });
-    list.innerHTML = "";
-    list.appendChild(frag);
-    [].forEach.call(list.children, function (c) {
+    // Reorder IN PLACE, moving only rows that changed position. Emptying the
+    // list and re-inserting every row restarted each row's CSS entrance
+    // animation (which starts at opacity 0), so on a busy machine rows blinked
+    // out — or stayed invisible — on every update.
+    var keep = {};
+    ordered.forEach(function (el, i) {
+      keep[el.dataset.pid] = true;
+      if (list.children[i] !== el) list.insertBefore(el, list.children[i] || null);
+    });
+    [].slice.call(list.children).forEach(function (c) { if (!keep[c.dataset.pid]) c.remove(); });
+    ordered.forEach(function (c) {
       var o = oldTop[c.dataset.pid];
-      if (o == null) { c.classList.add("tt-pop"); return; }
+      if (fresh[c.dataset.pid] || o == null) {
+        c.classList.add("tt-pop");
+        setTimeout(function () { c.classList.remove("tt-pop"); }, 650);   // never left to replay
+        return;
+      }
       var dy = o - c.getBoundingClientRect().top;
       if (Math.abs(dy) > 2) {
         c.animate([{ transform: "translateY(" + dy + "px)" }, { transform: "none" }], { duration: 650, easing: "cubic-bezier(.2,.8,.2,1)" });
@@ -313,9 +327,7 @@
     }
     else if ((b = e.target.closest("#tt-auto"))) { autoCam = !autoCam; b.classList.toggle("is-on", autoCam); }
     else if ((b = e.target.closest("#tt-mute"))) { TT.setMuted(!TT.isMuted()); b.textContent = TT.isMuted() ? "🔇" : "🔊"; }
-    else if ((b = e.target.closest("#tt-fs"))) {
-      if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
-    }
+    else if ((b = e.target.closest("[data-fs]"))) toggleFullscreen();
     else if ((b = e.target.closest("#tt-people-btn"))) { $("tt-people").hidden = !$("tt-people").hidden; renderPeople(); }
     else if ((b = e.target.closest("[data-kick]"))) { if (confirm("Remove this player from the night?")) host("kick", { player: +b.dataset.kick }); }
     else if ((b = e.target.closest("[data-bench]"))) host("bench", { player: +b.dataset.bench });
@@ -356,8 +368,41 @@
   }
   ["mousemove", "keydown", "touchstart"].forEach(function (ev) { window.addEventListener(ev, wake, { passive: true }); });
   wake();
+  /* ───────────────────────── full screen + keep awake ───────────────────────── */
+  function fsElement() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+  function toggleFullscreen() {
+    var d = document.documentElement;
+    if (fsElement()) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      try { localStorage.setItem("tt-fs", "0"); } catch (e) { /* ignore */ }
+      return;
+    }
+    var req = d.requestFullscreen || d.webkitRequestFullscreen;
+    if (!req) { toast("This browser can't go full screen — try Chrome or Edge, or press F11.", true); return; }
+    var pr = req.call(d, { navigationUI: "hide" });
+    if (pr && pr.catch) pr.catch(function () { toast("Full screen was blocked — press F11 instead.", true); });
+    try { localStorage.setItem("tt-fs", "1"); } catch (e) { /* ignore */ }
+    TT.keepAwake().request();     // the click is a user gesture: a good moment to (re)lock
+  }
+  function onFsChange() {
+    var on = !!fsElement();
+    root.classList.toggle("is-fullscreen", on);
+    [].forEach.call(document.querySelectorAll(".tt-fs-label"), function (l) { l.textContent = on ? "Exit full screen" : "Full screen"; });
+    if (on) $("tt-fs-resume").hidden = true;
+  }
+  document.addEventListener("fullscreenchange", onFsChange);
+  document.addEventListener("webkitfullscreenchange", onFsChange);
+  // double-click the board to toggle
+  var feat = document.querySelector(".tt-featured");
+  if (feat) feat.addEventListener("dblclick", toggleFullscreen);
+  // after a reload mid-event the browser won't re-enter full screen by itself
+  // (it needs a click), so offer a one-tap way back
+  try { if (localStorage.getItem("tt-fs") === "1" && !fsElement()) $("tt-fs-resume").hidden = false; } catch (e) { /* ignore */ }
+  TT.awakeBadge($("tt-awake"));
+
   window.addEventListener("keydown", function (e) {
     if (e.target.matches("input, select, textarea")) return;
+    if (e.key === "f" || e.key === "F") { toggleFullscreen(); return; }
     if (e.key === "ArrowRight") $("tt-next").click();
     if (e.key === "ArrowLeft") $("tt-prev").click();
     if (e.key === "1") host("view", { view: "split" });

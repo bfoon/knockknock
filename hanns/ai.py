@@ -530,6 +530,59 @@ def digest_slide(slide, index=None, with_ids=True):
     return out
 
 
+DEFAULTS = {"rot": 0, "italic": False, "animDelay": 0, "stroke": "none", "fill": "none", "radius": 0}
+
+
+def compact(d):
+    """Drop fields at their default value — big decks fit far more slides per request."""
+    return {k: v for k, v in d.items() if not (k in DEFAULTS and v == DEFAULTS[k])}
+
+
+# ─────────────────────────── waves (big decks) ───────────────────────────
+# One huge request used to carry the whole deck: the prompt was cut at 30 000
+# characters (≈ 6-10 real slides) and the reply ran out of tokens part-way, so
+# "whole deck" only ever touched the first handful of slides. Now each request
+# takes a WAVE of slides that comfortably fits; the browser sends the rest in
+# later waves (it gets them back in `pending`) and carries a style guide from
+# wave to wave so the deck stays consistent.
+
+WAVE_CHARS = 14_000     # slide digests per request
+WAVE_MAX = 6            # slides per request
+
+
+def take_wave(slides, with_ids=True):
+    """Split [{index, slide}] into (digests for this request, pending indexes)."""
+    digests, pending, used = [], [], 0
+    for item in slides or []:
+        if not isinstance(item, dict):
+            continue
+        idx = item.get("index")
+        d = digest_slide(item.get("slide") or item, idx, with_ids=with_ids)
+        d["els"] = [compact(e) for e in d["els"]]
+        size = len(json.dumps(d))
+        if digests and (used + size > WAVE_CHARS or len(digests) >= WAVE_MAX):
+            pending.append(idx)
+            continue
+        digests.append(d)
+        used += size
+    return digests, pending
+
+
+def _guide_block(p):
+    guide = str(p.get("guide") or "").strip()[:1500]
+    deck = str(p.get("outline") or "").strip()[:2500]
+    out = ""
+    if deck:
+        out += "\nWHOLE DECK (for context — you only edit the slides listed below):\n" + deck + "\n"
+    if guide:
+        out += "\nDECK STYLE GUIDE (already applied to other slides of this deck — follow it exactly):\n" + guide + "\n"
+    return out
+
+
+GUIDE_ASK = ('Also return "guide": 2-4 short lines recording the concrete style decisions you made '
+             "(fonts, sizes, colours, spacing, decorative motifs) so later batches of this deck match.")
+
+
 def deck_outline(slides, limit=30):
     lines = []
     for i, s in enumerate((slides or [])[:limit]):
@@ -681,9 +734,12 @@ Return: {{"slides": [{{"index": int, "els": [{{"id": same id, ...only the fields
 - Keep every element and its meaning. Never invent new facts. Keep ids exactly.
 - {"You MAY fix typos, grammar and tighten wording in 'text' (keep meaning, keep language)." if fix_text else "Do NOT change any 'text' field."}
 """
-    digests = [digest_slide(s.get("slide") or s, s.get("index")) for s in slides[:12]]
-    data, model = ai_json(system, "SLIDES:\n" + json.dumps(digests)[:30000], temperature=0.4, max_tokens=16000)
-    return {"slides": _list(_obj(data, "slides").get("slides")), "fixText": fix_text}, model
+    digests, pending = take_wave(slides)
+    system += GUIDE_ASK
+    data, model = ai_json(system, _guide_block(p) + "SLIDES:\n" + json.dumps(digests), temperature=0.4, max_tokens=16000)
+    data = _obj(data, "slides")
+    return {"slides": _list(data.get("slides")), "fixText": fix_text, "pending": pending,
+            "guide": str(data.get("guide") or "")[:1500]}, model
 
 
 def action_decorate(p):
@@ -700,10 +756,12 @@ Return: {"slides": [{"index": int, "add": [ELEMENT...], "bgFx": optional, "bg": 
 - Give them gentle entrances (fade/zoom/float, animDelay 0-0.3) so they arrive before the content.
 - Keep a consistent decorative language across all slides.
 """
-    digests = [digest_slide(s.get("slide") or s, s.get("index")) for s in slides[:12]]
-    user = f"Decoration style: {style}\nSLIDES:\n" + json.dumps(digests)[:30000]
+    digests, pending = take_wave(slides)
+    system += GUIDE_ASK
+    user = f"Decoration style: {style}\n" + _guide_block(p) + "SLIDES:\n" + json.dumps(digests)
     data, model = ai_json(system, user, temperature=0.9, max_tokens=16000)
-    return {"slides": _list(_obj(data, "slides").get("slides"))}, model
+    data = _obj(data, "slides")
+    return {"slides": _list(data.get("slides")), "pending": pending, "guide": str(data.get("guide") or "")[:1500]}, model
 
 
 def action_animate(p):
@@ -720,9 +778,9 @@ Return: {{"slides": [{{"index": int, "transition": one of {TRANSITIONS}, "bgFx":
 - Vary transitions across the deck; save dramatic ones (shatter, curtain, burn, paper_grab) for 1-2 key moments.
 - Keep total build per slide under ~2.5 s. Use bgFx sparingly and only where it adds mood.
 """
-    digests = [digest_slide(s.get("slide") or s, s.get("index")) for s in slides[:20]]
-    data, model = ai_json(system, "SLIDES:\n" + json.dumps(digests)[:30000], temperature=0.7, max_tokens=12000)
-    return {"slides": _list(_obj(data, "slides").get("slides"))}, model
+    digests, pending = take_wave(slides)
+    data, model = ai_json(system, _guide_block(p) + "SLIDES:\n" + json.dumps(digests), temperature=0.7, max_tokens=12000)
+    return {"slides": _list(_obj(data, "slides").get("slides")), "pending": pending}, model
 
 
 def action_ideas(p):
@@ -753,10 +811,10 @@ TASK: Write speaker notes the presenter can read from the teleprompter.
 Return: {"slides": [{"index": int, "notes": "3-6 natural spoken sentences, with one [pause] cue where it lands"}]}
 Expand on what's on the slide — add the story, the "why", a transition line into the next slide. Don't just read the slide back.
 """
-    digests = [digest_slide(s.get("slide") or s, s.get("index"), with_ids=False) for s in slides[:25]]
-    data, model = ai_json(system, f"Tone: {style}\nSLIDES:\n" + json.dumps(digests)[:30000],
-                              temperature=0.8, max_tokens=12000)
-    return {"slides": _list(_obj(data, "slides").get("slides"))}, model
+    digests, pending = take_wave(slides, with_ids=False)
+    data, model = ai_json(system, f"Tone: {style}\n" + _guide_block({"outline": p.get("outline")}) + "SLIDES:\n" + json.dumps(digests),
+                          temperature=0.8, max_tokens=12000)
+    return {"slides": _list(_obj(data, "slides").get("slides")), "pending": pending}, model
 
 
 def action_rewrite(p):
@@ -774,9 +832,90 @@ def action_rewrite(p):
     return {"options": opts[:4]}, model
 
 
+def action_edit(p):
+    want = str(p.get("prompt") or "").strip()[:1500]
+    slides = p.get("slides") or []
+    system = SYSTEM_BASE + """
+TASK: Apply the author's INSTRUCTION to each slide listed. Change ONLY what the instruction asks for.
+Return: {"slides": [{"index": int,
+                     "els": [{"id": same id, ...only the fields you change (text allowed if the instruction is about wording)}],
+                     "add": [new ELEMENT, ...], "remove": [ids to delete],
+                     "bg": optional, "bgFx": optional, "transition": optional, "notes": optional}],
+         "guide": "..."}
+- Keep every id exactly. Never invent facts. Keep the slide's language unless asked to translate.
+- New elements must fit on the canvas and must not cover existing text.
+- Return an entry for EVERY slide listed. If the instruction doesn't apply to a slide, return {"index": i, "unchanged": true}.
+- Treat every slide consistently (same sizes/colours/positions for the same kind of change).
+""" + GUIDE_ASK
+    digests, pending = take_wave(slides)
+    user = f"INSTRUCTION: {want}\n" + _guide_block(p) + "SLIDES:\n" + json.dumps(digests)
+    data, model = ai_json(system, user, temperature=0.5, max_tokens=16000)
+    data = _obj(data, "slides")
+    return {"slides": _list(data.get("slides")), "pending": pending, "guide": str(data.get("guide") or "")[:1500]}, model
+
+
+def _region(p):
+    r = p.get("region") or {}
+    try:
+        x, y, w, h = (max(0, min(lim, int(float(r.get(k, 0))))) for k, lim in (("x", 960), ("y", 540), ("w", 960), ("h", 540)))
+    except (TypeError, ValueError):
+        raise AIError("Draw an area on the slide first.", status=400)
+    w, h = min(w, 960 - x), min(h, 540 - y)
+    if w < 24 or h < 16:
+        raise AIError("That area is too small — drag a bigger box.", status=400)
+    return x, y, w, h
+
+
+ILLUSTRATION_RULES = """ILLUSTRATION SVG RULES: viewBox="0 0 {w} {h}" exactly, no width/height attributes, NO text, NO images,
+NO external references, NO scripts. Flat modern vector illustration (like Stripe / Notion / Headspace art):
+simple confident shapes, a limited palette that matches the slide, soft gradients and gentle shadows,
+clear silhouette that reads at a glance from the back of a room. Transparent background unless a backdrop is asked for.
+Keep it under 14 KB — a few well-drawn shapes beat hundreds of tiny ones."""
+
+
+def action_region(p, deck_code):
+    want = str(p.get("prompt") or "").strip()[:1200]
+    x, y, w, h = _region(p)
+    mode = p.get("mode") if p.get("mode") in ("auto", "design", "illustration") else "auto"
+    slide = p.get("slide") or {}
+    system = SYSTEM_BASE + f"""
+TASK: The author highlighted a REGION of the current slide and asked for something to be put there.
+REGION: x={x}, y={y}, w={w}, h={h} (slide pixels). Everything you create must fit INSIDE it.
+Return: {{"els": [ELEMENT, ...], "illustration": null or {{"svg": "<svg ...>...</svg>", "alt": short description}},
+          "caption": "what you made, in a few words"}}
+- Match the slide: reuse its fonts, colours and style so the addition looks like it was always there.
+- Fill the region well (aim to use 80-100% of it) with a clear hierarchy; text must be readable at that size.
+- Don't repeat text that's already on the slide outside the region.
+""" + ("- The author wants a PICTURE: return an illustration (and at most a small caption text element).\n" if mode == "illustration" else
+       "- Build it from elements only (text, shapes, charts) — no illustration.\n" if mode == "design" else
+       "- If the request is for a picture, drawing, icon, scene or illustration, return an illustration; "
+       "otherwise build it from elements (text, shapes, charts).\n") + \
+        ILLUSTRATION_RULES.format(w=w, h=h)
+    user = (f"REQUEST: {want}\nCURRENT SLIDE (ids included): " + json.dumps(digest_slide(slide))[:9000] +
+            ("\nDECK: " + str(p.get("outline"))[:1500] if p.get("outline") else ""))
+    data, model = ai_json(system, user, temperature=0.9, max_tokens=12000)
+    data = data if isinstance(data, dict) else {}
+    result = {"els": _list(data.get("els")), "caption": str(data.get("caption") or "")[:120],
+              "region": {"x": x, "y": y, "w": w, "h": h}}
+    ill = data.get("illustration")
+    if isinstance(ill, dict) and ill.get("svg"):
+        try:
+            svg = sanitize_svg(ill.get("svg"))
+            result["image"] = {"url": save_svg(deck_code, svg), "alt": str(ill.get("alt") or want)[:160],
+                               "x": x, "y": y, "w": w, "h": h}
+        except AIError as e:
+            logger.info("Hanns AI: region illustration rejected: %s", e)
+            if not result["els"]:
+                raise AIError("The AI's drawing didn't pass the safety check. Try again.")
+    if not result["els"] and not result.get("image"):
+        raise AIError("The AI didn't make anything for that area. Try describing it differently.")
+    return result, model
+
+
 ACTIONS = {
     "deck": action_deck, "slide": action_slide, "polish": action_polish, "decorate": action_decorate,
     "animate": action_animate, "ideas": action_ideas, "notes": action_notes, "rewrite": action_rewrite,
+    "edit": action_edit,
 }
 
 
@@ -786,14 +925,22 @@ def _validate(action, p):
         raise AIError("Tell the AI what you want first." if action == "deck" else "Describe the slide you want.", status=400)
     if action == "rewrite" and not str(p.get("text") or "").strip():
         raise AIError("Select a text box first.", status=400)
-    if action in ("polish", "decorate", "animate", "notes") and not (p.get("slides") or []):
+    if action in ("polish", "decorate", "animate", "notes", "edit") and not (p.get("slides") or []):
         raise AIError("There are no slides to work on.", status=400)
+    if action == "edit" and len(str(p.get("prompt") or "").strip()) < 3:
+        raise AIError("Tell the AI what to change.", status=400)
+    if action == "region":
+        if len(str(p.get("prompt") or "").strip()) < 2:
+            raise AIError("Say what should go in the area.", status=400)
+        _region(p)
 
 
 def _builtin(action, payload, deck_code):
     from . import ai_fallback as fb
     if action == "background":
         return fb.fb_background(payload, deck_code, sanitize_svg, save_svg)
+    if action == "region":
+        return fb.fb_region(payload, deck_code, sanitize_svg, save_svg)
     fn = fb.FALLBACKS.get(action)
     if not fn:
         raise AIError("Unknown AI action.", status=400)
@@ -810,7 +957,7 @@ def run(action, payload, deck_code, use_ai=True):
     A request the user must fix (status 400: empty prompt, no text
     selected) is reported, never papered over.
     """
-    if action != "background" and action not in ACTIONS:
+    if action not in ("background", "region") and action not in ACTIONS:
         raise AIError("Unknown AI action.", status=400)
     _validate(action, payload)
 
@@ -819,6 +966,8 @@ def run(action, payload, deck_code, use_ai=True):
         try:
             if action == "background":
                 result, model = action_background(payload, deck_code)
+            elif action == "region":
+                result, model = action_region(payload, deck_code)
             else:
                 result, model = ACTIONS[action](payload)
             return result, model, None

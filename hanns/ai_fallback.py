@@ -427,7 +427,7 @@ def fb_background(p, deck_code, sanitize, save):
 # ── slide-level actions ──
 
 def _slides_in(p):
-    for s in (p.get("slides") or [])[:20]:
+    for s in (p.get("slides") or []):           # every slide sent — no silent cut-off
         yield int(s.get("index", 0)), (s.get("slide") or s)
 
 
@@ -615,5 +615,75 @@ def fb_rewrite(p):
     return {"options": uniq[:3]}
 
 
+# ── custom instruction / highlighted area ──
+
+def fb_edit(p):
+    from .ai import AIError
+    raise AIError("Custom instructions need the AI, which isn't available right now — "
+                  "try again in a little while, or use Polish / Decorate / Animate.", status=503)
+
+
+def _slide_style(slide):
+    """Borrow the slide's own font and colours so the addition fits in."""
+    texts = [e for e in (slide or {}).get("els") or [] if isinstance(e, dict) and e.get("type") == "text"]
+    body = min(texts, key=lambda e: e.get("size") or 99, default={}) if texts else {}
+    head = max(texts, key=lambda e: e.get("size") or 0, default={}) if texts else {}
+    return {"font": body.get("font") or "Archivo", "color": body.get("color") or "#16140f",
+            "head": head.get("font") or body.get("font") or "Archivo", "accent": head.get("color") or "#e8482b"}
+
+
+def fb_region(p, deck_code, sanitize, save):
+    want = str(p.get("prompt") or "").strip()
+    r = p.get("region") or {}
+    x, y, w, h = (int(float(r.get(k, d))) for k, d in (("x", 100), ("y", 100), ("w", 300), ("h", 200)))
+    st = _slide_style(p.get("slide"))
+    low = want.lower()
+    mode = p.get("mode")
+    words = re.findall(r"[A-Za-z][A-Za-z'-]+", want)
+    if mode == "illustration" or (mode != "design" and re.search(r"\b(picture|illustrat|drawing|draw|image|icon|scene|art)\w*", low)):
+        style = random.choice(["aurora", "waves", "geometric", "bokeh night", "paper nature"])
+        pal = mood_palette(want + " " + style)
+        svg = art(style, pal, _rng("region", want), calm=False)
+        # stretch the 1600x900 art to the area's proportions
+        svg = re.sub(r'\s+preserveAspectRatio="[^"]*"', "", svg, count=1)
+        svg = re.sub(r'viewBox="[^"]*"', 'viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice"', svg, count=1)
+        url = save(deck_code, sanitize(svg))
+        return {"els": [], "image": {"url": url, "alt": want[:160], "x": x, "y": y, "w": w, "h": h},
+                "caption": "abstract artwork", "region": {"x": x, "y": y, "w": w, "h": h},
+                "notice": "Drawn by the built-in designer (abstract art)."}
+    els = []
+    big_number = re.search(r"big number|kpi|metric|headline number|one number", low) or \
+        (len(re.findall(r"\d[\d.,%+]*", want)) == 1 and not re.search(r"chart|graph|trend|by (month|year|quarter)", low))
+    if big_number:
+        num = (re.findall(r"\d[\d.,%+]*", want) or ["100%"])[0]
+        label = re.sub(r"big number:?|kpi:?|\d[\d.,%+]*", "", want, flags=re.I).strip(" :-") [:60] or "and growing"
+        els += [{"type": "text", "text": num, "x": x, "y": y, "w": w, "h": int(h * 0.62), "align": "center",
+                 "font": st["head"], "size": max(28, min(150, int(h * 0.48))), "weight": 900, "color": st["accent"], "anim": "pop"},
+                {"type": "text", "text": label, "x": x, "y": y + int(h * 0.64), "w": w, "h": int(h * 0.34), "align": "center",
+                 "font": st["font"], "size": max(14, min(30, int(h * 0.12))), "color": st["color"], "anim": "fade", "animDelay": 0.2}]
+    elif re.search(r"chart|graph|trend|growth|percent|%|data|numbers|sales|stat", low):
+        labels = [w_.capitalize() for w_ in words if len(w_) > 3][:4] or ["Q1", "Q2", "Q3", "Q4"]
+        while len(labels) < 4:
+            labels.append(f"Item {len(labels) + 1}")
+        vals = [round(30 + 60 * abs(math.sin(i * 1.7 + len(want)))) for i in range(len(labels))]
+        els.append({"type": "chart", "chartKind": "bar", "x": x, "y": y, "w": w, "h": h, "title": want[:60],
+                    "chartData": [{"label": l, "value": v} for l, v in zip(labels, vals)], "accent": st["accent"],
+                    "anim": "rise"})
+    elif re.search(r"bullet|list|points|steps|tips|reasons", low):
+        lines = [s_.strip(" -•") for s_ in re.split(r"[,;\n]| and ", want) if len(s_.strip()) > 2][:5] or [want]
+        size = max(14, min(30, int(h / (len(lines) * 1.9 + 1))))
+        els.append({"type": "text", "text": "\n".join("• " + l_[:70] for l_ in lines), "x": x + 8, "y": y + 8,
+                    "w": w - 16, "h": h - 16, "font": st["font"], "size": size, "color": st["color"], "lh": 1.5,
+                    "anim": "rise"})
+    else:
+        els += [{"type": "rect", "x": x, "y": y, "w": w, "h": h, "fill": "rgba(255,255,255,0.10)",
+                 "stroke": st["accent"], "strokeW": 2, "radius": 18, "anim": "fade"},
+                {"type": "text", "text": want[:140], "x": x + 18, "y": y + 16, "w": w - 36, "h": h - 32,
+                 "font": st["font"], "size": max(16, min(34, int(h / 4.5))), "color": st["color"], "lh": 1.3,
+                 "anim": "rise", "animDelay": 0.15}]
+    return {"els": els, "caption": "built-in layout", "region": {"x": x, "y": y, "w": w, "h": h}}
+
+
 FALLBACKS = {"deck": fb_deck, "slide": fb_slide, "polish": fb_polish, "decorate": fb_decorate,
-             "animate": fb_animate, "ideas": fb_ideas, "notes": fb_notes, "rewrite": fb_rewrite}
+             "animate": fb_animate, "ideas": fb_ideas, "notes": fb_notes, "rewrite": fb_rewrite,
+             "edit": fb_edit}

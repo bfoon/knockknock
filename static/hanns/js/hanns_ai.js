@@ -186,7 +186,8 @@
   // ───────────────────────── server calls ─────────────────────────
   let busy = null;
   let lastNotice = null;   // set when a fallback produced the result
-  async function call(action, payload, label) {
+  async function call(action, payload, label, opts) {
+    opts = opts || {};
     if (busy) { toast("The AI is still working on the last request"); return null; }
     const ctrl = new AbortController();
     busy = ctrl;
@@ -194,7 +195,7 @@
     // The server gives up after ~150 s and answers with a clear message;
     // this is only a backstop so the panel can never spin forever.
     const giveUp = setTimeout(() => { ctrl.timedOut = true; ctrl.abort(); }, 175000);
-    showLoading(action, label);
+    if (opts.wave) waveLabel(label); else showLoading(action, label);
     try {
       const r = await fetch(SRV.aiUrl, {
         method: "POST", credentials: "same-origin", signal: ctrl.signal,
@@ -235,7 +236,7 @@
     } finally {
       clearTimeout(giveUp);
       busy = null;
-      hideLoading();
+      if (!opts.wave) hideLoading();
     }
   }
 
@@ -356,9 +357,22 @@
         <section class="kai-pane" data-pane="magic">
           <div class="kai-seg" role="group" id="kai-m-scope">
             <button type="button" class="on" data-scope="slide">This slide</button>
+            <button type="button" data-scope="range">Slides…</button>
             <button type="button" data-scope="deck">Whole deck</button>
           </div>
+          <div class="kai-range" id="kai-m-scope-range" hidden>
+            Slides <input type="number" min="1" value="1" data-r="from" aria-label="From slide"> to
+            <input type="number" min="1" value="1" data-r="to" aria-label="To slide">
+            <small class="kai-range-n"></small>
+          </div>
           <div class="kai-cards">
+            <div class="kai-card kai-card-wide" data-magic="edit">
+              <div class="kai-card-ic">💬</div><div><b>Tell the AI what to change</b>
+              <p>Any instruction, applied to every slide in scope — in waves, so long decks are fully covered.</p>
+              <textarea id="kai-m-edit" rows="2" placeholder="e.g. Make every title gold and 64px, and add a small footer with 'Knock-Knock · 2026' on each slide"></textarea>
+              <div class="kai-chips sm" id="kai-m-edit-chips"></div>
+              <button type="button" class="kai-run">💬 Apply to slides</button></div>
+            </div>
             <div class="kai-card" data-magic="polish">
               <div class="kai-card-ic">🧹</div><div><b>Polish</b><p>Clean alignment, spacing, type scale, colour and contrast.</p>
               <label class="kai-check sm"><input type="checkbox" id="kai-m-fix"> Also fix wording &amp; typos</label>
@@ -393,7 +407,13 @@
           <p class="kai-lead">Speaker notes you can read from the Hanns teleprompter on your phone.</p>
           <div class="kai-seg" role="group" id="kai-n-scope">
             <button type="button" class="on" data-scope="slide">This slide</button>
+            <button type="button" data-scope="range">Slides…</button>
             <button type="button" data-scope="deck">Whole deck</button>
+          </div>
+          <div class="kai-range" id="kai-n-scope-range" hidden>
+            Slides <input type="number" min="1" value="1" data-r="from" aria-label="From slide"> to
+            <input type="number" min="1" value="1" data-r="to" aria-label="To slide">
+            <small class="kai-range-n"></small>
           </div>
           <div class="kai-pills" id="kai-n-tone">${[["conversational", "😊 Conversational"], ["inspiring", "🚀 Inspiring"], ["formal", "🎓 Formal"], ["concise", "⚡ Concise"]].map(([k, l], i) => `<button type="button" class="kai-pill${i ? "" : " on"}" data-v="${k}">${l}</button>`).join("")}</div>
           <button type="button" class="kai-go" id="kai-n-go">🗣 <span>Write my notes</span></button>
@@ -412,6 +432,7 @@
       <div class="kai-loading" id="kai-loading" hidden>
         <div class="kai-orb"><i></i><i></i><i></i></div>
         <p id="kai-load-msg">Thinking…</p>
+        <div class="kai-waves" id="kai-waves" hidden></div>
         <button type="button" class="kai-ghost" id="kai-cancel">Cancel</button>
       </div>
       <footer class="kai-foot">Free Gemini tier: Google may use prompts to improve its models — don't paste confidential data.</footer>`;
@@ -433,6 +454,9 @@
   }
   const segVal = (sel, attr) => ($(sel + " button.on") || {}).dataset?.[attr];
 
+  const EDIT_CHIPS = ["Make every title bigger and bolder", "Add a slim footer with the slide topic on every slide",
+    "Translate all text to French", "Use our brand colours: navy #1e3a8a and gold #f5b301", "Shorten all body text to 2 lines",
+    "Add an icon-like accent shape next to each heading"];
   const CREATE_CHIPS = {
     deck: ["Annual report to donors: 3 big wins and what's next", "Workshop on cybersecurity basics for office staff", "Pitch for a mobile app that helps farmers sell produce", "Climate change impacts on West African coastlines", "Onboarding new staff: who we are and how we work"],
     slide: ["A bold title slide: 'Building Tomorrow, Today'", "Our impact in 3 big numbers", "Before vs after comparison", "A 4-step timeline of the project", "A powerful closing call to action"],
@@ -451,14 +475,16 @@
     $$(".kai-tab").forEach(t => t.addEventListener("click", () => tab(t.dataset.tab)));
     ["#kai-c-tone", "#kai-b-style", "#kai-m-deco", "#kai-m-energy", "#kai-n-tone", "#kai-r-style"].forEach(pills);
     seg(".kai-pane[data-pane=create] .kai-seg", "mode", setCreateMode);
-    seg("#kai-m-scope", "scope"); seg("#kai-n-scope", "scope");
+    seg("#kai-m-scope", "scope", v => rangeToggle("#kai-m-scope", v)); seg("#kai-n-scope", "scope", v => rangeToggle("#kai-n-scope", v));
+    $("#kai-m-edit-chips").innerHTML = EDIT_CHIPS.map(c => `<button type="button" class="kai-chip">${esc(c)}</button>`).join("");
+    $$("#kai-m-edit-chips .kai-chip").forEach(c => c.addEventListener("click", e => { e.stopPropagation(); $("#kai-m-edit").value = c.textContent; $("#kai-m-edit").focus(); }));
     $("#kai-c-n").addEventListener("input", e => { $("#kai-c-nv").textContent = e.target.value; });
     $("#kai-c-go").addEventListener("click", runCreate);
     $("#kai-b-go").addEventListener("click", runBackground);
     $$(".kai-card").forEach(c => c.addEventListener("click", e => {
       // The explicit button always runs; elsewhere on the card, only clicks
       // that aren't on an option (pill / checkbox) do.
-      if (!e.target.closest(".kai-run") && e.target.closest(".kai-pill,label,input")) return;
+      if (!e.target.closest(".kai-run") && e.target.closest(".kai-pill,.kai-chip,label,input,textarea")) return;
       runMagic(c.dataset.magic);
     }));
     $("#kai-m-strip").addEventListener("click", stripDecor);
@@ -619,10 +645,90 @@
   }
 
   // ═════════════════════ 🪄 MAGIC ═════════════════════
-  function scopeSlides(sel) {
-    const deck = segVal(sel, "scope") === "deck";
-    const idx = deck ? Deck.slides.map((_, i) => i) : [Deck.cur];
-    return idx.map(i => ({ index: i, slide: lite(Deck.slides[i]) }));
+  function scopeIndexes(sel) {
+    const sc = segVal(sel, "scope");
+    if (sc === "deck") return Deck.slides.map((_, i) => i);
+    if (sc === "range") {
+      const box = $(sel + "-range"), n = Deck.slides.length;
+      let a = num(box.querySelector("[data-r=from]").value, 1, n, 1), b = num(box.querySelector("[data-r=to]").value, 1, n, n);
+      if (a > b) { const t = a; a = b; b = t; }
+      const out = []; for (let i = a - 1; i <= b - 1; i++) out.push(i);
+      return out;
+    }
+    return [Deck.cur];
+  }
+  function rangeToggle(sel, v) {
+    const box = $(sel + "-range"); if (!box) return;
+    box.hidden = v !== "range";
+    const n = Deck.slides.length, f = box.querySelector("[data-r=from]"), t = box.querySelector("[data-r=to]");
+    f.max = t.max = n;
+    if (v === "range") { f.value = Deck.cur + 1; t.value = n; }
+    const upd = () => { box.querySelector(".kai-range-n").textContent = "· " + scopeIndexes(sel).length + " slides"; };
+    f.oninput = t.oninput = upd; upd();
+  }
+
+  /* ─────────────── waves: whole decks, any length ───────────────
+     The server takes a few slides per request (it hands back the rest as
+     `pending`). We keep sending waves until every slide in scope is done,
+     retry a slide the model skipped (once, on its own), carry the style
+     guide from the first wave into the next ones so the deck stays
+     consistent, and tag every wave with one job id so the whole run costs
+     a single AI credit. */
+  const WAVE = 5;
+  function waveUI(indexes) {
+    const box = $("#kai-waves");
+    box.hidden = false;
+    box.innerHTML = `<div class="kai-wave-bar"><i></i></div><div class="kai-wave-chips">${indexes.map(i => `<span data-w="${i}">${i + 1}</span>`).join("")}</div>`;
+    $("#kai-loading").hidden = false;
+  }
+  function waveMark(i, state) { const c = $(`#kai-waves [data-w="${i}"]`); if (c) c.className = "is-" + state; }
+  function waveProgress(done, total) { const b = $("#kai-waves .kai-wave-bar i"); if (b) b.style.width = Math.round(100 * done / Math.max(1, total)) + "%"; }
+  function waveLabel(label) { clearInterval(showLoading.t); $("#kai-load-msg").textContent = label || "Working…"; $("#kai-loading").hidden = false; }
+  function waveEnd() { const b = $("#kai-waves"); if (b) { b.hidden = true; b.innerHTML = ""; } hideLoading(); }
+
+  async function runWaves(kind, indexes, extra, verb) {
+    const job = "j" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    let queue = indexes.slice(), guide = "", wave = 0, stopped = false;
+    const results = new Map(), tries = {}, skipped = [];
+    if (indexes.length > 1) waveUI(indexes);
+    const waves = Math.ceil(indexes.length / WAVE);
+    while (queue.length) {
+      const batch = queue.splice(0, WAVE);
+      wave++;
+      batch.forEach(i => waveMark(i, "work"));
+      const where = batch.length > 1 ? `slides ${batch[0] + 1}–${batch[batch.length - 1] + 1}` : `slide ${batch[0] + 1}`;
+      const label = indexes.length > 1 ? `${verb} · wave ${wave}${wave <= waves ? " of " + waves : ""} · ${where}` : verb + "…";
+      const payload = Object.assign({ job, guide, outline: outline(),
+        slides: batch.map(i => ({ index: i, slide: lite(Deck.slides[i]) })) }, extra);
+      const res = await call(kind, payload, label, { wave: indexes.length > 1 });
+      if (!res) {                              // cancelled / failed: keep what we have
+        stopped = true;
+        batch.concat(queue).forEach(i => { waveMark(i, "skip"); skipped.push(i); });
+        break;
+      }
+      if (res.guide && !guide) guide = res.guide;
+      if (res.fixText !== undefined) extra.fixText = res.fixText;
+      const same = new Set();
+      (res.slides || []).forEach(r => {
+        const i = Number(r && r.index);
+        if (!batch.includes(i) || results.has(i)) return;
+        if (r.unchanged) same.add(i);          // the model looked and decided nothing applies
+        else results.set(i, r);
+      });
+      const pending = (res.pending || []).map(Number).filter(i => batch.includes(i) && !results.has(i));
+      queue = pending.concat(queue);
+      batch.forEach(i => {
+        if (results.has(i)) waveMark(i, "done");
+        else if (pending.includes(i)) waveMark(i, "wait");
+        else if (same.has(i)) waveMark(i, "same");
+        else if ((tries[i] = (tries[i] || 0) + 1) < 2) { queue.push(i); waveMark(i, "wait"); }
+        else { skipped.push(i); waveMark(i, "skip"); }
+      });
+      waveProgress(indexes.length - queue.length, indexes.length);
+    }
+    if (indexes.length > 1) setTimeout(waveEnd, results.size ? 450 : 0); else hideLoading();
+    if (!results.size) return null;
+    return { slides: [...results.values()], skipped, stopped, guide, fixText: !!extra.fixText, total: indexes.length };
   }
 
   const STYLE_KEYS = ["x", "y", "w", "h", "rot", "size", "weight", "font", "color", "align", "lh", "ls", "fill", "stroke", "strokeW", "radius", "italic"];
@@ -656,6 +762,16 @@
         (r.els || []).forEach(p => { const el = p && byId.get(p.id); if (el) patchEl(el, p, kind === "polish" && opts.fixText); });
         if (kind === "animate" && TRANS_KEYS.has(r.transition)) s.transition = r.transition;
       }
+      if (kind === "edit") {
+        const byId = new Map((s.els || []).map(e => [e.id, e]));
+        (r.els || []).forEach(p => { const el = p && byId.get(p.id); if (el) patchEl(el, p, true); });
+        const gone = new Set((Array.isArray(r.remove) ? r.remove : []).map(String));
+        if (gone.size) s.els = (s.els || []).filter(e => !gone.has(String(e.id)));
+        const add = (Array.isArray(r.add) ? r.add : []).map(normEl).filter(Boolean).slice(0, 12);
+        s.els = (s.els || []).concat(add);
+        if (TRANS_KEYS.has(r.transition)) s.transition = r.transition;
+        if (typeof r.notes === "string" && r.notes.trim()) s.notes = r.notes.slice(0, 3000);
+      }
       if (kind === "decorate") {
         const add = (r.add || []).map(normEl).filter(e => e && e.type !== "text" && e.type !== "chart").slice(0, 8);
         add.forEach(e => { e.aiDecor = true; });
@@ -669,19 +785,25 @@
   }
 
   async function runMagic(kind) {
-    const slides = scopeSlides("#kai-m-scope");
-    const payload = { slides };
-    if (kind === "polish") payload.fixText = $("#kai-m-fix").checked;
-    if (kind === "decorate") payload.style = pillVal("#kai-m-deco");
-    if (kind === "animate") payload.style = pillVal("#kai-m-energy");
-    const res = await call(kind, payload);
+    const indexes = scopeIndexes("#kai-m-scope");
+    const extra = {};
+    if (kind === "polish") extra.fixText = $("#kai-m-fix").checked;
+    if (kind === "decorate") extra.style = pillVal("#kai-m-deco");
+    if (kind === "animate") extra.style = pillVal("#kai-m-energy");
+    if (kind === "edit") {
+      extra.prompt = $("#kai-m-edit").value.trim();
+      if (extra.prompt.length < 3) { showError("Type what you'd like the AI to change first."); $("#kai-m-edit").focus(); return; }
+    }
+    const verb = { polish: "🧹 Polishing", decorate: "🎀 Decorating", animate: "🎬 Choreographing", edit: "💬 Applying your instruction" }[kind];
+    const res = await runWaves(kind, indexes, extra, verb);
     if (!res) return;
     const changes = propose(kind, res, { fixText: !!res.fixText });
     const o = out("#kai-m-out");
     if (!changes.size) { showError("The AI didn't suggest any changes this time. Try again."); return; }
     const first = changes.has(Deck.cur) ? Deck.cur : changes.keys().next().value;
-    const label = { polish: "🧹 Polished", decorate: "🎀 Decorated", animate: "🎬 Choreographed" }[kind];
-    o.insertAdjacentHTML("beforeend", `<div class="kai-res-head"><b>${label}</b><small>${changes.size} slide${changes.size > 1 ? "s" : ""} — drag the divider to compare</small></div>`);
+    const label = { polish: "🧹 Polished", decorate: "🎀 Decorated", animate: "🎬 Choreographed", edit: "💬 Changed" }[kind];
+    o.insertAdjacentHTML("beforeend", `<div class="kai-res-head"><b>${label}</b><small>${changes.size} of ${res.total} slide${res.total > 1 ? "s" : ""} — drag the divider to compare</small></div>`);
+    if (res.skipped.length) o.insertAdjacentHTML("beforeend", `<div class="kai-notice">${res.stopped ? "⏸ Stopped early" : "⚠️ The AI couldn't finish"} — slide${res.skipped.length > 1 ? "s" : ""} ${res.skipped.map(i => i + 1).join(", ")} ${res.skipped.length > 1 ? "were" : "was"} left as they were. Apply the rest, then run again on just those with “Slides…”.</div>`);
     o.appendChild(compare(Deck.slides[first], changes.get(first)));
     if (kind === "animate") {
       const s = changes.get(first);
@@ -691,7 +813,12 @@
     }
     if (changes.size > 1) {
       const strip = document.createElement("div"); strip.className = "kai-grid sm";
-      [...changes.values()].slice(0, 12).forEach((s, n) => { const m = mini(s); m.style.animationDelay = (n * 0.05) + "s"; strip.appendChild(m); });
+      [...changes.entries()].sort((a, b) => a[0] - b[0]).forEach(([i, s], n) => {
+        const m = mini(s); m.style.animationDelay = Math.min(1.2, n * 0.04) + "s"; m.title = "Slide " + (i + 1);
+        m.insertAdjacentHTML("beforeend", `<em class="kai-mini-n">${i + 1}</em>`);
+        m.addEventListener("click", () => { const c = o.querySelector(".kai-compare"); if (c) c.replaceWith(compare(Deck.slides[i], s)); });
+        strip.appendChild(m);
+      });
       o.appendChild(strip);
     }
     o.appendChild(actions([
@@ -747,8 +874,7 @@
 
   // ═════════════════════ 🗣 NOTES ═════════════════════
   async function runNotes() {
-    const slides = scopeSlides("#kai-n-scope");
-    const res = await call("notes", { slides, style: pillVal("#kai-n-tone") });
+    const res = await runWaves("notes", scopeIndexes("#kai-n-scope"), { style: pillVal("#kai-n-tone") }, "🗣 Writing notes");
     if (!res) return;
     const o = out("#kai-n-out");
     const rows = (res.slides || []).filter(r => Deck.slides[r.index] && typeof r.notes === "string");
@@ -847,5 +973,5 @@
   // Keep the Rewrite tab in step with the canvas selection.
   document.addEventListener("click", () => { if (root && root.classList.contains("on") && $(".kai-tab.on").dataset.tab === "rewrite") setTimeout(paintSelection, 30); }, true);
 
-  window.HannsAI = { open, close, normSlide, normEl };
+  window.HannsAI = { open, close, normSlide, normEl, lite, outline };
 })();

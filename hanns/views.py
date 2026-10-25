@@ -609,13 +609,24 @@ async def deck_ai(request, code):
         return JsonResponse({"ok": False, "error": "Malformed request."}, status=400)
     action = str(payload.get("action") or "")
     # Hourly AI limit reached → still answer, using the built-in designer.
+    # A whole-deck run is sent as several "waves" tagged with one job id: only
+    # its first wave takes a credit, so one Magic click costs one credit
+    # however long the deck is.
     use_ai = True
     left = 0
+    job = str(payload.get("job") or "")[:40]
+    job_key = f"hanns-ai-job:{user.pk}:{job}" if job else None
     if ai.is_enabled():
-        try:
-            left = await sync_to_async(ai.take_quota)(user.pk)
-        except ai.AIError:
-            use_ai = False
+        from django.core.cache import cache
+        if job_key and await sync_to_async(cache.get)(job_key):
+            left = await sync_to_async(ai.quota_left)(user.pk)
+        else:
+            try:
+                left = await sync_to_async(ai.take_quota)(user.pk)
+                if job_key:
+                    await sync_to_async(cache.set)(job_key, 1, 1800)
+            except ai.AIError:
+                use_ai = False
     try:
         result, model, notice = await sync_to_async(ai.run, thread_sensitive=False)(
             action, payload, deck.code, use_ai=use_ai)

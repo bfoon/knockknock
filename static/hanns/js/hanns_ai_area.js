@@ -25,7 +25,7 @@
   const toast = m => (API().toast || console.log)(m);
 
   let layer = null, box = null, bubble = null, ghost = null, hint = null;
-  let region = null, drag = null, ctrl = null, active = false, last = null, raf = 0;
+  let region = null, drag = null, ctrl = null, active = false, last = null, raf = 0, seed = null;
 
   /* ───────────── geometry: slide px <-> screen px ───────────── */
   function canvasRect() {
@@ -141,6 +141,7 @@
     return ["A bar chart of sales by quarter", "An illustration of a farmer with solar panels", "3 bullet points on why it matters", "A before / after comparison"];
   }
   function askBubble(prev) {
+    if (!prev && seed) { prev = seed; seed = null; }      // "Remix with AI" from the library
     if (!bubble) {
       bubble = document.createElement("div");
       bubble.className = "kaa-bubble";
@@ -271,12 +272,18 @@
       <div class="kaa-row">
         <button type="button" class="kaa-ghost kaa-edit">✎ Change the prompt</button>
         <button type="button" class="kaa-ghost kaa-discard">Discard</button>
-      </div>`;
+      </div>
+      ${window.HannsLibrary ? `<button type="button" class="kaa-save" title="Keep a copy in your design library to reuse on any slide">☆ Save to my library</button>` : ""}`;
     bubble.querySelector(".kaa-keep").addEventListener("click", keep);
     bubble.querySelector(".kaa-again").addEventListener("click", () => create(true));
     bubble.querySelector(".kaa-edit").addEventListener("click", () => { clearGhost(); askBubble(last.ask); });
     bubble.querySelector(".kaa-discard").addEventListener("click", stop);
     bubble.querySelector(".kaa-x").addEventListener("click", stop);
+    const save = bubble.querySelector(".kaa-save");
+    if (save) save.addEventListener("click", () => {
+      window.HannsLibrary.saveDesign({ els: last.els, name: last.caption || last.ask.prompt, kind: "ai", prompt: last.ask.prompt,
+        from: save }).then(ok => { if (ok) { save.textContent = "★ Saved to your library"; save.disabled = true; } });
+    });
     setTimeout(() => bubble.querySelector(".kaa-keep").focus({ preventScroll: true }), 30);
   }
   function keep() {
@@ -297,7 +304,9 @@
   });
   function addButton() {
     const ai = document.getElementById("btn-ai-design");
-    if (!ai || document.getElementById("btn-ai-area")) return;
+    const have = document.getElementById("btn-ai-area");
+    if (have) { have.addEventListener("click", () => (active ? stop() : start())); return; }   // editor.html ships it
+    if (!ai) return;
     const b = document.createElement("button");
     b.type = "button"; b.id = "btn-ai-area"; b.className = ai.className + " kaa-btn";
     b.title = "AI area — drag a box on the slide and tell the AI what to put there (Ctrl+Shift+J)";
@@ -306,5 +315,7 @@
     ai.insertAdjacentElement("afterend", b);
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", addButton); else addButton();
-  window.HannsAIArea = { start, stop };
+  // Start the tool with a prompt already filled in (used by the library's "Remix with AI").
+  function startWith(prompt, mode) { seed = { prompt: String(prompt || ""), mode: mode || "auto" }; stop(); start(); }
+  window.HannsAIArea = { start, stop, startWith };
 })();

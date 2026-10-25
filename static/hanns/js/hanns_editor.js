@@ -4488,6 +4488,9 @@ function slideDesignPanel(){
    Deliberately small: render, record an undo step + autosave, toast, navigate. */
 window.HannsEditorAPI = {
   renderAll, markDirty, toast, gotoSlide,
+  // the design library reads and sets the canvas selection (multi-select included)
+  selected: ()=>selectedElements().map(e=>JSON.parse(JSON.stringify(e))),
+  select: (ids)=>{setSelectionIds(ids||[]);renderInspector();},
   commit(){ renderAll(); markDirty(); },      // one Ctrl+Z reverts the whole change
   save: (silent)=>saveDeck(silent),
 };

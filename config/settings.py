@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     "chalk",
     "icebreakers.apps.IcebreakersConfig",
     "tabletop",
+    "designlib",
 ]
 
 MIDDLEWARE = [

@@ -22,6 +22,7 @@ urlpatterns = [
     path("community/", include("community.urls")),
     path("chalk/", include("chalk.urls", namespace="chalk")),
     path("tabletop/", include("tabletop.urls", namespace="tabletop")),
+    path("designlib/", include("designlib.urls", namespace="designlib")),
 ]
 
 # ── User-uploaded media (/media/…) ─────────────────────────────────────

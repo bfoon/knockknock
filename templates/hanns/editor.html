@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Archivo:wght@400;500;600;700;800&family=Archivo+Expanded:wght@600;700;800&family=Spline+Sans+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800;900&family=Manrope:wght@300;400;500;600;700;800&family=Poppins:wght@300;400;500;600;700;800;900&family=Montserrat:wght@300;400;500;600;700;800;900&family=Roboto:wght@300;400;500;700;900&family=Open+Sans:wght@300;400;500;600;700;800&family=Lato:wght@300;400;700;900&family=Nunito+Sans:wght@300;400;600;700;800;900&family=Raleway:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=DM+Serif+Display:ital@0;1&family=Bebas+Neue&family=Oswald:wght@300;400;500;600;700&family=Merriweather:wght@300;400;700;900&family=Libre+Baskerville:wght@400;700&family=Lora:ital,wght@0,400..700;1,400..700&family=Cormorant+Garamond:ital,wght@0,300..700;1,300..700&family=Space+Grotesk:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Barlow+Condensed:wght@300;400;500;600;700;800&family=Rubik:wght@300;400;500;600;700;800;900&family=Quicksand:wght@300;400;500;600;700&family=Sora:wght@300;400;500;600;700;800&family=Exo+2:wght@300;400;500;600;700;800;900&family=Ubuntu:wght@300;400;500;700&family=Work+Sans:wght@300;400;500;600;700;800;900&family=Noto+Sans:wght@300;400;500;600;700;800;900&family=Noto+Serif:wght@400;500;600;700;800;900&family=Source+Serif+4:opsz,wght@8..60,300..900&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Serif:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700;800&family=Fira+Code:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Cinzel:wght@400;500;600;700;800;900&family=Abril+Fatface&family=Anton&family=Pacifico&family=Caveat:wght@400;500;600;700&family=Permanent+Marker&family=Righteous&family=Kanit:wght@300;400;500;600;700;800;900&family=Lexend:wght@300;400;500;600;700;800;900&family=Urbanist:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=62">
-<link rel="stylesheet" href="{% static 'hanns/css/hanns_ai.css' %}?v=8">
+<link rel="stylesheet" href="{% static 'hanns/css/hanns_ai.css' %}?v=9">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="{% static 'hanns/css/hanns_rich_data.css' %}?v=62">
 
@@ -238,6 +238,10 @@ body.hanns-options-open .drawer{
 .topbar.fit-3 .option-summary svg{display:block;width:16px;height:16px}
 .topbar.fit-2 .file-name{max-width:16ch}
 .topbar.fit-4 .file-name{max-width:12ch}
+/* AI area + Library: labelled at full width, icon-only from the first collapse step, so they never crowd the bar. */
+.topbar[class*="fit-"] #btn-ai-area .tb-lbl,.topbar[class*="fit-"] #btn-design-lib .tb-lbl{display:none}
+.topbar[class*="fit-"] #btn-ai-area,.topbar[class*="fit-"] #btn-design-lib{gap:0!important;padding:.42rem .5rem!important}
+.topbar #btn-ai-area svg,.topbar #btn-design-lib svg{display:block;width:16px;height:16px}
 .topbar.fit-5{grid-template-columns:minmax(0,1fr) auto!important;gap:.5rem}
 .topbar.fit-5 .topbar-center{display:none!important}
 .topbar.fit-5 .topbar-left{min-width:0;overflow:hidden}
@@ -325,6 +329,14 @@ body.hanns-options-open .drawer{
         <button class="tbtn ghost compact ai-btn" id="btn-ai-design" type="button" title="Hanns AI Studio — create decks, paint backgrounds, polish, decorate and animate (Ctrl+J)">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
           AI Design
+        </button>
+        <button class="tbtn ghost compact ai-btn kaa-btn" id="btn-ai-area" type="button" aria-label="AI area" title="AI area — drag a box on the slide and tell the AI what to put there (Ctrl+Shift+J)">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2" stroke-dasharray="3 2.5"/><path d="M12 8.5l1.2 2.3 2.3 1.2-2.3 1.2-1.2 2.3-1.2-2.3-2.3-1.2 2.3-1.2z" fill="currentColor" stroke="none"/></svg>
+          <span class="tb-lbl">AI area</span>
+        </button>
+        <button class="tbtn ghost compact hlib-btn" id="btn-design-lib" type="button" aria-label="Library" title="My library — saved designs, backgrounds and templates for any slide (Ctrl+Shift+L). Save a selection with Ctrl+Shift+B">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" stroke="none"><path d="M6 2h12a1 1 0 0 1 1 1v19l-7-4.5L5 22V3a1 1 0 0 1 1-1z"/></svg>
+          <span class="tb-lbl">Library</span>
         </button>
         <button class="tbtn ghost compact" id="btn-templates" type="button" title="Creative templates">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
@@ -451,9 +463,6 @@ body.hanns-options-open .drawer{
       <button class="tool" id="rail-shape" title="Creative shapes" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l3 6 6 .9-4.5 4.3 1.1 6.1L12 17.4 6.4 20.3l1.1-6.1L3 9.9 9 9z"/></svg><span class="lbl">Shapes</span></button>
       <button class="tool" id="rail-bg" title="Backgrounds" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8c4-4 6 4 9 0s5-4 9 0M3 16c4-4 6 4 9 0s5-4 9 0"/></svg><span class="lbl">Backgrounds</span></button>
       <button class="tool" id="rail-tpl" title="Templates" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span class="lbl">Templates</span></button>
-      {# On the tool rail, not the top bar (no spare room there: it fell into the ☰ menu on laptops). The ☰ menu still lists both. #}
-      <button class="tool kaa-btn" id="btn-ai-area" type="button" title="AI area — drag a box on the slide and tell the AI what to put there (Ctrl+Shift+J)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2" stroke-dasharray="3 2.5"/><path d="M12 8.5l1.2 2.3 2.3 1.2-2.3 1.2-1.2 2.3-1.2-2.3-2.3-1.2 2.3-1.2z" fill="currentColor" stroke="none"/></svg><span class="lbl">AI area</span></button>
-      <button class="tool hlib-btn" id="btn-design-lib" type="button" title="My library — saved designs, backgrounds and templates for any slide (Ctrl+Shift+L). Save a selection with Ctrl+Shift+B"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M6 2h12a1 1 0 0 1 1 1v19l-7-4.5L5 22V3a1 1 0 0 1 1-1z"/></svg><span class="lbl">Library</span></button>
     </nav>
 
     <aside class="filmstrip" id="filmstrip">
@@ -893,6 +902,13 @@ body.hanns-options-open .drawer{
     }).observe(bar);
   }
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(schedule);
+  // Re-check once things settle: if the first fit ran while web fonts were still
+  // loading (wider fallback text) the bar could fall into the ☰ menu and stay
+  // there, because a font swap doesn't change the bar's own width.
+  if(document.fonts&&document.fonts.addEventListener)document.fonts.addEventListener("loadingdone",schedule);
+  window.addEventListener("load",function(){schedule();setTimeout(schedule,600);});
+  // …and on a timer too: on slow connections "load" can be held up for a long time by fonts and CDNs.
+  [400,1200,3000].forEach(function(ms){setTimeout(schedule,ms);});
   var title=document.getElementById("deck-title");
   if(title)title.addEventListener("change",schedule);
 

@@ -1,4 +1,4 @@
-"""Design library — bookmarked slide designs you can drop onto any slide.
+"""Design library — bookmarked designs, backgrounds and templates for any slide.
 
 A bookmark is a little bundle of Hanns slide elements (an AI-area result, or
 anything you selected on a slide) stored relative to its own top-left corner,
@@ -18,12 +18,18 @@ MAX_JSON_BYTES = 250_000
 
 
 class DesignBookmark(models.Model):
-    KIND_CHOICES = [("ai", "AI area"), ("selection", "Selection")]
+    KIND_CHOICES = [("ai", "AI area"), ("selection", "Selection"), ("background", "Background"),
+                    ("bgset", "Background set"), ("template", "Template")]
+    DESIGN_KINDS = ("ai", "selection")
 
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="design_bookmarks")
     name = models.CharField(max_length=80)
     kind = models.CharField(max_length=12, choices=KIND_CHOICES, default="selection")
-    els = models.JSONField(default=list)          # elements, coordinates relative to (0, 0)
+    els = models.JSONField(default=list)          # designs: elements, coordinates relative to (0, 0)
+    # backgrounds: {bg, bgSize, bgFx, bgFxColor, bgMode, …, palette, tone}
+    # background sets: {variants: [{role, bg, bgSize, bgFx, palette, text}, …]}
+    # templates: {slide: {bg, bgSize, bgFx, transition, els}}
+    payload = models.JSONField(default=dict, blank=True)
     w = models.PositiveIntegerField(default=100)
     h = models.PositiveIntegerField(default=100)
     prompt = models.CharField(max_length=600, blank=True, default="")   # AI-area prompt, for remixing
@@ -42,7 +48,8 @@ class DesignBookmark(models.Model):
         return f"{self.name} ({self.owner})"
 
     def as_dict(self):
-        return {"id": self.id, "name": self.name, "kind": self.kind, "els": self.els, "w": self.w, "h": self.h,
+        return {"id": self.id, "name": self.name, "kind": self.kind, "els": self.els, "payload": self.payload,
+                "w": self.w, "h": self.h,
                 "prompt": self.prompt, "tags": self.tags, "color": self.color, "pinned": self.pinned,
                 "uses": self.uses, "created": self.created_at.isoformat(),
                 "lastUsed": self.last_used_at.isoformat() if self.last_used_at else None}

@@ -245,7 +245,7 @@
   color: #fff; background: rgba(15,23,42,.75); border-radius: 6px; padding: 2px 5px; }
 
 /* ═════════════ AI area tool ═════════════ */
-.kaa-btn span { font-size: 1.05em; }
+#btn-ai-area svg { color: #c4b5fd; }
 body.kaa-on #btn-ai-area { box-shadow: 0 0 0 2px #a78bfa, 0 0 18px rgba(167,139,250,.6); }
 .kaa-layer { position: fixed; z-index: 9000; cursor: crosshair; touch-action: none; }
 .kaa-box { position: absolute; border-radius: 10px; pointer-events: none;
@@ -308,7 +308,8 @@ body.kaa-on #btn-ai-area { box-shadow: 0 0 0 2px #a78bfa, 0 0 18px rgba(167,139,
 @media (prefers-reduced-motion: reduce) { .kaa-box::before, .kaa-box.is-busy .kaa-scan, .kaa-spark.spin, .kai-wave-chips .is-work { animation: none; } }
 
 /* ═════════════ ★ design library ═════════════ */
-.hlib-btn span { color: #facc15; }
+#btn-design-lib svg { color: #facc15; }
+body.hlib-open #btn-design-lib, body.kaa-on #btn-ai-area { background: rgba(250,204,21,.14); }
 .hlib-bump { animation: hlibBump .6s cubic-bezier(.2,.9,.3,1.6); }
 @keyframes hlibBump { 40% { transform: scale(1.25); box-shadow: 0 0 22px rgba(250,204,21,.8); } }
 .hlib-fly { position: fixed; left: 0; top: 0; z-index: 9999; margin: -14px 0 0 -14px; font-size: 28px; color: #facc15;
@@ -346,6 +347,7 @@ body.kaa-on #btn-ai-area { box-shadow: 0 0 0 2px #a78bfa, 0 0 18px rgba(167,139,
   background: linear-gradient(135deg, #1e293b, #0f172a); background-image: radial-gradient(rgba(255,255,255,.07) 1px, transparent 1px), linear-gradient(135deg, #1e293b, #0f172a);
   background-size: 12px 12px, auto; border-bottom: 3px solid var(--hl, rgba(250,204,21,.6)); }
 .hlib-stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; background: transparent !important; }
+.hlib-slide { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; overflow: hidden; }
 .hlib-pin { position: absolute; top: 5px; right: 6px; border: 0; background: rgba(15,23,42,.65); color: #fde68a; border-radius: 8px; width: 26px; height: 24px; cursor: pointer; font-size: 14px; }
 .hlib-pin.on { color: #facc15; }
 .hlib-meta { padding: .4rem .55rem .1rem; display: flex; flex-direction: column; min-width: 0; }
@@ -394,3 +396,34 @@ body.kaa-on #btn-ai-area { box-shadow: 0 0 0 2px #a78bfa, 0 0 18px rgba(167,139,
   border-radius: 12px; padding: .5rem; cursor: pointer; font: 700 .82rem/1 system-ui, sans-serif; }
 .kaa-save:disabled { border-style: solid; opacity: .85; cursor: default; }
 @media (prefers-reduced-motion: reduce) { .hlib-item, .hlib-empty-art, .hlib-phantom, .hlib-bump { animation: none; } }
+
+/* ═════════════ ★ library: backgrounds & templates ═════════════ */
+.hlib-tabs { display: flex; gap: 4px; padding: 0 1rem .55rem; }
+.hlib-tabs button { flex: 1; border: 0; border-radius: 10px; padding: .42rem .2rem; background: rgba(255,255,255,.05); color: #cbd5e1;
+  font: 600 .72rem/1 system-ui, sans-serif; cursor: pointer; white-space: nowrap; }
+.hlib-tabs button i { font-style: normal; opacity: .65; margin-left: 2px; }
+.hlib-tabs button.on { background: linear-gradient(135deg, #facc15, #fb923c); color: #1f1300; }
+.hlib-tabs button.on i { opacity: .8; }
+.hlib-saves { display: flex; flex-wrap: wrap; gap: 5px; }
+.hlib-saves > button { flex: 1 1 45%; }
+.hlib-saves [hidden], .hlib-opts [hidden] { display: none !important; }
+.hlib-save-bg, .hlib-save-tpl, .hlib-shuffle { border: 1px solid rgba(250,204,21,.4); border-radius: 12px; padding: .5rem .4rem; cursor: pointer;
+  background: rgba(250,204,21,.08); color: #fde68a; font: 700 .78rem/1 system-ui, sans-serif; }
+.hlib-shuffle:disabled { opacity: .4; cursor: default; }
+.hlib-setcell { position: absolute; top: 0; height: 100%; overflow: hidden; border-right: 1px solid rgba(0,0,0,.35); }
+.hlib-setcell em { position: absolute; left: 4px; bottom: 4px; font: 800 .6rem/1 system-ui, sans-serif; font-style: normal; color: #fff;
+  background: rgba(15,23,42,.7); border-radius: 5px; padding: 2px 4px; }
+.hlib-k-background .hlib-thumb, .hlib-k-bgset .hlib-thumb, .hlib-k-template .hlib-thumb { background: #0f172a; }
+.hlib-k-background:hover, .hlib-k-bgset:hover { cursor: zoom-in; }
+.hlib-star { position: absolute; top: 6px; right: 6px; z-index: 3; width: 28px; height: 28px; border-radius: 9px; border: 0; cursor: pointer;
+  background: rgba(15,23,42,.72); color: #fde68a; font-size: 16px; line-height: 1; opacity: 0; transform: scale(.8); transition: all .15s; }
+.tpl:hover .hlib-star, .bg-cell:hover .hlib-star, .hlib-star.on { opacity: 1; transform: none; }
+.hlib-star:hover { background: #facc15; color: #1f1300; }
+.hlib-star.on { color: #facc15; }
+.tpl, .bg-cell { position: relative; }
+.hlib-drawer-save { width: 100%; margin-bottom: .7rem; border: 1px dashed rgba(250,204,21,.55); border-radius: 12px; padding: .55rem;
+  background: rgba(250,204,21,.07); color: #fde68a; cursor: pointer; font: 700 .8rem/1 system-ui, sans-serif; }
+body.hlib-trying #canvas { outline: 3px dashed #facc15; outline-offset: 6px; transition: outline-color .2s; }
+body.hlib-trying #canvas-wrap::after { content: "👀 Trying it on — click a button to keep it"; position: fixed; left: 50%; bottom: 70px;
+  transform: translateX(-50%); z-index: 50; background: rgba(15,23,42,.88); color: #fde68a; padding: .45rem .9rem; border-radius: 999px;
+  font: 600 .8rem/1 system-ui, sans-serif; pointer-events: none; box-shadow: 0 8px 24px rgba(0,0,0,.4); }

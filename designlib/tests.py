@@ -88,3 +88,61 @@ class LibraryApiTests(TestCase):
         r = self.save()
         self.assertEqual(r.status_code, 400)
         self.assertIn("full", r.json()["error"])
+
+
+class BackgroundsAndTemplatesTests(TestCase):
+    def setUp(self):
+        self.me = get_user_model().objects.create_user("fatou", password="pw-pw-pw-123")
+        self.client.force_login(self.me)
+        self.url = reverse("designlib:list")
+
+    def post(self, body):
+        return self.client.post(self.url, json.dumps(body), content_type="application/json")
+
+    def test_background_bookmark(self):
+        r = self.post({"kind": "background", "name": "Sunset", "w": 960, "h": 540, "tags": ["Warm"],
+                       "payload": {"bg": "linear-gradient(135deg,#f97316,#be123c)", "bgFx": "aurora", "palette": ["#f97316", "#be123c", "nope"],
+                                   "tone": 0.31, "bgMode": "linear", "junk": {"x": 1}}})
+        self.assertEqual(r.status_code, 201, r.content)
+        item = r.json()["item"]
+        self.assertEqual(item["kind"], "background")
+        self.assertEqual(item["els"], [])
+        self.assertEqual(item["payload"]["bgFx"], "aurora")
+        self.assertEqual(item["payload"]["palette"], ["#f97316", "#be123c"])
+        self.assertNotIn("junk", item["payload"])
+
+    def test_ai_art_background_keeps_its_media_url(self):
+        bg = 'url("/media/hanns/decks/AB/ai/x.svg") center / cover no-repeat, linear-gradient(135deg,#111,#333)'
+        item = self.post({"kind": "background", "name": "AI art", "payload": {"bg": bg}}).json()["item"]
+        self.assertEqual(item["payload"]["bg"], bg)
+
+    def test_unsafe_css_is_refused(self):
+        for bad in ("expression(alert(1))", "url(javascript:alert(1))", "red; </style><script>"):
+            self.assertEqual(self.post({"kind": "background", "payload": {"bg": bad}}).status_code, 400, bad)
+        self.assertEqual(self.post({"kind": "background", "payload": {"bg": ""}}).status_code, 400)
+
+    def test_background_set_needs_two_or_more(self):
+        one = {"kind": "bgset", "payload": {"variants": [{"bg": "#111", "role": "Title"}]}}
+        self.assertEqual(self.post(one).status_code, 400)
+        three = {"kind": "bgset", "name": "Aurora family", "payload": {"variants": [
+            {"bg": "#111", "role": "Title"}, {"bg": "#222", "role": "Content"}, {"bg": "#333", "role": "Closing", "text": "#ffffff"}]}}
+        item = self.post(three).json()["item"]
+        self.assertEqual([v["role"] for v in item["payload"]["variants"]], ["Title", "Content", "Closing"])
+
+    def test_template_bookmark_strips_pasted_images(self):
+        big = "data:image/png;base64," + "B" * 9000
+        slide = {"bg": "#0f172a", "bgFx": "none", "transition": "zoom", "els": [
+            {"id": "a", "type": "text", "text": "Title here", "x": 60, "y": 40, "w": 600, "h": 80, "size": 60},
+            {"id": "b", "type": "image", "src": big, "x": 600, "y": 120, "w": 300, "h": 300},
+            {"no": "type"}]}
+        item = self.post({"kind": "template", "name": "Hero split", "w": 960, "h": 540, "payload": {"slide": slide}}).json()["item"]
+        tpl = item["payload"]["slide"]
+        self.assertEqual((tpl["transition"], len(tpl["els"])), ("zoom", 2))
+        self.assertEqual(tpl["els"][1]["src"], "")
+        self.assertEqual(item["els"], [])
+
+    def test_kinds_are_listed_together(self):
+        self.post({"kind": "background", "name": "A", "payload": {"bg": "#111"}})
+        self.post({"kind": "template", "name": "B", "payload": {"slide": {"bg": "#222", "els": []}}})
+        kinds = sorted(i["kind"] for i in self.client.get(self.url).json()["items"])
+        self.assertEqual(kinds, ["background", "template"])

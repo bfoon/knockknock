@@ -608,13 +608,24 @@
       card.appendChild(mini(demo));
       card.insertAdjacentHTML("beforeend", `<div class="kai-bgmeta"><b>${esc(v.name)}</b><small>${roles[i] || ""}${v.bgFx && v.bgFx !== "none" ? " · ✨ " + esc(v.bgFx) : ""}</small>
         <span class="kai-swatches">${(v.palette || []).map(c => `<i style="background:${esc(c)}"></i>`).join("")}</span></div>`);
-      card.appendChild(actions([
+      const btns = [
         ["This slide", () => applyBg([v], "slide"), true],
         ["All slides", () => applyBg(vars, "deck", i)],
-      ]));
+      ];
+      if (window.HannsLibrary) btns.push(["☆", e => window.HannsLibrary.saveBackground(
+        { bg: v.bg, bgFx: v.bgFx, palette: v.palette, text: v.text, bgMode: "preset" },
+        { name: v.name, from: e.currentTarget }).then(ok => { if (ok) e.target.textContent = "★"; })]);
+      card.appendChild(actions(btns));
       o.appendChild(card);
     });
-    if (vars.length > 1) o.appendChild(actions([["✦ Apply the matched set to the whole deck", () => applyBg(vars, "set"), true], ["↻ Paint new ones", runBackground]]));
+    if (vars.length > 1) {
+      const row = [["✦ Apply the matched set to the whole deck", () => applyBg(vars, "set"), true], ["↻ Paint new ones", runBackground]];
+      if (window.HannsLibrary) row.push(["☆ Save the set", e => window.HannsLibrary.saveBgSet(
+        vars.map((v, i) => ({ bg: v.bg, bgFx: v.bgFx, palette: v.palette, text: v.text, bgMode: "preset", role: roles[i] })),
+        { name: (vars[0].name || "Backdrop").split("·")[0].trim() + " set", from: e.currentTarget })
+        .then(ok => { if (ok) e.target.textContent = "★ Set saved"; })]);
+      o.appendChild(actions(row));
+    }
   }
 
   function previewWithBg(slide, v) {

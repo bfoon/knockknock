@@ -1,7 +1,8 @@
 """JSON API for the design library (used by static/hanns/js/hanns_library.js).
 
     GET  /designlib/                 your bookmarks
-    POST /designlib/                 save one   {name, els, w, h, kind, prompt, tags, color}
+    POST /designlib/                 save one   {name, kind, els | payload, w, h, prompt, tags, color}
+                                     kind: ai | selection (els) · background | bgset | template (payload)
     POST /designlib/<id>/            update     {name?, pinned?, tags?} or {"use": true}
     POST /designlib/<id>/delete/     remove
 """
@@ -41,6 +42,43 @@ def _strip_inline_images(node):
     return node
 
 
+BG_KEYS = ("bg", "bgSize", "bgFx", "bgFxColor", "bgMode", "bgC1", "bgC2", "bgC3", "bgAngle", "bgUse3", "text", "role")
+UNSAFE_CSS = re.compile(r"expression\s*\(|javascript:|<\s*/?\s*\w|@import", re.I)
+
+
+def _clean_bg(v):
+    if not isinstance(v, dict) or not isinstance(v.get("bg"), str) or not v["bg"].strip():
+        return None
+    out = {k: v[k] for k in BG_KEYS if k in v and isinstance(v[k], (str, int, float, bool, type(None)))}
+    if any(isinstance(x, str) and UNSAFE_CSS.search(x) for x in out.values()):
+        return None
+    pal = [c for c in v.get("palette") or [] if isinstance(c, str) and COLOR_RE.match(c)][:6]
+    if pal:
+        out["palette"] = pal
+    if isinstance(v.get("tone"), (int, float)):
+        out["tone"] = max(0.0, min(1.0, float(v["tone"])))
+    return out
+
+
+def _clean_payload(kind, p):
+    """Validate a background / set / template bookmark. Returns (payload, error)."""
+    if not isinstance(p, dict):
+        return None, "Nothing to bookmark."
+    if kind == "background":
+        bg = _clean_bg(p)
+        return (bg, None) if bg else (None, "That background can't be saved.")
+    if kind == "bgset":
+        variants = [b for b in (_clean_bg(v) for v in (p.get("variants") or [])[:6]) if b]
+        return ({"variants": variants}, None) if len(variants) >= 2 else (None, "A set needs at least two backgrounds.")
+    slide = p.get("slide")
+    if not isinstance(slide, dict):
+        return None, "Nothing to bookmark."
+    bg = _clean_bg(slide) or {"bg": "#0f172a"}
+    els = [e for e in (slide.get("els") or [])[:80] if isinstance(e, dict) and e.get("type")]
+    bg.update({"els": _strip_inline_images(els), "transition": str(slide.get("transition") or "fade")[:24]})
+    return {"slide": bg}, None
+
+
 def _bad(msg, status=400):
     return JsonResponse({"ok": False, "error": msg}, status=status)
 
@@ -55,12 +93,19 @@ def bookmarks(request):
         p = json.loads(request.body or "{}")
     except ValueError:
         return _bad("That request was malformed.")
-    els = p.get("els")
-    if not isinstance(els, list) or not els or not all(isinstance(e, dict) and e.get("type") for e in els):
-        return _bad("Select something to bookmark first.")
-    els = _strip_inline_images(els[:60])
-    if len(json.dumps(els)) > MAX_JSON_BYTES:
-        return _bad("That design is too big to bookmark — try fewer elements.")
+    kind = p.get("kind") if p.get("kind") in dict(DesignBookmark.KIND_CHOICES) else "selection"
+    els, payload = [], {}
+    if kind in DesignBookmark.DESIGN_KINDS:
+        els = p.get("els")
+        if not isinstance(els, list) or not els or not all(isinstance(e, dict) and e.get("type") for e in els):
+            return _bad("Select something to bookmark first.")
+        els = _strip_inline_images(els[:60])
+    else:
+        payload, problem = _clean_payload(kind, p.get("payload"))
+        if problem:
+            return _bad(problem)
+    if len(json.dumps(els)) + len(json.dumps(payload)) > MAX_JSON_BYTES:
+        return _bad("That's too big to bookmark — if it uses a pasted image, upload the image instead and try again.")
     if DesignBookmark.objects.filter(owner=request.user).count() >= MAX_PER_USER:
         return _bad(f"Your library is full ({MAX_PER_USER} designs) — delete a few first.")
     try:
@@ -72,8 +117,7 @@ def bookmarks(request):
     b = DesignBookmark.objects.create(
         owner=request.user,
         name=(" ".join(str(p.get("name") or "").split())[:80] or "Untitled design"),
-        kind="ai" if p.get("kind") == "ai" else "selection",
-        els=els, w=w, h=h,
+        kind=kind, els=els, payload=payload, w=w, h=h,
         prompt=str(p.get("prompt") or "")[:600],
         tags=_clean_tags(p.get("tags")),
         color=color if COLOR_RE.match(color) else "",

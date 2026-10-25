@@ -627,6 +627,8 @@ function apply(next, notice){
   syncFrame();
   updateBadge();
   if(notice) handleNotice(notice);
+  // add-ons (event backgrounds) render from the same snapshot
+  document.dispatchEvent(new CustomEvent("scr:state", {detail: next}));
 }
 
 /* ── realtime ─────────────────────────────────────────────────────── */

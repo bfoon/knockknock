@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     "icebreakers.apps.IcebreakersConfig",
     "tabletop",
     "designlib",
+    "screenart",
 ]
 
 MIDDLEWARE = [

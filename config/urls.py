@@ -23,6 +23,7 @@ urlpatterns = [
     path("chalk/", include("chalk.urls", namespace="chalk")),
     path("tabletop/", include("tabletop.urls", namespace="tabletop")),
     path("designlib/", include("designlib.urls", namespace="designlib")),
+    path("screenart/", include("screenart.urls", namespace="screenart")),
 ]
 
 # ── User-uploaded media (/media/…) ─────────────────────────────────────

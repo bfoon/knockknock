@@ -137,6 +137,7 @@ def screen_stage(request, token):
             "shareBase": base + "share/",
             "controlEntryUrl": _abs(request, "hanns:screen_control_entry"),
             "hannsUrl": _abs(request, "hanns:list"),
+            "backdropBase": f"/screenart/s/{screen.token}/",
         }),
     })
 
@@ -283,6 +284,11 @@ def screen_stop(request, token):
             [s for s in closed if s.control_code]
         )
         svc.push_stopped(screen)
+        try:                                   # a stopped screen can't come back: free its event backgrounds
+            from screenart.services import delete_all
+            delete_all(screen.id)
+        except Exception:
+            pass
     nxt = request.POST.get("next")
     if nxt and nxt.startswith("/") and not nxt.startswith("//"):
         return redirect(nxt)

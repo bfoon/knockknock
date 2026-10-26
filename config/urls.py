@@ -24,6 +24,7 @@ urlpatterns = [
     path("tabletop/", include("tabletop.urls", namespace="tabletop")),
     path("designlib/", include("designlib.urls", namespace="designlib")),
     path("screenart/", include("screenart.urls", namespace="screenart")),
+    path("livestyle/", include("livestyle.urls", namespace="livestyle")),
 ]
 
 # ── User-uploaded media (/media/…) ─────────────────────────────────────

@@ -1,4 +1,4 @@
-{% load static %}<!doctype html>
+{% load static livestyle %}<!doctype html>
 <html lang="en" data-bs-theme="dark">
 <head>
 <meta charset="utf-8">
@@ -2094,7 +2094,8 @@
      data-code="{{ session.code }}"
      data-kind="{{ session.kind }}"
      data-mode="{{ session.mode }}"
-     data-chart-bg="{{ chart_background|default:'normal' }}">
+     data-chart-bg="{{ chart_background|default:'normal' }}"{% if session.kind == "poll" %}{% poll_chart_style session.questionnaire_id as cs %}
+     data-chart-style="{{ cs.style }}" data-chart-panel="{{ cs.panel }}"{% endif %}>
 
   <header class="kk-stage-header">
     <a href="{% if session.kind == 'poll' %}{% url 'polls:edit' session.questionnaire.pk %}{% else %}{% url 'games:edit' session.quiz.pk %}{% endif %}"
@@ -2487,7 +2488,8 @@
   </div>
 </div>
 
-<script src="{% static 'js/chart_preview.js' %}?v=14"></script>
+<script src="{% static 'js/kk_chart_style.js' %}?v=3"></script>
+<script src="{% static 'js/chart_preview.js' %}?v=15"></script>
 <script src="{% static 'js/chart_extra.js' %}?v=1"></script>
 <script src="{% static 'js/draw_overlay.js' %}?v=9"></script>
 <script src="{% static 'js/chart_fx.js' %}?v=3"></script>
@@ -2805,6 +2807,6 @@
 })();
 </script>
 
-<script src="{% static 'js/present.js' %}?v=18"></script>
+<script src="{% static 'js/present.js' %}?v=20"></script>
 </body>
 </html>

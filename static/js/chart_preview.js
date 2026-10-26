@@ -575,6 +575,18 @@
     return options;
   }
 
+  // Poll chart style (kk_chart_style.js): theme-matched colours / finishing.
+  // Without it — and for games and the "classic" style — nothing changes.
+  function themedColors(count, kind) {
+    const p = window.kkChartPaint;
+    const own = p && p.colors(count, kind);
+    return own || Array.from({ length: count }, (_, index) => DEFAULT_COLORS[index % DEFAULT_COLORS.length]);
+  }
+  function styleDataset(ds, kind) {
+    const p = window.kkChartPaint;
+    return p && p.dataset ? p.dataset(ds, kind) : ds;
+  }
+
   function buildDataset(chartKind, values, colors) {
     if (chartKind === "line") {
       return {
@@ -654,13 +666,13 @@
 
     const labels = choices.length ? choices.map((choice) => choice.text) : ["No choices"];
     const values = choices.length ? choices.map(() => 0) : [0];
-    const colors = labels.map((_, index) => DEFAULT_COLORS[index % DEFAULT_COLORS.length]);
+    const colors = themedColors(labels.length, chartInfo.type);
 
     holder.chart = new Chart(canvas, {
       type: chartInfo.type,
       data: {
         labels,
-        datasets: [buildDataset(chartInfo.type, values, colors)],
+        datasets: [styleDataset(buildDataset(chartInfo.type, values, colors), chartInfo.type)],
       },
       options: baseOptions(values, chartInfo.type, chartInfo.indexAxis),
     });
@@ -688,7 +700,7 @@
 
     const labels = choices.map((choice) => choice.text);
     const values = tallyData.values;
-    const colors = labels.map((_, index) => DEFAULT_COLORS[index % DEFAULT_COLORS.length]);
+    const colors = themedColors(labels.length, chartInfo.type);
 
     const options = baseOptions(values, chartInfo.type, chartInfo.indexAxis);
 
@@ -709,7 +721,7 @@
       type: chartInfo.type,
       data: {
         labels,
-        datasets: [buildDataset(chartInfo.type, values, colors)],
+        datasets: [styleDataset(buildDataset(chartInfo.type, values, colors), chartInfo.type)],
       },
       options,
     });

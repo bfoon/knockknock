@@ -1287,7 +1287,7 @@
           borderRadius: 18,
           borderWidth: 1,
           borderColor: "rgba(255,255,255,.35)",
-          backgroundColor: labels.map((_, i) => [
+          backgroundColor: (window.kkChartPaint && window.kkChartPaint.colors(labels.length, "bar")) || labels.map((_, i) => [
             "rgba(124,58,237,.82)",
             "rgba(34,211,238,.82)",
             "rgba(251,113,133,.82)",
@@ -2302,7 +2302,10 @@
     if (!slider || !wrap) return;
 
     const KEY = "kk-chart-bg-opacity";
-    const stored = Number(localStorage.getItem(KEY));
+    // Number(null) is 0: a browser that never touched the slider used to get a
+    // fully opaque veil (a solid dark box over the chart). Default to 100%.
+    const raw = localStorage.getItem(KEY);
+    const stored = raw === null || raw === "" ? NaN : Number(raw);
     const initial = Number.isFinite(stored) && stored >= 0 && stored <= 100 ? stored : 100;
 
     function apply(percent) {

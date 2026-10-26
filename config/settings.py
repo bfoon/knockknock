@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     "tabletop",
     "designlib",
     "screenart",
+    "livestyle",
 ]
 
 MIDDLEWARE = [

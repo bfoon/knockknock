@@ -112,6 +112,15 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
         self.role = msg.get("role", "participant")
         self.uid = msg.get("uid") or str(uuid.uuid4())
 
+        # The role used to be taken on the client's word: anyone with the
+        # session code could say "presenter" and advance, end, reveal answers
+        # or extend timers. Only the session's owner (the one person the
+        # presenter page opens for) may be the presenter; anyone else claiming
+        # it becomes a read-only viewer.
+        if self.role == "presenter" and not await self._may_present():
+            self.role = "viewer"
+            await self.send_json({"type": "error", "detail": "Only the session's presenter can control it."})
+
         if self.role == "participant":
             existing = await self._get_participant(self.session_pk, self.uid)
 
@@ -672,6 +681,16 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 },
             },
         )
+
+    @database_sync_to_async
+    def _may_present_sync(self, user_id):
+        return LiveSession.objects.filter(pk=self.session_pk, owner_id=user_id).exists()
+
+    async def _may_present(self):
+        user = self.scope.get("user")
+        if not user or not getattr(user, "is_authenticated", False) or not self.session_pk:
+            return False
+        return await self._may_present_sync(user.pk)
 
     @database_sync_to_async
     def _get_session(self, code):

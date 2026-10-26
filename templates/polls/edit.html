@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static livestyle %}
 
 {% block title %}{{ questionnaire.title }} · Knock-Knock{% endblock %}
 
 {% block content %}
-<link rel="stylesheet" href="{% static 'css/polls.css' %}?v=2">
+<link rel="stylesheet" href="{% static 'css/polls.css' %}?v=3">
 
 <div class="p">
   <div class="p-head">
@@ -222,8 +222,11 @@
           polls:set_template (and restyles any live session); the hidden input
           keeps "Save settings" consistent. polls_editor.js builds the tiles.
         {% endcomment %}
+        {% poll_chart_style questionnaire.pk as cs %}
         <div class="p-subpanel mb-3 p-studio" id="theme-studio"
-             data-save-url="{% url 'polls:set_template' questionnaire.pk %}">
+             data-save-url="{% url 'polls:set_template' questionnaire.pk %}"
+             data-chart-url="{% url 'livestyle:poll_charts' questionnaire.pk %}"
+             data-chart-style="{{ cs.style }}" data-chart-panel="{{ cs.panel }}">
           <h3 class="p-section" style="font-size:.88rem;">
             <i class="bi bi-palette"></i> Theme studio
             <span id="theme-status" class="p-save-state" role="status" aria-live="polite"></span>
@@ -234,6 +237,18 @@
             <span class="p-sp-q">{% firstof questions.0.text "How are you feeling today?" %}</span>
             <span class="p-sp-bars">
               <i style="--h:46%"><b>A</b></i><i style="--h:88%"><b>B</b></i><i style="--h:64%"><b>C</b></i><i style="--h:30%"><b>D</b></i>
+            </span>
+          </div>
+          {# Chart style (kk_chart_style_editor.js): how live charts sit on the theme. #}
+          <div class="p-cs" role="group" aria-label="Chart style">
+            <span class="p-cs-label">Charts</span>
+            <button type="button" class="p-cs-opt" data-cs="theme" title="Bars in the theme's colours, straight on the background — like this preview"><span class="p-cs-ic t"></span>Match theme</button>
+            <button type="button" class="p-cs-opt" data-cs="panel" title="The chart sits on its own separate card"><span class="p-cs-ic p"></span>On a card</button>
+            <button type="button" class="p-cs-opt" data-cs="classic" title="The original colourful bars on a dark band"><span class="p-cs-ic c"></span>Classic</button>
+            <span class="p-cs-panels" hidden>
+              <button type="button" data-cp="glass" title="Frosted glass">Glass</button>
+              <button type="button" data-cp="dark" title="Dark card">Dark</button>
+              <button type="button" data-cp="light" title="Light card">Light</button>
             </span>
           </div>
           <div class="p-st-tools">
@@ -294,4 +309,5 @@
   an inline script that ran first — so drag-and-drop never switched on.
 {% endcomment %}
 <script src="{% static 'js/polls_editor.js' %}?v=1"></script>
+<script src="{% static 'js/kk_chart_style_editor.js' %}?v=1"></script>
 {% endblock %}

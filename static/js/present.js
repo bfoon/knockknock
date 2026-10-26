@@ -207,7 +207,8 @@
     ws.addEventListener("open", () => {
       send({
         type: "hello",
-        role: "presenter",
+        // on a Hanns Big Screen this page is display only: a read-only viewer
+        role: window.__KK_SCREEN_MODE__ ? "screen" : "presenter",
         uid: "presenter-" + Math.random().toString(36).slice(2),
       });
     });

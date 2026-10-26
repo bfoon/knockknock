@@ -105,6 +105,8 @@ def delete_all(screen_id):
             pass
     ScreenBackdrop.objects.filter(screen_id=screen_id).delete()
     ScreenStyle.objects.filter(screen_id=screen_id).delete()
+    from .live import delete_all as delete_live
+    delete_live(screen_id)
 
 
 def style_for(screen_id):

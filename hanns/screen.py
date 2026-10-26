@@ -127,7 +127,17 @@ def screen_state(screen):
         "waiting": sum(1 for s in shares if s.status == s.STATUS_WAITING),
         "control_entry_url": reverse("hanns:screen_control_entry"),
         "backdrop": _backdrop(screen),
+        "live": _live(screen),
     }
+
+
+def _live(screen):
+    """Menti polls / games shared to this screen (screenart.live)."""
+    try:
+        from screenart.live import live_for
+        return live_for(screen.id) if screen.is_active else None
+    except Exception:
+        return None
 
 
 def _backdrop(screen):

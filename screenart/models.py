@@ -57,3 +57,29 @@ class ScreenStyle(models.Model):
         out = dict(DEFAULT_STYLE)
         out.update({k: v for k, v in (self.settings or {}).items() if k in DEFAULT_STYLE})
         return out
+
+
+class ScreenLiveShare(models.Model):
+    """A Menti poll or game a presenter sent to a big screen.
+
+    It waits in the screen's lobby until the host puts it on air; the host
+    then drives it (next / back / reveal / +30 s / end) from the big screen.
+    The live session is referred to by id + code (no foreign key: the
+    presentations app's migrations live on the server, not in the repo).
+    """
+    STATUS_CHOICES = [("waiting", "Waiting"), ("onair", "On air")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    screen_id = models.UUIDField(db_index=True)
+    session_pk = models.PositiveIntegerField()
+    session_code = models.CharField(max_length=12)
+    kind = models.CharField(max_length=8)            # poll | game
+    title = models.CharField(max_length=200)
+    owner_id = models.PositiveIntegerField()
+    owner_name = models.CharField(max_length=150, blank=True, default="")
+    status = models.CharField(max_length=8, choices=STATUS_CHOICES, default="waiting")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        constraints = [models.UniqueConstraint(fields=["screen_id", "session_pk"], name="uniq_live_share_per_screen")]

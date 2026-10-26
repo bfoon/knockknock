@@ -2088,7 +2088,27 @@
 </style>
 </head>
 
-<body>
+<body{% if screen_mode %} class="kk-screen-mode"{% endif %}>
+{% if screen_mode %}
+{# Shown on a Hanns Big Screen: display only — the big screen host drives it. #}
+<script>
+  window.__KK_SCREEN_MODE__ = true;
+  // The big screen host's keys belong to the big screen (→ next, ← back, R reveal,
+  // B event background, Q panel…), even when this embedded view has the focus.
+  document.addEventListener("keydown", function (e) {
+    if (!/^(ArrowRight|ArrowLeft|PageDown|PageUp| |r|R|b|B|q|Q|f|F|Escape)$/.test(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (window.parent !== window) window.parent.postMessage({ kkScreenKey: e.key }, location.origin);
+  }, true);
+</script>
+<style>
+  body.kk-screen-mode .kk-stage-header > a, body.kk-screen-mode .kk-stage-header .ms-auto,
+  body.kk-screen-mode .kk-presenter-control-card, body.kk-screen-mode .kk-stage-side > .kk-card,
+  body.kk-screen-mode #kk-bigscreen-btn, body.kk-screen-mode .kkt-fab, body.kk-screen-mode .kkt-switch,
+  body.kk-screen-mode #btn-start, body.kk-screen-mode .kk-lobby-tip { display: none !important; }
+  body.kk-screen-mode { cursor: none; }
+</style>
+{% endif %}
 <div class="kk-stage"
      id="stage"
      data-code="{{ session.code }}"
@@ -2112,6 +2132,15 @@
     <div class="text-secondary small d-none d-md-block">{{ session.title }}</div>
 
     <div class="ms-auto d-flex align-items-center gap-2 flex-wrap">
+      {% if not screen_mode %}
+        {# Send this live session to a Hanns Big Screen (kk_bigscreen_share.js). #}
+        <button type="button" class="kk-btn kk-btn-ghost btn-sm" id="kk-bigscreen-btn"
+                data-share-url="{% url 'screenart:live_share' %}" data-unshare-url="{% url 'screenart:live_unshare' %}"
+                title="Show this {{ session.kind|default:'session' }} on a Hanns Big Screen — the screen's host runs it from the lobby">
+          <i class="bi bi-display"></i> Big screen
+        </button>
+        {% csrf_token %}{# sets the CSRF cookie the Big screen request needs #}
+      {% endif %}
 
       {% if session.kind != "game" %}
         <div class="kk-tools" id="draw-tools">
@@ -2807,6 +2836,7 @@
 })();
 </script>
 
-<script src="{% static 'js/present.js' %}?v=20"></script>
+<script src="{% static 'js/present.js' %}?v=21"></script>
+{% if not screen_mode %}<script src="{% static 'js/kk_bigscreen_share.js' %}?v=2"></script>{% endif %}
 </body>
 </html>

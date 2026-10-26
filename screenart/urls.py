@@ -8,4 +8,11 @@ urlpatterns = [
     path("s/<str:token>/upload/", views.upload, name="upload"),
     path("s/<str:token>/settings/", views.settings, name="settings"),
     path("s/<str:token>/<uuid:image_id>/delete/", views.delete, name="delete"),
+    # live polls & games
+    path("live/share/", views.live_share, name="live_share"),
+    path("live/unshare/", views.live_unshare, name="live_unshare"),
+    path("s/<str:token>/live/<uuid:share_id>/air/", views.live_air, name="live_air"),
+    path("s/<str:token>/live/<uuid:share_id>/control/", views.live_control, name="live_control"),
+    path("s/<str:token>/live/<uuid:share_id>/remove/", views.live_remove, name="live_remove"),
+    path("s/<str:token>/live/<uuid:share_id>/view/", views.live_view, name="live_view"),
 ]

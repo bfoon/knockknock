@@ -137,3 +137,16 @@ class EventBackgroundTests(TestCase):
         r = self.client.get(f"/hanns/screen/s/{self.screen.token}/")
         self.assertContains(r, f"/screenart/s/{self.screen.token}/")
         self.assertContains(r, "hanns_screen_backdrop.js")
+
+
+@override_settings(MEDIA_ROOT=TMP, STATICFILES_STORAGE="django.contrib.staticfiles.storage.StaticFilesStorage")
+class HostDashboardTests(TestCase):
+    def test_screens_page_has_the_background_button(self):
+        host = get_user_model().objects.create_user("host2", password="pw-pw-pw-123")
+        screen = BigScreen.objects.create(owner=host, name="Main Screen")
+        self.client.force_login(host)
+        r = self.client.get("/hanns/screen/")
+        self.assertContains(r, "data-bg-toggle")
+        self.assertContains(r, "Event background")
+        self.assertContains(r, "hanns_screen_home_bg.js")
+        self.assertContains(r, f'data-token="{screen.token}"')

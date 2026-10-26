@@ -230,6 +230,67 @@
     .bs-cc{grid-template-columns:1fr}
     .bs-cc-qr-shell{justify-self:start}
   }
+
+  /* ── event background (hanns_screen_home_bg.js) ── */
+  .bs-bg-btn{display:inline-flex;align-items:center;gap:.65rem;margin-top:.7rem;padding:.4rem .7rem .4rem .4rem;border-radius:14px;cursor:pointer;
+    border:1px dashed rgba(250,204,21,.55);background:rgba(250,204,21,.06);color:var(--kk-text,#f4f1ff);text-align:left;max-width:100%;
+    transition:background .15s,border-color .15s,box-shadow .15s}
+  .bs-bg-btn:hover,.bs-bg-btn.open{background:rgba(250,204,21,.12);border-style:solid}
+  .bs-bg-btn.drop{box-shadow:0 0 0 3px rgba(250,204,21,.45)}
+  .bs-bg-btn.live{border-color:#ff3b5c;background:rgba(255,59,92,.12)}
+  .bs-bg-sw{flex:0 0 auto;width:64px;height:36px;border-radius:8px;display:grid;place-items:center;font-size:1.1rem;color:#facc15;
+    background:rgba(255,255,255,.06) center/cover no-repeat;border:1px solid var(--kk-border,rgba(255,255,255,.12))}
+  .bs-bg-sw.has i{display:none}
+  .bs-bg-txt{display:flex;flex-direction:column;min-width:0;line-height:1.2}
+  .bs-bg-txt b{font-size:.86rem}
+  .bs-bg-txt small{font-size:.72rem;color:var(--kk-text-dim,#a9a6c2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bs-bg-btn.live .bs-bg-txt small{color:#fda4af;font-weight:600}
+  .bs-bg-chev{font-size:.8rem;color:var(--kk-text-dim,#a9a6c2);transition:transform .2s}
+  .bs-bg-btn.open .bs-bg-chev{transform:rotate(180deg)}
+  .bs-bgpanel{padding:1rem 1.2rem;border-bottom:1px solid var(--kk-border,rgba(255,255,255,.1));
+    background:radial-gradient(120% 120% at 0% 0%,rgba(250,204,21,.07),transparent 60%);transition:box-shadow .15s}
+  .bs-bgpanel.drop{box-shadow:inset 0 0 0 2px rgba(250,204,21,.6)}
+  .bs-bg-head{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;margin-bottom:.7rem}
+  .bs-bg-head b{display:block;font-size:.95rem}
+  .bs-bg-head span{font-size:.8rem;color:var(--kk-text-dim,#a9a6c2)}
+  .bs-bg-strip{display:flex;gap:.6rem;overflow-x:auto;padding:.2rem .1rem .55rem}
+  .bs-bg-th{position:relative;flex:0 0 auto;width:150px;aspect-ratio:16/9;border-radius:10px;cursor:pointer;border:2px solid transparent;
+    background:#111 center/cover no-repeat;box-shadow:0 6px 16px -8px rgba(0,0,0,.7);transition:transform .15s,border-color .15s}
+  .bs-bg-th:hover{transform:translateY(-2px)}
+  .bs-bg-th.on{border-color:#22d3ee;box-shadow:0 0 0 3px rgba(34,211,238,.25)}
+  .bs-bg-th button{position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:7px;border:0;cursor:pointer;
+    background:rgba(7,6,13,.75);color:#fda4af;opacity:0;transition:opacity .15s}
+  .bs-bg-th:hover button{opacity:1}
+  .bs-bg-add{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.2rem;color:var(--kk-text-dim,#a9a6c2);
+    background:rgba(255,255,255,.04);border:2px dashed rgba(250,204,21,.45);font:600 .74rem/1.2 inherit;padding:.3rem}
+  .bs-bg-add i{font-size:1.4rem;color:#facc15}
+  .bs-bg-add:hover{color:var(--kk-text,#fff);border-color:#facc15}
+  .bs-bg-progress{height:5px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden;margin:.1rem 0 .55rem}
+  .bs-bg-progress i{display:block;height:100%;width:0;background:linear-gradient(90deg,#facc15,#fb923c);transition:width .2s}
+  .bs-bg-note{font-size:.8rem;margin:.1rem 0 .6rem;color:#86efac}
+  .bs-bg-note.bad{color:#fde68a}
+  .bs-bg-main{display:flex;flex-wrap:wrap;gap:.6rem 1rem;align-items:center;margin-bottom:.75rem}
+  .bs-bg-show{flex:1 1 220px;display:inline-flex;align-items:center;justify-content:center;gap:.45rem;padding:.65rem 1rem;border-radius:12px;
+    border:0;cursor:pointer;font-weight:700;color:#1f1300;background:linear-gradient(135deg,#facc15,#fb923c);box-shadow:0 8px 22px -10px rgba(251,146,60,.8)}
+  .bs-bg-show.on{color:#fff;background:linear-gradient(135deg,#ff3b5c,#be123c);box-shadow:0 8px 22px -10px rgba(255,59,92,.8)}
+  .bs-bg-sw2{display:inline-flex;gap:.4rem;align-items:center;font-size:.82rem;color:var(--kk-text-dim,#a9a6c2);cursor:pointer}
+  .bs-bg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.6rem 1rem}
+  .bs-bg-seg,.bs-bg-f{display:flex;align-items:center;gap:.45rem;font-size:.8rem;color:var(--kk-text-dim,#a9a6c2)}
+  .bs-bg-seg>span,.bs-bg-f>span{min-width:5.6em}
+  .bs-bg-seg button{border:1px solid var(--kk-border,rgba(255,255,255,.14));background:rgba(255,255,255,.04);color:var(--kk-text,#fff);
+    border-radius:9px;padding:.35rem .65rem;cursor:pointer;font-size:.78rem}
+  .bs-bg-seg button.on{background:rgba(34,211,238,.16);border-color:rgba(34,211,238,.5)}
+  .bs-bg-f input[type=text],.bs-bg-f input[type=time],.bs-bg-f select{flex:1;min-width:0;border-radius:9px;padding:.4rem .55rem;
+    border:1px solid var(--kk-border,rgba(255,255,255,.16));background:rgba(255,255,255,.05);color:var(--kk-text,#fff);font:inherit;color-scheme:dark}
+  .bs-bg-f input[type=range]{flex:1;accent-color:#facc15}
+  .bs-bg-f.wide{grid-column:1/-1}
+  .bs-bg-cdx{border:0;background:none;color:var(--kk-text-dim,#a9a6c2);cursor:pointer}
+  .bs-bgpanel button:disabled,.bs-bgpanel input:disabled,.bs-bgpanel select:disabled{opacity:.45;cursor:default}
+  .bs-mon-bg{position:absolute;inset:0;z-index:3;background:#000 center/cover no-repeat;display:flex;align-items:flex-end;justify-content:center}
+  .bs-mon-bg.behind{z-index:0;opacity:.55}
+  .bs-mon-bg span{margin-bottom:8%;padding:0 6%;font:800 clamp(.7rem,1.4vw,1rem)/1.1 "Archivo",system-ui,sans-serif;color:#fff;text-align:center;
+    text-shadow:0 2px 10px rgba(0,0,0,.8)}
+  .bs-monitor.bg-live .bs-monitor-k .pulse{background:#ff3b5c}
 </style>
 {% endblock %}
 
@@ -267,6 +328,12 @@
     <div class="bs-title">
       <div class="k"><span class="dot" data-dot></span><span data-seen>Big screen</span></div>
       <h2 data-name>{{ c.screen.name }}</h2>
+      {# Event background for this screen (hanns_screen_home_bg.js): upload, then show it on the projector. #}
+      <button class="bs-bg-btn" type="button" data-bg-toggle aria-expanded="false" title="Upload an event background and show it on the big screen">
+        <span class="bs-bg-sw" data-bg-swatch><i class="bi bi-image"></i></span>
+        <span class="bs-bg-txt"><b>Event background</b><small data-bg-sub>Upload an image for the screen</small></span>
+        <i class="bi bi-chevron-down bs-bg-chev"></i>
+      </button>
     </div>
 
     {# Live host monitor: rendered by JS from the current slide snapshot. #}
@@ -294,6 +361,8 @@
       <button class="bs-ic" type="button" data-rotate title="New share code"><i class="bi bi-arrow-repeat"></i></button>
     </div>
   </div>
+
+  <div class="bs-bgpanel" data-bg-panel hidden></div>
 
   <div class="bs-link">
     <code data-url>{{ c.url }}</code>
@@ -625,6 +694,7 @@
 
         root.querySelector("[data-seen]").textContent = "Lobby";
         renderMonitor();
+        root.dispatchEvent(new CustomEvent("bs:state", {detail: state}));   // add-ons, on this early exit too
         return;
       }
 
@@ -702,6 +772,8 @@
         : "Lobby";
 
       renderMonitor();
+      // add-ons (event background controls) render from the same snapshot
+      root.dispatchEvent(new CustomEvent("bs:state", {detail: state}));
     }
 
     root.addEventListener("click", async ev=>{
@@ -926,5 +998,6 @@
   });
 })();
 </script>
+<script src="{% static 'hanns/js/hanns_screen_home_bg.js' %}?v=1"></script>
 {% endif %}
 {% endblock %}

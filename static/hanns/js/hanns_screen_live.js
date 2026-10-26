@@ -37,11 +37,11 @@
   .lv-live::before{content:"";width:7px;height:7px;border-radius:50%;background:#ff3b5c;animation:lvP 1.4s ease-in-out infinite}
   @keyframes lvP{50%{opacity:.35}}
   .lv-acts{display:flex;gap:.35rem;flex-wrap:wrap;justify-content:flex-end}
-  .lv-acts button{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);color:#f1f5f9;border-radius:10px;
+  .lv-acts button,.lv-ctl button{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);color:#f1f5f9;border-radius:10px;
     padding:.42rem .7rem;font:600 .78rem/1 system-ui,sans-serif;cursor:pointer;white-space:nowrap}
-  .lv-acts button:hover{border-color:#a78bfa}
+  .lv-acts button:hover,.lv-ctl button:hover{border-color:#a78bfa}
   .lv-acts .go{border:0;color:#fff;background:linear-gradient(135deg,#ff3b5c,#f97316)}
-  .lv-acts .nx{border:0;color:#04121a;background:linear-gradient(135deg,#22d3ee,#a78bfa)}
+  .lv-acts .nx,.lv-ctl .nx{border:0;color:#04121a;background:linear-gradient(135deg,#22d3ee,#a78bfa)}
   .lv-acts .x{color:#fda4af}
   .lv-ctl{grid-column:1/-1;display:flex;gap:.35rem;flex-wrap:wrap}
   .lv-ctl button{flex:1 1 auto}

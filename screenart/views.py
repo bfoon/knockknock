@@ -182,3 +182,53 @@ def live_view(request, token, share_id):
         "join_url": join_url, "avatars": pv.AVATARS, "avatar_groups": pv.avatars_grouped(),
         "themes": pv.public_themes(), "screen_mode": True,
     })
+
+
+# ───────────────────────── music & video, event ─────────────────────────
+from . import program
+
+
+@require_POST
+def media(request, token):
+    screen = _screen(token)
+    if not screen.is_active:
+        return _stopped()
+    data, bad = _json(request)
+    if bad:
+        return bad
+    try:
+        program.media_action(screen.id, data)
+    except program.ProgramError as e:
+        return JsonResponse({"ok": False, "error": str(e)}, status=400)
+    return JsonResponse({"ok": True, "state": _push(screen)})
+
+
+@require_GET
+def events(request, token):
+    screen = _screen(token)
+    if not screen.is_active:
+        return _stopped()
+    return JsonResponse({"ok": True, "events": program.owner_events(screen)})
+
+
+@require_POST
+def event(request, token):
+    screen = _screen(token)
+    if not screen.is_active:
+        return _stopped()
+    data, bad = _json(request)
+    if bad:
+        return bad
+    try:
+        program.set_event(screen, data)
+    except program.ProgramError as e:
+        return JsonResponse({"ok": False, "error": str(e)}, status=400)
+    return JsonResponse({"ok": True, "state": _push(screen)})
+
+
+@require_GET
+def event_data(request, token):
+    screen = _screen(token)
+    if not screen.is_active:
+        return _stopped()
+    return JsonResponse({"ok": True, "event": program.event_data(screen, request)})

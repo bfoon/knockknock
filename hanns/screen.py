@@ -128,7 +128,20 @@ def screen_state(screen):
         "control_entry_url": reverse("hanns:screen_control_entry"),
         "backdrop": _backdrop(screen),
         "live": _live(screen),
+        "media": _program(screen, "media"),
+        "event": _program(screen, "event"),
     }
+
+
+def _program(screen, part):
+    """YouTube music/video and the Attendance event view (screenart.program)."""
+    try:
+        from screenart import program
+        if not screen.is_active:
+            return None
+        return program.media_for(screen.id) if part == "media" else program.event_for(screen.id)
+    except Exception:
+        return None
 
 
 def _live(screen):

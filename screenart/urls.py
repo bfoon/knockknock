@@ -15,4 +15,9 @@ urlpatterns = [
     path("s/<str:token>/live/<uuid:share_id>/control/", views.live_control, name="live_control"),
     path("s/<str:token>/live/<uuid:share_id>/remove/", views.live_remove, name="live_remove"),
     path("s/<str:token>/live/<uuid:share_id>/view/", views.live_view, name="live_view"),
+    # music & video, event
+    path("s/<str:token>/media/", views.media, name="media"),
+    path("s/<str:token>/events/", views.events, name="events"),
+    path("s/<str:token>/event/", views.event, name="event"),
+    path("s/<str:token>/event/data/", views.event_data, name="event_data"),
 ]

@@ -251,7 +251,7 @@
     const soundAsk = document.createElement("div"); soundAsk.className = "pm-sound";
     soundAsk.innerHTML = "<div>🔊 Click anywhere to start the sound<small>Browsers only play sound after someone clicks the screen once.</small></div>";
     document.body.append(vwrap, chip, soundAsk);
-    let yt = null, ytReady = false, loadedKey = null, apiAsked = false, skew = 0, askTimer = null;
+    let yt = null, ytReady = false, loadedKey = null, apiAsked = false, skew = 0, askTimer = null, skewFrom = null;
     function api() {
       if (apiAsked) return; apiAsked = true;
       const prev = window.onYouTubeIframeAPIReady;
@@ -283,7 +283,10 @@
     }
     function sync(force) {
       const m = state.media || {}, cur = m.current;
-      if (m.server_now) skew = m.server_now - Date.now();
+      // The server's clock vs this projector's: measured ONCE per update, when it arrives.
+      // (Re-measuring on every check against the same old server timestamp froze the target
+      // position, so the player kept jumping back a few seconds — a short loop.)
+      if (m.server_now && m.server_now !== skewFrom) { skewFrom = m.server_now; skew = m.server_now - Date.now(); }
       // layers
       const showVideo = !!(cur && m.mode === "video");
       vwrap.classList.toggle("on", showVideo);
@@ -305,7 +308,8 @@
         if (m.playing && st !== 1 && st !== 3) yt.playVideo();
         if (!m.playing && st === 1) yt.pauseVideo();
         const t = yt.getCurrentTime ? yt.getCurrentTime() : 0;
-        if (m.playing && (force || Math.abs(t - pos) > 3)) yt.seekTo(pos, true);
+        // only correct real drift, and never while YouTube is still buffering
+        if (m.playing && st === 1 && (force || Math.abs(t - pos) > 4)) yt.seekTo(pos, true);
       }
       // sound blocked until someone clicks the projector page once
       clearTimeout(askTimer);

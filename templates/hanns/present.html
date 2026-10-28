@@ -320,6 +320,10 @@
     // Big Screen embed: no presenter credentials in a page the room sees,
     // and no owner-only endpoints (the screen may not be signed in).
     embed: true,
+    // which big screen this stage is, so a paired slide remote's lock can
+    // still let it resync after a reconnect (hanns/remote.py)
+    screenToken: "{{ screen_token|escapejs }}",
+    screenShare: "{{ share_id|escapejs }}",
     controlUrl: "",
     controlPin: "",
     stateUrl: "",
@@ -348,7 +352,7 @@
      isStudioObject() says no, objectDef() finds no match and falls back
      to OBJECTS[0] — fill_cow — so every 3D bar chart draws as a cow. -->
 <script src="{% static 'hanns/js/hanns_bars3d.js' %}?v=62"></script>
-<script src="{% static 'hanns/js/hanns_present.js' %}?v=63"></script>
+<script src="{% static 'hanns/js/hanns_present.js' %}?v=64"></script>
 
 <script>
 (function(){

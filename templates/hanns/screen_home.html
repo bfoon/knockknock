@@ -345,6 +345,7 @@
       </div>
     </div>
     <div class="st-acts">
+      <a class="kk-btn kk-btn-ghost" href="{% url 'hanns:screen_dj' c.screen.token %}" target="hanns-dj-{{ c.screen.token }}" data-dj-page-open title="The DJ booth on its own page — full screen, and this device stays awake"><i class="bi bi-vinyl"></i> DJ booth <i class="bi bi-arrows-fullscreen" style="font-size:.8em"></i></a>
       <a class="kk-btn kk-btn-ghost" href="{{ c.url }}" target="_blank" rel="noopener" title="Open the projector view on this device"><i class="bi bi-box-arrow-up-right"></i> Open on this device</a>
       <button class="kk-btn kk-btn-danger" type="button" data-stop><i class="bi bi-power"></i> Stop screen</button>
     </div>
@@ -1094,6 +1095,7 @@
 <script src="{% static 'hanns/js/hanns_screen_home_bg.js' %}?v=1"></script>
 <script src="{% static 'hanns/js/hanns_screen_live.js' %}?v=4"></script>
 <script src="{% static 'hanns/js/hanns_dj_fx.js' %}?v=1"></script>
-<script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=5"></script>
+<script src="{% static 'hanns/js/hanns_screen_remote.js' %}?v=2"></script>
+<script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=6"></script>
 {% endif %}
 {% endblock %}

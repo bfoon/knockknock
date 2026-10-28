@@ -219,13 +219,30 @@
   .peek-actions{display:flex;gap:.4rem;margin-top:.55rem}
   .peek-actions .phone-btn{flex:1;padding:.6rem .3rem;font-size:.78rem}
   .peek-actions[hidden]{display:none}
+  .pin-row[hidden]{display:none}   /* hanns.css sets display:flex, which beat [hidden]: the code box stayed up once connected */
   .peek-go{background:linear-gradient(135deg,#ff8a1f,#ff3f98);color:#fff;border-color:transparent}
+  /* paired slide remote (hanns/remote.py) */
+  .remote-badge{display:flex;align-items:center;gap:.6rem;margin:.2rem 0 .6rem;padding:.55rem .75rem;border-radius:14px;
+    background:linear-gradient(135deg,rgba(45,212,191,.14),rgba(167,139,250,.14));border:1px solid rgba(45,212,191,.4)}
+  .remote-badge .ic{font-size:1.4rem}
+  .remote-badge b{display:block;font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:#5eead4}
+  .remote-badge small{display:block;font-size:.82rem;opacity:.85}
+  .remote-badge button{margin-left:auto;min-height:36px;border-radius:10px;padding:0 .7rem;border:1px solid rgba(255,255,255,.2);background:transparent;color:inherit;font:inherit;font-size:.78rem}
+  .lock-banner{margin:.2rem 0 .6rem;padding:.65rem .8rem;border-radius:14px;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.45);color:#fde68a;font-size:.86rem;line-height:1.4}
+  .lock-banner[hidden]{display:none}
+  body.remote-locked #controls button{opacity:.45}
 </style>
 </head>
 <body class="phone-control">
 <main class="phone-card">
     <div class="phone-brandline"><span class="mark">Hanns<span class="dot">.</span></span><small>Knock-Knock controller</small></div>
     <div class="phone-status" id="status">CONNECTING…</div>
+{% if remote_screen %}
+    <div class="remote-badge" role="note"><span class="ic" aria-hidden="true">📱</span>
+      <span><b>Slide remote</b><small>Paired with {{ remote_screen }} — only this phone moves its slides.</small></span>
+      <button type="button" id="remote-unpair">Unpair</button></div>
+{% endif %}
+    <div class="lock-banner" id="lock-banner" role="status" hidden></div>
     <h1 id="control-deck-title" class="title-safe" title="{{ deck.title|escape }}">{% if deck.title|length > 26 %}{{ deck.title|slice:":26" }}....{% else %}{{ deck.title }}{% endif %}</h1>
     <div class="phone-slide-title" id="slide-title">Slide 1</div>
 
@@ -399,7 +416,10 @@ window.__HANNS_CONTROL__ = {
   // The server only reaches this template once the code has been checked
   // and this browser's session marked good, so handing the page the code
   // for the socket handshake tells it nothing it has not already proved.
-  pin: "{{ control_pin|escapejs }}"
+  pin: "{{ control_pin|escapejs }}",
+  // Set when this phone is a big screen's paired slide remote: it follows
+  // whatever deck that screen shows, and leaves if it's unpaired.
+  remote: {% if remote_screen %}{statusUrl: "{{ remote_status_url|escapejs }}", homeUrl: "{{ remote_home_url|escapejs }}", deck: "{{ deck.code|escapejs }}"}{% else %}null{% endif %}
 };
 </script>
 <script src="{% static 'hanns/js/hanns_actors.js' %}?v=62"></script>
@@ -470,6 +490,32 @@ function scriptForSlide(s){
 
 function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
 function setStatus(t){const el=$("#status"); if(el) el.textContent=t;}
+function lockBanner(screen){
+  const b=$("#lock-banner"); if(!b) return;
+  b.hidden=!screen;
+  b.textContent=screen?`🔒 ${screen}'s slide remote is driving right now. You'll follow along here, and you can drive again when the host unlocks it.`:"";
+  document.body.classList.toggle("remote-locked",!!screen);
+}
+/* Paired slide remote: follow the screen. When the deck on it changes, or
+   this phone is unpaired, go back through /hanns/screen/remote/, which
+   opens the right deck (or the pairing page). */
+if(CFG.remote){
+  const R=CFG.remote;
+  setInterval(async()=>{
+    if(document.hidden) return;
+    try{
+      const r=await fetch(R.statusUrl,{credentials:"same-origin",cache:"no-store"}); const j=await r.json();
+      if(j.state!=="paired"||(j.deck||"")!==R.deck) location.href=R.homeUrl;
+    }catch(e){}
+  },3000);
+  const u=document.getElementById("remote-unpair");
+  if(u) u.addEventListener("click",async()=>{
+    if(!confirm("Unpair this phone from the big screen? Anyone with the code can drive the slides again.")) return;
+    const csrf=(document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/)||[])[1]||"";
+    try{ await fetch(R.homeUrl+"forget/",{method:"POST",credentials:"same-origin",headers:{"X-CSRFToken":decodeURIComponent(csrf)}}); }catch(e){}
+    location.href=R.homeUrl;
+  });
+}
 function send(o){
   if(!sock||sock.readyState!==1)return false;
   // A throw here means the tunnel is gone even though readyState
@@ -724,9 +770,13 @@ function openSocket(){
       $("#pin-row").hidden=true;
       $("#controls").hidden=false;
       $("#phone-secondary-actions").hidden=false;
-      setStatus("CONNECTED · PHONE CONTROLLER READY");
+      setStatus(m.remote?"CONNECTED · SLIDE REMOTE READY":"CONNECTED · PHONE CONTROLLER READY");
+      lockBanner(m.locked_by||"");
       keepAwake();
       render();
+    }else if(m.type==="controller_locked"||m.type==="controller_unlocked"){
+      // A big screen's paired slide remote has (or let go of) the slides.
+      lockBanner(m.type==="controller_locked"?m.screen:"");
     }else if(m.type==="controller_denied"){
       // Almost always a rotated code: this phone unlocked the page earlier
       // and the owner has since issued a new one. Reloading lands on the

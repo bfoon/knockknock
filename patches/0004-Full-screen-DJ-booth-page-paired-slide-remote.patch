@@ -1,0 +1,1905 @@
+From 7ca1607bd4f6642a9a0d0b4b77f8888729c8e41e Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Wed, 28 Oct 2026 12:37:36 +0000
+Subject: [PATCH 4/4] Full-screen DJ booth page + paired slide remote
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Full-screen DJ booth  /hanns/screen/s/<token>/dj/  (owner only)
+- the booth on its own page, edge to edge; opened from the card header,
+  the Music & video row, or the booth itself (one named tab per screen)
+- "Start the booth" = one tap: full screen, sound unlocked, wake lock
+- Screen Wake Lock, re-taken when the tab comes back; a 2 KB silent
+  looping video keeps older iPhones awake; Add-to-Home-Screen tip on iOS
+- live over the screen socket with a polling backstop (hanns_dj_page.js)
+
+Paired slide remote  (hanns/remote.py)
+- a phone pairs at /hanns/screen/remote/ with the screen code; it gets a
+  match symbol (e.g. "Amber Giraffe") that also shows on the projector
+  lobby and the control board, where the host approves or denies
+- approved → lock on: only that phone drives slides of the deck on that
+  screen. PIN / control-code phones and presenter laptops are refused,
+  told why, and snapped back to the room's slide; the screen's own
+  embedded stage may still resync. Lock off / unpair → as before
+- the remote opens the existing controller (notes, reveals, zoom...) and
+  follows the screen when the deck changes; unpair kicks it at once
+- stored in ScreenStyle.settings["remote"], secrets only as SHA-256;
+  cookie is HttpOnly; code entry throttled; ≤3 waiting requests
+- consumer: remote:<secret> credential, frame identification, a gate on
+  every slide-driving message, screen.lock_changed fan-out
+- control board row (QR, approve/deny, lock switch, unpair), projector
+  match card, presenter-screen lock notice; tests incl. WebSocket tests
+
+Fixes found on the way
+- deck_control now sets the CSRF cookie: a phone arriving fresh from the
+  controller QR got 403 on the PIN unlock ("Could not reach the server")
+- the controller's CODE box stayed visible after connecting
+  (hanns.css display:flex beat [hidden])
+---
+ hanns/consumers.py                      | 117 +++++++++++-
+ hanns/remote.py                         | 240 ++++++++++++++++++++++++
+ hanns/screen.py                         |  17 ++
+ hanns/screen_views.py                   | 160 +++++++++++++++-
+ hanns/test_remote.py                    | 221 ++++++++++++++++++++++
+ hanns/urls.py                           |   8 +
+ hanns/views.py                          |   2 +
+ screenart/test_program.py               |  17 ++
+ static/hanns/js/hanns_dj_page.js        | 146 ++++++++++++++
+ static/hanns/js/hanns_present.js        |  24 ++-
+ static/hanns/js/hanns_screen_program.js |  45 ++++-
+ static/hanns/js/hanns_screen_remote.js  | 172 +++++++++++++++++
+ templates/hanns/control.html            |  54 +++++-
+ templates/hanns/present.html            |   6 +-
+ templates/hanns/screen_dj.html          |  72 +++++++
+ templates/hanns/screen_home.html        |   4 +-
+ templates/hanns/screen_remote.html      | 165 ++++++++++++++++
+ templates/hanns/screen_stage.html       |   3 +-
+ 18 files changed, 1457 insertions(+), 16 deletions(-)
+ create mode 100644 hanns/remote.py
+ create mode 100644 hanns/test_remote.py
+ create mode 100644 static/hanns/js/hanns_dj_page.js
+ create mode 100644 static/hanns/js/hanns_screen_remote.js
+ create mode 100644 templates/hanns/screen_dj.html
+ create mode 100644 templates/hanns/screen_remote.html
+
+diff --git a/hanns/consumers.py b/hanns/consumers.py
+index a6d2df1..2834bba 100644
+--- a/hanns/consumers.py
++++ b/hanns/consumers.py
+@@ -51,6 +51,18 @@ Server → client (fanned out to the whole deck group):
+ Server → group (from the Big Screen views, not from a client):
+     {type:"screen.control_revoked", shares:[id,…]}  drop phones that came in
+                                             through those shares' control codes
++    {type:"screen.lock_changed"}            a big screen showing this deck
++                                            paired / unpaired its slide remote
++                                            or switched the lock
++
++── Paired slide remote (hanns/remote.py) ────────────────────────────────
++While a big screen showing this deck has its remote LOCK on, only that
++screen's paired phone ({type:"controller_hello", pin:"remote:<secret>"})
++may drive the slides. Every other controller and presenter is refused with
++{type:"controller_locked", screen} and, for a goto, snapped back to the
++room's slide. The screen's own embedded stage (presenter_hello with its
++screen token + share id) may still resync after a reconnect. Lock off →
++nothing changes.
+ 
+ Server → the calling controller only:
+     {type:"reveal_state", index, elements, revealed}
+@@ -162,6 +174,13 @@ class PresentConsumer(AsyncWebsocketConsumer):
+         # Set when this phone unlocked with a Big Screen control code rather
+         # than the deck PIN, so a revoke can find exactly those phones.
+         self.ctrl_share = None
++        # Paired slide remote: the screen this phone is the remote of, and
++        # the screen whose own embedded stage this connection is.
++        self.remote_screen = None
++        self.remote_secret = None
++        self.frame_screen = None
++        self._locks_at, self._locks = 0.0, {}
++        self._locked_note_at = 0.0
+ 
+         self.deck = await self._get_deck(self.code)
+         if self.deck is None:
+@@ -209,6 +228,9 @@ class PresentConsumer(AsyncWebsocketConsumer):
+ 
+         if mtype == "presenter_hello":
+             self.is_presenter = True
++            # The big screen's embedded stage says which screen it is.
++            if data.get("screen") and data.get("share"):
++                self.frame_screen = await self._frame_screen(str(data.get("screen")), str(data.get("share")))
+             await self._broadcast_participants()
+ 
+         elif mtype == "controller_hello":
+@@ -218,7 +240,15 @@ class PresentConsumer(AsyncWebsocketConsumer):
+             # however much of it was right.
+             granted = bool(pin and real and secrets.compare_digest(pin, real))
+             self.ctrl_share = None
+-            if not granted and pin:
++            self.remote_screen = self.remote_secret = None
++            if not granted and pin.startswith("remote:"):
++                # A big screen's paired slide remote, for the deck on that screen.
++                secret = pin[len("remote:"):]
++                screen_id = await self._remote_screen(secret)
++                if screen_id:
++                    granted = True
++                    self.remote_screen, self.remote_secret = screen_id, secret
++            elif not granted and pin:
+                 # A control code the Big Screen host issued for this deck.
+                 # It works only while that share is open, and only for this
+                 # deck — see screen.share_for_control_code.
+@@ -229,8 +259,12 @@ class PresentConsumer(AsyncWebsocketConsumer):
+             if granted:
+                 self.is_controller = True
+                 current = await self._current_slide()
++                locks = await self._lock_map(fresh=True)
+                 await self.send_json({
+                     "type": "controller_ok",
++                    "remote": bool(self.remote_screen),
++                    # tell a phone up front that a screen's remote has the slides
++                    "locked_by": "" if self._may_drive(locks, {}) else ", ".join(locks.values()),
+                     "seq": PresentConsumer._slide_seq.get(self.code, 0),
+                     "current_slide": current,
+                     # Send the latest slides from the DB so phone notes are fresh,
+@@ -262,6 +296,12 @@ class PresentConsumer(AsyncWebsocketConsumer):
+         elif mtype == "react":
+             await self._handle_react(data)
+ 
++        elif mtype in self.DRIVE_TYPES and (self.is_presenter or self.is_controller) \
++                and not self._may_drive(await self._lock_map(), data):
++            # A big screen's paired remote has the slides: refuse, and put a
++            # stage/phone that already moved back where the room is.
++            await self._refuse_locked(mtype)
++
+         elif mtype == "goto":
+             # Presenter screen or PIN-approved phone controller drives slides.
+             if self.is_presenter or self.is_controller:
+@@ -651,6 +691,60 @@ class PresentConsumer(AsyncWebsocketConsumer):
+     async def fanout(self, event):
+         await self.send_json(event["payload"])
+ 
++    # Messages that move or change what the room sees.
++    DRIVE_TYPES = frozenset({"goto", "pointer", "zoom", "reveal", "focus", "actor_action",
++                             "fluid", "end_show", "show_download"})
++
++    async def _lock_map(self, fresh=False):
++        """{screen_id: name} of locked screens showing this deck (cached 2 s)."""
++        now = asyncio.get_running_loop().time()
++        if fresh or now - self._locks_at > 2.0:
++            self._locks = await self._locks_for_deck()
++            self._locks_at = now
++        return self._locks
++
++    def _may_drive(self, locks, data):
++        if not locks:
++            return True                                   # no lock anywhere: as always
++        if self.remote_screen and self.remote_screen in locks:
++            return True
++        # the screen's own stage re-announcing its slide after a reconnect
++        if self.frame_screen and self.frame_screen in locks and data.get("type") == "goto" and data.get("resync"):
++            return True
++        return False
++
++    async def _refuse_locked(self, mtype):
++        loop_now = asyncio.get_running_loop().time()
++        if loop_now - self._locked_note_at > 2.0:
++            self._locked_note_at = loop_now
++            await self.send_json({"type": "controller_locked", "screen": ", ".join(self._locks.values())})
++        if mtype == "goto":
++            index = await self._current_slide()
++            seq = PresentConsumer._slide_seq.get(self.code, 0) + 1
++            PresentConsumer._slide_seq[self.code] = seq
++            await self.send_json({
++                "type": "goto", "index": index, "slide": await self._slide(index),
++                "revealed": self._revealed_list(index), "seq": seq, "resync": True,
++            })
++
++    async def screen_lock_changed(self, event):
++        """A screen showing this deck paired/unpaired its remote or flipped the lock."""
++        self._locks_at = 0.0
++        locks = await self._lock_map(fresh=True)
++        if self.remote_screen:
++            still = await self._remote_screen(self.remote_secret)
++            if not still:                                  # unpaired / replaced: off the slides
++                self.is_controller = False
++                self.remote_screen = self.remote_secret = None
++                await self.send_json({"type": "controller_denied"})
++                return
++            self.remote_screen = still
++        if (self.is_controller or self.is_presenter) and not self.frame_screen and not self.remote_screen:
++            if locks:
++                await self.send_json({"type": "controller_locked", "screen": ", ".join(locks.values())})
++            else:
++                await self.send_json({"type": "controller_unlocked"})
++
+     async def screen_control_revoked(self, event):
+         """The Big Screen host removed a share, reissued its control code or
+         stopped the screen. Phones that came in through that code lose the
+@@ -762,6 +856,27 @@ class PresentConsumer(AsyncWebsocketConsumer):
+         from .models import Deck
+         Deck.objects.filter(code=self.code).update(current_slide=index)
+ 
++    @sync_to_async
++    def _locks_for_deck(self):
++        from .remote import locks_for_deck
++        try:
++            return locks_for_deck(self.code)
++        except Exception:
++            return {}
++
++    @sync_to_async
++    def _remote_screen(self, secret):
++        from .remote import remote_screen_for
++        try:
++            return remote_screen_for(self.code, secret)
++        except Exception:
++            return None
++
++    @sync_to_async
++    def _frame_screen(self, token, share_id):
++        from .remote import frame_screen_for
++        return frame_screen_for(self.code, token, share_id)
++
+     @sync_to_async
+     def _current_slide(self):
+         from .models import Deck
+diff --git a/hanns/remote.py b/hanns/remote.py
+new file mode 100644
+index 0000000..bf57737
+--- /dev/null
++++ b/hanns/remote.py
+@@ -0,0 +1,240 @@
++"""Big Screen · the paired slide remote.
++
++One phone or tablet can be paired with a big screen. While the screen's
++remote LOCK is on, that device is the only thing that can drive the slides
++of whatever deck is on that screen: phones on the deck PIN or a Big Screen
++control code, and presenter laptops, are refused and snapped back to the
++slide the room is on. Lock off (or nothing paired) → everything works the
++way it always has.
++
++Pairing, like Bluetooth:
++  1. the phone opens /hanns/screen/remote/, types the screen's share code and
++     a name ("Fatou's iPhone") → the server makes a secret, keeps only its
++     SHA-256 hash, and gives the phone a match symbol — e.g. 🦊 Amber Fox
++  2. the same symbol shows on the projector lobby and on the control board,
++     where the host taps Approve (or Deny)
++  3. approved → the lock switches on; the phone opens the full controller
++     (notes, reveals, zoom, actors) for the deck on the screen and follows
++     the screen when the deck changes
++
++Stored in screenart.ScreenStyle.settings["remote"] — no new table:
++  {"lock": bool,
++   "device":  {"id", "hash", "name", "match", "since"} | None,
++   "pending": [{"id", "hash", "name", "match", "at"}],     (≤ 3, 10 min)
++   "denied":  [hash, …]}                                   (last 10)
++The phone's cookie holds "<screen id>.<secret>"; only `public_state` goes to
++clients, and it never includes a hash.
++"""
++
++import hashlib
++import secrets
++import time
++
++from django.utils import timezone
++
++COOKIE = "kk_remote"
++PENDING_TTL_MS = 10 * 60 * 1000
++MAX_PENDING = 3
++
++ANIMALS = [("🦊", "Fox"), ("🐙", "Octopus"), ("🦉", "Owl"), ("🐢", "Turtle"), ("🦁", "Lion"), ("🐬", "Dolphin"),
++           ("🦜", "Parrot"), ("🐝", "Bee"), ("🦋", "Butterfly"), ("🐘", "Elephant"), ("🦒", "Giraffe"), ("🐼", "Panda")]
++COLOURS = [("Amber", "#f5a524"), ("Coral", "#fb7185"), ("Teal", "#2dd4bf"), ("Violet", "#a78bfa"),
++           ("Lime", "#a3e635"), ("Sky", "#38bdf8")]
++
++
++class RemoteError(Exception):
++    pass
++
++
++def _now_ms():
++    return int(time.time() * 1000)
++
++
++def _hash(secret):
++    return hashlib.sha256(str(secret or "").encode()).hexdigest()
++
++
++def _style(screen_id, create=False):
++    from screenart.models import ScreenStyle
++    if create:
++        style, _ = ScreenStyle.objects.get_or_create(screen_id=screen_id, defaults={"settings": {}})
++        return style
++    return ScreenStyle.objects.filter(screen_id=screen_id).first()
++
++
++def _load(screen_id):
++    style = _style(screen_id)
++    r = dict(((style.settings or {}).get("remote") or {}) if style else {})
++    r.setdefault("lock", False)
++    r.setdefault("device", None)
++    r.setdefault("denied", [])
++    now = _now_ms()
++    r["pending"] = [p for p in (r.get("pending") or []) if now - int(p.get("at") or 0) < PENDING_TTL_MS]
++    return r
++
++
++def _save(screen_id, r):
++    style = _style(screen_id, create=True)
++    style.settings = dict(style.settings or {}, remote=r)
++    style.save(update_fields=["settings", "updated_at"])
++
++
++def _match(taken):
++    """A symbol nobody else on this screen is showing right now."""
++    for _ in range(40):
++        a, c = secrets.choice(ANIMALS), secrets.choice(COLOURS)
++        m = {"emoji": a[0], "word": f"{c[0]} {a[1]}", "color": c[1]}
++        if m["word"] not in taken:
++            return m
++    return m
++
++
++# ── reading ──────────────────────────────────────────────────────────
++def public_state(screen_id):
++    """What the control board and projector see (no hashes)."""
++    r = _load(screen_id)
++    d = r["device"]
++    return {
++        "lock": bool(r["lock"] and d),
++        "device": {"name": d["name"], "match": d["match"], "since": d.get("since")} if d else None,
++        "pending": [{"id": p["id"], "name": p["name"], "match": p["match"]} for p in r["pending"]],
++    }
++
++
++def parse_cookie(value):
++    """'<screen id>.<secret>' → (screen_id, secret) or (None, None)."""
++    sid, _, secret = str(value or "").partition(".")
++    return (sid, secret) if sid and len(secret) >= 32 else (None, None)
++
++
++def status(screen_id, secret):
++    """Where this phone stands with the screen: paired / pending / denied / unpaired."""
++    r, h = _load(screen_id), _hash(secret)
++    d = r["device"]
++    if d and secrets.compare_digest(d["hash"], h):
++        return {"state": "paired", "name": d["name"], "match": d["match"], "lock": bool(r["lock"])}
++    for p in r["pending"]:
++        if secrets.compare_digest(p["hash"], h):
++            return {"state": "pending", "name": p["name"], "match": p["match"]}
++    if h in r["denied"]:
++        return {"state": "denied"}
++    return {"state": "unpaired"}
++
++
++def device_ok(screen_id, secret):
++    d = _load(screen_id)["device"]
++    return bool(d and secret and secrets.compare_digest(d["hash"], _hash(secret)))
++
++
++def is_locked(screen_id):
++    r = _load(screen_id)
++    return bool(r["lock"] and r["device"])
++
++
++# ── the phone ────────────────────────────────────────────────────────
++def request_pair(screen_id, name, secret=None):
++    """Ask to pair. Re-asking from the same phone replaces its old request."""
++    r = _load(screen_id)
++    name = " ".join(str(name or "").split())[:40] or "Phone"
++    secret = secret if secret and len(secret) >= 32 else secrets.token_urlsafe(32)
++    h = _hash(secret)
++    r["pending"] = [p for p in r["pending"] if p["hash"] != h]
++    if len(r["pending"]) >= MAX_PENDING:
++        raise RemoteError("A few phones are already waiting — ask the host to answer them first.")
++    taken = {p["match"]["word"] for p in r["pending"]}
++    req = {"id": "r" + secrets.token_hex(6), "hash": h, "name": name, "match": _match(taken), "at": _now_ms()}
++    r["pending"].append(req)
++    r["denied"] = [x for x in r["denied"] if x != h]
++    _save(screen_id, r)
++    return secret, req
++
++
++def forget(screen_id, secret):
++    """The phone lets go: drops its request, or unpairs itself."""
++    r, h = _load(screen_id), _hash(secret)
++    r["pending"] = [p for p in r["pending"] if p["hash"] != h]
++    changed = False
++    if r["device"] and r["device"]["hash"] == h:
++        r["device"], r["lock"], changed = None, False, True
++    _save(screen_id, r)
++    return changed
++
++
++# ── the host ─────────────────────────────────────────────────────────
++def host_action(screen_id, data):
++    """approve / deny a request, unpair the device, lock on/off.
++    Returns True when the lock picture changed (live controllers must hear)."""
++    r = _load(screen_id)
++    action = str(data.get("action") or "")
++    before = (bool(r["lock"] and r["device"]), (r["device"] or {}).get("hash"))
++    if action in ("approve", "deny"):
++        req = next((p for p in r["pending"] if p["id"] == data.get("id")), None)
++        if not req:
++            raise RemoteError("That request has expired — ask the phone to try again.")
++        r["pending"] = [p for p in r["pending"] if p["id"] != req["id"]]
++        if action == "approve":
++            # one remote per screen: a new approval replaces the old phone
++            r["device"] = {"id": "d" + secrets.token_hex(6), "hash": req["hash"], "name": req["name"],
++                           "match": req["match"], "since": timezone.now().isoformat()}
++            r["lock"] = True
++        else:
++            r["denied"] = (r["denied"] + [req["hash"]])[-10:]
++    elif action == "unpair":
++        r["device"], r["lock"] = None, False
++    elif action == "lock":
++        if data.get("lock") and not r["device"]:
++            raise RemoteError("Pair a phone first.")
++        r["lock"] = bool(data.get("lock"))
++    else:
++        raise RemoteError("Unknown action.")
++    _save(screen_id, r)
++    return before != (bool(r["lock"] and r["device"]), (r["device"] or {}).get("hash"))
++
++
++# ── who may drive a deck ─────────────────────────────────────────────
++def locks_for_deck(code):
++    """Active screens showing deck `code` right now whose remote lock is on.
++    → {screen_id(str): screen name}"""
++    from .models import ScreenShare
++    out = {}
++    live = (ScreenShare.objects.select_related("screen")
++            .filter(deck__code=str(code).upper(), status=ScreenShare.STATUS_LIVE, screen__is_active=True))
++    for share in live:
++        s = share.screen
++        if s.current_share_id == share.id and is_locked(s.id):
++            out[str(s.id)] = s.name
++    return out
++
++
++def remote_screen_for(code, secret):
++    """The screen this phone is the remote of, if that screen shows deck `code`."""
++    from .models import ScreenShare
++    live = (ScreenShare.objects.select_related("screen")
++            .filter(deck__code=str(code).upper(), status=ScreenShare.STATUS_LIVE, screen__is_active=True))
++    for share in live:
++        s = share.screen
++        if s.current_share_id == share.id and device_ok(s.id, secret):
++            return str(s.id)
++    return None
++
++
++def frame_screen_for(code, token, share_id):
++    """The big screen whose own embedded stage this is (token + live share)."""
++    from .models import ScreenShare
++    if not token or not share_id:
++        return None
++    try:
++        share = ScreenShare.objects.select_related("screen").get(
++            pk=share_id, deck__code=str(code).upper(), status=ScreenShare.STATUS_LIVE,
++            screen__token=token, screen__is_active=True)
++    except Exception:
++        return None
++    return str(share.screen_id)
++
++
++def deck_on(screen):
++    """The deck on this screen now: (code, title) or (None, None)."""
++    share = screen.current_share if screen.current_share_id else None
++    if share and share.status == share.STATUS_LIVE:
++        return share.deck.code, share.deck.title
++    return None, None
+diff --git a/hanns/screen.py b/hanns/screen.py
+index 400449d..80bcfaa 100644
+--- a/hanns/screen.py
++++ b/hanns/screen.py
+@@ -130,9 +130,26 @@ def screen_state(screen):
+         "live": _live(screen),
+         "media": _program(screen, "media"),
+         "event": _program(screen, "event"),
++        "remote": _remote(screen),
+     }
+ 
+ 
++def _remote(screen):
++    """The paired slide remote (hanns/remote.py), never with its secret."""
++    try:
++        from .remote import public_state
++        return public_state(screen.id) if screen.is_active else None
++    except Exception:
++        return None
++
++
++def push_lock_changed(screen):
++    """Tell the deck on this screen that its remote / lock changed."""
++    share = screen.current_share if screen.current_share_id else None
++    if share and share.status == share.STATUS_LIVE:
++        _send(f"hanns_{share.deck.code}", {"type": "screen.lock_changed"})
++
++
+ def _program(screen, part):
+     """YouTube music/video and the Attendance event view (screenart.program)."""
+     try:
+diff --git a/hanns/screen_views.py b/hanns/screen_views.py
+index a1216cc..9ccb578 100644
+--- a/hanns/screen_views.py
++++ b/hanns/screen_views.py
+@@ -35,7 +35,7 @@ Presenter without a laptop:
+ import json
+ 
+ from django.contrib.auth.decorators import login_required
+-from django.http import JsonResponse, HttpResponseBadRequest
++from django.http import Http404, JsonResponse, HttpResponseBadRequest
+ from django.shortcuts import get_object_or_404, redirect, render
+ from django.urls import reverse
+ from django.utils import timezone
+@@ -142,6 +142,161 @@ def screen_stage(request, token):
+     })
+ 
+ 
++# ── the paired slide remote (hanns/remote.py) ────────────────────────
++def _remote_cookie(request):
++    from . import remote
++    return remote.parse_cookie(request.COOKIES.get(remote.COOKIE))
++
++
++def _remote_screen(screen_id):
++    from .models import BigScreen
++    try:
++        return BigScreen.objects.select_related("current_share__deck").get(pk=screen_id)
++    except Exception:
++        return None
++
++
++def _remote_status(request):
++    """(payload, screen) for the phone holding this browser's remote cookie."""
++    from . import remote
++    sid, secret = _remote_cookie(request)
++    screen = _remote_screen(sid) if sid else None
++    if not screen or not screen.is_active:
++        return {"state": "unpaired"}, None
++    st = dict(remote.status(screen.id, secret), screen=screen.name)
++    if st["state"] == "paired":
++        code, title = remote.deck_on(screen)
++        st.update(deck=code, deck_title=title or "")
++    return st, screen
++
++
++@ensure_csrf_cookie
++def remote_home(request):
++    """The phone's way in. Paired + a deck on the screen → the full slide
++    controller for that deck. Otherwise the pair / waiting page."""
++    from . import remote
++    from .models import Deck
++    st, screen = _remote_status(request)
++    if st["state"] == "paired" and st.get("deck"):
++        deck = get_object_or_404(Deck, code=st["deck"])
++        _, secret = _remote_cookie(request)
++        return render(request, "hanns/control.html", {
++            "deck": deck,
++            "deck_json": json.dumps(deck.as_dict()),
++            "control_pin": "remote:" + secret,           # the socket checks it against the screen
++            "control_unlocked": True,
++            "remote_screen": screen.name,
++            "remote_status_url": reverse("hanns:remote_status"),
++            "remote_home_url": reverse("hanns:remote_home"),
++        })
++    return render(request, "hanns/screen_remote.html", {
++        "status_json": json.dumps(st),
++        "code": (request.GET.get("code") or "").strip()[:8],
++    })
++
++
++def remote_qr(request):
++    """An SVG QR for the pairing link with the screen code filled in."""
++    import io
++    import segno
++    from django.http import HttpResponse
++    code = "".join(ch for ch in str(request.GET.get("code") or "") if ch.isdigit())[:6]
++    url = request.build_absolute_uri(reverse("hanns:remote_home")) + (f"?code={code}" if code else "")
++    buf = io.BytesIO()
++    segno.make(url, error="m").save(buf, kind="svg", scale=6, border=2, dark="#0b0a12", light="#ffffff")
++    resp = HttpResponse(buf.getvalue(), content_type="image/svg+xml")
++    resp["Cache-Control"] = "private, max-age=300"
++    return resp
++
++
++@require_POST
++def remote_pair(request):
++    from . import remote
++    from .models import BigScreen
++    left, locked = svc.throttle_check(request, "remote")
++    if locked:
++        return JsonResponse({"ok": False, "error": "Too many wrong codes. Wait ten minutes and try again."}, status=429)
++    try:
++        data = json.loads(request.body or b"{}")
++    except (ValueError, TypeError):
++        return HttpResponseBadRequest("Bad JSON")
++    code = "".join(ch for ch in str(data.get("code") or "") if ch.isdigit())
++    screen = BigScreen.objects.filter(share_code=code, is_active=True).first() if code else None
++    if not screen:
++        svc.throttle_miss(request, "remote")
++        return JsonResponse({"ok": False, "error": "No big screen with that code. It's on the lobby screen."}, status=404)
++    sid, old = _remote_cookie(request)
++    try:
++        secret, req = remote.request_pair(screen.id, data.get("name"), old if sid == str(screen.id) else None)
++    except remote.RemoteError as e:
++        return JsonResponse({"ok": False, "error": str(e)}, status=409)
++    svc.push_state(screen)                                # the lobby + control board show the request
++    resp = JsonResponse({"ok": True, "state": "pending", "match": req["match"], "screen": screen.name})
++    resp.set_cookie(remote.COOKIE, f"{screen.id}.{secret}", max_age=60 * 60 * 24 * 30, httponly=True,
++                    samesite="Lax", secure=request.is_secure())
++    return resp
++
++
++def remote_status(request):
++    st, _ = _remote_status(request)
++    return JsonResponse(dict(st, ok=True))
++
++
++@require_POST
++def remote_forget(request):
++    from . import remote
++    sid, secret = _remote_cookie(request)
++    screen = _remote_screen(sid) if sid else None
++    if screen and screen.is_active:
++        if remote.forget(screen.id, secret):
++            svc.push_lock_changed(screen)
++        svc.push_state(screen)
++    resp = JsonResponse({"ok": True, "state": "unpaired"})
++    resp.delete_cookie(remote.COOKIE)
++    return resp
++
++
++@require_POST
++def screen_remote(request, token):
++    """Host: approve / deny a phone, unpair it, lock on/off. The screen's
++    token is the credential, like every other screen action."""
++    from . import remote
++    screen, bad = _active_screen_or_json(token)
++    if bad:
++        return bad
++    try:
++        data = json.loads(request.body or b"{}")
++    except (ValueError, TypeError):
++        return HttpResponseBadRequest("Bad JSON")
++    try:
++        changed = remote.host_action(screen.id, data)
++    except remote.RemoteError as e:
++        return JsonResponse({"ok": False, "error": str(e)}, status=400)
++    if changed:
++        svc.push_lock_changed(screen)
++    svc.push_state(screen)
++    return JsonResponse({"ok": True, "state": svc.screen_state(screen)})
++
++
++@login_required
++def screen_dj(request, token):
++    """The DJ booth on its own page — full screen on a laptop or tablet at the
++    DJ table, kept awake while it's open. Only the screen's owner gets it
++    (the booth can run everything the screen plays)."""
++    screen = _screen_or_404(token)
++    if screen.owner_id != request.user.id:
++        raise Http404
++    if not screen.is_active:
++        return redirect(reverse("hanns:screen_home"))
++    return render(request, "hanns/screen_dj.html", {
++        "screen": screen,
++        "state_json": json.dumps(svc.screen_state(screen)),
++        "ws_path": f"/ws/hanns/screen/{screen.token}/",
++        "back_url": reverse("hanns:screen_home"),
++        "stage_url": _abs(request, "hanns:screen_stage", screen.token),
++    })
++
++
+ def screen_state(request, token):
+     screen = _screen_or_404(token)
+     if screen.is_active:
+@@ -174,6 +329,7 @@ def screen_select(request, token):
+         "kind": "live", "share": str(share.id),
+         "title": share.deck.title, "sharer": share.sharer_name,
+     })
++    svc.push_lock_changed(screen)                         # a paired remote's lock now covers this deck
+     return JsonResponse({"ok": True, "frame_url": reverse(
+         "hanns:screen_frame", args=[screen.token, share.id])})
+ 
+@@ -333,6 +489,8 @@ def screen_frame(request, token, share_id):
+         "control_pin": "",
+         "download_url": download_url,
+         "embed": True,
++        "screen_token": screen.token,
++        "share_id": str(share.id),
+     })
+ 
+ 
+diff --git a/hanns/test_remote.py b/hanns/test_remote.py
+new file mode 100644
+index 0000000..cfc4789
+--- /dev/null
++++ b/hanns/test_remote.py
+@@ -0,0 +1,221 @@
++"""The paired slide remote (hanns/remote.py): pairing over HTTP, and the
++lock enforced on the deck socket."""
++
++import json
++
++from asgiref.sync import sync_to_async
++from channels.routing import URLRouter
++from channels.testing import WebsocketCommunicator
++from django.contrib.auth import get_user_model
++from django.test import TestCase, TransactionTestCase, override_settings
++
++from hanns import remote
++from hanns import screen as svc
++from hanns.models import BigScreen, Deck, ScreenShare, Slide
++from hanns.routing import websocket_urlpatterns
++
++MEM = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
++
++
++def _setup(test):
++    U = get_user_model()
++    test.host = U.objects.create_user("rm-host", password="pw-pw-pw-123")
++    test.screen = BigScreen.objects.create(owner=test.host, name="Hall 2")
++    test.deck = Deck.objects.create(owner=test.host, code="RMTE01", title="Keynote")
++    for i in range(4):
++        Slide.objects.create(deck=test.deck, position=i, data={"els": []})
++    test.deck.ensure_control_pin()
++    test.share = ScreenShare.objects.create(screen=test.screen, deck=test.deck, status=ScreenShare.STATUS_LIVE)
++    test.screen.current_share = test.share
++    test.screen.save(update_fields=["current_share"])
++
++
++def _pair(client, screen, name="Fatou's iPhone"):
++    r = client.post("/hanns/screen/remote/pair/", json.dumps({"code": screen.share_code, "name": name}),
++                    content_type="application/json")
++    return r
++
++
++def _host(client, screen, **body):
++    return client.post(f"/hanns/screen/s/{screen.token}/remote/", json.dumps(body), content_type="application/json")
++
++
++@override_settings(CHANNEL_LAYERS=MEM, STATICFILES_STORAGE="django.contrib.staticfiles.storage.StaticFilesStorage")
++class PairingTests(TestCase):
++    def setUp(self):
++        _setup(self)
++
++    def test_pair_approve_and_open_the_controller(self):
++        self.assertEqual(self.client.get("/hanns/screen/remote/").status_code, 200)      # the pair page
++        r = self.client.post("/hanns/screen/remote/pair/", json.dumps({"code": "000000", "name": "x"}),
++                             content_type="application/json")
++        self.assertEqual(r.status_code, 404)
++        r = _pair(self.client, self.screen)
++        self.assertEqual(r.status_code, 200, r.content)
++        match = r.json()["match"]
++        self.assertIn(remote.COOKIE, r.cookies)
++        self.assertTrue(r.cookies[remote.COOKIE]["httponly"])
++        # the control board + lobby see the request (and its symbol), never a hash
++        st = svc.screen_state(self.screen)["remote"]
++        self.assertEqual((st["pending"][0]["name"], st["pending"][0]["match"]), ("Fatou's iPhone", match))
++        self.assertNotIn("hash", json.dumps(st))
++        self.assertFalse(st["lock"])
++        self.assertEqual(self.client.get("/hanns/screen/remote/status/").json()["state"], "pending")
++        # host approves → paired + locked
++        r = _host(self.client, self.screen, action="approve", id=st["pending"][0]["id"])
++        self.assertEqual(r.status_code, 200, r.content)
++        st = r.json()["state"]["remote"]
++        self.assertEqual((st["device"]["name"], st["lock"], st["pending"]), ("Fatou's iPhone", True, []))
++        s = self.client.get("/hanns/screen/remote/status/").json()
++        self.assertEqual((s["state"], s["deck"], s["screen"]), ("paired", "RMTE01", "Hall 2"))
++        # the phone now gets the full controller for the deck on the screen
++        page = self.client.get("/hanns/screen/remote/")
++        self.assertContains(page, "Slide remote")
++        self.assertContains(page, "remote:")
++        self.assertNotContains(page, self.deck.control_pin)                              # never the deck PIN
++
++    def test_no_deck_on_screen_waits(self):
++        r = _pair(self.client, self.screen)
++        _host(self.client, self.screen, action="approve", id=svc.screen_state(self.screen)["remote"]["pending"][0]["id"])
++        self.screen.current_share = None
++        self.screen.save(update_fields=["current_share"])
++        page = self.client.get("/hanns/screen/remote/")
++        self.assertContains(page, "Ready when the slides are")
++        self.assertEqual(self.client.get("/hanns/screen/remote/status/").json()["deck"], None)
++
++    def test_deny_unpair_forget_lock(self):
++        _pair(self.client, self.screen)
++        rid = svc.screen_state(self.screen)["remote"]["pending"][0]["id"]
++        self.assertEqual(_host(self.client, self.screen, action="lock", lock=True).status_code, 400)   # nothing paired
++        _host(self.client, self.screen, action="deny", id=rid)
++        self.assertEqual(self.client.get("/hanns/screen/remote/status/").json()["state"], "denied")
++        self.assertEqual(_host(self.client, self.screen, action="approve", id=rid).status_code, 400)   # gone
++        _pair(self.client, self.screen)                                                  # asks again
++        rid = svc.screen_state(self.screen)["remote"]["pending"][0]["id"]
++        _host(self.client, self.screen, action="approve", id=rid)
++        r = _host(self.client, self.screen, action="lock", lock=False)
++        self.assertFalse(r.json()["state"]["remote"]["lock"])
++        self.assertFalse(remote.locks_for_deck("RMTE01"))
++        _host(self.client, self.screen, action="lock", lock=True)
++        self.assertEqual(remote.locks_for_deck("RMTE01"), {str(self.screen.id): "Hall 2"})
++        self.client.post("/hanns/screen/remote/forget/")                                 # the phone lets go
++        self.assertIsNone(svc.screen_state(self.screen)["remote"]["device"])
++        self.assertEqual(self.client.get("/hanns/screen/remote/status/").json()["state"], "unpaired")
++
++    def test_one_remote_per_screen_and_request_limits(self):
++        phones = [self.client_class() for _ in range(4)]
++        for i, c in enumerate(phones[:3]):
++            self.assertEqual(_pair(c, self.screen, f"P{i}").status_code, 200)
++        self.assertEqual(_pair(phones[3], self.screen, "P3").status_code, 409)           # 3 waiting max
++        pending = svc.screen_state(self.screen)["remote"]["pending"]
++        self.assertEqual(len({p["match"]["word"] for p in pending}), 3)                  # all different symbols
++        _host(self.client, self.screen, action="approve", id=pending[0]["id"])
++        _host(self.client, self.screen, action="approve", id=pending[1]["id"])           # replaces the first
++        self.assertEqual(phones[0].get("/hanns/screen/remote/status/").json()["state"], "unpaired")
++        self.assertEqual(phones[1].get("/hanns/screen/remote/status/").json()["state"], "paired")
++
++    def test_qr_and_stopped_screen(self):
++        r = self.client.get(f"/hanns/screen/remote/qr.svg?code={self.screen.share_code}")
++        self.assertEqual(r["Content-Type"], "image/svg+xml")
++        self.assertIn(b"<svg", r.content)
++        self.screen.is_active = False
++        self.screen.save()
++        self.assertEqual(_host(self.client, self.screen, action="unpair").status_code, 410)
++        self.assertEqual(_pair(self.client, self.screen).status_code, 404)
++
++
++@override_settings(CHANNEL_LAYERS=MEM)
++class LockTests(TransactionTestCase):
++    """The lock on the deck socket."""
++
++    def setUp(self):
++        _setup(self)
++        self.secret, req = remote.request_pair(self.screen.id, "Remote")
++        remote.host_action(self.screen.id, {"action": "approve", "id": req["id"]})
++
++    async def _ws(self):
++        c = WebsocketCommunicator(URLRouter(websocket_urlpatterns), "/ws/hanns/RMTE01/")
++        ok, _ = await c.connect()
++        self.assertTrue(ok)
++        await c.receive_json_from()                                       # the snapshot
++        return c
++
++    async def _msgs(self, c):
++        out = []
++        while not await c.receive_nothing(timeout=0.25):
++            out.append(await c.receive_json_from())
++        return out
++
++    async def _slide(self):
++        d = await sync_to_async(Deck.objects.get)(code="RMTE01")
++        return d.current_slide
++
++    async def _hello(self, pin):
++        c = await self._ws()
++        await c.send_json_to({"type": "controller_hello", "pin": pin})
++        return c, await self._msgs(c)
++
++    async def test_only_the_remote_drives_while_locked(self):
++        pin = await sync_to_async(lambda: Deck.objects.get(code="RMTE01").control_pin)()
++        phone, hello = await self._hello(pin)
++        ok = next(m for m in hello if m["type"] == "controller_ok")
++        self.assertEqual((ok["remote"], ok["locked_by"]), (False, "Hall 2"))
++        rem, hello = await self._hello("remote:" + self.secret)
++        ok = next(m for m in hello if m["type"] == "controller_ok")
++        self.assertEqual((ok["remote"], ok["locked_by"]), (True, ""))
++
++        await phone.send_json_to({"type": "goto", "index": 2})          # refused, snapped back
++        got = await self._msgs(phone)
++        self.assertIn("controller_locked", [m["type"] for m in got])
++        self.assertEqual(next(m for m in got if m["type"] == "goto")["index"], 0)
++        self.assertEqual(await self._slide(), 0)
++
++        await rem.send_json_to({"type": "goto", "index": 3})            # the remote moves the room
++        await self._msgs(rem)
++        self.assertEqual(await self._slide(), 3)
++        self.assertEqual(next(m for m in await self._msgs(phone) if m["type"] == "goto")["index"], 3)
++
++        # lock off → the PIN phone drives again, and hears it
++        await sync_to_async(remote.host_action)(self.screen.id, {"action": "lock", "lock": False})
++        await sync_to_async(svc.push_lock_changed)(await sync_to_async(BigScreen.objects.get)(pk=self.screen.pk))
++        self.assertIn("controller_unlocked", [m["type"] for m in await self._msgs(phone)])
++        await phone.send_json_to({"type": "goto", "index": 1})
++        await self._msgs(phone)
++        self.assertEqual(await self._slide(), 1)
++        await phone.disconnect(); await rem.disconnect()
++
++    async def test_wrong_secret_and_unpair_kick_the_remote(self):
++        bad, hello = await self._hello("remote:" + "x" * 40)
++        self.assertIn("controller_denied", [m["type"] for m in hello])
++        rem, _ = await self._hello("remote:" + self.secret)
++        await sync_to_async(remote.host_action)(self.screen.id, {"action": "unpair"})
++        await sync_to_async(svc.push_lock_changed)(await sync_to_async(BigScreen.objects.get)(pk=self.screen.pk))
++        self.assertIn("controller_denied", [m["type"] for m in await self._msgs(rem)])
++        await rem.send_json_to({"type": "goto", "index": 2})
++        await self._msgs(rem)
++        self.assertEqual(await self._slide(), 0)
++        await bad.disconnect(); await rem.disconnect()
++
++    async def test_presenters_and_the_screen_frame(self):
++        laptop = await self._ws()
++        await laptop.send_json_to({"type": "presenter_hello"})
++        await self._msgs(laptop)
++        await laptop.send_json_to({"type": "goto", "index": 2})         # a presenter laptop is refused too
++        self.assertIn("controller_locked", [m["type"] for m in await self._msgs(laptop)])
++        self.assertEqual(await self._slide(), 0)
++        frame = await self._ws()
++        await frame.send_json_to({"type": "presenter_hello", "screen": self.screen.token, "share": str(self.share.id)})
++        await self._msgs(frame)
++        await frame.send_json_to({"type": "goto", "index": 1, "resync": True})   # the screen's own stage may resync
++        await self._msgs(frame)
++        self.assertEqual(await self._slide(), 1)
++        await frame.send_json_to({"type": "goto", "index": 3})          # … but not drive
++        await self._msgs(frame)
++        self.assertEqual(await self._slide(), 1)
++        fake = await self._ws()                                          # a made-up screen token buys nothing
++        await fake.send_json_to({"type": "presenter_hello", "screen": "nope", "share": str(self.share.id)})
++        await fake.send_json_to({"type": "goto", "index": 3, "resync": True})
++        await self._msgs(fake)
++        self.assertEqual(await self._slide(), 1)
++        for c in (laptop, frame, fake):
++            await c.disconnect()
+diff --git a/hanns/urls.py b/hanns/urls.py
+index b6c1bcc..3b04f31 100644
+--- a/hanns/urls.py
++++ b/hanns/urls.py
+@@ -56,11 +56,19 @@ urlpatterns = [
+     path("screen/new/", screen_views.screen_create, name="screen_create"),
+     # PUBLIC — a presenter with no laptop types the host-issued code here.
+     path("screen/control/", screen_views.screen_control_entry, name="screen_control_entry"),
++    # The paired slide remote (hanns/remote.py): a phone pairs with a screen.
++    path("screen/remote/", screen_views.remote_home, name="remote_home"),
++    path("screen/remote/pair/", screen_views.remote_pair, name="remote_pair"),
++    path("screen/remote/status/", screen_views.remote_status, name="remote_status"),
++    path("screen/remote/forget/", screen_views.remote_forget, name="remote_forget"),
++    path("screen/remote/qr.svg", screen_views.remote_qr, name="remote_qr"),
+     path("screen/share/<uuid:share_id>/", screen_views.screen_share_status, name="screen_share_status"),
+     path("screen/share/<uuid:share_id>/withdraw/", screen_views.screen_share_withdraw, name="screen_share_withdraw"),
+     # PUBLIC — the token is the credential; it is the screen's own URL.
+     path("screen/s/<str:token>/", screen_views.screen_stage, name="screen_stage"),
+     path("screen/s/<str:token>/state/", screen_views.screen_state, name="screen_state"),
++    path("screen/s/<str:token>/dj/", screen_views.screen_dj, name="screen_dj"),
++    path("screen/s/<str:token>/remote/", screen_views.screen_remote, name="screen_remote"),
+     path("screen/s/<str:token>/select/", screen_views.screen_select, name="screen_select"),
+     path("screen/s/<str:token>/lobby/", screen_views.screen_lobby, name="screen_lobby"),
+     path("screen/s/<str:token>/settings/", screen_views.screen_settings, name="screen_settings"),
+diff --git a/hanns/views.py b/hanns/views.py
+index a67d676..1e2240f 100644
+--- a/hanns/views.py
++++ b/hanns/views.py
+@@ -51,6 +51,7 @@ from django.core.exceptions import ValidationError, RequestDataTooBig
+ from django.db import IntegrityError
+ from django.db.models import Q
+ from django.http import JsonResponse, HttpResponseBadRequest, HttpResponseForbidden, Http404
++from django.views.decorators.csrf import ensure_csrf_cookie
+ from django.shortcuts import get_object_or_404, redirect, render
+ from django.urls import reverse
+ from django.views.decorators.http import require_POST
+@@ -1023,6 +1024,7 @@ def deck_download_settings(request, code):
+     })
+ 
+ 
++@ensure_csrf_cookie   # the lock screen POSTs the PIN with this cookie; a phone fresh from the QR has none
+ def deck_control(request, code):
+     """The presenter's phone controller.
+ 
+diff --git a/screenart/test_program.py b/screenart/test_program.py
+index 98b4651..32260ec 100644
+--- a/screenart/test_program.py
++++ b/screenart/test_program.py
+@@ -265,6 +265,23 @@ class EventViewTests(TestCase):
+     def test_no_event_means_no_data(self):
+         self.assertIsNone(self.client.get(self.base + "event/data/").json()["event"])
+ 
++    def test_dj_booth_page(self):
++        url = f"/hanns/screen/s/{self.screen.token}/dj/"
++        self.assertEqual(self.client.get(url).status_code, 302)                     # login first
++        stranger = get_user_model().objects.create_user("dj-stranger", password="pw-pw-pw-123")
++        self.client.force_login(stranger)
++        self.assertEqual(self.client.get(url).status_code, 404)                     # not their screen
++        self.client.force_login(self.host)
++        with self.settings(STATICFILES_STORAGE="django.contrib.staticfiles.storage.StaticFilesStorage"):
++            r = self.client.get(url)
++            self.assertContains(r, "hanns_dj_page.js")
++            self.assertContains(r, "data-dj-page")
++            self.assertContains(r, 'name="apple-mobile-web-app-capable"')
++            self.assertContains(self.client.get("/hanns/screen/"), "data-dj-page-open")   # the way in, from the card
++        self.screen.is_active = False
++        self.screen.save()
++        self.assertRedirects(self.client.get(url), "/hanns/screen/", fetch_redirect_response=False)
++
+     def test_dashboard_and_stage_load_the_script(self):
+         with self.settings(STATICFILES_STORAGE="django.contrib.staticfiles.storage.StaticFilesStorage"):
+             self.assertContains(self.client.get(f"/hanns/screen/s/{self.screen.token}/"), "hanns_screen_program.js")
+diff --git a/static/hanns/js/hanns_dj_page.js b/static/hanns/js/hanns_dj_page.js
+new file mode 100644
+index 0000000..9c1b845
+--- /dev/null
++++ b/static/hanns/js/hanns_dj_page.js
+@@ -0,0 +1,146 @@
++/* ═══════════════════════════════════════════════════════════════════
++   HANNS · BIG SCREEN — the DJ booth's own page  (/hanns/screen/s/<token>/dj/)
++   ───────────────────────────────────────────────────────────────────
++   hanns_screen_program.js mounts the booth (page mode: no dialog chrome,
++   edge to edge). This file adds what a booth on a DJ table needs:
++     • live state — the screen socket, with a polling backstop
++     • keep awake — Screen Wake Lock, re-taken whenever the page is shown
++       again; where the API is missing (older iPhones) a tiny silent video
++       loops inline, the classic way to stop a phone from sleeping
++     • full screen — entered from the start button (browsers only allow it
++       from a tap); iPhone gets the "Add to Home Screen" tip instead
++   ═══════════════════════════════════════════════════════════════════ */
++(function () {
++  "use strict";
++  const root = document.querySelector("[data-screen][data-dj-page]");
++  if (!root) return;
++  const base = `/hanns/screen/s/${root.dataset.token}/`;
++  const $ = id => document.getElementById(id);
++  const push = s => root.dispatchEvent(new CustomEvent("bs:state", { detail: s }));
++
++  /* ── live state ── */
++  let sock = null, lastRx = 0;
++  function connect() {
++    try { sock = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + root.dataset.ws); }
++    catch (_) { setTimeout(connect, 3000); return; }
++    sock.onmessage = ev => {
++      lastRx = Date.now();
++      let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
++      if (m.type === "ping") { try { sock.send('{"type":"pong"}'); } catch (_) { /* closed */ } return; }
++      if (m.type === "screen_state") push(m.state);
++      else if (m.type === "screen_stopped") gone();
++    };
++    sock.onclose = () => setTimeout(connect, 3000);
++  }
++  connect();
++  async function poll(force) {
++    if (!force && sock && sock.readyState === 1 && Date.now() - lastRx < 50000) return;
++    try {
++      const r = await fetch(base + "state/", { credentials: "same-origin", cache: "no-store" });
++      if (r.status === 404 || r.status === 410) { gone(); return; }
++      const j = await r.json();
++      if (j.state) { if (j.state.active === false) gone(); else push(j.state); }
++    } catch (_) { /* offline for a moment */ }
++  }
++  setInterval(poll, 8000);
++  setInterval(() => { if (sock && sock.readyState === 1) { try { sock.send('{"type":"ping"}'); } catch (_) { /* closed */ } } }, 20000);
++  function gone() { $("djp-gone").hidden = false; release(); }
++
++  /* ── keep the screen awake ── */
++  const KEEP_AWAKE_MP4 = "data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAXAbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAB9AAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwAAAll0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAB9AAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAfQAAAAAAABAAAAAAHRbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAAAgABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABfG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAATxzdGJsAAAAuHN0c2QAAAAAAAAAAQAAAKhhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFUxhdmM2MC4zMS4xMDIgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAALmF2Y0MBQsAK/+EAFmdCwArZHsBEAAADAAQAAAMACDxImSABAAVoy4PLIAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAAApAAAAKQAAAABhzdHRzAAAAAAAAAAEAAAACAABAAAAAABRzdHNzAAAAAAAAAAEAAAABAAAAHHN0c2MAAAAAAAAAAQAAAAEAAAABAAAAAQAAABxzdHN6AAAAAAAAAAAAAAACAAAChgAAAAoAAAAYc3RjbwAAAAAAAAACAAAGBQAACKsAAAKRdHJhawAAAFx0a2hkAAAAAwAAAAAAAAAAAAAAAgAAAAAAAAfQAAAAAAAAAAAAAAABAQAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAJGVkdHMAAAAcZWxzdAAAAAAAAAABAAAH0AAABAAAAQAAAAACCW1kaWEAAAAgbWRoZAAAAAAAAAAAAAAAAAAAH0AAAEKAVcQAAAAAAC1oZGxyAAAAAAAAAABzb3VuAAAAAAAAAAAAAAAAU291bmRIYW5kbGVyAAAAAbRtaW5mAAAAEHNtaGQAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAXhzdGJsAAAAfnN0c2QAAAAAAAAAAQAAAG5tcDRhAAAAAAAAAAEAAAAAAAAAAAABABAAAAAAH0AAAAAAADZlc2RzAAAAAAOAgIAlAAIABICAgBdAFQAAAAAAH0AAAAE/BYCAgAUViFblAAaAgIABAgAAABRidHJ0AAAAAAAAH0AAAAE/AAAAIHN0dHMAAAAAAAAAAgAAABAAAAQAAAAAAQAAAoAAAAAoc3RzYwAAAAAAAAACAAAAAQAAAAEAAAABAAAAAgAAAAgAAAABAAAAWHN0c3oAAAAAAAAAAAAAABEAAAAVAAAABAAAAAQAAAAEAAAABAAAAAQAAAAEAAAABAAAAAQAAAAEAAAABAAAAAQAAAAEAAAABAAAAAQAAAAEAAAABAAAABxzdGNvAAAAAAAAAAMAAAXwAAAIiwAACLUAAAAac2dwZAEAAAByb2xsAAAAAgAAAAH//wAAABxzYmdwAAAAAHJvbGwAAAABAAAAEQAAAAEAAABidWR0YQAAAFptZXRhAAAAAAAAACFoZGxyAAAAAAAAAABtZGlyYXBwbAAAAAAAAAAAAAAAAC1pbHN0AAAAJal0b28AAAAdZGF0YQAAAAEAAAAATGF2ZjYwLjE2LjEwMAAAAAhmcmVlAAAC7W1kYXTeAgBMYXZjNjAuMzEuMTAyAAIwQA4AAAJwBgX//2zcRem95tlIt5Ys2CDZI+7veDI2NCAtIGNvcmUgMTY0IHIzMTA4IDMxZTE5ZjkgLSBILjI2NC9NUEVHLTQgQVZDIGNvZGVjIC0gQ29weWxlZnQgMjAwMy0yMDIzIC0gaHR0cDovL3d3dy52aWRlb2xhbi5vcmcveDI2NC5odG1sIC0gb3B0aW9uczogY2FiYWM9MCByZWY9MyBkZWJsb2NrPTE6MDowIGFuYWx5c2U9MHgxOjB4MTExIG1lPWhleCBzdWJtZT03IHBzeT0xIHBzeV9yZD0xLjAwOjAuMDAgbWl4ZWRfcmVmPTEgbWVfcmFuZ2U9MTYgY2hyb21hX21lPTEgdHJlbGxpcz0xIDh4OGRjdD0wIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9MSBjaHJvbWFfcXBfb2Zmc2V0PS0yIHRocmVhZHM9MSBsb29rYWhlYWRfdGhyZWFkcz0xIHNsaWNlZF90aHJlYWRzPTAgbnI9MCBkZWNpbWF0ZT0xIGludGVybGFjZWQ9MCBibHVyYXlfY29tcGF0PTAgY29uc3RyYWluZWRfaW50cmE9MCBiZnJhbWVzPTAgd2VpZ2h0cD0wIGtleWludD0yNTAga2V5aW50X21pbj0xIHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTE6MS4wMACAAAAADmWIhAW///8PRQABT3+AARggBwEYIAcBGCAHARggBwEYIAcBGCAHARggBwEYIAcAAAAGQZo4CvqAARggBwEYIAcBGCAHARggBwEYIAcBGCAHARggBwEYIAc=";
++  let lock = null, video = null, want = true;
++  const canLock = "wakeLock" in navigator;
++  function status(on, why) {
++    document.querySelectorAll("[data-wake]").forEach(n => {
++      n.hidden = false;
++      n.classList.toggle("on", on);
++      n.innerHTML = on ? '<i class="bi bi-sun-fill"></i> Screen stays on' : '<i class="bi bi-moon"></i> May sleep';
++      n.title = on ? "This device won't go to sleep while the booth is open." : (why || "Tap to keep this device awake.");
++    });
++  }
++  async function keepAwake() {
++    want = true;
++    if (document.visibilityState !== "visible") return;
++    if (canLock) {
++      try {
++        if (lock && !lock.released) { status(true); return; }
++        lock = await navigator.wakeLock.request("screen");
++        lock.addEventListener("release", () => { if (document.visibilityState !== "visible") status(false, "Paused while the booth is hidden — it comes back when you return."); else status(false); });
++        status(true);
++        return;
++      } catch (e) {
++        // e.g. battery saver, or not allowed until a tap: fall through to the video trick
++        status(false, "This browser said no (battery saver?) — tap to try again.");
++      }
++    }
++    try {
++      if (!video) {
++        video = document.createElement("video");
++        video.setAttribute("playsinline", ""); video.setAttribute("muted", ""); video.muted = true; video.loop = true;
++        video.setAttribute("aria-hidden", "true");
++        video.style.cssText = "position:fixed;width:1px;height:1px;left:-10px;top:-10px;opacity:0;pointer-events:none";
++        video.src = KEEP_AWAKE_MP4;
++        document.body.appendChild(video);
++      }
++      await video.play();
++      status(true);
++    } catch (_) { status(false, "Couldn't keep the screen awake here — set auto-lock to Never while you play."); }
++  }
++  function release() {
++    want = false;
++    if (lock) { lock.release().catch(() => {}); lock = null; }
++    if (video) video.pause();
++  }
++  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && want) keepAwake(); });
++  keepAwake();                                    // allowed without a tap in most browsers; the start button retries
++
++  /* ── full screen ── */
++  const de = document.documentElement;
++  const fsOk = !!(de.requestFullscreen || de.webkitRequestFullscreen);
++  const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
++  const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
++  async function enterFs() {
++    if (!fsOk || isFs()) return;
++    try { await (de.requestFullscreen ? de.requestFullscreen({ navigationUI: "hide" }) : de.webkitRequestFullscreen()); } catch (_) { /* refused */ }
++  }
++  async function exitFs() {
++    try { await (document.exitFullscreen ? document.exitFullscreen() : document.webkitExitFullscreen()); } catch (_) { /* not in it */ }
++  }
++  function fsButtons() {
++    document.querySelectorAll("[data-fs]").forEach(b => {
++      b.hidden = !fsOk;
++      b.innerHTML = isFs() ? '<i class="bi bi-fullscreen-exit"></i> Exit full screen' : '<i class="bi bi-arrows-fullscreen"></i> Full screen';
++    });
++  }
++  document.addEventListener("fullscreenchange", fsButtons);
++  document.addEventListener("webkitfullscreenchange", fsButtons);
++  document.addEventListener("click", e => {
++    const b = e.target.closest("[data-fs],[data-wake]");
++    if (!b) return;
++    if (b.hasAttribute("data-fs")) { isFs() ? exitFs() : enterFs(); }
++    else keepAwake();
++  });
++  fsButtons();
++
++  /* ── start ── */
++  const start = $("djp-start");
++  if (!fsOk && !standalone) {
++    const tip = $("djp-tip");
++    tip.hidden = false;
++    tip.textContent = /iPhone|iPad|iPod/.test(navigator.userAgent)
++      ? "For true full screen on iPhone: Share → Add to Home Screen, then open DJ booth from there."
++      : "This browser can't go full screen, but the booth fills the window.";
++    $("djp-skip").hidden = true;
++    $("djp-go").innerHTML = '<i class="bi bi-play-fill"></i> Start the booth';
++  }
++  if (standalone) start.hidden = true;
++  function begin(fs) {
++    if (fs) enterFs();
++    keepAwake();
++    if (window.KKDJ) window.KKDJ.engine().unlock();   // "Hear FX here" can play straight away
++    start.hidden = true;
++    poll(true);
++  }
++  $("djp-go").addEventListener("click", () => begin(true));
++  $("djp-skip").addEventListener("click", () => begin(false));
++})();
+diff --git a/static/hanns/js/hanns_present.js b/static/hanns/js/hanns_present.js
+index 196fbf6..d0cf81d 100644
+--- a/static/hanns/js/hanns_present.js
++++ b/static/hanns/js/hanns_present.js
+@@ -493,6 +493,22 @@ function cycleFocus(){
+    Each socket carries a generation number. A close arriving from a socket
+    we have already replaced is ignored, so a reconnect cannot race with the
+    old socket's close handler and open two connections at once.           */
++/* A big screen's paired slide remote has the slides (hanns/remote.py):
++   say so on this presenter screen instead of silently bouncing the keys. */
++function remoteLockNote(screen,on){
++  let n=document.getElementById("hanns-remote-lock");
++  if(!n){
++    n=document.createElement("div"); n.id="hanns-remote-lock"; n.setAttribute("role","status");
++    n.style.cssText="position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:9999;padding:10px 16px;border-radius:999px;"+
++      "background:rgba(12,10,20,.92);color:#fde68a;border:1px solid rgba(251,191,36,.5);font:600 14px/1.3 system-ui,sans-serif;"+
++      "box-shadow:0 10px 30px rgba(0,0,0,.5);transition:opacity .3s;pointer-events:none";
++    document.body.appendChild(n);
++  }
++  n.textContent=on?`🔒 ${screen||"The big screen"}'s slide remote is driving — your keys follow the room.`:"🔓 The slide remote let go — you can drive again.";
++  n.style.opacity="1";
++  clearTimeout(remoteLockNote.t);
++  remoteLockNote.t=setTimeout(()=>{n.style.opacity="0";},on?5000:3000);
++}
+ const HEARTBEAT_MS=20000, STALE_MS=50000;
+ const Live={
+   sock:null, retry:0, gen:0, lastRx:0, timer:null, closed:false,
+@@ -506,7 +522,11 @@ const Live={
+     sock.addEventListener("open",()=>{
+       if(gen!==this.gen)return;
+       this.retry=0; this.lastRx=Date.now();
+-      this.send({type:"presenter_hello"});
++      // On a big screen, say which one: a paired slide remote's lock still
++      // lets the screen's own stage resync (hanns/remote.py).
++      this.send(EMBED && CFG.screenToken
++        ? {type:"presenter_hello", screen:CFG.screenToken, share:CFG.screenShare}
++        : {type:"presenter_hello"});
+       // The stage is the source of truth for where the talk is. If the
+       // socket was down while the presenter drove with the keyboard, the
+       // server's stored slide is stale — so say where we actually are
+@@ -535,6 +555,8 @@ const Live={
+         if(m.resync && m.index===i) return;
+         if(m.index!==i){suppressBroadcast=true;show(m.index,false);suppressBroadcast=false;}
+       }else if(m.type==="fluid"){keepScreenAwake("fluid-cue");applyFluidCue(m);}else if(m.type==="pointer"){showPointer(m.x,m.y);}
++      else if(m.type==="controller_locked"&&!EMBED){remoteLockNote(m.screen,true);}
++      else if(m.type==="controller_unlocked"&&!EMBED){remoteLockNote("",false);}
+     });
+     sock.addEventListener("close",()=>{
+       if(gen!==this.gen)return;              // superseded by a reconnect
+diff --git a/static/hanns/js/hanns_screen_program.js b/static/hanns/js/hanns_screen_program.js
+index 5647c9e..6dd9fed 100644
+--- a/static/hanns/js/hanns_screen_program.js
++++ b/static/hanns/js/hanns_screen_program.js
+@@ -566,7 +566,16 @@
+   .dj-ear,.dj-x{min-height:42px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:#e2e8f0;cursor:pointer}
+   .dj-ear{padding:0 .85rem;display:inline-flex;align-items:center;gap:.45rem;font-size:.8rem;font-weight:600}
+   .dj-ear[aria-pressed="true"]{color:#04121a;background:#22d3ee;border-color:#22d3ee}
+-  .dj-x{width:42px;font-size:1rem}
++  .dj-x{width:42px;font-size:1rem;display:inline-grid;place-items:center;text-decoration:none}
++  .dj-x.wide{width:auto;padding:0 .9rem;font:600 .8rem/1 inherit;gap:.4rem;display:inline-flex;align-items:center}
++  .dj-ear[hidden],.dj-wake[hidden]{display:none}
++  .dj-wake{min-height:42px;padding:0 .8rem;border-radius:12px;display:inline-flex;align-items:center;gap:.4rem;cursor:pointer;
++    font:600 .74rem/1 inherit;border:1px solid rgba(251,191,36,.4);background:rgba(251,191,36,.08);color:#fcd34d}
++  .dj-wake.on{border-color:rgba(74,222,128,.4);background:rgba(74,222,128,.08);color:#86efac}
++  /* the booth's own page: edge to edge, safe areas respected */
++  dialog.dj.page{position:fixed;inset:0;width:100%;height:100%;max-width:none;max-height:none;margin:0;border-radius:0;box-shadow:none;
++    padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);box-sizing:border-box;animation:none}
++  dialog.dj.page .dj-top{position:sticky;top:0;z-index:5;background:rgba(8,8,12,.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+ 
+   .desk{display:grid;grid-template-columns:minmax(0,1fr) 250px minmax(0,1fr);gap:.9rem;padding:1rem 1.2rem}
+   /* ── a CDJ ── */
+@@ -759,13 +768,16 @@
+ 
+   document.querySelectorAll("[data-screen]").forEach(root => {
+     const base = `/screenart/s/${root.dataset.token}/`;
++    const PAGE = root.hasAttribute("data-dj-page");          // /hanns/screen/s/<token>/dj/
++    const pageUrl = `/hanns/screen/s/${root.dataset.token}/dj/`;
+     let state = {};
+     try { state = JSON.parse(root.querySelector("[data-state]").textContent || "{}"); } catch (_) { /* ignore */ }
+     const box = document.createElement("div");
+     box.innerHTML = `<div class="dj-row" data-pg="media">
+         <span class="ico" aria-hidden="true"><i class="bi bi-vinyl-fill"></i></span>
+         <span class="tx"><b>Music &amp; video</b><small class="pg-sum-m"></small></span>
+-        <span class="acts"><button type="button" class="go" data-dj-open><i class="bi bi-disc"></i> Open DJ booth</button></span></div>
++        <span class="acts"><button type="button" data-dj-page-open title="The booth on its own page — full screen, the device stays awake"><i class="bi bi-arrows-fullscreen"></i> Full screen</button>
++          <button type="button" class="go" data-dj-open><i class="bi bi-disc"></i> Open DJ booth</button></span></div>
+       <details class="pg-fold" data-pg="event"><summary><span class="ico" aria-hidden="true"><i class="bi bi-clipboard-check"></i></span>
+         <span class="tx"><b>Event</b><small class="pg-sum-e"></small></span></summary><div class="pg-e"></div></details>`;
+     const slot = root.querySelector("[data-addons]"), link = root.querySelector(".bs-link");
+@@ -773,11 +785,15 @@
+     else if (link) link.parentNode.insertBefore(box, link); else root.appendChild(box);
+ 
+     const dj = document.createElement("dialog");
+-    dj.className = "dj";
++    dj.className = PAGE ? "dj page" : "dj";
+     dj.setAttribute("aria-label", "DJ booth");
+     dj.innerHTML = `<div class="dj-top"><div><div class="k">DJ booth · 2 decks + mixer · plays on the projector</div><h3 class="dj-name"></h3></div>
+-        <div class="dj-tr"><button type="button" class="dj-ear" data-ear aria-pressed="false" title="Play the scratches and pads on this device too"><i class="bi bi-headphones"></i> Hear FX here</button>
+-          <button type="button" class="dj-x" data-dj-close aria-label="Close the DJ booth">✕</button></div></div>
++        <div class="dj-tr">${PAGE
++            ? `<button type="button" class="dj-wake" data-wake hidden></button><button type="button" class="dj-ear" data-fs hidden></button>`
++            : `<button type="button" class="dj-ear" data-dj-page-open title="Open the booth on its own page — full screen, and the device stays awake"><i class="bi bi-arrows-fullscreen"></i> Full-screen booth</button>`}
++          <button type="button" class="dj-ear" data-ear aria-pressed="false" title="Play the scratches and pads on this device too"><i class="bi bi-headphones"></i> Hear FX here</button>
++          ${PAGE ? `<a class="dj-x wide" href="${esc(root.dataset.back || "/hanns/screen/")}" title="Back to Big screens"><i class="bi bi-box-arrow-left"></i> Exit</a>`
++                 : `<button type="button" class="dj-x" data-dj-close aria-label="Close the DJ booth">✕</button>`}</div></div>
+       <div class="desk">
+         ${deckHtml("a", 1)}
+         <section class="mx" aria-label="Mixer"><h4>MIXER</h4>
+@@ -1087,7 +1103,8 @@
+     dj.addEventListener("click", e => {
+       if (e.target === dj || e.target.closest("[data-dj-close]")) { closeDj(); return; }
+       const b = e.target.closest("button"); if (!b) return;
+-      if (b.dataset.load) load(b.dataset.load);
++      if (b.hasAttribute("data-dj-page-open")) openPage();
++      else if (b.dataset.load) load(b.dataset.load);
+       else if (b.dataset.fx) pad(b.dataset.fx);
+       else if (b.dataset.curve) media({ action: "mix", curve: b.dataset.curve });
+       else if (b.dataset.mode) media({ action: "mode", mode: b.dataset.mode });
+@@ -1135,19 +1152,30 @@
+       raf = dj.open ? requestAnimationFrame(frame) : 0;
+     }
+ 
++    const openPage = () => {     // one tab per screen: a second click brings the same tab back
++      const w = window.open(pageUrl, `hanns-dj-${root.dataset.token}`);
++      if (!w) location.href = pageUrl;                     // pop-up blocked: go there here
++      else { try { w.focus(); } catch (_) { /* fine */ } if (dj.open) closeDj(); }
++    };
+     function openDj() {
+-      if (typeof dj.showModal === "function") { if (!dj.open) dj.showModal(); } else dj.setAttribute("open", "");
++      if (PAGE) { if (!dj.open) { if (typeof dj.show === "function") dj.show(); else dj.setAttribute("open", ""); } }
++      else if (typeof dj.showModal === "function") { if (!dj.open) dj.showModal(); } else dj.setAttribute("open", "");
+       last = performance.now();
+       if (!raf) raf = requestAnimationFrame(frame);
+       if (!M().current && !(M().b || {}).current) setTimeout(() => url.focus(), 60);
+     }
+-    function closeDj() { decks.a.release(); decks.b.release(); if (typeof dj.close === "function") dj.close(); else dj.removeAttribute("open"); }
++    function closeDj() {
++      decks.a.release(); decks.b.release();
++      if (PAGE) return;                                    // the page's Exit link leaves instead
++      if (typeof dj.close === "function") dj.close(); else dj.removeAttribute("open");
++    }
+     dj.addEventListener("close", () => { decks.a.release(); decks.b.release(); });
+ 
+     root.addEventListener("click", e => {
+       const b = e.target.closest("button");
+       if (!b) return;
+       if (b.hasAttribute("data-dj-open")) { e.preventDefault(); openDj(); }
++      else if (b.hasAttribute("data-dj-page-open")) { e.preventDefault(); openPage(); }
+       else if (b.hasAttribute("data-event-open")) {
+         e.preventDefault();
+         evFold.open = true;
+@@ -1187,5 +1215,6 @@
+     }
+     root.addEventListener("bs:state", ev => { state = ev.detail || state; render(); });
+     render();
++    if (PAGE) openDj();
+   });
+ })();
+diff --git a/static/hanns/js/hanns_screen_remote.js b/static/hanns/js/hanns_screen_remote.js
+new file mode 100644
+index 0000000..67b87a1
+--- /dev/null
++++ b/static/hanns/js/hanns_screen_remote.js
+@@ -0,0 +1,172 @@
++/* ═══════════════════════════════════════════════════════════════════
++   HANNS · BIG SCREEN — the paired slide remote  (server: hanns/remote.py)
++   ───────────────────────────────────────────────────────────────────
++   Control board (each screen card, in Sources):
++     nothing paired  → "Pair a phone": QR + link (screen code filled in)
++     a phone asks    → its match symbol (🦊 Amber Fox) + Approve / Deny
++     paired          → the phone, a lock switch ("only this phone moves
++                       the slides"), Unpair
++   Projector lobby:
++     while a phone is asking, a match card shows the same symbol, so the
++     person holding the phone and the host can both see it's the right one;
++     a short "paired" flourish when it's approved.
++   ═══════════════════════════════════════════════════════════════════ */
++(function () {
++  "use strict";
++  const esc = v => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
++  function csrf() {
++    const i = document.querySelector("[name=csrfmiddlewaretoken]");
++    if (i && i.value) return i.value;
++    const m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
++    return m ? decodeURIComponent(m[1]) : "";
++  }
++  const REMOTE_URL = "/hanns/screen/remote/";
++  const css = document.createElement("style");
++  css.textContent = `
++  .rm-row{padding:.75rem 1.2rem;display:flex;flex-direction:column;gap:.7rem}
++  .rm-head{display:flex;align-items:center;gap:.9rem;flex-wrap:wrap}
++  .rm-ico{flex:none;width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:1.15rem;color:#5eead4;background:rgba(45,212,191,.12)}
++  .rm-tx{flex:1 1 220px;min-width:0;display:flex;flex-direction:column;gap:.15rem}
++  .rm-tx b{font-size:.95rem}
++  .rm-tx small{font-size:.8rem;color:#a9a6c2}
++  .rm-btn{min-height:40px;border-radius:11px;padding:0 .9rem;font:600 .82rem/1 inherit;cursor:pointer;border:1px solid rgba(255,255,255,.14);
++    background:rgba(255,255,255,.05);color:#f1f5f9;display:inline-flex;align-items:center;gap:.4rem}
++  .rm-btn.ok{border:0;color:#05201c;background:#2dd4bf}
++  .rm-btn.no{color:#fda4af;border-color:rgba(251,113,133,.4)}
++  .rm-pair{display:flex;gap:1rem;align-items:center;flex-wrap:wrap;padding:.8rem;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08)}
++  .rm-pair img{width:120px;height:120px;border-radius:10px;background:#fff;flex:none}
++  .rm-pair ol{margin:0;padding-left:1.1rem;font-size:.84rem;line-height:1.55;color:#cbd5e1;flex:1 1 220px}
++  .rm-pair code{font-size:.78rem;word-break:break-all;color:#5eead4}
++  .rm-req{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;padding:.7rem .8rem;border-radius:14px;
++    background:color-mix(in srgb,var(--c) 10%,transparent);border:1px solid color-mix(in srgb,var(--c) 55%,transparent);animation:rmIn .35s ease both}
++  @keyframes rmIn{from{opacity:0;transform:translateY(6px)}}
++  .rm-face{flex:none;width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-size:1.7rem;
++    background:color-mix(in srgb,var(--c) 30%,#14121e);box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 40%,transparent);animation:rmPulse 1.8s ease-in-out infinite}
++  @keyframes rmPulse{50%{box-shadow:0 0 0 8px color-mix(in srgb,var(--c) 10%,transparent)}}
++  .rm-req .who{flex:1 1 160px;min-width:0}
++  .rm-req .who b{display:block;color:var(--c);font-size:.95rem}
++  .rm-req .who small{color:#cbd5e1;font-size:.8rem}
++  .rm-dev{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap}
++  .rm-switch{display:inline-flex;align-items:center;gap:.6rem;cursor:pointer;font-size:.84rem;color:#e5e7eb;user-select:none}
++  .rm-switch input{appearance:none;-webkit-appearance:none;width:46px;height:26px;border-radius:13px;background:#3f3f46;position:relative;cursor:pointer;transition:background .2s;margin:0}
++  .rm-switch input::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .2s}
++  .rm-switch input:checked{background:#2dd4bf}
++  .rm-switch input:checked::after{transform:translateX(20px)}
++  .rm-switch input:focus-visible{outline:2px solid #fff;outline-offset:2px}
++  .rm-lockline{font-size:.8rem;color:#a9a6c2}
++  .rm-lockline b{color:#5eead4}
++  @media (prefers-reduced-motion:reduce){.rm-face,.rm-req{animation:none}}
++
++  /* projector lobby: the match card */
++  .rm-lobby{position:fixed;right:3vw;bottom:calc(3vh + 96px);z-index:40;display:flex;align-items:center;gap:1.1rem;padding:1rem 1.4rem 1rem 1rem;border-radius:24px;
++    color:#f6f4ff;background:rgba(10,9,18,.86);border:2px solid var(--c);box-shadow:0 30px 80px -20px rgba(0,0,0,.8),0 0 50px -10px var(--c);
++    font-family:"Archivo",system-ui,sans-serif;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
++    transform:translateY(20px);opacity:0;transition:opacity .4s,transform .4s;pointer-events:none;max-width:min(560px,90vw)}
++  .rm-lobby.on{opacity:1;transform:none}
++  .rm-lobby .face{flex:none;width:clamp(64px,7vw,110px);height:clamp(64px,7vw,110px);border-radius:50%;display:grid;place-items:center;
++    font-size:clamp(2.2rem,4vw,3.8rem);background:color-mix(in srgb,var(--c) 30%,#14121e);animation:rmPulse 1.8s ease-in-out infinite}
++  .rm-lobby small{display:block;font:600 clamp(.6rem,.9vw,.8rem)/1 "Spline Sans Mono",ui-monospace,monospace;letter-spacing:.2em;text-transform:uppercase;color:#a9a6c2}
++  .rm-lobby b{display:block;margin:.35rem 0 .25rem;font-size:clamp(1.3rem,2.4vw,2.2rem);color:var(--c);line-height:1}
++  .rm-lobby span{font-size:clamp(.8rem,1.1vw,1rem);color:#d7d4e8}`;
++  document.head.appendChild(css);
++
++  /* ───────────── control board ───────────── */
++  document.querySelectorAll("[data-screen]").forEach(root => {
++    if (root.hasAttribute("data-dj-page")) return;
++    const token = root.dataset.token;
++    let state = {};
++    try { state = JSON.parse(root.querySelector("[data-state]").textContent || "{}"); } catch (_) { /* ignore */ }
++    const host = document.createElement("div");
++    host.className = "rm-row";
++    const slot = root.querySelector("[data-addons]");
++    if (slot) slot.appendChild(host); else root.appendChild(host);
++    let showPair = false, busy = false;
++
++    async function act(body) {
++      if (busy) return; busy = true;
++      try {
++        const r = await fetch(`/hanns/screen/s/${token}/remote/`, { method: "POST", credentials: "same-origin",
++          headers: { "Content-Type": "application/json", "X-CSRFToken": csrf() }, body: JSON.stringify(body) });
++        const j = await r.json().catch(() => ({}));
++        if (!r.ok || !j.ok) alert(j.error || "Couldn't do that.");
++        else if (j.state) { state = j.state; render(); }
++      } catch (_) { alert("No connection to the screen."); }
++      busy = false;
++    }
++    function render() {
++      const rm = state.remote || { pending: [], device: null, lock: false };
++      const code = String(state.share_code || "").replace(/\D/g, "");
++      const link = `${location.origin}${REMOTE_URL}?code=${code}`;
++      let html = `<div class="rm-head"><span class="rm-ico" aria-hidden="true"><i class="bi bi-phone"></i></span>
++        <span class="rm-tx"><b>Slide remote</b><small>${rm.device
++          ? (rm.lock ? `Only <b style="color:#5eead4">${esc(rm.device.name)}</b> moves the slides on this screen` : `${esc(rm.device.name)} is paired — the lock is off, anyone with a code can drive`)
++          : "Pair one phone or tablet so it's the only thing that moves the slides here"}</small></span>
++        ${rm.device || (rm.pending || []).length ? "" : `<button type="button" class="rm-btn" data-rm="toggle" aria-expanded="${showPair}"><i class="bi bi-qr-code"></i> ${showPair ? "Hide" : "Pair a phone"}</button>`}</div>`;
++      (rm.pending || []).forEach(p => {
++        html += `<div class="rm-req" style="--c:${esc(p.match.color)}"><span class="rm-face" aria-hidden="true">${esc(p.match.emoji)}</span>
++          <span class="who"><b>${esc(p.match.word)}</b><small>${esc(p.name)} wants to be the slide remote — check its screen shows the same symbol</small></span>
++          <button type="button" class="rm-btn ok" data-rm="approve" data-id="${esc(p.id)}"><i class="bi bi-check-lg"></i> Approve</button>
++          <button type="button" class="rm-btn no" data-rm="deny" data-id="${esc(p.id)}">Deny</button></div>`;
++      });
++      if (rm.device) {
++        html += `<div class="rm-dev"><span class="rm-face" style="--c:${esc(rm.device.match.color)};animation:none;width:40px;height:40px;font-size:1.25rem" aria-hidden="true">${esc(rm.device.match.emoji)}</span>
++          <label class="rm-switch"><input type="checkbox" data-rm="lock" ${rm.lock ? "checked" : ""}> Only this phone moves the slides</label>
++          <span style="flex:1"></span>
++          <button type="button" class="rm-btn no" data-rm="unpair"><i class="bi bi-x-lg"></i> Unpair</button></div>
++          <div class="rm-lockline">${rm.lock
++            ? "Other phones (deck PIN or control codes) and presenter laptops follow along but can't change slides."
++            : "Lock is off: everything works as usual. Switch it on to hand the slides to this phone only."}</div>`;
++      } else if (showPair || (rm.pending || []).length) {
++        html += `<div class="rm-pair"><img alt="QR code to pair a phone" src="/hanns/screen/remote/qr.svg?code=${code}">
++          <ol><li>On the phone, scan this — or open <code>${esc(link)}</code></li>
++          <li>Give it a name and tap <b>Ask to pair</b></li>
++          <li>Its symbol shows up here and on the lobby — tap <b>Approve</b></li></ol></div>`;
++      }
++      host.innerHTML = html;
++    }
++    host.addEventListener("click", e => {
++      const b = e.target.closest("[data-rm]"); if (!b || b.tagName === "INPUT") return;
++      const a = b.dataset.rm;
++      if (a === "toggle") { showPair = !showPair; render(); }
++      else if (a === "approve" || a === "deny") act({ action: a, id: b.dataset.id });
++      else if (a === "unpair" && confirm("Unpair this phone? Anyone with the deck PIN or a control code can drive the slides again.")) act({ action: "unpair" });
++    });
++    host.addEventListener("change", e => {
++      if (e.target.matches('[data-rm="lock"]')) act({ action: "lock", lock: e.target.checked });
++    });
++    root.addEventListener("bs:state", ev => { state = ev.detail || state; render(); });
++    render();
++  });
++
++  /* ───────────── projector lobby ───────────── */
++  if (document.getElementById("scr-cfg") && document.getElementById("scr-stage")) {
++    const card = document.createElement("div");
++    card.className = "rm-lobby"; card.setAttribute("aria-live", "polite");
++    document.body.appendChild(card);
++    let lastDevice = null, flourish = null;
++    const sig = rm => (rm && rm.device ? rm.device.name + "|" + rm.device.match.word : null);
++    function draw(s) {
++      const rm = (s && s.remote) || {}, p = (rm.pending || [])[0], dev = sig(rm);
++      if (p) {                                     // a phone is asking: show its symbol
++        clearTimeout(flourish); flourish = null;
++        card.style.setProperty("--c", p.match.color);
++        card.innerHTML = `<div class="face" aria-hidden="true">${esc(p.match.emoji)}</div><div><small>Slide remote · pairing</small>
++          <b>${esc(p.match.word)}</b><span>${esc(p.name)} — the host approves on the control board</span></div>`;
++        card.classList.add("on");
++      } else if (dev && dev !== lastDevice) {      // just approved: a short flourish
++        card.style.setProperty("--c", rm.device.match.color);
++        card.innerHTML = `<div class="face" aria-hidden="true">${esc(rm.device.match.emoji)}</div><div><small>Slide remote · paired</small>
++          <b>${esc(rm.device.name)}</b><span>is now driving the slides</span></div>`;
++        card.classList.add("on");
++        clearTimeout(flourish);
++        flourish = setTimeout(() => { flourish = null; card.classList.remove("on"); }, 4500);
++      } else if (!flourish) card.classList.remove("on");
++      lastDevice = dev;
++    }
++    let first = {};
++    try { first = JSON.parse((document.getElementById("scr-state") || {}).textContent || "{}"); } catch (_) { /* ignore */ }
++    lastDevice = sig(first.remote);
++    document.addEventListener("scr:state", e => draw(e.detail));
++    draw(first);
++  }
++})();
+diff --git a/templates/hanns/control.html b/templates/hanns/control.html
+index 7f036b9..7b83afe 100644
+--- a/templates/hanns/control.html
++++ b/templates/hanns/control.html
+@@ -219,13 +219,30 @@
+   .peek-actions{display:flex;gap:.4rem;margin-top:.55rem}
+   .peek-actions .phone-btn{flex:1;padding:.6rem .3rem;font-size:.78rem}
+   .peek-actions[hidden]{display:none}
++  .pin-row[hidden]{display:none}   /* hanns.css sets display:flex, which beat [hidden]: the code box stayed up once connected */
+   .peek-go{background:linear-gradient(135deg,#ff8a1f,#ff3f98);color:#fff;border-color:transparent}
++  /* paired slide remote (hanns/remote.py) */
++  .remote-badge{display:flex;align-items:center;gap:.6rem;margin:.2rem 0 .6rem;padding:.55rem .75rem;border-radius:14px;
++    background:linear-gradient(135deg,rgba(45,212,191,.14),rgba(167,139,250,.14));border:1px solid rgba(45,212,191,.4)}
++  .remote-badge .ic{font-size:1.4rem}
++  .remote-badge b{display:block;font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:#5eead4}
++  .remote-badge small{display:block;font-size:.82rem;opacity:.85}
++  .remote-badge button{margin-left:auto;min-height:36px;border-radius:10px;padding:0 .7rem;border:1px solid rgba(255,255,255,.2);background:transparent;color:inherit;font:inherit;font-size:.78rem}
++  .lock-banner{margin:.2rem 0 .6rem;padding:.65rem .8rem;border-radius:14px;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.45);color:#fde68a;font-size:.86rem;line-height:1.4}
++  .lock-banner[hidden]{display:none}
++  body.remote-locked #controls button{opacity:.45}
+ </style>
+ </head>
+ <body class="phone-control">
+ <main class="phone-card">
+     <div class="phone-brandline"><span class="mark">Hanns<span class="dot">.</span></span><small>Knock-Knock controller</small></div>
+     <div class="phone-status" id="status">CONNECTING…</div>
++{% if remote_screen %}
++    <div class="remote-badge" role="note"><span class="ic" aria-hidden="true">📱</span>
++      <span><b>Slide remote</b><small>Paired with {{ remote_screen }} — only this phone moves its slides.</small></span>
++      <button type="button" id="remote-unpair">Unpair</button></div>
++{% endif %}
++    <div class="lock-banner" id="lock-banner" role="status" hidden></div>
+     <h1 id="control-deck-title" class="title-safe" title="{{ deck.title|escape }}">{% if deck.title|length > 26 %}{{ deck.title|slice:":26" }}....{% else %}{{ deck.title }}{% endif %}</h1>
+     <div class="phone-slide-title" id="slide-title">Slide 1</div>
+ 
+@@ -399,7 +416,10 @@ window.__HANNS_CONTROL__ = {
+   // The server only reaches this template once the code has been checked
+   // and this browser's session marked good, so handing the page the code
+   // for the socket handshake tells it nothing it has not already proved.
+-  pin: "{{ control_pin|escapejs }}"
++  pin: "{{ control_pin|escapejs }}",
++  // Set when this phone is a big screen's paired slide remote: it follows
++  // whatever deck that screen shows, and leaves if it's unpaired.
++  remote: {% if remote_screen %}{statusUrl: "{{ remote_status_url|escapejs }}", homeUrl: "{{ remote_home_url|escapejs }}", deck: "{{ deck.code|escapejs }}"}{% else %}null{% endif %}
+ };
+ </script>
+ <script src="{% static 'hanns/js/hanns_actors.js' %}?v=62"></script>
+@@ -470,6 +490,32 @@ function scriptForSlide(s){
+ 
+ function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+ function setStatus(t){const el=$("#status"); if(el) el.textContent=t;}
++function lockBanner(screen){
++  const b=$("#lock-banner"); if(!b) return;
++  b.hidden=!screen;
++  b.textContent=screen?`🔒 ${screen}'s slide remote is driving right now. You'll follow along here, and you can drive again when the host unlocks it.`:"";
++  document.body.classList.toggle("remote-locked",!!screen);
++}
++/* Paired slide remote: follow the screen. When the deck on it changes, or
++   this phone is unpaired, go back through /hanns/screen/remote/, which
++   opens the right deck (or the pairing page). */
++if(CFG.remote){
++  const R=CFG.remote;
++  setInterval(async()=>{
++    if(document.hidden) return;
++    try{
++      const r=await fetch(R.statusUrl,{credentials:"same-origin",cache:"no-store"}); const j=await r.json();
++      if(j.state!=="paired"||(j.deck||"")!==R.deck) location.href=R.homeUrl;
++    }catch(e){}
++  },3000);
++  const u=document.getElementById("remote-unpair");
++  if(u) u.addEventListener("click",async()=>{
++    if(!confirm("Unpair this phone from the big screen? Anyone with the code can drive the slides again.")) return;
++    const csrf=(document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/)||[])[1]||"";
++    try{ await fetch(R.homeUrl+"forget/",{method:"POST",credentials:"same-origin",headers:{"X-CSRFToken":decodeURIComponent(csrf)}}); }catch(e){}
++    location.href=R.homeUrl;
++  });
++}
+ function send(o){
+   if(!sock||sock.readyState!==1)return false;
+   // A throw here means the tunnel is gone even though readyState
+@@ -724,9 +770,13 @@ function openSocket(){
+       $("#pin-row").hidden=true;
+       $("#controls").hidden=false;
+       $("#phone-secondary-actions").hidden=false;
+-      setStatus("CONNECTED · PHONE CONTROLLER READY");
++      setStatus(m.remote?"CONNECTED · SLIDE REMOTE READY":"CONNECTED · PHONE CONTROLLER READY");
++      lockBanner(m.locked_by||"");
+       keepAwake();
+       render();
++    }else if(m.type==="controller_locked"||m.type==="controller_unlocked"){
++      // A big screen's paired slide remote has (or let go of) the slides.
++      lockBanner(m.type==="controller_locked"?m.screen:"");
+     }else if(m.type==="controller_denied"){
+       // Almost always a rotated code: this phone unlocked the page earlier
+       // and the owner has since issued a new one. Reloading lands on the
+diff --git a/templates/hanns/present.html b/templates/hanns/present.html
+index bd6e895..dee5915 100644
+--- a/templates/hanns/present.html
++++ b/templates/hanns/present.html
+@@ -320,6 +320,10 @@
+     // Big Screen embed: no presenter credentials in a page the room sees,
+     // and no owner-only endpoints (the screen may not be signed in).
+     embed: true,
++    // which big screen this stage is, so a paired slide remote's lock can
++    // still let it resync after a reconnect (hanns/remote.py)
++    screenToken: "{{ screen_token|escapejs }}",
++    screenShare: "{{ share_id|escapejs }}",
+     controlUrl: "",
+     controlPin: "",
+     stateUrl: "",
+@@ -348,7 +352,7 @@
+      isStudioObject() says no, objectDef() finds no match and falls back
+      to OBJECTS[0] — fill_cow — so every 3D bar chart draws as a cow. -->
+ <script src="{% static 'hanns/js/hanns_bars3d.js' %}?v=62"></script>
+-<script src="{% static 'hanns/js/hanns_present.js' %}?v=63"></script>
++<script src="{% static 'hanns/js/hanns_present.js' %}?v=64"></script>
+ 
+ <script>
+ (function(){
+diff --git a/templates/hanns/screen_dj.html b/templates/hanns/screen_dj.html
+new file mode 100644
+index 0000000..75e04a5
+--- /dev/null
++++ b/templates/hanns/screen_dj.html
+@@ -0,0 +1,72 @@
++{% load static %}<!doctype html>
++<html lang="en">
++<head>
++<meta charset="utf-8">
++<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
++<meta name="robots" content="noindex, nofollow">
++<meta name="theme-color" content="#08080c">
++{# "Add to Home Screen" opens this page full screen on iPhone / iPad #}
++<meta name="apple-mobile-web-app-capable" content="yes">
++<meta name="mobile-web-app-capable" content="yes">
++<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
++<meta name="apple-mobile-web-app-title" content="DJ booth">
++<title>DJ booth · {{ screen.name }} · Hanns</title>
++<link rel="preconnect" href="https://fonts.googleapis.com">
++<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
++<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Inter:wght@400;500;600;700;800&family=Spline+Sans+Mono:wght@500;600;700&display=swap" rel="stylesheet">
++<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
++<style>
++  html,body{margin:0;height:100%;background:#08080c;color:#eef0f6;font-family:"Inter",system-ui,sans-serif;overscroll-behavior:none}
++  body{-webkit-tap-highlight-color:transparent}
++  /* tap-to-start: one gesture enters full screen, unlocks sound and keeps the screen awake */
++  .djp-start{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:1.5rem;background:
++      radial-gradient(60% 50% at 30% 40%,rgba(34,211,238,.12),transparent 70%),
++      radial-gradient(50% 50% at 72% 60%,rgba(255,138,61,.12),transparent 70%),#08080c}
++  .djp-start[hidden]{display:none}
++  .djp-card{max-width:440px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:1rem}
++  .djp-discs{display:flex;gap:1.2rem}
++  .djp-discs i{width:92px;height:92px;border-radius:50%;
++    background:radial-gradient(circle,#0b0b0f 0 14%,var(--c) 15% 31%,#0b0b0f 32%),repeating-radial-gradient(circle,#101015 0 2px,#1c1c23 2px 4px);
++    box-shadow:0 10px 30px rgba(0,0,0,.6),inset 0 0 0 2px #000;animation:djpSpin 3.6s linear infinite}
++  .djp-discs i:first-child{--c:#22d3ee}.djp-discs i:last-child{--c:#ff8a3d;animation-direction:reverse}
++  @keyframes djpSpin{to{transform:rotate(360deg)}}
++  .djp-card .k{font:600 .62rem/1 "Spline Sans Mono",ui-monospace,monospace;letter-spacing:.24em;text-transform:uppercase;color:#9a98ad}
++  .djp-card h1{margin:0;font:800 clamp(1.8rem,5vw,2.6rem)/1.05 "Archivo",system-ui,sans-serif;letter-spacing:-.02em}
++  .djp-card p{margin:0;color:#a9a6c2;font-size:.92rem;line-height:1.5}
++  .djp-go{min-height:56px;padding:0 1.6rem;border:0;border-radius:16px;cursor:pointer;font:800 1rem/1 "Archivo",system-ui,sans-serif;color:#0b0b0f;
++    background:linear-gradient(135deg,#22d3ee,#ff8a3d);box-shadow:0 14px 34px -12px rgba(34,211,238,.6)}
++  .djp-go:focus-visible,.djp-skip:focus-visible{outline:2px solid #fff;outline-offset:3px}
++  .djp-skip{background:none;border:0;color:#9a98ad;font-size:.85rem;cursor:pointer;text-decoration:underline;text-underline-offset:3px;min-height:40px}
++  .djp-tip{font-size:.8rem;color:#fbbf24}
++  .djp-gone{position:fixed;inset:0;z-index:60;display:grid;place-items:center;background:rgba(8,8,12,.94);text-align:center;padding:1.5rem}
++  .djp-gone[hidden]{display:none}
++  .djp-gone a{color:#22d3ee}
++  @media (prefers-reduced-motion:reduce){.djp-discs i{animation:none}}
++</style>
++</head>
++<body>
++{% csrf_token %}
++<div class="djp-start" id="djp-start">
++  <div class="djp-card">
++    <div class="djp-discs" aria-hidden="true"><i></i><i></i></div>
++    <div class="k">DJ booth · {{ screen.name }}</div>
++    <h1>Ready to spin?</h1>
++    <p>Starting the booth goes full screen and keeps this device awake while the booth is open. Everything you play comes out of the projector.</p>
++    <button type="button" class="djp-go" id="djp-go"><i class="bi bi-play-fill"></i> Start the booth</button>
++    <span class="djp-tip" id="djp-tip" hidden></span>
++    <button type="button" class="djp-skip" id="djp-skip">Start without full screen</button>
++  </div>
++</div>
++<div class="djp-gone" id="djp-gone" hidden><div><h2 style="margin:0 0 .5rem;font-family:Archivo,system-ui,sans-serif">This screen has been stopped</h2>
++  <p style="color:#a9a6c2;margin:0 0 1rem">The booth has nothing to play on any more.</p><a href="{{ back_url }}">Back to Big screens</a></div></div>
++
++{# The booth script mounts into this (hidden) root the same way it does on the dashboard card. #}
++<div data-screen data-dj-page hidden data-token="{{ screen.token }}" data-ws="{{ ws_path }}" data-back="{{ back_url }}" data-stage="{{ stage_url }}">
++  <script type="application/json" data-state>{{ state_json|safe }}</script>
++</div>
++
++<script src="{% static 'hanns/js/hanns_dj_fx.js' %}?v=1"></script>
++<script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=6"></script>
++<script src="{% static 'hanns/js/hanns_dj_page.js' %}?v=1"></script>
++</body>
++</html>
+diff --git a/templates/hanns/screen_home.html b/templates/hanns/screen_home.html
+index 1fc4e09..99ac956 100644
+--- a/templates/hanns/screen_home.html
++++ b/templates/hanns/screen_home.html
+@@ -345,6 +345,7 @@
+       </div>
+     </div>
+     <div class="st-acts">
++      <a class="kk-btn kk-btn-ghost" href="{% url 'hanns:screen_dj' c.screen.token %}" target="hanns-dj-{{ c.screen.token }}" data-dj-page-open title="The DJ booth on its own page — full screen, and this device stays awake"><i class="bi bi-vinyl"></i> DJ booth <i class="bi bi-arrows-fullscreen" style="font-size:.8em"></i></a>
+       <a class="kk-btn kk-btn-ghost" href="{{ c.url }}" target="_blank" rel="noopener" title="Open the projector view on this device"><i class="bi bi-box-arrow-up-right"></i> Open on this device</a>
+       <button class="kk-btn kk-btn-danger" type="button" data-stop><i class="bi bi-power"></i> Stop screen</button>
+     </div>
+@@ -1094,6 +1095,7 @@
+ <script src="{% static 'hanns/js/hanns_screen_home_bg.js' %}?v=1"></script>
+ <script src="{% static 'hanns/js/hanns_screen_live.js' %}?v=4"></script>
+ <script src="{% static 'hanns/js/hanns_dj_fx.js' %}?v=1"></script>
+-<script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=5"></script>
++<script src="{% static 'hanns/js/hanns_screen_remote.js' %}?v=2"></script>
++<script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=6"></script>
+ {% endif %}
+ {% endblock %}
+diff --git a/templates/hanns/screen_remote.html b/templates/hanns/screen_remote.html
+new file mode 100644
+index 0000000..744f79b
+--- /dev/null
++++ b/templates/hanns/screen_remote.html
+@@ -0,0 +1,165 @@
++{% load static %}<!doctype html>
++<html lang="en">
++<head>
++<meta charset="utf-8">
++<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
++<meta name="robots" content="noindex, nofollow">
++<meta name="theme-color" content="#0b0a12">
++<title>Slide remote · Hanns</title>
++<link rel="preconnect" href="https://fonts.googleapis.com">
++<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
++<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Inter:wght@400;500;600;700&family=Spline+Sans+Mono:wght@500;600;700&display=swap" rel="stylesheet">
++<style>
++  :root{--c:#2dd4bf}
++  *{box-sizing:border-box}
++  html,body{margin:0;min-height:100%;background:#0b0a12;color:#f3f1fa;font-family:"Inter",system-ui,sans-serif}
++  body{display:grid;place-items:center;min-height:100dvh;padding:calc(1.2rem + env(safe-area-inset-top,0px)) 1.2rem calc(1.2rem + env(safe-area-inset-bottom,0px))}
++  main{width:min(420px,100%);display:flex;flex-direction:column;gap:1.1rem;text-align:center}
++  .k{font:600 .62rem/1 "Spline Sans Mono",ui-monospace,monospace;letter-spacing:.24em;text-transform:uppercase;color:#9a98ad}
++  h1{margin:0;font:800 clamp(1.7rem,7vw,2.2rem)/1.08 "Archivo",system-ui,sans-serif;letter-spacing:-.02em}
++  p{margin:0;color:#b4b1c8;line-height:1.5;font-size:.95rem}
++  [hidden]{display:none!important}
++  .phone{width:84px;height:136px;margin:0 auto;border-radius:20px;border:3px solid #3a3850;position:relative;background:#14121e}
++  .phone::before{content:"";position:absolute;left:50%;top:8px;width:26px;height:4px;margin-left:-13px;border-radius:2px;background:#3a3850}
++  .phone i{position:absolute;inset:22px 10px 22px;border-radius:8px;display:grid;place-items:center;font-style:normal;font-size:2rem;
++    background:linear-gradient(160deg,rgba(45,212,191,.25),rgba(167,139,250,.25))}
++  .phone b{position:absolute;right:-30px;top:44px;font-size:1.4rem;animation:wave 1.8s ease-in-out infinite}
++  @keyframes wave{50%{transform:translateX(6px)}}
++  form{display:flex;flex-direction:column;gap:.7rem;text-align:left}
++  label{font-size:.78rem;font-weight:600;color:#cbd5e1}
++  input{width:100%;min-height:54px;border-radius:14px;border:1px solid rgba(255,255,255,.16);background:#05050a;color:#fff;padding:0 1rem;font:600 1.05rem/1 inherit}
++  input.code{font:700 1.7rem/1 "Spline Sans Mono",ui-monospace,monospace;letter-spacing:.4em;text-align:center}
++  input:focus-visible,button:focus-visible{outline:2px solid #fff;outline-offset:2px}
++  .go{min-height:56px;border:0;border-radius:16px;cursor:pointer;font:800 1rem/1 "Archivo",system-ui,sans-serif;color:#06121a;
++    background:linear-gradient(135deg,#2dd4bf,#a78bfa)}
++  .go:disabled{opacity:.6}
++  .ghost{min-height:44px;border-radius:12px;border:1px solid rgba(255,255,255,.16);background:transparent;color:#e5e7eb;font:600 .9rem/1 inherit;cursor:pointer}
++  .err{color:#fda4af;font-size:.88rem;min-height:1.2em}
++  /* the match card: the same symbol shows on the projector and the control board */
++  .match{position:relative;width:200px;height:200px;margin:.4rem auto;display:grid;place-items:center}
++  .match .ring{position:absolute;inset:0;border-radius:50%;border:2px solid var(--c);opacity:0;animation:ring 2.4s ease-out infinite}
++  .match .ring:nth-child(2){animation-delay:.8s}.match .ring:nth-child(3){animation-delay:1.6s}
++  @keyframes ring{0%{transform:scale(.55);opacity:.8}100%{transform:scale(1.15);opacity:0}}
++  .match .face{width:132px;height:132px;border-radius:50%;display:grid;place-items:center;font-size:4.2rem;
++    background:radial-gradient(circle at 35% 30%,color-mix(in srgb,var(--c) 55%,#fff 0%),color-mix(in srgb,var(--c) 35%,#0b0a12));
++    box-shadow:0 0 0 4px rgba(255,255,255,.08),0 20px 50px -10px color-mix(in srgb,var(--c) 60%,transparent)}
++  .word{font:800 1.6rem/1 "Archivo",system-ui,sans-serif;color:var(--c)}
++  .steps{display:flex;flex-direction:column;gap:.5rem;text-align:left;padding:.9rem 1rem;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}
++  .steps div{display:flex;gap:.6rem;align-items:flex-start;font-size:.88rem;color:#cbd5e1}
++  .steps span{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:700 .7rem/1 "Spline Sans Mono",monospace;background:rgba(255,255,255,.1)}
++  .ok{width:96px;height:96px;margin:0 auto;border-radius:50%;display:grid;place-items:center;font-size:3rem;background:rgba(45,212,191,.15);border:2px solid #2dd4bf}
++  @media (prefers-reduced-motion:reduce){.match .ring,.phone b{animation:none}}
++</style>
++</head>
++<body>
++{% csrf_token %}
++<main>
++  {# ── 1. pair ── #}
++  <section id="v-pair" hidden>
++    <div class="phone" aria-hidden="true"><i>📱</i><b>✨</b></div>
++    <div class="k" style="margin-top:1rem">Hanns · Slide remote</div>
++    <h1 style="margin:.5rem 0">Make this phone the slide remote</h1>
++    <p style="margin-bottom:1rem">Pair it with a big screen and it becomes the one device that moves the slides on that screen.</p>
++    <form id="f-pair" novalidate>
++      <label for="code">Screen code <span style="font-weight:400;color:#8a889c">— it's on the lobby screen</span></label>
++      <input class="code" id="code" inputmode="numeric" autocomplete="off" maxlength="7" placeholder="000 000" value="{{ code }}">
++      <label for="name">Name this device</label>
++      <input id="name" maxlength="40" autocomplete="off" placeholder="e.g. Fatou's iPhone">
++      <div class="err" id="err" role="alert"></div>
++      <button class="go" id="b-pair" type="submit">Ask to pair</button>
++    </form>
++  </section>
++
++  {# ── 2. waiting for the host ── #}
++  <section id="v-pending" hidden>
++    <div class="k">Waiting for the host</div>
++    <div class="match" aria-hidden="true"><i class="ring"></i><i class="ring"></i><i class="ring"></i><div class="face" id="m-emoji">🦊</div></div>
++    <div class="word" id="m-word">Amber Fox</div>
++    <div class="steps">
++      <div><span>1</span>The same symbol is on the big screen and on the control board.</div>
++      <div><span>2</span>If it matches, the host taps <b>Approve</b>.</div>
++      <div><span>3</span>This phone turns into the slide remote by itself.</div>
++    </div>
++    <button class="ghost" type="button" data-forget>Cancel</button>
++  </section>
++
++  {# ── 3. paired, nothing on screen yet ── #}
++  <section id="v-ready" hidden>
++    <div class="ok" aria-hidden="true">✓</div>
++    <div class="k" style="margin-top:.8rem">Paired with <span id="r-screen"></span></div>
++    <h1 style="margin:.5rem 0">Ready when the slides are</h1>
++    <p>When a deck goes on the big screen, its controls open here. Keep this page open.</p>
++    <button class="ghost" type="button" data-forget style="margin-top:1rem">Unpair this phone</button>
++  </section>
++
++  {# ── 4. denied ── #}
++  <section id="v-denied" hidden>
++    <div class="ok" aria-hidden="true" style="border-color:#fb7185;background:rgba(251,113,133,.12)">✕</div>
++    <h1 style="margin:.8rem 0 .5rem">The host said no</h1>
++    <p>Check you're on the right screen code, then ask again.</p>
++    <button class="go" type="button" id="b-again" style="margin-top:1rem;width:100%">Try again</button>
++  </section>
++</main>
++<script>
++(function(){
++  "use strict";
++  let st = {{ status_json|safe }};
++  const $ = id => document.getElementById(id);
++  const csrf = () => { const i = document.querySelector("[name=csrfmiddlewaretoken]"); return i ? i.value : ""; };
++  const name = $("name");
++  try { name.value = localStorage.getItem("kk-remote-name") || ""; } catch (_) { /* private mode */ }
++  if (!name.value) name.value = /iPhone/.test(navigator.userAgent) ? "iPhone" : /iPad/.test(navigator.userAgent) ? "iPad" : /Android/.test(navigator.userAgent) ? "Android phone" : "";
++
++  function show(s) {
++    st = s || st;
++    ["pair", "pending", "ready", "denied"].forEach(v => $("v-" + v).hidden = true);
++    if (st.state === "paired" && st.deck) { location.reload(); return; }      // → the slide controller
++    if (st.state === "pending") {
++      $("v-pending").hidden = false;
++      $("m-emoji").textContent = st.match.emoji; $("m-word").textContent = st.match.word;
++      document.documentElement.style.setProperty("--c", st.match.color);
++    } else if (st.state === "paired") {
++      $("v-ready").hidden = false; $("r-screen").textContent = st.screen || "the big screen";
++      document.documentElement.style.setProperty("--c", (st.match || {}).color || "#2dd4bf");
++    } else if (st.state === "denied") $("v-denied").hidden = false;
++    else { $("v-pair").hidden = false; setTimeout(() => ($("code").value ? name : $("code")).focus(), 50); }
++  }
++  // the code reads like the lobby: 199 415
++  $("code").addEventListener("input", e => {
++    const d = e.target.value.replace(/\D/g, "").slice(0, 6);
++    e.target.value = d.length > 3 ? d.slice(0, 3) + " " + d.slice(3) : d;
++  });
++  $("f-pair").addEventListener("submit", async e => {
++    e.preventDefault();
++    const b = $("b-pair"); $("err").textContent = "";
++    const code = $("code").value.replace(/\D/g, "");
++    if (code.length !== 6) { $("err").textContent = "The screen code has six digits."; return; }
++    b.disabled = true; b.textContent = "Asking…";
++    try { localStorage.setItem("kk-remote-name", name.value.trim()); } catch (_) { /* fine */ }
++    try {
++      const r = await fetch("pair/", { method: "POST", credentials: "same-origin",
++        headers: { "Content-Type": "application/json", "X-CSRFToken": csrf() },
++        body: JSON.stringify({ code, name: name.value.trim() || "Phone" }) });
++      const j = await r.json();
++      if (!j.ok) { $("err").textContent = j.error || "Couldn't ask the screen."; }
++      else show({ state: "pending", match: j.match, screen: j.screen });
++    } catch (_) { $("err").textContent = "No connection — try again."; }
++    b.disabled = false; b.textContent = "Ask to pair";
++  });
++  document.querySelectorAll("[data-forget]").forEach(b => b.addEventListener("click", async () => {
++    try { await fetch("forget/", { method: "POST", credentials: "same-origin", headers: { "X-CSRFToken": csrf() } }); } catch (_) { /* fine */ }
++    show({ state: "unpaired" });
++  }));
++  $("b-again").addEventListener("click", () => show({ state: "unpaired" }));
++  setInterval(async () => {
++    if (document.hidden || st.state === "unpaired" || st.state === "denied") return;
++    try {
++      const j = await (await fetch("status/", { credentials: "same-origin", cache: "no-store" })).json();
++      if (j.state !== st.state || (j.deck || "") !== (st.deck || "")) show(j);
++    } catch (_) { /* offline for a moment */ }
++  }, 2000);
++  show(st);
++})();
++</script>
++</body>
++</html>
+diff --git a/templates/hanns/screen_stage.html b/templates/hanns/screen_stage.html
+index b22a88a..faff69c 100644
+--- a/templates/hanns/screen_stage.html
++++ b/templates/hanns/screen_stage.html
+@@ -149,6 +149,7 @@
+ <script src="{% static 'hanns/js/hanns_screen_backdrop.js' %}?v=1"></script>
+ <script src="{% static 'hanns/js/hanns_screen_live.js' %}?v=3"></script>
+ <script src="{% static 'hanns/js/hanns_dj_fx.js' %}?v=1"></script>
+-<script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=5"></script>
++<script src="{% static 'hanns/js/hanns_screen_remote.js' %}?v=2"></script>
++<script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=6"></script>
+ </body>
+ </html>
+-- 
+2.43.0
+

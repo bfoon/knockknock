@@ -51,6 +51,18 @@ Server → client (fanned out to the whole deck group):
 Server → group (from the Big Screen views, not from a client):
     {type:"screen.control_revoked", shares:[id,…]}  drop phones that came in
                                             through those shares' control codes
+    {type:"screen.lock_changed"}            a big screen showing this deck
+                                            paired / unpaired its slide remote
+                                            or switched the lock
+
+── Paired slide remote (hanns/remote.py) ────────────────────────────────
+While a big screen showing this deck has its remote LOCK on, only that
+screen's paired phone ({type:"controller_hello", pin:"remote:<secret>"})
+may drive the slides. Every other controller and presenter is refused with
+{type:"controller_locked", screen} and, for a goto, snapped back to the
+room's slide. The screen's own embedded stage (presenter_hello with its
+screen token + share id) may still resync after a reconnect. Lock off →
+nothing changes.
 
 Server → the calling controller only:
     {type:"reveal_state", index, elements, revealed}
@@ -162,6 +174,13 @@ class PresentConsumer(AsyncWebsocketConsumer):
         # Set when this phone unlocked with a Big Screen control code rather
         # than the deck PIN, so a revoke can find exactly those phones.
         self.ctrl_share = None
+        # Paired slide remote: the screen this phone is the remote of, and
+        # the screen whose own embedded stage this connection is.
+        self.remote_screen = None
+        self.remote_secret = None
+        self.frame_screen = None
+        self._locks_at, self._locks = 0.0, {}
+        self._locked_note_at = 0.0
 
         self.deck = await self._get_deck(self.code)
         if self.deck is None:
@@ -209,6 +228,9 @@ class PresentConsumer(AsyncWebsocketConsumer):
 
         if mtype == "presenter_hello":
             self.is_presenter = True
+            # The big screen's embedded stage says which screen it is.
+            if data.get("screen") and data.get("share"):
+                self.frame_screen = await self._frame_screen(str(data.get("screen")), str(data.get("share")))
             await self._broadcast_participants()
 
         elif mtype == "controller_hello":
@@ -218,7 +240,15 @@ class PresentConsumer(AsyncWebsocketConsumer):
             # however much of it was right.
             granted = bool(pin and real and secrets.compare_digest(pin, real))
             self.ctrl_share = None
-            if not granted and pin:
+            self.remote_screen = self.remote_secret = None
+            if not granted and pin.startswith("remote:"):
+                # A big screen's paired slide remote, for the deck on that screen.
+                secret = pin[len("remote:"):]
+                screen_id = await self._remote_screen(secret)
+                if screen_id:
+                    granted = True
+                    self.remote_screen, self.remote_secret = screen_id, secret
+            elif not granted and pin:
                 # A control code the Big Screen host issued for this deck.
                 # It works only while that share is open, and only for this
                 # deck — see screen.share_for_control_code.
@@ -229,8 +259,12 @@ class PresentConsumer(AsyncWebsocketConsumer):
             if granted:
                 self.is_controller = True
                 current = await self._current_slide()
+                locks = await self._lock_map(fresh=True)
                 await self.send_json({
                     "type": "controller_ok",
+                    "remote": bool(self.remote_screen),
+                    # tell a phone up front that a screen's remote has the slides
+                    "locked_by": "" if self._may_drive(locks, {}) else ", ".join(locks.values()),
                     "seq": PresentConsumer._slide_seq.get(self.code, 0),
                     "current_slide": current,
                     # Send the latest slides from the DB so phone notes are fresh,
@@ -261,6 +295,12 @@ class PresentConsumer(AsyncWebsocketConsumer):
 
         elif mtype == "react":
             await self._handle_react(data)
+
+        elif mtype in self.DRIVE_TYPES and (self.is_presenter or self.is_controller) \
+                and not self._may_drive(await self._lock_map(), data):
+            # A big screen's paired remote has the slides: refuse, and put a
+            # stage/phone that already moved back where the room is.
+            await self._refuse_locked(mtype)
 
         elif mtype == "goto":
             # Presenter screen or PIN-approved phone controller drives slides.
@@ -651,6 +691,60 @@ class PresentConsumer(AsyncWebsocketConsumer):
     async def fanout(self, event):
         await self.send_json(event["payload"])
 
+    # Messages that move or change what the room sees.
+    DRIVE_TYPES = frozenset({"goto", "pointer", "zoom", "reveal", "focus", "actor_action",
+                             "fluid", "end_show", "show_download"})
+
+    async def _lock_map(self, fresh=False):
+        """{screen_id: name} of locked screens showing this deck (cached 2 s)."""
+        now = asyncio.get_running_loop().time()
+        if fresh or now - self._locks_at > 2.0:
+            self._locks = await self._locks_for_deck()
+            self._locks_at = now
+        return self._locks
+
+    def _may_drive(self, locks, data):
+        if not locks:
+            return True                                   # no lock anywhere: as always
+        if self.remote_screen and self.remote_screen in locks:
+            return True
+        # the screen's own stage re-announcing its slide after a reconnect
+        if self.frame_screen and self.frame_screen in locks and data.get("type") == "goto" and data.get("resync"):
+            return True
+        return False
+
+    async def _refuse_locked(self, mtype):
+        loop_now = asyncio.get_running_loop().time()
+        if loop_now - self._locked_note_at > 2.0:
+            self._locked_note_at = loop_now
+            await self.send_json({"type": "controller_locked", "screen": ", ".join(self._locks.values())})
+        if mtype == "goto":
+            index = await self._current_slide()
+            seq = PresentConsumer._slide_seq.get(self.code, 0) + 1
+            PresentConsumer._slide_seq[self.code] = seq
+            await self.send_json({
+                "type": "goto", "index": index, "slide": await self._slide(index),
+                "revealed": self._revealed_list(index), "seq": seq, "resync": True,
+            })
+
+    async def screen_lock_changed(self, event):
+        """A screen showing this deck paired/unpaired its remote or flipped the lock."""
+        self._locks_at = 0.0
+        locks = await self._lock_map(fresh=True)
+        if self.remote_screen:
+            still = await self._remote_screen(self.remote_secret)
+            if not still:                                  # unpaired / replaced: off the slides
+                self.is_controller = False
+                self.remote_screen = self.remote_secret = None
+                await self.send_json({"type": "controller_denied"})
+                return
+            self.remote_screen = still
+        if (self.is_controller or self.is_presenter) and not self.frame_screen and not self.remote_screen:
+            if locks:
+                await self.send_json({"type": "controller_locked", "screen": ", ".join(locks.values())})
+            else:
+                await self.send_json({"type": "controller_unlocked"})
+
     async def screen_control_revoked(self, event):
         """The Big Screen host removed a share, reissued its control code or
         stopped the screen. Phones that came in through that code lose the
@@ -761,6 +855,27 @@ class PresentConsumer(AsyncWebsocketConsumer):
     def _set_current_slide(self, index):
         from .models import Deck
         Deck.objects.filter(code=self.code).update(current_slide=index)
+
+    @sync_to_async
+    def _locks_for_deck(self):
+        from .remote import locks_for_deck
+        try:
+            return locks_for_deck(self.code)
+        except Exception:
+            return {}
+
+    @sync_to_async
+    def _remote_screen(self, secret):
+        from .remote import remote_screen_for
+        try:
+            return remote_screen_for(self.code, secret)
+        except Exception:
+            return None
+
+    @sync_to_async
+    def _frame_screen(self, token, share_id):
+        from .remote import frame_screen_for
+        return frame_screen_for(self.code, token, share_id)
 
     @sync_to_async
     def _current_slide(self):

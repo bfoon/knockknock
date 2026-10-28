@@ -130,7 +130,24 @@ def screen_state(screen):
         "live": _live(screen),
         "media": _program(screen, "media"),
         "event": _program(screen, "event"),
+        "remote": _remote(screen),
     }
+
+
+def _remote(screen):
+    """The paired slide remote (hanns/remote.py), never with its secret."""
+    try:
+        from .remote import public_state
+        return public_state(screen.id) if screen.is_active else None
+    except Exception:
+        return None
+
+
+def push_lock_changed(screen):
+    """Tell the deck on this screen that its remote / lock changed."""
+    share = screen.current_share if screen.current_share_id else None
+    if share and share.status == share.STATUS_LIVE:
+        _send(f"hanns_{share.deck.code}", {"type": "screen.lock_changed"})
 
 
 def _program(screen, part):

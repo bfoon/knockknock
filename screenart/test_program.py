@@ -265,6 +265,23 @@ class EventViewTests(TestCase):
     def test_no_event_means_no_data(self):
         self.assertIsNone(self.client.get(self.base + "event/data/").json()["event"])
 
+    def test_dj_booth_page(self):
+        url = f"/hanns/screen/s/{self.screen.token}/dj/"
+        self.assertEqual(self.client.get(url).status_code, 302)                     # login first
+        stranger = get_user_model().objects.create_user("dj-stranger", password="pw-pw-pw-123")
+        self.client.force_login(stranger)
+        self.assertEqual(self.client.get(url).status_code, 404)                     # not their screen
+        self.client.force_login(self.host)
+        with self.settings(STATICFILES_STORAGE="django.contrib.staticfiles.storage.StaticFilesStorage"):
+            r = self.client.get(url)
+            self.assertContains(r, "hanns_dj_page.js")
+            self.assertContains(r, "data-dj-page")
+            self.assertContains(r, 'name="apple-mobile-web-app-capable"')
+            self.assertContains(self.client.get("/hanns/screen/"), "data-dj-page-open")   # the way in, from the card
+        self.screen.is_active = False
+        self.screen.save()
+        self.assertRedirects(self.client.get(url), "/hanns/screen/", fetch_redirect_response=False)
+
     def test_dashboard_and_stage_load_the_script(self):
         with self.settings(STATICFILES_STORAGE="django.contrib.staticfiles.storage.StaticFilesStorage"):
             self.assertContains(self.client.get(f"/hanns/screen/s/{self.screen.token}/"), "hanns_screen_program.js")

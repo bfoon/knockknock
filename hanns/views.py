@@ -51,6 +51,7 @@ from django.core.exceptions import ValidationError, RequestDataTooBig
 from django.db import IntegrityError
 from django.db.models import Q
 from django.http import JsonResponse, HttpResponseBadRequest, HttpResponseForbidden, Http404
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -1023,6 +1024,7 @@ def deck_download_settings(request, code):
     })
 
 
+@ensure_csrf_cookie   # the lock screen POSTs the PIN with this cookie; a phone fresh from the QR has none
 def deck_control(request, code):
     """The presenter's phone controller.
 

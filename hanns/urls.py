@@ -56,11 +56,19 @@ urlpatterns = [
     path("screen/new/", screen_views.screen_create, name="screen_create"),
     # PUBLIC — a presenter with no laptop types the host-issued code here.
     path("screen/control/", screen_views.screen_control_entry, name="screen_control_entry"),
+    # The paired slide remote (hanns/remote.py): a phone pairs with a screen.
+    path("screen/remote/", screen_views.remote_home, name="remote_home"),
+    path("screen/remote/pair/", screen_views.remote_pair, name="remote_pair"),
+    path("screen/remote/status/", screen_views.remote_status, name="remote_status"),
+    path("screen/remote/forget/", screen_views.remote_forget, name="remote_forget"),
+    path("screen/remote/qr.svg", screen_views.remote_qr, name="remote_qr"),
     path("screen/share/<uuid:share_id>/", screen_views.screen_share_status, name="screen_share_status"),
     path("screen/share/<uuid:share_id>/withdraw/", screen_views.screen_share_withdraw, name="screen_share_withdraw"),
     # PUBLIC — the token is the credential; it is the screen's own URL.
     path("screen/s/<str:token>/", screen_views.screen_stage, name="screen_stage"),
     path("screen/s/<str:token>/state/", screen_views.screen_state, name="screen_state"),
+    path("screen/s/<str:token>/dj/", screen_views.screen_dj, name="screen_dj"),
+    path("screen/s/<str:token>/remote/", screen_views.screen_remote, name="screen_remote"),
     path("screen/s/<str:token>/select/", screen_views.screen_select, name="screen_select"),
     path("screen/s/<str:token>/lobby/", screen_views.screen_lobby, name="screen_lobby"),
     path("screen/s/<str:token>/settings/", screen_views.screen_settings, name="screen_settings"),

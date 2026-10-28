@@ -566,7 +566,16 @@
   .dj-ear,.dj-x{min-height:42px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:#e2e8f0;cursor:pointer}
   .dj-ear{padding:0 .85rem;display:inline-flex;align-items:center;gap:.45rem;font-size:.8rem;font-weight:600}
   .dj-ear[aria-pressed="true"]{color:#04121a;background:#22d3ee;border-color:#22d3ee}
-  .dj-x{width:42px;font-size:1rem}
+  .dj-x{width:42px;font-size:1rem;display:inline-grid;place-items:center;text-decoration:none}
+  .dj-x.wide{width:auto;padding:0 .9rem;font:600 .8rem/1 inherit;gap:.4rem;display:inline-flex;align-items:center}
+  .dj-ear[hidden],.dj-wake[hidden]{display:none}
+  .dj-wake{min-height:42px;padding:0 .8rem;border-radius:12px;display:inline-flex;align-items:center;gap:.4rem;cursor:pointer;
+    font:600 .74rem/1 inherit;border:1px solid rgba(251,191,36,.4);background:rgba(251,191,36,.08);color:#fcd34d}
+  .dj-wake.on{border-color:rgba(74,222,128,.4);background:rgba(74,222,128,.08);color:#86efac}
+  /* the booth's own page: edge to edge, safe areas respected */
+  dialog.dj.page{position:fixed;inset:0;width:100%;height:100%;max-width:none;max-height:none;margin:0;border-radius:0;box-shadow:none;
+    padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);box-sizing:border-box;animation:none}
+  dialog.dj.page .dj-top{position:sticky;top:0;z-index:5;background:rgba(8,8,12,.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
 
   .desk{display:grid;grid-template-columns:minmax(0,1fr) 250px minmax(0,1fr);gap:.9rem;padding:1rem 1.2rem}
   /* ── a CDJ ── */
@@ -759,13 +768,16 @@
 
   document.querySelectorAll("[data-screen]").forEach(root => {
     const base = `/screenart/s/${root.dataset.token}/`;
+    const PAGE = root.hasAttribute("data-dj-page");          // /hanns/screen/s/<token>/dj/
+    const pageUrl = `/hanns/screen/s/${root.dataset.token}/dj/`;
     let state = {};
     try { state = JSON.parse(root.querySelector("[data-state]").textContent || "{}"); } catch (_) { /* ignore */ }
     const box = document.createElement("div");
     box.innerHTML = `<div class="dj-row" data-pg="media">
         <span class="ico" aria-hidden="true"><i class="bi bi-vinyl-fill"></i></span>
         <span class="tx"><b>Music &amp; video</b><small class="pg-sum-m"></small></span>
-        <span class="acts"><button type="button" class="go" data-dj-open><i class="bi bi-disc"></i> Open DJ booth</button></span></div>
+        <span class="acts"><button type="button" data-dj-page-open title="The booth on its own page — full screen, the device stays awake"><i class="bi bi-arrows-fullscreen"></i> Full screen</button>
+          <button type="button" class="go" data-dj-open><i class="bi bi-disc"></i> Open DJ booth</button></span></div>
       <details class="pg-fold" data-pg="event"><summary><span class="ico" aria-hidden="true"><i class="bi bi-clipboard-check"></i></span>
         <span class="tx"><b>Event</b><small class="pg-sum-e"></small></span></summary><div class="pg-e"></div></details>`;
     const slot = root.querySelector("[data-addons]"), link = root.querySelector(".bs-link");
@@ -773,11 +785,15 @@
     else if (link) link.parentNode.insertBefore(box, link); else root.appendChild(box);
 
     const dj = document.createElement("dialog");
-    dj.className = "dj";
+    dj.className = PAGE ? "dj page" : "dj";
     dj.setAttribute("aria-label", "DJ booth");
     dj.innerHTML = `<div class="dj-top"><div><div class="k">DJ booth · 2 decks + mixer · plays on the projector</div><h3 class="dj-name"></h3></div>
-        <div class="dj-tr"><button type="button" class="dj-ear" data-ear aria-pressed="false" title="Play the scratches and pads on this device too"><i class="bi bi-headphones"></i> Hear FX here</button>
-          <button type="button" class="dj-x" data-dj-close aria-label="Close the DJ booth">✕</button></div></div>
+        <div class="dj-tr">${PAGE
+            ? `<button type="button" class="dj-wake" data-wake hidden></button><button type="button" class="dj-ear" data-fs hidden></button>`
+            : `<button type="button" class="dj-ear" data-dj-page-open title="Open the booth on its own page — full screen, and the device stays awake"><i class="bi bi-arrows-fullscreen"></i> Full-screen booth</button>`}
+          <button type="button" class="dj-ear" data-ear aria-pressed="false" title="Play the scratches and pads on this device too"><i class="bi bi-headphones"></i> Hear FX here</button>
+          ${PAGE ? `<a class="dj-x wide" href="${esc(root.dataset.back || "/hanns/screen/")}" title="Back to Big screens"><i class="bi bi-box-arrow-left"></i> Exit</a>`
+                 : `<button type="button" class="dj-x" data-dj-close aria-label="Close the DJ booth">✕</button>`}</div></div>
       <div class="desk">
         ${deckHtml("a", 1)}
         <section class="mx" aria-label="Mixer"><h4>MIXER</h4>
@@ -1087,7 +1103,8 @@
     dj.addEventListener("click", e => {
       if (e.target === dj || e.target.closest("[data-dj-close]")) { closeDj(); return; }
       const b = e.target.closest("button"); if (!b) return;
-      if (b.dataset.load) load(b.dataset.load);
+      if (b.hasAttribute("data-dj-page-open")) openPage();
+      else if (b.dataset.load) load(b.dataset.load);
       else if (b.dataset.fx) pad(b.dataset.fx);
       else if (b.dataset.curve) media({ action: "mix", curve: b.dataset.curve });
       else if (b.dataset.mode) media({ action: "mode", mode: b.dataset.mode });
@@ -1135,19 +1152,30 @@
       raf = dj.open ? requestAnimationFrame(frame) : 0;
     }
 
+    const openPage = () => {     // one tab per screen: a second click brings the same tab back
+      const w = window.open(pageUrl, `hanns-dj-${root.dataset.token}`);
+      if (!w) location.href = pageUrl;                     // pop-up blocked: go there here
+      else { try { w.focus(); } catch (_) { /* fine */ } if (dj.open) closeDj(); }
+    };
     function openDj() {
-      if (typeof dj.showModal === "function") { if (!dj.open) dj.showModal(); } else dj.setAttribute("open", "");
+      if (PAGE) { if (!dj.open) { if (typeof dj.show === "function") dj.show(); else dj.setAttribute("open", ""); } }
+      else if (typeof dj.showModal === "function") { if (!dj.open) dj.showModal(); } else dj.setAttribute("open", "");
       last = performance.now();
       if (!raf) raf = requestAnimationFrame(frame);
       if (!M().current && !(M().b || {}).current) setTimeout(() => url.focus(), 60);
     }
-    function closeDj() { decks.a.release(); decks.b.release(); if (typeof dj.close === "function") dj.close(); else dj.removeAttribute("open"); }
+    function closeDj() {
+      decks.a.release(); decks.b.release();
+      if (PAGE) return;                                    // the page's Exit link leaves instead
+      if (typeof dj.close === "function") dj.close(); else dj.removeAttribute("open");
+    }
     dj.addEventListener("close", () => { decks.a.release(); decks.b.release(); });
 
     root.addEventListener("click", e => {
       const b = e.target.closest("button");
       if (!b) return;
       if (b.hasAttribute("data-dj-open")) { e.preventDefault(); openDj(); }
+      else if (b.hasAttribute("data-dj-page-open")) { e.preventDefault(); openPage(); }
       else if (b.hasAttribute("data-event-open")) {
         e.preventDefault();
         evFold.open = true;
@@ -1187,5 +1215,6 @@
     }
     root.addEventListener("bs:state", ev => { state = ev.detail || state; render(); });
     render();
+    if (PAGE) openDj();
   });
 })();

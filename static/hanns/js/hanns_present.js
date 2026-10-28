@@ -493,6 +493,22 @@ function cycleFocus(){
    Each socket carries a generation number. A close arriving from a socket
    we have already replaced is ignored, so a reconnect cannot race with the
    old socket's close handler and open two connections at once.           */
+/* A big screen's paired slide remote has the slides (hanns/remote.py):
+   say so on this presenter screen instead of silently bouncing the keys. */
+function remoteLockNote(screen,on){
+  let n=document.getElementById("hanns-remote-lock");
+  if(!n){
+    n=document.createElement("div"); n.id="hanns-remote-lock"; n.setAttribute("role","status");
+    n.style.cssText="position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:9999;padding:10px 16px;border-radius:999px;"+
+      "background:rgba(12,10,20,.92);color:#fde68a;border:1px solid rgba(251,191,36,.5);font:600 14px/1.3 system-ui,sans-serif;"+
+      "box-shadow:0 10px 30px rgba(0,0,0,.5);transition:opacity .3s;pointer-events:none";
+    document.body.appendChild(n);
+  }
+  n.textContent=on?`🔒 ${screen||"The big screen"}'s slide remote is driving — your keys follow the room.`:"🔓 The slide remote let go — you can drive again.";
+  n.style.opacity="1";
+  clearTimeout(remoteLockNote.t);
+  remoteLockNote.t=setTimeout(()=>{n.style.opacity="0";},on?5000:3000);
+}
 const HEARTBEAT_MS=20000, STALE_MS=50000;
 const Live={
   sock:null, retry:0, gen:0, lastRx:0, timer:null, closed:false,
@@ -506,7 +522,11 @@ const Live={
     sock.addEventListener("open",()=>{
       if(gen!==this.gen)return;
       this.retry=0; this.lastRx=Date.now();
-      this.send({type:"presenter_hello"});
+      // On a big screen, say which one: a paired slide remote's lock still
+      // lets the screen's own stage resync (hanns/remote.py).
+      this.send(EMBED && CFG.screenToken
+        ? {type:"presenter_hello", screen:CFG.screenToken, share:CFG.screenShare}
+        : {type:"presenter_hello"});
       // The stage is the source of truth for where the talk is. If the
       // socket was down while the presenter drove with the keyboard, the
       // server's stored slide is stale — so say where we actually are
@@ -535,6 +555,8 @@ const Live={
         if(m.resync && m.index===i) return;
         if(m.index!==i){suppressBroadcast=true;show(m.index,false);suppressBroadcast=false;}
       }else if(m.type==="fluid"){keepScreenAwake("fluid-cue");applyFluidCue(m);}else if(m.type==="pointer"){showPointer(m.x,m.y);}
+      else if(m.type==="controller_locked"&&!EMBED){remoteLockNote(m.screen,true);}
+      else if(m.type==="controller_unlocked"&&!EMBED){remoteLockNote("",false);}
     });
     sock.addEventListener("close",()=>{
       if(gen!==this.gen)return;              // superseded by a reconnect

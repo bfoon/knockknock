@@ -1,0 +1,165 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0b0a12">
+<title>Slide remote · Hanns</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Inter:wght@400;500;600;700&family=Spline+Sans+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--c:#2dd4bf}
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%;background:#0b0a12;color:#f3f1fa;font-family:"Inter",system-ui,sans-serif}
+  body{display:grid;place-items:center;min-height:100dvh;padding:calc(1.2rem + env(safe-area-inset-top,0px)) 1.2rem calc(1.2rem + env(safe-area-inset-bottom,0px))}
+  main{width:min(420px,100%);display:flex;flex-direction:column;gap:1.1rem;text-align:center}
+  .k{font:600 .62rem/1 "Spline Sans Mono",ui-monospace,monospace;letter-spacing:.24em;text-transform:uppercase;color:#9a98ad}
+  h1{margin:0;font:800 clamp(1.7rem,7vw,2.2rem)/1.08 "Archivo",system-ui,sans-serif;letter-spacing:-.02em}
+  p{margin:0;color:#b4b1c8;line-height:1.5;font-size:.95rem}
+  [hidden]{display:none!important}
+  .phone{width:84px;height:136px;margin:0 auto;border-radius:20px;border:3px solid #3a3850;position:relative;background:#14121e}
+  .phone::before{content:"";position:absolute;left:50%;top:8px;width:26px;height:4px;margin-left:-13px;border-radius:2px;background:#3a3850}
+  .phone i{position:absolute;inset:22px 10px 22px;border-radius:8px;display:grid;place-items:center;font-style:normal;font-size:2rem;
+    background:linear-gradient(160deg,rgba(45,212,191,.25),rgba(167,139,250,.25))}
+  .phone b{position:absolute;right:-30px;top:44px;font-size:1.4rem;animation:wave 1.8s ease-in-out infinite}
+  @keyframes wave{50%{transform:translateX(6px)}}
+  form{display:flex;flex-direction:column;gap:.7rem;text-align:left}
+  label{font-size:.78rem;font-weight:600;color:#cbd5e1}
+  input{width:100%;min-height:54px;border-radius:14px;border:1px solid rgba(255,255,255,.16);background:#05050a;color:#fff;padding:0 1rem;font:600 1.05rem/1 inherit}
+  input.code{font:700 1.7rem/1 "Spline Sans Mono",ui-monospace,monospace;letter-spacing:.4em;text-align:center}
+  input:focus-visible,button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+  .go{min-height:56px;border:0;border-radius:16px;cursor:pointer;font:800 1rem/1 "Archivo",system-ui,sans-serif;color:#06121a;
+    background:linear-gradient(135deg,#2dd4bf,#a78bfa)}
+  .go:disabled{opacity:.6}
+  .ghost{min-height:44px;border-radius:12px;border:1px solid rgba(255,255,255,.16);background:transparent;color:#e5e7eb;font:600 .9rem/1 inherit;cursor:pointer}
+  .err{color:#fda4af;font-size:.88rem;min-height:1.2em}
+  /* the match card: the same symbol shows on the projector and the control board */
+  .match{position:relative;width:200px;height:200px;margin:.4rem auto;display:grid;place-items:center}
+  .match .ring{position:absolute;inset:0;border-radius:50%;border:2px solid var(--c);opacity:0;animation:ring 2.4s ease-out infinite}
+  .match .ring:nth-child(2){animation-delay:.8s}.match .ring:nth-child(3){animation-delay:1.6s}
+  @keyframes ring{0%{transform:scale(.55);opacity:.8}100%{transform:scale(1.15);opacity:0}}
+  .match .face{width:132px;height:132px;border-radius:50%;display:grid;place-items:center;font-size:4.2rem;
+    background:radial-gradient(circle at 35% 30%,color-mix(in srgb,var(--c) 55%,#fff 0%),color-mix(in srgb,var(--c) 35%,#0b0a12));
+    box-shadow:0 0 0 4px rgba(255,255,255,.08),0 20px 50px -10px color-mix(in srgb,var(--c) 60%,transparent)}
+  .word{font:800 1.6rem/1 "Archivo",system-ui,sans-serif;color:var(--c)}
+  .steps{display:flex;flex-direction:column;gap:.5rem;text-align:left;padding:.9rem 1rem;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}
+  .steps div{display:flex;gap:.6rem;align-items:flex-start;font-size:.88rem;color:#cbd5e1}
+  .steps span{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:700 .7rem/1 "Spline Sans Mono",monospace;background:rgba(255,255,255,.1)}
+  .ok{width:96px;height:96px;margin:0 auto;border-radius:50%;display:grid;place-items:center;font-size:3rem;background:rgba(45,212,191,.15);border:2px solid #2dd4bf}
+  @media (prefers-reduced-motion:reduce){.match .ring,.phone b{animation:none}}
+</style>
+</head>
+<body>
+{% csrf_token %}
+<main>
+  {# ── 1. pair ── #}
+  <section id="v-pair" hidden>
+    <div class="phone" aria-hidden="true"><i>📱</i><b>✨</b></div>
+    <div class="k" style="margin-top:1rem">Hanns · Slide remote</div>
+    <h1 style="margin:.5rem 0">Make this phone the slide remote</h1>
+    <p style="margin-bottom:1rem">Pair it with a big screen and it becomes the one device that moves the slides on that screen.</p>
+    <form id="f-pair" novalidate>
+      <label for="code">Screen code <span style="font-weight:400;color:#8a889c">— it's on the lobby screen</span></label>
+      <input class="code" id="code" inputmode="numeric" autocomplete="off" maxlength="7" placeholder="000 000" value="{{ code }}">
+      <label for="name">Name this device</label>
+      <input id="name" maxlength="40" autocomplete="off" placeholder="e.g. Fatou's iPhone">
+      <div class="err" id="err" role="alert"></div>
+      <button class="go" id="b-pair" type="submit">Ask to pair</button>
+    </form>
+  </section>
+
+  {# ── 2. waiting for the host ── #}
+  <section id="v-pending" hidden>
+    <div class="k">Waiting for the host</div>
+    <div class="match" aria-hidden="true"><i class="ring"></i><i class="ring"></i><i class="ring"></i><div class="face" id="m-emoji">🦊</div></div>
+    <div class="word" id="m-word">Amber Fox</div>
+    <div class="steps">
+      <div><span>1</span>The same symbol is on the big screen and on the control board.</div>
+      <div><span>2</span>If it matches, the host taps <b>Approve</b>.</div>
+      <div><span>3</span>This phone turns into the slide remote by itself.</div>
+    </div>
+    <button class="ghost" type="button" data-forget>Cancel</button>
+  </section>
+
+  {# ── 3. paired, nothing on screen yet ── #}
+  <section id="v-ready" hidden>
+    <div class="ok" aria-hidden="true">✓</div>
+    <div class="k" style="margin-top:.8rem">Paired with <span id="r-screen"></span></div>
+    <h1 style="margin:.5rem 0">Ready when the slides are</h1>
+    <p>When a deck goes on the big screen, its controls open here. Keep this page open.</p>
+    <button class="ghost" type="button" data-forget style="margin-top:1rem">Unpair this phone</button>
+  </section>
+
+  {# ── 4. denied ── #}
+  <section id="v-denied" hidden>
+    <div class="ok" aria-hidden="true" style="border-color:#fb7185;background:rgba(251,113,133,.12)">✕</div>
+    <h1 style="margin:.8rem 0 .5rem">The host said no</h1>
+    <p>Check you're on the right screen code, then ask again.</p>
+    <button class="go" type="button" id="b-again" style="margin-top:1rem;width:100%">Try again</button>
+  </section>
+</main>
+<script>
+(function(){
+  "use strict";
+  let st = {{ status_json|safe }};
+  const $ = id => document.getElementById(id);
+  const csrf = () => { const i = document.querySelector("[name=csrfmiddlewaretoken]"); return i ? i.value : ""; };
+  const name = $("name");
+  try { name.value = localStorage.getItem("kk-remote-name") || ""; } catch (_) { /* private mode */ }
+  if (!name.value) name.value = /iPhone/.test(navigator.userAgent) ? "iPhone" : /iPad/.test(navigator.userAgent) ? "iPad" : /Android/.test(navigator.userAgent) ? "Android phone" : "";
+
+  function show(s) {
+    st = s || st;
+    ["pair", "pending", "ready", "denied"].forEach(v => $("v-" + v).hidden = true);
+    if (st.state === "paired" && st.deck) { location.reload(); return; }      // → the slide controller
+    if (st.state === "pending") {
+      $("v-pending").hidden = false;
+      $("m-emoji").textContent = st.match.emoji; $("m-word").textContent = st.match.word;
+      document.documentElement.style.setProperty("--c", st.match.color);
+    } else if (st.state === "paired") {
+      $("v-ready").hidden = false; $("r-screen").textContent = st.screen || "the big screen";
+      document.documentElement.style.setProperty("--c", (st.match || {}).color || "#2dd4bf");
+    } else if (st.state === "denied") $("v-denied").hidden = false;
+    else { $("v-pair").hidden = false; setTimeout(() => ($("code").value ? name : $("code")).focus(), 50); }
+  }
+  // the code reads like the lobby: 199 415
+  $("code").addEventListener("input", e => {
+    const d = e.target.value.replace(/\D/g, "").slice(0, 6);
+    e.target.value = d.length > 3 ? d.slice(0, 3) + " " + d.slice(3) : d;
+  });
+  $("f-pair").addEventListener("submit", async e => {
+    e.preventDefault();
+    const b = $("b-pair"); $("err").textContent = "";
+    const code = $("code").value.replace(/\D/g, "");
+    if (code.length !== 6) { $("err").textContent = "The screen code has six digits."; return; }
+    b.disabled = true; b.textContent = "Asking…";
+    try { localStorage.setItem("kk-remote-name", name.value.trim()); } catch (_) { /* fine */ }
+    try {
+      const r = await fetch("pair/", { method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrf() },
+        body: JSON.stringify({ code, name: name.value.trim() || "Phone" }) });
+      const j = await r.json();
+      if (!j.ok) { $("err").textContent = j.error || "Couldn't ask the screen."; }
+      else show({ state: "pending", match: j.match, screen: j.screen });
+    } catch (_) { $("err").textContent = "No connection — try again."; }
+    b.disabled = false; b.textContent = "Ask to pair";
+  });
+  document.querySelectorAll("[data-forget]").forEach(b => b.addEventListener("click", async () => {
+    try { await fetch("forget/", { method: "POST", credentials: "same-origin", headers: { "X-CSRFToken": csrf() } }); } catch (_) { /* fine */ }
+    show({ state: "unpaired" });
+  }));
+  $("b-again").addEventListener("click", () => show({ state: "unpaired" }));
+  setInterval(async () => {
+    if (document.hidden || st.state === "unpaired" || st.state === "denied") return;
+    try {
+      const j = await (await fetch("status/", { credentials: "same-origin", cache: "no-store" })).json();
+      if (j.state !== st.state || (j.deck || "") !== (st.deck || "")) show(j);
+    } catch (_) { /* offline for a moment */ }
+  }, 2000);
+  show(st);
+})();
+</script>
+</body>
+</html>

@@ -35,7 +35,7 @@ Presenter without a laptop:
 import json
 
 from django.contrib.auth.decorators import login_required
-from django.http import JsonResponse, HttpResponseBadRequest
+from django.http import Http404, JsonResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -142,6 +142,161 @@ def screen_stage(request, token):
     })
 
 
+# ── the paired slide remote (hanns/remote.py) ────────────────────────
+def _remote_cookie(request):
+    from . import remote
+    return remote.parse_cookie(request.COOKIES.get(remote.COOKIE))
+
+
+def _remote_screen(screen_id):
+    from .models import BigScreen
+    try:
+        return BigScreen.objects.select_related("current_share__deck").get(pk=screen_id)
+    except Exception:
+        return None
+
+
+def _remote_status(request):
+    """(payload, screen) for the phone holding this browser's remote cookie."""
+    from . import remote
+    sid, secret = _remote_cookie(request)
+    screen = _remote_screen(sid) if sid else None
+    if not screen or not screen.is_active:
+        return {"state": "unpaired"}, None
+    st = dict(remote.status(screen.id, secret), screen=screen.name)
+    if st["state"] == "paired":
+        code, title = remote.deck_on(screen)
+        st.update(deck=code, deck_title=title or "")
+    return st, screen
+
+
+@ensure_csrf_cookie
+def remote_home(request):
+    """The phone's way in. Paired + a deck on the screen → the full slide
+    controller for that deck. Otherwise the pair / waiting page."""
+    from . import remote
+    from .models import Deck
+    st, screen = _remote_status(request)
+    if st["state"] == "paired" and st.get("deck"):
+        deck = get_object_or_404(Deck, code=st["deck"])
+        _, secret = _remote_cookie(request)
+        return render(request, "hanns/control.html", {
+            "deck": deck,
+            "deck_json": json.dumps(deck.as_dict()),
+            "control_pin": "remote:" + secret,           # the socket checks it against the screen
+            "control_unlocked": True,
+            "remote_screen": screen.name,
+            "remote_status_url": reverse("hanns:remote_status"),
+            "remote_home_url": reverse("hanns:remote_home"),
+        })
+    return render(request, "hanns/screen_remote.html", {
+        "status_json": json.dumps(st),
+        "code": (request.GET.get("code") or "").strip()[:8],
+    })
+
+
+def remote_qr(request):
+    """An SVG QR for the pairing link with the screen code filled in."""
+    import io
+    import segno
+    from django.http import HttpResponse
+    code = "".join(ch for ch in str(request.GET.get("code") or "") if ch.isdigit())[:6]
+    url = request.build_absolute_uri(reverse("hanns:remote_home")) + (f"?code={code}" if code else "")
+    buf = io.BytesIO()
+    segno.make(url, error="m").save(buf, kind="svg", scale=6, border=2, dark="#0b0a12", light="#ffffff")
+    resp = HttpResponse(buf.getvalue(), content_type="image/svg+xml")
+    resp["Cache-Control"] = "private, max-age=300"
+    return resp
+
+
+@require_POST
+def remote_pair(request):
+    from . import remote
+    from .models import BigScreen
+    left, locked = svc.throttle_check(request, "remote")
+    if locked:
+        return JsonResponse({"ok": False, "error": "Too many wrong codes. Wait ten minutes and try again."}, status=429)
+    try:
+        data = json.loads(request.body or b"{}")
+    except (ValueError, TypeError):
+        return HttpResponseBadRequest("Bad JSON")
+    code = "".join(ch for ch in str(data.get("code") or "") if ch.isdigit())
+    screen = BigScreen.objects.filter(share_code=code, is_active=True).first() if code else None
+    if not screen:
+        svc.throttle_miss(request, "remote")
+        return JsonResponse({"ok": False, "error": "No big screen with that code. It's on the lobby screen."}, status=404)
+    sid, old = _remote_cookie(request)
+    try:
+        secret, req = remote.request_pair(screen.id, data.get("name"), old if sid == str(screen.id) else None)
+    except remote.RemoteError as e:
+        return JsonResponse({"ok": False, "error": str(e)}, status=409)
+    svc.push_state(screen)                                # the lobby + control board show the request
+    resp = JsonResponse({"ok": True, "state": "pending", "match": req["match"], "screen": screen.name})
+    resp.set_cookie(remote.COOKIE, f"{screen.id}.{secret}", max_age=60 * 60 * 24 * 30, httponly=True,
+                    samesite="Lax", secure=request.is_secure())
+    return resp
+
+
+def remote_status(request):
+    st, _ = _remote_status(request)
+    return JsonResponse(dict(st, ok=True))
+
+
+@require_POST
+def remote_forget(request):
+    from . import remote
+    sid, secret = _remote_cookie(request)
+    screen = _remote_screen(sid) if sid else None
+    if screen and screen.is_active:
+        if remote.forget(screen.id, secret):
+            svc.push_lock_changed(screen)
+        svc.push_state(screen)
+    resp = JsonResponse({"ok": True, "state": "unpaired"})
+    resp.delete_cookie(remote.COOKIE)
+    return resp
+
+
+@require_POST
+def screen_remote(request, token):
+    """Host: approve / deny a phone, unpair it, lock on/off. The screen's
+    token is the credential, like every other screen action."""
+    from . import remote
+    screen, bad = _active_screen_or_json(token)
+    if bad:
+        return bad
+    try:
+        data = json.loads(request.body or b"{}")
+    except (ValueError, TypeError):
+        return HttpResponseBadRequest("Bad JSON")
+    try:
+        changed = remote.host_action(screen.id, data)
+    except remote.RemoteError as e:
+        return JsonResponse({"ok": False, "error": str(e)}, status=400)
+    if changed:
+        svc.push_lock_changed(screen)
+    svc.push_state(screen)
+    return JsonResponse({"ok": True, "state": svc.screen_state(screen)})
+
+
+@login_required
+def screen_dj(request, token):
+    """The DJ booth on its own page — full screen on a laptop or tablet at the
+    DJ table, kept awake while it's open. Only the screen's owner gets it
+    (the booth can run everything the screen plays)."""
+    screen = _screen_or_404(token)
+    if screen.owner_id != request.user.id:
+        raise Http404
+    if not screen.is_active:
+        return redirect(reverse("hanns:screen_home"))
+    return render(request, "hanns/screen_dj.html", {
+        "screen": screen,
+        "state_json": json.dumps(svc.screen_state(screen)),
+        "ws_path": f"/ws/hanns/screen/{screen.token}/",
+        "back_url": reverse("hanns:screen_home"),
+        "stage_url": _abs(request, "hanns:screen_stage", screen.token),
+    })
+
+
 def screen_state(request, token):
     screen = _screen_or_404(token)
     if screen.is_active:
@@ -174,6 +329,7 @@ def screen_select(request, token):
         "kind": "live", "share": str(share.id),
         "title": share.deck.title, "sharer": share.sharer_name,
     })
+    svc.push_lock_changed(screen)                         # a paired remote's lock now covers this deck
     return JsonResponse({"ok": True, "frame_url": reverse(
         "hanns:screen_frame", args=[screen.token, share.id])})
 
@@ -333,6 +489,8 @@ def screen_frame(request, token, share_id):
         "control_pin": "",
         "download_url": download_url,
         "embed": True,
+        "screen_token": screen.token,
+        "share_id": str(share.id),
     })
 
 

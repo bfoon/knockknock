@@ -19,6 +19,19 @@ DJ booth (turntable)
   cue_clear a cue is played with a plain seek.
 Scratches and FX pads don't touch the database at all: see `DJ_FX`.
 
+Dual decks (CDJ booth)
+----------------------
+Deck A is the top level of the media dict (so the queue, the projector panel
+and every older client keep working); deck B lives under `m["b"]` with the
+same playback fields. Deck actions take `"deck": "a" | "b"` (default "a").
+  mix         crossfader `xf` −1 (A) … +1 (B), channel faders `a` / `b` 0–100,
+              `curve` "mix" (both full in the middle) or "cut" (scratch)
+  cue_main    CDJ CUE: store the cue point;  cue_return: back to it, paused
+  bpm         the track's own tempo (tapped in the booth); shown × rate
+  sync        set this deck's rate so its BPM matches the other deck
+  duration    reported once by a projector, for remaining time / needle search
+  load_queued move a crate item onto a deck
+
 Event (Attendance app)
 ----------------------
 The host picks one of the screen owner's Attendance events and shows:
@@ -44,6 +57,9 @@ MAX_QUEUE = 20
 MODES = ("video", "audio")
 RATE_MIN, RATE_MAX = 0.5, 2.0
 CUE_SLOTS = 4
+DECKS = ("a", "b")
+DECK_FIELDS = ("current", "playing", "position", "started_at", "rate", "seek_rev")
+MIX_CURVES = ("mix", "cut")
 # DJ booth effects, fanned out to the projectors as-is (never stored):
 DJ_FX = ("scratch_start", "scratch", "scratch_end", "horn", "siren", "rewind", "brake")
 VIEWS = ("off", "register", "checkin", "agenda")
@@ -118,6 +134,14 @@ def media_for(screen_id):
     m.setdefault("playing", False)
     m.setdefault("rate", 1.0)
     m.setdefault("seek_rev", 0)
+    b = dict(m.get("b") or {})
+    b.setdefault("current", None)
+    b.setdefault("playing", False)
+    b.setdefault("position", 0)
+    b.setdefault("rate", 1.0)
+    b.setdefault("seek_rev", 0)
+    m["b"] = b
+    m["mix"] = dict({"xf": 0.0, "a": 100, "b": 100, "curve": "mix"}, **(m.get("mix") or {}))
     m["server_now"] = _now_ms()          # lets projectors correct for their own clock
     return m
 
@@ -152,7 +176,7 @@ def dj_fx(data):
     kind = str(data.get("kind") or "")
     if kind not in DJ_FX:
         raise ProgramError("Unknown effect.")
-    out = {"type": "dj_fx", "kind": kind}
+    out = {"type": "dj_fx", "kind": kind, "deck": "b" if str(data.get("deck") or "a").lower() == "b" else "a"}
     if kind == "scratch":
         v = data.get("v") if isinstance(data.get("v"), list) else []
         out["v"] = [round(max(-8.0, min(8.0, _num(x))), 3) for x in v[:64]]
@@ -162,48 +186,91 @@ def dj_fx(data):
     return out
 
 
+def _pos(d, now):
+    """Where a deck's needle is at `now` (ms), rate-aware."""
+    if not d.get("current"):
+        return 0
+    if d.get("playing"):
+        return d.get("position", 0) + max(0, now - d.get("started_at", now)) / 1000 * float(d.get("rate") or 1)
+    return d.get("position", 0)
+
+
+def _jump(d, position, now, playing=None):
+    d.update(position=round(max(0, position), 3), started_at=now, seek_rev=int(d.get("seek_rev") or 0) + 1)
+    if playing is not None:
+        d["playing"] = playing
+
+
+def _track(d, data):
+    """The deck's current track with `cues` normalised (raises if the deck is empty)."""
+    if not d.get("current"):
+        raise ProgramError("Put a track on the deck first.")
+    cur = dict(d["current"])
+    cues = list((cur.get("cues") or [None] * CUE_SLOTS)[:CUE_SLOTS])
+    cur["cues"] = cues + [None] * (CUE_SLOTS - len(cues))
+    return cur
+
+
 def media_action(screen_id, data):
-    """Apply one host action: load / queue / play / pause / stop / next / seek / volume / mode / loop / chip / remove / ended
-    / rate / cue_set / cue_clear."""
+    """Apply one host action.
+
+    Library / deck A:  load / queue / next / ended / remove / mode / loop / chip / volume
+    Any deck (`deck`): load / load_queued / play / pause / stop / seek / rate / cue_set / cue_clear /
+                       cue_main / cue_return / bpm / sync / duration / ended
+    Mixer:             mix"""
     m = media_for(screen_id)
     action = str(data.get("action") or "")
     now = _now_ms()
-
-    def pos_now():
-        if not m.get("current"):
-            return 0
-        if m.get("playing"):
-            return m.get("position", 0) + max(0, now - m.get("started_at", now)) / 1000 * float(m.get("rate") or 1)
-        return m.get("position", 0)
+    dk = str(data.get("deck") or "a").lower()
+    if dk not in DECKS:
+        raise ProgramError("Unknown deck.")
+    d = m if dk == "a" else m["b"]                       # the deck this action is about
+    other = m["b"] if dk == "a" else m
 
     if action in ("load", "queue"):
         vid, start = parse_youtube(data.get("url"))
         item = {"id": vid, "title": video_title(vid), "start": start, "key": f"{vid}-{now}"}
         if data.get("mode") in MODES:
             m["mode"] = data["mode"]
-        if action == "load" or not m.get("current"):
-            _start(m, item, start)
+        if action == "load" or (dk == "a" and not m.get("current")):
+            _start(d, item, start)
+            if not data.get("autoplay", dk == "a"):       # deck B (a CDJ) loads paused unless told
+                d["playing"] = False
         else:
             if len(m["queue"]) >= MAX_QUEUE:
                 raise ProgramError(f"The queue holds {MAX_QUEUE} videos — remove one first.")
             m["queue"].append(item)
+    elif action == "load_queued":
+        key = data.get("key")
+        item = next((i for i in m["queue"] if i.get("key") == key), None)
+        if not item:
+            raise ProgramError("That track isn't in the crate any more.")
+        m["queue"] = [i for i in m["queue"] if i.get("key") != key]
+        _start(d, item, item.get("start", 0))
+        if not data.get("autoplay", False):
+            d["playing"] = False                          # a CDJ loads paused, on its cue
     elif action == "play":
-        if not m.get("current"):
-            if not m["queue"]:
-                raise ProgramError("Paste a YouTube link first.")
+        if not d.get("current"):
+            if dk == "b" or not m["queue"]:
+                raise ProgramError("Paste a YouTube link first." if dk == "a" else "Load a track on deck B first.")
             _start(m, m["queue"].pop(0), 0)
-        elif not m.get("playing"):
-            m.update(playing=True, started_at=now)
+        elif not d.get("playing"):
+            d.update(playing=True, started_at=now)
     elif action == "pause":
-        if m.get("current") and m.get("playing"):
-            m.update(position=pos_now(), playing=False)
+        if d.get("current") and d.get("playing"):
+            d.update(position=_pos(d, now), playing=False)
     elif action == "stop":
-        m.update(current=None, playing=False, position=0)
+        d.update(current=None, playing=False, position=0)
     elif action in ("next", "ended"):
         # "ended" comes from a projector: only act if it's about what's playing now
-        if action == "ended" and (not m.get("current") or data.get("key") != m["current"].get("key")):
+        if action == "ended" and (not d.get("current") or data.get("key") != d["current"].get("key")):
             return m
-        if action == "ended" and m.get("loop") and not m["queue"]:
+        if dk == "b":                                     # deck B: a CD player stops at the end
+            if m.get("loop"):
+                _start(d, d["current"], d["current"].get("start", 0))
+            else:
+                _jump(d, d["current"].get("cue", d["current"].get("start", 0)), now, playing=False)
+        elif action == "ended" and m.get("loop") and not m["queue"]:
             _start(m, m["current"], m["current"].get("start", 0))
         elif m["queue"]:
             nxt = m["queue"].pop(0)
@@ -213,22 +280,54 @@ def media_action(screen_id, data):
         else:
             m.update(current=None, playing=False, position=0)
     elif action == "seek":
-        if m.get("current"):
-            m.update(position=max(0, _num(data.get("position"))), started_at=now,
-                     seek_rev=int(m.get("seek_rev") or 0) + 1)
+        if d.get("current"):
+            _jump(d, _num(data.get("position")), now)
     elif action == "rate":
         rate = round(min(RATE_MAX, max(RATE_MIN, _num(data.get("rate"), 1.0))), 3)
-        m.update(position=pos_now(), started_at=now, rate=rate)      # rebase, then change speed
+        d.update(position=_pos(d, now), started_at=now, rate=rate)      # rebase, then change speed
     elif action in ("cue_set", "cue_clear"):
-        if not m.get("current"):
-            raise ProgramError("Put a track on the deck first.")
+        cur = _track(d, data)
         slot = int(_num(data.get("slot"), -1))
         if not 0 <= slot < CUE_SLOTS:
             raise ProgramError("Unknown cue.")
-        cues = list((m["current"].get("cues") or [None] * CUE_SLOTS)[:CUE_SLOTS])
-        cues += [None] * (CUE_SLOTS - len(cues))
-        cues[slot] = round(max(0, _num(data.get("position"), pos_now())), 2) if action == "cue_set" else None
-        m["current"] = dict(m["current"], cues=cues)
+        cur["cues"][slot] = round(max(0, _num(data.get("position"), _pos(d, now))), 2) if action == "cue_set" else None
+        d["current"] = cur
+    elif action == "cue_main":
+        cur = _track(d, data)
+        cur["cue"] = round(max(0, _num(data.get("position"), _pos(d, now))), 2)
+        d["current"] = cur
+        if not d.get("playing"):
+            _jump(d, cur["cue"], now)
+    elif action == "cue_return":
+        cur = _track(d, data)
+        _jump(d, cur.get("cue", cur.get("start", 0)), now, playing=False)
+    elif action == "bpm":
+        cur = _track(d, data)
+        bpm = _num(data.get("bpm"), 0)
+        cur["bpm"] = round(bpm, 1) if 40 <= bpm <= 250 else None
+        d["current"] = cur
+    elif action == "sync":
+        mine, theirs = (_track(d, data).get("bpm"), (other.get("current") or {}).get("bpm"))
+        if not mine or not theirs:
+            raise ProgramError("Tap the BPM on both decks first.")
+        rate = round(min(RATE_MAX, max(RATE_MIN, theirs * float(other.get("rate") or 1) / mine)), 3)
+        d.update(position=_pos(d, now), started_at=now, rate=rate)
+    elif action == "duration":
+        cur = d.get("current")
+        dur = _num(data.get("duration"), 0)
+        if cur and data.get("key") == cur.get("key") and 0 < dur < 24 * 3600 and not cur.get("duration"):
+            d["current"] = dict(cur, duration=round(dur, 1))
+        else:
+            return m                                       # nothing new: don't save or push
+    elif action == "mix":
+        mix = m["mix"]
+        if "xf" in data:
+            mix["xf"] = round(max(-1.0, min(1.0, _num(data.get("xf"), mix["xf"]))), 3)
+        for ch in DECKS:
+            if ch in data:
+                mix[ch] = int(max(0, min(100, _num(data.get(ch), mix[ch]))))
+        if data.get("curve") in MIX_CURVES:
+            mix["curve"] = data["curve"]
     elif action == "volume":
         m["volume"] = max(0, min(100, int(data.get("volume") or 0)))
     elif action == "mode":

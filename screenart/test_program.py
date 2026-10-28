@@ -132,17 +132,71 @@ class MediaTests(TestCase):
         _, m = self.act(action="cue_clear", slot=2)
         self.assertEqual(m["current"]["cues"], [None] * 4)
 
+    # ── dual decks ──
+    def test_deck_b_is_independent_and_loads_paused(self):
+        self.act(action="load", url="dQw4w9WgXcQ", mode="audio")
+        r, m = self.act(action="load", deck="b", url="aqz-KE-bpKQ")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual((m["b"]["current"]["id"], m["b"]["playing"]), ("aqz-KE-bpKQ", False))
+        self.assertEqual((m["current"]["id"], m["playing"]), ("dQw4w9WgXcQ", True))        # A untouched
+        _, m = self.act(action="play", deck="b")
+        _, m = self.act(action="seek", deck="b", position=33)
+        self.assertEqual((m["b"]["playing"], m["b"]["position"]), (True, 33))
+        self.assertEqual(self.act(action="play", deck="c")[0].status_code, 400)
+        _, m = self.act(action="stop", deck="b")
+        self.assertIsNone(m["b"]["current"])
+        self.assertEqual(m["current"]["id"], "dQw4w9WgXcQ")
+        self.assertEqual(self.act(action="play", deck="b")[0].status_code, 400)
+
+    def test_crate_to_deck_and_deck_b_end(self):
+        self.act(action="load", url="dQw4w9WgXcQ", mode="audio")
+        _, m = self.act(action="queue", url="aqz-KE-bpKQ")
+        key = m["queue"][0]["key"]
+        _, m = self.act(action="load_queued", deck="b", key=key)
+        self.assertEqual((m["b"]["current"]["id"], m["queue"]), ("aqz-KE-bpKQ", []))
+        self.assertEqual(self.act(action="load_queued", deck="b", key=key)[0].status_code, 400)
+        self.act(action="play", deck="b")
+        _, m = self.act(action="ended", deck="b", key=m["b"]["current"]["key"])         # stops, stays loaded
+        self.assertEqual((m["b"]["playing"], m["b"]["current"]["id"]), (False, "aqz-KE-bpKQ"))
+
+    def test_cdj_cue_bpm_sync_duration(self):
+        self.act(action="load", url="dQw4w9WgXcQ", mode="audio")
+        _, m = self.act(action="load", deck="b", url="aqz-KE-bpKQ")
+        _, m = self.act(action="cue_main", deck="b", position=8.5)
+        self.assertEqual((m["b"]["current"]["cue"], m["b"]["position"]), (8.5, 8.5))       # paused → jumps there
+        self.act(action="play", deck="b")
+        _, m = self.act(action="cue_return", deck="b")
+        self.assertEqual((m["b"]["playing"], m["b"]["position"]), (False, 8.5))
+        self.assertEqual(self.act(action="sync", deck="b")[0].status_code, 400)            # no BPMs yet
+        self.act(action="bpm", deck="a", bpm=120)
+        self.act(action="rate", deck="a", rate=1.05)
+        _, m = self.act(action="bpm", deck="b", bpm=126)
+        _, m = self.act(action="sync", deck="b")
+        self.assertAlmostEqual(126 * m["b"]["rate"], 120 * 1.05, places=1)                # 126 BPM → 126 BPM
+        _, m = self.act(action="bpm", deck="b", bpm=999)
+        self.assertIsNone(m["b"]["current"]["bpm"])
+        key = m["b"]["current"]["key"]
+        self.act(action="duration", deck="b", key="stale", duration=200)
+        _, m = self.act(action="duration", deck="b", key=key, duration=212.37)
+        self.assertEqual(m["b"]["current"]["duration"], 212.4)
+
+    def test_mixer(self):
+        _, m = self.act(action="mix", xf=-3, a=150, b=40, curve="cut")
+        self.assertEqual(m["mix"], {"xf": -1.0, "a": 100, "b": 40, "curve": "cut"})
+        _, m = self.act(action="mix", xf=0.25, curve="wobble")
+        self.assertEqual((m["mix"]["xf"], m["mix"]["curve"], m["mix"]["b"]), (0.25, "cut", 40))
+
     def test_dj_fx_fans_out_without_saving(self):
         url = f"/screenart/s/{self.screen.token}/dj/fx/"
         post = lambda **b: self.client.post(url, json.dumps(b), content_type="application/json")
         sent = []
         with mock.patch.object(svc, "_send", side_effect=lambda g, msg: sent.append(msg)):
-            r = post(kind="scratch", v=[0.5, -3, 99] + [1] * 100, dt=5)
+            r = post(kind="scratch", deck="B", v=[0.5, -3, 99] + [1] * 100, dt=5)
             self.assertEqual(r.status_code, 200, r.content)
             post(kind="scratch_end", position=12.345)
             self.assertEqual(post(kind="explode").status_code, 400)
         p = sent[0]["payload"]
-        self.assertEqual((p["type"], p["kind"], p["v"][:3], len(p["v"]), p["dt"]), ("dj_fx", "scratch", [0.5, -3.0, 8.0], 64, 10))
+        self.assertEqual((p["type"], p["kind"], p["deck"], p["v"][:3], len(p["v"]), p["dt"]), ("dj_fx", "scratch", "b", [0.5, -3.0, 8.0], 64, 10))
         self.assertEqual(sent[1]["payload"]["position"], 12.35)
         self.assertEqual(len(sent), 2)
         self.assertNotIn("dj", svc.screen_state(self.screen)["media"])

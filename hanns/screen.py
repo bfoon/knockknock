@@ -95,6 +95,9 @@ def share_dict(share, *, include_control=True, include_live_preview=False):
         # screen snapshot while a talk is live so its monitor mirrors the
         # projector without opening a second presentation/player socket.
         "current_index": current_index if include_live_preview else 0,
+        # the on-air deck's code, so the control board can drive its slides
+        # (host override — see hanns/remote.host_screen_for)
+        "code": deck.code if include_live_preview else "",
         "current_slide": current_slide,
 
         "created": share.created_at.isoformat() if share.created_at else "",

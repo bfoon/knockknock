@@ -1,0 +1,401 @@
+From 65a79128db20a8a15a75c4c4353d4aa85f3af645 Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Wed, 28 Oct 2026 12:44:23 +0000
+Subject: [PATCH 5/5] Control board: drive the on-screen deck's slides (host
+ override)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- the deck that's ON SCREEN gets ‹ / jump-to-slide / › on its queue card
+  (inside the presenter phone controller card when a code is issued,
+  as its own strip otherwise), with a live 'Slide n / N' readout
+- the board opens its own deck connection with pin 'screen:<token>':
+  good only while that screen is active and showing that deck
+- a host override: works with or without the slide remote's lock, so a
+  dead phone or remote never strands a talk; phones follow the board
+  and the board follows the phones
+- share_dict carries the on-air deck's code; tests incl. WebSocket
+---
+ hanns/consumers.py               |  28 ++++++-
+ hanns/remote.py                  |  15 ++++
+ hanns/screen.py                  |   3 +
+ hanns/test_remote.py             |  40 +++++++++
+ templates/hanns/screen_home.html | 136 ++++++++++++++++++++++++++++++-
+ 5 files changed, 217 insertions(+), 5 deletions(-)
+
+diff --git a/hanns/consumers.py b/hanns/consumers.py
+index 2834bba..12d4a4f 100644
+--- a/hanns/consumers.py
++++ b/hanns/consumers.py
+@@ -58,7 +58,8 @@ Server → group (from the Big Screen views, not from a client):
+ ── Paired slide remote (hanns/remote.py) ────────────────────────────────
+ While a big screen showing this deck has its remote LOCK on, only that
+ screen's paired phone ({type:"controller_hello", pin:"remote:<secret>"})
+-may drive the slides. Every other controller and presenter is refused with
++— and that screen's own control board (pin:"screen:<token>", a host
++override that works with or without a lock) — may drive the slides. Every other controller and presenter is refused with
+ {type:"controller_locked", screen} and, for a goto, snapped back to the
+ room's slide. The screen's own embedded stage (presenter_hello with its
+ screen token + share id) may still resync after a reconnect. Lock off →
+@@ -179,6 +180,7 @@ class PresentConsumer(AsyncWebsocketConsumer):
+         self.remote_screen = None
+         self.remote_secret = None
+         self.frame_screen = None
++        self.host_screen = None              # the screen's own control board (host override)
+         self._locks_at, self._locks = 0.0, {}
+         self._locked_note_at = 0.0
+ 
+@@ -241,7 +243,15 @@ class PresentConsumer(AsyncWebsocketConsumer):
+             granted = bool(pin and real and secrets.compare_digest(pin, real))
+             self.ctrl_share = None
+             self.remote_screen = self.remote_secret = None
+-            if not granted and pin.startswith("remote:"):
++            self.host_screen = None
++            if not granted and pin.startswith("screen:"):
++                # The big screen's control board, for the deck on that screen:
++                # the host's fallback when a phone or remote fails.
++                screen_id = await self._host_screen(pin[len("screen:"):])
++                if screen_id:
++                    granted = True
++                    self.host_screen = screen_id
++            elif not granted and pin.startswith("remote:"):
+                 # A big screen's paired slide remote, for the deck on that screen.
+                 secret = pin[len("remote:"):]
+                 screen_id = await self._remote_screen(secret)
+@@ -263,6 +273,7 @@ class PresentConsumer(AsyncWebsocketConsumer):
+                 await self.send_json({
+                     "type": "controller_ok",
+                     "remote": bool(self.remote_screen),
++                    "host": bool(self.host_screen),
+                     # tell a phone up front that a screen's remote has the slides
+                     "locked_by": "" if self._may_drive(locks, {}) else ", ".join(locks.values()),
+                     "seq": PresentConsumer._slide_seq.get(self.code, 0),
+@@ -706,6 +717,8 @@ class PresentConsumer(AsyncWebsocketConsumer):
+     def _may_drive(self, locks, data):
+         if not locks:
+             return True                                   # no lock anywhere: as always
++        if self.host_screen:
++            return True                                   # the control board always can
+         if self.remote_screen and self.remote_screen in locks:
+             return True
+         # the screen's own stage re-announcing its slide after a reconnect
+@@ -739,7 +752,8 @@ class PresentConsumer(AsyncWebsocketConsumer):
+                 await self.send_json({"type": "controller_denied"})
+                 return
+             self.remote_screen = still
+-        if (self.is_controller or self.is_presenter) and not self.frame_screen and not self.remote_screen:
++        if (self.is_controller or self.is_presenter) and not self.frame_screen and not self.remote_screen \
++                and not self.host_screen:
+             if locks:
+                 await self.send_json({"type": "controller_locked", "screen": ", ".join(locks.values())})
+             else:
+@@ -872,6 +886,14 @@ class PresentConsumer(AsyncWebsocketConsumer):
+         except Exception:
+             return None
+ 
++    @sync_to_async
++    def _host_screen(self, token):
++        from .remote import host_screen_for
++        try:
++            return host_screen_for(self.code, token)
++        except Exception:
++            return None
++
+     @sync_to_async
+     def _frame_screen(self, token, share_id):
+         from .remote import frame_screen_for
+diff --git a/hanns/remote.py b/hanns/remote.py
+index bf57737..13e2bde 100644
+--- a/hanns/remote.py
++++ b/hanns/remote.py
+@@ -218,6 +218,21 @@ def remote_screen_for(code, secret):
+     return None
+ 
+ 
++def host_screen_for(code, token):
++    """The control board driving the deck on its own screen: the screen's token
++    (the credential for every screen action) is good for the deck that screen
++    is showing right now — and only that deck. It overrides the remote lock, so
++    a dead phone never strands a talk."""
++    from .models import BigScreen
++    if not token:
++        return None
++    s = BigScreen.objects.select_related("current_share__deck").filter(token=token, is_active=True).first()
++    share = s.current_share if s and s.current_share_id else None
++    if share and share.status == share.STATUS_LIVE and share.deck.code == str(code).upper():
++        return str(s.id)
++    return None
++
++
+ def frame_screen_for(code, token, share_id):
+     """The big screen whose own embedded stage this is (token + live share)."""
+     from .models import ScreenShare
+diff --git a/hanns/screen.py b/hanns/screen.py
+index 80bcfaa..a8fd94d 100644
+--- a/hanns/screen.py
++++ b/hanns/screen.py
+@@ -95,6 +95,9 @@ def share_dict(share, *, include_control=True, include_live_preview=False):
+         # screen snapshot while a talk is live so its monitor mirrors the
+         # projector without opening a second presentation/player socket.
+         "current_index": current_index if include_live_preview else 0,
++        # the on-air deck's code, so the control board can drive its slides
++        # (host override — see hanns/remote.host_screen_for)
++        "code": deck.code if include_live_preview else "",
+         "current_slide": current_slide,
+ 
+         "created": share.created_at.isoformat() if share.created_at else "",
+diff --git a/hanns/test_remote.py b/hanns/test_remote.py
+index cfc4789..d1dea8b 100644
+--- a/hanns/test_remote.py
++++ b/hanns/test_remote.py
+@@ -59,6 +59,8 @@ class PairingTests(TestCase):
+         st = svc.screen_state(self.screen)["remote"]
+         self.assertEqual((st["pending"][0]["name"], st["pending"][0]["match"]), ("Fatou's iPhone", match))
+         self.assertNotIn("hash", json.dumps(st))
++        live = svc.screen_state(self.screen)["shares"][0]
++        self.assertEqual(live["code"], "RMTE01")                                         # the board can reach the deck
+         self.assertFalse(st["lock"])
+         self.assertEqual(self.client.get("/hanns/screen/remote/status/").json()["state"], "pending")
+         # host approves → paired + locked
+@@ -219,3 +221,41 @@ class LockTests(TransactionTestCase):
+         self.assertEqual(await self._slide(), 1)
+         for c in (laptop, frame, fake):
+             await c.disconnect()
++
++    async def test_control_board_always_drives(self):
++        """The host's fallback: the screen's token drives the deck on that screen,
++        lock or no lock — and nothing else."""
++        host, hello = await self._hello("screen:" + self.screen.token)
++        ok = next(m for m in hello if m["type"] == "controller_ok")
++        self.assertEqual((ok["host"], ok["locked_by"]), (True, ""))       # locked, but not for the host
++        await host.send_json_to({"type": "goto", "index": 2})
++        await self._msgs(host)
++        self.assertEqual(await self._slide(), 2)
++        # the remote's phone hears the move and keeps working too
++        rem, _ = await self._hello("remote:" + self.secret)
++        await rem.send_json_to({"type": "goto", "index": 3})
++        await self._msgs(rem)
++        self.assertEqual(await self._slide(), 3)
++        self.assertEqual(next(m for m in await self._msgs(host) if m["type"] == "goto")["index"], 3)
++        # unpaired / lock off: the board still drives
++        await sync_to_async(remote.host_action)(self.screen.id, {"action": "unpair"})
++        await host.send_json_to({"type": "goto", "index": 0})
++        await self._msgs(host)
++        self.assertEqual(await self._slide(), 0)
++        await host.disconnect(); await rem.disconnect()
++
++    async def test_control_board_token_is_narrow(self):
++        for pin in ("screen:", "screen:not-a-token"):
++            c, hello = await self._hello(pin)
++            self.assertIn("controller_denied", [m["type"] for m in hello])
++            await c.disconnect()
++        # another screen's token, or this screen once the deck is off it
++        other = await sync_to_async(BigScreen.objects.create)(owner=self.host, name="Hall 3")
++        c, hello = await self._hello("screen:" + other.token)
++        self.assertIn("controller_denied", [m["type"] for m in hello])
++        await c.disconnect()
++        await sync_to_async(BigScreen.objects.filter(pk=self.screen.pk).update)(current_share=None)
++        c, hello = await self._hello("screen:" + self.screen.token)
++        self.assertIn("controller_denied", [m["type"] for m in hello])
++        await c.disconnect()
++
+diff --git a/templates/hanns/screen_home.html b/templates/hanns/screen_home.html
+index 99ac956..bba6b95 100644
+--- a/templates/hanns/screen_home.html
++++ b/templates/hanns/screen_home.html
+@@ -212,6 +212,21 @@
+     font-size:.68rem;cursor:pointer;
+   }
+   .bs-cc-actions button:hover{color:var(--kk-text);background:rgba(255,255,255,.08)}
++  /* host slide control on the deck that's on screen — the fallback when a phone fails */
++  .bs-host{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap}
++  .bs-cc-actions .bs-host{margin-left:auto}
++  .bs-host-solo{margin-top:.65rem;padding:.6rem .7rem;border-radius:12px;background:rgba(255,255,255,.03);border:1px solid var(--kk-border)}
++  .bs-cc-actions .bs-host button,.bs-host button{
++    display:inline-flex;align-items:center;justify-content:center;gap:.3rem;min-width:54px;min-height:44px;padding:0 .9rem;
++    border-radius:10px;border:1px solid rgba(245,165,36,.45);background:rgba(245,165,36,.1);color:#fcd38a;
++    font:800 1.45rem/1 inherit;cursor:pointer}
++  .bs-host button:hover:not(:disabled){background:rgba(245,165,36,.2);color:#fff}
++  .bs-host button:disabled{opacity:.35;cursor:default}
++  .bs-host select{min-height:40px;max-width:15rem;border-radius:10px;border:1px solid var(--kk-border);background:#0b0b12;color:var(--kk-text);
++    padding:0 .55rem;font:600 .78rem/1 var(--kk-font-mono)}
++  .bs-host .st{font:600 .62rem/1.3 var(--kk-font-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--kk-text-dim)}
++  .bs-host .st.on{color:#86efac}.bs-host .st.bad{color:#fca5a5}
++  .bs-host .k{font:600 .6rem/1 var(--kk-font-mono);letter-spacing:.16em;text-transform:uppercase;color:#fcd38a;margin-right:.15rem}
+   .bs-cc-qr-shell{
+     width:118px;
+     padding:7px;
+@@ -482,6 +497,111 @@
+     let monitorKey = "";
+     let previewBusy = false;
+ 
++    /* Host slide control. The control board opens its own connection to the
++       deck that's on screen (pin "screen:<token>", checked by the deck
++       socket) and drives it like a phone controller would. It works with or
++       without the slide remote's lock: when a phone or remote fails, the
++       host can always carry on from here. */
++    const hostCtl = {
++      code:"", sock:null, ok:false, i:0, slides:[], seq:0, retry:0, timer:null, gen:0, err:"",
++      want(code){
++        code = code || "";
++        if(code === this.code) return;
++        this.close(); this.code = code; this.ok = false; this.slides = []; this.i = 0; this.seq = 0; this.err = "";
++        if(code) this.open();
++        this.paint();
++      },
++      close(){
++        this.gen++; clearInterval(this.timer); this.timer = null;
++        try{ this.sock && this.sock.close(); }catch(e){}
++        this.sock = null;
++      },
++      open(){
++        const gen = ++this.gen, code = this.code;
++        let ws;
++        try{ ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + `/ws/hanns/${code}/`); }
++        catch(e){ return this.again(gen); }
++        this.sock = ws;
++        ws.onopen = ()=>{
++          if(gen !== this.gen) return;
++          this.retry = 0;
++          ws.send(JSON.stringify({type:"controller_hello", pin:"screen:" + token}));
++          clearInterval(this.timer);
++          this.timer = setInterval(()=>{ try{ ws.send('{"type":"ping"}'); }catch(e){} }, 20000);
++        };
++        ws.onmessage = ev=>{
++          if(gen !== this.gen) return;
++          let m; try{ m = JSON.parse(ev.data); }catch(e){ return; }
++          if(m.type === "ping"){ try{ ws.send('{"type":"pong"}'); }catch(e){} return; }
++          if(m.type === "controller_ok"){
++            this.ok = true; this.err = "";
++            if(Array.isArray(m.slides)) this.slides = m.slides;
++            if(typeof m.seq === "number") this.seq = m.seq;
++            this.i = Number(m.current_slide) || 0;
++            this.paint(true);
++          }else if(m.type === "controller_denied"){
++            this.ok = false; this.err = "Can't reach this deck";
++            this.paint();
++          }else if(m.type === "goto" && typeof m.index === "number"){
++            if(typeof m.seq === "number"){ if(m.seq <= this.seq) return; this.seq = m.seq; }
++            this.i = m.index; this.paint();
++          }
++        };
++        ws.onclose = ()=>{ if(gen === this.gen){ this.ok = false; this.paint(); this.again(gen); } };
++      },
++      again(gen){
++        if(gen !== this.gen || !this.code) return;
++        this.retry++;
++        setTimeout(()=>{ if(gen === this.gen && this.code) this.open(); }, Math.min(1000 * this.retry, 8000));
++      },
++      go(index){
++        if(!this.ok || !this.sock || this.sock.readyState !== 1) return;
++        const n = this.slides.length;
++        index = Math.max(0, Math.min(index, n - 1));
++        if(index === this.i) return;
++        this.i = index;                       // move the board at once; the room follows the socket
++        this.sock.send(JSON.stringify({type:"goto", index}));
++        this.paint();
++      },
++      label(sl, k){
++        const els = (sl && sl.els) || [];
++        const t = els.find(e => e && e.type === "text" && String(e.text || e.html || "").trim());
++        const txt = t ? String(t.text || t.html || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() : "";
++        return `${k + 1}${txt ? " · " + (txt.length > 34 ? txt.slice(0, 34) + "…" : txt) : ""}`;
++      },
++      paint(rebuild){
++        root.querySelectorAll("[data-host]").forEach(box=>{
++          const n = this.slides.length, ready = this.ok && n > 0;
++          const prev = box.querySelector('[data-host-act="prev"]'), next = box.querySelector('[data-host-act="next"]');
++          const sel = box.querySelector("select"), st = box.querySelector(".st");
++          prev.disabled = !ready || this.i <= 0;
++          next.disabled = !ready || this.i >= n - 1;
++          sel.disabled = !ready;
++          if(rebuild || sel.options.length !== n){
++            sel.innerHTML = ready ? this.slides.map((sl, k)=>`<option value="${k}">${esc(this.label(sl, k))}</option>`).join("")
++                                  : `<option>${this.code ? "Connecting…" : "—"}</option>`;
++          }
++          if(ready) sel.value = String(this.i);
++          const lock = state.remote && state.remote.lock && state.remote.device;
++          st.className = "st" + (ready ? " on" : this.err ? " bad" : "");
++          st.textContent = ready ? `Slide ${this.i + 1} / ${n}${lock ? " · overrides " + state.remote.device.name : ""}`
++                                 : (this.err || "Connecting…");
++        });
++      },
++    };
++    function hostControls(){
++      return `<div class="bs-host" data-host role="group" aria-label="Drive the slides from here">
++          <span class="k"><i class="bi bi-display"></i> From here</span>
++          <button type="button" data-host-act="prev" aria-label="Previous slide" title="Previous slide">‹</button>
++          <select aria-label="Jump to slide"><option>Connecting…</option></select>
++          <button type="button" data-host-act="next" aria-label="Next slide" title="Next slide">›</button>
++          <span class="st" aria-live="polite">Connecting…</span>
++        </div>`;
++    }
++    root.addEventListener("change", ev=>{
++      if(ev.target.matches("[data-host] select")) hostCtl.go(Number(ev.target.value));
++    });
++
+     async function post(path, data){
+       const r = await fetch(base + path, {
+         method:"POST",
+@@ -628,7 +748,7 @@
+       });
+     }
+ 
+-    function controllerCard(s){
++    function controllerCard(s, extra){
+       const code = codes[s.id];
+       if(!code){
+         return "";
+@@ -665,6 +785,7 @@
+                 <i class="bi ${showQr ? "bi-eye-slash" : "bi-qr-code"}"></i>
+                 ${showQr ? "Hide QR" : "Show QR"}
+               </button>
++              ${extra || ""}
+             </div>
+           </div>
+ 
+@@ -763,6 +884,7 @@
+           </div>`;
+ 
+         root.querySelector("[data-seen]").textContent = "Lobby";
++        hostCtl.want("");
+         renderMonitor();
+         root.dispatchEvent(new CustomEvent("bs:state", {detail: state}));   // add-ons, on this early exit too
+         return;
+@@ -783,7 +905,8 @@
+                 ${esc(s.age)}
+               </div>
+ 
+-              ${controllerCard(s)}
++              ${controllerCard(s, live ? hostControls() : "")}
++              ${live && !codes[s.id] ? `<div class="bs-host-solo">${hostControls()}</div>` : ""}
+             </div>
+ 
+             <span class="bs-state${live ? " live" : ""}">
+@@ -836,6 +959,11 @@
+       });
+ 
+       drawControllerQrs();
++      {
++        const liveShare = shares.find(x=>x.id === state.current);
++        hostCtl.want(liveShare && liveShare.code);
++        hostCtl.paint(true);
++      }
+ 
+       root.querySelector("[data-seen]").textContent = state.current
+         ? "On air"
+@@ -870,6 +998,10 @@
+         }
+       }
+ 
++      else if(b.dataset.hostAct){
++        hostCtl.go(hostCtl.i + (b.dataset.hostAct === "next" ? 1 : -1));
++      }
++
+       else if(b.dataset.act === "copy-control"){
+         const code = codes[id] || "";
+ 
+-- 
+2.43.0
+

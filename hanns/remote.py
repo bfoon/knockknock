@@ -218,6 +218,21 @@ def remote_screen_for(code, secret):
     return None
 
 
+def host_screen_for(code, token):
+    """The control board driving the deck on its own screen: the screen's token
+    (the credential for every screen action) is good for the deck that screen
+    is showing right now — and only that deck. It overrides the remote lock, so
+    a dead phone never strands a talk."""
+    from .models import BigScreen
+    if not token:
+        return None
+    s = BigScreen.objects.select_related("current_share__deck").filter(token=token, is_active=True).first()
+    share = s.current_share if s and s.current_share_id else None
+    if share and share.status == share.STATUS_LIVE and share.deck.code == str(code).upper():
+        return str(s.id)
+    return None
+
+
 def frame_screen_for(code, token, share_id):
     """The big screen whose own embedded stage this is (token + live share)."""
     from .models import ScreenShare

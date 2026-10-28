@@ -59,6 +59,8 @@ class PairingTests(TestCase):
         st = svc.screen_state(self.screen)["remote"]
         self.assertEqual((st["pending"][0]["name"], st["pending"][0]["match"]), ("Fatou's iPhone", match))
         self.assertNotIn("hash", json.dumps(st))
+        live = svc.screen_state(self.screen)["shares"][0]
+        self.assertEqual(live["code"], "RMTE01")                                         # the board can reach the deck
         self.assertFalse(st["lock"])
         self.assertEqual(self.client.get("/hanns/screen/remote/status/").json()["state"], "pending")
         # host approves → paired + locked
@@ -219,3 +221,41 @@ class LockTests(TransactionTestCase):
         self.assertEqual(await self._slide(), 1)
         for c in (laptop, frame, fake):
             await c.disconnect()
+
+    async def test_control_board_always_drives(self):
+        """The host's fallback: the screen's token drives the deck on that screen,
+        lock or no lock — and nothing else."""
+        host, hello = await self._hello("screen:" + self.screen.token)
+        ok = next(m for m in hello if m["type"] == "controller_ok")
+        self.assertEqual((ok["host"], ok["locked_by"]), (True, ""))       # locked, but not for the host
+        await host.send_json_to({"type": "goto", "index": 2})
+        await self._msgs(host)
+        self.assertEqual(await self._slide(), 2)
+        # the remote's phone hears the move and keeps working too
+        rem, _ = await self._hello("remote:" + self.secret)
+        await rem.send_json_to({"type": "goto", "index": 3})
+        await self._msgs(rem)
+        self.assertEqual(await self._slide(), 3)
+        self.assertEqual(next(m for m in await self._msgs(host) if m["type"] == "goto")["index"], 3)
+        # unpaired / lock off: the board still drives
+        await sync_to_async(remote.host_action)(self.screen.id, {"action": "unpair"})
+        await host.send_json_to({"type": "goto", "index": 0})
+        await self._msgs(host)
+        self.assertEqual(await self._slide(), 0)
+        await host.disconnect(); await rem.disconnect()
+
+    async def test_control_board_token_is_narrow(self):
+        for pin in ("screen:", "screen:not-a-token"):
+            c, hello = await self._hello(pin)
+            self.assertIn("controller_denied", [m["type"] for m in hello])
+            await c.disconnect()
+        # another screen's token, or this screen once the deck is off it
+        other = await sync_to_async(BigScreen.objects.create)(owner=self.host, name="Hall 3")
+        c, hello = await self._hello("screen:" + other.token)
+        self.assertIn("controller_denied", [m["type"] for m in hello])
+        await c.disconnect()
+        await sync_to_async(BigScreen.objects.filter(pk=self.screen.pk).update)(current_share=None)
+        c, hello = await self._hello("screen:" + self.screen.token)
+        self.assertIn("controller_denied", [m["type"] for m in hello])
+        await c.disconnect()
+

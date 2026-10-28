@@ -58,7 +58,8 @@ Server → group (from the Big Screen views, not from a client):
 ── Paired slide remote (hanns/remote.py) ────────────────────────────────
 While a big screen showing this deck has its remote LOCK on, only that
 screen's paired phone ({type:"controller_hello", pin:"remote:<secret>"})
-may drive the slides. Every other controller and presenter is refused with
+— and that screen's own control board (pin:"screen:<token>", a host
+override that works with or without a lock) — may drive the slides. Every other controller and presenter is refused with
 {type:"controller_locked", screen} and, for a goto, snapped back to the
 room's slide. The screen's own embedded stage (presenter_hello with its
 screen token + share id) may still resync after a reconnect. Lock off →
@@ -179,6 +180,7 @@ class PresentConsumer(AsyncWebsocketConsumer):
         self.remote_screen = None
         self.remote_secret = None
         self.frame_screen = None
+        self.host_screen = None              # the screen's own control board (host override)
         self._locks_at, self._locks = 0.0, {}
         self._locked_note_at = 0.0
 
@@ -241,7 +243,15 @@ class PresentConsumer(AsyncWebsocketConsumer):
             granted = bool(pin and real and secrets.compare_digest(pin, real))
             self.ctrl_share = None
             self.remote_screen = self.remote_secret = None
-            if not granted and pin.startswith("remote:"):
+            self.host_screen = None
+            if not granted and pin.startswith("screen:"):
+                # The big screen's control board, for the deck on that screen:
+                # the host's fallback when a phone or remote fails.
+                screen_id = await self._host_screen(pin[len("screen:"):])
+                if screen_id:
+                    granted = True
+                    self.host_screen = screen_id
+            elif not granted and pin.startswith("remote:"):
                 # A big screen's paired slide remote, for the deck on that screen.
                 secret = pin[len("remote:"):]
                 screen_id = await self._remote_screen(secret)
@@ -263,6 +273,7 @@ class PresentConsumer(AsyncWebsocketConsumer):
                 await self.send_json({
                     "type": "controller_ok",
                     "remote": bool(self.remote_screen),
+                    "host": bool(self.host_screen),
                     # tell a phone up front that a screen's remote has the slides
                     "locked_by": "" if self._may_drive(locks, {}) else ", ".join(locks.values()),
                     "seq": PresentConsumer._slide_seq.get(self.code, 0),
@@ -706,6 +717,8 @@ class PresentConsumer(AsyncWebsocketConsumer):
     def _may_drive(self, locks, data):
         if not locks:
             return True                                   # no lock anywhere: as always
+        if self.host_screen:
+            return True                                   # the control board always can
         if self.remote_screen and self.remote_screen in locks:
             return True
         # the screen's own stage re-announcing its slide after a reconnect
@@ -739,7 +752,8 @@ class PresentConsumer(AsyncWebsocketConsumer):
                 await self.send_json({"type": "controller_denied"})
                 return
             self.remote_screen = still
-        if (self.is_controller or self.is_presenter) and not self.frame_screen and not self.remote_screen:
+        if (self.is_controller or self.is_presenter) and not self.frame_screen and not self.remote_screen \
+                and not self.host_screen:
             if locks:
                 await self.send_json({"type": "controller_locked", "screen": ", ".join(locks.values())})
             else:
@@ -869,6 +883,14 @@ class PresentConsumer(AsyncWebsocketConsumer):
         from .remote import remote_screen_for
         try:
             return remote_screen_for(self.code, secret)
+        except Exception:
+            return None
+
+    @sync_to_async
+    def _host_screen(self, token):
+        from .remote import host_screen_for
+        try:
+            return host_screen_for(self.code, token)
         except Exception:
             return None
 

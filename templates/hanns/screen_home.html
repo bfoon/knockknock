@@ -212,6 +212,21 @@
     font-size:.68rem;cursor:pointer;
   }
   .bs-cc-actions button:hover{color:var(--kk-text);background:rgba(255,255,255,.08)}
+  /* host slide control on the deck that's on screen — the fallback when a phone fails */
+  .bs-host{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap}
+  .bs-cc-actions .bs-host{margin-left:auto}
+  .bs-host-solo{margin-top:.65rem;padding:.6rem .7rem;border-radius:12px;background:rgba(255,255,255,.03);border:1px solid var(--kk-border)}
+  .bs-cc-actions .bs-host button,.bs-host button{
+    display:inline-flex;align-items:center;justify-content:center;gap:.3rem;min-width:54px;min-height:44px;padding:0 .9rem;
+    border-radius:10px;border:1px solid rgba(245,165,36,.45);background:rgba(245,165,36,.1);color:#fcd38a;
+    font:800 1.45rem/1 inherit;cursor:pointer}
+  .bs-host button:hover:not(:disabled){background:rgba(245,165,36,.2);color:#fff}
+  .bs-host button:disabled{opacity:.35;cursor:default}
+  .bs-host select{min-height:40px;max-width:15rem;border-radius:10px;border:1px solid var(--kk-border);background:#0b0b12;color:var(--kk-text);
+    padding:0 .55rem;font:600 .78rem/1 var(--kk-font-mono)}
+  .bs-host .st{font:600 .62rem/1.3 var(--kk-font-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--kk-text-dim)}
+  .bs-host .st.on{color:#86efac}.bs-host .st.bad{color:#fca5a5}
+  .bs-host .k{font:600 .6rem/1 var(--kk-font-mono);letter-spacing:.16em;text-transform:uppercase;color:#fcd38a;margin-right:.15rem}
   .bs-cc-qr-shell{
     width:118px;
     padding:7px;
@@ -482,6 +497,111 @@
     let monitorKey = "";
     let previewBusy = false;
 
+    /* Host slide control. The control board opens its own connection to the
+       deck that's on screen (pin "screen:<token>", checked by the deck
+       socket) and drives it like a phone controller would. It works with or
+       without the slide remote's lock: when a phone or remote fails, the
+       host can always carry on from here. */
+    const hostCtl = {
+      code:"", sock:null, ok:false, i:0, slides:[], seq:0, retry:0, timer:null, gen:0, err:"",
+      want(code){
+        code = code || "";
+        if(code === this.code) return;
+        this.close(); this.code = code; this.ok = false; this.slides = []; this.i = 0; this.seq = 0; this.err = "";
+        if(code) this.open();
+        this.paint();
+      },
+      close(){
+        this.gen++; clearInterval(this.timer); this.timer = null;
+        try{ this.sock && this.sock.close(); }catch(e){}
+        this.sock = null;
+      },
+      open(){
+        const gen = ++this.gen, code = this.code;
+        let ws;
+        try{ ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + `/ws/hanns/${code}/`); }
+        catch(e){ return this.again(gen); }
+        this.sock = ws;
+        ws.onopen = ()=>{
+          if(gen !== this.gen) return;
+          this.retry = 0;
+          ws.send(JSON.stringify({type:"controller_hello", pin:"screen:" + token}));
+          clearInterval(this.timer);
+          this.timer = setInterval(()=>{ try{ ws.send('{"type":"ping"}'); }catch(e){} }, 20000);
+        };
+        ws.onmessage = ev=>{
+          if(gen !== this.gen) return;
+          let m; try{ m = JSON.parse(ev.data); }catch(e){ return; }
+          if(m.type === "ping"){ try{ ws.send('{"type":"pong"}'); }catch(e){} return; }
+          if(m.type === "controller_ok"){
+            this.ok = true; this.err = "";
+            if(Array.isArray(m.slides)) this.slides = m.slides;
+            if(typeof m.seq === "number") this.seq = m.seq;
+            this.i = Number(m.current_slide) || 0;
+            this.paint(true);
+          }else if(m.type === "controller_denied"){
+            this.ok = false; this.err = "Can't reach this deck";
+            this.paint();
+          }else if(m.type === "goto" && typeof m.index === "number"){
+            if(typeof m.seq === "number"){ if(m.seq <= this.seq) return; this.seq = m.seq; }
+            this.i = m.index; this.paint();
+          }
+        };
+        ws.onclose = ()=>{ if(gen === this.gen){ this.ok = false; this.paint(); this.again(gen); } };
+      },
+      again(gen){
+        if(gen !== this.gen || !this.code) return;
+        this.retry++;
+        setTimeout(()=>{ if(gen === this.gen && this.code) this.open(); }, Math.min(1000 * this.retry, 8000));
+      },
+      go(index){
+        if(!this.ok || !this.sock || this.sock.readyState !== 1) return;
+        const n = this.slides.length;
+        index = Math.max(0, Math.min(index, n - 1));
+        if(index === this.i) return;
+        this.i = index;                       // move the board at once; the room follows the socket
+        this.sock.send(JSON.stringify({type:"goto", index}));
+        this.paint();
+      },
+      label(sl, k){
+        const els = (sl && sl.els) || [];
+        const t = els.find(e => e && e.type === "text" && String(e.text || e.html || "").trim());
+        const txt = t ? String(t.text || t.html || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() : "";
+        return `${k + 1}${txt ? " · " + (txt.length > 34 ? txt.slice(0, 34) + "…" : txt) : ""}`;
+      },
+      paint(rebuild){
+        root.querySelectorAll("[data-host]").forEach(box=>{
+          const n = this.slides.length, ready = this.ok && n > 0;
+          const prev = box.querySelector('[data-host-act="prev"]'), next = box.querySelector('[data-host-act="next"]');
+          const sel = box.querySelector("select"), st = box.querySelector(".st");
+          prev.disabled = !ready || this.i <= 0;
+          next.disabled = !ready || this.i >= n - 1;
+          sel.disabled = !ready;
+          if(rebuild || sel.options.length !== n){
+            sel.innerHTML = ready ? this.slides.map((sl, k)=>`<option value="${k}">${esc(this.label(sl, k))}</option>`).join("")
+                                  : `<option>${this.code ? "Connecting…" : "—"}</option>`;
+          }
+          if(ready) sel.value = String(this.i);
+          const lock = state.remote && state.remote.lock && state.remote.device;
+          st.className = "st" + (ready ? " on" : this.err ? " bad" : "");
+          st.textContent = ready ? `Slide ${this.i + 1} / ${n}${lock ? " · overrides " + state.remote.device.name : ""}`
+                                 : (this.err || "Connecting…");
+        });
+      },
+    };
+    function hostControls(){
+      return `<div class="bs-host" data-host role="group" aria-label="Drive the slides from here">
+          <span class="k"><i class="bi bi-display"></i> From here</span>
+          <button type="button" data-host-act="prev" aria-label="Previous slide" title="Previous slide">‹</button>
+          <select aria-label="Jump to slide"><option>Connecting…</option></select>
+          <button type="button" data-host-act="next" aria-label="Next slide" title="Next slide">›</button>
+          <span class="st" aria-live="polite">Connecting…</span>
+        </div>`;
+    }
+    root.addEventListener("change", ev=>{
+      if(ev.target.matches("[data-host] select")) hostCtl.go(Number(ev.target.value));
+    });
+
     async function post(path, data){
       const r = await fetch(base + path, {
         method:"POST",
@@ -628,7 +748,7 @@
       });
     }
 
-    function controllerCard(s){
+    function controllerCard(s, extra){
       const code = codes[s.id];
       if(!code){
         return "";
@@ -665,6 +785,7 @@
                 <i class="bi ${showQr ? "bi-eye-slash" : "bi-qr-code"}"></i>
                 ${showQr ? "Hide QR" : "Show QR"}
               </button>
+              ${extra || ""}
             </div>
           </div>
 
@@ -763,6 +884,7 @@
           </div>`;
 
         root.querySelector("[data-seen]").textContent = "Lobby";
+        hostCtl.want("");
         renderMonitor();
         root.dispatchEvent(new CustomEvent("bs:state", {detail: state}));   // add-ons, on this early exit too
         return;
@@ -783,7 +905,8 @@
                 ${esc(s.age)}
               </div>
 
-              ${controllerCard(s)}
+              ${controllerCard(s, live ? hostControls() : "")}
+              ${live && !codes[s.id] ? `<div class="bs-host-solo">${hostControls()}</div>` : ""}
             </div>
 
             <span class="bs-state${live ? " live" : ""}">
@@ -836,6 +959,11 @@
       });
 
       drawControllerQrs();
+      {
+        const liveShare = shares.find(x=>x.id === state.current);
+        hostCtl.want(liveShare && liveShare.code);
+        hostCtl.paint(true);
+      }
 
       root.querySelector("[data-seen]").textContent = state.current
         ? "On air"
@@ -868,6 +996,10 @@
           qrVisible[id] = true;
           render();
         }
+      }
+
+      else if(b.dataset.hostAct){
+        hostCtl.go(hostCtl.i + (b.dataset.hostAct === "next" ? 1 : -1));
       }
 
       else if(b.dataset.act === "copy-control"){

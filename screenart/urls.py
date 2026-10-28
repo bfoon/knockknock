@@ -18,6 +18,7 @@ urlpatterns = [
     # music & video, event
     path("s/<str:token>/media/", views.media, name="media"),
     path("s/<str:token>/dj/fx/", views.dj_fx, name="dj_fx"),
+    path("s/<str:token>/dj/sample/", views.dj_sample, name="dj_sample"),
     path("s/<str:token>/events/", views.events, name="events"),
     path("s/<str:token>/event/", views.event, name="event"),
     path("s/<str:token>/event/data/", views.event_data, name="event_data"),

@@ -724,6 +724,7 @@ body.hanns-options-open .drawer{
     deck: {{ deck_json|safe }},
     saveUrl: "{% url 'hanns:save' deck.code %}",
     imageUploadUrl: "{% url 'hanns:image_upload' deck.code %}",
+    videoUploadUrl: "{% url 'hanns:video_upload' deck.code %}",
     aiUrl: "{% url 'hanns:ai' deck.code %}",
     aiStatusUrl: "{% url 'hanns:ai_status' deck.code %}",
     powerpointImportUrl: "{% url 'hanns:powerpoint_import' deck.code %}",
@@ -1472,7 +1473,7 @@ body.hanns-options-open .drawer{
      isStudioObject() says no, objectDef() finds no match and falls back
      to OBJECTS[0] — fill_cow — so every 3D bar chart draws as a cow. -->
 <script src="{% static 'hanns/js/hanns_bars3d.js' %}?v=62"></script>
-<script src="{% static 'hanns/js/hanns_editor.js' %}?v=65"></script>
+<script src="{% static 'hanns/js/hanns_editor.js' %}?v=66"></script>
 {# Hanns AI Studio — Gemini via the server (hanns:ai). Needs HannsEditorAPI from hanns_editor.js. #}
 <script src="{% static 'hanns/js/hanns_ai.js' %}?v=5"></script>
 {# ✦ AI area: drag a box on the slide and tell the AI what to put there. Needs HannsAI. #}

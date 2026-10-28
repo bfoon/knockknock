@@ -80,6 +80,8 @@
   .pm-video.audio .pm-yt-box,.pm-video.tiny .pm-yt-box{width:100%!important;height:100%!important;transform:none!important}
   /* the lobby's drifting light sits under an opaque video: hold it still meanwhile */
   body.pm-on .scr-aurora i{animation-play-state:paused}
+  /* SCREEN ONLY from the DJ booth: video gone at once, no fade */
+  body.pm-cut .pm-video{transition:none!important}
   .pm-chip{position:fixed;left:50%;bottom:3vh;z-index:25;margin-left:0;translate:-50% 0;display:flex;gap:.8rem;align-items:center;padding:.7rem 1.1rem .7rem .8rem;border-radius:18px;
     background:rgba(7,6,13,.66);border:1px solid rgba(255,255,255,.18);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);color:#fff;
     font:600 clamp(.8rem,1.25vw,1.15rem)/1.25 system-ui,sans-serif;max-width:46vw;opacity:0;transform:translateY(12px);transition:opacity .5s,transform .5s;pointer-events:none}
@@ -268,7 +270,7 @@
     const soundAsk = document.createElement("div"); soundAsk.className = "pm-sound";
     soundAsk.innerHTML = "<div>🔊 Click anywhere to start the sound<small>Browsers only play sound after someone clicks the screen once.</small></div>";
     document.body.append(chip, soundAsk);
-    let apiAsked = false, apiReady = false, skew = 0, askTimer = null, skewFrom = null;
+    let apiAsked = false, apiReady = false, skew = 0, askTimer = null, skewFrom = null, lastCut = false;
     const fx = window.KKDJ ? window.KKDJ.engine() : null;
     function api() {
       if (apiAsked) return; apiAsked = true;
@@ -348,7 +350,7 @@
       self.sync = (m, force, g, vis) => {
         const d = deckOf(m, id), cur = d.current, yt = self.yt;
         self.gain = g;
-        const showVideo = !!(cur && m.mode === "video");
+        const showVideo = !!(cur && m.mode === "video" && !m.cut);   // screen only: no picture
         wrap.classList.toggle("on", showVideo && vis > 0.001);
         wrap.classList.toggle("audio", !!(cur && m.mode !== "video"));
         wrap.classList.toggle("tiny", showVideo && vis <= 0.001);     // can't be seen: lowest quality
@@ -392,12 +394,17 @@
       const visB = !B ? 0 : !A ? 1 : (g.vb + g.va ? g.vb / (g.va + g.vb) : 0);
       decks.a.sync(m, force, g.a, A ? (B && visB >= 0.999 ? 0 : 1) : 0);   // fully under B: nobody sees A
       decks.b.sync(m, force, g.b, visB);
-      const showVideo = !!((A || B) && m.mode === "video");
+      const showVideo = !!((A || B) && m.mode === "video" && !m.cut);
       document.body.classList.toggle("pm-on", showVideo);
+      document.body.classList.toggle("pm-cut", !!m.cut);
+      if (m.cut && !lastCut && fx) fx.silence();                 // in case the booth's "silence" got lost
+      lastCut = !!m.cut;
+      // Drums & FX: have the host's own sounds decoded before the first hit
+      if (fx && Array.isArray(m.pads)) fx.preload(m.pads.filter(p => p && p.sound === "custom").map(p => p.url));
       // the "Now playing" chip follows whichever deck the room hears most
       const onB = B && (m.b.playing && (!A || !m.playing || g.b > g.a));
       const air = onB ? m.b : m, cur = air.current;
-      if (cur && m.chip && m.mode !== "video") {
+      if (cur && m.chip && m.mode !== "video" && !m.cut) {
         chip.innerHTML = `<div class="pm-eq"><i></i><i></i><i></i></div><img src="${thumb(cur.id)}" alt=""><div style="min-width:0"><small>${air.playing ? "Now playing" : "Paused"}</small><span>${esc(cur.title)}</span></div>`;
         chip.classList.add("on"); chip.classList.toggle("paused", !air.playing);
       } else chip.classList.remove("on");
@@ -426,7 +433,18 @@
     document.addEventListener("scr:djfx", e => {
       const m = e.detail || {}, dk = decks[m.deck === "b" ? "b" : "a"];
       const loaded = !!deckOf(state.media || {}, dk.id).current;
-      if (!loaded && m.kind !== "horn" && m.kind !== "siren") return;
+      if (m.kind === "pad") { if (fx) fx.pad(((state.media || {}).pads || [])[m.pad]); return; }   // Drums & FX
+      if (m.kind === "silence") {
+        // SCREEN ONLY arrives here first (no database on this path): take the music off
+        // the room now; the saved state (decks paused, cut) confirms a moment later.
+        if (fx) fx.silence();
+        const md = state.media || {};
+        md.cut = true;
+        Object.values(decks).forEach(dk => { if (dk.ready && dk.yt.pauseVideo) { try { dk.yt.pauseVideo(); } catch (_) { /* fine */ } } });
+        sync(false);
+        return;
+      }
+      if (!loaded && m.kind !== "horn" && m.kind !== "siren" && m.kind !== "silence") return;
       if (m.kind === "scratch_start") { dk.setDuck(0, 15000); chip.classList.add("scratch"); }   // hand on the platter
       else if (m.kind === "scratch_end") { setTimeout(() => dk.setDuck(1), 220); chip.classList.remove("scratch"); }
       else if (m.kind === "rewind") dk.setDuck(0, 1300);
@@ -741,6 +759,46 @@
   .crate .empty{padding:.9rem;border-radius:11px;border:1px dashed rgba(255,255,255,.14);color:#8a889c;font-size:.82rem;text-align:center;margin-top:.7rem}
   .crate .opts{display:flex;gap:1rem;flex-wrap:wrap;margin-top:.7rem;font-size:.78rem;color:#a9a6c2}
   .crate .opts label{display:inline-flex;gap:.4rem;align-items:center;cursor:pointer}
+  /* SCREEN ONLY + Drums & FX */
+  .dj-cut{min-height:42px;padding:0 .95rem;border-radius:12px;border:1px solid #b91c1c;background:#dc2626;color:#fff;cursor:pointer;
+    font:800 .78rem/1 var(--mono);letter-spacing:.08em;display:inline-flex;align-items:center;gap:.45rem;box-shadow:0 0 0 0 rgba(220,38,38,.5)}
+  .dj-cut:hover{background:#ef4444}
+  .dj-cut.on{background:#450a0a;color:#fecaca;border-color:#ef4444;animation:cutPulse 1.4s ease-in-out infinite}
+  @keyframes cutPulse{50%{box-shadow:0 0 0 6px rgba(239,68,68,.18)}}
+  .dj-pads-btn[aria-expanded="true"]{color:#05070a;background:#f5a524;border-color:#f5a524}
+  .pb{margin:1rem 1.2rem 0;border-radius:20px;padding:.9rem;background:linear-gradient(180deg,#1b1a22,#111116);border:1px solid rgba(255,255,255,.07)}
+  .pb[hidden]{display:none}
+  .pb-h{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.7rem}
+  .pb-h h4{margin:0;font:800 .72rem/1 var(--mono);letter-spacing:.24em;color:#e5e7eb}
+  .pb-h small{color:#8a889c;font-size:.74rem}
+  .pb-h .sp{flex:1}
+  .pb-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.5rem}
+  .dp{--k:#22d3ee;position:relative;min-height:84px;border-radius:14px;border:1px solid rgba(0,0,0,.6);cursor:pointer;color:#f8fafc;text-align:left;
+    padding:.55rem .6rem;display:flex;flex-direction:column;justify-content:space-between;touch-action:manipulation;user-select:none;-webkit-user-select:none;
+    background:linear-gradient(180deg,color-mix(in srgb,var(--k) 16%,#24242c),color-mix(in srgb,var(--k) 6%,#17171d));
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.08),inset 0 0 0 1px color-mix(in srgb,var(--k) 30%,transparent),0 4px 0 #060609;transition:transform .04s}
+  .dp b{font:800 .9rem/1.1 "Archivo",system-ui,sans-serif}
+  .dp small{font:600 .56rem/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:color-mix(in srgb,var(--k) 70%,#fff)}
+  .dp .key{position:absolute;top:.45rem;right:.5rem;font:700 .58rem/1 var(--mono);color:#6b6980}
+  .dp.hit{transform:translateY(3px);box-shadow:0 1px 0 #060609,0 0 28px -2px var(--k),inset 0 0 0 2px var(--k);
+    background:color-mix(in srgb,var(--k) 45%,#24242c)}
+  .dp.custom{--k:#a3e635}
+  .dp.sel{outline:2px solid #fff;outline-offset:2px}
+  .pb.editing .dp{border-style:dashed}
+  .pk{margin-top:.8rem;padding:.8rem;border-radius:14px;background:#0b0b10;border:1px solid rgba(255,255,255,.08)}
+  .pk[hidden]{display:none}
+  .pk-h{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.6rem;font-size:.84rem;color:#cbd5e1}
+  .pk-h b{color:#fff}
+  .pk-g{font:700 .56rem/1 var(--mono);letter-spacing:.2em;text-transform:uppercase;color:#8a889c;margin:.55rem 0 .35rem}
+  .pk-row{display:flex;flex-wrap:wrap;gap:.35rem}
+  .pk-row button{min-height:38px;padding:0 .7rem;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:#e5e7eb;
+    cursor:pointer;font:600 .78rem/1 inherit}
+  .pk-row button[aria-pressed="true"]{background:#f5a524;color:#05070a;border-color:#f5a524}
+  .pk-act{display:flex;gap:.45rem;flex-wrap:wrap;margin-top:.7rem}
+  .pk-act button,.pk-act label{min-height:40px;padding:0 .85rem;border-radius:10px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);
+    color:#e5e7eb;cursor:pointer;font:600 .8rem/1 inherit;display:inline-flex;align-items:center;gap:.4rem}
+  .pk-act .up{background:#a3e635;color:#0b1400;border-color:#a3e635}
+  @media (max-width:760px){.pb-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:.35rem}.dp{min-height:70px;padding:.4rem}.dp b{font-size:.76rem}}
   .dj-toast{position:sticky;bottom:1rem;margin:0 auto;width:max-content;max-width:90%;padding:.55rem .9rem;border-radius:999px;background:#fbbf24;color:#1c1300;
     font-weight:700;font-size:.82rem;opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s;pointer-events:none}
   .dj-toast.on{opacity:1;transform:none}
@@ -818,9 +876,26 @@
         <div class="dj-tr">${PAGE
             ? `<button type="button" class="dj-wake" data-wake hidden></button><button type="button" class="dj-ear" data-fs hidden></button>`
             : `<button type="button" class="dj-ear" data-dj-page-open title="Open the booth on its own page — full screen, and the device stays awake"><i class="bi bi-arrows-fullscreen"></i> Full-screen booth</button>`}
+          <button type="button" class="dj-cut" data-cut title="Stop the music and video and show the big screen as it is — ▶ on a deck brings the music back"><i class="bi bi-stop-fill"></i> SCREEN ONLY</button>
+          <button type="button" class="dj-ear dj-pads-btn" data-pads-open aria-expanded="false" title="16 pads: drums and sound effects"><i class="bi bi-grid-3x3-gap-fill"></i> Drums &amp; FX</button>
           <button type="button" class="dj-ear" data-ear aria-pressed="false" title="Play the scratches and pads on this device too"><i class="bi bi-headphones"></i> Hear FX here</button>
           ${PAGE ? `<a class="dj-x wide" href="${esc(root.dataset.back || "/hanns/screen/")}" title="Back to Big screens"><i class="bi bi-box-arrow-left"></i> Exit</a>`
                  : `<button type="button" class="dj-x" data-dj-close aria-label="Close the DJ booth">✕</button>`}</div></div>
+      <section class="pb" data-pb hidden aria-label="Drums and FX pads">
+        <div class="pb-h"><h4>DRUMS &amp; FX</h4><small data-pb-hint>Tap a pad — it plays on the projector. Keys: 1–4 · Q–R · A–F · Z–V</small><span class="sp"></span>
+          <button type="button" class="dj-ear" data-pb-edit aria-pressed="false"><i class="bi bi-pencil"></i> Edit pads</button></div>
+        <div class="pb-grid" data-pb-grid></div>
+        <div class="pk" data-pk hidden>
+          <div class="pk-h">Pad <b data-pk-n></b> · now <b data-pk-now></b><span style="flex:1"></span><small>tap a sound to hear it and put it on this pad</small></div>
+          <div class="pk-g">Drums</div><div class="pk-row" data-pk-drums></div>
+          <div class="pk-g">Sound effects</div><div class="pk-row" data-pk-fx></div>
+          <div class="pk-act">
+            <label class="up"><i class="bi bi-upload"></i> Upload your own sound…<input type="file" data-pk-file accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.opus" hidden></label>
+            <button type="button" data-pk-reset><i class="bi bi-arrow-counterclockwise"></i> Back to default</button>
+            <button type="button" data-pk-done>Done</button>
+          </div>
+        </div>
+      </section>
       <div class="desk">
         ${deckHtml("a", 1)}
         <section class="mx" aria-label="Mixer"><h4>MIXER</h4>
@@ -1116,6 +1191,106 @@
       if (air && kind !== "horn" && kind !== "siren") toast(`${kind === "brake" ? "Brake" : "Rewind"} on deck ${air === "a" ? 1 : 2}`);
     }
 
+    /* ── SCREEN ONLY ── */
+    // Both decks pause where they are and the room sees the big screen as it is,
+    // straight away; ▶ on either deck brings the music back.
+    $("[data-cut]").addEventListener("click", () => {
+      decks.a.release(); decks.b.release();
+      if (fx) fx.silence();
+      post("dj/fx/", { kind: "silence" });
+      media({ action: "cut" }).then(r => { if (r) toast("Screen only — press ▶ on a deck to bring the music back"); });
+    });
+
+    /* ── Drums & FX pads ── */
+    const SOUND_INFO = {
+      kick: ["Kick", "drum"], snare: ["Snare", "drum"], clap: ["Clap", "drum"], hat: ["Hi-hat", "drum"], openhat: ["Open hat", "drum"],
+      tom: ["Tom", "drum"], rim: ["Rim", "drum"], crash: ["Crash", "drum"], cowbell: ["Cowbell", "drum"], bass808: ["808 bass", "drum"],
+      gunshot: ["Gunshot", "fx"], laser: ["Laser", "fx"], explosion: ["Explosion", "fx"], airhorn: ["Air horn", "fx"], siren: ["Siren", "fx"],
+      riser: ["Riser", "fx"], impact: ["Impact", "fx"], whoosh: ["Whoosh", "fx"], rewind: ["Rewind", "fx"], applause: ["Applause", "fx"],
+    };
+    const PAD_KEYS = "1234qwerasdfzxcv";
+    const pb = $("[data-pb]"), grid = $("[data-pb-grid]"), pk = $("[data-pk]");
+    let padsOpen = false, editing = false, sel = -1;
+    const padsNow = () => (M().pads || []);
+    const padName = p => !p ? "—" : p.sound === "custom" ? (p.name || "My sound") : (SOUND_INFO[p.sound] || [p.sound])[0];
+    const padKind = p => !p ? "" : p.sound === "custom" ? "custom" : (SOUND_INFO[p.sound] || [0, "fx"])[1];
+    function renderPads() {
+      const pads = padsNow();
+      grid.innerHTML = Array.from({ length: 16 }, (_, i) => {
+        const p = pads[i], kind = padKind(p);
+        const k = kind === "drum" ? "#22d3ee" : kind === "custom" ? "#a3e635" : "#ff8a3d";
+        return `<button type="button" class="dp${kind === "custom" ? " custom" : ""}${editing && i === sel ? " sel" : ""}" data-dp="${i}" style="--k:${k}"
+          aria-label="Pad ${i + 1}: ${esc(padName(p))}"><span class="key">${PAD_KEYS[i].toUpperCase()}</span><small>${kind === "drum" ? "drum" : kind === "custom" ? "yours" : "fx"}</small><b>${esc(padName(p))}</b></button>`;
+      }).join("");
+      if (editing && sel >= 0) {
+        const p = pads[sel];
+        $("[data-pk-n]").textContent = sel + 1; $("[data-pk-now]").textContent = padName(p);
+        const chips = cat => Object.entries(SOUND_INFO).filter(([, v]) => v[1] === cat)
+          .map(([id, v]) => `<button type="button" data-pk-sound="${id}" aria-pressed="${p && p.sound === id}">${v[0]}</button>`).join("");
+        $("[data-pk-drums]").innerHTML = chips("drum"); $("[data-pk-fx]").innerHTML = chips("fx");
+      }
+      pk.hidden = !(editing && sel >= 0);
+    }
+    function hitPad(i) {
+      const p = padsNow()[i];
+      const b = grid.querySelector(`[data-dp="${i}"]`);
+      if (b) { b.classList.remove("hit"); void b.offsetWidth; b.classList.add("hit"); setTimeout(() => b.classList.remove("hit"), 140); }
+      if (!p) return;
+      fx && fx.unlock();
+      post("dj/fx/", { kind: "pad", pad: i });                    // the room hears it
+      if (ear && fx) fx.pad(p);                                   // and you, with "Hear FX here"
+    }
+    // pointerdown, not click: a drum has to answer the finger, not the lift
+    grid.addEventListener("pointerdown", e => {
+      const b = e.target.closest("[data-dp]"); if (!b) return;
+      const i = +b.dataset.dp;
+      if (editing) { sel = i; renderPads(); return; }
+      e.preventDefault(); hitPad(i);
+    });
+    grid.addEventListener("keydown", e => {                       // keyboard users: Enter/Space on a focused pad
+      const b = e.target.closest("[data-dp]");
+      if (b && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.stopPropagation(); editing ? (sel = +b.dataset.dp, renderPads()) : hitPad(+b.dataset.dp); }
+    });
+    $("[data-pads-open]").addEventListener("click", e => {
+      padsOpen = !padsOpen; pb.hidden = !padsOpen;
+      e.currentTarget.setAttribute("aria-expanded", String(padsOpen));
+      if (padsOpen) { renderPads(); fx && fx.unlock(); pb.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+    });
+    $("[data-pb-edit]").addEventListener("click", e => {
+      editing = !editing; e.currentTarget.setAttribute("aria-pressed", String(editing));
+      pb.classList.toggle("editing", editing);
+      $("[data-pb-hint]").textContent = editing ? "Pick a pad, then choose its sound — or upload your own." : "Tap a pad — it plays on the projector. Keys: 1–4 · Q–R · A–F · Z–V";
+      if (editing && sel < 0) sel = 0;
+      renderPads();
+    });
+    pk.addEventListener("click", async e => {
+      const b = e.target.closest("button"); if (!b || sel < 0) return;
+      if (b.dataset.pkSound) {
+        fx && fx.unlock(); if (fx) fx.play(b.dataset.pkSound);        // hear it here first
+        await media({ action: "pad_set", pad: sel, sound: b.dataset.pkSound });
+      } else if (b.hasAttribute("data-pk-reset")) {
+        await media({ action: "pad_reset", pad: sel });
+      } else if (b.hasAttribute("data-pk-done")) {
+        editing = false; sel = -1; pb.classList.remove("editing");
+        $("[data-pb-edit]").setAttribute("aria-pressed", "false");
+        $("[data-pb-hint]").textContent = "Tap a pad — it plays on the projector. Keys: 1–4 · Q–R · A–F · Z–V";
+        renderPads();
+      }
+    });
+    $("[data-pk-file]").addEventListener("change", async e => {
+      const f = e.target.files && e.target.files[0]; e.target.value = "";
+      if (!f || sel < 0) return;
+      const at = sel, fd = new FormData(); fd.append("sample", f, f.name || "sound.wav");
+      toast(`Uploading ${f.name}…`);
+      try {
+        const r = await fetch(base + "dj/sample/", { method: "POST", credentials: "same-origin", headers: { "X-CSRFToken": csrf() }, body: fd });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.ok) { toast(j.error || "Couldn't upload that sound"); return; }
+        const done = await media({ action: "pad_custom", pad: at, url: j.url, name: j.name });
+        if (done) { toast(`“${j.name}” is on pad ${at + 1}`); if (fx) { fx.unlock(); fx.playUrl(j.url); } }
+      } catch (_) { toast("No connection to the screen"); }
+    });
+
     /* ── crate ── */
     const url = $("[data-url]");
     async function load(where) {
@@ -1149,6 +1324,9 @@
     dj.addEventListener("keydown", e => {
       if (e.target.matches("input[type=url],input[type=text],select,textarea") || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
+      if (padsOpen && !editing && k.length === 1 && PAD_KEYS.includes(k) && !e.repeat) {   // pads win while the bank is open
+        e.preventDefault(); hitPad(PAD_KEYS.indexOf(k)); return;
+      }
       const map = { z: () => decks.a.cue(), x: () => decks.a.play(), n: () => decks.b.cue(), m: () => decks.b.play() };
       if (map[k]) { e.preventDefault(); map[k](); return; }
       if ("1234".includes(k) && k.length === 1) { e.preventDefault(); decks.a.hot(+k - 1, e.shiftKey); return; }
@@ -1220,6 +1398,11 @@
       const playing = !!((A && m.playing) || (B && m.b.playing));
       box.querySelector(".dj-row").classList.toggle("playing", playing);
       $(".dj-name").textContent = state.name || "Big screen";
+      const cutBtn = $("[data-cut]");
+      cutBtn.classList.toggle("on", !!m.cut);
+      cutBtn.innerHTML = m.cut ? '<i class="bi bi-display"></i> SCREEN ONLY · ON' : '<i class="bi bi-stop-fill"></i> SCREEN ONLY';
+      if (padsOpen) renderPads();
+      if (fx && Array.isArray(m.pads)) fx.preload(m.pads.filter(p => p && p.sound === "custom").map(p => p.url));
       decks.a.render(); decks.b.render();
       const mix = m.mix || {};
       ["a", "b"].forEach(c => { if (!touched(chf[c])) chf[c].value = mix[c] ?? 100; });

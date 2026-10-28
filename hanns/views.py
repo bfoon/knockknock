@@ -699,6 +699,70 @@ def deck_image_upload(request, code):
 
 @login_required
 @require_POST
+def deck_video_upload(request, code):
+    """Upload a slide video. The slide gets a stable /hanns/video/<id>/ link at
+    once (it plays the original); a projector-friendly copy is made in the
+    background and that link switches to it when it's ready (hanns/video.py)."""
+    from . import video as hv
+    deck, denied = _editable_deck_or_403(request, code)
+    if denied:
+        return denied
+    upload = request.FILES.get("video") or request.FILES.get("file")
+    if not upload:
+        return JsonResponse({"ok": False, "error": "No video file was uploaded."}, status=400)
+    content_type = (getattr(upload, "content_type", "") or "").lower()
+    ext = os.path.splitext(getattr(upload, "name", "") or "")[1].lower()
+    if not (content_type.startswith("video/") or ext in hv.ALLOWED_EXTS):
+        return JsonResponse({"ok": False, "error": "Only video files can be uploaded here."}, status=400)
+    limit = hv.max_upload_bytes()
+    if getattr(upload, "size", 0) and upload.size > limit:
+        return JsonResponse({"ok": False, "error": f"That video is over {limit // (1024 * 1024)} MB."}, status=413)
+    meta = hv.store_upload(deck.code, upload)
+    converting = hv.available()
+    if not converting:
+        hv._update(meta, status="ready", progress=100, reasons=[],
+                   error="This server can't convert videos (ffmpeg missing), so the original plays.")
+    elif not hv.worker_alive():
+        hv.kick_inline(meta["id"])             # no worker running: do it here, in the background
+    return JsonResponse({"ok": True, "url": hv.play_url(meta["id"]), "id": meta["id"],
+                         "status": hv.public_status(hv.read_meta(meta["id"]) or meta)})
+
+
+def video_play(request, vid):
+    """The stable link a slide stores: the screen copy when ready, else the original."""
+    from . import video as hv
+    meta = hv.read_meta(vid)
+    if not meta:
+        raise Http404
+    resp = redirect(hv.best_url(meta))
+    resp["Cache-Control"] = "no-store"         # so it switches to the copy as soon as it exists
+    return resp
+
+
+def video_poster(request, vid):
+    from . import video as hv
+    meta = hv.read_meta(vid)
+    if not meta or not meta.get("poster"):
+        raise Http404
+    resp = redirect(hv._media_url(meta["poster"]))
+    resp["Cache-Control"] = "no-store"
+    return resp
+
+
+@login_required
+def video_status(request, vid):
+    from . import video as hv
+    meta = hv.read_meta(vid)
+    if not meta:
+        return JsonResponse({"ok": False, "error": "Unknown video."}, status=404)
+    if meta.get("status") in ("queued", "converting"):
+        hv.revive(vid)                         # an interrupted job starts again
+        meta = hv.read_meta(vid) or meta
+    return JsonResponse(dict(hv.public_status(meta), ok=True))
+
+
+@login_required
+@require_POST
 def deck_powerpoint_import(request, code):
     """
     Import a PowerPoint file into the current Hanns deck.

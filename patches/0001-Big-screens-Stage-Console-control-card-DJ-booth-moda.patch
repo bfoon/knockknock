@@ -1,7 +1,7 @@
 From 777b461fbef240f983ca4a806fd2dae14a175bc2 Mon Sep 17 00:00:00 2001
 From: Claude <claude@anthropic.com>
 Date: Wed, 28 Oct 2026 00:30:03 +0000
-Subject: [PATCH 1/7] Big screens: Stage Console control card + DJ booth modal
+Subject: [PATCH 1/9] Big screens: Stage Console control card + DJ booth modal
 
 - Card redesigned as a vision-mixer: tally (Lobby / On air), PROGRAM monitor
   with a live lobby preview, F1-F4 scene keys (Lobby, Code on lobby, DJ booth, Event)

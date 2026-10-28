@@ -203,6 +203,38 @@ def media(request, token):
     return JsonResponse({"ok": True, "state": _push(screen)})
 
 
+SAMPLE_EXTS = {".mp3", ".wav", ".ogg", ".oga", ".m4a", ".aac", ".webm", ".flac", ".opus"}
+
+
+@require_POST
+def dj_sample(request, token):
+    """Upload a sound for a Drums & FX pad. Stored for this screen only; the booth
+    then puts it on a pad (media action pad_custom)."""
+    import os
+    import uuid
+    from django.conf import settings
+    from django.core.files.storage import default_storage
+    screen = _screen(token)
+    if not screen.is_active:
+        return _stopped()
+    f = request.FILES.get("sample") or request.FILES.get("file")
+    if not f:
+        return JsonResponse({"ok": False, "error": "No sound file was uploaded."}, status=400)
+    ext = os.path.splitext(getattr(f, "name", "") or "")[1].lower()
+    ctype = (getattr(f, "content_type", "") or "").lower()
+    if ext not in SAMPLE_EXTS or not (ctype.startswith("audio/") or ctype in ("video/webm", "application/octet-stream", "")):
+        return JsonResponse({"ok": False, "error": "Use an audio file: MP3, WAV, OGG, M4A or FLAC."}, status=400)
+    limit = int(getattr(settings, "SCREENART_SAMPLE_MAX_SIZE", 8 * 1024 * 1024))
+    if f.size > limit:
+        return JsonResponse({"ok": False, "error": f"Keep pad sounds under {limit // (1024 * 1024)} MB."}, status=413)
+    saved = default_storage.save(f"{program.SAMPLE_DIR}/{screen.id}/{uuid.uuid4().hex}{ext}", f)
+    url = default_storage.url(saved)
+    if not url.startswith(("http://", "https://", "//")):
+        url = url if url.startswith("/") else "/" + url
+    name = os.path.splitext(os.path.basename(getattr(f, "name", "") or "My sound"))[0][:40] or "My sound"
+    return JsonResponse({"ok": True, "url": url, "name": name})
+
+
 @require_POST
 def dj_fx(request, token):
     """A scratch / FX pad from the DJ booth → straight to the projectors over the

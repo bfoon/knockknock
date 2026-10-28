@@ -1,7 +1,7 @@
 From 65a79128db20a8a15a75c4c4353d4aa85f3af645 Mon Sep 17 00:00:00 2001
 From: Claude <claude@anthropic.com>
 Date: Wed, 28 Oct 2026 12:44:23 +0000
-Subject: [PATCH 5/7] Control board: drive the on-screen deck's slides (host
+Subject: [PATCH 5/9] Control board: drive the on-screen deck's slides (host
  override)
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8

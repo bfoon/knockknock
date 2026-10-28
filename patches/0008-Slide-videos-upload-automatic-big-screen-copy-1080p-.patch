@@ -1,0 +1,962 @@
+From 176fc5eeda4eae54fa7b10023c433e1f60beb9cf Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Wed, 28 Oct 2026 20:08:44 +0000
+Subject: [PATCH 8/9] Slide videos: upload + automatic big-screen copy (1080p
+ H.264) on the server
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Until now a slide video could only be a pasted URL; the server never had the
+file, so nothing could be converted. Now:
+
+Editor: "Upload video file…" under Video URL, with upload progress and a live
+status ("Optimising for the big screen… 42%" → "Ready · plays a 1920×1080
+copy, original 2560×1440 vp9"); a poster frame is filled in automatically.
+
+Server (hanns/video.py, no new table / no migration):
+- the slide stores a stable /hanns/video/<id>/ link: it redirects to the
+  screen copy when ready and to the original until then (or if conversion
+  failed) — slide JSON never changes, so no race with an open editor
+- ffprobe decides; a copy is made only when needed (over 1920×1080, not
+  H.264 / yuv420p, over 12 Mbit/s, over 60 fps, odd audio, not MP4); light
+  files are left alone. Copy: H.264 high, CRF 22, ≤8 Mbit/s, AAC, faststart,
+  checked with ffprobe before it is used. Original never touched.
+- worker: `manage.py hanns_video_worker` (new compose service), one job at a
+  time, nice 15, progress in meta.json; jobs claimed by atomic rename
+- no worker running → the upload converts in a background thread; a job
+  abandoned by a restart (10 min without progress) is re-queued by the worker
+  or by the editor's status check
+- Dockerfile installs ffmpeg; without ffmpeg the original simply plays
+
+Tests: real ffmpeg — oversized → copy at the limit + faststart + link
+switches; light file untouched; broken file → original plays; worker
+command; stale/interrupted jobs; inline fallback; bad ids
+---
+ Dockerfile                                    |   1 +
+ docker-compose.yml                            |  14 +
+ hanns/management/__init__.py                  |   0
+ hanns/management/commands/__init__.py         |   0
+ .../management/commands/hanns_video_worker.py |  48 ++
+ hanns/test_video.py                           | 165 +++++++
+ hanns/urls.py                                 |   5 +
+ hanns/video.py                                | 411 ++++++++++++++++++
+ hanns/views.py                                |  64 +++
+ static/hanns/js/hanns_editor.js               |  70 ++-
+ templates/hanns/editor.html                   |   3 +-
+ 11 files changed, 779 insertions(+), 2 deletions(-)
+ create mode 100644 hanns/management/__init__.py
+ create mode 100644 hanns/management/commands/__init__.py
+ create mode 100644 hanns/management/commands/hanns_video_worker.py
+ create mode 100644 hanns/test_video.py
+ create mode 100644 hanns/video.py
+
+diff --git a/Dockerfile b/Dockerfile
+index a089964..1b671e9 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
+     build-essential \
+     libpq-dev \
+     curl \
++    ffmpeg \
+     && rm -rf /var/lib/apt/lists/*
+ 
+ COPY requirements.txt .
+diff --git a/docker-compose.yml b/docker-compose.yml
+index 3632d12..e90cc7d 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -41,6 +41,20 @@ services:
+       redis:
+         condition: service_healthy
+ 
++  # Makes a big-screen copy (1080p H.264) of every uploaded slide video,
++  # one at a time, at low priority (hanns/video.py). Same image as web.
++  videoworker:
++    build: .
++    command: python manage.py hanns_video_worker
++    volumes:
++      - .:/app
++      - media:/app/media
++    env_file: .env
++    restart: unless-stopped
++    depends_on:
++      db:
++        condition: service_healthy
++
+ volumes:
+   pgdata:
+   media:
+\ No newline at end of file
+diff --git a/hanns/management/__init__.py b/hanns/management/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/hanns/management/commands/__init__.py b/hanns/management/commands/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/hanns/management/commands/hanns_video_worker.py b/hanns/management/commands/hanns_video_worker.py
+new file mode 100644
+index 0000000..bb0daf9
+--- /dev/null
++++ b/hanns/management/commands/hanns_video_worker.py
+@@ -0,0 +1,48 @@
++"""Make projector-friendly copies of uploaded slide videos (hanns/video.py).
++
++    python manage.py hanns_video_worker          # run forever (a compose service)
++    python manage.py hanns_video_worker --once   # empty the queue, then exit (cron)
++"""
++import signal
++import time
++
++from django.core.management.base import BaseCommand
++
++from hanns import video as hv
++
++
++class Command(BaseCommand):
++    help = "Convert uploaded slide videos to a 1080p H.264 screen copy, one at a time."
++
++    def add_arguments(self, parser):
++        parser.add_argument("--once", action="store_true", help="Process what's queued, then exit.")
++        parser.add_argument("--poll", type=float, default=3.0, help="Seconds between queue checks.")
++
++    def handle(self, *args, once=False, poll=3.0, **opts):
++        if not hv.available():
++            self.stderr.write("ffmpeg/ffprobe not found (or media isn't on local disk): nothing to do.")
++            if once:
++                return
++        stop = {"now": False}
++        signal.signal(signal.SIGTERM, lambda *_: stop.__setitem__("now", True))
++        self.stdout.write("Hanns video worker: watching the queue.")
++        last_sweep = 0
++        while not stop["now"]:
++            hv.heartbeat()                                    # uploads see a live worker and leave it the job
++            if time.time() - last_sweep > 600:
++                last_sweep = time.time()
++                n = hv.requeue_stale()
++                if n:
++                    self.stdout.write(f"re-queued {n} interrupted job(s)")
++            ids = hv.pending()
++            for vid in ids:
++                if stop["now"]:
++                    break
++                meta = hv.process_one(vid)
++                if meta:
++                    self.stdout.write(f"{vid}: {meta['status']}" + (f" ({meta['error']})" if meta.get("error") else ""))
++                hv.heartbeat()
++            if once and not hv.pending():
++                break
++            if not ids:
++                time.sleep(poll)
+diff --git a/hanns/test_video.py b/hanns/test_video.py
+new file mode 100644
+index 0000000..5df6e05
+--- /dev/null
++++ b/hanns/test_video.py
+@@ -0,0 +1,165 @@
++"""Slide videos: upload, stable link, the screen copy (real ffmpeg, small clips)."""
++
++import json
++import os
++import shutil
++import subprocess
++import tempfile
++import time
++import unittest
++
++from django.contrib.auth import get_user_model
++from django.core.files.uploadedfile import SimpleUploadedFile
++from django.core.management import call_command
++from django.test import TestCase, override_settings
++
++from hanns import video as hv
++from hanns.models import Deck
++
++HAVE_FFMPEG = bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
++
++
++def _clip(path, size, vcodec, acodec, secs=2, rate=25, extra=()):
++    cmd = ["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"testsrc2=size={size}:rate={rate}",
++           "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", str(secs),
++           "-c:v", vcodec, *extra, "-c:a", acodec, path]
++    subprocess.run(cmd, check=True, capture_output=True)
++    with open(path, "rb") as f:
++        return f.read()
++
++
++@unittest.skipUnless(HAVE_FFMPEG, "ffmpeg not installed")
++class VideoTests(TestCase):
++    @classmethod
++    def setUpClass(cls):
++        super().setUpClass()
++        cls.tmp = tempfile.mkdtemp()
++        # "too big" for this test = above 320×180, so a 640×360 clip takes the 4K path
++        cls.big = _clip(os.path.join(cls.tmp, "big.webm"), "640x360", "libvpx-vp9", "libopus",
++                        extra=("-deadline", "realtime", "-cpu-used", "8"))
++        cls.fine = _clip(os.path.join(cls.tmp, "fine.mp4"), "320x180", "libx264", "aac",
++                         extra=("-pix_fmt", "yuv420p", "-b:v", "300k"))
++
++    @classmethod
++    def tearDownClass(cls):
++        shutil.rmtree(cls.tmp, ignore_errors=True)
++        super().tearDownClass()
++
++    def setUp(self):
++        self.media = tempfile.mkdtemp()
++        self.o = override_settings(MEDIA_ROOT=self.media, HANNS_VIDEO_MAX_WIDTH=320, HANNS_VIDEO_MAX_HEIGHT=180,
++                                   STATICFILES_STORAGE="django.contrib.staticfiles.storage.StaticFilesStorage")
++        self.o.enable()
++        U = get_user_model()
++        self.owner = U.objects.create_user("v-owner", password="pw-pw-pw-123")
++        self.deck = Deck.objects.create(owner=self.owner, code="VIDS01", title="Clips")
++        self.client.force_login(self.owner)
++        hv.heartbeat()                          # pretend a worker is up: tests call the worker themselves
++
++    def tearDown(self):
++        self.o.disable()
++        shutil.rmtree(self.media, ignore_errors=True)
++
++    def _upload(self, data, name="clip.webm", ctype="video/webm"):
++        return self.client.post("/hanns/VIDS01/video-upload/", {"video": SimpleUploadedFile(name, data, content_type=ctype)})
++
++    def test_upload_rules(self):
++        self.client.logout()
++        self.assertEqual(self._upload(self.big).status_code, 302)                     # sign in first
++        stranger = get_user_model().objects.create_user("v-stranger", password="pw-pw-pw-123")
++        self.client.force_login(stranger)
++        self.assertIn(self._upload(self.big).status_code, (403, 404))                 # not their deck
++        self.client.force_login(self.owner)
++        self.assertEqual(self._upload(b"hello", "notes.txt", "text/plain").status_code, 400)
++        with override_settings(HANNS_VIDEO_UPLOAD_MAX_SIZE=1000):
++            self.assertEqual(self._upload(self.big).status_code, 413)
++        self.assertContains(self.client.get(f"/hanns/{self.deck.code}/edit/"), "/hanns/VIDS01/video-upload/")   # editor knows
++
++    def test_big_video_gets_a_screen_copy(self):
++        r = self._upload(self.big)
++        self.assertEqual(r.status_code, 200, r.content)
++        j = r.json()
++        vid, url = j["id"], j["url"]
++        self.assertEqual(url, f"/hanns/video/{vid}/")
++        self.assertEqual(j["status"]["status"], "queued")
++        # until it's converted, the stable link plays the original
++        play = self.client.get(url)
++        self.assertEqual(play.status_code, 302)
++        self.assertTrue(play["Location"].endswith("/original.webm"))
++        self.assertEqual(play["Cache-Control"], "no-store")
++        meta = hv.process_one(vid)
++        self.assertEqual(meta["status"], "ready", meta.get("error"))
++        self.assertTrue(meta["reasons"])                                                # why it was converted
++        out = hv.probe(os.path.join(self.media, meta["screen"]))
++        self.assertEqual((out["codec"], out["width"], out["height"]), ("h264", 320, 180))   # 640×360 → 320×180
++        with open(os.path.join(self.media, meta["screen"]), "rb") as f:
++            head = f.read(4096)
++        self.assertLess(head.find(b"moov"), head.find(b"mdat") if b"mdat" in head else 10 ** 9)   # faststart
++        self.assertTrue(self.client.get(url)["Location"].endswith("/screen.mp4"))       # now plays the copy
++        st = self.client.get(f"/hanns/video/{vid}/status/").json()
++        self.assertEqual((st["status"], st["playing"], st["screen"]["width"]), ("ready", "screen copy", 320))
++        self.assertEqual(self.client.get(f"/hanns/video/{vid}/poster/").status_code, 302)
++        self.assertIsNone(hv.process_one(vid))                                          # already done: no rework
++
++    def test_light_video_is_left_alone(self):
++        vid = self._upload(self.fine, "fine.mp4", "video/mp4").json()["id"]
++        meta = hv.process_one(vid)
++        self.assertEqual((meta["status"], meta["screen"]), ("ready", None))
++        self.assertTrue(self.client.get(f"/hanns/video/{vid}/")["Location"].endswith("/original.mp4"))
++
++    def test_broken_file_keeps_playing_the_original(self):
++        vid = self._upload(b"\x00not a video" * 500, "broken.mp4", "video/mp4").json()["id"]
++        meta = hv.process_one(vid)
++        self.assertEqual(meta["status"], "failed")
++        self.assertTrue(meta["error"])
++        self.assertTrue(self.client.get(f"/hanns/video/{vid}/")["Location"].endswith("/original.mp4"))
++        self.assertFalse(os.path.exists(os.path.join(self.media, f"hanns/decks/VIDS01/videos/{vid}/screen.part.mp4")))
++
++    def test_worker_command_and_stale_jobs(self):
++        a = self._upload(self.big).json()["id"]
++        b = self._upload(self.fine, "fine.mp4", "video/mp4").json()["id"]
++        # a job a dead worker left half-way gets put back
++        os.rename(os.path.join(self.media, hv.QUEUE_DIR, b), os.path.join(self.media, hv.QUEUE_DIR, b + ".working"))
++        old = time.time() - 4 * 3600
++        os.utime(os.path.join(self.media, hv.QUEUE_DIR, b + ".working"), (old, old))
++        m = hv.read_meta(b); m["updated"] = old; hv._write_meta(m)
++        self.assertEqual(hv.requeue_stale(), 1)
++        call_command("hanns_video_worker", "--once", stdout=open(os.devnull, "w"))
++        self.assertEqual(hv.read_meta(a)["status"], "ready")
++        self.assertEqual(hv.read_meta(b)["status"], "ready")
++        self.assertEqual(hv.pending(), [])
++
++    def test_no_worker_converts_in_the_background(self):
++        os.remove(os.path.join(self.media, hv.HEARTBEAT))                               # nobody's watching the queue
++        vid = self._upload(self.big).json()["id"]
++        for _ in range(120):
++            if hv.read_meta(vid)["status"] in ("ready", "failed"):
++                break
++            time.sleep(0.25)
++        self.assertEqual(hv.read_meta(vid)["status"], "ready")
++
++    def test_unknown_ids(self):
++        self.assertEqual(self.client.get("/hanns/video/" + "0" * 32 + "/").status_code, 404)
++        self.assertEqual(self.client.get("/hanns/video/../../etc/").status_code, 404)
++        self.assertIsNone(hv.read_meta("../../etc/passwd"))
++
++    def test_interrupted_job_restarts_when_looked_at(self):
++        """The web process restarted mid-conversion and no worker runs: the editor's
++        status check puts the job back and converts it."""
++        vid = self._upload(self.big).json()["id"]
++        q = os.path.join(self.media, hv.QUEUE_DIR)
++        os.rename(os.path.join(q, vid), os.path.join(q, vid + ".working"))
++        m = hv.read_meta(vid); m.update(status="converting", progress=24, updated=time.time() - 3600); hv._write_meta(m)
++        os.utime(os.path.join(q, vid + ".working"), (time.time() - 3600,) * 2)
++        os.remove(os.path.join(self.media, hv.HEARTBEAT))
++        self.client.get(f"/hanns/video/{vid}/status/")
++        for _ in range(120):
++            if hv.read_meta(vid)["status"] == "ready":
++                break
++            time.sleep(0.25)
++        self.assertEqual(hv.read_meta(vid)["status"], "ready")
++        # a job that's merely busy (fresh progress) is left alone
++        vid2 = self._upload(self.fine, "fine.mp4", "video/mp4").json()["id"]
++        os.rename(os.path.join(q, vid2), os.path.join(q, vid2 + ".working"))
++        self.assertEqual(hv.requeue_stale(only=vid2), 0)
++
+diff --git a/hanns/urls.py b/hanns/urls.py
+index 3b04f31..4cc3488 100644
+--- a/hanns/urls.py
++++ b/hanns/urls.py
+@@ -57,6 +57,10 @@ urlpatterns = [
+     # PUBLIC — a presenter with no laptop types the host-issued code here.
+     path("screen/control/", screen_views.screen_control_entry, name="screen_control_entry"),
+     # The paired slide remote (hanns/remote.py): a phone pairs with a screen.
++    # Slide videos (hanns/video.py): a stable link per upload, the screen copy when ready.
++    path("video/<str:vid>/", views.video_play, name="video_play"),
++    path("video/<str:vid>/poster/", views.video_poster, name="video_poster"),
++    path("video/<str:vid>/status/", views.video_status, name="video_status"),
+     path("screen/remote/", screen_views.remote_home, name="remote_home"),
+     path("screen/remote/pair/", screen_views.remote_pair, name="remote_pair"),
+     path("screen/remote/status/", screen_views.remote_status, name="remote_status"),
+@@ -82,6 +86,7 @@ urlpatterns = [
+     path("<str:code>/edit/", views.deck_edit, name="edit"),
+     path("<str:code>/save/", views.deck_save, name="save"),
+     path("<str:code>/image-upload/", views.deck_image_upload, name="image_upload"),
++    path("<str:code>/video-upload/", views.deck_video_upload, name="video_upload"),
+     # Hanns AI Studio (Gemini, server-side key)
+     path("<str:code>/ai/", views.deck_ai, name="ai"),
+     path("<str:code>/ai/status/", views.deck_ai_status, name="ai_status"),
+diff --git a/hanns/video.py b/hanns/video.py
+new file mode 100644
+index 0000000..d6739e1
+--- /dev/null
++++ b/hanns/video.py
+@@ -0,0 +1,411 @@
++"""Hanns · slide videos: upload, then a projector-friendly copy made in the background.
++
++Why: a slide video is decoded at its own resolution. A 4K (or HEVC, or 40 Mbit/s)
++file plays fine on a fast desktop and stutters on the laptop driving a projector —
++picture breaks, sound carries on. So every uploaded video gets a "screen copy":
++H.264 / AAC in an MP4, at most 1920×1080, sensible bitrate, `faststart` — the format
++nearly every laptop decodes in hardware and every browser plays.
++
++How it hangs together (no new table, so no migration to run):
++
++  media/hanns/decks/<CODE>/videos/<id>/
++      original.<ext>     what was uploaded — never changed
++      screen.mp4         the screen copy (when one was needed)
++      poster.jpg         a frame for the <video poster>
++      meta.json          status: queued → converting (progress) → ready | failed
++  media/hanns/video-queue/<id>         a job marker; the worker claims it by rename
++  media/hanns/video-queue/.worker      the worker's heartbeat
++
++The slide stores a STABLE link, /hanns/video/<id>/ . That view redirects to the
++screen copy when it's ready and to the original until then (or if conversion
++failed), so slide JSON never changes — no race with an editor that's open and
++autosaving, and the deck simply gets lighter by itself.
++
++The worker is `python manage.py hanns_video_worker` (its own compose service).
++If no worker has been seen recently, an upload converts in a background thread
++instead, so it still works before that service is added.
++"""
++
++import json
++import logging
++import os
++import re
++import shutil
++import subprocess
++import threading
++import time
++import uuid
++
++from django.conf import settings
++from django.core.files.storage import default_storage
++
++log = logging.getLogger(__name__)
++
++ALLOWED_EXTS = {".mp4", ".m4v", ".mov", ".webm", ".mkv", ".avi", ".mpg", ".mpeg", ".ogv", ".3gp"}
++QUEUE_DIR = "hanns/video-queue"
++HEARTBEAT = QUEUE_DIR + "/.worker"
++ID_RE = re.compile(r"^[0-9a-f]{32}$")
++
++
++def _setting(name, default):
++    return getattr(settings, name, default)
++
++
++def max_upload_bytes():
++    return int(_setting("HANNS_VIDEO_UPLOAD_MAX_SIZE", 1024 * 1024 * 1024))     # 1 GB
++
++
++def max_w():
++    return int(_setting("HANNS_VIDEO_MAX_WIDTH", 1920))
++
++
++def max_h():
++    return int(_setting("HANNS_VIDEO_MAX_HEIGHT", 1080))
++
++
++def max_bitrate():
++    return int(_setting("HANNS_VIDEO_MAX_BITRATE", 12_000_000))                  # bits/s, whole file
++
++
++def ffmpeg_bin():
++    return _setting("HANNS_FFMPEG", "ffmpeg")
++
++
++def ffprobe_bin():
++    return _setting("HANNS_FFPROBE", "ffprobe")
++
++
++def available():
++    """Conversion needs ffmpeg/ffprobe and local-disk media (ffmpeg reads paths)."""
++    try:
++        default_storage.path("x")
++    except NotImplementedError:
++        return False
++    return bool(shutil.which(ffmpeg_bin()) and shutil.which(ffprobe_bin()))
++
++
++# ── paths & meta ──────────────────────────────────────────────────────
++def _dir(deck_code, vid):
++    return f"hanns/decks/{deck_code}/videos/{vid}"
++
++
++def _abs(rel):
++    return default_storage.path(rel)
++
++
++def _media_url(rel):
++    url = default_storage.url(rel)
++    if not url.startswith(("http://", "https://", "//")):
++        url = url if url.startswith("/") else "/" + url
++    return url
++
++
++def play_url(vid):
++    return f"/hanns/video/{vid}/"
++
++
++def read_meta(vid):
++    """meta.json for video <vid>, or None. Found through the queue-independent index."""
++    if not ID_RE.match(str(vid or "")):
++        return None
++    idx = f"{QUEUE_DIR}/index/{vid}"
++    try:
++        with default_storage.open(idx) as f:
++            deck_code = f.read().decode().strip()
++        with default_storage.open(_dir(deck_code, vid) + "/meta.json") as f:
++            return json.loads(f.read().decode())
++    except Exception:
++        return None
++
++
++def _write_meta(meta):
++    rel = _dir(meta["deck"], meta["id"]) + "/meta.json"
++    path = _abs(rel)
++    os.makedirs(os.path.dirname(path), exist_ok=True)
++    tmp = path + ".tmp"
++    with open(tmp, "w") as f:
++        json.dump(meta, f)
++    os.replace(tmp, path)                       # atomic: readers never see half a file
++
++
++def _update(meta, **kw):
++    meta.update(kw)
++    meta["updated"] = time.time()
++    _write_meta(meta)
++    return meta
++
++
++# ── upload ────────────────────────────────────────────────────────────
++def store_upload(deck_code, upload):
++    """Save the uploaded file as an original, queue a screen copy, return meta."""
++    name = os.path.basename(getattr(upload, "name", "") or "video")
++    ext = os.path.splitext(name)[1].lower()
++    if ext not in ALLOWED_EXTS:
++        ext = ".mp4"
++    vid = uuid.uuid4().hex
++    rel = _dir(deck_code, vid) + "/original" + ext
++    saved = default_storage.save(rel, upload)
++    meta = {"id": vid, "deck": deck_code, "name": name[:120], "original": saved,
++            "screen": None, "poster": None, "status": "queued", "progress": 0,
++            "error": "", "info": {}, "created": time.time(), "updated": time.time()}
++    _write_meta(meta)
++    for d in (QUEUE_DIR, QUEUE_DIR + "/index"):
++        os.makedirs(_abs(d), exist_ok=True)
++    with open(_abs(f"{QUEUE_DIR}/index/{vid}"), "w") as f:
++        f.write(deck_code)
++    with open(_abs(f"{QUEUE_DIR}/{vid}"), "w") as f:
++        f.write(deck_code)
++    return meta
++
++
++def worker_alive(window=90):
++    try:
++        return time.time() - os.path.getmtime(_abs(HEARTBEAT)) < window
++    except OSError:
++        return False
++
++
++def heartbeat():
++    os.makedirs(_abs(QUEUE_DIR), exist_ok=True)
++    with open(_abs(HEARTBEAT), "w") as f:
++        f.write(str(time.time()))
++
++
++def kick_inline(vid):
++    """No worker around: convert this one in a background thread (low priority)."""
++    t = threading.Thread(target=process_one, args=(vid,), name=f"hanns-video-{vid[:8]}", daemon=True)
++    t.start()
++    return t
++
++
++# ── probing & deciding ────────────────────────────────────────────────
++def probe(path):
++    out = subprocess.run(
++        [ffprobe_bin(), "-v", "error", "-print_format", "json", "-show_format", "-show_streams", path],
++        capture_output=True, timeout=120, check=True).stdout
++    j = json.loads(out or b"{}")
++    v = next((s for s in j.get("streams", []) if s.get("codec_type") == "video"), None)
++    a = next((s for s in j.get("streams", []) if s.get("codec_type") == "audio"), None)
++    if not v:
++        raise ValueError("No video stream in this file.")
++    fmt = j.get("format", {})
++    rot = 0
++    for sd in v.get("side_data_list", []) or []:
++        if "rotation" in sd:
++            rot = abs(int(float(sd["rotation"]))) % 180
++    rot = rot or (abs(int(float((v.get("tags") or {}).get("rotate", 0) or 0))) % 180)
++    w, h = int(v.get("width") or 0), int(v.get("height") or 0)
++    if rot == 90:
++        w, h = h, w                               # what the viewer sees
++    def _rate(s):
++        try:
++            n, d = str(s or "0/1").split("/")
++            return float(n) / float(d or 1)
++        except (ValueError, ZeroDivisionError):
++            return 0.0
++    return {
++        "width": w, "height": h, "codec": v.get("codec_name") or "", "pix_fmt": v.get("pix_fmt") or "",
++        "fps": round(_rate(v.get("avg_frame_rate") or v.get("r_frame_rate")), 3),
++        "audio": (a or {}).get("codec_name") or "",
++        "duration": float(fmt.get("duration") or v.get("duration") or 0),
++        "bitrate": int(fmt.get("bit_rate") or 0),
++        "container": fmt.get("format_name") or "",
++    }
++
++
++def needs_screen_copy(info, original_name=""):
++    """Reasons a file would struggle on a projector laptop (empty list = fine as is)."""
++    why = []
++    big_w, big_h = (max_w(), max_h()) if info["width"] >= info["height"] else (max_h(), max_w())
++    if info["width"] > big_w or info["height"] > big_h:
++        why.append(f"{info['width']}×{info['height']} is larger than {big_w}×{big_h}")
++    if info["codec"] != "h264":
++        why.append(f"{info['codec'] or 'unknown'} video isn't decoded in hardware everywhere")
++    if info["pix_fmt"] not in ("yuv420p", "yuvj420p"):
++        why.append(f"{info['pix_fmt'] or 'unknown'} colour format")
++    if info["bitrate"] and info["bitrate"] > max_bitrate():
++        why.append(f"{info['bitrate'] // 1_000_000} Mbit/s is heavy")
++    if info["fps"] > 61:
++        why.append(f"{info['fps']:.0f} fps")
++    if info["audio"] not in ("", "aac", "mp3"):
++        why.append(f"{info['audio']} audio")
++    if "mp4" not in info["container"] and "mov" not in info["container"]:
++        why.append("not an MP4")
++    return why
++
++
++# ── converting ────────────────────────────────────────────────────────
++def _ffmpeg_args(src, dst, info):
++    big_w, big_h = (max_w(), max_h()) if info["width"] >= info["height"] else (max_h(), max_w())
++    vf = [f"scale='min({big_w},iw)':'min({big_h},ih)':force_original_aspect_ratio=decrease",
++          "scale=trunc(iw/2)*2:trunc(ih/2)*2"]           # H.264 needs even sides
++    if info["fps"] > 61:
++        vf.append("fps=60")
++    args = [ffmpeg_bin(), "-hide_banner", "-nostdin", "-y", "-i", src,
++            "-map", "0:v:0", "-map", "0:a:0?",
++            "-vf", ",".join(vf),
++            "-c:v", "libx264", "-preset", _setting("HANNS_VIDEO_PRESET", "veryfast"), "-crf", "22",
++            "-maxrate", "8M", "-bufsize", "16M", "-profile:v", "high", "-level", "4.2", "-pix_fmt", "yuv420p",
++            "-c:a", "aac", "-b:a", "160k", "-ac", "2",
++            "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", dst]
++    if os.name == "posix" and shutil.which("nice"):
++        args = ["nice", "-n", "15"] + args                # the website stays responsive
++    return args
++
++
++def _poster(src, dst, duration):
++    at = min(1.0, max(0.0, duration / 3)) if duration else 0
++    subprocess.run([ffmpeg_bin(), "-hide_banner", "-nostdin", "-y", "-ss", f"{at:.2f}", "-i", src,
++                    "-frames:v", "1", "-vf", "scale='min(1280,iw)':-2", "-q:v", "4", dst],
++                   capture_output=True, timeout=120, check=True)
++
++
++def _claim(vid):
++    """Take the job marker atomically, so a worker and an inline thread never both convert."""
++    src, dst = _abs(f"{QUEUE_DIR}/{vid}"), _abs(f"{QUEUE_DIR}/{vid}.working")
++    try:
++        os.rename(src, dst)
++        return dst
++    except OSError:
++        return None
++
++
++def process_one(vid):
++    """Convert one queued video. Never raises: failures are written to meta."""
++    claim = _claim(vid)
++    if not claim:
++        return None                                       # someone else has it, or it's done
++    meta = read_meta(vid)
++    if not meta:
++        _drop(claim)
++        return None
++    src = _abs(meta["original"])
++    try:
++        info = probe(src)
++        _update(meta, status="converting", progress=0, info=info)
++        base = os.path.dirname(src)
++        try:
++            _poster(src, os.path.join(base, "poster.jpg"), info["duration"])
++            meta["poster"] = _dir(meta["deck"], vid) + "/poster.jpg"
++        except Exception:
++            log.info("Hanns video %s: no poster frame", vid)
++        why = needs_screen_copy(info, meta.get("name", ""))
++        if not why:
++            return _update(meta, status="ready", progress=100, screen=None, reasons=[])
++        tmp = os.path.join(base, "screen.part.mp4")
++        timeout = max(600, info["duration"] * 6 + 300)
++        p = subprocess.Popen(_ffmpeg_args(src, tmp, info), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
++        started, last = time.time(), 0
++        for line in p.stdout:                             # "-progress pipe:1": key=value lines
++            if time.time() - started > timeout:
++                p.kill()
++                raise RuntimeError("Conversion took too long.")
++            if line.startswith("out_time_us=") and info["duration"]:
++                try:
++                    pct = min(99, int(int(line.split("=")[1]) / 1e6 / info["duration"] * 100))
++                except ValueError:
++                    continue
++                if pct >= last + 3:
++                    last = pct
++                    _update(meta, progress=pct)
++        err = p.stderr.read()[-800:]
++        if p.wait() != 0:
++            raise RuntimeError("ffmpeg: " + (err.strip().splitlines() or ["failed"])[-1])
++        out = probe(tmp)                                  # check what we made before using it
++        if out["codec"] != "h264" or not out["width"]:
++            raise RuntimeError("The converted file didn't check out.")
++        final = os.path.join(base, "screen.mp4")
++        os.replace(tmp, final)
++        return _update(meta, status="ready", progress=100, screen=_dir(meta["deck"], vid) + "/screen.mp4",
++                       reasons=why, screen_info={k: out[k] for k in ("width", "height", "codec", "bitrate")})
++    except Exception as e:
++        log.warning("Hanns video %s failed: %s", vid, e)
++        for leftover in ("screen.part.mp4",):
++            try:
++                os.remove(os.path.join(os.path.dirname(src), leftover))
++            except OSError:
++                pass
++        return _update(meta, status="failed", error=str(e)[:300])
++    finally:
++        _drop(claim)
++
++
++def _drop(path):
++    try:
++        os.remove(path)
++    except OSError:
++        pass
++
++
++def pending():
++    """Queued ids, oldest first."""
++    try:
++        names = os.listdir(_abs(QUEUE_DIR))
++    except OSError:
++        return []
++    ids = [n for n in names if ID_RE.match(n)]
++    return sorted(ids, key=lambda n: os.path.getmtime(_abs(f"{QUEUE_DIR}/{n}")))
++
++
++STALE_AFTER = 600      # a conversion writes progress every few %; 10 min of silence = it died
++
++
++def _stale(vid, older_than):
++    meta = read_meta(vid) or {}
++    last = meta.get("updated") or 0
++    try:
++        last = max(last, os.path.getmtime(_abs(f"{QUEUE_DIR}/{vid}.working")))
++    except OSError:
++        pass
++    return time.time() - last > older_than
++
++
++def requeue_stale(older_than=STALE_AFTER, only=None):
++    """A worker or web process that stopped mid-job (restart, deploy, crash) leaves
++    '<id>.working' and a meta stuck on "converting": put it back in the queue."""
++    try:
++        names = os.listdir(_abs(QUEUE_DIR))
++    except OSError:
++        return 0
++    n = 0
++    for name in names:
++        vid = name[:-8]
++        if not (name.endswith(".working") and ID_RE.match(vid)) or (only and vid != only):
++            continue
++        if _stale(vid, older_than):
++            p = _abs(f"{QUEUE_DIR}/{name}")
++            try:
++                os.rename(p, p[:-8])
++                n += 1
++                meta = read_meta(vid)
++                if meta:
++                    _update(meta, status="queued", progress=0)
++            except OSError:
++                pass
++    return n
++
++
++def revive(vid):
++    """Called when someone looks at a video's status: if its job was abandoned and
++    no worker is around to pick it up, restart it here in the background."""
++    if requeue_stale(only=vid) and not worker_alive():
++        kick_inline(vid)
++
++
++# ── serving ───────────────────────────────────────────────────────────
++def best_url(meta):
++    """What a slide should play right now."""
++    if meta.get("status") == "ready" and meta.get("screen"):
++        return _media_url(meta["screen"])
++    return _media_url(meta["original"])
++
++
++def public_status(meta):
++    return {
++        "id": meta["id"], "status": meta["status"], "progress": meta.get("progress", 0),
++        "error": meta.get("error", ""), "reasons": meta.get("reasons", []),
++        "playing": "screen copy" if (meta.get("status") == "ready" and meta.get("screen")) else "original",
++        "original": {k: meta.get("info", {}).get(k) for k in ("width", "height", "codec", "bitrate", "fps")},
++        "screen": meta.get("screen_info") or None,
++        "poster": f"/hanns/video/{meta['id']}/poster/" if meta.get("poster") else "",
++    }
+diff --git a/hanns/views.py b/hanns/views.py
+index 1e2240f..c89d312 100644
+--- a/hanns/views.py
++++ b/hanns/views.py
+@@ -697,6 +697,70 @@ def deck_image_upload(request, code):
+     })
+ 
+ 
++@login_required
++@require_POST
++def deck_video_upload(request, code):
++    """Upload a slide video. The slide gets a stable /hanns/video/<id>/ link at
++    once (it plays the original); a projector-friendly copy is made in the
++    background and that link switches to it when it's ready (hanns/video.py)."""
++    from . import video as hv
++    deck, denied = _editable_deck_or_403(request, code)
++    if denied:
++        return denied
++    upload = request.FILES.get("video") or request.FILES.get("file")
++    if not upload:
++        return JsonResponse({"ok": False, "error": "No video file was uploaded."}, status=400)
++    content_type = (getattr(upload, "content_type", "") or "").lower()
++    ext = os.path.splitext(getattr(upload, "name", "") or "")[1].lower()
++    if not (content_type.startswith("video/") or ext in hv.ALLOWED_EXTS):
++        return JsonResponse({"ok": False, "error": "Only video files can be uploaded here."}, status=400)
++    limit = hv.max_upload_bytes()
++    if getattr(upload, "size", 0) and upload.size > limit:
++        return JsonResponse({"ok": False, "error": f"That video is over {limit // (1024 * 1024)} MB."}, status=413)
++    meta = hv.store_upload(deck.code, upload)
++    converting = hv.available()
++    if not converting:
++        hv._update(meta, status="ready", progress=100, reasons=[],
++                   error="This server can't convert videos (ffmpeg missing), so the original plays.")
++    elif not hv.worker_alive():
++        hv.kick_inline(meta["id"])             # no worker running: do it here, in the background
++    return JsonResponse({"ok": True, "url": hv.play_url(meta["id"]), "id": meta["id"],
++                         "status": hv.public_status(hv.read_meta(meta["id"]) or meta)})
++
++
++def video_play(request, vid):
++    """The stable link a slide stores: the screen copy when ready, else the original."""
++    from . import video as hv
++    meta = hv.read_meta(vid)
++    if not meta:
++        raise Http404
++    resp = redirect(hv.best_url(meta))
++    resp["Cache-Control"] = "no-store"         # so it switches to the copy as soon as it exists
++    return resp
++
++
++def video_poster(request, vid):
++    from . import video as hv
++    meta = hv.read_meta(vid)
++    if not meta or not meta.get("poster"):
++        raise Http404
++    resp = redirect(hv._media_url(meta["poster"]))
++    resp["Cache-Control"] = "no-store"
++    return resp
++
++
++@login_required
++def video_status(request, vid):
++    from . import video as hv
++    meta = hv.read_meta(vid)
++    if not meta:
++        return JsonResponse({"ok": False, "error": "Unknown video."}, status=404)
++    if meta.get("status") in ("queued", "converting"):
++        hv.revive(vid)                         # an interrupted job starts again
++        meta = hv.read_meta(vid) or meta
++    return JsonResponse(dict(hv.public_status(meta), ok=True))
++
++
+ @login_required
+ @require_POST
+ def deck_powerpoint_import(request, code):
+diff --git a/static/hanns/js/hanns_editor.js b/static/hanns/js/hanns_editor.js
+index 957822a..7e0a7d5 100644
+--- a/static/hanns/js/hanns_editor.js
++++ b/static/hanns/js/hanns_editor.js
+@@ -1256,6 +1256,69 @@ function hexWithAlpha(hex,prev){
+   return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
+ }
+ function field(label,inner){return `<div class="field"><label>${label}</label>${inner}</div>`;}
++
++/* ── slide videos: upload, then the server makes a big-screen copy ─────
++   The slide gets a stable /hanns/video/<id>/ link straight away (it plays the
++   original); the server converts in the background and that link switches to
++   the 1080p screen copy by itself. Here we only show what's going on.       */
++const VIDEO_ID_RE=/^\/hanns\/video\/([0-9a-f]{32})\/$/;
++let videoPoll=null;
++function videoStateText(st){
++  const o=st.original||{}, mbit=b=>b?` · ${Math.round(b/1e6)} Mbit/s`:"";
++  const orig=o.width?`${o.width}×${o.height} ${o.codec||""}${mbit(o.bitrate)}`:"";
++  if(st.status==="queued")return "⏳ Waiting to be optimised for the big screen… (the original plays meanwhile)";
++  if(st.status==="converting")return `⚙ Optimising for the big screen… ${st.progress||0}%${orig?`<br><small>from ${orig}</small>`:""}`;
++  if(st.status==="failed")return `⚠ Couldn't optimise this one — the original plays.<br><small>${String(st.error||"").replace(/[<>&]/g,"")}</small>`;
++  if(st.playing==="screen copy"){const s=st.screen||{};return `✓ Ready for the big screen · plays a ${s.width}×${s.height} copy${orig?`<br><small>original ${orig}</small>`:""}`;}
++  if(st.error)return `✓ Uploaded · ${String(st.error).replace(/[<>&]/g,"")}`;
++  return `✓ Ready for the big screen · already light enough${orig?` (${orig})`:""}`;
++}
++function followVideo(el){
++  clearTimeout(videoPoll);
++  const box=$("#f-videostate"), m=VIDEO_ID_RE.exec(String(el.src||""));
++  if(!box)return;
++  if(!m){box.innerHTML="";return;}
++  const tick=async()=>{
++    if(!document.body.contains(box)||!VIDEO_ID_RE.test(String(el.src||"")))return;   // panel closed / src changed
++    try{
++      const r=await fetch(`/hanns/video/${m[1]}/status/`,{credentials:"same-origin",cache:"no-store"});
++      const st=await r.json();
++      if(!st.ok){box.textContent="";return;}
++      box.innerHTML=videoStateText(st);
++      if(st.poster&&!el.poster){el.poster=st.poster;const vp=$("#f-videoposter");if(vp)vp.value=el.poster;renderCanvas();markDirty();}
++      if(st.status==="queued"||st.status==="converting")videoPoll=setTimeout(tick,2500);
++    }catch(e){videoPoll=setTimeout(tick,6000);}
++  };
++  tick();
++}
++function bindVideoUpload(el){
++  const btn=$("#f-videoupload"), inp=$("#f-videofile"), box=$("#f-videostate");
++  if(!btn||!inp)return;
++  btn.addEventListener("click",()=>inp.click());
++  inp.addEventListener("change",()=>{
++    const file=inp.files&&inp.files[0]; if(!file)return;
++    const fd=new FormData(); fd.append("video",file,file.name||"video.mp4");
++    const xhr=new XMLHttpRequest();
++    xhr.open("POST",SRV.videoUploadUrl); xhr.setRequestHeader("X-CSRFToken",SRV.csrftoken||"");
++    btn.disabled=true;
++    xhr.upload.onprogress=e=>{ if(e.lengthComputable&&box)box.textContent=`⬆ Uploading… ${Math.round(e.loaded/e.total*100)}%`; };
++    xhr.onload=()=>{
++      btn.disabled=false; inp.value="";
++      let j=null; try{j=JSON.parse(xhr.responseText);}catch(_){}
++      if(xhr.status>=200&&xhr.status<300&&j&&j.ok){
++        el.src=j.url; const vs=$("#f-videosrc"); if(vs)vs.value=el.src;
++        renderCanvas(); markDirty(); toast("Video uploaded");
++        followVideo(el);
++      }else{
++        const msg=(j&&j.error)||(xhr.status===413?"That video is too large for the server.":"Upload failed.");
++        if(box)box.textContent="⚠ "+msg; toast(msg);
++      }
++    };
++    xhr.onerror=()=>{ btn.disabled=false; if(box)box.textContent="⚠ Upload failed — check the connection."; };
++    xhr.send(fd);
++  });
++  followVideo(el);
++}
+ function swatchRow(current,onAttr){
+   ensureSwatchPickerCss();
+   const cur=String(current==null?"":current);
+@@ -1779,13 +1842,17 @@ function elementPanel(el){
+     h+=`<div class="group"><span class="glabel">Video</span>
+       ${field("Title",`<input type="text" id="f-videotitle" value="${escapeAttr(el.title||"Video")}">`)}
+       ${field("Video URL",`<input type="url" id="f-videosrc" placeholder="https://...mp4 or YouTube embed URL" value="${escapeAttr(el.src||"")}">`)}
++      ${SRV.videoUploadUrl?`<div class="field"><label>Or upload a file</label>
++        <input type="file" id="f-videofile" accept="video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi" hidden>
++        <button type="button" class="btn" id="f-videoupload" style="width:100%">⬆ Upload video file…</button>
++        <div id="f-videostate" class="insp-empty" style="padding-top:.45rem;line-height:1.45" aria-live="polite"></div></div>`:""}
+       ${field("Poster image URL",`<input type="url" id="f-videoposter" value="${escapeAttr(el.poster||"")}">`)}
+       ${field("Fit",`<div class="seg" id="f-videofit"><button data-fit="cover" class="${(el.fit||"cover")==="cover"?"active":""}">Cover</button><button data-fit="contain" class="${el.fit==="contain"?"active":""}">Contain</button></div>`)}
+       ${field("Controls",`<div class="seg" id="f-videocontrols"><button data-on="1" class="${el.controls!==false?"active":""}">On</button><button data-on="0" class="${el.controls===false?"active":""}">Off</button></div>`)}
+       ${field("Autoplay",`<div class="seg" id="f-videoautoplay"><button data-on="1" class="${el.autoplay?"active":""}">On</button><button data-on="0" class="${!el.autoplay?"active":""}">Off</button></div>`)}
+       ${field("Muted",`<div class="seg" id="f-videomuted"><button data-on="1" class="${el.muted?"active":""}">On</button><button data-on="0" class="${!el.muted?"active":""}">Off</button></div>`)}
+       ${field("Corner radius "+(el.radius||18),`<input type="range" id="f-videoradius" min="0" max="80" value="${el.radius||18}">`)}
+-      <div class="insp-empty" style="padding-top:.2rem">For YouTube/Vimeo, use an embed URL. For direct video, paste an MP4/WebM URL.</div>
++      <div class="insp-empty" style="padding-top:.2rem">For YouTube/Vimeo, use an embed URL. For direct video, paste an MP4/WebM URL — or upload the file: it's made ready for the big screen (1080p) automatically.</div>
+     </div>`;
+   }
+   if(el.type==="gallery"){
+@@ -2291,6 +2358,7 @@ function bindElementPanel(el){
+     const vt=$("#f-videotitle");vt&&vt.addEventListener("input",()=>{el.title=vt.value;renderCanvas();markDirty();});
+     const vs=$("#f-videosrc");vs&&vs.addEventListener("input",()=>{el.src=vs.value;renderCanvas();markDirty();});
+     const vp=$("#f-videoposter");vp&&vp.addEventListener("input",()=>{el.poster=vp.value;renderCanvas();markDirty();});
++    bindVideoUpload(el);
+     seg("f-videofit","fit",v=>{el.fit=v;renderCanvas();markDirty();});
+     seg("f-videocontrols","on",v=>{el.controls=v==="1";renderCanvas();markDirty();});
+     seg("f-videoautoplay","on",v=>{el.autoplay=v==="1";renderCanvas();markDirty();});
+diff --git a/templates/hanns/editor.html b/templates/hanns/editor.html
+index a914fdf..cb3a985 100644
+--- a/templates/hanns/editor.html
++++ b/templates/hanns/editor.html
+@@ -724,6 +724,7 @@ body.hanns-options-open .drawer{
+     deck: {{ deck_json|safe }},
+     saveUrl: "{% url 'hanns:save' deck.code %}",
+     imageUploadUrl: "{% url 'hanns:image_upload' deck.code %}",
++    videoUploadUrl: "{% url 'hanns:video_upload' deck.code %}",
+     aiUrl: "{% url 'hanns:ai' deck.code %}",
+     aiStatusUrl: "{% url 'hanns:ai_status' deck.code %}",
+     powerpointImportUrl: "{% url 'hanns:powerpoint_import' deck.code %}",
+@@ -1472,7 +1473,7 @@ body.hanns-options-open .drawer{
+      isStudioObject() says no, objectDef() finds no match and falls back
+      to OBJECTS[0] — fill_cow — so every 3D bar chart draws as a cow. -->
+ <script src="{% static 'hanns/js/hanns_bars3d.js' %}?v=62"></script>
+-<script src="{% static 'hanns/js/hanns_editor.js' %}?v=65"></script>
++<script src="{% static 'hanns/js/hanns_editor.js' %}?v=66"></script>
+ {# Hanns AI Studio — Gemini via the server (hanns:ai). Needs HannsEditorAPI from hanns_editor.js. #}
+ <script src="{% static 'hanns/js/hanns_ai.js' %}?v=5"></script>
+ {# ✦ AI area: drag a box on the slide and tell the AI what to put there. Needs HannsAI. #}
+-- 
+2.43.0
+

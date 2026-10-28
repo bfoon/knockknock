@@ -1,0 +1,787 @@
+From 9bc2d463531e78c7fbb471630a1ab51f478d4405 Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Wed, 28 Oct 2026 23:54:02 +0000
+Subject: [PATCH 9/9] DJ booth: SCREEN ONLY button + Drums & FX pad bank with
+ your own sounds
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+SCREEN ONLY (booth top bar)
+- both decks pause where they are (▶ resumes from there), the projector
+  hides the video with no fade and cuts every sounding effect; the big
+  screen shows its slides / lobby. ▶, load or load-from-crate lifts it.
+- the projector acts on the booth's "silence" signal (no database on that
+  path): measured 52–64 ms from click to video gone; the saved state
+  (media action "cut") confirms it
+
+Drums & FX (booth top bar → 16 pads, keys 1–4 / Q–R / A–F / Z–V)
+- 20 built-in sounds, synthesized in Web Audio (no sample files):
+  kick, snare, clap, hi-hat, open hat, tom, rim, crash, cowbell, 808 bass,
+  gunshot, laser, explosion, air horn, siren, riser, impact, whoosh,
+  rewind, applause
+- Edit pads: pick a pad, tap a sound to hear it and put it there, upload
+  your own sound file (MP3/WAV/OGG/M4A/FLAC, ≤8 MB, stored for this screen),
+  or go back to the default; saved per screen
+- pads fire on pointer-down; they play on the projector (and on the booth
+  with "Hear FX here"); the projector preloads uploaded sounds
+- engine: one effects bus, so silence() stops everything instantly
+
+Server: media actions cut / pad_set / pad_custom (url must be this screen's
+upload) / pad_reset; dj/fx kinds pad + silence; POST s/<token>/dj/sample/
+---
+ screenart/program.py                    |  71 ++++++++-
+ screenart/test_program.py               |  66 ++++++++
+ screenart/urls.py                       |   1 +
+ screenart/views.py                      |  32 ++++
+ static/hanns/js/hanns_dj_fx.js          | 116 +++++++++++++-
+ static/hanns/js/hanns_screen_program.js | 193 +++++++++++++++++++++++-
+ templates/hanns/screen_dj.html          |   4 +-
+ templates/hanns/screen_home.html        |   4 +-
+ templates/hanns/screen_stage.html       |   4 +-
+ 9 files changed, 475 insertions(+), 16 deletions(-)
+
+diff --git a/screenart/program.py b/screenart/program.py
+index 2985449..5023070 100644
+--- a/screenart/program.py
++++ b/screenart/program.py
+@@ -61,7 +61,19 @@ DECKS = ("a", "b")
+ DECK_FIELDS = ("current", "playing", "position", "started_at", "rate", "seek_rev")
+ MIX_CURVES = ("mix", "cut")
+ # DJ booth effects, fanned out to the projectors as-is (never stored):
+-DJ_FX = ("scratch_start", "scratch", "scratch_end", "horn", "siren", "rewind", "brake")
++DJ_FX = ("scratch_start", "scratch", "scratch_end", "horn", "siren", "rewind", "brake", "pad", "silence")
++
++# Drums & FX sampler: 16 pads. Built-in sounds are synthesized in the browser
++# (hanns_dj_fx.js), so these ids are the whole contract; a pad can also hold a
++# sound file the host uploaded for this screen (url under SAMPLE_DIR).
++PAD_COUNT = 16
++PAD_SOUNDS = (
++    "kick", "snare", "clap", "hat", "openhat", "tom", "rim", "crash", "cowbell", "bass808",
++    "gunshot", "laser", "explosion", "airhorn", "siren", "riser", "impact", "whoosh", "rewind", "applause",
++)
++DEFAULT_PADS = ("kick", "snare", "clap", "hat", "openhat", "tom", "rim", "crash",
++                "gunshot", "laser", "explosion", "airhorn", "siren", "riser", "impact", "whoosh")
++SAMPLE_DIR = "screenart/samples"
+ VIEWS = ("off", "register", "checkin", "agenda")
+ 
+ 
+@@ -142,6 +154,8 @@ def media_for(screen_id):
+     b.setdefault("seek_rev", 0)
+     m["b"] = b
+     m["mix"] = dict({"xf": 0.0, "a": 100, "b": 100, "curve": "mix"}, **(m.get("mix") or {}))
++    m["pads"] = _pads(m.get("pads"))
++    m.setdefault("cut", False)
+     m["server_now"] = _now_ms()          # lets projectors correct for their own clock
+     return m
+ 
+@@ -183,9 +197,38 @@ def dj_fx(data):
+         out["dt"] = int(max(10, min(100, _num(data.get("dt"), 30))))
+     if kind == "scratch_end":
+         out["position"] = round(max(0, _num(data.get("position"))), 2)
++    if kind == "pad":
++        i = int(_num(data.get("pad"), -1))
++        if not 0 <= i < PAD_COUNT:
++            raise ProgramError("Unknown pad.")
++        out["pad"] = i
+     return out
+ 
+ 
++def _pads(stored):
++    """16 pads, each {"sound": built-in id} or {"sound": "custom", "url", "name"}."""
++    pads = []
++    stored = stored if isinstance(stored, list) else []
++    for i in range(PAD_COUNT):
++        p = stored[i] if i < len(stored) and isinstance(stored[i], dict) else {}
++        if p.get("sound") == "custom" and p.get("url"):
++            pads.append({"sound": "custom", "url": str(p["url"]), "name": str(p.get("name") or "My sound")[:40]})
++        elif p.get("sound") in PAD_SOUNDS:
++            pads.append({"sound": p["sound"]})
++        else:
++            pads.append({"sound": DEFAULT_PADS[i]})
++    return pads
++
++
++def sample_prefix(screen_id):
++    """The URL prefix of sounds uploaded for this screen (what pad_custom accepts)."""
++    from django.core.files.storage import default_storage
++    url = default_storage.url(f"{SAMPLE_DIR}/{screen_id}/")
++    if not url.startswith(("http://", "https://", "//")):
++        url = url if url.startswith("/") else "/" + url
++    return url
++
++
+ def _pos(d, now):
+     """Where a deck's needle is at `now` (ms), rate-aware."""
+     if not d.get("current"):
+@@ -227,6 +270,8 @@ def media_action(screen_id, data):
+     d = m if dk == "a" else m["b"]                       # the deck this action is about
+     other = m["b"] if dk == "a" else m
+ 
++    if action in ("play", "load", "load_queued"):
++        m["cut"] = False                                  # music back on: "screen only" is over
+     if action in ("load", "queue"):
+         vid, start = parse_youtube(data.get("url"))
+         item = {"id": vid, "title": video_title(vid), "start": start, "key": f"{vid}-{now}"}
+@@ -319,6 +364,30 @@ def media_action(screen_id, data):
+             d["current"] = dict(cur, duration=round(dur, 1))
+         else:
+             return m                                       # nothing new: don't save or push
++    elif action == "cut":
++        # SCREEN ONLY: both decks pause where they are (▶ picks up from there),
++        # and the projector drops the video/audio straight away.
++        for deck in (m, m["b"]):
++            if deck.get("current") and deck.get("playing"):
++                deck.update(position=_pos(deck, now), playing=False)
++        m["cut"] = True
++    elif action in ("pad_set", "pad_custom", "pad_reset"):
++        i = int(_num(data.get("pad"), -1))
++        if not 0 <= i < PAD_COUNT:
++            raise ProgramError("Unknown pad.")
++        pads = m["pads"]
++        if action == "pad_reset":
++            pads[i] = {"sound": DEFAULT_PADS[i]}
++        elif action == "pad_set":
++            if data.get("sound") not in PAD_SOUNDS:
++                raise ProgramError("Unknown sound.")
++            pads[i] = {"sound": data["sound"]}
++        else:
++            url = str(data.get("url") or "")
++            if not url.startswith(sample_prefix(screen_id)) or ".." in url:
++                raise ProgramError("Upload the sound for this screen first.")
++            pads[i] = {"sound": "custom", "url": url, "name": " ".join(str(data.get("name") or "My sound").split())[:40]}
++        m["pads"] = pads
+     elif action == "mix":
+         mix = m["mix"]
+         if "xf" in data:
+diff --git a/screenart/test_program.py b/screenart/test_program.py
+index 32260ec..3206cf1 100644
+--- a/screenart/test_program.py
++++ b/screenart/test_program.py
+@@ -132,6 +132,72 @@ class MediaTests(TestCase):
+         _, m = self.act(action="cue_clear", slot=2)
+         self.assertEqual(m["current"]["cues"], [None] * 4)
+ 
++    # ── screen only + drums & fx pads ──
++    def test_screen_only_pauses_both_decks_and_play_lifts_it(self):
++        clock = [5_000_000]
++        with mock.patch.object(program, "_now_ms", side_effect=lambda: clock[0]):
++            self.act(action="load", url="dQw4w9WgXcQ", mode="video")
++            self.act(action="load", deck="b", url="aqz-KE-bpKQ")
++            self.act(action="play", deck="b")
++            clock[0] += 7_000
++            _, m = self.act(action="cut")
++        self.assertTrue(m["cut"])
++        self.assertEqual((m["playing"], m["b"]["playing"]), (False, False))
++        self.assertAlmostEqual(m["position"], m["current"]["start"] + 7, places=2)      # kept where it was
++        self.assertEqual(m["current"]["id"], "dQw4w9WgXcQ")                            # still loaded
++        _, m = self.act(action="play", deck="b")
++        self.assertFalse(m["cut"])
++        self.assertTrue(m["b"]["playing"])
++
++    def test_pads_default_set_reset_and_custom(self):
++        _, m = self.act(action="volume", volume=70)
++        self.assertEqual(len(m["pads"]), program.PAD_COUNT)
++        self.assertEqual([p["sound"] for p in m["pads"]], list(program.DEFAULT_PADS))
++        _, m = self.act(action="pad_set", pad=3, sound="bass808")
++        self.assertEqual(m["pads"][3], {"sound": "bass808"})
++        for bad in ({"pad": 16, "sound": "kick"}, {"pad": -1, "sound": "kick"}, {"pad": 2, "sound": "nope"}):
++            self.assertEqual(self.act(action="pad_set", **bad)[0].status_code, 400)
++        prefix = program.sample_prefix(self.screen.id)
++        _, m = self.act(action="pad_custom", pad=0, url=prefix + "abc.mp3", name="  My   gunshot  ")
++        self.assertEqual(m["pads"][0], {"sound": "custom", "url": prefix + "abc.mp3", "name": "My gunshot"})
++        import uuid; other = program.sample_prefix(uuid.uuid4())                         # another screen
++        for url in ("https://evil.example/x.mp3", other + "x.mp3", prefix + "../../x.mp3"):
++            self.assertEqual(self.act(action="pad_custom", pad=1, url=url)[0].status_code, 400)
++        _, m = self.act(action="pad_reset", pad=0)
++        self.assertEqual(m["pads"][0], {"sound": program.DEFAULT_PADS[0]})
++        self.assertEqual(m["pads"][3], {"sound": "bass808"})                             # others kept
++
++    def test_sample_upload(self):
++        import tempfile
++        from django.core.files.uploadedfile import SimpleUploadedFile
++        url = f"/screenart/s/{self.screen.token}/dj/sample/"
++        with tempfile.TemporaryDirectory() as media, override_settings(MEDIA_ROOT=media):
++            up = lambda name, data, ctype: self.client.post(url, {"sample": SimpleUploadedFile(name, data, content_type=ctype)})
++            self.assertEqual(up("notes.txt", b"hi", "text/plain").status_code, 400)
++            self.assertEqual(up("x.exe", b"MZ", "audio/mpeg").status_code, 400)
++            with override_settings(SCREENART_SAMPLE_MAX_SIZE=10):
++                self.assertEqual(up("big.wav", b"x" * 100, "audio/wav").status_code, 413)
++            r = up("Shot gun.wav", b"RIFF....WAVEfmt ", "audio/wav")
++            self.assertEqual(r.status_code, 200, r.content)
++            j = r.json()
++            self.assertTrue(j["url"].startswith(program.sample_prefix(self.screen.id)))
++            self.assertEqual(j["name"], "Shot gun")
++            _, m = self.act(action="pad_custom", pad=5, url=j["url"], name=j["name"])         # and it goes on a pad
++            self.assertEqual(m["pads"][5]["url"], j["url"])
++            self.screen.is_active = False
++            self.screen.save()
++            self.assertEqual(up("a.wav", b"RIFF", "audio/wav").status_code, 410)
++
++    def test_pad_and_silence_effects(self):
++        url = f"/screenart/s/{self.screen.token}/dj/fx/"
++        post = lambda **b: self.client.post(url, json.dumps(b), content_type="application/json")
++        sent = []
++        with mock.patch.object(svc, "_send", side_effect=lambda g, msg: sent.append(msg["payload"])):
++            self.assertEqual(post(kind="pad", pad=7).status_code, 200)
++            self.assertEqual(post(kind="silence").status_code, 200)
++            self.assertEqual(post(kind="pad", pad=99).status_code, 400)
++        self.assertEqual([(p["kind"], p.get("pad")) for p in sent], [("pad", 7), ("silence", None)])
++
+     # ── dual decks ──
+     def test_deck_b_is_independent_and_loads_paused(self):
+         self.act(action="load", url="dQw4w9WgXcQ", mode="audio")
+diff --git a/screenart/urls.py b/screenart/urls.py
+index e66a98c..96c7bb0 100644
+--- a/screenart/urls.py
++++ b/screenart/urls.py
+@@ -18,6 +18,7 @@ urlpatterns = [
+     # music & video, event
+     path("s/<str:token>/media/", views.media, name="media"),
+     path("s/<str:token>/dj/fx/", views.dj_fx, name="dj_fx"),
++    path("s/<str:token>/dj/sample/", views.dj_sample, name="dj_sample"),
+     path("s/<str:token>/events/", views.events, name="events"),
+     path("s/<str:token>/event/", views.event, name="event"),
+     path("s/<str:token>/event/data/", views.event_data, name="event_data"),
+diff --git a/screenart/views.py b/screenart/views.py
+index f715bdf..3a718df 100644
+--- a/screenart/views.py
++++ b/screenart/views.py
+@@ -203,6 +203,38 @@ def media(request, token):
+     return JsonResponse({"ok": True, "state": _push(screen)})
+ 
+ 
++SAMPLE_EXTS = {".mp3", ".wav", ".ogg", ".oga", ".m4a", ".aac", ".webm", ".flac", ".opus"}
++
++
++@require_POST
++def dj_sample(request, token):
++    """Upload a sound for a Drums & FX pad. Stored for this screen only; the booth
++    then puts it on a pad (media action pad_custom)."""
++    import os
++    import uuid
++    from django.conf import settings
++    from django.core.files.storage import default_storage
++    screen = _screen(token)
++    if not screen.is_active:
++        return _stopped()
++    f = request.FILES.get("sample") or request.FILES.get("file")
++    if not f:
++        return JsonResponse({"ok": False, "error": "No sound file was uploaded."}, status=400)
++    ext = os.path.splitext(getattr(f, "name", "") or "")[1].lower()
++    ctype = (getattr(f, "content_type", "") or "").lower()
++    if ext not in SAMPLE_EXTS or not (ctype.startswith("audio/") or ctype in ("video/webm", "application/octet-stream", "")):
++        return JsonResponse({"ok": False, "error": "Use an audio file: MP3, WAV, OGG, M4A or FLAC."}, status=400)
++    limit = int(getattr(settings, "SCREENART_SAMPLE_MAX_SIZE", 8 * 1024 * 1024))
++    if f.size > limit:
++        return JsonResponse({"ok": False, "error": f"Keep pad sounds under {limit // (1024 * 1024)} MB."}, status=413)
++    saved = default_storage.save(f"{program.SAMPLE_DIR}/{screen.id}/{uuid.uuid4().hex}{ext}", f)
++    url = default_storage.url(saved)
++    if not url.startswith(("http://", "https://", "//")):
++        url = url if url.startswith("/") else "/" + url
++    name = os.path.splitext(os.path.basename(getattr(f, "name", "") or "My sound"))[0][:40] or "My sound"
++    return JsonResponse({"ok": True, "url": url, "name": name})
++
++
+ @require_POST
+ def dj_fx(request, token):
+     """A scratch / FX pad from the DJ booth → straight to the projectors over the
+diff --git a/static/hanns/js/hanns_dj_fx.js b/static/hanns/js/hanns_dj_fx.js
+index 61fab03..de7ab1f 100644
+--- a/static/hanns/js/hanns_dj_fx.js
++++ b/static/hanns/js/hanns_dj_fx.js
+@@ -15,6 +15,10 @@
+        .scratchStart() / .scratch(v[], dtMs) / .scratchEnd()
+              v = platter speed, 1 = normal play, <0 = backwards
+        .horn() .siren() .rewind() .brake()
++       .play(id)                   a built-in pad sound (SOUNDS below)
++       .playUrl(url) .preload([url])  a sound file the host put on a pad
++       .pad({sound, url})          whatever a pad holds
++       .silence()                  stop everything that's sounding, now
+        .handle(msg)                a {type:"dj_fx", kind, …} socket message
+    ═══════════════════════════════════════════════════════════════════ */
+ (function () {
+@@ -25,7 +29,8 @@
+   const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+ 
+   function Engine() {
+-    let ctx = null, out = null, voice = null, cursor = 0, bufF = null, bufR = null;
++    let ctx = null, out = null, voice = null, cursor = 0, bufF = null, bufR = null, bus = null, noise = null;
++    const files = new Map();                    // url → Promise<AudioBuffer>
+ 
+     function ensure() {
+       if (!AC) return null;
+@@ -35,6 +40,10 @@
+         comp.threshold.value = -14; comp.ratio.value = 4;
+         out = ctx.createGain(); out.gain.value = 0.9;
+         out.connect(comp); comp.connect(ctx.destination);
++        // every effect plays through this bus; silence() swaps in a fresh one
++        bus = ctx.createGain(); bus.connect(out);
++        const nn = ctx.sampleRate * 2; noise = ctx.createBuffer(1, nn, ctx.sampleRate);
++        const nd = noise.getChannelData(0); for (let i = 0; i < nn; i++) nd[i] = Math.random() * 2 - 1;
+         // the scratch "voice": a breathy vowel (harmonics + noise), plus a reversed copy
+         const n = Math.floor(ctx.sampleRate * 1.6), f = ctx.createBuffer(1, n, ctx.sampleRate), d = f.getChannelData(0);
+         const f0 = 140, sr = ctx.sampleRate;
+@@ -68,7 +77,7 @@
+       gF.gain.value = 0; gR.gain.value = 0;
+       const sF = ctx.createBufferSource(), sR = ctx.createBufferSource();
+       sF.buffer = bufF; sR.buffer = bufR; sF.loop = sR.loop = true;
+-      sF.connect(gF); sR.connect(gR); gF.connect(bp); gR.connect(bp); bp.connect(hp); hp.connect(out);
++      sF.connect(gF); sR.connect(gR); gF.connect(bp); gR.connect(bp); bp.connect(hp); hp.connect(bus);
+       sF.start(); sR.start(0, 0.4);
+       voice = { sF, sR, gF, gR, bp };
+       cursor = ctx.currentTime + 0.09;            // a small jitter buffer for network chunks
+@@ -110,7 +119,7 @@
+     /* ── pads ── */
+     function horn() {
+       if (!ensure()) return;
+-      const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 3200; lp.connect(out);
++      const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 3200; lp.connect(bus);
+       const blasts = [[0, 0.16], [0.24, 0.16], [0.48, 0.62]];
+       for (const [at, len] of blasts) {
+         const t0 = ctx.currentTime + at, g = ctx.createGain();
+@@ -135,15 +144,113 @@
+       const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2400;
+       g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(0.1, t0 + 0.08);
+       g.gain.setValueAtTime(0.1, t0 + dur - 0.25); g.gain.linearRampToValueAtTime(0, t0 + dur);
+-      o.connect(lp); lp.connect(g); g.connect(out);
++      o.connect(lp); lp.connect(g); g.connect(bus);
+       o.start(t0); lfo.start(t0); o.stop(t0 + dur); lfo.stop(t0 + dur);
+     }
+     const rewind = () => ensure() && curve(p => -7 * Math.pow(1 - p, 1.6) - 0.3, 1.1, 25);
+     const brake = () => ensure() && curve(p => Math.max(0, 1 - p * 1.05), 1.2, 25);
+ 
++    /* ── Drums & FX pads: all synthesized, no samples ── */
++    const T = () => ctx.currentTime;
++    function env(node, t0, peak, attack, decay) {              // a gain envelope, exponential tail
++      node.gain.setValueAtTime(0.0001, t0);
++      node.gain.exponentialRampToValueAtTime(Math.max(peak, 0.0002), t0 + Math.max(attack, 0.001));
++      node.gain.exponentialRampToValueAtTime(0.0001, t0 + attack + decay);
++      return t0 + attack + decay;
++    }
++    function gainTo(dest) { const g = ctx.createGain(); g.connect(dest || bus); return g; }
++    function filt(type, f, q, dest) { const b = ctx.createBiquadFilter(); b.type = type; b.frequency.value = f; if (q) b.Q.value = q; b.connect(dest); return b; }
++    function burst(t0, dest, dur, off) {                        // a slice of white noise
++      const n = ctx.createBufferSource(); n.buffer = noise; n.connect(dest);
++      n.start(t0, off == null ? Math.random() * 1.5 : off, dur + 0.05);
++      return n;
++    }
++    function tone(type, f0, f1, t0, glide, dest, stop) {
++      const o = ctx.createOscillator(); o.type = type; o.frequency.setValueAtTime(f0, t0);
++      if (f1 && f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t0 + glide);
++      o.connect(dest); o.start(t0); o.stop(stop + 0.05); return o;
++    }
++    const SOUNDS = {
++      kick() { const t = T(), g = gainTo(); const end = env(g, t, 1, 0.002, 0.42); tone("sine", 150, 42, t, 0.12, g, end); },
++      snare() { const t = T(), g = gainTo(), h = filt("highpass", 1100, 0, g); env(g, t, 0.55, 0.001, 0.2); burst(t, h, 0.25);
++                const g2 = gainTo(); const e2 = env(g2, t, 0.45, 0.001, 0.1); tone("triangle", 190, 160, t, 0.08, g2, e2); },
++      clap() { const t = T(), bp = filt("bandpass", 1500, 0.9, bus);
++               [0, 0.011, 0.023].forEach(d => { const g = gainTo(bp); env(g, t + d, 0.8, 0.001, 0.012); burst(t + d, g, 0.03); });
++               const g = gainTo(bp); env(g, t + 0.03, 0.6, 0.002, 0.22); burst(t + 0.03, g, 0.3); },
++      hat() { const t = T(), g = gainTo(), h = filt("highpass", 7200, 0, g); env(g, t, 0.32, 0.001, 0.05); burst(t, h, 0.08); },
++      openhat() { const t = T(), g = gainTo(), h = filt("highpass", 6800, 0, g); env(g, t, 0.3, 0.002, 0.4); burst(t, h, 0.5); },
++      tom() { const t = T(), g = gainTo(); const end = env(g, t, 0.85, 0.002, 0.38); tone("sine", 160, 95, t, 0.25, g, end); },
++      rim() { const t = T(), g = gainTo(), bp = filt("bandpass", 1800, 4, g); const end = env(g, t, 0.6, 0.001, 0.045);
++              tone("square", 1750, 1750, t, 0, bp, end); burst(t, bp, 0.05); },
++      crash() { const t = T(), g = gainTo(), h = filt("highpass", 4200, 0, g); env(g, t, 0.35, 0.003, 1.8); burst(t, h, 1.9, 0); },
++      cowbell() { const t = T(), g = gainTo(), bp = filt("bandpass", 800, 2, g); const end = env(g, t, 0.45, 0.001, 0.4);
++                  tone("square", 540, 540, t, 0, bp, end); tone("square", 800, 800, t, 0, bp, end); },
++      bass808() { const t = T(), g = gainTo(), sh = ctx.createWaveShaper(), c = new Float32Array(256);
++                  for (let i = 0; i < 256; i++) { const x = i / 128 - 1; c[i] = Math.tanh(2.2 * x); }
++                  sh.curve = c; sh.connect(g); const end = env(g, t, 0.9, 0.003, 1.3); tone("sine", 75, 50, t, 0.06, sh, end); },
++      gunshot() { const t = T(), g = gainTo(), lp = filt("lowpass", 7000, 0.7, g);
++                  lp.frequency.setValueAtTime(7000, t); lp.frequency.exponentialRampToValueAtTime(380, t + 0.28);
++                  env(g, t, 1, 0.001, 0.32); burst(t, lp, 0.35);
++                  const g2 = gainTo(); const e2 = env(g2, t, 0.9, 0.001, 0.16); tone("sine", 110, 38, t, 0.14, g2, e2);
++                  const g3 = gainTo(), lp3 = filt("lowpass", 700, 0, g3); env(g3, t + 0.05, 0.18, 0.02, 0.7); burst(t + 0.05, lp3, 0.8); },
++      laser() { const t = T(), g = gainTo(), lp = filt("lowpass", 5000, 3, g); const end = env(g, t, 0.35, 0.002, 0.34);
++                tone("sawtooth", 1900, 110, t, 0.32, lp, end); tone("square", 1910, 115, t, 0.32, lp, end); },
++      explosion() { const t = T(), g = gainTo(), lp = filt("lowpass", 1400, 0.6, g);
++                    lp.frequency.setValueAtTime(1400, t); lp.frequency.exponentialRampToValueAtTime(140, t + 2.2);
++                    env(g, t, 1, 0.004, 2.4); burst(t, lp, 1.95, 0);
++                    const g2 = gainTo(); const e2 = env(g2, t, 1, 0.003, 1.6); tone("sine", 58, 28, t, 1.4, g2, e2);
++                    for (let k = 0; k < 14; k++) { const d = 0.05 + Math.random() * 1.2, gc = gainTo(), hp = filt("highpass", 2500, 0, gc);
++                      env(gc, t + d, 0.12 * Math.random() + 0.04, 0.001, 0.02); burst(t + d, hp, 0.03); } },
++      airhorn() { horn(); },
++      siren() { siren(); },
++      riser() { const t = T(), dur = 2.6, g = gainTo(), bp = filt("bandpass", 300, 1.5, g);
++                bp.frequency.setValueAtTime(300, t); bp.frequency.exponentialRampToValueAtTime(7000, t + dur);
++                g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + dur); g.gain.setValueAtTime(0.0001, t + dur + 0.02);
++                burst(t, bp, 1.95, 0); const g2 = gainTo(); g2.gain.setValueAtTime(0.0001, t); g2.gain.exponentialRampToValueAtTime(0.12, t + dur);
++                g2.gain.setValueAtTime(0.0001, t + dur + 0.02); tone("sawtooth", 180, 1400, t, dur, g2, t + dur); },
++      impact() { const t = T(), g = gainTo(); const e = env(g, t, 1, 0.002, 1.4); tone("sine", 68, 32, t, 1.2, g, e);
++                 const g2 = gainTo(), lp = filt("lowpass", 2400, 0, g2); env(g2, t, 0.7, 0.001, 0.45); burst(t, lp, 0.5);
++                 const g3 = gainTo(), hp = filt("highpass", 5000, 0, g3); env(g3, t + 0.01, 0.16, 0.004, 1.2); burst(t, hp, 1.3); },
++      whoosh() { const t = T(), g = gainTo(), bp = filt("bandpass", 400, 1.2, g);
++                 bp.frequency.setValueAtTime(400, t); bp.frequency.exponentialRampToValueAtTime(3200, t + 0.45); bp.frequency.exponentialRampToValueAtTime(350, t + 0.9);
++                 g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.6, t + 0.42); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.92);
++                 burst(t, bp, 1.0); },
++      rewind() { rewind(); },
++      applause() { const t = T(), dur = 3.2, bp = filt("bandpass", 1600, 0.7, bus);
++                   for (let k = 0; k < 140; k++) { const d = Math.random() * dur, w = Math.sin(Math.PI * d / dur);   // swell and fade
++                     const g = gainTo(bp); env(g, t + d, 0.05 + 0.25 * w * Math.random(), 0.001, 0.03 + Math.random() * 0.03); burst(t + d, g, 0.07); } },
++    };
++    function play(id) { if (!ensure() || !SOUNDS[id]) return false; try { SOUNDS[id](); return true; } catch (_) { return false; } }
++    function load(url) {
++      if (!files.has(url)) {
++        files.set(url, fetch(url, { credentials: "same-origin" }).then(r => { if (!r.ok) throw 0; return r.arrayBuffer(); })
++          .then(b => new Promise((res, rej) => { ensure(); ctx.decodeAudioData(b, res, rej); }))
++          .catch(e => { files.delete(url); throw e; }));
++      }
++      return files.get(url);
++    }
++    function preload(urls) { if (!AC) return; (urls || []).forEach(u => { if (u) load(u).catch(() => {}); }); }
++    function playUrl(url) {
++      if (!ensure() || !url) return;
++      const at = T();
++      load(url).then(buf => {
++        if (T() - at > 1.5) return;                                // arrived far too late to be in time
++        const s = ctx.createBufferSource(); s.buffer = buf; s.connect(bus); s.start();
++      }).catch(() => {});
++    }
++    function pad(p) { if (!p) return; if (p.sound === "custom") playUrl(p.url); else play(p.sound); }
++    function silence() {                                         // SCREEN ONLY: everything, now
++      if (!ctx) return;
++      scratchEnd(true);
++      const old = bus;
++      bus = ctx.createGain(); bus.connect(out);
++      try { old.gain.cancelScheduledValues(T()); old.gain.setValueAtTime(0, T()); old.disconnect(); } catch (_) { /* gone */ }
++    }
++
+     function handle(m) {
+       if (!m || m.type !== "dj_fx") return;
+       switch (m.kind) {
++        case "silence": silence(); break;
+         case "scratch_start": scratchStart(); break;
+         case "scratch": scratch(m.v, m.dt); break;
+         case "scratch_end": scratchEnd(); break;
+@@ -154,6 +261,7 @@
+       }
+     }
+     return { unlock: ensure, scratchStart, scratch, scratchEnd, horn, siren, rewind, brake, handle,
++             play, playUrl, preload, pad, silence, sounds: () => Object.keys(SOUNDS),
+              get supported() { return !!AC; } };
+   }
+ 
+diff --git a/static/hanns/js/hanns_screen_program.js b/static/hanns/js/hanns_screen_program.js
+index 9b829e8..258b7a6 100644
+--- a/static/hanns/js/hanns_screen_program.js
++++ b/static/hanns/js/hanns_screen_program.js
+@@ -80,6 +80,8 @@
+   .pm-video.audio .pm-yt-box,.pm-video.tiny .pm-yt-box{width:100%!important;height:100%!important;transform:none!important}
+   /* the lobby's drifting light sits under an opaque video: hold it still meanwhile */
+   body.pm-on .scr-aurora i{animation-play-state:paused}
++  /* SCREEN ONLY from the DJ booth: video gone at once, no fade */
++  body.pm-cut .pm-video{transition:none!important}
+   .pm-chip{position:fixed;left:50%;bottom:3vh;z-index:25;margin-left:0;translate:-50% 0;display:flex;gap:.8rem;align-items:center;padding:.7rem 1.1rem .7rem .8rem;border-radius:18px;
+     background:rgba(7,6,13,.66);border:1px solid rgba(255,255,255,.18);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);color:#fff;
+     font:600 clamp(.8rem,1.25vw,1.15rem)/1.25 system-ui,sans-serif;max-width:46vw;opacity:0;transform:translateY(12px);transition:opacity .5s,transform .5s;pointer-events:none}
+@@ -268,7 +270,7 @@
+     const soundAsk = document.createElement("div"); soundAsk.className = "pm-sound";
+     soundAsk.innerHTML = "<div>🔊 Click anywhere to start the sound<small>Browsers only play sound after someone clicks the screen once.</small></div>";
+     document.body.append(chip, soundAsk);
+-    let apiAsked = false, apiReady = false, skew = 0, askTimer = null, skewFrom = null;
++    let apiAsked = false, apiReady = false, skew = 0, askTimer = null, skewFrom = null, lastCut = false;
+     const fx = window.KKDJ ? window.KKDJ.engine() : null;
+     function api() {
+       if (apiAsked) return; apiAsked = true;
+@@ -348,7 +350,7 @@
+       self.sync = (m, force, g, vis) => {
+         const d = deckOf(m, id), cur = d.current, yt = self.yt;
+         self.gain = g;
+-        const showVideo = !!(cur && m.mode === "video");
++        const showVideo = !!(cur && m.mode === "video" && !m.cut);   // screen only: no picture
+         wrap.classList.toggle("on", showVideo && vis > 0.001);
+         wrap.classList.toggle("audio", !!(cur && m.mode !== "video"));
+         wrap.classList.toggle("tiny", showVideo && vis <= 0.001);     // can't be seen: lowest quality
+@@ -392,12 +394,17 @@
+       const visB = !B ? 0 : !A ? 1 : (g.vb + g.va ? g.vb / (g.va + g.vb) : 0);
+       decks.a.sync(m, force, g.a, A ? (B && visB >= 0.999 ? 0 : 1) : 0);   // fully under B: nobody sees A
+       decks.b.sync(m, force, g.b, visB);
+-      const showVideo = !!((A || B) && m.mode === "video");
++      const showVideo = !!((A || B) && m.mode === "video" && !m.cut);
+       document.body.classList.toggle("pm-on", showVideo);
++      document.body.classList.toggle("pm-cut", !!m.cut);
++      if (m.cut && !lastCut && fx) fx.silence();                 // in case the booth's "silence" got lost
++      lastCut = !!m.cut;
++      // Drums & FX: have the host's own sounds decoded before the first hit
++      if (fx && Array.isArray(m.pads)) fx.preload(m.pads.filter(p => p && p.sound === "custom").map(p => p.url));
+       // the "Now playing" chip follows whichever deck the room hears most
+       const onB = B && (m.b.playing && (!A || !m.playing || g.b > g.a));
+       const air = onB ? m.b : m, cur = air.current;
+-      if (cur && m.chip && m.mode !== "video") {
++      if (cur && m.chip && m.mode !== "video" && !m.cut) {
+         chip.innerHTML = `<div class="pm-eq"><i></i><i></i><i></i></div><img src="${thumb(cur.id)}" alt=""><div style="min-width:0"><small>${air.playing ? "Now playing" : "Paused"}</small><span>${esc(cur.title)}</span></div>`;
+         chip.classList.add("on"); chip.classList.toggle("paused", !air.playing);
+       } else chip.classList.remove("on");
+@@ -426,7 +433,18 @@
+     document.addEventListener("scr:djfx", e => {
+       const m = e.detail || {}, dk = decks[m.deck === "b" ? "b" : "a"];
+       const loaded = !!deckOf(state.media || {}, dk.id).current;
+-      if (!loaded && m.kind !== "horn" && m.kind !== "siren") return;
++      if (m.kind === "pad") { if (fx) fx.pad(((state.media || {}).pads || [])[m.pad]); return; }   // Drums & FX
++      if (m.kind === "silence") {
++        // SCREEN ONLY arrives here first (no database on this path): take the music off
++        // the room now; the saved state (decks paused, cut) confirms a moment later.
++        if (fx) fx.silence();
++        const md = state.media || {};
++        md.cut = true;
++        Object.values(decks).forEach(dk => { if (dk.ready && dk.yt.pauseVideo) { try { dk.yt.pauseVideo(); } catch (_) { /* fine */ } } });
++        sync(false);
++        return;
++      }
++      if (!loaded && m.kind !== "horn" && m.kind !== "siren" && m.kind !== "silence") return;
+       if (m.kind === "scratch_start") { dk.setDuck(0, 15000); chip.classList.add("scratch"); }   // hand on the platter
+       else if (m.kind === "scratch_end") { setTimeout(() => dk.setDuck(1), 220); chip.classList.remove("scratch"); }
+       else if (m.kind === "rewind") dk.setDuck(0, 1300);
+@@ -741,6 +759,46 @@
+   .crate .empty{padding:.9rem;border-radius:11px;border:1px dashed rgba(255,255,255,.14);color:#8a889c;font-size:.82rem;text-align:center;margin-top:.7rem}
+   .crate .opts{display:flex;gap:1rem;flex-wrap:wrap;margin-top:.7rem;font-size:.78rem;color:#a9a6c2}
+   .crate .opts label{display:inline-flex;gap:.4rem;align-items:center;cursor:pointer}
++  /* SCREEN ONLY + Drums & FX */
++  .dj-cut{min-height:42px;padding:0 .95rem;border-radius:12px;border:1px solid #b91c1c;background:#dc2626;color:#fff;cursor:pointer;
++    font:800 .78rem/1 var(--mono);letter-spacing:.08em;display:inline-flex;align-items:center;gap:.45rem;box-shadow:0 0 0 0 rgba(220,38,38,.5)}
++  .dj-cut:hover{background:#ef4444}
++  .dj-cut.on{background:#450a0a;color:#fecaca;border-color:#ef4444;animation:cutPulse 1.4s ease-in-out infinite}
++  @keyframes cutPulse{50%{box-shadow:0 0 0 6px rgba(239,68,68,.18)}}
++  .dj-pads-btn[aria-expanded="true"]{color:#05070a;background:#f5a524;border-color:#f5a524}
++  .pb{margin:1rem 1.2rem 0;border-radius:20px;padding:.9rem;background:linear-gradient(180deg,#1b1a22,#111116);border:1px solid rgba(255,255,255,.07)}
++  .pb[hidden]{display:none}
++  .pb-h{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.7rem}
++  .pb-h h4{margin:0;font:800 .72rem/1 var(--mono);letter-spacing:.24em;color:#e5e7eb}
++  .pb-h small{color:#8a889c;font-size:.74rem}
++  .pb-h .sp{flex:1}
++  .pb-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.5rem}
++  .dp{--k:#22d3ee;position:relative;min-height:84px;border-radius:14px;border:1px solid rgba(0,0,0,.6);cursor:pointer;color:#f8fafc;text-align:left;
++    padding:.55rem .6rem;display:flex;flex-direction:column;justify-content:space-between;touch-action:manipulation;user-select:none;-webkit-user-select:none;
++    background:linear-gradient(180deg,color-mix(in srgb,var(--k) 16%,#24242c),color-mix(in srgb,var(--k) 6%,#17171d));
++    box-shadow:inset 0 1px 0 rgba(255,255,255,.08),inset 0 0 0 1px color-mix(in srgb,var(--k) 30%,transparent),0 4px 0 #060609;transition:transform .04s}
++  .dp b{font:800 .9rem/1.1 "Archivo",system-ui,sans-serif}
++  .dp small{font:600 .56rem/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:color-mix(in srgb,var(--k) 70%,#fff)}
++  .dp .key{position:absolute;top:.45rem;right:.5rem;font:700 .58rem/1 var(--mono);color:#6b6980}
++  .dp.hit{transform:translateY(3px);box-shadow:0 1px 0 #060609,0 0 28px -2px var(--k),inset 0 0 0 2px var(--k);
++    background:color-mix(in srgb,var(--k) 45%,#24242c)}
++  .dp.custom{--k:#a3e635}
++  .dp.sel{outline:2px solid #fff;outline-offset:2px}
++  .pb.editing .dp{border-style:dashed}
++  .pk{margin-top:.8rem;padding:.8rem;border-radius:14px;background:#0b0b10;border:1px solid rgba(255,255,255,.08)}
++  .pk[hidden]{display:none}
++  .pk-h{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.6rem;font-size:.84rem;color:#cbd5e1}
++  .pk-h b{color:#fff}
++  .pk-g{font:700 .56rem/1 var(--mono);letter-spacing:.2em;text-transform:uppercase;color:#8a889c;margin:.55rem 0 .35rem}
++  .pk-row{display:flex;flex-wrap:wrap;gap:.35rem}
++  .pk-row button{min-height:38px;padding:0 .7rem;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:#e5e7eb;
++    cursor:pointer;font:600 .78rem/1 inherit}
++  .pk-row button[aria-pressed="true"]{background:#f5a524;color:#05070a;border-color:#f5a524}
++  .pk-act{display:flex;gap:.45rem;flex-wrap:wrap;margin-top:.7rem}
++  .pk-act button,.pk-act label{min-height:40px;padding:0 .85rem;border-radius:10px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);
++    color:#e5e7eb;cursor:pointer;font:600 .8rem/1 inherit;display:inline-flex;align-items:center;gap:.4rem}
++  .pk-act .up{background:#a3e635;color:#0b1400;border-color:#a3e635}
++  @media (max-width:760px){.pb-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:.35rem}.dp{min-height:70px;padding:.4rem}.dp b{font-size:.76rem}}
+   .dj-toast{position:sticky;bottom:1rem;margin:0 auto;width:max-content;max-width:90%;padding:.55rem .9rem;border-radius:999px;background:#fbbf24;color:#1c1300;
+     font-weight:700;font-size:.82rem;opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s;pointer-events:none}
+   .dj-toast.on{opacity:1;transform:none}
+@@ -818,9 +876,26 @@
+         <div class="dj-tr">${PAGE
+             ? `<button type="button" class="dj-wake" data-wake hidden></button><button type="button" class="dj-ear" data-fs hidden></button>`
+             : `<button type="button" class="dj-ear" data-dj-page-open title="Open the booth on its own page — full screen, and the device stays awake"><i class="bi bi-arrows-fullscreen"></i> Full-screen booth</button>`}
++          <button type="button" class="dj-cut" data-cut title="Stop the music and video and show the big screen as it is — ▶ on a deck brings the music back"><i class="bi bi-stop-fill"></i> SCREEN ONLY</button>
++          <button type="button" class="dj-ear dj-pads-btn" data-pads-open aria-expanded="false" title="16 pads: drums and sound effects"><i class="bi bi-grid-3x3-gap-fill"></i> Drums &amp; FX</button>
+           <button type="button" class="dj-ear" data-ear aria-pressed="false" title="Play the scratches and pads on this device too"><i class="bi bi-headphones"></i> Hear FX here</button>
+           ${PAGE ? `<a class="dj-x wide" href="${esc(root.dataset.back || "/hanns/screen/")}" title="Back to Big screens"><i class="bi bi-box-arrow-left"></i> Exit</a>`
+                  : `<button type="button" class="dj-x" data-dj-close aria-label="Close the DJ booth">✕</button>`}</div></div>
++      <section class="pb" data-pb hidden aria-label="Drums and FX pads">
++        <div class="pb-h"><h4>DRUMS &amp; FX</h4><small data-pb-hint>Tap a pad — it plays on the projector. Keys: 1–4 · Q–R · A–F · Z–V</small><span class="sp"></span>
++          <button type="button" class="dj-ear" data-pb-edit aria-pressed="false"><i class="bi bi-pencil"></i> Edit pads</button></div>
++        <div class="pb-grid" data-pb-grid></div>
++        <div class="pk" data-pk hidden>
++          <div class="pk-h">Pad <b data-pk-n></b> · now <b data-pk-now></b><span style="flex:1"></span><small>tap a sound to hear it and put it on this pad</small></div>
++          <div class="pk-g">Drums</div><div class="pk-row" data-pk-drums></div>
++          <div class="pk-g">Sound effects</div><div class="pk-row" data-pk-fx></div>
++          <div class="pk-act">
++            <label class="up"><i class="bi bi-upload"></i> Upload your own sound…<input type="file" data-pk-file accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.opus" hidden></label>
++            <button type="button" data-pk-reset><i class="bi bi-arrow-counterclockwise"></i> Back to default</button>
++            <button type="button" data-pk-done>Done</button>
++          </div>
++        </div>
++      </section>
+       <div class="desk">
+         ${deckHtml("a", 1)}
+         <section class="mx" aria-label="Mixer"><h4>MIXER</h4>
+@@ -1116,6 +1191,106 @@
+       if (air && kind !== "horn" && kind !== "siren") toast(`${kind === "brake" ? "Brake" : "Rewind"} on deck ${air === "a" ? 1 : 2}`);
+     }
+ 
++    /* ── SCREEN ONLY ── */
++    // Both decks pause where they are and the room sees the big screen as it is,
++    // straight away; ▶ on either deck brings the music back.
++    $("[data-cut]").addEventListener("click", () => {
++      decks.a.release(); decks.b.release();
++      if (fx) fx.silence();
++      post("dj/fx/", { kind: "silence" });
++      media({ action: "cut" }).then(r => { if (r) toast("Screen only — press ▶ on a deck to bring the music back"); });
++    });
++
++    /* ── Drums & FX pads ── */
++    const SOUND_INFO = {
++      kick: ["Kick", "drum"], snare: ["Snare", "drum"], clap: ["Clap", "drum"], hat: ["Hi-hat", "drum"], openhat: ["Open hat", "drum"],
++      tom: ["Tom", "drum"], rim: ["Rim", "drum"], crash: ["Crash", "drum"], cowbell: ["Cowbell", "drum"], bass808: ["808 bass", "drum"],
++      gunshot: ["Gunshot", "fx"], laser: ["Laser", "fx"], explosion: ["Explosion", "fx"], airhorn: ["Air horn", "fx"], siren: ["Siren", "fx"],
++      riser: ["Riser", "fx"], impact: ["Impact", "fx"], whoosh: ["Whoosh", "fx"], rewind: ["Rewind", "fx"], applause: ["Applause", "fx"],
++    };
++    const PAD_KEYS = "1234qwerasdfzxcv";
++    const pb = $("[data-pb]"), grid = $("[data-pb-grid]"), pk = $("[data-pk]");
++    let padsOpen = false, editing = false, sel = -1;
++    const padsNow = () => (M().pads || []);
++    const padName = p => !p ? "—" : p.sound === "custom" ? (p.name || "My sound") : (SOUND_INFO[p.sound] || [p.sound])[0];
++    const padKind = p => !p ? "" : p.sound === "custom" ? "custom" : (SOUND_INFO[p.sound] || [0, "fx"])[1];
++    function renderPads() {
++      const pads = padsNow();
++      grid.innerHTML = Array.from({ length: 16 }, (_, i) => {
++        const p = pads[i], kind = padKind(p);
++        const k = kind === "drum" ? "#22d3ee" : kind === "custom" ? "#a3e635" : "#ff8a3d";
++        return `<button type="button" class="dp${kind === "custom" ? " custom" : ""}${editing && i === sel ? " sel" : ""}" data-dp="${i}" style="--k:${k}"
++          aria-label="Pad ${i + 1}: ${esc(padName(p))}"><span class="key">${PAD_KEYS[i].toUpperCase()}</span><small>${kind === "drum" ? "drum" : kind === "custom" ? "yours" : "fx"}</small><b>${esc(padName(p))}</b></button>`;
++      }).join("");
++      if (editing && sel >= 0) {
++        const p = pads[sel];
++        $("[data-pk-n]").textContent = sel + 1; $("[data-pk-now]").textContent = padName(p);
++        const chips = cat => Object.entries(SOUND_INFO).filter(([, v]) => v[1] === cat)
++          .map(([id, v]) => `<button type="button" data-pk-sound="${id}" aria-pressed="${p && p.sound === id}">${v[0]}</button>`).join("");
++        $("[data-pk-drums]").innerHTML = chips("drum"); $("[data-pk-fx]").innerHTML = chips("fx");
++      }
++      pk.hidden = !(editing && sel >= 0);
++    }
++    function hitPad(i) {
++      const p = padsNow()[i];
++      const b = grid.querySelector(`[data-dp="${i}"]`);
++      if (b) { b.classList.remove("hit"); void b.offsetWidth; b.classList.add("hit"); setTimeout(() => b.classList.remove("hit"), 140); }
++      if (!p) return;
++      fx && fx.unlock();
++      post("dj/fx/", { kind: "pad", pad: i });                    // the room hears it
++      if (ear && fx) fx.pad(p);                                   // and you, with "Hear FX here"
++    }
++    // pointerdown, not click: a drum has to answer the finger, not the lift
++    grid.addEventListener("pointerdown", e => {
++      const b = e.target.closest("[data-dp]"); if (!b) return;
++      const i = +b.dataset.dp;
++      if (editing) { sel = i; renderPads(); return; }
++      e.preventDefault(); hitPad(i);
++    });
++    grid.addEventListener("keydown", e => {                       // keyboard users: Enter/Space on a focused pad
++      const b = e.target.closest("[data-dp]");
++      if (b && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.stopPropagation(); editing ? (sel = +b.dataset.dp, renderPads()) : hitPad(+b.dataset.dp); }
++    });
++    $("[data-pads-open]").addEventListener("click", e => {
++      padsOpen = !padsOpen; pb.hidden = !padsOpen;
++      e.currentTarget.setAttribute("aria-expanded", String(padsOpen));
++      if (padsOpen) { renderPads(); fx && fx.unlock(); pb.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
++    });
++    $("[data-pb-edit]").addEventListener("click", e => {
++      editing = !editing; e.currentTarget.setAttribute("aria-pressed", String(editing));
++      pb.classList.toggle("editing", editing);
++      $("[data-pb-hint]").textContent = editing ? "Pick a pad, then choose its sound — or upload your own." : "Tap a pad — it plays on the projector. Keys: 1–4 · Q–R · A–F · Z–V";
++      if (editing && sel < 0) sel = 0;
++      renderPads();
++    });
++    pk.addEventListener("click", async e => {
++      const b = e.target.closest("button"); if (!b || sel < 0) return;
++      if (b.dataset.pkSound) {
++        fx && fx.unlock(); if (fx) fx.play(b.dataset.pkSound);        // hear it here first
++        await media({ action: "pad_set", pad: sel, sound: b.dataset.pkSound });
++      } else if (b.hasAttribute("data-pk-reset")) {
++        await media({ action: "pad_reset", pad: sel });
++      } else if (b.hasAttribute("data-pk-done")) {
++        editing = false; sel = -1; pb.classList.remove("editing");
++        $("[data-pb-edit]").setAttribute("aria-pressed", "false");
++        $("[data-pb-hint]").textContent = "Tap a pad — it plays on the projector. Keys: 1–4 · Q–R · A–F · Z–V";
++        renderPads();
++      }
++    });
++    $("[data-pk-file]").addEventListener("change", async e => {
++      const f = e.target.files && e.target.files[0]; e.target.value = "";
++      if (!f || sel < 0) return;
++      const at = sel, fd = new FormData(); fd.append("sample", f, f.name || "sound.wav");
++      toast(`Uploading ${f.name}…`);
++      try {
++        const r = await fetch(base + "dj/sample/", { method: "POST", credentials: "same-origin", headers: { "X-CSRFToken": csrf() }, body: fd });
++        const j = await r.json().catch(() => ({}));
++        if (!r.ok || !j.ok) { toast(j.error || "Couldn't upload that sound"); return; }
++        const done = await media({ action: "pad_custom", pad: at, url: j.url, name: j.name });
++        if (done) { toast(`“${j.name}” is on pad ${at + 1}`); if (fx) { fx.unlock(); fx.playUrl(j.url); } }
++      } catch (_) { toast("No connection to the screen"); }
++    });
++
+     /* ── crate ── */
+     const url = $("[data-url]");
+     async function load(where) {
+@@ -1149,6 +1324,9 @@
+     dj.addEventListener("keydown", e => {
+       if (e.target.matches("input[type=url],input[type=text],select,textarea") || e.metaKey || e.ctrlKey || e.altKey) return;
+       const k = e.key.toLowerCase();
++      if (padsOpen && !editing && k.length === 1 && PAD_KEYS.includes(k) && !e.repeat) {   // pads win while the bank is open
++        e.preventDefault(); hitPad(PAD_KEYS.indexOf(k)); return;
++      }
+       const map = { z: () => decks.a.cue(), x: () => decks.a.play(), n: () => decks.b.cue(), m: () => decks.b.play() };
+       if (map[k]) { e.preventDefault(); map[k](); return; }
+       if ("1234".includes(k) && k.length === 1) { e.preventDefault(); decks.a.hot(+k - 1, e.shiftKey); return; }
+@@ -1220,6 +1398,11 @@
+       const playing = !!((A && m.playing) || (B && m.b.playing));
+       box.querySelector(".dj-row").classList.toggle("playing", playing);
+       $(".dj-name").textContent = state.name || "Big screen";
++      const cutBtn = $("[data-cut]");
++      cutBtn.classList.toggle("on", !!m.cut);
++      cutBtn.innerHTML = m.cut ? '<i class="bi bi-display"></i> SCREEN ONLY · ON' : '<i class="bi bi-stop-fill"></i> SCREEN ONLY';
++      if (padsOpen) renderPads();
++      if (fx && Array.isArray(m.pads)) fx.preload(m.pads.filter(p => p && p.sound === "custom").map(p => p.url));
+       decks.a.render(); decks.b.render();
+       const mix = m.mix || {};
+       ["a", "b"].forEach(c => { if (!touched(chf[c])) chf[c].value = mix[c] ?? 100; });
+diff --git a/templates/hanns/screen_dj.html b/templates/hanns/screen_dj.html
+index 69769f8..a9e0ba3 100644
+--- a/templates/hanns/screen_dj.html
++++ b/templates/hanns/screen_dj.html
+@@ -65,8 +65,8 @@
+   <script type="application/json" data-state>{{ state_json|safe }}</script>
+ </div>
+ 
+-<script src="{% static 'hanns/js/hanns_dj_fx.js' %}?v=1"></script>
+-<script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=7"></script>
++<script src="{% static 'hanns/js/hanns_dj_fx.js' %}?v=2"></script>
++<script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=8"></script>
+ <script src="{% static 'hanns/js/hanns_dj_page.js' %}?v=1"></script>
+ </body>
+ </html>
+diff --git a/templates/hanns/screen_home.html b/templates/hanns/screen_home.html
+index c473f97..bb094fd 100644
+--- a/templates/hanns/screen_home.html
++++ b/templates/hanns/screen_home.html
+@@ -1226,8 +1226,8 @@
+ </script>
+ <script src="{% static 'hanns/js/hanns_screen_home_bg.js' %}?v=1"></script>
+ <script src="{% static 'hanns/js/hanns_screen_live.js' %}?v=4"></script>
+-<script src="{% static 'hanns/js/hanns_dj_fx.js' %}?v=1"></script>
++<script src="{% static 'hanns/js/hanns_dj_fx.js' %}?v=2"></script>
+ <script src="{% static 'hanns/js/hanns_screen_remote.js' %}?v=2"></script>
+-<script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=7"></script>
++<script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=8"></script>
+ {% endif %}
+ {% endblock %}
+diff --git a/templates/hanns/screen_stage.html b/templates/hanns/screen_stage.html
+index e7006a8..b80e3d2 100644
+--- a/templates/hanns/screen_stage.html
++++ b/templates/hanns/screen_stage.html
+@@ -148,8 +148,8 @@
+ <script src="{% static 'hanns/js/hanns_screen_extras.js' %}?v=3"></script>
+ <script src="{% static 'hanns/js/hanns_screen_backdrop.js' %}?v=1"></script>
+ <script src="{% static 'hanns/js/hanns_screen_live.js' %}?v=3"></script>
+-<script src="{% static 'hanns/js/hanns_dj_fx.js' %}?v=1"></script>
++<script src="{% static 'hanns/js/hanns_dj_fx.js' %}?v=2"></script>
+ <script src="{% static 'hanns/js/hanns_screen_remote.js' %}?v=2"></script>
+-<script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=7"></script>
++<script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=8"></script>
+ </body>
+ </html>
+-- 
+2.43.0
+

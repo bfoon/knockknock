@@ -57,6 +57,10 @@ urlpatterns = [
     # PUBLIC — a presenter with no laptop types the host-issued code here.
     path("screen/control/", screen_views.screen_control_entry, name="screen_control_entry"),
     # The paired slide remote (hanns/remote.py): a phone pairs with a screen.
+    # Slide videos (hanns/video.py): a stable link per upload, the screen copy when ready.
+    path("video/<str:vid>/", views.video_play, name="video_play"),
+    path("video/<str:vid>/poster/", views.video_poster, name="video_poster"),
+    path("video/<str:vid>/status/", views.video_status, name="video_status"),
     path("screen/remote/", screen_views.remote_home, name="remote_home"),
     path("screen/remote/pair/", screen_views.remote_pair, name="remote_pair"),
     path("screen/remote/status/", screen_views.remote_status, name="remote_status"),
@@ -82,6 +86,7 @@ urlpatterns = [
     path("<str:code>/edit/", views.deck_edit, name="edit"),
     path("<str:code>/save/", views.deck_save, name="save"),
     path("<str:code>/image-upload/", views.deck_image_upload, name="image_upload"),
+    path("<str:code>/video-upload/", views.deck_video_upload, name="video_upload"),
     # Hanns AI Studio (Gemini, server-side key)
     path("<str:code>/ai/", views.deck_ai, name="ai"),
     path("<str:code>/ai/status/", views.deck_ai_status, name="ai_status"),

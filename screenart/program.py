@@ -61,7 +61,19 @@ DECKS = ("a", "b")
 DECK_FIELDS = ("current", "playing", "position", "started_at", "rate", "seek_rev")
 MIX_CURVES = ("mix", "cut")
 # DJ booth effects, fanned out to the projectors as-is (never stored):
-DJ_FX = ("scratch_start", "scratch", "scratch_end", "horn", "siren", "rewind", "brake")
+DJ_FX = ("scratch_start", "scratch", "scratch_end", "horn", "siren", "rewind", "brake", "pad", "silence")
+
+# Drums & FX sampler: 16 pads. Built-in sounds are synthesized in the browser
+# (hanns_dj_fx.js), so these ids are the whole contract; a pad can also hold a
+# sound file the host uploaded for this screen (url under SAMPLE_DIR).
+PAD_COUNT = 16
+PAD_SOUNDS = (
+    "kick", "snare", "clap", "hat", "openhat", "tom", "rim", "crash", "cowbell", "bass808",
+    "gunshot", "laser", "explosion", "airhorn", "siren", "riser", "impact", "whoosh", "rewind", "applause",
+)
+DEFAULT_PADS = ("kick", "snare", "clap", "hat", "openhat", "tom", "rim", "crash",
+                "gunshot", "laser", "explosion", "airhorn", "siren", "riser", "impact", "whoosh")
+SAMPLE_DIR = "screenart/samples"
 VIEWS = ("off", "register", "checkin", "agenda")
 
 
@@ -142,6 +154,8 @@ def media_for(screen_id):
     b.setdefault("seek_rev", 0)
     m["b"] = b
     m["mix"] = dict({"xf": 0.0, "a": 100, "b": 100, "curve": "mix"}, **(m.get("mix") or {}))
+    m["pads"] = _pads(m.get("pads"))
+    m.setdefault("cut", False)
     m["server_now"] = _now_ms()          # lets projectors correct for their own clock
     return m
 
@@ -183,7 +197,36 @@ def dj_fx(data):
         out["dt"] = int(max(10, min(100, _num(data.get("dt"), 30))))
     if kind == "scratch_end":
         out["position"] = round(max(0, _num(data.get("position"))), 2)
+    if kind == "pad":
+        i = int(_num(data.get("pad"), -1))
+        if not 0 <= i < PAD_COUNT:
+            raise ProgramError("Unknown pad.")
+        out["pad"] = i
     return out
+
+
+def _pads(stored):
+    """16 pads, each {"sound": built-in id} or {"sound": "custom", "url", "name"}."""
+    pads = []
+    stored = stored if isinstance(stored, list) else []
+    for i in range(PAD_COUNT):
+        p = stored[i] if i < len(stored) and isinstance(stored[i], dict) else {}
+        if p.get("sound") == "custom" and p.get("url"):
+            pads.append({"sound": "custom", "url": str(p["url"]), "name": str(p.get("name") or "My sound")[:40]})
+        elif p.get("sound") in PAD_SOUNDS:
+            pads.append({"sound": p["sound"]})
+        else:
+            pads.append({"sound": DEFAULT_PADS[i]})
+    return pads
+
+
+def sample_prefix(screen_id):
+    """The URL prefix of sounds uploaded for this screen (what pad_custom accepts)."""
+    from django.core.files.storage import default_storage
+    url = default_storage.url(f"{SAMPLE_DIR}/{screen_id}/")
+    if not url.startswith(("http://", "https://", "//")):
+        url = url if url.startswith("/") else "/" + url
+    return url
 
 
 def _pos(d, now):
@@ -227,6 +270,8 @@ def media_action(screen_id, data):
     d = m if dk == "a" else m["b"]                       # the deck this action is about
     other = m["b"] if dk == "a" else m
 
+    if action in ("play", "load", "load_queued"):
+        m["cut"] = False                                  # music back on: "screen only" is over
     if action in ("load", "queue"):
         vid, start = parse_youtube(data.get("url"))
         item = {"id": vid, "title": video_title(vid), "start": start, "key": f"{vid}-{now}"}
@@ -319,6 +364,30 @@ def media_action(screen_id, data):
             d["current"] = dict(cur, duration=round(dur, 1))
         else:
             return m                                       # nothing new: don't save or push
+    elif action == "cut":
+        # SCREEN ONLY: both decks pause where they are (▶ picks up from there),
+        # and the projector drops the video/audio straight away.
+        for deck in (m, m["b"]):
+            if deck.get("current") and deck.get("playing"):
+                deck.update(position=_pos(deck, now), playing=False)
+        m["cut"] = True
+    elif action in ("pad_set", "pad_custom", "pad_reset"):
+        i = int(_num(data.get("pad"), -1))
+        if not 0 <= i < PAD_COUNT:
+            raise ProgramError("Unknown pad.")
+        pads = m["pads"]
+        if action == "pad_reset":
+            pads[i] = {"sound": DEFAULT_PADS[i]}
+        elif action == "pad_set":
+            if data.get("sound") not in PAD_SOUNDS:
+                raise ProgramError("Unknown sound.")
+            pads[i] = {"sound": data["sound"]}
+        else:
+            url = str(data.get("url") or "")
+            if not url.startswith(sample_prefix(screen_id)) or ".." in url:
+                raise ProgramError("Upload the sound for this screen first.")
+            pads[i] = {"sound": "custom", "url": url, "name": " ".join(str(data.get("name") or "My sound").split())[:40]}
+        m["pads"] = pads
     elif action == "mix":
         mix = m["mix"]
         if "xf" in data:

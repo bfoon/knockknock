@@ -41,6 +41,20 @@ services:
       redis:
         condition: service_healthy
 
+  # Makes a big-screen copy (1080p H.264) of every uploaded slide video,
+  # one at a time, at low priority (hanns/video.py). Same image as web.
+  videoworker:
+    build: .
+    command: python manage.py hanns_video_worker
+    volumes:
+      - .:/app
+      - media:/app/media
+    env_file: .env
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   pgdata:
   media:

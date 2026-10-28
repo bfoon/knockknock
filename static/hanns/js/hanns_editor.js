@@ -1256,6 +1256,69 @@ function hexWithAlpha(hex,prev){
   return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
 }
 function field(label,inner){return `<div class="field"><label>${label}</label>${inner}</div>`;}
+
+/* ── slide videos: upload, then the server makes a big-screen copy ─────
+   The slide gets a stable /hanns/video/<id>/ link straight away (it plays the
+   original); the server converts in the background and that link switches to
+   the 1080p screen copy by itself. Here we only show what's going on.       */
+const VIDEO_ID_RE=/^\/hanns\/video\/([0-9a-f]{32})\/$/;
+let videoPoll=null;
+function videoStateText(st){
+  const o=st.original||{}, mbit=b=>b?` · ${Math.round(b/1e6)} Mbit/s`:"";
+  const orig=o.width?`${o.width}×${o.height} ${o.codec||""}${mbit(o.bitrate)}`:"";
+  if(st.status==="queued")return "⏳ Waiting to be optimised for the big screen… (the original plays meanwhile)";
+  if(st.status==="converting")return `⚙ Optimising for the big screen… ${st.progress||0}%${orig?`<br><small>from ${orig}</small>`:""}`;
+  if(st.status==="failed")return `⚠ Couldn't optimise this one — the original plays.<br><small>${String(st.error||"").replace(/[<>&]/g,"")}</small>`;
+  if(st.playing==="screen copy"){const s=st.screen||{};return `✓ Ready for the big screen · plays a ${s.width}×${s.height} copy${orig?`<br><small>original ${orig}</small>`:""}`;}
+  if(st.error)return `✓ Uploaded · ${String(st.error).replace(/[<>&]/g,"")}`;
+  return `✓ Ready for the big screen · already light enough${orig?` (${orig})`:""}`;
+}
+function followVideo(el){
+  clearTimeout(videoPoll);
+  const box=$("#f-videostate"), m=VIDEO_ID_RE.exec(String(el.src||""));
+  if(!box)return;
+  if(!m){box.innerHTML="";return;}
+  const tick=async()=>{
+    if(!document.body.contains(box)||!VIDEO_ID_RE.test(String(el.src||"")))return;   // panel closed / src changed
+    try{
+      const r=await fetch(`/hanns/video/${m[1]}/status/`,{credentials:"same-origin",cache:"no-store"});
+      const st=await r.json();
+      if(!st.ok){box.textContent="";return;}
+      box.innerHTML=videoStateText(st);
+      if(st.poster&&!el.poster){el.poster=st.poster;const vp=$("#f-videoposter");if(vp)vp.value=el.poster;renderCanvas();markDirty();}
+      if(st.status==="queued"||st.status==="converting")videoPoll=setTimeout(tick,2500);
+    }catch(e){videoPoll=setTimeout(tick,6000);}
+  };
+  tick();
+}
+function bindVideoUpload(el){
+  const btn=$("#f-videoupload"), inp=$("#f-videofile"), box=$("#f-videostate");
+  if(!btn||!inp)return;
+  btn.addEventListener("click",()=>inp.click());
+  inp.addEventListener("change",()=>{
+    const file=inp.files&&inp.files[0]; if(!file)return;
+    const fd=new FormData(); fd.append("video",file,file.name||"video.mp4");
+    const xhr=new XMLHttpRequest();
+    xhr.open("POST",SRV.videoUploadUrl); xhr.setRequestHeader("X-CSRFToken",SRV.csrftoken||"");
+    btn.disabled=true;
+    xhr.upload.onprogress=e=>{ if(e.lengthComputable&&box)box.textContent=`⬆ Uploading… ${Math.round(e.loaded/e.total*100)}%`; };
+    xhr.onload=()=>{
+      btn.disabled=false; inp.value="";
+      let j=null; try{j=JSON.parse(xhr.responseText);}catch(_){}
+      if(xhr.status>=200&&xhr.status<300&&j&&j.ok){
+        el.src=j.url; const vs=$("#f-videosrc"); if(vs)vs.value=el.src;
+        renderCanvas(); markDirty(); toast("Video uploaded");
+        followVideo(el);
+      }else{
+        const msg=(j&&j.error)||(xhr.status===413?"That video is too large for the server.":"Upload failed.");
+        if(box)box.textContent="⚠ "+msg; toast(msg);
+      }
+    };
+    xhr.onerror=()=>{ btn.disabled=false; if(box)box.textContent="⚠ Upload failed — check the connection."; };
+    xhr.send(fd);
+  });
+  followVideo(el);
+}
 function swatchRow(current,onAttr){
   ensureSwatchPickerCss();
   const cur=String(current==null?"":current);
@@ -1779,13 +1842,17 @@ function elementPanel(el){
     h+=`<div class="group"><span class="glabel">Video</span>
       ${field("Title",`<input type="text" id="f-videotitle" value="${escapeAttr(el.title||"Video")}">`)}
       ${field("Video URL",`<input type="url" id="f-videosrc" placeholder="https://...mp4 or YouTube embed URL" value="${escapeAttr(el.src||"")}">`)}
+      ${SRV.videoUploadUrl?`<div class="field"><label>Or upload a file</label>
+        <input type="file" id="f-videofile" accept="video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi" hidden>
+        <button type="button" class="btn" id="f-videoupload" style="width:100%">⬆ Upload video file…</button>
+        <div id="f-videostate" class="insp-empty" style="padding-top:.45rem;line-height:1.45" aria-live="polite"></div></div>`:""}
       ${field("Poster image URL",`<input type="url" id="f-videoposter" value="${escapeAttr(el.poster||"")}">`)}
       ${field("Fit",`<div class="seg" id="f-videofit"><button data-fit="cover" class="${(el.fit||"cover")==="cover"?"active":""}">Cover</button><button data-fit="contain" class="${el.fit==="contain"?"active":""}">Contain</button></div>`)}
       ${field("Controls",`<div class="seg" id="f-videocontrols"><button data-on="1" class="${el.controls!==false?"active":""}">On</button><button data-on="0" class="${el.controls===false?"active":""}">Off</button></div>`)}
       ${field("Autoplay",`<div class="seg" id="f-videoautoplay"><button data-on="1" class="${el.autoplay?"active":""}">On</button><button data-on="0" class="${!el.autoplay?"active":""}">Off</button></div>`)}
       ${field("Muted",`<div class="seg" id="f-videomuted"><button data-on="1" class="${el.muted?"active":""}">On</button><button data-on="0" class="${!el.muted?"active":""}">Off</button></div>`)}
       ${field("Corner radius "+(el.radius||18),`<input type="range" id="f-videoradius" min="0" max="80" value="${el.radius||18}">`)}
-      <div class="insp-empty" style="padding-top:.2rem">For YouTube/Vimeo, use an embed URL. For direct video, paste an MP4/WebM URL.</div>
+      <div class="insp-empty" style="padding-top:.2rem">For YouTube/Vimeo, use an embed URL. For direct video, paste an MP4/WebM URL — or upload the file: it's made ready for the big screen (1080p) automatically.</div>
     </div>`;
   }
   if(el.type==="gallery"){
@@ -2291,6 +2358,7 @@ function bindElementPanel(el){
     const vt=$("#f-videotitle");vt&&vt.addEventListener("input",()=>{el.title=vt.value;renderCanvas();markDirty();});
     const vs=$("#f-videosrc");vs&&vs.addEventListener("input",()=>{el.src=vs.value;renderCanvas();markDirty();});
     const vp=$("#f-videoposter");vp&&vp.addEventListener("input",()=>{el.poster=vp.value;renderCanvas();markDirty();});
+    bindVideoUpload(el);
     seg("f-videofit","fit",v=>{el.fit=v;renderCanvas();markDirty();});
     seg("f-videocontrols","on",v=>{el.controls=v==="1";renderCanvas();markDirty();});
     seg("f-videoautoplay","on",v=>{el.autoplay=v==="1";renderCanvas();markDirty();});

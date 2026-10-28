@@ -1,7 +1,7 @@
 From 6734e0b912a8961bc8cfe8370c1ccacbaa3631c4 Mon Sep 17 00:00:00 2001
 From: Claude <claude@anthropic.com>
 Date: Wed, 28 Oct 2026 01:05:55 +0000
-Subject: [PATCH 2/7] DJ booth: a playable turntable with scratching, pitch,
+Subject: [PATCH 2/9] DJ booth: a playable turntable with scratching, pitch,
  hot cues and FX
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8

@@ -132,6 +132,72 @@ class MediaTests(TestCase):
         _, m = self.act(action="cue_clear", slot=2)
         self.assertEqual(m["current"]["cues"], [None] * 4)
 
+    # ── screen only + drums & fx pads ──
+    def test_screen_only_pauses_both_decks_and_play_lifts_it(self):
+        clock = [5_000_000]
+        with mock.patch.object(program, "_now_ms", side_effect=lambda: clock[0]):
+            self.act(action="load", url="dQw4w9WgXcQ", mode="video")
+            self.act(action="load", deck="b", url="aqz-KE-bpKQ")
+            self.act(action="play", deck="b")
+            clock[0] += 7_000
+            _, m = self.act(action="cut")
+        self.assertTrue(m["cut"])
+        self.assertEqual((m["playing"], m["b"]["playing"]), (False, False))
+        self.assertAlmostEqual(m["position"], m["current"]["start"] + 7, places=2)      # kept where it was
+        self.assertEqual(m["current"]["id"], "dQw4w9WgXcQ")                            # still loaded
+        _, m = self.act(action="play", deck="b")
+        self.assertFalse(m["cut"])
+        self.assertTrue(m["b"]["playing"])
+
+    def test_pads_default_set_reset_and_custom(self):
+        _, m = self.act(action="volume", volume=70)
+        self.assertEqual(len(m["pads"]), program.PAD_COUNT)
+        self.assertEqual([p["sound"] for p in m["pads"]], list(program.DEFAULT_PADS))
+        _, m = self.act(action="pad_set", pad=3, sound="bass808")
+        self.assertEqual(m["pads"][3], {"sound": "bass808"})
+        for bad in ({"pad": 16, "sound": "kick"}, {"pad": -1, "sound": "kick"}, {"pad": 2, "sound": "nope"}):
+            self.assertEqual(self.act(action="pad_set", **bad)[0].status_code, 400)
+        prefix = program.sample_prefix(self.screen.id)
+        _, m = self.act(action="pad_custom", pad=0, url=prefix + "abc.mp3", name="  My   gunshot  ")
+        self.assertEqual(m["pads"][0], {"sound": "custom", "url": prefix + "abc.mp3", "name": "My gunshot"})
+        import uuid; other = program.sample_prefix(uuid.uuid4())                         # another screen
+        for url in ("https://evil.example/x.mp3", other + "x.mp3", prefix + "../../x.mp3"):
+            self.assertEqual(self.act(action="pad_custom", pad=1, url=url)[0].status_code, 400)
+        _, m = self.act(action="pad_reset", pad=0)
+        self.assertEqual(m["pads"][0], {"sound": program.DEFAULT_PADS[0]})
+        self.assertEqual(m["pads"][3], {"sound": "bass808"})                             # others kept
+
+    def test_sample_upload(self):
+        import tempfile
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        url = f"/screenart/s/{self.screen.token}/dj/sample/"
+        with tempfile.TemporaryDirectory() as media, override_settings(MEDIA_ROOT=media):
+            up = lambda name, data, ctype: self.client.post(url, {"sample": SimpleUploadedFile(name, data, content_type=ctype)})
+            self.assertEqual(up("notes.txt", b"hi", "text/plain").status_code, 400)
+            self.assertEqual(up("x.exe", b"MZ", "audio/mpeg").status_code, 400)
+            with override_settings(SCREENART_SAMPLE_MAX_SIZE=10):
+                self.assertEqual(up("big.wav", b"x" * 100, "audio/wav").status_code, 413)
+            r = up("Shot gun.wav", b"RIFF....WAVEfmt ", "audio/wav")
+            self.assertEqual(r.status_code, 200, r.content)
+            j = r.json()
+            self.assertTrue(j["url"].startswith(program.sample_prefix(self.screen.id)))
+            self.assertEqual(j["name"], "Shot gun")
+            _, m = self.act(action="pad_custom", pad=5, url=j["url"], name=j["name"])         # and it goes on a pad
+            self.assertEqual(m["pads"][5]["url"], j["url"])
+            self.screen.is_active = False
+            self.screen.save()
+            self.assertEqual(up("a.wav", b"RIFF", "audio/wav").status_code, 410)
+
+    def test_pad_and_silence_effects(self):
+        url = f"/screenart/s/{self.screen.token}/dj/fx/"
+        post = lambda **b: self.client.post(url, json.dumps(b), content_type="application/json")
+        sent = []
+        with mock.patch.object(svc, "_send", side_effect=lambda g, msg: sent.append(msg["payload"])):
+            self.assertEqual(post(kind="pad", pad=7).status_code, 200)
+            self.assertEqual(post(kind="silence").status_code, 200)
+            self.assertEqual(post(kind="pad", pad=99).status_code, 400)
+        self.assertEqual([(p["kind"], p.get("pad")) for p in sent], [("pad", 7), ("silence", None)])
+
     # ── dual decks ──
     def test_deck_b_is_independent_and_loads_paused(self):
         self.act(action="load", url="dQw4w9WgXcQ", mode="audio")

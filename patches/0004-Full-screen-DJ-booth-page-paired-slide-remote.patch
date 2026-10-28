@@ -1,7 +1,7 @@
 From 7ca1607bd4f6642a9a0d0b4b77f8888729c8e41e Mon Sep 17 00:00:00 2001
 From: Claude <claude@anthropic.com>
 Date: Wed, 28 Oct 2026 12:37:36 +0000
-Subject: [PATCH 4/7] Full-screen DJ booth page + paired slide remote
+Subject: [PATCH 4/9] Full-screen DJ booth page + paired slide remote
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit

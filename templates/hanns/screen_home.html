@@ -29,103 +29,126 @@
   .bs-screen{padding:0;overflow:hidden;margin-bottom:1.4rem}
   .bs-screen.is-fresh{box-shadow:0 0 0 2px var(--kk-accent-2),var(--kk-shadow-glow)}
 
-  /* ── Top control strip + live monitor ─────────────────────────── */
-  .bs-top{
-    display:grid;
-    grid-template-columns:minmax(210px,1fr) minmax(260px,420px) auto;
-    gap:1rem;
-    align-items:center;
-    padding:1rem 1.2rem;
-    border-bottom:1px solid var(--kk-border);
-  }
-  .bs-title{min-width:0}
-  .bs-title .k{display:flex;align-items:center;gap:.45rem;font:600 .66rem/1 var(--kk-font-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--kk-text-dim)}
-  .bs-title .k .dot{width:8px;height:8px;border-radius:50%;background:var(--kk-success);box-shadow:0 0 0 3px rgba(52,211,153,.18)}
-  .bs-title .k .dot.idle{background:var(--kk-warn);box-shadow:0 0 0 3px rgba(251,191,36,.15)}
-  .bs-title h2{margin:.35rem 0 0;font-family:"Fraunces",Georgia,serif;font-size:1.45rem;font-weight:600}
+  /* ── Stage console card (v3) ──────────────────────────────────────
+     One card per running screen, laid out like a broadcast desk:
+     tally + name up top, a big PROGRAM monitor with scene keys,
+     a rail with the share code and the operator-only link, then
+     sources (background · music/DJ · event) and the deck queue.  */
+  .bs-screen.stage{--st-amber:#f5a524;--st-red:#ff3b5c;--st-cyan:#22d3ee;--st-ink:#07080d;
+    --st-line:rgba(255,255,255,.09);--st-panel:rgba(255,255,255,.028)}
+  .st-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:1rem;padding:1rem 1.2rem;border-bottom:1px solid var(--st-line)}
+  .st-id{display:flex;align-items:center;gap:1rem;min-width:0;flex-wrap:wrap}
+  .st-tally{display:inline-flex;align-items:center;gap:.55rem;padding:.45rem .8rem;border-radius:999px;
+    font:700 .66rem/1 "Spline Sans Mono",var(--kk-font-mono);letter-spacing:.18em;text-transform:uppercase;
+    color:#9ca3af;background:rgba(255,255,255,.04);border:1px solid var(--st-line);white-space:nowrap}
+  .st-tally .dot{width:9px;height:9px;border-radius:50%;background:currentColor}
+  .stage[data-air="lobby"] .st-tally{color:var(--st-amber);background:rgba(245,165,36,.08);border-color:rgba(245,165,36,.35)}
+  .stage[data-air="deck"] .st-tally{color:#fff;background:var(--st-red);border-color:var(--st-red)}
+  .stage[data-air="lobby"] .st-tally .dot,.stage[data-air="deck"] .st-tally .dot{animation:stTally 1.6s ease-in-out infinite}
+  @keyframes stTally{50%{opacity:.3}}
+  .st-name .k{font:600 .62rem/1 var(--kk-font-mono);letter-spacing:.2em;text-transform:uppercase;color:var(--kk-text-dim)}
+  .st-name h2{margin:.3rem 0 0;font:800 clamp(1.4rem,2.6vw,1.9rem)/1 "Archivo",system-ui,sans-serif;letter-spacing:-.02em}
+  .st-acts{display:flex;gap:.5rem;flex-wrap:wrap}
 
-  .bs-monitor{
-    position:relative;
-    display:grid;
-    grid-template-columns:minmax(150px,220px) minmax(0,1fr);
-    gap:.8rem;
-    align-items:center;
-    min-width:0;
-    padding:.55rem;
-    border-radius:16px;
-    border:1px solid rgba(99,102,241,.26);
-    background:
-      radial-gradient(180px 80px at 15% 0%,rgba(34,211,238,.09),transparent 65%),
-      linear-gradient(135deg,rgba(255,255,255,.045),rgba(255,255,255,.018));
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
-  }
-  .bs-monitor-screen{
-    position:relative;
-    aspect-ratio:16/9;
-    overflow:hidden;
-    border-radius:10px;
-    background:#06050b;
-    border:1px solid rgba(255,255,255,.12);
-    box-shadow:0 8px 28px rgba(0,0,0,.34);
-  }
-  .bs-monitor-canvas{
-    position:absolute;left:0;top:0;width:960px;height:540px;
-    transform-origin:top left;pointer-events:none;
-  }
-  .bs-monitor-lobby{
-    position:absolute;inset:0;display:grid;place-items:center;text-align:center;
-    padding:.6rem;color:#8f8aa8;
-    background:
-      radial-gradient(circle at 30% 25%,rgba(139,92,246,.18),transparent 42%),
-      radial-gradient(circle at 70% 70%,rgba(34,211,238,.12),transparent 46%),
-      #090713;
-  }
-  .bs-monitor-lobby i{display:block;font-size:1.35rem;color:#b9b4d1;margin-bottom:.25rem}
-  .bs-monitor-lobby b{display:block;color:#e7e3f5;font-size:.75rem}
-  .bs-monitor-lobby small{font-size:.62rem}
-  .bs-monitor-meta{min-width:0}
-  .bs-monitor-k{
-    display:flex;align-items:center;gap:.4rem;
-    font:700 .58rem/1 var(--kk-font-mono);letter-spacing:.15em;text-transform:uppercase;
-    color:#8f8aa8;
-  }
-  .bs-monitor-k .pulse{
-    width:7px;height:7px;border-radius:50%;background:#64748b;
-  }
+  .st-main{display:flex;flex-wrap:wrap;gap:1rem;padding:1.1rem 1.2rem;border-bottom:1px solid var(--st-line)}
+  .st-pgm{flex:999 1 520px;min-width:0;display:flex;flex-direction:column;gap:.75rem}
+  .st-rail{flex:1 1 320px;min-width:0;display:flex;flex-direction:column;gap:1rem}
+  .st-lbl{display:flex;justify-content:space-between;align-items:center;gap:.6rem;
+    font:600 .62rem/1 var(--kk-font-mono);letter-spacing:.2em;text-transform:uppercase;color:var(--kk-text-dim)}
+
+  /* the PROGRAM monitor (JS paints the live slide into [data-monitor-screen]) */
+  .bs-monitor{display:block;padding:0;border:0;background:none;box-shadow:none}
+  .bs-monitor-screen{position:relative;aspect-ratio:16/9;overflow:hidden;border-radius:14px;background:var(--st-ink);
+    border:2px solid rgba(245,165,36,.55);box-shadow:0 20px 50px -24px rgba(0,0,0,.9);transition:border-color .3s}
+  .stage[data-air="deck"] .bs-monitor-screen,.bs-monitor.bg-live .bs-monitor-screen{border-color:var(--st-red)}
+  .bs-monitor-screen::after{content:"PGM";position:absolute;top:10px;left:10px;z-index:5;padding:.28rem .5rem;border-radius:6px;
+    font:800 .6rem/1 "Spline Sans Mono",var(--kk-font-mono);letter-spacing:.16em;color:var(--st-ink);background:var(--st-amber)}
+  .stage[data-air="deck"] .bs-monitor-screen::after{background:var(--st-red);color:#fff}
+  .bs-monitor-canvas{position:absolute;left:0;top:0;width:960px;height:540px;transform-origin:top left;pointer-events:none}
+  .bs-monitor-lobby{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.6rem;
+    text-align:center;padding:1rem;color:#cbd5e1;background:
+      repeating-linear-gradient(0deg,rgba(255,255,255,.018) 0 1px,transparent 1px 3px),#090a12}
+  .bs-monitor-lobby[hidden]{display:none}
+  .bs-monitor-lobby .w{font:600 clamp(.55rem,1vw,.75rem)/1 var(--kk-font-mono);letter-spacing:.32em;text-transform:uppercase;color:var(--st-cyan)}
+  .bs-monitor-lobby .n{font:800 clamp(1.6rem,4.6vw,3.4rem)/1 "Archivo",system-ui,sans-serif;letter-spacing:-.03em;color:#fff}
+  .bs-monitor-lobby .c{display:flex;align-items:center;gap:.5rem;font-size:clamp(.65rem,1.2vw,.9rem);color:#94a3b8}
+  .bs-monitor-lobby .c b{font:700 1.15em/1 "Spline Sans Mono",var(--kk-font-mono);letter-spacing:.18em;color:#fff;
+    padding:.35em .55em;border-radius:7px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14)}
+  .bs-monitor-lobby .c[hidden]{display:none}
+  .bs-monitor-meta{display:flex;align-items:center;gap:.8rem;min-width:0}
+  .bs-monitor-k{display:flex;align-items:center;gap:.45rem;flex:none;
+    font:700 .6rem/1 var(--kk-font-mono);letter-spacing:.15em;text-transform:uppercase;color:var(--st-amber)}
+  .bs-monitor-k .pulse{width:7px;height:7px;border-radius:50%;background:currentColor}
   .bs-monitor.live .bs-monitor-k{color:#ff9aaa}
-  .bs-monitor.live .bs-monitor-k .pulse{
-    background:#ff3b5c;box-shadow:0 0 0 0 rgba(255,59,92,.5);
-    animation:bsMonitorPulse 1.5s infinite;
-  }
-  @keyframes bsMonitorPulse{
-    0%{box-shadow:0 0 0 0 rgba(255,59,92,.45)}
-    70%{box-shadow:0 0 0 8px rgba(255,59,92,0)}
-    100%{box-shadow:0 0 0 0 rgba(255,59,92,0)}
-  }
-  .bs-monitor-title{
-    margin:.35rem 0 .2rem;font-weight:750;font-size:.9rem;
-    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  }
-  .bs-monitor-pos{font:600 .68rem/1.4 var(--kk-font-mono);color:var(--kk-text-dim)}
-  .bs-monitor-note{margin-top:.35rem;font-size:.7rem;line-height:1.35;color:#77738f}
+  .bs-monitor.live .bs-monitor-k .pulse{background:var(--st-red);animation:bsMonitorPulse 1.5s infinite}
+  @keyframes bsMonitorPulse{0%{box-shadow:0 0 0 0 rgba(255,59,92,.45)}70%{box-shadow:0 0 0 8px rgba(255,59,92,0)}100%{box-shadow:0 0 0 0 rgba(255,59,92,0)}}
+  .bs-monitor-title{flex:1 1 auto;min-width:0;font-weight:700;font-size:.92rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bs-monitor-pos{flex:none;font:600 .7rem/1 var(--kk-font-mono);color:var(--kk-text-dim)}
 
-  .bs-code{display:flex;align-items:center;gap:.4rem;padding:.5rem .55rem .5rem .9rem;border-radius:14px;background:rgba(0,0,0,.25);border:1px solid var(--kk-border)}
-  .bs-code .l{font:600 .6rem/1.2 var(--kk-font-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--kk-text-dim)}
-  .bs-code .v{font:700 1.5rem/1 "Spline Sans Mono",var(--kk-font-mono);letter-spacing:.16em}
-  .bs-ic{
-    width:34px;height:34px;border-radius:10px;display:inline-grid;place-items:center;cursor:pointer;
-    border:1px solid transparent;background:transparent;color:var(--kk-text-dim);
-  }
+  /* scene keys */
+  .st-keys{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.55rem}
+  .st-key{position:relative;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:.3rem;min-height:62px;
+    padding:.6rem .75rem;border-radius:12px;cursor:pointer;text-align:left;color:var(--kk-text);
+    background:rgba(255,255,255,.035);border:1px solid var(--st-line);transition:background .15s,border-color .15s,transform .1s}
+  .st-key:hover{background:rgba(255,255,255,.07)}
+  .st-key:active{transform:translateY(1px)}
+  .st-key:disabled{cursor:default}
+  .st-key small{font:600 .58rem/1 var(--kk-font-mono);letter-spacing:.16em;color:var(--kk-text-dim)}
+  .st-key b{display:flex;align-items:center;gap:.4rem;font-size:.9rem;font-weight:600}
+  .st-key.on{background:rgba(245,165,36,.12);border-color:rgba(245,165,36,.6);color:#fcd38a}
+  .st-key.on small{color:#fcd38a}
+  .st-key.on::after{content:"";position:absolute;top:9px;right:9px;width:7px;height:7px;border-radius:50%;background:var(--st-amber);box-shadow:0 0 10px var(--st-amber)}
+  .st-key.dj{background:rgba(167,139,250,.08);border-color:rgba(167,139,250,.32)}
+  .st-key.dj.on{background:rgba(167,139,250,.16);border-color:#a78bfa;color:#ddd6fe}
+  .st-key.dj.on::after{background:#a78bfa;box-shadow:0 0 10px #a78bfa}
+
+  /* share code */
+  .st-card{padding:1rem;border-radius:16px;background:var(--st-panel);border:1px solid var(--st-line);display:flex;flex-direction:column;gap:.8rem}
+  .bs-code{display:flex;gap:.35rem;padding:0;border:0;background:none}
+  .bs-code .t{flex:1 1 0;max-width:52px;height:62px;display:grid;place-items:center;border-radius:10px;
+    font:700 1.9rem/1 "Spline Sans Mono",var(--kk-font-mono);color:#fff;background:var(--st-ink);border:1px solid rgba(255,255,255,.12);
+    box-shadow:inset 0 -2px 0 rgba(255,255,255,.04)}
+  .bs-code .t:nth-child(4){margin-left:.7rem}
+  .bs-code .t.flip{animation:stFlip .45s ease both}
+  @keyframes stFlip{0%{transform:rotateX(90deg);opacity:.2}100%{transform:none;opacity:1}}
+  .st-row2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem}
+  .st-row2 .kk-btn{justify-content:center;min-height:44px}
+  .bs-ic{width:40px;height:40px;border-radius:10px;display:inline-grid;place-items:center;cursor:pointer;
+    border:1px solid var(--st-line);background:rgba(255,255,255,.04);color:var(--kk-text-dim)}
   .bs-ic:hover{background:rgba(255,255,255,.08);color:var(--kk-text)}
 
-  .bs-link{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;padding:.9rem 1.2rem;border-bottom:1px solid var(--kk-border);background:rgba(0,0,0,.14)}
-  .bs-link code{
-    flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-    font:500 .8rem/1 var(--kk-font-mono);color:var(--kk-text-dim);padding:.6rem .75rem;border-radius:10px;
-    background:rgba(0,0,0,.25);border:1px solid var(--kk-border);
-  }
-  .bs-link .warn{width:100%;font-size:.76rem;color:var(--kk-text-dim)}
-  .bs-link .warn i{color:var(--kk-warn)}
+  /* operator-only link: blurred until revealed, copy still copies the real URL */
+  .st-url{display:flex;align-items:center;gap:.35rem;padding:0 .3rem 0 .8rem;min-height:44px;border-radius:12px;background:var(--st-ink);border:1px solid rgba(255,255,255,.12)}
+  .st-url code{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:500 .76rem/1 var(--kk-font-mono);
+    color:#cbd5e1;background:none;border:0;padding:0;filter:blur(4px);transition:filter .2s;user-select:none}
+  .st-url.shown code{filter:none;user-select:text}
+  .st-url .bs-ic{width:34px;height:34px;border:0;background:none}
+  .st-warn{display:flex;gap:.55rem;align-items:flex-start;padding:.65rem .75rem;border-radius:12px;font-size:.78rem;line-height:1.45;
+    color:#e9d9b6;background:rgba(245,165,36,.07);border:1px solid rgba(245,165,36,.28)}
+  .st-warn i{color:var(--st-amber);margin-top:.1rem}
+  .st-warn b{color:var(--st-amber)}
+
+  /* sources */
+  .st-sources{border-bottom:1px solid var(--st-line)}
+  .st-sources>.st-lbl{padding:.95rem 1.2rem .35rem}
+  .st-src{display:flex;align-items:center;gap:.9rem;padding:.75rem 1.2rem;flex-wrap:wrap}
+  .st-ico{flex:none;width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:1.1rem}
+  .st-ico.amb{color:#facc15;background:rgba(250,204,21,.1)}
+  .st-ico.vio{color:#c4b5fd;background:rgba(167,139,250,.12)}
+  .st-ico.cya{color:#67e8f9;background:rgba(34,211,238,.1)}
+  .st-src .tx{flex:1 1 220px;min-width:0;display:flex;flex-direction:column;gap:.15rem}
+  .st-src .tx b{font-size:.95rem}
+  .st-src .tx small{font-size:.8rem;color:var(--kk-text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .st-sources .bs-bg-btn{margin:0;width:100%;border:0;border-radius:0;background:none;padding:.75rem 1.2rem;gap:.9rem}
+  .st-sources .bs-bg-btn:hover,.st-sources .bs-bg-btn.open{background:rgba(250,204,21,.05)}
+  .st-sources .bs-bg-btn.live{background:rgba(255,59,92,.08)}
+  .st-sources .bs-bg-sw{width:72px;height:42px;border-radius:10px}
+  .st-sources .bs-bg-txt{flex:1}
+  .st-sources .bs-bg-txt b{font-size:.95rem}
+  .st-sources .bs-bg-txt small{font-size:.8rem}
+  .st-sources [data-addons]>*{border-top:1px solid var(--st-line)}
+  .st-sources [data-addons]>[hidden]{display:none}
+  .st-sources .bs-live{padding:.75rem 1.2rem;margin:0}
 
   .bs-body{padding:1rem 1.2rem 1.2rem}
   .bs-sec{display:flex;justify-content:space-between;align-items:center;margin-bottom:.7rem}
@@ -146,9 +169,6 @@
   .bs-acts{display:flex;gap:.4rem;flex-wrap:wrap}
   .bs-acts .kk-btn{padding:.45rem .7rem;font-size:.8rem}
   .bs-empty{padding:1.4rem;text-align:center;border:1px dashed var(--kk-border);border-radius:14px;color:var(--kk-text-dim);font-size:.9rem}
-  .bs-foot{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:1rem}
-  .bs-foot .sp{flex:1}
-  .bs-foot form{display:inline}
 
   /* ── Presenter phone pass / QR ────────────────────────────────── */
   .bs-cc{
@@ -211,22 +231,13 @@
   .bs-ended{display:flex;flex-direction:column;gap:.4rem;margin-top:2rem}
   .bs-ended .row{display:flex;justify-content:space-between;gap:1rem;padding:.65rem .9rem;border-radius:12px;border:1px solid var(--kk-border);color:var(--kk-text-dim);font-size:.85rem}
 
-  @media (max-width:1100px){
-    .bs-top{grid-template-columns:minmax(200px,1fr) minmax(240px,360px)}
-    .bs-code{grid-column:1/-1;justify-self:end}
-  }
-  @media (max-width:760px){
-    .bs-top{grid-template-columns:1fr}
-    .bs-monitor{grid-template-columns:160px minmax(0,1fr)}
-    .bs-code{grid-column:auto;justify-self:stretch;justify-content:space-between}
-  }
   @media (max-width:640px){
     .bs-row{flex-wrap:wrap}
     .bs-th{width:100%}
     .bs-acts{width:100%}
     .bs-acts .kk-btn{flex:1;justify-content:center}
-    .bs-monitor{grid-template-columns:1fr}
-    .bs-monitor-screen{max-width:280px}
+    .st-keys{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .bs-monitor-meta{flex-wrap:wrap}
     .bs-cc{grid-template-columns:1fr}
     .bs-cc-qr-shell{justify-self:start}
   }
@@ -320,66 +331,95 @@
 {% endif %}
 
 {% for c in cards %}
-<section class="kk-card bs-screen{% if fresh == c.screen.id|stringformat:'s' %} is-fresh{% endif %}"
-         data-screen data-token="{{ c.screen.token }}" data-ws="{{ c.ws_path }}">
+<section class="kk-card bs-screen stage{% if fresh == c.screen.id|stringformat:'s' %} is-fresh{% endif %}"
+         data-screen data-air="lobby" data-token="{{ c.screen.token }}" data-ws="{{ c.ws_path }}">
   <script type="application/json" data-state>{{ c.state_json|safe }}</script>
 
-  <div class="bs-top">
-    <div class="bs-title">
-      <div class="k"><span class="dot" data-dot></span><span data-seen>Big screen</span></div>
-      <h2 data-name>{{ c.screen.name }}</h2>
-      {# Event background for this screen (hanns_screen_home_bg.js): upload, then show it on the projector. #}
-      <button class="bs-bg-btn" type="button" data-bg-toggle aria-expanded="false" title="Upload an event background and show it on the big screen">
-        <span class="bs-bg-sw" data-bg-swatch><i class="bi bi-image"></i></span>
-        <span class="bs-bg-txt"><b>Event background</b><small data-bg-sub>Upload an image for the screen</small></span>
-        <i class="bi bi-chevron-down bs-bg-chev"></i>
-      </button>
-    </div>
-
-    {# Live host monitor: rendered by JS from the current slide snapshot. #}
-    <div class="bs-monitor" data-monitor>
-      <div class="bs-monitor-screen" data-monitor-screen>
-        <div class="bs-monitor-lobby" data-monitor-lobby>
-          <div>
-            <i class="bi bi-display"></i>
-            <b>Lobby</b>
-            <small>Nothing is on screen yet</small>
-          </div>
-        </div>
-      </div>
-      <div class="bs-monitor-meta">
-        <div class="bs-monitor-k"><span class="pulse"></span><span data-monitor-k>Lobby preview</span></div>
-        <div class="bs-monitor-title" data-monitor-title>{{ c.screen.name }}</div>
-        <div class="bs-monitor-pos" data-monitor-pos>Waiting for a deck</div>
-        <div class="bs-monitor-note">This mirrors the slide currently shown on the projector.</div>
+  {# ── tally · name · master actions ── #}
+  <header class="st-head">
+    <div class="st-id">
+      <span class="st-tally" data-dot><span class="dot"></span><span data-seen>Lobby</span></span>
+      <div class="st-name">
+        <div class="k">Stage console</div>
+        <h2 data-name>{{ c.screen.name }}</h2>
       </div>
     </div>
-
-    <div class="bs-code" title="Presenters type this in Hanns to share a deck here">
-      <div><div class="l">Share code</div><div class="v" data-code>{{ c.screen.share_code|slice:":3" }} {{ c.screen.share_code|slice:"3:" }}</div></div>
-      <button class="bs-ic" type="button" data-copy-code title="Copy code"><i class="bi bi-copy"></i></button>
-      <button class="bs-ic" type="button" data-rotate title="New share code"><i class="bi bi-arrow-repeat"></i></button>
-    </div>
-  </div>
-
-  <div class="bs-bgpanel" data-bg-panel hidden></div>
-
-  <div class="bs-link">
-    <code data-url>{{ c.url }}</code>
-    <button class="kk-btn kk-btn-ghost" type="button" data-copy-url><i class="bi bi-link-45deg"></i> Copy link</button>
-    <a class="kk-btn kk-btn-primary" href="{{ c.url }}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i> Open on this device</a>
-    <div class="warn"><i class="bi bi-shield-lock"></i> Anyone with this link can run the screen. Open it on the projector only — share the <b>code</b> with presenters, never the link.</div>
-  </div>
-
-  <div class="bs-body">
-    <div class="bs-sec"><h3>Remote · shared decks</h3><span class="kk-text-dim" style="font-size:.78rem" data-count></span></div>
-    <div class="bs-queue" data-queue></div>
-    <div class="bs-foot">
-      <button class="kk-btn kk-btn-ghost" type="button" data-lobby><i class="bi bi-house"></i> Back to lobby</button>
-      <button class="kk-btn kk-btn-ghost" type="button" data-showcode><i class="bi bi-display"></i> <span>Code on lobby</span></button>
-      <span class="sp"></span>
+    <div class="st-acts">
+      <a class="kk-btn kk-btn-ghost" href="{{ c.url }}" target="_blank" rel="noopener" title="Open the projector view on this device"><i class="bi bi-box-arrow-up-right"></i> Open on this device</a>
       <button class="kk-btn kk-btn-danger" type="button" data-stop><i class="bi bi-power"></i> Stop screen</button>
     </div>
+  </header>
+
+  <div class="st-main">
+    {# ── PROGRAM monitor + scene keys ── #}
+    <div class="st-pgm">
+      <div class="st-lbl"><span>Program · what the room sees</span><span>16 : 9</span></div>
+      <div class="bs-monitor" data-monitor>
+        <div class="bs-monitor-screen" data-monitor-screen>
+          <div class="bs-monitor-lobby" data-monitor-lobby>
+            <span class="w">Welcome to</span>
+            <span class="n" data-name-echo>{{ c.screen.name }}</span>
+            <span class="c" data-lobby-code>Share your deck with <b data-code-echo>{{ c.screen.share_code|slice:":3" }} {{ c.screen.share_code|slice:"3:" }}</b></span>
+          </div>
+        </div>
+        <div class="bs-monitor-meta" style="margin-top:.7rem">
+          <div class="bs-monitor-k"><span class="pulse"></span><span data-monitor-k>Lobby preview</span></div>
+          <div class="bs-monitor-title" data-monitor-title>{{ c.screen.name }}</div>
+          <div class="bs-monitor-pos" data-monitor-pos>Waiting for a deck</div>
+        </div>
+      </div>
+      <div class="st-keys" role="group" aria-label="Scenes">
+        <button class="st-key" type="button" data-lobby><small>F1</small><b><i class="bi bi-house"></i> Lobby</b></button>
+        <button class="st-key" type="button" data-showcode><small>F2</small><b><i class="bi bi-123"></i> <span>Code on lobby</span></b></button>
+        <button class="st-key dj" type="button" data-dj-open><small>F3</small><b><i class="bi bi-vinyl"></i> DJ booth</b></button>
+        <button class="st-key" type="button" data-event-open><small>F4</small><b><i class="bi bi-clipboard-check"></i> Event</b></button>
+      </div>
+    </div>
+
+    {# ── rail: share code + operator link ── #}
+    <aside class="st-rail">
+      <div class="st-card" title="Presenters type this in Hanns to share a deck here">
+        <div class="st-lbl"><span>Share code · for presenters</span>
+          <button class="bs-ic" type="button" data-rotate title="New share code" aria-label="New share code"><i class="bi bi-arrow-repeat"></i></button></div>
+        <div class="bs-code" data-code aria-label="Share code">{{ c.screen.share_code|slice:":3" }} {{ c.screen.share_code|slice:"3:" }}</div>
+        <div class="st-row2">
+          <button class="kk-btn kk-btn-ghost" type="button" data-copy-code><i class="bi bi-copy"></i> <span>Copy code</span></button>
+          <button class="kk-btn kk-btn-primary" type="button" data-showcode-quick><i class="bi bi-display"></i> <span>Show on screen</span></button>
+        </div>
+      </div>
+
+      <div class="st-card">
+        <div class="st-lbl"><span>Projector link · operator only</span></div>
+        <div class="st-url" data-url-box>
+          <code data-url>{{ c.url }}</code>
+          <button class="bs-ic" type="button" data-reveal-url title="Show the link" aria-label="Show the link"><i class="bi bi-eye"></i></button>
+        </div>
+        <div class="st-row2">
+          <button class="kk-btn kk-btn-ghost" type="button" data-copy-url><i class="bi bi-link-45deg"></i> Copy link</button>
+          <a class="kk-btn kk-btn-primary" href="{{ c.url }}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i> Open</a>
+        </div>
+        <div class="st-warn"><i class="bi bi-shield-lock"></i><span>Anyone with this link can run the screen. Open it on the projector only — share the <b>code</b> with presenters, never the link.</span></div>
+      </div>
+    </aside>
+  </div>
+
+  {# ── sources: background · music/DJ · event (add-on scripts mount into [data-addons]) ── #}
+  <div class="st-sources">
+    <div class="st-lbl"><span>Sources</span></div>
+    {# Event background for this screen (hanns_screen_home_bg.js): upload, then show it on the projector. #}
+    <button class="bs-bg-btn" type="button" data-bg-toggle aria-expanded="false" title="Upload an event background and show it on the big screen">
+      <span class="bs-bg-sw" data-bg-swatch><i class="bi bi-image"></i></span>
+      <span class="bs-bg-txt"><b>Event background</b><small data-bg-sub>Upload an image for the screen</small></span>
+      <i class="bi bi-chevron-down bs-bg-chev"></i>
+    </button>
+    <div class="bs-bgpanel" data-bg-panel hidden></div>
+    <div data-addons></div>
+  </div>
+
+  {# ── deck queue ── #}
+  <div class="bs-body">
+    <div class="bs-sec"><h3>Remote · deck queue</h3><span class="kk-text-dim" style="font-size:.78rem" data-count></span></div>
+    <div class="bs-queue" data-queue></div>
   </div>
 </section>
 {% endfor %}
@@ -483,6 +523,20 @@
       thumbs.set(s.id, n);
 
       return n;
+    }
+
+    /* Share code as six tiles; tiles that change flip in. */
+    let shownCode = null;
+    function renderCode(code){
+      const host = root.querySelector("[data-code]");
+      root.querySelectorAll("[data-code-echo]").forEach(n => { n.textContent = group(code); });
+      if(!host || code === shownCode) return;
+      const prev = shownCode || "";
+      shownCode = code;
+      host.innerHTML = code.split("").map((d, i) =>
+        `<span class="t${prev && prev[i] !== d ? " flip" : ""}" style="animation-delay:${i * 40}ms">${esc(d)}</span>`
+      ).join("");
+      host.setAttribute("aria-label", "Share code " + group(code));
     }
 
     function currentShare(){
@@ -655,14 +709,29 @@
       }
 
       root.querySelector("[data-name]").textContent = state.name;
-      root.querySelector("[data-code]").textContent = group(state.share_code);
+      root.querySelectorAll("[data-name-echo]").forEach(n => { n.textContent = state.name; });
+      renderCode(state.share_code || "");
+
+      // tally + scene keys: the card reads like a vision mixer
+      root.dataset.air = state.current ? "deck" : "lobby";
 
       const sc = root.querySelector("[data-showcode]");
       sc.querySelector("span").textContent = state.show_code
         ? "Code on lobby"
         : "Code hidden";
+      sc.classList.toggle("on", !!state.show_code);
 
-      root.querySelector("[data-lobby]").disabled = !state.current;
+      const lb = root.querySelector("[data-lobby]");
+      lb.disabled = !state.current;
+      lb.classList.toggle("on", !state.current);
+
+      const lc = root.querySelector("[data-lobby-code]");
+      if(lc) lc.hidden = !state.show_code;
+
+      const quick = root.querySelector("[data-showcode-quick] span");
+      if(quick){
+        quick.textContent = state.show_code && !state.current ? "On the lobby" : "Show on screen";
+      }
 
       const shares = state.shares || [];
 
@@ -850,10 +919,34 @@
         }
       }
 
-      else if(b.hasAttribute("data-copy-code")){
-        if(navigator.clipboard){
-          navigator.clipboard.writeText(state.share_code);
+      else if(b.hasAttribute("data-showcode-quick")){
+        // put the code up on the lobby (and go back to the lobby if a deck is live)
+        if(!state.show_code) await post("settings/", {show_code: true});
+        if(state.current && confirm("Take the deck off and show the lobby with the code?")){
+          await post("lobby/", {});
         }
+      }
+
+      else if(b.hasAttribute("data-copy-code")){
+        try{
+          if(navigator.clipboard){
+            await navigator.clipboard.writeText(state.share_code);
+          }
+        }catch(e){}
+        const lbl = b.querySelector("span");
+        if(lbl){
+          lbl.textContent = "Copied";
+          setTimeout(()=>{ lbl.textContent = "Copy code"; }, 1300);
+        }
+      }
+
+      else if(b.hasAttribute("data-reveal-url")){
+        const box = root.querySelector("[data-url-box]");
+        const on = !box.classList.contains("shown");
+        box.classList.toggle("shown", on);
+        b.innerHTML = `<i class="bi ${on ? "bi-eye-slash" : "bi-eye"}"></i>`;
+        b.title = on ? "Hide the link" : "Show the link";
+        b.setAttribute("aria-label", b.title);
       }
 
       else if(b.hasAttribute("data-copy-url")){
@@ -999,7 +1092,7 @@
 })();
 </script>
 <script src="{% static 'hanns/js/hanns_screen_home_bg.js' %}?v=1"></script>
-<script src="{% static 'hanns/js/hanns_screen_live.js' %}?v=3"></script>
-<script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=3"></script>
+<script src="{% static 'hanns/js/hanns_screen_live.js' %}?v=4"></script>
+<script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=4"></script>
 {% endif %}
 {% endblock %}

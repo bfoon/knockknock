@@ -178,8 +178,9 @@
     try { state = JSON.parse(root.querySelector("[data-state]").textContent || "{}"); } catch (_) { /* ignore */ }
     const host = document.createElement("div");
     host.className = "bs-live lv-sec";
-    const link = root.querySelector(".bs-link");
-    if (link) link.parentNode.insertBefore(host, link); else root.appendChild(host);
+    const slot = root.querySelector("[data-addons]"), link = root.querySelector(".bs-link");
+    if (slot) slot.appendChild(host);
+    else if (link) link.parentNode.insertBefore(host, link); else root.appendChild(host);
     const ui = LiveUI(host, base, s => { state = s; render(); });
     function render() {
       const l = state.live || { shares: [] };

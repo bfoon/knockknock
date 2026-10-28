@@ -228,7 +228,7 @@
       eventHost.querySelectorAll("[data-ev]").forEach(b => { b.classList.toggle("on", b.dataset.ev === ev.view); b.disabled = !ev.id && b.dataset.ev !== "off"; });
       eventHost.querySelector("[data-ew]").checked = !!ev.welcome;
     }
-    return { render(state) { renderMedia(state.media); renderEvent(state.event); }, loadEvents };
+    return { render(state) { renderMedia(state.media); renderEvent(state.event); }, loadEvents, media: mediaDo };
   }
 
   /* ───────────── projector ───────────── */
@@ -429,22 +429,160 @@
   }
 
   /* ───────────── dashboard ───────────── */
+  /* Music & video lives in a DJ booth modal: the source row shows what's
+     playing (with a quick play/pause), and "Open DJ booth" — or the F3
+     scene key — pops the full deck: spinning record, link box, queue,
+     volume, loop and the "Now playing" strip toggle. */
+  const djCss = document.createElement("style");
+  djCss.textContent = `
+  .dj-row{display:flex;align-items:center;gap:.9rem;padding:.75rem 1.2rem;flex-wrap:wrap}
+  .dj-row .ico{flex:none;width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:1.15rem;color:#c4b5fd;background:rgba(167,139,250,.12)}
+  .dj-row.playing .ico i{animation:djSpin 2.4s linear infinite}
+  .dj-row .tx{flex:1 1 220px;min-width:0;display:flex;flex-direction:column;gap:.15rem}
+  .dj-row .tx b{font-size:.95rem}
+  .dj-row .tx small{font-size:.8rem;color:#a9a6c2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dj-row .acts{display:flex;gap:.45rem;flex-wrap:wrap}
+  .dj-row .acts button{min-height:40px;border-radius:11px;padding:0 .9rem;font:600 .82rem/1 system-ui,sans-serif;cursor:pointer;
+    border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);color:#f1f5f9;display:inline-flex;align-items:center;gap:.4rem}
+  .dj-row .acts .go{border:0;color:#1b1030;background:linear-gradient(135deg,#c4b5fd,#22d3ee)}
+  .dj-row .acts button[hidden]{display:none}
+  details.pg-fold{border-top:1px solid rgba(255,255,255,.09);padding:0}
+  details.pg-fold>summary{padding:.75rem 1.2rem;gap:.9rem}
+  details.pg-fold>summary::after{margin-right:.2rem}
+  details.pg-fold>summary .ico{flex:none;width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:1.1rem;color:#67e8f9;background:rgba(34,211,238,.1)}
+  details.pg-fold>summary .tx{display:flex;flex-direction:column;gap:.15rem;min-width:0}
+  details.pg-fold>summary .tx small{font-size:.8rem}
+  details.pg-fold .pg-e{padding:0 1.2rem 1rem}
+
+  dialog.dj{width:min(760px,94vw);max-height:92vh;padding:0;border:0;border-radius:24px;color:#f6f4ff;overflow:auto;
+    background:#0c0a17;box-shadow:0 40px 120px -20px rgba(0,0,0,.85),0 0 0 1px rgba(167,139,250,.28)}
+  dialog.dj::backdrop{background:rgba(4,3,10,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+  dialog.dj[open]{animation:djIn .28s cubic-bezier(.2,.9,.3,1.2) both}
+  @keyframes djIn{from{opacity:0;transform:translateY(14px) scale(.97)}}
+  .dj-top{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:1rem 1.2rem;border-bottom:1px solid rgba(255,255,255,.08)}
+  .dj-top .k{font:600 .62rem/1 ui-monospace,monospace;letter-spacing:.22em;text-transform:uppercase;color:#c4b5fd}
+  .dj-top h3{margin:.3rem 0 0;font:800 1.4rem/1 "Archivo",system-ui,sans-serif;letter-spacing:-.02em}
+  .dj-x{width:42px;height:42px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:#f1f5f9;cursor:pointer;font-size:1.1rem}
+  .dj-deck{display:grid;grid-template-columns:minmax(180px,250px) minmax(0,1fr);gap:1.4rem;align-items:center;padding:1.3rem 1.2rem .4rem}
+  .dj-plat{position:relative;aspect-ratio:1;border-radius:22px;background:#15122a;border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;
+    box-shadow:inset 0 2px 0 rgba(255,255,255,.04),inset 0 -12px 30px rgba(0,0,0,.4)}
+  .dj-rec{width:86%;aspect-ratio:1;border-radius:50%;position:relative;
+    background:repeating-radial-gradient(circle,#0b0b10 0 2px,#16151d 2px 4px);
+    box-shadow:0 10px 30px rgba(0,0,0,.6),inset 0 0 0 2px #000;animation:djSpin 1.8s linear infinite;animation-play-state:paused}
+  .dj-rec::after{content:"";position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 20deg,transparent 0 40deg,rgba(255,255,255,.07) 55deg,transparent 70deg 200deg,rgba(255,255,255,.05) 220deg,transparent 240deg)}
+  .dj-lab{position:absolute;inset:32%;border-radius:50%;background:#a78bfa center/cover no-repeat;border:3px solid #0b0b10;z-index:1}
+  .dj-lab::after{content:"";position:absolute;left:50%;top:50%;width:9px;height:9px;margin:-4.5px;border-radius:50%;background:#0c0a17}
+  .dj-arm{position:absolute;top:9%;right:9%;width:12%;height:58%;transform-origin:50% 6%;transform:rotate(-26deg);transition:transform .6s cubic-bezier(.3,.9,.3,1.1)}
+  .dj-arm::before{content:"";position:absolute;left:50%;top:0;width:16px;height:16px;margin-left:-8px;border-radius:50%;background:#2a2640;border:2px solid #4b4570}
+  .dj-arm::after{content:"";position:absolute;left:50%;top:8px;bottom:0;width:4px;margin-left:-2px;border-radius:2px;background:linear-gradient(#8f89b6,#5a5480)}
+  dialog.dj.spinning .dj-rec{animation-play-state:running}
+  dialog.dj.spinning .dj-arm{transform:rotate(4deg)}
+  @keyframes djSpin{to{transform:rotate(360deg)}}
+  .dj-now .k{font:600 .6rem/1 ui-monospace,monospace;letter-spacing:.2em;text-transform:uppercase;color:#a9a6c2}
+  .dj-now b{display:block;margin:.45rem 0 .35rem;font:800 clamp(1.1rem,2.4vw,1.5rem)/1.15 "Archivo",system-ui,sans-serif;
+    overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .dj-now small{color:#a9a6c2;font-size:.82rem}
+  .dj-eq{display:flex;gap:4px;align-items:flex-end;height:44px;margin-top:1rem}
+  .dj-eq i{flex:1;max-width:9px;height:12%;border-radius:3px;background:linear-gradient(#22d3ee,#a78bfa);opacity:.35}
+  dialog.dj.spinning .dj-eq i{opacity:1;animation:djEq 1.1s ease-in-out infinite}
+  ${Array.from({length:16},(_, i)=>`dialog.dj.spinning .dj-eq i:nth-child(${i+1}){animation-delay:-${(i*0.137%1).toFixed(2)}s;animation-duration:${(0.8+((i*7)%5)*0.12).toFixed(2)}s}`).join("")}
+  @keyframes djEq{0%,100%{height:14%}50%{height:100%}}
+  .dj-body{padding:.2rem 1.2rem 1.3rem}
+  .dj-body .pg-sec{margin-top:.6rem}
+  .dj-body .pg-now{display:block;margin:.6rem 0 0;padding:.75rem;border-radius:14px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08)}
+  .dj-body .pg-now>img,.dj-body .pg-now>div:not(.pg-ctl){display:none}
+  .dj-body .pg-ctl{display:flex;gap:.45rem;flex-wrap:wrap;align-items:center}
+  .dj-body .pg-cur:empty+.pg-q:empty::before{content:"Nothing in the queue yet — paste a YouTube link above.";display:block;padding:1rem;border-radius:12px;
+    border:1px dashed rgba(255,255,255,.14);color:#a9a6c2;font-size:.85rem;text-align:center}
+  @media (max-width:600px){.dj-deck{grid-template-columns:1fr}.dj-plat{max-width:240px;justify-self:center;width:100%}}
+  @media (prefers-reduced-motion:reduce){.dj-rec,.dj-eq i,.dj-row .ico i{animation:none!important}}`;
+  document.head.appendChild(djCss);
+
   document.querySelectorAll("[data-screen]").forEach(root => {
     const base = `/screenart/s/${root.dataset.token}/`;
     let state = {};
     try { state = JSON.parse(root.querySelector("[data-state]").textContent || "{}"); } catch (_) { /* ignore */ }
     const box = document.createElement("div");
-    box.innerHTML = `<details class="pg-fold" data-pg="media"><summary>🎵 Music &amp; video <small class="pg-sum-m"></small></summary><div class="pg-m"></div></details>
-      <details class="pg-fold" data-pg="event"><summary>📋 Event <small class="pg-sum-e"></small></summary><div class="pg-e"></div></details>`;
-    const link = root.querySelector(".bs-link");
-    if (link) link.parentNode.insertBefore(box, link); else root.appendChild(box);
-    const ui = ProgramUI(box.querySelector(".pg-m"), box.querySelector(".pg-e"), base, s => { state = s; render(); }, {});
-    box.querySelector('[data-pg="event"]').addEventListener("toggle", e => { if (e.target.open) ui.loadEvents(); });
+    box.innerHTML = `<div class="dj-row" data-pg="media">
+        <span class="ico" aria-hidden="true"><i class="bi bi-vinyl-fill"></i></span>
+        <span class="tx"><b>Music &amp; video</b><small class="pg-sum-m"></small></span>
+        <span class="acts">
+          <button type="button" data-dj-quick hidden></button>
+          <button type="button" class="go" data-dj-open><i class="bi bi-boombox"></i> Open DJ booth</button>
+        </span></div>
+      <details class="pg-fold" data-pg="event"><summary><span class="ico" aria-hidden="true"><i class="bi bi-clipboard-check"></i></span>
+        <span class="tx"><b>Event</b><small class="pg-sum-e"></small></span></summary><div class="pg-e"></div></details>`;
+    const slot = root.querySelector("[data-addons]"), link = root.querySelector(".bs-link");
+    if (slot) slot.appendChild(box);
+    else if (link) link.parentNode.insertBefore(box, link); else root.appendChild(box);
+
+    // the DJ booth modal (holds the full media controls)
+    const dj = document.createElement("dialog");
+    dj.className = "dj";
+    dj.setAttribute("aria-label", "DJ booth");
+    dj.innerHTML = `<div class="dj-top"><div><div class="k">DJ booth · plays on the projector only</div><h3 class="dj-name"></h3></div>
+        <button type="button" class="dj-x" data-dj-close aria-label="Close the DJ booth"><i class="bi bi-x-lg"></i></button></div>
+      <div class="dj-deck">
+        <div class="dj-plat" aria-hidden="true"><div class="dj-rec"><span class="dj-lab"></span></div><div class="dj-arm"></div></div>
+        <div class="dj-now"><div class="k">Now playing</div><b class="dj-t">Nothing on the deck</b><small class="dj-s">Paste a YouTube link below — welcome music, a break playlist, a showreel.</small>
+          <div class="dj-eq" aria-hidden="true">${"<i></i>".repeat(16)}</div></div>
+      </div>
+      <div class="dj-body pg-m"></div>`;
+    document.body.appendChild(dj);
+
+    const ui = ProgramUI(dj.querySelector(".pg-m"), box.querySelector(".pg-e"), base, s => { state = s; render(); }, {});
+    const evFold = box.querySelector('[data-pg="event"]');
+    evFold.addEventListener("toggle", e => { if (e.target.open) ui.loadEvents(); });
+
+    function openDj() {
+      if (typeof dj.showModal === "function") { if (!dj.open) dj.showModal(); } else dj.setAttribute("open", "");
+      const url = dj.querySelector(".pg-url");
+      if (url && !(state.media && state.media.current)) setTimeout(() => url.focus(), 60);
+    }
+    function closeDj() { if (typeof dj.close === "function") dj.close(); else dj.removeAttribute("open"); }
+    dj.addEventListener("click", e => {
+      if (e.target === dj || e.target.closest("[data-dj-close]")) closeDj();   // backdrop or ✕
+    });
+
+    // the card's F3 / F4 scene keys and the row buttons
+    root.addEventListener("click", e => {
+      const b = e.target.closest("button");
+      if (!b || dj.contains(b)) return;
+      if (b.hasAttribute("data-dj-open")) { e.preventDefault(); openDj(); }
+      else if (b.hasAttribute("data-dj-quick")) {
+        e.preventDefault();
+        const m = state.media || {};
+        if (m.current) ui.media({ action: m.playing ? "pause" : "play" });
+      } else if (b.hasAttribute("data-event-open")) {
+        e.preventDefault();
+        evFold.open = true;
+        evFold.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+
     function render() {
       ui.render(state);
       const m = state.media || {}, e = state.event || {};
-      box.querySelector(".pg-sum-m").textContent = m.current ? `${m.playing ? (m.mode === "video" ? "▶ " : "♪ ") : "⏸ "}${m.current.title}` : "Play a YouTube video or just its sound";
+      const cur = m.current;
+      box.querySelector(".pg-sum-m").textContent = cur ? `${m.playing ? (m.mode === "video" ? "▶ " : "♪ ") : "⏸ "}${cur.title}` : "Play a YouTube video or just its sound";
       box.querySelector(".pg-sum-e").textContent = e.view && e.view !== "off" ? { register: "Showing registration", checkin: "Showing check-in", agenda: "Showing the agenda" }[e.view] : "Registration, check-in or agenda on the big screen";
+      box.querySelector(".dj-row").classList.toggle("playing", !!(cur && m.playing));
+      const q = box.querySelector("[data-dj-quick]");
+      q.hidden = !cur;
+      q.innerHTML = m.playing ? '<i class="bi bi-pause-fill"></i> Pause' : '<i class="bi bi-play-fill"></i> Play';
+
+      // booth deck
+      dj.querySelector(".dj-name").textContent = state.name || "Big screen";
+      dj.classList.toggle("spinning", !!(cur && m.playing));
+      dj.querySelector(".dj-t").textContent = cur ? cur.title : "Nothing on the deck";
+      dj.querySelector(".dj-s").textContent = cur
+        ? `${m.playing ? "" : "Paused · "}${m.mode === "video" ? "Video, full screen on the projector" : "Audio only — the screen keeps its picture"}${(m.queue || []).length ? ` · ${m.queue.length} up next` : ""}`
+        : "Paste a YouTube link below — welcome music, a break playlist, a showreel.";
+      dj.querySelector(".dj-lab").style.backgroundImage = cur ? `url("${thumb(cur.id)}")` : "";
+      const djKey = root.querySelector(".st-key[data-dj-open]");
+      if (djKey) djKey.classList.toggle("on", !!(cur && m.playing));
+      const evKey = root.querySelector(".st-key[data-event-open]");
+      if (evKey) evKey.classList.toggle("on", !!(e.view && e.view !== "off"));
     }
     root.addEventListener("bs:state", ev => { state = ev.detail || state; render(); });
     render();

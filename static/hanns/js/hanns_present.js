@@ -193,6 +193,7 @@ function show(n,broadcast=true){
   const ghost=(needsGhost&&Hx.captureSlide)?Hx.captureSlide(wrap):null;
   paintSlide(wrap,s,{live:true});
   transition(wrap,kind,ghost,i+1);
+  scheduleDecodeAhead(i);
   const pos=$("#pp-pos");if(pos)pos.textContent=`${i+1} / ${DECK.slides.length}`;
   if(broadcast&&!suppressBroadcast)Live.goto(i);
   tellScreen({type:"slide", index:i, total:DECK.slides.length});
@@ -369,6 +370,253 @@ function scheduleIdle(fn, timeoutMs){
   return window.setTimeout(fn, ms);
 }
 
+/* ── decode-ahead ─────────────────────────────────────────────────────
+   Measured on the big screen: moving to a photo slide spent ~0 ms in
+   script but ~145 ms DECODING the photo and ~230 ms rasterising it, all
+   inside the frame that should have shown the new slide — the hitch you
+   see at every slide change. prefetchDeckMedia() below only puts bytes in
+   the HTTP cache; decoding still happened on arrival.
+
+   So keep the slides around the current one (next, the one after, and the
+   previous) fetched AND decoded ahead of time, holding the decoded images
+   so the browser keeps them. It runs once the transition has finished, so
+   it never competes with the slide the room is watching, and it only holds
+   a small window — a 60-photo deck isn't kept decoded in memory.        */
+const AHEAD = [1, 2, -1];                  // which neighbours to have ready (in this order)
+const aheadHeld = new Map();               // url → decoded HTMLImageElement
+let aheadTimer = null;
+function slideMediaUrls(slide){
+  const out = [], seen = new Set();
+  const add = v => {
+    v = String(v || "").trim();
+    if(!v || seen.has(v) || v.slice(0,5) === "data:" || v.slice(0,5) === "blob:") return;
+    seen.add(v); out.push(v);
+  };
+  const isImg = v => /^(https?:|\/)/.test(v) &&
+    (/\.(png|jpe?g|gif|webp|avif|svg)(\?|#|$)/i.test(v) || v.indexOf("/media/") >= 0);
+  const walk = (o, depth)=>{
+    if(!o || depth > 6) return;
+    if(typeof o === "string"){
+      if(isImg(o)) add(o);
+      else if(o.indexOf("url(") >= 0){          // CSS backgrounds: url("…") center/cover
+        o.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/g, (_, q, u)=>{ if(isImg(u)) add(u); return _; });
+      }
+      return;
+    }
+    if(Array.isArray(o)){ o.forEach(x=>walk(x, depth+1)); return; }
+    if(typeof o === "object"){ for(const k in o) walk(o[k], depth+1); }
+  };
+  walk(slide, 0);
+  return out;
+}
+/* ── screen-sized renditions ──────────────────────────────────────────
+   A 3000-px photo on a 1920-px projector is decoded and scaled down on
+   every arrival. A worker makes a copy at this screen's size, off the main
+   thread, while the speaker talks; the stage then paints the copy (fewer
+   bytes, ~⅓ the pixels to decode and rasterise).
+   Deliberately narrow, so nothing can look different:
+     • JPEG only — no PNG/GIF/SVG/WebP, so transparency and animation are
+       never touched; and only when the photo is clearly bigger than the screen
+     • same-origin or CORS-readable images only; anything else stays as is
+     • a copy is used for the NEXT paint only — the slide that's up is never
+       repainted — and the magnifier / zoom regions put the originals back
+   No Worker / OffscreenCanvas / createImageBitmap → everything as before. */
+const RENDITION_OK = typeof Worker === "function" && typeof OffscreenCanvas === "function" &&
+  typeof createImageBitmap === "function" && typeof URL.createObjectURL === "function" && !!Hx.setMediaRendition;
+const renditions = new Map();      // raw url → blob: url | "skip" | Promise (in flight)
+let renditionWorker = null, renditionSeq = 0;
+const renditionWaiters = new Map();
+const isJpeg = u => /\.jpe?g(\?|#|$)/i.test(u);
+function renditionTarget(){
+  // the stage's pixel size: the fit scale × device pixels, long side
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const px = Math.max(window.innerWidth || 1920, window.innerHeight || 1080) * dpr;
+  return Math.round(Math.max(1280, Math.min(2560, px)));
+}
+function startRenditionWorker(){
+  if(renditionWorker || !RENDITION_OK) return renditionWorker;
+  const code = `self.onmessage = async e => {
+    const { id, url, max } = e.data;
+    try{
+      const r = await fetch(url, { credentials: "same-origin" });
+      if(!r.ok) throw 0;
+      const blob = await r.blob();
+      if(!/^image\\/jpe?g$/i.test(blob.type)) throw 0;
+      // the size, from the JPEG header — without decoding the whole photo
+      const b = new Uint8Array(await blob.slice(0, 262144).arrayBuffer());
+      let w = 0, h = 0;
+      for(let p = 2; p + 9 < b.length;){
+        if(b[p] !== 0xFF){ p++; continue; }
+        const m = b[p + 1], len = (b[p + 2] << 8) | b[p + 3];
+        if(m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC){ h = (b[p + 5] << 8) | b[p + 6]; w = (b[p + 7] << 8) | b[p + 8]; break; }
+        p += 2 + len;
+      }
+      if(!w || !h || Math.max(w, h) <= max * 1.2) throw 0;      // unknown, or already about screen-sized
+      // Width only, so the aspect ratio is kept by construction (EXIF rotation
+      // can't stretch it); decoding straight to size is far cheaper than
+      // decoding 3000 px and shrinking afterwards.
+      const k = max / Math.max(w, h);
+      const bmp = await createImageBitmap(blob, { imageOrientation: "from-image",
+                                                  resizeWidth: Math.max(1, Math.round(w * k)), resizeQuality: "high" });
+      const tw = bmp.width, th = bmp.height;
+      if(Math.max(tw, th) < max * 0.5){ bmp.close(); throw 0; } // came out oddly small: keep the original
+      const c = new OffscreenCanvas(tw, th);
+      c.getContext("2d").drawImage(bmp, 0, 0); bmp.close();
+      const out = await c.convertToBlob({ type: "image/jpeg", quality: 0.9 });
+      self.postMessage({ id, blob: out });
+    }catch(_){ self.postMessage({ id, blob: null }); }
+  };`;
+  try{
+    startRenditionWorker.src = startRenditionWorker.src || URL.createObjectURL(new Blob([code], {type: "text/javascript"}));
+    renditionWorker = new Worker(startRenditionWorker.src);
+    renditionWorker.onmessage = e => { const w = renditionWaiters.get(e.data.id); if(w){ renditionWaiters.delete(e.data.id); w(e.data.blob); } };
+    renditionWorker.onerror = () => {               // a crashed worker must not stall the queue
+      const job = renditionJob;
+      renditionWorker = null; renditionBusy = false; renditionJob = null; renditionWaiters.clear();
+      if(job) job.done(null);
+      pumpRenditions();
+    };
+  }catch(_){ renditionWorker = null; }
+  return renditionWorker;
+}
+/* One photo at a time, nearest slides first, and only when the page is
+   idle — several decodes at once fought the transitions for the CPU. */
+const renditionQueue = [];
+let renditionBusy = false, renditionHoldUntil = 0, renditionHoldTimer = null, renditionJob = null;
+/* A slide change is on: the worker yields to the room. The trace showed a
+   conversion still running when Next was pressed (its JPEG encode took the
+   CPU the transition needed). So stop the worker on the spot — the photo
+   goes back to the front of the queue — and start again only once the
+   slide has been up for a moment. */
+function holdRenditions(ms){
+  renditionHoldUntil = Math.max(renditionHoldUntil, performance.now() + ms);
+  if(renditionBusy){
+    if(renditionWorker){ try{ renditionWorker.terminate(); }catch(_){} }
+    renditionWorker = null;
+    renditionWaiters.clear();
+    renditionBusy = false;
+    if(renditionJob){ renditionQueue.unshift(renditionJob); renditionJob = null; }
+  }
+}
+/* Bytes the stage already has. The worker only converts these, so it never
+   adds network traffic next to what the room is waiting for. */
+const mediaFetched = new Set();
+function warmBytes(u){                  // fetch into the HTTP cache, don't decode
+  if(mediaFetched.has(u) || warmBytes.inflight.has(u)) return;
+  const im = new Image();
+  warmBytes.inflight.set(u, im);
+  im.onload = im.onerror = ()=>{ warmBytes.inflight.delete(u); mediaFetched.add(u); pumpRenditions(); };
+  im.src = u;
+}
+warmBytes.inflight = new Map();
+function pumpRenditions(){
+  if(renditionBusy || !renditionQueue.length) return;
+  const wait = renditionHoldUntil - performance.now();
+  if(wait > 0){ clearTimeout(renditionHoldTimer); renditionHoldTimer = setTimeout(pumpRenditions, wait + 20); return; }
+  const k = renditionQueue.findIndex(j=>mediaFetched.has(j.raw));
+  if(k < 0){ clearTimeout(renditionHoldTimer); renditionHoldTimer = setTimeout(pumpRenditions, 500); return; }
+  renditionBusy = true;
+  const job = renditionJob = renditionQueue.splice(k, 1)[0];
+  scheduleIdle(()=>{
+    if(renditionJob !== job) return;               // stopped by a slide change meanwhile
+    if(!startRenditionWorker()){ renditionBusy = false; renditionJob = null; job.done(null); return; }
+    const id = ++renditionSeq;
+    renditionWaiters.set(id, blob=>{ renditionBusy = false; renditionJob = null; job.done(blob); pumpRenditions(); });
+    try{ renditionWorker.postMessage({ id, url: new URL(job.raw, location.href).href, max: renditionTarget() }); }
+    catch(_){ renditionWaiters.delete(id); renditionBusy = false; renditionJob = null; job.done(null); pumpRenditions(); }
+  }, 600);
+}
+function rendition(raw, urgent){
+  const have = renditions.get(raw);
+  if(have){
+    // already queued: an urgent ask (a neighbour) moves it to the front
+    if(urgent && typeof have.then === "function"){
+      const k = renditionQueue.findIndex(j=>j.raw === raw);
+      if(k > 0) renditionQueue.unshift(renditionQueue.splice(k, 1)[0]);
+    }
+    return have;                                          // a blob: url, "skip", or the promise
+  }
+  if(!RENDITION_OK || !isJpeg(raw) || !startRenditionWorker()){ renditions.set(raw, "skip"); return "skip"; }
+  const p = new Promise(resolve => {
+    const job = { raw, done: blob=>{
+      if(blob && blob.size){
+        const url = URL.createObjectURL(blob);
+        renditions.set(raw, url);
+        Hx.setMediaRendition(raw, url);                    // used from the next paint on
+        resolve(url);
+      }else{ renditions.set(raw, "skip"); resolve("skip"); }
+    }};
+    if(urgent) renditionQueue.unshift(job); else renditionQueue.push(job);
+  });
+  renditions.set(raw, p);
+  pumpRenditions();
+  return p;
+}
+/* Magnifier / zoom region: put the full-resolution originals back on the
+   slide that's up (the copies are screen-sized, a zoom is not). */
+function restoreFullRes(){
+  const wrap = ensureAnimWrap() || pCanvas;
+  if(!wrap) return;
+  wrap.querySelectorAll("[data-full-src]").forEach(b=>{
+    b.style.backgroundImage = `url("${b.dataset.fullSrc}")`;
+    delete b.dataset.fullSrc;
+  });
+}
+window.__hannsFullRes = restoreFullRes;
+
+function holdDecoded(u){
+  if(aheadHeld.has(u)) return;
+  const img = new Image();
+  img.decoding = "async";
+  img.src = u;
+  aheadHeld.set(u, img);
+  if(img.decode) img.decode().catch(()=>{});    // a 404 or a blocked host just stays undecoded
+}
+function decodeAhead(at){
+  if(!DECK || !Array.isArray(DECK.slides)) return;
+  const raw = Hx.mediaSrcRaw || Hx.mediaSrc || (u=>u);
+  const want = [];
+  AHEAD.forEach(d=>{ const sl = DECK.slides[at + d]; if(sl) slideMediaUrls(sl).forEach(u=>want.push(raw(u))); });
+  // what will actually be painted: the screen-sized copy when there is one
+  const painted = u => { const r = renditions.get(u); return typeof r === "string" && r !== "skip" ? r : u; };
+  const keep = new Set(want.map(painted));
+  // let go of what fell out of the window, so memory stays flat on long decks
+  for(const u of aheadHeld.keys()) if(!keep.has(u)) aheadHeld.delete(u);
+  want.forEach(u=>{
+    const r = rendition(u, true);
+    if(r && typeof r.then === "function"){
+      warmBytes(u);                         // the next slides' bytes come in now, as before
+      // A copy is on its way. Don't pre-decode the original meanwhile: the
+      // trace showed an <img> decode is at full size, the slide paints it
+      // scaled, so Chrome decodes it again anyway — it only added CPU load
+      // next to the transition. The bytes are already in the HTTP cache.
+      r.then(url=>{
+        if(Math.abs(i - at) > 2) return;
+        holdDecoded(url === "skip" ? u : url);
+      });
+    }else holdDecoded(painted(u));
+  });
+  // then, quietly, the rest of the deck — nearest first — so every slide
+  // has its copy by the time the talk reaches it
+  if(!decodeAhead.queuedAll){
+    decodeAhead.queuedAll = true;
+    // forward first (that's where a talk goes), the slide that's up last
+    const rank = k => k === at ? 1e6 : (k > at ? (k - at) * 2 - 1 : (at - k) * 2);
+    DECK.slides.map((sl, k)=>({sl, k})).sort((a, b)=>rank(a.k) - rank(b.k))
+      .forEach(o=>slideMediaUrls(o.sl).forEach(u=>rendition(raw(u), false)));
+  }
+}
+function scheduleDecodeAhead(at){
+  clearTimeout(aheadTimer);
+  // after the incoming transition, so it never steals frames from it
+  const s = DECK.slides[at], kind = (s && s.transition) || "fade";
+  const dur = (Hx.TRANSITION_DUR && Hx.TRANSITION_DUR[kind]) || 700;
+  holdRenditions(Number(dur) + 1200);
+  aheadTimer = setTimeout(()=>{
+    try{ decodeAhead(at); }catch(err){ console.warn("[hanns] decode-ahead skipped", err); }
+  }, Math.min(1500, Number(dur) + 80));
+}
+
 function prefetchDeckMedia(){
   if(!DECK || !Array.isArray(DECK.slides)) return;
   const urls = [], seen = new Set();
@@ -403,7 +651,8 @@ function prefetchDeckMedia(){
     const url = urls[n++];
     const img = new Image();
     img.decoding = "async";
-    const next = ()=>{ scheduleIdle(pull, 120); };
+    const done = (Hx.mediaSrcRaw || (u=>u))(url);
+    const next = ()=>{ mediaFetched.add(done); pumpRenditions(); scheduleIdle(pull, 120); };
     img.onload = next;
     img.onerror = next;      // a 404 must not stall the queue
     img.src = url;
@@ -437,6 +686,7 @@ function focusElById(id){
   return ((s.els) || []).find(e => e && e.type === "focus" && e.id === id) || null;
 }
 function applyFocus(elId, off, index){
+  if(!off) restoreFullRes();                 // a callout enlarges: use the originals
   const Hh = window.Hanns || {};
   const wrap = stageWrap();
   if(!wrap || !Hh.showFocus) return;

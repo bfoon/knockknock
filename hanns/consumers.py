@@ -420,8 +420,9 @@ class PresentConsumer(AsyncWebsocketConsumer):
         # stage rather than the other way round.
         resync = bool(data.get("resync")) and self.is_presenter
 
-        await self._set_current_slide(index)
-        slide = await self._slide(index)
+        # One trip to the database for both: save where the room is, and read
+        # just that slide (it used to load every slide of the deck to send one).
+        slide = await self._goto_db(index)
         # Arriving at a slide resets its cue-held elements, so stepping back
         # to a slide replays it from the top instead of showing every reveal
         # the presenter already spent.
@@ -910,6 +911,27 @@ class PresentConsumer(AsyncWebsocketConsumer):
         from .models import Deck
         d = Deck.objects.filter(code=self.code).first()
         return [s.as_dict() for s in d.slides.all()] if d else []
+
+    @sync_to_async
+    def _goto_db(self, index):
+        """Store the current slide and return that slide — same result as
+        _set_current_slide() + _slide(), in one thread hop and one row."""
+        from .models import Deck, Slide
+        Deck.objects.filter(code=self.code).update(current_slide=index)
+        return self._one_slide(index)
+
+    @staticmethod
+    def _slide_rows(code):
+        from .models import Slide
+        return Slide.objects.filter(deck__code=code)              # Meta: position, id
+
+    def _one_slide(self, index):
+        index = max(0, int(index))
+        qs = self._slide_rows(self.code)
+        row = next(iter(qs[index:index + 1]), None)
+        if row is None and index > 0:
+            row = qs.last()                                       # past the end → the last slide
+        return row.as_dict() if row else {}
 
     @sync_to_async
     def _slide(self, index):

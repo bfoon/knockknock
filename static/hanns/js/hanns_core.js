@@ -5507,7 +5507,7 @@ function styleEl(el,node){
    When the URL points at THIS host we drop the scheme+host and let the
    browser resolve it against the page origin. Genuinely remote media
    (S3/GCS/CDN, a pasted https:// image) is left completely alone. */
-function mediaSrc(src){
+function mediaSrcRaw(src){
   const s=String(src||"").trim();
   if(!s||/^(data:|blob:)/i.test(s))return s;
   try{
@@ -5518,10 +5518,23 @@ function mediaSrc(src){
     return s;
   }catch(_){return s;}
 }
+/* Screen-sized renditions. The presenter stage (hanns_present.js) may make a
+   lighter copy of an oversized photo for THIS screen and register it here;
+   mediaSrc() then hands out that copy. Nothing registers on any other page
+   (editor, exports, thumbnails), so there it is exactly mediaSrcRaw(). */
+const MEDIA_SWAP=new Map();
+function setMediaRendition(raw,url){ if(url)MEDIA_SWAP.set(raw,url); else MEDIA_SWAP.delete(raw); }
+function mediaSrc(src){
+  const r=mediaSrcRaw(src);
+  return (MEDIA_SWAP.size&&MEDIA_SWAP.get(r))||r;
+}
 /* Paint a src into a .imgbox and, if it cannot be fetched, swap the silent
    blank box for a labelled placeholder instead of leaving a bare frame. */
 function paintImageBox(box,src,fit){
   const url=mediaSrc(src);
+  // painted from a screen-sized copy: remember the original, for the magnifier
+  const raw=mediaSrcRaw(src);
+  if(url!==raw)box.dataset.fullSrc=raw;
   box.style.backgroundImage=`url("${url}")`;
   box.style.backgroundSize=fit||"cover";
   const probe=new Image();
@@ -11102,6 +11115,8 @@ window.Hanns = {Deck,TEMPLATES,BACKGROUNDS,BG_FX,ANIMS,TRANSITIONS,PALETTE,FONTS
   isStudioObject,renderStudioObject,GEO,GEO_SETS,RAMPS,RAMP_KEYS,toIso,rampFor,rampAt,seriesColor,
   SHAPE_MOTIONS,SHAPE_MOTION_KEYS,SHAPE_MOTION_DEFAULT,MOTION_TYPES,motionOf,
   captureSlide,playTransition,TRANSITION_DUR,
+  // the exact URL paintImageBox() will paint — so a preloader warms the same cache entry
+  mediaSrc,mediaSrcRaw,setMediaRendition,
   AUTO_THEMES,AUTO_THEME_KEYS,autoTheme,autoClassify,autoDesignSlide,autoDesignDeck,autoDesignStrip,
   makeText,makeShape,makeLine,makeImage,makeVideo,makeLink,makeObject,makeCreativeShape,makeTable,makeChart,makeMap,makeGallery,W,H,$,$$,uid,clamp,genCode};
 

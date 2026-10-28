@@ -344,7 +344,7 @@
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="{% static 'hanns/js/hanns_actors.js' %}?v=62"></script>
-<script src="{% static 'hanns/js/hanns_core.js' %}?v=63"></script>
+<script src="{% static 'hanns/js/hanns_core.js' %}?v=64"></script>
 <script src="{% static 'hanns/js/hanns_shapes.js' %}?v=62"></script>
 <script src="{% static 'hanns/js/hanns_fluid.js' %}?v=62"></script>
 <!-- Must load AFTER core, and after fluid for drawer ordering: it reads
@@ -352,7 +352,7 @@
      isStudioObject() says no, objectDef() finds no match and falls back
      to OBJECTS[0] — fill_cow — so every 3D bar chart draws as a cow. -->
 <script src="{% static 'hanns/js/hanns_bars3d.js' %}?v=62"></script>
-<script src="{% static 'hanns/js/hanns_present.js' %}?v=64"></script>
+<script src="{% static 'hanns/js/hanns_present.js' %}?v=65"></script>
 
 <script>
 (function(){
@@ -450,6 +450,8 @@
     if(!canvas) return;
     scale = Math.max(1, Math.min(6, Number(scale) || 1));
     zoomState.scale = scale;
+    // magnifying: paint the full-resolution originals, never a screen-sized copy
+    if(scale > 1 && typeof window.__hannsFullRes === "function") window.__hannsFullRes();
     zoomState.x = (x === undefined || x === null) ? null : Number(x);
     zoomState.y = (y === undefined || y === null) ? null : Number(y);
     if(stage) stage.classList.toggle("zoomed", scale > 1);

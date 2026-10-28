@@ -259,3 +259,35 @@ class LockTests(TransactionTestCase):
         self.assertIn("controller_denied", [m["type"] for m in hello])
         await c.disconnect()
 
+
+
+class GotoDbTests(TestCase):
+    """_goto_db() (one thread hop, one row) must equal the old
+    _set_current_slide() + _slide() pair — including past the end."""
+
+    def setUp(self):
+        _setup(self)
+
+    def _old(self, code, index):
+        d = Deck.objects.filter(code=code).first()
+        slides = list(d.slides.all()) if d else []
+        if not slides:
+            return {}
+        return slides[max(0, min(int(index), len(slides) - 1))].as_dict()
+
+    def test_same_as_before(self):
+        from hanns.consumers import PresentConsumer
+        c = PresentConsumer.__new__(PresentConsumer)
+        c.code = "RMTE01"
+        # reorder positions so ordering really matters
+        for s, pos in zip(Slide.objects.filter(deck=self.deck).order_by("position"), (3, 1, 0, 2)):
+            Slide.objects.filter(pk=s.pk).update(position=pos)
+        for index in (0, 1, 2, 3, 4, 99):
+            got = PresentConsumer.__dict__["_goto_db"].func(c, index)   # the real one, minus the thread hop
+            self.assertEqual(got, self._old("RMTE01", index), index)
+            self.assertEqual(Deck.objects.get(code="RMTE01").current_slide, index)   # stored as before (unclamped)
+        c.code = "NOPE00"
+        self.assertEqual(c._one_slide(0), {})                                       # no deck
+        empty = Deck.objects.create(owner=self.host, code="EMPTY1", title="Empty")
+        c.code = empty.code
+        self.assertEqual(c._one_slide(3), {})                                       # no slides

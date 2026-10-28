@@ -1,0 +1,151 @@
+From b533fa78bbdf2188bd559e4c321b6e78bbb63af1 Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Wed, 28 Oct 2026 19:48:43 +0000
+Subject: [PATCH 7/7] Big screen video: stop YouTube choosing a resolution the
+ projector can't play
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Symptom: Music & video on the big screen — sound fine, picture breaks/slows.
+YouTube picks the stream from the player's size in device pixels; full screen
+on a 4K or high-DPI screen = 1440p/2160p VP9/AV1, which many laptops decode in
+software. Measured here, same clip full screen: 720p and 1080p 30 fps, 0 %
+dropped; 2160p 13.6 fps. (Slide videos and the lobby were measured too: slide
+video 30 fps with or without the photo worker; lobby decoration 5 % vs 3 %.)
+
+- the player's box is at most 1080p in device pixels and scaled up to fill
+  the screen (same shape, so letterboxing is unchanged); on a <=1080p screen
+  it is exactly as before
+- a deck nobody can see in video mode (crossfaded out, or fully under the
+  other deck) shrinks like an audio-only deck, so YouTube drops it to its
+  lowest quality instead of decoding full HD invisibly; it grows back as soon
+  as the crossfader brings it in
+- the lobby's drifting light pauses while an opaque video covers it
+---
+ static/hanns/js/hanns_screen_program.js | 33 ++++++++++++++++++++++---
+ templates/hanns/screen_dj.html          |  2 +-
+ templates/hanns/screen_home.html        |  2 +-
+ templates/hanns/screen_stage.html       |  2 +-
+ 4 files changed, 33 insertions(+), 6 deletions(-)
+
+diff --git a/static/hanns/js/hanns_screen_program.js b/static/hanns/js/hanns_screen_program.js
+index 6dd9fed..9b829e8 100644
+--- a/static/hanns/js/hanns_screen_program.js
++++ b/static/hanns/js/hanns_screen_program.js
+@@ -69,7 +69,17 @@
+   .pm-video.audio{inset:auto;left:0;bottom:0;width:2px;height:2px;opacity:.01;visibility:visible;pointer-events:none;overflow:hidden}
+   .pm-video iframe,.pm-video>div{width:100%;height:100%;border:0}
+   .pm-video.pm-deck-b{z-index:20;transition:opacity .25s,visibility .6s}
+-  .pm-video.pm-deck-b.audio{left:2px}
++  .pm-video.pm-deck-b.audio,.pm-video.pm-deck-b.tiny{left:2px}
++  /* A deck you can't see (faded out, or fully covered by the other deck) shrinks
++     like an audio-only deck, so YouTube drops it to its lowest quality instead of
++     decoding full HD nobody is looking at. */
++  .pm-video.tiny{inset:auto;left:0;bottom:0;width:2px;height:2px;opacity:.01;visibility:visible;pointer-events:none;overflow:hidden}
++  /* The player's own box: at most 1080p in device pixels, scaled up to the screen
++     (see fitBox). In a tiny / audio-only deck it simply fills its 2 px. */
++  .pm-yt-box{position:absolute;left:0;top:0;width:100%;height:100%;transform-origin:0 0}
++  .pm-video.audio .pm-yt-box,.pm-video.tiny .pm-yt-box{width:100%!important;height:100%!important;transform:none!important}
++  /* the lobby's drifting light sits under an opaque video: hold it still meanwhile */
++  body.pm-on .scr-aurora i{animation-play-state:paused}
+   .pm-chip{position:fixed;left:50%;bottom:3vh;z-index:25;margin-left:0;translate:-50% 0;display:flex;gap:.8rem;align-items:center;padding:.7rem 1.1rem .7rem .8rem;border-radius:18px;
+     background:rgba(7,6,13,.66);border:1px solid rgba(255,255,255,.18);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);color:#fff;
+     font:600 clamp(.8rem,1.25vw,1.15rem)/1.25 system-ui,sans-serif;max-width:46vw;opacity:0;transform:translateY(12px);transition:opacity .5s,transform .5s;pointer-events:none}
+@@ -268,6 +278,20 @@
+       document.head.appendChild(s);
+     }
+     const deckOf = (m, id) => (id === "a" ? m : (m.b || {}));
++    /* YouTube picks the video resolution from the player's size in device
++       pixels. Full screen on a 4K or high-DPI screen that means 1440p/2160p,
++       which many laptops can't decode in hardware: the picture stutters while
++       the sound carries on. So the player is at most 1080p in device pixels
++       and scaled up to the screen; on a ≤1080p screen it is exactly as before. */
++    const MAX_VIDEO_PX = 1920;
++    function fitBox(box) {
++      if (!box) return;
++      const dpr = window.devicePixelRatio || 1, vw = window.innerWidth || 1920, vh = window.innerHeight || 1080;
++      if (vw * dpr <= MAX_VIDEO_PX * 1.05) { box.style.width = box.style.height = box.style.transform = ""; return; }
++      const w = MAX_VIDEO_PX / dpr, h = w * vh / vw;          // the screen's own shape: letterboxing unchanged
++      box.style.width = w + "px"; box.style.height = h + "px";
++      box.style.transform = `scale(${vw / w})`;
++    }
+     function gains(m) {
+       const mix = m.mix || {}, xf = +mix.xf || 0, cut = mix.curve === "cut";
+       const cA = cut ? (xf > 0.92 ? 0 : 1) : Math.max(0, Math.min(1, 1 - xf));
+@@ -282,8 +306,9 @@
+     }
+     function Deck(id) {
+       const wrap = document.createElement("div"); wrap.className = `pm-video pm-deck-${id}`;
+-      wrap.innerHTML = `<div id="pm-yt-${id}"></div>`;
++      wrap.innerHTML = `<div class="pm-yt-box"><div id="pm-yt-${id}"></div></div>`;
+       document.body.appendChild(wrap);
++      fitBox(wrap.firstElementChild);
+       const self = { id, wrap, yt: null, ready: false, loadedKey: null, seekRev: null, duck: 1, duckTimer: null, fadeTimer: null, durKey: null, gain: 0 };
+       self.make = () => {
+         self.yt = new YT.Player(`pm-yt-${id}`, {
+@@ -326,6 +351,7 @@
+         const showVideo = !!(cur && m.mode === "video");
+         wrap.classList.toggle("on", showVideo && vis > 0.001);
+         wrap.classList.toggle("audio", !!(cur && m.mode !== "video"));
++        wrap.classList.toggle("tiny", showVideo && vis <= 0.001);     // can't be seen: lowest quality
+         wrap.style.opacity = showVideo ? String(vis) : "";
+         if (!cur) { self.loadedKey = null; if (self.ready) yt.stopVideo(); return; }
+         if (!self.ready) { api(); return; }
+@@ -350,6 +376,7 @@
+       return self;
+     }
+     const decks = { a: Deck("a"), b: Deck("b") };
++    window.addEventListener("resize", () => { fitBox(decks.a.wrap.firstElementChild); fitBox(decks.b.wrap.firstElementChild); });
+     function wantPos(d) {
+       if (!d.playing) return d.position || 0;
+       return (d.position || 0) + Math.max(0, (Date.now() + skew - (d.started_at || 0)) / 1000) * (+d.rate || 1);
+@@ -363,7 +390,7 @@
+       const g = gains(m), A = m.current, B = (m.b || {}).current;
+       // picture: A underneath at full, B on top fading in with the crossfader
+       const visB = !B ? 0 : !A ? 1 : (g.vb + g.va ? g.vb / (g.va + g.vb) : 0);
+-      decks.a.sync(m, force, g.a, A ? 1 : 0);
++      decks.a.sync(m, force, g.a, A ? (B && visB >= 0.999 ? 0 : 1) : 0);   // fully under B: nobody sees A
+       decks.b.sync(m, force, g.b, visB);
+       const showVideo = !!((A || B) && m.mode === "video");
+       document.body.classList.toggle("pm-on", showVideo);
+diff --git a/templates/hanns/screen_dj.html b/templates/hanns/screen_dj.html
+index 75e04a5..69769f8 100644
+--- a/templates/hanns/screen_dj.html
++++ b/templates/hanns/screen_dj.html
+@@ -66,7 +66,7 @@
+ </div>
+ 
+ <script src="{% static 'hanns/js/hanns_dj_fx.js' %}?v=1"></script>
+-<script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=6"></script>
++<script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=7"></script>
+ <script src="{% static 'hanns/js/hanns_dj_page.js' %}?v=1"></script>
+ </body>
+ </html>
+diff --git a/templates/hanns/screen_home.html b/templates/hanns/screen_home.html
+index 4f0d32a..c473f97 100644
+--- a/templates/hanns/screen_home.html
++++ b/templates/hanns/screen_home.html
+@@ -1228,6 +1228,6 @@
+ <script src="{% static 'hanns/js/hanns_screen_live.js' %}?v=4"></script>
+ <script src="{% static 'hanns/js/hanns_dj_fx.js' %}?v=1"></script>
+ <script src="{% static 'hanns/js/hanns_screen_remote.js' %}?v=2"></script>
+-<script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=6"></script>
++<script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=7"></script>
+ {% endif %}
+ {% endblock %}
+diff --git a/templates/hanns/screen_stage.html b/templates/hanns/screen_stage.html
+index bd4d293..e7006a8 100644
+--- a/templates/hanns/screen_stage.html
++++ b/templates/hanns/screen_stage.html
+@@ -150,6 +150,6 @@
+ <script src="{% static 'hanns/js/hanns_screen_live.js' %}?v=3"></script>
+ <script src="{% static 'hanns/js/hanns_dj_fx.js' %}?v=1"></script>
+ <script src="{% static 'hanns/js/hanns_screen_remote.js' %}?v=2"></script>
+-<script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=6"></script>
++<script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=7"></script>
+ </body>
+ </html>
+-- 
+2.43.0
+

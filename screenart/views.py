@@ -203,6 +203,26 @@ def media(request, token):
     return JsonResponse({"ok": True, "state": _push(screen)})
 
 
+@require_POST
+def dj_fx(request, token):
+    """A scratch / FX pad from the DJ booth → straight to the projectors over the
+    screen socket. Nothing is saved; the music state itself still moves through
+    `media` (seek on scratch release, pause after a brake, …)."""
+    screen = _screen(token)
+    if not screen.is_active:
+        return _stopped()
+    data, bad = _json(request)
+    if bad:
+        return bad
+    try:
+        payload = program.dj_fx(data)
+    except program.ProgramError as e:
+        return JsonResponse({"ok": False, "error": str(e)}, status=400)
+    from hanns import screen as svc
+    svc._send(svc.screen_group(screen.id), {"type": "screen.event", "payload": payload})
+    return JsonResponse({"ok": True})
+
+
 @require_GET
 def events(request, token):
     screen = _screen(token)

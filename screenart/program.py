@@ -6,8 +6,18 @@ The host pastes a YouTube link and plays it as **video** (full screen on the
 projector) or **audio only** (the sound plays behind whatever is showing —
 lobby, event background, a poll). A small queue lets breaks run on their
 own: when a track ends the projector says so and the next one starts.
-The projector keeps itself in sync from `started_at` + `position`, so every
-open copy of the screen plays the same moment.
+The projector keeps itself in sync from `started_at` + `position` (+ `rate`),
+so every open copy of the screen plays the same moment.
+
+DJ booth (turntable)
+--------------------
+  rate      pitch fader / 33-45: YouTube playback speed, 0.5–2.0. Position
+            maths is rate-aware, so a pitched track stays in sync.
+  seek      also bumps `seek_rev`, so projectors jump even for a small move
+            (a scratch release, a hot cue) instead of waiting for 4 s of drift.
+  cue_set   store hot cue 0–3 on the current track (`current.cues`);
+  cue_clear a cue is played with a plain seek.
+Scratches and FX pads don't touch the database at all: see `DJ_FX`.
 
 Event (Attendance app)
 ----------------------
@@ -32,6 +42,10 @@ from .models import ScreenStyle
 YT_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 MAX_QUEUE = 20
 MODES = ("video", "audio")
+RATE_MIN, RATE_MAX = 0.5, 2.0
+CUE_SLOTS = 4
+# DJ booth effects, fanned out to the projectors as-is (never stored):
+DJ_FX = ("scratch_start", "scratch", "scratch_end", "horn", "siren", "rewind", "brake")
 VIEWS = ("off", "register", "checkin", "agenda")
 
 
@@ -102,6 +116,8 @@ def media_for(screen_id):
     m.setdefault("loop", False)
     m.setdefault("chip", True)
     m.setdefault("playing", False)
+    m.setdefault("rate", 1.0)
+    m.setdefault("seek_rev", 0)
     m["server_now"] = _now_ms()          # lets projectors correct for their own clock
     return m
 
@@ -115,11 +131,40 @@ def _save_media(screen_id, m):
 
 
 def _start(m, item, position=0):
-    m.update(current=item, playing=True, position=max(0, int(position)), started_at=_now_ms())
+    m.update(current=item, playing=True, position=max(0, int(position)), started_at=_now_ms(),
+             seek_rev=int(m.get("seek_rev") or 0) + 1)
+
+
+def _num(v, default=0.0):
+    """A finite float from client JSON, else `default`."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return default
+    return f if f == f and f not in (float("inf"), float("-inf")) else default
+
+
+def dj_fx(data):
+    """Validate one DJ booth effect for the projectors. Returns the payload to fan out.
+
+    scratch: `v` = up to 64 platter speeds (1.0 = normal play, negative = backwards),
+    one every `dt` ms; scratch_end carries `position`, where the needle lands."""
+    kind = str(data.get("kind") or "")
+    if kind not in DJ_FX:
+        raise ProgramError("Unknown effect.")
+    out = {"type": "dj_fx", "kind": kind}
+    if kind == "scratch":
+        v = data.get("v") if isinstance(data.get("v"), list) else []
+        out["v"] = [round(max(-8.0, min(8.0, _num(x))), 3) for x in v[:64]]
+        out["dt"] = int(max(10, min(100, _num(data.get("dt"), 30))))
+    if kind == "scratch_end":
+        out["position"] = round(max(0, _num(data.get("position"))), 2)
+    return out
 
 
 def media_action(screen_id, data):
-    """Apply one host action: load / queue / play / pause / stop / next / seek / volume / mode / loop / chip / remove / ended."""
+    """Apply one host action: load / queue / play / pause / stop / next / seek / volume / mode / loop / chip / remove / ended
+    / rate / cue_set / cue_clear."""
     m = media_for(screen_id)
     action = str(data.get("action") or "")
     now = _now_ms()
@@ -128,7 +173,7 @@ def media_action(screen_id, data):
         if not m.get("current"):
             return 0
         if m.get("playing"):
-            return m.get("position", 0) + max(0, now - m.get("started_at", now)) / 1000
+            return m.get("position", 0) + max(0, now - m.get("started_at", now)) / 1000 * float(m.get("rate") or 1)
         return m.get("position", 0)
 
     if action in ("load", "queue"):
@@ -169,7 +214,21 @@ def media_action(screen_id, data):
             m.update(current=None, playing=False, position=0)
     elif action == "seek":
         if m.get("current"):
-            m.update(position=max(0, float(data.get("position") or 0)), started_at=now)
+            m.update(position=max(0, _num(data.get("position"))), started_at=now,
+                     seek_rev=int(m.get("seek_rev") or 0) + 1)
+    elif action == "rate":
+        rate = round(min(RATE_MAX, max(RATE_MIN, _num(data.get("rate"), 1.0))), 3)
+        m.update(position=pos_now(), started_at=now, rate=rate)      # rebase, then change speed
+    elif action in ("cue_set", "cue_clear"):
+        if not m.get("current"):
+            raise ProgramError("Put a track on the deck first.")
+        slot = int(_num(data.get("slot"), -1))
+        if not 0 <= slot < CUE_SLOTS:
+            raise ProgramError("Unknown cue.")
+        cues = list((m["current"].get("cues") or [None] * CUE_SLOTS)[:CUE_SLOTS])
+        cues += [None] * (CUE_SLOTS - len(cues))
+        cues[slot] = round(max(0, _num(data.get("position"), pos_now())), 2) if action == "cue_set" else None
+        m["current"] = dict(m["current"], cues=cues)
     elif action == "volume":
         m["volume"] = max(0, min(100, int(data.get("volume") or 0)))
     elif action == "mode":

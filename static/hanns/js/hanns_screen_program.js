@@ -80,6 +80,8 @@
   .pm-eq i:nth-child(2){animation-delay:-.3s;background:#a78bfa}.pm-eq i:nth-child(3){animation-delay:-.6s;background:#fb7185}
   @keyframes pmEq{0%,100%{height:25%}50%{height:100%}}
   .pm-chip.paused .pm-eq i{animation-play-state:paused}
+  .pm-chip.scratch img{animation:pmWig .18s ease-in-out infinite alternate}
+  @keyframes pmWig{from{transform:rotate(-8deg)}to{transform:rotate(8deg)}}
   .pm-sound{position:fixed;inset:0;z-index:95;display:none;place-items:center;background:rgba(5,6,14,.55);cursor:pointer}
   .pm-sound.on{display:grid}
   .pm-sound div{padding:1.2rem 1.8rem;border-radius:20px;background:#12101f;border:1px solid rgba(255,255,255,.2);color:#fff;font:700 clamp(1rem,2vw,1.6rem)/1.3 system-ui,sans-serif;text-align:center}
@@ -252,6 +254,8 @@
     soundAsk.innerHTML = "<div>🔊 Click anywhere to start the sound<small>Browsers only play sound after someone clicks the screen once.</small></div>";
     document.body.append(vwrap, chip, soundAsk);
     let yt = null, ytReady = false, loadedKey = null, apiAsked = false, skew = 0, askTimer = null, skewFrom = null;
+    let seekRev = null, duck = 1, duckTimer = null, fadeTimer = null;   // DJ booth: needle drops + FX ducking
+    const fx = window.KKDJ ? window.KKDJ.engine() : null;
     function api() {
       if (apiAsked) return; apiAsked = true;
       const prev = window.onYouTubeIframeAPIReady;
@@ -279,7 +283,7 @@
     }
     function wantPos(m) {
       if (!m.playing) return m.position || 0;
-      return (m.position || 0) + Math.max(0, (Date.now() + skew - (m.started_at || 0)) / 1000);
+      return (m.position || 0) + Math.max(0, (Date.now() + skew - (m.started_at || 0)) / 1000) * (+m.rate || 1);
     }
     function sync(force) {
       const m = state.media || {}, cur = m.current;
@@ -298,7 +302,10 @@
       } else chip.classList.remove("on");
       if (!cur) { loadedKey = null; if (ytReady) yt.stopVideo(); soundAsk.classList.remove("on"); return; }
       if (!ytReady) { api(); return; }
-      yt.setVolume(m.volume ?? 80);
+      yt.setVolume(Math.round((m.volume ?? 80) * duck));
+      if (yt.setPlaybackRate && yt.getPlaybackRate && Math.abs(yt.getPlaybackRate() - (+m.rate || 1)) > 0.001) yt.setPlaybackRate(+m.rate || 1);
+      const jumped = m.seek_rev != null && m.seek_rev !== seekRev;   // a scratch release, hot cue, nudge…
+      seekRev = m.seek_rev;
       const pos = wantPos(m);
       if (cur.key !== loadedKey) {
         loadedKey = cur.key;
@@ -309,7 +316,8 @@
         if (!m.playing && st === 1) yt.pauseVideo();
         const t = yt.getCurrentTime ? yt.getCurrentTime() : 0;
         // only correct real drift, and never while YouTube is still buffering
-        if (m.playing && st === 1 && (force || Math.abs(t - pos) > 4)) yt.seekTo(pos, true);
+        if (jumped && !force) yt.seekTo(pos, true);
+        else if (m.playing && st === 1 && (force || Math.abs(t - pos) > 4)) yt.seekTo(pos, true);
       }
       // sound blocked until someone clicks the projector page once
       clearTimeout(askTimer);
@@ -318,7 +326,35 @@
         if ((state.media || {}).playing && st !== 1 && st !== 3) soundAsk.classList.add("on");
       }, 2500);
     }
-    soundAsk.addEventListener("click", () => { soundAsk.classList.remove("on"); if (ytReady) { yt.unMute(); yt.playVideo(); } });
+    soundAsk.addEventListener("click", () => { soundAsk.classList.remove("on"); fx && fx.unlock(); if (ytReady) { yt.unMute(); yt.playVideo(); } });
+    document.addEventListener("pointerdown", () => fx && fx.unlock(), { passive: true });
+
+    // ── DJ booth effects (from the screen socket, never stored) ──
+    function setDuck(x, ms) {
+      duck = x; clearTimeout(duckTimer); clearInterval(fadeTimer);
+      if (ytReady) yt.setVolume(Math.round(((state.media || {}).volume ?? 80) * duck));
+      if (ms) duckTimer = setTimeout(() => setDuck(1), ms);
+    }
+    function fadeOut(ms) {               // the brake: the track sinks away while the platter stops
+      clearInterval(fadeTimer);
+      const t0 = Date.now();
+      fadeTimer = setInterval(() => {
+        const p = Math.min(1, (Date.now() - t0) / ms);
+        duck = 1 - p;
+        if (ytReady) yt.setVolume(Math.round(((state.media || {}).volume ?? 80) * duck));
+        if (p >= 1) { clearInterval(fadeTimer); duckTimer = setTimeout(() => setDuck(1), 1500); }
+      }, 50);
+    }
+    document.addEventListener("scr:djfx", e => {
+      const m = e.detail || {};
+      if (!(state.media || {}).current && m.kind !== "horn" && m.kind !== "siren") return;
+      if (m.kind === "scratch_start") { setDuck(0, 15000); chip.classList.add("scratch"); }   // hand on the record
+      else if (m.kind === "scratch_end") { setTimeout(() => setDuck(1), 220); chip.classList.remove("scratch"); }
+      else if (m.kind === "rewind") setDuck(0, 1300);
+      else if (m.kind === "brake") fadeOut(1150);
+      else if (m.kind === "horn") setDuck(0.55, 1100);
+      if (fx) fx.handle(m);
+    });
     setInterval(() => { if (ytReady && (state.media || {}).playing) sync(false); }, 5000);
 
     // ── event views ──
@@ -429,10 +465,19 @@
   }
 
   /* ───────────── dashboard ───────────── */
-  /* Music & video lives in a DJ booth modal: the source row shows what's
-     playing (with a quick play/pause), and "Open DJ booth" — or the F3
-     scene key — pops the full deck: spinning record, link box, queue,
-     volume, loop and the "Now playing" strip toggle. */
+  /* Music & video lives in the DJ booth: a turntable you can actually play.
+       • grab the record and scratch — your hand's speed streams to the
+         projector (scratch voice + muted track), and on release the needle
+         drops exactly where you left it
+       • START·STOP, 33 / 45, a pitch fader (±8 / ±16 %), ⟲ ⟳ nudge
+       • four hot cues (tap to set, tap to jump, hold to clear)
+       • FX pads: air horn, siren, rewind, brake
+       • 🎧 "Hear FX here" monitors the scratches and pads on this device
+     Keys inside the booth: Space start/stop · 1–4 cues · Q W E R pads ·
+     ← → nudge. The source row on the card shows what's playing, with a
+     quick play/pause, and "Open DJ booth" (or the F3 scene key) pops it. */
+  const RPM33 = 100 / 3, SEC_PER_REV = 60 / RPM33;            // 1.8 s of music per turn at 33⅓
+  const fmt = s => { s = Math.max(0, s || 0); const m = Math.floor(s / 60), r = s - m * 60; return `${m}:${r < 10 ? "0" : ""}${r.toFixed(1)}`; };
   const djCss = document.createElement("style");
   djCss.textContent = `
   .dj-row{display:flex;align-items:center;gap:.9rem;padding:.75rem 1.2rem;flex-wrap:wrap}
@@ -453,50 +498,155 @@
   details.pg-fold>summary .tx{display:flex;flex-direction:column;gap:.15rem;min-width:0}
   details.pg-fold>summary .tx small{font-size:.8rem}
   details.pg-fold .pg-e{padding:0 1.2rem 1rem}
-
-  dialog.dj{width:min(760px,94vw);max-height:92vh;padding:0;border:0;border-radius:24px;color:#f6f4ff;overflow:auto;
-    background:#0c0a17;box-shadow:0 40px 120px -20px rgba(0,0,0,.85),0 0 0 1px rgba(167,139,250,.28)}
-  dialog.dj::backdrop{background:rgba(4,3,10,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
-  dialog.dj[open]{animation:djIn .28s cubic-bezier(.2,.9,.3,1.2) both}
-  @keyframes djIn{from{opacity:0;transform:translateY(14px) scale(.97)}}
-  .dj-top{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:1rem 1.2rem;border-bottom:1px solid rgba(255,255,255,.08)}
-  .dj-top .k{font:600 .62rem/1 ui-monospace,monospace;letter-spacing:.22em;text-transform:uppercase;color:#c4b5fd}
-  .dj-top h3{margin:.3rem 0 0;font:800 1.4rem/1 "Archivo",system-ui,sans-serif;letter-spacing:-.02em}
-  .dj-x{width:42px;height:42px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:#f1f5f9;cursor:pointer;font-size:1.1rem}
-  .dj-deck{display:grid;grid-template-columns:minmax(180px,250px) minmax(0,1fr);gap:1.4rem;align-items:center;padding:1.3rem 1.2rem .4rem}
-  .dj-plat{position:relative;aspect-ratio:1;border-radius:22px;background:#15122a;border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;
-    box-shadow:inset 0 2px 0 rgba(255,255,255,.04),inset 0 -12px 30px rgba(0,0,0,.4)}
-  .dj-rec{width:86%;aspect-ratio:1;border-radius:50%;position:relative;
-    background:repeating-radial-gradient(circle,#0b0b10 0 2px,#16151d 2px 4px);
-    box-shadow:0 10px 30px rgba(0,0,0,.6),inset 0 0 0 2px #000;animation:djSpin 1.8s linear infinite;animation-play-state:paused}
-  .dj-rec::after{content:"";position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 20deg,transparent 0 40deg,rgba(255,255,255,.07) 55deg,transparent 70deg 200deg,rgba(255,255,255,.05) 220deg,transparent 240deg)}
-  .dj-lab{position:absolute;inset:32%;border-radius:50%;background:#a78bfa center/cover no-repeat;border:3px solid #0b0b10;z-index:1}
-  .dj-lab::after{content:"";position:absolute;left:50%;top:50%;width:9px;height:9px;margin:-4.5px;border-radius:50%;background:#0c0a17}
-  .dj-arm{position:absolute;top:9%;right:9%;width:12%;height:58%;transform-origin:50% 6%;transform:rotate(-26deg);transition:transform .6s cubic-bezier(.3,.9,.3,1.1)}
-  .dj-arm::before{content:"";position:absolute;left:50%;top:0;width:16px;height:16px;margin-left:-8px;border-radius:50%;background:#2a2640;border:2px solid #4b4570}
-  .dj-arm::after{content:"";position:absolute;left:50%;top:8px;bottom:0;width:4px;margin-left:-2px;border-radius:2px;background:linear-gradient(#8f89b6,#5a5480)}
-  dialog.dj.spinning .dj-rec{animation-play-state:running}
-  dialog.dj.spinning .dj-arm{transform:rotate(4deg)}
   @keyframes djSpin{to{transform:rotate(360deg)}}
-  .dj-now .k{font:600 .6rem/1 ui-monospace,monospace;letter-spacing:.2em;text-transform:uppercase;color:#a9a6c2}
-  .dj-now b{display:block;margin:.45rem 0 .35rem;font:800 clamp(1.1rem,2.4vw,1.5rem)/1.15 "Archivo",system-ui,sans-serif;
-    overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-  .dj-now small{color:#a9a6c2;font-size:.82rem}
-  .dj-eq{display:flex;gap:4px;align-items:flex-end;height:44px;margin-top:1rem}
-  .dj-eq i{flex:1;max-width:9px;height:12%;border-radius:3px;background:linear-gradient(#22d3ee,#a78bfa);opacity:.35}
-  dialog.dj.spinning .dj-eq i{opacity:1;animation:djEq 1.1s ease-in-out infinite}
-  ${Array.from({length:16},(_, i)=>`dialog.dj.spinning .dj-eq i:nth-child(${i+1}){animation-delay:-${(i*0.137%1).toFixed(2)}s;animation-duration:${(0.8+((i*7)%5)*0.12).toFixed(2)}s}`).join("")}
-  @keyframes djEq{0%,100%{height:14%}50%{height:100%}}
-  .dj-body{padding:.2rem 1.2rem 1.3rem}
-  .dj-body .pg-sec{margin-top:.6rem}
-  .dj-body .pg-now{display:block;margin:.6rem 0 0;padding:.75rem;border-radius:14px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08)}
-  .dj-body .pg-now>img,.dj-body .pg-now>div:not(.pg-ctl){display:none}
+
+  /* ── the booth ── */
+  dialog.dj{width:min(1000px,96vw);max-height:94vh;padding:0;border:0;border-radius:26px;color:#f3f1fa;overflow:auto;
+    background:#0b0a12;box-shadow:0 40px 120px -20px rgba(0,0,0,.9),0 0 0 1px rgba(255,255,255,.08);
+    font-family:"Inter",system-ui,sans-serif}
+  dialog.dj::backdrop{background:rgba(3,2,8,.78);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px)}
+  dialog.dj[open]{animation:djIn .3s cubic-bezier(.2,.9,.3,1.15) both}
+  @keyframes djIn{from{opacity:0;transform:translateY(16px) scale(.97)}}
+  .dj button{font-family:inherit}
+  .dj button:focus-visible,.dj input:focus-visible{outline:2px solid #22d3ee;outline-offset:2px}
+  .dj-top{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:1rem 1.3rem;border-bottom:1px solid rgba(255,255,255,.07);flex-wrap:wrap}
+  .dj-top .k{font:600 .6rem/1 "Spline Sans Mono",ui-monospace,monospace;letter-spacing:.24em;text-transform:uppercase;color:#a9a6c2}
+  .dj-top h3{margin:.32rem 0 0;font:800 1.45rem/1 "Archivo",system-ui,sans-serif;letter-spacing:-.02em}
+  .dj-tr{display:flex;gap:.5rem;align-items:center}
+  .dj-ear{min-height:42px;padding:0 .85rem;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:#cbd5e1;
+    display:inline-flex;align-items:center;gap:.45rem;cursor:pointer;font-size:.8rem;font-weight:600}
+  .dj-ear[aria-pressed="true"]{color:#04121a;background:#22d3ee;border-color:#22d3ee}
+  .dj-x{width:42px;height:42px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:#f1f5f9;cursor:pointer;font-size:1.05rem}
+
+  /* plinth */
+  .tt{margin:1.1rem 1.3rem 0;border-radius:22px;padding:1.2rem;display:grid;grid-template-columns:minmax(0,1fr) 92px;gap:1.2rem;
+    background:linear-gradient(180deg,#22212b,#17161e);border:1px solid rgba(255,255,255,.08);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.08),inset 0 -20px 40px rgba(0,0,0,.35),0 18px 40px -18px rgba(0,0,0,.9)}
+  .tt-left{display:flex;flex-direction:column;gap:1rem;min-width:0}
+  .tt-plat{position:relative;width:min(100%,430px);aspect-ratio:1;margin:0 auto;touch-action:none;user-select:none;-webkit-user-select:none}
+  .tt-rim{position:absolute;inset:0;border-radius:50%;
+    background:conic-gradient(from 0deg,#8d8c96,#d9d8de,#6f6e78,#c8c7cf,#7c7b85,#e3e2e8,#73727c,#bfbec6,#8d8c96);
+    box-shadow:0 14px 34px rgba(0,0,0,.75),inset 0 0 0 2px rgba(0,0,0,.5)}
+  .tt-strobe{position:absolute;inset:1.4%;border-radius:50%;
+    background:repeating-conic-gradient(from 0deg,#2b2a33 0 3deg,#55545e 3deg 6deg);
+    -webkit-mask:radial-gradient(circle,transparent 66%,#000 66.5%,#000 69%,transparent 69.5%);mask:radial-gradient(circle,transparent 66%,#000 66.5%,#000 69%,transparent 69.5%)}
+  .tt-rec{position:absolute;inset:4.5%;border-radius:50%;cursor:grab;will-change:transform;
+    background:
+      radial-gradient(circle,transparent 31%,rgba(255,255,255,.05) 31.4%,transparent 32%),
+      repeating-radial-gradient(circle,#0a0a0d 0 1.4px,#17161c 1.4px 2.8px);
+    box-shadow:inset 0 0 0 3px #050507,0 0 0 1px rgba(0,0,0,.6)}
+  .tt-rec::before{content:"";position:absolute;inset:0;border-radius:50%;
+    background:conic-gradient(from 35deg,transparent 0 30deg,rgba(255,255,255,.09) 45deg,transparent 60deg 205deg,rgba(255,255,255,.06) 222deg,transparent 240deg)}
+  .tt-sheen{position:absolute;inset:4.5%;border-radius:50%;pointer-events:none;
+    background:conic-gradient(from 300deg,transparent 0 20deg,rgba(255,255,255,.08) 34deg,transparent 48deg 180deg,rgba(255,255,255,.05) 200deg,transparent 220deg)}
+  .tt-plat.held .tt-rec{cursor:grabbing}
+  .tt-lab{position:absolute;inset:33%;border-radius:50%;background:#7c3aed center/cover no-repeat;border:3px solid #0a0a0d;
+    display:grid;place-items:center;overflow:hidden}
+  .tt-lab span{font:800 .62rem/1.1 "Archivo",system-ui,sans-serif;color:#fff;text-align:center;padding:0 14%;text-shadow:0 1px 6px rgba(0,0,0,.9)}
+  .tt-lab.art span{display:none}
+  .tt-spin{position:absolute;left:50%;top:50%;width:3.2%;aspect-ratio:1;margin:-1.6%;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#f5f5f7,#8b8a93);box-shadow:0 1px 3px rgba(0,0,0,.8);pointer-events:none}
+  .tt-mark{position:absolute;left:50%;top:5%;width:2px;height:7%;margin-left:-1px;background:rgba(255,255,255,.55);border-radius:1px}
+  .tt-hint{position:absolute;left:50%;bottom:-2px;translate:-50% 100%;font-size:.72rem;color:#8f8ba6;white-space:nowrap;padding-top:.45rem}
+  .tt-plat.held .tt-hint{color:#fbbf24}
+  .tt-arm{position:absolute;top:-3%;right:-6%;width:30%;height:82%;pointer-events:none;transform-origin:72% 9%;
+    transform:rotate(-30deg);transition:transform .9s cubic-bezier(.3,.85,.25,1.1);filter:drop-shadow(0 10px 8px rgba(0,0,0,.55))}
+  .tt.on .tt-arm{transform:rotate(var(--arm,2deg))}
+  .tt-arm svg{width:100%;height:100%;overflow:visible}
+
+  .tt-bar{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+  .tt-ss{min-width:108px;min-height:62px;border-radius:12px;border:1px solid #000;cursor:pointer;color:#e5e7eb;
+    font:800 .72rem/1.15 "Archivo",system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;
+    background:linear-gradient(180deg,#3a3944,#24232c);box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 4px 0 #0b0a10,0 6px 12px rgba(0,0,0,.5);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.3rem;transition:transform .06s,box-shadow .06s}
+  .tt-ss:active{transform:translateY(3px);box-shadow:inset 0 1px 0 rgba(255,255,255,.1),0 1px 0 #0b0a10}
+  .tt-ss i.led{width:26px;height:4px;border-radius:2px;background:#3f1d12}
+  .tt.on .tt-ss i.led{background:#ff6a2b;box-shadow:0 0 10px #ff6a2b}
+  .tt-spd{display:flex;gap:.35rem}
+  .tt-spd button,.tt-nudge button{min-width:50px;min-height:44px;border-radius:10px;border:1px solid #000;cursor:pointer;color:#cbd5e1;
+    font:700 .82rem/1 "Spline Sans Mono",ui-monospace,monospace;background:linear-gradient(180deg,#32313b,#22212a);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.1),0 3px 0 #0b0a10}
+  .tt-spd button:active,.tt-nudge button:active{transform:translateY(2px);box-shadow:0 1px 0 #0b0a10}
+  .tt-spd button[aria-pressed="true"]{color:#ffb38a;box-shadow:inset 0 1px 0 rgba(255,255,255,.1),0 3px 0 #0b0a10,inset 0 -3px 0 #ff6a2b}
+  .tt-nudge{display:flex;gap:.35rem}
+  .tt-lcd{margin-left:auto;min-width:150px;padding:.55rem .8rem;border-radius:10px;background:#071512;border:1px solid #0f2a24;
+    font:700 1.35rem/1 "Spline Sans Mono",ui-monospace,monospace;color:#5eead4;text-shadow:0 0 8px rgba(94,234,212,.45);text-align:right}
+  .tt-lcd small{display:block;margin-top:.3rem;font-size:.6rem;letter-spacing:.14em;color:#2dd4bf;opacity:.75}
+
+  /* pitch fader column */
+  .tt-pitch{align-self:center;display:flex;flex-direction:column;align-items:center;gap:.55rem;padding:.6rem .4rem;border-radius:14px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.06)}
+  .tt-pitch .k{font:600 .56rem/1 "Spline Sans Mono",ui-monospace,monospace;letter-spacing:.18em;color:#8f8ba6}
+  .tt-track{position:relative;flex:none;height:min(300px,44vh);width:44px;display:flex;justify-content:center}
+  .tt-track::before{content:"";position:absolute;top:6px;bottom:6px;left:50%;width:6px;margin-left:-3px;border-radius:3px;background:#050508;box-shadow:inset 0 1px 2px #000}
+  .tt-track::after{content:"";position:absolute;top:50%;left:4px;right:4px;height:2px;margin-top:-1px;background:#22c55e;box-shadow:0 0 6px #22c55e}
+  .tt-fader{-webkit-appearance:none;appearance:none;writing-mode:vertical-lr;direction:ltr;width:44px;height:100%;block-size:44px;inline-size:100%;margin:0;background:transparent;cursor:ns-resize;position:relative;z-index:1}
+  .tt-fader::-webkit-slider-runnable-track{width:44px;background:transparent}
+  .tt-fader::-moz-range-track{background:transparent}
+  .tt-fader::-webkit-slider-thumb{-webkit-appearance:none;width:40px;height:24px;border-radius:5px;border:1px solid #000;
+    background:linear-gradient(180deg,#e7e6ec 0,#b9b8c1 45%,#3b3a44 46%,#3b3a44 54%,#b9b8c1 55%,#e7e6ec 100%);box-shadow:0 3px 6px rgba(0,0,0,.6)}
+  .tt-fader::-moz-range-thumb{width:40px;height:24px;border-radius:5px;border:1px solid #000;
+    background:linear-gradient(180deg,#e7e6ec 0,#b9b8c1 45%,#3b3a44 46%,#3b3a44 54%,#b9b8c1 55%,#e7e6ec 100%);box-shadow:0 3px 6px rgba(0,0,0,.6)}
+  .tt-m{font:700 .8rem/1 "Spline Sans Mono",ui-monospace,monospace;color:#77738f;margin:-.2rem 0}
+  .tt-pv{font:700 .78rem/1 "Spline Sans Mono",ui-monospace,monospace;color:#5eead4;min-width:4.6em;text-align:center}
+  .tt-pitch .row{display:flex;gap:.25rem}
+  .tt-pitch .row button{min-height:32px;padding:0 .4rem;border-radius:7px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);
+    color:#cbd5e1;font:600 .62rem/1 "Spline Sans Mono",ui-monospace,monospace;cursor:pointer}
+  .tt-pitch .row button[aria-pressed="true"]{border-color:#5eead4;color:#5eead4}
+  .tt-pitch .zero{width:100%;min-height:32px;border-radius:7px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#cbd5e1;font-size:.66rem;cursor:pointer}
+
+  /* pads */
+  .dj-pads{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;padding:1.1rem 1.3rem 0}
+  .dj-pads h4{margin:0 0 .5rem;display:flex;justify-content:space-between;gap:.5rem;font:600 .6rem/1 "Spline Sans Mono",ui-monospace,monospace;letter-spacing:.2em;text-transform:uppercase;color:#a9a6c2}
+  .dj-pads h4 small{letter-spacing:0;text-transform:none;font-family:inherit;color:#77738f}
+  .dj-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.5rem}
+  .pad{--c:#22d3ee;position:relative;min-height:74px;border-radius:12px;border:1px solid rgba(0,0,0,.6);cursor:pointer;color:#f8fafc;
+    background:linear-gradient(180deg,#1f1e27,#16151d);box-shadow:inset 0 1px 0 rgba(255,255,255,.07),inset 0 0 0 1px rgba(255,255,255,.03),0 3px 0 #08070c;
+    display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;padding:.55rem .6rem;text-align:left;transition:transform .05s,box-shadow .12s,background .12s}
+  .pad b{font:800 .95rem/1 "Archivo",system-ui,sans-serif}
+  .pad small{font:600 .66rem/1 "Spline Sans Mono",ui-monospace,monospace;color:#8f8ba6}
+  .pad i.bi{font-size:1.1rem;color:var(--c)}
+  .pad:active,.pad.hit{transform:translateY(2px);box-shadow:0 1px 0 #08070c,0 0 24px -4px var(--c),inset 0 0 0 2px var(--c)}
+  .pad.set{background:linear-gradient(180deg,color-mix(in srgb,var(--c) 30%,#1f1e27),color-mix(in srgb,var(--c) 14%,#16151d));
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.12),inset 0 0 0 1px color-mix(in srgb,var(--c) 70%,transparent),0 3px 0 #08070c}
+  .pad.set small{color:#f1f5f9}
+  .pad .key{position:absolute;top:.45rem;right:.5rem;font:600 .55rem/1 "Spline Sans Mono",ui-monospace,monospace;color:#5c5873}
+  .pad:disabled{opacity:.4;cursor:default}
+
+  .dj-now{display:flex;align-items:center;gap:.8rem;margin:1.1rem 1.3rem 0;padding:.7rem .9rem;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);min-width:0}
+  .dj-now .k{flex:none;font:600 .56rem/1 "Spline Sans Mono",ui-monospace,monospace;letter-spacing:.2em;text-transform:uppercase;color:#a9a6c2}
+  .dj-now b{flex:1;min-width:0;font-size:.92rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dj-now small{flex:none;color:#a9a6c2;font-size:.78rem}
+  .dj-body{padding:.2rem 1.3rem 1.3rem}
+  .dj-body .pg-h h3::before{content:"Crate · "}
+  .dj-body .pg-sec{margin-top:.8rem}
+  .dj-body .pg-now{display:block;margin:.6rem 0 0;padding:.7rem;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07)}
+  .dj-body .pg-now>img,.dj-body .pg-now>div:not(.pg-ctl),.dj-body [data-ma="toggle"]{display:none}
   .dj-body .pg-ctl{display:flex;gap:.45rem;flex-wrap:wrap;align-items:center}
-  .dj-body .pg-cur:empty+.pg-q:empty::before{content:"Nothing in the queue yet — paste a YouTube link above.";display:block;padding:1rem;border-radius:12px;
+  .dj-body .pg-cur:empty+.pg-q:empty::before{content:"The crate is empty — paste a YouTube link above to put a record on.";display:block;padding:1rem;border-radius:12px;
     border:1px dashed rgba(255,255,255,.14);color:#a9a6c2;font-size:.85rem;text-align:center}
-  @media (max-width:600px){.dj-deck{grid-template-columns:1fr}.dj-plat{max-width:240px;justify-self:center;width:100%}}
-  @media (prefers-reduced-motion:reduce){.dj-rec,.dj-eq i,.dj-row .ico i{animation:none!important}}`;
+  .dj-toast{position:sticky;bottom:1rem;margin:0 auto;width:max-content;max-width:90%;padding:.55rem .9rem;border-radius:999px;background:#fbbf24;color:#1c1300;
+    font-weight:700;font-size:.82rem;opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s;pointer-events:none}
+  .dj-toast.on{opacity:1;transform:none}
+  @media (max-width:760px){
+    .tt{grid-template-columns:1fr}
+    .tt-pitch{flex-direction:row;flex-wrap:wrap;justify-content:center}
+    .tt-track{min-height:0;height:44px;width:100%;max-width:260px}
+    .tt-track::before{top:50%;bottom:auto;left:6px;right:6px;width:auto;height:6px;margin:-3px 0 0}
+    .tt-track::after{left:50%;right:auto;top:4px;bottom:4px;width:2px;height:auto;margin:0 0 0 -1px}
+    .tt-fader{writing-mode:horizontal-tb;width:100%;height:44px;inline-size:100%;block-size:44px}
+    .dj-pads{grid-template-columns:1fr}
+    .tt-lcd{margin-left:0}
+  }
+  @media (prefers-reduced-motion:reduce){.dj-row .ico i{animation:none!important}}`;
   document.head.appendChild(djCss);
+
+  const ARM_SVG = `<svg viewBox="0 0 100 300" aria-hidden="true">
+    <circle cx="72" cy="27" r="22" fill="#2a2933" stroke="#4a4955" stroke-width="3"/><circle cx="72" cy="27" r="9" fill="#9d9ca6"/>
+    <rect x="58" y="-8" width="28" height="20" rx="4" fill="#3a3944"/>
+    <path d="M72 27 L66 210 L44 262" fill="none" stroke="#c9c8d0" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M72 27 L66 210 L44 262" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="2" stroke-linecap="round"/>
+    <rect x="28" y="250" width="30" height="36" rx="5" transform="rotate(24 43 268)" fill="#1d1c24" stroke="#5b5a66" stroke-width="2"/>
+    <rect x="34" y="282" width="8" height="10" rx="2" transform="rotate(24 43 268)" fill="#ff6a2b"/></svg>`;
 
   document.querySelectorAll("[data-screen]").forEach(root => {
     const base = `/screenart/s/${root.dataset.token}/`;
@@ -508,7 +658,7 @@
         <span class="tx"><b>Music &amp; video</b><small class="pg-sum-m"></small></span>
         <span class="acts">
           <button type="button" data-dj-quick hidden></button>
-          <button type="button" class="go" data-dj-open><i class="bi bi-boombox"></i> Open DJ booth</button>
+          <button type="button" class="go" data-dj-open><i class="bi bi-vinyl"></i> Open DJ booth</button>
         </span></div>
       <details class="pg-fold" data-pg="event"><summary><span class="ico" aria-hidden="true"><i class="bi bi-clipboard-check"></i></span>
         <span class="tx"><b>Event</b><small class="pg-sum-e"></small></span></summary><div class="pg-e"></div></details>`;
@@ -516,44 +666,269 @@
     if (slot) slot.appendChild(box);
     else if (link) link.parentNode.insertBefore(box, link); else root.appendChild(box);
 
-    // the DJ booth modal (holds the full media controls)
+    const CUE_COLORS = ["#22d3ee", "#a78bfa", "#f5a524", "#fb7185"];
+    const FX = [["horn", "Air horn", "bi-megaphone-fill", "Q", "#f5a524"], ["siren", "Siren", "bi-bell-fill", "W", "#fb7185"],
+                ["rewind", "Rewind", "bi-rewind-fill", "E", "#22d3ee"], ["brake", "Brake", "bi-stop-circle-fill", "R", "#a78bfa"]];
     const dj = document.createElement("dialog");
     dj.className = "dj";
     dj.setAttribute("aria-label", "DJ booth");
-    dj.innerHTML = `<div class="dj-top"><div><div class="k">DJ booth · plays on the projector only</div><h3 class="dj-name"></h3></div>
-        <button type="button" class="dj-x" data-dj-close aria-label="Close the DJ booth"><i class="bi bi-x-lg"></i></button></div>
-      <div class="dj-deck">
-        <div class="dj-plat" aria-hidden="true"><div class="dj-rec"><span class="dj-lab"></span></div><div class="dj-arm"></div></div>
-        <div class="dj-now"><div class="k">Now playing</div><b class="dj-t">Nothing on the deck</b><small class="dj-s">Paste a YouTube link below — welcome music, a break playlist, a showreel.</small>
-          <div class="dj-eq" aria-hidden="true">${"<i></i>".repeat(16)}</div></div>
+    dj.innerHTML = `<div class="dj-top"><div><div class="k">DJ booth · plays on the projector</div><h3 class="dj-name"></h3></div>
+        <div class="dj-tr">
+          <button type="button" class="dj-ear" data-ear aria-pressed="false" title="Play the scratches and pads on this device too"><i class="bi bi-headphones"></i> Hear FX here</button>
+          <button type="button" class="dj-x" data-dj-close aria-label="Close the DJ booth">✕</button></div></div>
+      <div class="tt">
+        <div class="tt-left">
+          <div class="tt-plat" data-plat role="slider" tabindex="0" aria-label="Record — drag to scratch" aria-valuetext="0:00">
+            <div class="tt-rim"></div><div class="tt-strobe" data-strobe></div>
+            <div class="tt-rec" data-rec><div class="tt-mark"></div><div class="tt-lab" data-lab><span data-lab-t>Hanns</span></div></div>
+            <div class="tt-sheen"></div><div class="tt-spin"></div>
+            <div class="tt-arm">${ARM_SVG}</div>
+            <div class="tt-hint" data-hint>Grab the record to scratch</div>
+          </div>
+          <div class="tt-bar" style="margin-top:1.4rem">
+            <button type="button" class="tt-ss" data-ss title="Start / stop (Space)"><i class="led"></i>Start · Stop</button>
+            <div class="tt-spd" role="group" aria-label="Speed">
+              <button type="button" data-spd="1" aria-pressed="true">33</button><button type="button" data-spd="1.35" aria-pressed="false">45</button></div>
+            <div class="tt-nudge" role="group" aria-label="Nudge">
+              <button type="button" data-nudge="-5" title="Back 5 s (←)" aria-label="Back 5 seconds"><i class="bi bi-arrow-counterclockwise"></i> 5</button>
+              <button type="button" data-nudge="5" title="Forward 5 s (→)" aria-label="Forward 5 seconds">5 <i class="bi bi-arrow-clockwise"></i></button></div>
+            <div class="tt-lcd" aria-live="off"><span data-time>0:00.0</span><small data-spdtxt>33 RPM · 0.0 %</small></div>
+          </div>
+        </div>
+        <div class="tt-pitch">
+          <span class="k">Pitch</span>
+          <span class="tt-m" aria-hidden="true">−</span>
+          <div class="tt-track"><input class="tt-fader" type="range" min="-8" max="8" step="0.1" value="0" data-pitch aria-label="Pitch"></div>
+          <span class="tt-m" aria-hidden="true">+</span>
+          <span class="tt-pv" data-pv>0.0 %</span>
+          <div class="row"><button type="button" data-prange="8" aria-pressed="true">±8</button><button type="button" data-prange="16" aria-pressed="false">±16</button></div>
+          <button type="button" class="zero" data-pzero>Reset</button>
+        </div>
       </div>
-      <div class="dj-body pg-m"></div>`;
+      <div class="dj-pads">
+        <div><h4>Hot cues <small>tap set · tap jump · hold clear</small></h4><div class="dj-grid" data-cues>
+          ${[0, 1, 2, 3].map(i => `<button type="button" class="pad" data-cue="${i}" style="--c:${CUE_COLORS[i]}"><span class="key">${i + 1}</span><b>${"ABCD"[i]}</b><small>set</small></button>`).join("")}</div></div>
+        <div><h4>Effects <small>Q W E R</small></h4><div class="dj-grid">
+          ${FX.map(([k, l, ic, key, c]) => `<button type="button" class="pad" data-fx="${k}" style="--c:${c}"><span class="key">${key}</span><i class="bi ${ic}"></i><b>${l}</b></button>`).join("")}</div></div>
+      </div>
+      <div class="dj-now"><span class="k">On the deck</span><b class="dj-t">Nothing yet</b><small class="dj-s"></small></div>
+      <div class="dj-body pg-m"></div>
+      <div class="dj-toast" data-toast></div>`;
     document.body.appendChild(dj);
 
     const ui = ProgramUI(dj.querySelector(".pg-m"), box.querySelector(".pg-e"), base, s => { state = s; render(); }, {});
     const evFold = box.querySelector('[data-pg="event"]');
     evFold.addEventListener("toggle", e => { if (e.target.open) ui.loadEvents(); });
 
+    const $ = sel => dj.querySelector(sel);
+    const plat = $("[data-plat]"), rec = $("[data-rec]"), strobe = $("[data-strobe]"), tt = dj.querySelector(".tt");
+    const fx = window.KKDJ ? window.KKDJ.engine() : null;
+    let ear = false, skew = 0, skewFrom = null, toastT = null;
+    let speedBase = 1, pitchRange = 8, pitchPending = null, pitchUntil = 0;
+
+    function toast(t) {
+      const n = $("[data-toast]"); n.textContent = t; n.classList.add("on");
+      clearTimeout(toastT); toastT = setTimeout(() => n.classList.remove("on"), 2600);
+    }
+    async function post(path, body) {
+      try {
+        const r = await fetch(base + path, { method: "POST", credentials: "same-origin",
+          headers: { "Content-Type": "application/json", "X-CSRFToken": csrf() }, body: JSON.stringify(body || {}) });
+        let d = null; try { d = await r.json(); } catch (_) { /* html */ }
+        if (r.status === 410) { location.reload(); return null; }
+        if (!r.ok || !d || !d.ok) { toast((d && d.error) || "Something went wrong"); return null; }
+        if (d.state) { state = d.state; render(); }
+        return d;
+      } catch (_) { toast("No connection to the screen"); return null; }
+    }
+    const media = body => post("media/", body);
+    const sendFx = (kind, extra) => post("dj/fx/", Object.assign({ kind }, extra || {}));
+    const cur = () => (state.media || {}).current || null;
+    function pos() {                            // where the needle is now, on the server's clock
+      const m = state.media || {};
+      if (!m.current) return 0;
+      if (!m.playing) return m.position || 0;
+      return (m.position || 0) + Math.max(0, (Date.now() + skew - (m.started_at || 0)) / 1000) * (+m.rate || 1);
+    }
+    function needTrack() { if (cur()) return true; toast("Put a record on first — paste a YouTube link in the crate."); return false; }
+
+    /* ── the platter: motor + hand ── */
+    let angle = 0, motor = 0, last = performance.now(), raf = 0, armTwitch = 0, strobeA = 0, prevAngle = 0;
+    let held = null;            // {lastA, lastT, grabPos, revs, samples:[], playing, sendT}
+    function targetSpeed() { const m = state.media || {}; return m.current && m.playing ? (+m.rate || 1) : 0; }
+    function frame(t) {
+      const dt = Math.min(0.05, (t - last) / 1000); last = t;
+      if (!held) {
+        // a direct-drive motor: quick to start, a little slower to stop
+        const tgt = targetSpeed(), k = tgt > motor ? 7 : 4;
+        motor += (tgt - motor) * Math.min(1, dt * k);
+        angle += motor * dt * 360 * RPM33 / 60;
+      }
+      rec.style.transform = `rotate(${angle}deg)`;
+      // strobe dots look still at exactly 33⅓ / 45 with the pitch at zero, and drift as you pitch
+      if (held) strobeA += angle - prevAngle;
+      else if (motor > 0.05) strobeA += (motor / (speedBase || 1) - 1) * dt * 360 * 0.8;
+      prevAngle = angle;
+      strobe.style.transform = `rotate(${strobeA}deg)`;
+      const p = pos();
+      $("[data-time]").textContent = fmt(held ? Math.max(0, held.grabPos + held.revs * SEC_PER_REV) : p);
+      plat.setAttribute("aria-valuetext", fmt(p));
+      armTwitch = (armTwitch + dt) % 1000;
+      tt.style.setProperty("--arm", `${2 + Math.min(16, p / 30) + Math.sin(armTwitch * 2) * 0.15}deg`);
+      raf = dj.open ? requestAnimationFrame(frame) : 0;
+    }
+    const angleAt = e => { const r = plat.getBoundingClientRect(); return Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)) * 180 / Math.PI; };
+    function flush(final) {
+      if (!held || !held.samples.length) return;
+      const v = held.samples.splice(0, 64);
+      sendFx("scratch", { v, dt: 30 });
+      if (final && held.samples.length) flush(true);
+    }
+    plat.addEventListener("pointerdown", e => {
+      if (e.button !== 0 || !cur()) { if (!cur()) needTrack(); return; }
+      e.preventDefault();
+      plat.setPointerCapture(e.pointerId);
+      fx && fx.unlock();
+      held = { lastA: angleAt(e), grabPos: pos(), revs: 0, samples: [], acc: 0, tick: 0 };
+      // every 30 ms: platter speed relative to 33⅓ (1 = normal play); every 3rd tick → projector
+      held.timer = setInterval(() => {
+        if (!held) return;
+        const v = Math.round((held.acc / 360) / 0.03 / (RPM33 / 60) * 1000) / 1000;
+        held.acc = 0;
+        held.samples.push(v);
+        if (ear && fx) fx.scratch([v], 30);
+        if (++held.tick % 3 === 0) flush(false);
+      }, 30);
+      motor = 0;
+      plat.classList.add("held");
+      $("[data-hint]").textContent = "Scratching — let go to drop the needle";
+      sendFx("scratch_start");
+      if (ear && fx) fx.scratchStart();
+    });
+    plat.addEventListener("pointermove", e => {
+      if (!held) return;
+      const a = angleAt(e);
+      let d = a - held.lastA; if (d > 180) d -= 360; if (d < -180) d += 360;
+      held.lastA = a; angle += d; held.revs += d / 360; held.acc += d;
+    });
+    function release() {
+      if (!held) return;
+      clearInterval(held.timer);
+      held.samples.push(0); flush(true);
+      const to = Math.max(0, held.grabPos + held.revs * SEC_PER_REV);
+      held = null;
+      plat.classList.remove("held");
+      $("[data-hint]").textContent = "Grab the record to scratch";
+      if (ear && fx) fx.scratchEnd();
+      sendFx("scratch_end", { position: to });
+      media({ action: "seek", position: to });
+    }
+    plat.addEventListener("pointerup", release);
+    plat.addEventListener("pointercancel", release);
+    plat.addEventListener("lostpointercapture", release);
+    plat.addEventListener("keydown", e => {             // keyboard: ← → nudge the record
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); e.stopPropagation(); nudge(e.key === "ArrowLeft" ? -2 : 2); }
+    });
+
+    function nudge(s) { if (needTrack()) media({ action: "seek", position: Math.max(0, pos() + s) }); }
+    function startStop() {
+      if (!needTrack()) return;
+      const m = state.media || {};
+      media({ action: m.playing ? "pause" : "play" });
+    }
+    function setRate() {
+      const pitch = +$("[data-pitch]").value || 0;
+      const r = Math.round(speedBase * (1 + pitch / 100) * 1000) / 1000;
+      clearTimeout(pitchPending);
+      pitchUntil = Date.now() + 900;
+      pitchPending = setTimeout(() => { pitchPending = null; media({ action: "rate", rate: r }); }, 220);
+      showSpeed(r);
+    }
+    function showSpeed(rate) {
+      const pitch = (rate / speedBase - 1) * 100;
+      $("[data-pv]").textContent = `${pitch >= 0 ? "+" : ""}${pitch.toFixed(1)} %`;
+      $("[data-spdtxt]").textContent = `${speedBase > 1.1 ? 45 : 33} RPM · ${pitch >= 0 ? "+" : ""}${pitch.toFixed(1)} %`;
+    }
+    function cueTap(i, long) {
+      if (!needTrack()) return;
+      const cues = cur().cues || [];
+      if (long) { if (cues[i] != null) { media({ action: "cue_clear", slot: i }); toast(`Cue ${"ABCD"[i]} cleared`); } return; }
+      if (cues[i] == null) media({ action: "cue_set", slot: i, position: pos() });
+      else media({ action: "seek", position: cues[i] });
+    }
+    function pad(kind) {
+      if (kind !== "horn" && kind !== "siren" && !needTrack()) return;
+      fx && fx.unlock();
+      sendFx(kind);
+      if (ear && fx) fx[kind]();
+      const p = dj.querySelector(`[data-fx="${kind}"]`); p.classList.add("hit"); setTimeout(() => p.classList.remove("hit"), 180);
+      if (kind === "rewind") {           // spin back to cue A (or 10 s), then carry on
+        const a = (cur().cues || [])[0], to = a != null && a < pos() ? a : Math.max(0, pos() - 10);
+        motor = -6; setTimeout(() => media({ action: "seek", position: to }), 1000);
+      } else if (kind === "brake") {
+        setTimeout(() => media({ action: "pause" }), 1150);
+      }
+    }
+
+    // long-press for cue pads
+    dj.querySelectorAll("[data-cue]").forEach(b => {
+      let t = null, long = false;
+      b.addEventListener("pointerdown", () => { long = false; t = setTimeout(() => { long = true; cueTap(+b.dataset.cue, true); }, 600); });
+      ["pointerup", "pointerleave", "pointercancel"].forEach(ev => b.addEventListener(ev, () => clearTimeout(t)));
+      b.addEventListener("click", e => { e.preventDefault(); if (!long) cueTap(+b.dataset.cue, false); });
+      b.addEventListener("contextmenu", e => { e.preventDefault(); cueTap(+b.dataset.cue, true); });
+    });
+    dj.addEventListener("click", e => {
+      if (e.target === dj || e.target.closest("[data-dj-close]")) { closeDj(); return; }
+      const b = e.target.closest("button"); if (!b) return;
+      if (b.hasAttribute("data-ss")) startStop();
+      else if (b.dataset.spd) {
+        speedBase = +b.dataset.spd;
+        dj.querySelectorAll("[data-spd]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+        setRate();
+      } else if (b.dataset.nudge) nudge(+b.dataset.nudge);
+      else if (b.dataset.fx) pad(b.dataset.fx);
+      else if (b.dataset.prange) {
+        pitchRange = +b.dataset.prange;
+        const f = $("[data-pitch]"); f.min = -pitchRange; f.max = pitchRange;
+        dj.querySelectorAll("[data-prange]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+        setRate();
+      } else if (b.hasAttribute("data-pzero")) { $("[data-pitch]").value = 0; setRate(); }
+      else if (b.hasAttribute("data-ear")) {
+        ear = !ear; b.setAttribute("aria-pressed", String(ear));
+        if (ear && fx) fx.unlock();
+        if (ear && !(fx && fx.supported)) toast("This browser can't play the effects");
+      }
+    });
+    $("[data-pitch]").addEventListener("input", setRate);
+    $("[data-pitch]").addEventListener("dblclick", () => { $("[data-pitch]").value = 0; setRate(); });
+    dj.addEventListener("keydown", e => {
+      if (e.target.matches("input[type=url],input[type=text],select,textarea")) return;
+      const k = e.key.toLowerCase();
+      if (k === " " && !e.target.matches("button")) { e.preventDefault(); startStop(); }
+      else if ("1234".includes(k) && k.length === 1) { e.preventDefault(); cueTap(+k - 1, e.shiftKey); }
+      else if ("qwer".includes(k) && k.length === 1) { e.preventDefault(); pad(FX["qwer".indexOf(k)][0]); }
+      else if (k === "arrowleft" || k === "arrowright") { if (e.target.matches("input[type=range]")) return; e.preventDefault(); nudge(k === "arrowleft" ? -5 : 5); }
+    });
+
     function openDj() {
       if (typeof dj.showModal === "function") { if (!dj.open) dj.showModal(); } else dj.setAttribute("open", "");
+      last = performance.now();
+      if (!raf) raf = requestAnimationFrame(frame);
       const url = dj.querySelector(".pg-url");
-      if (url && !(state.media && state.media.current)) setTimeout(() => url.focus(), 60);
+      if (url && !cur()) setTimeout(() => url.focus(), 60);
+      else setTimeout(() => plat.focus(), 60);
     }
-    function closeDj() { if (typeof dj.close === "function") dj.close(); else dj.removeAttribute("open"); }
-    dj.addEventListener("click", e => {
-      if (e.target === dj || e.target.closest("[data-dj-close]")) closeDj();   // backdrop or ✕
-    });
+    function closeDj() { release(); if (typeof dj.close === "function") dj.close(); else dj.removeAttribute("open"); }
+    dj.addEventListener("close", release);
 
     // the card's F3 / F4 scene keys and the row buttons
     root.addEventListener("click", e => {
       const b = e.target.closest("button");
-      if (!b || dj.contains(b)) return;
+      if (!b) return;
       if (b.hasAttribute("data-dj-open")) { e.preventDefault(); openDj(); }
-      else if (b.hasAttribute("data-dj-quick")) {
-        e.preventDefault();
-        const m = state.media || {};
-        if (m.current) ui.media({ action: m.playing ? "pause" : "play" });
-      } else if (b.hasAttribute("data-event-open")) {
+      else if (b.hasAttribute("data-dj-quick")) { e.preventDefault(); if (cur()) startStop(); }
+      else if (b.hasAttribute("data-event-open")) {
         e.preventDefault();
         evFold.open = true;
         evFold.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -562,25 +937,48 @@
 
     function render() {
       ui.render(state);
-      const m = state.media || {}, e = state.event || {};
-      const cur = m.current;
-      box.querySelector(".pg-sum-m").textContent = cur ? `${m.playing ? (m.mode === "video" ? "▶ " : "♪ ") : "⏸ "}${cur.title}` : "Play a YouTube video or just its sound";
+      const m = state.media || {}, e = state.event || {}, c = m.current;
+      if (m.server_now && m.server_now !== skewFrom) { skewFrom = m.server_now; skew = m.server_now - Date.now(); }
+      box.querySelector(".pg-sum-m").textContent = c ? `${m.playing ? (m.mode === "video" ? "▶ " : "♪ ") : "⏸ "}${c.title}` : "Play a YouTube video or just its sound";
       box.querySelector(".pg-sum-e").textContent = e.view && e.view !== "off" ? { register: "Showing registration", checkin: "Showing check-in", agenda: "Showing the agenda" }[e.view] : "Registration, check-in or agenda on the big screen";
-      box.querySelector(".dj-row").classList.toggle("playing", !!(cur && m.playing));
+      box.querySelector(".dj-row").classList.toggle("playing", !!(c && m.playing));
       const q = box.querySelector("[data-dj-quick]");
-      q.hidden = !cur;
+      q.hidden = !c;
       q.innerHTML = m.playing ? '<i class="bi bi-pause-fill"></i> Pause' : '<i class="bi bi-play-fill"></i> Play';
 
-      // booth deck
-      dj.querySelector(".dj-name").textContent = state.name || "Big screen";
-      dj.classList.toggle("spinning", !!(cur && m.playing));
-      dj.querySelector(".dj-t").textContent = cur ? cur.title : "Nothing on the deck";
-      dj.querySelector(".dj-s").textContent = cur
-        ? `${m.playing ? "" : "Paused · "}${m.mode === "video" ? "Video, full screen on the projector" : "Audio only — the screen keeps its picture"}${(m.queue || []).length ? ` · ${m.queue.length} up next` : ""}`
-        : "Paste a YouTube link below — welcome music, a break playlist, a showreel.";
-      dj.querySelector(".dj-lab").style.backgroundImage = cur ? `url("${thumb(cur.id)}")` : "";
+      // the deck
+      $(".dj-name").textContent = state.name || "Big screen";
+      tt.classList.toggle("on", !!(c && m.playing));
+      $(".dj-t").textContent = c ? c.title : "Nothing yet — paste a YouTube link in the crate";
+      $(".dj-s").textContent = c ? `${m.mode === "video" ? "Video on screen" : "Audio only"}${(m.queue || []).length ? ` · ${m.queue.length} up next` : ""}` : "";
+      const lab = $("[data-lab]");
+      lab.style.backgroundImage = c ? `url("${thumb(c.id)}")` : "";
+      lab.classList.toggle("art", !!c);
+      $("[data-lab-t]").textContent = state.name || "Hanns";
+      // speed: infer 33/45 from the stored rate, keep the fader where the server says
+      const rate = +m.rate || 1;
+      if (Date.now() > pitchUntil || !dj.open) {
+        speedBase = rate > 1.25 ? 1.35 : 1;
+        dj.querySelectorAll("[data-spd]").forEach(x => x.setAttribute("aria-pressed", String(+x.dataset.spd === speedBase)));
+        const pitch = (rate / speedBase - 1) * 100;
+        if (Math.abs(pitch) > pitchRange) {
+          pitchRange = 16; const f = $("[data-pitch]"); f.min = -16; f.max = 16;
+          dj.querySelectorAll("[data-prange]").forEach(x => x.setAttribute("aria-pressed", String(+x.dataset.prange === 16)));
+        }
+        if (document.activeElement !== $("[data-pitch]")) $("[data-pitch]").value = pitch.toFixed(1);
+        showSpeed(rate);
+      }
+      // hot cues
+      const cues = (c && c.cues) || [];
+      dj.querySelectorAll("[data-cue]").forEach(b => {
+        const i = +b.dataset.cue, v = cues[i];
+        b.classList.toggle("set", v != null);
+        b.querySelector("small").textContent = v != null ? fmt(v) : "set";
+        b.disabled = !c;
+        b.title = v != null ? `Jump to ${fmt(v)} — hold to clear` : "Set a cue here";
+      });
       const djKey = root.querySelector(".st-key[data-dj-open]");
-      if (djKey) djKey.classList.toggle("on", !!(cur && m.playing));
+      if (djKey) djKey.classList.toggle("on", !!(c && m.playing));
       const evKey = root.querySelector(".st-key[data-event-open]");
       if (evKey) evKey.classList.toggle("on", !!(e.view && e.view !== "off"));
     }

@@ -98,6 +98,58 @@ class MediaTests(TestCase):
         self.screen.save()
         self.assertEqual(self.act(action="play")[0].status_code, 410)
 
+    # ── DJ booth ──
+    def test_rate_is_clamped_and_position_aware(self):
+        clock = [1_000_000]
+        with mock.patch.object(program, "_now_ms", side_effect=lambda: clock[0]):
+            _, m = self.act(action="load", url="dQw4w9WgXcQ", mode="audio")
+            self.assertEqual(m["rate"], 1.0)
+            _, m = self.act(action="rate", rate=9)
+            self.assertEqual(m["rate"], program.RATE_MAX)
+            _, m = self.act(action="rate", rate="nope")
+            self.assertEqual(m["rate"], 1.0)
+            _, m = self.act(action="rate", rate=0.92)
+            self.assertEqual(m["rate"], 0.92)
+            clock[0] += 10_000
+            _, m = self.act(action="pause")
+        self.assertAlmostEqual(m["position"], m["current"]["start"] + 9.2, places=3)   # 10 s at 0.92×
+
+    def test_seek_bumps_seek_rev(self):
+        _, m = self.act(action="load", url="dQw4w9WgXcQ", mode="audio")
+        rev = m["seek_rev"]
+        _, m = self.act(action="seek", position=42.5)
+        self.assertEqual((m["position"], m["seek_rev"]), (42.5, rev + 1))
+        _, m = self.act(action="seek", position=float("nan"))
+        self.assertEqual(m["position"], 0)
+
+    def test_hot_cues(self):
+        r, _ = self.act(action="cue_set", slot=0, position=3)
+        self.assertEqual(r.status_code, 400)                                   # nothing on the deck
+        self.act(action="load", url="dQw4w9WgXcQ", mode="audio")
+        _, m = self.act(action="cue_set", slot=2, position=61.234)
+        self.assertEqual(m["current"]["cues"], [None, None, 61.23, None])
+        self.assertEqual(self.act(action="cue_set", slot=7, position=1)[0].status_code, 400)
+        _, m = self.act(action="cue_clear", slot=2)
+        self.assertEqual(m["current"]["cues"], [None] * 4)
+
+    def test_dj_fx_fans_out_without_saving(self):
+        url = f"/screenart/s/{self.screen.token}/dj/fx/"
+        post = lambda **b: self.client.post(url, json.dumps(b), content_type="application/json")
+        sent = []
+        with mock.patch.object(svc, "_send", side_effect=lambda g, msg: sent.append(msg)):
+            r = post(kind="scratch", v=[0.5, -3, 99] + [1] * 100, dt=5)
+            self.assertEqual(r.status_code, 200, r.content)
+            post(kind="scratch_end", position=12.345)
+            self.assertEqual(post(kind="explode").status_code, 400)
+        p = sent[0]["payload"]
+        self.assertEqual((p["type"], p["kind"], p["v"][:3], len(p["v"]), p["dt"]), ("dj_fx", "scratch", [0.5, -3.0, 8.0], 64, 10))
+        self.assertEqual(sent[1]["payload"]["position"], 12.35)
+        self.assertEqual(len(sent), 2)
+        self.assertNotIn("dj", svc.screen_state(self.screen)["media"])
+        self.screen.is_active = False
+        self.screen.save()
+        self.assertEqual(post(kind="horn").status_code, 410)
+
 
 @override_settings(CHANNEL_LAYERS={"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}})
 class EventViewTests(TestCase):
@@ -163,4 +215,8 @@ class EventViewTests(TestCase):
         with self.settings(STATICFILES_STORAGE="django.contrib.staticfiles.storage.StaticFilesStorage"):
             self.assertContains(self.client.get(f"/hanns/screen/s/{self.screen.token}/"), "hanns_screen_program.js")
             self.client.force_login(self.host)
-            self.assertContains(self.client.get("/hanns/screen/"), "hanns_screen_program.js")
+            dash = self.client.get("/hanns/screen/")
+            self.assertContains(dash, "hanns_screen_program.js")
+            self.assertContains(dash, "hanns_dj_fx.js")                      # the DJ booth engine
+            self.assertContains(dash, "data-dj-open")
+            self.assertContains(self.client.get(f"/hanns/screen/s/{self.screen.token}/"), "hanns_dj_fx.js")

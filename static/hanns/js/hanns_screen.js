@@ -659,6 +659,7 @@ const Live = {
       if(m.type === "ping"){ try{ s.send(JSON.stringify({type:"pong"})); }catch(e){} return; }
       if(m.type === "screen_state") apply(m.state, m.notice);
       else if(m.type === "screen_stopped") showStopped();
+      else if(m.type === "dj_fx") document.dispatchEvent(new CustomEvent("scr:djfx", {detail: m}));
     });
     s.addEventListener("close", ()=>{
       if(gen !== this.gen) return;

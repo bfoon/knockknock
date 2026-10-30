@@ -1,0 +1,484 @@
+From 452df3e0c53bdfbafbbb8ae50ff240d3670cd8e6 Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Thu, 29 Oct 2026 13:28:30 +0000
+Subject: [PATCH 10/12] =?UTF-8?q?Big=20screen:=20transitions=20=E2=80=94?=
+ =?UTF-8?q?=20everything=20rolls=20down=20onto=20the=20screen=20(or=20your?=
+ =?UTF-8?q?=20choice)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Whenever something comes onto the big screen — a deck, the lobby coming
+back, the event background, an event view, a live poll, the video player —
+it enters with the screen's chosen transition. Default ROLL DOWN, like a
+projector screen unrolling: a metal roller bar rides the leading edge and the
+screen settles with a little bounce. Also: roll up, curtain, iris, slide,
+zoom, flip down, fade (exactly the old cross-fade), none (instant).
+
+- hanns_screen_enter.js: watches the layers' on/off classes and plays the
+  entrance with the Web Animations API; nothing about how a layer works
+  changes. A deck over the lobby lifts the stage (see-through meanwhile) so
+  it unrolls OVER the lobby, which stays up until the roll lands
+- control board → Sources → "Screen transitions": nine choices, each
+  previews itself on hover; "Preview on the big screen" replays it there
+- server: look_for/set_look in ScreenStyle.settings["look"] (no migration),
+  POST /screenart/s/<token>/look/, "look" in the screen state, a
+  look_preview socket message
+- prefers-reduced-motion on the projector → the plain fade
+- test fix: test_video no longer races its own background conversion
+---
+ hanns/screen.py                       |  10 ++
+ hanns/test_video.py                   |   1 +
+ screenart/program.py                  |  24 +++
+ screenart/test_program.py             |  19 ++
+ screenart/urls.py                     |   1 +
+ screenart/views.py                    |  24 +++
+ static/hanns/js/hanns_screen.js       |   1 +
+ static/hanns/js/hanns_screen_enter.js | 238 ++++++++++++++++++++++++++
+ templates/hanns/screen_home.html      |   1 +
+ templates/hanns/screen_stage.html     |   3 +-
+ 10 files changed, 321 insertions(+), 1 deletion(-)
+ create mode 100644 static/hanns/js/hanns_screen_enter.js
+
+diff --git a/hanns/screen.py b/hanns/screen.py
+index a8fd94d..b1bdd2e 100644
+--- a/hanns/screen.py
++++ b/hanns/screen.py
+@@ -133,6 +133,7 @@ def screen_state(screen):
+         "live": _live(screen),
+         "media": _program(screen, "media"),
+         "event": _program(screen, "event"),
++        "look": _look(screen),
+         "remote": _remote(screen),
+     }
+ 
+@@ -153,6 +154,15 @@ def push_lock_changed(screen):
+         _send(f"hanns_{share.deck.code}", {"type": "screen.lock_changed"})
+ 
+ 
++def _look(screen):
++    """How things come onto the screen (screenart.program.look_for); default roll-down."""
++    try:
++        from screenart import program
++        return program.look_for(screen.id)
++    except Exception:
++        return {"entrance": "rolldown"}
++
++
+ def _program(screen, part):
+     """YouTube music/video and the Attendance event view (screenart.program)."""
+     try:
+diff --git a/hanns/test_video.py b/hanns/test_video.py
+index 5df6e05..679f0e7 100644
+--- a/hanns/test_video.py
++++ b/hanns/test_video.py
+@@ -159,6 +159,7 @@ class VideoTests(TestCase):
+             time.sleep(0.25)
+         self.assertEqual(hv.read_meta(vid)["status"], "ready")
+         # a job that's merely busy (fresh progress) is left alone
++        hv.heartbeat()                          # a worker again: this upload mustn't start its own thread
+         vid2 = self._upload(self.fine, "fine.mp4", "video/mp4").json()["id"]
+         os.rename(os.path.join(q, vid2), os.path.join(q, vid2 + ".working"))
+         self.assertEqual(hv.requeue_stale(only=vid2), 0)
+diff --git a/screenart/program.py b/screenart/program.py
+index 5023070..c224203 100644
+--- a/screenart/program.py
++++ b/screenart/program.py
+@@ -135,6 +135,30 @@ def _style(screen_id):
+     return style
+ 
+ 
++# ── how things come onto the big screen ──────────────────────────────
++ENTRANCES = ("rolldown", "rollup", "curtain", "iris", "slide", "zoom", "flip", "fade", "none")
++DEFAULT_ENTRANCE = "rolldown"
++
++
++def look_for(screen_id):
++    """The screen's look: how a deck, the lobby, a view… comes in. Default: roll down."""
++    style = _style(screen_id)
++    look = dict(((style.settings or {}).get("look") or {}) if style else {})
++    if look.get("entrance") not in ENTRANCES:
++        look["entrance"] = DEFAULT_ENTRANCE
++    return {"entrance": look["entrance"]}
++
++
++def set_look(screen_id, data):
++    entrance = data.get("entrance")
++    if entrance not in ENTRANCES:
++        raise ProgramError("Unknown transition.")
++    style = _style(screen_id)
++    style.settings = dict(style.settings or {}, look={"entrance": entrance})
++    style.save(update_fields=["settings", "updated_at"])
++    return look_for(screen_id)
++
++
+ def media_for(screen_id):
+     style = ScreenStyle.objects.filter(screen_id=screen_id).first()
+     m = dict((style.settings or {}).get("media") or {}) if style else {}
+diff --git a/screenart/test_program.py b/screenart/test_program.py
+index 3206cf1..758f718 100644
+--- a/screenart/test_program.py
++++ b/screenart/test_program.py
+@@ -132,6 +132,25 @@ class MediaTests(TestCase):
+         _, m = self.act(action="cue_clear", slot=2)
+         self.assertEqual(m["current"]["cues"], [None] * 4)
+ 
++    # ── screen transitions ──
++    def test_look_default_choose_preview(self):
++        url = f"/screenart/s/{self.screen.token}/look/"
++        post = lambda **b: self.client.post(url, json.dumps(b), content_type="application/json")
++        self.assertEqual(svc.screen_state(self.screen)["look"], {"entrance": "rolldown"})     # roll down by default
++        sent = []
++        with mock.patch.object(svc, "_send", side_effect=lambda g, msg: sent.append(msg["payload"])):
++            r = post(entrance="curtain")
++            self.assertEqual(r.json()["look"], {"entrance": "curtain"})
++            self.assertEqual(post(entrance="explode").status_code, 400)
++            self.assertEqual(post(entrance="none").json()["look"]["entrance"], "none")    # can be switched off
++            post(preview=True)
++        self.assertEqual(svc.screen_state(self.screen)["look"], {"entrance": "none"})
++        self.assertIn({"type": "look_preview", "entrance": "none"}, sent)
++        self.assertTrue(any(p.get("type") == "screen_state" for p in sent))             # projectors hear the change
++        self.screen.is_active = False
++        self.screen.save()
++        self.assertEqual(post(entrance="fade").status_code, 410)
++
+     # ── screen only + drums & fx pads ──
+     def test_screen_only_pauses_both_decks_and_play_lifts_it(self):
+         clock = [5_000_000]
+diff --git a/screenart/urls.py b/screenart/urls.py
+index 96c7bb0..17013d3 100644
+--- a/screenart/urls.py
++++ b/screenart/urls.py
+@@ -19,6 +19,7 @@ urlpatterns = [
+     path("s/<str:token>/media/", views.media, name="media"),
+     path("s/<str:token>/dj/fx/", views.dj_fx, name="dj_fx"),
+     path("s/<str:token>/dj/sample/", views.dj_sample, name="dj_sample"),
++    path("s/<str:token>/look/", views.look, name="look"),
+     path("s/<str:token>/events/", views.events, name="events"),
+     path("s/<str:token>/event/", views.event, name="event"),
+     path("s/<str:token>/event/data/", views.event_data, name="event_data"),
+diff --git a/screenart/views.py b/screenart/views.py
+index 3a718df..a380657 100644
+--- a/screenart/views.py
++++ b/screenart/views.py
+@@ -203,6 +203,30 @@ def media(request, token):
+     return JsonResponse({"ok": True, "state": _push(screen)})
+ 
+ 
++@require_POST
++def look(request, token):
++    """How things come onto the big screen: {entrance} saves it; {preview: true}
++    replays it on the projector now, on whatever is showing."""
++    screen = _screen(token)
++    if not screen.is_active:
++        return _stopped()
++    try:
++        data = json.loads(request.body or b"{}")
++    except (ValueError, TypeError):
++        return JsonResponse({"ok": False, "error": "Bad JSON."}, status=400)
++    from hanns import screen as svc
++    if data.get("entrance") is not None:
++        try:
++            program.set_look(screen.id, data)
++        except program.ProgramError as e:
++            return JsonResponse({"ok": False, "error": str(e)}, status=400)
++        svc.push_state(screen)
++    if data.get("preview"):
++        svc._send(svc.screen_group(screen.id), {"type": "screen.event", "payload": {
++            "type": "look_preview", "entrance": program.look_for(screen.id)["entrance"]}})
++    return JsonResponse({"ok": True, "look": program.look_for(screen.id)})
++
++
+ SAMPLE_EXTS = {".mp3", ".wav", ".ogg", ".oga", ".m4a", ".aac", ".webm", ".flac", ".opus"}
+ 
+ 
+diff --git a/static/hanns/js/hanns_screen.js b/static/hanns/js/hanns_screen.js
+index c22d70f..c0994c4 100644
+--- a/static/hanns/js/hanns_screen.js
++++ b/static/hanns/js/hanns_screen.js
+@@ -660,6 +660,7 @@ const Live = {
+       if(m.type === "screen_state") apply(m.state, m.notice);
+       else if(m.type === "screen_stopped") showStopped();
+       else if(m.type === "dj_fx") document.dispatchEvent(new CustomEvent("scr:djfx", {detail: m}));
++      else if(m.type === "look_preview") document.dispatchEvent(new CustomEvent("scr:lookpreview", {detail: m}));
+     });
+     s.addEventListener("close", ()=>{
+       if(gen !== this.gen) return;
+diff --git a/static/hanns/js/hanns_screen_enter.js b/static/hanns/js/hanns_screen_enter.js
+new file mode 100644
+index 0000000..4f2d6ee
+--- /dev/null
++++ b/static/hanns/js/hanns_screen_enter.js
+@@ -0,0 +1,238 @@
++/* ═══════════════════════════════════════════════════════════════════
++   HANNS · BIG SCREEN — how things come onto the screen
++   ───────────────────────────────────────────────────────────────────
++   Projector: every time something comes in — a deck, the lobby coming
++   back, the event background, an event view, a live poll, the video
++   player — it enters with the screen's chosen transition. Default:
++   ROLL DOWN, like a projector screen unrolling (with its roller bar and
++   a little settle at the bottom). Others: roll up, curtain, iris, slide,
++   zoom, flip down, fade (exactly the old behaviour), none (instant).
++
++   It doesn't touch how any layer works: it watches for a layer becoming
++   visible (its on/off class) and plays the entrance on it with the Web
++   Animations API, holding that layer's own CSS fade back meanwhile.
++
++   Control board: a "Screen transitions" row in Sources to choose one
++   (each choice previews itself on hover) and replay it on the big screen.
++   Server: screenart/program.py look_for/set_look, POST …/look/.
++   ═══════════════════════════════════════════════════════════════════ */
++(function () {
++  "use strict";
++  const esc = v => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
++  const CHOICES = [
++    ["rolldown", "Roll down"], ["rollup", "Roll up"], ["curtain", "Curtain"], ["iris", "Iris"],
++    ["slide", "Slide"], ["zoom", "Zoom"], ["flip", "Flip down"], ["fade", "Fade"], ["none", "None"],
++  ];
++  const DUR = { rolldown: 1000, rollup: 1000, curtain: 850, iris: 900, slide: 700, zoom: 650, flip: 850 };
++  const EASE = "cubic-bezier(.22,.8,.24,1)";
++  // a roll is a screen coming down: an even descent that eases into its stop
++  const ROLL_EASE = "cubic-bezier(.45,.05,.3,1)";
++  const easeOf = k => (k === "rolldown" || k === "rollup" ? ROLL_EASE : EASE);
++  // keyframes per style; [frames, options] — the roll-downs settle with a tiny bounce
++  const KF = {
++    rolldown: [{ clipPath: "inset(0 0 100% 0)" }, { clipPath: "inset(0 0 0% 0)", offset: 0.82 },
++               { clipPath: "inset(0 0 1.8% 0)", offset: 0.91 }, { clipPath: "inset(0 0 0% 0)" }],
++    rollup: [{ clipPath: "inset(100% 0 0 0)" }, { clipPath: "inset(0% 0 0 0)", offset: 0.82 },
++             { clipPath: "inset(1.8% 0 0 0)", offset: 0.91 }, { clipPath: "inset(0% 0 0 0)" }],
++    curtain: [{ clipPath: "inset(0 50% 0 50%)" }, { clipPath: "inset(0 0% 0 0%)" }],
++    iris: [{ clipPath: "circle(0% at 50% 50%)" }, { clipPath: "circle(75% at 50% 50%)" }],
++    slide: [{ transform: "translateX(100%)" }, { transform: "translateX(0)" }],
++    zoom: [{ transform: "scale(.84)", opacity: 0 }, { transform: "scale(1)", opacity: 1 }],
++    flip: [{ transform: "perspective(1800px) rotateX(-78deg)", transformOrigin: "50% 0", opacity: 0.25 },
++           { transform: "perspective(1800px) rotateX(0deg)", transformOrigin: "50% 0", opacity: 1 }],
++  };
++
++  /* ───────────── projector ───────────── */
++  const stage = document.getElementById("scr-stage");
++  if (document.getElementById("scr-cfg") && stage) {
++    let entrance = "rolldown";
++    try {
++      const st = JSON.parse((document.getElementById("scr-state") || {}).textContent || "{}");
++      entrance = (st.look && st.look.entrance) || entrance;
++    } catch (_) { /* default */ }
++    document.addEventListener("scr:state", e => { const l = e.detail && e.detail.look; if (l && l.entrance) entrance = l.entrance; });
++    const reduced = () => window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
++    const lobby = document.querySelector(".scr-lobby");
++
++    const css = document.createElement("style");
++    css.textContent = `
++    .scr-roller{position:fixed;left:-1%;right:-1%;height:18px;margin-top:-9px;z-index:60;pointer-events:none;border-radius:9px;
++      background:linear-gradient(180deg,#f4f4f7 0%,#b6b6bf 38%,#5b5b66 62%,#9d9da7 100%);
++      box-shadow:0 10px 26px rgba(0,0,0,.55),0 2px 0 rgba(255,255,255,.35) inset}
++    .scr-roller::before,.scr-roller::after{content:"";position:absolute;top:2px;width:26px;height:14px;border-radius:7px;background:#2a2a31}
++    .scr-roller::before{left:1.4%}.scr-roller::after{right:1.4%}`;
++    document.head.appendChild(css);
++
++    function roller(kind, dur) {                  // the bar riding the leading edge of a roll
++      const bar = document.createElement("div");
++      bar.className = "scr-roller"; bar.setAttribute("aria-hidden", "true");
++      document.body.appendChild(bar);
++      const down = kind === "rolldown";
++      const tops = down ? ["0%", "100%", "98.2%", "100%"] : ["100%", "0%", "1.8%", "0%"];
++      const a = bar.animate([{ top: tops[0] }, { top: tops[1], offset: 0.82 }, { top: tops[2], offset: 0.91 }, { top: tops[3] }],
++                            { duration: dur, easing: ROLL_EASE, fill: "forwards" });
++      a.finished.then(() => bar.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 260, fill: "forwards" }).finished)
++               .catch(() => {}).then(() => bar.remove());
++    }
++
++    let running = new WeakMap();
++    function enter(el, opts = {}) {
++      const kind = opts.kind || entrance;
++      if (kind === "fade" || !el || reduced()) return;   // fade = the screen's own fades, as always
++      const before = el.style.transition;
++      el.style.transition = "none";                     // the entrance does the work, not the fade
++      // Lifting the stage over the lobby: the stage's own black background goes
++      // see-through meanwhile, or it would cover the lobby with black.
++      const raise = opts.raise, z = raise ? raise.style.zIndex : "", rbg = raise ? raise.style.background : "";
++      if (raise) { raise.style.zIndex = String(opts.raiseZ || 6); raise.style.background = "transparent"; }
++      // What's underneath (the lobby, when a deck comes in over it): for a roll it
++      // stays fully up until the roll lands — that's what makes it look like the new
++      // picture unrolls over the old one; for "none" it goes at once.
++      const under = opts.under, keep = under && kind !== "none";
++      const ub = under ? { t: under.style.transition, o: under.style.opacity, v: under.style.visibility } : null;
++      if (under) under.style.transition = "none";
++      if (keep) { under.style.opacity = "1"; under.style.visibility = "visible"; }
++      const done = () => {
++        el.style.transition = before;
++        if (raise) { raise.style.zIndex = z; raise.style.background = rbg; }
++        if (under) {
++          under.style.opacity = ub.o; under.style.visibility = ub.v;         // now it can be hidden — instantly
++          requestAnimationFrame(() => { under.style.transition = ub.t; });
++        }
++        running.delete(el);
++      };
++      const prev = running.get(el); if (prev) prev.cancel();
++      if (kind === "none" || !KF[kind] || !el.animate) { requestAnimationFrame(() => requestAnimationFrame(done)); return; }
++      const dur = DUR[kind] || 900;
++      const a = el.animate(KF[kind], { duration: dur, easing: easeOf(kind) });
++      running.set(el, a);
++      if (kind === "rolldown" || kind === "rollup") roller(kind, dur);
++      a.finished.then(done, done);
++    }
++
++    // which layers count, and when each one is "showing"
++    const LAYERS = [
++      { sel: ".scr-lobby", on: n => !n.classList.contains("off") },
++      { sel: ".scr-frame", on: n => n.classList.contains("on"), deck: true },
++      { sel: ".sbd-show", on: n => n.classList.contains("on") },
++      { sel: ".pe-layer", on: n => n.classList.contains("on") },
++      { sel: ".lv-layer", on: n => n.classList.contains("on") },
++      { sel: ".pm-video.pm-deck-a", on: n => n.classList.contains("on") && !n.classList.contains("tiny") && !n.classList.contains("audio") },
++    ];
++    const seen = new WeakMap();                      // element → was it showing
++    function layerOf(n) { return LAYERS.find(L => n.matches && n.matches(L.sel)); }
++    function check(n) {
++      const L = layerOf(n); if (!L) return;
++      const now = L.on(n), was = seen.get(n);
++      seen.set(n, now);
++      if (!now || was !== false) return;              // only a real hidden → showing change
++      if (L.deck) {
++        // A deck comes in over the lobby: lift the stage above it for the entrance.
++        // The projector hides the lobby in the same instant, so ask what the lobby
++        // was a moment ago (its record in this batch hasn't been read yet).
++        const overLobby = lobby && seen.get(lobby) !== false;
++        enter(n, overLobby ? { raise: stage, raiseZ: 6, under: lobby } : {});
++      } else enter(n);
++    }
++    function scan(root) {
++      LAYERS.forEach(L => root.querySelectorAll && root.querySelectorAll(L.sel).forEach(n => { if (!seen.has(n)) seen.set(n, L.on(n)); }));
++    }
++    scan(document);
++    new MutationObserver(list => {
++      for (const m of list) {
++        if (m.type === "attributes") check(m.target);
++        else m.addedNodes.forEach(n => { if (n.nodeType === 1) { const L = layerOf(n); if (L && !seen.has(n)) seen.set(n, false); check(n); scan(n); } });
++      }
++    }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
++
++    // "Preview on the big screen": replay the entrance on whatever is on top now
++    document.addEventListener("scr:lookpreview", e => {
++      const kind = (e.detail && e.detail.entrance) || entrance;
++      const top = LAYERS.slice().reverse().map(L => [...document.querySelectorAll(L.sel)].find(n => L.on(n))).find(Boolean)
++        || stage.querySelector(".scr-frame.on");
++      if (top) enter(top, { kind: kind === "fade" ? "zoom" : kind });   // fade has nothing to show: a soft zoom instead
++    });
++    window.__hannsEnter = { enter, get entrance() { return entrance; } };
++  }
++
++  /* ───────────── control board ───────────── */
++  const cssB = document.createElement("style");
++  cssB.textContent = `
++  .tx-row{padding:.75rem 1.2rem;display:flex;flex-direction:column;gap:.65rem}
++  .tx-head{display:flex;align-items:center;gap:.9rem;flex-wrap:wrap}
++  .tx-ico{flex:none;width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:1.1rem;color:#fcd34d;background:rgba(252,211,77,.1)}
++  .tx-tx{flex:1 1 220px;min-width:0;display:flex;flex-direction:column;gap:.15rem}
++  .tx-tx b{font-size:.95rem}.tx-tx small{font-size:.8rem;color:#a9a6c2}
++  .tx-prev{min-height:40px;border-radius:11px;padding:0 .9rem;font:600 .82rem/1 inherit;cursor:pointer;border:1px solid rgba(255,255,255,.14);
++    background:rgba(255,255,255,.05);color:#f1f5f9;display:inline-flex;align-items:center;gap:.4rem}
++  .tx-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:.45rem}
++  .tx-c{display:flex;flex-direction:column;align-items:center;gap:.4rem;padding:.55rem .4rem;border-radius:12px;cursor:pointer;color:#e5e7eb;
++    border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);font:600 .74rem/1 inherit}
++  .tx-c[aria-pressed="true"]{border-color:#fcd34d;background:rgba(252,211,77,.1);color:#fde68a}
++  .tx-c:focus-visible{outline:2px solid #fff;outline-offset:2px}
++  .tx-mini{position:relative;width:54px;height:32px;border-radius:5px;background:#1f2937;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
++  .tx-mini i{position:absolute;inset:0;background:linear-gradient(135deg,#7c3aed,#22d3ee)}
++  .tx-c:hover .tx-mini i,.tx-c:focus-visible .tx-mini i,.tx-c[aria-pressed="true"] .tx-mini i{animation:var(--tx) 1.6s cubic-bezier(.22,.8,.24,1) infinite}
++  @keyframes tx-rolldown{0%{clip-path:inset(0 0 100% 0)}55%,100%{clip-path:inset(0 0 0 0)}}
++  @keyframes tx-rollup{0%{clip-path:inset(100% 0 0 0)}55%,100%{clip-path:inset(0 0 0 0)}}
++  @keyframes tx-curtain{0%{clip-path:inset(0 50% 0 50%)}55%,100%{clip-path:inset(0 0 0 0)}}
++  @keyframes tx-iris{0%{clip-path:circle(0% at 50% 50%)}55%,100%{clip-path:circle(75% at 50% 50%)}}
++  @keyframes tx-slide{0%{transform:translateX(100%)}55%,100%{transform:none}}
++  @keyframes tx-zoom{0%{transform:scale(.6);opacity:0}55%,100%{transform:none;opacity:1}}
++  @keyframes tx-flip{0%{transform:perspective(120px) rotateX(-80deg);transform-origin:50% 0;opacity:.2}55%,100%{transform:none;opacity:1}}
++  @keyframes tx-fade{0%{opacity:0}55%,100%{opacity:1}}
++  @keyframes tx-none{0%,100%{opacity:1}}
++  .tx-saved{font-size:.76rem;color:#86efac;min-height:1em}
++  @media (prefers-reduced-motion:reduce){.tx-c .tx-mini i{animation:none!important}}`;
++  document.head.appendChild(cssB);
++  function csrf() {
++    const i = document.querySelector("[name=csrfmiddlewaretoken]");
++    if (i && i.value) return i.value;
++    const m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
++    return m ? decodeURIComponent(m[1]) : "";
++  }
++  document.querySelectorAll("[data-screen]").forEach(root => {
++    if (root.hasAttribute("data-dj-page")) return;
++    const token = root.dataset.token;
++    let state = {};
++    try { state = JSON.parse(root.querySelector("[data-state]").textContent || "{}"); } catch (_) { /* ignore */ }
++    const host = document.createElement("div");
++    host.className = "tx-row";
++    host.innerHTML = `<div class="tx-head"><span class="tx-ico" aria-hidden="true"><i class="bi bi-film"></i></span>
++        <span class="tx-tx"><b>Screen transitions</b><small>How a deck, the lobby, views and video come onto the big screen</small></span>
++        <button type="button" class="tx-prev" data-tx-preview title="Play it on the big screen now"><i class="bi bi-play-fill"></i> Preview on the big screen</button></div>
++      <div class="tx-grid" role="radiogroup" aria-label="Screen transition">${CHOICES.map(([id, label]) =>
++        `<button type="button" class="tx-c" role="radio" data-tx="${id}" style="--tx:tx-${id}"><span class="tx-mini" aria-hidden="true"><i></i></span>${esc(label)}</button>`).join("")}</div>
++      <div class="tx-saved" data-tx-saved aria-live="polite"></div>`;
++    const slot = root.querySelector("[data-addons]");
++    if (slot) slot.appendChild(host); else root.appendChild(host);
++    const saved = host.querySelector("[data-tx-saved]");
++    let note = null;
++    const say = t => { saved.textContent = t; clearTimeout(note); note = setTimeout(() => { saved.textContent = ""; }, 2600); };
++    function render() {
++      const cur = (state.look && state.look.entrance) || "rolldown";
++      host.querySelectorAll("[data-tx]").forEach(b => {
++        const on = b.dataset.tx === cur;
++        b.setAttribute("aria-pressed", String(on)); b.setAttribute("aria-checked", String(on));
++      });
++    }
++    async function post(body) {
++      try {
++        const r = await fetch(`/screenart/s/${token}/look/`, { method: "POST", credentials: "same-origin",
++          headers: { "Content-Type": "application/json", "X-CSRFToken": csrf() }, body: JSON.stringify(body) });
++        const j = await r.json().catch(() => ({}));
++        if (!r.ok || !j.ok) { say(j.error || "Couldn't save that."); return null; }
++        state.look = j.look; render(); return j;
++      } catch (_) { say("No connection to the screen."); return null; }
++    }
++    host.addEventListener("click", async e => {
++      const b = e.target.closest("[data-tx],[data-tx-preview]"); if (!b) return;
++      if (b.dataset.tx) {
++        const label = (CHOICES.find(c => c[0] === b.dataset.tx) || [0, ""])[1];
++        if (await post({ entrance: b.dataset.tx })) say(b.dataset.tx === "none" ? "Saved — things now appear instantly, no animation." : `Saved — things now come in with “${label}”.`);
++      } else if (await post({ preview: true })) say("Playing it on the big screen…");
++    });
++    root.addEventListener("bs:state", ev => { state = ev.detail || state; render(); });
++    render();
++  });
++})();
+diff --git a/templates/hanns/screen_home.html b/templates/hanns/screen_home.html
+index bb094fd..034baee 100644
+--- a/templates/hanns/screen_home.html
++++ b/templates/hanns/screen_home.html
+@@ -1228,6 +1228,7 @@
+ <script src="{% static 'hanns/js/hanns_screen_live.js' %}?v=4"></script>
+ <script src="{% static 'hanns/js/hanns_dj_fx.js' %}?v=2"></script>
+ <script src="{% static 'hanns/js/hanns_screen_remote.js' %}?v=2"></script>
++<script src="{% static 'hanns/js/hanns_screen_enter.js' %}?v=3"></script>
+ <script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=8"></script>
+ {% endif %}
+ {% endblock %}
+diff --git a/templates/hanns/screen_stage.html b/templates/hanns/screen_stage.html
+index b80e3d2..5575668 100644
+--- a/templates/hanns/screen_stage.html
++++ b/templates/hanns/screen_stage.html
+@@ -144,12 +144,13 @@
+ <script src="{% static 'hanns/js/hanns_core.js' %}?v=64"></script>
+ <script src="{% static 'hanns/js/hanns_shapes.js' %}?v=62"></script>
+ <script src="{% static 'hanns/js/hanns_bars3d.js' %}?v=62"></script>
+-<script src="{% static 'hanns/js/hanns_screen.js' %}?v=4"></script>
++<script src="{% static 'hanns/js/hanns_screen.js' %}?v=5"></script>
+ <script src="{% static 'hanns/js/hanns_screen_extras.js' %}?v=3"></script>
+ <script src="{% static 'hanns/js/hanns_screen_backdrop.js' %}?v=1"></script>
+ <script src="{% static 'hanns/js/hanns_screen_live.js' %}?v=3"></script>
+ <script src="{% static 'hanns/js/hanns_dj_fx.js' %}?v=2"></script>
+ <script src="{% static 'hanns/js/hanns_screen_remote.js' %}?v=2"></script>
++<script src="{% static 'hanns/js/hanns_screen_enter.js' %}?v=3"></script>
+ <script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=8"></script>
+ </body>
+ </html>
+-- 
+2.43.0
+

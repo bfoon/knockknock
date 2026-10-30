@@ -135,6 +135,30 @@ def _style(screen_id):
     return style
 
 
+# ── how things come onto the big screen ──────────────────────────────
+ENTRANCES = ("rolldown", "rollup", "curtain", "iris", "slide", "zoom", "flip", "fade", "none")
+DEFAULT_ENTRANCE = "rolldown"
+
+
+def look_for(screen_id):
+    """The screen's look: how a deck, the lobby, a view… comes in. Default: roll down."""
+    style = _style(screen_id)
+    look = dict(((style.settings or {}).get("look") or {}) if style else {})
+    if look.get("entrance") not in ENTRANCES:
+        look["entrance"] = DEFAULT_ENTRANCE
+    return {"entrance": look["entrance"]}
+
+
+def set_look(screen_id, data):
+    entrance = data.get("entrance")
+    if entrance not in ENTRANCES:
+        raise ProgramError("Unknown transition.")
+    style = _style(screen_id)
+    style.settings = dict(style.settings or {}, look={"entrance": entrance})
+    style.save(update_fields=["settings", "updated_at"])
+    return look_for(screen_id)
+
+
 def media_for(screen_id):
     style = ScreenStyle.objects.filter(screen_id=screen_id).first()
     m = dict((style.settings or {}).get("media") or {}) if style else {}

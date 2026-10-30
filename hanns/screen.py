@@ -133,6 +133,8 @@ def screen_state(screen):
         "live": _live(screen),
         "media": _program(screen, "media"),
         "event": _program(screen, "event"),
+        "look": _look(screen),
+        "teams": _teams(screen),
         "remote": _remote(screen),
     }
 
@@ -151,6 +153,24 @@ def push_lock_changed(screen):
     share = screen.current_share if screen.current_share_id else None
     if share and share.status == share.STATUS_LIVE:
         _send(f"hanns_{share.deck.code}", {"type": "screen.lock_changed"})
+
+
+def _teams(screen):
+    """A Teams meeting the control board put on this screen (screenart/teams.py)."""
+    try:
+        from screenart import teams
+        return teams.state_for(screen.id)
+    except Exception:
+        return {"on": False}
+
+
+def _look(screen):
+    """How things come onto the screen (screenart.program.look_for); default roll-down."""
+    try:
+        from screenart import program
+        return program.look_for(screen.id)
+    except Exception:
+        return {"entrance": "rolldown"}
 
 
 def _program(screen, part):

@@ -1,7 +1,7 @@
 From 9bc2d463531e78c7fbb471630a1ab51f478d4405 Mon Sep 17 00:00:00 2001
 From: Claude <claude@anthropic.com>
 Date: Wed, 28 Oct 2026 23:54:02 +0000
-Subject: [PATCH 9/9] DJ booth: SCREEN ONLY button + Drums & FX pad bank with
+Subject: [PATCH 09/12] DJ booth: SCREEN ONLY button + Drums & FX pad bank with
  your own sounds
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8

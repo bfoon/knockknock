@@ -1,0 +1,723 @@
+From 0d424f1a5df7fcaa1fc7551570b9ee581c06365f Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Fri, 30 Oct 2026 00:09:45 +0000
+Subject: [PATCH 12/12] Big screen: Microsoft Teams meetings, opened and
+ switched from the control board
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Control board → Sources → Teams meeting: paste the invitation, a join link
+or the meeting ID (+ passcode); "Put it on the big screen". Live check of
+what was understood (passcode masked), work/school vs personal detected,
+optional name, recent meetings one tap away (this browser only).
+
+Teams can't run inside another page (Microsoft forbids framing), so the
+projector opens the meeting in its own window, sized to the screen. Found in
+testing: once that window lands on an isolating site the browser cuts it off
+from the opener — the projector can then neither see nor close it (it looked
+"closed" after a second). So after joining, one click on the projector —
+"Show it inside the big screen" — captures the Teams window as a big-screen
+scene. From then on the board has Show Teams / Back to Knock Knock (meeting
+keeps running, sound too) / End meeting; before that it honestly offers
+"End & back to Knock Knock" with the projector steps.
+
+- screenart/teams.py: parse() — pasted invitations (Meeting ID / Passcode),
+  meetup-join / meet / teams.live.com / teams.cloud.microsoft links, Outlook
+  Safe Links unwrapped; only real Teams hosts are ever opened
+- state on / shown / mode ("window" | "inside", reported by the projector)
+- POST /screenart/s/<token>/teams/ (check / open / show / hide / close /
+  report); "teams" in the screen state; the scene uses the screen transitions
+- pop-ups blocked → one "Open the meeting" button + how to allow them
+---
+ hanns/screen.py                       |  10 +
+ screenart/teams.py                    | 152 +++++++++++++
+ screenart/test_teams.py               |  96 +++++++++
+ screenart/urls.py                     |   1 +
+ screenart/views.py                    |  24 +++
+ static/hanns/js/hanns_screen_enter.js |   1 +
+ static/hanns/js/hanns_screen_teams.js | 293 ++++++++++++++++++++++++++
+ templates/hanns/screen_home.html      |   3 +-
+ templates/hanns/screen_stage.html     |   3 +-
+ 9 files changed, 581 insertions(+), 2 deletions(-)
+ create mode 100644 screenart/teams.py
+ create mode 100644 screenart/test_teams.py
+ create mode 100644 static/hanns/js/hanns_screen_teams.js
+
+diff --git a/hanns/screen.py b/hanns/screen.py
+index b1bdd2e..c13732d 100644
+--- a/hanns/screen.py
++++ b/hanns/screen.py
+@@ -134,6 +134,7 @@ def screen_state(screen):
+         "media": _program(screen, "media"),
+         "event": _program(screen, "event"),
+         "look": _look(screen),
++        "teams": _teams(screen),
+         "remote": _remote(screen),
+     }
+ 
+@@ -154,6 +155,15 @@ def push_lock_changed(screen):
+         _send(f"hanns_{share.deck.code}", {"type": "screen.lock_changed"})
+ 
+ 
++def _teams(screen):
++    """A Teams meeting the control board put on this screen (screenart/teams.py)."""
++    try:
++        from screenart import teams
++        return teams.state_for(screen.id)
++    except Exception:
++        return {"on": False}
++
++
+ def _look(screen):
+     """How things come onto the screen (screenart.program.look_for); default roll-down."""
+     try:
+diff --git a/screenart/teams.py b/screenart/teams.py
+new file mode 100644
+index 0000000..c61a95f
+--- /dev/null
++++ b/screenart/teams.py
+@@ -0,0 +1,152 @@
++"""Big screen · a Microsoft Teams meeting, opened from the control board.
++
++Teams can't be embedded inside another web page (Microsoft forbids framing it),
++so the projector opens the meeting in its OWN window, sized to the screen, and
++the control board opens and closes it — like the YouTube player, but the
++meeting lives in a window next to the big-screen page instead of inside it.
++
++What the host can give us — whatever is easiest:
++  • the whole invitation text, pasted from Outlook / Teams
++        "Meeting ID: 381 234 567 890 1   Passcode: aB3dE5"
++  • a join link: teams.microsoft.com/l/meetup-join/…, teams.microsoft.com/meet/…,
++    teams.live.com/meet/… (Teams free), teams.cloud.microsoft/…
++  • an Outlook "Safe Links" wrapped link (unwrapped to the real one)
++  • just the meeting ID + passcode (work/school or personal)
++
++Only real Teams hosts are ever opened, so the big screen can't be sent anywhere
++else.
++
++Why the meeting is also captured INTO the big screen: once a pop-up lands on a
++site that isolates itself from its opener (Microsoft's sites commonly do), the
++browser cuts the link — the projector page then can't see or close that window
++any more. So after joining, one click on the projector ("Show it inside the big
++screen") captures the Teams window and shows it as a scene of the big screen.
++From then on the control board switches freely between Teams and Knock Knock
++while the meeting keeps running.
++
++Stored in ScreenStyle.settings["teams"]:
++  {"on": bool        a meeting is running on this screen
++   "shown": bool     it's what the big screen shows right now
++   "mode": "" | "window" | "inside"   how the projector has it (it reports this)
++   "url", "label", "id", "kind", "since"}
++"""
++
++import re
++from urllib.parse import parse_qs, quote, urlparse
++
++from django.utils import timezone
++
++TEAMS_HOSTS = ("teams.microsoft.com", "teams.live.com", "teams.cloud.microsoft")
++KINDS = ("work", "personal")
++_URL_RE = re.compile(r"https?://[^\s<>\"'()\[\]]+", re.I)
++_ID_RE = re.compile(r"(?:meeting\s*id|id\s*de\s*r[ée]union|meeting-id)\s*[:#]?\s*([\d][\d \u00a0]{7,30}\d)", re.I)
++_PASS_RE = re.compile(r"(?:pass\s*code|passcode|code\s*secret|password)\s*[:#]?\s*([A-Za-z0-9]{1,30})", re.I)
++
++
++class TeamsError(Exception):
++    pass
++
++
++def _style(screen_id):
++    from .models import ScreenStyle
++    style, _ = ScreenStyle.objects.get_or_create(screen_id=screen_id, defaults={"settings": {}})
++    return style
++
++
++def _host_ok(host):
++    host = (host or "").lower().split(":")[0]
++    return any(host == h or host.endswith("." + h) for h in TEAMS_HOSTS)
++
++
++def _unwrap(url):
++    """Outlook Safe Links → the link inside them."""
++    p = urlparse(url)
++    if p.netloc.lower().endswith("safelinks.protection.outlook.com"):
++        inner = (parse_qs(p.query).get("url") or [""])[0]
++        if inner:
++            return inner
++    return url
++
++
++def _fmt_id(digits):
++    return " ".join(digits[i:i + 3] for i in range(0, len(digits), 3))
++
++
++def parse(invite="", meeting_id="", passcode="", kind="work"):
++    """Whatever the host pasted → {"url", "label", "id", "kind"}. Raises TeamsError."""
++    text = str(invite or "")
++    kind = kind if kind in KINDS else "work"
++    # 1. a link in the text (possibly Safe-Links-wrapped)
++    for raw in _URL_RE.findall(text):
++        url = _unwrap(raw.rstrip(".,;:!?>"))
++        p = urlparse(url)
++        if p.scheme in ("http", "https") and _host_ok(p.netloc):
++            digits = re.sub(r"\D", "", (re.search(r"/meet/(\d+)", p.path) or [None, ""])[1] or "")
++            m_id = _ID_RE.search(text)
++            digits = digits or (re.sub(r"\D", "", m_id.group(1)) if m_id else "")
++            label = f"Teams meeting {_fmt_id(digits)}" if digits else "Teams meeting"
++            return {"url": "https://" + p.netloc.lower() + p.path + (("?" + p.query) if p.query else ""),
++                    "label": label, "id": digits, "kind": "personal" if "teams.live.com" in p.netloc.lower() else "work"}
++    if _URL_RE.search(text) and not meeting_id:
++        raise TeamsError("That link isn't a Microsoft Teams meeting link.")
++    # 2. meeting ID + passcode (typed, or found in a pasted invitation)
++    m_id = _ID_RE.search(text)
++    digits = re.sub(r"\D", "", str(meeting_id or "") or (m_id.group(1) if m_id else "") or
++                    (text if re.fullmatch(r"[\d \u00a0-]+", text.strip() or "x") else ""))
++    m_pass = _PASS_RE.search(text)
++    code = str(passcode or "").strip() or (m_pass.group(1) if m_pass else "")
++    if "teams.live.com" in text.lower():
++        kind = "personal"
++    if not digits:
++        raise TeamsError("Paste the invitation, a Teams link, or the meeting ID.")
++    if not 9 <= len(digits) <= 20:
++        raise TeamsError("A Teams meeting ID has 10–15 digits.")
++    if not code:
++        raise TeamsError("Add the meeting passcode (it's under the meeting ID in the invitation).")
++    if not re.fullmatch(r"[A-Za-z0-9]{1,30}", code):
++        raise TeamsError("The passcode is letters and numbers only.")
++    host = "teams.live.com" if kind == "personal" else "teams.microsoft.com"
++    return {"url": f"https://{host}/meet/{digits}?p={quote(code)}", "label": f"Teams meeting {_fmt_id(digits)}",
++            "id": digits, "kind": kind}
++
++
++def state_for(screen_id):
++    """What the projector and control board see."""
++    from .models import ScreenStyle
++    style = ScreenStyle.objects.filter(screen_id=screen_id).first()
++    t = dict(((style.settings or {}).get("teams") or {}) if style else {})
++    on = bool(t.get("on") and t.get("url"))
++    return {"on": on, "shown": bool(on and t.get("shown", True)), "mode": (t.get("mode") or "") if on else "",
++            "label": t.get("label") or "", "id": t.get("id") or "", "since": t.get("since") or "",
++            "url": t["url"] if on else "", "kind": t.get("kind") or "work"}
++
++
++def act(screen_id, data):
++    """Board: open (with what the host pasted) / show / hide / close.  check = parse only.
++    Projector: report {mode: "window" | "inside"}."""
++    action = str(data.get("action") or "")
++    style = _style(screen_id)
++    t = dict((style.settings or {}).get("teams") or {})
++    if action in ("open", "check"):
++        got = parse(data.get("invite"), data.get("id"), data.get("passcode"), data.get("kind"))
++        if data.get("label"):
++            got["label"] = " ".join(str(data["label"]).split())[:60]
++        if action == "check":
++            return dict(got, on=t.get("on", False))
++        t = dict(got, on=True, shown=True, mode="", since=timezone.now().isoformat())
++    elif action in ("show", "hide"):
++        if not t.get("on"):
++            raise TeamsError("No Teams meeting is running on this screen.")
++        t["shown"] = action == "show"
++    elif action == "report":
++        if data.get("mode") not in ("window", "inside"):
++            raise TeamsError("Unknown mode.")
++        if t.get("on"):
++            t["mode"] = data["mode"]
++    elif action in ("close", "closed"):
++        t.update(on=False, shown=False, mode="")
++    else:
++        raise TeamsError("Unknown action.")
++    style.settings = dict(style.settings or {}, teams=t)
++    style.save(update_fields=["settings", "updated_at"])
++    return state_for(screen_id)
+diff --git a/screenart/test_teams.py b/screenart/test_teams.py
+new file mode 100644
+index 0000000..f1b2f55
+--- /dev/null
++++ b/screenart/test_teams.py
+@@ -0,0 +1,96 @@
++import json
++from unittest import mock
++
++from django.contrib.auth import get_user_model
++from django.test import TestCase
++
++from hanns import screen as svc
++from hanns.models import BigScreen
++from screenart import teams as tm
++
++INVITE = """Microsoft Teams Need help?
++Join the meeting now
++Meeting ID: 381 234 567 890 1
++Passcode: aB3dE5
++________________________________
++Dial in by phone  +1 323-555-0100,,123456789#"""
++
++
++class ParseTests(TestCase):
++    def test_pasted_invitation(self):
++        r = tm.parse(INVITE)
++        self.assertEqual(r["url"], "https://teams.microsoft.com/meet/3812345678901?p=aB3dE5")
++        self.assertEqual((r["id"], r["label"], r["kind"]), ("3812345678901", "Teams meeting 381 234 567 890 1", "work"))
++
++    def test_links(self):
++        long = "https://teams.microsoft.com/l/meetup-join/19%3ameeting_ZmQ5%40thread.v2/0?context=%7b%22Tid%22%3a%22abc%22%7d"
++        self.assertEqual(tm.parse(f"Join here: {long} .")["url"], long)
++        self.assertEqual(tm.parse("https://teams.microsoft.com/meet/3812345678901?p=aB3dE5")["id"], "3812345678901")
++        r = tm.parse("https://teams.live.com/meet/9876543210123?p=Zz9")
++        self.assertEqual((r["kind"], r["url"]), ("personal", "https://teams.live.com/meet/9876543210123?p=Zz9"))
++        self.assertTrue(tm.parse("https://teams.cloud.microsoft/meet/3812345678901?p=x1")["url"].startswith("https://teams.cloud.microsoft/"))
++
++    def test_outlook_safe_links_are_unwrapped(self):
++        wrapped = ("https://nam12.safelinks.protection.outlook.com/?url=https%3A%2F%2Fteams.microsoft.com%2Fmeet%2F"
++                   "3812345678901%3Fp%3DaB3dE5&data=05%7C02&reserved=0")
++        self.assertEqual(tm.parse(wrapped)["url"], "https://teams.microsoft.com/meet/3812345678901?p=aB3dE5")
++
++    def test_id_and_passcode_fields(self):
++        r = tm.parse("", "381 234 567 890 1", "aB3dE5")
++        self.assertEqual(r["url"], "https://teams.microsoft.com/meet/3812345678901?p=aB3dE5")
++        r = tm.parse("", "3812345678901", "aB3dE5", kind="personal")
++        self.assertEqual(r["url"], "https://teams.live.com/meet/3812345678901?p=aB3dE5")
++        self.assertEqual(tm.parse("381 234 567 890 1", passcode="Q1")["id"], "3812345678901")   # ID in the box
++
++    def test_refuses_what_isnt_teams(self):
++        for bad in ("https://evil.example/meet/3812345678901?p=x", "https://teams.microsoft.com.evil.example/meet/1",
++                    "javascript:alert(1)", "https://safelinks.protection.outlook.com.evil/?url=https%3A%2F%2Fevil.example"):
++            with self.assertRaises(tm.TeamsError, msg=bad):
++                tm.parse(bad)
++        with self.assertRaises(tm.TeamsError):
++            tm.parse("", "12345", "x")                     # too short
++        with self.assertRaises(tm.TeamsError):
++            tm.parse("", "3812345678901", "")              # no passcode
++        with self.assertRaises(tm.TeamsError):
++            tm.parse("", "3812345678901", "a b<script>")   # not a passcode
++        with self.assertRaises(tm.TeamsError):
++            tm.parse("")
++
++
++class EndpointTests(TestCase):
++    def setUp(self):
++        u = get_user_model().objects.create_user("t-host", password="pw-pw-pw-123")
++        self.screen = BigScreen.objects.create(owner=u, name="Hall 2")
++        self.url = f"/screenart/s/{self.screen.token}/teams/"
++
++    def post(self, **b):
++        return self.client.post(self.url, json.dumps(b), content_type="application/json")
++
++    def test_open_close_and_state(self):
++        self.assertEqual(svc.screen_state(self.screen)["teams"]["on"], False)
++        r = self.post(action="check", invite=INVITE)                      # parse only
++        self.assertEqual(r.json()["teams"]["id"], "3812345678901")
++        self.assertFalse(svc.screen_state(self.screen)["teams"]["on"])
++        sent = []
++        with mock.patch.object(svc, "_send", side_effect=lambda g, m: sent.append(m["payload"])):
++            r = self.post(action="open", invite=INVITE, label="  Board   call ")
++        st = svc.screen_state(self.screen)["teams"]
++        self.assertEqual((st["on"], st["label"], st["url"]), (True, "Board call", "https://teams.microsoft.com/meet/3812345678901?p=aB3dE5"))
++        self.assertTrue(any(p.get("type") == "screen_state" for p in sent))
++        self.assertEqual((st["shown"], st["mode"]), (True, ""))
++        self.post(action="report", mode="inside")                          # the projector captured it
++        self.post(action="hide")                                           # back to Knock Knock, meeting runs on
++        st = svc.screen_state(self.screen)["teams"]
++        self.assertEqual((st["on"], st["shown"], st["mode"]), (True, False, "inside"))
++        self.post(action="show")
++        self.assertTrue(svc.screen_state(self.screen)["teams"]["shown"])
++        self.assertEqual(self.post(action="report", mode="tv").status_code, 400)
++        self.post(action="close")
++        st = svc.screen_state(self.screen)["teams"]
++        self.assertEqual((st["on"], st["shown"], st["mode"], st["url"], st["label"]), (False, False, "", "", "Board call"))
++        self.assertEqual(self.post(action="hide").status_code, 400)        # nothing running
++        self.assertEqual(self.post(action="open", invite="https://evil.example/x").status_code, 400)
++        self.assertEqual(self.post(action="launch").status_code, 400)
++        self.screen.is_active = False
++        self.screen.save()
++        self.assertEqual(self.post(action="close").status_code, 410)
+diff --git a/screenart/urls.py b/screenart/urls.py
+index 17013d3..3f42da0 100644
+--- a/screenart/urls.py
++++ b/screenart/urls.py
+@@ -20,6 +20,7 @@ urlpatterns = [
+     path("s/<str:token>/dj/fx/", views.dj_fx, name="dj_fx"),
+     path("s/<str:token>/dj/sample/", views.dj_sample, name="dj_sample"),
+     path("s/<str:token>/look/", views.look, name="look"),
++    path("s/<str:token>/teams/", views.teams, name="teams"),
+     path("s/<str:token>/events/", views.events, name="events"),
+     path("s/<str:token>/event/", views.event, name="event"),
+     path("s/<str:token>/event/data/", views.event_data, name="event_data"),
+diff --git a/screenart/views.py b/screenart/views.py
+index a380657..aebf8cb 100644
+--- a/screenart/views.py
++++ b/screenart/views.py
+@@ -227,6 +227,30 @@ def look(request, token):
+     return JsonResponse({"ok": True, "look": program.look_for(screen.id)})
+ 
+ 
++@require_POST
++def teams(request, token):
++    """A Teams meeting on the big screen: open (with the pasted invite / link /
++    ID + passcode), close, check (parse only), closed (the projector's window
++    was shut by hand). The screen's token is the credential, as for every
++    other screen action (screenart/teams.py)."""
++    from . import teams as tm
++    screen = _screen(token)
++    if not screen.is_active:
++        return _stopped()
++    try:
++        data = json.loads(request.body or b"{}")
++    except (ValueError, TypeError):
++        return JsonResponse({"ok": False, "error": "Bad JSON."}, status=400)
++    try:
++        out = tm.act(screen.id, data)
++    except tm.TeamsError as e:
++        return JsonResponse({"ok": False, "error": str(e)}, status=400)
++    if data.get("action") != "check":
++        from hanns import screen as svc
++        svc.push_state(screen)
++    return JsonResponse({"ok": True, "teams": out})
++
++
+ SAMPLE_EXTS = {".mp3", ".wav", ".ogg", ".oga", ".m4a", ".aac", ".webm", ".flac", ".opus"}
+ 
+ 
+diff --git a/static/hanns/js/hanns_screen_enter.js b/static/hanns/js/hanns_screen_enter.js
+index 2ddf981..8cdca1a 100644
+--- a/static/hanns/js/hanns_screen_enter.js
++++ b/static/hanns/js/hanns_screen_enter.js
+@@ -188,6 +188,7 @@
+       { sel: ".sbd-show", on: n => n.classList.contains("on") },
+       { sel: ".pe-layer", on: n => n.classList.contains("on") },
+       { sel: ".lv-layer", on: n => n.classList.contains("on") },
++      { sel: ".tm-layer", on: n => n.classList.contains("on") },        // a Teams meeting
+       { sel: ".pm-video.pm-deck-a", on: n => n.classList.contains("on") && !n.classList.contains("tiny") && !n.classList.contains("audio") },
+     ];
+     const seen = new WeakMap();                      // element → was it showing
+diff --git a/static/hanns/js/hanns_screen_teams.js b/static/hanns/js/hanns_screen_teams.js
+new file mode 100644
+index 0000000..f299de2
+--- /dev/null
++++ b/static/hanns/js/hanns_screen_teams.js
+@@ -0,0 +1,293 @@
++/* ═══════════════════════════════════════════════════════════════════
++   HANNS · BIG SCREEN — a Microsoft Teams meeting on the big screen
++   (server: screenart/teams.py)
++   ───────────────────────────────────────────────────────────────────
++   Microsoft doesn't let Teams run inside another web page, so it can't
++   live inside the big screen like YouTube does. Instead:
++
++   Projector:  a "Teams" scene comes in (with the screen's transition) and
++               the meeting opens in its OWN window on the projector laptop,
++               sized to the screen. If the browser blocks that window, the
++               scene shows one big "Open the meeting" button (one click on
++               the projector) and how to allow it for next time. If someone
++               closes the Teams window by hand, the control board hears it.
++   Board:      paste the invitation, a link or the meeting ID (+ passcode);
++               "Put it on the big screen" / "Back to Knock Knock"; recent
++               meetings one tap away (kept in this browser only).
++   ═══════════════════════════════════════════════════════════════════ */
++(function () {
++  "use strict";
++  const esc = v => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
++  function csrf() {
++    if (window.__SCR_CSRF__) return window.__SCR_CSRF__;
++    const i = document.querySelector("[name=csrfmiddlewaretoken]");
++    if (i && i.value) return i.value;
++    const m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
++    return m ? decodeURIComponent(m[1]) : "";
++  }
++  const post = (token, body) => fetch(`/screenart/s/${token}/teams/`, {
++    method: "POST", credentials: "same-origin",
++    headers: { "Content-Type": "application/json", "X-CSRFToken": csrf() }, body: JSON.stringify(body),
++  }).then(r => r.json().then(j => ({ ok: r.ok && j.ok, j })).catch(() => ({ ok: false, j: {} })));
++  const TEAMS = "#7b83eb";               // a Teams-like violet for the scene and buttons
++
++  /* ───────────── projector ───────────── */
++  const cfgEl = document.getElementById("scr-cfg");
++  if (cfgEl && document.getElementById("scr-stage")) {
++    let token = "";
++    try { token = (JSON.parse(cfgEl.textContent || "{}").token) || ""; } catch (_) { /* below */ }
++    if (!token) { const m = location.pathname.match(/\/screen\/s\/([^/]+)\//); token = m ? m[1] : ""; }
++    const css = document.createElement("style");
++    css.textContent = `
++    .tm-layer{position:fixed;inset:0;z-index:30;display:none;align-items:center;justify-content:center;padding:4vh 4vw;
++      background:radial-gradient(70% 60% at 50% 40%,rgba(123,131,235,.22),transparent 70%),#0b0b16;color:#eef0ff;
++      font-family:"Archivo",system-ui,sans-serif;text-align:center}
++    .tm-layer.on{display:flex}
++    .tm-card{display:flex;flex-direction:column;align-items:center;gap:2.2vh;max-width:min(900px,92vw)}
++    .tm-rings{position:relative;width:15vh;height:15vh;display:grid;place-items:center}
++    .tm-rings i{position:absolute;inset:0;border-radius:50%;border:2px solid ${TEAMS};opacity:0;animation:tmRing 2.4s ease-out infinite}
++    .tm-rings i:nth-child(2){animation-delay:.8s}.tm-rings i:nth-child(3){animation-delay:1.6s}
++    @keyframes tmRing{0%{transform:scale(.5);opacity:.85}100%{transform:scale(1.35);opacity:0}}
++    .tm-face{width:9vh;height:9vh;border-radius:26%;display:grid;place-items:center;background:${TEAMS};color:#fff;
++      font:800 4.6vh/1 "Archivo",system-ui,sans-serif;box-shadow:0 2vh 6vh -1vh rgba(123,131,235,.6)}
++    .tm-k{font:600 clamp(.7rem,1.3vh,1rem)/1 "Spline Sans Mono",ui-monospace,monospace;letter-spacing:.28em;text-transform:uppercase;color:#b8bdf7}
++    .tm-t{font:800 clamp(1.8rem,6vh,4.2rem)/1.05 "Archivo",system-ui,sans-serif;letter-spacing:-.02em}
++    .tm-s{font:500 clamp(1rem,2.3vh,1.5rem)/1.4 "Inter",system-ui,sans-serif;color:#c9cbe6;max-width:46em}
++    .tm-go{margin-top:1vh;min-height:7vh;padding:0 4vh;border:0;border-radius:2vh;cursor:pointer;color:#fff;background:${TEAMS};
++      font:800 clamp(1rem,2.6vh,1.7rem)/1 "Archivo",system-ui,sans-serif;box-shadow:0 1.6vh 5vh -1vh rgba(123,131,235,.7)}
++    .tm-go[hidden]{display:none}
++    .tm-tips{font:500 clamp(.8rem,1.7vh,1.1rem)/1.5 "Inter",system-ui,sans-serif;color:#9a9cc0}
++    .tm-tips b{color:#e0e2ff}
++    @media (prefers-reduced-motion:reduce){.tm-rings i{animation:none;opacity:.4}}`;
++    document.head.appendChild(css);
++    const layer = document.createElement("div");
++    layer.className = "tm-layer"; layer.setAttribute("role", "status");
++    layer.innerHTML = `<video class="tm-video" data-tm-video muted playsinline hidden></video>
++      <div class="tm-card" data-tm-card>
++        <div class="tm-rings" aria-hidden="true"><i></i><i></i><i></i><span class="tm-face">T</span></div>
++        <div class="tm-k">Microsoft Teams</div>
++        <div class="tm-t" data-tm-t>Teams meeting</div>
++        <div class="tm-s" data-tm-s>Opening the meeting on this screen…</div>
++        <div class="tm-acts"><button type="button" class="tm-go" data-tm-go hidden>Open the meeting</button>
++          <button type="button" class="tm-go tm-cap" data-tm-cap hidden>Show it inside the big screen</button></div>
++        <div class="tm-tips" data-tm-tips></div></div>`;
++    document.body.appendChild(layer);
++    css.textContent += `
++    .tm-video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
++    .tm-video[hidden],.tm-card[hidden]{display:none}
++    .tm-acts{display:flex;gap:1.5vh;flex-wrap:wrap;justify-content:center}
++    .tm-cap{background:#16a34a;box-shadow:0 1.6vh 5vh -1vh rgba(22,163,74,.6)}`;
++    const $ = s => layer.querySelector(s);
++    const video = $("[data-tm-video]");
++    let win = null, key = "", stream = null, mode = "";
++    const report = m => { if (m !== mode) { mode = m; post(token, { action: "report", mode: m }); } };
++
++    function open(st) {
++      const w = (screen.availWidth || 1920), h = (screen.availHeight || 1080);
++      try { win = window.open(st.url, `kk-teams-${token}`, `popup=yes,left=0,top=0,width=${w},height=${h}`); } catch (_) { win = null; }
++      if (win) {
++        try { win.focus(); } catch (_) { /* fine */ }
++        $("[data-tm-s]").textContent = "The meeting opened in its own window on this screen.";
++        $("[data-tm-go]").hidden = true;
++        $("[data-tm-cap]").hidden = false;
++        $("[data-tm-tips]").innerHTML = "1 · In Teams: <b>Continue on this browser</b> → <b>Join now</b>.<br>" +
++          "2 · Come back to this window and click <b>Show it inside the big screen</b>, then pick the Teams window — " +
++          "the control board can then switch between Teams and Knock Knock without leaving the meeting.";
++        report("window");
++      } else {
++        // the browser blocked the window: one click here, and how to stop it happening
++        $("[data-tm-s]").textContent = "This browser needs one click here to open the meeting.";
++        $("[data-tm-go]").hidden = false;
++        $("[data-tm-tips]").innerHTML = "To skip this next time: allow <b>pop-ups</b> for this site (the icon at the end of the address bar).";
++      }
++    }
++    async function capture() {
++      // The browser asks which window to show — pick the Teams one. (A rule of every
++      // browser: only a person at this computer can start a capture.)
++      try {
++        stream = await navigator.mediaDevices.getDisplayMedia({
++          video: { displaySurface: "window", frameRate: { ideal: 30 }, cursor: "never" },
++          audio: false, selfBrowserSurface: "exclude", surfaceSwitching: "include",
++        });
++      } catch (_) { stream = null; return; }                   // cancelled: nothing changes
++      video.srcObject = stream; video.hidden = false; $("[data-tm-card]").hidden = true;
++      try { await video.play(); } catch (_) { /* muted: plays */ }
++      report("inside");
++      stream.getVideoTracks()[0].addEventListener("ended", () => {   // sharing stopped / the window went away
++        stopCapture(); if (render.last && render.last.on) report("window");
++      });
++    }
++    function stopCapture() {
++      if (stream) stream.getTracks().forEach(t => t.stop());
++      stream = null; video.srcObject = null; video.hidden = true; $("[data-tm-card]").hidden = false;
++    }
++    $("[data-tm-go]").addEventListener("click", () => { const st = render.last; if (st && st.on) open(st); });
++    $("[data-tm-cap]").addEventListener("click", capture);
++    function end() {
++      stopCapture();
++      if (win) { try { if (!win.closed) win.close(); } catch (_) { /* cut off: can't */ } }   // works while the browser still lets us
++      win = null; mode = "";
++      try { window.focus(); } catch (_) { /* fine */ }
++    }
++    function render(s) {
++      const st = (s && s.teams) || { on: false };
++      render.last = st;
++      // the meeting keeps running while hidden: showing it again is instant
++      layer.classList.toggle("on", !!(st.on && st.shown));
++      if (!st.on) { if (key) { key = ""; end(); } return; }
++      $("[data-tm-t]").textContent = st.label || "Teams meeting";
++      const k = st.url + "|" + st.since;
++      if (k !== key) { key = k; stopCapture(); mode = ""; open(st); }   // a new meeting: open it
++    }
++    let first = {};
++    try { first = JSON.parse((document.getElementById("scr-state") || {}).textContent || "{}"); } catch (_) { /* ignore */ }
++    render(first);
++    document.addEventListener("scr:state", e => render(e.detail));
++  }
++
++  /* ───────────── control board ───────────── */
++  const cssB = document.createElement("style");
++  cssB.textContent = `
++  .tmb{padding:.75rem 1.2rem;display:flex;flex-direction:column;gap:.6rem}
++  .tmb-head{display:flex;align-items:center;gap:.9rem;flex-wrap:wrap}
++  .tmb-ico{flex:none;width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font:800 1.1rem/1 "Archivo",system-ui,sans-serif;color:#fff;background:${TEAMS}}
++  .tmb-tx{flex:1 1 220px;min-width:0;display:flex;flex-direction:column;gap:.15rem}
++  .tmb-tx b{font-size:.95rem}.tmb-tx small{font-size:.8rem;color:#a9a6c2}
++  .tmb-live{display:inline-flex;align-items:center;gap:.4rem;font:700 .66rem/1 ui-monospace,monospace;letter-spacing:.14em;color:#c7ccff;
++    padding:.35rem .55rem;border-radius:999px;background:rgba(123,131,235,.16);border:1px solid rgba(123,131,235,.5)}
++  .tmb-live::before{content:"";width:7px;height:7px;border-radius:50%;background:#a5acff;box-shadow:0 0 8px #a5acff}
++  .tmb-form{display:grid;grid-template-columns:minmax(0,1fr) 170px;gap:.45rem}
++  .tmb textarea,.tmb input{width:100%;box-sizing:border-box;border-radius:11px;border:1px solid rgba(255,255,255,.16);background:#05050a;color:#f1f5f9;
++    padding:.6rem .75rem;font:500 .86rem/1.35 inherit}
++  .tmb textarea{min-height:46px;resize:vertical}
++  .tmb input{min-height:46px}
++  .tmb .row{display:flex;gap:.45rem;flex-wrap:wrap;align-items:center}
++  .tmb .seg{display:inline-flex;padding:3px;border-radius:10px;background:#05050a;border:1px solid rgba(255,255,255,.12)}
++  .tmb .seg button{min-height:34px;border:0;border-radius:8px;background:none;color:#a9a6c2;padding:0 .7rem;font:600 .76rem/1 inherit;cursor:pointer}
++  .tmb .seg button[aria-pressed="true"]{background:#e5e7eb;color:#0b0b0f}
++  .tmb .go{min-height:42px;border:0;border-radius:11px;padding:0 1rem;cursor:pointer;color:#fff;background:${TEAMS};font:700 .84rem/1 inherit}
++  .tmb .back{min-height:42px;border-radius:11px;padding:0 1rem;cursor:pointer;color:#fecaca;background:#450a0a;border:1px solid #ef4444;font:700 .84rem/1 inherit}
++  .tmb .go:disabled{opacity:.5;cursor:default}
++  .tmb-check{font-size:.8rem;min-height:1.2em;color:#a9a6c2}
++  .tmb-hint{margin-top:.5rem;font-size:.8rem;line-height:1.45;color:#c7c9e8;padding:.55rem .7rem;border-radius:10px;
++    background:rgba(123,131,235,.08);border:1px solid rgba(123,131,235,.3)}
++  .tmb-hint:empty{display:none}
++  .tmb-hint b{color:#fff}
++  .tmb-check.ok{color:#86efac}.tmb-check.bad{color:#fda4af}
++  .tmb-recent{display:flex;gap:.35rem;flex-wrap:wrap}
++  .tmb-recent button{min-height:32px;border-radius:999px;padding:0 .75rem;border:1px solid rgba(123,131,235,.45);background:rgba(123,131,235,.1);
++    color:#d6d9ff;font:600 .74rem/1 inherit;cursor:pointer}
++  .tmb [hidden]{display:none!important}
++  @media (max-width:700px){.tmb-form{grid-template-columns:1fr}}`;
++  document.head.appendChild(cssB);
++  document.querySelectorAll("[data-screen]").forEach(root => {
++    if (root.hasAttribute("data-dj-page")) return;
++    const token = root.dataset.token;
++    let state = {};
++    try { state = JSON.parse(root.querySelector("[data-state]").textContent || "{}"); } catch (_) { /* ignore */ }
++    const host = document.createElement("div");
++    host.className = "tmb";
++    host.innerHTML = `<div class="tmb-head"><span class="tmb-ico" aria-hidden="true">T</span>
++        <span class="tmb-tx"><b>Teams meeting</b><small data-tmb-sub>Paste the invitation — the big screen opens the meeting</small></span>
++        <span class="tmb-live" data-tmb-live hidden>ON THE BIG SCREEN</span></div>
++      <div data-tmb-edit>
++        <div class="tmb-form">
++          <textarea data-tmb-invite rows="2" placeholder="Paste the Teams invitation, a join link, or the meeting ID" aria-label="Teams invitation, link or meeting ID"></textarea>
++          <input data-tmb-pass autocomplete="off" placeholder="Passcode" aria-label="Passcode (if not in the invitation)">
++        </div>
++        <div class="row" style="margin-top:.45rem">
++          <span class="seg" role="group" aria-label="Kind of meeting"><button type="button" data-tmb-kind="work" aria-pressed="true">Work / school</button><button type="button" data-tmb-kind="personal" aria-pressed="false">Personal</button></span>
++          <input data-tmb-label maxlength="60" placeholder="Name it (optional) — e.g. Board call" aria-label="Name for the big screen" style="flex:1 1 200px;min-height:42px">
++          <button type="button" class="go" data-tmb-go disabled>Put it on the big screen</button>
++        </div>
++      </div>
++      <div data-tmb-on hidden>
++        <div class="row">
++          <button type="button" class="go" data-tmb-show>Show Teams</button>
++          <button type="button" class="back" data-tmb-hide>Back to Knock Knock</button>
++          <button type="button" class="back" data-tmb-end>End meeting</button>
++        </div>
++        <div class="tmb-hint" data-tmb-hint></div>
++      </div>
++      <div class="tmb-check" data-tmb-check aria-live="polite"></div>
++      <div class="tmb-recent" data-tmb-recent></div>`;
++    const slot = root.querySelector("[data-addons]");
++    if (slot) slot.appendChild(host); else root.appendChild(host);
++    const $ = s => host.querySelector(s);
++    const inv = $("[data-tmb-invite]"), pass = $("[data-tmb-pass]"), label = $("[data-tmb-label]"), go = $("[data-tmb-go]"), check = $("[data-tmb-check]");
++    let kind = "work", ckT = null, parsed = null;
++    const RKEY = `kk-teams-recent-${token}`;
++    const recent = () => { try { return JSON.parse(localStorage.getItem(RKEY) || "[]"); } catch (_) { return []; } };
++    function remember(p, name) {
++      const list = recent().filter(r => r.url !== p.url);
++      list.unshift({ url: p.url, label: name || p.label, id: p.id, kind: p.kind });
++      try { localStorage.setItem(RKEY, JSON.stringify(list.slice(0, 5))); } catch (_) { /* private mode */ }
++      drawRecent();
++    }
++    function drawRecent() {
++      const list = recent();
++      $("[data-tmb-recent]").innerHTML = list.length ? `<small style="color:#77738f;align-self:center">Recent:</small>` +
++        list.map((r, i) => `<button type="button" data-tmb-recent-i="${i}" title="${esc(r.url.replace(/\?p=.*/, "?p=…"))}">${esc(r.label)}</button>`).join("") : "";
++    }
++    const say = (t, cls) => { check.className = "tmb-check" + (cls ? " " + cls : ""); check.textContent = t; };
++    const body = () => ({ invite: inv.value, passcode: pass.value, id: "", kind, label: label.value.trim() });
++    function recheck() {
++      clearTimeout(ckT); parsed = null; go.disabled = true;
++      if (!inv.value.trim() && !pass.value.trim()) { say(""); return; }
++      ckT = setTimeout(async () => {
++        const { ok, j } = await post(token, Object.assign({ action: "check" }, body()));
++        if (!ok) { say(j.error || "Couldn't read that.", "bad"); return; }
++        parsed = j.teams; go.disabled = false;
++        // what we understood, passcode hidden
++        const p = (parsed.url.match(/[?&]p=([^&]+)/) || [])[1];
++        if (parsed.kind !== kind) { kind = parsed.kind; drawKind(); }
++        say(`✓ ${parsed.label}${p ? " · passcode ••••" + decodeURIComponent(p).slice(-2) : ""}${parsed.kind === "personal" ? " · personal meeting" : ""}`, "ok");
++      }, 350);
++    }
++    function drawKind() { host.querySelectorAll("[data-tmb-kind]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.tmbKind === kind))); }
++    inv.addEventListener("input", recheck); pass.addEventListener("input", recheck);
++    host.addEventListener("click", async e => {
++      const b = e.target.closest("button"); if (!b) return;
++      if (b.dataset.tmbKind) { kind = b.dataset.tmbKind; drawKind(); recheck(); }
++      else if (b.hasAttribute("data-tmb-go")) {
++        go.disabled = true;
++        const { ok, j } = await post(token, Object.assign({ action: "open" }, body()));
++        if (!ok) { say(j.error || "Couldn't open it.", "bad"); go.disabled = false; return; }
++        remember(j.teams, label.value.trim());
++        state.teams = j.teams; render();
++        say("Opening on the big screen… In Teams pick “Continue on this browser”, then “Join now”.", "ok");
++      } else if (b.hasAttribute("data-tmb-show") || b.hasAttribute("data-tmb-hide") || b.hasAttribute("data-tmb-end")) {
++        const act = b.hasAttribute("data-tmb-show") ? "show" : b.hasAttribute("data-tmb-hide") ? "hide" : "close";
++        const { ok, j } = await post(token, { action: act });
++        if (ok) {
++          state.teams = j.teams; render();
++          say(act === "show" ? "Teams is on the big screen." : act === "hide" ? "Back to Knock Knock — the meeting keeps running." : "Meeting ended on the big screen.");
++        } else say(j.error || "Couldn't do that.", "bad");
++      } else if (b.dataset.tmbRecentI != null) {
++        const r = recent()[+b.dataset.tmbRecentI]; if (!r) return;
++        inv.value = r.url; pass.value = ""; label.value = r.label || ""; kind = r.kind || "work"; drawKind(); recheck();
++      }
++    });
++    function render() {
++      const t = state.teams || { on: false };
++      const inside = t.on && t.mode === "inside";
++      $("[data-tmb-live]").hidden = !(t.on && t.shown);
++      $("[data-tmb-on]").hidden = !t.on;
++      $("[data-tmb-edit]").hidden = !!t.on;
++      // what can really be done depends on how the projector has the meeting
++      $("[data-tmb-show]").hidden = !(inside && !t.shown);
++      $("[data-tmb-hide]").hidden = !(inside && t.shown);
++      $("[data-tmb-end]").textContent = inside ? "End meeting" : "End & back to Knock Knock";
++      $("[data-tmb-hint]").innerHTML = !t.on ? "" : inside
++        ? (t.shown ? "Teams is on the big screen. <b>Back to Knock Knock</b> keeps the meeting running in the background."
++                   : "The meeting is running in the background — <b>Show Teams</b> puts it back on the big screen.")
++        : "On the projector: join in Teams (<b>Continue on this browser</b> → <b>Join now</b>), then click <b>Show it inside the big screen</b> " +
++          "on the Knock Knock window and pick the Teams window. After that you can switch between Teams and Knock Knock from here.";
++      $("[data-tmb-sub]").textContent = t.on
++        ? `${t.label || "Teams meeting"}${t.since ? " · since " + new Date(t.since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}${inside && !t.shown ? " · in the background" : ""}`
++        : "Paste the invitation — the big screen opens the meeting";
++    }
++    root.addEventListener("bs:state", ev => { state = ev.detail || state; render(); });
++    render(); drawRecent();
++  });
++})();
+diff --git a/templates/hanns/screen_home.html b/templates/hanns/screen_home.html
+index 377b707..45a3526 100644
+--- a/templates/hanns/screen_home.html
++++ b/templates/hanns/screen_home.html
+@@ -1228,7 +1228,8 @@
+ <script src="{% static 'hanns/js/hanns_screen_live.js' %}?v=4"></script>
+ <script src="{% static 'hanns/js/hanns_dj_fx.js' %}?v=2"></script>
+ <script src="{% static 'hanns/js/hanns_screen_remote.js' %}?v=2"></script>
+-<script src="{% static 'hanns/js/hanns_screen_enter.js' %}?v=5"></script>
++<script src="{% static 'hanns/js/hanns_screen_teams.js' %}?v=2"></script>
++<script src="{% static 'hanns/js/hanns_screen_enter.js' %}?v=6"></script>
+ <script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=8"></script>
+ {% endif %}
+ {% endblock %}
+diff --git a/templates/hanns/screen_stage.html b/templates/hanns/screen_stage.html
+index 7be2092..5a99d82 100644
+--- a/templates/hanns/screen_stage.html
++++ b/templates/hanns/screen_stage.html
+@@ -150,7 +150,8 @@
+ <script src="{% static 'hanns/js/hanns_screen_live.js' %}?v=3"></script>
+ <script src="{% static 'hanns/js/hanns_dj_fx.js' %}?v=2"></script>
+ <script src="{% static 'hanns/js/hanns_screen_remote.js' %}?v=2"></script>
+-<script src="{% static 'hanns/js/hanns_screen_enter.js' %}?v=5"></script>
++<script src="{% static 'hanns/js/hanns_screen_teams.js' %}?v=2"></script>
++<script src="{% static 'hanns/js/hanns_screen_enter.js' %}?v=6"></script>
+ <script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=8"></script>
+ </body>
+ </html>
+-- 
+2.43.0
+

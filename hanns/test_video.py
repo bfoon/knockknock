@@ -159,6 +159,7 @@ class VideoTests(TestCase):
             time.sleep(0.25)
         self.assertEqual(hv.read_meta(vid)["status"], "ready")
         # a job that's merely busy (fresh progress) is left alone
+        hv.heartbeat()                          # a worker again: this upload mustn't start its own thread
         vid2 = self._upload(self.fine, "fine.mp4", "video/mp4").json()["id"]
         os.rename(os.path.join(q, vid2), os.path.join(q, vid2 + ".working"))
         self.assertEqual(hv.requeue_stale(only=vid2), 0)

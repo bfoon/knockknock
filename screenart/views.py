@@ -203,6 +203,54 @@ def media(request, token):
     return JsonResponse({"ok": True, "state": _push(screen)})
 
 
+@require_POST
+def look(request, token):
+    """How things come onto the big screen: {entrance} saves it; {preview: true}
+    replays it on the projector now, on whatever is showing."""
+    screen = _screen(token)
+    if not screen.is_active:
+        return _stopped()
+    try:
+        data = json.loads(request.body or b"{}")
+    except (ValueError, TypeError):
+        return JsonResponse({"ok": False, "error": "Bad JSON."}, status=400)
+    from hanns import screen as svc
+    if data.get("entrance") is not None:
+        try:
+            program.set_look(screen.id, data)
+        except program.ProgramError as e:
+            return JsonResponse({"ok": False, "error": str(e)}, status=400)
+        svc.push_state(screen)
+    if data.get("preview"):
+        svc._send(svc.screen_group(screen.id), {"type": "screen.event", "payload": {
+            "type": "look_preview", "entrance": program.look_for(screen.id)["entrance"]}})
+    return JsonResponse({"ok": True, "look": program.look_for(screen.id)})
+
+
+@require_POST
+def teams(request, token):
+    """A Teams meeting on the big screen: open (with the pasted invite / link /
+    ID + passcode), close, check (parse only), closed (the projector's window
+    was shut by hand). The screen's token is the credential, as for every
+    other screen action (screenart/teams.py)."""
+    from . import teams as tm
+    screen = _screen(token)
+    if not screen.is_active:
+        return _stopped()
+    try:
+        data = json.loads(request.body or b"{}")
+    except (ValueError, TypeError):
+        return JsonResponse({"ok": False, "error": "Bad JSON."}, status=400)
+    try:
+        out = tm.act(screen.id, data)
+    except tm.TeamsError as e:
+        return JsonResponse({"ok": False, "error": str(e)}, status=400)
+    if data.get("action") != "check":
+        from hanns import screen as svc
+        svc.push_state(screen)
+    return JsonResponse({"ok": True, "teams": out})
+
+
 SAMPLE_EXTS = {".mp3", ".wav", ".ogg", ".oga", ".m4a", ".aac", ".webm", ".flac", ".opus"}
 
 

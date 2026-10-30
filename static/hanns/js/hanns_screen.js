@@ -660,6 +660,7 @@ const Live = {
       if(m.type === "screen_state") apply(m.state, m.notice);
       else if(m.type === "screen_stopped") showStopped();
       else if(m.type === "dj_fx") document.dispatchEvent(new CustomEvent("scr:djfx", {detail: m}));
+      else if(m.type === "look_preview") document.dispatchEvent(new CustomEvent("scr:lookpreview", {detail: m}));
     });
     s.addEventListener("close", ()=>{
       if(gen !== this.gen) return;

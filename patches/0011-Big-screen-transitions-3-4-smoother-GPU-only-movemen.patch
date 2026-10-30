@@ -1,0 +1,277 @@
+From 2f5b203ffa893a80a1a4ca59e1b382f912054a7e Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Thu, 29 Oct 2026 18:19:13 +0000
+Subject: [PATCH 11/12] =?UTF-8?q?Big=20screen=20transitions:=203=E2=80=934?=
+ =?UTF-8?q?=C3=97=20smoother=20(GPU-only=20movement,=20cheaper=20lobby)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Measured on the projector page (1920×1080, software compositing): every
+entrance ran at 1–6 fps with single frames up to ~1 s. The main thread was
+nearly idle; the time went to re-rasterising and compositing the screen on
+every frame. Causes, each fixed and re-measured:
+
+- clip-path reveals repainted the whole incoming screen every frame
+  → rolls are now the screen itself coming down/up (transform), the roller
+    bar rides on a transform (was `top`, layout per frame); curtain is two
+    velvet stage curtains parting over the new picture; iris is a cover with
+    a growing opening (only the cover repaints, never the content)
+- the lobby aurora: three gradients under a live 70px blur + blend mode,
+  re-blurred on every frame → softness built into the gradients, no filter,
+  no blend; drift stays transform-only (screenshots: same look)
+- the lobby grid's full-screen CSS mask → drawn once into an image at the
+  screen's size (pixel-identical), plain background from then on
+- the closed operator panel stayed a live backdrop-blurred layer above the
+  screen → visibility:hidden once it has slid away (also: not tabbable)
+- shorter: rolls 1000→700 ms, curtain 850→700, iris 900→650, slide 700→550,
+  zoom 650→450, flip 850→650
+
+Same machine, same settings, deck in / lobby back:
+  roll down 3/6 → 13/18 fps · curtain 3/6 → 14/14 · zoom 4/5 → 12/14
+  (worst roll-down frame 408 → 103 ms). None / Fade unchanged.
+---
+ static/hanns/css/hanns_screen.css     |  30 ++++++--
+ static/hanns/js/hanns_screen_enter.js | 101 ++++++++++++++++++++++----
+ templates/hanns/screen_home.html      |   2 +-
+ templates/hanns/screen_stage.html     |   4 +-
+ 4 files changed, 112 insertions(+), 25 deletions(-)
+
+diff --git a/static/hanns/css/hanns_screen.css b/static/hanns/css/hanns_screen.css
+index 58285cf..cf17c06 100644
+--- a/static/hanns/css/hanns_screen.css
++++ b/static/hanns/css/hanns_screen.css
+@@ -53,14 +53,25 @@ body.scr.scr-fs:not(.scr-awake) *{cursor:none!important}
+   transition:opacity .7s var(--scr-ease),visibility .7s;
+ }
+ .scr-lobby.off{opacity:0;visibility:hidden;pointer-events:none}
+-.scr-aurora{position:absolute;inset:-20%;filter:blur(70px);opacity:.75;pointer-events:none}
++/* The lobby's drifting light. It used to be three gradients under a live 70px
++   blur with mix-blend-mode — re-blurred on every frame anything moved on the
++   projector (measured: most of the frame time during a transition on a
++   modest laptop). Now the softness is in the gradients themselves and the
++   blobs only drift with transforms, which the GPU does for free. Same colours,
++   same places, same drift. */
++.scr-aurora{position:absolute;inset:-20%;pointer-events:none}
+ .scr-aurora i{
+-  position:absolute;border-radius:50%;mix-blend-mode:screen;
++  position:absolute;border-radius:50%;will-change:transform;
+   animation:scrDrift 26s ease-in-out infinite alternate;
+ }
+-.scr-aurora i:nth-child(1){width:55vw;height:55vw;left:5%;top:0;background:radial-gradient(circle,rgba(139,92,246,.55),transparent 65%)}
+-.scr-aurora i:nth-child(2){width:45vw;height:45vw;right:0;top:20%;background:radial-gradient(circle,rgba(34,211,238,.35),transparent 65%);animation-duration:32s;animation-delay:-8s}
+-.scr-aurora i:nth-child(3){width:50vw;height:50vw;left:30%;bottom:-10%;background:radial-gradient(circle,rgba(251,113,133,.30),transparent 65%);animation-duration:38s;animation-delay:-16s}
++.scr-aurora i:nth-child(1){width:66vw;height:66vw;left:0;top:-6%;
++  background:radial-gradient(circle,rgba(139,92,246,.41) 0%,rgba(139,92,246,.30) 22%,rgba(139,92,246,.15) 42%,rgba(139,92,246,.05) 58%,transparent 72%)}
++.scr-aurora i:nth-child(2){width:56vw;height:56vw;right:-5%;top:14%;
++  background:radial-gradient(circle,rgba(34,211,238,.26) 0%,rgba(34,211,238,.19) 22%,rgba(34,211,238,.09) 42%,rgba(34,211,238,.03) 58%,transparent 72%);
++  animation-duration:32s;animation-delay:-8s}
++.scr-aurora i:nth-child(3){width:61vw;height:61vw;left:25%;bottom:-16%;
++  background:radial-gradient(circle,rgba(251,113,133,.23) 0%,rgba(251,113,133,.17) 22%,rgba(251,113,133,.08) 42%,rgba(251,113,133,.03) 58%,transparent 72%);
++  animation-duration:38s;animation-delay:-16s}
+ @keyframes scrDrift{
+   0%{transform:translate(0,0) scale(1)}
+   50%{transform:translate(6vw,-4vh) scale(1.12)}
+@@ -197,13 +208,18 @@ body.scr-panel-open .scr-scrim{opacity:1;pointer-events:auto}
+ .scr-panel{
+   position:fixed;left:50%;top:0;z-index:60;width:min(1080px,96vw);
+   max-height:min(78vh,760px);display:flex;flex-direction:column;
+-  transform:translate(-50%,-104%);transition:transform .5s var(--scr-ease);
++  transform:translate(-50%,-104%);
++  /* once it has slid away it is really gone: its backdrop blur stops being a
++     live layer, and a closed panel can't be tabbed into */
++  visibility:hidden;transition:transform .5s var(--scr-ease),visibility 0s linear .5s;
+   background:var(--scr-glass);border:1px solid var(--scr-line);border-top:0;
+   border-radius:0 0 22px 22px;
+   box-shadow:0 40px 120px -20px rgba(0,0,0,.8),inset 0 -1px 0 rgba(255,255,255,.06);
+   backdrop-filter:blur(26px) saturate(1.3);-webkit-backdrop-filter:blur(26px) saturate(1.3);
+ }
+-body.scr-panel-open .scr-panel{transform:translate(-50%,0)}
++body.scr-panel-open .scr-panel{transform:translate(-50%,0);visibility:visible;transition:transform .5s var(--scr-ease),visibility 0s}
++/* the grid drawn once into an image (hanns_screen_enter.js): same look, no mask pass per frame */
++.scr-grid.baked{background-size:100% 100%;mask-image:none;-webkit-mask-image:none}
+ .scr-ph{
+   display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+   padding:1rem 1.25rem .85rem;border-bottom:1px solid var(--scr-line);
+diff --git a/static/hanns/js/hanns_screen_enter.js b/static/hanns/js/hanns_screen_enter.js
+index 4f2d6ee..2ddf981 100644
+--- a/static/hanns/js/hanns_screen_enter.js
++++ b/static/hanns/js/hanns_screen_enter.js
+@@ -23,19 +23,23 @@
+     ["rolldown", "Roll down"], ["rollup", "Roll up"], ["curtain", "Curtain"], ["iris", "Iris"],
+     ["slide", "Slide"], ["zoom", "Zoom"], ["flip", "Flip down"], ["fade", "Fade"], ["none", "None"],
+   ];
+-  const DUR = { rolldown: 1000, rollup: 1000, curtain: 850, iris: 900, slide: 700, zoom: 650, flip: 850 };
++  /* Every entrance moves with transform/opacity only, so the GPU just moves
++     pictures it already has. (The first version revealed with clip-path,
++     which re-painted the whole incoming screen on every frame — measured at
++     1–6 fps on a modest projector laptop.) Curtain and iris animate a cover
++     over the new picture instead of the picture itself, for the same reason. */
++  const DUR = { rolldown: 700, rollup: 700, curtain: 700, iris: 650, slide: 550, zoom: 450, flip: 650 };
+   const EASE = "cubic-bezier(.22,.8,.24,1)";
+   // a roll is a screen coming down: an even descent that eases into its stop
+   const ROLL_EASE = "cubic-bezier(.45,.05,.3,1)";
+   const easeOf = k => (k === "rolldown" || k === "rollup" ? ROLL_EASE : EASE);
+   // keyframes per style; [frames, options] — the roll-downs settle with a tiny bounce
+   const KF = {
+-    rolldown: [{ clipPath: "inset(0 0 100% 0)" }, { clipPath: "inset(0 0 0% 0)", offset: 0.82 },
+-               { clipPath: "inset(0 0 1.8% 0)", offset: 0.91 }, { clipPath: "inset(0 0 0% 0)" }],
+-    rollup: [{ clipPath: "inset(100% 0 0 0)" }, { clipPath: "inset(0% 0 0 0)", offset: 0.82 },
+-             { clipPath: "inset(1.8% 0 0 0)", offset: 0.91 }, { clipPath: "inset(0% 0 0 0)" }],
+-    curtain: [{ clipPath: "inset(0 50% 0 50%)" }, { clipPath: "inset(0 0% 0 0%)" }],
+-    iris: [{ clipPath: "circle(0% at 50% 50%)" }, { clipPath: "circle(75% at 50% 50%)" }],
++    // the screen comes down (or up) into place and settles
++    rolldown: [{ transform: "translateY(-100%)" }, { transform: "translateY(0)", offset: 0.82 },
++               { transform: "translateY(-1.6%)", offset: 0.91 }, { transform: "translateY(0)" }],
++    rollup: [{ transform: "translateY(100%)" }, { transform: "translateY(0)", offset: 0.82 },
++             { transform: "translateY(1.6%)", offset: 0.91 }, { transform: "translateY(0)" }],
+     slide: [{ transform: "translateX(100%)" }, { transform: "translateX(0)" }],
+     zoom: [{ transform: "scale(.84)", opacity: 0 }, { transform: "scale(1)", opacity: 1 }],
+     flip: [{ transform: "perspective(1800px) rotateX(-78deg)", transformOrigin: "50% 0", opacity: 0.25 },
+@@ -60,7 +64,19 @@
+       background:linear-gradient(180deg,#f4f4f7 0%,#b6b6bf 38%,#5b5b66 62%,#9d9da7 100%);
+       box-shadow:0 10px 26px rgba(0,0,0,.55),0 2px 0 rgba(255,255,255,.35) inset}
+     .scr-roller::before,.scr-roller::after{content:"";position:absolute;top:2px;width:26px;height:14px;border-radius:7px;background:#2a2a31}
+-    .scr-roller::before{left:1.4%}.scr-roller::after{right:1.4%}`;
++    .scr-roller::before{left:1.4%}.scr-roller::after{right:1.4%}
++    .scr-roller{top:0;will-change:transform}
++    /* stage curtains for "curtain": two velvet panels that part */
++    .scr-curtain{position:fixed;inset:0;z-index:60;pointer-events:none;display:flex;overflow:hidden}
++    .scr-curtain i{flex:1;will-change:transform;
++      background:repeating-linear-gradient(90deg,rgba(0,0,0,.28) 0 2.2vw,rgba(255,255,255,.05) 3.4vw,rgba(0,0,0,.28) 4.6vw),
++                 linear-gradient(180deg,#5b0f1e,#3a0913 70%,#24050c)}
++    .scr-curtain i:first-child{box-shadow:inset -10px 0 18px rgba(0,0,0,.55)}
++    .scr-curtain i:last-child{box-shadow:inset 10px 0 18px rgba(0,0,0,.55)}
++    /* "iris": a black cover whose round opening grows (only the cover repaints) */
++    @property --scr-iris{syntax:"<percentage>";inherits:false;initial-value:0%}
++    .scr-iris{position:fixed;inset:0;z-index:60;pointer-events:none;
++      background:radial-gradient(circle at 50% 50%,transparent var(--scr-iris),#000 calc(var(--scr-iris) + .6%))}`;
+     document.head.appendChild(css);
+ 
+     function roller(kind, dur) {                  // the bar riding the leading edge of a roll
+@@ -68,13 +84,64 @@
+       bar.className = "scr-roller"; bar.setAttribute("aria-hidden", "true");
+       document.body.appendChild(bar);
+       const down = kind === "rolldown";
+-      const tops = down ? ["0%", "100%", "98.2%", "100%"] : ["100%", "0%", "1.8%", "0%"];
+-      const a = bar.animate([{ top: tops[0] }, { top: tops[1], offset: 0.82 }, { top: tops[2], offset: 0.91 }, { top: tops[3] }],
+-                            { duration: dur, easing: ROLL_EASE, fill: "forwards" });
++      // rides the edge with a transform (no layout per frame)
++      const ys = down ? [0, 100, 98.4, 100] : [100, 0, 1.6, 0];
++      const k = ys.map(v => ({ transform: `translateY(${v}vh)` }));
++      k[1].offset = 0.82; k[2].offset = 0.91;
++      const a = bar.animate(k, { duration: dur, easing: ROLL_EASE, fill: "forwards" });
+       a.finished.then(() => bar.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 260, fill: "forwards" }).finished)
+                .catch(() => {}).then(() => bar.remove());
+     }
+ 
++    function cover(kind, dur) {           // curtain / iris: animate a cover, not the content
++      const c = document.createElement("div");
++      c.setAttribute("aria-hidden", "true");
++      let a;
++      if (kind === "curtain") {
++        c.className = "scr-curtain"; c.innerHTML = "<i></i><i></i>";
++        document.body.appendChild(c);
++        const [l, r] = c.children, o = { duration: dur, easing: "cubic-bezier(.6,.02,.25,1)", fill: "forwards" };
++        l.animate([{ transform: "translateX(0)" }, { transform: "translateX(-101%)" }], o);
++        a = r.animate([{ transform: "translateX(0)" }, { transform: "translateX(101%)" }], o);
++      } else {
++        c.className = "scr-iris";
++        document.body.appendChild(c);
++        a = c.animate([{ "--scr-iris": "0%" }, { "--scr-iris": "78%" }], { duration: dur, easing: EASE, fill: "forwards" });
++      }
++      a.finished.catch(() => {}).then(() => c.remove());
++      return a;
++    }
++
++    /* The lobby grid: 64 px lines faded out by a radial CSS mask, which costs a
++       mask pass on every redraw. Draw it once, faded, into an image instead —
++       same picture, a plain background from then on. */
++    function bakeGrid() {
++      const g = document.querySelector(".scr-grid");
++      if (!g) return;
++      try {
++        const w = Math.round(g.clientWidth), h = Math.round(g.clientHeight);
++        if (!w || !h) return;
++        const c = document.createElement("canvas"); c.width = w; c.height = h;
++        const x = c.getContext("2d");
++        x.fillStyle = "rgba(255,255,255,.035)";
++        for (let px = 0; px < w; px += 64) x.fillRect(px, 0, 1, h);
++        for (let py = 0; py < h; py += 64) x.fillRect(0, py, w, 1);
++        // the mask: radial-gradient(ellipse at center, #000 30%, transparent 75%)
++        x.globalCompositeOperation = "destination-in";
++        x.setTransform(w / 2, 0, 0, h / 2, w / 2, h / 2);                 // ellipse = scaled circle
++        const r = Math.hypot(1, 1);                                        // "farthest-corner" of the ellipse
++        const m = x.createRadialGradient(0, 0, 0, 0, 0, r);
++        m.addColorStop(0.30, "#000"); m.addColorStop(0.75, "rgba(0,0,0,0)");
++        x.fillStyle = m; x.fillRect(-1, -1, 2, 2);
++        const url = c.toDataURL("image/png");
++        g.style.backgroundImage = `url("${url}")`;
++        g.classList.add("baked");
++      } catch (_) { /* the CSS mask stays */ }
++    }
++    bakeGrid();
++    let bakeT = null;
++    window.addEventListener("resize", () => { clearTimeout(bakeT); bakeT = setTimeout(bakeGrid, 300); });
++
+     let running = new WeakMap();
+     function enter(el, opts = {}) {
+       const kind = opts.kind || entrance;
+@@ -102,11 +169,15 @@
+         running.delete(el);
+       };
+       const prev = running.get(el); if (prev) prev.cancel();
+-      if (kind === "none" || !KF[kind] || !el.animate) { requestAnimationFrame(() => requestAnimationFrame(done)); return; }
+-      const dur = DUR[kind] || 900;
+-      const a = el.animate(KF[kind], { duration: dur, easing: easeOf(kind) });
++      if (kind === "none" || !el.animate || !(KF[kind] || kind === "curtain" || kind === "iris")) { requestAnimationFrame(() => requestAnimationFrame(done)); return; }
++      const dur = DUR[kind] || 700;
++      let a;
++      if (kind === "curtain" || kind === "iris") a = cover(kind, dur);   // the new picture is already in place underneath
++      else {
++        a = el.animate(KF[kind], { duration: dur, easing: easeOf(kind) });
++        if (kind === "rolldown" || kind === "rollup") roller(kind, dur);
++      }
+       running.set(el, a);
+-      if (kind === "rolldown" || kind === "rollup") roller(kind, dur);
+       a.finished.then(done, done);
+     }
+ 
+diff --git a/templates/hanns/screen_home.html b/templates/hanns/screen_home.html
+index 034baee..377b707 100644
+--- a/templates/hanns/screen_home.html
++++ b/templates/hanns/screen_home.html
+@@ -1228,7 +1228,7 @@
+ <script src="{% static 'hanns/js/hanns_screen_live.js' %}?v=4"></script>
+ <script src="{% static 'hanns/js/hanns_dj_fx.js' %}?v=2"></script>
+ <script src="{% static 'hanns/js/hanns_screen_remote.js' %}?v=2"></script>
+-<script src="{% static 'hanns/js/hanns_screen_enter.js' %}?v=3"></script>
++<script src="{% static 'hanns/js/hanns_screen_enter.js' %}?v=5"></script>
+ <script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=8"></script>
+ {% endif %}
+ {% endblock %}
+diff --git a/templates/hanns/screen_stage.html b/templates/hanns/screen_stage.html
+index 5575668..7be2092 100644
+--- a/templates/hanns/screen_stage.html
++++ b/templates/hanns/screen_stage.html
+@@ -13,7 +13,7 @@
+ <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Archivo:wght@400;500;600;700;800&family=Archivo+Expanded:wght@600;700;800&family=Spline+Sans+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800;900&family=Manrope:wght@300;400;500;600;700;800&family=Poppins:wght@300;400;500;600;700;800;900&family=Montserrat:wght@300;400;500;600;700;800;900&family=Roboto:wght@300;400;500;700;900&family=Open+Sans:wght@300;400;500;600;700;800&family=Lato:wght@300;400;700;900&family=Nunito+Sans:wght@300;400;600;700;800;900&family=Raleway:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=DM+Serif+Display:ital@0;1&family=Bebas+Neue&family=Oswald:wght@300;400;500;600;700&family=Merriweather:wght@300;400;700;900&family=Libre+Baskerville:wght@400;700&family=Lora:ital,wght@0,400..700;1,400..700&family=Cormorant+Garamond:ital,wght@0,300..700;1,300..700&family=Space+Grotesk:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Barlow+Condensed:wght@300;400;500;600;700;800&family=Rubik:wght@300;400;500;600;700;800;900&family=Quicksand:wght@300;400;500;600;700&family=Sora:wght@300;400;500;600;700;800&family=Exo+2:wght@300;400;500;600;700;800;900&family=Ubuntu:wght@300;400;500;700&family=Work+Sans:wght@300;400;500;600;700;800;900&family=Noto+Sans:wght@300;400;500;600;700;800;900&family=Noto+Serif:wght@400;500;600;700;800;900&family=Source+Serif+4:opsz,wght@8..60,300..900&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Serif:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700;800&family=Fira+Code:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Cinzel:wght@400;500;600;700;800;900&family=Abril+Fatface&family=Anton&family=Pacifico&family=Caveat:wght@400;500;600;700&family=Permanent+Marker&family=Righteous&family=Kanit:wght@300;400;500;600;700;800;900&family=Lexend:wght@300;400;500;600;700;800;900&family=Urbanist:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+ <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+ <link rel="stylesheet" href="{% static 'hanns/css/hanns.css' %}?v=62">
+-<link rel="stylesheet" href="{% static 'hanns/css/hanns_screen.css' %}?v=3">
++<link rel="stylesheet" href="{% static 'hanns/css/hanns_screen.css' %}?v=4">
+ </head>
+ <body class="scr">
+ 
+@@ -150,7 +150,7 @@
+ <script src="{% static 'hanns/js/hanns_screen_live.js' %}?v=3"></script>
+ <script src="{% static 'hanns/js/hanns_dj_fx.js' %}?v=2"></script>
+ <script src="{% static 'hanns/js/hanns_screen_remote.js' %}?v=2"></script>
+-<script src="{% static 'hanns/js/hanns_screen_enter.js' %}?v=3"></script>
++<script src="{% static 'hanns/js/hanns_screen_enter.js' %}?v=5"></script>
+ <script src="{% static 'hanns/js/hanns_screen_program.js' %}?v=8"></script>
+ </body>
+ </html>
+-- 
+2.43.0
+

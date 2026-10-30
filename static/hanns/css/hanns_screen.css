@@ -53,14 +53,25 @@ body.scr.scr-fs:not(.scr-awake) *{cursor:none!important}
   transition:opacity .7s var(--scr-ease),visibility .7s;
 }
 .scr-lobby.off{opacity:0;visibility:hidden;pointer-events:none}
-.scr-aurora{position:absolute;inset:-20%;filter:blur(70px);opacity:.75;pointer-events:none}
+/* The lobby's drifting light. It used to be three gradients under a live 70px
+   blur with mix-blend-mode — re-blurred on every frame anything moved on the
+   projector (measured: most of the frame time during a transition on a
+   modest laptop). Now the softness is in the gradients themselves and the
+   blobs only drift with transforms, which the GPU does for free. Same colours,
+   same places, same drift. */
+.scr-aurora{position:absolute;inset:-20%;pointer-events:none}
 .scr-aurora i{
-  position:absolute;border-radius:50%;mix-blend-mode:screen;
+  position:absolute;border-radius:50%;will-change:transform;
   animation:scrDrift 26s ease-in-out infinite alternate;
 }
-.scr-aurora i:nth-child(1){width:55vw;height:55vw;left:5%;top:0;background:radial-gradient(circle,rgba(139,92,246,.55),transparent 65%)}
-.scr-aurora i:nth-child(2){width:45vw;height:45vw;right:0;top:20%;background:radial-gradient(circle,rgba(34,211,238,.35),transparent 65%);animation-duration:32s;animation-delay:-8s}
-.scr-aurora i:nth-child(3){width:50vw;height:50vw;left:30%;bottom:-10%;background:radial-gradient(circle,rgba(251,113,133,.30),transparent 65%);animation-duration:38s;animation-delay:-16s}
+.scr-aurora i:nth-child(1){width:66vw;height:66vw;left:0;top:-6%;
+  background:radial-gradient(circle,rgba(139,92,246,.41) 0%,rgba(139,92,246,.30) 22%,rgba(139,92,246,.15) 42%,rgba(139,92,246,.05) 58%,transparent 72%)}
+.scr-aurora i:nth-child(2){width:56vw;height:56vw;right:-5%;top:14%;
+  background:radial-gradient(circle,rgba(34,211,238,.26) 0%,rgba(34,211,238,.19) 22%,rgba(34,211,238,.09) 42%,rgba(34,211,238,.03) 58%,transparent 72%);
+  animation-duration:32s;animation-delay:-8s}
+.scr-aurora i:nth-child(3){width:61vw;height:61vw;left:25%;bottom:-16%;
+  background:radial-gradient(circle,rgba(251,113,133,.23) 0%,rgba(251,113,133,.17) 22%,rgba(251,113,133,.08) 42%,rgba(251,113,133,.03) 58%,transparent 72%);
+  animation-duration:38s;animation-delay:-16s}
 @keyframes scrDrift{
   0%{transform:translate(0,0) scale(1)}
   50%{transform:translate(6vw,-4vh) scale(1.12)}
@@ -197,13 +208,18 @@ body.scr-panel-open .scr-scrim{opacity:1;pointer-events:auto}
 .scr-panel{
   position:fixed;left:50%;top:0;z-index:60;width:min(1080px,96vw);
   max-height:min(78vh,760px);display:flex;flex-direction:column;
-  transform:translate(-50%,-104%);transition:transform .5s var(--scr-ease);
+  transform:translate(-50%,-104%);
+  /* once it has slid away it is really gone: its backdrop blur stops being a
+     live layer, and a closed panel can't be tabbed into */
+  visibility:hidden;transition:transform .5s var(--scr-ease),visibility 0s linear .5s;
   background:var(--scr-glass);border:1px solid var(--scr-line);border-top:0;
   border-radius:0 0 22px 22px;
   box-shadow:0 40px 120px -20px rgba(0,0,0,.8),inset 0 -1px 0 rgba(255,255,255,.06);
   backdrop-filter:blur(26px) saturate(1.3);-webkit-backdrop-filter:blur(26px) saturate(1.3);
 }
-body.scr-panel-open .scr-panel{transform:translate(-50%,0)}
+body.scr-panel-open .scr-panel{transform:translate(-50%,0);visibility:visible;transition:transform .5s var(--scr-ease),visibility 0s}
+/* the grid drawn once into an image (hanns_screen_enter.js): same look, no mask pass per frame */
+.scr-grid.baked{background-size:100% 100%;mask-image:none;-webkit-mask-image:none}
 .scr-ph{
   display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
   padding:1rem 1.25rem .85rem;border-bottom:1px solid var(--scr-line);

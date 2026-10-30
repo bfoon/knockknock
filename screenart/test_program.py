@@ -132,6 +132,25 @@ class MediaTests(TestCase):
         _, m = self.act(action="cue_clear", slot=2)
         self.assertEqual(m["current"]["cues"], [None] * 4)
 
+    # ── screen transitions ──
+    def test_look_default_choose_preview(self):
+        url = f"/screenart/s/{self.screen.token}/look/"
+        post = lambda **b: self.client.post(url, json.dumps(b), content_type="application/json")
+        self.assertEqual(svc.screen_state(self.screen)["look"], {"entrance": "rolldown"})     # roll down by default
+        sent = []
+        with mock.patch.object(svc, "_send", side_effect=lambda g, msg: sent.append(msg["payload"])):
+            r = post(entrance="curtain")
+            self.assertEqual(r.json()["look"], {"entrance": "curtain"})
+            self.assertEqual(post(entrance="explode").status_code, 400)
+            self.assertEqual(post(entrance="none").json()["look"]["entrance"], "none")    # can be switched off
+            post(preview=True)
+        self.assertEqual(svc.screen_state(self.screen)["look"], {"entrance": "none"})
+        self.assertIn({"type": "look_preview", "entrance": "none"}, sent)
+        self.assertTrue(any(p.get("type") == "screen_state" for p in sent))             # projectors hear the change
+        self.screen.is_active = False
+        self.screen.save()
+        self.assertEqual(post(entrance="fade").status_code, 410)
+
     # ── screen only + drums & fx pads ──
     def test_screen_only_pauses_both_decks_and_play_lifts_it(self):
         clock = [5_000_000]

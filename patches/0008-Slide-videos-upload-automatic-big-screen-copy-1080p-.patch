@@ -1,7 +1,7 @@
 From 176fc5eeda4eae54fa7b10023c433e1f60beb9cf Mon Sep 17 00:00:00 2001
 From: Claude <claude@anthropic.com>
 Date: Wed, 28 Oct 2026 20:08:44 +0000
-Subject: [PATCH 8/9] Slide videos: upload + automatic big-screen copy (1080p
+Subject: [PATCH 08/12] Slide videos: upload + automatic big-screen copy (1080p
  H.264) on the server
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8

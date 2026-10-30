@@ -332,3 +332,59 @@ def event_data(request, token):
     if not screen.is_active:
         return _stopped()
     return JsonResponse({"ok": True, "event": program.event_data(screen, request)})
+
+
+# ───────────────────────────── door screen ─────────────────────────────
+# The host side is authorised by the projector token like every other action here; the door page itself
+# only knows its own read-only token (screenart/door.py).
+from django.http import Http404
+from django.views.decorators.cache import never_cache
+
+from . import door as doorsvc
+
+
+@require_POST
+def door(request, token):
+    """POST {op: get|set|rotate, ...settings} → the door settings and its link."""
+    screen = _screen(token)
+    try:
+        data = json.loads(request.body or "{}")
+    except ValueError:
+        return JsonResponse({"ok": False, "error": "That request was malformed."}, status=400)
+    op = data.get("op") or "get"
+    try:
+        if op == "set":
+            if not screen.is_active:
+                return _stopped()
+            doorsvc.set_door(screen.id, data)
+        elif op == "rotate":
+            if not screen.is_active:
+                return _stopped()
+            doorsvc.rotate(screen.id)
+        elif op != "get":
+            return JsonResponse({"ok": False, "error": "Unknown action."}, status=400)
+    except doorsvc.DoorError as e:
+        return JsonResponse({"ok": False, "error": str(e)}, status=400)
+    return JsonResponse({"ok": True, "door": doorsvc.host_view(screen, request)})
+
+
+@never_cache
+@require_GET
+@xframe_options_sameorigin
+def door_page(request, door_token):
+    screen, d = doorsvc.screen_for_token(door_token)
+    if not screen:
+        raise Http404("This door screen link is not active.")
+    return render(request, "screenart/door.html", {
+        "door_token": door_token, "preview": request.GET.get("preview") == "1",
+        "state_json": json.dumps(doorsvc.public_state(screen, d, request)),
+    })
+
+
+@never_cache
+@require_GET
+def door_state(request, door_token):
+    screen, d = doorsvc.screen_for_token(door_token)
+    if not screen:
+        return JsonResponse({"ok": False, "gone": True}, status=404)
+    return JsonResponse(doorsvc.public_state(screen, d, request))

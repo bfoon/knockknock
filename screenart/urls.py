@@ -24,4 +24,8 @@ urlpatterns = [
     path("s/<str:token>/events/", views.events, name="events"),
     path("s/<str:token>/event/", views.event, name="event"),
     path("s/<str:token>/event/data/", views.event_data, name="event_data"),
+    # door screen: the welcome / event-information display outside the room
+    path("s/<str:token>/door/", views.door, name="door"),
+    path("door/<str:door_token>/", views.door_page, name="door_page"),
+    path("door/<str:door_token>/state/", views.door_state, name="door_state"),
 ]

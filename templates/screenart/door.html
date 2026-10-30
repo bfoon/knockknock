@@ -1,0 +1,259 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Welcome</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<style>
+:root{--ink:#fff;--soft:rgba(255,255,255,.72);--glass:rgba(10,18,34,.55);--line:rgba(255,255,255,.14);--gold:#f6c344;--red:#ce1126;--blue:#0c1c8c;--green:#3a7728}
+*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;background:#07101f;color:var(--ink);font-family:"Segoe UI",system-ui,-apple-system,sans-serif}
+body.idle{cursor:none}
+/* background */
+.bg{position:fixed;inset:0;z-index:0;overflow:hidden}
+.bg .img{position:absolute;inset:-3%;background:center/cover no-repeat;opacity:0;transition:opacity 1.6s ease}
+.bg .img.on{opacity:1}.bg.contain .img{inset:0;background-size:contain;background-color:#000}
+.bg.drift .img.on{animation:drift 26s ease-in-out infinite alternate}
+@keyframes drift{from{transform:scale(1) translate(0,0)}to{transform:scale(1.08) translate(-1.5%,-1%)}}
+.bg .dim{position:absolute;inset:0;background:#000;transition:opacity .6s}
+.bg .wash{position:absolute;inset:-20%;opacity:.0;transition:opacity 1s;
+  background:radial-gradient(40% 50% at 20% 25%,rgba(206,17,38,.55),transparent 70%),radial-gradient(45% 55% at 80% 30%,rgba(12,28,140,.75),transparent 70%),
+             radial-gradient(50% 50% at 55% 85%,rgba(58,119,40,.6),transparent 70%),#07101f;animation:wash 30s ease-in-out infinite alternate}
+.bg.empty .wash{opacity:1}
+@keyframes wash{to{transform:rotate(8deg) scale(1.1)}}
+.bg .grain{position:absolute;inset:0;background:linear-gradient(180deg,rgba(7,16,31,.55),transparent 28%,transparent 55%,rgba(7,16,31,.8))}
+/* layout */
+.stage{position:fixed;inset:0;z-index:1;display:grid;grid-template-columns:minmax(0,34%) minmax(0,1fr);gap:2vw;padding:3.2vh 3vw}
+body.side-right .stage{grid-template-columns:minmax(0,1fr) minmax(0,34%)}
+body.side-right .greeter{order:2}
+body.no-greeter .stage{grid-template-columns:minmax(0,1fr)}body.no-greeter .greeter{display:none}
+.greeter{position:relative;min-height:0}
+.greeter .dg-host{position:absolute;inset:5vh 0 1.5vh 0}
+.main{display:flex;flex-direction:column;min-width:0;min-height:0;gap:2.2vh;overflow:hidden}
+.top{display:flex;align-items:flex-start;justify-content:space-between;gap:2vw}
+.kicker{display:inline-flex;align-items:center;gap:.6em;font:700 clamp(12px,1.25vw,22px)/1 ui-monospace,monospace;letter-spacing:.22em;text-transform:uppercase;color:var(--gold)}
+.kicker i{width:.6em;height:.6em;border-radius:50%;background:#22c55e;box-shadow:0 0 0 0 rgba(34,197,94,.6);animation:pulse 2s infinite}
+@keyframes pulse{70%{box-shadow:0 0 0 .7em rgba(34,197,94,0)}}
+.title{margin:.35em 0 0;font:850 clamp(26px,4.2vw,84px)/1.02 "Segoe UI",system-ui,sans-serif;letter-spacing:-.02em;text-shadow:0 4px 30px rgba(0,0,0,.45)}
+.where{margin-top:.6em;display:inline-flex;gap:.5em;align-items:center;padding:.35em .8em;border-radius:999px;background:var(--glass);border:1px solid var(--line);font-size:clamp(13px,1.3vw,24px);color:var(--soft)}
+.clock{text-align:right;flex:none}
+.clock .t{font:300 clamp(40px,7vw,140px)/.9 "Segoe UI",system-ui,sans-serif;letter-spacing:-.03em;font-variant-numeric:tabular-nums;text-shadow:0 4px 30px rgba(0,0,0,.4)}
+.clock .t b{font-weight:300;animation:colon 1s steps(1) infinite}@keyframes colon{50%{opacity:.25}}
+.clock .d{margin-top:.35em;font-size:clamp(13px,1.4vw,26px);color:var(--soft)}
+.caption{margin:auto 0 0;font:800 clamp(22px,3vw,62px)/1.12 "Segoe UI",system-ui,sans-serif;text-shadow:0 6px 40px rgba(0,0,0,.55);max-width:30ch;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.count{display:inline-flex;align-items:center;gap:.6em;margin-top:.5em;padding:.45em 1em;border-radius:999px;background:var(--gold);color:#1c1405;font:800 clamp(14px,1.6vw,30px)/1 system-ui,sans-serif}
+/* agenda */
+.agenda{flex:0 1 auto;min-height:0;overflow:hidden;background:var(--glass);border:1px solid var(--line);border-radius:clamp(14px,1.6vw,28px);padding:clamp(14px,1.6vw,30px);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 30px 70px rgba(0,0,0,.35)}
+.ag-head{display:flex;justify-content:space-between;align-items:baseline;gap:1em;font:700 clamp(11px,1.05vw,19px)/1 ui-monospace,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--soft);margin-bottom:.9em}
+.ag-now{display:grid;grid-template-columns:auto 1fr;gap:.2em 1em;align-items:center}
+.ag-badge{grid-row:span 2;align-self:stretch;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:5.2em;border-radius:14px;padding:.5em;background:linear-gradient(135deg,var(--red),#ff6b3d);font:850 clamp(12px,1.2vw,22px)/1 system-ui,sans-serif;letter-spacing:.12em}
+.ag-badge small{margin-top:.45em;font:600 clamp(11px,1vw,18px)/1 ui-monospace,monospace;letter-spacing:0;opacity:.9}
+.ag-badge.next{background:linear-gradient(135deg,#1d4ed8,#22d3ee)}
+.ag-t{font:800 clamp(18px,2.3vw,44px)/1.1 "Segoe UI",system-ui,sans-serif}
+.ag-s{font-size:clamp(13px,1.25vw,24px);color:var(--soft)}
+.ag-bar{grid-column:2;height:.45em;border-radius:999px;background:rgba(255,255,255,.15);overflow:hidden;margin-top:.3em}.ag-bar i{display:block;height:100%;background:var(--gold);transition:width 1s linear}
+.ag-next{margin-top:1.1em}
+.ag-list{margin-top:1.1em;border-top:1px solid var(--line);padding-top:.7em;display:grid;gap:.45em}
+.ag-row{display:grid;grid-template-columns:max-content 1fr;gap:1em;font-size:clamp(13px,1.3vw,25px)}.ag-row time{color:var(--gold);font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
+.ag-row span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ag-row.done{opacity:.45}
+.ag-empty{font-size:clamp(14px,1.4vw,26px);color:var(--soft)}
+/* closed */
+.closed{position:fixed;inset:0;z-index:2;display:none;place-items:center;text-align:center;background:radial-gradient(60% 60% at 50% 40%,#13284d,#07101f)}
+body.stopped .closed{display:grid}body.stopped .stage{display:none}
+.closed h1{font:850 clamp(32px,6vw,110px)/1 "Segoe UI",system-ui,sans-serif;margin:.2em 0}.closed p{color:var(--soft);font-size:clamp(14px,1.6vw,30px)}
+.closed .t{font:300 clamp(40px,8vw,150px)/1 "Segoe UI",system-ui,sans-serif;font-variant-numeric:tabular-nums}
+.fs-hint{position:fixed;right:1.2vw;bottom:1.2vh;z-index:3;border:1px solid var(--line);background:var(--glass);color:var(--soft);border-radius:999px;padding:.5em .9em;font:600 13px system-ui;transition:opacity .6s}
+body.idle .fs-hint,body.preview .fs-hint{opacity:0;pointer-events:none}
+/* portrait TVs: greeter on top, information below */
+@media (orientation:portrait){
+  .stage,body.side-right .stage{grid-template-columns:1fr;grid-template-rows:38vh 1fr}
+  body.side-right .greeter{order:0}
+  .greeter .dg-host{inset:0}
+  .caption{max-width:none;font-size:5.2vw;-webkit-line-clamp:4}
+  .kicker{font-size:2.1vw}.title{font-size:6.4vw}.where{font-size:2.5vw}
+  .clock .t{font-size:11vw}.clock .d{font-size:2.6vw}.count{font-size:3vw}
+  .main{gap:2.6vh}.agenda{padding:3.4vw;border-radius:3vw}
+  .ag-head{font-size:2vw}.ag-badge{font-size:2.4vw}.ag-badge small{font-size:2vw}
+  .ag-t{font-size:4.4vw}.ag-s{font-size:2.8vw}.ag-row{font-size:3vw}.ag-empty{font-size:3vw}
+  .dg-bubble{font-size:4.4vw;max-width:44vw}.dg-sign{font-size:2.6vw}
+}
+@media (prefers-reduced-motion:reduce){.bg .img.on,.bg .wash,.kicker i,.clock .t b{animation:none}}
+</style>
+</head>
+<body class="{% if preview %}preview{% endif %}">
+<div class="bg empty" id="bg"><div class="wash"></div><div class="img a"></div><div class="img b"></div><div class="dim" id="dim"></div><div class="grain"></div></div>
+
+<div class="stage">
+  <div class="greeter"><div class="dg-host" id="greeter"></div></div>
+  <div class="main">
+    <div class="top">
+      <div>
+        <div class="kicker"><i></i><span>Welcome</span></div>
+        <h1 class="title" id="title"></h1>
+        <div class="where" id="where" hidden><i class="bi bi-geo-alt-fill"></i><span></span></div>
+      </div>
+      <div class="clock" id="clock"><div class="t" id="clockT"></div><div class="d" id="clockD"></div></div>
+    </div>
+    <div>
+      <p class="caption" id="caption" hidden></p>
+      <div class="count" id="count" hidden><i class="bi bi-cup-hot-fill"></i><span></span></div>
+    </div>
+    <section class="agenda" id="agenda" hidden aria-label="Agenda">
+      <div class="ag-head"><span id="agTitle">Agenda</span><span id="agDay"></span></div>
+      <div id="agBody"></div>
+    </section>
+  </div>
+</div>
+
+<section class="closed" id="closed"><div><div class="t" id="closedT"></div><h1>This room is free</h1><p id="closedP">The event on this screen has ended. Thank you for coming.</p></div></section>
+<button class="fs-hint" id="fsHint" type="button"><i class="bi bi-arrows-fullscreen"></i> Tap for full screen</button>
+
+<script id="door-state" type="application/json">{{ state_json|safe }}</script>
+<script src="{% static 'screenart/js/door_greeter.js' %}?v=1"></script>
+<script>
+(function () {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const STATE_URL = "{% url 'screenart:door_state' door_token %}";
+  const PREVIEW = document.body.classList.contains("preview");
+  let S = JSON.parse($("door-state").textContent || "{}");
+  let drift = 0, greeter = null, slideTimer = null, slideIdx = 0, front = "a", lastBgKey = "";
+
+  function now() { return new Date(Date.now() + drift); }
+  function syncClock(st) { const t = Date.parse(st.server_now); if (!isNaN(t)) drift = t - Date.now(); }
+  function tz() { return (S.event && S.event.tz) || undefined; }
+  function parts(d) {
+    const f = new Intl.DateTimeFormat("en-GB", { timeZone: tz(), year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+    const o = {}; f.formatToParts(d).forEach(p => o[p.type] = p.value);
+    return { date: `${o.year}-${o.month}-${o.day}`, h: +o.hour % 24, m: +o.minute, s: +o.second };
+  }
+  const mins = hhmm => { const m = /^(\d{1,2}):(\d{2})/.exec(hhmm || ""); return m ? (+m[1]) * 60 + (+m[2]) : null; };
+  const pad = n => String(n).padStart(2, "0");
+  function inWords(m) { if (m < 1) return "now"; if (m < 60) return `in ${m} min`; const h = Math.floor(m / 60), r = m % 60; return `in ${h} h${r ? " " + r + " min" : ""}`; }
+
+  /* ── background ── */
+  function paintBg() {
+    const bg = $("bg"), b = S.background, imgs = (b && b.images) || [];
+    bg.classList.toggle("empty", !imgs.length);
+    bg.classList.toggle("contain", !!b && b.fit === "contain");
+    bg.classList.toggle("drift", !!b && b.motion === "drift");
+    $("dim").style.opacity = b ? String((b.dim || 0) / 100) : "0";
+    const key = JSON.stringify([imgs.map(i => i.id), b && b.active, b && b.slideshow]);
+    if (key === lastBgKey) return;
+    lastBgKey = key; clearInterval(slideTimer); slideIdx = 0;
+    if (!imgs.length) { bg.querySelectorAll(".img").forEach(n => n.classList.remove("on")); return; }
+    const start = Math.max(0, imgs.findIndex(i => i.id === b.active));
+    const ordered = imgs.slice(start).concat(imgs.slice(0, start));
+    const show = () => {
+      const next = front === "a" ? "b" : "a", el = bg.querySelector(".img." + next), url = ordered[slideIdx % ordered.length].url;
+      const pre = new Image();
+      pre.onload = pre.onerror = () => {
+        el.style.backgroundImage = `url("${url.replace(/"/g, "%22")}")`;
+        el.classList.add("on"); bg.querySelector(".img." + front).classList.remove("on"); front = next;
+      };
+      pre.src = url;
+    };
+    show();
+    if (b.slideshow && ordered.length > 1) slideTimer = setInterval(() => { slideIdx++; show(); }, b.slideshow * 1000);
+  }
+
+  /* ── clock, caption, countdown ── */
+  function tickClock() {
+    const d = now(), p = parts(d);
+    const t = `${pad(p.h)}<b>:</b>${pad(p.m)}`;
+    $("clockT").innerHTML = t; $("closedT").innerHTML = t;
+    $("clockD").textContent = new Intl.DateTimeFormat("en-GB", { timeZone: tz(), weekday: "long", day: "numeric", month: "long" }).format(d);
+    const cd = S.countdown ? mins(S.countdown) : null;
+    const c = $("count");
+    if (cd !== null) {
+      const left = cd - (p.h * 60 + p.m);
+      c.hidden = false; c.querySelector("span").textContent = left > 0 ? `Back at ${S.countdown} · ${inWords(left)}` : `Starting again now`;
+    } else c.hidden = true;
+    paintAgenda(p);
+  }
+
+  /* ── agenda ── */
+  function pickDay(days, today) {
+    if (!days || !days.length) return null;
+    return days.find(d => d.date === today) || (today < days[0].date ? days[0] : null) || null;
+  }
+  function paintAgenda(p) {
+    const box = $("agenda"), ev = S.event;
+    const days = ev && S.show && S.show.agenda ? (ev.agenda || []) : [];
+    const day = pickDay(days, p.date);
+    if (!day || !day.items || !day.items.length) { box.hidden = true; return; }
+    box.hidden = false;
+    const nowM = p.h * 60 + p.m, upcoming = day.date > p.date;
+    const items = day.items.map((it, i) => {
+      const s = mins(it.start), e = mins(it.end) ?? (day.items[i + 1] ? mins(day.items[i + 1].start) : null);
+      return Object.assign({}, it, { s, e });
+    });
+    const cur = upcoming ? null : items.find(it => it.s !== null && it.s <= nowM && (it.e === null || nowM < it.e));
+    const nxt = items.find(it => it.s !== null && (upcoming || it.s > nowM) && it !== cur);
+    $("agTitle").textContent = upcoming ? "Coming up" : "Today's agenda";
+    $("agDay").textContent = day.label || new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(day.date + "T12:00:00Z"));
+    const esc = v => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const sub = it => [it.speaker, it.track].filter(Boolean).map(esc).join(" · ");
+    let html = "";
+    if (cur) {
+      const pct = cur.e && cur.e > cur.s ? Math.min(100, Math.max(0, (nowM - cur.s) / (cur.e - cur.s) * 100)) : 0;
+      html += `<div class="ag-now"><div class="ag-badge">NOW<small>${esc(cur.start)}${cur.end ? "–" + esc(cur.end) : ""}</small></div>
+        <div class="ag-t">${esc(cur.title)}</div><div class="ag-s">${sub(cur) || "&nbsp;"}</div>${cur.e ? `<div class="ag-bar"><i style="width:${pct.toFixed(1)}%"></i></div>` : ""}</div>`;
+    }
+    if (nxt) {
+      html += `<div class="ag-now${cur ? " ag-next" : ""}"><div class="ag-badge next">NEXT<small>${esc(nxt.start)}</small></div>
+        <div class="ag-t">${esc(nxt.title)}</div><div class="ag-s">${[sub(nxt), upcoming ? "" : inWords(nxt.s - nowM)].filter(Boolean).join(" · ")}</div></div>`;
+    }
+    const rest = items.filter(it => it !== cur && it !== nxt && (upcoming || it.s === null || it.s > nowM)).slice(0, (matchMedia("(orientation: portrait)").matches ? 5 : 3) - (cur && nxt ? 1 : 0));
+    if (rest.length) html += `<div class="ag-list">${rest.map(it => `<div class="ag-row"><time>${esc(it.start)}${it.end ? "–" + esc(it.end) : ""}</time><span>${esc(it.title)}</span></div>`).join("")}</div>`;
+    if (!cur && !nxt) html = `<div class="ag-empty">That's all for today — thank you for coming.</div>`;
+    const bd = $("agBody"); if (bd.innerHTML !== html) bd.innerHTML = html;
+  }
+
+  /* ── everything from one state ── */
+  function render() {
+    document.body.classList.toggle("stopped", !S.active);
+    const ev = S.event;
+    $("title").textContent = (ev && ev.title) || S.name || "Welcome";
+    const w = $("where"); w.hidden = !(ev && ev.location); if (ev && ev.location) w.querySelector("span").textContent = ev.location;
+    $("clock").hidden = !(S.show && S.show.clock);
+    const cap = $("caption"); cap.hidden = !S.caption; cap.textContent = S.caption || "";
+    paintBg();
+    const g = S.greeter || {};
+    document.body.classList.toggle("no-greeter", !g.on);
+    document.body.classList.toggle("side-right", g.side === "right");
+    if (g.on) {
+      const opts = { figure: g.figure, outfit: g.outfit, style: g.style, skin: g.skin, side: g.side, every: g.every, sign: g.sign, lines: g.lines, wayText: g.way };
+      if (!greeter) greeter = DoorGreeter.mount($("greeter"), opts); else greeter.update(opts);
+    } else if (greeter) { greeter.destroy(); greeter = null; }
+    tickClock();
+  }
+
+  async function poll() {
+    try {
+      const r = await fetch(STATE_URL, { cache: "no-store", credentials: "same-origin" });
+      if (r.status === 404) { S.active = false; $("closedP").textContent = "This door screen link has been switched off."; render(); return; }
+      if (r.ok) { const st = await r.json(); syncClock(st); S = st; render(); }
+    } catch (e) { /* keep showing the last good state; try again shortly */ }
+  }
+
+  syncClock(S); render();
+  setInterval(tickClock, 1000);
+  setInterval(poll, 8000);
+
+  /* ── a screen that runs all day ── */
+  let idleT = null;
+  const wake = () => { document.body.classList.remove("idle"); clearTimeout(idleT); idleT = setTimeout(() => document.body.classList.add("idle"), 3000); };
+  ["mousemove", "touchstart", "keydown"].forEach(e => document.addEventListener(e, wake, { passive: true })); wake();
+  async function keepAwake() { try { if (!PREVIEW && navigator.wakeLock) await navigator.wakeLock.request("screen"); } catch (e) {} }
+  keepAwake(); document.addEventListener("visibilitychange", () => { if (!document.hidden) keepAwake(); });
+  $("fsHint").addEventListener("click", () => { const d = document.documentElement; (d.requestFullscreen || d.webkitRequestFullscreen || (() => {})).call(d); });
+  document.addEventListener("fullscreenchange", () => { $("fsHint").hidden = !!document.fullscreenElement; });
+  // a long-running TV tab: reload once a day at night to pick up updates and free memory
+  setInterval(() => { const p = parts(now()); if (p.h === 3 && p.m === 30) location.reload(); }, 60000);
+})();
+</script>
+</body>
+</html>

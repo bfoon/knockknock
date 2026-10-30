@@ -87,7 +87,7 @@
       <div class="dr-host">
         <div class="dr-grid">
           ${seg("figure", "Host", [["woman", "👩🏾 Woman"], ["man", "👨🏾 Man"]])}
-          ${seg("outfit", "Dress", [["official", "Official"], ["casual", "Casual"]])}
+          ${seg("outfit", "Dress", [["official", "Office wear"], ["traditional", "Traditional"], ["casual", "Casual"]])}
           ${seg("style", "Style", [["animated", "Animated"], ["robot", "🤖 Robot"]])}
           ${seg("side", "Stands", [["left", "Left"], ["right", "Right"]])}
           <div class="dr-seg"><span>Skin</span><div class="dr-skin">${[["1", "#8a5a3b"], ["2", "#5e3a22"], ["3", "#3b2416"]].map(([v, c]) => `<button type="button" data-skin="${v}" style="background:${c}" title="Tone ${v}"></button>`).join("")}</div></div>
@@ -204,7 +204,8 @@
   function summary(d) {
     if (!d || !d.on) return "Off · a welcome screen for the TV by the door";
     const g = d.greeter || {};
-    const host = g.on ? [g.figure === "man" ? "Man" : "Woman", g.outfit === "casual" ? "Casual" : "Official", g.style === "robot" ? "Robot" : "Animated"].join(" · ") : "No host";
+    const dress = { casual: "Casual", traditional: "Traditional" }[g.outfit] || "Office wear";
+    const host = g.on ? [g.figure === "man" ? "Man" : "Woman", dress, g.style === "robot" ? "Robot" : "Animated"].join(" · ") : "No host";
     return `● Link on · ${host}`;
   }
 

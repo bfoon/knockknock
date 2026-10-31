@@ -2642,11 +2642,11 @@ renderIndicators();
 renderLookups();
 renderAll();
 
-/* ── Public hook for Kora, Kura's AI assistant ──────────────────────
-   Kora drafts questions in the chat; this lets it drop them straight into
+/* ── Public hook for Foon, Kura's AI assistant ──────────────────────
+   Foon drafts questions in the chat; this lets it drop them straight into
    the form you have open (through the same prepareQuestions path as Excel
    import) instead of saving behind the builder's back and racing autosave.
-   snapshot() gives Kora the live, possibly unsaved form to review. */
+   snapshot() gives Foon the live, possibly unsaved form to review. */
 window.KuraBuilder = {
   version: 1,
   snapshot(){ return JSON.parse(JSON.stringify({title: $("#title-input").value, schema})); },

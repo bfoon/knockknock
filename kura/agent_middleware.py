@@ -1,5 +1,5 @@
 """
-kura/agent_middleware.py — puts Kora in the bottom-right corner of every
+kura/agent_middleware.py — puts Foon in the bottom-right corner of every
 owner-facing Kura page, without editing a dozen standalone templates.
 
 Most Kura screens are self-contained HTML documents (they don't extend
@@ -7,13 +7,13 @@ base.html), so a template block can't reach them all. This middleware adds
 three tags just before </body> on successful HTML responses whose URL
 resolves inside the `kura` namespace:
 
-    <script type="application/json" id="kora-config">…</script>
-    <script src="/static/kura/agent/kora.<hash>.js" defer></script>
+    <script type="application/json" id="foon-config">…</script>
+    <script src="/static/kura/agent/foon.<hash>.js" defer></script>
 
 It skips anything public or field-facing — the web runner (/kura/<code>/),
 previews, shared dashboard links, invite links and the enumerator's
 "my work" page — and anyone who couldn't see the survey anyway. Any error
-here is swallowed: Kora must never be the reason a page fails to load.
+here is swallowed: Foon must never be the reason a page fails to load.
 
 settings.py:  add "kura.agent_middleware.KuraAgentMiddleware" to MIDDLEWARE
               after AuthenticationMiddleware. KURA_AGENT_ENABLED=False hides it.
@@ -69,7 +69,7 @@ class KuraAgentMiddleware:
                     if response.has_header("Content-Length"):
                         response["Content-Length"] = str(len(response.content))
         except Exception:  # never break a page over the assistant
-            logger.exception("Kora injection skipped")
+            logger.exception("Foon injection skipped")
         return response
 
     def _snippet(self, request, response) -> bytes | None:
@@ -83,7 +83,7 @@ class KuraAgentMiddleware:
         user = getattr(request, "user", None)
         if not user or not user.is_authenticated:
             return None
-        if request.GET.get("kora") == "0" or request.headers.get("X-Kora-Skip"):
+        if request.GET.get("foon") == "0" or request.headers.get("X-Foon-Skip"):
             return None
 
         from django.conf import settings
@@ -111,12 +111,12 @@ class KuraAgentMiddleware:
             code, title, state = survey.code, survey.title, survey.state
 
         try:
-            js_url = static("kura/agent/kora.js")
-            css_url = static("kura/agent/kora.css")
+            js_url = static("kura/agent/foon.js")
+            css_url = static("kura/agent/foon.css")
         except Exception:
             # Manifest storage without collectstatic: fall back to plain paths.
             base = settings.STATIC_URL if str(settings.STATIC_URL).startswith("/") else "/" + str(settings.STATIC_URL)
-            js_url, css_url = base + "kura/agent/kora.js", base + "kura/agent/kora.css"
+            js_url, css_url = base + "kura/agent/foon.js", base + "kura/agent/foon.css"
 
         config = {
             "v": 1,
@@ -132,5 +132,5 @@ class KuraAgentMiddleware:
                           "export": "/kura/agent/export/", "apply": "/kura/agent/apply/"},
             "libs": {"chart": CHART_JS, "leaflet": LEAFLET_JS, "leafletCss": LEAFLET_CSS, "fonts": FONTS_CSS},
         }
-        tag = json_script(config, "kora-config")
+        tag = json_script(config, "foon-config")
         return (f"\n{tag}\n<script src=\"{js_url}\" defer></script>\n").encode("utf-8")

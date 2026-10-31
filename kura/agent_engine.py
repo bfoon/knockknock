@@ -1,7 +1,7 @@
 """
-kura/agent_engine.py — the deterministic half of Kora, Kura's AI assistant.
+kura/agent_engine.py — the deterministic half of Foon, Kura's AI assistant.
 
-The split that keeps Kora honest
+The split that keeps Foon honest
 ────────────────────────────────
 The language model (kura/agent_ai.py) only ever *plans*: it reads column
 metadata and aggregate statistics and answers with a list of tool calls
@@ -15,7 +15,7 @@ reusing Kura's own engines:
     cleaning        → PipelineExecutor._apply_step (all studio operations)
 
 So a chart can never show a hallucinated percentage, and a cleaning step
-Kora proposes behaves byte-for-byte like the same step in the Data Studio.
+Foon proposes behaves byte-for-byte like the same step in the Data Studio.
 
 Privacy
 ───────
@@ -203,7 +203,7 @@ def build_catalog(schema: dict) -> list[dict]:
 
     Calculated questions live in Submission.calculations, which the frame
     exposes as ``calc__<name>`` — the catalogue uses that column name so a
-    tile Kora saves keeps working in the live dashboard engine.
+    tile Foon saves keeps working in the live dashboard engine.
     """
     out = []
     for q in (schema or {}).get("questions") or []:
@@ -263,6 +263,7 @@ class AgentContext:
     can: dict = dc_field(default_factory=dict)
     _frame: pd.DataFrame | None = None
     scope_user_ids: list | None = None    # supervisor without whole-survey view
+    studio: dict | None = None            # what the open Dashboard/Data Studio shows (agent_studio)
 
     @property
     def fields(self) -> dict:
@@ -1424,14 +1425,15 @@ def auto_clean_steps(ctx: AgentContext) -> list:
                                              "match": "any", "reason": "Beyond 3× the IQR."}})
     answer_cols = [f["name"] for f in ctx.catalog if not f.get("meta") and f["name"] in df.columns]
     if answer_cols and int(df[answer_cols].astype(str).duplicated().sum()):
+        # fields [] = "all answer columns" in the studio's own dedupe
         steps.append({"operation": "deduplicate", "name": "Remove repeated submissions",
-                      "config": {"fields": answer_cols, "keep": "first"}})
+                      "config": {"fields": [], "keep": "first"}})
     empty = [c for c in answer_cols if blank_mask(df[c]).all()]
     if empty:
         steps.append({"operation": "drop_columns", "name": "Drop empty columns", "config": {"columns": empty}})
     if not steps:
         steps.append({"operation": "deduplicate", "name": "Remove repeated submissions",
-                      "config": {"fields": answer_cols, "keep": "first"}})
+                      "config": {"fields": [], "keep": "first"}})
     return steps[:MAX_STEPS]
 
 
@@ -1455,8 +1457,12 @@ def clean_steps(ctx: AgentContext, spec: dict) -> list:
 
 
 def run_clean(ctx: AgentContext, steps: list):
-    """Apply steps to a copy of the frame. Returns (clean_df, step_report)."""
-    df = ctx.frame.copy()
+    """Apply steps to a copy of the frame. Returns (clean_df, step_report).
+
+    `_duration_s` is Foon's own helper column; the studio's pipeline never
+    sees it, so it's dropped here or a dedupe on "all columns" would treat
+    two identical answers with different timings as different rows."""
+    df = ctx.frame.drop(columns=["_duration_s"], errors="ignore").copy()
     ex = _executor()
     report = []
     for i, st in enumerate(steps):
@@ -2154,6 +2160,16 @@ def tool_review_form(ctx: AgentContext, spec: dict) -> dict:
 #  Dispatcher
 # ─────────────────────────────────────────────────────────────────────
 
+def tool_studio_dashboard(ctx, spec):
+    from .agent_studio import tool_studio_dashboard as run
+    return run(ctx, spec)
+
+
+def tool_studio_flow(ctx, spec):
+    from .agent_studio import tool_studio_flow as run
+    return run(ctx, spec)
+
+
 TOOLS = {
     "overview": (tool_overview, "view"),
     "surveys": (tool_surveys, None),
@@ -2168,6 +2184,8 @@ TOOLS = {
     "dashboard": (tool_dashboard, "view"),
     "questionnaire": (tool_questionnaire, None),
     "review_form": (tool_review_form, None),
+    "studio_dashboard": (tool_studio_dashboard, None),   # permission checked inside
+    "studio_flow": (tool_studio_flow, None),
 }
 DATA_TOOLS = {k for k, (_fn, need) in TOOLS.items() if need == "view"}
 
@@ -2189,5 +2207,5 @@ def run_tool(ctx: AgentContext, action: dict) -> dict:
         return {"type": "error", "text": str(exc)}
     except Exception as exc:  # pragma: no cover - defensive
         import logging
-        logging.getLogger(__name__).exception("Kora tool %s failed", name)
+        logging.getLogger(__name__).exception("Foon tool %s failed", name)
         return {"type": "error", "text": "That didn't work on this data — try rephrasing, or pick a different column."}

@@ -2068,6 +2068,73 @@ function setupPublic(){
 let pollTimer=null;
 function schedulePoll(){ clearInterval(pollTimer); const s=(board.refresh_seconds||0)*1000; if(s) pollTimer=setInterval(()=>refresh(false), s); }
 
+/* ── Public hook for Foon, Kura's AI assistant ──────────────────────
+   Foon reads the board through snapshot() and gets back the DESIRED state
+   (every card + board settings), already validated on the server against
+   this board's columns, themes and sources (kura/agent_studio.py).
+   apply() swaps it in through the same path as any studio edit: one entry
+   on the Undo stack, then the normal debounced autosave. A stale snapshot
+   (you edited while Foon was thinking) is refused rather than overwritten. */
+function foonRev(){ const s=snapshot(); let h=0; for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))|0; return String(h>>>0); }
+const studioUndo = () => undo();
+window.KuraDashStudio = {
+  version: 1,
+  canEdit: CAN_EDIT,
+  snapshot(){
+    return {kind:"dashboard", rev:foonRev(),
+      board:{id:board.id, name:board.name, description:board.description, theme:board.theme, theme_config:board.theme_config,
+             filters:board.filters, filter_match:board.filter_match, source:board.source, pipeline_id:board.pipeline_id,
+             dataset_id:board.dataset_id, refresh_seconds:board.refresh_seconds, is_live:board.is_live},
+      tiles: tiles.map(t=>({id:t.id, kind:t.kind, title:t.title, subtitle:t.subtitle, x:t.x, y:t.y, w:t.w, h:t.h,
+                            spec:t.spec, filters:t.filters, filter_match:t.filter_match})),
+      fields: fields.map(f=>({name:f.name, label:f.label, kind:f.kind, unique:f.unique, meta:!!f.meta})),
+      pipelines: BOOT.pipelines||[], datasets: BOOT.datasets||[]};
+  },
+  rev: foonRev,
+  async apply(plan, opts={}){
+    if(!CAN_EDIT) return {ok:false, error:"This board is read-only for you."};
+    if(!opts.force && plan.base_rev && plan.base_rev !== foonRev())
+      return {ok:false, stale:true, error:"The board changed while Foon was thinking."};
+    const a = plan.after || {}, flags = plan.flags || {}, ids = {};
+    const old = Object.fromEntries(tiles.map(t=>[String(t.id), t]));
+    tiles = (a.tiles||[]).map(t=>{
+      const fresh = String(t.id).startsWith("new-");
+      const id = fresh ? uid-- : t.id;
+      if(fresh) ids[t.id] = id;
+      const base = old[String(t.id)] || {};
+      return norm({...base, ...t, id, alert: base.alert || {}});
+    });
+    Object.keys(old).forEach(k=>{ if(!tiles.some(t=>String(t.id)===k)) destroyKey(k); });
+    const b = a.board || {};
+    Object.assign(board, {name:b.name ?? board.name, description:b.description ?? board.description,
+      theme:b.theme || board.theme, theme_config:b.theme_config || board.theme_config,
+      filters:b.filters || [], filter_match:b.filter_match || "all",
+      refresh_seconds:b.refresh_seconds ?? board.refresh_seconds, is_live:b.is_live ?? board.is_live});
+    if(flags.source_changed)
+      Object.assign(board, {source:b.source, pipeline_id:b.pipeline_id||null, dataset_id:b.dataset_id||null, run_id:null});
+    if(flags.tidy) compact();
+    if(selectedId!==null && !byId(selectedId)) selectedId = null;
+    const bn = $("#boardName"); if(bn) bn.value = board.name;
+    applyTheme(); renderGrid(); renderInspector(); renderFilterBar(); commit(); schedulePoll();
+    if(flags.source_changed){
+      await flushSave();
+      try{ const f = await api(URLS.fields); fields = f.fields||[]; }catch(e){}
+      renderFields(); feedHeadlineOptions(); lastStamp=null; lastCfg=null; refresh(true); connect();
+    } else refresh(false);
+    const touched = (plan.touched||[]).map(k=>String(ids[k] ?? k));
+    requestAnimationFrame(()=>touched.forEach(id=>{
+      const el = $(`.tile[data-id="${id}"]`); if(!el) return;
+      el.classList.remove("foon-touch"); void el.offsetWidth; el.classList.add("foon-touch");
+    }));
+    const first = touched.length && $(`.tile[data-id="${touched[0]}"]`);
+    if(first) first.scrollIntoView({block:"nearest", behavior:reduced?"auto":"smooth"});
+    if(flags.present) present(true);
+    return {ok:true, touched};
+  },
+  undo(){ if(hist.i<=0) return {ok:false}; studioUndo(); return {ok:true}; },
+  element(id){ return $(`.tile[data-id="${id}"]`); },
+};
+
 /* ═══════════════════════════ BOOT ══════════════════════════════════ */
 (async function start(){
   applyTheme();

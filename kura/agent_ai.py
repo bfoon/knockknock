@@ -1,5 +1,5 @@
 """
-kura/agent_ai.py — Kora's planner: turns a chat message into tool calls.
+kura/agent_ai.py — Foon's planner: turns a chat message into tool calls.
 
 Three layers, each tried only if the one before it fails — the same
 arrangement as Hanns AI Studio, and it reuses that engine (hanns/ai.py) so
@@ -9,19 +9,19 @@ one .env serves both:
      (overloaded → retry, quota → cool that model down and try the next).
   2. The optional OpenAI-compatible provider (HANNS_AI_FALLBACK_URL/_KEY/
      _MODEL — Groq, OpenRouter, Mistral, a local Ollama…).
-  3. Kora's built-in skills below — keyword intent + fuzzy column matching
+  3. Foon's built-in skills below — keyword intent + fuzzy column matching
      + questionnaire templates. Always answers, never needs a network.
 
 .env
 ────
     GEMINI_API_KEY=…                     # shared with Hanns
     KURA_AGENT_HOURLY_LIMIT=60           # AI turns per user per hour (default 60)
-    KURA_AGENT_ENABLED=true              # set false to hide Kora everywhere
+    KURA_AGENT_ENABLED=true              # set false to hide Foon everywhere
 
 Privacy: only the digest built by agent_engine.data_digest reaches the
 model — question wording, column types and aggregates. Answers to text,
 identifying, media and location questions are never sent. On Google's free
-tier prompts may be used to improve Google's products; Kora's panel says so.
+tier prompts may be used to improve Google's products; Foon's panel says so.
 """
 
 from __future__ import annotations
@@ -120,7 +120,7 @@ PAGE_NAMES = {
     "team_board": "a supervisor's team board",
 }
 
-SYSTEM = """You are Kora, the AI assistant inside Kura — the survey and data-collection studio of the Knock-Knock platform (nokknock.app, The Gambia). You are a cheerful, music-loving robot with headphones and a sharp senior data engineer and M&E specialist. You help people design questionnaires, understand their survey data, make charts, tables, KPI cards, maps, infographic shapes and dashboards, clean data, and make privacy-safe subsets.
+SYSTEM = """You are Foon, the AI assistant inside Kura — the survey and data-collection studio of the Knock-Knock platform (nokknock.app, The Gambia). You are a cheerful, music-loving robot with headphones and a sharp senior data engineer and M&E specialist. You help people design questionnaires, understand their survey data, make charts, tables, KPI cards, maps, infographic shapes and dashboards, clean data, and make privacy-safe subsets.
 
 HOW YOU WORK
 You never see raw answers — only the questionnaire, column metadata and aggregate statistics in CONTEXT. To show numbers you call TOOLS; the server computes every figure exactly and renders it with download buttons (PNG, CSV, Excel, HTML). Rules:
@@ -248,11 +248,17 @@ def build_user_prompt(ctx: eng.AgentContext, message: str, history: list) -> str
         if mine:
             parts.append("THE USER'S SURVEYS: " + "; ".join(f"{t} ({c}, {st})" for t, c, st in mine))
         parts.append("No survey is open. Data tools need a survey — offer to draft a questionnaire, "
-                     "or tell them to pick a survey in Kora's menu.")
+                     "or tell them to pick a survey in Foon's menu.")
+    if ctx.studio:
+        from . import agent_studio
+        if ctx.studio["kind"] == "dashboard":
+            parts.append(agent_studio.dashboard_context(ctx.studio))
+        else:
+            parts.append(agent_studio.flow_context(ctx.studio, eng.valid_operations()))
     if history:
         convo = []
         for h in history[-8:]:
-            role = "User" if h.get("role") == "user" else "Kora"
+            role = "User" if h.get("role") == "user" else "Foon"
             line = f"{role}: {eng._clip_text(h.get('text') or '', 500)}"
             if h.get("made"):
                 line += f"  [made: {eng._clip_text(', '.join(h['made']), 160)}]"
@@ -284,13 +290,20 @@ def normalise_plan(raw) -> dict:
     return {"say": say.strip()[:3000], "actions": actions, "suggestions": sugg, "mood": mood}
 
 
-def call_ai(prompt):
+def system_prompt(ctx):
+    if ctx.studio:
+        from .agent_studio import STUDIO_SYSTEM
+        return SYSTEM + STUDIO_SYSTEM[ctx.studio["kind"]]
+    return SYSTEM
+
+
+def call_ai(prompt, system=None):
     """The slow part: one HTTP round-trip through the Gemini chain (and the
     optional fallback provider). Pure network — no database — so the async
     view can run it on a worker thread. Returns (plan, model)."""
     hai = _engine()
     try:
-        data, model = hai.ai_json(SYSTEM, prompt, temperature=0.45, max_tokens=8192)
+        data, model = hai.ai_json(system or SYSTEM, prompt, temperature=0.45, max_tokens=8192)
     except hai.AIError as e:
         msg = str(e)
         if "slide data" in msg:
@@ -374,11 +387,16 @@ RX_HELLO = R(r"^\s*(hi|hello|hey|salaam|salam|bonjour|good (morning|afternoon|ev
 
 def builtin_plan(ctx: eng.AgentContext, message: str) -> dict:
     m = message or ""
+    if ctx.studio:
+        from . import agent_studio
+        studio_plan = agent_studio.builtin_plan(ctx, m)
+        if studio_plan:
+            return studio_plan
     has_data = ctx.survey is not None and ctx.can.get("view") and not ctx.frame.empty
     fields = match_fields(ctx, m) if ctx.survey is not None and ctx.can.get("view") else []
 
     if RX_HELLO.search(m) and len(m) < 40:
-        return {"say": ("Hi! I'm **Kora**. I can draft questionnaires, tell you how a survey is going, "
+        return {"say": ("Hi! I'm **Foon**. I can draft questionnaires, tell you how a survey is going, "
                         "make charts, tables, maps, KPI cards and dashboards you can download, clean your data, "
                         "and make a privacy-safe copy to share. What shall we play?"),
                 "mood": "happy", "actions": [],
@@ -723,8 +741,9 @@ def template_questionnaire(message: str) -> dict:
 #   finish()   DB thread   → final plan, model, notice (built-in fallback)
 
 def prepare(ctx: eng.AgentContext, message: str, history: list, use_ai: bool):
+    """Returns ((system, prompt) or None, reason_or_None)."""
     if use_ai and ai_enabled():
-        return build_user_prompt(ctx, message, history), None
+        return (system_prompt(ctx), build_user_prompt(ctx, message, history)), None
     if not ai_enabled():
         return None, "AI isn't switched on for this server yet (GEMINI_API_KEY)"
     return None, "You've used this hour's AI turns"
@@ -738,17 +757,18 @@ def finish(ctx: eng.AgentContext, message: str, ai_result=None, reason=None):
         reason = "The AI sent back an empty answer"
     p = normalise_plan(builtin_plan(ctx, message))
     notice = f"{(reason or 'The AI was unavailable').rstrip('.')} — so I used my built-in skills. They know the basics; try again later for the full AI."
-    return p, "kora-builtin", notice
+    return p, "foon-builtin", notice
 
 
-def run_ai_safely(prompt):
+def run_ai_safely(prepared):
     """call_ai() that never raises: returns (result_or_None, reason_or_None)."""
+    system, prompt = prepared
     try:
-        return call_ai(prompt), None
+        return call_ai(prompt, system), None
     except AgentError as e:
         return None, str(e).rstrip(".")
     except Exception:
-        logger.exception("Kora: AI planning failed — using built-in skills")
+        logger.exception("Foon: AI planning failed — using built-in skills")
         return None, "The AI hit an unexpected problem"
 
 

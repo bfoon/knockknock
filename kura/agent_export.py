@@ -1,5 +1,5 @@
 """
-kura/agent_export.py — turn anything Kora made into a file.
+kura/agent_export.py — turn anything Foon made into a file.
 
 Every export RE-RUNS the tool on the server from its normalised spec, with
 the caller's permissions, instead of trusting numbers sent by the browser.
@@ -43,7 +43,7 @@ class ExportError(Exception):
     pass
 
 
-def _slug(text, fallback="kora"):
+def _slug(text, fallback="foon"):
     s = re.sub(r"[^A-Za-z0-9]+", "-", str(text or "")).strip("-").lower()[:50]
     return s or fallback
 
@@ -128,7 +128,7 @@ def full_frames(ctx, spec) -> tuple[list[tuple[str, pd.DataFrame]], dict]:
     if tool == "privacy":
         df, plan, kinfo = eng.run_privacy(ctx, spec)
         rep = pd.DataFrame([{"Column": p["column"], "Question": p["label"], "Detected": p["level"],
-                             "Why": p["reason"], "What Kora did": eng.ACTION_TEXT.get(p["action"], p["action"])}
+                             "Why": p["reason"], "What Foon did": eng.ACTION_TEXT.get(p["action"], p["action"])}
                             for p in plan if p["column"] != "_submission_id"])
         k = pd.DataFrame([{"Check": "k-anonymity target (k)", "Value": kinfo["k"]},
                           {"Check": "Quasi-identifiers kept", "Value": ", ".join(kinfo["quasi"]) or "none"},
@@ -161,7 +161,7 @@ def write_csv(frames) -> bytes:
     return df.to_csv(index=False).encode("utf-8-sig")
 
 
-def write_xlsx(frames, title="Kora export") -> bytes:
+def write_xlsx(frames, title="Foon export") -> bytes:
     if not frames:
         raise ExportError("Nothing to export.")
     from openpyxl.styles import Alignment, Font, PatternFill
@@ -192,7 +192,7 @@ def write_xlsx(frames, title="Kora export") -> bytes:
                 ws.column_dimensions[get_column_letter(i)].width = width
             ws.row_dimensions[1].height = 30
         xw.book.properties.title = title[:250]
-        xw.book.properties.creator = "Kora · Kura"
+        xw.book.properties.creator = "Foon · Kura"
     return buf.getvalue()
 
 
@@ -301,7 +301,7 @@ def write_kura_form(title, description, questions) -> bytes:
     ws.title = "📖 Read me"
     for line in [
         "KURA FORM — fill this workbook, then Import it in the form builder.", "",
-        "Drafted by Kora, Kura's AI assistant. Edit freely: one row per question in the Questions sheet.",
+        "Drafted by Foon, Kura's AI assistant. Edit freely: one row per question in the Questions sheet.",
         "• Type: Choose one, Choose many, Short text, Paragraph, Whole number, Decimal number, Rating, Likert scale,",
         "  Rank options, Date, Time, Date & time, GPS location, Photo, Barcode / QR, Note / disclaimer,",
         "  Section header, Calculated (hidden), Repeat group, End repeat.",

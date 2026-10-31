@@ -1469,6 +1469,99 @@ $("#pipeActive").addEventListener("change",markDirty);
 $("#autoRun").checked=localStorage.getItem("kuraAutoRun")==="1";
 $("#autoRun").addEventListener("change",e=>localStorage.setItem("kuraAutoRun",e.target.checked?"1":"0"));
 
+/* ── Public hook for Foon, Kura's AI assistant ──────────────────────
+   Foon reads the open flow through snapshot() and gets back the DESIRED
+   flow (every step, name, source, active flag), validated and dry-run on
+   the server (kura/agent_studio.py). apply() swaps it in, keeps each
+   existing node where you placed it, saves through the normal save() and
+   can run it. A stale snapshot is refused; undo() restores the previous
+   flow exactly (and removes a flow Foon had just created). */
+function foonRev(){
+  const s=JSON.stringify({id:pipeline.id,n:pipeline.name,a:pipeline.is_active,src:pipeline.source,ds:pipeline.source_dataset_id,
+    st:(pipeline.steps||[]).map(x=>{const c={...(x.config||{})};delete c._ui;return [x.operation,x.name,x.enabled!==false,c]})});
+  let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))|0;return String(h>>>0);
+}
+async function foonSave(){
+  for(let i=0;i<60&&saving;i++)await new Promise(r=>setTimeout(r,150));
+  clearTimeout(saveTimer);dirty=true;await save(false);
+}
+const foonHistory=[];
+window.KuraDataStudio={
+  version:1,
+  snapshot(){
+    const defaults={};
+    for(const o of operations){try{defaults[o.value]=defaultConfig(o.value)||{}}catch(e){defaults[o.value]={}}}
+    return {kind:"flow",rev:foonRev(),
+      pipeline:{id:pipeline.id,name:pipeline.name,is_active:pipeline.is_active!==false,source:pipeline.source||"submissions",
+        source_dataset_id:pipeline.source_dataset_id||null,
+        steps:(pipeline.steps||[]).map(x=>({operation:x.operation,name:x.name,config:x.config||{},enabled:x.enabled!==false,stop_on_error:x.stop_on_error!==false}))},
+      pipelines:(bootstrap?.pipelines||[]).map(p=>({id:p.id,name:p.name,step_count:p.step_count??(p.steps||[]).length})),
+      columns:columns.slice(0,400),
+      datasets:(datasets||[]).map(d=>({id:d.id,name:d.name,row_count:d.row_count})),
+      op_defaults:defaults};
+  },
+  rev:foonRev,
+  async apply(plan,opts={}){
+    if(!opts.force&&plan.base_rev&&plan.base_rev!==foonRev())
+      return {ok:false,stale:true,error:"The flow changed while Foon was thinking."};
+    const f=plan.flags||{};
+    if(f.switch){await switchPipeline(f.switch);return {ok:true,touched:[]}}
+    const want=plan.after&&plan.after.pipeline;
+    if(!want)return {ok:false,error:"Nothing to apply."};
+    clearTimeout(saveTimer);
+    if(f.new_flow&&dirty)await foonSave();
+    foonHistory.push({pipeline:structuredClone(pipeline),created:!!f.new_flow});
+    const oldSteps=pipeline.steps||[];
+    const steps=want.steps.map(st=>{
+      const base=(st.origin!=null&&!f.new_flow)?oldSteps[st.origin]:null;
+      const cfg={...(st.config||{})};
+      if(base&&base.config&&base.config._ui&&!f.layout)cfg._ui=base.config._ui;
+      return {operation:st.operation,name:st.name,config:cfg,enabled:st.enabled!==false,
+              stop_on_error:st.stop_on_error!==false,note:base?(base.note||""):"Added by Foon"};
+    });
+    const srcChanged=(want.source||"submissions")!==(pipeline.source||"submissions")||(want.source_dataset_id||null)!==(pipeline.source_dataset_id||null);
+    if(f.new_flow){
+      pipeline={id:null,name:want.name,description:"Built with Foon",is_active:!!want.is_active,steps,
+                source:want.source||"submissions",source_dataset_id:want.source_dataset_id||null};
+    }else{
+      Object.assign(pipeline,{name:want.name,is_active:want.is_active!==false,source:want.source||"submissions",
+                              source_dataset_id:want.source_dataset_id||null,steps});
+    }
+    $("#pipelineName").value=pipeline.name;
+    $("#pipeActive").checked=pipeline.is_active!==false;
+    selected=null;
+    ensureLayout();
+    if(srcChanged||f.new_flow)await applySource(false);
+    renderFlow();renderConfig();
+    await foonSave();
+    if(f.new_flow){await boot(false);renderFlow();}
+    refreshPipeSelect();
+    const touched=plan.touched||[];
+    requestAnimationFrame(()=>touched.forEach(i=>{const el=document.querySelector(`#nodes .node[data-i="${i}"]`);
+      if(el){el.classList.remove("foon-touch");void el.offsetWidth;el.classList.add("foon-touch")}}));
+    if(f.run)await runPipeline();
+    return {ok:true,touched};
+  },
+  async undo(){
+    const prev=foonHistory.pop();if(!prev)return {ok:false};
+    clearTimeout(saveTimer);
+    if(prev.created&&pipeline.id&&pipeline.id!==prev.pipeline.id){
+      const madeId=pipeline.id;
+      try{await api(`${STUDIO_BASE}pipeline/${madeId}/delete/`,{method:"POST",body:"{}"})}catch(e){}
+      await boot(false);
+      if(prev.pipeline.id){await switchPipeline(prev.pipeline.id)}
+      else{pipeline=prev.pipeline;ensureLayout();renderFlow();renderConfig()}
+      return {ok:true};
+    }
+    pipeline=prev.pipeline;
+    $("#pipelineName").value=pipeline.name;$("#pipeActive").checked=pipeline.is_active!==false;
+    selected=null;await applySource(false);renderFlow();renderConfig();await foonSave();refreshPipeSelect();
+    return {ok:true};
+  },
+  element(i){return document.querySelector(`#nodes .node[data-i="${i}"]`)},
+  run(){return runPipeline()},
+};
+
 renderPalette();ensureLayout();renderFlow();renderConfig();setSaveState("saved","Loaded");
 boot().then(()=>{renderFlow();
   const wanted=new URLSearchParams(location.search).get("run");
@@ -1476,8 +1569,9 @@ boot().then(()=>{renderFlow();
     if(completeRuns().some(r=>r.id===+wanted)){dashRun=+wanted;$("#dashRun").value=wanted;}}
 });
 </script>
-<!-- Auto-clean notice: quick rules + active pipelines re-run on new data (kura/autoclean.py) -->
-<div id="kuraAutoToast" role="status" aria-live="polite" style="position:fixed;right:18px;bottom:18px;z-index:9999;max-width:360px;display:none;background:#0f1a2b;color:#e6eefc;border:1px solid rgba(34,211,238,.45);border-radius:12px;padding:12px 14px;box-shadow:0 12px 32px rgba(0,0,0,.45);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
+<!-- Auto-clean notice: quick rules + active pipelines re-run on new data (kura/autoclean.py).
+     Sits at bottom:128px so it clears Foon, the assistant robot in the corner. -->
+<div id="kuraAutoToast" role="status" aria-live="polite" style="position:fixed;right:18px;bottom:128px;z-index:9999;max-width:360px;display:none;background:#0f1a2b;color:#e6eefc;border:1px solid rgba(34,211,238,.45);border-radius:12px;padding:12px 14px;box-shadow:0 12px 32px rgba(0,0,0,.45);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
   <div style="font-weight:600;margin-bottom:4px">⚡ New data cleaned automatically</div>
   <div id="kuraAutoToastBody" style="opacity:.85"></div>
   <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end">

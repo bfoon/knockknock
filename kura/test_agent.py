@@ -1,5 +1,5 @@
 """
-Tests for Kora, Kura's AI assistant.
+Tests for Foon, Kura's AI assistant.
 
     python manage.py test kura.test_agent
 
@@ -432,7 +432,7 @@ class AgentViewTests(TestCase):
             r = self.post("/kura/agent/chat/", {"message": "pie chart of water source", "code": self.survey.code, "page": "data"})
         j = r.json()
         self.assertEqual(r.status_code, 200, j)
-        self.assertEqual(j["model"], "kora-builtin")
+        self.assertEqual(j["model"], "foon-builtin")
         self.assertIn("built-in", j["notice"])
         self.assertEqual(j["blocks"][0]["type"], "chart")
         self.assertEqual(j["blocks"][0]["chart"], "pie")
@@ -462,7 +462,7 @@ class AgentViewTests(TestCase):
                 mock.patch.object(hai, "ai_json", side_effect=hai.AIError("quota used up", status=429)):
             r = self.post("/kura/agent/chat/", {"message": "make a dashboard", "code": self.survey.code, "page": "data"})
         j = r.json()
-        self.assertEqual(j["model"], "kora-builtin")
+        self.assertEqual(j["model"], "foon-builtin")
         self.assertIn("quota used up", j["notice"])
         self.assertEqual(j["blocks"][0]["type"], "dashboard")
 
@@ -476,10 +476,10 @@ class AgentViewTests(TestCase):
             r = self.post("/kura/agent/export/", {"code": self.survey.code, "spec": spec, "format": fmt})
             self.assertEqual(r.status_code, 200, (fmt, r.content[:200]))
             self.assertIn(ctype, r["Content-Type"])
-            self.assertIn(self.survey.code, r["X-Kora-Filename"])
+            self.assertIn(self.survey.code, r["X-Foon-Filename"])
         html = self.post("/kura/agent/export/", {"code": self.survey.code, "format": "html",
                                                  "spec": {"tool": "dashboard", "auto": True}}).content.decode()
-        self.assertIn("kora-export", html)
+        self.assertIn("foon-export", html)
         self.assertIn("chart.umd.min.js", html)
         self.assertIn("leaflet", html)
         geo = self.post("/kura/agent/export/", {"code": self.survey.code, "format": "geojson", "spec": {"tool": "map"}})
@@ -545,9 +545,9 @@ class AgentViewTests(TestCase):
 
         cl = eng.run_tool(_ctx(self.owner, self.survey), {"tool": "clean", "auto": True})
         r = self.post("/kura/agent/apply/", {"action": "save_pipeline", "code": self.survey.code,
-                                             "name": "Kora test", "steps": cl["spec"]["steps"]})
+                                             "name": "Foon test", "steps": cl["spec"]["steps"]})
         self.assertTrue(r.json()["ok"], r.json())
-        pipe = self.survey.pipelines.get(name="Kora test")
+        pipe = self.survey.pipelines.get(name="Foon test")
         self.assertEqual(pipe.steps.count(), len(cl["spec"]["steps"]))
         # and it runs in the real studio executor
         from .models import CleaningRun
@@ -596,30 +596,325 @@ class AgentMiddlewareTests(TestCase):
             r = self.client.get(url)
             self.assertEqual(r.status_code, 200, url)
             body = r.content.decode()
-            self.assertIn('id="kora-config"', body, url)
-            self.assertIn("kura/agent/kora.js", body)
-            self.assertLess(body.index("kora-config"), body.rindex("</body>"))
+            self.assertIn('id="foon-config"', body, url)
+            self.assertIn("kura/agent/foon.js", body)
+            self.assertLess(body.index("foon-config"), body.rindex("</body>"))
 
     def test_config_is_safe_json(self):
         self.survey.title = '</script><script>alert(1)</script>'
         self.survey.save()
         self.client.force_login(self.owner)
         body = self.client.get(f"/kura/{self.survey.code}/data/").content.decode()
-        start = body.index('id="kora-config"')
+        start = body.index('id="foon-config"')
         chunk = body[start:start + 2000]
         self.assertNotIn("<script>alert(1)", chunk)
 
     def test_not_on_public_runner_or_for_anonymous(self):
         r = self.client.get(f"/kura/{self.survey.code}/")
-        self.assertNotIn(b"kora-config", r.content)
+        self.assertNotIn(b"foon-config", r.content)
         self.client.force_login(self.owner)
         r = self.client.get(f"/kura/{self.survey.code}/")
-        self.assertNotIn(b"kora-config", r.content)
+        self.assertNotIn(b"foon-config", r.content)
 
     def test_opt_out_and_switch(self):
         self.client.force_login(self.owner)
-        r = self.client.get(f"/kura/{self.survey.code}/data/?kora=0")
-        self.assertNotIn(b"kora-config", r.content)
+        r = self.client.get(f"/kura/{self.survey.code}/data/?foon=0")
+        self.assertNotIn(b"foon-config", r.content)
         with override_settings(KURA_AGENT_ENABLED=False):
             r = self.client.get(f"/kura/{self.survey.code}/data/")
-            self.assertNotIn(b"kora-config", r.content)
+            self.assertNotIn(b"foon-config", r.content)
+
+
+# ─────────────────────────────────────────────────────────────────────
+#  Studios: Foon editing the Dashboard Studio and the Data Studio
+# ─────────────────────────────────────────────────────────────────────
+
+def dash_snapshot(tiles=None):
+    return {"kind": "dashboard", "rev": "123",
+            "board": {"id": 1, "name": "Field board", "theme": "studio", "theme_config": {}, "filters": [],
+                      "filter_match": "all", "source": "submissions", "refresh_seconds": 0, "is_live": True},
+            "tiles": tiles if tiles is not None else [
+                {"id": 11, "kind": "kpi", "title": "Responses", "x": 0, "y": 0, "w": 3, "h": 2, "spec": {"agg": "count"}},
+                {"id": 12, "kind": "hbar", "title": "Region", "x": 0, "y": 2, "w": 6, "h": 4, "spec": {"x": "region"}},
+                {"id": 13, "kind": "table", "title": "Latest responses", "x": 6, "y": 2, "w": 6, "h": 4, "spec": {"limit": 25}},
+            ],
+            "fields": [{"name": "region", "label": "Region", "kind": "categorical", "unique": 7},
+                       {"name": "water", "label": "Main water source", "kind": "categorical", "unique": 3},
+                       {"name": "sex", "label": "Sex", "kind": "categorical", "unique": 2},
+                       {"name": "age", "label": "How old are you?", "kind": "numeric"},
+                       {"name": "_received_at", "label": "Received at", "kind": "datetime", "meta": True}],
+            "pipelines": [{"id": 5, "name": "Main clean"}], "datasets": []}
+
+
+def flow_snapshot(steps=None):
+    return {"kind": "flow", "rev": "abc",
+            "pipeline": {"id": 9, "name": "Main clean", "is_active": True, "source": "submissions",
+                         "steps": steps if steps is not None else [
+                             {"operation": "trim_text", "name": "Tidy village", "config": {"field": "village", "_ui": {"x": 1}}},
+                             {"operation": "deduplicate", "name": "Remove repeats", "config": {"fields": [], "keep": "first"}},
+                         ]},
+            "pipelines": [{"id": 9, "name": "Main clean", "step_count": 2}, {"id": 10, "name": "Second pass", "step_count": 1}],
+            "columns": ["consent", "full_name", "phone", "age", "sex", "region", "water", "village", "income"],
+            "datasets": [], "op_defaults": {"trim_text": {"field": "consent"}, "fill_missing": {"field": "consent", "method": "median"}}}
+
+
+class StudioEngineTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.owner = User.objects.create_user("studio", password="pw")
+        cls.survey = make_survey(cls.owner, n=30)
+
+    def ctx(self, page, snap):
+        from .agent_views import build_context
+        return build_context(self.owner, self.survey.code, page, studio=snap)
+
+    def test_snapshot_parsing(self):
+        from .agent_studio import parse_snapshot
+        snap = parse_snapshot(dash_snapshot(), "dashboard")
+        self.assertEqual(len(snap["tiles"]), 3)
+        self.assertIsNone(parse_snapshot(dash_snapshot(), "studio"))          # wrong page → ignored
+        bad = dash_snapshot([{"id": 1, "kind": "rocket", "x": 0, "y": 0, "w": 3, "h": 2}])
+        self.assertEqual(parse_snapshot(bad, "dashboard")["tiles"], [])
+        flow = parse_snapshot(flow_snapshot(), "studio")
+        self.assertNotIn("_ui", flow["pipeline"]["steps"][0]["config"])        # canvas positions stay client-side
+
+    def test_dashboard_plan(self):
+        from .agent_studio import plan_dashboard, parse_snapshot
+        snap = parse_snapshot(dash_snapshot(), "dashboard")
+        b = plan_dashboard(snap, [
+            {"op": "add", "kind": "donut", "title": "Water", "spec": {"x": "Main water source"}},
+            {"op": "update", "card": "#2", "title": "Regions", "spec": {"group_by": "sex", "limit": None}},
+            {"op": "remove", "card": "latest responses"},
+            {"op": "theme", "theme": "ocean", "accent": "#FF8A1F", "card": "glass", "density": "nonsense"},
+            {"op": "filters", "filters": [{"field": "sex", "operator": "eq", "value": "f"}, {"field": "nope", "value": 1}]},
+            {"op": "source", "source": "pipeline", "id": 5},
+            {"op": "add", "kind": "bar", "spec": {"x": "no_such"}},
+        ], "Makeover")
+        tiles = {str(t["id"]): t for t in b["after"]["tiles"]}
+        self.assertIn("new-1", tiles)
+        self.assertEqual(tiles["new-1"]["spec"]["x"], "water")                 # label resolved to the column
+        self.assertEqual(tiles["12"]["title"], "Regions")
+        self.assertEqual(tiles["12"]["spec"]["group_by"], "sex")
+        self.assertNotIn("13", tiles)
+        cfg = b["after"]["board"]["theme_config"]
+        self.assertEqual((b["after"]["board"]["theme"], cfg["accent"], cfg["card"]), ("ocean", "#ff8a1f", "glass"))
+        self.assertNotIn("density", cfg)
+        self.assertEqual([f["field"] for f in b["after"]["board"]["filters"]], ["sex"])
+        self.assertTrue(b["flags"]["source_changed"])
+        self.assertEqual(b["after"]["board"]["pipeline_id"], 5)
+        self.assertTrue(any("no_such" in w for w in b["warnings"]))
+        self.assertFalse(b["needs_confirm"])
+        for t in b["after"]["tiles"]:                                            # no overlaps after placing
+            for u in b["after"]["tiles"]:
+                if t is not u:
+                    self.assertFalse(t["x"] < u["x"] + u["w"] and u["x"] < t["x"] + t["w"] and
+                                     t["y"] < u["y"] + u["h"] and u["y"] < t["y"] + t["h"], (t, u))
+
+    def test_dashboard_big_rewrite_asks_first(self):
+        from .agent_studio import plan_dashboard, parse_snapshot
+        b = plan_dashboard(parse_snapshot(dash_snapshot(), "dashboard"),
+                           [{"op": "clear"}, {"op": "add", "kind": "kpi", "title": "Total"}, {"op": "tidy"}])
+        self.assertTrue(b["needs_confirm"])
+        self.assertEqual(len(b["after"]["tiles"]), 1)
+        self.assertEqual(b["after"]["tiles"][0]["y"], 0)
+
+    def test_flow_plan_and_dry_run(self):
+        snap = flow_snapshot()
+        ctx = self.ctx("studio", snap)
+        b = eng.run_tool(ctx, {"tool": "studio_flow", "ops": [
+            {"op": "add", "step": {"operation": "fill_missing", "name": "Fill income", "config": {"field": "income", "method": "median"}}, "at": 1},
+            {"op": "update", "step": "Remove repeats", "config": {"keep": "last"}},
+            {"op": "move", "step": "#3", "to": 2},
+            {"op": "add", "step": {"operation": "warp_drive"}},
+            {"op": "add", "step": {"operation": "trim_text", "name": "Tidy ghost", "config": {"field": "ghost_column"}}},
+            {"op": "rename", "name": "Field fixes"},
+            {"op": "run"},
+        ]})
+        self.assertEqual(b["type"], "studio", b)
+        steps = b["after"]["pipeline"]["steps"]
+        self.assertEqual([s["name"] for s in steps], ["Fill income", "Remove repeats", "Tidy village", "Tidy ghost"])
+        self.assertEqual(steps[1]["config"]["keep"], "last")
+        self.assertEqual(steps[2]["origin"], 0)                                 # the old node keeps its identity
+        self.assertEqual(b["after"]["pipeline"]["name"], "Field fixes")
+        self.assertTrue(b["flags"]["run"])
+        self.assertTrue(any("warp_drive" in w for w in b["warnings"]))
+        self.assertTrue(any("ghost_column" in w for w in b["warnings"]))
+        pv = b["preview"]
+        self.assertEqual(pv["source_rows"], 31)
+        self.assertLess(pv["result_rows"], pv["source_rows"])                   # the duplicate was removed
+        self.assertEqual(len(pv["steps"]), 4)
+        self.assertIn(0, b["touched"])
+
+    def test_flow_new_and_switch(self):
+        ctx = self.ctx("studio", flow_snapshot())
+        b = eng.run_tool(ctx, {"tool": "studio_flow", "ops": [{"op": "new_flow", "name": "Fresh", "steps": [
+            {"operation": "trim_text", "config": {"field": "village"}}]}]})
+        self.assertTrue(b["flags"]["new_flow"])
+        self.assertIsNone(b["after"]["pipeline"]["id"])
+        self.assertEqual(b["touched"], [0])
+        sw = eng.run_tool(ctx, {"tool": "studio_flow", "ops": [{"op": "switch", "flow": "second pass"}]})
+        self.assertEqual(sw["flags"]["switch"], 10)
+
+    def test_studio_tools_need_the_right_page_and_rights(self):
+        ctx = self.ctx("data", None)
+        self.assertEqual(eng.run_tool(ctx, {"tool": "studio_dashboard", "ops": []})["type"], "error")
+        viewer = User.objects.create_user("v_studio", password="pw")
+        from .models_team import SurveyCollaborator
+        SurveyCollaborator.objects.create(survey=self.survey, user=viewer, role="viewer")
+        from .agent_views import build_context
+        vctx = build_context(viewer, self.survey.code, "dashboard", studio=dash_snapshot())
+        r = eng.run_tool(vctx, {"tool": "studio_dashboard", "ops": [{"op": "tidy"}]})
+        self.assertEqual(r["type"], "error")
+        fctx = build_context(viewer, self.survey.code, "studio", studio=flow_snapshot())
+        self.assertIn("owner", eng.run_tool(fctx, {"tool": "studio_flow", "ops": [{"op": "layout"}]})["text"])
+
+    def test_prompt_and_system_carry_the_studio(self):
+        ctx = self.ctx("dashboard", dash_snapshot())
+        prompt = agent_ai.build_user_prompt(ctx, "make it nicer", [])
+        self.assertIn("STUDIO: Dashboard Studio", prompt)
+        self.assertIn("#2 id=12 hbar", prompt)
+        self.assertIn("STUDIO MODE", agent_ai.system_prompt(ctx))
+        fctx = self.ctx("studio", flow_snapshot())
+        self.assertIn("ALL OPERATIONS", agent_ai.build_user_prompt(fctx, "x", []))
+        self.assertIn("studio_flow", agent_ai.system_prompt(fctx))
+        self.assertNotIn("STUDIO MODE", agent_ai.system_prompt(self.ctx("data", None)))
+
+
+class StudioBuiltinTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.owner = User.objects.create_user("studio2", password="pw")
+        cls.survey = make_survey(cls.owner, n=12)
+
+    def plan(self, msg, page="dashboard", snap=None):
+        from .agent_views import build_context
+        snap = snap or (dash_snapshot() if page == "dashboard" else flow_snapshot())
+        ctx = build_context(self.owner, self.survey.code, page, studio=snap)
+        p = agent_ai.normalise_plan(agent_ai.builtin_plan(ctx, msg))
+        return p, ctx
+
+    def ops(self, msg, **kw):
+        p, _ = self.plan(msg, **kw)
+        self.assertTrue(p["actions"], msg)
+        return p["actions"][0]["ops"]
+
+    def test_dashboard_phrases(self):
+        ops = self.ops("use the ocean theme with an orange accent")
+        self.assertIn({"op": "theme", "theme": "ocean"}, ops)
+        self.assertIn({"op": "theme", "accent": "#ff8a1f"}, ops)
+        add = self.ops("add a donut of water source")[0]
+        self.assertEqual((add["op"], add["kind"], add["spec"]["x"]), ("add", "donut", "water"))
+        self.assertEqual(self.ops("remove the table")[0], {"op": "remove", "card": 13})
+        self.assertEqual(self.ops("tidy the layout"), [{"op": "tidy"}])
+        grow = self.ops("make Region bigger")[0]
+        self.assertEqual((grow["card"], grow["w"]), (12, 9))
+        self.assertEqual(self.ops("rename the board to Gambia WASH 2026")[0]["name"], "Gambia WASH 2026")
+        knobs = self.ops("glass cards and compact")
+        self.assertIn({"op": "theme", "card": "glass"}, knobs)
+        self.assertIn({"op": "theme", "density": "compact"}, knobs)
+
+    def test_flow_phrases(self):
+        add = self.ops("trim spaces in village", page="studio")[0]
+        self.assertEqual((add["step"]["operation"], add["step"]["config"]), ("trim_text", {"field": "village"}))
+        fill = self.ops("fill missing income with median", page="studio")[0]["step"]
+        self.assertEqual(fill["config"], {"field": "income", "method": "median"})
+        ops = self.ops("remove duplicates and run it", page="studio")
+        self.assertEqual([o["op"] for o in ops], ["add", "run"])
+        self.assertEqual(self.ops("remove step 2", page="studio"), [{"op": "remove", "step": "#2"}])
+        self.assertEqual(self.ops("move step 2 up", page="studio"), [{"op": "move", "step": "#2", "to": 1}])
+        new = self.ops("build a cleaning flow", page="studio")[0]
+        self.assertEqual(new["op"], "new_flow")
+        self.assertTrue(new["steps"])
+
+    def test_falls_back_to_normal_skills(self):
+        p, _ = self.plan("how is collection going?")
+        self.assertIn("overview", [a["tool"] for a in p["actions"]])
+
+
+class StudioChatTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.owner = User.objects.create_user("studio3", password="pw")
+        cls.survey = make_survey(cls.owner, n=10)
+
+    def setUp(self):
+        cache.clear()
+        self.client.force_login(self.owner)
+
+    def chat(self, message, page, snap):
+        return self.client.post("/kura/agent/chat/", json.dumps({"message": message, "code": self.survey.code,
+                                                                 "page": page, "studio": snap}),
+                                content_type="application/json").json()
+
+    def test_builtin_dashboard_edit(self):
+        with mock.patch.object(agent_ai, "ai_enabled", return_value=False):
+            j = self.chat("add a pie of sex and use the sunset theme", "dashboard", dash_snapshot())
+        b = j["blocks"][0]
+        self.assertEqual((b["type"], b["studio"]), ("studio", "dashboard"))
+        self.assertEqual(b["after"]["board"]["theme"], "sunset")
+        self.assertEqual(b["base_rev"], "123")
+
+    def test_ai_flow_edit(self):
+        fake = {"say": "Added a step and ran it.", "mood": "proud",
+                "actions": [{"tool": "studio_flow", "note": "Fill blanks", "ops": [
+                    {"op": "add", "step": {"operation": "fill_missing", "name": "Fill age", "config": {"field": "age", "method": "median"}}},
+                    {"op": "run"}]}]}
+        from hanns import ai as hai
+        with mock.patch.object(hai, "is_enabled", return_value=True), \
+                mock.patch.object(hai, "ai_json", return_value=(fake, "gemini-flash-latest")) as m:
+            j = self.chat("fill blanks in age and run", "studio", flow_snapshot())
+        self.assertIn("STUDIO MODE", m.call_args[0][0])
+        b = j["blocks"][0]
+        self.assertEqual(b["studio"], "flow")
+        self.assertEqual(b["after"]["pipeline"]["steps"][-1]["name"], "Fill age")
+        self.assertTrue(b["flags"]["run"])
+        self.assertEqual(b["title"], "Fill blanks")
+
+
+class StudioWelcomeSkillsTests(TestCase):
+    """Every skill button on the studio welcome screens works without a Gemini key."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.owner = User.objects.create_user("studio4", password="pw")
+        cls.survey = make_survey(cls.owner, n=20)
+
+    def plan(self, msg, page, snap):
+        from .agent_views import build_context
+        ctx = build_context(self.owner, self.survey.code, page, studio=snap)
+        return agent_ai.normalise_plan(agent_ai.builtin_plan(ctx, msg)), ctx
+
+    def test_remix_rebuilds_and_waits_for_ok(self):
+        p, ctx = self.plan("Redesign this board so it looks great and tells the story clearly", "dashboard", dash_snapshot())
+        self.assertEqual(p["actions"][0]["tool"], "studio_dashboard")
+        b = eng.run_tool(ctx, p["actions"][0])
+        self.assertEqual(b["type"], "studio", b)
+        self.assertTrue(b["needs_confirm"])                       # it replaces the cards
+        kinds = [t["kind"] for t in b["after"]["tiles"]]
+        self.assertIn("kpi", kinds)
+        self.assertGreaterEqual(len(kinds), 4)
+
+    def test_explain_board_and_flow(self):
+        p, _ = self.plan("What does this board tell me?", "dashboard", dash_snapshot())
+        self.assertEqual(p["actions"], [])
+        self.assertIn("3 cards", p["say"])
+        p, _ = self.plan("Explain what this flow does, step by step", "studio", flow_snapshot())
+        self.assertIn("1. Tidy village", p["say"])
+        self.assertIn("rows in", p["say"])
+
+    def test_first_chart_wider_and_split(self):
+        p, _ = self.plan("Make the first chart wider and split it by sex", "dashboard", dash_snapshot())
+        op = p["actions"][0]["ops"][0]
+        self.assertEqual((op["card"], op["w"], op["spec"]), (12, 9, {"group_by": "sex"}))
+
+    def test_best_order(self):
+        snap = flow_snapshot([
+            {"operation": "deduplicate", "name": "Remove repeats", "config": {"fields": []}},
+            {"operation": "fill_missing", "name": "Fill income", "config": {"field": "income", "method": "median"}},
+            {"operation": "trim_text", "name": "Tidy village", "config": {"field": "village"}},
+        ])
+        p, ctx = self.plan("Put the steps in the best order and tidy the canvas", "studio", snap)
+        b = eng.run_tool(ctx, p["actions"][0])
+        self.assertEqual([s["name"] for s in b["after"]["pipeline"]["steps"]],
+                         ["Tidy village", "Remove repeats", "Fill income"])
+        self.assertTrue(b["flags"]["layout"])

@@ -31,7 +31,7 @@ Resulting URLs:
     /kura/<code>/validation/…       → the owner's locked check suite
     /kura/<code>/chat/…             → chat REST fallback (WebSocket in routing.py)
 
-    Kora — the AI assistant (kura/agent_views.py):
+    Foon — the AI assistant (kura/agent_views.py):
     /kura/agent/status/             → enabled?, quota, permissions (GET)
     /kura/agent/chat/               → one chat turn (POST, async)
     /kura/agent/export/             → CSV / Excel / HTML / GeoJSON / Kura Form (POST)
@@ -55,7 +55,7 @@ urlpatterns = [
     path("", views.survey_list, name="list"),
     path("new/", views.survey_create, name="create"),
 
-    # Kora, the AI assistant. Literal "agent/" routes: they must sit above
+    # Foon, the AI assistant. Literal "agent/" routes: they must sit above
     # every <str:code>/… pattern or "agent" would be read as a survey code.
     path("agent/status/", agent_views.status, name="agent_status"),
     path("agent/chat/", agent_views.chat, name="agent_chat"),

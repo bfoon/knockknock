@@ -1,5 +1,5 @@
 """
-kura/agent_views.py — HTTP endpoints for Kora, Kura's AI assistant.
+kura/agent_views.py — HTTP endpoints for Foon, Kura's AI assistant.
 
     GET  /kura/agent/status/?code=…   enabled?, quota, what this user may do
     POST /kura/agent/chat/            one chat turn → reply text + rendered blocks
@@ -8,7 +8,7 @@ kura/agent_views.py — HTTP endpoints for Kora, Kura's AI assistant.
                                       live dashboard, studio pipeline, dataset
 
 Permissions ride on kura/teams.access_for — the same gate every other Kura
-screen uses — so Kora can never show a supervisor another team's rows, or
+screen uses — so Foon can never show a supervisor another team's rows, or
 let a viewer download what the Data page wouldn't.
 
 The chat view is async on purpose (see hanns/views.deck_ai): a Gemini call
@@ -45,7 +45,7 @@ class Denied(Exception):
 # ─────────────────────────── context & permissions ───────────────────────────
 
 def capabilities(user, survey):
-    """(access, can-dict) or (None, None) when Kora must not appear."""
+    """(access, can-dict) or (None, None) when Foon must not appear."""
     from .teams import access_for
     access = access_for(user, survey)
     if access.role not in AGENT_ROLES and not access.is_supervisor:
@@ -63,7 +63,7 @@ def capabilities(user, survey):
     return access, can
 
 
-def build_context(user, code=None, page="list", draft=None) -> eng.AgentContext:
+def build_context(user, code=None, page="list", draft=None, studio=None) -> eng.AgentContext:
     page = page if page in agent_ai.PAGE_NAMES else "list"
     if not code:
         return eng.AgentContext(user=user, page="list", can={"build": True})
@@ -84,9 +84,10 @@ def build_context(user, code=None, page="list", draft=None) -> eng.AgentContext:
         draft_schema = draft
     # In the builder the live draft is what the user is looking at.
     catalog_schema = schema if survey.current_version else (draft_schema or schema)
+    from .agent_studio import parse_snapshot
     return eng.AgentContext(user=user, survey=survey, access=access, page=page, schema=catalog_schema,
                             draft_schema=draft_schema, catalog=eng.build_catalog(catalog_schema),
-                            can=can, scope_user_ids=scope)
+                            can=can, scope_user_ids=scope, studio=parse_snapshot(studio, page))
 
 
 def _json_body(request):
@@ -105,9 +106,9 @@ PAGE_CHIPS = {
     "list": ["Draft a household survey", "Show my surveys", "What can you do?"],
     "builder": ["Review my form", "Add a consent section", "Suggest skip logic"],
     "data": ["What's in my data?", "Find data problems", "Make a privacy-safe copy"],
-    "studio": ["Clean my data", "Find outliers", "Build a cleaning pipeline"],
+    "studio": ["Build a cleaning flow", "Add a step to remove duplicates", "Run the flow"],
     "dashboards": ["Make a dashboard", "Key numbers as cards", "Map the responses"],
-    "dashboard": ["Suggest cards for this board", "Chart responses over time", "Make a dashboard"],
+    "dashboard": ["Remix this board", "Use the ocean theme", "Add a map of responses"],
     "monitor": ["How is collection going?", "Responses per day", "Where are responses from?"],
     "live_map": ["Map responses by region", "How is collection going?", "Responses per day"],
     "teams": ["How is collection going?", "Responses by collector", "Find data problems"],
@@ -150,7 +151,8 @@ def _turn(user, payload):
     message = str(payload.get("message") or "").strip()[:MAX_MESSAGE]
     if not message:
         raise Denied("Type a message first.", status=400)
-    ctx = build_context(user, payload.get("code"), payload.get("page") or "list", payload.get("draft"))
+    ctx = build_context(user, payload.get("code"), payload.get("page") or "list", payload.get("draft"),
+                        payload.get("studio"))
     history = payload.get("history") if isinstance(payload.get("history"), list) else []
     history = [h for h in history[-10:] if isinstance(h, dict)]
     use_ai = False
@@ -192,7 +194,7 @@ async def chat(request):
     if not user.is_authenticated:
         return _error("Please sign in again.", 401)
     if not agent_ai.agent_enabled():
-        return _error("Kora is switched off on this server.", 503)
+        return _error("Foon is switched off on this server.", 503)
     payload = _json_body(request)
     if payload is None:
         return _error("That request was too large or malformed.")
@@ -208,7 +210,7 @@ async def chat(request):
             ai_result, reason = await sync_to_async(agent_ai.run_ai_safely, thread_sensitive=False)(prompt)
         plan, model, notice, blocks, made = await sync_to_async(_finish)(ctx, message, ai_result, reason)
     except Exception:
-        logger.exception("Kora chat turn failed")
+        logger.exception("Foon chat turn failed")
         return _error("Something went wrong on my side — try again in a moment.", 500)
     if blocks and all(b.get("type") == "error" for b in blocks) and plan["mood"] != "oops":
         plan["mood"] = "oops"
@@ -245,11 +247,11 @@ def export(request):
     except (agent_export.ExportError, eng.ToolError) as e:
         return _error(str(e), 400)
     except Exception:
-        logger.exception("Kora export failed (%s)", fmt)
+        logger.exception("Foon export failed (%s)", fmt)
         return _error("The file could not be built — try again.", 500)
     resp = HttpResponse(data, content_type=ctype)
     resp["Content-Disposition"] = f'attachment; filename="{filename}"'
-    resp["X-Kora-Filename"] = filename
+    resp["X-Foon-Filename"] = filename
     resp["Cache-Control"] = "no-store"
     return resp
 
@@ -334,8 +336,8 @@ def _apply_dashboard(request, ctx, payload):
     with transaction.atomic():
         board = LiveDashboard.objects.create(
             survey=ctx.survey, created_by=request.user, source="submissions", theme=theme,
-            name=str(payload.get("title") or "Kora dashboard")[:140],
-            description="Built with Kora, Kura's AI assistant.")
+            name=str(payload.get("title") or "Foon dashboard")[:140],
+            description="Built with Foon, Kura's AI assistant.")
         DashboardTile.objects.bulk_create([
             DashboardTile(dashboard=board, kind=t["kind"], title=t["title"][:140], subtitle=t.get("subtitle", "")[:200],
                           x=t["x"], y=t["y"], w=t["w"], h=t["h"], spec=t["spec"], filters=t.get("filters") or [],
@@ -353,11 +355,11 @@ def _apply_pipeline(request, ctx, payload):
     with transaction.atomic():
         pipe = CleaningPipeline.objects.create(
             survey=ctx.survey, created_by=request.user, is_active=False,
-            name=str(payload.get("name") or "Kora cleaning pipeline")[:140],
-            description="Proposed by Kora. Review the steps, then run it in the Data Studio.")
+            name=str(payload.get("name") or "Foon cleaning pipeline")[:140],
+            description="Proposed by Foon. Review the steps, then run it in the Data Studio.")
         PipelineStep.objects.bulk_create([
             PipelineStep(pipeline=pipe, order=i, operation=s["operation"], name=s["name"][:140],
-                         config=s["config"], enabled=True, stop_on_error=False, note="Added by Kora")
+                         config=s["config"], enabled=True, stop_on_error=False, note="Added by Foon")
             for i, s in enumerate(steps)])
     return JsonResponse({"ok": True, "url": f"/kura/{ctx.survey.code}/studio/?pipeline={pipe.id}",
                          "message": f"Saved “{pipe.name}” with {len(steps)} step(s) to the Data Studio."})
@@ -373,7 +375,7 @@ def _apply_dataset(request, ctx, payload):
     ds = UploadedDataset.objects.create(
         survey=ctx.survey, uploaded_by=request.user,
         name=str(payload.get("name") or f"{ctx.survey.title} — privacy-safe")[:140],
-        original_filename="kora-privacy-safe.csv", columns=cols, rows=rows, row_count=len(rows))
+        original_filename="foon-privacy-safe.csv", columns=cols, rows=rows, row_count=len(rows))
     return JsonResponse({"ok": True, "url": f"/kura/{ctx.survey.code}/studio/",
                          "message": f"Saved “{ds.name}” ({len(rows)} rows, {len(cols)} columns) to the Data Studio’s files."})
 

@@ -918,3 +918,312 @@ class StudioWelcomeSkillsTests(TestCase):
         self.assertEqual([s["name"] for s in b["after"]["pipeline"]["steps"]],
                          ["Tidy village", "Remove repeats", "Fill income"])
         self.assertTrue(b["flags"]["layout"])
+
+
+# ─────────────────────────────────────────────────────────────────────
+#  Excel questionnaires: Kura Form template, checker, fixer, XLSForm
+# ─────────────────────────────────────────────────────────────────────
+
+def kura_form_bytes(rows, extra_sheets=None, headers=None):
+    from openpyxl import Workbook
+    from . import kura_form as kf
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Questions"
+    ws.append(headers or kf.KF_HEADERS)
+    for r in rows:
+        ws.append(r)
+    for name, data in (extra_sheets or {}).items():
+        sh = wb.create_sheet(name)
+        for r in data:
+            sh.append(r)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+BROKEN_ROWS = [
+    ["Chose one", "Do you agree to take part?", "consent", "yes", "yes = Yes; no = No"],
+    ["Whole number", "Age", "age", "Yes", "", "", "consent = Yes", "", "120", "0"],
+    ["Short text", "Your phone number", "Phone Number!", "", "", "", "consnt = yes"],
+    ["Choose one", "Water source", "water", "", "", "", "age > 18 and consent = yes or age < 5"],
+    ["Short text", "Village", "age"],
+    ["Calculated (hidden)", "Double age", "dbl", "", "", "", "", "", "", "", "", "", "", "", "", "${age} * 2"],
+    ["Short text", "ID", "nid", "", "", "", "", "", "", "", "[0-9{7}"],
+    ["Short text", "Later dependency", "dep", "", "", "", "follow_up is answered"],
+    ["Short text", "Follow up", "follow_up"],
+    ["Likert scale", "I feel safe", "safe"],
+]
+
+
+class KuraFormTests(TestCase):
+    def test_template_round_trips_exactly(self):
+        from . import kura_form as kf
+        data = kf.build_workbook("My survey", "Desc", kf.STARTER, kf.STARTER_INDICATORS)
+        res = kf.check_file(data, "template.xlsx")
+        self.assertEqual(res["summary"]["counts"]["error"], 0)
+        self.assertEqual(res["summary"]["counts"]["warning"], 0)
+        self.assertEqual(res["form"]["title"], "My survey")
+        keys = ("name", "type", "label", "required", "relevant", "choices", "validate")
+        got = [{k: q.get(k) for k in keys} for q in kf.to_schema_questions(res["form"])]
+        want = [{k: q.get(k) for k in keys} for q in kf.to_schema_questions({"questions": kf.STARTER})]
+        self.assertEqual(got, want)
+        self.assertEqual(res["form"]["questions"][3]["children"][0]["name"], "mname")
+        self.assertEqual(res["form"]["questions"][3].get("indicator"), None)
+
+    def test_template_extras_dont_break_import(self):
+        from openpyxl import load_workbook
+        from . import kura_form as kf
+        wb = load_workbook(io.BytesIO(kf.build_workbook("", "", [], [], blank_rows=10)))
+        self.assertEqual(wb.sheetnames[:3], ["📖 Read me", "Form", "Questions"])
+        self.assertEqual(wb["Lists"].sheet_state, "hidden")
+        self.assertTrue(wb["Questions"]["A1"].comment)                     # column help
+        self.assertTrue(wb["Questions"].data_validations.dataValidation)  # type dropdown
+        # the builder finds sheets by name fragments: no extra sheet may contain them
+        for n in wb.sheetnames:
+            if n not in ("Form", "Questions"):
+                for frag in ("questions", "choices", "form", "indicators"):
+                    self.assertNotIn(frag, kf.norm_key(n), n)
+
+    def test_checker_finds_planted_problems(self):
+        from . import kura_form as kf
+        res = kf.check_file(kura_form_bytes(BROKEN_ROWS), "broken.xlsx")
+        by = {(i.cell, i.level) for i in res["issues"]}
+        text = " | ".join(f"{i.cell}:{i.msg}" for i in res["issues"])
+        self.assertIn(("A2", "error"), by)                                 # “Chose one”
+        self.assertIn(("C6", "error"), by)                                 # duplicate name “age”
+        self.assertIn(("G4", "error"), by)                                 # consnt
+        self.assertIn("mixes and with or", text)
+        self.assertIn(("I3", "error"), by)                                 # min > max
+        self.assertIn("${name}", text)
+        self.assertIn(("K8", "error"), by)                                 # broken regex
+        self.assertIn("comes later in the form", text)
+        self.assertIn(("E11", "warning"), by)                              # likert without choices
+        self.assertFalse(res["summary"]["ready"])
+        self.assertGreaterEqual(res["summary"]["fixable"], 6)
+        grid = res["grid"]
+        self.assertEqual(grid["columns"][0]["letter"], "A")
+        self.assertEqual(grid["rows"][0]["cells"][0]["s"], "error")
+
+    def test_fix_rounds_and_recheck(self):
+        from . import kura_form as kf
+        res = kf.check_file(kura_form_bytes(BROKEN_ROWS), "broken.xlsx")
+        fixed, applied, remaining = kf.fix_all(res["form"], res["issues"])
+        msgs = " | ".join(a.msg for a in applied)
+        self.assertIn("Choose one", msgs)
+        self.assertIn("age_2", msgs)
+        self.assertIn("“consent”", msgs)                                    # consnt → consent
+        self.assertIn("“yes” instead of “Yes”", msgs)                       # found only in round 2
+        self.assertIn("swapped Min and Max", msgs)
+        q = {x["name"]: x for x, _p in kf.iter_questions(fixed["questions"])}
+        self.assertEqual(q["age"]["relevant"]["rules"][0]["value"], "yes")
+        self.assertEqual(q["dbl"]["calc"], "age * 2")
+        left = {i.msg.split("—")[0][:30] for i in remaining if i.level == "error"}
+        self.assertTrue(any("mixes" in m or "age > 18" in m for m in left) or
+                        any("mixes and with or" in i.msg for i in remaining))
+
+    def test_duplicate_names_keep_logic_on_the_first(self):
+        from . import kura_form as kf
+        rows = [["Choose one", "Consent", "consent", "", "yes = Yes; no = No"],
+                ["Short text", "Other consent text", "consent"],
+                ["Short text", "Why", "why", "", "", "", "consent = no"]]
+        res = kf.check_file(kura_form_bytes(rows), "d.xlsx")
+        fixed, applied, remaining = kf.fix_all(res["form"], res["issues"])
+        names = [q["name"] for q in kf.to_schema_questions(fixed)]
+        self.assertEqual(names, ["consent", "consent_2", "why"])
+        self.assertEqual(kf.to_schema_questions(fixed)[2]["relevant"]["rules"][0]["q"], "consent")
+        self.assertFalse([i for i in remaining if i.level == "error"])
+
+    def test_markup_keeps_the_users_workbook(self):
+        from openpyxl import load_workbook
+        from . import kura_form as kf
+        data = kura_form_bytes(BROKEN_ROWS, {"My notes": [["keep me"]]})
+        res = kf.check_file(data, "b.xlsx")
+        wb = load_workbook(io.BytesIO(kf.markup_original(data, res["issues"])))
+        self.assertEqual(wb.sheetnames[0], "Foon check")
+        self.assertIn("My notes", wb.sheetnames)
+        self.assertEqual(wb["My notes"]["A1"].value, "keep me")
+        self.assertIn("isn't a question type", wb["Questions"]["A2"].comment.text)
+        links = [c.hyperlink.location if c.hyperlink and c.hyperlink.location else (c.hyperlink.target if c.hyperlink else None)
+                 for c in wb["Foon check"]["C"] if c.hyperlink]
+        self.assertTrue(links)
+
+    def test_choices_sheet_cascade_and_indicators(self):
+        from . import kura_form as kf
+        rows = [["Choose one", "Region", "region", "", "wcr = West Coast; nbr = North Bank"],
+                ["Choose one", "District", "district", "", "(see the Choices sheet)", "", "", "region"],
+                ["Whole number", "Children", "kids", "", "", "", "", "", "0", "20", "", "", "", "", "", "", "IND-9"]]
+        sheets = {"Choices": [["Question name", "Value", "Label", "Parent value"],
+                              ["district", "brikama", "Brikama", "wcr"], ["district", "kerewan", "Kerewan", "nbx"]],
+                  "Indicators": [["Code", "Name", "Target"], ["IND-1", "Kids in school", 100]]}
+        res = kf.check_file(kura_form_bytes(rows, sheets), "c.xlsx")
+        text = " | ".join(i.msg for i in res["issues"])
+        self.assertIn("nbx", text)                                         # parent value not an option
+        self.assertIn("IND-9", text)                                       # unknown indicator
+        q = {x["name"]: x for x, _p in kf.iter_questions(res["form"]["questions"])}
+        self.assertEqual(q["district"]["cascade"], {"parent": "region"})
+        self.assertEqual(len(q["district"]["choices"]), 2)
+
+    def test_xlsform_conversion(self):
+        from openpyxl import Workbook
+        from . import kura_form as kf
+        wb = Workbook()
+        s = wb.active
+        s.title = "survey"
+        s.append(["type", "name", "label::English (en)", "required", "relevant", "constraint", "calculation", "choice_filter"])
+        for r in [["start", "start", "", "", "", "", "", ""],
+                  ["select_one yn", "consent", "Consent?", "yes", "", "", "", ""],
+                  ["integer", "age", "Age", "yes", "${consent} = 'yes'", ". >= 0 and . <= 120", "", ""],
+                  ["select_multiple sym", "sym", "Symptoms", "", "selected(${consent}, 'yes')", "", "", ""],
+                  ["select_one region", "region", "Region", "", "", "", "", ""],
+                  ["select_one district", "district", "District", "", "", "", "", "region=${region}"],
+                  ["begin_repeat", "kids", "Children", "", "${age} > 18", "", "", ""],
+                  ["text", "kname", "Child name", "", "", "", "", ""],
+                  ["end_repeat", "", "", "", "", "", "", ""],
+                  ["calculate", "dbl", "", "", "", "", "${age} * 2", ""]]:
+            s.append(r)
+        c = wb.create_sheet("choices")
+        c.append(["list_name", "name", "label", "region"])
+        for r in [["yn", "yes", "Yes", ""], ["yn", "no", "No", ""], ["sym", "fever", "Fever", ""], ["sym", "cough", "Cough", ""],
+                  ["region", "wcr", "West Coast", ""], ["district", "brikama", "Brikama", "wcr"]]:
+            c.append(r)
+        buf = io.BytesIO()
+        wb.save(buf)
+        res = kf.check_file(buf.getvalue(), "kobo.xlsx")
+        self.assertEqual(res["kind"], "xlsform")
+        self.assertEqual(res["summary"]["counts"]["error"], 0, [i.msg for i in res["issues"]])
+        qs = {q["name"]: q for q in kf.to_schema_questions(res["form"])}
+        self.assertNotIn("start", qs)
+        self.assertEqual(qs["age"]["validate"], {"min": 0, "max": 120})
+        self.assertEqual(qs["age"]["relevant"]["rules"][0], {"q": "consent", "cmp": "eq", "value": "yes"})
+        self.assertEqual(qs["sym"]["relevant"]["rules"][0]["cmp"], "selected")
+        self.assertEqual(qs["district"]["cascade"], {"parent": "region"})
+        self.assertEqual(qs["district"]["choices"][0]["parent"], "wcr")
+        self.assertEqual([c["name"] for c in qs["kids"]["children"]], ["kname"])
+        self.assertEqual(qs["dbl"]["calc"], "age * 2")
+
+    def test_csv_and_bad_files(self):
+        from . import kura_form as kf
+        csv_data = ("Type,Question,Name\nChoose one,Do you agree?,consent\nShort text,Name,nm\n").encode()
+        res = kf.check_file(csv_data, "q.csv")
+        self.assertEqual(res["kind"], "csv")
+        self.assertTrue(any("needs answer options" in i.msg for i in res["issues"]))
+        for data, name, words in [(b"not excel", "x.xlsx", "could not be read"), (b"x", "old.xls", ".xlsx"),
+                                  (kura_form_bytes([], headers=["Foo", "Bar"]), "h.xlsx", "Type"),
+                                  (b"", "e.xlsx", "empty")]:
+            with self.assertRaises(kf.FormFileError) as cm:
+                kf.check_file(data, name)
+            self.assertIn(words, str(cm.exception))
+
+    def test_foon_drafts_pass_their_own_check(self):
+        from . import kura_form as kf
+        for topic in ("household", "health clinic", "school", "water and sanitation", "farm", "workshop", "customer", "staff"):
+            q = agent_ai.template_questionnaire(f"draft a survey about {topic}")
+            qs = eng.sanitize_questions(q["questions"])
+            res = kf.check_file(kf.build_workbook(q["title"], "", qs, []), "draft.xlsx")
+            self.assertEqual(res["summary"]["counts"]["error"], 0, (topic, [i.msg for i in res["issues"] if i.level == "error"]))
+
+    def test_expression_checks(self):
+        from . import kura_form as kf
+        probs, _ = kf.check_expression("if(age > 5, 1, 0)", {"age"})
+        self.assertTrue(any("if_" in p[2] for p in probs))
+        probs, _ = kf.check_expression("age = 5", {"age"})
+        self.assertEqual(probs[0][3], "age == 5")
+        probs, _ = kf.check_expression("value <= age", {"age"}, allow_value=True)
+        self.assertEqual(probs, [])
+        probs, _ = kf.check_expression("sum_of(members, 'age') / count(members)", {"members"})
+        self.assertEqual(probs, [])
+        probs, _ = kf.check_expression("__import__('os')", set())
+        self.assertEqual(probs[0][0], "error")
+
+
+class FormCheckEndpointTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.owner = User.objects.create_user("fc_owner", password="pw")
+        cls.other = User.objects.create_user("fc_other", password="pw")
+
+    def setUp(self):
+        cache.clear()
+        self.client.force_login(self.owner)
+
+    def upload(self, data, name="form.xlsx"):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        return self.client.post("/kura/agent/form-check/", {"file": SimpleUploadedFile(name, data)}).json()
+
+    def post(self, url, body):
+        return self.client.post(url, json.dumps(body), content_type="application/json")
+
+    def test_upload_fix_and_create(self):
+        rows = [["Chose one", "Do you agree to take part?", "consent", "yes", "yes = Yes; no = No"],
+                ["Whole number", "Age", "age", "Yes", "", "", "consent = Yes", "", "120", "0"],
+                ["Likert scale", "I feel safe", "safe"]]
+        j = self.upload(kura_form_bytes(rows))
+        b = j["block"]
+        self.assertEqual(b["type"], "formcheck")
+        self.assertFalse(b["summary"]["ready"])
+        r = self.post("/kura/agent/apply/", {"action": "create_from_check", "token": b["token"], "variant": "original"})
+        self.assertEqual(r.status_code, 400)                              # gate: errors first
+        self.assertIn("Fix the", r.json()["error"])
+        f = self.post("/kura/agent/form-check/", {"token": b["token"], "action": "fix"}).json()
+        fb = f["block"]
+        self.assertEqual(fb["variant"], "fixed")
+        self.assertTrue(fb["summary"]["ready"], fb["issues"])
+        self.assertGreaterEqual(len(fb["applied"]), 3)
+        self.assertTrue(any(c["s"] == "fixed" for row in fb["grid"]["rows"] for c in row["cells"]))
+        r = self.post("/kura/agent/apply/", {"action": "create_from_check", "token": b["token"], "variant": "fixed"}).json()
+        self.assertTrue(r["ok"], r)
+        survey = Survey.objects.get(code=r["code"])
+        qs = survey.draft_schema["questions"]
+        self.assertEqual([q["type"] for q in qs], ["select_one", "integer", "likert"])
+        self.assertEqual(qs[1]["relevant"]["rules"][0]["value"], "yes")
+        self.assertEqual(len(qs[2]["choices"]), 5)
+
+    def test_downloads(self):
+        from openpyxl import load_workbook
+        j = self.upload(kura_form_bytes(BROKEN_ROWS))
+        tok = j["block"]["token"]
+        for variant, sheet in (("marked", "Foon check"), ("fixed", "Foon check"), ("clean", "Questions")):
+            r = self.post("/kura/agent/export/", {"format": "xlsx", "spec": {"tool": "formcheck", "token": tok, "variant": variant}})
+            self.assertEqual(r.status_code, 200, (variant, r.content[:200]))
+            wb = load_workbook(io.BytesIO(r.content))
+            self.assertIn(sheet, wb.sheetnames, variant)
+        for kind in ("starter", "blank"):
+            r = self.post("/kura/agent/export/", {"format": "kuraform", "spec": {"tool": "form_template", "kind": kind}})
+            self.assertEqual(r.status_code, 200)
+            self.assertIn("kura_form", r["X-Foon-Filename"])
+
+    def test_tokens_are_private(self):
+        j = self.upload(kura_form_bytes(BROKEN_ROWS))
+        tok = j["block"]["token"]
+        self.client.force_login(self.other)
+        r = self.post("/kura/agent/form-check/", {"token": tok, "action": "fix"})
+        self.assertEqual(r.status_code, 404)
+        r = self.post("/kura/agent/apply/", {"action": "create_from_check", "token": tok})
+        self.assertEqual(r.status_code, 404)
+        r = self.post("/kura/agent/export/", {"format": "xlsx", "spec": {"tool": "formcheck", "token": tok, "variant": "marked"}})
+        self.assertEqual(r.status_code, 400)
+
+    def test_self_check_and_chat_context(self):
+        q = agent_ai.template_questionnaire("draft a survey about a health clinic")
+        j = self.post("/kura/agent/form-check/", {"questions": q["questions"], "title": q["title"]}).json()
+        self.assertEqual(j["block"]["kind"], "draft")
+        self.assertTrue(j["block"]["summary"]["ready"], j["block"]["issues"])
+        from hanns import ai as hai
+        fake = {"say": "Simplified.", "actions": []}
+        with mock.patch.object(hai, "is_enabled", return_value=True), \
+                mock.patch.object(hai, "ai_json", return_value=(fake, "gemini")) as m:
+            self.post("/kura/agent/chat/", {"message": "make the wording simpler", "page": "list",
+                                            "form_token": j["block"]["token"]})
+        self.assertIn("UPLOADED QUESTIONNAIRE", m.call_args[0][1])
+        self.assertIn("EXCEL QUESTIONNAIRES", m.call_args[0][0])
+
+    def test_builtin_template_and_check_intents(self):
+        with mock.patch.object(agent_ai, "ai_enabled", return_value=False):
+            j = self.post("/kura/agent/chat/", {"message": "give me the excel template", "page": "list"}).json()
+            self.assertEqual(j["blocks"][0]["type"], "template")
+            j = self.post("/kura/agent/chat/", {"message": "can you check my excel file?", "page": "list"}).json()
+            self.assertIn("📎", j["say"])
+            j = self.post("/kura/agent/chat/", {"message": "draft a household survey in excel", "page": "list"}).json()
+            self.assertEqual(j["blocks"][0]["type"], "questionnaire")
+            self.assertIn("Excel", j["say"])

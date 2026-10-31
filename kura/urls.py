@@ -37,6 +37,7 @@ Resulting URLs:
     /kura/agent/export/             → CSV / Excel / HTML / GeoJSON / Kura Form (POST)
     /kura/agent/apply/              → new survey, add questions, live board,
                                       studio pipeline, saved dataset (POST)
+    /kura/agent/form-check/         → check an Excel questionnaire, fix it (POST)
 
     /kura/<code>/                   → collect   (public runner — the QR URL)
 
@@ -61,6 +62,7 @@ urlpatterns = [
     path("agent/chat/", agent_views.chat, name="agent_chat"),
     path("agent/export/", agent_views.export, name="agent_export"),
     path("agent/apply/", agent_views.apply, name="agent_apply"),
+    path("agent/form-check/", agent_views.form_check, name="agent_form_check"),
 
     # Public live-dashboard share link. MUST sit here: "d" would otherwise
     # be captured by the <str:code>/ catch-all at the bottom.

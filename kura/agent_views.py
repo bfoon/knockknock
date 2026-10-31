@@ -103,8 +103,8 @@ def _error(message, status=400, **extra):
 
 
 PAGE_CHIPS = {
-    "list": ["Draft a household survey", "Show my surveys", "What can you do?"],
-    "builder": ["Review my form", "Add a consent section", "Suggest skip logic"],
+    "list": ["Draft a household survey in Excel", "Give me the Excel template", "Show my surveys"],
+    "builder": ["Review my form", "Give me the Excel template", "Suggest skip logic"],
     "data": ["What's in my data?", "Find data problems", "Make a privacy-safe copy"],
     "studio": ["Build a cleaning flow", "Add a step to remove duplicates", "Run the flow"],
     "dashboards": ["Make a dashboard", "Key numbers as cards", "Map the responses"],
@@ -153,6 +153,9 @@ def _turn(user, payload):
         raise Denied("Type a message first.", status=400)
     ctx = build_context(user, payload.get("code"), payload.get("page") or "list", payload.get("draft"),
                         payload.get("studio"))
+    if payload.get("form_token"):
+        from .agent_formcheck import prompt_context
+        ctx.uploaded = prompt_context(user, payload.get("form_token"))
     history = payload.get("history") if isinstance(payload.get("history"), list) else []
     history = [h for h in history[-10:] if isinstance(h, dict)]
     use_ai = False
@@ -258,6 +261,43 @@ def export(request):
 
 @login_required
 @require_POST
+def form_check(request):
+    """Check an Excel questionnaire (upload), Foon's own draft (JSON
+    questions), or fix a check (JSON token + action=fix)."""
+    from . import agent_formcheck as fc
+    try:
+        if request.FILES.get("file"):
+            f = request.FILES["file"]
+            if f.size > 5 * 1024 * 1024:
+                return _error("That file is larger than 5 MB — a questionnaire workbook should be much smaller.")
+            token, entry = fc.start_from_file(request.user, f.read(), f.name)
+            variant = "original"
+        else:
+            payload = _json_body(request)
+            if payload is None:
+                return _error("Send a file, or JSON.")
+            if payload.get("action") == "fix":
+                token = str(payload.get("token") or "")
+                entry = fc.fix(request.user, token)
+                variant = "fixed"
+            elif isinstance(payload.get("questions"), list):
+                token, entry = fc.start_from_questions(request.user, payload.get("title"), payload.get("description"),
+                                                       payload["questions"])
+                variant = "original"
+            else:
+                return _error("Nothing to check.")
+    except fc.CheckError as e:
+        return _error(str(e), e.status)
+    except Exception:
+        logger.exception("Foon form check failed")
+        return _error("I couldn't read that file — is it an Excel workbook (.xlsx)?", 400)
+    return JsonResponse({"ok": True, "say": fc.say_for(entry, variant), "mood": fc.mood_for(entry, variant),
+                         "suggestions": fc.suggestions_for(entry, variant), "block": fc.block(token, entry, variant),
+                         "made": [f"formcheck: {entry['filename']}"]})
+
+
+@login_required
+@require_POST
 def apply(request):
     payload = _json_body(request)
     if payload is None:
@@ -266,6 +306,15 @@ def apply(request):
     try:
         if action == "create_survey":
             return _apply_create_survey(request, payload)
+        if action == "create_from_check":
+            from . import agent_formcheck as fc
+            try:
+                survey, n = fc.create_survey(request.user, payload.get("token"), payload.get("variant") or "original",
+                                             payload.get("title"))
+            except fc.CheckError as e:
+                raise Denied(str(e), e.status)
+            return JsonResponse({"ok": True, "code": survey.code, "url": f"/kura/{survey.code}/build/",
+                                 "message": f"Created “{survey.title}” with {n} questions — checked and clean."})
         ctx = build_context(request.user, payload.get("code"), payload.get("page") or "list")
         if ctx.survey is None:
             raise Denied("Open a survey first.", status=400)

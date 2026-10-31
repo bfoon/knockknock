@@ -129,7 +129,8 @@ class KuraAgentMiddleware:
             "can": can,
             "css": css_url,
             "endpoints": {"status": "/kura/agent/status/", "chat": "/kura/agent/chat/",
-                          "export": "/kura/agent/export/", "apply": "/kura/agent/apply/"},
+                          "export": "/kura/agent/export/", "apply": "/kura/agent/apply/",
+                          "formcheck": "/kura/agent/form-check/"},
             "libs": {"chart": CHART_JS, "leaflet": LEAFLET_JS, "leafletCss": LEAFLET_CSS, "fonts": FONTS_CSS},
         }
         tag = json_script(config, "foon-config")

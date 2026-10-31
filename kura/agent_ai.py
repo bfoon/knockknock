@@ -169,6 +169,12 @@ TOOLS
    Design like a senior M&E specialist: open with a note explaining the purpose and a consent select_one when interviewing people (later questions shown only if consent = yes); group with sections; required on key questions; min/max on numbers; include "Other" / "Don't know" where natural; skip logic for follow-ups (only to earlier questions); plain words; one idea per question; 12–35 questions unless asked otherwise. For The Gambia, region choices are Banjul, Kanifing, West Coast, North Bank, Lower River, Central River, Upper River.
 {"tool":"review_form"} — check the current questionnaire for problems (placeholders, missing options, broken logic, no min/max…). Add your own expert suggestions in "say".
 {"tool":"surveys"} — the user's surveys with response counts (useful on the survey list).
+{"tool":"form_template"} — the Kura Form Excel template (blank or with examples) to fill in offline.
+
+EXCEL QUESTIONNAIRES
+- Every questionnaire you draft can be downloaded as a Kura Form Excel workbook (the builder's own import format) — mention it when the user wants Excel.
+- To CHECK an Excel questionnaire (Kura Form, a CSV, or a Kobo/ODK XLSForm), the user drops the file on Foon or presses the 📎 button; Foon checks every cell, fixes what it safely can, and only then creates the survey. If they ask you to check or validate a file, tell them to do that.
+- When CONTEXT has an UPLOADED QUESTIONNAIRE, answer questions about it (explain problems, suggest better wording) and, if asked to improve or rewrite it, return the full revised form with the questionnaire tool.
 """
 
 
@@ -249,6 +255,8 @@ def build_user_prompt(ctx: eng.AgentContext, message: str, history: list) -> str
             parts.append("THE USER'S SURVEYS: " + "; ".join(f"{t} ({c}, {st})" for t, c, st in mine))
         parts.append("No survey is open. Data tools need a survey — offer to draft a questionnaire, "
                      "or tell them to pick a survey in Foon's menu.")
+    if ctx.uploaded:
+        parts.append(ctx.uploaded)
     if ctx.studio:
         from . import agent_studio
         if ctx.studio["kind"] == "dashboard":
@@ -382,6 +390,9 @@ RX_TABLE = R(r"\b(table|cross ?tab|pivot|breakdown|frequenc|counts?)\b")
 RX_CHART = R(r"\b(charts?|graphs?|plots?|bars?|pie|donut|histogram|trend|over time|visuali[sz]e|scatter|distribution)\b")
 RX_ABOUT = R(r"\b(about (my|the|this) data|summar|insights?|tell me|describe|overview|what('s| is) in|explain (my|the) data|analy[sz]e)\b")
 RX_SURVEYS = R(r"\b(my surveys|all (my )?surveys|which survey|list (of )?surveys)\b")
+RX_TEMPLATE = R(r"\btemplate\b|\bblank (form|excel|sheet|workbook)\b|\bexcel (layout|format|form)\b|\bkura form\b")
+RX_QUESTIONNAIRE_TOPIC = R(r"\b(about|on|for)\s+\w{4,}")
+RX_CHECK_FILE = R(r"\b(check|validate|verify|test|inspect|audit)\b.*\b(excel|xlsx|spreadsheet|workbook|file|upload|xlsform|kobo|odk)\b")
 RX_HELLO = R(r"^\s*(hi|hello|hey|salaam|salam|bonjour|good (morning|afternoon|evening)|help|what can you do)\b")
 
 
@@ -402,6 +413,18 @@ def builtin_plan(ctx: eng.AgentContext, message: str) -> dict:
                 "mood": "happy", "actions": [],
                 "suggestions": ["How is collection going?", "Make a dashboard", "Draft a household survey"]}
 
+    if RX_TEMPLATE.search(m) and not RX_QUESTIONNAIRE_TOPIC.search(m):
+        return {"say": "Here's the Kura Form template — the same layout the form builder imports. Fill it in Excel or "
+                       "Google Sheets, then drop it back on me and I'll check every cell before creating the survey.",
+                "mood": "happy", "actions": [{"tool": "form_template"}],
+                "suggestions": ["Draft a household survey in Excel", "How do I write skip logic?"]}
+
+    if RX_CHECK_FILE.search(m):
+        return {"say": "Drop the Excel file on me (or press the 📎 button) — I'll check every cell, show you exactly where "
+                       "the problems are, fix what I safely can, and only then create the survey. Kura Forms, CSVs and "
+                       "Kobo/ODK XLSForms all work.", "mood": "curious", "actions": [],
+                "suggestions": ["Give me the Excel template"]}
+
     if RX_REVIEW.search(m) and ctx.survey is not None:
         return {"say": "Here's a check of your questionnaire.", "mood": "thinking",
                 "actions": [{"tool": "review_form"}], "suggestions": ["Fix the placeholder options", "Add a consent question"]}
@@ -410,7 +433,10 @@ def builtin_plan(ctx: eng.AgentContext, message: str) -> dict:
         q = template_questionnaire(m)
         if ctx.page == "builder" and ctx.survey is not None:
             q["questions"] = _skip_existing(q["questions"], ctx.draft_schema or ctx.survey.draft_schema)
-        return {"say": f"Here's a starter questionnaire: **{q['title']}**. Add it to your form or create a new survey from it, then tweak the wording in the builder.",
+        excel = bool(re.search(r"\b(excel|xlsx|spreadsheet|workbook|kura form)\b", m, re.I))
+        return {"say": (f"Here's a starter questionnaire: **{q['title']}**. "
+                        + ("Download it as an Excel Kura Form, edit it offline, then drop it back on me to check it."
+                           if excel else "Add it to your form or create a new survey from it, then tweak the wording in the builder.")),
                 "mood": "proud", "actions": [{"tool": "questionnaire", **q,
                                               "mode": "append" if ctx.page == "builder" else "new"}],
                 "suggestions": ["Add skip logic ideas", "Review my form"]}

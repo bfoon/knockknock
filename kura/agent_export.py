@@ -232,123 +232,12 @@ def write_html(blocks_or_board, title, survey_title="", dark=True) -> bytes:
 
 
 # ─────────────────────────── Kura Form workbook ───────────────────────────
-# Mirrors buildWorkbook()/_questionRow() in templates/kura/builder.html so
-# the file re-imports with the builder's ⇪ Import, rows and logic intact.
+# The builder's own Excel layout lives in kura/kura_form.py (writer, reader,
+# checker) so Foon's downloads and Foon's checks can never drift apart.
 
-FRIENDLY_TYPES = {
-    "section": "Section header", "note": "Note / disclaimer", "text": "Short text", "long_text": "Paragraph",
-    "integer": "Whole number", "decimal": "Decimal number", "select_one": "Choose one",
-    "select_multiple": "Choose many", "rank": "Rank options", "likert": "Likert scale", "rating": "Rating",
-    "date": "Date", "time": "Time", "datetime": "Date & time", "gps": "GPS location",
-    "mapper": "Map (track / area / draw)", "photo": "Photo", "barcode": "Barcode / QR",
-    "calculate": "Calculated (hidden)", "repeat": "Repeat group",
-}
-CHOICE_Q = {"select_one", "select_multiple", "rank", "likert"}
-CMP_TO_TEXT = {"eq": "=", "ne": "≠", "gt": ">", "gte": ">=", "lt": "<", "lte": "<=", "contains": "contains",
-               "not_contains": "doesn't contain", "selected": "has selected", "not_selected": "hasn't selected",
-               "answered": "is answered", "not_answered": "is blank", "between": "between", "matches": "matches"}
-KF_HEADERS = ["Type", "Question", "Name (data column)", "Required", "Choices", "Hint / help", "Show when",
-              "Filter choices by", "Min", "Max", "Pattern (regex)", "Must be true (rule)", "Warn when false",
-              "Warning message", "Error message", "Calculation", "Indicator"]
-
-
-def _show_when(rel):
-    if not isinstance(rel, dict) or not rel.get("rules"):
-        return ""
-    if any(isinstance(r, dict) and isinstance(r.get("rules"), list) for r in rel["rules"]):
-        return "(complex logic — edit in the builder)"
-    parts = []
-    for r in rel["rules"]:
-        if r.get("cmp") == "answered":
-            parts.append(f"{r['q']} is answered")
-        elif r.get("cmp") == "not_answered":
-            parts.append(f"{r['q']} is blank")
-        else:
-            v = ", ".join(map(str, r["value"])) if isinstance(r.get("value"), list) else ("" if r.get("value") is None else r["value"])
-            parts.append(f"{r['q']} {CMP_TO_TEXT.get(r.get('cmp'), '=')} {v}")
-    return (" or " if rel.get("op") == "or" else " and ").join(parts)
-
-
-def _choices_cell(q):
-    cs = q.get("choices") or []
-    if not cs:
-        return ""
-    if any(c.get("parent") not in (None, "") for c in cs):
-        return "(see the Choices sheet)"
-    return "\n".join(f"{c['value']} = {c.get('label') or c['value']}" for c in cs)
-
-
-def _kf_row(q):
-    v = q.get("validate") or {}
-    rep = q.get("repeat") or {}
-    return [
-        FRIENDLY_TYPES.get(q.get("type"), q.get("type")), q.get("label") or "", q.get("name") or "",
-        "Yes" if q.get("required") else "", _choices_cell(q) if q.get("type") in CHOICE_Q else "",
-        q.get("hint") or "", _show_when(q.get("relevant")), (q.get("cascade") or {}).get("parent", ""),
-        rep.get("min", "") if q.get("type") == "repeat" else v.get("min", ""),
-        rep.get("max", "") if q.get("type") == "repeat" else v.get("max", ""),
-        v.get("regex", ""), v.get("expr", ""), v.get("warn_expr", ""), v.get("warn_message", ""),
-        v.get("message", ""), rep.get("count_expr", "") if q.get("type") == "repeat" else q.get("calc", ""), "",
-    ]
-
-
-def write_kura_form(title, description, questions) -> bytes:
-    from openpyxl import Workbook
-    from openpyxl.styles import Alignment, Font, PatternFill
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "📖 Read me"
-    for line in [
-        "KURA FORM — fill this workbook, then Import it in the form builder.", "",
-        "Drafted by Foon, Kura's AI assistant. Edit freely: one row per question in the Questions sheet.",
-        "• Type: Choose one, Choose many, Short text, Paragraph, Whole number, Decimal number, Rating, Likert scale,",
-        "  Rank options, Date, Time, Date & time, GPS location, Photo, Barcode / QR, Note / disclaimer,",
-        "  Section header, Calculated (hidden), Repeat group, End repeat.",
-        "• Choices: one per line as  value = Label.",
-        "• Show when: e.g.  consent = yes  ·  age >= 18  ·  symptoms has selected fever.",
-        "• Repeat group rows continue until End repeat.",
-    ]:
-        ws.append([line])
-    ws.column_dimensions["A"].width = 100
-
-    wf = wb.create_sheet("Form")
-    wf.append(["Title", title or ""])
-    wf.append(["Description", description or ""])
-    wf.column_dimensions["A"].width = 14
-    wf.column_dimensions["B"].width = 70
-
-    wq = wb.create_sheet("Questions")
-    wq.append(KF_HEADERS)
-    choice_rows = []
-    for q in questions or []:
-        wq.append(_kf_row(q))
-        if q.get("type") in CHOICE_Q and _choices_cell(q) == "(see the Choices sheet)":
-            for c in q.get("choices") or []:
-                choice_rows.append([q["name"], c["value"], c.get("label", ""), c.get("parent", ""), ""])
-        if q.get("type") == "repeat":
-            for c in q.get("children") or []:
-                wq.append(_kf_row(c))
-            wq.append(["End repeat"] + [""] * 16)
-    fill = PatternFill("solid", fgColor="2B2F77")
-    for cell in wq[1]:
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = fill
-    widths = [18, 46, 18, 9, 30, 32, 28, 16, 7, 7, 18, 22, 20, 24, 24, 18, 12]
-    for i, w in enumerate(widths):
-        wq.column_dimensions[chr(65 + i)].width = w
-    for row in wq.iter_rows(min_row=2):
-        for cell in row:
-            cell.alignment = Alignment(wrap_text=True, vertical="top")
-    wq.freeze_panes = "A2"
-    if choice_rows:
-        wc = wb.create_sheet("Choices")
-        wc.append(["Question name", "Value", "Label", "Parent value", "Zones"])
-        for r in choice_rows:
-            wc.append(r)
-    buf = io.BytesIO()
-    wb.save(buf)
-    return buf.getvalue()
+def write_kura_form(title, description, questions, indicators=None) -> bytes:
+    from .kura_form import build_workbook
+    return build_workbook(title, description, questions, indicators or [])
 
 
 # ─────────────────────────── entry point ───────────────────────────
@@ -356,13 +245,25 @@ def write_kura_form(title, description, questions) -> bytes:
 def export(ctx, spec: dict, fmt: str):
     """Returns (bytes, filename, content_type). Raises ExportError / eng.ToolError."""
     tool = (spec or {}).get("tool")
-    if tool not in eng.TOOLS:
+    if tool not in eng.TOOLS and tool not in ("formcheck",):
         raise ExportError("Unknown block.")
     if fmt not in CONTENT_TYPES:
         raise ExportError("Unknown file type.")
     stamp = timezone.localtime().strftime("%Y%m%d-%H%M")
     code = ctx.survey.code if ctx.survey else "kura"
     survey_title = ctx.survey.title if ctx.survey else ""
+
+    if tool == "form_template":
+        from . import kura_form as kf
+        if spec.get("kind") == "blank":
+            data = kf.build_workbook("", "", [], [], blank_rows=40)
+            return data, "kura_form_blank_template.xlsx", CONTENT_TYPES["xlsx"]
+        data = kf.build_workbook("My survey", "", kf.STARTER, kf.STARTER_INDICATORS)
+        return data, "kura_form_template.xlsx", CONTENT_TYPES["xlsx"]
+
+    if tool == "formcheck":
+        from .agent_formcheck import export_checked
+        return export_checked(ctx.user, spec, fmt)
 
     if tool == "questionnaire":
         qs = eng.sanitize_questions(spec.get("questions"))

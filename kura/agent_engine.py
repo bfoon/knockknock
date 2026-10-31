@@ -264,6 +264,7 @@ class AgentContext:
     _frame: pd.DataFrame | None = None
     scope_user_ids: list | None = None    # supervisor without whole-survey view
     studio: dict | None = None            # what the open Dashboard/Data Studio shows (agent_studio)
+    uploaded: dict | None = None          # the last Excel questionnaire checked in this chat (agent_formcheck)
 
     @property
     def fields(self) -> dict:
@@ -2160,6 +2161,20 @@ def tool_review_form(ctx: AgentContext, spec: dict) -> dict:
 #  Dispatcher
 # ─────────────────────────────────────────────────────────────────────
 
+def tool_form_template(ctx, spec):
+    from .kura_form import FRIENDLY_TYPES
+    return {"type": "template", "title": "Kura Form — the Excel questionnaire template",
+            "sheets": [
+                {"name": "📖 Read me", "text": "How to fill it in, with examples."},
+                {"name": "Form", "text": "The survey title and description."},
+                {"name": "Questions", "text": "One row per question: type, wording, choices, skip logic, checks."},
+                {"name": "Choices", "text": "Long or cascading option lists, one row per option."},
+                {"name": "Indicators", "text": "Programme indicators (code, name, target) to link questions to."},
+            ],
+            "types": [FRIENDLY_TYPES[t] for t in FRIENDLY_TYPES] + ["End repeat"],
+            "spec": {"tool": "form_template"}}
+
+
 def tool_studio_dashboard(ctx, spec):
     from .agent_studio import tool_studio_dashboard as run
     return run(ctx, spec)
@@ -2184,6 +2199,7 @@ TOOLS = {
     "dashboard": (tool_dashboard, "view"),
     "questionnaire": (tool_questionnaire, None),
     "review_form": (tool_review_form, None),
+    "form_template": (tool_form_template, None),
     "studio_dashboard": (tool_studio_dashboard, None),   # permission checked inside
     "studio_flow": (tool_studio_flow, None),
 }

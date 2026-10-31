@@ -100,6 +100,9 @@ const ICON = {
   play: I('<path d="M7 5v14l11-7z" fill="currentColor"/>'),
   flow: I('<rect x="2.5" y="9" width="5" height="6" rx="1.5"/><rect x="16.5" y="9" width="5" height="6" rx="1.5"/><path d="M7.5 12h9"/><circle cx="12" cy="12" r="2"/>'),
   remix: I('<path d="M4 17h3l10-10h3M4 7h3l3 3M14 14l3 3h3"/><path d="m18 4 2 3-2 3M18 14l2 3-2 3"/>'),
+  clip: I('<path d="m20 11.5-8.2 8.2a5 5 0 0 1-7.1-7.1l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.4 8.4a1.7 1.7 0 0 1-2.4-2.4l7.7-7.7"/>'),
+  sheet: I('<rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M3.5 9h17M3.5 14.5h17M9 3.5v17"/>'),
+  scan: I('<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M7 12h10"/>'),
 };
 
 /* ── the robot ─────────────────────────────────────────────────────── */
@@ -314,8 +317,12 @@ ROOT.innerHTML =
         '</div>'+
       '</header>'+
       '<div class="log" aria-live="polite"></div>'+
+      '<div class="dropzone" aria-hidden="true"><div class="dz-in">'+ICON.sheet+'<b>Drop your Excel questionnaire</b>'+
+        '<span>Kura Form · CSV · Kobo/ODK XLSForm — I’ll check every cell before it becomes a survey</span></div></div>'+
       '<div class="chips"></div>'+
       '<form class="composer" autocomplete="off">'+
+        '<button class="clip" type="button" title="Check an Excel questionnaire (.xlsx, CSV or Kobo/ODK XLSForm)" aria-label="Attach an Excel questionnaire">'+ICON.clip+'</button>'+
+        '<input class="filein" type="file" accept=".xlsx,.xlsm,.csv" hidden>'+
         '<textarea rows="1" placeholder="Ask Foon anything…" aria-label="Message Foon"></textarea>'+
         '<button class="send" type="submit" aria-label="Send">'+ICON.send+'</button>'+
       '</form>'+
@@ -453,7 +460,7 @@ function btn(label, icon, cls){
 }
 function dlButtons(foot, spec, formats){
   if(!spec) return;
-  const names = {png:"PNG", svg:"SVG", xlsx:"Excel", csv:"CSV", html:"HTML", geojson:"GeoJSON", kuraform:"Kura Form (Excel)", json:"JSON"};
+  const names = {png:"PNG", svg:"SVG", xlsx:"Excel", csv:"CSV", html:"HTML", geojson:"GeoJSON", kuraform:"Excel (Kura Form)", json:"JSON"};
   formats.forEach(f=>{
     if(typeof f === "function"){ f(foot); return; }
     const b = btn(names[f]||f, "down");
@@ -917,6 +924,10 @@ R.questionnaire = (b, ctx)=>{
     if(d) toast(d.message, {href:d.url, label:"Open the builder"});
   });
   s.foot.appendChild(mk);
+  const chk = btn("Check it", "scan");
+  chk.title = "Write it as an Excel Kura Form and read it back like the builder would";
+  chk.addEventListener("click", ()=>checkDraft(b, chk));
+  s.foot.appendChild(chk);
   dlButtons(s.foot, b.spec, ["kuraform","json"]);
   s.finish(); return s.wrap;
 };
@@ -1126,13 +1137,220 @@ R.studio = (b, ctx)=>{
   s.finish(); return s.wrap;
 };
 
+/* ── Excel questionnaires: template, upload, check, fix, create ─────────
+   The server reads the workbook exactly like the form builder's importer,
+   then checks far more (kura/kura_form.py). The check lives in a short
+   server-side session (token); "Create survey" is refused there until the
+   chosen version has no errors. */
+function latestFormToken(){
+  for(let i=S.messages.length-1;i>=0;i--){
+    const b = (S.messages[i].blocks||[]).find(x=>x.type==="formcheck");
+    if(b) return b.token;
+  }
+  return null;
+}
+const CHECK_PHRASES = ["Opening your workbook…","Reading every row…","Checking types and names…","Testing skip logic…","Trying the formulas…","Matching choices…"];
+async function postForm(body, isFile){
+  const opts = {method:"POST", credentials:"same-origin",
+    headers: isFile ? {"X-CSRFToken":CFG.csrf, "X-Requested-With":"XMLHttpRequest"} : headers(), body};
+  const res = await fetch(CFG.endpoints.formcheck, opts);
+  let data = null; try{ data = await res.json(); }catch(e){}
+  if(!res.ok || !data || !data.ok) throw new Error((data && data.error) || "I couldn't check that file (HTTP "+res.status+").");
+  return data;
+}
+async function runCheck(userText, body, isFile){
+  if(S.busy) return;
+  if(!S.open) openPanel(true);
+  if(userText){ S.messages.push({role:"user", text:userText, ts:Date.now()}); appendMessage(S.messages[S.messages.length-1]); }
+  setBusy(true); showTyping(CHECK_PHRASES);
+  let msg;
+  try{
+    const d = await postForm(body, isFile);
+    msg = {role:"foon", text:d.say, blocks:[d.block], suggestions:d.suggestions||[], mood:d.mood, made:d.made||[], ts:Date.now()};
+    if(!S.wide && window.innerWidth > 980 && d.block && d.block.grid){ S.autoWidened = true; setWide(true); }
+  }catch(e){
+    msg = {role:"foon", text:"", blocks:[{type:"error", text:e.message}], mood:"oops", ts:Date.now()};
+  }finally{ hideTyping(); setBusy(false); }
+  S.messages.push(msg); appendMessage(msg); saveConversation(); react(msg.mood);
+  if(msg.mood==="proud") Bot.burst();
+  if(!S.open || document.hidden){ S.unread++; updateBadge(); }
+}
+function uploadForm(file){
+  if(!file) return;
+  if(!/\.(xlsx|xlsm|csv)$/i.test(file.name)){
+    toast(/\.xls$/i.test(file.name) ? "That’s an old .xls file — save it as .xlsx first." : "Drop an Excel workbook (.xlsx) or a CSV.");
+    Bot.flash("oops", 900); return;
+  }
+  const fd = new FormData(); fd.append("file", file); fd.append("code", S.code||""); fd.append("page", S.page);
+  runCheck("📎 "+file.name, fd, true);
+}
+function checkDraft(b, btnEl){
+  btnEl && btnEl.classList.add("busy");
+  runCheck(null, JSON.stringify({questions:b.questions, title:b.title, description:b.description}), false)
+    .finally(()=>btnEl && btnEl.classList.remove("busy"));
+}
+async function fixCheck(m, b, btnEl){
+  if(S.busy) return;
+  btnEl && btnEl.classList.add("busy");
+  b._fixRequested = true; saveConversation();
+  await runCheck(null, JSON.stringify({token:b.token, action:"fix"}), false);
+  rerenderMessage(m);
+}
+
+const plural = (n, word)=>fmt(n)+" "+word+(Number(n)===1 ? "" : "s");
+function scoreRing(score, ready){
+  const r = 26, c = 2*Math.PI*r, col = ready ? (score >= 90 ? "#34d399" : "#22d3ee") : (score >= 40 ? "#fbbf24" : "#fb7185");
+  return '<svg class="ring" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="'+r+'" class="trk"/>'+
+    '<circle cx="32" cy="32" r="'+r+'" class="val" stroke="'+col+'" stroke-dasharray="'+(c*score/100).toFixed(1)+' '+c.toFixed(1)+'" transform="rotate(-90 32 32)"/>'+
+    '<text x="32" y="37" text-anchor="middle">'+score+'</text></svg>';
+}
+function xrayTable(grid, onPick){
+  const wrap = h("div","xray");
+  let html = '<table><thead><tr><th class="rn"></th>'+grid.columns.map(c=>'<th><span class="cl">'+esc(c.letter)+'</span>'+esc(c.label)+'</th>').join("")+'</tr></thead><tbody>';
+  grid.rows.forEach(r=>{
+    html += '<tr class="'+(r.s||"")+'"><td class="rn">'+r.row+'</td>'+r.cells.map((c,i)=>
+      '<td class="'+(c.s||"")+'" data-cell="'+esc(grid.columns[i].letter+r.row)+'" title="'+esc(c.m||c.v)+'">'+esc(c.v)+'</td>').join("")+'</tr>';
+  });
+  wrap.innerHTML = html + '</tbody></table>';
+  wrap.addEventListener("click", e=>{ const td = e.target.closest("td[data-cell]"); if(td && onPick) onPick(td); });
+  return wrap;
+}
+
+R.formcheck = (b, ctx)=>{
+  const sm = b.summary || {}, cn = sm.counts || {}, st = sm.stats || {};
+  const fixed = b.variant==="fixed";
+  const s = shell({title:"", subtitle:""}, ctx);
+  s.wrap.classList.add("fc-blk", sm.ready ? "ok" : "bad");
+  const kind = {xlsform:"Kobo/ODK XLSForm → converted", csv:"CSV", draft:"Foon’s draft, read back", xlsx:"Kura Form workbook"}[b.kind] || "workbook";
+  const verdict = sm.ready ? (cn.warning ? "Ready — a few things worth a look" : "Ready to become a survey")
+    : (cn.error+" problem"+(cn.error>1?"s":"")+" to fix first");
+  const head = h("div","fc-head",
+    scoreRing(sm.score||0, sm.ready)+
+    '<div class="fc-id"><div class="fc-verdict">'+esc(verdict)+'</div>'+
+    '<div class="fc-file">'+ICON.sheet+'<span>'+esc(b.filename)+'</span><em>'+esc(fixed ? "fixed version" : kind)+'</em></div>'+
+    '<div class="fc-stats"><span>'+plural(st.questions,"question")+'</span><span>~'+fmt(st.minutes)+' min</span>'+
+    (st.sections?'<span>'+plural(st.sections,"section")+'</span>':'')+(st.logic?'<span>'+fmt(st.logic)+' with skip logic</span>':'')+
+    (st.repeats?'<span>'+plural(st.repeats,"repeat")+'</span>':'')+(st.calculations?'<span>'+plural(st.calculations,"formula")+'</span>':'')+
+    '</div></div>');
+  s.body.appendChild(head);
+  const cats = Object.values(sm.categories||{});
+  s.body.appendChild(h("div","fc-cats", cats.map(c=>{
+    const cls = c.errors ? "e" : c.warnings ? "w" : "g";
+    const mark = c.errors ? c.errors : c.warnings ? c.warnings : "✓";
+    return '<span class="'+cls+'"><i>'+mark+'</i>'+esc(c.label)+'</span>';
+  }).join("")));
+  if(fixed && (b.applied||[]).length){
+    const ap = b.applied, box = h("div","fc-fixed", '<b>'+ICON.check+'Foon fixed '+ap.length+' thing'+(ap.length>1?'s':'')+'</b>');
+    box.appendChild(h("ul","", ap.slice(0,4).map(a=>'<li>'+esc(a.msg.replace(/^Foon /,""))+(a.cell?' <code>'+esc(a.cell)+'</code>':'')+'</li>').join("")));
+    if(ap.length > 4){ const d = h("details","more-d","<summary>"+(ap.length-4)+" more</summary>");
+      d.appendChild(h("ul","", ap.slice(4).map(a=>'<li>'+esc(a.msg.replace(/^Foon /,""))+'</li>').join(""))); box.appendChild(d); }
+    s.body.appendChild(box);
+  }
+  let grid = null, note = null;
+  const pick = td=>{
+    if(!grid) return;
+    grid.querySelectorAll("td.pick").forEach(x=>x.classList.remove("pick"));
+    td.classList.add("pick");
+    const tr = td.parentElement, top = tr.offsetTop - grid.clientHeight/2 + tr.offsetHeight;
+    grid.scrollTo({top: Math.max(0, top), left: Math.max(0, td.offsetLeft - 60), behavior: REDUCED ? "auto" : "smooth"});
+    note.innerHTML = '<code>'+esc(td.dataset.cell)+'</code> '+esc(td.title || "(empty)");
+  };
+  if(b.grid && (b.grid.rows||[]).length){
+    s.body.appendChild(h("div","fc-sub", ICON.scan+"Your "+esc(b.grid.sheet)+" sheet, x-rayed"+
+      '<span class="lg"><i class="e"></i>problem<i class="w"></i>worth a look'+(fixed?'<i class="f"></i>fixed':'')+'</span>'));
+    grid = xrayTable(b.grid, pick);
+    s.body.appendChild(grid);
+    note = h("div","fc-note", b.grid.truncated ? "Showing the first rows — the downloads cover the whole sheet." : "Click a cell to see what Foon found.");
+    s.body.appendChild(note);
+  }
+  const shown = (b.issues||[]).filter(i=>i.level!=="info" || (b.issues||[]).length < 12);
+  const li = i=>'<li class="'+esc(i.level)+'"><span class="dot"></span><span class="tx">'+esc(i.msg)+
+    (i.fix?'<span class="fx">→ '+esc(i.fix)+'</span>':'')+'</span>'+
+    (i.cell?'<button type="button" class="cellchip" data-cell="'+esc(i.cell)+'">'+esc(i.cell)+'</button>':'')+
+    (i.fixable && !fixed?'<span class="tag change">auto-fix</span>':'')+'</li>';
+  if(shown.length){
+    const ul = h("ul","fc-issues", shown.slice(0,7).map(li).join(""));
+    s.body.appendChild(ul);
+    if(shown.length > 7){ const d = h("details","more-d","<summary>"+(shown.length-7)+" more finding(s)</summary>");
+      d.appendChild(h("ul","fc-issues", shown.slice(7).map(li).join(""))); s.body.appendChild(d); }
+    s.body.addEventListener("click", e=>{
+      const chip = e.target.closest(".cellchip"); if(!chip || !grid) return;
+      const td = grid.querySelector('td[data-cell="'+chip.dataset.cell+'"]');
+      if(td) pick(td); else if(note) note.innerHTML = '<code>'+esc(chip.dataset.cell)+'</code> is outside the columns shown here — it’s marked in the downloads.';
+    });
+  } else {
+    s.body.appendChild(h("p","cap","Not a single problem — every type, name, choice, condition and formula reads cleanly."));
+  }
+  const prev = h("details","more-d","<summary>Preview the form ("+fmt((b.questions||[]).length)+" items)</summary>");
+  const pv = h("div",""); pv.appendChild(questionList(b.questions||[])); prev.appendChild(pv); s.body.appendChild(prev);
+
+  const m = ctx && ctx.msg;
+  if(!fixed && sm.fixable && !b._fixRequested){
+    const fx = btn("Fix "+sm.fixable+" thing"+(sm.fixable>1?"s":"")+" for me", "wand", sm.ready ? "" : "primary");
+    fx.addEventListener("click", ()=>fixCheck(m, b, fx));
+    s.foot.appendChild(fx);
+  }
+  const mk = btn("Create the survey", "form", sm.ready ? "primary" : "");
+  if(!sm.ready){ mk.disabled = true; mk.title = "Fix the "+cn.error+" problem(s) first — I won’t build a survey that would break."; mk.classList.add("off"); }
+  mk.addEventListener("click", async ()=>{
+    const d = await apply("create_from_check", {token:b.token, variant:b.variant}, mk);
+    if(d) toast(d.message, {href:d.url, label:"Open the builder"});
+  });
+  s.foot.appendChild(mk);
+  const onBuilder = S.page==="builder" && window.KuraBuilder && S.code===CFG.code;
+  if(onBuilder && sm.ready){
+    const ld = btn("Add to this form", "plus");
+    ld.addEventListener("click", ()=>{ const n = window.KuraBuilder.addQuestions(JSON.parse(JSON.stringify(b.questions)));
+      if(n){ ld.classList.add("done"); ld.innerHTML = ICON.check+" Added "+n; toast("Added "+n+" checked question(s) to your form."); Bot.flash("happy",1000); } });
+    s.foot.appendChild(ld);
+  }
+  const dl = (label, variant, title)=>{ const x = btn(label, "down"); x.title = title;
+    x.addEventListener("click", ()=>download({tool:"formcheck", token:b.token, variant}, "xlsx", x)); s.foot.appendChild(x); };
+  if(!fixed && b.has_original && (b.issues||[]).length) dl("Marked-up workbook", "marked", "Your own file, with problem cells coloured and explained, plus a Foon check sheet");
+  if(fixed) dl("Fixed workbook", "fixed", "The fixed Kura Form — green cells show what Foon changed");
+  else if(b.kind==="xlsform" || b.kind==="csv" || b.kind==="draft") dl("Excel (Kura Form)", "clean", "The questionnaire in the builder’s Excel layout");
+  s.finish(); return s.wrap;
+};
+
+function questionList(qs){
+  let html = "", prevRule = "";
+  const row = (q, child)=>{
+    const rule = q.relevant ? JSON.stringify(q.relevant) : "";
+    const opts = (q.choices||[]).map(c=>c.label);
+    const out = '<li class="'+(child?"child ":"")+(q.type==="section"?"sec":"")+'"><span class="ty">'+esc(QGLYPH[q.type]||"?")+'</span>'+
+      '<span class="qb"><span class="ql">'+esc(q.label)+'</span>'+(q.required?'<span class="req">*</span>':"")+
+      (opts.length?'<span class="opts">'+esc(opts.slice(0,5).join(" · "))+(opts.length>5?" · +"+(opts.length-5):"")+'</span>':"")+
+      (rule && rule!==prevRule?'<span class="logic">'+esc(ruleText(q.relevant))+'</span>':"")+'</span></li>';
+    prevRule = rule; return out;
+  };
+  qs.forEach(q=>{ html += row(q,false); (q.children||[]).forEach(c=>{ html += row(c,true); }); });
+  return h("ul","qlist", html);
+}
+
+R.template = (b, ctx)=>{
+  const s = shell({title:b.title}, ctx);
+  s.wrap.classList.add("tpl-blk");
+  s.body.appendChild(h("div","tabs-x", (b.sheets||[]).map((t,i)=>'<span class="'+(t.name==="Questions"?"on":"")+'">'+esc(t.name)+'</span>').join("")));
+  s.body.appendChild(h("ul","tpl-list", (b.sheets||[]).map(t=>'<li><b>'+esc(t.name)+'</b>'+esc(t.text)+'</li>').join("")));
+  s.body.appendChild(h("div","tpl-types", '<span class="lbl">Types you can use</span>'+(b.types||[]).map(t=>'<i>'+esc(t)+'</i>').join("")));
+  s.body.appendChild(h("p","cap","The Type and Required columns have dropdowns, and every heading has a note explaining it. Fill it in, then drop it back on me — I’ll check every cell before creating the survey."));
+  const a = btn("Template with examples", "down", "primary");
+  a.addEventListener("click", ()=>download({tool:"form_template", kind:"starter"}, "kuraform", a));
+  const z = btn("Blank template", "down");
+  z.addEventListener("click", ()=>download({tool:"form_template", kind:"blank"}, "kuraform", z));
+  const u = btn("Check a filled one", "clip");
+  u.addEventListener("click", ()=>$(".filein").click());
+  s.foot.append(a, z, u);
+  s.finish(); return s.wrap;
+};
+
 /* ── conversation rendering ────────────────────────────────────────── */
 function renderMessage(m){
   const wrap = h("div","msg "+(m.role==="user"?"user":"bot"));   // not "foon": that's the root's class
   if(m.role==="user"){ wrap.appendChild(h("div","bub", esc(m.text))); return wrap; }
   if(m.text) wrap.appendChild(h("div","say", md(m.text)));
   (m.blocks||[]).forEach(b=>{
-    try{ wrap.appendChild((R[b.type] || R.error)(b, b.type==="studio" ? {msg:m} : null)); }
+    try{ wrap.appendChild((R[b.type] || R.error)(b, (b.type==="studio" || b.type==="formcheck") ? {msg:m} : null)); }
     catch(e){ wrap.appendChild(R.error({text:"Could not draw this result."})); }
   });
   if(m.notice) wrap.appendChild(h("div","notice", ICON.info+"<span>"+esc(m.notice)+"</span>"));
@@ -1162,9 +1380,17 @@ function welcome(){
     ["shield","Privacy-safe copy","Remove personal data","Make a privacy-safe copy of my data"],
   ] : [
     ["form","Draft a questionnaire","Tell me the topic","Draft a questionnaire about "],
+    ["scan","Check an Excel form","Drop it — every cell checked","__upload__"],
+    ["sheet","Excel template","Fill it in offline","Give me the Excel template"],
     ["pulse","My surveys","Responses at a glance","Show my surveys"],
   ];
-  if(onSurvey && S.page==="builder") skills.unshift(["form","Review this form","Spot problems early","Review my form"]);
+  if(onSurvey && S.page==="builder"){
+    skills.splice(0, skills.length,
+      ["form","Review this form","Spot problems early","Review my form"],
+      ["scan","Check an Excel form","Every cell, before import","__upload__"],
+      ["sheet","Excel template","Fill it in offline","Give me the Excel template"],
+      ["plus","Draft questions","Tell me the topic","Draft questions about "]);
+  }
   if(onSurvey && S.page==="dashboard" && S.code===CFG.code) skills.splice(0, skills.length,
     ["remix","Remix this board","A designer's makeover","Redesign this board so it looks great and tells the story clearly"],
     ["wand","Change the look","Theme, accent, cards","Try the ocean theme with an orange accent and glass cards"],
@@ -1183,7 +1409,9 @@ function welcome(){
   skills.slice(0,6).forEach(([ic,t,sub,prompt])=>{
     const b = h("button","skill", ICON[ic]+"<span><b>"+esc(t)+"</b><span>"+esc(sub)+"</span></span>");
     b.type = "button";
-    b.addEventListener("click", ()=>{ if(prompt.endsWith(" ")){ TA.value = prompt; TA.focus(); autosize(); } else send(prompt); });
+    b.addEventListener("click", ()=>{
+      if(prompt==="__upload__"){ $(".filein").click(); return; }
+      if(prompt.endsWith(" ")){ TA.value = prompt; TA.focus(); autosize(); } else send(prompt); });
     g.appendChild(b);
   });
   w.appendChild(g);
@@ -1230,11 +1458,12 @@ function appendMessage(m){
 /* ── sending ───────────────────────────────────────────────────────── */
 const THINKING = ["Listening closely…","Reading your columns…","Counting the beats…","Mixing the numbers…","Laying down the tracks…"];
 let typingEl = null, typingTimer = 0;
-function showTyping(){
-  typingEl = h("div","typing", '<span class="eq"><i></i><i></i><i></i><i></i></span><span class="tx">'+THINKING[0]+'</span>');
+function showTyping(phrases){
+  const list = phrases || THINKING;
+  typingEl = h("div","typing", '<span class="eq"><i></i><i></i><i></i><i></i></span><span class="tx">'+list[0]+'</span>');
   LOG.appendChild(typingEl); scrollEnd();
   let i = 0;
-  typingTimer = setInterval(()=>{ i = (i+1) % THINKING.length; const t = typingEl && typingEl.querySelector(".tx"); if(t) t.textContent = THINKING[i]; }, 2600);
+  typingTimer = setInterval(()=>{ i = (i+1) % list.length; const t = typingEl && typingEl.querySelector(".tx"); if(t) t.textContent = list[i]; }, phrases ? 1400 : 2600);
 }
 function hideTyping(){ clearInterval(typingTimer); if(typingEl){ typingEl.remove(); typingEl = null; } }
 function setBusy(on){
@@ -1261,7 +1490,7 @@ async function send(text){
     const res = await fetch(CFG.endpoints.chat, {method:"POST", headers:headers(), credentials:"same-origin",
       signal: S.controller ? S.controller.signal : undefined,
       body: JSON.stringify({message:text, code:S.code, page:S.page, history:historyForServer(), draft:builderDraft(),
-                            studio:studioSnapshot()})});
+                            studio:studioSnapshot(), form_token:latestFormToken()})});
     let data = null; try{ data = await res.json(); }catch(e){}
     if(!res.ok || !data || !data.ok) throw new Error((data && data.error) || (res.status===403 ? "Your session expired — reload the page and try again." : res.status===504 ? "That took too long — try a smaller request." : "I couldn't reach the server (HTTP "+res.status+")."));
     msg = {role:"foon", text:data.say, blocks:data.blocks||[], suggestions:data.suggestions||[], notice:data.notice||null,
@@ -1426,6 +1655,22 @@ $(".composer").addEventListener("submit", e=>{
   if(S.busy){ if(S.controller) S.controller.abort(); return; }
   send(TA.value);
 });
+$(".clip").addEventListener("click", ()=>$(".filein").click());
+$(".filein").addEventListener("change", e=>{ const f = e.target.files && e.target.files[0]; e.target.value = ""; uploadForm(f); });
+(function dropZone(){
+  const panel = $(".panel"), launcher = $(".launcher"), zone = $(".dropzone");
+  let depth = 0;
+  const hasFiles = e=>e.dataTransfer && [...(e.dataTransfer.types||[])].includes("Files");
+  const show = on=>{ zone.classList.toggle("on", on); if(on){ Bot.faceOverride = "wow"; Bot.paint(); } else { Bot.faceOverride = null; Bot.paint(); } };
+  [panel, launcher].forEach(el=>{
+    el.addEventListener("dragenter", e=>{ if(!hasFiles(e)) return; e.preventDefault(); depth++;
+      if(el===launcher && !S.open) openPanel(true); show(true); });
+    el.addEventListener("dragover", e=>{ if(!hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; });
+    el.addEventListener("dragleave", ()=>{ depth = Math.max(0, depth-1); if(!depth) show(false); });
+    el.addEventListener("drop", e=>{ if(!hasFiles(e)) return; e.preventDefault(); depth = 0; show(false);
+      const f = e.dataTransfer.files && e.dataTransfer.files[0]; uploadForm(f); });
+  });
+})();
 let typeTimer = 0;
 TA.addEventListener("input", ()=>{
   autosize();

@@ -11,7 +11,8 @@
                             tall tiko head-wrap
              casual      — tie-dye kaftan shirt & trousers /
                             wax-print top & malan wrapper with a head-wrap
-     style   animated (smooth, friendly) | robot (LED eyes, antenna,
+     style   animated (a 3D-cartoon look: big glossy eyes, soft light,
+             warm skin, curly hair) | robot (LED eyes, antenna,
              visible joints, stepped "servo" motion)
      skin    1 | 2 | 3
 
@@ -26,19 +27,23 @@
 (function () {
   "use strict";
   const NS = "http://www.w3.org/2000/svg";
-  // skin: [base, shadow, highlight, lips]
-  const SKIN = { 1: ["#a06a47", "#7a4c31", "#c08d69", "#7d4136"], 2: ["#6e442b", "#50301d", "#8c5b3e", "#5c2d23"], 3: ["#462b1b", "#301d12", "#5e3e2a", "#3e2018"] };
-  const HAIR = "#15100d";
+  // 3D-cartoon skin: base, light, shadow, deep shadow, blush, lips
+  const SKIN = {
+    1: { base: "#c68b62", light: "#ecb48c", dark: "#94603f", deep: "#6e432a", blush: "#ef7f66", lip: "#a8574a", palm: "#efc3a0", nail: "#f1d2bd" },
+    2: { base: "#99603d", light: "#c98a5f", dark: "#6b3f25", deep: "#4c2a17", blush: "#e06d55", lip: "#87412f", palm: "#d9a17b", nail: "#e3b9a0" },
+    3: { base: "#6b3f25", light: "#93603d", dark: "#4a2a17", deep: "#33190c", blush: "#c45a43", lip: "#5e2b1f", palm: "#bb8460", nail: "#c99c80" },
+  };
+  const HAIR = { base: "#22170f", light: "#5a4030", dark: "#0d0805" };
   const REDUCED = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   // Office wear (the "official" choice), Gambian traditional dress, and casual Gambian wear.
   const LOOKS = {
-    man_official:      { cloth: ["#1d2840", "#2f3f62", "#121a2c"], shirt: "#f3f5f8", tie: "#7d1f2c", tie2: "#a83242", shoes: "#141414" },
-    woman_official:    { cloth: ["#33384a", "#4a5168", "#232633"], blouse: "#f2e9d8", shoes: "#141414", accent: "#d8b46a" },
-    man_traditional:   { cloth: ["#1f3a8a", "#3152ad", "#152a66"], trim: "#e2b44f", cap: "#f1e6c8", trousers: "#1f3a8a", shoes: "#6b4423" },
-    woman_traditional: { cloth: ["#762063", "#94307f", "#561548"], trim: "#e2b44f", wrap: "#762063", wrap2: "#e2b44f", shoes: "#b9862f" },
-    man_casual:        { shirt: "#0f8a8a", shirt2: "#f2c14e", dye: "#e2552d", trousers: ["#e3d7bd", "#f1e8d4", "#c8b996"], shoes: "#6e4423" },
-    woman_casual:      { top: "#e2552d", top2: "#f6c344", top3: "#1d7a4a", skirt: "#1f4fa3", skirt2: "#f6c344", wrap: "#f6c344", wrap2: "#e2552d", shoes: "#6e4423" },
+    man_official:      { cloth: ["#26324f", "#3d4f78", "#151d31"], shirt: "#f5f7fa", tie: "#8e2233", tie2: "#bd3a4c", shoes: "#1a1412" },
+    woman_official:    { cloth: ["#3a3550", "#585274", "#25213a"], blouse: "#f6ecd9", shoes: "#1a1412", accent: "#e8bf68" },
+    man_traditional:   { cloth: ["#2340a0", "#3d63cf", "#172b70"], trim: "#f0c25a", cap: "#f4ead0", trousers: "#2340a0", shoes: "#7a4b26" },
+    woman_traditional: { cloth: ["#8a2373", "#b0409a", "#621655"], trim: "#f0c25a", wrap: "#8a2373", wrap2: "#f0c25a", shoes: "#c8923a" },
+    man_casual:        { shirt: "#11a0a0", shirt2: "#f6c752", dye: "#ee5d33", trousers: ["#e6dac2", "#f7eedb", "#c6b691"], shoes: "#7a4b26" },
+    woman_casual:      { top: "#ee5d33", top2: "#f7c84c", top3: "#1f8a52", skirt: "#2459b8", skirt2: "#f7c84c", band: "#ff8a6b", band2: "#ffd2c2", shoes: "#8b5cf6" },
   };
 
   function el(tag, attrs, parent) {
@@ -47,8 +52,108 @@
     if (parent) parent.appendChild(n);
     return n;
   }
+  // stable pseudo-random numbers, so the curls are the same on every screen
+  function rng(seed) { let s = seed >>> 0; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); }
 
-  /* ───────────── drawing ───────────── */
+  /* ───────────── hands: a jointed rig ─────────────
+     Every finger has three joints (knuckle, middle, tip) and the thumb its own three. A joint bending toward
+     the viewer foreshortens its segment and, past 90°, folds it back over the palm — how a curling finger
+     looks from the front. Spread fans the fingers in the plane of the hand. Poses blend joint by joint, and
+     a little idle motion keeps the hands alive. Palms are lighter than the back of the hand; nails and
+     knuckles show when the back faces the viewer. */
+  const FINGERS = [                        // x from the hand's centre (negative = toward the thumb), segment lengths, width
+    { x: -6.9, L: [8.4, 5.6, 4.6], w: 5.1 },   // index
+    { x: -2.3, L: [9.2, 6.1, 4.8], w: 5.3 },   // middle
+    { x: 2.3, L: [8.6, 5.7, 4.6], w: 5.0 },    // ring
+    { x: 6.7, L: [6.8, 4.6, 3.9], w: 4.4 },    // little
+  ];
+  const FLEX = [74, 96, 64];               // how far each joint bends at full curl (degrees)
+  const HANDS = {
+    relax: { c: [.30, .34, .38, .43], s: [-3, 0, 3, 6], ta: 6, tc: .28, b: 1, fl: 0 },
+    open:  { c: [.04, .02, .05, .09], s: [-13, -4, 6, 15], ta: 44, tc: .04, b: 0, fl: 0 },
+    wave:  { c: [.05, .03, .06, .1], s: [-11, -3, 5, 13], ta: 40, tc: .05, b: 0, fl: 1 },
+    flat:  { c: [.02, .02, .03, .05], s: [-2, 0, 1, 3], ta: 12, tc: .1, b: 0, fl: 0 },
+    heart: { c: [.15, .15, .17, .21], s: [-3, 0, 2, 4], ta: 10, tc: .26, b: 1, fl: 0 },
+    point: { c: [.02, .88, .92, .95], s: [-2, 3, 5, 7], ta: -36, tc: .55, b: 1, fl: 0 },
+  };
+  function H(pre, name) {                  // a hand pose as flat numbers, so it blends like any joint
+    const h = HANDS[name], o = {};
+    h.c.forEach((v, i) => { o[pre + "c" + i] = v; }); h.s.forEach((v, i) => { o[pre + "s" + i] = v; });
+    o[pre + "ta"] = h.ta; o[pre + "tc"] = h.tc; o[pre + "b"] = h.b; o[pre + "fl"] = h.fl;
+    return o;
+  }
+
+  function makeHand(g, hx, hy, s, C, robot) {
+    // s = +1 for the arm on screen-right; the thumb is on the inner side (toward the body), i.e. at -s.
+    const mk = (tag, a) => el(tag, a, g);
+    const palmBack = mk("path", { fill: C.base });
+    const knuckles = FINGERS.map(f => mk("ellipse", { cx: hx + s * f.x, cy: hy + 16.5, rx: 2.4, ry: 1.6, fill: C.light, opacity: .5 }));
+    const palmFront = mk("path", { fill: C.palm });
+    const creases = mk("path", { stroke: C.dark, "stroke-width": .8, fill: "none", opacity: .45 });
+    const PB = `M${hx - 9} ${hy - 2} Q${hx - 11.5} ${hy + 8} ${hx - 10.5} ${hy + 18.5} Q${hx} ${hy + 21} ${hx + 10.5} ${hy + 18.5} Q${hx + 11.5} ${hy + 8} ${hx + 9} ${hy - 2}Z`;
+    palmBack.setAttribute("d", PB); palmFront.setAttribute("d", PB);
+    creases.setAttribute("d", `M${hx - s * 9} ${hy + 9} Q${hx} ${hy + 6} ${hx + s * 9} ${hy + 11} M${hx - s * 8} ${hy + 13.5} Q${hx + s * 1} ${hy + 11} ${hx + s * 9} ${hy + 15}`);
+    const seg = () => ({ sh: mk("path", { stroke: robot ? "#6b7788" : C.dark, fill: "none", "stroke-linecap": "round" }),
+                         base: mk("path", { stroke: robot ? "#cdd6e2" : C.base, fill: "none", "stroke-linecap": "round" }),
+                         hi: mk("path", { stroke: robot ? "#f4f7fb" : C.light, fill: "none", "stroke-linecap": "round", opacity: .55 }) });
+    const fingers = FINGERS.map(f => ({ f, segs: [seg(), seg(), seg()],
+      nail: mk("path", { stroke: C.nail, fill: "none", "stroke-linecap": "round" }),
+      joints: robot ? [mk("circle", { r: 1.6, fill: "#6b7788" }), mk("circle", { r: 1.5, fill: "#6b7788" })] : [] }));
+    const thumb = { segs: [seg(), seg(), seg()], nail: mk("path", { stroke: C.nail, fill: "none", "stroke-linecap": "round" }) };
+    const TL = [7.2, 6.4, 5.2], TW = [6.6, 6, 5.4];
+    const line = (a, b) => `M${a[0].toFixed(2)} ${a[1].toFixed(2)} L${b[0].toFixed(2)} ${b[1].toFixed(2)}`;
+    function drawSeg(sg, a, b, w, front) {
+      const dx = b[0] - a[0], dy = b[1] - a[1], n = Math.hypot(dx, dy) || 1, px = -dy / n, py = dx / n;   // a perpendicular
+      const off = (k) => [[a[0] + px * k, a[1] + py * k], [b[0] + px * k, b[1] + py * k]];
+      const [s1, s2] = off(.55 * s), [h1, h2] = off(-.32 * w * s);
+      sg.sh.setAttribute("d", line(s1, s2)); sg.sh.setAttribute("stroke-width", w);
+      sg.base.setAttribute("d", line(a, b)); sg.base.setAttribute("stroke-width", w - .9);
+      sg.base.setAttribute("stroke", robot ? "#cdd6e2" : (front ? C.palm : C.base));
+      sg.hi.setAttribute("d", line(h1, h2)); sg.hi.setAttribute("stroke-width", w * .3);
+    }
+    function chain(start, dirAngle, Ls, curls, w, front) {
+      // dirAngle: in-plane direction in degrees (0 = down, + = toward the outer side); curls: per-joint flex 0..1
+      const a = dirAngle * Math.PI / 180, d = [s * Math.sin(a), Math.cos(a)];
+      const pts = [start]; let phi = 0;
+      for (let k = 0; k < Ls.length; k++) {
+        phi += curls[k];
+        const len = Ls[k] * Math.cos(phi * Math.PI / 180);
+        const last = pts[pts.length - 1];
+        pts.push([last[0] + d[0] * len, last[1] + d[1] * len]);
+      }
+      return { pts, d, tipCos: Math.cos(phi * Math.PI / 180) };
+    }
+    return {
+      set(p, now) {
+        const back = p.b >= .5;
+        palmFront.setAttribute("opacity", back ? 0 : 1); creases.setAttribute("opacity", back ? 0 : .45);
+        knuckles.forEach(k => k.setAttribute("opacity", back ? .5 : 0));
+        fingers.forEach((F, i) => {
+          const live = REDUCED ? 0 : .035 * Math.sin(now / 650 + i * 1.7 + s);
+          const ripple = (p.fl || 0) * .16 * (.5 + .5 * Math.sin(now / 105 - i * .95));
+          const c = Math.max(0, Math.min(1, p.c[i] + live + ripple));
+          const base = [hx + s * F.f.x, hy + 18];
+          const { pts, d, tipCos } = chain(base, p.s[i] + c * 4, F.f.L, FLEX.map(v => v * c), F.f.w, !back);
+          for (let k = 0; k < 3; k++) drawSeg(F.segs[k], pts[k], pts[k + 1], F.f.w * (1 - k * .09), !back);
+          F.joints.forEach((j, k) => { j.setAttribute("cx", pts[k + 1][0]); j.setAttribute("cy", pts[k + 1][1]); });
+          const showNail = back && tipCos > .35 && !robot;
+          const tip = pts[3], L3 = F.f.L[2] * tipCos;
+          F.nail.setAttribute("d", showNail ? line([tip[0] - d[0] * L3 * .62, tip[1] - d[1] * L3 * .62], [tip[0] - d[0] * .3, tip[1] - d[1] * .3]) : "");
+          F.nail.setAttribute("stroke-width", F.f.w * .55);
+        });
+        // thumb: out to the side (ta > 0) or tucked across the palm (ta < 0)
+        const tc = Math.max(0, Math.min(1, p.tc + (REDUCED ? 0 : .03 * Math.sin(now / 800 + s))));
+        const t0 = [hx - s * 8.6, hy + 4];
+        const { pts, d, tipCos } = chain(t0, -(24 + p.ta), TL, [18 * tc, 46 * tc, 58 * tc], 6, !back);
+        for (let k = 0; k < 3; k++) drawSeg(thumb.segs[k], pts[k], pts[k + 1], TW[k], !back);
+        const tip = pts[3], L3 = TL[2] * tipCos;
+        thumb.nail.setAttribute("d", back && tipCos > .3 && !robot ? line([tip[0] - d[0] * L3 * .6, tip[1] - d[1] * L3 * .6], [tip[0] - d[0] * .3, tip[1] - d[1] * .3]) : "");
+        thumb.nail.setAttribute("stroke-width", 3.2);
+      },
+    };
+  }
+
+  /* ───────────── drawing: a 3D-cartoon look made of lit SVG shapes ───────────── */
   function build(opts) {
     const o = Object.assign({ figure: "woman", outfit: "official", style: "animated", skin: 2 }, opts || {});
     const robot = o.style === "robot";
@@ -56,8 +161,8 @@
     const outfit = ["official", "traditional", "casual"].includes(o.outfit) ? o.outfit : "official";
     const key = fig + "_" + outfit;
     const L = LOOKS[key];
-    const [skin, skinD, skinH, lip] = SKIN[o.skin] || SKIN[2];
-    const metal = "#c9d3df", metalD = "#8e9bab";
+    const K = SKIN[o.skin] || SKIN[2];
+    const metal = "#cdd6e2", metalD = "#8794a6";
     const svg = el("svg", { viewBox: "0 0 320 640", class: "dg-svg", role: "img", "aria-label": "Welcome host" });
     const uid = "dg" + Math.random().toString(36).slice(2, 8);
     const defs = el("defs", {}, svg);
@@ -66,220 +171,278 @@
       const g = el("linearGradient", Object.assign({ id: id(name) }, a || {}), defs);
       stops.forEach(([off, c, op]) => el("stop", { offset: off, "stop-color": c, "stop-opacity": op == null ? 1 : op }, g));
     }
-    // a cloth / limb "cylinder": darker at both edges, lit a little left of centre
-    const cyl = (name, [base, light, dark]) => lin(name, [[0, dark], [.32, base], [.46, light], [.62, base], [1, dark]], { x1: 0, x2: 1, y1: 0, y2: 0 });
-    // skin
-    const face = el("radialGradient", { id: id("face"), cx: ".42", cy: ".36", r: ".72" }, defs);
-    [[0, skinH], [.55, skin], [1, skinD]].forEach(([off, c]) => el("stop", { offset: off, "stop-color": c }, face));
-    cyl("limb", [skin, skinH, skinD]);
-    lin("lipsU", [[0, lip], [1, skinD]], { x1: 0, x2: 0, y1: 0, y2: 1 });
-    lin("lipsL", [[0, skinD], [.5, lip], [1, lip]], { x1: 0, x2: 0, y1: 0, y2: 1 });
-    // metal (robot)
-    cyl("steel", [metal, "#eef2f7", metalD]);
-    // outfit fabrics
+    function rad(name, stops, a) {
+      const g = el("radialGradient", Object.assign({ id: id(name) }, a || {}), defs);
+      stops.forEach(([off, c, op]) => el("stop", { offset: off, "stop-color": c, "stop-opacity": op == null ? 1 : op }, g));
+    }
+    const cyl = (name, [base, light, dark]) => lin(name, [[0, dark], [.28, base], [.44, light], [.62, base], [1, dark]], { x1: 0, x2: 1, y1: 0, y2: 0 });
+    [["b1", 1.2], ["b2", 2.2], ["b4", 4], ["b7", 7]].forEach(([n, sd]) => {
+      const f = el("filter", { id: id(n), x: "-50%", y: "-50%", width: "200%", height: "200%" }, defs);
+      el("feGaussianBlur", { stdDeviation: sd }, f);
+    });
+    // skin, lit from the upper left, warm in the shadows
+    rad("face", [[0, K.light], [.45, K.base], [.82, K.dark], [1, K.deep]], { cx: ".40", cy: ".34", r: ".78" });
+    rad("ear", [[0, K.light], [.6, K.base], [1, K.dark]], { cx: ".35", cy: ".4", r: ".8" });
+    cyl("limb", [K.base, K.light, K.dark]);
+    lin("rim", [[0, "#fff", 0], [.84, "#fff", 0], [1, "#ffe7cf", .2]], { x1: 0, x2: 1 });
+    lin("lip", [[0, K.lip], [1, K.deep]], { x1: 0, x2: 0, y1: 0, y2: 1 });
+    lin("lipL", [[0, K.deep], [.45, K.lip], [1, K.lip]], { x1: 0, x2: 0, y1: 0, y2: 1 });
+    lin("sclera", [[0, "#e3d6ca"], [.32, "#fdfaf6"], [1, "#f1e8df"]], { x1: 0, x2: 0, y1: 0, y2: 1 });
+    rad("iris", [[0, "#d99a4e"], [.38, "#9a5520"], [.8, "#42210c"], [1, "#160a03"]], { cx: ".5", cy: ".58", r: ".6" });
+    rad("curl", [[0, HAIR.light], [.55, HAIR.base], [1, HAIR.dark]], { cx: ".35", cy: ".3", r: ".75" });
+    rad("hairCap", [[0, HAIR.light], [.5, HAIR.base], [1, HAIR.dark]], { cx: ".4", cy: ".25", r: ".85" });
+    cyl("steel", [metal, "#f2f5f9", metalD]);
     if (L.cloth) cyl("cloth", L.cloth);
-    if (L.shirt && outfit === "official") cyl("shirt", [L.shirt, "#ffffff", "#cfd5de"]);
-    if (L.blouse) cyl("blouse", [L.blouse, "#fff8ea", "#d8ccb4"]);
+    if (outfit === "official" && fig === "man") cyl("shirt", [L.shirt, "#ffffff", "#c9d1dc"]);
+    if (L.blouse) cyl("blouse", [L.blouse, "#fffaf0", "#dccfb6"]);
     if (L.trousers && Array.isArray(L.trousers)) cyl("trousers", L.trousers);
-    lin("shade", [[0, "#000", .28], [.25, "#000", 0], [.75, "#000", 0], [1, "#000", .28]], { x1: 0, x2: 1 });
-    if (key === "man_official") {                                       // a striped silk tie
+    lin("gloss", [[0, "#fff", .32], [.5, "#fff", 0]], { x1: 0, x2: 0, y1: 0, y2: 1 });
+    if (key === "man_official") {
       const p = el("pattern", { id: id("tie"), width: 10, height: 10, patternUnits: "userSpaceOnUse", patternTransform: "rotate(35)" }, defs);
-      el("rect", { width: 10, height: 10, fill: L.tie }, p);
-      el("rect", { width: 10, height: 2.2, y: 4, fill: L.tie2 }, p);
+      el("rect", { width: 10, height: 10, fill: L.tie }, p); el("rect", { width: 10, height: 2.4, y: 4, fill: L.tie2 }, p);
     }
-    if (key === "man_casual") {
-      const dye = el("radialGradient", { id: id("dye"), cx: "50%", cy: "40%", r: "65%" }, defs);
-      [[0, L.dye], [.22, L.shirt2], [.45, L.shirt], [.7, L.shirt2], [1, L.shirt]].forEach(([off, c]) => el("stop", { offset: off, "stop-color": c }, dye));
-    }
+    if (key === "man_casual") rad("dye", [[0, L.dye], [.22, L.shirt2], [.45, L.shirt], [.7, L.shirt2], [1, L.shirt]], { cx: "50%", cy: "40%", r: "65%" });
     if (key === "woman_casual") {
       const wax = el("pattern", { id: id("wax"), width: 30, height: 30, patternUnits: "userSpaceOnUse" }, defs);
-      el("rect", { width: 30, height: 30, fill: L.top }, wax);
-      el("circle", { cx: 15, cy: 15, r: 9, fill: L.top2 }, wax);
-      el("circle", { cx: 15, cy: 15, r: 4.5, fill: L.top3 }, wax);
-      el("path", { d: "M0 0L7 0L0 7ZM30 30L23 30L30 23Z", fill: L.top3 }, wax);
+      el("rect", { width: 30, height: 30, fill: L.top }, wax); el("circle", { cx: 15, cy: 15, r: 9, fill: L.top2 }, wax);
+      el("circle", { cx: 15, cy: 15, r: 4.5, fill: L.top3 }, wax); el("path", { d: "M0 0L7 0L0 7ZM30 30L23 30L30 23Z", fill: L.top3 }, wax);
       const sk = el("pattern", { id: id("skirt"), width: 36, height: 36, patternUnits: "userSpaceOnUse", patternTransform: "rotate(20)" }, defs);
-      el("rect", { width: 36, height: 36, fill: L.skirt }, sk);
-      el("rect", { width: 36, height: 8, y: 14, fill: L.skirt2 }, sk);
+      el("rect", { width: 36, height: 36, fill: L.skirt }, sk); el("rect", { width: 36, height: 8, y: 14, fill: L.skirt2 }, sk);
       el("circle", { cx: 9, cy: 5, r: 2.6, fill: "#fff", opacity: .7 }, sk);
+      cyl("band", [L.band, L.band2, "#d0563c"]);
     }
     const limbFill = robot ? url("steel") : url("limb");
+    const blurred = (tag, a, b, parent) => el(tag, Object.assign({ filter: `url(#${uid}${b})` }, a), parent);
 
-    el("ellipse", { cx: 160, cy: 610, rx: 86, ry: 10, fill: "#000", opacity: .3, class: "dg-shadow" }, svg);
+    el("ellipse", { cx: 160, cy: 610, rx: 84, ry: 11, fill: "#000", opacity: .32, class: "dg-shadow", filter: url("b4") }, svg);
     const root = el("g", { class: "dg-root" }, svg);
     const parts = { root };
 
-    /* legs & shoes */
+    /* legs & shoes — rounded, with a gloss on the shoes */
     const legs = el("g", {}, root);
-    function shoe(x, s, color, heel) {          // s = +1 right foot (screen right), -1 left
+    function shoe(x, s, color, heel) {
       if (heel) {
-        el("path", { d: `M${x - 9 * s} 584 Q${x - 12 * s} 598 ${x - 10 * s} 602 L${x + 8 * s} 602 L${x + 7 * s} 592 Q${x + 4 * s} 584 ${x - 9 * s} 584Z`, fill: color }, legs);
-        el("rect", { x: s > 0 ? x + 4 : x - 7, y: 594, width: 3, height: 10, fill: color }, legs);
+        el("path", { d: `M${x - 10 * s} 582 Q${x - 14 * s} 598 ${x - 11 * s} 603 L${x + 9 * s} 603 L${x + 8 * s} 592 Q${x + 5 * s} 582 ${x - 10 * s} 582Z`, fill: color }, legs);
+        el("rect", { x: s > 0 ? x + 5 : x - 8, y: 594, width: 3.4, height: 10, rx: 1.5, fill: color }, legs);
       } else {
-        el("path", { d: `M${x - 13 * s} 588 Q${x - 15 * s} 600 ${x - 12 * s} 604 L${x + 13 * s} 604 Q${x + 15 * s} 596 ${x + 10 * s} 588Z`, fill: color }, legs);
-        el("path", { d: `M${x - 10 * s} 593 Q${x} 590 ${x + 9 * s} 593`, stroke: "#fff", "stroke-opacity": .18, "stroke-width": 2, fill: "none" }, legs);
+        el("path", { d: `M${x - 15 * s} 586 Q${x - 18 * s} 602 ${x - 13 * s} 606 L${x + 14 * s} 606 Q${x + 18 * s} 597 ${x + 11 * s} 586Z`, fill: color }, legs);
       }
+      el("ellipse", { cx: x - 2 * s, cy: 592, rx: 7, ry: 2.4, fill: "#fff", opacity: .22 }, legs);
     }
     if (key === "woman_official") {
       for (const s of [-1, 1]) {
         const x = 160 + s * 15;
-        el("path", { d: `M${x - 11} 494 Q${x - 14} 526 ${x - 7} 556 L${x - 4.5} 586 L${x + 4.5} 586 L${x + 7} 556 Q${x + 13} 524 ${x + 10} 494Z`, fill: limbFill }, legs);
+        el("path", { d: `M${x - 12} 492 Q${x - 15} 526 ${x - 7.5} 556 L${x - 5} 586 L${x + 5} 586 L${x + 7.5} 556 Q${x + 14} 524 ${x + 11} 492Z`, fill: limbFill }, legs);
         shoe(x, s, L.shoes, true);
       }
-    } else if (key === "man_official" || key === "man_casual" || key === "man_traditional") {
+    } else if (fig === "man") {
       const tfill = key === "man_official" ? url("cloth") : key === "man_casual" ? url("trousers") : L.trousers;
       for (const s of [-1, 1]) {
-        const x = 160 + s * 16;
-        el("path", { d: `M${x - 15} 380 L${x + 14} 380 L${x + 11} 590 L${x - 11} 590Z`, fill: tfill }, legs);
-        el("path", { d: `M${x} 400 L${x} 586`, stroke: "#000", "stroke-opacity": .18, "stroke-width": 1.2 }, legs);   // crease
+        const x = 160 + s * 17;
+        el("path", { d: `M${x - 17} 376 Q${x} 372 ${x + 16} 376 L${x + 13} 590 Q${x} 594 ${x - 13} 590Z`, fill: tfill }, legs);
         shoe(x, s, L.shoes, false);
       }
     } else {
-      for (const s of [-1, 1]) { const x = 160 + s * 15; el("rect", { x: x - 8, y: 540, width: 16, height: 48, rx: 7, fill: limbFill }, legs); shoe(x, s, L.shoes, false); }
+      for (const s of [-1, 1]) { const x = 160 + s * 15; el("rect", { x: x - 9, y: 538, width: 18, height: 50, rx: 8, fill: limbFill }, legs); shoe(x, s, L.shoes, false); }
     }
 
-    /* body */
+    /* body — the same tailoring as before, with soft 3D light and contact shadows */
     const torso = el("g", { class: "dg-torso" }, root);
     parts.torso = torso;
-    const fold = (d, op) => el("path", { d, stroke: "#000", "stroke-opacity": op || .16, "stroke-width": 1.4, fill: "none", "stroke-linecap": "round" }, torso);
+    const fold = (d, op) => el("path", { d, stroke: "#000", "stroke-opacity": op || .14, "stroke-width": 2, fill: "none", "stroke-linecap": "round", filter: url("b1") }, torso);
     if (key === "man_official") {
-      // suit jacket, white shirt, striped tie, pocket square
-      el("path", { d: "M106 198 Q108 188 128 184 L147 181 L160 200 L173 181 L192 184 Q212 188 214 198 L210 300 Q206 330 204 352 L208 404 Q160 414 112 404 L116 352 Q114 330 110 300Z", fill: url("cloth") }, torso);
-      el("path", { d: "M147 182 L173 182 L160 320Z", fill: url("shirt") }, torso);
-      el("path", { d: "M155 197 L165 197 L163.5 208 L156.5 208Z", fill: L.tie }, torso);
-      el("path", { d: "M156.5 208 L163.5 208 L168 290 L160 302 L152 290Z", fill: url("tie") }, torso);
-      el("path", { d: "M147 182 L160 199 L150 207Z", fill: "#ffffff" }, torso);
-      el("path", { d: "M173 182 L160 199 L170 207Z", fill: "#e9edf2" }, torso);
-      el("path", { d: "M146 181 L127 188 L131 214 L141 222 L136 230 L160 322Z", fill: L.cloth[2] }, torso);     // lapels
-      el("path", { d: "M174 181 L193 188 L189 214 L179 222 L184 230 L160 322Z", fill: L.cloth[2] }, torso);
-      el("path", { d: "M136 230 L160 322 M184 230 L160 322", stroke: L.cloth[1], "stroke-width": 1, opacity: .7 }, torso);
-      el("path", { d: "M160 322 Q158 365 160 410", stroke: "#000", "stroke-opacity": .3, "stroke-width": 1.2, fill: "none" }, torso);
-      [334, 364].forEach(y => el("circle", { cx: 163, cy: y, r: 2.6, fill: "#0b0f18" }, torso));
-      el("path", { d: "M117 372 L141 372 M179 372 L203 372", stroke: "#000", "stroke-opacity": .35, "stroke-width": 1.4 }, torso);
-      el("path", { d: "M178 238 L198 238", stroke: "#000", "stroke-opacity": .35, "stroke-width": 1.3 }, torso);
-      el("path", { d: "M182 238 L186 231 L190 236 L194 230 L196 238Z", fill: "#e9edf2" }, torso);
-      fold("M120 300 Q126 330 122 352", .12); fold("M200 300 Q194 330 198 352", .12);
+      el("path", { d: "M106 200 Q108 186 130 182 L147 180 L160 200 L173 180 L190 182 Q212 186 214 200 L210 300 Q206 330 205 352 L209 402 Q160 414 111 402 L115 352 Q114 330 110 300Z", fill: url("cloth") }, torso);
+      el("path", { d: "M147 181 L173 181 L160 318Z", fill: url("shirt") }, torso);
+      el("path", { d: "M154 196 L166 196 L164 208 L156 208Z", fill: L.tie }, torso);
+      el("path", { d: "M156 208 L164 208 L169 290 L160 302 L151 290Z", fill: url("tie") }, torso);
+      el("path", { d: "M147 181 L160 199 L149 208Z", fill: "#ffffff" }, torso);
+      el("path", { d: "M173 181 L160 199 L171 208Z", fill: "#e6ebf1" }, torso);
+      el("path", { d: "M146 180 L126 188 L130 214 L141 222 L136 230 L160 320Z", fill: L.cloth[2] }, torso);
+      el("path", { d: "M174 180 L194 188 L190 214 L179 222 L184 230 L160 320Z", fill: L.cloth[2] }, torso);
+      el("path", { d: "M136 230 L160 320 M184 230 L160 320", stroke: L.cloth[1], "stroke-width": 1.2, opacity: .8 }, torso);
+      [334, 364].forEach(y => { el("circle", { cx: 163, cy: y, r: 3.2, fill: "#0b0f18" }, torso); el("circle", { cx: 162, cy: y - 1, r: 1, fill: "#fff", opacity: .35 }, torso); });
+      el("path", { d: "M178 238 L198 238", stroke: "#000", "stroke-opacity": .35, "stroke-width": 1.4 }, torso);
+      el("path", { d: "M182 238 L186 230 L190 236 L194 229 L196 238Z", fill: "#eef2f6" }, torso);
+      fold("M120 300 Q127 332 122 354"); fold("M200 300 Q193 332 198 354");
     } else if (key === "woman_official") {
-      // tailored blazer over a cream blouse, pencil skirt, a fine necklace
-      el("path", { d: "M116 368 L204 368 Q206 430 196 498 Q160 504 124 498 Q114 430 116 368Z", fill: url("cloth") }, torso);
-      el("path", { d: "M160 452 L160 500", stroke: "#000", "stroke-opacity": .3, "stroke-width": 1.2 }, torso);
-      el("path", { d: "M108 200 Q110 191 128 187 L148 184 L160 210 L172 184 L192 187 Q210 191 212 200 L206 290 Q198 318 200 336 L206 382 Q160 392 114 382 L120 336 Q122 318 114 290Z", fill: url("cloth") }, torso);
-      el("path", { d: "M148 185 L172 185 L160 300Z", fill: url("blouse") }, torso);
-      el("path", { d: "M150 186 Q160 204 170 186", fill: "none", stroke: L.accent, "stroke-width": 1.2 }, torso);
-      el("circle", { cx: 160, cy: 198, r: 2.2, fill: L.accent }, torso);
-      el("path", { d: "M147 184 L130 190 L134 214 L143 220 L139 228 L160 302Z", fill: L.cloth[2] }, torso);
-      el("path", { d: "M173 184 L190 190 L186 214 L177 220 L181 228 L160 302Z", fill: L.cloth[2] }, torso);
-      el("circle", { cx: 160, cy: 312, r: 3, fill: "#11131a" }, torso);
-      el("path", { d: "M160 312 Q157 350 160 386", stroke: "#000", "stroke-opacity": .28, "stroke-width": 1.2, fill: "none" }, torso);
-      fold("M122 290 Q130 318 126 336", .12); fold("M198 290 Q190 318 194 336", .12);
+      el("path", { d: "M116 366 L204 366 Q207 430 196 496 Q160 503 124 496 Q113 430 116 366Z", fill: url("cloth") }, torso);
+      el("path", { d: "M108 202 Q110 189 130 185 L148 183 L160 210 L172 183 L190 185 Q210 189 212 202 L206 290 Q198 318 200 336 L206 380 Q160 391 114 380 L120 336 Q122 318 114 290Z", fill: url("cloth") }, torso);
+      el("path", { d: "M148 184 L172 184 L160 298Z", fill: url("blouse") }, torso);
+      el("path", { d: "M149 186 Q160 206 171 186", fill: "none", stroke: L.accent, "stroke-width": 1.3 }, torso);
+      el("path", { d: "M160 200 l-3 5 l3 4 l3 -4z", fill: L.accent }, torso);
+      el("path", { d: "M147 183 L129 190 L133 214 L143 220 L139 228 L160 300Z", fill: L.cloth[2] }, torso);
+      el("path", { d: "M173 183 L191 190 L187 214 L177 220 L181 228 L160 300Z", fill: L.cloth[2] }, torso);
+      el("circle", { cx: 160, cy: 310, r: 3.4, fill: "#11131a" }, torso);
+      fold("M122 290 Q131 318 126 338"); fold("M198 290 Q189 318 194 338");
     } else if (key === "man_traditional") {
-      el("path", { d: "M104 186 Q160 166 216 186 L262 548 Q160 572 58 548Z", fill: url("cloth") }, torso);
-      el("path", { d: "M136 180 Q160 238 184 180", fill: "none", stroke: L.trim, "stroke-width": 6, "stroke-linecap": "round" }, torso);
-      el("path", { d: "M160 206 L160 330", stroke: L.trim, "stroke-width": 3.5, "stroke-dasharray": "2 7", "stroke-linecap": "round" }, torso);
-      for (let i = 0; i < 6; i++) el("circle", { cx: 140 + i * 8, cy: 252 + Math.abs(2.5 - i) * 9, r: 2.6, fill: L.trim }, torso);
-      el("path", { d: "M58 548 Q160 572 262 548", fill: "none", stroke: L.trim, "stroke-width": 4.5 }, torso);
-      fold("M120 260 Q100 400 92 540"); fold("M200 260 Q220 400 228 540"); fold("M150 360 Q146 450 140 556", .1); fold("M172 360 Q176 450 182 556", .1);
+      el("path", { d: "M104 188 Q160 168 216 188 L262 548 Q160 572 58 548Z", fill: url("cloth") }, torso);
+      el("path", { d: "M136 182 Q160 238 184 182", fill: "none", stroke: L.trim, "stroke-width": 6.5, "stroke-linecap": "round" }, torso);
+      el("path", { d: "M160 208 L160 330", stroke: L.trim, "stroke-width": 3.5, "stroke-dasharray": "2 7", "stroke-linecap": "round" }, torso);
+      for (let i = 0; i < 6; i++) el("circle", { cx: 140 + i * 8, cy: 254 + Math.abs(2.5 - i) * 9, r: 2.8, fill: L.trim }, torso);
+      el("path", { d: "M58 548 Q160 572 262 548", fill: "none", stroke: L.trim, "stroke-width": 5 }, torso);
+      fold("M120 262 Q100 400 92 540"); fold("M200 262 Q220 400 228 540"); fold("M150 362 Q146 452 140 556", .1); fold("M172 362 Q176 452 182 556", .1);
     } else if (key === "woman_traditional") {
-      el("path", { d: "M110 188 Q160 168 210 188 L252 600 Q160 618 68 600Z", fill: url("cloth") }, torso);
-      el("path", { d: "M134 182 Q160 232 186 182", fill: "none", stroke: L.trim, "stroke-width": 6, "stroke-linecap": "round" }, torso);
-      el("path", { d: "M120 300 Q160 320 200 300", fill: "none", stroke: L.trim, "stroke-width": 3.5, "stroke-dasharray": "3 6" }, torso);
-      el("path", { d: "M68 600 Q160 618 252 600", fill: "none", stroke: L.trim, "stroke-width": 5 }, torso);
-      for (let i = 0; i < 5; i++) el("path", { d: `M${92 + i * 34} 560 l7 -12 l7 12z`, fill: L.trim, opacity: .9 }, torso);
-      fold("M124 320 Q108 450 98 596"); fold("M196 320 Q212 450 222 596"); fold("M160 330 L160 606", .08);
+      el("path", { d: "M110 190 Q160 170 210 190 L252 600 Q160 618 68 600Z", fill: url("cloth") }, torso);
+      el("path", { d: "M134 184 Q160 234 186 184", fill: "none", stroke: L.trim, "stroke-width": 6.5, "stroke-linecap": "round" }, torso);
+      el("path", { d: "M120 302 Q160 322 200 302", fill: "none", stroke: L.trim, "stroke-width": 3.5, "stroke-dasharray": "3 6" }, torso);
+      el("path", { d: "M68 600 Q160 618 252 600", fill: "none", stroke: L.trim, "stroke-width": 5.5 }, torso);
+      for (let i = 0; i < 5; i++) el("path", { d: `M${92 + i * 34} 560 l7 -12 l7 12z`, fill: L.trim }, torso);
+      fold("M124 322 Q108 452 98 596"); fold("M196 322 Q212 452 222 596");
     } else if (key === "man_casual") {
-      el("path", { d: "M108 188 Q160 170 212 188 L226 450 Q160 464 94 450Z", fill: url("dye") }, torso);
-      el("path", { d: "M147 184 L160 214 L173 184", fill: "none", stroke: "#fff", "stroke-width": 3, opacity: .8 }, torso);
-      fold("M128 260 Q122 360 118 448"); fold("M192 260 Q198 360 202 448");
+      el("path", { d: "M108 190 Q160 172 212 190 L226 450 Q160 464 94 450Z", fill: url("dye") }, torso);
+      el("path", { d: "M147 186 L160 216 L173 186", fill: "none", stroke: "#fff", "stroke-width": 3.2, opacity: .85 }, torso);
+      fold("M128 262 Q122 362 118 448"); fold("M192 262 Q198 362 202 448");
     } else {
-      el("path", { d: "M112 188 Q160 170 208 188 L222 392 Q160 404 98 392Z", fill: url("wax") }, torso);
+      el("path", { d: "M112 190 Q160 172 208 190 L222 392 Q160 404 98 392Z", fill: url("wax") }, torso);
       el("path", { d: "M92 382 Q160 400 228 382 L240 600 Q160 616 80 600Z", fill: url("skirt") }, torso);
       el("path", { d: "M92 382 Q160 400 228 382", fill: "none", stroke: L.top3, "stroke-width": 5 }, torso);
     }
+    // soft contact shadow under the head on the chest, and a light sheen across the shoulders
+    blurred("ellipse", { cx: 160, cy: 196, rx: 32, ry: 10, fill: "#000", opacity: .28 }, "b4", torso);
+    el("path", { d: "M114 196 Q160 184 206 196 L204 214 Q160 202 116 214Z", fill: "#fff", opacity: .07 }, torso);
     if (robot) {
-      el("rect", { x: 140, y: 252, width: 40, height: 26, rx: 6, fill: "#0b1626", opacity: .85 }, torso);
+      el("rect", { x: 140, y: 252, width: 40, height: 26, rx: 7, fill: "#0b1626", opacity: .88 }, torso);
       [0, 1, 2].forEach(i => el("circle", { cx: 150 + i * 10, cy: 265, r: 3, fill: ["#22d3ee", "#a3e635", "#f59e0b"][i], class: "dg-led l" + i }, torso));
     }
 
     /* head */
-    const headPivot = el("g", { class: "dg-head" }, root);
-    parts.head = headPivot;
-    el("path", { d: "M150 140 L170 140 L172 188 Q160 196 148 188Z", fill: limbFill }, headPivot);                 // neck
-    if (!robot) el("ellipse", { cx: 160, cy: 156, rx: 13, ry: 5, fill: skinD, opacity: .55 }, headPivot);
-    const head = el("g", { transform: "translate(0 10)" }, headPivot);           // the head sits 10 lower: a natural neck length
-    if (robot) {
-      el("rect", { x: 126, y: 70, width: 68, height: 74, rx: 24, fill: url("steel") }, head);
-      el("rect", { x: 134, y: 88, width: 52, height: 32, rx: 14, fill: "#0b1626" }, head);
-      parts.eyeL = el("rect", { x: 144, y: 99, width: 10, height: 10, rx: 5, fill: "#22d3ee", class: "dg-eye" }, head);
-      parts.eyeR = el("rect", { x: 166, y: 99, width: 10, height: 10, rx: 5, fill: "#22d3ee", class: "dg-eye" }, head);
-      parts.mouth = el("path", { d: "M150 131 Q160 137 170 131", stroke: "#22d3ee", "stroke-width": 3, fill: "none", "stroke-linecap": "round" }, head);
-      el("line", { x1: 160, y1: 70, x2: 160, y2: 50, stroke: metalD, "stroke-width": 3 }, head);
-      parts.antenna = el("circle", { cx: 160, cy: 46, r: 5.5, fill: "#f43f5e", class: "dg-antenna" }, head);
-      el("circle", { cx: 126, cy: 106, r: 7, fill: metalD }, head); el("circle", { cx: 194, cy: 106, r: 7, fill: metalD }, head);
-    } else {
-      // hair behind the head (woman, office: natural hair in a neat bun)
-      if (key === "woman_official") {
-        el("ellipse", { cx: 160, cy: 68, rx: 17, ry: 12, fill: HAIR }, head);
-        el("path", { d: "M127 116 C122 80 138 62 160 62 C182 62 198 80 193 116 C190 100 182 88 160 88 C138 88 130 100 127 116Z", fill: HAIR }, head);
-      }
-      el("ellipse", { cx: 131, cy: 110, rx: 5, ry: 8.5, fill: skinD }, head);                                      // ears
-      el("ellipse", { cx: 189, cy: 110, rx: 5, ry: 8.5, fill: skinD }, head);
-      el("path", { d: "M160 72 C182 72 192 90 191 110 C190 130 180 146 160 150 C140 146 130 130 129 110 C128 90 138 72 160 72Z", fill: url("face") }, head);
-      el("path", { d: "M131 116 C134 136 146 148 160 150 C174 148 186 136 189 116 C184 138 172 145 160 146 C148 145 136 138 131 116Z", fill: skinD, opacity: .35 }, head);   // jaw shadow
-      el("ellipse", { cx: 144, cy: 119, rx: 6, ry: 3, fill: skinH, opacity: .16 }, head);                       // cheek light
-      el("ellipse", { cx: 176, cy: 119, rx: 6, ry: 3, fill: skinH, opacity: .1 }, head);
-      // brows
-      const bw = fig === "man" ? 3.2 : 2.2;
-      el("path", { d: fig === "man" ? "M139 98 Q146 94 154 97" : "M140 98 Q147 92.5 154 96", stroke: HAIR, "stroke-width": bw, fill: "none", "stroke-linecap": "round" }, head);
-      el("path", { d: fig === "man" ? "M166 97 Q174 94 181 98" : "M166 96 Q173 92.5 180 98", stroke: HAIR, "stroke-width": bw, fill: "none", "stroke-linecap": "round" }, head);
-      // eyes (an outer group places it, an inner group blinks)
-      function eye(x) {
-        const at = el("g", { transform: `translate(${x} 107)` }, head);
-        const e = el("g", { class: "dg-eye" }, at);
-        el("path", { d: "M-7 0 Q0 -5 7 0 Q0 4 -7 0Z", fill: "#f3ece2" }, e);
-        el("circle", { cx: 0, cy: -.2, r: 3.4, fill: "#2b170c" }, e);
-        el("circle", { cx: 0, cy: -.2, r: 1.6, fill: "#050302" }, e);
-        el("circle", { cx: 1, cy: -1.3, r: .9, fill: "#fff" }, e);
-        el("path", { d: "M-7.6 .2 Q0 -6.2 7.6 .2", stroke: fig === "woman" ? HAIR : skinD, "stroke-width": fig === "woman" ? 2 : 1.6, fill: "none", "stroke-linecap": "round" }, e);
-        if (fig === "woman") el("path", { d: `M${x < 160 ? -7.6 : 7.6} .2 l${x < 160 ? -2 : 2} -1.6`, stroke: HAIR, "stroke-width": 1.4 }, e);
-        el("path", { d: "M-6 2.6 Q0 4.6 6 2.6", stroke: skinD, "stroke-width": .9, fill: "none", opacity: .6 }, e);
-        return e;
-      }
-      parts.eyeL = eye(147); parts.eyeR = eye(173);
-      // nose
-      el("path", { d: "M157 106 Q156 116 153 123", stroke: skinD, "stroke-width": 1.4, fill: "none", opacity: .55 }, head);
-      el("path", { d: "M151 123 Q153 129 160 129.5 Q167 129 169 123 Q166 126.5 160 126.5 Q154 126.5 151 123Z", fill: skinD, opacity: .7 }, head);
-      el("ellipse", { cx: 155.5, cy: 126.3, rx: 2, ry: 1.2, fill: "#1f120b", opacity: .7 }, head);
-      el("ellipse", { cx: 164.5, cy: 126.3, rx: 2, ry: 1.2, fill: "#1f120b", opacity: .7 }, head);
-      el("path", { d: "M160 110 L160 121", stroke: skinH, "stroke-width": 2, opacity: .3, "stroke-linecap": "round" }, head);
-      // lips, a calm friendly smile
-      const m = el("g", {}, head); parts.mouth = m;
-      el("path", { d: "M149 136 Q154 132.5 160 134.5 Q166 132.5 171 136 Q160 138.5 149 136Z", fill: url("lipsU") }, m);
-      el("path", { d: "M150 136.4 Q160 144.5 170 136.4 Q160 139 150 136.4Z", fill: url("lipsL") }, m);
-      el("path", { d: "M149 136 Q160 139.2 171 136", stroke: "#2a120c", "stroke-width": 1, fill: "none", "stroke-linecap": "round" }, m);
-      el("ellipse", { cx: 160, cy: 140.5, rx: 4, ry: 1.2, fill: "#fff", opacity: .12 }, m);
-      // hair / headwear in front
-      if (fig === "man") {
-        el("path", { d: "M130 104 C129 80 141 68 160 67 C179 68 191 80 190 104 C187 92 180 85 160 84 C140 85 133 92 130 104Z", fill: HAIR }, head);
-        el("path", { d: "M131 112 C132 132 144 147 160 150 C176 147 188 132 189 112", stroke: HAIR, "stroke-width": 3, fill: "none", opacity: .18 }, head);   // light stubble line
-      } else if (key === "woman_official") {
-        el("path", { d: "M129 104 C130 82 142 72 160 72 C178 72 190 82 191 104 C186 90 174 84 160 84 C146 84 134 90 129 104Z", fill: HAIR }, head);
-        el("circle", { cx: 130.5, cy: 120, r: 2.4, fill: L.accent }, head); el("circle", { cx: 189.5, cy: 120, r: 2.4, fill: L.accent }, head);
-      } else {
-        el("circle", { cx: 130.5, cy: 121, r: 3, fill: "#e2b44f" }, head); el("circle", { cx: 189.5, cy: 121, r: 3, fill: "#e2b44f" }, head);
+    const head = el("g", { class: "dg-head" }, root);
+    parts.head = head;
+    el("path", { d: "M146 150 L174 150 L176 194 Q160 203 144 194Z", fill: limbFill }, head);                     // neck
+    if (!robot) blurred("ellipse", { cx: 160, cy: 168, rx: 20, ry: 8, fill: K.deep, opacity: .6 }, "b4", head);
+
+    // hair behind the head
+    function curlCluster(cx, cy, rx, ry, n, rmin, rmax, seed, parent) {
+      const r = rng(seed);
+      for (let i = 0; i < n; i++) {
+        const a = r() * Math.PI * 2, d = Math.sqrt(r());
+        const x = cx + Math.cos(a) * rx * d, y = cy + Math.sin(a) * ry * d, rr = rmin + r() * (rmax - rmin);
+        el("circle", { cx: x.toFixed(1), cy: y.toFixed(1), r: rr.toFixed(1), fill: url("curl") }, parent);
+        el("path", { d: `M${(x - rr * .5).toFixed(1)} ${(y - rr * .1).toFixed(1)} a${(rr * .55).toFixed(1)} ${(rr * .55).toFixed(1)} 0 1 1 ${(rr * .8).toFixed(1)} ${(rr * .3).toFixed(1)}`,
+          stroke: HAIR.light, "stroke-width": 1.1, fill: "none", opacity: .45 }, parent);
       }
     }
+    if (!robot && key === "woman_official") {
+      // curls gathered up into a big soft puff behind the head
+      curlCluster(160, 62, 50, 30, 70, 7, 12, 7, head);
+      curlCluster(116, 108, 12, 30, 18, 6, 10, 11, head);
+      curlCluster(204, 108, 12, 30, 18, 6, 10, 13, head);
+    } else if (!robot && key === "woman_casual") {
+      // two afro puffs
+      curlCluster(122, 66, 26, 22, 46, 6, 10, 21, head);
+      curlCluster(198, 66, 26, 22, 46, 6, 10, 23, head);
+    }
+
+    if (robot) {
+      el("rect", { x: 118, y: 64, width: 84, height: 90, rx: 32, fill: url("steel") }, head);
+      el("rect", { x: 128, y: 86, width: 64, height: 40, rx: 18, fill: "#0b1626" }, head);
+      el("rect", { x: 128, y: 86, width: 64, height: 40, rx: 18, fill: url("gloss") }, head);
+      parts.eyeL = el("rect", { x: 140, y: 99, width: 13, height: 13, rx: 6.5, fill: "#22d3ee", class: "dg-eye" }, head);
+      parts.eyeR = el("rect", { x: 167, y: 99, width: 13, height: 13, rx: 6.5, fill: "#22d3ee", class: "dg-eye" }, head);
+      parts.mouth = el("path", { d: "M147 138 Q160 146 173 138", stroke: "#22d3ee", "stroke-width": 3.5, fill: "none", "stroke-linecap": "round" }, head);
+      el("line", { x1: 160, y1: 64, x2: 160, y2: 42, stroke: metalD, "stroke-width": 3.5 }, head);
+      parts.antenna = el("circle", { cx: 160, cy: 38, r: 6.5, fill: "#f43f5e", class: "dg-antenna" }, head);
+      el("circle", { cx: 118, cy: 108, r: 8, fill: metalD }, head); el("circle", { cx: 202, cy: 108, r: 8, fill: metalD }, head);
+    } else {
+      // ears
+      for (const x of [113, 207]) {
+        el("ellipse", { cx: x, cy: 120, rx: 9, ry: 13, fill: url("ear") }, head);
+        el("ellipse", { cx: x + (x < 160 ? 1.5 : -1.5), cy: 121, rx: 4.5, ry: 7.5, fill: K.dark, opacity: .55 }, head);
+      }
+      // the face: a big soft cranium and a small chin
+      const FACE = "M160 58 C199 58 210 88 209 116 C208 146 189 167 160 169 C131 167 112 146 111 116 C110 88 121 58 160 58Z";
+      el("path", { d: FACE, fill: url("face") }, head);
+      el("path", { d: FACE, fill: url("rim") }, head);                                       // cool rim light, shadow side
+      blurred("ellipse", { cx: 152, cy: 82, rx: 24, ry: 11, fill: "#fff", opacity: .2 }, "b7", head);   // forehead sheen
+      blurred("ellipse", { cx: 131, cy: 141, rx: 13, ry: 8, fill: K.blush, opacity: .5 }, "b4", head);
+      blurred("ellipse", { cx: 189, cy: 141, rx: 13, ry: 8, fill: K.blush, opacity: .42 }, "b4", head);
+      blurred("ellipse", { cx: 133, cy: 133, rx: 6, ry: 3.2, fill: "#fff", opacity: .3 }, "b2", head);    // cheek highlight
+      blurred("path", { d: "M128 150 Q160 176 192 150 Q160 168 128 150Z", fill: K.deep, opacity: .35 }, "b2", head);   // under the chin line
+      // eyes: big and glossy (the outer group places it, the inner one blinks)
+      function eye(cx, s) {
+        blurred("ellipse", { cx, cy: 112, rx: 17, ry: 13, fill: K.deep, opacity: .32 }, "b4", head);           // socket
+        const at = el("g", { transform: `translate(${cx} 116)` }, head);
+        const clip = el("clipPath", { id: id("eye" + s) }, defs);
+        el("ellipse", { cx: 0, cy: 0, rx: 12.5, ry: 11.5 }, clip);
+        const e = el("g", { class: "dg-eye" }, at);
+        el("ellipse", { cx: 0, cy: 0, rx: 12.5, ry: 11.5, fill: url("sclera") }, e);
+        const inner = el("g", { "clip-path": `url(#${uid}eye${s})` }, e);
+        el("circle", { cx: s * .6, cy: 1.2, r: 8.8, fill: url("iris") }, inner);
+        el("circle", { cx: s * .6, cy: 1.2, r: 8.8, fill: "none", stroke: "#130904", "stroke-width": 1.2 }, inner);
+        el("circle", { cx: s * .6, cy: 1.4, r: 4.3, fill: "#080402" }, inner);
+        el("path", { d: "M-13 -3.2 Q0 -10.6 13 -3.2 L13 -13 L-13 -13Z", fill: "#3a1d10", opacity: .2 }, inner);       // lid shadow
+        el("path", { d: "M-13 -4.6 Q0 -12.4 13 -4.6 L13 -13 L-13 -13Z", fill: K.base }, inner);                     // upper lid
+        el("path", { d: "M-13 -7 Q0 -13 13 -7", stroke: K.light, "stroke-width": 1.4, fill: "none", opacity: .5 }, inner);
+        el("ellipse", { cx: s * .6 - 3.2, cy: -1.6, rx: 3, ry: 2.5, fill: "#fff" }, e);                // catch-lights
+        el("circle", { cx: s * .6 + 3.4, cy: 4.6, r: 1.4, fill: "#fff", opacity: .85 }, e);
+        el("path", { d: "M-13.6 -3.6 Q0 -13.2 13.6 -3.6", stroke: HAIR.dark, "stroke-width": fig === "woman" ? 3.2 : 2.4, fill: "none", "stroke-linecap": "round" }, e);
+        if (fig === "woman") [[10.5, -7.6, 15.5, -11.4], [12.8, -5, 17.8, -7.2]].forEach(([x1, y1, x2, y2]) =>
+          el("path", { d: `M${s * x1} ${y1} Q${s * (x1 + 3.4)} ${y1 - 1.6} ${s * x2} ${y2}`, stroke: HAIR.dark, "stroke-width": 2.2, fill: "none", "stroke-linecap": "round" }, e));
+        el("path", { d: "M-10 8.6 Q0 13 10 8.6", stroke: K.deep, "stroke-width": 1.1, fill: "none", opacity: .5 }, e);
+        return e;
+      }
+      parts.eyeL = eye(140, -1); parts.eyeR = eye(180, 1);
+      // brows: thick, shaped
+      const bw = fig === "man" ? 5 : 4;
+      el("path", { d: fig === "man" ? "M126 96 Q138 89 152 94" : "M127 96 Q138 87 152 92", stroke: HAIR.base, "stroke-width": bw, fill: "none", "stroke-linecap": "round" }, head);
+      el("path", { d: fig === "man" ? "M168 94 Q182 89 194 96" : "M168 92 Q182 87 193 96", stroke: HAIR.base, "stroke-width": bw, fill: "none", "stroke-linecap": "round" }, head);
+      // nose: small and rounded, with a highlight on the tip
+      blurred("path", { d: "M156 118 Q152 130 152 136", stroke: K.deep, "stroke-width": 3, fill: "none", opacity: .35 }, "b2", head);
+      el("ellipse", { cx: 160, cy: 136, rx: 9, ry: 6, fill: K.base }, head);
+      blurred("ellipse", { cx: 160, cy: 138.5, rx: 8, ry: 3.5, fill: K.deep, opacity: .45 }, "b1", head);
+      el("ellipse", { cx: 155.5, cy: 139, rx: 2.2, ry: 1.4, fill: "#1a0c06", opacity: .65 }, head);
+      el("ellipse", { cx: 164.5, cy: 139, rx: 2.2, ry: 1.4, fill: "#1a0c06", opacity: .65 }, head);
+      blurred("ellipse", { cx: 158, cy: 133, rx: 3.4, ry: 2.2, fill: "#fff", opacity: .55 }, "b1", head);
+      // beard (man): neat and short, around the jaw and chin
+      if (fig === "man") {
+        el("path", { d: "M117 128 C118 150 136 172 160 173 C184 172 202 150 203 128 C198 146 190 152 182 154 C176 146 168 145 160 146 C152 145 144 146 138 154 C130 152 122 146 117 128Z", fill: url("hairCap"), opacity: .96 }, head);
+        el("path", { d: "M146 146 Q160 140 174 146 Q170 150 160 149 Q150 150 146 146Z", fill: HAIR.base }, head);   // moustache
+      }
+      // an open, friendly smile
+      const m = el("g", { transform: "translate(160 152)" }, head); parts.mouth = m;
+      el("path", { d: "M-15 -2 Q0 3 15 -2 Q10 8.5 0 9.2 Q-10 8.5 -15 -2Z", fill: "#4a130f" }, m);
+      el("path", { d: "M-13.5 -1.2 Q0 3.2 13.5 -1.2 L12 2.8 Q0 5.8 -12 2.8Z", fill: "#fbf7f1" }, m);
+      el("ellipse", { cx: 0, cy: 7.2, rx: 5.5, ry: 2.2, fill: "#b9483f" }, m);
+      el("path", { d: "M-17 -2.6 Q-8 -7 0 -4.4 Q8 -7 17 -2.6 Q8 -.6 0 -1.2 Q-8 -.6 -17 -2.6Z", fill: url("lip") }, m);
+      el("path", { d: "M-13.5 5 Q0 14.5 13.5 5 Q0 11 -13.5 5Z", fill: url("lipL") }, m);
+      el("ellipse", { cx: 0, cy: 10.4, rx: 5, ry: 1.3, fill: "#fff", opacity: .35 }, m);
+      el("circle", { cx: -17, cy: -2.6, r: 1.4, fill: K.deep, opacity: .7 }, m); el("circle", { cx: 17, cy: -2.6, r: 1.4, fill: K.deep, opacity: .7 }, m);
+      // hair in front / earrings
+      if (fig === "man") {
+        el("path", { d: "M112 112 C108 70 132 52 160 51 C188 52 212 70 208 112 C204 94 196 80 184 76 C176 84 144 84 136 76 C124 80 116 94 112 112Z", fill: url("hairCap") }, head);
+        blurred("path", { d: "M130 70 Q150 60 176 64", stroke: HAIR.light, "stroke-width": 3, fill: "none", opacity: .45 }, "b1", head);
+      } else {
+        if (key !== "woman_traditional") {
+          // hair pulled back smoothly over the crown
+          el("path", { d: "M112 112 C109 72 132 54 160 53 C188 54 211 72 208 112 C204 90 190 76 160 74 C130 76 116 90 112 112Z", fill: url("hairCap") }, head);
+          [[124, 84, 148, 62], [140, 72, 160, 58], [180, 72, 162, 58], [196, 84, 172, 62]].forEach(([x1, y1, x2, y2]) =>
+            el("path", { d: `M${x1} ${y1} Q${(x1 + x2) / 2} ${Math.min(y1, y2) - 2} ${x2} ${y2}`, stroke: HAIR.light, "stroke-width": 1.4, fill: "none", opacity: .5 }, head));
+        }
+        // drop earrings with a gloss
+        for (const x of [111, 209]) {
+          el("line", { x1: x, y1: 132, x2: x, y2: 142, stroke: "#d9a845", "stroke-width": 1.4 }, head);
+          el("ellipse", { cx: x, cy: 152, rx: 4.5, ry: 10, fill: "#e3b04b" }, head);
+          el("ellipse", { cx: x - 1.5, cy: 148, rx: 1.4, ry: 4, fill: "#fff", opacity: .55 }, head);
+        }
+      }
+    }
+    if (key === "woman_casual" && !robot) {
+      el("path", { d: "M113 86 Q160 50 207 86 L205 96 Q160 62 115 96Z", fill: url("band") }, head);               // coral headband at the hairline
+      el("path", { d: "M119 86 Q160 56 201 86", stroke: "#fff", "stroke-opacity": .4, "stroke-width": 1.8, fill: "none" }, head);
+    }
     if (key === "man_traditional") {
-      el("path", { d: robot ? "M128 76 Q160 60 192 76 L190 58 Q160 44 130 58Z" : "M129 90 Q160 78 191 90 L188 64 Q160 52 132 64Z", fill: L.cap }, head);
-      el("path", { d: robot ? "M129 72 Q160 61 191 72" : "M130 86 Q160 76 190 86", fill: "none", stroke: L.trim, "stroke-width": 3.5 }, head);
+      el("path", { d: robot ? "M122 72 Q160 54 198 72 L196 52 Q160 36 124 52Z" : "M116 88 Q160 70 204 88 L200 56 Q160 40 120 56Z", fill: L.cap }, head);
+      el("path", { d: robot ? "M123 68 Q160 55 197 68" : "M117 84 Q160 68 203 84", fill: "none", stroke: L.trim, "stroke-width": 4 }, head);
+      el("path", { d: robot ? "M126 56 Q160 44 194 56" : "M124 60 Q160 47 196 60", fill: "none", stroke: "#fff", "stroke-opacity": .4, "stroke-width": 3 }, head);
     } else if (key === "woman_traditional") {
-      el("path", { d: "M124 102 Q120 52 160 44 Q202 50 196 102 Q160 86 124 102Z", fill: L.wrap }, head);
-      el("path", { d: "M130 66 Q160 34 192 64 Q182 20 160 14 Q136 20 130 66Z", fill: L.wrap }, head);
-      el("path", { d: "M150 30 Q140 6 164 10 Q186 4 174 34Z", fill: L.wrap2 }, head);
-      el("path", { d: "M126 94 Q160 80 194 94", fill: "none", stroke: L.wrap2, "stroke-width": 4 }, head);
-      fold("M140 60 Q150 48 172 56", .2);
-    } else if (key === "woman_casual") {
-      el("path", { d: "M126 102 Q122 56 160 50 Q200 56 194 102 Q160 88 126 102Z", fill: L.wrap }, head);
-      el("path", { d: "M180 56 Q210 42 204 72 Q196 62 184 66Z", fill: L.wrap2 }, head);
-      el("path", { d: "M128 92 Q160 79 192 92", fill: "none", stroke: L.wrap2, "stroke-width": 3.5, "stroke-dasharray": "6 5" }, head);
+      // fanned knot first (behind), then the wrap around the head
+      [[-62, 0], [-34, 1], [-6, 0], [22, 1], [50, 0]].forEach(([a, c]) => el("path", {
+        d: "M0 0 C-14 -16 -12 -44 0 -52 C12 -44 14 -16 0 0Z", fill: c ? L.wrap2 : L.wrap,
+        transform: `translate(160 54) rotate(${a})` }, head));
+      el("path", { d: "M104 110 Q96 60 120 44 Q160 26 200 44 Q224 60 216 110 Q160 88 104 110Z", fill: L.wrap }, head);
+      el("path", { d: "M106 100 Q160 80 214 100", fill: "none", stroke: L.wrap2, "stroke-width": 5 }, head);
+      [["M116 82 Q140 60 170 56", .22], ["M150 92 Q176 70 204 70", .18]].forEach(([d, op]) => blurred("path", { d, stroke: "#000", "stroke-width": 3, fill: "none", opacity: op }, "b2", head));
+      blurred("path", { d: "M124 58 Q156 42 192 52", stroke: "#fff", "stroke-width": 5, fill: "none", opacity: .25 }, "b2", head);
     }
 
     /* arms: shoulder → elbow → wrist, each rotating about its own joint (see motion) */
@@ -289,37 +452,26 @@
       const sh = el("g", { class: "dg-arm" + side }, root);
       const sleeve = L.cloth ? url("cloth") : key === "man_casual" ? url("dye") : url("wax");
       const wide = outfit === "traditional";
-      // upper arm
-      if (wide) el("path", { d: `M${sx - 18} ${sy - 6} L${sx + 18} ${sy - 6} L${ex + 24} ${ey + 4} L${ex - 24} ${ey + 4}Z`, fill: sleeve }, sh);
-      else el("path", { d: `M${sx - 16} ${sy - 4} Q${sx} ${sy - 15} ${sx + 16} ${sy - 4} L${ex + 12} ${ey + 4} L${ex - 12} ${ey + 4}Z`, fill: sleeve }, sh);
-      if (robot) el("circle", { cx: sx, cy: sy, r: 9, fill: metalD }, sh);
+      if (wide) el("path", { d: `M${sx - 19} ${sy - 7} L${sx + 19} ${sy - 7} L${ex + 25} ${ey + 4} L${ex - 25} ${ey + 4}Z`, fill: sleeve }, sh);
+      else el("path", { d: `M${sx - 17} ${sy - 5} Q${sx} ${sy - 17} ${sx + 17} ${sy - 5} L${ex + 13} ${ey + 4} L${ex - 13} ${ey + 4}Z`, fill: sleeve }, sh);
+      if (robot) el("circle", { cx: sx, cy: sy, r: 9.5, fill: metalD }, sh);
       const fore = el("g", {}, sh);
-      if (robot) el("circle", { cx: ex, cy: ey, r: 8, fill: metalD }, fore);
-      // forearm: skin, then the sleeve over it
-      el("path", { d: `M${ex - 9} ${ey} L${ex + 9} ${ey} L${hx + 7} ${hy} L${hx - 7} ${hy}Z`, fill: limbFill }, fore);
+      if (robot) el("circle", { cx: ex, cy: ey, r: 8.5, fill: metalD }, fore);
+      el("path", { d: `M${ex - 10} ${ey} L${ex + 10} ${ey} L${hx + 8} ${hy} L${hx - 8} ${hy}Z`, fill: limbFill }, fore);
       if (outfit === "official") {
-        el("ellipse", { cx: ex, cy: ey + 2, rx: 12, ry: 7, fill: sleeve }, fore);
-        el("path", { d: `M${ex - 12} ${ey} L${ex + 12} ${ey} L${hx + 10} ${hy - 9} L${hx - 10} ${hy - 9}Z`, fill: sleeve }, fore);
-        el("rect", { x: hx - 9, y: hy - 10, width: 18, height: 6, rx: 2, fill: fig === "man" ? "#f3f5f8" : L.blouse }, fore);   // shirt cuff
+        el("ellipse", { cx: ex, cy: ey + 2, rx: 13, ry: 7.5, fill: sleeve }, fore);
+        el("path", { d: `M${ex - 13} ${ey} L${ex + 13} ${ey} L${hx + 11} ${hy - 9} L${hx - 11} ${hy - 9}Z`, fill: sleeve }, fore);
+        el("rect", { x: hx - 10, y: hy - 10, width: 20, height: 6.5, rx: 2.5, fill: fig === "man" ? "#f5f7fa" : L.blouse }, fore);
       } else if (wide) {
-        el("path", { d: `M${ex - 24} ${ey + 2} L${ex + 24} ${ey + 2} L${hx + 17} ${hy - 12} L${hx - 17} ${hy - 12}Z`, fill: sleeve }, fore);
-        el("path", { d: `M${hx - 17} ${hy - 12} L${hx + 17} ${hy - 12}`, stroke: L.trim, "stroke-width": 3 }, fore);
+        el("path", { d: `M${ex - 25} ${ey + 2} L${ex + 25} ${ey + 2} L${hx + 18} ${hy - 12} L${hx - 18} ${hy - 12}Z`, fill: sleeve }, fore);
+        el("path", { d: `M${hx - 18} ${hy - 12} L${hx + 18} ${hy - 12}`, stroke: L.trim, "stroke-width": 3.2 }, fore);
       } else if (key === "man_casual") {
-        el("path", { d: `M${ex - 13} ${ey} L${ex + 13} ${ey} L${ex + 11} ${ey + 34} L${ex - 11} ${ey + 34}Z`, fill: sleeve }, fore);
+        el("path", { d: `M${ex - 14} ${ey} L${ex + 14} ${ey} L${ex + 12} ${ey + 34} L${ex - 12} ${ey + 34}Z`, fill: sleeve }, fore);
       }
-      // hand: palm, four fingers, a thumb on the inner side
+      // hand: a jointed rig (see makeHand) — fingers bend at every joint
       const hand = el("g", {}, fore);
-      if (robot) {
-        el("rect", { x: hx - 10, y: hy - 3, width: 20, height: 20, rx: 7, fill: metal }, hand);
-        [-7, -1, 5].forEach(dx => el("rect", { x: hx + dx - 2, y: hy + 15, width: 5, height: 11, rx: 2.5, fill: metalD }, hand));
-      } else {
-        el("path", { d: `M${hx - 9} ${hy - 2} Q${hx - 10.5} ${hy + 12} ${hx - 8} ${hy + 19} L${hx + 8} ${hy + 19} Q${hx + 10.5} ${hy + 12} ${hx + 9} ${hy - 2}Z`, fill: url("limb") }, hand);
-        [[-6.6, 11], [-2.2, 13.5], [2.2, 13], [6.4, 10.5]].forEach(([dx, len]) =>
-          el("rect", { x: hx + dx - 2.2, y: hy + 16, width: 4.4, height: len, rx: 2.2, fill: skin }, hand));
-        el("path", { d: `M${hx - s * 8.5} ${hy + 3} Q${hx - s * 14} ${hy + 9} ${hx - s * 11} ${hy + 17}`, stroke: skin, "stroke-width": 4.6, fill: "none", "stroke-linecap": "round" }, hand);
-        el("path", { d: `M${hx - 7} ${hy + 16.5} L${hx + 7} ${hy + 16.5}`, stroke: skinD, "stroke-width": .9, opacity: .55 }, hand);
-      }
-      return { sh, fore, hand, sx, sy, ex, ey, hx, hy };
+      const hr = makeHand(hand, hx, hy, s, robot ? { base: "#cdd6e2", light: "#f4f7fb", dark: "#6b7788", palm: "#dfe6ee", nail: "#ffffff" } : K, robot);
+      return { sh, fore, hand, hr, sx, sy, ex, ey, hx, hy };
     }
     parts.L = arm("L");
     parts.R = arm("R");
@@ -334,8 +486,8 @@
   // the shoulder. `o*` = the OUTER arm (away from the speech bubble), `i*` = the INNER arm
   // (toward the room / screen centre). w = wrist tilt. head > 0 tilts toward the outer side.
   const LU = 86, LF = 82;                                   // upper arm, forearm (rig units)
-  const REST = { ox: 12, oy: 160, ow: 0, ix: 12, iy: 160, iw: 0, head: 0, y: 0 };
-  const P = (o) => Object.assign({}, REST, o);
+  const REST = Object.assign({ ox: 12, oy: 160, ow: 0, ix: 12, iy: 160, iw: 0, head: 0, y: 0 }, H("oh", "relax"), H("ih", "relax"));
+  const P = (o, ...hands) => Object.assign({}, REST, ...hands, o);
 
   function solve(tx, ty) {
     // returns [upper, fore] absolute angles in degrees, 0 = hanging down, + = outward
@@ -351,22 +503,25 @@
   }
 
   function gestures() {
+    const WAVE = H("oh", "wave"), OPEN2 = [H("oh", "open"), H("ih", "open")], FLAT = H("oh", "flat");
     return {
-      // big friendly wave with the outer hand, the hand rocking from the elbow
-      wave: [[0, REST], [450, P({ ox: 52, oy: -112, ow: 0, head: 6 })],
-             [700, P({ ox: 66, oy: -108, ow: 24, head: 6 })], [950, P({ ox: 40, oy: -114, ow: -24, head: 6 })],
-             [1200, P({ ox: 66, oy: -108, ow: 24, head: 6 })], [1450, P({ ox: 40, oy: -114, ow: -24, head: 6 })],
-             [1700, P({ ox: 60, oy: -110, ow: 16, head: 6 })], [2300, REST]],
-      // arms open wide: "you are welcome here"
-      open: [[0, REST], [650, P({ ox: 128, oy: -22, ow: -18, ix: 128, iy: -22, iw: -18, y: -4 })],
-             [1600, P({ ox: 134, oy: -30, ow: -22, ix: 134, iy: -30, iw: -22, y: -5 })], [2300, REST]],
-      // sign WELCOME: flat hand, palm up, out at the side → sweeps in to the body. Twice.
-      sign: [[0, REST], [450, P({ ox: 108, oy: 84, ow: -28, head: -3 })], [1150, P({ ox: -28, oy: 72, ow: -28, head: -6 })],
-             [1350, P({ ox: 108, oy: 84, ow: -28, head: -3 })], [2050, P({ ox: -28, oy: 72, ow: -28, head: -6 })], [2750, REST]],
-      // hand on the heart with a small bow of the head
-      heart: [[0, REST], [600, P({ ix: -36, iy: 58, iw: 12, head: -10, y: 5 })], [1700, P({ ix: -36, iy: 58, iw: 12, head: -12, y: 7 })], [2400, REST]],
-      // "this way": the inner arm points toward the room
-      point: [[0, REST], [600, P({ ix: 162, iy: -8, iw: -6, head: -12 })], [1700, P({ ix: 164, iy: -14, iw: -8, head: -14 })], [2400, REST]],
+      // big friendly wave with the outer hand: palm out, fingers spread, a soft ripple through them
+      wave: [[0, REST], [450, P({ ox: 52, oy: -112, ow: 0, head: 6 }, WAVE)],
+             [700, P({ ox: 66, oy: -108, ow: 24, head: 6 }, WAVE)], [950, P({ ox: 40, oy: -114, ow: -24, head: 6 }, WAVE)],
+             [1200, P({ ox: 66, oy: -108, ow: 24, head: 6 }, WAVE)], [1450, P({ ox: 40, oy: -114, ow: -24, head: 6 }, WAVE)],
+             [1700, P({ ox: 60, oy: -110, ow: 16, head: 6 }, WAVE)], [2300, REST]],
+      // arms open wide, palms open: "you are welcome here"
+      open: [[0, REST], [650, P({ ox: 128, oy: -22, ow: -18, ix: 128, iy: -22, iw: -18, y: -4 }, ...OPEN2)],
+             [1600, P({ ox: 134, oy: -30, ow: -22, ix: 134, iy: -30, iw: -22, y: -5 }, ...OPEN2)], [2300, REST]],
+      // sign WELCOME: flat hand, fingers together, palm up, out at the side → sweeps in to the body. Twice.
+      sign: [[0, REST], [450, P({ ox: 108, oy: 84, ow: -28, head: -3 }, FLAT)], [1150, P({ ox: -28, oy: 72, ow: -28, head: -6 }, FLAT)],
+             [1350, P({ ox: 108, oy: 84, ow: -28, head: -3 }, FLAT)], [2050, P({ ox: -28, oy: 72, ow: -28, head: -6 }, FLAT)], [2750, REST]],
+      // hand on the heart, fingers gently curved, with a small bow of the head
+      heart: [[0, REST], [600, P({ ix: -36, iy: 58, iw: 12, head: -10, y: 5 }, H("ih", "heart"))],
+              [1700, P({ ix: -36, iy: 58, iw: 12, head: -12, y: 7 }, H("ih", "heart"))], [2400, REST]],
+      // "this way": index finger out, the others curled, thumb tucked
+      point: [[0, REST], [600, P({ ix: 162, iy: -8, iw: -6, head: -12 }, H("ih", "point"))],
+              [1700, P({ ix: 164, iy: -14, iw: -8, head: -14 }, H("ih", "point"))], [2400, REST]],
       nod: [[0, REST], [300, P({ head: -9, y: 2 })], [600, P({ head: 2 })], [900, P({ head: -8, y: 2 })], [1300, REST]],
     };
   }
@@ -422,6 +577,9 @@
         a.sh.setAttribute("transform", `rotate(${-s * u} ${a.sx} ${a.sy})`);
         a.fore.setAttribute("transform", `rotate(${-s * (f - u)} ${a.ex} ${a.ey})`);
         a.hand.setAttribute("transform", `rotate(${-s * w} ${a.hx} ${a.hy})`);
+        const pre = isOuter ? "oh" : "ih";
+        a.hr.set({ c: [0, 1, 2, 3].map(n => p[pre + "c" + n]), s: [0, 1, 2, 3].map(n => p[pre + "s" + n]),
+                   ta: p[pre + "ta"], tc: p[pre + "tc"], b: p[pre + "b"], fl: p[pre + "fl"] }, now);
       }
     }
     function say(name) {

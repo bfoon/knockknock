@@ -72,6 +72,9 @@ MIDDLEWARE = [
     # Buckets traffic by URL namespace so the admin can answer "which part
     # of the platform gets used?". Set SITE_USAGE_TRACKING=False to disable.
     "accounts.middleware.SiteUsageMiddleware",
+    # Kora, Kura's AI assistant: adds the robot to owner-facing Kura pages
+    # (never the public runner or share links). KURA_AGENT_ENABLED=False hides it.
+    "kura.agent_middleware.KuraAgentMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]

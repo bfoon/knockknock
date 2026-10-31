@@ -2641,6 +2641,29 @@ renderZones();
 renderIndicators();
 renderLookups();
 renderAll();
+
+/* ── Public hook for Kora, Kura's AI assistant ──────────────────────
+   Kora drafts questions in the chat; this lets it drop them straight into
+   the form you have open (through the same prepareQuestions path as Excel
+   import) instead of saving behind the builder's back and racing autosave.
+   snapshot() gives Kora the live, possibly unsaved form to review. */
+window.KuraBuilder = {
+  version: 1,
+  snapshot(){ return JSON.parse(JSON.stringify({title: $("#title-input").value, schema})); },
+  addQuestions(list){ return insertQuestions(Array.isArray(list) ? list : []); },
+  replaceQuestions(list, opts){
+    const cleaned = prepareQuestions(Array.isArray(list) ? list : [], new Set());
+    if(!cleaned.length) return 0;
+    schema.questions = cleaned;
+    if(opts && opts.title) $("#title-input").value = String(opts.title).slice(0,140);
+    if(opts && opts.description) importedDescription = String(opts.description).slice(0,500);
+    sel = {i:0, ci:null};
+    markDirty(); renderAll();
+    return cleaned.length;
+  },
+  saveNow(){ return save(); }
+};
+document.dispatchEvent(new CustomEvent("kura:builder-ready"));
 })();
 </script>
 </body>

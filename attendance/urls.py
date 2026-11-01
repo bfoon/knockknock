@@ -2,6 +2,9 @@ from django.urls import path
 from . import views
 from . import venue_views
 from . import feedback_views
+# Importing badge_views also registers the badge models (badge_models.py)
+# with Django — same mechanism feedback_views uses for feedback_models.
+from . import badge_views
 
 app_name = "attendance"
 
@@ -31,6 +34,18 @@ urlpatterns = [
     path("<int:pk>/certificates/preview/",  views.certificate_preview,  name="certificate_preview"),
     path("<int:pk>/certificates/bulk/",     views.certificates_bulk,    name="certificates_bulk"),
     path("<int:pk>/certificates/<int:reg_id>/", views.certificate_download, name="certificate_download"),
+
+    # Badges — designer, uploads, "my templates", print sheet + PDF.
+    path("<int:pk>/badges/",                        badge_views.badge_designer,         name="badge_designer"),
+    path("<int:pk>/badges/save/",                   badge_views.badge_save,             name="badge_save"),
+    path("<int:pk>/badges/upload/",                 badge_views.badge_upload,           name="badge_upload"),
+    path("<int:pk>/badges/background/clear/",       badge_views.badge_background_clear, name="badge_background_clear"),
+    path("<int:pk>/badges/assets/<int:asset_id>/delete/", badge_views.badge_asset_delete, name="badge_asset_delete"),
+    path("<int:pk>/badges/library/save/",           badge_views.badge_library_save,     name="badge_library_save"),
+    path("<int:pk>/badges/library/<int:tid>/apply/",  badge_views.badge_library_apply,  name="badge_library_apply"),
+    path("<int:pk>/badges/library/<int:tid>/delete/", badge_views.badge_library_delete, name="badge_library_delete"),
+    path("<int:pk>/badges/print/",                  badge_views.badge_print,            name="badge_print"),
+    path("<int:pk>/badges/badges.pdf",              badge_views.badge_pdf,              name="badge_pdf"),
 
     # Agenda
     path("<int:pk>/agenda/",                       views.agenda_editor,       name="agenda_editor"),

@@ -1,0 +1,176 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Badges · {{ event.title }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link id="kb-fonts" rel="stylesheet" href="">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<style id="kb-page-size">@page { size: A4; margin: 0; }</style>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { background: #2a2a3a; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #f5f6ff;
+         -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  .bp-bar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+            padding: .7rem 1rem; background: #12121f; border-bottom: 1px solid rgba(255,255,255,.1); }
+  .bp-bar a, .bp-bar button { display: inline-flex; align-items: center; gap: .4rem; border-radius: 10px; padding: .5rem .9rem;
+            font-size: .9rem; text-decoration: none; border: 1px solid rgba(255,255,255,.14); color: #d6d7ea; background: transparent; cursor: pointer; }
+  .bp-bar a:hover, .bp-bar button:hover { background: rgba(255,255,255,.06); color: #fff; }
+  .bp-bar .bp-primary { background: linear-gradient(135deg,#7c3aed,#db2777); border-color: transparent; color: #fff; }
+  .bp-bar .bp-info { flex: 1; font-size: .88rem; color: #a0a0b8; min-width: 220px; }
+  .bp-bar .bp-info b { color: #fff; }
+  .bp-tip { font-size: .8rem; color: #fbbf24; padding: .4rem 1rem; background: rgba(251,191,36,.08); border-bottom: 1px solid rgba(251,191,36,.2); }
+
+  .bp-sheets { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 24px 12px 60px; }
+  .bp-sheet { position: relative; background: #fff; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,.45); flex: 0 0 auto; }
+  .bp-slot { position: absolute; }
+  .bp-mark { position: absolute; background: #000; }
+  .bp-empty { color: #a0a0b8; padding: 3rem 1rem; text-align: center; }
+  .bp-pageno { position: absolute; right: 3mm; bottom: 1.5mm; font: 6pt/1 system-ui; color: #9ca3af; }
+
+  @media print {
+    body { background: #fff; }
+    .bp-bar, .bp-tip { display: none !important; }
+    .bp-sheets { display: block; padding: 0; gap: 0; }
+    .bp-sheet { box-shadow: none; break-after: page; page-break-after: always; margin: 0; }
+    .bp-sheet:last-child { break-after: auto; page-break-after: auto; }
+  }
+  {% if is_pdf %}.bp-bar, .bp-tip { display: none !important; } body { background: #fff; } .bp-sheets { display:block; padding:0; } .bp-sheet { box-shadow:none; }{% endif %}
+</style>
+</head>
+<body>
+{{ boot|json_script:"kb-boot" }}
+
+<div class="bp-bar">
+  <a href="{% url 'attendance:badge_designer' event.pk %}"><i class="bi bi-arrow-left"></i> Designer</a>
+  <span class="bp-info" id="bp-info">Preparing badges…</span>
+  <a href="{% url 'attendance:badge_designer' event.pk %}?print=1"><i class="bi bi-sliders"></i> Change settings</a>
+  <a href="{% url 'attendance:badge_pdf' event.pk %}?{{ query }}"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
+  <button type="button" class="bp-primary" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
+</div>
+<div class="bp-tip">In the print dialog choose <b>Scale: 100% / Actual size</b>, <b>Margins: None</b> and tick <b>Background graphics</b> — otherwise badges shrink or lose their colours.</div>
+
+<div class="bp-sheets" id="bp-sheets"></div>
+
+<script src="{% static 'attendance/badges/vendor/qrcode-generator.js' %}"></script>
+<script src="{% static 'attendance/badges/badge_render.js' %}?v=1"></script>
+<script src="{% static 'attendance/badges/badge_templates.js' %}?v=1"></script>
+<script>
+(function () {
+  "use strict";
+  const K = window.KKBadge, TPL = window.KKBadgeTemplates;
+  const boot = JSON.parse(document.getElementById("kb-boot").textContent);
+  document.getElementById("kb-fonts").href = K.googleFontsHref();
+
+  const fallback = (TPL.byKey(boot.templateKey) || TPL.first()).layout;
+  const L = K.normalize(boot.layout, fallback);
+  const o = boot.opts;
+  const g = K.sheetGrid(o.paper, o.orient, o.margin, o.gap, L.w, L.h);
+  const people = boot.people || [];
+  const ctx = { event: boot.event, assets: boot.assetMap || {} };
+
+  document.getElementById("kb-page-size").textContent =
+    `@page { size: ${g.pw}mm ${g.ph}mm; margin: 0; }`;
+
+  const sheets = document.getElementById("bp-sheets");
+  const pages = Math.ceil(people.length / g.per);
+  const info = document.getElementById("bp-info");
+  const paperLabel = g.single ? "one per page" : `${(K.PAPERS[o.paper] || {}).label || o.paper} · ${g.cols} × ${g.rows} per sheet`;
+  info.innerHTML = "";
+  const b = t => { const x = document.createElement("b"); x.textContent = t; return x; };
+  info.append(b(`${people.length} badge${people.length === 1 ? "" : "s"}`), ` · ${paperLabel} · `,
+              b(`${pages} page${pages === 1 ? "" : "s"}`), ` · badge ${L.w} × ${L.h} mm`);
+  if (g.tooBig) info.append(" · badge is larger than the paper, printing one per page");
+
+  if (!people.length) {
+    const e = document.createElement("div");
+    e.className = "bp-empty";
+    e.textContent = "No attendees match these settings. Go back to the designer and choose who to print, or add blank badges.";
+    sheets.appendChild(e);
+  }
+
+  const MARK = 4, THICK = 0.2; // crop-mark length / thickness in mm
+  function mark(sheet, x, y, w, h) {
+    const m = document.createElement("div");
+    m.className = "bp-mark";
+    m.style.cssText = `left:${x}mm;top:${y}mm;width:${w}mm;height:${h}mm`;
+    sheet.appendChild(m);
+  }
+  function cropMarks(sheet, used) {
+    if (!o.crop || g.single) return;
+    const cols = Math.min(g.cols, used), rows = Math.ceil(used / g.cols);
+    const xs = new Set(), ys = new Set();
+    for (let c = 0; c < cols; c++) { const x = g.ox + c * (L.w + o.gap); xs.add(+x.toFixed(3)); xs.add(+(x + L.w).toFixed(3)); }
+    for (let r = 0; r < rows; r++) { const y = g.oy + r * (L.h + o.gap); ys.add(+y.toFixed(3)); ys.add(+(y + L.h).toFixed(3)); }
+    const gridTop = g.oy, gridBottom = g.oy + rows * L.h + (rows - 1) * o.gap;
+    const gridLeft = g.ox, gridRight = g.ox + cols * L.w + (cols - 1) * o.gap;
+    const gapLen = Math.min(MARK, Math.max(0, o.gap / 2 - 0.5));
+    xs.forEach(x => {
+      const len = Math.min(MARK, gridTop - 1);
+      if (len > 0.5) { mark(sheet, x - THICK / 2, gridTop - len - 1, THICK, len); mark(sheet, x - THICK / 2, gridBottom + 1, THICK, len); }
+    });
+    ys.forEach(y => {
+      const len = Math.min(MARK, gridLeft - 1);
+      if (len > 0.5) { mark(sheet, gridLeft - len - 1, y - THICK / 2, len, THICK); mark(sheet, gridRight + 1, y - THICK / 2, len, THICK); }
+    });
+    // Little ticks inside the gaps too, so each badge has its own corners.
+    if (gapLen > 0.6) {
+      for (let i = 0; i < used; i++) {
+        const c = i % g.cols, r = Math.floor(i / g.cols);
+        const x = g.ox + c * (L.w + o.gap), y = g.oy + r * (L.h + o.gap);
+        [[x, y], [x + L.w, y], [x, y + L.h], [x + L.w, y + L.h]].forEach(([cx, cy], k) => {
+          const right = k % 2 === 1, down = k > 1;
+          mark(sheet, right ? cx + 0.5 : cx - 0.5 - gapLen, cy - THICK / 2, gapLen, THICK);
+          mark(sheet, cx - THICK / 2, down ? cy + 0.5 : cy - 0.5 - gapLen, THICK, gapLen);
+        });
+      }
+    }
+  }
+
+  for (let p = 0; p < pages; p++) {
+    const sheet = document.createElement("div");
+    sheet.className = "bp-sheet";
+    sheet.style.width = g.pw + "mm";
+    sheet.style.height = g.ph + "mm";
+    const slice = people.slice(p * g.per, (p + 1) * g.per);
+    slice.forEach((person, i) => {
+      const c = i % g.cols, r = Math.floor(i / g.cols);
+      const slot = document.createElement("div");
+      slot.className = "bp-slot";
+      slot.style.left = (g.ox + c * (L.w + o.gap)) + "mm";
+      slot.style.top = (g.oy + r * (L.h + o.gap)) + "mm";
+      slot.appendChild(K.render(L, person, ctx));
+      sheet.appendChild(slot);
+    });
+    cropMarks(sheet, slice.length);
+    if (!g.single && pages > 1 && g.oy > 4) {
+      const n = document.createElement("div");
+      n.className = "bp-pageno";
+      n.textContent = `${p + 1} / ${pages}`;
+      sheet.appendChild(n);
+    }
+    sheets.appendChild(sheet);
+  }
+
+  // Ready = fonts loaded, text fitted, images decoded. The PDF renderer
+  // waits for body[data-render-ready=1] before capturing.
+  function imagesReady() {
+    const imgs = Array.from(document.images);
+    return Promise.all(imgs.map(im => im.complete ? Promise.resolve() :
+      new Promise(res => { im.addEventListener("load", res, { once: true }); im.addEventListener("error", res, { once: true }); })));
+  }
+  const fontsReady = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+  const timeout = new Promise(res => setTimeout(res, 8000));
+  K.fitText(sheets);
+  Promise.race([Promise.all([fontsReady, imagesReady()]), timeout]).then(() => {
+    K.fitText(sheets);
+    document.body.dataset.renderReady = "1";
+  });
+})();
+</script>
+</body>
+</html>

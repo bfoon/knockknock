@@ -34,6 +34,9 @@
     <a href="{% url 'attendance:feedback_editor' event.pk %}" class="kk-btn kk-btn-ghost">
       <i class="bi bi-chat-square-text"></i> Feedback
     </a>
+    <a href="{% url 'attendance:badge_designer' event.pk %}" class="kk-btn kk-btn-ghost">
+      <i class="bi bi-person-badge"></i> Badges
+    </a>
     {% if event.generate_certificates %}
       <a href="{% url 'attendance:certificate_picker' event.pk %}" class="kk-btn kk-btn-ghost">
         <i class="bi bi-award"></i> Certificate design
@@ -315,6 +318,11 @@
           </div>
           <form method="post" action="{% url 'attendance:registration_action' event.pk r.pk %}" class="d-flex gap-1">
             {% csrf_token %}
+            <a href="{% url 'attendance:badge_print' event.pk %}?ids={{ r.pk }}"
+               class="kk-btn kk-btn-ghost btn-sm" target="_blank" rel="noopener"
+               title="Print this person's badge">
+              <i class="bi bi-person-badge"></i>
+            </a>
             {% if r.status == "accepted" %}
               <button name="action" value="check_in" class="kk-btn kk-btn-primary btn-sm"
                       title="Organizer-driven check-in bypasses geofence">
@@ -635,6 +643,19 @@
           <i class="bi bi-send"></i> Send
         </button>
       </form>
+    </div>
+
+<!--    {# Name badges — designer + one-click print of everyone accepted #}-->
+    <div class="kk-side-card mb-4">
+      <h3 class="kk-side-card-title"><i class="bi bi-person-badge"></i> Name badges</h3>
+      <p class="kk-text-dim small">Lanyard badges with each attendee's personal check-in QR. Pick a template, add your background photo, print.</p>
+      <a href="{% url 'attendance:badge_designer' event.pk %}" class="kk-btn kk-btn-ghost w-100 mb-2">
+        <i class="bi bi-palette"></i> Design badges
+      </a>
+      <a href="{% url 'attendance:badge_print' event.pk %}" target="_blank" rel="noopener"
+         class="kk-btn kk-btn-primary w-100">
+        <i class="bi bi-printer"></i> Print all accepted ({{ accepted_count }})
+      </a>
     </div>
 
     {% if event.generate_certificates %}

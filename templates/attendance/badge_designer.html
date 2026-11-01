@@ -1,0 +1,1367 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Badges · {{ event.title }}{% endblock %}
+{% block main_class %}kk-main kk-main-badges{% endblock %}
+
+{% block head_extra %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link id="kb-fonts" rel="stylesheet" href="">
+<style>
+.kk-main-badges { max-width: none; padding: 1rem 1.25rem 2rem; }
+
+.kb-top { display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; margin-bottom:.9rem; }
+.kb-top h1 { font-size:1.5rem; margin:0; }
+.kb-top .kb-save { font-size:.8rem; color:var(--kk-text-dim); min-width:7.5rem; text-align:right; }
+.kb-top .kb-save.is-dirty { color: var(--kk-warn); }
+.kb-top .kb-save.is-err { color: var(--kk-danger); }
+
+.kb-shell { display:grid; grid-template-columns: 330px minmax(0,1fr) 310px; gap: .9rem; align-items:start; }
+@media (max-width: 1280px) { .kb-shell { grid-template-columns: 300px minmax(0,1fr); } .kb-right { grid-column: 1 / -1; } }
+@media (max-width: 860px)  { .kb-shell { grid-template-columns: 1fr; } }
+
+.kb-panel { background: var(--kk-surface); border:1px solid var(--kk-border); border-radius: var(--kk-radius); }
+.kb-left, .kb-right { max-height: calc(100vh - 150px); overflow:auto; position: sticky; top: 76px; }
+@media (max-width: 860px) { .kb-left, .kb-right { position: static; max-height:none; } }
+
+.kb-tabs { display:flex; gap:2px; padding:.4rem; border-bottom:1px solid var(--kk-border); position:sticky; top:0; background:var(--kk-surface); z-index:3; flex-wrap:wrap; }
+.kb-tab { flex:1; border:0; background:transparent; color:var(--kk-text-dim); font-size:.78rem; padding:.45rem .3rem; border-radius:9px; display:flex; flex-direction:column; align-items:center; gap:2px; }
+.kb-tab i { font-size:1.05rem; }
+.kb-tab.is-on { background: rgba(124,58,237,.18); color: var(--kk-text); }
+.kb-pane { display:none; padding:.85rem; }
+.kb-pane.is-on { display:block; }
+
+.kb-h { font-size:.72rem; letter-spacing:.12em; text-transform:uppercase; color:var(--kk-text-dim); margin:.9rem 0 .45rem; font-weight:700; }
+.kb-h:first-child { margin-top:0; }
+.kb-chips { display:flex; flex-wrap:wrap; gap:.35rem; }
+.kb-chip { border:1px solid var(--kk-border); background:transparent; color:var(--kk-text-dim); border-radius:999px; font-size:.76rem; padding:.22rem .6rem; }
+.kb-chip:hover { color:var(--kk-text); border-color: rgba(255,255,255,.25); }
+.kb-chip.is-on { background: var(--kk-accent); border-color: var(--kk-accent); color:#fff; }
+
+.kb-gallery { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:.6rem; margin-top:.7rem; }
+.kb-thumb { border:1px solid var(--kk-border); background: rgba(255,255,255,.03); border-radius:12px; padding:.45rem .45rem .35rem; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:.3rem; transition: border-color .15s, transform .15s; }
+.kb-thumb:hover { border-color: rgba(124,58,237,.6); transform: translateY(-1px); }
+.kb-thumb.is-on { border-color: var(--kk-accent); box-shadow: 0 0 0 2px rgba(124,58,237,.35); }
+.kb-thumb-art { height:150px; display:flex; align-items:center; justify-content:center; pointer-events:none; }
+.kb-thumb-art .kb-badge { box-shadow: 0 6px 18px rgba(0,0,0,.35); border-radius:4px; }
+.kb-thumb-name { font-size:.75rem; color:var(--kk-text); text-align:center; line-height:1.2; }
+.kb-thumb-tag { font-size:.62rem; color: var(--kk-text-dim); }
+
+.kb-addgrid { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:.4rem; }
+.kb-add { border:1px solid var(--kk-border); background: rgba(255,255,255,.03); color: var(--kk-text); border-radius:10px; padding:.5rem .55rem; font-size:.8rem; text-align:left; display:flex; gap:.45rem; align-items:center; }
+.kb-add:hover { border-color: rgba(124,58,237,.6); background: rgba(124,58,237,.1); }
+.kb-add i { color: var(--kk-text-dim); }
+.kb-add small { color: var(--kk-text-dim); display:block; font-size:.68rem; }
+
+.kb-assets { display:grid; grid-template-columns: repeat(3, 1fr); gap:.4rem; margin-top:.5rem; }
+.kb-asset { position:relative; border:1px solid var(--kk-border); border-radius:8px; aspect-ratio:1; background: repeating-conic-gradient(#2a2a3e 0 25%, #1f1f30 0 50%) 0 0/12px 12px; cursor:pointer; overflow:hidden; }
+.kb-asset img { width:100%; height:100%; object-fit:contain; }
+.kb-asset button { position:absolute; top:2px; right:2px; border:0; background:rgba(0,0,0,.6); color:#fff; border-radius:6px; font-size:.7rem; padding:0 .3rem; }
+
+/* centre stage */
+.kb-center { min-width:0; }
+.kb-toolbar { display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; padding:.5rem .6rem; margin-bottom:.6rem; }
+.kb-toolbar .form-select, .kb-toolbar .form-control { font-size:.8rem; padding:.3rem .5rem; height:auto; width:auto; }
+.kb-toolbar .kb-sep { width:1px; height:22px; background:var(--kk-border); margin:0 .2rem; }
+.kb-ibtn { border:1px solid var(--kk-border); background:transparent; color:var(--kk-text-dim); border-radius:8px; padding:.28rem .5rem; font-size:.85rem; line-height:1; }
+.kb-ibtn:hover { color:var(--kk-text); background: rgba(255,255,255,.05); }
+.kb-ibtn.is-on { color:#fff; background: rgba(124,58,237,.35); border-color: rgba(124,58,237,.6); }
+.kb-ibtn:disabled { opacity:.35; }
+
+.kb-stage { position:relative; display:flex; align-items:center; justify-content:center; min-height: calc(100vh - 250px); padding: 2.2rem 1rem;
+  background: radial-gradient(circle at 1px 1px, rgba(255,255,255,.07) 1px, transparent 0) 0 0/18px 18px, #0d0d1a; border-radius: var(--kk-radius); overflow:auto; }
+.kb-stage-inner { position:relative; flex: 0 0 auto; }
+.kb-stage-inner .kb-badge { box-shadow: 0 18px 50px rgba(0,0,0,.55); border-radius:3px; }
+.kb-stage-inner .kb-el { cursor: move; }
+.kb-stage-inner .kb-el.is-locked { cursor: default; }
+.kb-stage-inner .kb-placeholder .kb-tx { opacity:.38; font-style: italic; }
+.kb-img-empty { background: repeating-linear-gradient(45deg, rgba(124,58,237,.18) 0 6px, rgba(124,58,237,.08) 6px 12px) !important; outline: 1px dashed rgba(124,58,237,.6); }
+.kb-img-ph { width:100%; height:100%; display:flex; align-items:center; justify-content:center; font: 600 3cqmin/1 system-ui; color: rgba(124,58,237,.9); text-transform: uppercase; letter-spacing:.1em; }
+.kb-grid-on .kb-badge::after { content:""; position:absolute; inset:0; pointer-events:none; z-index:9998;
+  background: linear-gradient(rgba(34,211,238,.18) 1px, transparent 1px) 0 0/10% 10%, linear-gradient(90deg, rgba(34,211,238,.18) 1px, transparent 1px) 0 0/10% 10%; }
+
+.kb-sel { position:absolute; border:1.5px solid #22d3ee; pointer-events:none; z-index:9999; box-shadow: 0 0 0 1px rgba(0,0,0,.35); }
+.kb-sel.is-locked { border-style: dashed; border-color:#fbbf24; }
+.kb-h-dot { position:absolute; width:11px; height:11px; background:#fff; border:2px solid #22d3ee; border-radius:3px; pointer-events:auto; transform: translate(-50%,-50%); }
+.kb-sel.is-locked .kb-h-dot { display:none; }
+.kb-hover { position:absolute; border:1px dashed rgba(34,211,238,.6); pointer-events:none; z-index:9997; }
+.kb-guide { position:absolute; background:#f472b6; pointer-events:none; z-index:9998; display:none; }
+.kb-guide.v { width:1px; top:0; bottom:0; }
+.kb-guide.h { height:1px; left:0; right:0; }
+.kb-tag { position:absolute; left:0; top:-22px; font: 600 11px/1 system-ui; background:#22d3ee; color:#05202a; padding:4px 6px; border-radius:4px; white-space:nowrap; }
+
+.kb-hint { font-size:.75rem; color: var(--kk-text-dim); text-align:center; margin-top:.5rem; }
+
+/* inspector */
+.kb-insp { padding:.85rem; }
+.kb-insp-head { display:flex; align-items:center; justify-content:space-between; gap:.5rem; margin-bottom:.6rem; }
+.kb-insp-head h3 { font-size:1rem; margin:0; display:flex; align-items:center; gap:.45rem; }
+.kb-row { display:grid; grid-template-columns: 1fr 1fr; gap:.4rem; margin-bottom:.45rem; }
+.kb-row.c3 { grid-template-columns: repeat(3, 1fr); }
+.kb-row.c4 { grid-template-columns: repeat(4, 1fr); }
+.kb-row.c1 { grid-template-columns: 1fr; }
+.kb-f { display:flex; flex-direction:column; gap:.18rem; min-width:0; }
+.kb-f > span { font-size:.68rem; color: var(--kk-text-dim); text-transform: uppercase; letter-spacing:.06em; }
+.kb-f input, .kb-f select, .kb-f textarea { font-size:.82rem; padding:.3rem .45rem; min-width:0; }
+.kb-f textarea { resize: vertical; min-height: 60px; font-family: var(--kk-font-mono); }
+.kb-f input[type=range] { padding:0; }
+.kb-check { display:flex; align-items:center; gap:.4rem; font-size:.8rem; color: var(--kk-text); margin:.2rem 0; cursor:pointer; }
+.kb-color { display:flex; gap:.3rem; align-items:center; }
+.kb-color input[type=color] { width:34px; height:30px; padding:1px; border-radius:7px; border:1px solid var(--kk-border); background: transparent; flex:0 0 auto; }
+.kb-color input[type=text] { flex:1; min-width:0; }
+.kb-color .kb-mini { flex:0 0 auto; font-size:.66rem; padding:.25rem .35rem; border-radius:6px; border:1px solid var(--kk-border); background:transparent; color: var(--kk-text-dim); }
+.kb-color .kb-mini.is-on { background: rgba(124,58,237,.35); color:#fff; }
+.kb-seg { display:flex; border:1px solid var(--kk-border); border-radius:8px; overflow:hidden; }
+.kb-seg button { flex:1; border:0; background:transparent; color: var(--kk-text-dim); padding:.3rem 0; font-size:.85rem; }
+.kb-seg button.is-on { background: rgba(124,58,237,.35); color:#fff; }
+.kb-tokens { display:flex; flex-wrap:wrap; gap:.25rem; margin:.3rem 0 .5rem; }
+.kb-token { border:1px dashed rgba(124,58,237,.6); background: rgba(124,58,237,.08); color: #c4b5fd; border-radius:6px; font-size:.68rem; padding:.12rem .4rem; }
+.kb-token:hover { background: rgba(124,58,237,.25); color:#fff; }
+.kb-layers { display:flex; flex-direction:column; gap:2px; }
+.kb-layer { display:flex; align-items:center; gap:.4rem; padding:.3rem .4rem; border-radius:7px; font-size:.78rem; color: var(--kk-text-dim); cursor:pointer; }
+.kb-layer:hover { background: rgba(255,255,255,.05); color: var(--kk-text); }
+.kb-layer.is-on { background: rgba(34,211,238,.12); color: var(--kk-text); }
+.kb-layer .kb-lname { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.kb-layer button { border:0; background:transparent; color: var(--kk-text-dim); padding:0 .15rem; }
+.kb-layer button:hover { color: var(--kk-text); }
+.kb-swatches { display:grid; grid-template-columns: repeat(6, 1fr); gap:.3rem; margin:.4rem 0; }
+.kb-swatch { aspect-ratio:1; border-radius:8px; border:1px solid var(--kk-border); cursor:pointer; }
+.kb-swatch:hover { outline: 2px solid var(--kk-accent); }
+.kb-role-row { display:grid; grid-template-columns: 1fr 120px 24px; gap:.3rem; align-items:center; margin-bottom:.3rem; }
+.kb-role-row input { font-size:.8rem; padding:.25rem .4rem; }
+.kb-role-row button { border:0; background:transparent; color: var(--kk-text-dim); }
+.kb-mine { display:flex; align-items:center; gap:.4rem; padding:.45rem .5rem; border:1px solid var(--kk-border); border-radius:10px; margin-bottom:.35rem; }
+.kb-mine .kb-lname { flex:1; font-size:.85rem; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.kb-note { font-size:.75rem; color: var(--kk-text-dim); line-height:1.45; }
+.kb-empty-ins { text-align:center; color: var(--kk-text-dim); font-size:.82rem; padding: .5rem 0 1rem; }
+
+/* print modal */
+.kb-modal { position:fixed; inset:0; background: rgba(5,5,15,.72); z-index: 2000; display:none; align-items:center; justify-content:center; padding:1rem; }
+.kb-modal.is-open { display:flex; }
+.kb-modal-card { width: min(720px, 100%); max-height: calc(100vh - 2rem); overflow:auto; background: var(--kk-surface); border:1px solid var(--kk-border); border-radius: var(--kk-radius-lg); padding:1.2rem 1.3rem; }
+.kb-modal-card h2 { font-size:1.25rem; margin:0 0 .2rem; }
+.kb-estimate { background: rgba(124,58,237,.12); border:1px solid rgba(124,58,237,.35); border-radius:12px; padding:.6rem .8rem; font-size:.85rem; margin:.8rem 0; }
+.kb-pick { max-height: 220px; overflow:auto; border:1px solid var(--kk-border); border-radius:10px; padding:.3rem .5rem; margin-top:.4rem; }
+.kb-pick label { display:flex; gap:.5rem; align-items:center; font-size:.82rem; padding:.18rem 0; cursor:pointer; }
+.kb-pick label small { color: var(--kk-text-dim); }
+</style>
+{% endblock %}
+
+{% block content %}
+{% csrf_token %}
+{{ boot|json_script:"kb-boot" }}
+
+<div class="kb-top">
+  <div>
+    <a href="{% url 'attendance:event_detail' event.pk %}" class="kk-text-dim small text-decoration-none">
+      <i class="bi bi-arrow-left"></i> {{ event.title }}
+    </a>
+    <h1 class="mt-1">Badge designer</h1>
+  </div>
+  <div class="d-flex align-items-center gap-2 flex-wrap">
+    <span class="kb-save" id="kb-save-state">All changes saved</span>
+    <button type="button" class="kk-btn kk-btn-ghost btn-sm" id="kb-save-btn"><i class="bi bi-cloud-check"></i> Save</button>
+    <button type="button" class="kk-btn kk-btn-primary" id="kb-print-open"><i class="bi bi-printer"></i> Print badges</button>
+  </div>
+</div>
+
+<div class="kb-shell">
+
+  <!-- ───────────── LEFT ───────────── -->
+  <aside class="kb-panel kb-left">
+    <div class="kb-tabs" role="tablist">
+      <button class="kb-tab is-on" data-tab="templates"><i class="bi bi-grid-1x2"></i>Templates</button>
+      <button class="kb-tab" data-tab="add"><i class="bi bi-plus-square"></i>Add</button>
+      <button class="kb-tab" data-tab="bg"><i class="bi bi-image"></i>Background</button>
+      <button class="kb-tab" data-tab="roles"><i class="bi bi-palette"></i>Roles</button>
+      <button class="kb-tab" data-tab="mine"><i class="bi bi-bookmark-star"></i>Mine</button>
+    </div>
+
+    <div class="kb-pane is-on" data-pane="templates">
+      <div class="kb-chips" id="kb-cats"></div>
+      <div class="kb-gallery" id="kb-gallery"></div>
+      <p class="kb-note mt-3 mb-0">Picking a template copies it into this event. Change anything afterwards — it never touches the original or your other events.</p>
+    </div>
+
+    <div class="kb-pane" data-pane="add">
+      <div class="kb-h">Attendee details</div>
+      <div class="kb-addgrid" id="kb-add-text"></div>
+      <div class="kb-h" id="kb-add-fields-h">Registration answers</div>
+      <div class="kb-addgrid" id="kb-add-fields"></div>
+      <div class="kb-h">QR code</div>
+      <div class="kb-addgrid" id="kb-add-qr"></div>
+      <div class="kb-h">Shapes</div>
+      <div class="kb-addgrid" id="kb-add-shapes"></div>
+      <div class="kb-h">Images</div>
+      <div class="kb-addgrid" id="kb-add-images"></div>
+      <label class="kk-btn kk-btn-ghost btn-sm w-100 mt-2 justify-content-center">
+        <i class="bi bi-upload"></i> Upload image (logo, sponsor, seal…)
+        <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" id="kb-asset-file" hidden>
+      </label>
+      <div class="kb-assets" id="kb-assets"></div>
+    </div>
+
+    <div class="kb-pane" data-pane="bg">
+      <div class="kb-h">Background photo</div>
+      <div class="d-flex gap-2 flex-wrap">
+        <label class="kk-btn kk-btn-primary btn-sm mb-0">
+          <i class="bi bi-upload"></i> Upload photo
+          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" id="kb-bg-file" hidden>
+        </label>
+        <button type="button" class="kk-btn kk-btn-ghost btn-sm" id="kb-bg-cover" hidden><i class="bi bi-card-image"></i> Use event cover</button>
+        <button type="button" class="kk-btn kk-btn-ghost btn-sm" id="kb-bg-remove"><i class="bi bi-x-lg"></i> Remove</button>
+      </div>
+      <div id="kb-bg-controls" class="mt-2"></div>
+      <div class="kb-h">Colour</div>
+      <div id="kb-bg-color"></div>
+      <div class="kb-h">Gradient &amp; pattern</div>
+      <div class="kb-swatches" id="kb-bg-swatches"></div>
+      <div class="kb-f"><span>Custom CSS background (advanced)</span>
+        <textarea id="kb-bg-grad" rows="3" class="form-control" placeholder="linear-gradient(135deg, #7c3aed, #22d3ee)"></textarea></div>
+      <div class="kb-h">Overlay (tint over the photo)</div>
+      <div id="kb-bg-overlay"></div>
+    </div>
+
+    <div class="kb-pane" data-pane="roles">
+      <p class="kb-note">Role colours paint ribbons, bands and accents. Any colour set to <b>Role</b> in the inspector follows the attendee's role — Speakers in red, Staff in blue, and so on.</p>
+      <div class="kb-f mb-2"><span>Role comes from</span><select class="form-select" id="kb-role-field"></select></div>
+      <div class="kb-f mb-2"><span>Role when the answer is empty</span><input class="form-control" id="kb-role-fallback"></div>
+      <div class="kb-h">Colours</div>
+      <div id="kb-role-list"></div>
+      <button type="button" class="kk-btn kk-btn-ghost btn-sm" id="kb-role-add"><i class="bi bi-plus"></i> Add role colour</button>
+      <p class="kb-note mt-2 mb-0">Roles without a colour get a stable automatic one. Tip: add a <b>Single choice</b> question like “Participant type” to your registration form, then pick it above.</p>
+    </div>
+
+    <div class="kb-pane" data-pane="mine">
+      <div class="kb-h">Save this design</div>
+      <div class="d-flex gap-2">
+        <input class="form-control form-control-sm" id="kb-mine-name" placeholder="e.g. UNDP workshop badge">
+        <button type="button" class="kk-btn kk-btn-primary btn-sm" id="kb-mine-save"><i class="bi bi-bookmark-plus"></i></button>
+      </div>
+      <p class="kb-note mt-1">Saved templates (with their background photo) are available on all your events.</p>
+      <div class="kb-h">My templates</div>
+      <div id="kb-mine-list"></div>
+    </div>
+  </aside>
+
+  <!-- ───────────── CENTRE ───────────── -->
+  <section class="kb-center">
+    <div class="kb-panel kb-toolbar">
+      <select class="form-select" id="kb-size" title="Badge size"></select>
+      <span id="kb-custom-size" hidden class="d-inline-flex align-items-center gap-1">
+        <input type="number" class="form-control" id="kb-cw" min="30" max="300" step="0.5" style="width:70px" title="Width (mm)">×
+        <input type="number" class="form-control" id="kb-ch" min="30" max="300" step="0.5" style="width:70px" title="Height (mm)"> mm
+      </span>
+      <span class="kb-sep"></span>
+      <button class="kb-ibtn" id="kb-undo" title="Undo (Ctrl+Z)"><i class="bi bi-arrow-counterclockwise"></i></button>
+      <button class="kb-ibtn" id="kb-redo" title="Redo (Ctrl+Shift+Z)"><i class="bi bi-arrow-clockwise"></i></button>
+      <span class="kb-sep"></span>
+      <button class="kb-ibtn" id="kb-zoom-out" title="Zoom out"><i class="bi bi-zoom-out"></i></button>
+      <span class="small kk-text-dim" id="kb-zoom-label" style="min-width:3rem;text-align:center">100%</span>
+      <button class="kb-ibtn" id="kb-zoom-in" title="Zoom in"><i class="bi bi-zoom-in"></i></button>
+      <button class="kb-ibtn" id="kb-zoom-fit" title="Fit to screen"><i class="bi bi-arrows-fullscreen"></i></button>
+      <span class="kb-sep"></span>
+      <button class="kb-ibtn is-on" id="kb-snap" title="Snap to grid & centre"><i class="bi bi-magnet"></i></button>
+      <button class="kb-ibtn" id="kb-grid" title="Show grid"><i class="bi bi-grid-3x3"></i></button>
+      <span class="kb-sep"></span>
+      <span class="small kk-text-dim">Preview as</span>
+      <select class="form-select" id="kb-person" style="max-width:220px"></select>
+      <button class="kb-ibtn" id="kb-person-next" title="Next attendee"><i class="bi bi-chevron-right"></i></button>
+    </div>
+    <div class="kb-stage" id="kb-stage">
+      <div class="kb-stage-inner" id="kb-stage-inner"></div>
+    </div>
+    <div class="kb-hint">Drag to move · corner handles resize · arrows nudge (Shift = bigger) · Delete removes · Ctrl+D duplicates · double-click text to edit</div>
+  </section>
+
+  <!-- ───────────── RIGHT ───────────── -->
+  <aside class="kb-panel kb-right">
+    <div class="kb-insp" id="kb-insp"></div>
+  </aside>
+</div>
+
+<!-- ───────────── PRINT DIALOG ───────────── -->
+<div class="kb-modal" id="kb-print">
+  <div class="kb-modal-card">
+    <div class="d-flex justify-content-between align-items-start">
+      <div>
+        <h2><i class="bi bi-printer"></i> Print badges</h2>
+        <p class="kk-text-dim small mb-0">Each badge carries the attendee's personal QR — scanning it at the door checks them in.</p>
+      </div>
+      <button type="button" class="btn-close btn-close-white" id="kb-print-close" aria-label="Close"></button>
+    </div>
+
+    <div class="row g-3 mt-1">
+      <div class="col-md-6">
+        <div class="kb-f mb-2"><span>Who</span>
+          <select class="form-select" id="pp-who">
+            <option value="accepted">Accepted &amp; checked-in</option>
+            <option value="checked_in">Checked-in only</option>
+            <option value="all">Everyone (incl. pending)</option>
+            <option value="pick">Pick attendees…</option>
+          </select></div>
+        <div id="pp-pick-wrap" hidden>
+          <input class="form-control form-control-sm" id="pp-pick-q" placeholder="Search name, organisation…">
+          <div class="kb-pick" id="pp-pick"></div>
+          <div class="d-flex gap-2 mt-1">
+            <button type="button" class="kb-chip" id="pp-pick-all">Select shown</button>
+            <button type="button" class="kb-chip" id="pp-pick-none">Clear</button>
+          </div>
+        </div>
+        <div class="kb-f mb-2" id="pp-after-wrap"><span>Only registered after (optional)</span>
+          <input type="datetime-local" class="form-control" id="pp-after"></div>
+        <div class="kb-f mb-2"><span>Order</span>
+          <select class="form-select" id="pp-sort">
+            <option value="name">Name (A–Z)</option>
+            <option value="last">Last name</option>
+            <option value="org">Organisation</option>
+            <option value="registered">Registration order</option>
+          </select></div>
+        <div class="kb-row">
+          <div class="kb-f"><span>Copies each</span><input type="number" min="1" max="10" class="form-control" id="pp-copies"></div>
+          <div class="kb-f"><span>Extra blank badges</span><input type="number" min="0" max="500" class="form-control" id="pp-blank"></div>
+        </div>
+        <p class="kb-note mb-0">Blank badges have no name (write one in) and a QR that opens walk-in check-in.</p>
+      </div>
+      <div class="col-md-6">
+        <div class="kb-f mb-2"><span>Paper</span><select class="form-select" id="pp-paper"></select></div>
+        <div class="kb-f mb-2"><span>Orientation</span>
+          <select class="form-select" id="pp-orient">
+            <option value="auto">Auto (fit the most)</option>
+            <option value="portrait">Portrait</option>
+            <option value="landscape">Landscape</option>
+          </select></div>
+        <div class="kb-row">
+          <div class="kb-f"><span>Margin (mm)</span><input type="number" min="0" max="40" step="0.5" class="form-control" id="pp-margin"></div>
+          <div class="kb-f"><span>Gap (mm)</span><input type="number" min="0" max="30" step="0.5" class="form-control" id="pp-gap"></div>
+        </div>
+        <label class="kb-check"><input type="checkbox" id="pp-crop"> Crop marks for cutting</label>
+      </div>
+    </div>
+
+    <div class="kb-estimate" id="pp-estimate"></div>
+
+    <div class="d-flex gap-2 justify-content-end flex-wrap">
+      <button type="button" class="kk-btn kk-btn-ghost" id="pp-pdf"><i class="bi bi-file-earmark-pdf"></i> Download PDF</button>
+      <button type="button" class="kk-btn kk-btn-primary" id="pp-open"><i class="bi bi-box-arrow-up-right"></i> Open print sheet</button>
+    </div>
+    <p class="kb-note mt-2 mb-0">Print at <b>100% / Actual size</b> with background graphics on, so badges come out at their real size.</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'attendance/badges/vendor/qrcode-generator.js' %}"></script>
+<script src="{% static 'attendance/badges/badge_render.js' %}?v=1"></script>
+<script src="{% static 'attendance/badges/badge_templates.js' %}?v=1"></script>
+<script>
+(function () {
+  "use strict";
+  const K = window.KKBadge, TPL = window.KKBadgeTemplates;
+  const boot = JSON.parse(document.getElementById("kb-boot").textContent);
+  document.getElementById("kb-fonts").href = K.googleFontsHref();
+
+  const URLS = {
+    save:      "{% url 'attendance:badge_save' event.pk %}",
+    upload:    "{% url 'attendance:badge_upload' event.pk %}",
+    bgClear:   "{% url 'attendance:badge_background_clear' event.pk %}",
+    assetDel:  "{% url 'attendance:badge_asset_delete' event.pk 0 %}",
+    mineSave:  "{% url 'attendance:badge_library_save' event.pk %}",
+    mineApply: "{% url 'attendance:badge_library_apply' event.pk 0 %}",
+    mineDel:   "{% url 'attendance:badge_library_delete' event.pk 0 %}",
+    print:     "{% url 'attendance:badge_print' event.pk %}",
+    pdf:       "{% url 'attendance:badge_pdf' event.pk %}",
+  };
+  const swapId = (url, id) => url.replace(/\/0\/(?=[a-z]+\/$)/, "/" + id + "/");
+
+  function csrf() {
+    const m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    if (m) return decodeURIComponent(m[1]);
+    const el = document.querySelector("input[name=csrfmiddlewaretoken]");
+    return el ? el.value : "";
+  }
+  async function post(url, body, isForm) {
+    const opts = { method: "POST", headers: { "X-CSRFToken": csrf() }, credentials: "same-origin" };
+    if (isForm) opts.body = body;
+    else { opts.body = JSON.stringify(body || {}); opts.headers["Content-Type"] = "application/json"; }
+    const r = await fetch(url, opts);
+    let data = {};
+    try { data = await r.json(); } catch (e) {}
+    if (!r.ok || data.ok === false) throw new Error(data.error || ("Request failed (" + r.status + ")"));
+    return data;
+  }
+  const $ = (s, root) => (root || document).querySelector(s);
+  const $$ = (s, root) => Array.from((root || document).querySelectorAll(s));
+  function h(tag, attrs, kids) {
+    const n = document.createElement(tag);
+    for (const k in (attrs || {})) {
+      const v = attrs[k];
+      if (v == null || v === false) continue;
+      if (k === "class") n.className = v;
+      else if (k === "text") n.textContent = v;
+      else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+      else if (k === "style") n.style.cssText = v;
+      else n.setAttribute(k, v === true ? "" : v);
+    }
+    (kids || []).forEach(c => c != null && n.appendChild(typeof c === "string" ? document.createTextNode(c) : c));
+    return n;
+  }
+
+  // ───────────────────── state ─────────────────────
+  const state = {
+    L: null, templateKey: boot.templateKey || "", sel: null,
+    zoom: 1, autoZoom: true, snap: true, grid: false,
+    assetMap: Object.assign({}, boot.assetMap || {}),
+    assets: boot.assets || [], saved: boot.saved || [],
+    personIdx: 0, dirty: false, history: [], future: [],
+  };
+  const startTpl = TPL.byKey(state.templateKey) || TPL.first();
+  state.L = K.normalize(boot.layout, startTpl.layout);
+  if (!boot.layout || !boot.layout.els || !boot.layout.els.length) state.templateKey = startTpl.key;
+
+  // Sample attendees (for empty events and to stress-test long names)
+  function sampleAnswers(i) {
+    const f = {};
+    (boot.fields || []).forEach(fl => {
+      if (fl.options && fl.options.length) f[fl.id] = fl.options[i % fl.options.length];
+      else if (fl.token === "org") f[fl.id] = ["Ministry of Health", "UNDP The Gambia"][i % 2];
+      else if (fl.token === "title") f[fl.id] = ["Programme Officer", "ICT Specialist"][i % 2];
+    });
+    return f;
+  }
+  const samples = [
+    { label: "Sample · long name", p: { name: "Aminata Jallow-Ceesay", first: "Aminata", last: "Jallow-Ceesay", org: "Ministry of Health and Social Welfare", title: "Senior Programme Officer", dept: "Planning", country: "The Gambia", email: "aminata@example.org", phone: "+220 700 0000", no: "0042", ticket_url: boot.event.checkin_url, f: sampleAnswers(0) } },
+    { label: "Sample · short name", p: { name: "Lamin Darboe", first: "Lamin", last: "Darboe", org: "UNDP The Gambia", title: "ICT Specialist", dept: "Operations", country: "The Gambia", email: "lamin@example.org", phone: "", no: "0007", ticket_url: boot.event.checkin_url, f: sampleAnswers(1) } },
+    { label: "Blank (write-in) badge", p: { name: "", first: "", last: "", org: "", title: "", no: "", blank: true, ticket_url: boot.event.checkin_url, f: {} } },
+  ];
+  const people = samples.concat((boot.people || []).map(p => ({ label: p.name || ("#" + p.no), p })));
+  if (boot.people && boot.people.length) state.personIdx = 3;
+  const person = () => (people[state.personIdx] || people[0]).p;
+  const ctx = () => ({ event: boot.event, assets: state.assetMap });
+
+  // ───────────────────── history / save ─────────────────────
+  const snapshot = () => JSON.stringify({ L: state.L, k: state.templateKey });
+  let lastSnap = snapshot();
+  function commit() {
+    const s = snapshot();
+    if (s === lastSnap) return;
+    state.history.push(lastSnap);
+    if (state.history.length > 80) state.history.shift();
+    state.future = [];
+    lastSnap = s;
+    markDirty();
+    syncUndo();
+  }
+  function restore(s) {
+    const o = JSON.parse(s);
+    state.L = o.L; state.templateKey = o.k; lastSnap = s;
+    if (state.sel && !findEl(state.sel)) state.sel = null;
+    markDirty(); renderAll(); syncUndo();
+  }
+  function undo() { if (!state.history.length) return; state.future.push(lastSnap); restore(state.history.pop()); }
+  function redo() { if (!state.future.length) return; state.history.push(lastSnap); restore(state.future.pop()); }
+  function syncUndo() { $("#kb-undo").disabled = !state.history.length; $("#kb-redo").disabled = !state.future.length; }
+
+  let saveTimer = null;
+  const saveEl = $("#kb-save-state");
+  function markDirty() {
+    state.dirty = true;
+    saveEl.textContent = "Unsaved changes"; saveEl.className = "kb-save is-dirty";
+    clearTimeout(saveTimer); saveTimer = setTimeout(save, 1400);
+  }
+  async function save() {
+    clearTimeout(saveTimer);
+    if (!state.dirty) return;
+    state.dirty = false;
+    saveEl.textContent = "Saving…"; saveEl.className = "kb-save";
+    try {
+      const r = await post(URLS.save, { layout: state.L, template_key: state.templateKey });
+      saveEl.textContent = "Saved " + r.saved_at; saveEl.className = "kb-save";
+    } catch (e) {
+      state.dirty = true;
+      saveEl.textContent = "Not saved — " + e.message; saveEl.className = "kb-save is-err";
+    }
+  }
+  window.addEventListener("beforeunload", e => { if (state.dirty) { e.preventDefault(); e.returnValue = ""; } });
+
+  // ───────────────────── element helpers ─────────────────────
+  const findEl = id => state.L.els.find(e => e.id === id);
+  const selEl = () => (state.sel ? findEl(state.sel) : null);
+  const ratio = () => state.L.w / state.L.h;
+  const elH = el => (el.sq || el.t === "qr") ? el.w * ratio() : el.h;
+  const TYPE_ICON = { text: "bi-fonts", qr: "bi-qr-code", image: "bi-image", shape: "bi-square" };
+  function elLabel(el) {
+    if (el.name) return el.name;
+    if (el.t === "text") return (el.txt || "Text").replace(/\s+/g, " ").slice(0, 28);
+    if (el.t === "qr") return "QR · " + ({ ticket: "check-in", vcard: "contact card", event: "registration", checkin: "walk-in", custom: "custom" }[el.mode || "ticket"]);
+    if (el.t === "image") return "Image · " + (el.src === "logo" ? "logo" : el.src === "background" ? "photo" : el.src === "cover" ? "event cover" : "upload");
+    return "Shape";
+  }
+  function addElement(el) {
+    el.id = K.newId();
+    state.L.els.push(el);
+    state.sel = el.id;
+    commit(); renderAll();
+  }
+
+  // ───────────────────── stage render ─────────────────────
+  const stage = $("#kb-stage"), inner = $("#kb-stage-inner");
+  let badgeNode = null, selBox = null, hoverBox = null, guideV = null, guideH = null;
+  let raf = 0;
+  function scheduleStage() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; renderStage(); }); }
+
+  function computeZoom() {
+    if (!state.autoZoom) return state.zoom;
+    const availW = stage.clientWidth - 60, availH = Math.max(420, stage.clientHeight - 80);
+    const mmToPx = 3.78;
+    const z = Math.min(availW / (state.L.w * mmToPx), availH / (state.L.h * mmToPx));
+    return Math.max(0.3, Math.min(z, 4));
+  }
+  function renderStage() {
+    state.zoom = computeZoom();
+    const wpx = state.L.w * 3.78 * state.zoom, hpx = state.L.h * 3.78 * state.zoom;
+    const node = K.render(state.L, person(), ctx(), { width: wpx + "px", height: hpx + "px", editor: true });
+    $$(".kb-el", node).forEach(n => { const e = findEl(n.dataset.id); if (e && e.lock) n.classList.add("is-locked"); });
+    inner.innerHTML = "";
+    inner.style.width = wpx + "px"; inner.style.height = hpx + "px";
+    inner.appendChild(node);
+    badgeNode = node;
+    guideV = h("div", { class: "kb-guide v" }); guideH = h("div", { class: "kb-guide h" });
+    hoverBox = h("div", { class: "kb-hover", style: "display:none" });
+    selBox = h("div", { class: "kb-sel", style: "display:none" });
+    inner.append(guideV, guideH, hoverBox, selBox);
+    inner.classList.toggle("kb-grid-on", state.grid);
+    K.fitText(node);
+    $("#kb-zoom-label").textContent = Math.round(state.zoom * 100) + "%";
+    placeSel();
+  }
+  function rectOf(el) {
+    const W = inner.clientWidth, H = inner.clientHeight;
+    return { l: el.x / 100 * W, t: el.y / 100 * H, w: el.w / 100 * W, h: elH(el) / 100 * H };
+  }
+  function placeBox(box, el) {
+    const r = rectOf(el);
+    box.style.display = "block";
+    box.style.left = r.l + "px"; box.style.top = r.t + "px";
+    box.style.width = r.w + "px"; box.style.height = r.h + "px";
+    box.style.transform = el.r ? `rotate(${el.r}deg)` : "";
+  }
+  function placeSel() {
+    const el = selEl();
+    if (!selBox) return;
+    if (!el) { selBox.style.display = "none"; return; }
+    placeBox(selBox, el);
+    selBox.classList.toggle("is-locked", !!el.lock);
+    selBox.innerHTML = "";
+    selBox.appendChild(h("div", { class: "kb-tag", text: (el.lock ? "🔒 " : "") + elLabel(el) }));
+    const pos = { nw: [0, 0], n: [50, 0], ne: [100, 0], e: [100, 50], se: [100, 100], s: [50, 100], sw: [0, 100], w: [0, 50] };
+    const sq = el.sq || el.t === "qr";
+    Object.entries(pos).forEach(([k, [x, y]]) => {
+      if (sq && k.length === 1) return;
+      const cur = { nw: "nwse", se: "nwse", ne: "nesw", sw: "nesw", n: "ns", s: "ns", e: "ew", w: "ew" }[k];
+      selBox.appendChild(h("div", { class: "kb-h-dot", "data-h": k, style: `left:${x}%;top:${y}%;cursor:${cur}-resize` }));
+    });
+  }
+
+  // ───────────────────── pointer: select / drag / resize ─────────────────────
+  let drag = null;
+  inner.addEventListener("pointerdown", e => {
+    const handle = e.target.closest(".kb-h-dot");
+    const elNode = e.target.closest(".kb-el");
+    if (handle && selEl()) {
+      const el = selEl();
+      drag = { mode: "resize", h: handle.dataset.h, sx: e.clientX, sy: e.clientY, o: { x: el.x, y: el.y, w: el.w, h: el.h } };
+    } else if (elNode && badgeNode && badgeNode.contains(elNode)) {
+      const id = elNode.dataset.id, el = findEl(id);
+      if (state.sel !== id) { state.sel = id; renderInspector(); }
+      placeSel();
+      if (el && !el.lock) drag = { mode: "move", sx: e.clientX, sy: e.clientY, o: { x: el.x, y: el.y } };
+    } else {
+      if (state.sel) { state.sel = null; placeSel(); renderInspector(); }
+      return;
+    }
+    if (drag) { inner.setPointerCapture(e.pointerId); drag.moved = false; e.preventDefault(); }
+  });
+  inner.addEventListener("pointermove", e => {
+    if (!drag) {
+      const n = e.target.closest(".kb-el");
+      const el = n && findEl(n.dataset.id);
+      if (el && el.id !== state.sel) placeBox(hoverBox, el); else if (hoverBox) hoverBox.style.display = "none";
+      return;
+    }
+    const el = selEl(); if (!el) return;
+    const W = inner.clientWidth, H = inner.clientHeight;
+    const dx = (e.clientX - drag.sx) / W * 100, dy = (e.clientY - drag.sy) / H * 100;
+    if (Math.abs(dx) + Math.abs(dy) > 0.05) drag.moved = true;
+    const snap = v => state.snap && !e.altKey ? Math.round(v * 2) / 2 : Math.round(v * 100) / 100;
+    guideV.style.display = "none"; guideH.style.display = "none";
+    if (drag.mode === "move") {
+      let x = snap(drag.o.x + dx), y = snap(drag.o.y + dy);
+      const eh = elH(el);
+      if (state.snap && !e.altKey) {
+        if (Math.abs(x + el.w / 2 - 50) < 1.2) { x = 50 - el.w / 2; guideV.style.left = "50%"; guideV.style.display = "block"; }
+        if (Math.abs(y + eh / 2 - 50) < 1.2) { y = 50 - eh / 2; guideH.style.top = "50%"; guideH.style.display = "block"; }
+      }
+      el.x = x; el.y = y;
+    } else {
+      const o = drag.o, k = drag.h, sq = el.sq || el.t === "qr";
+      let x = o.x, y = o.y, w = o.w, hh = o.h;
+      if (sq) {
+        let d = k.includes("e") ? dx : -dx;
+        if (Math.abs(dy / ratio()) > Math.abs(d)) d = (k.includes("s") ? dy : -dy) / ratio();
+        w = Math.max(2, snap(o.w + d));
+        if (k.includes("w")) x = o.x + (o.w - w);
+        if (k.includes("n")) y = o.y + (o.w - w) * ratio();
+      } else {
+        if (k.includes("e")) w = Math.max(1, snap(o.w + dx));
+        if (k.includes("s")) hh = Math.max(0.3, snap(o.h + dy));
+        if (k.includes("w")) { w = Math.max(1, snap(o.w - dx)); x = o.x + (o.w - w); }
+        if (k.includes("n")) { hh = Math.max(0.3, snap(o.h - dy)); y = o.y + (o.h - hh); }
+      }
+      el.x = x; el.y = y; el.w = w; el.h = hh;
+    }
+    scheduleStage();
+    syncGeomInputs();
+  });
+  function endDrag() {
+    if (!drag) return;
+    const moved = drag.moved; drag = null;
+    guideV.style.display = "none"; guideH.style.display = "none";
+    if (moved) { commit(); renderStage(); }
+  }
+  inner.addEventListener("pointerup", endDrag);
+  inner.addEventListener("pointercancel", endDrag);
+  inner.addEventListener("pointerleave", () => { if (hoverBox) hoverBox.style.display = "none"; });
+  inner.addEventListener("dblclick", e => {
+    const n = e.target.closest(".kb-el");
+    const el = n && findEl(n.dataset.id);
+    if (el && el.t === "text") { const ta = $("#ins-txt"); if (ta) { ta.focus(); ta.select(); } }
+  });
+
+  // keyboard
+  document.addEventListener("keydown", e => {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) || document.activeElement.isContentEditable;
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); save(); return; }
+    if (typing || $("#kb-print").classList.contains("is-open")) return;
+    if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+    if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); return; }
+    const el = selEl(); if (!el) return;
+    if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); duplicate(); return; }
+    if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); removeSel(); return; }
+    if (e.key === "Escape") { state.sel = null; placeSel(); renderInspector(); return; }
+    const step = e.shiftKey ? 2 : 0.5;
+    const mv = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+    if (mv && !el.lock) { e.preventDefault(); el.x = +(el.x + mv[0]).toFixed(2); el.y = +(el.y + mv[1]).toFixed(2); commit(); renderStage(); syncGeomInputs(); }
+  });
+
+  function duplicate() {
+    const el = selEl(); if (!el) return;
+    const c = K.clone(el); c.x += 2; c.y += 2; delete c.lock;
+    const i = state.L.els.indexOf(el);
+    c.id = K.newId(); state.L.els.splice(i + 1, 0, c); state.sel = c.id;
+    commit(); renderAll();
+  }
+  function removeSel() {
+    const el = selEl(); if (!el) return;
+    state.L.els = state.L.els.filter(x => x !== el); state.sel = null;
+    commit(); renderAll();
+  }
+  function moveLayer(dir) {
+    const el = selEl(); if (!el) return;
+    const a = state.L.els, i = a.indexOf(el);
+    a.splice(i, 1);
+    const j = dir === "front" ? a.length : dir === "back" ? 0 : Math.max(0, Math.min(a.length, i + (dir === "up" ? 1 : -1)));
+    a.splice(j, 0, el);
+    commit(); renderAll();
+  }
+
+  // ───────────────────── inspector ─────────────────────
+  const insp = $("#kb-insp");
+  const FONT_OPTS = Object.entries(K.FONTS).map(([k, f]) => [k, f.label]);
+  const WEIGHTS = [["400", "Regular"], ["500", "Medium"], ["600", "Semibold"], ["700", "Bold"], ["800", "Extra bold"], ["900", "Black"]];
+  const CLIPS = [
+    ["", "None"], ["polygon(50% 0,100% 100%,0 100%)", "Triangle"],
+    ["polygon(0 0,100% 0,100% 62%,0 100%)", "Diagonal ↘"], ["polygon(0 0,100% 0,100% 100%,0 62%)", "Diagonal ↙"],
+    ["polygon(0 38%,100% 0,100% 100%,0 100%)", "Slope up"], ["polygon(25% 5%,75% 5%,100% 50%,75% 95%,25% 95%,0 50%)", "Hexagon"],
+    ["polygon(0 0,100% 0,96% 50%,100% 100%,0 100%,4% 50%)", "Ribbon"], ["polygon(0 0,90% 0,100% 50%,90% 100%,0 100%)", "Arrow tag"],
+    ["polygon(50% 0,100% 50%,50% 100%,0 50%)", "Diamond"], ["polygon(0 0,100% 0,100% 80%,50% 100%,0 80%)", "Pennant"],
+    ["polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%)", "Star"],
+  ];
+  const GRADS = [
+    "linear-gradient(135deg,#7c3aed,#22d3ee)", "linear-gradient(135deg,#ff6a88,#ffb347)", "linear-gradient(160deg,#0f172a,#1e3a8a)",
+    "linear-gradient(135deg,#16a34a,#0ea5e9)", "linear-gradient(135deg,{role},#111111)", "linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.8))",
+    "radial-gradient(circle at 30% 20%,#fde68a,#f59e0b 60%,#b45309)", "linear-gradient(90deg,#ce1126 0 33.3%,#0c1c8c 33.3% 66.6%,#3a7728 66.6%)",
+    "repeating-linear-gradient(45deg,#111 0 8%,#facc15 8% 16%)", "linear-gradient(135deg,#fde047,#f472b6,#818cf8)",
+    "linear-gradient(135deg,#e2e8f0,#f8fafc)", "conic-gradient(from 90deg at 50% 50%,#7c3aed,#22d3ee,#f472b6,#7c3aed)",
+  ];
+  const BG_GRADS = [
+    "", "linear-gradient(160deg,#120a2e,#0b0820)", "linear-gradient(160deg,#ffb347 0%,#ff6a88 55%,#8e44ad 100%)",
+    "linear-gradient(135deg,#0ea5e9,#0e7490)", "linear-gradient(160deg,#f0fdf4,#dcfce7)", "radial-gradient(90% 60% at 50% 0%, #292524, #0c0a09 70%)",
+    "radial-gradient(120% 80% at 0% 0%, #7c3aed 0%, transparent 55%), radial-gradient(100% 70% at 100% 100%, #22d3ee 0%, transparent 50%), linear-gradient(160deg,#120a2e,#0b0820)",
+    "linear-gradient(rgba(56,189,248,.09) 1px, transparent 1px) 0 0/6cqmin 6cqmin, linear-gradient(90deg, rgba(56,189,248,.09) 1px, transparent 1px) 0 0/6cqmin 6cqmin, linear-gradient(180deg,#0b1220,#111a2e)",
+    "radial-gradient(#e2d5b9 0.15cqmin, transparent 0.22cqmin) 0 0/2.4cqmin 2.4cqmin", "linear-gradient(180deg,{role} 0 30%, #ffffff 30%)",
+    "repeating-linear-gradient(135deg,#fafafa 0 3cqmin,#f1f5f9 3cqmin 6cqmin)", "linear-gradient(135deg,#fde047,#f472b6,#818cf8)",
+  ];
+
+  function field(label, input, cls) { return h("div", { class: "kb-f " + (cls || "") }, [h("span", { text: label }), input]); }
+  function num(el, key, opts) {
+    opts = opts || {};
+    const i = h("input", { type: "number", class: "form-control", step: opts.step || 0.5, min: opts.min, max: opts.max, id: opts.id });
+    i.value = el[key] == null ? (opts.def == null ? "" : opts.def) : +(+el[key]).toFixed(2);
+    i.addEventListener("input", () => {
+      if (i.value === "") { delete el[key]; } else { el[key] = +i.value; }
+      scheduleStage(); markLive();
+    });
+    i.addEventListener("change", commitLive);
+    return i;
+  }
+  function range(el, key, min, max, step, def) {
+    const i = h("input", { type: "range", class: "form-range", min, max, step });
+    i.value = el[key] == null ? def : el[key];
+    i.addEventListener("input", () => { el[key] = +i.value; scheduleStage(); markLive(); });
+    i.addEventListener("change", commitLive);
+    return i;
+  }
+  function select(el, key, options, def, onChange) {
+    const s = h("select", { class: "form-select" });
+    options.forEach(([v, l]) => s.appendChild(h("option", { value: v, text: l })));
+    s.value = el[key] == null ? (def == null ? "" : def) : el[key];
+    s.addEventListener("change", () => {
+      if (s.value === "" && def === undefined) delete el[key]; else el[key] = s.value;
+      commit(); renderStage(); if (onChange) onChange();
+    });
+    return s;
+  }
+  function check(el, key, label, onChange) {
+    const i = h("input", { type: "checkbox" }); i.checked = !!el[key];
+    i.addEventListener("change", () => { if (i.checked) el[key] = true; else delete el[key]; commit(); renderStage(); placeSel(); if (onChange) onChange(); });
+    return h("label", { class: "kb-check" }, [i, label]);
+  }
+  function colorField(obj, key, opts) {
+    opts = opts || {};
+    const v = obj[key] || "";
+    const pick = h("input", { type: "color" });
+    const txt = h("input", { type: "text", class: "form-control", placeholder: opts.placeholder || "none" });
+    const roleBtn = h("button", { type: "button", class: "kb-mini", text: "Role", title: "Follow the attendee's role colour" });
+    const inkBtn = h("button", { type: "button", class: "kb-mini", text: "Ink", title: "Black or white — whichever reads on the role colour" });
+    const sync = () => {
+      const cur = obj[key] || "";
+      txt.value = cur;
+      roleBtn.classList.toggle("is-on", cur === "role");
+      inkBtn.classList.toggle("is-on", cur === "roleInk");
+      pick.value = /^#[0-9a-f]{6}$/i.test(cur) ? cur : (cur === "role" ? (K.roleColorOf(K.roleOf(person(), state.L), state.L)) : "#000000");
+    };
+    const set = val => { if (val) obj[key] = val; else delete obj[key]; sync(); scheduleStage(); };
+    pick.addEventListener("input", () => { set(pick.value); markLive(); });
+    pick.addEventListener("change", commitLive);
+    txt.addEventListener("input", () => { set(txt.value.trim()); markLive(); });
+    txt.addEventListener("change", commitLive);
+    roleBtn.addEventListener("click", () => { set("role"); commit(); });
+    inkBtn.addEventListener("click", () => { set("roleInk"); commit(); });
+    sync();
+    const kids = [pick, txt];
+    if (!opts.noRole) kids.push(roleBtn, inkBtn);
+    return h("div", { class: "kb-color" }, kids);
+  }
+  function seg(el, key, options, def) {
+    const wrap = h("div", { class: "kb-seg" });
+    options.forEach(([v, icon, title]) => {
+      const b = h("button", { type: "button", title, class: (el[key] || def) === v ? "is-on" : "" }, [h("i", { class: "bi " + icon })]);
+      b.addEventListener("click", () => { el[key] = v; commit(); renderStage(); renderInspector(); });
+      wrap.appendChild(b);
+    });
+    return wrap;
+  }
+  let liveDirty = false;
+  function markLive() { liveDirty = true; }
+  function commitLive() { if (liveDirty) { liveDirty = false; commit(); renderStage(); } }
+  function syncGeomInputs() {
+    const el = selEl(); if (!el) return;
+    [["ins-x", "x"], ["ins-y", "y"], ["ins-w", "w"], ["ins-h", "h"]].forEach(([id, k]) => {
+      const i = document.getElementById(id);
+      if (i && document.activeElement !== i) i.value = +(+el[k]).toFixed(2);
+    });
+  }
+
+  function tokenChips(target, el, key) {
+    const list = [
+      ["Name", "{name}"], ["First", "{first}"], ["Last", "{last}"], ["Initials", "{initials}"], ["Org", "{org}"],
+      ["Job title", "{title}"], ["Dept", "{dept}"], ["Country", "{country}"], ["Role", "{role}"], ["No.", "{no}"],
+      ["Email", "{email}"], ["Phone", "{phone}"], ["Event", "{event}"], ["Date", "{date}"], ["Dates", "{dates}"],
+      ["Time", "{time}"], ["Venue", "{venue}"], ["Code", "{code}"],
+    ].concat((boot.fields || []).map(f => [f.label.slice(0, 22), "{f:" + f.id + "}"]));
+    const wrap = h("div", { class: "kb-tokens" });
+    list.forEach(([l, t]) => {
+      const b = h("button", { type: "button", class: "kb-token", text: l, title: t });
+      b.addEventListener("mousedown", e => e.preventDefault());
+      b.addEventListener("click", () => {
+        const s = target.selectionStart ?? target.value.length, e2 = target.selectionEnd ?? s;
+        target.value = target.value.slice(0, s) + t + target.value.slice(e2);
+        target.setSelectionRange(s + t.length, s + t.length); target.focus();
+        el[key] = target.value; commit(); renderStage(); renderLayers();
+      });
+      wrap.appendChild(b);
+    });
+    return wrap;
+  }
+
+  function renderInspector() {
+    insp.innerHTML = "";
+    const el = selEl();
+    if (!el) { renderBadgePanel(); return; }
+
+    insp.appendChild(h("div", { class: "kb-insp-head" }, [
+      h("h3", {}, [h("i", { class: "bi " + TYPE_ICON[el.t] }), ({ text: "Text", qr: "QR code", image: "Image", shape: "Shape" })[el.t]]),
+      h("div", { class: "d-flex gap-1" }, [
+        h("button", { type: "button", class: "kb-ibtn", title: el.lock ? "Unlock" : "Lock in place", onclick: () => { if (el.lock) delete el.lock; else el.lock = true; commit(); renderAll(); } }, [h("i", { class: "bi " + (el.lock ? "bi-lock-fill" : "bi-unlock") })]),
+        h("button", { type: "button", class: "kb-ibtn", title: "Duplicate (Ctrl+D)", onclick: duplicate }, [h("i", { class: "bi bi-copy" })]),
+        h("button", { type: "button", class: "kb-ibtn", title: "Delete", onclick: removeSel }, [h("i", { class: "bi bi-trash3" })]),
+      ]),
+    ]));
+
+    // type-specific first (most used)
+    if (el.t === "text") textPanel(el);
+    if (el.t === "qr") qrPanel(el);
+    if (el.t === "image") imagePanel(el);
+    if (el.t === "shape") shapePanel(el);
+
+    // geometry
+    insp.appendChild(h("div", { class: "kb-h", text: "Position & size (% of badge)" }));
+    const sq = el.sq || el.t === "qr";
+    insp.appendChild(h("div", { class: "kb-row c4" }, [
+      field("X", num(el, "x", { id: "ins-x" })), field("Y", num(el, "y", { id: "ins-y" })),
+      field("W", num(el, "w", { id: "ins-w", min: 0.3 })),
+      sq ? field("H", h("input", { class: "form-control", disabled: true, value: (+elH(el)).toFixed(1) })) : field("H", num(el, "h", { id: "ins-h", min: 0.3 })),
+    ]));
+    insp.appendChild(h("div", { class: "kb-row" }, [
+      field("Rotate °", num(el, "r", { step: 1, min: -180, max: 180, def: 0 })),
+      field("Opacity", range(el, "op", 0, 1, 0.05, 1)),
+    ]));
+    if (el.t !== "qr") insp.appendChild(check(el, "sq", "Keep square (circles stay round)", renderInspector));
+    const al = (fn) => () => { fn(el); commit(); renderStage(); syncGeomInputs(); };
+    insp.appendChild(h("div", { class: "kb-row c3" }, [
+      h("button", { type: "button", class: "kb-ibtn", title: "Centre horizontally", onclick: al(e => e.x = +(50 - e.w / 2).toFixed(2)) }, [h("i", { class: "bi bi-align-center" })]),
+      h("button", { type: "button", class: "kb-ibtn", title: "Centre vertically", onclick: al(e => e.y = +(50 - elH(e) / 2).toFixed(2)) }, [h("i", { class: "bi bi-align-middle" })]),
+      h("button", { type: "button", class: "kb-ibtn", title: "Full width", onclick: al(e => { e.x = 0; e.w = 100; }) }, [h("i", { class: "bi bi-arrows-expand-vertical" })]),
+    ]));
+    insp.appendChild(h("div", { class: "kb-h", text: "Layer" }));
+    insp.appendChild(h("div", { class: "kb-row c4" }, [
+      h("button", { type: "button", class: "kb-ibtn", title: "Bring to front", onclick: () => moveLayer("front") }, [h("i", { class: "bi bi-front" })]),
+      h("button", { type: "button", class: "kb-ibtn", title: "Forward", onclick: () => moveLayer("up") }, [h("i", { class: "bi bi-arrow-up" })]),
+      h("button", { type: "button", class: "kb-ibtn", title: "Backward", onclick: () => moveLayer("down") }, [h("i", { class: "bi bi-arrow-down" })]),
+      h("button", { type: "button", class: "kb-ibtn", title: "Send to back", onclick: () => moveLayer("back") }, [h("i", { class: "bi bi-back" })]),
+    ]));
+    const nm = h("input", { class: "form-control", placeholder: elLabel(el) });
+    nm.value = el.name || "";
+    nm.addEventListener("change", () => { if (nm.value.trim()) el.name = nm.value.trim(); else delete el.name; commit(); placeSel(); });
+    insp.appendChild(h("div", { class: "kb-row c1 mt-2" }, [field("Layer name", nm)]));
+  }
+
+  function textPanel(el) {
+    const ta = h("textarea", { class: "form-control", id: "ins-txt", rows: 2 });
+    ta.value = el.txt || "";
+    ta.addEventListener("input", () => { el.txt = ta.value; scheduleStage(); markLive(); });
+    ta.addEventListener("change", () => { commitLive(); renderLayers(); placeSel(); });
+    insp.appendChild(field("Text — click a token to insert it", ta, "mb-1"));
+    insp.appendChild(tokenChips(ta, el, "txt"));
+    insp.appendChild(h("div", { class: "kb-row" }, [field("Font", select(el, "ff", FONT_OPTS, "inter")), field("Weight", select(el, "fw", WEIGHTS, "600"))]));
+    insp.appendChild(h("div", { class: "kb-row" }, [field("Size", num(el, "fs", { step: 0.2, min: 0.5, max: 60, def: 4 })), field("Letter spacing", num(el, "ls", { step: 0.02, min: -0.2, max: 1, def: 0 }))]));
+    insp.appendChild(field("Colour", colorField(el, "c"), "mb-2"));
+    insp.appendChild(h("div", { class: "kb-row" }, [
+      field("Align", seg(el, "al", [["l", "bi-text-left", "Left"], ["c", "bi-text-center", "Centre"], ["r", "bi-text-right", "Right"]], "c")),
+      field("Vertical", seg(el, "va", [["t", "bi-align-top", "Top"], ["m", "bi-align-middle", "Middle"], ["b", "bi-align-bottom", "Bottom"]], "m")),
+    ]));
+    insp.appendChild(h("div", { class: "kb-row" }, [
+      h("div", {}, [check(el, "fit", "Auto-shrink to fit"), check(el, "nowrap", "Single line"), check(el, "up", "UPPERCASE")]),
+      h("div", {}, [check(el, "it", "Italic"), check(el, "sh", "Text shadow"), check(el, "keep", "Show when empty")]),
+    ]));
+    insp.appendChild(h("div", { class: "kb-row" }, [field("Line height", num(el, "lh", { step: 0.05, min: 0.6, max: 3, def: 1.12 })), field("Padding", num(el, "pad", { step: 0.2, min: 0, max: 20, def: 0 }))]));
+    insp.appendChild(field("Box fill", colorField(el, "bgc"), "mb-2"));
+    insp.appendChild(h("div", { class: "kb-row" }, [field("Corner radius", num(el, "rad", { step: 0.2, min: 0, max: 50, def: 0 })), field("Border", num(el, "bw", { step: 0.1, min: 0, max: 5, def: 0 }))]));
+    if (el.bw) insp.appendChild(field("Border colour", colorField(el, "bc"), "mb-2"));
+  }
+
+  function qrPanel(el) {
+    insp.appendChild(field("QR opens", select(el, "mode", [
+      ["ticket", "Attendee check-in (personal)"], ["vcard", "Contact card (vCard)"],
+      ["event", "Event registration page"], ["checkin", "Walk-in check-in page"], ["custom", "Custom text / link"],
+    ], "ticket", renderInspector), "mb-2"));
+    if (el.mode === "custom") {
+      const ta = h("textarea", { class: "form-control", rows: 2, placeholder: "https://… or any text with {tokens}" });
+      ta.value = el.data || "";
+      ta.addEventListener("input", () => { el.data = ta.value; scheduleStage(); markLive(); });
+      ta.addEventListener("change", commitLive);
+      insp.appendChild(field("Custom content", ta, "mb-1"));
+      insp.appendChild(tokenChips(ta, el, "data"));
+    }
+    if (el.mode === "vcard") insp.appendChild(h("p", { class: "kb-note", text: "Scanning saves the attendee's name, organisation, title, email and phone to the scanner's contacts — great for networking. It does NOT check them in." }));
+    insp.appendChild(h("div", { class: "kb-row" }, [field("Dots", colorField(el, "fg", { noRole: false })), field("Background", colorField(el, "bgc", { noRole: true }))]));
+    insp.appendChild(h("div", { class: "kb-row c3" }, [
+      field("Padding", num(el, "pad", { step: 0.2, min: 0, max: 10, def: 0 })),
+      field("Radius", num(el, "rad", { step: 0.2, min: 0, max: 20, def: 0 })),
+      field("Quiet zone", num(el, "quiet", { step: 1, min: 0, max: 4, def: 0 })),
+    ]));
+    insp.appendChild(check(el, "dots", "Round dots style"));
+    const logoOpts = [["", "No logo in the middle"], ["logo", "Event logo"]].concat(state.assets.map(a => [a.key, "Upload · " + (a.label || a.id)]));
+    insp.appendChild(field("Centre logo", select(el, "logo", logoOpts, undefined), "mb-1"));
+    insp.appendChild(field("Error correction", select(el, "ec", [["L", "Low"], ["M", "Medium (default)"], ["Q", "Quartile"], ["H", "High"]], "M"), "mb-2"));
+    insp.appendChild(h("p", { class: "kb-note", text: "Keep QR codes at least 18 mm wide with dark dots on a light background so phones scan them first time." }));
+  }
+
+  function imageSourceOptions() {
+    return [["logo", "Event logo (from certificate settings)"], ["background", "Background photo"], ["cover", "Event cover image"]]
+      .concat(state.assets.map(a => [a.key, "Upload · " + (a.label || a.id)]));
+  }
+  function imagePanel(el) {
+    insp.appendChild(field("Image", select(el, "src", imageSourceOptions(), "logo"), "mb-2"));
+    if (!state.assetMap[el.src]) insp.appendChild(h("p", { class: "kb-note", text: el.src === "logo" ? "No event logo yet — upload one in Certificate design, or upload an image in the Add tab." : "Nothing uploaded for this slot yet. It stays empty on printed badges." }));
+    insp.appendChild(h("div", { class: "kb-row" }, [
+      field("Fit", select(el, "fit", [["contain", "Contain (whole image)"], ["cover", "Cover (crop to fill)"], ["stretch", "Stretch"]], "contain")),
+      field("Corner radius", num(el, "rad", { step: 0.2, min: 0, max: 50, def: 0 })),
+    ]));
+    insp.appendChild(h("div", { class: "kb-row" }, [h("div", {}, [check(el, "round", "Circle crop"), check(el, "gray", "Black & white")]), field("Border", num(el, "bw", { step: 0.1, min: 0, max: 5, def: 0 }))]));
+    if (el.bw) insp.appendChild(field("Border colour", colorField(el, "bc"), "mb-2"));
+    insp.appendChild(field("Backing colour", colorField(el, "bgc"), "mb-2"));
+  }
+
+  function shapePanel(el) {
+    insp.appendChild(field("Fill", colorField(el, "fill"), "mb-2"));
+    insp.appendChild(h("div", { class: "kb-h", text: "Gradient / pattern" }));
+    const sw = h("div", { class: "kb-swatches" });
+    sw.appendChild(h("div", { class: "kb-swatch", title: "No gradient", style: "background: repeating-linear-gradient(45deg,#333 0 4px,#222 4px 8px)", onclick: () => { delete el.grad; commit(); renderStage(); renderInspector(); } }));
+    GRADS.forEach(g => sw.appendChild(h("div", { class: "kb-swatch", title: g, style: "background:" + g.replace(/\{role\}/g, "#e11d48"), onclick: () => { el.grad = g; commit(); renderStage(); renderInspector(); } })));
+    insp.appendChild(sw);
+    const ta = h("textarea", { class: "form-control", rows: 2, placeholder: "CSS background, e.g. linear-gradient(…)" });
+    ta.value = el.grad || "";
+    ta.addEventListener("input", () => { if (ta.value.trim()) el.grad = ta.value; else delete el.grad; scheduleStage(); markLive(); });
+    ta.addEventListener("change", commitLive);
+    insp.appendChild(field("Custom (use {role} for the role colour)", ta, "mb-2"));
+    insp.appendChild(field("Shape", select(el, "clip", CLIPS, undefined), "mb-2"));
+    insp.appendChild(h("div", { class: "kb-row" }, [field("Corner radius", num(el, "rad", { step: 0.2, min: 0, max: 50, def: 0 })), field("Border", num(el, "bw", { step: 0.1, min: 0, max: 5, def: 0 }))]));
+    if (el.bw) insp.appendChild(h("div", { class: "kb-row" }, [field("Border colour", colorField(el, "bc")), field("Style", select(el, "bs", [["solid", "Solid"], ["dashed", "Dashed"], ["dotted", "Dotted"], ["double", "Double"]], "solid"))]));
+    insp.appendChild(h("div", {}, [check(el, "round", "Circle / ellipse"), check(el, "shadow", "Drop shadow")]));
+  }
+
+  function renderBadgePanel() {
+    insp.appendChild(h("div", { class: "kb-insp-head" }, [h("h3", {}, [h("i", { class: "bi bi-person-badge" }), "Badge"])]));
+    insp.appendChild(h("p", { class: "kb-empty-ins", text: "Click anything on the badge to edit it, or add new items from the Add tab." }));
+    insp.appendChild(h("div", { class: "kb-h", text: "Layers (top is in front)" }));
+    insp.appendChild(h("div", { class: "kb-layers", id: "kb-layers" }));
+    renderLayers();
+  }
+  function renderLayers() {
+    const wrap = document.getElementById("kb-layers");
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    state.L.els.slice().reverse().forEach(el => {
+      const row = h("div", { class: "kb-layer" + (el.id === state.sel ? " is-on" : "") }, [
+        h("i", { class: "bi " + TYPE_ICON[el.t] }),
+        h("span", { class: "kb-lname", text: elLabel(el) }),
+        h("button", { type: "button", title: el.hide ? "Show" : "Hide on badge", onclick: ev => { ev.stopPropagation(); if (el.hide) delete el.hide; else el.hide = true; commit(); renderAll(); } }, [h("i", { class: "bi " + (el.hide ? "bi-eye-slash" : "bi-eye") })]),
+        h("button", { type: "button", title: el.lock ? "Unlock" : "Lock", onclick: ev => { ev.stopPropagation(); if (el.lock) delete el.lock; else el.lock = true; commit(); renderAll(); } }, [h("i", { class: "bi " + (el.lock ? "bi-lock-fill" : "bi-unlock") })]),
+      ]);
+      row.addEventListener("click", () => { state.sel = el.id; renderInspector(); placeSel(); });
+      wrap.appendChild(row);
+    });
+  }
+
+  // ───────────────────── left: tabs ─────────────────────
+  $$(".kb-tab").forEach(t => t.addEventListener("click", () => {
+    $$(".kb-tab").forEach(x => x.classList.toggle("is-on", x === t));
+    $$(".kb-pane").forEach(p => p.classList.toggle("is-on", p.dataset.pane === t.dataset.tab));
+    if (t.dataset.tab === "templates") renderGallery();
+  }));
+
+  // Templates gallery
+  let cat = "all";
+  function renderCats() {
+    const wrap = $("#kb-cats"); wrap.innerHTML = "";
+    TPL.CATEGORIES.forEach(c => {
+      const b = h("button", { type: "button", class: "kb-chip" + (c.key === cat ? " is-on" : ""), text: c.label });
+      b.addEventListener("click", () => { cat = c.key; renderCats(); renderGallery(); });
+      wrap.appendChild(b);
+    });
+  }
+  function renderGallery() {
+    const wrap = $("#kb-gallery"); wrap.innerHTML = "";
+    const list = TPL.LIST.filter(t => cat === "all" || t.cat === cat || (cat === "photo" && t.tags.includes("photo")));
+    list.forEach(t => {
+      const L = K.clone(t.layout);
+      L.roles = K.clone(state.L.roles);
+      const N = K.normalize(L);
+      const scale = 150 / Math.max(N.w * 1.0, N.h * 1.0);
+      const art = h("div", { class: "kb-thumb-art" });
+      const badge = K.render(L, person(), ctx(), { width: (N.w * scale) + "px", height: (N.h * scale) + "px" });
+      art.appendChild(badge);
+      const card = h("div", { class: "kb-thumb" + (t.key === state.templateKey ? " is-on" : ""), title: "Use " + t.name }, [
+        art, h("div", { class: "kb-thumb-name", text: t.name }),
+        h("div", { class: "kb-thumb-tag", text: K.SIZES[N.size].label.split("·")[0].trim() + (t.tags.includes("photo") ? " · 📷 photo" : "") }),
+      ]);
+      card.addEventListener("click", () => applyTemplate(t));
+      wrap.appendChild(card);
+    });
+    requestAnimationFrame(() => K.fitText(wrap));
+  }
+  function applyTemplate(t) {
+    const L = K.clone(t.layout);
+    L.roles = K.clone(state.L.roles);                      // keep the organiser's role mapping
+    state.L = K.normalize(L);
+    state.templateKey = t.key; state.sel = null;
+    commit(); renderAll(); renderGallery();
+  }
+
+  // Add tab
+  function addBtn(icon, label, sub, fn) {
+    return h("button", { type: "button", class: "kb-add", onclick: fn }, [h("i", { class: "bi " + icon }), h("span", {}, [label, sub ? h("small", { text: sub }) : null])]);
+  }
+  function textEl(txt, o) { return Object.assign({ t: "text", x: 10, y: 40, w: 80, h: 8, txt, fs: 4.5, fw: 700, ff: "inter", c: "#111111", al: "c", va: "m" }, o || {}); }
+  function buildAddTab() {
+    const T = $("#kb-add-text"); T.innerHTML = "";
+    [
+      ["bi-person", "Full name", "{name}", { fs: 8, fw: 800, h: 12, fit: true }],
+      ["bi-person", "First name", "{first}", { fs: 11, fw: 800, h: 14, fit: true, nowrap: true }],
+      ["bi-person", "Last name", "{last}", { fs: 5.5, fw: 600, h: 7, fit: true, nowrap: true }],
+      ["bi-type", "Initials", "{initials}", { fs: 10, fw: 800, w: 30, x: 35, h: 21, sq: true }],
+      ["bi-briefcase", "Job title", "{title}", { fs: 3.4, fw: 500, h: 5 }],
+      ["bi-building", "Organisation", "{org}", { fs: 3.6, fw: 700, h: 5 }],
+      ["bi-award", "Role", "{role}", { fs: 4.6, fw: 800, up: true, ls: 0.2, h: 8, c: "role" }],
+      ["bi-hash", "Ticket no.", "#{no}", { ff: "mono", fs: 2.8, fw: 500, h: 4.5, c: "#64748b" }],
+      ["bi-calendar-event", "Event title", "{event}", { fs: 3.6, fw: 700, h: 6, fit: true, nowrap: true }],
+      ["bi-clock", "Dates & venue", "{dates} · {venue}", { fs: 2.6, fw: 500, h: 4.5, fit: true, nowrap: true, c: "#64748b" }],
+      ["bi-envelope", "Email", "{email}", { fs: 2.8, fw: 500, h: 4.5 }],
+      ["bi-fonts", "Free text", "Your text", { fs: 4, fw: 600, h: 6 }],
+    ].forEach(([icon, label, txt, o]) => T.appendChild(addBtn(icon, label, txt, () => addElement(textEl(txt, o)))));
+
+    const F = $("#kb-add-fields"); F.innerHTML = "";
+    const fields = boot.fields || [];
+    $("#kb-add-fields-h").hidden = !fields.length;
+    fields.forEach(f => F.appendChild(addBtn("bi-input-cursor-text", f.label.slice(0, 26), "{f:" + f.id + "}", () => addElement(textEl("{f:" + f.id + "}", { fs: 3.4, fw: 600, h: 5 })))));
+
+    const Q = $("#kb-add-qr"); Q.innerHTML = "";
+    const q = (mode, extra) => Object.assign({ t: "qr", x: 35, y: 60, w: 30, h: 30, mode, fg: "#111111", bgc: "#ffffff", pad: 1, rad: 1, sq: true }, extra || {});
+    Q.appendChild(addBtn("bi-qr-code-scan", "Check-in QR", "personal, scans at door", () => addElement(q("ticket"))));
+    Q.appendChild(addBtn("bi-person-vcard", "Contact QR", "vCard for networking", () => addElement(q("vcard"))));
+    Q.appendChild(addBtn("bi-link-45deg", "Registration QR", "event sign-up page", () => addElement(q("event"))));
+    Q.appendChild(addBtn("bi-qr-code", "Custom QR", "any link or text", () => addElement(q("custom", { data: "https://" }))));
+
+    const S = $("#kb-add-shapes"); S.innerHTML = "";
+    const s = (o) => Object.assign({ t: "shape", x: 0, y: 85, w: 100, h: 15, fill: "role" }, o);
+    [
+      ["bi-square-fill", "Band", "full width", s({})],
+      ["bi-app", "Rounded box", "", s({ x: 10, y: 30, w: 80, h: 30, fill: "#f1f5f9", rad: 4 })],
+      ["bi-circle-fill", "Circle", "", s({ x: 35, y: 20, w: 30, h: 21, round: true, sq: true })],
+      ["bi-capsule", "Pill", "", s({ x: 20, y: 80, w: 60, h: 8, rad: 4 })],
+      ["bi-dash-lg", "Line", "", s({ x: 10, y: 55, w: 80, h: 0.4, fill: "#111111" })],
+      ["bi-triangle-fill", "Diagonal", "", s({ x: 0, y: 0, w: 100, h: 35, clip: "polygon(0 0,100% 0,100% 62%,0 100%)" })],
+      ["bi-bookmark-fill", "Ribbon", "", s({ x: 15, y: 82, w: 70, h: 8, clip: "polygon(0 0,100% 0,96% 50%,100% 100%,0 100%,4% 50%)" })],
+      ["bi-hexagon-fill", "Hexagon", "", s({ x: 35, y: 20, w: 30, h: 21, sq: true, clip: "polygon(25% 5%,75% 5%,100% 50%,75% 95%,25% 95%,0 50%)" })],
+      ["bi-star-fill", "Star", "", s({ x: 40, y: 20, w: 20, h: 14, sq: true, fill: "#facc15", clip: CLIPS[CLIPS.length - 1][0] })],
+      ["bi-bounding-box", "Frame", "border only", s({ x: 4, y: 3, w: 92, h: 94, fill: "transparent", bw: 0.5, bc: "role", rad: 2 })],
+    ].forEach(([icon, label, sub, el]) => S.appendChild(addBtn(icon, label, sub, () => addElement(K.clone(el)))));
+
+    const I = $("#kb-add-images"); I.innerHTML = "";
+    I.appendChild(addBtn("bi-building", "Event logo", "", () => addElement({ t: "image", x: 30, y: 4, w: 40, h: 12, src: "logo", fit: "contain" })));
+    I.appendChild(addBtn("bi-image", "Photo window", "uses background photo", () => addElement({ t: "image", x: 0, y: 0, w: 100, h: 40, src: "background", fit: "cover" })));
+    renderAssets();
+  }
+  function renderAssets() {
+    const A = $("#kb-assets"); A.innerHTML = "";
+    state.assets.forEach(a => {
+      const del = h("button", { type: "button", title: "Delete image", text: "✕" });
+      del.addEventListener("click", async ev => {
+        ev.stopPropagation();
+        if (!confirm("Delete this image? Badges using it will show nothing in its place.")) return;
+        try {
+          await post(swapId(URLS.assetDel, a.id), {});
+          state.assets = state.assets.filter(x => x !== a); delete state.assetMap[a.key];
+          renderAssets(); renderStage();
+        } catch (e) { alert(e.message); }
+      });
+      const tile = h("div", { class: "kb-asset", title: "Add " + (a.label || "image") }, [h("img", { src: a.url, alt: "" }), del]);
+      tile.addEventListener("click", () => addElement({ t: "image", x: 30, y: 30, w: 40, h: 20, src: a.key, fit: "contain" }));
+      A.appendChild(tile);
+    });
+  }
+  $("#kb-asset-file").addEventListener("change", async e => {
+    const f = e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    const fd = new FormData(); fd.append("image", f); fd.append("kind", "asset"); fd.append("label", f.name);
+    try {
+      const r = await post(URLS.upload, fd, true);
+      state.assets.unshift({ key: r.key, id: r.id, url: r.url, label: r.label });
+      state.assetMap[r.key] = r.url;
+      renderAssets();
+      addElement({ t: "image", x: 30, y: 30, w: 40, h: 20, src: r.key, fit: "contain" });
+    } catch (err) { alert(err.message); }
+  });
+
+  // Background tab
+  function buildBgTab() {
+    const bg = state.L.bg;
+    $("#kb-bg-cover").hidden = !state.assetMap.cover;
+    const C = $("#kb-bg-controls"); C.innerHTML = "";
+    const using = bg.img && state.assetMap[bg.img];
+    if (using) {
+      const fit = select(bg, "fit", [["cover", "Fill (crop)"], ["contain", "Whole photo"], ["stretch", "Stretch"]], "cover");
+      C.appendChild(h("div", { class: "d-flex gap-2 align-items-center mb-2" }, [
+        h("img", { src: state.assetMap[bg.img], style: "width:54px;height:54px;object-fit:cover;border-radius:8px;border:1px solid var(--kk-border)" }),
+        h("div", { class: "kb-note", text: bg.img === "cover" ? "Using the event cover image." : "Using your uploaded photo." }),
+      ]));
+      C.appendChild(field("Fit", fit, "mb-2"));
+      C.appendChild(h("div", { class: "kb-row" }, [field("Position ←→", range(bg, "px", 0, 100, 1, 50)), field("Position ↑↓", range(bg, "py", 0, 100, 1, 50))]));
+      C.appendChild(h("div", { class: "kb-row" }, [field("Photo opacity", range(bg, "op", 0, 1, 0.05, 1)), field("Blur", range(bg, "blur", 0, 20, 1, 0))]));
+      C.appendChild(check(bg, "gray", "Black & white photo"));
+    } else {
+      C.appendChild(h("p", { class: "kb-note mb-0", text: state.assetMap.background ? "A photo is uploaded but this design isn't showing it." : "No photo yet. Templates marked 📷 are made for one." }));
+      if (state.assetMap.background) C.appendChild(h("button", { type: "button", class: "kk-btn kk-btn-ghost btn-sm mt-1", text: "Show my photo", onclick: () => { bg.img = "background"; commit(); renderAll(); } }));
+    }
+    const col = $("#kb-bg-color"); col.innerHTML = "";
+    col.appendChild(colorField(bg, "color", { placeholder: "#ffffff" }));
+    const sw = $("#kb-bg-swatches"); sw.innerHTML = "";
+    BG_GRADS.forEach(g => sw.appendChild(h("div", { class: "kb-swatch", title: g || "None", style: "background:" + (g ? g.replace(/\{role\}/g, "#e11d48").replace(/cqmin/g, "px") : "repeating-linear-gradient(45deg,#333 0 4px,#222 4px 8px)"), onclick: () => { bg.grad = g; commit(); renderAll(); } })));
+    const ta = $("#kb-bg-grad"); ta.value = bg.grad || "";
+    const ov = $("#kb-bg-overlay"); ov.innerHTML = "";
+    ov.appendChild(field("Overlay colour or gradient", colorField(bg, "ov"), "mb-2"));
+    ov.appendChild(field("Overlay strength", range(bg, "ovop", 0, 1, 0.05, 0)));
+  }
+  $("#kb-bg-grad").addEventListener("input", e => { state.L.bg.grad = e.target.value; scheduleStage(); markLive(); });
+  $("#kb-bg-grad").addEventListener("change", commitLive);
+  $("#kb-bg-file").addEventListener("change", async e => {
+    const f = e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    const fd = new FormData(); fd.append("image", f); fd.append("kind", "background");
+    saveEl.textContent = "Uploading photo…";
+    try {
+      const r = await post(URLS.upload, fd, true);
+      state.assetMap.background = r.url + (r.url.includes("?") ? "&" : "?") + "t=" + Date.now();
+      state.L.bg.img = "background";
+      commit(); renderAll();
+    } catch (err) { alert(err.message); saveEl.textContent = "Upload failed"; }
+  });
+  $("#kb-bg-cover").addEventListener("click", () => { state.L.bg.img = "cover"; commit(); renderAll(); });
+  $("#kb-bg-remove").addEventListener("click", async () => {
+    if (state.L.bg.img === "cover") { state.L.bg.img = ""; commit(); renderAll(); return; }
+    if (!state.assetMap.background) { state.L.bg.img = ""; commit(); renderAll(); return; }
+    if (!confirm("Remove the background photo from this event's badges?")) return;
+    try { await post(URLS.bgClear, {}); } catch (e) { alert(e.message); return; }
+    delete state.assetMap.background; state.L.bg.img = "";
+    commit(); renderAll();
+  });
+
+  // Roles tab
+  function buildRolesTab() {
+    const R = state.L.roles;
+    const sel = $("#kb-role-field"); sel.innerHTML = "";
+    sel.appendChild(h("option", { value: "", text: "Nobody — everyone gets the fallback role" }));
+    (boot.fields || []).forEach(f => sel.appendChild(h("option", { value: "f:" + f.id, text: "Question · " + f.label })));
+    [["org", "Organisation"], ["title", "Job title"], ["dept", "Department"], ["country", "Country"]].forEach(([k, l]) => sel.appendChild(h("option", { value: k, text: "Token · " + l })));
+    sel.value = R.field || "";
+    $("#kb-role-fallback").value = R.fallback || "";
+    const list = $("#kb-role-list"); list.innerHTML = "";
+    const fieldDef = (boot.fields || []).find(f => "f:" + f.id === R.field);
+    const names = Object.keys(R.colors);
+    if (fieldDef && fieldDef.options) fieldDef.options.forEach(o => { if (!names.some(n => n.toLowerCase() === o.toLowerCase())) names.unshift(o); });
+    names.forEach(name => {
+      const nameIn = h("input", { class: "form-control", value: name });
+      const holder = { c: R.colors[name] || K.roleColorOf(name, state.L) };
+      const colorIn = h("input", { type: "color", class: "form-control form-control-color", value: /^#[0-9a-f]{6}$/i.test(holder.c) ? holder.c : "#7c3aed", style: "height:30px;min-width:0;width:100%" });
+      const del = h("button", { type: "button", title: "Remove", text: "✕" });
+      nameIn.addEventListener("change", () => {
+        const nv = nameIn.value.trim(); if (!nv || nv === name) return;
+        R.colors[nv] = R.colors[name] || colorIn.value; delete R.colors[name];
+        commit(); renderAll();
+      });
+      colorIn.addEventListener("input", () => { R.colors[name] = colorIn.value; scheduleStage(); markLive(); });
+      colorIn.addEventListener("change", () => { commitLive(); renderGallery(); });
+      del.addEventListener("click", () => { delete R.colors[name]; commit(); renderAll(); });
+      list.appendChild(h("div", { class: "kb-role-row" }, [nameIn, colorIn, del]));
+    });
+  }
+  $("#kb-role-field").addEventListener("change", e => { state.L.roles.field = e.target.value; commit(); renderAll(); });
+  $("#kb-role-fallback").addEventListener("change", e => { state.L.roles.fallback = e.target.value.trim(); commit(); renderAll(); });
+  $("#kb-role-add").addEventListener("click", () => {
+    const name = prompt("Role name (exactly as attendees answer it):");
+    if (!name || !name.trim()) return;
+    state.L.roles.colors[name.trim()] = "#0ea5e9"; commit(); renderAll();
+  });
+
+  // Mine tab
+  function buildMineTab() {
+    const list = $("#kb-mine-list"); list.innerHTML = "";
+    if (!state.saved.length) { list.appendChild(h("p", { class: "kb-note", text: "Nothing saved yet." })); return; }
+    state.saved.forEach(t => {
+      const apply = h("button", { type: "button", class: "kk-btn kk-btn-ghost btn-sm", text: "Use" });
+      const del = h("button", { type: "button", class: "kb-ibtn", title: "Delete" }, [h("i", { class: "bi bi-trash3" })]);
+      apply.addEventListener("click", async () => {
+        if (!confirm(`Replace this event's badge design with “${t.name}”?`)) return;
+        try {
+          const r = await post(swapId(URLS.mineApply, t.id), {});
+          state.L = K.normalize(r.layout); state.templateKey = "mine:" + t.id; state.sel = null;
+          if (r.background) state.assetMap.background = r.background;
+          commit(); state.dirty = false; saveEl.textContent = "Saved"; renderAll();
+        } catch (e) { alert(e.message); }
+      });
+      del.addEventListener("click", async () => {
+        if (!confirm(`Delete “${t.name}” from your templates?`)) return;
+        try { await post(swapId(URLS.mineDel, t.id), {}); state.saved = state.saved.filter(x => x !== t); buildMineTab(); }
+        catch (e) { alert(e.message); }
+      });
+      list.appendChild(h("div", { class: "kb-mine" }, [h("i", { class: "bi bi-bookmark-star" }), h("span", { class: "kb-lname", text: t.name }), apply, del]));
+    });
+  }
+  $("#kb-mine-save").addEventListener("click", async () => {
+    const name = $("#kb-mine-name").value.trim();
+    if (!name) { $("#kb-mine-name").focus(); return; }
+    try {
+      await save();
+      const r = await post(URLS.mineSave, { name, layout: state.L });
+      state.saved.unshift(r.template); $("#kb-mine-name").value = ""; buildMineTab();
+    } catch (e) { alert(e.message); }
+  });
+
+  // ───────────────────── toolbar ─────────────────────
+  const sizeSel = $("#kb-size");
+  Object.entries(K.SIZES).forEach(([k, s]) => sizeSel.appendChild(h("option", { value: k, text: s.label })));
+  sizeSel.addEventListener("change", () => {
+    state.L.size = sizeSel.value;
+    if (sizeSel.value !== "custom") { state.L.w = K.SIZES[sizeSel.value].w; state.L.h = K.SIZES[sizeSel.value].h; }
+    commit(); renderAll();
+  });
+  ["#kb-cw", "#kb-ch"].forEach((s, i) => $(s).addEventListener("change", e => {
+    const v = Math.max(30, Math.min(300, +e.target.value || 0));
+    if (i === 0) state.L.w = v; else state.L.h = v;
+    commit(); renderAll();
+  }));
+  function syncToolbar() {
+    sizeSel.value = state.L.size;
+    $("#kb-custom-size").hidden = state.L.size !== "custom";
+    $("#kb-cw").value = state.L.w; $("#kb-ch").value = state.L.h;
+  }
+  $("#kb-undo").addEventListener("click", undo);
+  $("#kb-redo").addEventListener("click", redo);
+  $("#kb-zoom-in").addEventListener("click", () => { state.autoZoom = false; state.zoom = Math.min(4, state.zoom * 1.2); renderStage(); });
+  $("#kb-zoom-out").addEventListener("click", () => { state.autoZoom = false; state.zoom = Math.max(0.25, state.zoom / 1.2); renderStage(); });
+  $("#kb-zoom-fit").addEventListener("click", () => { state.autoZoom = true; renderStage(); });
+  $("#kb-snap").addEventListener("click", e => { state.snap = !state.snap; e.currentTarget.classList.toggle("is-on", state.snap); });
+  $("#kb-grid").addEventListener("click", e => { state.grid = !state.grid; e.currentTarget.classList.toggle("is-on", state.grid); inner.classList.toggle("kb-grid-on", state.grid); });
+  const personSel = $("#kb-person");
+  people.forEach((p, i) => personSel.appendChild(h("option", { value: i, text: p.label })));
+  personSel.value = state.personIdx;
+  personSel.addEventListener("change", () => { state.personIdx = +personSel.value; renderStage(); });
+  $("#kb-person-next").addEventListener("click", () => { state.personIdx = (state.personIdx + 1) % people.length; personSel.value = state.personIdx; renderStage(); });
+  $("#kb-save-btn").addEventListener("click", () => { state.dirty = true; save(); });
+  window.addEventListener("resize", () => { if (state.autoZoom) scheduleStage(); });
+
+  function renderAll() {
+    syncToolbar();
+    renderStage();
+    renderInspector();
+    buildBgTab();
+    buildRolesTab();
+    if ($(".kb-pane[data-pane=templates]").classList.contains("is-on")) renderGallery();
+  }
+
+  // ───────────────────── print dialog ─────────────────────
+  const modal = $("#kb-print");
+  const po = Object.assign({}, boot.printOpts || {});
+  const paperSel = $("#pp-paper");
+  Object.entries(K.PAPERS).forEach(([k, p]) => paperSel.appendChild(h("option", { value: k, text: p.label })));
+  const picked = new Set();
+  function openPrint() {
+    save();
+    $("#pp-who").value = po.who || "accepted"; $("#pp-sort").value = po.sort || "name";
+    paperSel.value = po.paper || "a4"; $("#pp-orient").value = po.orient || "auto";
+    $("#pp-margin").value = po.margin ?? 8; $("#pp-gap").value = po.gap ?? 4;
+    $("#pp-crop").checked = po.crop !== false; $("#pp-copies").value = po.copies || 1; $("#pp-blank").value = po.blank || 0;
+    syncPick(); estimate();
+    modal.classList.add("is-open");
+  }
+  function readPrint() {
+    return {
+      who: $("#pp-who").value, sort: $("#pp-sort").value, paper: paperSel.value, orient: $("#pp-orient").value,
+      margin: +$("#pp-margin").value || 0, gap: +$("#pp-gap").value || 0, crop: $("#pp-crop").checked,
+      copies: Math.max(1, +$("#pp-copies").value || 1), blank: Math.max(0, +$("#pp-blank").value || 0),
+    };
+  }
+  function countFor(o) {
+    const all = boot.people || [];
+    let n;
+    if (o.who === "pick") n = picked.size;
+    else {
+      const ok = { accepted: ["accepted", "checked_in"], checked_in: ["checked_in"], all: ["pending", "accepted", "checked_in"] }[o.who];
+      n = o.who === "accepted" ? boot.attendeeCount : all.filter(p => ok.includes(p.status)).length;
+    }
+    return n * o.copies + o.blank;
+  }
+  function estimate() {
+    const o = readPrint();
+    const g = K.sheetGrid(o.paper, o.orient, o.margin, o.gap, state.L.w, state.L.h);
+    const n = countFor(o);
+    const pages = Math.ceil(n / g.per) || 0;
+    const el = $("#pp-estimate"); el.innerHTML = "";
+    const b = (t) => h("b", { text: t });
+    el.append(b(n + " badge" + (n === 1 ? "" : "s")), " · ",
+      g.single ? "one per page" : b(g.per + " per sheet") , g.single ? "" : ` (${g.cols} × ${g.rows}, ${g.pw > g.ph ? "landscape" : "portrait"})`,
+      " · ", b(pages + " page" + (pages === 1 ? "" : "s")),
+      " · badge " + state.L.w + " × " + state.L.h + " mm");
+    const g0 = K.sheetGrid(o.paper, o.orient, 0, 0, state.L.w, state.L.h);
+    if (!g.single && g0.per > g.per) el.append(h("div", { class: "mt-1", text: `Tip: set margin and gap to 0 to fit ${g0.per} per sheet (cut on the lines; most printers leave a small unprinted edge).` }));
+    if (g.tooBig) el.append(h("div", { class: "text-warning mt-1", text: "The badge is larger than the paper's printable area — printing one per page." }));
+    if (!n) el.append(h("div", { class: "text-warning mt-1", text: "Nobody matches yet — you can still print blank badges." }));
+  }
+  function syncPick() {
+    const isPick = $("#pp-who").value === "pick";
+    $("#pp-pick-wrap").hidden = !isPick;
+    $("#pp-after-wrap").hidden = isPick;
+    if (isPick) renderPick();
+  }
+  function renderPick() {
+    const q = $("#pp-pick-q").value.trim().toLowerCase();
+    const wrap = $("#pp-pick"); wrap.innerHTML = "";
+    const list = (boot.people || []).filter(p => !q || (p.name + " " + p.org + " " + p.email).toLowerCase().includes(q));
+    if (!list.length) wrap.appendChild(h("div", { class: "kb-note p-2", text: "No attendees found." }));
+    list.forEach(p => {
+      const c = h("input", { type: "checkbox" }); c.checked = picked.has(p.id);
+      c.addEventListener("change", () => { if (c.checked) picked.add(p.id); else picked.delete(p.id); estimate(); });
+      wrap.appendChild(h("label", {}, [c, p.name || p.email || ("#" + p.no), h("small", { text: [p.org, p.status.replace("_", " ")].filter(Boolean).join(" · ") })]));
+    });
+  }
+  $("#pp-pick-q").addEventListener("input", renderPick);
+  $("#pp-pick-all").addEventListener("click", () => { $$("#pp-pick input").forEach(c => { c.checked = true; c.dispatchEvent(new Event("change")); }); });
+  $("#pp-pick-none").addEventListener("click", () => { picked.clear(); renderPick(); estimate(); });
+  $("#pp-who").addEventListener("change", () => { syncPick(); estimate(); });
+  ["#pp-paper", "#pp-orient", "#pp-margin", "#pp-gap", "#pp-copies", "#pp-blank", "#pp-crop"].forEach(s => $(s).addEventListener("input", estimate));
+  function printQuery() {
+    const o = readPrint();
+    Object.assign(po, o, { who: o.who === "pick" ? po.who || "accepted" : o.who });
+    post(URLS.save, { print_opts: Object.assign({}, po) }).catch(() => {});
+    const q = new URLSearchParams();
+    Object.entries(o).forEach(([k, v]) => { if (k !== "who") q.set(k, typeof v === "boolean" ? (v ? "1" : "0") : v); });
+    if (o.who === "pick") {
+      if (!picked.size) { alert("Tick at least one attendee."); return null; }
+      q.set("ids", Array.from(picked).join(","));
+    } else {
+      q.set("who", o.who);
+      const after = $("#pp-after").value; if (after) q.set("after", after);
+    }
+    return q.toString();
+  }
+  $("#kb-print-open").addEventListener("click", openPrint);
+  $("#kb-print-close").addEventListener("click", () => modal.classList.remove("is-open"));
+  modal.addEventListener("click", e => { if (e.target === modal) modal.classList.remove("is-open"); });
+  $("#pp-open").addEventListener("click", async () => { await save(); const q = printQuery(); if (q != null) window.open(URLS.print + "?" + q, "_blank"); });
+  $("#pp-pdf").addEventListener("click", async () => { await save(); const q = printQuery(); if (q != null) window.location.href = URLS.pdf + "?" + q; });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && modal.classList.contains("is-open")) modal.classList.remove("is-open"); });
+
+  // ───────────────────── boot ─────────────────────
+  renderCats();
+  buildAddTab();
+  buildMineTab();
+  renderAll();
+  syncUndo();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { renderStage(); renderGallery(); });
+  if (new URLSearchParams(location.search).get("print") === "1") openPrint();
+})();
+</script>
+{% endblock %}

@@ -118,6 +118,7 @@ PAGE_NAMES = {
     "live_map": "the live map",
     "teams": "team management",
     "team_board": "a supervisor's team board",
+    "gallery": "the photo gallery",
 }
 
 SYSTEM = """You are Foon, the AI assistant inside Kura — the survey and data-collection studio of the Knock-Knock platform (nokknock.app, The Gambia). You are a cheerful, music-loving robot with headphones and a sharp senior data engineer and M&E specialist. You help people design questionnaires, understand their survey data, make charts, tables, KPI cards, maps, infographic shapes and dashboards, clean data, and make privacy-safe subsets.
@@ -170,6 +171,10 @@ TOOLS
 {"tool":"review_form"} — check the current questionnaire for problems (placeholders, missing options, broken logic, no min/max…). Add your own expert suggestions in "say".
 {"tool":"surveys"} — the user's surveys with response counts (useful on the survey list).
 {"tool":"form_template"} — the Kura Form Excel template (blank or with examples) to fill in offline.
+{"tool":"gallery","question":"photo column (optional)","starred":false,"filters":[],"title":"..."} — the survey's photos (starred first) with a link to the full gallery.
+{"tool":"report","title":"...","subtitle":"...","summary":"executive summary, 2-4 sentences, real figures from CONTEXT","sections":[{"heading":"...","text":"1-3 paragraphs (blank line between), real figures","chart":{chart spec},"table":{table spec},"photos":{"count":0-4,"question":"photo column","filters":[]}}],"recommendations":["specific, actionable"],"limitations":"..."} — a written report the user downloads as Word, PDF or HTML. 4-7 sections; every section should earn its place; photos only when PHOTOS exist.
+{"tool":"story_deck","title":"...","subtitle":"...","theme":"night|savanna|atlantic|forest|paper|sunrise","scenes":[{"type":"title|bignumber|chart|photo|gallery|compare|timeline|takeaways|closing","headline":"max 9 words","text":"max 30 words","notes":"speaker notes, 2-3 sentences","chart":{chart spec},"number":{"agg","column","format":"percent","filters":[],"of":[]},"items":[{"label","filters":[],"of":[]}],"points":["..."],"photo":{"question":"...","filters":[],"count":3}}]} — a story-telling presentation Foon builds in Hanns (the user's deck editor) with native charts and their photos.
+   Tell a STORY, not a data dump: open with a human hook (title), set the scene (one bignumber), then 3-5 insights that build on each other (chart / bignumber / compare — each headline states the insight, e.g. "Two in three homes walk over 30 minutes for water", never just "Water source"), a human moment (photo or gallery) when PHOTOS exist, then takeaways (3 points) and a closing call to action. 8-12 scenes. Speaker notes say what to emphasise. Pick the theme for the audience (paper/sunrise for print-friendly, night/atlantic/forest/savanna for screens).
 
 EXCEL QUESTIONNAIRES
 - Every questionnaire you draft can be downloaded as a Kura Form Excel workbook (the builder's own import format) — mention it when the user wants Excel.
@@ -257,6 +262,16 @@ def build_user_prompt(ctx: eng.AgentContext, message: str, history: list) -> str
                      "or tell them to pick a survey in Foon's menu.")
     if ctx.uploaded:
         parts.append(ctx.uploaded)
+    if ctx.survey is not None and ctx.can.get("view"):
+        try:
+            from .media import photo_stats
+            ps = photo_stats(ctx.survey)
+            if ps["total"]:
+                parts.append("PHOTOS: " + f"{ps['total']} photo(s), {ps['starred']} starred — " +
+                             "; ".join(f"{q['name']} “{q['label']}”: {q['count']}" for q in ps["questions"][:6]) +
+                             ". Foon picks starred photos first; it never sees the images.")
+        except Exception:
+            pass
     if ctx.studio:
         from . import agent_studio
         if ctx.studio["kind"] == "dashboard":
@@ -390,6 +405,19 @@ RX_TABLE = R(r"\b(table|cross ?tab|pivot|breakdown|frequenc|counts?)\b")
 RX_CHART = R(r"\b(charts?|graphs?|plots?|bars?|pie|donut|histogram|trend|over time|visuali[sz]e|scatter|distribution)\b")
 RX_ABOUT = R(r"\b(about (my|the|this) data|summar|insights?|tell me|describe|overview|what('s| is) in|explain (my|the) data|analy[sz]e)\b")
 RX_SURVEYS = R(r"\b(my surveys|all (my )?surveys|which survey|list (of )?surveys)\b")
+RX_STORY = R(r"\b(story|storytelling|story-telling|presentation|present it|deck|slides?|hanns|pitch)\b")
+RX_REPORT = R(r"\breport\b|\bwrite[- ]?up\b")
+RX_GALLERY = R(r"\b(photos?|pictures?|images?|gallery|pics)\b")
+
+
+def _has_photos(ctx):
+    try:
+        from .media import photo_stats
+        return photo_stats(ctx.survey)["total"] > 0
+    except Exception:
+        return False
+
+
 RX_TEMPLATE = R(r"\btemplate\b|\bblank (form|excel|sheet|workbook)\b|\bexcel (layout|format|form)\b|\bkura form\b")
 RX_QUESTIONNAIRE_TOPIC = R(r"\b(about|on|for)\s+\w{4,}")
 RX_CHECK_FILE = R(r"\b(check|validate|verify|test|inspect|audit)\b.*\b(excel|xlsx|spreadsheet|workbook|file|upload|xlsform|kobo|odk)\b")
@@ -429,7 +457,7 @@ def builtin_plan(ctx: eng.AgentContext, message: str) -> dict:
         return {"say": "Here's a check of your questionnaire.", "mood": "thinking",
                 "actions": [{"tool": "review_form"}], "suggestions": ["Fix the placeholder options", "Add a consent question"]}
 
-    if RX_QUESTIONNAIRE.search(m) and not RX_CHART.search(m):
+    if RX_QUESTIONNAIRE.search(m) and not RX_CHART.search(m) and not RX_STORY.search(m) and not RX_REPORT.search(m):
         q = template_questionnaire(m)
         if ctx.page == "builder" and ctx.survey is not None:
             q["questions"] = _skip_existing(q["questions"], ctx.draft_schema or ctx.survey.draft_schema)
@@ -461,6 +489,27 @@ def builtin_plan(ctx: eng.AgentContext, message: str) -> dict:
     if not has_data:
         return {"say": "There are no responses yet, so there's nothing to analyse. Once data arrives I can chart and clean it — meanwhile I can review the questionnaire.",
                 "mood": "curious", "actions": [{"tool": "overview"}], "suggestions": ["Review my form"]}
+
+    if RX_STORY.search(m):
+        from .agent_story import builtin_story
+        story = builtin_story(ctx)
+        return {"say": "Here's a storyboard for a Hanns deck — a hook, the key insights, "
+                       + ("your photos, " if any(sc["type"] in ("photo", "gallery") for sc in story["scenes"]) else "")
+                       + "takeaways and a close. Pick a theme, then create it in Hanns and present.",
+                "mood": "proud", "actions": [story],
+                "suggestions": ["Use the savanna theme", "Write a report too"]}
+
+    if RX_REPORT.search(m):
+        from .agent_report import builtin_report
+        return {"say": "I drafted a findings report with charts" + (" and photos" if _has_photos(ctx) else "")
+                       + ". Download it as Word to edit, or as PDF to share.",
+                "mood": "proud", "actions": [builtin_report(ctx)],
+                "suggestions": ["Turn it into a Hanns story", "Show the photos"]}
+
+    if RX_GALLERY.search(m):
+        return {"say": "Here are the photos from the field — starred ones first. Open the gallery to caption, star "
+                       "or download them.", "mood": "happy", "actions": [{"tool": "gallery"}],
+                "suggestions": ["Write a report with these photos", "Make a story deck"]}
 
     if RX_PRIVACY.search(m):
         return {"say": "I've made a privacy-safe copy: personal identifiers removed or coded, exact dates and places generalised. Check the decisions, then download or save it.",

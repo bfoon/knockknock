@@ -47,7 +47,7 @@ every longer-suffixed route must precede the bare <str:code>/ catch-all.
 
 from django.urls import path
 
-from . import agent_views, api, dashboard_views, team_views, views, studio_views
+from . import agent_views, api, dashboard_views, media_views, team_views, views, studio_views
 
 app_name = "kura"
 
@@ -75,6 +75,8 @@ urlpatterns = [
     path("api/forms/", api.forms_manifest, name="api_forms"),
     path("api/forms/<str:code>/", api.form_detail, name="api_form_detail"),
     path("api/forms/<str:code>/sync/", api.form_sync, name="api_form_sync"),
+    path("api/forms/<str:code>/media/", media_views.api_media_upload, name="api_media_upload"),
+    path("api/forms/<str:code>/media/check/", media_views.api_media_check, name="api_media_check"),
     path("api/forms/<str:code>/live/", api.form_live, name="api_form_live"),
     path("api/forms/<str:code>/lookups/", api.form_lookups, name="api_form_lookups"),
 
@@ -182,6 +184,13 @@ urlpatterns = [
     path("<str:code>/chat/direct/", team_views.chat_direct, name="chat_direct"),
 
     path("<str:code>/submit/", views.collect_submit, name="collect_submit"),
+    path("<str:code>/media/", media_views.collect_media, name="collect_media"),
+    path("<str:code>/media/<int:media_id>/", media_views.media_file, name="media_file"),
+    path("<str:code>/media/<int:media_id>/update/", media_views.media_update, name="media_update"),
+    path("<str:code>/gallery/", media_views.gallery, name="gallery"),
+    path("<str:code>/gallery/data/", media_views.gallery_data, name="gallery_data"),
+    path("<str:code>/gallery/bulk/", media_views.gallery_bulk, name="gallery_bulk"),
+    path("<str:code>/gallery/zip/", media_views.gallery_zip, name="gallery_zip"),
     path("<str:code>/preview/", views.preview, name="preview"),
     path("<str:code>/preview/schema/", views.preview_schema, name="preview_schema"),
     path("<str:code>/lookups/upload/", views.lookups_upload, name="lookups_upload"),

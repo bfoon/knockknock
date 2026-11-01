@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 
 import '../config/api_config.dart';
@@ -101,5 +103,44 @@ class ApiClient {
       options: await _authOptions(),
     );
     return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Which of these photos does the server still need? Returns the indexes
+  /// of [items] (each {uuid, question, size}) that are missing or changed.
+  Future<List<int>> mediaCheck(
+    String code,
+    List<Map<String, dynamic>> items,
+  ) async {
+    final baseUrl = await SessionStore.baseUrl;
+    final response = await _dio.post(
+      ApiConfig.mediaCheck(baseUrl!, code),
+      data: {'items': items},
+      options: await _authOptions(),
+    );
+    final raw = (response.data as Map)['missing'];
+    if (raw is! List) return <int>[];
+    return raw.map((e) => (e as num).toInt()).toList();
+  }
+
+  /// Uploads one photo for one answer. Safe to repeat — the server keeps a
+  /// single photo per (record, question) and ignores an identical resend.
+  Future<void> uploadMedia(
+    String code, {
+    required String uuid,
+    required String question,
+    required File file,
+  }) async {
+    final baseUrl = await SessionStore.baseUrl;
+    final name = file.path.split(Platform.pathSeparator).last;
+    final form = FormData.fromMap({
+      'uuid': uuid,
+      'question': question,
+      'file': await MultipartFile.fromFile(file.path, filename: name),
+    });
+    final options = (await _authOptions()).copyWith(
+      sendTimeout: const Duration(minutes: 3),
+      receiveTimeout: const Duration(minutes: 2),
+    );
+    await _dio.post(ApiConfig.media(baseUrl!, code), data: form, options: options);
   }
 }

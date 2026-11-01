@@ -979,6 +979,16 @@ def tool_chart(ctx: AgentContext, spec: dict) -> dict:
         nums = numeric(df[col]).dropna()
         if nums.empty:
             raise ToolError(f"“{ctx.label(col)}” has no numbers.")
+        all_nums, extreme = nums, 0
+        q1, q3 = nums.quantile(.25), nums.quantile(.75)
+        iqr = q3 - q1
+        if iqr and len(nums) >= 10:
+            # One typo like 9,999,999 would squash every other answer into the
+            # first bar: draw the normal range and say what was left out.
+            core = nums[(nums >= q1 - 3 * iqr) & (nums <= q3 + 3 * iqr)]
+            extreme = int(len(nums) - len(core))
+            if extreme and len(core) >= 5:
+                nums = core
         bins = int(spec.get("bins") or min(20, max(5, int(math.sqrt(len(nums))))))
         whole = bool((nums % 1 == 0).all())
         if whole and nums.max() - nums.min() >= bins:
@@ -990,9 +1000,11 @@ def tool_chart(ctx: AgentContext, spec: dict) -> dict:
         else:
             counts, edges = np.histogram(nums, bins=bins)
             labels = [f"{fmt_num(edges[i])}–{fmt_num(edges[i + 1])}" for i in range(len(counts))]
-        caption = (f"n = {len(nums):,}. Mean {fmt_num(nums.mean())}, median {fmt_num(nums.median())}, "
-                   f"range {fmt_num(nums.min())}–{fmt_num(nums.max())}.")
-        return {"type": "chart", "chart": "bar", "title": title or f"Distribution of {ctx.label(col)}",
+        caption = (f"n = {len(all_nums):,}. Mean {fmt_num(all_nums.mean())}, median {fmt_num(all_nums.median())}, "
+                   f"range {fmt_num(all_nums.min())}–{fmt_num(all_nums.max())}.")
+        if extreme and len(nums) < len(all_nums):
+            caption += f" {extreme} extreme value(s) lie outside the range shown — check them for typos."
+        return {"type": "chart", "chart": "bar", "histogram": True, "title": title or f"Distribution of {ctx.label(col)}",
                 "labels": labels, "series": [{"name": "Responses", "data": counts.astype(int).tolist()}],
                 "caption": caption, "filters": fdesc, "x_label": ctx.label(col), "y_label": "Responses",
                 "spec": norm}
@@ -2161,6 +2173,41 @@ def tool_review_form(ctx: AgentContext, spec: dict) -> dict:
 #  Dispatcher
 # ─────────────────────────────────────────────────────────────────────
 
+def tool_gallery(ctx, spec):
+    """Survey photos (starred first) with a link to the full gallery."""
+    from urllib.parse import urlencode
+    from . import media
+    stats = media.photo_stats(ctx.survey)
+    if not stats["total"]:
+        raise ToolError("No photos have arrived yet. Add a Photo question — collectors' phones upload their photos "
+                        "when they sync, and respondents on the web link can take one.")
+    filters = clean_filters(ctx, spec.get("filters"))
+    ids = None
+    if filters:
+        df = apply_filters(ctx, ctx.frame, filters)
+        ids = {int(x) for x in df["_submission_id"].tolist()} if "_submission_id" in df.columns else set()
+    res = media.photo_items(ctx.survey, limit=12, question=spec.get("question") or None,
+                            starred=bool(spec.get("starred")), submission_ids=ids, order="starred", answers=False)
+    q = {k: v for k, v in (("q", spec.get("question")), ("starred", "1" if spec.get("starred") else None)) if v}
+    return {"type": "gallery", "title": _clip_text(spec.get("title") or "Photos from the field", 100),
+            "items": [{k: it[k] for k in ("id", "thumb", "web", "caption", "question_label", "starred", "received_at",
+                                          "w", "h")} for it in res["items"]],
+            "total": res["total"], "stats": stats, "filters": describe_filters(ctx, filters),
+            "url": f"/kura/{ctx.survey.code}/gallery/" + (("?" + urlencode(q)) if q else ""),
+            "spec": {"tool": "gallery", "question": spec.get("question"), "starred": spec.get("starred"),
+                     "filters": filters}}
+
+
+def tool_report(ctx, spec):
+    from .agent_report import tool_report as run
+    return run(ctx, spec)
+
+
+def tool_story_deck(ctx, spec):
+    from .agent_story import tool_story_deck as run
+    return run(ctx, spec)
+
+
 def tool_form_template(ctx, spec):
     from .kura_form import FRIENDLY_TYPES
     return {"type": "template", "title": "Kura Form — the Excel questionnaire template",
@@ -2200,6 +2247,9 @@ TOOLS = {
     "questionnaire": (tool_questionnaire, None),
     "review_form": (tool_review_form, None),
     "form_template": (tool_form_template, None),
+    "gallery": (tool_gallery, "view"),
+    "report": (tool_report, "view"),
+    "story_deck": (tool_story_deck, "view"),
     "studio_dashboard": (tool_studio_dashboard, None),   # permission checked inside
     "studio_flow": (tool_studio_flow, None),
 }

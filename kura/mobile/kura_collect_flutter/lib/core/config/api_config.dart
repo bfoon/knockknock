@@ -32,4 +32,12 @@ class ApiConfig {
 
   static String sync(String baseUrl, String code) =>
       '$baseUrl/kura/api/forms/${code.toUpperCase()}/sync/';
+
+  /// Photos for a record's answers (multipart: uuid, question, file).
+  static String media(String baseUrl, String code) =>
+      '$baseUrl/kura/api/forms/${code.toUpperCase()}/media/';
+
+  /// "Which of these photos do you still need?" — skips re-uploads on retry.
+  static String mediaCheck(String baseUrl, String code) =>
+      '$baseUrl/kura/api/forms/${code.toUpperCase()}/media/check/';
 }

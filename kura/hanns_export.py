@@ -72,6 +72,10 @@ def _chart(chart_type, pairs, x, y, w, h, *, accent="#e8482b", title="",
         "id": _eid(), "type": "chart",
         "x": x, "y": y, "w": w, "h": h, "rot": 0,
         "anim": anim, "animDelay": delay,
+        # Hanns' renderer and editor read chartKind; chartType is kept for
+        # the PowerPoint exporter. Writing only chartType rendered every
+        # chart in these decks as the default bar chart.
+        "chartKind": chart_type,
         "chartType": chart_type,          # "bar" | "donut" | "line"
         "title": title, "accent": accent,
         "showValues": True, "showLabels": True, "showLegend": show_legend,

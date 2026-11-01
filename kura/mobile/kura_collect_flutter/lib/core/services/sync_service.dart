@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -113,6 +114,17 @@ class SyncService {
 
   Future<_Stop> _sendBatch(
       String formCode, List<LocalSubmission> batch, SyncReport report) async {
+    // Photos go first: a record is only sent once its photos are on the
+    // server, so its answers never point at an image that never arrives.
+    final ready = <LocalSubmission>[];
+    for (final s in batch) {
+      final outcome = await _uploadPhotos(formCode, s, report);
+      if (outcome == _Stop.all) return _Stop.all;
+      if (outcome == _Stop.none) ready.add(s);
+    }
+    if (ready.isEmpty) return _Stop.none;
+    batch = ready;
+
     try {
       final response = await api.syncBatch(formCode, batch);
       final raw = response['results'];
@@ -215,6 +227,101 @@ class SyncService {
         report.retrying++;
       }
       report.lastError = e.toString();
+      return _Stop.form;
+    }
+  }
+
+  /// Local photo files in a record's answers, keyed by the question path the
+  /// server expects: "photo" or, inside a repeat group, "group|0|photo".
+  static Map<String, File> localPhotos(Map<String, dynamic> answers) {
+    final out = <String, File>{};
+    void consider(String key, dynamic value) {
+      if (value is! String || !value.startsWith('/')) return;
+      final lower = value.toLowerCase();
+      final isImage = lower.endsWith('.jpg') ||
+          lower.endsWith('.jpeg') ||
+          lower.endsWith('.png') ||
+          lower.endsWith('.webp') ||
+          lower.endsWith('.heic');
+      if (!isImage) return;
+      final file = File(value);
+      if (file.existsSync()) out[key] = file;
+    }
+
+    answers.forEach((key, value) {
+      if (value is List) {
+        for (var i = 0; i < value.length; i++) {
+          final item = value[i];
+          if (item is Map) {
+            item.forEach((child, v) => consider('$key|$i|$child', v));
+          }
+        }
+      } else {
+        consider(key, value);
+      }
+    });
+    return out;
+  }
+
+  /// Uploads the photos the server doesn't have yet.
+  /// _Stop.none → send this record · _Stop.form → retry it later ·
+  /// _Stop.all → offline, stop the whole run.
+  Future<_Stop> _uploadPhotos(
+      String formCode, LocalSubmission s, SyncReport report) async {
+    final photos = localPhotos(s.answers);
+    if (photos.isEmpty) return _Stop.none;
+    final keys = photos.keys.toList();
+    try {
+      final items = <Map<String, dynamic>>[
+        for (final k in keys)
+          {'uuid': s.uuid, 'question': k, 'size': photos[k]!.lengthSync()},
+      ];
+      final missing = await api.mediaCheck(formCode, items);
+      for (final i in missing) {
+        if (i < 0 || i >= keys.length) continue;
+        final k = keys[i];
+        try {
+          await api.uploadMedia(formCode,
+              uuid: s.uuid, question: k, file: photos[k]!);
+        } on DioException catch (e) {
+          final code = e.response?.statusCode;
+          if (code == 400 || code == 413) {
+            // This photo can't be accepted (not a photo question, too big…).
+            // Send the answers anyway instead of holding the record forever.
+            report.lastError =
+                'A photo was not accepted: ${_serverMessage(e) ?? code}';
+            continue;
+          }
+          rethrow;
+        }
+      }
+      return _Stop.none;
+    } on DioException catch (e) {
+      final code = e.response?.statusCode;
+      if (code == null) {
+        await database.markRetry(
+            s.uuid,
+            'No connection to the server — will retry automatically.',
+            nextAttempt(s.attempts));
+        report.retrying++;
+        report.offline = true;
+        report.lastError = 'No connection to the server.';
+        return _Stop.all;
+      }
+      if (code == 401 || code == 403 || code == 404 || code == 409) {
+        // The answers request reports the same access problem properly.
+        return _Stop.none;
+      }
+      await database.markRetry(
+          s.uuid,
+          _serverMessage(e) ?? 'Photo upload failed ($code) — will retry.',
+          nextAttempt(s.attempts));
+      report.retrying++;
+      return _Stop.form;
+    } catch (e) {
+      await database.markRetry(
+          s.uuid, 'Photo upload error: $e', nextAttempt(s.attempts));
+      report.retrying++;
       return _Stop.form;
     }
   }

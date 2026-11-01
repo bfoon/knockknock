@@ -103,6 +103,9 @@ const ICON = {
   clip: I('<path d="m20 11.5-8.2 8.2a5 5 0 0 1-7.1-7.1l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.4 8.4a1.7 1.7 0 0 1-2.4-2.4l7.7-7.7"/>'),
   sheet: I('<rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M3.5 9h17M3.5 14.5h17M9 3.5v17"/>'),
   scan: I('<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M7 12h10"/>'),
+  photo: I('<rect x="3" y="5" width="18" height="15" rx="3"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 5l1.5-2h5L16 5"/>'),
+  doc: I('<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/>'),
+  slides: I('<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>'),
 };
 
 /* ── the robot ─────────────────────────────────────────────────────── */
@@ -1344,13 +1347,129 @@ R.template = (b, ctx)=>{
   s.finish(); return s.wrap;
 };
 
+/* ── photos, reports and story decks ─────────────────────────────────── */
+R.gallery = (b, ctx)=>{
+  const s = shell({title:b.title, subtitle: fmt(b.total)+" photo"+(b.total===1?"":"s")+(b.stats && b.stats.starred ? " · ★ "+b.stats.starred+" starred" : "")}, ctx);
+  const g = h("div","ph-grid");
+  (b.items||[]).forEach(it=>{
+    const a = h("a","gtile", '<img loading="lazy" src="'+esc(it.thumb)+'" alt="'+esc(it.caption||it.question_label)+'">'+
+      (it.starred?'<i class="st">★</i>':'')+'<span>'+esc(it.caption||it.question_label)+'</span>');
+    a.href = b.url; a.target = "_top"; a.title = it.caption || it.question_label;
+    g.appendChild(a);
+  });
+  s.body.appendChild(g);
+  if(b.filters) s.body.appendChild(h("span","filt","Only: "+esc(b.filters)));
+  if((b.stats||{}).questions && b.stats.questions.length > 1)
+    s.body.appendChild(h("p","cap", b.stats.questions.map(q=>esc(q.label)+" ("+q.count+")").join(" · ")));
+  const open = h("a","btn primary", ICON.photo+"Open the gallery"); open.href = b.url; s.foot.appendChild(open);
+  promptBtn(s.foot, "Report with photos", "Write a report about this data with the best photos", "doc");
+  promptBtn(s.foot, "Story deck", "Tell the story of this data as a Hanns deck with photos", "slides");
+  s.finish(); return s.wrap;
+};
+
+function miniBars(chart, color){
+  const vals = (chart.values || chart.data.map(d=>d.value)).map(v=>Number(v)||0), max = Math.max(1, ...vals);
+  return '<div class="mb">'+vals.slice(0,6).map(v=>'<i style="height:'+Math.max(6, 100*v/max)+'%;background:'+color+'"></i>').join("")+'</div>';
+}
+function miniDonut(chart, pal){
+  const vals = chart.data.map(d=>Number(d.value)||0), tot = vals.reduce((a,b)=>a+b,0) || 1;
+  let acc = 0; const stops = vals.map((v,i)=>{ const a = acc; acc += 360*v/tot; return pal[i%pal.length]+" "+a+"deg "+acc+"deg"; });
+  return '<div class="md" style="background:conic-gradient('+stops.join(",")+')"><span></span></div>';
+}
+function miniLine(chart, color){
+  const vals = chart.data.map(d=>Number(d.value)||0), max = Math.max(1, ...vals), n = Math.max(2, vals.length);
+  const pts = vals.map((v,i)=>(i*100/(n-1)).toFixed(1)+","+(38-34*v/max).toFixed(1)).join(" ");
+  return '<svg class="ml" viewBox="0 0 100 40" preserveAspectRatio="none"><polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg>';
+}
+function storyCard(sc, T, i){
+  const pal = T.palette || PALETTE;
+  let inner = "";
+  const head = '<b class="hd" style="color:'+T.ink+'">'+esc(sc.headline||"")+'</b>';
+  const ph = (sc.photos||[]);
+  switch(sc.type){
+    case "title": inner = (ph[0]?'<i class="pic r" style="background-image:url('+esc(ph[0])+')"></i>':'')+'<em style="color:'+T.accent+'">'+esc(sc.text||"")+'</em>'+head; break;
+    case "bignumber": inner = '<small style="color:'+T.ink+'">'+esc(sc.headline||"")+'</small><strong style="color:'+T.accent+'">'+esc(sc.value||"")+'</strong>'; break;
+    case "chart": inner = head+(sc.chart ? (["pie","donut"].includes(sc.chart.kind) ? miniDonut(sc.chart, pal) : ["line","area"].includes(sc.chart.kind) ? miniLine(sc.chart, T.accent) : miniBars(sc.chart, T.accent)) : ""); break;
+    case "timeline": inner = head+(sc.chart ? miniLine(sc.chart, T.accent2) : ""); break;
+    case "photo": inner = (ph[0]?'<i class="pic full" style="background-image:url('+esc(ph[0])+')"></i>':'')+'<b class="hd ov">'+esc(sc.headline||"")+'</b>'; break;
+    case "gallery": inner = head+'<div class="trio">'+ph.map(u=>'<i style="background-image:url('+esc(u)+')"></i>').join("")+'</div>'; break;
+    case "compare": inner = head+'<div class="cmp">'+(sc.items||[]).map((it,k)=>'<span><strong style="color:'+(k?T.accent2:T.accent)+'">'+esc(it.value)+'</strong>'+esc(it.label)+'</span>').join("")+'</div>'; break;
+    case "takeaways": inner = head+'<div class="tk">'+(sc.points||[]).map((p,k)=>'<span><i style="background:'+pal[k%pal.length]+'">'+(k+1)+'</i>'+esc(p)+'</span>').join("")+'</div>'; break;
+    default: inner = '<b class="hd cen" style="color:'+T.ink+'">'+esc(sc.headline||"Thank you")+'</b>';
+  }
+  const names = {title:"Hook", bignumber:"Big number", chart:"Insight", timeline:"Timeline", photo:"Photo", gallery:"Photos", compare:"Compare", takeaways:"Takeaways", closing:"Close"};
+  return '<figure class="sb" title="'+esc(sc.notes||sc.text||"")+'"><div class="slide16 t-'+esc(sc.type)+'" style="background:'+T.bg+';color:'+T.ink+'">'+inner+'</div>'+
+    '<figcaption><span>'+(i+1)+'</span>'+names[sc.type]+'</figcaption></figure>';
+}
+R.story = (b, ctx)=>{
+  const s = shell({title:b.title, subtitle:(b.scenes||[]).length+" slides · native Hanns charts"+(b.photo_count?" · "+b.photo_count+" photo"+(b.photo_count>1?"s":""):"")+" · speaker notes"}, ctx);
+  s.wrap.classList.add("story-blk");
+  const T = {...(b.theme_tokens||{}), ...(b._theme ? (THEME_TOKENS[b._theme]||{}) : {})};
+  const strip = h("div","sbstrip", (b.scenes||[]).map((sc,i)=>storyCard(sc, T, i)).join(""));
+  s.body.appendChild(strip);
+  const pick = h("div","themes", '<span class="lbl">Theme</span>'+Object.entries(b.themes||{}).map(([k,v])=>
+    '<button type="button" data-th="'+esc(k)+'" aria-pressed="'+(k===(b._theme||b.theme))+'" title="'+esc(v.label)+'"><i style="background:'+v.bg+'"></i>'+esc(v.label)+'</button>').join(""));
+  s.body.appendChild(pick);
+  pick.addEventListener("click", e=>{
+    const t = e.target.closest("[data-th]"); if(!t || b._deck) return;
+    b._theme = t.dataset.th;
+    b._themeTokens = THEME_TOKENS[b._theme] || {};
+    saveConversation(); rerenderMessage(ctx.msg);
+  });
+  if((b.problems||[]).length) s.body.appendChild(h("p","cap", esc(b.problems.join(" "))));
+  s.body.appendChild(h("p","cap","Hover a slide to read its speaker notes. Every number is computed from your data; charts stay editable in Hanns."));
+  if(b._deck){
+    const o = h("a","btn primary", ICON.open+"Open in Hanns"); o.href = b._deck.url; o.target = "_blank"; o.rel = "noopener";
+    const p = h("a","btn", ICON.play+"Present"); p.href = b._deck.present; p.target = "_blank"; p.rel = "noopener";
+    s.foot.append(o, p);
+  } else {
+    const mk = btn("Create in Hanns", "slides", "primary");
+    mk.addEventListener("click", async ()=>{
+      const d = await apply("create_story_deck", {spec:b.spec, theme:b._theme||b.theme}, mk);
+      if(d){ b._deck = {url:d.url, present:d.present}; saveConversation(); rerenderMessage(ctx.msg); toast(d.message, {href:d.url, label:"Open in Hanns", blank:true}); }
+    });
+    s.foot.appendChild(mk);
+  }
+  promptBtn(s.foot, "Make it bolder", "Make the story bolder and more surprising, and use a different theme");
+  s.finish(); return s.wrap;
+};
+const THEME_TOKENS = {
+  night:{bg:"linear-gradient(135deg,#070818 0%,#13163f 58%,#2a0f3d 100%)",ink:"#f6f7ff",accent:"#ff8a1f",accent2:"#22d3ee",palette:["#ff8a1f","#22d3ee","#ff3f98","#8b5cf6","#34d399","#fbbf24"]},
+  savanna:{bg:"linear-gradient(140deg,#1f0d05 0%,#5a260c 58%,#a5481b 100%)",ink:"#fff6e8",accent:"#ffb703",accent2:"#8ecae6",palette:["#ffb703","#8ecae6","#fb8500","#e76f51","#2a9d8f","#f4a261"]},
+  atlantic:{bg:"linear-gradient(135deg,#021526 0%,#063b63 55%,#0a6c8f 100%)",ink:"#f0fbff",accent:"#48cae4",accent2:"#ffd166",palette:["#48cae4","#ffd166","#ef476f","#06d6a0","#90e0ef","#f78c6b"]},
+  forest:{bg:"linear-gradient(135deg,#06140e 0%,#0e3a27 58%,#1d6142 100%)",ink:"#f0fff6",accent:"#a7e163",accent2:"#f4d35e",palette:["#a7e163","#f4d35e","#56cfe1","#ff8c61","#c3a6ff","#ffffff"]},
+  paper:{bg:"#f6f1e7",ink:"#16140f",accent:"#e8482b",accent2:"#2a9d8f",palette:["#e8482b","#2a9d8f","#e9c46a","#264653","#f4a261","#8a5cf6"]},
+  sunrise:{bg:"linear-gradient(135deg,#fff4e6 0%,#ffe3ec 100%)",ink:"#2b1b30",accent:"#ff3f98",accent2:"#ff8a1f",palette:["#ff3f98","#ff8a1f","#7c3aed","#06b6d4","#22c55e","#f59e0b"]},
+};
+
+R.report = (b, ctx)=>{
+  const st = b.stats || {};
+  const s = shell({title:"", subtitle:""}, ctx);
+  s.wrap.classList.add("rep-blk");
+  const page = h("div","paper");
+  page.innerHTML = '<div class="pk">Report draft · '+esc(b.date||"")+'</div><h4>'+esc(b.title)+'</h4><p class="ps">'+esc(b.subtitle||"")+'</p>'+
+    ((b.kpis||[]).length ? '<div class="pkpi">'+b.kpis.map(k=>'<span><b>'+(k.format==="percent"?fmt(k.value)+"%":fmt(k.value))+'</b>'+esc(k.label)+'</span>').join("")+'</div>' : '')+
+    ((b.summary||[]).length ? '<p class="psum">'+esc(b.summary.join(" "))+'</p>' : '')+
+    '<ol class="psec">'+(b.sections||[]).map(x=>'<li><b>'+esc(x.heading)+'</b>'+(x.lead?'<span>'+esc(x.lead)+'</span>':'')+
+      '<div class="pfx">'+(x.chart?miniBars(x.chart, "#e8482b"):"")+(x.photos?x.photos.map(u=>'<i style="background-image:url('+esc(u)+')"></i>').join(""):"")+
+      (x.table?'<em>Table: '+esc(x.table)+'</em>':'')+'</div></li>').join("")+'</ol>'+
+    ((b.recommendations||[]).length ? '<div class="prec"><b>Recommendations</b>'+b.recommendations.map(r=>'<span>'+esc(r)+'</span>').join("")+'</div>' : '');
+  s.body.appendChild(page);
+  s.body.appendChild(h("p","cap", "~"+fmt(st.pages)+" page"+(st.pages===1?"":"s")+" · "+fmt(st.sections)+" sections · "+fmt(st.charts)+" chart"+(st.charts===1?"":"s")+" · "+fmt(st.photos)+" photo"+(st.photos===1?"":"s")+" · "+fmt(st.words)+" words"));
+  if((b.problems||[]).length) s.body.appendChild(h("p","cap", esc(b.problems.join(" "))));
+  const names = {docx:"Word", pdf:"PDF", html:"HTML"};
+  ["docx","pdf","html"].forEach((f,i)=>{ const x = btn(names[f], "down", i===0?"primary":""); x.addEventListener("click", ()=>download(b.spec, f, x)); s.foot.appendChild(x); });
+  promptBtn(s.foot, "Turn into a story deck", "Turn this report into a story-telling Hanns deck", "slides");
+  s.finish(); return s.wrap;
+};
+
 /* ── conversation rendering ────────────────────────────────────────── */
 function renderMessage(m){
   const wrap = h("div","msg "+(m.role==="user"?"user":"bot"));   // not "foon": that's the root's class
   if(m.role==="user"){ wrap.appendChild(h("div","bub", esc(m.text))); return wrap; }
   if(m.text) wrap.appendChild(h("div","say", md(m.text)));
   (m.blocks||[]).forEach(b=>{
-    try{ wrap.appendChild((R[b.type] || R.error)(b, (b.type==="studio" || b.type==="formcheck") ? {msg:m} : null)); }
+    try{ wrap.appendChild((R[b.type] || R.error)(b, (b.type==="studio" || b.type==="formcheck" || b.type==="story") ? {msg:m} : null)); }
     catch(e){ wrap.appendChild(R.error({text:"Could not draw this result."})); }
   });
   if(m.notice) wrap.appendChild(h("div","notice", ICON.info+"<span>"+esc(m.notice)+"</span>"));
@@ -1378,6 +1497,8 @@ function welcome(){
     ["pin","Map it","Where answers came from","Map the responses"],
     ["broom","Clean my data","Find and fix problems","Find data problems in my data"],
     ["shield","Privacy-safe copy","Remove personal data","Make a privacy-safe copy of my data"],
+    ["doc","Draft a report","Word or PDF, with photos","Write a report about this data with charts and the best photos"],
+    ["slides","Story deck in Hanns","A presentation that tells it","Tell the story of this data as a Hanns deck"],
   ] : [
     ["form","Draft a questionnaire","Tell me the topic","Draft a questionnaire about "],
     ["scan","Check an Excel form","Drop it — every cell checked","__upload__"],
@@ -1406,7 +1527,7 @@ function welcome(){
     ["remix","Reorder and tidy","Best step order","Put the steps in the best order and tidy the canvas"],
     ["pulse","Explain this flow","Step by step","Explain what this flow does, step by step"]);
   const g = h("div","skills");
-  skills.slice(0,6).forEach(([ic,t,sub,prompt])=>{
+  skills.slice(0,8).forEach(([ic,t,sub,prompt])=>{
     const b = h("button","skill", ICON[ic]+"<span><b>"+esc(t)+"</b><span>"+esc(sub)+"</span></span>");
     b.type = "button";
     b.addEventListener("click", ()=>{
@@ -1576,7 +1697,7 @@ function renderContext(){
     ctx.innerHTML = ""; ctx.appendChild(sel);
   } else {
     const pages = {list:"Your surveys", builder:"Form builder", data:"Data", studio:"Data Studio", dashboards:"Dashboards",
-      dashboard:"Dashboard Studio", monitor:"Live monitor", live_map:"Live map", teams:"Teams", team_board:"Team board"};
+      dashboard:"Dashboard Studio", monitor:"Live monitor", live_map:"Live map", teams:"Teams", team_board:"Team board", gallery:"Photo gallery"};
     ctx.textContent = (S.title ? S.title+" — " : "") + (pages[S.page] || "Kura");
     ctx.title = ctx.textContent;
   }

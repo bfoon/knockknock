@@ -105,14 +105,15 @@ def _error(message, status=400, **extra):
 PAGE_CHIPS = {
     "list": ["Draft a household survey in Excel", "Give me the Excel template", "Show my surveys"],
     "builder": ["Review my form", "Give me the Excel template", "Suggest skip logic"],
-    "data": ["What's in my data?", "Find data problems", "Make a privacy-safe copy"],
+    "data": ["Write a report about this data", "Tell the story as a Hanns deck", "Find data problems"],
     "studio": ["Build a cleaning flow", "Add a step to remove duplicates", "Run the flow"],
     "dashboards": ["Make a dashboard", "Key numbers as cards", "Map the responses"],
     "dashboard": ["Remix this board", "Use the ocean theme", "Add a map of responses"],
-    "monitor": ["How is collection going?", "Responses per day", "Where are responses from?"],
+    "monitor": ["How is collection going?", "Show the latest photos", "Responses per day"],
     "live_map": ["Map responses by region", "How is collection going?", "Responses per day"],
     "teams": ["How is collection going?", "Responses by collector", "Find data problems"],
     "team_board": ["How is my team doing today?", "Find data problems", "Responses per day"],
+    "gallery": ["Write a report with these photos", "Make a story deck with photos", "Which photos should I star?"],
 }
 
 
@@ -328,6 +329,8 @@ def apply(request):
             return _apply_dataset(request, ctx, payload)
         if action == "set_state":
             return _apply_state(ctx, payload)
+        if action == "create_story_deck":
+            return _apply_story_deck(request, ctx, payload)
     except Denied as e:
         return _error(str(e), e.status)
     except eng.ToolError as e:
@@ -440,3 +443,17 @@ def _apply_state(ctx, payload):
     ctx.survey.state = state
     ctx.survey.save(update_fields=["state", "updated_at"])
     return JsonResponse({"ok": True, "message": f"The survey is now {state}."})
+
+
+def _apply_story_deck(request, ctx, payload):
+    if not ctx.can.get("view"):
+        raise Denied("You can't see this survey's data.")
+    from .agent_story import create_deck
+    spec = payload.get("spec") if isinstance(payload.get("spec"), dict) else {}
+    if payload.get("theme"):
+        spec = {**spec, "theme": payload["theme"]}
+    deck, n, problems = create_deck(ctx, spec, request.user)
+    return JsonResponse({"ok": True, "url": f"/hanns/{deck.code}/edit/", "present": f"/hanns/{deck.code}/present/",
+                         "code": deck.code,
+                         "message": f"Created “{deck.title}” in Hanns — {n} slides with native charts"
+                                    + (", your photos" if "photo" in str(spec) else "") + " and speaker notes."})

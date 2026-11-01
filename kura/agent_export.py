@@ -35,6 +35,8 @@ CONTENT_TYPES = {
     "html": "text/html; charset=utf-8",
     "geojson": "application/geo+json",
     "json": "application/json",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "pdf": "application/pdf",
 }
 ROW_LEVEL = {"clean", "privacy"}
 
@@ -260,6 +262,17 @@ def export(ctx, spec: dict, fmt: str):
             return data, "kura_form_blank_template.xlsx", CONTENT_TYPES["xlsx"]
         data = kf.build_workbook("My survey", "", kf.STARTER, kf.STARTER_INDICATORS)
         return data, "kura_form_template.xlsx", CONTENT_TYPES["xlsx"]
+
+    if tool == "report":
+        from . import agent_report as rp
+        if fmt not in ("docx", "pdf", "html"):
+            raise ExportError("Reports download as Word, PDF or HTML.")
+        if ctx.survey is None or not ctx.can.get("view"):
+            raise ExportError("Open the survey to download its report.")
+        rep = rp.build_report(ctx, spec)
+        base = f"{ctx.survey.code}-{_slug(rep['title'])}-{stamp}"
+        data = {"docx": rp.to_docx, "pdf": rp.to_pdf, "html": rp.to_html}[fmt](rep)
+        return data, f"{base}.{fmt}", CONTENT_TYPES[fmt]
 
     if tool == "formcheck":
         from .agent_formcheck import export_checked

@@ -1227,3 +1227,288 @@ class FormCheckEndpointTests(TestCase):
             j = self.post("/kura/agent/chat/", {"message": "draft a household survey in excel", "page": "list"}).json()
             self.assertEqual(j["blocks"][0]["type"], "questionnaire")
             self.assertIn("Excel", j["say"])
+
+
+# ─────────────────────────────────────────────────────────────────────
+#  Photos, gallery, reports and Hanns story decks
+# ─────────────────────────────────────────────────────────────────────
+
+import shutil
+import tempfile
+import zipfile
+
+TMP_MEDIA = tempfile.mkdtemp(prefix="kura_media_test_")
+
+
+def photo_bytes(color=(40, 120, 200), w=640, h=360, orientation=1, gps=True):
+    from PIL import Image
+    img = Image.new("RGB", (w, h), color)
+    exif = Image.Exif()
+    exif[274] = orientation
+    exif[36867] = "2026:10:20 09:15:00"
+    if gps:
+        exif[0x8825] = {1: "N", 2: (13.0, 27.0, 11.0), 3: "W", 4: (16.0, 34.0, 40.0)}
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", exif=exif)
+    return buf.getvalue()
+
+
+def add_photo_question(survey):
+    for holder in [survey] + list(survey.versions.all()):
+        sch = holder.draft_schema if holder is survey else holder.schema
+        sch = json.loads(json.dumps(sch))
+        sch["questions"].append({"name": "wp_photo", "type": "photo", "label": "Photo of the water point"})
+        if holder is survey:
+            survey.draft_schema = sch
+            survey.save()
+        else:
+            holder.schema = sch
+            holder.save()
+
+
+def attach_photos(survey, n=5, star=(0,)):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from . import media
+    out = []
+    for i, sub in enumerate(Submission.objects.filter(survey=survey).order_by("id")[:n]):
+        m, _how = media.save_upload(survey, sub.client_uuid, "wp_photo",
+                                    SimpleUploadedFile(f"p{i}.jpg", photo_bytes((20 * i, 100, 200)), "image/jpeg"))
+        m.starred = i in star
+        m.caption = f"Water point {i}"
+        m.save()
+        out.append(m)
+    return out
+
+
+@override_settings(MEDIA_ROOT=TMP_MEDIA)
+class MediaPipelineTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        from .models import Device, SurveyDeviceAccess
+        cls.owner = User.objects.create_user("ph_owner", password="pw")
+        cls.survey = make_survey(cls.owner, n=8)
+        add_photo_question(cls.survey)
+        cls.device = Device.issue(cls.owner, "Phone")
+        SurveyDeviceAccess.objects.create(survey=cls.survey, device=cls.device, allowed=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        shutil.rmtree(TMP_MEDIA, ignore_errors=True)
+
+    def upload(self, uuid_, question="wp_photo", data=None, token=None):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        return self.client.post(f"/kura/api/forms/{self.survey.code}/media/",
+                                {"uuid": str(uuid_), "question": question,
+                                 "file": SimpleUploadedFile("p.jpg", data or photo_bytes(orientation=6), "application/octet-stream")},
+                                HTTP_AUTHORIZATION=f"Token {token or self.device.token}")
+
+    def test_phone_upload_dedupe_exif_and_link(self):
+        import uuid as uuidlib
+        from PIL import Image
+        from .models_media import SubmissionMedia
+        cu = uuidlib.uuid4()
+        r = self.upload(cu)
+        self.assertEqual(r.json()["result"], "created", r.content)
+        self.assertEqual(self.upload(cu).json()["result"], "duplicate")
+        m = SubmissionMedia.objects.get(client_uuid=cu)
+        self.assertEqual((m.width, m.height), (360, 640))                     # orientation applied
+        self.assertAlmostEqual(m.gps_lat, 13.453, places=2)
+        self.assertAlmostEqual(m.gps_lng, -16.578, places=2)
+        self.assertIsNotNone(m.captured_at)
+        self.assertEqual(dict(Image.open(m.web.open("rb")).getexif()), {})   # no EXIF on shared copies
+        self.assertIsNone(m.submission)
+        Submission.objects.create(survey=self.survey, client_uuid=cu, answers={"consent": "yes"})
+        from . import media
+        media.link_pending(self.survey)
+        m.refresh_from_db()
+        self.assertIsNotNone(m.submission)
+        chk = self.client.post(f"/kura/api/forms/{self.survey.code}/media/check/",
+                               json.dumps({"items": [{"uuid": str(cu), "question": "wp_photo", "size": m.size},
+                                                     {"uuid": str(cu), "question": "wp_photo", "size": 1}]}),
+                               content_type="application/json", HTTP_AUTHORIZATION=f"Token {self.device.token}")
+        self.assertEqual(chk.json()["missing"], [1])
+
+    def test_phone_upload_follows_sync_gates(self):
+        import uuid as uuidlib
+        from .models import Device
+        other = Device.issue(self.owner, "Unscanned phone")
+        self.assertEqual(self.upload(uuidlib.uuid4(), token=other.token).status_code, 403)   # never scanned the form
+        self.assertEqual(self.upload(uuidlib.uuid4(), token="nope").status_code, 401)
+        self.survey.state = "paused"
+        self.survey.save()
+        self.assertEqual(self.upload(uuidlib.uuid4()).status_code, 409)
+        self.survey.state = "collecting"
+        self.survey.save()
+        self.assertEqual(self.upload(uuidlib.uuid4(), question="consent").status_code, 400)   # not a photo question
+        self.assertEqual(self.upload(uuidlib.uuid4(), data=b"not an image").status_code, 400)
+
+    def test_web_runner_upload_rules(self):
+        import uuid as uuidlib
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        url = f"/kura/{self.survey.code}/media/"
+        cu = uuidlib.uuid4()
+        ok = self.client.post(url, {"uuid": str(cu), "question": "wp_photo", "file": SimpleUploadedFile("a.jpg", photo_bytes())})
+        self.assertTrue(ok.json()["ok"], ok.content)
+        done = Submission.objects.filter(survey=self.survey).first()
+        late = self.client.post(url, {"uuid": str(done.client_uuid), "question": "wp_photo",
+                                      "file": SimpleUploadedFile("a.jpg", photo_bytes())})
+        self.assertEqual(late.status_code, 409)                               # response already submitted
+        self.survey.state = "closed"
+        self.survey.save()
+        self.assertEqual(self.client.post(url, {"uuid": str(uuidlib.uuid4()), "question": "wp_photo",
+                                                "file": SimpleUploadedFile("a.jpg", photo_bytes())}).status_code, 409)
+        self.survey.state = "collecting"
+        self.survey.save()
+
+    def test_gallery_permissions_edits_and_zip(self):
+        from .models_team import SurveyCollaborator
+        photos = attach_photos(self.survey, n=4, star=(2,))
+        viewer = User.objects.create_user("ph_viewer", password="pw")
+        SurveyCollaborator.objects.create(survey=self.survey, user=viewer, role="viewer")
+        outsider = User.objects.create_user("ph_out", password="pw")
+        base = f"/kura/{self.survey.code}"
+        self.client.force_login(outsider)
+        self.assertEqual(self.client.get(f"{base}/gallery/").status_code, 404)
+        self.assertEqual(self.client.get(f"{base}/media/{photos[0].id}/").status_code, 404)
+        self.client.force_login(viewer)
+        self.assertEqual(self.client.get(f"{base}/gallery/").status_code, 200)
+        self.assertEqual(self.client.get(f"{base}/media/{photos[0].id}/?v=web").status_code, 200)
+        r = self.client.post(f"{base}/media/{photos[0].id}/update/", json.dumps({"caption": "x"}), content_type="application/json")
+        self.assertEqual(r.status_code, 403)
+        self.client.force_login(self.owner)
+        r = self.client.post(f"{base}/media/{photos[0].id}/update/", json.dumps({"caption": "Borehole", "starred": True}),
+                             content_type="application/json").json()
+        self.assertEqual((r["caption"], r["starred"]), ("Borehole", True))
+        data = self.client.get(f"{base}/gallery/data/?starred=1").json()
+        self.assertEqual({i["id"] for i in data["items"]}, {photos[0].id, photos[2].id})
+        self.assertEqual(data["items"][0]["answers"][0]["label"], "Do you agree?")
+        sub0 = photos[0].submission
+        sex = sub0.answers["sex"]
+        filt = self.client.get(f"{base}/gallery/data/?field=sex&value={sex}").json()
+        self.assertTrue(all(i["submission_id"] for i in filt["items"]))
+        self.assertIn(photos[0].id, {i["id"] for i in filt["items"]})
+        self.client.post(f"{base}/gallery/bulk/", json.dumps({"ids": [photos[1].id], "hidden": True}), content_type="application/json")
+        self.assertNotIn(photos[1].id, {i["id"] for i in self.client.get(f"{base}/gallery/data/").json()["items"]})
+        z = zipfile.ZipFile(io.BytesIO(self.client.get(f"{base}/gallery/zip/?ids={photos[0].id},{photos[2].id}").content))
+        self.assertIn("index.csv", z.namelist())
+        self.assertEqual(len([n for n in z.namelist() if n.startswith("photos/")]), 2)
+
+
+@override_settings(MEDIA_ROOT=TMP_MEDIA)
+class ReportAndStoryTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.owner = User.objects.create_user("rs_owner", password="pw")
+        cls.survey = make_survey(cls.owner, n=40)
+        add_photo_question(cls.survey)
+        cls.photos = attach_photos(cls.survey, n=6, star=(1, 4))
+
+    def setUp(self):
+        cache.clear()
+        self.client.force_login(self.owner)
+
+    def ctx(self):
+        from .agent_views import build_context
+        return build_context(self.owner, self.survey.code, "data")
+
+    def test_report_all_formats_with_photos(self):
+        from .agent_report import builtin_report
+        spec = builtin_report(self.ctx())
+        block = eng.run_tool(self.ctx(), spec)
+        self.assertEqual(block["type"], "report", block)
+        self.assertGreaterEqual(block["stats"]["charts"], 3)
+        self.assertGreaterEqual(block["stats"]["photos"], 1)
+        for fmt, magic in (("docx", b"PK"), ("pdf", b"%PDF"), ("html", b"<!doctype")):
+            r = self.client.post("/kura/agent/export/", json.dumps({"code": self.survey.code, "page": "data",
+                                                                   "spec": block["spec"], "format": fmt}),
+                                 content_type="application/json")
+            self.assertEqual(r.status_code, 200, (fmt, r.content[:200]))
+            self.assertTrue(r.content.startswith(magic), fmt)
+            if fmt == "docx":
+                names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+                self.assertGreaterEqual(len([n for n in names if n.startswith("word/media/")]), 4)   # charts + photos
+            if fmt == "html":
+                self.assertGreaterEqual(r.content.count(b"data:image/jpeg"), 1)
+                self.assertNotIn(b"Fatou Ceesay", r.content)
+
+    def test_report_from_ai_spec_uses_computed_numbers(self):
+        spec = {"tool": "report", "title": "Water access", "summary": "Most homes use taps.",
+                "sections": [{"heading": "Sources", "text": "Taps lead.", "chart": {"kind": "bar", "x": "water"},
+                              "photos": {"count": 2}},
+                             {"heading": "Bad", "chart": {"kind": "bar", "x": "nope"}}],
+                "recommendations": ["Fix the pumps"]}
+        block = eng.run_tool(self.ctx(), spec)
+        self.assertEqual(block["sections"][0]["chart"]["labels"][:3] and len(block["sections"][0]["photos"]), 2)
+        self.assertTrue(any("nope" in p for p in block["problems"]))
+        starred = {m.id for m in self.photos if m.starred}
+        from .agent_report import build_report
+        rep = build_report(self.ctx(), spec)
+        self.assertEqual({p["media"].id for p in rep["sections"][0]["photos"]}, starred)       # starred first
+
+    def test_story_deck_spec_and_hanns_deck(self):
+        spec = {"tool": "story_deck", "title": "Water, told", "theme": "atlantic", "scenes": [
+            {"type": "title", "headline": "Every drop counts"},
+            {"type": "bignumber", "headline": "Women answered most", "number": {"format": "percent",
+                "filters": [{"field": "sex", "operator": "eq", "value": "Female"}]}, "notes": "Pause here."},
+            {"type": "chart", "headline": "Taps lead", "chart": {"kind": "donut", "x": "water"}},
+            {"type": "compare", "headline": "Women vs men", "items": [
+                {"label": "Women", "filters": [{"field": "sex", "operator": "eq", "value": "f"}]},
+                {"label": "Men", "filters": [{"field": "sex", "operator": "eq", "value": "m"}]}]},
+            {"type": "photo", "headline": "A morning at the tap"},
+            {"type": "gallery", "headline": "Voices", "photo": {"count": 3}},
+            {"type": "chart", "headline": "Broken", "chart": {"x": "missing_column"}},
+            {"type": "takeaways", "points": ["One", "Two", "Three"]}]}
+        block = eng.run_tool(self.ctx(), spec)
+        self.assertEqual(block["type"], "story", block)
+        types = [s["type"] for s in block["scenes"]]
+        self.assertEqual(types, ["title", "bignumber", "chart", "compare", "photo", "gallery", "takeaways", "closing"])
+        self.assertTrue(any("missing_column" in p for p in block["problems"]))
+        df = self.ctx().frame
+        want = round((df["sex"] == "f").mean() * 100, 1)
+        self.assertEqual(block["scenes"][1]["value"], f"{eng.fmt_num(want)}%")
+        photo_ids = set()
+        r = self.client.post("/kura/agent/apply/", json.dumps({"action": "create_story_deck", "code": self.survey.code,
+                                                              "page": "data", "spec": block["spec"], "theme": "forest"}),
+                             content_type="application/json").json()
+        self.assertTrue(r["ok"], r)
+        from hanns.models import Deck
+        deck = Deck.objects.get(code=r["code"])
+        self.assertEqual(deck.owner, self.owner)
+        slides = list(deck.slides.all())
+        self.assertEqual(len(slides), 8)
+        for sl in slides:
+            for el in sl.data["els"]:
+                if el["type"] == "text":
+                    self.assertIn("lh", el)
+                    self.assertIn("weight", el)                                  # Hanns' font shorthand needs both
+                if el["type"] == "chart":
+                    self.assertIn(el["chartKind"], ("bar", "donut", "pie", "line", "area"))
+                    self.assertTrue(el["chartData"])
+                if el["type"] == "image":
+                    self.assertTrue(el["src"].startswith(f"/media/hanns/decks/{deck.code}/images/"), el["src"])
+                    photo_ids.add(el["src"])
+        self.assertEqual(slides[1].data["notes"], "Pause here.")
+        self.assertEqual(slides[0].data["bg"], "linear-gradient(135deg,#06140e 0%,#0e3a27 58%,#1d6142 100%)")   # forest
+        self.assertGreaterEqual(len(photo_ids), 4)                               # title + photo + 3 in the gallery, no repeats
+
+    def test_builtin_intents_and_gallery_block(self):
+        with mock.patch.object(agent_ai, "ai_enabled", return_value=False):
+            for msg, kind in (("show me the photos", "gallery"), ("write a report about this data", "report"),
+                              ("make a presentation about the survey", "story")):
+                j = self.client.post("/kura/agent/chat/", json.dumps({"message": msg, "code": self.survey.code, "page": "data"}),
+                                     content_type="application/json").json()
+                self.assertEqual(j["blocks"][0]["type"], kind, (msg, j["blocks"][0]))
+        prompt = agent_ai.build_user_prompt(self.ctx(), "hi", [])
+        self.assertIn("PHOTOS: 6 photo(s), 2 starred", prompt)
+
+    def test_histogram_ignores_extreme_values(self):
+        b = eng.run_tool(self.ctx(), {"tool": "chart", "kind": "histogram", "x": "income"})
+        self.assertIn("extreme value", b["caption"])
+        self.assertTrue(b["histogram"])
+        self.assertLess(int(b["labels"][-1].split("–")[-1].replace(",", "").split(".")[0]), 9_000_000)
+
+    def test_existing_results_deck_charts_render(self):
+        from .hanns_export import _chart
+        el = _chart("donut", [("a", 1), ("b", 2)], 0, 0, 100, 100)
+        self.assertEqual(el["chartKind"], "donut")

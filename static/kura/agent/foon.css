@@ -440,6 +440,80 @@ details.more-d > div{margin-top:8px}
 .tpl-types .lbl{width:100%;font-size:11.5px;color:var(--dim)}
 .tpl-types i{font-style:normal;font-size:11px;color:var(--text);background:var(--glass2);border-radius:6px;padding:2px 7px}
 
+/* ── photos, reports, story decks ─────────────────────────────────── */
+.ph-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.foon.wide .ph-grid{grid-template-columns:repeat(6,1fr)}
+.gtile{position:relative;display:block;aspect-ratio:1;border-radius:10px;overflow:hidden;background:#141743;text-decoration:none}
+.gtile img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .3s}
+.gtile:hover img{transform:scale(1.06)}
+.gtile .st{position:absolute;top:5px;right:6px;font-style:normal;color:#fbbf24;text-shadow:0 1px 4px rgba(0,0,0,.6)}
+.gtile span{position:absolute;left:0;right:0;bottom:0;padding:14px 6px 5px;font-size:10.5px;color:#fff;
+  background:linear-gradient(transparent,rgba(0,0,0,.7));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:0;transition:opacity .2s}
+.gtile:hover span{opacity:1}
+
+.story-blk{border-color:rgba(139,92,246,.4)}
+.sbstrip{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 8px;scroll-snap-type:x mandatory;scrollbar-width:thin}
+.sb{margin:0;flex:none;width:208px;scroll-snap-align:start}
+.foon.wide .sb{width:236px}
+.slide16{position:relative;aspect-ratio:16/9;border-radius:10px;overflow:hidden;padding:10px 12px;display:flex;flex-direction:column;
+  justify-content:center;gap:3px;box-shadow:0 6px 18px rgba(0,0,0,.35);font-family:"Archivo",sans-serif}
+.slide16 .hd{font:600 12.5px/1.15 "Fraunces",Georgia,serif;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;position:relative;z-index:1;max-width:100%}
+.slide16 .hd.cen{text-align:center}
+.slide16 em{font-style:normal;font-size:8px;font-weight:700;position:relative;z-index:1;max-width:58%}
+.slide16.t-title .hd{font-size:15px;max-width:58%}
+.slide16 small{font-size:9px;opacity:.85}
+.slide16 strong{font:800 30px/1 "Fraunces",Georgia,serif}
+.slide16 .pic{position:absolute;background-size:cover;background-position:center}
+.slide16 .pic.r{right:8px;top:8px;bottom:8px;width:38%;border-radius:7px}
+.slide16 .pic.full{inset:0}
+.slide16 .hd.ov{position:absolute;left:10px;right:10px;bottom:8px;color:#fff!important;text-shadow:0 1px 6px rgba(0,0,0,.7)}
+.slide16.t-photo::after{content:"";position:absolute;inset:40% 0 0;background:linear-gradient(transparent,rgba(0,0,0,.6))}
+.slide16.t-photo .hd.ov{z-index:2}
+.slide16 .mb{display:flex;align-items:flex-end;gap:3px;height:46%;margin-top:4px}
+.slide16 .mb i{flex:1;border-radius:2px 2px 0 0;min-height:3px}
+.slide16 .md{width:44px;height:44px;border-radius:50%;margin:4px auto 0;display:grid;place-items:center}
+.slide16 .md span{width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.35)}
+.slide16 .ml{width:100%;height:40%;margin-top:4px}
+.slide16 .trio{display:flex;gap:4px;height:52%}
+.slide16 .trio i{flex:1;border-radius:4px;background-size:cover;background-position:center}
+.slide16 .cmp{display:flex;gap:8px}
+.slide16 .cmp span{flex:1;font-size:8px;opacity:.9;display:flex;flex-direction:column}
+.slide16 .cmp strong{font-size:20px}
+.slide16 .tk{display:flex;gap:4px}
+.slide16 .tk span{flex:1;font-size:7px;line-height:1.25;opacity:.92;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.slide16 .tk i{display:inline-grid;place-items:center;width:12px;height:12px;border-radius:50%;color:#fff;font-style:normal;font-size:7px;margin-right:3px}
+.sb figcaption{display:flex;align-items:center;gap:6px;margin-top:5px;font-size:11.5px;color:var(--muted)}
+.sb figcaption span{width:18px;height:18px;border-radius:6px;background:var(--glass2);display:grid;place-items:center;font-size:10px;font-weight:700;color:#fff}
+.themes{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}
+.themes .lbl{font-size:11.5px;color:var(--dim);margin-right:2px}
+.themes button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line2);background:var(--glass);border-radius:999px;
+  padding:3px 10px 3px 4px;font-size:12px;color:var(--muted)}
+.themes button i{width:18px;height:18px;border-radius:50%;border:1px solid rgba(255,255,255,.3)}
+.themes button[aria-pressed="true"]{color:#fff;border-color:var(--violet);background:rgba(139,92,246,.18)}
+
+.rep-blk{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02))}
+.paper{background:#fbfaf7;color:#1b1d3a;border-radius:10px;padding:18px 20px;box-shadow:0 10px 30px rgba(0,0,0,.35);
+  font:13px/1.5 "Archivo",sans-serif;max-height:420px;overflow:auto}
+.paper .pk{font-size:10px;font-weight:700;color:#e8482b;letter-spacing:.06em;text-transform:uppercase}
+.paper h4{margin:4px 0 2px;font:600 21px/1.15 "Fraunces",Georgia,serif;color:#1b1d3a}
+.paper .ps{margin:0;color:#5b6288;font-size:13px}
+.paper .pkpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:6px;margin:12px 0}
+.paper .pkpi span{background:#f0eefc;border-radius:8px;padding:6px 8px;font-size:10px;color:#5b6288}
+.paper .pkpi b{display:block;font-size:16px;color:#e8482b}
+.paper .psum{margin:8px 0;color:#2b2f55}
+.paper .psec{margin:10px 0 0;padding-left:18px}
+.paper .psec li{margin:0 0 10px}
+.paper .psec b{display:block;color:#1b1d3a}
+.paper .psec span{display:block;color:#5b6288;font-size:12px}
+.paper .pfx{display:flex;gap:5px;align-items:flex-end;margin-top:5px}
+.paper .pfx .mb{display:flex;align-items:flex-end;gap:2px;width:90px;height:34px}
+.paper .pfx .mb i{flex:1;border-radius:2px 2px 0 0}
+.paper .pfx > i{width:44px;height:34px;border-radius:5px;background-size:cover;background-position:center}
+.paper .pfx em{font-size:11px;color:#5b6288}
+.paper .prec{margin-top:10px;padding:10px 12px;border-radius:8px;background:#f5f3ee}
+.paper .prec b{display:block;margin-bottom:3px}
+.paper .prec span{display:block;font-size:12px;color:#2b2f55;margin:2px 0}
+
 /* ── the robot ────────────────────────────────────────────────────── */
 .kbot{overflow:visible}
 .kbot .k-shadow{fill:rgba(0,0,0,.38);transform-box:fill-box;transform-origin:center;transition:transform .3s}

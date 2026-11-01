@@ -779,3 +779,4 @@ class AnalysisDashboard(models.Model):
 
 
 from .models_team import *  # noqa: E402,F401,F403
+from .models_media import *  # noqa: E402,F401,F403

@@ -132,6 +132,11 @@
   .q.calc-live{border-color:rgba(34,211,238,.35);background:rgba(34,211,238,.05)}
   .calc-out{font-family:"Spline Sans Mono",monospace;font-size:1.35rem;font-weight:700;color:var(--cyan);
     padding:.2rem 0 .1rem}
+.photobtn{display:flex;flex-direction:column;align-items:center;gap:10px;padding:14px;border:2px dashed rgba(127,127,127,.45);
+  border-radius:14px;cursor:pointer;text-align:center;font-weight:600}
+.photobtn:hover{border-color:#ff8a1f}
+.photobtn.busy{opacity:.6;pointer-events:none}
+.photoprev{max-width:100%;max-height:260px;border-radius:10px;display:block}
 </style>
 <link rel="stylesheet" href="{% static 'kura/kura_mapper.css' %}?v=2">
 </head>
@@ -177,6 +182,7 @@
   submitUrl: "{% url 'kura:collect_submit' survey.code %}{% if preview %}?preview=1{% endif %}",
   schemaUrl: "{% url 'kura:preview_schema' survey.code %}",
   lookupUrl: "{% url 'kura:lookup_query' survey.code %}",
+  mediaUrl: "{% url 'kura:collect_media' survey.code %}",
   csrftoken: "{{ csrf_token }}"
 };</script>
 <script>
@@ -444,7 +450,13 @@ function inputHtml(q, v, ns, ctx){
       return '<div class="kmapper-slot" data-mapper="'+esc(dq)+'" data-cfg="'+esc(JSON.stringify(q.mapper||{}))+'"></div>';
     case "gps":
       return '<button type="button" class="gpsbtn" data-gps="'+esc(dq)+'">📍 '+(v?("Captured: "+esc(v)):"Capture my location")+'</button>';
-    case "photo": case "audio": case "signature":
+    case "photo": {
+      const prev = photoPreviews[dq];
+      const label = photoBusy[dq] ? "Uploading…" : (v ? (prev ? "Retake photo" : "Photo attached — tap to replace") : "Take or choose a photo");
+      return '<label class="photobtn'+(photoBusy[dq]?' busy':'')+'">'+(prev?'<img src="'+esc(prev)+'" alt="Your photo" class="photoprev">':'')+
+        '<span>📷 '+label+'</span><input type="file" accept="image/*" capture="environment" data-photo="'+esc(dq)+'" hidden></label>';
+    }
+    case "audio": case "signature":
       return '<p class="hint">Captured in the mobile app; on the web enter a file reference:</p>'+
         '<input type="text" data-q="'+esc(dq)+'" value="'+esc(v||"")+'" placeholder="reference / URL">';
     default: return "";
@@ -768,6 +780,40 @@ form.addEventListener("focusout",e=>{
   if(e.target.closest&&e.target.closest(".kmp")) return;
   if(pointerIsDown){ renderAfterTap=true; return; }
   render();
+});
+/* photos: shrink in the browser (≤1600 px, which also drops the phone's EXIF
+   location), upload against this response's uuid, keep a local preview. */
+const photoPreviews={}, photoBusy={};
+async function shrinkPhoto(file){
+  try{
+    const bmp=await createImageBitmap(file,{imageOrientation:"from-image"});
+    const scale=Math.min(1,1600/Math.max(bmp.width,bmp.height));
+    const c=document.createElement("canvas"); c.width=Math.round(bmp.width*scale); c.height=Math.round(bmp.height*scale);
+    c.getContext("2d").drawImage(bmp,0,0,c.width,c.height);
+    return await new Promise(r=>c.toBlob(b=>r(b||file),"image/jpeg",0.85));
+  }catch(e){ return file; }
+}
+async function uploadPhoto(path,file){
+  photoBusy[path]=true; render();
+  const blob=await shrinkPhoto(file);
+  const fd=new FormData();
+  fd.append("uuid",clientUuid);
+  fd.append("question",path.startsWith("r|")?path.slice(2):path);
+  fd.append("file",blob,"photo.jpg");
+  try{
+    const res=await fetch(CFG.mediaUrl+(CFG.preview?"?preview=1":""),{method:"POST",headers:{"X-CSRFToken":CFG.csrftoken},body:fd});
+    const j=await res.json();
+    if(!j.ok) throw new Error(j.error||"upload failed");
+    if(photoPreviews[path]) URL.revokeObjectURL(photoPreviews[path]);
+    photoPreviews[path]=URL.createObjectURL(blob);
+    setPath(path,"kura-photo:"+(j.preview?"preview":j.id));
+    delete errors[path.startsWith("r|")?path.split("|").slice(1).join("."):path];
+  }catch(e){ alert("The photo could not be uploaded ("+e.message+"). Check your connection and try again."); }
+  photoBusy[path]=false; render();
+}
+form.addEventListener("change",e=>{
+  const t=e.target;
+  if(t.dataset.photo && t.files && t.files[0]) uploadPhoto(t.dataset.photo,t.files[0]);
 });
 form.addEventListener("click",e=>{
   const t=e.target;

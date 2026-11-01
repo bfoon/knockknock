@@ -2541,3 +2541,13 @@ body.hanns-options-open .drawer{
   text-align:center;padding:.4em .6em;line-height:1.25;
   pointer-events:none;white-space:pre-wrap;overflow-wrap:anywhere;
 }
+
+/* The chart CONTAINER carries the class "chart-<kind>", which is also the
+   class of the SVG shapes inside it. So the shape rules leaked onto the
+   container: Area charts faded to 18% (.chart-area{opacity:.18}), Scatter
+   and Bubble charts faded too, and on Line charts the 8px stroke of
+   .chart-line was inherited by every label, smearing the text. Reset the
+   container only — two classes outrank the one-class shape rules, so the
+   line, area, dot and bubble shapes keep their own styling. */
+.chart-box.chart-area,.chart-box.chart-line,.chart-box.chart-scatter,.chart-box.chart-bubble{
+  opacity:1;fill:initial;stroke:none;stroke-width:1px;stroke-dasharray:none;stroke-dashoffset:0;animation:none}

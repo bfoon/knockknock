@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:signature/signature.dart';
 import 'package:uuid/uuid.dart';
@@ -2472,7 +2473,20 @@ class _AnswerFieldState extends State<_AnswerField> {
   Future<void> _pickImage(ImageSource source) async {
     final image =
         await ImagePicker().pickImage(source: source, imageQuality: 80);
-    if (image != null) widget.onChanged(image.path);
+    if (image == null) return;
+    // image_picker leaves the photo in the app's cache, which Android may
+    // clear before the phone syncs — keep our own copy until it's uploaded.
+    var path = image.path;
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final folder = Directory('${docs.path}/kura_media');
+      if (!folder.existsSync()) folder.createSync(recursive: true);
+      final name = '${DateTime.now().millisecondsSinceEpoch}_${image.name}';
+      path = (await File(image.path).copy('${folder.path}/$name')).path;
+    } catch (_) {
+      // Keep the cache path if the copy fails; it usually survives.
+    }
+    widget.onChanged(path);
   }
 
   Future<void> _captureSignature() async {

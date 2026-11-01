@@ -1,0 +1,391 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Photos — {{ survey.title }} · Kura</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{
+  --bg:#07081a; --panel:#0e1030; --panel2:#141743; --line:rgba(255,255,255,.1); --line2:rgba(255,255,255,.18);
+  --text:#f4f6ff; --muted:#aab3da; --dim:#7680ad; --cyan:#22d3ee; --orange:#ff8a1f; --pink:#ff3f98; --mint:#34d399;
+  --amber:#fbbf24; --red:#fb7185; --groove:linear-gradient(135deg,#ff8a1f,#ff3f98);
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 "Archivo",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+
+.top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:14px;padding:12px 22px;
+  background:rgba(7,8,26,.88);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.back{display:inline-flex;align-items:center;gap:6px;text-decoration:none;color:var(--muted);font-size:13.5px;
+  padding:6px 10px;border:1px solid var(--line2);border-radius:10px}
+.back:hover{color:#fff;border-color:rgba(255,255,255,.35)}
+.ttl{flex:1;min-width:0}
+.ttl h1{margin:0;font:600 22px/1.15 "Fraunces",Georgia,serif;letter-spacing:-.01em}
+.ttl .sub{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:11px;overflow:hidden}
+.seg button{border:0;background:none;padding:7px 13px;color:var(--muted);font-size:13px;font-weight:600}
+.seg button[aria-pressed="true"]{background:rgba(255,255,255,.1);color:#fff}
+.btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line2);background:rgba(255,255,255,.05);
+  border-radius:11px;padding:7px 13px;font-size:13px;font-weight:600;text-decoration:none}
+.btn:hover{background:rgba(255,255,255,.1)}
+.btn.primary{background:var(--groove);border-color:transparent;color:#fff}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.btn svg,.ib svg{width:16px;height:16px}
+
+.tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 22px;border-bottom:1px solid var(--line)}
+.tools select,.tools input{background:var(--panel);color:var(--text);border:1px solid var(--line2);border-radius:10px;
+  padding:7px 10px;font:inherit;font-size:13px;max-width:240px}
+.tools input[type=search]{min-width:200px}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line2);border-radius:999px;padding:6px 12px;
+  font-size:13px;color:var(--muted);background:none}
+.chip[aria-pressed="true"]{color:#fff;border-color:rgba(251,191,36,.6);background:rgba(251,191,36,.12)}
+.chip.h[aria-pressed="true"]{border-color:rgba(251,113,133,.5);background:rgba(251,113,133,.1)}
+.stats{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
+.stats span{font-size:12px;color:var(--muted);background:rgba(255,255,255,.06);border-radius:999px;padding:3px 10px}
+
+main{padding:18px 22px 80px}
+.grid{columns:4 240px;column-gap:14px}
+.card{break-inside:avoid;margin:0 0 14px;position:relative;border-radius:14px;overflow:hidden;background:var(--panel);
+  border:1px solid var(--line);cursor:zoom-in;transition:transform .18s,box-shadow .18s,border-color .18s}
+.card:hover{transform:translateY(-2px);box-shadow:0 14px 34px rgba(0,0,0,.45);border-color:var(--line2)}
+.card img{display:block;width:100%;height:auto;background:#141743;min-height:120px}
+.card .meta{padding:9px 11px 11px}
+.card .q{font-size:11.5px;color:var(--cyan);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .cap{font-size:13px;color:var(--text);margin-top:2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card .when{font-size:11.5px;color:var(--dim);margin-top:3px}
+.card .star{position:absolute;top:8px;right:8px;width:30px;height:30px;border-radius:50%;border:0;display:grid;place-items:center;
+  background:rgba(7,8,26,.6);color:#fff;backdrop-filter:blur(4px);font-size:15px}
+.card .star.on{color:var(--amber)}
+.card.hid{opacity:.45}
+.card .waiting{position:absolute;left:8px;top:8px;font-size:11px;background:rgba(7,8,26,.75);border-radius:999px;padding:2px 8px;color:var(--amber)}
+.card .pick{position:absolute;top:8px;left:8px;width:24px;height:24px;border-radius:7px;border:2px solid #fff;background:rgba(7,8,26,.5);display:none}
+.selecting .card .pick{display:block}
+.card.sel{outline:3px solid var(--cyan);outline-offset:-3px}
+.card.sel .pick{background:var(--cyan);border-color:var(--cyan)}
+.card.sel .pick::after{content:"✓";display:block;text-align:center;color:#07081a;font-weight:900;font-size:14px;line-height:20px}
+#map{height:calc(100vh - 190px);min-height:420px;border-radius:16px;overflow:hidden;border:1px solid var(--line);display:none}
+.mapmode #map{display:block}
+.mapmode .grid{display:none}
+.mpop img{width:200px;border-radius:8px;display:block}
+.mgrid{display:grid;grid-template-columns:repeat(3,64px);gap:4px}
+.mgrid img{width:64px;height:64px;object-fit:cover;border-radius:6px;cursor:pointer}
+.mcount{background:#ff3f98;color:#fff;border:2px solid #fff;border-radius:50%;width:30px!important;height:30px!important;
+  display:grid!important;place-items:center;font:800 13px Archivo,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.4)}
+.mpop b{display:block;margin-top:5px;font-size:12px}
+.empty{max-width:620px;margin:60px auto;text-align:center;color:var(--muted)}
+.empty h2{font:600 24px "Fraunces",Georgia,serif;color:#fff;margin:14px 0 8px}
+.empty svg{width:64px;height:64px;color:var(--cyan)}
+.empty ol{text-align:left;display:inline-block;margin:12px auto}
+.more{display:block;margin:10px auto;color:var(--dim);font-size:13px;text-align:center}
+
+#selbar{position:fixed;left:50%;bottom:22px;transform:translate(-50%,calc(100% + 40px));z-index:40;display:flex;gap:8px;align-items:center;
+  background:#111437;border:1px solid var(--line2);border-radius:16px;padding:9px 12px;box-shadow:0 18px 50px rgba(0,0,0,.6);
+  transition:transform .25s cubic-bezier(.2,1.2,.4,1)}
+.selecting #selbar{transform:translate(-50%,0)}
+#selbar b{font-size:13.5px;margin-right:6px}
+
+#lb{position:fixed;inset:0;z-index:60;display:none;background:rgba(3,4,14,.94);backdrop-filter:blur(6px)}
+#lb.on{display:grid;grid-template-columns:1fr 380px}
+.stage{position:relative;display:grid;place-items:center;padding:30px 70px;min-width:0;min-height:0}
+.stage img{max-width:100%;max-height:calc(100vh - 60px);border-radius:12px;box-shadow:0 30px 80px rgba(0,0,0,.6);
+  animation:lbin .25s ease-out}
+@keyframes lbin{from{opacity:0;transform:scale(.98)}}
+.nav{position:absolute;top:50%;transform:translateY(-50%);width:48px;height:48px;border-radius:50%;border:1px solid var(--line2);
+  background:rgba(255,255,255,.06);color:#fff;font-size:22px;display:grid;place-items:center}
+.nav:hover{background:rgba(255,255,255,.14)}
+.nav.prev{left:14px}.nav.next{right:14px}
+.side{background:var(--panel);border-left:1px solid var(--line);overflow-y:auto;padding:18px 18px 30px;display:flex;flex-direction:column;gap:14px}
+.side > *{flex-shrink:0}
+.side .x{align-self:flex-end;width:36px;height:36px;border-radius:10px;border:1px solid var(--line2);background:none;font-size:18px}
+.side h2{margin:0;font:600 19px/1.25 "Fraunces",Georgia,serif}
+.side .q2{color:var(--cyan);font-size:12.5px;font-weight:700}
+.side textarea{width:100%;min-height:74px;resize:vertical;background:var(--bg);color:var(--text);border:1px solid var(--line2);
+  border-radius:12px;padding:9px 11px;font:inherit;font-size:14px}
+.side textarea:focus{outline:none;border-color:rgba(34,211,238,.6)}
+.saved{font-size:11.5px;color:var(--mint);min-height:16px}
+.acts{display:flex;flex-wrap:wrap;gap:6px}
+.facts{margin:0;display:grid;grid-template-columns:auto 1fr;gap:5px 12px;font-size:13px}
+.facts dt{color:var(--dim)}
+.facts dd{margin:0;color:var(--text);word-break:break-word}
+.answers{list-style:none;margin:0;padding:0;font-size:13px}
+.answers li{padding:6px 0;border-bottom:1px dashed var(--line)}
+.answers li span{display:block;color:var(--dim);font-size:11.5px}
+.lbl{font-size:11.5px;font-weight:700;color:var(--dim);letter-spacing:.02em}
+#minimap{height:150px;border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+.toast{position:fixed;left:50%;top:76px;transform:translate(-50%,-14px);opacity:0;z-index:90;background:#111437;border:1px solid var(--line2);
+  padding:9px 14px;border-radius:12px;font-size:13px;transition:.25s;pointer-events:none}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+@media (max-width:900px){
+  #lb.on{grid-template-columns:1fr;grid-template-rows:55vh 1fr}
+  .side{border-left:0;border-top:1px solid var(--line)}
+  .stage{padding:14px 54px}
+  .top{flex-wrap:wrap}
+  .stats{margin-left:0}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="back" href="{{ cfg.urls.dataPage }}">← Data</a>
+  <div class="ttl"><h1>Photo gallery</h1><div class="sub">{{ survey.title }}</div></div>
+  <div class="seg" role="group" aria-label="View">
+    <button type="button" id="v-grid" aria-pressed="true">Grid</button>
+    <button type="button" id="v-map" aria-pressed="false">Map</button>
+  </div>
+  {% if cfg.can.edit or cfg.can.export %}<button class="btn" type="button" id="b-select">Select</button>{% endif %}
+  {% if cfg.can.export %}<a class="btn" id="b-zip" href="#">⇩ Download</a>{% endif %}
+</header>
+<div class="tools">
+  <select id="f-q" aria-label="Question"><option value="">All photo questions</option></select>
+  <select id="f-field" aria-label="Filter by an answer"><option value="">Any answer…</option></select>
+  <select id="f-value" aria-label="Answer value" hidden></select>
+  <select id="f-collector" aria-label="Collector" hidden><option value="">Any collector</option></select>
+  <input type="date" id="f-from" aria-label="From date"><input type="date" id="f-to" aria-label="To date">
+  <button class="chip" type="button" id="f-star" aria-pressed="false">★ Starred</button>
+  {% if cfg.can.edit %}<button class="chip h" type="button" id="f-hidden" aria-pressed="false">Show hidden</button>{% endif %}
+  <input type="search" id="f-search" placeholder="Search captions and answers" aria-label="Search">
+  <div class="stats" id="stats"></div>
+</div>
+<main id="main">
+  <div class="grid" id="grid"></div>
+  <div id="map"></div>
+  <span class="more" id="more"></span>
+</main>
+<div id="selbar"><b id="sel-n">0 selected</b>
+  {% if cfg.can.edit %}<button class="btn" type="button" data-bulk="star">★ Star</button>
+  <button class="btn" type="button" data-bulk="unstar">Unstar</button>
+  <button class="btn" type="button" data-bulk="hide">Hide</button>
+  <button class="btn" type="button" data-bulk="show">Unhide</button>{% endif %}
+  {% if cfg.can.export %}<button class="btn primary" type="button" data-bulk="zip">⇩ ZIP</button>{% endif %}
+  <button class="btn" type="button" id="sel-done">Done</button>
+</div>
+<div id="lb" role="dialog" aria-modal="true" aria-label="Photo">
+  <div class="stage"><button class="nav prev" type="button" aria-label="Previous">‹</button><img id="lb-img" alt=""><button class="nav next" type="button" aria-label="Next">›</button></div>
+  <aside class="side">
+    <button class="x" type="button" aria-label="Close">×</button>
+    <div><div class="q2" id="lb-q"></div><h2 id="lb-title"></h2></div>
+    <div><div class="lbl">Caption</div>
+      <textarea id="lb-cap" placeholder="Describe what this photo shows — it appears in Foon’s reports and decks" {% if not cfg.can.edit %}readonly{% endif %}></textarea>
+      <div class="saved" id="lb-saved"></div></div>
+    <div class="acts">
+      {% if cfg.can.edit %}<button class="btn" type="button" id="lb-star">☆ Star</button>
+      <button class="btn" type="button" id="lb-hide">Hide</button>{% endif %}
+      {% if cfg.can.export %}<a class="btn" id="lb-dl" href="#">⇩ Original</a>{% endif %}
+    </div>
+    <dl class="facts" id="lb-facts"></dl>
+    <div id="minimap" hidden></div>
+    <div><div class="lbl">Answers in this response</div><ul class="answers" id="lb-ans"></ul></div>
+  </aside>
+</div>
+<div class="toast" id="toast"></div>
+{{ cfg|json_script:"gallery-cfg" }}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function(){
+"use strict";
+const CFG = JSON.parse(document.getElementById("gallery-cfg").textContent);
+const $ = s=>document.querySelector(s);
+const esc = s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const csrf = (document.cookie.match(/csrftoken=([^;]+)/)||[])[1]||"";
+const items = []; let total = 0, loading = false, offset = 0, view = "grid", current = -1;
+const selected = new Set();
+const fmtDate = iso=>{ if(!iso) return ""; const d = new Date(iso); return d.toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"})+" · "+d.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"}); };
+function toast(t){ const el=$("#toast"); el.textContent=t; el.classList.add("on"); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove("on"),2600); }
+
+/* filters */
+const st = CFG.stats || {};
+$("#stats").innerHTML = '<span>'+(st.total||0)+' photo'+((st.total===1)?'':'s')+'</span>'+(st.starred?'<span>★ '+st.starred+' starred</span>':'')+(st.with_gps?'<span>📍 '+st.with_gps+' with location</span>':'');
+(st.questions||[]).forEach(q=>{ const o=document.createElement("option"); o.value=q.name; o.textContent=q.label+" ("+q.count+")"; $("#f-q").appendChild(o); });
+CFG.choiceFields.forEach(f=>{ const o=document.createElement("option"); o.value=f.name; o.textContent=f.label; $("#f-field").appendChild(o); });
+if(CFG.collectors.length){ $("#f-collector").hidden=false; CFG.collectors.forEach(c=>{ const o=document.createElement("option"); o.value=c.id; o.textContent=c.name; $("#f-collector").appendChild(o); }); }
+$("#f-field").addEventListener("change", ()=>{
+  const f = CFG.choiceFields.find(x=>x.name===$("#f-field").value), v=$("#f-value");
+  v.innerHTML = ""; v.hidden = !f;
+  if(f){ f.choices.forEach(c=>{ const o=document.createElement("option"); o.value=c.value; o.textContent=c.label; v.appendChild(o); }); }
+  reload();
+});
+["#f-q","#f-value","#f-collector","#f-from","#f-to"].forEach(s=>$(s).addEventListener("change", reload));
+let searchT=0; $("#f-search").addEventListener("input", ()=>{ clearTimeout(searchT); searchT=setTimeout(reload, 350); });
+document.querySelectorAll(".chip").forEach(b=>b.addEventListener("click", ()=>{ b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed")!=="true")); reload(); }));
+
+function params(){
+  const p = new URLSearchParams();
+  if($("#f-q").value) p.set("q", $("#f-q").value);
+  if($("#f-field").value && $("#f-value").value){ p.set("field", $("#f-field").value); p.set("value", $("#f-value").value); }
+  if($("#f-collector").value) p.set("collector", $("#f-collector").value);
+  if($("#f-from").value) p.set("from", $("#f-from").value);
+  if($("#f-to").value) p.set("to", $("#f-to").value);
+  if($("#f-star").getAttribute("aria-pressed")==="true") p.set("starred","1");
+  const h = $("#f-hidden"); if(h && h.getAttribute("aria-pressed")==="true") p.set("hidden","1");
+  if($("#f-search").value.trim()) p.set("search", $("#f-search").value.trim());
+  return p;
+}
+async function load(){
+  if(loading || (offset && items.length >= total)) return;
+  loading = true; $("#more").textContent = "Loading…";
+  const p = params(); p.set("offset", offset); p.set("limit", 60);
+  try{
+    const j = await fetch(CFG.urls.data+"?"+p, {credentials:"same-origin"}).then(r=>r.json());
+    total = j.total; offset += j.limit;
+    j.items.forEach(it=>{ items.push(it); $("#grid").appendChild(card(it, items.length-1)); });
+    if(!items.length) empty();
+    $("#more").textContent = items.length ? (items.length < total ? "Scroll for more" : (total+" photo"+(total===1?"":"s"))) : "";
+    if(view==="map") drawMap();
+  }catch(e){ $("#more").textContent = "Couldn't load photos — refresh to try again."; }
+  loading = false;
+}
+function reload(){ items.length = 0; offset = 0; total = 0; $("#grid").innerHTML = ""; selected.clear(); updateSel(); load(); }
+function empty(){
+  const filtered = [...params().keys()].length > 0;
+  $("#grid").innerHTML = filtered ? '<div class="empty"><h2>No photos match</h2><p>Try removing a filter.</p></div>' :
+    '<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="18" height="15" rx="3"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 5l1.5-2h5L16 5"/></svg>'+
+    '<h2>No photos yet</h2><p>Photos appear here as soon as they arrive:</p><ol><li>Add a <b>Photo</b> question in the builder.</li>'+
+    '<li>Collectors take photos in the Kura Collect app — they upload when the phone syncs.</li><li>On the web link, respondents can take or attach a photo.</li></ol>'+
+    '<p>Then star the best ones — Foon puts them in reports and Hanns decks.</p></div>';
+}
+function card(it, i){
+  const f = document.createElement("figure");
+  f.className = "card"+(it.hidden?" hid":"")+(selected.has(it.id)?" sel":"");
+  f.dataset.i = i;
+  const ratio = it.w && it.h ? (it.h/it.w) : .75;
+  f.innerHTML = '<img loading="lazy" src="'+esc(it.thumb)+'" alt="'+esc(it.caption||it.question_label)+'" style="aspect-ratio:'+(1/ratio).toFixed(3)+'">'+
+    '<button class="star'+(it.starred?' on':'')+'" type="button" aria-label="Star" title="'+(CFG.can.edit?'Star for reports and decks':'Starred')+'">'+(it.starred?'★':'☆')+'</button>'+
+    (it.waiting?'<span class="waiting">answers on the way</span>':'')+'<span class="pick"></span>'+
+    '<figcaption class="meta"><div class="q">'+esc(it.question_label)+'</div>'+(it.caption?'<div class="cap">'+esc(it.caption)+'</div>':'')+
+    '<div class="when">'+esc(fmtDate(it.received_at))+(it.collector?' · '+esc(it.collector):'')+'</div></figcaption>';
+  f.addEventListener("click", e=>{
+    if(e.target.closest(".star")){ e.stopPropagation(); if(CFG.can.edit) toggle(i, "starred"); return; }
+    if(document.body.classList.contains("selecting")){ pick(i, f); return; }
+    open(i);
+  });
+  return f;
+}
+async function save(it, patch){
+  const r = await fetch(CFG.urls.media+it.id+"/update/", {method:"POST", credentials:"same-origin",
+    headers:{"Content-Type":"application/json","X-CSRFToken":csrf}, body:JSON.stringify(patch)});
+  const j = await r.json(); if(!j.ok) throw new Error(j.error||"Not saved");
+  Object.assign(it, {caption:j.caption, starred:j.starred, hidden:j.hidden});
+}
+async function toggle(i, key){
+  const it = items[i];
+  try{ await save(it, {[key]: !it[key]}); }catch(e){ toast(e.message); return; }
+  const old = document.querySelector('.card[data-i="'+i+'"]'); if(old) old.replaceWith(card(it, i));
+  if(current===i) fillSide(it);
+  toast(key==="starred" ? (it.starred ? "Starred — Foon will use it first" : "Unstarred") : (it.hidden ? "Hidden from the gallery, reports and decks" : "Visible again"));
+}
+
+/* lightbox */
+let mini = null;
+function open(i){ current = i; $("#lb").classList.add("on"); show(); }
+function close(){ $("#lb").classList.remove("on"); current = -1; }
+function show(){
+  const it = items[current]; if(!it) return;
+  $("#lb-img").src = it.web; $("#lb-img").alt = it.caption || it.question_label;
+  fillSide(it);
+  if(current >= items.length-4) load();
+}
+function fillSide(it){
+  $("#lb-q").textContent = it.question_label;
+  $("#lb-title").textContent = it.caption || "Untitled photo";
+  $("#lb-cap").value = it.caption || ""; $("#lb-saved").textContent = "";
+  const s = $("#lb-star"); if(s){ s.textContent = it.starred ? "★ Starred" : "☆ Star"; }
+  const h = $("#lb-hide"); if(h){ h.textContent = it.hidden ? "Unhide" : "Hide"; }
+  const d = $("#lb-dl"); if(d) d.href = it.original;
+  const facts = [["Received", fmtDate(it.received_at)], ["Taken", it.captured_at ? fmtDate(it.captured_at) : ""],
+    ["Collector", it.collector], ["Via", it.source==="app" ? "Kura Collect app" : "Web link"],
+    ["Location", it.lat!=null ? it.lat.toFixed(5)+", "+it.lng.toFixed(5) : ""], ["Size", it.w ? it.w+" × "+it.h+" px" : ""],
+    ["Response", it.submission_id ? '<a href="'+CFG.urls.dataPage+'#s'+it.submission_id+'">#'+it.submission_id+' in Data</a>' : "answers on the way"]];
+  $("#lb-facts").innerHTML = facts.filter(f=>f[1]).map(f=>'<dt>'+f[0]+'</dt><dd>'+(f[0]==="Response"?f[1]:esc(f[1]))+'</dd>').join("");
+  $("#lb-ans").innerHTML = (it.answers||[]).map(a=>'<li><span>'+esc(a.label)+'</span>'+esc(a.value)+'</li>').join("") || '<li>No other answers yet.</li>';
+  const mm = $("#minimap");
+  if(it.lat!=null && window.L){
+    mm.hidden = false;
+    if(!mini){ mini = L.map(mm, {zoomControl:false, attributionControl:false}); L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png").addTo(mini); mini._m = null; }
+    setTimeout(()=>{ mini.invalidateSize(); mini.setView([it.lat, it.lng], 14); if(mini._m) mini._m.remove();
+      mini._m = L.circleMarker([it.lat, it.lng], {radius:8, color:"#fff", weight:2, fillColor:"#ff3f98", fillOpacity:.95}).addTo(mini); }, 30);
+  } else mm.hidden = true;
+}
+let capT = 0;
+$("#lb-cap").addEventListener("input", ()=>{
+  if(!CFG.can.edit) return;
+  clearTimeout(capT); const it = items[current]; const val = $("#lb-cap").value;
+  capT = setTimeout(async ()=>{ try{ await save(it, {caption: val}); $("#lb-saved").textContent = "Saved"; $("#lb-title").textContent = val || "Untitled photo";
+    const old = document.querySelector('.card[data-i="'+current+'"]'); if(old) old.replaceWith(card(it, current)); }catch(e){ $("#lb-saved").textContent = e.message; } }, 600);
+});
+$("#lb-star") && $("#lb-star").addEventListener("click", ()=>toggle(current, "starred"));
+$("#lb-hide") && $("#lb-hide").addEventListener("click", ()=>toggle(current, "hidden"));
+$(".side .x").addEventListener("click", close);
+$(".nav.prev").addEventListener("click", ()=>{ if(current>0){ current--; show(); } });
+$(".nav.next").addEventListener("click", ()=>{ if(current<items.length-1){ current++; show(); } });
+$("#lb").addEventListener("click", e=>{ if(e.target.id==="lb" || e.target.classList.contains("stage")) close(); });
+document.addEventListener("keydown", e=>{
+  if(!$("#lb").classList.contains("on") || e.target.tagName==="TEXTAREA") return;
+  if(e.key==="Escape") close();
+  if(e.key==="ArrowRight" && current<items.length-1){ current++; show(); }
+  if(e.key==="ArrowLeft" && current>0){ current--; show(); }
+  if((e.key==="s" || e.key==="S") && CFG.can.edit) toggle(current, "starred");
+});
+
+/* map */
+let map = null, layer = null;
+function drawMap(){
+  if(!window.L) return;
+  if(!map){ map = L.map("map"); L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    {attribution:"© OpenStreetMap © CARTO", maxZoom:19}).addTo(map); }
+  if(layer) layer.remove();
+  layer = L.layerGroup().addTo(map);
+  const pts = [], spots = {};
+  items.forEach((it,i)=>{ if(it.lat==null) return; const k = it.lat.toFixed(5)+","+it.lng.toFixed(5); (spots[k]=spots[k]||[]).push(i); });
+  Object.values(spots).forEach(group=>{
+    const it = items[group[0]]; pts.push([it.lat,it.lng]);
+    if(group.length===1){
+      L.circleMarker([it.lat,it.lng], {radius: it.starred?9:7, color:"#fff", weight:1.5, fillColor: it.starred?"#fbbf24":"#22d3ee", fillOpacity:.9})
+        .bindPopup('<div class="mpop"><img src="'+esc(it.thumb)+'"><b>'+esc(it.caption||it.question_label)+'</b><a href="#" data-open="'+group[0]+'">Open</a></div>')
+        .addTo(layer);
+    } else {
+      // Several photos at one spot (one water point, one household): one numbered marker.
+      L.marker([it.lat,it.lng], {icon: L.divIcon({className:"mcount", html:String(group.length), iconSize:[30,30]})})
+        .bindPopup('<div class="mpop"><b>'+group.length+' photos here</b><div class="mgrid">'+group.slice(0,9).map(i=>
+          '<img src="'+esc(items[i].thumb)+'" data-open="'+i+'" alt="">').join("")+'</div></div>', {maxWidth:240})
+        .addTo(layer);
+    }
+  });
+  setTimeout(()=>{ map.invalidateSize(); if(pts.length) map.fitBounds(pts, {padding:[40,40], maxZoom:15}); else map.setView([13.45,-15.4], 8); }, 50);
+}
+document.addEventListener("click", e=>{ const a = e.target.closest("[data-open]"); if(a){ e.preventDefault(); open(+a.dataset.open); } });
+function setView(v){ view = v; document.body.classList.toggle("mapmode", v==="map");
+  $("#v-grid").setAttribute("aria-pressed", String(v==="grid")); $("#v-map").setAttribute("aria-pressed", String(v==="map"));
+  if(v==="map") drawMap(); }
+$("#v-grid").addEventListener("click", ()=>setView("grid"));
+$("#v-map").addEventListener("click", ()=>setView("map"));
+
+/* selection */
+function pick(i, el){ const id = items[i].id; selected.has(id) ? selected.delete(id) : selected.add(id); el.classList.toggle("sel", selected.has(id)); updateSel(); }
+function updateSel(){ $("#sel-n").textContent = selected.size+" selected"; }
+$("#b-select") && $("#b-select").addEventListener("click", ()=>{ document.body.classList.toggle("selecting"); if(!document.body.classList.contains("selecting")){ selected.clear(); document.querySelectorAll(".card.sel").forEach(c=>c.classList.remove("sel")); updateSel(); } });
+$("#sel-done").addEventListener("click", ()=>{ document.body.classList.remove("selecting"); selected.clear(); document.querySelectorAll(".card.sel").forEach(c=>c.classList.remove("sel")); updateSel(); });
+document.querySelectorAll("[data-bulk]").forEach(b=>b.addEventListener("click", async ()=>{
+  if(!selected.size){ toast("Pick some photos first."); return; }
+  const kind = b.dataset.bulk;
+  if(kind==="zip"){ location.href = CFG.urls.zip+"?ids="+[...selected].join(","); return; }
+  const patch = {star:{starred:true}, unstar:{starred:false}, hide:{hidden:true}, show:{hidden:false}}[kind];
+  const r = await fetch(CFG.urls.bulk, {method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json","X-CSRFToken":csrf},
+    body:JSON.stringify({ids:[...selected], ...patch})}).then(r=>r.json());
+  if(r.ok){ toast(r.updated+" photo(s) updated"); reload(); } else toast(r.error||"Couldn't update.");
+}));
+$("#b-zip") && $("#b-zip").addEventListener("click", e=>{ e.preventDefault(); const p = params(); location.href = CFG.urls.zip+"?"+p; });
+
+/* infinite scroll */
+const io = new IntersectionObserver(es=>{ if(es.some(x=>x.isIntersecting) && view==="grid") load(); }, {rootMargin:"600px"});
+io.observe($("#more"));
+load();
+})();
+</script>
+</body>
+</html>

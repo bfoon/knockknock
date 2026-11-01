@@ -28,7 +28,7 @@ from asgiref.sync import iscoroutinefunction, markcoroutinefunction, sync_to_asy
 logger = logging.getLogger(__name__)
 
 PAGES = {"list", "builder", "data", "studio", "dashboards", "dashboard", "monitor",
-         "live_map", "teams", "team_board"}
+         "live_map", "teams", "team_board", "gallery"}
 
 CHART_JS = "https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"
 LEAFLET_JS = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"

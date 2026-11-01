@@ -1,4 +1,4 @@
-{% load static %}<!doctype html>
+{% load static kura_maps %}<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -186,6 +186,7 @@ main{padding:18px 22px 80px}
 <div class="toast" id="toast"></div>
 {{ cfg|json_script:"gallery-cfg" }}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+{% kura_basemap %}
 <script>
 (function(){
 "use strict";
@@ -306,7 +307,7 @@ function fillSide(it){
   const mm = $("#minimap");
   if(it.lat!=null && window.L){
     mm.hidden = false;
-    if(!mini){ mini = L.map(mm, {zoomControl:false, attributionControl:false}); L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png").addTo(mini); mini._m = null; }
+    if(!mini){ mini = L.map(mm, {zoomControl:false, attributionControl:false}); addBasemap(mini); mini._m = null; }
     setTimeout(()=>{ mini.invalidateSize(); mini.setView([it.lat, it.lng], 14); if(mini._m) mini._m.remove();
       mini._m = L.circleMarker([it.lat, it.lng], {radius:8, color:"#fff", weight:2, fillColor:"#ff3f98", fillOpacity:.95}).addTo(mini); }, 30);
   } else mm.hidden = true;
@@ -333,11 +334,18 @@ document.addEventListener("keydown", e=>{
 });
 
 /* map */
+/* Basemap: CARTO stamps "API KEY REQUIRED" on keyless tiles since Aug 2026, so the
+   provider now comes from the kura_basemap tag in head (settings.KURA_BASEMAP*). If that tag
+   is ever missing, fall back to Esri's keyless dark canvas rather than a blank map. */
+function addBasemap(m){
+  if(window.KURA_BASEMAP) return KURA_BASEMAP.addTo(m);
+  return L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+    {maxZoom:19, maxNativeZoom:16, attribution:"Tiles &copy; Esri — Esri, HERE, Garmin, &copy; OpenStreetMap contributors"}).addTo(m);
+}
 let map = null, layer = null;
 function drawMap(){
   if(!window.L) return;
-  if(!map){ map = L.map("map"); L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-    {attribution:"© OpenStreetMap © CARTO", maxZoom:19}).addTo(map); }
+  if(!map){ map = L.map("map"); addBasemap(map); }
   if(layer) layer.remove();
   layer = L.layerGroup().addTo(map);
   const pts = [], spots = {};

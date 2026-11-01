@@ -11,15 +11,22 @@
                             tall tiko head-wrap
              casual      — tie-dye kaftan shirt & trousers /
                             wax-print top & malan wrapper with a head-wrap
+             street      — grey camp-collar shirt over a tee & cargo
+                            joggers / grey cropped utility shirt, blue
+                            cargo joggers, lavender sneakers and big loose
+                            curls — she rests with her hands on her hips
      style   animated (a 3D-cartoon look: big glossy eyes, soft light,
              warm skin, curly hair) | robot (LED eyes, antenna,
-             visible joints, stepped "servo" motion)
+             visible joints, stepped "servo" motion) | character (your
+             own picture, exactly — see door_character.js)
      skin    1 | 2 | 3
 
    Gestures, one every few seconds (`every`):
      wave · open arms · sign-language WELCOME (flat hand sweeps in to the
      body, twice) · hand on heart with a small bow · "this way" toward
      the room · a nod. Speech bubbles cycle through `lines`.
+     Street style adds: hands on hips (her resting pose, so the free hand
+     stays on the hip while the other waves) and a fist-pump cheer.
 
    Usage:  DoorGreeter.mount(hostEl, {figure, outfit, style, skin, side,
                                       every, sign, lines}) → {update, destroy}
@@ -43,6 +50,10 @@
     man_traditional:   { cloth: ["#2340a0", "#3d63cf", "#172b70"], trim: "#f0c25a", cap: "#f4ead0", trousers: "#2340a0", shoes: "#7a4b26" },
     woman_traditional: { cloth: ["#8a2373", "#b0409a", "#621655"], trim: "#f0c25a", wrap: "#8a2373", wrap2: "#f0c25a", shoes: "#c8923a" },
     man_casual:        { shirt: "#11a0a0", shirt2: "#f6c752", dye: "#ee5d33", trousers: ["#e6dac2", "#f7eedb", "#c6b691"], shoes: "#7a4b26" },
+    man_street:        { cloth: ["#8f959c", "#b9bec4", "#666c73"], tee: "#f4f5f7", pants: ["#86a7c8", "#b3cce5", "#5f7f9f"], pantsD: "#55738f",
+                         stitch: "#dde8f3", shoes: ["#a78bfa", "#cdbcfd", "#7c5fd6"], sole: "#f7f5ff", lace: "#ffffff", button: "#e9ebee" },
+    woman_street:      { cloth: ["#9aa0a6", "#c6cbd0", "#6e747a"], pants: ["#8fb0cf", "#bad1e8", "#6687a8"], pantsD: "#5b7a98",
+                         stitch: "#e2ecf6", shoes: ["#a78bfa", "#cdbcfd", "#7c5fd6"], sole: "#f7f5ff", lace: "#ffffff", button: "#eceef1" },
     woman_casual:      { top: "#ee5d33", top2: "#f7c84c", top3: "#1f8a52", skirt: "#2459b8", skirt2: "#f7c84c", band: "#ff8a6b", band2: "#ffd2c2", shoes: "#8b5cf6" },
   };
 
@@ -75,6 +86,8 @@
     flat:  { c: [.02, .02, .03, .05], s: [-2, 0, 1, 3], ta: 12, tc: .1, b: 0, fl: 0 },
     heart: { c: [.15, .15, .17, .21], s: [-3, 0, 2, 4], ta: 10, tc: .26, b: 1, fl: 0 },
     point: { c: [.02, .88, .92, .95], s: [-2, 3, 5, 7], ta: -36, tc: .55, b: 1, fl: 0 },
+    hip:   { c: [.42, .46, .5, .55], s: [-4, -1, 2, 5], ta: -10, tc: .45, b: 1, fl: 0 },
+    fist:  { c: [.97, .99, .99, .99], s: [0, 1, 2, 3], ta: -36, tc: .6, b: 1, fl: 0 },
   };
   function H(pre, name) {                  // a hand pose as flat numbers, so it blends like any joint
     const h = HANDS[name], o = {};
@@ -158,7 +171,8 @@
     const o = Object.assign({ figure: "woman", outfit: "official", style: "animated", skin: 2 }, opts || {});
     const robot = o.style === "robot";
     const fig = o.figure === "man" ? "man" : "woman";
-    const outfit = ["official", "traditional", "casual"].includes(o.outfit) ? o.outfit : "official";
+    const outfit = ["official", "traditional", "casual", "street"].includes(o.outfit) ? o.outfit : "official";
+    const street = outfit === "street";
     const key = fig + "_" + outfit;
     const L = LOOKS[key];
     const K = SKIN[o.skin] || SKIN[2];
@@ -197,6 +211,11 @@
     if (L.blouse) cyl("blouse", [L.blouse, "#fffaf0", "#dccfb6"]);
     if (L.trousers && Array.isArray(L.trousers)) cyl("trousers", L.trousers);
     lin("gloss", [[0, "#fff", .32], [.5, "#fff", 0]], { x1: 0, x2: 0, y1: 0, y2: 1 });
+    if (street) {
+      cyl("pants", L.pants);
+      cyl("sneak", L.shoes);
+      lin("pantsV", [[0, "#000", 0], [.55, "#000", 0], [1, "#000", .16]], { x1: 0, x2: 0, y1: 0, y2: 1 });   // denim darkens toward the ankle
+    }
     if (key === "man_official") {
       const p = el("pattern", { id: id("tie"), width: 10, height: 10, patternUnits: "userSpaceOnUse", patternTransform: "rotate(35)" }, defs);
       el("rect", { width: 10, height: 10, fill: L.tie }, p); el("rect", { width: 10, height: 2.4, y: 4, fill: L.tie2 }, p);
@@ -229,7 +248,40 @@
       }
       el("ellipse", { cx: x - 2 * s, cy: 592, rx: 7, ry: 2.4, fill: "#fff", opacity: .22 }, legs);
     }
-    if (key === "woman_official") {
+    function sneaker(x, s) {
+      // chunky lavender trainer: padded upper, white cup sole with a tread line, laces, toe gloss
+      el("path", { d: `M${x - 16 * s} 600 Q${x - 20 * s} 610 ${x - 14 * s} 614 L${x + 17 * s} 614 Q${x + 22 * s} 609 ${x + 18 * s} 600Z`, fill: L.sole }, legs);
+      el("path", { d: `M${x - 17 * s} 608 L${x + 20 * s} 608`, stroke: "#c9c3e8", "stroke-width": 1.2 }, legs);
+      el("path", { d: `M${x - 14 * s} 581 Q${x - 18 * s} 594 ${x - 16 * s} 602 L${x + 18 * s} 602 Q${x + 20 * s} 592 ${x + 9 * s} 586 Q${x + 2 * s} 578 ${x - 14 * s} 581Z`, fill: url("sneak") }, legs);
+      el("path", { d: `M${x - 13 * s} 580 Q${x - 4 * s} 576 ${x + 6 * s} 582`, stroke: L.shoes[1], "stroke-width": 3, fill: "none", "stroke-linecap": "round" }, legs);  // padded collar
+      [[0, 585], [4, 589], [8, 593]].forEach(([d, y]) =>
+        el("path", { d: `M${x - 6 * s + d * s} ${y} l${7 * s} -1.5`, stroke: L.lace, "stroke-width": 1.8, "stroke-linecap": "round" }, legs));
+      el("path", { d: `M${x - 15 * s} 596 Q${x} 598 ${x + 17 * s} 596`, stroke: L.shoes[2], "stroke-width": 1, fill: "none", opacity: .7 }, legs);
+      el("ellipse", { cx: x + 10 * s, cy: 594, rx: 5.5, ry: 2.2, fill: "#fff", opacity: .35 }, legs);
+    }
+    if (street) {
+      const wide = fig === "man" ? 2 : 0;
+      for (const s of [-1, 1]) {
+        const x = 160 + s * 17;
+        // relaxed cargo jogger leg: full at the thigh, tapering into a gathered cuff
+        const leg = `M${x - 20 - wide} 352 Q${x - 24 - wide} 450 ${x - 15} 540 L${x - 12} 568 L${x + 12} 568 L${x + 15} 540 Q${x + 23 + wide} 450 ${x + 22 + wide} 352Z`;
+        el("path", { d: leg, fill: url("pants") }, legs);
+        el("path", { d: leg, fill: url("pantsV") }, legs);
+        // outer cargo pocket with a flap and a snap
+        const px = x + s * 9, pw = 15;
+        el("path", { d: `M${px - pw / 2} 440 L${px + pw / 2} 440 L${px + pw / 2 + s * 1} 478 Q${px} 482 ${px - pw / 2 + s * 1} 478Z`, fill: L.pants[0], stroke: L.pantsD, "stroke-width": 1.1 }, legs);
+        el("path", { d: `M${px - pw / 2 - 1} 438 L${px + pw / 2 + 1} 438 L${px + pw / 2} 450 Q${px} 452 ${px - pw / 2} 450Z`, fill: L.pants[1], stroke: L.pantsD, "stroke-width": 1.1 }, legs);
+        el("circle", { cx: px, cy: 446, r: 1.6, fill: L.button }, legs);
+        el("path", { d: `M${px - pw / 2 + 2} 443 L${px + pw / 2 - 2} 443`, stroke: L.stitch, "stroke-width": .8, "stroke-dasharray": "2 2" }, legs);
+        // soft folds at the knee and above the cuff
+        el("path", { d: `M${x - 10} 500 Q${x} 506 ${x + 11} 499 M${x - 9} 548 Q${x} 553 ${x + 9} 547 M${x - 8} 556 Q${x + 1} 560 ${x + 8} 555`,
+          stroke: L.pantsD, "stroke-width": 1.4, fill: "none", opacity: .55, filter: url("b1") }, legs);
+        // ribbed cuff, then the sneaker
+        el("rect", { x: x - 13, y: 564, width: 26, height: 16, rx: 6, fill: L.pants[2] }, legs);
+        for (let i = -9; i <= 9; i += 3) el("line", { x1: x + i, y1: 566, x2: x + i, y2: 578, stroke: L.pants[0], "stroke-width": .9, opacity: .7 }, legs);
+        sneaker(x, s);
+      }
+    } else if (key === "woman_official") {
       for (const s of [-1, 1]) {
         const x = 160 + s * 15;
         el("path", { d: `M${x - 12} 492 Q${x - 15} 526 ${x - 7.5} 556 L${x - 5} 586 L${x + 5} 586 L${x + 7.5} 556 Q${x + 14} 524 ${x + 11} 492Z`, fill: limbFill }, legs);
@@ -288,6 +340,44 @@
       el("path", { d: "M68 600 Q160 618 252 600", fill: "none", stroke: L.trim, "stroke-width": 5.5 }, torso);
       for (let i = 0; i < 5; i++) el("path", { d: `M${92 + i * 34} 560 l7 -12 l7 12z`, fill: L.trim }, torso);
       fold("M124 322 Q108 452 98 596"); fold("M196 322 Q212 452 222 596");
+    } else if (street) {
+      // trouser top (hips, waistband, fly) — drawn on the body so it sits over the legs
+      el("path", { d: "M117 318 Q160 311 203 318 Q208 344 199 372 Q180 380 160 382 Q140 380 121 372 Q112 344 117 318Z", fill: url("pants") }, torso);
+      el("path", { d: "M160 334 Q158 356 150 372", stroke: L.pantsD, "stroke-width": 1.3, fill: "none" }, torso);           // fly
+      el("path", { d: "M124 336 Q136 344 140 360 M196 336 Q184 344 180 360", stroke: L.stitch, "stroke-width": 1, fill: "none", "stroke-dasharray": "2.5 2.5", opacity: .8 }, torso);
+      if (fig === "woman") {
+        // cropped shirt: a little midriff between the hem and the high waistband
+        el("path", { d: "M122 272 L198 272 L202 326 Q160 320 118 326Z", fill: limbFill }, torso);
+        blurred("ellipse", { cx: 160, cy: 300, rx: 30, ry: 6, fill: K.deep, opacity: .35 }, "b4", torso);                // shadow under the hem
+        el("ellipse", { cx: 160, cy: 313, rx: 1.6, ry: 2.4, fill: K.deep, opacity: .6 }, torso);                              // navel
+      }
+      el("path", { d: "M116 318 Q160 311 204 318 L205 333 Q160 326 115 333Z", fill: L.pantsD }, torso);                       // waistband
+      el("path", { d: "M117 321 Q160 314 203 321", stroke: L.stitch, "stroke-width": .9, fill: "none", "stroke-dasharray": "2.5 2.5" }, torso);
+      [130, 190].forEach(x => el("rect", { x: x - 2, y: 316, width: 4, height: 18, rx: 1.5, fill: L.pants[2] }, torso));   // belt loops
+      el("circle", { cx: 160, cy: 325, r: 3.4, fill: "#c9ced6", stroke: "#8a929e", "stroke-width": 1 }, torso);              // metal button
+      el("circle", { cx: 159, cy: 324, r: 1, fill: "#fff", opacity: .8 }, torso);
+
+      const hem = fig === "woman" ? 292 : 392;
+      if (fig === "man") el("path", { d: "M148 182 L172 182 L160 214Z", fill: L.tee }, torso);                               // tee under the open collar
+      else el("path", { d: "M149 183 L171 183 L160 210Z", fill: url("face") }, torso);                                       // open neckline
+      el("path", { d: `M108 200 Q110 188 130 184 L148 182 L160 ${fig === "woman" ? 210 : 214} L172 182 L190 184 Q210 188 212 200 L208 260 Q205 ${hem - 20} 206 ${hem} Q160 ${hem + 10} 114 ${hem} Q115 ${hem - 20} 112 260Z`, fill: url("cloth") }, torso);
+      el("path", { d: `M114 ${hem} Q160 ${hem + 10} 206 ${hem}`, stroke: L.cloth[2], "stroke-width": 2.2, fill: "none" }, torso);      // hem
+      el("path", { d: `M160 ${fig === "woman" ? 210 : 214} L160 ${hem + 5}`, stroke: L.cloth[2], "stroke-width": 1.4 }, torso);           // placket
+      const btns = fig === "woman" ? [222, 246, 270] : [232, 268, 304, 340, 372];
+      btns.forEach(y => { el("circle", { cx: 163, cy: y, r: 2.6, fill: L.button }, torso); el("circle", { cx: 162.4, cy: y - .6, r: .8, fill: "#fff" }, torso); });
+      // collar points
+      el("path", { d: "M148 181 L131 188 L138 214 L160 208Z", fill: L.cloth[1] }, torso);
+      el("path", { d: "M172 181 L189 188 L182 214 L160 208Z", fill: L.cloth[1] }, torso);
+      el("path", { d: "M148 181 L138 214 M172 181 L182 214", stroke: L.cloth[2], "stroke-width": 1.2, opacity: .7 }, torso);
+      // utility chest pockets with flaps (one on the man's camp shirt)
+      (fig === "woman" ? [-1, 1] : [-1]).forEach(sd => {
+        const cx = 160 + sd * 26;
+        el("path", { d: `M${cx - 12} 228 L${cx + 12} 228 L${cx + 12} 252 Q${cx} 255 ${cx - 12} 252Z`, fill: L.cloth[0], stroke: L.cloth[2], "stroke-width": 1.1 }, torso);
+        el("path", { d: `M${cx - 13} 224 L${cx + 13} 224 L${cx + 12} 234 L${cx} 237 L${cx - 12} 234Z`, fill: L.cloth[1], stroke: L.cloth[2], "stroke-width": 1.1 }, torso);
+        el("circle", { cx, cy: 232, r: 1.8, fill: L.button }, torso);
+      });
+      fold(`M124 262 Q130 ${hem - 14} 126 ${hem - 2}`); fold(`M196 262 Q190 ${hem - 14} 194 ${hem - 2}`);
+      if (fig === "man") el("path", { d: `M110 ${hem - 18} L114 ${hem} M210 ${hem - 18} L206 ${hem}`, stroke: L.cloth[2], "stroke-width": 1.4 }, torso);   // side vents
     } else if (key === "man_casual") {
       el("path", { d: "M108 190 Q160 172 212 190 L226 450 Q160 464 94 450Z", fill: url("dye") }, torso);
       el("path", { d: "M147 186 L160 216 L173 186", fill: "none", stroke: "#fff", "stroke-width": 3.2, opacity: .85 }, torso);
@@ -327,6 +417,13 @@
       curlCluster(160, 62, 50, 30, 70, 7, 12, 7, head);
       curlCluster(116, 108, 12, 30, 18, 6, 10, 11, head);
       curlCluster(204, 108, 12, 30, 18, 6, 10, 13, head);
+    } else if (!robot && key === "woman_street") {
+      // big, loose shoulder-length curls: a full halo behind the head that falls past the jaw
+      curlCluster(160, 92, 74, 54, 120, 8, 14, 31, head);
+      curlCluster(98, 152, 22, 44, 34, 7, 12, 33, head);
+      curlCluster(222, 152, 22, 44, 34, 7, 12, 35, head);
+      curlCluster(108, 196, 16, 14, 12, 6, 10, 37, head);
+      curlCluster(212, 196, 16, 14, 12, 6, 10, 39, head);
     } else if (!robot && key === "woman_casual") {
       // two afro puffs
       curlCluster(122, 66, 26, 22, 46, 6, 10, 21, head);
@@ -411,15 +508,27 @@
       if (fig === "man") {
         el("path", { d: "M112 112 C108 70 132 52 160 51 C188 52 212 70 208 112 C204 94 196 80 184 76 C176 84 144 84 136 76 C124 80 116 94 112 112Z", fill: url("hairCap") }, head);
         blurred("path", { d: "M130 70 Q150 60 176 64", stroke: HAIR.light, "stroke-width": 3, fill: "none", opacity: .45 }, "b1", head);
+        if (key === "man_street") curlCluster(160, 60, 38, 11, 44, 5, 8, 51, head);          // short twists on top, faded sides
       } else {
-        if (key !== "woman_traditional") {
+        if (key === "woman_street") {
+          // a soft side-parted crown, then curls tumbling over the forehead and framing the face
+          el("path", { d: "M110 118 C106 72 132 50 160 49 C190 50 214 72 210 118 C206 92 192 80 172 78 C160 70 140 74 128 84 C118 92 112 104 110 118Z", fill: url("hairCap") }, head);
+          curlCluster(140, 66, 30, 12, 26, 6, 10, 41, head);
+          curlCluster(186, 70, 22, 10, 18, 6, 9, 43, head);
+          curlCluster(112, 108, 7, 22, 12, 6, 9, 45, head);
+          curlCluster(208, 108, 7, 22, 12, 6, 9, 47, head);
+        } else if (key !== "woman_traditional") {
           // hair pulled back smoothly over the crown
           el("path", { d: "M112 112 C109 72 132 54 160 53 C188 54 211 72 208 112 C204 90 190 76 160 74 C130 76 116 90 112 112Z", fill: url("hairCap") }, head);
           [[124, 84, 148, 62], [140, 72, 160, 58], [180, 72, 162, 58], [196, 84, 172, 62]].forEach(([x1, y1, x2, y2]) =>
             el("path", { d: `M${x1} ${y1} Q${(x1 + x2) / 2} ${Math.min(y1, y2) - 2} ${x2} ${y2}`, stroke: HAIR.light, "stroke-width": 1.4, fill: "none", opacity: .5 }, head));
         }
-        // drop earrings with a gloss
-        for (const x of [111, 209]) {
+        // drop earrings with a gloss (little gold studs with street style)
+        if (key === "woman_street") for (const x of [114, 206]) {
+          el("circle", { cx: x, cy: 134, r: 3, fill: "#e3b04b" }, head);
+          el("circle", { cx: x - .9, cy: 133, r: 1, fill: "#fff", opacity: .8 }, head);
+        }
+        else for (const x of [111, 209]) {
           el("line", { x1: x, y1: 132, x2: x, y2: 142, stroke: "#d9a845", "stroke-width": 1.4 }, head);
           el("ellipse", { cx: x, cy: 152, rx: 4.5, ry: 10, fill: "#e3b04b" }, head);
           el("ellipse", { cx: x - 1.5, cy: 148, rx: 1.4, ry: 4, fill: "#fff", opacity: .55 }, head);
@@ -453,6 +562,12 @@
       const sleeve = L.cloth ? url("cloth") : key === "man_casual" ? url("dye") : url("wax");
       const wide = outfit === "traditional";
       if (wide) el("path", { d: `M${sx - 19} ${sy - 7} L${sx + 19} ${sy - 7} L${ex + 25} ${ey + 4} L${ex - 25} ${ey + 4}Z`, fill: sleeve }, sh);
+      else if (street) {
+        // bare upper arm, then a short sleeve with a rolled cuff
+        el("path", { d: `M${sx - 13} ${sy - 2} Q${sx} ${sy - 12} ${sx + 13} ${sy - 2} L${ex + 10} ${ey + 2} L${ex - 10} ${ey + 2}Z`, fill: limbFill }, sh);
+        el("path", { d: `M${sx - 18} ${sy - 6} Q${sx} ${sy - 19} ${sx + 18} ${sy - 6} L${sx + 17} ${sy + 38} Q${sx} ${sy + 42} ${sx - 17} ${sy + 38}Z`, fill: sleeve }, sh);
+        el("path", { d: `M${sx - 17.5} ${sy + 30} Q${sx} ${sy + 34} ${sx + 17.5} ${sy + 30} L${sx + 17} ${sy + 40} Q${sx} ${sy + 44} ${sx - 17} ${sy + 40}Z`, fill: L.cloth[1], stroke: L.cloth[2], "stroke-width": 1 }, sh);
+      }
       else el("path", { d: `M${sx - 17} ${sy - 5} Q${sx} ${sy - 17} ${sx + 17} ${sy - 5} L${ex + 13} ${ey + 4} L${ex - 13} ${ey + 4}Z`, fill: sleeve }, sh);
       if (robot) el("circle", { cx: sx, cy: sy, r: 9.5, fill: metalD }, sh);
       const fore = el("g", {}, sh);
@@ -487,7 +602,8 @@
   // (toward the room / screen centre). w = wrist tilt. head > 0 tilts toward the outer side.
   const LU = 86, LF = 82;                                   // upper arm, forearm (rig units)
   const REST = Object.assign({ ox: 12, oy: 160, ow: 0, ix: 12, iy: 160, iw: 0, head: 0, y: 0 }, H("oh", "relax"), H("ih", "relax"));
-  const P = (o, ...hands) => Object.assign({}, REST, ...hands, o);
+  const REST0 = REST;
+  const HIP = { x: -4, y: 118, w: 62 };                       // wrist target and tilt for a hand resting on the hip
 
   function solve(tx, ty) {
     // returns [upper, fore] absolute angles in degrees, 0 = hanging down, + = outward
@@ -502,7 +618,13 @@
     return pick.map(r => r * 180 / Math.PI);
   }
 
-  function gestures() {
+  // Street style's resting pose: both hands on the hips, elbows out. Gestures only move the arm they
+  // need, so while one hand waves or signs the other stays on the hip — just like the reference.
+  const HIPS = Object.assign({}, REST, { ox: HIP.x, oy: HIP.y, ow: HIP.w, ix: HIP.x, iy: HIP.y, iw: HIP.w }, H("oh", "hip"), H("ih", "hip"));
+
+  function gestures(rest) {
+    const REST = rest || REST0;
+    const P = (o, ...hands) => Object.assign({}, REST, ...hands, o);
     const WAVE = H("oh", "wave"), OPEN2 = [H("oh", "open"), H("ih", "open")], FLAT = H("oh", "flat");
     return {
       // big friendly wave with the outer hand: palm out, fingers spread, a soft ripple through them
@@ -523,9 +645,19 @@
       point: [[0, REST], [600, P({ ix: 162, iy: -8, iw: -6, head: -12 }, H("ih", "point"))],
               [1700, P({ ix: 164, iy: -14, iw: -8, head: -14 }, H("ih", "point"))], [2400, REST]],
       nod: [[0, REST], [300, P({ head: -9, y: 2 })], [600, P({ head: 2 })], [900, P({ head: -8, y: 2 })], [1300, REST]],
+      // hands to the hips with a confident little lean and a bounce (from any resting pose)
+      hips: [[0, REST], [550, P({ ox: HIP.x, oy: HIP.y, ow: HIP.w, ix: HIP.x, iy: HIP.y, iw: HIP.w, head: 7, y: -2 }, H("oh", "hip"), H("ih", "hip"))],
+             [900, P({ ox: HIP.x, oy: HIP.y, ow: HIP.w, ix: HIP.x, iy: HIP.y, iw: HIP.w, head: 9, y: -6 }, H("oh", "hip"), H("ih", "hip"))],
+             [1200, P({ ox: HIP.x, oy: HIP.y, ow: HIP.w, ix: HIP.x, iy: HIP.y, iw: HIP.w, head: 6, y: 0 }, H("oh", "hip"), H("ih", "hip"))],
+             [1500, P({ ox: HIP.x, oy: HIP.y, ow: HIP.w, ix: HIP.x, iy: HIP.y, iw: HIP.w, head: 8, y: -4 }, H("oh", "hip"), H("ih", "hip"))],
+             [2100, P({ ox: HIP.x, oy: HIP.y, ow: HIP.w, ix: HIP.x, iy: HIP.y, iw: HIP.w, head: 3, y: 0 }, H("oh", "hip"), H("ih", "hip"))], [2600, REST]],
+      // a happy fist-pump cheer, twice
+      cheer: [[0, REST], [500, P({ ox: 46, oy: -84, ow: 180, head: 5 }, H("oh", "fist"))],
+              [800, P({ ox: 50, oy: -96, ow: 180, head: 7, y: -4 }, H("oh", "fist"))], [1100, P({ ox: 46, oy: -86, ow: 180, head: 4 }, H("oh", "fist"))],
+              [1400, P({ ox: 50, oy: -96, ow: 180, head: 7, y: -4 }, H("oh", "fist"))], [2100, REST]],
     };
   }
-  const BUBBLE = { wave: 0, open: 1, sign: "sign", heart: 2, point: "way", nod: null };
+  const BUBBLE = { wave: 0, open: 1, sign: "sign", heart: 2, point: "way", nod: null, hips: 0, cheer: 1 };
 
   function ease(t) { return t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
   function servo(t) { return Math.round(ease(t) * 6) / 6; }            // robot: stepped "servo" motion
@@ -539,10 +671,10 @@
     return out;
   }
 
-  function mount(host, options) {
+  function mountRig(host, options) {
     let opts = Object.assign({ figure: "woman", outfit: "official", style: "animated", skin: 2, side: "left", every: 6, sign: true,
                                lines: ["Welcome!", "Dalal ak jàmm", "I bisimila"] }, options || {});
-    let rig, clips, order, idx = 0, clip = null, clipName = "", clipStart = 0, nextAt = 0, raf = 0, lineIdx = 0;
+    let rig, clips, order, rest = REST, idx = 0, clip = null, clipName = "", clipStart = 0, nextAt = 0, raf = 0, lineIdx = 0;
     const wrap = document.createElement("div");
     wrap.className = "dg-wrap";
     const bubble = document.createElement("div");
@@ -557,8 +689,11 @@
       wrap.innerHTML = ""; wrap.appendChild(rig.svg);
       host.classList.toggle("dg-robot", rig.robot);
       host.dataset.side = opts.side === "right" ? "right" : "left";
-      clips = gestures();
-      order = ["wave", "open", opts.sign ? "sign" : "nod", "heart", "point", opts.sign ? "sign" : "wave", "nod"];
+      rest = opts.outfit === "street" && !rig.robot ? HIPS : REST;
+      clips = gestures(rest);
+      order = opts.outfit === "street"
+        ? ["wave", "cheer", opts.sign ? "sign" : "nod", "open", "point", "heart", opts.sign ? "sign" : "wave", "nod"]
+        : ["wave", "open", opts.sign ? "sign" : "nod", "heart", "point", opts.sign ? "sign" : "wave", "nod"];
       idx = 0; clip = null; nextAt = performance.now() + 900;
     }
     function apply(p, now) {
@@ -603,7 +738,7 @@
       if (!clip && now >= nextAt) {
         clipName = order[idx++ % order.length]; clip = clips[clipName]; clipStart = now; say(clipName);
       }
-      let pose = REST;
+      let pose = rest;
       if (clip) {
         const ms = now - clipStart;
         pose = sample(clip, ms, rig.robot);
@@ -653,5 +788,24 @@
   `;
   document.head.appendChild(css);
 
-  window.DoorGreeter = { mount, build, gestures, _sample: sample, _solve: solve };
+  // style "character" = the organiser's own picture, animated by door_character.js (PixiJS).
+  // The wrapper swaps engines when the host switches between a drawn rig and the picture.
+  function mount(host, options) {
+    let opts = Object.assign({}, options || {});
+    const isPic = o => o.style === "character" && !!window.DoorCharacter;
+    let pic = isPic(opts);
+    let impl = pic ? window.DoorCharacter.mount(host, opts) : mountRig(host, opts);
+    return {
+      update(next) {
+        opts = Object.assign(opts, next || {});
+        if (isPic(opts) !== pic) { impl.destroy(); pic = isPic(opts); impl = pic ? window.DoorCharacter.mount(host, opts) : mountRig(host, opts); }
+        else impl.update(next);
+      },
+      play(name) { if (impl.play) impl.play(name); },
+      destroy() { impl.destroy(); },
+      get options() { return impl.options; },
+    };
+  }
+
+  window.DoorGreeter = { mount, mountRig, build, gestures, _sample: sample, _solve: solve };
 })();

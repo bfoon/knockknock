@@ -117,13 +117,22 @@ class DoorTests(TestCase):
         d = self.host_post(op="set", greeter={"figure": "alien", "lines": ["a"] * 10}).json()["door"]["greeter"]
         self.assertEqual((d["figure"], len(d["lines"])), ("man", doorsvc.MAX_LINES))
 
-    def test_three_dress_choices(self):
+    def test_dress_choices(self):
         self.link_on()
-        for outfit in ("traditional", "casual", "official"):
+        for outfit in ("traditional", "casual", "street", "official"):
             g = self.host_post(op="set", greeter={"outfit": outfit}).json()["door"]["greeter"]
             self.assertEqual(g["outfit"], outfit)
         g = self.host_post(op="set", greeter={"outfit": "pyjamas"}).json()["door"]["greeter"]
         self.assertEqual(g["outfit"], "official")                                  # unknown: unchanged
+
+    def test_picture_character_style(self):
+        self.link_on()
+        g = self.host_post(op="set", greeter={"style": "character"}).json()["door"]["greeter"]
+        self.assertEqual(g["style"], "character")
+        token = doorsvc.door_for(self.screen.id)["token"]
+        html = self.client.get(f"/screenart/door/{token}/").content.decode()
+        for bit in ("door_character.js", "screenart/vendor/pixi.min.js", "screenart/img/greeter_character.webp"):
+            self.assertIn(bit, html)
 
     def test_page_renders_greeter_and_state(self):
         token, _ = self.link_on()

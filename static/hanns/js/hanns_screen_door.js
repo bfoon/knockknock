@@ -87,8 +87,8 @@
       <div class="dr-host">
         <div class="dr-grid">
           ${seg("figure", "Host", [["woman", "👩🏾 Woman"], ["man", "👨🏾 Man"]])}
-          ${seg("outfit", "Dress", [["official", "Office wear"], ["traditional", "Traditional"], ["casual", "Casual"]])}
-          ${seg("style", "Style", [["animated", "3D cartoon"], ["robot", "🤖 Robot"]])}
+          ${seg("outfit", "Dress", [["official", "Office wear"], ["traditional", "Traditional"], ["casual", "Casual"], ["street", "Street style"]])}
+          ${seg("style", "Style", [["character", "✨ Your character"], ["animated", "3D cartoon"], ["robot", "🤖 Robot"]])}
           ${seg("side", "Stands", [["left", "Left"], ["right", "Right"]])}
           <div class="dr-seg"><span>Skin</span><div class="dr-skin">${[["1", "#8a5a3b"], ["2", "#5e3a22"], ["3", "#3b2416"]].map(([v, c]) => `<button type="button" data-skin="${v}" style="background:${c}" title="Tone ${v}"></button>`).join("")}</div></div>
           <label class="dr-f"><span>Gestures</span><select class="dr-every">${[4, 6, 8, 10, 15, 20].map(s => `<option value="${s}">every ${s} s</option>`).join("")}</select></label>
@@ -154,6 +154,11 @@
       q(".dr-host").classList.toggle("dr-off", !g.on);
       host.querySelectorAll(".dr-seg[data-k]").forEach(s => s.querySelectorAll("button").forEach(b => b.classList.toggle("on", g[s.dataset.k] === b.dataset.v)));
       host.querySelectorAll(".dr-skin button").forEach(b => b.classList.toggle("on", +b.dataset.skin === +g.skin));
+      // a picture host is the picture: figure, dress, skin and sign language don't apply
+      const pic = g.style === "character";
+      ["figure", "outfit"].forEach(k => { const n = host.querySelector(`.dr-seg[data-k="${k}"]`); if (n) n.classList.toggle("dr-off", pic); });
+      const skin = q(".dr-skin"); if (skin) skin.closest(".dr-seg").classList.toggle("dr-off", pic);
+      q(".dr-sign").closest(".dr-row").classList.toggle("dr-off", pic);
       q(".dr-every").value = String(g.every || 6);
       q(".dr-sign").checked = !!g.sign;
       const lines = q(".dr-lines"); if (document.activeElement !== lines) lines.value = (g.lines || []).join("\n");
@@ -204,8 +209,9 @@
   function summary(d) {
     if (!d || !d.on) return "Off · a welcome screen for the TV by the door";
     const g = d.greeter || {};
-    const dress = { casual: "Casual", traditional: "Traditional" }[g.outfit] || "Office wear";
-    const host = g.on ? [g.figure === "man" ? "Man" : "Woman", dress, g.style === "robot" ? "Robot" : "3D cartoon"].join(" · ") : "No host";
+    const dress = { casual: "Casual", traditional: "Traditional", street: "Street style" }[g.outfit] || "Office wear";
+    const host = !g.on ? "No host" : g.style === "character" ? "Your character"
+      : [g.figure === "man" ? "Man" : "Woman", dress, g.style === "robot" ? "Robot" : "3D cartoon"].join(" · ");
     return `● Link on · ${host}`;
   }
 

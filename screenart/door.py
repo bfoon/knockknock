@@ -7,7 +7,8 @@ A Big Screen can hand out a separate, read-only link for the TVs by the door. Th
     • the time and date (in the event's time zone when an event is linked)
     • the agenda — Now / Up next / later today — when an Attendance event is linked
     • an animated welcome host (static/screenart/js/door_greeter.js) in office wear, Gambian traditional
-      dress or casual wear
+      dress, casual wear or street style (cropped utility shirt, cargo joggers, sneakers — rests with
+      hands on hips) — or as the organiser's own picture, animated with PixiJS (style "character")
 
 It never shows the share code, decks, check-in names, registration links or any control, so the link can sit
 on any screen in a corridor. It has its own token (not the projector's, which is a host credential), the host
@@ -22,8 +23,8 @@ import secrets
 from .models import ScreenStyle
 
 FIGURES = ("woman", "man")
-OUTFITS = ("official", "traditional", "casual")      # official = office wear
-STYLES = ("animated", "robot")
+OUTFITS = ("official", "traditional", "casual", "street")      # official = office wear
+STYLES = ("animated", "robot", "character")      # character = the uploaded picture (door_character.js)
 SIDES = ("left", "right")
 EVERY = (4, 6, 8, 10, 15, 20)
 MAX_LINES = 6

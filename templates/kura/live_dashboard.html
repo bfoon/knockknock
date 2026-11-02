@@ -1117,6 +1117,7 @@ async function refresh(force, onlyIds){
       const q = force ? "?fresh=1" : (lastStamp ? `?since=${encodeURIComponent(lastStamp)}` : "");
       j = await api(URLS.data + q);
     }
+    if(j.meta) noteSource(j.meta);
     if(j.pulse) drawPulse(j.pulse, j.meta);
     if(!j.unchanged){ lastStamp = j.stamp; paint(j.tiles); }
   }catch(err){
@@ -1128,15 +1129,34 @@ async function refresh(force, onlyIds){
   }
 }
 
+// which cleaning pipeline the numbers went through (boards prefer cleaned data automatically)
+let lastMeta = null, warnedAbout = "";
+function noteSource(meta){
+  lastMeta = meta;
+  if(meta.warning && CAN_EDIT && meta.warning!==warnedAbout){ warnedAbout = meta.warning; toast(meta.warning); }
+  const note = document.getElementById("bSrcNote");
+  if(note) note.innerHTML = sourceNote();
+}
+function sourceNote(){
+  const c = lastMeta && lastMeta.cleaned_by;
+  if(lastMeta && lastMeta.warning) return `⚠ ${esc(lastMeta.warning)}`;
+  if(board.source==="submissions"){
+    if(c) return `✓ Cleaned automatically by <b>“${esc(c.name)}”</b> — the pipeline that ran most recently. New responses are cleaned as they arrive${c.raw_rows!==c.rows?` (${c.rows.toLocaleString()} of ${c.raw_rows.toLocaleString()} responses kept)`:""}.`;
+    return "No cleaning pipeline has run for this survey yet, so cards show responses as collected. As soon as one runs, they switch to its cleaned data by themselves.";
+  }
+  if(board.source==="pipeline" && c) return `✓ Pinned to <b>“${esc(c.name)}”</b>${c.failed_steps&&c.failed_steps.length?` · skipped: ${esc(c.failed_steps.join(", "))}`:""}.`;
+  return "Changing the data keeps every card — they simply read the new source.";
+}
 function setPulse(state, text){ const p=$("#pulse"); if(!p) return; p.className="pulse "+state; $("#pulseText").textContent=text; }
 function drawPulse(pulse, meta){
   if(IS_PUBLIC && (board.publish_options||{}).show_pulse===false) return;
   const rows = (meta && meta.filtered_rows!==undefined && meta.filtered_rows!==null) ? meta.filtered_rows : pulse.rows;
   const n = (rows||0).toLocaleString();
-  if(!pulse.streaming){ setPulse("", `${n} rows · fixed data`); return; }
+  const clean = meta && meta.cleaned_by ? " · cleaned" : "";
+  if(!pulse.streaming){ setPulse("", `${n} rows · fixed data${clean}`); return; }
   const s = pulse.seconds_since;
   const when = s===undefined ? "no responses yet" : s<60 ? "latest just now" : s<3600 ? `latest ${Math.round(s/60)} min ago` : s<86400 ? `latest ${Math.round(s/3600)} h ago` : `latest ${Math.round(s/86400)} d ago`;
-  setPulse(s===undefined?"":(s<600?"on":"stale"), `${n} rows · ${pulse.last_hour} in the last hour · ${when}`);
+  setPulse(s===undefined?"":(s<600?"on":"stale"), `${n} rows${clean} · ${pulse.last_hour} in the last hour · ${when}`);
 }
 
 let sock=null, sockTimer=null;
@@ -1608,8 +1628,8 @@ function renderConditions(host, list, onChange){
 
 function renderBoardTab(){
   const box = $("#inspector");
-  const src = [`<option value="submissions">Live responses (as collected)</option>`]
-    .concat(BOOT.pipelines.map(p=>`<option value="pipeline:${p.id}">Live responses, cleaned by “${esc(p.name)}”</option>`))
+  const src = [`<option value="submissions">Live responses — cleaned automatically (recommended)</option>`]
+    .concat(BOOT.pipelines.map(p=>`<option value="pipeline:${p.id}">Live responses, always cleaned by “${esc(p.name)}”</option>`))
     .concat(BOOT.datasets.map(d=>`<option value="dataset:${d.id}">Uploaded file: ${esc(d.name)}</option>`))
     .concat(BOOT.runs.map(r=>`<option value="run:${r.id}">Snapshot: ${esc(r.label)}</option>`)).join("");
   const cur = board.source==="submissions" ? "submissions" : `${board.source}:${board.pipeline_id||board.dataset_id||board.run_id}`;
@@ -1618,7 +1638,7 @@ function renderBoardTab(){
     <label class="f">Description <span style="font-weight:400">(shown on the published page)</span></label>
     <textarea id="bDesc" rows="2" placeholder="What this board tracks">${esc(board.description||"")}</textarea>
     <label class="f">Data</label><select id="bSource">${src}</select>
-    <p class="hint">Changing the data keeps every card — they simply read the new source.</p>
+    <p class="hint" id="bSrcNote">${sourceNote()}</p>
     <div class="box">
       <label class="switch"><span>Live updates<small>New responses appear by themselves</small></span><input type="checkbox" id="bLive"${board.is_live?" checked":""}></label>
       <label class="switch"><span>Include excluded responses<small>Ones the cleaning rules set aside</small></span><input type="checkbox" id="bExcl"${board.include_excluded?" checked":""}></label>
@@ -1647,7 +1667,7 @@ function renderBoardTab(){
     markDirty(); await flushSave();
     try{ const f = await api(URLS.fields); fields = f.fields||[]; }catch(err){}
     renderFields(); feedHeadlineOptions(); lastStamp=null; lastCfg=null; refresh(true); connect();
-    toast(kind==="pipeline" ? "Cards now read cleaned data — layout unchanged" : "Data source changed");
+    toast(kind==="pipeline" || kind==="submissions" ? "Cards now read cleaned data where a pipeline has run — layout unchanged" : "Data source changed");
   };
   $$("[data-fm]",box).forEach(b=>b.onclick=()=>{ board.filter_match=b.dataset.fm; renderBoardTab(); commit(); refresh(false); });
   renderConditions($("#boardFilters"), board.filters, ()=>{ renderFilterBar(); commit(); refresh(false); });

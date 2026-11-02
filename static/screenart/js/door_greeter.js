@@ -28,6 +28,26 @@
      Street style adds: hands on hips (her resting pose, so the free hand
      stays on the hip while the other waves) and a fist-pump cheer.
 
+   Mouth: she talks. Whenever a speech bubble appears the lips shape the
+   actual words (a small viseme set — A, E, I, O, U, M/B/P, F/V — read off
+   the bubble text, blended so neighbouring sounds run into each other),
+   and while signing WELCOME she mouths the word, as signers do. Between
+   lines a quiet idle layer adds the odd big smile, a thoughtful lip press,
+   a little "mm-hm" or a giggle, so the face is never frozen. The robot's
+   LED mouth becomes a bouncing equaliser while it talks.
+
+   Hands, v7: three fixes for the "twisting" look —
+     · forearm roll: turning from back-of-hand to palm now narrows the hand
+       edge-on and opens it out MIRRORED, so the thumb lands on the side a
+       real hand's would (raised palm → thumb toward the head; arms open →
+       thumbs up). Before, the palm was a recolour of the same drawing and
+       the thumb pointed away from the body.
+     · elbows: the arm IK used to jump between its two flat elbow solutions
+       as the hand crossed shoulder height (a one-frame elbow flip). It is
+       now solved in 3D: the elbow swings forward toward the viewer through
+       the change, both segments foreshorten, and the hand stays on target.
+     · the fist-pump folded the fist back over the forearm (wrist 180°).
+
    Usage:  DoorGreeter.mount(hostEl, {figure, outfit, style, skin, side,
                                       every, sign, lines}) → {update, destroy}
    ═══════════════════════════════════════════════════════════════════ */
@@ -436,7 +456,17 @@
       el("rect", { x: 128, y: 86, width: 64, height: 40, rx: 18, fill: url("gloss") }, head);
       parts.eyeL = el("rect", { x: 140, y: 99, width: 13, height: 13, rx: 6.5, fill: "#22d3ee", class: "dg-eye" }, head);
       parts.eyeR = el("rect", { x: 167, y: 99, width: 13, height: 13, rx: 6.5, fill: "#22d3ee", class: "dg-eye" }, head);
-      parts.mouth = el("path", { d: "M147 138 Q160 146 173 138", stroke: "#22d3ee", "stroke-width": 3.5, fill: "none", "stroke-linecap": "round" }, head);
+      parts.mouth = el("path", { d: "M147 138 Q160 146 173 138", stroke: "#22d3ee", "stroke-width": 3.5, fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round" }, head);
+      // talking: the smile line turns into a bouncing equaliser, its height following how open the mouth is
+      parts.setMouth = function (q, now) {
+        const N = 9, amp = Math.min(8, (Math.abs(q.open - .52) + .5 * Math.abs(q.wide - .1) + .5 * q.round) * 12), pts = [];   // .52/.1 = the rest shape
+        for (let i = 0; i <= N; i++) {
+          const x = 147 + 26 * i / N, curve = 4 * q.smile * Math.sin(Math.PI * i / N);
+          const bar = i === 0 || i === N ? 0 : amp * Math.sin(now / 55 + i * 2.1) * Math.sin(Math.PI * i / N);
+          pts.push(`${x.toFixed(1)} ${(138 + curve + bar).toFixed(1)}`);
+        }
+        parts.mouth.setAttribute("d", "M" + pts.join(" L"));
+      };
       el("line", { x1: 160, y1: 64, x2: 160, y2: 42, stroke: metalD, "stroke-width": 3.5 }, head);
       parts.antenna = el("circle", { cx: 160, cy: 38, r: 6.5, fill: "#f43f5e", class: "dg-antenna" }, head);
       el("circle", { cx: 118, cy: 108, r: 8, fill: metalD }, head); el("circle", { cx: 202, cy: 108, r: 8, fill: metalD }, head);
@@ -495,15 +525,52 @@
         el("path", { d: "M117 128 C118 150 136 172 160 173 C184 172 202 150 203 128 C198 146 190 152 182 154 C176 146 168 145 160 146 C152 145 144 146 138 154 C130 152 122 146 117 128Z", fill: url("hairCap"), opacity: .96 }, head);
         el("path", { d: "M146 146 Q160 140 174 146 Q170 150 160 149 Q150 150 146 146Z", fill: HAIR.base }, head);   // moustache
       }
-      // an open, friendly smile
+      // the mouth: a parametric shape (open · wide · round · smile · press) redrawn every frame, so it
+      // can grin, talk, purse for an "oo" or press shut for an "m". Teeth, tongue and throat sit
+      // inside a clip of the opening, so they only ever show where the lips part.
       const m = el("g", { transform: "translate(160 152)" }, head); parts.mouth = m;
-      el("path", { d: "M-15 -2 Q0 3 15 -2 Q10 8.5 0 9.2 Q-10 8.5 -15 -2Z", fill: "#4a130f" }, m);
-      el("path", { d: "M-13.5 -1.2 Q0 3.2 13.5 -1.2 L12 2.8 Q0 5.8 -12 2.8Z", fill: "#fbf7f1" }, m);
-      el("ellipse", { cx: 0, cy: 7.2, rx: 5.5, ry: 2.2, fill: "#b9483f" }, m);
-      el("path", { d: "M-17 -2.6 Q-8 -7 0 -4.4 Q8 -7 17 -2.6 Q8 -.6 0 -1.2 Q-8 -.6 -17 -2.6Z", fill: url("lip") }, m);
-      el("path", { d: "M-13.5 5 Q0 14.5 13.5 5 Q0 11 -13.5 5Z", fill: url("lipL") }, m);
-      el("ellipse", { cx: 0, cy: 10.4, rx: 5, ry: 1.3, fill: "#fff", opacity: .35 }, m);
-      el("circle", { cx: -17, cy: -2.6, r: 1.4, fill: K.deep, opacity: .7 }, m); el("circle", { cx: 17, cy: -2.6, r: 1.4, fill: K.deep, opacity: .7 }, m);
+      const mClip = el("path", {}, el("clipPath", { id: id("mouth") }, defs));
+      const cav = el("path", { fill: "#4a130f" }, m);
+      const inside = el("g", { "clip-path": url("mouth") }, m);
+      const throat = el("ellipse", { cx: 0, fill: "#240604" }, inside);
+      const tongue = el("ellipse", { cx: 0, fill: "#b9483f" }, inside);
+      const teethL = el("path", { fill: "#efe6da" }, inside);
+      const teethU = el("path", { fill: "#fbf7f1" }, inside);
+      const lipU = el("path", { fill: url("lip") }, m);
+      const lipL = el("path", { fill: url("lipL") }, m);
+      const gloss = el("ellipse", { cx: 0, fill: "#fff", opacity: .35 }, m);
+      const dimL = el("circle", { r: 1.4, fill: K.deep, opacity: .7 }, m), dimR = el("circle", { r: 1.4, fill: K.deep, opacity: .7 }, m);
+      const n = v => v.toFixed(2);
+      parts.setMouth = function (q) {
+        const w = 15 * (1 + .16 * q.wide - .32 * q.round + .06 * q.smile);
+        const cy = -2 - 2.4 * q.smile + 1.4 * q.round;                      // the corners
+        const seam = cy + 2.6 + 3.4 * q.smile - 1.2 * q.round;               // where closed lips meet (middle)
+        const gap = 13 * Math.max(0, q.open);
+        const um = seam - gap * .18, lm = seam + gap * .82;                  // inner edges of the lips (middle)
+        const ku = .52 + .38 * q.round;                                      // a rounder mouth has squarer handles
+        const C = mid => (mid - .25 * cy) / .75;                             // cubic handle that puts the curve's middle at `mid`
+        const cu = C(um), cl = C(lm);
+        const upper = (dy) => `C${n(w * ku)} ${n(cu + dy)} ${n(-w * ku)} ${n(cu + dy)} ${n(-w)} ${n(cy + dy)}`;   // right → left
+        const opening = `M${n(-w)} ${n(cy)} C${n(-w * ku)} ${n(cl)} ${n(w * ku)} ${n(cl)} ${n(w)} ${n(cy)} ${upper(0)}Z`;
+        cav.setAttribute("d", opening); mClip.setAttribute("d", opening);
+        const tU = (3.6 - .6 * q.smile) * (1 - .35 * q.press) + .8 * q.round;
+        const tL = 4.6 * (1 - .3 * q.press) + 1.2 * q.round;
+        const top = um - tU;
+        lipU.setAttribute("d", `M${n(-w - 2)} ${n(cy - .3)} Q${n(-w * .62)} ${n(top - 1.6)} ${n(-w * .3)} ${n(top - 1.3)} Q${n(-w * .12)} ${n(top - 1.1)} 0 ${n(top + .2)} ` +
+          `Q${n(w * .12)} ${n(top - 1.1)} ${n(w * .3)} ${n(top - 1.3)} Q${n(w * .62)} ${n(top - 1.6)} ${n(w + 2)} ${n(cy - .3)} L${n(w)} ${n(cy)} ${upper(0)}Z`);
+        lipL.setAttribute("d", `M${n(-w)} ${n(cy)} C${n(-w * ku)} ${n(cl)} ${n(w * ku)} ${n(cl)} ${n(w)} ${n(cy)} ` +
+          `Q${n(w * .7)} ${n(lm + tL * .9)} 0 ${n(lm + tL)} Q${n(-w * .7)} ${n(lm + tL * .9)} ${n(-w)} ${n(cy)}Z`);
+        const th = 3.4 + 1.4 * Math.max(0, q.wide) - 1.8 * q.round;          // less teeth behind a rounded "oo"
+        teethU.setAttribute("d", `M${n(w)} ${n(cy - 4)} ${upper(-4)} L${n(-w)} ${n(cy + th)} C${n(-w * ku)} ${n(cu + th)} ${n(w * ku)} ${n(cu + th)} ${n(w)} ${n(cy + th)}Z`);
+        const tl = 3.4 * Math.max(0, q.wide - .3) - 1;                    // lower teeth peek out only on wide "ee" sounds
+        teethL.setAttribute("d", `M${n(-w)} ${n(cy + 4)} C${n(-w * ku)} ${n(cl + 4)} ${n(w * ku)} ${n(cl + 4)} ${n(w)} ${n(cy + 4)} L${n(w)} ${n(cy - tl)} C${n(w * ku)} ${n(cl - tl)} ${n(-w * ku)} ${n(cl - tl)} ${n(-w)} ${n(cy - tl)}Z`);
+        throat.setAttribute("cy", n((um + lm) / 2 + 1)); throat.setAttribute("rx", n(w * .42)); throat.setAttribute("ry", n(Math.max(.1, gap * .3)));
+        tongue.setAttribute("cy", n(lm - .6)); tongue.setAttribute("rx", n(w * .5)); tongue.setAttribute("ry", n(2 + 2.4 * Math.max(0, q.open)));
+        gloss.setAttribute("cy", n(lm + tL * .58)); gloss.setAttribute("rx", n(w * .32)); gloss.setAttribute("ry", "1.3");
+        dimL.setAttribute("cx", n(-w - 2.2)); dimR.setAttribute("cx", n(w + 2.2));
+        dimL.setAttribute("cy", n(cy - .4)); dimR.setAttribute("cy", n(cy - .4));
+        dimL.setAttribute("opacity", n(.25 + .45 * Math.max(0, Math.min(1, q.smile)))); dimR.setAttribute("opacity", dimL.getAttribute("opacity"));
+      };
       // hair in front / earrings
       if (fig === "man") {
         el("path", { d: "M112 112 C108 70 132 52 160 51 C188 52 212 70 208 112 C204 94 196 80 184 76 C176 84 144 84 136 76 C124 80 116 94 112 112Z", fill: url("hairCap") }, head);
@@ -585,8 +652,15 @@
       }
       // hand: a jointed rig (see makeHand) — fingers bend at every joint
       const hand = el("g", {}, fore);
-      const hr = makeHand(hand, hx, hy, s, robot ? { base: "#cdd6e2", light: "#f4f7fb", dark: "#6b7788", palm: "#dfe6ee", nail: "#ffffff" } : K, robot);
-      return { sh, fore, hand, hr, sx, sy, ex, ey, hx, hy };
+      // forearm roll: an inner group that narrows and mirrors the hand about the wrist (see apply)
+      const roll = el("g", {}, hand);
+      const hr = makeHand(roll, hx, hy, s, robot ? { base: "#cdd6e2", light: "#f4f7fb", dark: "#6b7788", palm: "#dfe6ee", nail: "#ffffff" } : K, robot);
+      // a soft cap over the elbow so the upper arm and forearm read as one bending limb, not two hinged boxes
+      if (!robot) {
+        // under the forearm, so a hand passing near the elbow is never covered by it
+        if (!wide) sh.insertBefore(el("circle", { cx: ex, cy: ey + 1, r: 11.5, fill: street ? limbFill : sleeve }), fore);
+      }
+      return { sh, fore, hand, roll, hr, sx, sy, ex, ey, hx, hy };
     }
     parts.L = arm("L");
     parts.R = arm("R");
@@ -605,17 +679,33 @@
   const REST0 = REST;
   const HIP = { x: -4, y: 118, w: 62 };                       // wrist target and tilt for a hand resting on the hip
 
-  function solve(tx, ty) {
-    // returns [upper, fore] absolute angles in degrees, 0 = hanging down, + = outward
-    let d = Math.hypot(tx, ty);
+  // The arm is solved in 3D and drawn in 2D. With the shoulder and the hand fixed, the elbow can sit
+  // anywhere on a circle around the shoulder→hand line; `bendSide` picks the spot on that circle
+  // (+1 = out to the side, -1 = hanging under the arm, 0 = pointing at the viewer). It changes
+  // smoothly with where the hand is (degrees: 0 = straight down, + = outward, ±180 = straight up):
+  // by the hip or crossing the body the elbow sits out to the side; out at the side or raised, it
+  // hangs underneath. In between the elbow swings forward toward the camera — the upper arm and
+  // forearm foreshorten, the hand stays exactly on its path — instead of the old one-frame jump
+  // between the two flat solutions, which read as the arm "twisting".
+  function bendSide(deg) {
+    const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+    if (deg >= 0) return 1 - 2 * sm(6, 60, deg);             // outward: elbow out → elbow under
+    return 1 - 2 * sm(-118, -150, deg);                      // across the body; up and over the head
+  }
+  function solve(tx, ty, side) {
+    // `side` overrides bendSide (the animator passes a time-smoothed value). Returns [upper, fore] absolute angles in degrees (0 = hanging down, + = outward) and how much
+    // each segment is foreshortened on screen (1 = full length, smaller = pointing toward the viewer)
+    let d = Math.hypot(tx, ty) || 1;
+    const phi = Math.atan2(tx, ty);
     d = Math.max(Math.abs(LU - LF) + 1, Math.min(LU + LF - .5, d));
-    const phiT = Math.atan2(tx, ty);
     const a = Math.acos(Math.max(-1, Math.min(1, (LU * LU + d * d - LF * LF) / (2 * LU * d))));
-    const b = Math.acos(Math.max(-1, Math.min(1, (LU * LU + LF * LF - d * d) / (2 * LU * LF))));
-    // two solutions; keep the one whose elbow sits further outward (a natural, relaxed elbow)
-    const u1 = phiT + a, u2 = phiT - a;
-    const pick = Math.sin(u1) >= Math.sin(u2) ? [u1, u1 - (Math.PI - b)] : [u2, u2 + (Math.PI - b)];
-    return pick.map(r => r * 180 / Math.PI);
+    const sd = side == null ? bendSide(phi * 180 / Math.PI) : side;
+    const dx = Math.sin(phi), dy = Math.cos(phi), px = Math.cos(phi), py = -Math.sin(phi);   // along / across the line
+    const ex = LU * (Math.cos(a) * dx + sd * Math.sin(a) * px), ey = LU * (Math.cos(a) * dy + sd * Math.sin(a) * py);
+    const hx = d * dx, hy = d * dy;
+    const u = Math.atan2(ex, ey), f = Math.atan2(hx - ex, hy - ey);
+    const kU = Math.max(.12, Math.hypot(ex, ey) / LU), kF = Math.max(.12, Math.min(1, Math.hypot(hx - ex, hy - ey) / LF));
+    return [u * 180 / Math.PI, f * 180 / Math.PI, kU, kF];
   }
 
   // Street style's resting pose: both hands on the hips, elbows out. Gestures only move the arm they
@@ -652,9 +742,9 @@
              [1500, P({ ox: HIP.x, oy: HIP.y, ow: HIP.w, ix: HIP.x, iy: HIP.y, iw: HIP.w, head: 8, y: -4 }, H("oh", "hip"), H("ih", "hip"))],
              [2100, P({ ox: HIP.x, oy: HIP.y, ow: HIP.w, ix: HIP.x, iy: HIP.y, iw: HIP.w, head: 3, y: 0 }, H("oh", "hip"), H("ih", "hip"))], [2600, REST]],
       // a happy fist-pump cheer, twice
-      cheer: [[0, REST], [500, P({ ox: 46, oy: -84, ow: 180, head: 5 }, H("oh", "fist"))],
-              [800, P({ ox: 50, oy: -96, ow: 180, head: 7, y: -4 }, H("oh", "fist"))], [1100, P({ ox: 46, oy: -86, ow: 180, head: 4 }, H("oh", "fist"))],
-              [1400, P({ ox: 50, oy: -96, ow: 180, head: 7, y: -4 }, H("oh", "fist"))], [2100, REST]],
+      cheer: [[0, REST], [500, P({ ox: 46, oy: -84, ow: -8, head: 5 }, H("oh", "fist"))],
+              [800, P({ ox: 50, oy: -96, ow: -8, head: 7, y: -4 }, H("oh", "fist"))], [1100, P({ ox: 46, oy: -86, ow: -8, head: 4 }, H("oh", "fist"))],
+              [1400, P({ ox: 50, oy: -96, ow: -8, head: 7, y: -4 }, H("oh", "fist"))], [2100, REST]],
     };
   }
   const BUBBLE = { wave: 0, open: 1, sign: "sign", heart: 2, point: "way", nod: null, hips: 0, cheer: 1 };
@@ -668,8 +758,68 @@
     const k = (robot ? servo : ease)((ms - t0) / Math.max(1, t1 - t0));
     const out = {};
     for (const key in a) out[key] = a[key] + (b[key] - a[key]) * k;
+    // Hands travel on ARCS around the shoulder (angle and reach blend separately), the way a real arm
+    // swings. A straight line from the hip to above the head cuts right past the shoulder, which made
+    // the arm crumple up tight halfway through a wave.
+    for (const [X, Y] of [["ox", "oy"], ["ix", "iy"]]) {
+      if (a[X] == null || b[X] == null) continue;
+      const pa = Math.atan2(a[X], a[Y]), pb = Math.atan2(b[X], b[Y]);
+      const ra = Math.hypot(a[X], a[Y]), rb = Math.hypot(b[X], b[Y]);
+      if (Math.abs(pb - pa) < .35) continue;                // short moves: a straight line is fine
+      const ph = pa + (pb - pa) * k, r = ra + (rb - ra) * k;
+      out[X] = r * Math.sin(ph); out[Y] = r * Math.cos(ph);
+    }
     return out;
   }
+
+  /* ───────────── the mouth: visemes, talking, idle moments ─────────────
+     A viseme is a mouth shape. Talking turns the bubble's text into a timed run of them (one per
+     letter group, vowels held longer than consonants) and the mouth eases toward each in turn,
+     so neighbouring sounds blend the way real speech does. */
+  const V = (open, wide, round, smile, press) => ({ open, wide, round, smile, press: press || 0 });
+  const VIS = {
+    rest: V(.52, .1, 0, 1),        // the friendly open grin she wears between lines
+    A: V(.95, .25, 0, .55),        // "ah"
+    E: V(.5, .75, 0, .6),          // "eh"
+    I: V(.32, 1, 0, .75),          // "ee"
+    O: V(.8, -.2, .8, .2),         // "oh"
+    U: V(.36, -.3, 1, .1),         // "oo" — rounded and pushed forward
+    M: V(0, .1, 0, .45, 1),        // m / b / p — lips pressed together
+    F: V(.14, .35, 0, .4),         // f / v
+    C: V(.36, .35, 0, .5),         // any other consonant
+    _: V(.14, .15, 0, .65),        // the small close between words
+    beam: V(.72, .35, 0, 1.35),    // a big beaming smile
+    hmm: V(0, .25, 0, .75, .8),    // a content, closed-lip smile
+  };
+  function visemes(text) {
+    const out = [];
+    const t = String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    for (const ch of t) {
+      let v, ms;
+      if ("a".includes(ch)) { v = "A"; ms = 120; }
+      else if ("e".includes(ch)) { v = "E"; ms = 105; }
+      else if ("iy".includes(ch)) { v = "I"; ms = 100; }
+      else if ("o".includes(ch)) { v = "O"; ms = 120; }
+      else if ("uw".includes(ch)) { v = "U"; ms = 105; }
+      else if ("mbp".includes(ch)) { v = "M"; ms = 85; }
+      else if ("fv".includes(ch)) { v = "F"; ms = 80; }
+      else if (/[a-z]/.test(ch)) { v = "C"; ms = 62; }
+      else if (/[.!?,;:—–-]/.test(ch)) { v = "_"; ms = 230; }
+      else { v = "_"; ms = 95; }
+      const last = out[out.length - 1];
+      if (last && last[0] === v) last[1] += ms * .45;               // a doubled letter holds, it doesn't re-open
+      else out.push([v, ms]);
+    }
+    return out;
+  }
+  // little things the face does on its own between lines, so it never looks frozen
+  const IDLE = [
+    [["beam", 1500]],                                              // a big smile
+    [["hmm", 900]],                                                // a thoughtful lip press
+    [["M", 160], ["C", 120], ["hmm", 140], ["M", 110], ["C", 160], ["hmm", 380]],   // "mm-hm"
+    [["A", 110], ["beam", 90], ["A", 110], ["beam", 90], ["A", 120], ["beam", 700]],  // a giggle
+    [["C", 80], ["A", 130], ["_", 120], ["I", 140], ["beam", 500]],  // a quiet little "hi!"
+  ];
 
   function mountRig(host, options) {
     let opts = Object.assign({ figure: "woman", outfit: "official", style: "animated", skin: 2, side: "left", every: 6, sign: true,
@@ -695,9 +845,15 @@
         ? ["wave", "cheer", opts.sign ? "sign" : "nod", "open", "point", "heart", opts.sign ? "sign" : "wave", "nod"]
         : ["wave", "open", opts.sign ? "sign" : "nod", "heart", "point", opts.sign ? "sign" : "wave", "nod"];
       idx = 0; clip = null; nextAt = performance.now() + 900;
+      if (rig.parts.setMouth) rig.parts.setMouth(VIS.rest, performance.now());
     }
+    const elbowSide = { L: 1, R: 1 }; let lastApply = 0;
     function apply(p, now) {
       const P_ = rig.parts;
+      // the elbow's swing follows its target with a short lag (~80 ms), so even a fast gesture rolls the
+      // elbow round smoothly rather than whipping it
+      const dt = lastApply ? Math.min(100, now - lastApply) : 100; lastApply = now;
+      const follow = 1 - Math.exp(-dt / 80);
       const breathe = REDUCED ? 0 : Math.sin(now / 900) * 1.6;
       const sway = REDUCED ? 0 : Math.sin(now / 2300) * 1.1;
       const outerIsRight = opts.side === "right";             // figure on the right → its outer arm is screen-right
@@ -707,12 +863,22 @@
       for (const [k, s] of [["R", 1], ["L", -1]]) {
         const a = P_[k];
         const isOuter = (k === "R") === outerIsRight;
-        const [u, f] = solve(isOuter ? p.ox : p.ix, isOuter ? p.oy : p.iy);
+        const tx = isOuter ? p.ox : p.ix, ty = isOuter ? p.oy : p.iy;
+        elbowSide[k] += (bendSide(Math.atan2(tx, ty) * 180 / Math.PI) - elbowSide[k]) * follow;
+        const [u, f, kU, kF] = solve(tx, ty, elbowSide[k]);
         const w = isOuter ? p.ow : p.iw;
-        a.sh.setAttribute("transform", `rotate(${-s * u} ${a.sx} ${a.sy})`);
-        a.fore.setAttribute("transform", `rotate(${-s * (f - u)} ${a.ex} ${a.ey})`);
-        a.hand.setAttribute("transform", `rotate(${-s * w} ${a.hx} ${a.hy})`);
+        // each segment: rotate about its joint, foreshorten along its own length, and the child undoes
+        // its parent's foreshortening so only that segment shrinks (the hand is never squashed)
+        const n3 = v => v.toFixed(3);
+        a.sh.setAttribute("transform", `rotate(${n3(-s * u)} ${a.sx} ${a.sy}) translate(${a.sx} ${a.sy}) scale(1 ${n3(kU)}) translate(${-a.sx} ${-a.sy})`);
+        a.fore.setAttribute("transform", `translate(${a.ex} ${a.ey}) scale(1 ${n3(1 / kU)}) rotate(${n3(-s * (f - u))}) scale(1 ${n3(kF)}) translate(${-a.ex} ${-a.ey})`);
+        a.hand.setAttribute("transform", `translate(${a.hx} ${a.hy}) scale(1 ${n3(1 / kF)}) rotate(${n3(-s * w)}) translate(${-a.hx} ${-a.hy})`);
         const pre = isOuter ? "oh" : "ih";
+        // forearm roll: b = 1 back of the hand to the viewer, 0 = palm. Turning between them the hand
+        // goes edge-on (narrow) and comes back mirrored, which moves the thumb to the correct side.
+        const roll = -Math.cos(Math.PI * Math.max(0, Math.min(1, p[pre + "b"])));
+        const sx = (roll < 0 ? -1 : 1) * Math.max(.2, Math.abs(roll));
+        a.roll.setAttribute("transform", `translate(${a.hx} 0) scale(${sx.toFixed(3)} 1) translate(${-a.hx} 0)`);
         a.hr.set({ c: [0, 1, 2, 3].map(n => p[pre + "c" + n]), s: [0, 1, 2, 3].map(n => p[pre + "s" + n]),
                    ta: p[pre + "ta"], tc: p[pre + "tc"], b: p[pre + "b"], fl: p[pre + "fl"] }, now);
       }
@@ -720,18 +886,48 @@
     function say(name) {
       const b = BUBBLE[name];
       signTag.classList.toggle("on", name === "sign");
-      if (b === null || b === undefined) { bubble.classList.remove("on"); return; }
+      if (b === null || b === undefined) {
+        bubble.classList.remove("on");
+        if (name === "nod" && !REDUCED) { mq = IDLE[2].concat([["rest", 1]]); mqAt = performance.now() + 150; }   // "mm-hm" with the nod
+        return;
+      }
       let text;
       if (b === "sign") text = "Welcome";
       else if (b === "way") text = opts.wayText || "Come in — this way";
       else { const lines = (opts.lines || []).filter(Boolean); text = lines.length ? lines[lineIdx++ % lines.length] : "Welcome!"; }
       bubble.textContent = text;
       bubble.classList.remove("on"); void bubble.offsetWidth; bubble.classList.add("on");
+      speak(text);                                                  // while signing WELCOME she mouths it too
     }
     function blink(now) {
       const phase = now % 4200;
       const shut = phase < 120;
       for (const e of [rig.parts.eyeL, rig.parts.eyeR]) if (e) e.style.transform = shut ? "scaleY(.12)" : "";
+    }
+    // mouth: a queue of [viseme, ms]; the shape eases toward whatever is current
+    let mq = [], mqAt = 0, mouthQ = Object.assign({}, VIS.rest), lastMouth = 0, idleAt = performance.now() + 4000, talking = false;
+    function speak(text, delay) {
+      const seq = visemes(text);
+      if (!seq.length) return;
+      mq = [["rest", delay == null ? 220 : delay]].concat(seq, [["rest", 1]]);
+      mqAt = performance.now(); talking = true;
+    }
+    function mouth(now) {
+      if (!rig.parts.setMouth) return;
+      const dt = lastMouth ? Math.min(80, now - lastMouth) : 16; lastMouth = now;
+      while (mq.length && now - mqAt >= mq[0][1]) { mqAt += mq[0][1]; mq.shift(); }
+      if (!mq.length && talking) { talking = false; idleAt = now + 2500 + Math.random() * 4000; }
+      if (!mq.length && !talking && !REDUCED && !clip && now >= idleAt) {
+        mq = IDLE[Math.floor(Math.random() * IDLE.length)].concat([["rest", 1]]); mqAt = now;
+        idleAt = now + 4500 + Math.random() * 6500;
+      }
+      const goal = VIS[mq.length ? mq[0][0] : "rest"];
+      const speed = talking ? 34 : 70;                               // speech moves quickly; moods drift
+      const k = 1 - Math.exp(-dt / speed);
+      for (const key in goal) mouthQ[key] += (goal[key] - mouthQ[key]) * k;
+      // a breath of life even at rest
+      const q = REDUCED ? mouthQ : Object.assign({}, mouthQ, { open: mouthQ.open + Math.sin(now / 1700) * .025 });
+      rig.parts.setMouth(q, now);
     }
     function tick(now) {
       raf = requestAnimationFrame(tick);
@@ -747,7 +943,7 @@
           setTimeout(() => { if (!clip) { bubble.classList.remove("on"); signTag.classList.remove("on"); } }, 900);
         }
       }
-      apply(pose, now); blink(now);
+      apply(pose, now); blink(now); mouth(now);
     }
     setup();
     raf = requestAnimationFrame(tick);
@@ -758,6 +954,9 @@
         if (JSON.stringify([opts.figure, opts.outfit, opts.style, opts.skin, opts.side, opts.sign]) !== before) setup();
       },
       play(name) { if (clips[name]) { clip = clips[name]; clipName = name; clipStart = performance.now(); say(name); } },
+      // make the host say something right now (bubble + lips), e.g. from the control board
+      speak(text) { if (!text) return; bubble.textContent = text; bubble.classList.remove("on"); void bubble.offsetWidth; bubble.classList.add("on"); speak(text, 120);
+        setTimeout(() => { if (!clip) bubble.classList.remove("on"); }, 1400 + String(text).length * 70); },
       destroy() { cancelAnimationFrame(raf); host.innerHTML = ""; },
       get options() { return Object.assign({}, opts); },
     };
@@ -802,6 +1001,7 @@
         else impl.update(next);
       },
       play(name) { if (impl.play) impl.play(name); },
+      speak(text) { if (impl.speak) impl.speak(text); },
       destroy() { impl.destroy(); },
       get options() { return impl.options; },
     };

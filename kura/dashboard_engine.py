@@ -12,6 +12,18 @@ you actually want on election night: raw counts while the data is thin,
 then flip the source to a cleaning pipeline once the rules matter, without
 rebuilding a single card.
 
+Cleaned data first
+------------------
+A board never has to be told to use cleaned data. On "live submissions"
+it is pushed through the survey's pipeline that most recently completed a
+run (``LiveDashboard.effective_pipeline``) — in memory, on every refresh,
+so new responses still appear within seconds, already cleaned. Until a
+pipeline has run the board shows responses as collected; the moment one
+finishes, open boards are nudged and switch over by themselves. Pinning a
+specific pipeline still works and wins. If the automatic pipeline throws,
+the board falls back to the raw rows (with a warning) rather than going
+blank — a pinned pipeline that throws still reports the error, as before.
+
 Pipelines run **in memory**. ``PipelineExecutor`` normally writes
 ``CleanedRecord`` and ``CleaningChange`` rows; a dashboard refreshing every
 few seconds must not. ``LiveTransformer`` subclasses it, drops the audit
@@ -115,9 +127,12 @@ def data_stamp(dashboard) -> str:
             qs = qs.exclude(status="excluded")
         agg = qs.aggregate(n=Count("id"), last=Max("received_at"))
         parts = [str(agg.get("n") or 0), str(agg.get("last") or "")]
-        if dashboard.source == "pipeline" and dashboard.pipeline_id:
-            parts += [str(dashboard.pipeline_id),
-                      str(dashboard.pipeline.updated_at)]
+        pipeline = dashboard.effective_pipeline
+        if pipeline is not None:
+            # editing a step (not just the pipeline row) must invalidate the frame too
+            steps = pipeline.steps.aggregate(n=Count("id"), last=Max("updated_at"))
+            parts += ["p", str(pipeline.id), str(pipeline.updated_at),
+                      str(steps.get("n") or 0), str(steps.get("last") or "")]
     elif dashboard.source == "dataset" and dashboard.dataset_id:
         parts = ["ds", str(dashboard.dataset_id), str(dashboard.dataset.created_at)]
     elif dashboard.source == "run" and dashboard.run_id:
@@ -128,22 +143,68 @@ def data_stamp(dashboard) -> str:
     return hashlib.md5("|".join(parts).encode()).hexdigest()[:16]
 
 
-def _raw_frame(dashboard) -> pd.DataFrame:
+def _restore_meta(raw, df):
+    """Put back Kura's own bookkeeping columns if a step dropped them.
+
+    A "keep only these columns" step is written with the questions in mind,
+    but the board still needs ``_received_at`` for the live pulse and time
+    charts and the GPS columns for maps. Rows are matched on the frame
+    index, which the step handlers carry through (filters and de-duplication
+    keep the original labels); if a step rebuilt the index we leave the
+    frame alone rather than guess.
+    """
+    missing = [c for c in META_COLUMNS if c in raw.columns and c not in df.columns]
+    if not missing or df.empty:
+        return df
+    if not df.index.is_unique or not df.index.isin(raw.index).all():
+        return df
+    df = df.copy()
+    for column in missing:
+        df[column] = raw.loc[df.index, column].values
+    return df
+
+
+def _frame_with_info(dashboard):
+    """``(df, info)`` — the rows, and which pipeline (if any) shaped them."""
+    info = {"cleaned_by": None, "warning": ""}
     if dashboard.source == "dataset" and dashboard.dataset_id:
-        return dataset_dataframe(dashboard.dataset)
+        return dataset_dataframe(dashboard.dataset), info
 
     if dashboard.source == "run" and dashboard.run_id:
-        return run_dataframe(dashboard.run)
+        return run_dataframe(dashboard.run), info
 
     df, _subs = survey_dataframe(dashboard.survey)
     if df.empty:
-        return df
+        return df, info
     if not dashboard.include_excluded and "_status" in df.columns:
         df = df[df["_status"] != "excluded"].copy()
 
-    if dashboard.source == "pipeline" and dashboard.pipeline_id:
-        df = LiveTransformer(dashboard.pipeline).transform(df)
-    return df
+    pipeline = dashboard.effective_pipeline
+    if pipeline is None:
+        return df, info
+
+    auto = dashboard.auto_cleaned
+    transformer = LiveTransformer(pipeline)
+    try:
+        cleaned = transformer.transform(df)
+    except Exception as exc:
+        if not auto:
+            raise                                   # a pinned pipeline reports its own failure
+        info["warning"] = (f"The cleaning pipeline “{pipeline.name}” failed on the latest data "
+                           f"({exc}); showing responses as collected until it is fixed.")
+        return df, info
+
+    info["cleaned_by"] = {
+        "id": pipeline.id, "name": pipeline.name, "auto": auto,
+        "raw_rows": int(len(df)), "rows": int(len(cleaned)),
+        "failed_steps": [s["name"] for s in transformer.step_stats if s.get("status") == "failed"],
+    }
+    return _restore_meta(df, cleaned), info
+
+
+def _raw_frame(dashboard) -> pd.DataFrame:
+    """Kept for callers that only want the rows."""
+    return _frame_with_info(dashboard)[0]
 
 
 def resolve_frame(dashboard, use_cache=True):
@@ -158,8 +219,9 @@ def resolve_frame(dashboard, use_cache=True):
             return df, {**hit["meta"], "cached": True}
 
     error = ""
+    info = {"cleaned_by": None, "warning": ""}
     try:
-        df = _raw_frame(dashboard)
+        df, info = _frame_with_info(dashboard)
     except Exception as exc:
         # A broken pipeline step must not blank the whole ops screen.
         df = pd.DataFrame()
@@ -172,6 +234,8 @@ def resolve_frame(dashboard, use_cache=True):
         "source": dashboard.source,
         "source_label": dashboard.source_label,
         "error": error,
+        "cleaned_by": info["cleaned_by"],
+        "warning": info["warning"],
         "cached": False,
     }
 

@@ -339,8 +339,54 @@ class LiveDashboard(models.Model):
                 == self.published_config.get("signature"))
         return "live" if same else "outdated"
 
+    # ── which pipeline the numbers really pass through ───────────────
+    def _latest_ran_pipeline(self):
+        """The survey's pipeline that most recently completed a cleaning run.
+
+        "Ran" is the test on purpose: a pipeline someone is still sketching
+        in the Data Studio has never produced a result, so it must not start
+        reshaping a board the moment its first step is saved. Only active
+        pipelines that read survey submissions qualify (one built on an
+        uploaded file describes different data).
+        """
+        if not hasattr(self, "_ran_pipeline_cache"):
+            run = (CleaningRun.objects
+                   .filter(pipeline__survey_id=self.survey_id,
+                           pipeline__source="submissions",
+                           pipeline__is_active=True,
+                           status="complete")
+                   .select_related("pipeline")
+                   .order_by(models.F("completed_at").desc(nulls_last=True), "-id")
+                   .first())
+            self._ran_pipeline_cache = run.pipeline if run else None
+        return self._ran_pipeline_cache
+
+    @property
+    def effective_pipeline(self):
+        """The pipeline applied to this board's rows, or None.
+
+        Kura always prefers cleaned data: a board on live submissions is
+        pushed through the pipeline that last ran for its survey,
+        automatically, and switches back to raw only while no pipeline has
+        run yet. A board pinned to a specific pipeline uses that one. Files
+        and frozen run snapshots are already final, so they get nothing.
+        """
+        if self.source == "pipeline":
+            return self.pipeline if self.pipeline_id else self._latest_ran_pipeline()
+        if self.source == "submissions":
+            return self._latest_ran_pipeline()
+        return None
+
+    @property
+    def auto_cleaned(self):
+        """True when the pipeline was chosen automatically rather than pinned."""
+        return self.source == "submissions" and self.effective_pipeline is not None
+
     @property
     def source_label(self):
+        if self.source == "submissions":
+            p = self.effective_pipeline
+            return f"Live submissions → {p.name} (cleaned automatically)" if p else "Live submissions"
         if self.source == "pipeline" and self.pipeline_id:
             return f"Live submissions → {self.pipeline.name}"
         if self.source == "dataset" and self.dataset_id:
@@ -363,6 +409,8 @@ class LiveDashboard(models.Model):
             "source": self.source,
             "source_label": self.source_label,
             "pipeline_id": self.pipeline_id,
+            "auto_pipeline": ({"id": self.effective_pipeline.id, "name": self.effective_pipeline.name}
+                              if self.auto_cleaned else None),
             "dataset_id": self.dataset_id,
             "run_id": self.run_id,
             "include_excluded": self.include_excluded,

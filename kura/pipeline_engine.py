@@ -1309,6 +1309,13 @@ class PipelineExecutor:
             }
             self.run.completed_at = timezone.now()
             self.run.save()
+            # live dashboards prefer the pipeline that ran most recently — tell
+            # open boards to re-fetch so they switch to the cleaned data now
+            try:
+                from .live import dashboard_changed
+                dashboard_changed(self.run.pipeline.survey.code, "cleaning_run")
+            except Exception:
+                pass
             return self.run
 
         except Exception as exc:

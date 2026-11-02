@@ -38,7 +38,7 @@
   {% if user.is_authenticated %}
     {# Desktop links — unchanged layout, just kept md-and-up. #}
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'core:dashboard' %}">Dashboard</a>
-    <a class="kk-nav-link d-none d-md-inline" href="{% url 'polls:list' %}">Menti</a>
+    <a class="kk-nav-link d-none d-md-inline" href="{% url 'polls:list' %}">Wenti</a>
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'games:list' %}">Game</a>
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'boardly:create' %}">Boardly</a>
     <a class="kk-nav-link d-none d-md-inline" href="{% url 'hanns:list' %}">Hanns</a>
@@ -106,7 +106,7 @@
 
       <div class="kk-drawer-label">Create &amp; manage</div>
       <a class="kk-drawer-link" href="{% url 'polls:list' %}">
-        <i class="bi bi-collection"></i> Menti
+        <i class="bi bi-collection"></i> Wenti
       </a>
       <a class="kk-drawer-link" href="{% url 'games:list' %}">
         <i class="bi bi-controller"></i> Game

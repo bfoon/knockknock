@@ -5,6 +5,8 @@ from . import feedback_views
 # Importing badge_views also registers the badge models (badge_models.py)
 # with Django — same mechanism feedback_views uses for feedback_models.
 from . import badge_views
+# Public agenda links — a separate feature with its own views module.
+from . import agenda_share_views
 
 app_name = "attendance"
 
@@ -72,6 +74,19 @@ urlpatterns = [
     # Actual file download endpoint. ?format=pdf|png&theme=dark|light.
     # Streams the rendered bytes as an attachment — no print dialog.
     path("<int:pk>/agenda/download/",              views.agenda_download,     name="agenda_download"),
+
+    # ── Public agenda links (agenda_share_views.py) ──────────
+    # Organizer side: make, stop/resume, delete links; QR per link.
+    path("<int:pk>/agenda/share/",                        agenda_share_views.agenda_share,          name="agenda_share"),
+    path("<int:pk>/agenda/share/new/",                    agenda_share_views.agenda_share_create,   name="agenda_share_create"),
+    path("<int:pk>/agenda/share/stop-all/",               agenda_share_views.agenda_share_stop_all, name="agenda_share_stop_all"),
+    path("<int:pk>/agenda/share/<int:link_id>/toggle/",   agenda_share_views.agenda_share_toggle,   name="agenda_share_toggle"),
+    path("<int:pk>/agenda/share/<int:link_id>/delete/",   agenda_share_views.agenda_share_delete,   name="agenda_share_delete"),
+    path("<int:pk>/agenda/share/<int:link_id>/qr.png",    agenda_share_views.agenda_share_qr,       name="agenda_share_qr"),
+    # Public side: anyone with the link, no sign-in, nothing asked.
+    path("a/<str:token>/",             agenda_share_views.public_agenda,        name="public_agenda"),
+    path("a/<str:token>/status.json",  agenda_share_views.public_agenda_status, name="public_agenda_status"),
+    path("a/<str:token>/agenda.ics",   agenda_share_views.public_agenda_ics,    name="public_agenda_ics"),
 
     path("<int:pk>/announce/",              views.announcement_send,    name="announcement_send"),
     path("<int:pk>/r/<int:reg_id>/action/", views.registration_action,  name="registration_action"),

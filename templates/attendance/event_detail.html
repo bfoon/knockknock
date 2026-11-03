@@ -31,6 +31,9 @@
     <a href="{% url 'attendance:agenda_editor' event.pk %}" class="kk-btn kk-btn-ghost">
       <i class="bi bi-list-ol"></i> Agenda
     </a>
+    <a href="{% url 'attendance:agenda_share' event.pk %}" class="kk-btn kk-btn-ghost">
+      <i class="bi bi-link-45deg"></i> Share agenda
+    </a>
     <a href="{% url 'attendance:feedback_editor' event.pk %}" class="kk-btn kk-btn-ghost">
       <i class="bi bi-chat-square-text"></i> Feedback
     </a>

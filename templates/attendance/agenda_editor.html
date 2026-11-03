@@ -14,6 +14,10 @@
     </p>
   </div>
   <div class="d-flex gap-2">
+    {# Public agenda links — anyone with a link can view, no sign-in. #}
+    <a href="{% url 'attendance:agenda_share' event.pk %}" class="kk-btn kk-btn-ghost">
+      <i class="bi bi-link-45deg"></i> Share agenda
+    </a>
     <a href="{% url 'attendance:event_detail' event.pk %}" class="kk-btn kk-btn-primary">
       <i class="bi bi-check2"></i> Done
     </a>

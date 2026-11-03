@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+{% block title %}Agenda · {{ event.title }}{% endblock %}
+{% block head_extra %}
+{# Shared links travel; keep them out of search engines and Referer headers. #}
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+{% endblock %}
+
+{% block content %}
+{% comment %}
+  Public agenda — opened from a share link (/attendance/a/<token>/).
+  No sign-in and nothing asked of the visitor. Shows only the event's
+  title, dates, venue and sessions.
+  While open, the page checks back once a minute: if the organizer
+  edits the agenda it offers a refresh; if they stop the link, the
+  agenda is taken off the page and the door closes.
+{% endcomment %}
+<div class="kk-pa" id="kk-pa"
+     data-status-url="{% url 'attendance:public_agenda_status' link.token %}"
+     data-fingerprint="{{ fingerprint }}"
+     data-tz="{{ event.timezone_name|default:'UTC' }}">
+
+  <header class="kk-pa-head">
+    <h1 class="kk-pa-title">{{ event.title }}</h1>
+    <p class="kk-pa-meta">
+      <i class="bi bi-calendar-event" aria-hidden="true"></i>
+      {% if event.starts_at|date:"Ymd" == event.ends_at|date:"Ymd" %}
+        {{ event.starts_at|date:"l j F Y" }}, {{ event.starts_at|time:"H:i" }}–{{ event.ends_at|time:"H:i" }}
+      {% else %}
+        {{ event.starts_at|date:"j F" }} to {{ event.ends_at|date:"j F Y" }}
+      {% endif %}
+    </p>
+    {% if event.is_online %}
+      <p class="kk-pa-meta"><i class="bi bi-camera-video" aria-hidden="true"></i> Online</p>
+    {% elif event.location %}
+      <p class="kk-pa-meta"><i class="bi bi-geo-alt" aria-hidden="true"></i> {{ event.location }}</p>
+    {% endif %}
+  </header>
+
+  {# Filled by the script below while the event is on: what's on now, what's next. #}
+  <section class="kk-pa-live" id="kk-pa-live" aria-live="polite" hidden></section>
+
+  <div class="kk-pa-actions">
+    {% if has_agenda %}
+      <a class="kk-btn kk-btn-primary btn-sm" href="{% url 'attendance:public_agenda_ics' link.token %}">
+        <i class="bi bi-calendar-plus" aria-hidden="true"></i> Add to my calendar
+      </a>
+    {% endif %}
+    {% if event.get_directions_url %}
+      <a class="kk-btn kk-btn-ghost btn-sm" href="{{ event.get_directions_url }}" target="_blank" rel="noopener">
+        <i class="bi bi-signpost-2-fill" aria-hidden="true"></i> Get directions
+      </a>
+    {% endif %}
+    <button type="button" class="kk-btn kk-btn-ghost btn-sm" id="kk-pa-share">
+      <i class="bi bi-share" aria-hidden="true"></i> <span>Share</span>
+    </button>
+    <button type="button" class="kk-btn kk-btn-ghost btn-sm" onclick="window.print()">
+      <i class="bi bi-printer" aria-hidden="true"></i> Print
+    </button>
+  </div>
+
+  <section class="kk-pa-agenda" id="kk-pa-agenda">
+    {% if has_agenda %}
+      {% include "attendance/_agenda.html" with event=event agenda_live=True %}
+    {% else %}
+      <p class="kk-pa-empty">The organizer hasn’t added any sessions yet. Check this link again later.</p>
+    {% endif %}
+  </section>
+
+  <p class="kk-pa-foot">Shared by the organizer. You don’t need an account to see it.</p>
+</div>
+
+<div class="kk-pa-updated" id="kk-pa-updated" role="status" hidden>
+  <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+  <span>The agenda was just updated.</span>
+  <button type="button" onclick="location.reload()">Refresh</button>
+</div>
+
+<template id="kk-pa-off">
+  {% include "attendance/_agenda_off_panel.html" with reason="stopped" %}
+</template>
+
+{{ sessions_json|json_script:"kk-pa-sessions" }}
+
+<script>
+(function () {
+  var root = document.getElementById("kk-pa");
+  if (!root) return;
+  var TZ = root.dataset.tz || "UTC";
+  var liveEl = document.getElementById("kk-pa-live");
+  var sessions = [];
+  try {
+    sessions = JSON.parse(document.getElementById("kk-pa-sessions").textContent)
+      .map(function (s) { s.s = Date.parse(s.start); s.e = Date.parse(s.end); return s; })
+      .sort(function (a, b) { return a.s - b.s; });
+  } catch (e) { /* no sessions */ }
+
+  // Times shown in the event's timezone, so they match the agenda below.
+  function fmt(ms, opts) {
+    try { return new Intl.DateTimeFormat(undefined, Object.assign({ timeZone: TZ }, opts)).format(ms); }
+    catch (e) { return new Intl.DateTimeFormat(undefined, Object.assign({ timeZone: "UTC" }, opts)).format(ms); }
+  }
+  function time(ms) { return fmt(ms, { hour: "2-digit", minute: "2-digit", hour12: false }); }
+  function day(ms) { return fmt(ms, { weekday: "short", day: "numeric", month: "short" }); }
+  function sameDay(a, b) { return day(a) === day(b); }
+  function span(ms) {
+    var m = Math.max(1, Math.round(ms / 60000));
+    if (m < 60) return m + " min";
+    var h = Math.floor(m / 60), r = m % 60;
+    if (h < 24) return h + " h" + (r ? " " + r + " min" : "");
+    var d = Math.round(h / 24);
+    return d + " day" + (d > 1 ? "s" : "");
+  }
+  function esc(s) { var d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML; }
+
+  // ── Happening now / Up next ─────────────────────────────────
+  function renderLive() {
+    var now = Date.now();
+    var current = sessions.filter(function (s) { return s.s <= now && now < s.e; }).slice(0, 3);
+    var next = sessions.find(function (s) { return s.s > now; });
+    if (!current.length && !next) { liveEl.hidden = true; return; }
+
+    var html = "";
+    current.forEach(function (s) {
+      html += '<div class="kk-pa-row kk-pa-row-now">'
+        + '<span class="kk-pa-tag"><span class="kk-pa-dot" aria-hidden="true"></span>Happening now</span>'
+        + '<span class="kk-pa-what">' + esc(s.title) + "</span>"
+        + '<span class="kk-pa-when">Ends in ' + span(s.e - now)
+        + (s.track ? " · " + esc(s.track) : "") + (s.speaker ? " · " + esc(s.speaker) : "") + "</span>"
+        + "</div>";
+    });
+    if (next) {
+      var when = sameDay(next.s, now)
+        ? "At " + time(next.s) + ", in " + span(next.s - now)
+        : day(next.s) + " at " + time(next.s) + ", in " + span(next.s - now);
+      html += '<div class="kk-pa-row kk-pa-row-next">'
+        + '<span class="kk-pa-tag">' + (current.length ? "Up next" : "First up") + "</span>"
+        + '<span class="kk-pa-what">' + esc(next.title) + "</span>"
+        + '<span class="kk-pa-when">' + when + (next.track ? " · " + esc(next.track) : "") + "</span>"
+        + "</div>";
+    }
+    liveEl.innerHTML = html;
+    liveEl.hidden = false;
+  }
+  renderLive();
+  var liveTimer = setInterval(renderLive, 30000);
+
+  // ── Share this page (phone share sheet, else copy) ──────────
+  var shareBtn = document.getElementById("kk-pa-share");
+  shareBtn.addEventListener("click", function () {
+    var data = { title: document.title, url: window.location.href };
+    if (navigator.share) { navigator.share(data).catch(function () {}); return; }
+    var label = shareBtn.querySelector("span");
+    navigator.clipboard && navigator.clipboard.writeText(data.url).then(function () {
+      label.textContent = "Link copied";
+      setTimeout(function () { label.textContent = "Share"; }, 2000);
+    });
+  });
+
+  // ── Still shared? Agenda changed? ───────────────────────────
+  var statusUrl = root.dataset.statusUrl;
+  var fingerprint = root.dataset.fingerprint;
+  var closed = false;
+
+  function closeDoor() {
+    // The organizer stopped the link: take the agenda off the page.
+    closed = true;
+    clearInterval(liveTimer);
+    clearInterval(checkTimer);
+    document.getElementById("kk-pa-updated").hidden = true;
+    root.innerHTML = "";
+    root.classList.add("is-closed");
+    root.appendChild(document.getElementById("kk-pa-off").content.cloneNode(true));
+    document.title = "Agenda link";
+  }
+
+  function check() {
+    if (closed || document.hidden) return;
+    fetch(statusUrl, { cache: "no-store", credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.live) { closeDoor(); return; }
+        if (d.fingerprint && d.fingerprint !== fingerprint) {
+          document.getElementById("kk-pa-updated").hidden = false;
+        }
+      })
+      .catch(function () { /* offline for a moment — try again next time */ });
+  }
+  var checkTimer = setInterval(check, 60000);
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) check(); });
+})();
+</script>
+
+<style>
+.kk-pa { max-width: 760px; margin: 1.75rem auto 3rem; padding: 0 1rem; }
+.kk-pa-head { margin-bottom: 1.25rem; }
+.kk-pa-title {
+  font-family: var(--kk-font-display);
+  font-size: clamp(1.9rem, 6vw, 2.6rem); font-weight: 600;
+  letter-spacing: -0.02em; line-height: 1.08;
+  margin: 0 0 .6rem; overflow-wrap: anywhere;
+}
+.kk-pa-meta {
+  display: flex; gap: .5rem; align-items: baseline;
+  color: var(--kk-text-dim); margin: 0 0 .2rem; overflow-wrap: anywhere;
+}
+
+/* Now / next — the one thing a link opened mid-event most needs. */
+.kk-pa-live {
+  display: grid; gap: 1px;
+  margin: 0 0 1.1rem;
+  border-radius: 14px; overflow: hidden;
+  border: 1px solid var(--kk-border);
+  background: var(--kk-border);
+}
+.kk-pa-live[hidden] { display: none; }
+.kk-pa-row {
+  display: grid; grid-template-columns: 9.5rem 1fr; gap: .15rem 1rem;
+  padding: .85rem 1rem;
+  background: var(--kk-surface);
+}
+.kk-pa-row-now { box-shadow: inset 3px 0 0 #22d3ee; }
+.kk-pa-row-next { box-shadow: inset 3px 0 0 #fbbf24; }
+.kk-pa-tag {
+  grid-row: span 2; align-self: start;
+  display: inline-flex; align-items: center; gap: .45rem;
+  font-size: .85rem; font-weight: 600; color: var(--kk-text-dim);
+}
+.kk-pa-row-now .kk-pa-tag { color: #67e8f9; }
+.kk-pa-row-next .kk-pa-tag { color: #fcd34d; }
+.kk-pa-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #22d3ee;
+  box-shadow: 0 0 0 0 rgba(34, 211, 238, .6);
+  animation: kkPaPulse 2s ease-out infinite;
+}
+@keyframes kkPaPulse {
+  0% { box-shadow: 0 0 0 0 rgba(34, 211, 238, .55); }
+  100% { box-shadow: 0 0 0 9px rgba(34, 211, 238, 0); }
+}
+.kk-pa-what { font-weight: 600; font-size: 1.05rem; overflow-wrap: anywhere; }
+.kk-pa-when { color: var(--kk-text-dim); font-size: .9rem; }
+
+.kk-pa-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0 0 1.5rem; }
+.kk-pa-empty { color: var(--kk-text-dim); padding: 2rem 0; }
+.kk-pa-foot { color: var(--kk-text-dim); font-size: .85rem; margin: 2rem 0 0; text-align: center; }
+
+.kk-pa-updated {
+  position: fixed; left: 50%; bottom: max(1rem, env(safe-area-inset-bottom));
+  transform: translateX(-50%); z-index: 1050;
+  display: flex; align-items: center; gap: .65rem;
+  width: max-content; max-width: calc(100% - 2rem);
+  padding: .55rem .6rem .55rem 1rem; border-radius: 16px;
+  background: #1f1a3d; border: 1px solid rgba(251, 191, 36, .45);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .45);
+  font-size: .92rem;
+}
+.kk-pa-updated[hidden] { display: none; }
+.kk-pa-updated i { color: #fcd34d; }
+.kk-pa-updated span { line-height: 1.3; }
+.kk-pa-updated button {
+  flex-shrink: 0;
+  border: 0; border-radius: 10px; padding: .4rem .85rem;
+  background: #fbbf24; color: #1a1a2e; font-weight: 600;
+}
+
+@media (max-width: 520px) {
+  .kk-pa { margin-top: 1.1rem; padding: 0 .75rem; }
+  .kk-pa-row { grid-template-columns: 1fr; }
+  .kk-pa-tag { grid-row: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kk-pa-dot { animation: none; }
+}
+@media print {
+  .kk-nav, .kk-drawer, .kk-drawer-backdrop, .kk-flash-wrap,
+  .kk-pa-actions, .kk-pa-live, .kk-pa-updated, .kk-pa-foot, .kk-agenda-now { display: none !important; }
+  :root {
+    --kk-bg: #fff; --kk-bg-2: #fff; --kk-surface: #fff; --kk-surface-2: #f3f4f6;
+    --kk-text: #111827; --kk-text-dim: #4b5563; --kk-border: rgba(0, 0, 0, .15);
+  }
+  html, body { background: #fff !important; color: #111827 !important; }
+  .kk-pa { margin-top: 0; max-width: none; }
+}
+</style>
+{% endblock %}

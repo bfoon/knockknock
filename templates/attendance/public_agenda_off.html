@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Agenda link{% endblock %}
+{% block head_extra %}
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+{% endblock %}
+
+{% block content %}
+{% include "attendance/_agenda_off_panel.html" with reason=reason %}
+{% endblock %}

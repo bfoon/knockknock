@@ -1,0 +1,49 @@
+{% comment %}
+  "This link is off" panel, with a closed door — the app's knock-knock
+  door, shut. Names no event: a link that leaked and was stopped gives
+  nothing further away.
+  Used by public_agenda_off.html (opening a link that's off) and by
+  public_agenda.html (the organizer stops the link while it's open).
+  Context: reason — "stopped" | "expired" | "unknown"
+{% endcomment %}
+<div class="kk-off">
+  <div class="kk-off-door" aria-hidden="true">
+    <span class="kk-off-door-panel"></span>
+    <span class="kk-off-door-panel"></span>
+    <span class="kk-off-door-handle"></span>
+  </div>
+  {% if reason == "expired" %}
+    <h1 class="kk-off-title">This agenda link has expired</h1>
+    <p class="kk-off-text">It stopped working after the event ended.</p>
+  {% elif reason == "unknown" %}
+    <h1 class="kk-off-title">This agenda link doesn’t work</h1>
+    <p class="kk-off-text">Check the address, or ask the organizer for a new link.</p>
+  {% else %}
+    <h1 class="kk-off-title">This agenda link is turned off</h1>
+    <p class="kk-off-text">The organizer stopped sharing it. If you still need the agenda, ask them for a new link.</p>
+  {% endif %}
+</div>
+
+<style>
+.kk-off { text-align: center; padding: 3rem 1rem 2rem; max-width: 420px; margin: 0 auto; }
+.kk-off-door {
+  position: relative; display: flex; flex-direction: column; gap: 8px;
+  width: 92px; height: 138px; margin: 0 auto 1.75rem;
+  padding: 22px 14px 14px;
+  border-radius: 46px 46px 4px 4px;
+  background: #322a63;
+  box-shadow: 0 0 0 5px #2b2550, 0 0 0 6px rgba(255, 255, 255, .08);
+}
+.kk-off-door-panel { flex: 1; border-radius: 24px 24px 3px 3px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); }
+.kk-off-door-panel + .kk-off-door-panel { border-radius: 3px; flex: .8; }
+.kk-off-door-handle {
+  position: absolute; right: 10px; top: 54%;
+  width: 16px; height: 5px; border-radius: 999px; background: #fbbf24;
+}
+.kk-off-title {
+  font-family: var(--kk-font-display);
+  font-size: clamp(1.6rem, 6vw, 2rem); font-weight: 600; letter-spacing: -0.01em;
+  margin: 0 0 .5rem;
+}
+.kk-off-text { color: var(--kk-text-dim); margin: 0; line-height: 1.55; }
+</style>

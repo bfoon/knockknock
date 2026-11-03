@@ -1,7 +1,7 @@
 from django.contrib import admin
 
 from .models import (
-    AttendanceEvent, EventField, Registration, RegistrationAnswer,
+    AgendaShareLink, AttendanceEvent, EventField, Registration, RegistrationAnswer,
     EventAnnouncement, Certificate,
 )
 
@@ -40,3 +40,12 @@ class RegistrationAdmin(admin.ModelAdmin):
 
 admin.site.register(EventAnnouncement)
 admin.site.register(Certificate)
+
+
+@admin.register(AgendaShareLink)
+class AgendaShareLinkAdmin(admin.ModelAdmin):
+    list_display = ("event", "label", "is_active", "stop_after_event",
+                    "view_count", "last_viewed_at", "created_at")
+    list_filter = ("is_active",)
+    search_fields = ("event__title", "label")
+    readonly_fields = ("token", "view_count", "last_viewed_at", "created_at", "stopped_at")

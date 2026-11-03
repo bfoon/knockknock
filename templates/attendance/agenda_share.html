@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+{% block title %}Share the agenda · {{ event.title }}{% endblock %}
+
+{% block content %}
+{% comment %}
+  Organizer page for public agenda links (agenda_share_views.py).
+  Each link is a separate, stoppable address to the same agenda.
+{% endcomment %}
+<div class="kk-sh">
+  <div class="kk-sh-head">
+    <div>
+      <a href="{% url 'attendance:event_detail' event.pk %}" class="kk-text-dim small text-decoration-none">
+        <i class="bi bi-arrow-left"></i> {{ event.title }}
+      </a>
+      <h1 class="kk-sh-title">Share the agenda</h1>
+      <p class="kk-sh-sub">
+        Anyone with one of these links can see the agenda. They don’t sign in and aren’t asked
+        anything. Stop a link whenever you like; the others keep working.
+      </p>
+    </div>
+    <a href="{% url 'attendance:agenda_editor' event.pk %}" class="kk-btn kk-btn-ghost">
+      <i class="bi bi-pencil-square"></i> Edit agenda
+    </a>
+  </div>
+
+  {% if agenda_is_empty %}
+    <div class="kk-sh-warn">
+      <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
+      <span>Your agenda is empty, so a link would open an empty page.
+        <a href="{% url 'attendance:agenda_editor' event.pk %}">Add sessions first</a>.</span>
+    </div>
+  {% endif %}
+
+  {# ── New link ─────────────────────────────────────────────── #}
+  <form method="post" action="{% url 'attendance:agenda_share_create' event.pk %}" class="kk-sh-new">
+    {% csrf_token %}
+    <label class="form-label" for="kk-sh-label">New link</label>
+    <div class="kk-sh-new-row">
+      <input type="text" name="label" id="kk-sh-label" class="form-control" maxlength="80"
+             placeholder="Where will you send it? For example: WhatsApp group">
+      <button type="submit" class="kk-btn kk-btn-primary">
+        <i class="bi bi-link-45deg" aria-hidden="true"></i> Create link
+      </button>
+    </div>
+    <div class="form-check mt-2 mb-0">
+      <input class="form-check-input" type="checkbox" name="stop_after_event" id="kk-sh-auto" checked>
+      <label class="form-check-label kk-text-dim" for="kk-sh-auto">
+        Stop it automatically on {{ auto_stop_at|date:"j M, H:i" }}, a day after the event ends
+      </label>
+    </div>
+  </form>
+
+  {# ── Links ────────────────────────────────────────────────── #}
+  {% if links %}
+    <div class="kk-sh-list-head">
+      <h2 class="kk-sh-h2">Your links <span class="kk-text-dim">({{ links|length }})</span></h2>
+      {% if live_count %}
+        <form method="post" action="{% url 'attendance:agenda_share_stop_all' event.pk %}"
+              onsubmit="return confirm('Stop all {{ live_count }} live link{{ live_count|pluralize }}? Nobody will be able to open the agenda from them until you share again.');">
+          {% csrf_token %}
+          <button type="submit" class="kk-btn kk-btn-ghost btn-sm kk-sh-danger">
+            <i class="bi bi-sign-stop" aria-hidden="true"></i> Stop every link
+          </button>
+        </form>
+      {% endif %}
+    </div>
+
+    <div class="kk-sh-list">
+      {% for link in links %}
+        <article class="kk-sh-card is-{{ link.current_state }}" id="link-{{ link.pk }}">
+          <div class="kk-sh-card-top">
+            <span class="kk-sh-state">
+              {% if link.current_state == "live" %}<span class="kk-sh-dot"></span> Live
+              {% elif link.current_state == "expired" %}Stopped by itself after the event
+              {% else %}Stopped{% endif %}
+            </span>
+            <h3 class="kk-sh-name">{{ link.label|default:"Untitled link" }}</h3>
+          </div>
+
+          <div class="kk-sh-url">
+            <input type="text" class="form-control form-control-sm" value="{{ link.absolute_url }}"
+                   readonly aria-label="Link address" onfocus="this.select()">
+            <button type="button" class="kk-btn kk-btn-ghost btn-sm" data-copy="{{ link.absolute_url }}">
+              <i class="bi bi-copy" aria-hidden="true"></i> <span>Copy</span>
+            </button>
+          </div>
+
+          <p class="kk-sh-facts">
+            {% if link.view_count %}
+              Opened {{ link.view_count }} time{{ link.view_count|pluralize }}, last {{ link.viewed_ago }}.
+            {% else %}
+              Not opened yet.
+            {% endif %}
+            {% if link.current_state == "live" %}
+              {% if link.stop_after_event %}Stops by itself on {{ link.expires_at|date:"j M, H:i" }}.{% else %}Stays on until you stop it.{% endif %}
+            {% elif link.stopped_at %}
+              Stopped {{ link.stopped_ago }}.
+            {% endif %}
+          </p>
+
+          <div class="kk-sh-actions">
+            {% if link.current_state == "live" %}
+              <a class="kk-btn kk-btn-ghost btn-sm" href="{{ link.absolute_url }}" target="_blank" rel="noopener">
+                <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> Open
+              </a>
+              <a class="kk-btn kk-btn-ghost btn-sm" href="{{ link.whatsapp_url }}" target="_blank" rel="noopener">
+                <i class="bi bi-whatsapp" aria-hidden="true"></i> WhatsApp
+              </a>
+              <details class="kk-sh-qr">
+                <summary class="kk-btn kk-btn-ghost btn-sm"><i class="bi bi-qr-code" aria-hidden="true"></i> QR code</summary>
+                <div class="kk-sh-qr-box">
+                  <img src="{% url 'attendance:agenda_share_qr' event.pk link.pk %}" alt="QR code for this link" loading="lazy">
+                  <a href="{% url 'attendance:agenda_share_qr' event.pk link.pk %}?download=1">Download PNG</a>
+                </div>
+              </details>
+            {% endif %}
+
+            <span class="kk-sh-spacer"></span>
+
+            <form method="post" action="{% url 'attendance:agenda_share_toggle' event.pk link.pk %}">
+              {% csrf_token %}
+              {% if link.current_state == "live" %}
+                <button type="submit" name="action" value="stop" class="kk-btn kk-btn-ghost btn-sm kk-sh-danger">
+                  <i class="bi bi-pause-circle" aria-hidden="true"></i> Stop sharing
+                </button>
+              {% else %}
+                <button type="submit" name="action" value="resume" class="kk-btn kk-btn-primary btn-sm">
+                  <i class="bi bi-play-circle" aria-hidden="true"></i> Share again
+                </button>
+              {% endif %}
+            </form>
+            <form method="post" action="{% url 'attendance:agenda_share_delete' event.pk link.pk %}"
+                  onsubmit="return confirm('Delete this link? Its address will never work again.');">
+              {% csrf_token %}
+              <button type="submit" class="kk-btn kk-btn-ghost btn-sm" title="Delete this link">
+                <i class="bi bi-trash3" aria-hidden="true"></i><span class="visually-hidden">Delete</span>
+              </button>
+            </form>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="kk-sh-empty">
+      <p class="mb-0">No links yet. Create one above, then copy it into a message, a flyer or your website.</p>
+    </div>
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  document.querySelectorAll("[data-copy]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var label = btn.querySelector("span");
+      navigator.clipboard && navigator.clipboard.writeText(btn.dataset.copy).then(function () {
+        label.textContent = "Copied";
+        setTimeout(function () { label.textContent = "Copy"; }, 1800);
+      });
+    });
+  });
+  // Coming back from "Create link": put the new link in view.
+  if (location.hash) {
+    var card = document.querySelector(location.hash);
+    if (card) card.classList.add("is-new");
+  }
+})();
+</script>
+
+<style>
+.kk-sh { max-width: 820px; margin: 0 auto; }
+.kk-sh-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.kk-sh-title { font-family: var(--kk-font-display); font-weight: 600; margin: .25rem 0 .35rem; }
+.kk-sh-sub { color: var(--kk-text-dim); margin: 0; max-width: 60ch; }
+
+.kk-sh-warn {
+  display: flex; gap: .6rem; align-items: baseline;
+  padding: .75rem 1rem; margin-bottom: 1.25rem; border-radius: 12px;
+  background: rgba(251, 191, 36, .08); border: 1px solid rgba(251, 191, 36, .3);
+}
+.kk-sh-warn i { color: #fcd34d; }
+.kk-sh-warn a { color: #fcd34d; }
+
+.kk-sh-new {
+  background: var(--kk-surface); border: 1px solid var(--kk-border);
+  border-radius: var(--kk-radius); padding: 1.1rem 1.25rem; margin-bottom: 2rem;
+}
+.kk-sh-new-row { display: flex; gap: .5rem; }
+.kk-sh-new-row .form-control { flex: 1 1 auto; min-width: 0; }
+.kk-sh-new-row .kk-btn { flex-shrink: 0; }
+
+.kk-sh-list-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: .75rem; }
+.kk-sh-h2 { font-size: 1.1rem; font-weight: 600; margin: 0; }
+.kk-sh-list { display: grid; gap: .85rem; }
+
+.kk-sh-card {
+  background: var(--kk-surface); border: 1px solid var(--kk-border);
+  border-radius: var(--kk-radius); padding: 1rem 1.15rem;
+  transition: border-color .3s ease;
+}
+.kk-sh-card.is-live { box-shadow: inset 3px 0 0 #34d399; }
+.kk-sh-card.is-stopped, .kk-sh-card.is-expired { opacity: .72; }
+.kk-sh-card.is-new { border-color: rgba(251, 191, 36, .6); }
+.kk-sh-card-top { display: flex; align-items: baseline; gap: .75rem; flex-wrap: wrap; margin-bottom: .6rem; }
+.kk-sh-name { font-size: 1.05rem; font-weight: 600; margin: 0; overflow-wrap: anywhere; }
+.kk-sh-state {
+  display: inline-flex; align-items: center; gap: .4rem;
+  font-size: .78rem; font-weight: 600; padding: .15rem .6rem; border-radius: 999px;
+  background: rgba(255, 255, 255, .06); color: var(--kk-text-dim);
+}
+.is-live .kk-sh-state { background: rgba(52, 211, 153, .12); color: #6ee7b7; }
+.kk-sh-dot { width: 7px; height: 7px; border-radius: 50%; background: #34d399; }
+
+.kk-sh-url { display: flex; gap: .5rem; }
+.kk-sh-url .form-control { flex: 1 1 auto; min-width: 0; font-variant-numeric: tabular-nums; }
+.kk-sh-url .kk-btn { flex-shrink: 0; }
+.kk-sh-facts { color: var(--kk-text-dim); font-size: .88rem; margin: .6rem 0 .75rem; }
+
+.kk-sh-actions { display: flex; flex-wrap: wrap; gap: .4rem; align-items: flex-start; }
+.kk-sh-actions form { margin: 0; }
+.kk-sh-spacer { flex: 1 1 auto; }
+.kk-sh-danger { color: #fda4af; }
+.kk-sh-danger:hover { color: #fecdd3; border-color: rgba(244, 63, 94, .45); }
+
+.kk-sh-qr summary { list-style: none; cursor: pointer; }
+.kk-sh-qr summary::-webkit-details-marker { display: none; }
+.kk-sh-qr-box {
+  margin-top: .5rem; padding: .75rem; border-radius: 12px; background: #fff;
+  display: flex; flex-direction: column; align-items: center; gap: .4rem; width: max-content;
+}
+.kk-sh-qr-box img { width: 168px; height: 168px; image-rendering: pixelated; }
+.kk-sh-qr-box a { color: #4c1d95; font-size: .85rem; font-weight: 600; }
+
+.kk-sh-empty {
+  padding: 1.5rem; border: 1px dashed var(--kk-border); border-radius: var(--kk-radius);
+  color: var(--kk-text-dim); text-align: center;
+}
+
+@media (max-width: 560px) {
+  .kk-sh-new-row { flex-direction: column; }
+  .kk-sh-spacer { flex-basis: 100%; height: 0; }
+}
+</style>
+{% endblock %}

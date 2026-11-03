@@ -39,6 +39,9 @@ from django.utils import timezone
 # import them from attendance.models like every other model. The actual
 # definitions live in venue_models.py to keep this file's diff small.
 from .venue_models import Venue, SiteSetting  # noqa: F401
+# Public agenda links (agenda_share_models.py). Imported here so Django
+# registers the model at start-up — makemigrations included.
+from .agenda_share_models import AgendaShareLink  # noqa: F401,E402
 
 
 def _gen_join_code():

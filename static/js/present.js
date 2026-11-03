@@ -286,6 +286,14 @@
           onPong();
           break;
 
+        case "error":
+          // The server couldn't carry out an action (it stays connected).
+          if (msg.action) {
+            clearNavPending();
+            showNavToast(msg.detail || "The server couldn't do that. Try again.");
+          }
+          break;
+
         case "restart":
           // "Play again" on this code from another tab: this page shows
           // the round that was moved aside — load the fresh one.

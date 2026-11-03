@@ -34,6 +34,7 @@ order the participant arranged them).
 
 import asyncio
 import json
+import logging
 import time
 import uuid
 
@@ -46,6 +47,8 @@ from django.utils import timezone
 
 
 from .models import LiveSession, Participant
+
+logger = logging.getLogger(__name__)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -136,7 +139,25 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             })
             return
 
-        await handler(content)
+        # One action failing must not drop the whole connection: Channels
+        # closes the socket when a handler raises, the page reconnects, the
+        # next tap fails the same way — an endless Reconnecting / Good loop
+        # where nothing ever moves. Log it, tell this screen, stay connected.
+        try:
+            await handler(content)
+        except Exception:
+            logger.exception("Live session %s: %r from %s failed", self.code, t, self.role)
+            try:
+                await self.send_json({
+                    "type": "error",
+                    "action": t,
+                    "detail": "The server couldn't do that. Try again.",
+                })
+                if t in ("advance", "back", "goto"):
+                    # Release the presenter's "Moving…" lock.
+                    await self.send_json({"type": "nav_result", "action": t, "applied": False})
+            except Exception:
+                pass
 
     async def _on_hello(self, msg):
         self.role = msg.get("role", "participant")
@@ -1067,12 +1088,13 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
         """
         with transaction.atomic():
             try:
-                session = (
-                    LiveSession.objects
-                    .select_for_update()
-                    .select_related("questionnaire", "quiz")
-                    .get(pk=session_pk)
-                )
+                # Lock just the session row. No select_related here:
+                # quiz/questionnaire are nullable, so joining them makes an
+                # outer join, and PostgreSQL refuses FOR UPDATE on that
+                # ("cannot be applied to the nullable side of an outer
+                # join"). SQLite ignores FOR UPDATE, so only production saw
+                # it. session.questions() loads the content below.
+                session = LiveSession.objects.select_for_update().get(pk=session_pk)
             except LiveSession.DoesNotExist:
                 return None, False
 

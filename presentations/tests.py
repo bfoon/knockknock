@@ -180,6 +180,25 @@ class WeakNetworkTests(TransactionTestCase):
         for c in [host] + phones:
             await c.disconnect()
 
+    async def test_a_failing_action_keeps_the_connection(self):
+        # A handler blowing up used to close the socket, so the page
+        # reconnected forever and nothing moved. Now it reports and stays.
+        from unittest import mock
+        from presentations.consumers import SessionConsumer
+        host = await self.presenter()
+        await drain(host)
+        with mock.patch.object(SessionConsumer, "_apply_navigation", side_effect=RuntimeError("boom")):
+            await host.send_json_to({"type": "advance"})
+            msgs = await drain(host, 0.5)
+        types = [m["type"] for m in msgs]
+        self.assertIn("error", types)
+        self.assertEqual([m for m in msgs if m["type"] == "nav_result"][0]["applied"], False)
+        self.assertNotIn("__closed__", types)
+        await host.send_json_to({"type": "advance"})          # still connected: the next tap works
+        await drain(host, 0.5)
+        self.assertEqual(await self.index(), ("running", 0))
+        await host.disconnect()
+
     async def test_answers_produce_one_coalesced_leaderboard(self):
         await sync_to_async(GameQuestion.objects.filter(quiz=self.quiz).update)(time_limit=30)
         host = await self.presenter()

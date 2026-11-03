@@ -54,6 +54,19 @@ class Questionnaire(models.Model):
             user=user, role__in=["edit", "owner"],
         ).exists()
 
+    def access_for(self, user):
+        """'owner', 'edit', 'view', or None."""
+        if not user or not getattr(user, "is_authenticated", False):
+            return None
+        if self.owner_id == user.id:
+            return "owner"
+        role = self.collaborators.filter(user=user).values_list("role", flat=True).first()
+        return "edit" if role == "owner" else role
+
+    def can_view(self, user) -> bool:
+        """View-only collaborators can open it and see results."""
+        return self.access_for(user) in ("owner", "edit", "view")
+
 
 class QuestionnaireCollaborator(models.Model):
     ROLE_CHOICES = [

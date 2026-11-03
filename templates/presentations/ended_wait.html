@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Waiting for the host · Knock-Knock{% endblock %}
+
+{% block content %}
+{% comment %}
+  Shown when someone opens (or refreshes) the link of a session that has
+  ended. Instead of a dead end it keeps watching: the moment the host
+  reopens the session or plays it again on the same code, the page
+  reloads into it and the phone rejoins with the name and avatar it
+  remembers. Checks back gently (4 s, growing to 20 s) and at once when
+  the phone comes back online or the tab is opened again.
+{% endcomment %}
+<div class="kk-main-narrow mx-auto text-center kk-ew">
+  <div class="kk-ew-emoji" aria-hidden="true">🎉</div>
+  <h1 class="mb-2">This game has finished</h1>
+  <p class="text-secondary mb-4" id="kk-ew-lead">
+    Keep this page open. If the host plays <strong>{{ session.code }}</strong> again,
+    you’ll go straight back in.
+  </p>
+
+  <div class="kk-ew-watch" role="status" aria-live="polite">
+    <span class="kk-ew-dot" aria-hidden="true"></span>
+    <span id="kk-ew-status">Watching for the host…</span>
+  </div>
+
+  <p class="mt-4 mb-0">
+    <a href="{% url 'presentations:join' %}" class="kk-btn kk-btn-ghost">Join a different game</a>
+  </p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var STATUS_URL = "{{ status_url|escapejs }}";
+  var CODE = "{{ session.code|escapejs }}";
+  var statusEl = document.getElementById("kk-ew-status");
+  var lead = document.getElementById("kk-ew-lead");
+  var delay = 4000, timer = null, going = false;
+
+  // The play page remembers who this phone was for this code.
+  try {
+    var nick = localStorage.getItem("kk-nick:" + CODE);
+    if (nick && lead) {
+      var p = document.createElement("p");
+      p.className = "text-secondary small mb-4";
+      p.textContent = "You’ll rejoin as " + nick + ".";
+      lead.insertAdjacentElement("afterend", p);
+    }
+  } catch (e) { /* storage off */ }
+
+  function schedule() {
+    clearTimeout(timer);
+    timer = setTimeout(check, delay);
+    delay = Math.min(20000, Math.round(delay * 1.4));
+  }
+
+  function check() {
+    if (going) return;
+    if (document.hidden) { schedule(); return; }
+    fetch(STATUS_URL, { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.exists && d.state && d.state !== "ended") {
+          going = true;
+          statusEl.textContent = "The host is back. Joining…";
+          location.reload();
+          return;
+        }
+        statusEl.textContent = d.exists ? "Watching for the host…" : "This code isn’t in use right now. Still watching…";
+        schedule();
+      })
+      .catch(function () {
+        statusEl.textContent = "Can’t reach the server. Will keep trying…";
+        schedule();
+      });
+  }
+
+  function now() { delay = 4000; clearTimeout(timer); check(); }
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) now(); });
+  window.addEventListener("online", now);
+  schedule();
+})();
+</script>
+
+<style>
+.kk-ew { padding-top: 2rem; }
+.kk-ew-emoji { font-size: 3.5rem; margin-bottom: .5rem; }
+.kk-ew-watch {
+  display: inline-flex; align-items: center; gap: .55rem;
+  padding: .45rem .95rem; border-radius: 999px;
+  background: rgba(34, 211, 238, .1); border: 1px solid rgba(34, 211, 238, .3);
+  color: #67e8f9; font-weight: 600; font-size: .92rem;
+}
+.kk-ew-dot {
+  width: 9px; height: 9px; border-radius: 50%; background: #22d3ee;
+  animation: kkEwPulse 2s ease-out infinite;
+}
+@keyframes kkEwPulse {
+  0% { box-shadow: 0 0 0 0 rgba(34, 211, 238, .55); }
+  100% { box-shadow: 0 0 0 10px rgba(34, 211, 238, 0); }
+}
+@media (prefers-reduced-motion: reduce) { .kk-ew-dot { animation: none; } }
+</style>
+{% endblock %}

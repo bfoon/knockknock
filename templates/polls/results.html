@@ -16,13 +16,25 @@
       <div class="p-meta">
         {% if selected_code == "all" %}All sessions combined
         {% elif selected_session %}
-          Session <code>{{ selected_session.code }}</code>
+          Session <code>{{ selected_session.played_code|default:selected_session.code }}</code>
+          {% if selected_session.round_no %}<span class="p-meta-dot">·</span> round {{ selected_session.round_no }}{% endif %}
           <span class="p-meta-dot">·</span> {{ selected_session.get_state_display }}
           <span class="p-meta-dot">·</span> {{ selected_session.created_at|date:"j M Y, H:i" }}
         {% else %}No live session yet{% endif %}
       </div>
     </div>
     <div class="p-actions">
+      {% if selected_session and selected_session.owner_id == request.user.pk %}
+        {# Fresh round on the same code and link: everyone rejoins, answers start empty. #}
+        <form method="post" action="{% url 'presentations:replay' selected_session.code %}" class="d-inline"
+              onsubmit="return confirm('Start a fresh round on code {{ selected_session.played_code }}? Same link and QR, answers start empty.{% if selected_session.state != "ended" %} This ends the round that is open now.{% endif %} These results stay saved.');">
+          {% csrf_token %}
+          <input type="hidden" name="how" value="restart">
+          <button type="submit" class="kk-btn kk-btn-primary">
+            <i class="bi bi-arrow-repeat"></i> Run again on {{ selected_session.played_code }}
+          </button>
+        </form>
+      {% endif %}
       <a class="kk-btn kk-btn-ghost"
          href="{% url 'polls:download_results_excel' questionnaire.pk %}?session={{ selected_code|default:'' }}">
         <i class="bi bi-file-earmark-spreadsheet"></i> Excel
@@ -42,7 +54,7 @@
           <option value="all" {% if selected_code == "all" %}selected{% endif %}>All sessions combined</option>
           {% for s in sessions %}
             <option value="{{ s.code }}" {% if selected_code == s.code %}selected{% endif %}>
-              {{ s.code }} · {{ s.get_state_display }} · {{ s.created_at|date:"j M Y, H:i" }}
+              {{ s.played_code }}{% if s.round_no %} round {{ s.round_no }}{% endif %} · {{ s.get_state_display }} · {{ s.created_at|date:"j M Y, H:i" }}
             </option>
           {% endfor %}
         </select>

@@ -100,5 +100,32 @@
       </div>
     {% endfor %}
   </div>
+
+  {% if shared_quizzes %}
+    {# Games other people shared with you (collaborations, kind "game"). #}
+    <h2 class="g-section mt-4"><i class="bi bi-people"></i> Shared with you</h2>
+    <div class="g-list">
+      {% for q in shared_quizzes %}
+        <div class="g-row">
+          <a class="g-row-main" href="{% url 'games:edit' q.pk %}">
+            <span class="g-q-num"><i class="bi bi-people-fill"></i></span>
+            <span class="g-row-body">
+              <span class="g-row-title">{{ q.title }}</span>
+              <span class="g-row-meta">
+                <span>from {{ q.owner.username }}</span>
+                <span>·</span>
+                <span>{{ q.num_questions }} question{{ q.num_questions|pluralize }}</span>
+              </span>
+            </span>
+            <span class="g-tag">{% if q.my_permission == "edit" %}Can edit and present{% else %}Can view{% endif %}</span>
+            <i class="bi bi-chevron-right" style="color: var(--g-ink-faint);"></i>
+          </a>
+          <a href="{% url 'games:results' q.pk %}" class="g-icon-btn g-icon-btn-accent" title="Results" aria-label="Results for {{ q.title }}">
+            <i class="bi bi-bar-chart"></i>
+          </a>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
 </div>
 {% endblock %}

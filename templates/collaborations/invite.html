@@ -1,84 +1,174 @@
 {% extends "base.html" %}
-{% block title %}Invite collaborators · Knock-Knock{% endblock %}
-
+{% block title %}Share {{ target.title }} · Knock-Knock{% endblock %}
 {% block content %}
-<div class="kk-main-narrow mx-auto">
-  <div class="mb-4">
-    <a href="{% if kind == 'menti' %}{% url 'polls:edit' target.pk %}{% else %}{% url 'games:edit' target.pk %}{% endif %}"
-       class="kk-text-dim small">← Back to {{ target.title }}</a>
-    <h1 class="mt-2">Invite collaborators</h1>
-    <p class="kk-text-dim">
-      Share <strong>{{ target.title }}</strong> with teammates or outsiders.
-      {% if not org %}
-        Anyone you invite by email will get a sign-up link if they don't have a Knock-Knock account.
-      {% endif %}
-    </p>
-  </div>
+{% comment %}
+  Share a game or a Wenti (collaborations.views.invite). People with an
+  account are added straight away (collaborations.sharing); anyone else
+  gets an email invite to sign up. The owner manages everyone here.
+{% endcomment %}
+<div class="kk-main-narrow mx-auto kk-sh2">
+  <a href="{% if kind == 'menti' %}{% url 'polls:edit' target.pk %}{% else %}{% url 'games:edit' target.pk %}{% endif %}"
+     class="kk-text-dim small text-decoration-none">← Back to {{ target.title }}</a>
+  <h1 class="mt-2 mb-1">Share “{{ target.title }}”</h1>
+  <p class="kk-text-dim mb-4">
+    Add people by email. If they have a Knock-Knock account they get access right away;
+    if not, we email them an invite to sign up.
+  </p>
 
-  <form method="post" class="kk-card">
+  <form method="post" class="kk-card mb-4" id="kk-share-form">
     {% csrf_token %}
-
+    <input type="hidden" name="action" value="add">
     {% if org %}
       <div class="mb-3">
-        <label class="form-label">From your {{ org.get_kind_display|lower }}</label>
+        <label class="form-label" for="{{ form.teammate.id_for_label }}">From your {{ org.get_kind_display|lower }}</label>
         {{ form.teammate }}
-        <div class="text-secondary small mt-1">Or invite someone outside ↓</div>
       </div>
     {% endif %}
-
     <div class="mb-3">
-      <label class="form-label">{% if org %}Outside email{% else %}Email{% endif %}</label>
-      {{ form.email }}
-      {% if form.email.help_text %}
-        <div class="text-secondary small mt-1">{{ form.email.help_text }}</div>
-      {% endif %}
+      <label class="form-label" for="{{ form.email.id_for_label }}">{% if org %}Or someone else’s email{% else %}Email address{% endif %}</label>
+      <input type="email" name="email" id="{{ form.email.id_for_label }}" class="form-control form-control-lg"
+             value="{{ form.email.value|default:'' }}" placeholder="name@example.com" autocomplete="email" inputmode="email">
     </div>
 
-    <div class="row g-3">
-      <div class="col-md-6">
-        <label class="form-label">Permission</label>
-        {{ form.permission }}
+    <fieldset class="mb-3">
+      <legend class="form-label">What can they do?</legend>
+      <div class="kk-roles">
+        <label class="kk-role">
+          <input type="radio" name="permission" value="view" {% if form.permission.value == "view" %}checked{% endif %}>
+          <span class="kk-role-card">
+            <span class="kk-role-name"><i class="bi bi-eye" aria-hidden="true"></i> Can view</span>
+            <span class="kk-role-what">Open it and see its results.</span>
+          </span>
+        </label>
+        <label class="kk-role">
+          <input type="radio" name="permission" value="edit" {% if form.permission.value != "view" %}checked{% endif %}>
+          <span class="kk-role-card">
+            <span class="kk-role-name"><i class="bi bi-pencil-square" aria-hidden="true"></i> Can edit and present</span>
+            <span class="kk-role-what">Change it, start it, and run it live for you from their own device.</span>
+          </span>
+        </label>
       </div>
-    </div>
+    </fieldset>
 
-    <div class="mb-3 mt-3">
-      <label class="form-label">Message (optional)</label>
-      {{ form.message }}
-    </div>
+    <details class="mb-3" {% if form.message.value %}open{% endif %}>
+      <summary class="kk-text-dim small">Add a note</summary>
+      <div class="mt-2">{{ form.message }}</div>
+    </details>
 
     {% if form.non_field_errors %}
-      <div class="text-danger small mb-2">{{ form.non_field_errors|join:", " }}</div>
+      <div class="text-danger small mb-2" role="alert">{{ form.non_field_errors|join:" " }}</div>
     {% endif %}
+    {% if form.email.errors %}<div class="text-danger small mb-2" role="alert">{{ form.email.errors|join:" " }}</div>{% endif %}
 
     <button class="kk-btn kk-btn-primary kk-btn-lg w-100">
-      <i class="bi bi-send"></i> Send invite
+      <i class="bi bi-person-plus" aria-hidden="true"></i> Share
     </button>
   </form>
 
+  <h2 class="kk-section-title"><i class="bi bi-people" aria-hidden="true"></i> People with access</h2>
+  <div class="kk-card kk-people">
+    <div class="kk-person">
+      <span class="kk-person-avatar is-owner" aria-hidden="true">{{ target.owner.username|slice:":1"|upper }}</span>
+      <span class="kk-person-who">
+        <span class="kk-person-name">{{ target.owner.username }}{% if target.owner == request.user %} (you){% endif %}</span>
+        <span class="kk-person-mail">{{ target.owner.email }}</span>
+      </span>
+      <span class="kk-person-tag">Owner</span>
+    </div>
+
+    {% for p in people %}
+      <div class="kk-person">
+        <span class="kk-person-avatar" aria-hidden="true">{{ p.user.username|slice:":1"|upper }}</span>
+        <span class="kk-person-who">
+          <span class="kk-person-name">{{ p.user.username }}</span>
+          <span class="kk-person-mail">{{ p.user.email }}</span>
+        </span>
+        <form method="post" class="kk-person-role">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="change">
+          <input type="hidden" name="user_id" value="{{ p.user.pk }}">
+          <label class="visually-hidden" for="role-{{ p.user.pk }}">Access for {{ p.user.username }}</label>
+          <select name="permission" id="role-{{ p.user.pk }}" class="form-select form-select-sm" onchange="this.form.submit()">
+            <option value="view" {% if p.permission == "view" %}selected{% endif %}>Can view</option>
+            <option value="edit" {% if p.permission == "edit" %}selected{% endif %}>Can edit and present</option>
+          </select>
+          <noscript><button class="kk-btn kk-btn-ghost btn-sm">Save</button></noscript>
+        </form>
+        <form method="post" onsubmit="return confirm('Remove {{ p.user.username|escapejs }}’s access?');">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="remove">
+          <input type="hidden" name="user_id" value="{{ p.user.pk }}">
+          <button class="kk-btn kk-btn-ghost btn-sm" title="Remove {{ p.user.username }}">
+            <i class="bi bi-x-lg" aria-hidden="true"></i><span class="visually-hidden">Remove</span>
+          </button>
+        </form>
+      </div>
+    {% empty %}
+      <p class="kk-text-dim small mb-0 mt-2">Only you so far.</p>
+    {% endfor %}
+  </div>
+
   {% if invites %}
-    <h3 class="kk-section-title mt-5"><i class="bi bi-envelope"></i> Sent invites</h3>
-    <div class="kk-card">
-      <table class="w-100" style="border-collapse: collapse;">
-        <thead style="border-bottom: 1px solid var(--kk-border);">
-          <tr class="kk-text-dim small text-start">
-            <th style="padding: .5rem 0;">To</th>
-            <th>Permission</th>
-            <th>Status</th>
-            <th class="text-end">Sent</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for i in invites %}
-            <tr style="border-bottom: 1px solid var(--kk-border);">
-              <td style="padding: .75rem 0;">{{ i.invitee_email }}</td>
-              <td>{{ i.get_permission_display }}</td>
-              <td><span class="kk-text-dim small">{{ i.get_status_display }}</span></td>
-              <td class="text-end kk-text-dim small">{{ i.created_at|timesince }} ago</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <h2 class="kk-section-title mt-4"><i class="bi bi-envelope" aria-hidden="true"></i> Waiting to sign up</h2>
+    <div class="kk-card kk-people">
+      {% for i in invites %}
+        <div class="kk-person">
+          <span class="kk-person-avatar is-pending" aria-hidden="true"><i class="bi bi-envelope"></i></span>
+          <span class="kk-person-who">
+            <span class="kk-person-name">{{ i.invitee_email }}</span>
+            <span class="kk-person-mail">{{ i.get_permission_display }}, invited {{ i.created_at|timesince }} ago</span>
+          </span>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="revoke">
+            <input type="hidden" name="invite_id" value="{{ i.pk }}">
+            <button class="kk-btn kk-btn-ghost btn-sm">Withdraw</button>
+          </form>
+        </div>
+      {% endfor %}
     </div>
   {% endif %}
 </div>
+
+<style>
+.kk-roles { display: grid; gap: .6rem; }
+@media (min-width: 560px) { .kk-roles { grid-template-columns: 1fr 1fr; } }
+.kk-role { display: block; cursor: pointer; margin: 0; }
+.kk-role input { position: absolute; opacity: 0; pointer-events: none; }
+.kk-role-card {
+  display: flex; flex-direction: column; gap: .25rem; height: 100%;
+  padding: .8rem .95rem; border-radius: 12px;
+  border: 1px solid var(--kk-border); background: var(--kk-surface-2, rgba(255,255,255,.03));
+  transition: border-color .15s ease, background .15s ease;
+}
+.kk-role-name { font-weight: 700; }
+.kk-role-name i { color: #fcd34d; margin-right: .2rem; }
+.kk-role-what { color: var(--kk-text-dim); font-size: .88rem; line-height: 1.4; }
+.kk-role input:checked + .kk-role-card { border-color: rgba(251, 191, 36, .7); background: rgba(251, 191, 36, .08); }
+.kk-role input:focus-visible + .kk-role-card { outline: 2px solid #fbbf24; outline-offset: 2px; }
+
+.kk-people { padding-top: .4rem; padding-bottom: .4rem; }
+.kk-person {
+  display: flex; align-items: center; gap: .75rem; padding: .65rem 0;
+  border-bottom: 1px solid var(--kk-border);
+}
+.kk-person:last-child { border-bottom: 0; }
+.kk-person form { margin: 0; }
+.kk-person-avatar {
+  flex-shrink: 0; width: 38px; height: 38px; border-radius: 50%;
+  display: grid; place-items: center; font-weight: 700;
+  background: rgba(124, 58, 237, .25); color: #ddd6fe;
+}
+.kk-person-avatar.is-owner { background: rgba(251, 191, 36, .2); color: #fcd34d; }
+.kk-person-avatar.is-pending { background: rgba(255, 255, 255, .06); color: var(--kk-text-dim); }
+.kk-person-who { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.kk-person-name { font-weight: 600; overflow-wrap: anywhere; }
+.kk-person-mail { color: var(--kk-text-dim); font-size: .85rem; overflow-wrap: anywhere; }
+.kk-person-tag { font-size: .8rem; font-weight: 600; color: #fcd34d; }
+.kk-person-role select { min-width: 11rem; }
+@media (max-width: 520px) {
+  .kk-person { flex-wrap: wrap; }
+  .kk-person-role { order: 3; flex-basis: calc(100% - 50px); margin-left: 50px !important; }
+}
+</style>
 {% endblock %}

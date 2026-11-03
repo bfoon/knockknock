@@ -9,5 +9,6 @@ urlpatterns = [
     path("join/", views.join_landing, name="join"),
     path("join/<str:code>/", views.join_code, name="join_code"),
     path("qr/<str:code>/", views.qr_png, name="qr"),
+    path("status/<str:code>/", views.session_status, name="status"),
     path("sessions/end-all/", views.end_all_sessions, name="end_all_sessions"),
 ]

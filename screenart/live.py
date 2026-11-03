@@ -119,12 +119,16 @@ class _Driver:
         c.send_json = _quiet
         self.c = c
 
-    async def run(self, action):
+    async def run(self, action, from_key=None):
+        # from_key: the screen this request was made against (see
+        # LiveSession.nav_key). Two requests that both see the same screen
+        # move it once; requests one after another each move it.
         c = self.c
+        nav = {"from_key": from_key} if from_key else {}
         if action == "next":
-            await c._on_advance({})
+            await c._on_advance(nav)
         elif action == "back":
-            await c._on_back({})
+            await c._on_back(nav)
         elif action == "reveal":
             await c._on_reveal_answer({})
         elif action == "extend":
@@ -145,7 +149,7 @@ def control(screen_id, share_id, action):
     if not session:
         share.delete()
         raise LiveError("That live session no longer exists.")
-    async_to_sync(_Driver(session).run)(action)
+    async_to_sync(_Driver(session).run)(action, session.nav_key())
     return _session(share.session_pk)
 
 

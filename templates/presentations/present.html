@@ -2085,6 +2085,44 @@
     .kk-stage-time-bar { padding: 0.5rem 0.75rem; }
     .kk-stage-time-bar-track { height: 16px; border-width: 1px; }
   }
+  /* ── Weak-network UX (present.js) ───────────────────────── */
+  .kk-round-badge {
+    display: inline-flex; align-items: center; padding: .2rem .6rem; border-radius: 999px;
+    background: rgba(251, 191, 36, .14); color: #fcd34d; font-size: .78rem; font-weight: 700;
+  }
+  .kk-net {
+    display: inline-flex; align-items: center; gap: .4rem;
+    padding: .2rem .6rem; border-radius: 999px; font-size: .78rem; font-weight: 600;
+    background: rgba(255, 255, 255, .06); color: var(--kk-text-dim);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .kk-net-dot { width: 8px; height: 8px; border-radius: 50%; background: #34d399; }
+  .kk-net[data-net="good"] .kk-net-dot { background: #34d399; }
+  .kk-net[data-net="slow"] { color: #fcd34d; }
+  .kk-net[data-net="slow"] .kk-net-dot { background: #fbbf24; }
+  .kk-net[data-net="down"] { color: #fda4af; }
+  .kk-net[data-net="down"] .kk-net-dot { background: #fb7185; animation: kkNetBlink 1s steps(2) infinite; }
+  @keyframes kkNetBlink { 50% { opacity: .25; } }
+
+  /* Next/Back while the server hasn't answered yet: one tap only. */
+  .kk-nav-pending { position: relative; pointer-events: none; opacity: .75; }
+  .kk-nav-pending::after {
+    content: ""; position: absolute; left: 10%; right: 10%; bottom: 3px; height: 2px;
+    border-radius: 2px; background: currentColor; opacity: .7;
+    transform-origin: left; animation: kkNavWait 1.2s ease-in-out infinite;
+  }
+  @keyframes kkNavWait { 0% { transform: scaleX(.1); } 50% { transform: scaleX(1); } 100% { transform: scaleX(.1); transform-origin: right; } }
+  .kk-nav-toast {
+    position: fixed; left: 50%; bottom: 1.25rem; transform: translateX(-50%); z-index: 3000;
+    padding: .6rem 1rem; border-radius: 12px; font-size: .9rem; font-weight: 600;
+    background: #1f1a3d; color: #fff; border: 1px solid rgba(251, 191, 36, .45);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, .45); pointer-events: none;
+    opacity: 0; transition: opacity .2s ease;
+  }
+  .kk-nav-toast.is-on { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) {
+    .kk-nav-pending::after, .kk-net[data-net="down"] .kk-net-dot { animation: none; }
+  }
 </style>
 </head>
 
@@ -2129,6 +2167,11 @@
     {% endif %}
 
     <div class="kk-stage-code">{{ session.code }}</div>
+    {% if round_no %}<span class="kk-round-badge" title="This code has been played before; this is a fresh round">Round {{ round_no }}</span>{% endif %}
+    {# Connection to the server, as this screen sees it (present.js). #}
+    <span class="kk-net" id="kk-net" data-net="good" role="status" aria-live="polite" title="Connection to the live server">
+      <span class="kk-net-dot" aria-hidden="true"></span><span class="kk-net-text">Connecting…</span>
+    </span>
     <div class="text-secondary small d-none d-md-block">{{ session.title }}</div>
 
     <div class="ms-auto d-flex align-items-center gap-2 flex-wrap">
@@ -2217,7 +2260,8 @@
               </div>
               <div class="kk-lobby-meta-card">
                 <div class="kk-lobby-meta-label">Join link</div>
-                <div class="kk-lobby-url">{{ join_url }}</div>
+                {# Short and readable from the back of the room: host/482913 #}
+                <div class="kk-lobby-url" title="{{ join_url }}">{{ join_host }}/<strong>{{ session.code }}</strong></div>
               </div>
             </div>
 
@@ -2322,9 +2366,24 @@
             <span>participants</span>
           </div>
 
-          <div class="mt-4">
-            <a href="/dashboard/" class="kk-btn kk-btn-primary">Back to dashboard</a>
+          <div class="mt-4 d-flex gap-2 justify-content-center flex-wrap">
+            {% if not screen_mode %}
+              {# Same link, same QR, same code — everyone starts again from zero. #}
+              <form method="post" action="{% url 'presentations:replay' session.code %}" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="how" value="restart">
+                <button type="submit" class="kk-btn kk-btn-primary">
+                  <i class="bi bi-arrow-repeat"></i> Play again on {{ session.code }}
+                </button>
+              </form>
+            {% endif %}
+            <a href="/dashboard/" class="kk-btn kk-btn-ghost">Back to dashboard</a>
           </div>
+          {% if not screen_mode %}
+            <p class="kk-end-subtitle mt-3 mb-0" style="font-size:.9rem;">
+              Players keep the same link; scores start again at 0. This round’s results stay saved.
+            </p>
+          {% endif %}
         </div>
       </div>
 
@@ -2334,7 +2393,7 @@
       <div class="kk-qr-panel">
         <img src="{% url 'presentations:qr' session.code %}" alt="QR">
         <div class="code">{{ session.code }}</div>
-        <div class="small text-muted mt-1" style="word-break: break-all;">{{ join_url }}</div>
+        <div class="small text-muted mt-1" style="word-break: break-all;">{{ join_host }}/{{ session.code }}</div>
       </div>
 
       <div class="kk-card kk-presenter-control-card" style="background: var(--kk-surface); border-color: var(--kk-border);">
@@ -2836,7 +2895,7 @@
 })();
 </script>
 
-<script src="{% static 'js/present.js' %}?v=21"></script>
+<script src="{% static 'js/present.js' %}?v=22"></script>
 {% if not screen_mode %}<script src="{% static 'js/kk_bigscreen_share.js' %}?v=2"></script>{% endif %}
 </body>
 </html>

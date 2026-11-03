@@ -50,7 +50,7 @@
   {% endcomment %}
   <form id="join-form" class="kk-card" method="get"
         action="{% url 'presentations:join' %}"
-        data-join-template="{% url 'presentations:join_code' '000000' %}"
+        data-join-template="{% url 'join_short' '000000' %}"
         novalidate>
 
     <div id="join-error"
@@ -82,7 +82,26 @@
       Knock knock <i class="bi bi-arrow-right"></i>
     </button>
   </form>
+
+  {# Filled by the script: games this phone has joined before, one tap to rejoin. #}
+  <div id="kk-recent" class="kk-recent" hidden>
+    <p class="text-secondary small mb-2">Jump back in</p>
+    <div class="kk-recent-list" id="kk-recent-list"></div>
+  </div>
 </div>
+
+<style>
+.kk-recent { margin-top: 1.5rem; text-align: center; }
+.kk-recent-list { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: center; }
+.kk-recent-chip {
+  display: inline-flex; align-items: center; gap: .5rem;
+  padding: .45rem .85rem; border-radius: 999px; text-decoration: none;
+  background: var(--kk-surface, #1a1a2e); border: 1px solid var(--kk-border, rgba(255,255,255,.12));
+  color: inherit; font-weight: 600;
+}
+.kk-recent-chip code { font-size: .95rem; letter-spacing: .08em; color: #fcd34d; background: none; }
+.kk-recent-chip:hover { border-color: rgba(251, 191, 36, .55); color: inherit; }
+</style>
 
 <script>
 (function () {
@@ -116,11 +135,45 @@
     return digits.slice(-6);
   }
 
-  input.addEventListener("input", function () {
+  /* Go as soon as the sixth digit lands: no button to hunt for on a
+     small phone. A short beat lets a fast typist see the full number. */
+  var autoGo = null;
+  input.addEventListener("input", function (e) {
     var cleaned = extractCode(input.value);
     if (cleaned !== input.value) input.value = cleaned;
     if (cleaned.length) clearError();
+    clearTimeout(autoGo);
+    var deleting = e && e.inputType && e.inputType.indexOf("delete") === 0;
+    if (cleaned.length === 6 && !deleting) {
+      autoGo = setTimeout(function () {
+        if (form.requestSubmit) form.requestSubmit(); else form.submit();
+      }, 250);
+    }
   });
+
+  /* Games this phone joined before (play.js remembers the nickname per
+     code): offer them as one-tap chips. */
+  try {
+    var recent = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && /^kk-nick:\d{6}$/.test(k)) recent.push({ code: k.slice(8), nick: localStorage.getItem(k) });
+    }
+    if (recent.length) {
+      var list = document.getElementById("kk-recent-list");
+      recent.slice(-3).reverse().forEach(function (r) {
+        var a = document.createElement("a");
+        a.className = "kk-recent-chip";
+        a.href = form.dataset.joinTemplate.replace("000000", r.code);
+        var c = document.createElement("code");
+        c.textContent = r.code;
+        a.appendChild(c);
+        if (r.nick) a.appendChild(document.createTextNode("as " + r.nick));
+        list.appendChild(a);
+      });
+      document.getElementById("kk-recent").hidden = false;
+    }
+  } catch (err) { /* storage off */ }
 
   input.addEventListener("paste", function (e) {
     var text = (e.clipboardData || window.clipboardData);

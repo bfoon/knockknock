@@ -48,6 +48,14 @@
         <i class="bi bi-bar-chart"></i> Results
       </a>
 
+      {% if access == "owner" %}
+        {# Share by email: view only, or edit and present on your behalf. #}
+        <a href="{% url 'collaborations:invite' 'game' quiz.pk %}" class="kk-btn kk-btn-ghost">
+          <i class="bi bi-people"></i> Share{% if share_count %} ({{ share_count }}){% endif %}
+        </a>
+      {% endif %}
+
+      {% if not read_only %}
       <div class="dropdown">
         <button class="kk-btn kk-btn-ghost dropdown-toggle" type="button"
                 data-bs-toggle="dropdown" aria-expanded="false">
@@ -84,13 +92,26 @@
         {% csrf_token %}
         <button class="kk-btn kk-btn-primary kk-btn-lg"
                 {% if not question_count %}disabled title="Add a question first"{% endif %}>
-          <i class="bi bi-controller"></i> Start game
+          <i class="bi bi-controller"></i> Start game{% if access == "edit" %} for {{ quiz.owner.username }}{% endif %}
         </button>
       </form>
+      {% endif %}
     </div>
   </div>
 
-  <div class="row g-4">
+  {% if access != "owner" %}
+    <div class="g-shared-banner" role="note">
+      <i class="bi bi-people-fill" aria-hidden="true"></i>
+      <span>
+        <strong>{{ quiz.owner.username }}</strong> shared this game with you.
+        {% if read_only %}You can look through it and see its results.
+        {% else %}You can edit it, start it, and present it live on their behalf.{% endif %}
+      </span>
+    </div>
+  {% endif %}
+
+  {# View-only: everything stays visible but can't be clicked or typed into. #}
+  <div class="row g-4{% if read_only %} g-readonly{% endif %}"{% if read_only %} inert{% endif %}>
 
     {# ── Questions ────────────────────────────────────────── #}
     <div class="col-lg-7">
@@ -709,4 +730,14 @@
   });
 })();
 </script>
+<style>
+.g-shared-banner {
+  display: flex; gap: .65rem; align-items: baseline;
+  margin: 0 0 1.25rem; padding: .75rem 1rem; border-radius: 12px;
+  background: rgba(124, 58, 237, .12); border: 1px solid rgba(124, 58, 237, .35);
+}
+.g-shared-banner i { color: #c4b5fd; }
+.g-readonly :is(.kk-btn, .g-icon-btn, button) { opacity: .45; }
+.g-readonly :is(input, select, textarea) { opacity: .8; }
+</style>
 {% endblock %}

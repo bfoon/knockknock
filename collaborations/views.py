@@ -7,6 +7,8 @@ from .forms import InviteCollaboratorForm
 from .invite_signup import _grant_access
 from .models import CollaborationInvite
 from .services import send_collaboration_invite_email
+from . import sharing
+from django.contrib.auth import get_user_model
 
 
 @login_required
@@ -27,9 +29,49 @@ def invite(request, kind, target_id):
     form_kwargs = {"org": org, "user": request.user, "kind": kind, "target_id": target_id}
 
     if request.method == "POST":
+        action = request.POST.get("action") or "add"
+
+        # Change someone's access, or take it away.
+        if action in ("change", "remove"):
+            person = get_user_model().objects.filter(pk=request.POST.get("user_id")).first()
+            if person:
+                if action == "remove":
+                    sharing.remove(kind, target, person)
+                    messages.info(request, f"{person.username} no longer has access.")
+                elif request.POST.get("permission") in sharing.PERMISSIONS:
+                    perm = request.POST["permission"]
+                    sharing.grant(kind, target, person, perm, request.user)
+                    messages.success(request, f"{person.username} can now {_can_text(perm)}.")
+            return redirect(request.path)
+
+        # Withdraw an invite that hasn't been accepted.
+        if action == "revoke":
+            CollaborationInvite.objects.filter(
+                pk=request.POST.get("invite_id"), inviter=request.user, kind=kind,
+                target_id=target_id, status=CollaborationInvite.STATUS_PENDING,
+            ).update(status=CollaborationInvite.STATUS_DECLINED)
+            messages.info(request, "Invite withdrawn.")
+            return redirect(request.path)
+
         form = InviteCollaboratorForm(request.POST, **form_kwargs)
         if form.is_valid():
             email = form.cleaned_data["resolved_email"]
+            perm = form.cleaned_data["permission"]
+
+            # Already has an account? Share straight away, no accept step.
+            person = sharing.account_for_email(email)
+            if person and person.pk == target.owner_id:
+                messages.info(request, f"{person.username} owns this already.")
+                return redirect(request.path)
+            if person:
+                sharing.grant(kind, target, person, perm, request.user)
+                sharing.notify_shared(kind, target, person, perm, request.user,
+                                      message=form.cleaned_data.get("message") or "", request=request)
+                messages.success(request, f"Shared with {person.username}: they can {_can_text(perm)}. "
+                                          "They’ll find it under “Shared with you”.")
+                return redirect(request.path)
+
+            # No account yet: email an invite to sign up and accept.
             inv = CollaborationInvite.objects.create(
                 inviter=request.user,
                 invitee_email=email,  # already lowercased by form / model.save
@@ -46,12 +88,20 @@ def invite(request, kind, target_id):
 
     existing_invites = CollaborationInvite.objects.filter(
         inviter=request.user, kind=kind, target_id=target_id,
+        status=CollaborationInvite.STATUS_PENDING,
     ).order_by("-created_at")
 
     return render(request, "collaborations/invite.html", {
         "form": form, "target": target, "kind": kind,
         "org": org, "invites": existing_invites,
+        "people": sharing.people_with_access(kind, target),
+        "what": "Wenti" if kind == CollaborationInvite.KIND_MENTI else "game",
     })
+
+
+def _can_text(permission):
+    return ("edit it, start it and present it for you" if permission == "edit"
+            else "open it and see its results")
 
 
 def _load_owned_target(user, kind, target_id):

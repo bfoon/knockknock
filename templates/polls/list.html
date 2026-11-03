@@ -85,5 +85,33 @@
       </div>
     {% endfor %}
   </div>
+
+  {% if shared_questionnaires %}
+    {# Wentis other people shared with you. #}
+    <h2 class="p-section mt-4"><i class="bi bi-people"></i> Shared with you</h2>
+    <div class="p-list">
+      {% for q in shared_questionnaires %}
+        <div class="p-listrow">
+          <a class="p-listrow-main" href="{% url 'polls:edit' q.pk %}">
+            <span class="p-q-num"><i class="bi bi-people-fill"></i></span>
+            <span class="p-listrow-body">
+              <span class="p-listrow-title">{{ q.title }}</span>
+              <span class="p-listrow-meta">
+                <span>from {{ q.owner.username }}</span>
+                <span>·</span>
+                <span>{{ q.num_questions }} question{{ q.num_questions|pluralize }}</span>
+                <span>·</span>
+                <span>{% if q.my_permission == "edit" %}can edit and present{% else %}can view{% endif %}</span>
+              </span>
+            </span>
+            <i class="bi bi-chevron-right" style="color: var(--p-ink-faint);"></i>
+          </a>
+          <a href="{% url 'polls:results' q.pk %}" class="p-icon-btn p-icon-btn-accent" title="Results" aria-label="Results for {{ q.title }}">
+            <i class="bi bi-bar-chart"></i>
+          </a>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
 </div>
 {% endblock %}

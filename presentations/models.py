@@ -9,6 +9,14 @@ def _gen_code():
     return "".join(secrets.choice(string.digits) for _ in range(6))
 
 
+def unused_code():
+    """A 6-digit code no session is using right now."""
+    while True:
+        code = _gen_code()
+        if not LiveSession.objects.filter(code=code).exists():
+            return code
+
+
 class LiveSession(models.Model):
     """A live, in-progress presentation. Owns both polls and games."""
 
@@ -57,6 +65,20 @@ class LiveSession(models.Model):
     def template_id(self):
         return self.questionnaire.template_id if self.questionnaire else (self.quiz.template_id if self.quiz else "space_hud")
 
+    def nav_key(self):
+        """
+        Identifies exactly what's on screen right now: state, question and
+        when that question started. Changes on every navigation, even a
+        goto to the same index.
+
+        The presenter sends the nav_key it was looking at with every
+        Next/Back/goto, and the server only acts if it still matches. A
+        second tap (or a resend after a reconnect) carries the old key and
+        is ignored, so a double tap can never skip a question.
+        """
+        started = int(self.question_started_at.timestamp() * 1000) if self.question_started_at else 0
+        return f"{self.state}:{self.current_question_index}:{started}"
+
     def questions(self):
         if self.kind == "poll" and self.questionnaire:
             return list(self.questionnaire.questions.all())
@@ -77,3 +99,30 @@ class Participant(models.Model):
     class Meta:
         unique_together = ("session", "participant_uid")
         ordering = ["-score", "joined_at"]
+
+
+class SessionRound(models.Model):
+    """
+    An earlier round of a join code that was restarted fresh.
+
+    "Play again" on a session keeps the code players know (same link, same
+    QR, same 6 digits) and starts from zero. To do that, the round that
+    held the code is moved aside: it gets a new internal code so the
+    played code is free again, and this row remembers which code the room
+    actually played with. That round's answers, players and scores stay
+    attached to it, so its results and exports are unchanged.
+
+    Kept as its own table (not a column on LiveSession) so a server that
+    hasn't run the migration yet still runs live sessions normally; only
+    "Play again" needs it.
+    """
+    session = models.OneToOneField(LiveSession, on_delete=models.CASCADE, related_name="as_round")
+    played_code = models.CharField(max_length=6, db_index=True)
+    archived_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["archived_at"]
+
+    def __str__(self):
+        return f"{self.played_code} round archived {self.archived_at:%Y-%m-%d %H:%M}"
+

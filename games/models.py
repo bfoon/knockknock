@@ -83,6 +83,29 @@ class Quiz(models.Model):
     def __str__(self):
         return self.title
 
+    # ── Sharing ───────────────────────────────────────────────────
+    # People are added from the Share page (collaborations app, kind
+    # "game"); that writes collaborations.Collaborator rows, which these
+    # read. "view": open the game, its questions and results.
+    # "edit": also change it, start it and present it for the owner.
+
+    def access_for(self, user):
+        """'owner', 'edit', 'view', or None."""
+        if not user or not getattr(user, "is_authenticated", False):
+            return None
+        if self.owner_id == user.id:
+            return "owner"
+        from collaborations.models import Collaborator
+        return (Collaborator.objects
+                .filter(kind="game", target_id=self.pk, user=user)
+                .values_list("permission", flat=True).first())
+
+    def can_edit(self, user) -> bool:
+        return self.access_for(user) in ("owner", "edit")
+
+    def can_view(self, user) -> bool:
+        return self.access_for(user) in ("owner", "edit", "view")
+
     @property
     def late_points_multiplier(self):
         """0.0–1.0 factor applied to a correct answer that arrived late."""

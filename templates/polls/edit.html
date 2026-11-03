@@ -21,7 +21,7 @@
           <span>{{ questionnaire.get_mode_display }}</span>
           {% if not is_owner %}
             <span class="p-meta-dot">·</span>
-            <span class="p-tag"><i class="bi bi-people"></i> shared with you</span>
+            <span class="p-tag"><i class="bi bi-people"></i> shared with you by {{ questionnaire.owner.username }}{% if read_only %}, view only{% endif %}</span>
           {% endif %}
         </div>
       </div>
@@ -69,17 +69,20 @@
         </ul>
       </div>
 
+      {% if not read_only %}
       <form method="post" action="{% url 'polls:start' questionnaire.pk %}">
         {% csrf_token %}
         <button class="kk-btn kk-btn-primary kk-btn-lg"
                 {% if not question_count %}disabled title="Add a question first"{% endif %}>
-          <i class="bi bi-play-fill"></i> Present live
+          <i class="bi bi-play-fill"></i> Present live{% if not is_owner %} for {{ questionnaire.owner.username }}{% endif %}
         </button>
       </form>
+      {% endif %}
     </div>
   </div>
 
-  <div class="row g-4">
+  {# View-only collaborators see everything but can't change it. #}
+  <div class="row g-4{% if read_only %} p-readonly{% endif %}"{% if read_only %} inert{% endif %}>
     <div class="col-lg-7">
       <h2 class="p-section">
         <i class="bi bi-list-ol"></i> Questions
@@ -310,4 +313,8 @@
 {% endcomment %}
 <script src="{% static 'js/polls_editor.js' %}?v=1"></script>
 <script src="{% static 'js/kk_chart_style_editor.js' %}?v=1"></script>
+<style>
+.p-readonly :is(.kk-btn, .p-icon-btn, button) { opacity: .45; }
+.p-readonly :is(input, select, textarea) { opacity: .8; }
+</style>
 {% endblock %}

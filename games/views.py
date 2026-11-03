@@ -5,6 +5,8 @@ from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.db.models import Count, F, Prefetch
 from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
+from django.core.exceptions import PermissionDenied
+from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.encoding import iri_to_uri
@@ -56,6 +58,24 @@ def _safe_next(request, fallback_url_name):
     return redirect(fallback_url_name)
 
 
+
+# ── Sharing: who may do what (Quiz.access_for) ───────────────────────
+#   view  → open the game (read-only), see results, download reports
+#   edit  → also change questions/settings, start and present it
+#   owner → also delete it and choose who it's shared with
+
+def _quiz_for(request, pk, need="view"):
+    quiz = get_object_or_404(Quiz, pk=pk)
+    access = quiz.access_for(request.user)
+    allowed = {"view": ("owner", "edit", "view"), "edit": ("owner", "edit"), "owner": ("owner",)}[need]
+    if access not in allowed:
+        # Not shared with you at all: don't reveal that it exists.
+        if access is None:
+            raise Http404
+        raise PermissionDenied("You can view this game but not change it.")
+    return quiz
+
+
 @login_required
 def list_view(request):
     qs = (
@@ -63,7 +83,17 @@ def list_view(request):
         .filter(owner=request.user)
         .annotate(num_questions=Count("questions", distinct=True))
     )
-    return render(request, "games/list.html", {"quizzes": qs})
+    from collaborations.models import Collaborator
+    perms = dict(Collaborator.objects.filter(kind="game", user=request.user)
+                 .values_list("target_id", "permission"))
+    shared = list(
+        Quiz.objects.filter(pk__in=perms.keys()).exclude(owner=request.user)
+        .select_related("owner")
+        .annotate(num_questions=Count("questions", distinct=True))
+    )
+    for q in shared:
+        q.my_permission = perms.get(q.pk)
+    return render(request, "games/list.html", {"quizzes": qs, "shared_quizzes": shared})
 
 
 @login_required
@@ -93,9 +123,13 @@ def create(request):
 
 @login_required
 def edit(request, pk):
-    quiz = get_object_or_404(Quiz, pk=pk, owner=request.user)
+    quiz = _quiz_for(request, pk, "view")
+    access = quiz.access_for(request.user)
+    read_only = access == "view"
 
     if request.method == "POST":
+        if read_only:
+            raise PermissionDenied("You can view this game but not change it.")
         form = QuizForm(request.POST, request.FILES, instance=quiz)
         room_formset = GameRoomFormSet(request.POST, instance=quiz, prefix="rooms")
 
@@ -142,7 +176,15 @@ def edit(request, pk):
         "avatars": AVATARS,
         "avatar_groups": avatars_grouped(),
         "top_three": top_three_for_quiz(quiz),
+        "access": access,
+        "read_only": read_only,
+        "share_count": _share_count(quiz),
     })
+
+
+def _share_count(quiz):
+    from collaborations.models import Collaborator
+    return Collaborator.objects.filter(kind="game", target_id=quiz.pk).count()
 
 
 def _save_rooms(quiz, room_formset):
@@ -192,7 +234,7 @@ def delete(request, pk):
     nuke a quiz. The dashboard's red trash bin posts here with a `next` param
     so the user lands back where they started.
     """
-    quiz = get_object_or_404(Quiz, pk=pk, owner=request.user)
+    quiz = _quiz_for(request, pk, "owner")
     title = quiz.title
     quiz.delete()
     messages.success(request, f"Deleted “{title}”.")
@@ -205,7 +247,7 @@ def delete(request, pk):
 
 @login_required
 def question_create(request, pk):
-    quiz = get_object_or_404(Quiz, pk=pk, owner=request.user)
+    quiz = _quiz_for(request, pk, "edit")
 
     qtype = request.GET.get("type", "mcq")
     allowed = {value for value, _label in GameQuestion.QUESTION_TYPE_CHOICES}
@@ -236,7 +278,7 @@ def question_create(request, pk):
 
 @login_required
 def question_edit(request, pk, qpk):
-    quiz = get_object_or_404(Quiz, pk=pk, owner=request.user)
+    quiz = _quiz_for(request, pk, "edit")
     question = get_object_or_404(GameQuestion, pk=qpk, quiz=quiz)
 
     if request.method == "POST":
@@ -299,7 +341,7 @@ def _renumber_choices(question):
 @login_required
 @require_POST
 def question_delete(request, pk, qpk):
-    quiz = get_object_or_404(Quiz, pk=pk, owner=request.user)
+    quiz = _quiz_for(request, pk, "edit")
     GameQuestion.objects.filter(pk=qpk, quiz=quiz).delete()
     _renumber_questions(quiz)
     messages.success(request, "Question deleted.")
@@ -310,7 +352,7 @@ def question_delete(request, pk, qpk):
 @require_POST
 def question_duplicate(request, pk, qpk):
     """Copy a question and its answers, inserting the copy directly after it."""
-    quiz = get_object_or_404(Quiz, pk=pk, owner=request.user)
+    quiz = _quiz_for(request, pk, "edit")
     original = get_object_or_404(GameQuestion, pk=qpk, quiz=quiz)
     source_choices = list(original.choices.all())
     source_order = original.order or 0
@@ -361,7 +403,7 @@ def question_reorder(request, pk):
     Body: JSON `{"order": [qpk1, qpk2, ...]}` with ALL of the quiz's question
     primary keys in the desired sequence. Returns 200 on success.
     """
-    quiz = get_object_or_404(Quiz, pk=pk, owner=request.user)
+    quiz = _quiz_for(request, pk, "edit")
     try:
         payload = json.loads(request.body.decode("utf-8") or "{}")
         ids = [int(x) for x in payload.get("order", [])]
@@ -394,7 +436,7 @@ def question_reorder(request, pk):
 @login_required
 @require_POST
 def start_session(request, pk):
-    quiz = get_object_or_404(Quiz, pk=pk, owner=request.user)
+    quiz = _quiz_for(request, pk, "edit")
 
     # The Start button is disabled in the editor when there are no questions,
     # but a disabled button is a suggestion, not a rule.
@@ -406,8 +448,10 @@ def start_session(request, pk):
         messages.error(request, "Rooms are on but none are set up. Add a room, or switch rooms off.")
         return redirect("games:edit", pk=quiz.pk)
 
+    # An editor starting it runs it for the owner: the session belongs to
+    # the owner (their history and results), and editors may present it.
     session = LiveSession.objects.create(
-        owner=request.user,
+        owner=quiz.owner,
         kind="game",
         quiz=quiz,
         mode=quiz.mode,
@@ -426,13 +470,17 @@ def results(request, pk):
     Lists every LiveSession that ever ran this quiz with participant count,
     state, and Excel/Word export buttons per session.
     """
-    quiz = get_object_or_404(Quiz, pk=pk, owner=request.user)
+    quiz = _quiz_for(request, pk, "view")
     sessions = list(
         LiveSession.objects
         .filter(quiz=quiz, kind="game")
         .annotate(num_participants=Count("participants"))
         .order_by("-created_at")
     )
+    # "Play again" keeps the code; show earlier rounds under the code
+    # players used, numbered (presentations.views.annotate_rounds).
+    from presentations.views import annotate_rounds
+    annotate_rounds(sessions)
 
     latest_rooms = room_standings(sessions[0]) if sessions else []
 
@@ -449,7 +497,8 @@ def results(request, pk):
 def _export_filename(session, ext):
     """Filesystem-safe filename like 'gameresults_5-brain-rewire_842913.xlsx'."""
     title = slugify(session.quiz.title) if session.quiz else "results"
-    return f"gameresults_{title or 'results'}_{session.code}.{ext}"
+    from presentations.views import played_code_of
+    return f"gameresults_{title or 'results'}_{played_code_of(session)}.{ext}"
 
 
 def _download(buf, content_type, filename):
@@ -462,7 +511,7 @@ def _download(buf, content_type, filename):
 @login_required
 def export_session_excel(request, pk, session_id):
     """Download .xlsx for a specific session of this quiz."""
-    quiz = get_object_or_404(Quiz, pk=pk, owner=request.user)
+    quiz = _quiz_for(request, pk, "view")
     session = get_object_or_404(LiveSession, pk=session_id, quiz=quiz, kind="game")
     return _download(
         build_excel(session),
@@ -474,7 +523,7 @@ def export_session_excel(request, pk, session_id):
 @login_required
 def export_session_word(request, pk, session_id):
     """Download .docx for a specific session of this quiz."""
-    quiz = get_object_or_404(Quiz, pk=pk, owner=request.user)
+    quiz = _quiz_for(request, pk, "view")
     session = get_object_or_404(LiveSession, pk=session_id, quiz=quiz, kind="game")
     return _download(
         build_word(session),
@@ -524,8 +573,9 @@ def duplicate(request, pk):
             "rooms",
         ),
         pk=pk,
-        owner=request.user,
     )
+    if not original.can_edit(request.user):
+        raise Http404
     source_questions = list(original.questions.all())
     source_rooms = list(original.rooms.all())
     original_title = original.title

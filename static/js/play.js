@@ -214,11 +214,71 @@
     });
   }
 
+  // ── Staying connected on a weak network ──
+  // On EDGE a phone drops and reconnects often. That must not wipe the
+  // question off the screen: keep it up, show a small "Reconnecting…"
+  // badge, and back off gently (with jitter, so 34 phones don't all
+  // retry in the same instant after a venue-wide blip).
+  let reconnectDelayMs = 1000;
+  let reconnectTimer = null;
+  let everConnected = false;
+
+  function ensureNetStyles() {
+    if (document.getElementById("kk-play-net-styles")) return;
+    const st = document.createElement("style");
+    st.id = "kk-play-net-styles";
+    st.textContent = `
+      .kk-reconnect-badge { position: fixed; top: max(.6rem, env(safe-area-inset-top)); left: 50%;
+        transform: translateX(-50%); z-index: 4000; display: inline-flex; align-items: center; gap: .45rem;
+        padding: .35rem .8rem; border-radius: 999px; font: 600 .82rem/1.2 system-ui, sans-serif;
+        background: rgba(20, 16, 44, .92); color: #fde68a; border: 1px solid rgba(251, 191, 36, .45);
+        box-shadow: 0 6px 18px rgba(0,0,0,.4); pointer-events: none; white-space: nowrap; }
+      .kk-reconnect-badge[hidden] { display: none; }
+      .kk-reconnect-badge i { width: 8px; height: 8px; border-radius: 50%; background: #fbbf24;
+        animation: kkPlayBlink 1s steps(2) infinite; }
+      @keyframes kkPlayBlink { 50% { opacity: .25; } }
+      .kk-round-banner { margin: 0 auto 1rem; max-width: 22rem; padding: .75rem 1rem; border-radius: 14px;
+        background: rgba(251, 191, 36, .12); border: 1px solid rgba(251, 191, 36, .4); color: inherit;
+        font-weight: 600; line-height: 1.4; animation: kkRoundIn .5s ease-out both; }
+      .kk-round-banner b { display: block; font-size: 1.15rem; color: #fcd34d; margin-bottom: .15rem; }
+      @keyframes kkRoundIn { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
+      @media (prefers-reduced-motion: reduce) { .kk-reconnect-badge i, .kk-round-banner { animation: none; } }
+    `;
+    document.head.appendChild(st);
+  }
+
+  function setReconnecting(on) {
+    ensureNetStyles();
+    let el = document.getElementById("kk-reconnect-badge");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "kk-reconnect-badge";
+      el.className = "kk-reconnect-badge";
+      el.setAttribute("role", "status");
+      el.innerHTML = "<i aria-hidden=\"true\"></i><span>Reconnecting…</span>";
+      document.body.appendChild(el);
+    }
+    el.hidden = !on;
+  }
+
+  function scheduleReconnect(fast) {
+    clearTimeout(reconnectTimer);
+    const base = fast ? 200 : reconnectDelayMs;
+    const wait = base * (0.75 + Math.random() * 0.5);
+    if (!fast) reconnectDelayMs = Math.min(10000, reconnectDelayMs * 2);
+    reconnectTimer = setTimeout(connect, wait);
+  }
+
   function connect() {
+    clearTimeout(reconnectTimer);
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    ws = new WebSocket(`${proto}://${location.host}/ws/session/${code}/`);
-    ws.addEventListener("open", () => {
-      ws.send(JSON.stringify({
+    const sock = new WebSocket(`${proto}://${location.host}/ws/session/${code}/`);
+    // Ignore events from an older socket that hasn't finished closing.
+    ws = sock;
+    sock.addEventListener("open", () => {
+      if (ws !== sock) return;
+      reconnectDelayMs = 1000;
+      sock.send(JSON.stringify({
         type: "hello", role: "participant",
         uid, nickname, avatar_id: avatarId,
       }));
@@ -228,12 +288,59 @@
         applyAnimClass(waitAvatar, avatarAnim(avatarId));
       }
       updateHeaderAvatar();
-      show(stepWait);
+      setReconnecting(false);
+      // First connection: the waiting screen until the first state.
+      // A reconnect keeps whatever is on screen (the question!).
+      if (!everConnected || !currentQuestion) show(stepWait);
+      everConnected = true;
     });
-    ws.addEventListener("message", (e) => handle(JSON.parse(e.data)));
-    ws.addEventListener("close", () => {
-      setTimeout(() => { if (!ws || ws.readyState === 3) connect(); }, 2500);
+    sock.addEventListener("message", (e) => {
+      if (ws !== sock) return;
+      let msg;
+      try { msg = JSON.parse(e.data); } catch (err) { return; }
+      handle(msg);
     });
+    sock.addEventListener("close", (e) => {
+      if (ws !== sock) return;
+      // 4000 = the host started a fresh round on this code: hop right over.
+      if (e && e.code === 4000) { scheduleReconnect(true); return; }
+      if (e && e.code === 4404) { setReconnecting(false); return; }   // no such session
+      if (everConnected) setReconnecting(true);
+      scheduleReconnect(false);
+    });
+  }
+
+  window.addEventListener("online", () => {
+    if (nickname && (!ws || ws.readyState === 2 || ws.readyState === 3)) {
+      reconnectDelayMs = 1000;
+      connect();
+    }
+  });
+
+  // "Play again" on this code: same link, fresh start. Reset what this
+  // phone remembers and wait for the new round's lobby.
+  function onRestart(msg) {
+    myScore = 0;
+    currentQuestion = null;
+    lastRenderKey = null;
+    answeredQuestionId = null;
+    myChoiceId = null;
+    if (scoreChip) scoreChip.textContent = "0 pts";
+    updateHeaderAvatar();
+    ensureNetStyles();
+    if (stepWait) {
+      let banner = document.getElementById("kk-round-banner");
+      if (!banner) {
+        banner = document.createElement("div");
+        banner.id = "kk-round-banner";
+        banner.className = "kk-round-banner";
+        const host = stepWait.querySelector(".text-center") || stepWait;
+        host.insertBefore(banner, host.firstChild);
+      }
+      const round = Number(msg && msg.round) || 2;
+      banner.innerHTML = "<b>Round " + round + "</b>Fresh start! Same game, and your score is back to 0.";
+    }
+    show(stepWait);
   }
 
   function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
@@ -286,6 +393,7 @@
       case "ended":            onEnded(); break;
       case "self_finished":    onSelfFinished(msg); break;
       case "replay":           location.reload(); break;
+      case "restart":          onRestart(msg); break;
     }
   }
 
@@ -298,7 +406,23 @@
   }
 
   // ─────────────────────── State / question rendering ───────────────────────
+  // What the question card was last built from. A state that changes
+  // none of it (someone else joined, a reconnect, a repeat) leaves the
+  // card alone instead of rebuilding it.
+  let lastRenderKey = null;
+  let lastSessionId = null;
+
   function onState(s) {
+    // Same code, new round (Play again): forget the previous round.
+    if (s.session_id != null && lastSessionId != null && s.session_id !== lastSessionId) {
+      currentQuestion = null;
+      lastRenderKey = null;
+      answeredQuestionId = null;
+      myChoiceId = null;
+      myScore = 0;
+    }
+    if (s.session_id != null) lastSessionId = s.session_id;
+
     // ── Sync clock skew from server (do this BEFORE anything that uses it) ──
     if (typeof s.server_time_ms === "number") {
       clockSkewMs = s.server_time_ms - Date.now();
@@ -351,8 +475,17 @@
     }
     currentQuestion = q;
 
-    qText.textContent = q.text;
-    applyQuestionTypography(q);
+    // Rebuilding the answer buttons wipes whatever the player was in the
+    // middle of (a puzzle arrangement, a typed answer) and reloads the
+    // picture — on a weak network that looked like the phone refreshing by
+    // itself. Rebuild only when something the player can see changed.
+    const renderKey = [
+      s.session_id, q.id, s.index, s.state, s.time_extension_seconds || 0,
+      JSON.stringify(s.my_answer || null),
+    ].join("|");
+    const needsRender = renderKey !== lastRenderKey;
+    lastRenderKey = renderKey;
+
     qProgress.textContent = `Question ${s.index + 1} / ${s.total}`;
     show(stepQuestion);
 
@@ -361,17 +494,23 @@
     // participant has answered yet).
     setSelfNav(s);
 
-    if (kind === "poll") renderPollQuestion(q, s);
-    else                 renderGameQuestion(q, s);
+    if (needsRender) {
+      qText.textContent = q.text;
+      applyQuestionTypography(q);
 
-    // Restore previous answer if the server tells us we already answered.
-    // For polls the per-type renderer above has already handled restoration
-    // from `s.my_answer`, so we only need the legacy restore for games.
-    if (s.my_answer && kind === "game") {
-      restoreMyAnswer(q, s.my_answer);
-    } else if (kind === "game") {
-      syncSpecialGameInputs();
-    } else if (kind === "poll" && s.my_answer) {
+      if (kind === "poll") renderPollQuestion(q, s);
+      else                 renderGameQuestion(q, s);
+
+      // Restore previous answer if the server tells us we already answered.
+      // For polls the per-type renderer above has already handled restoration
+      // from `s.my_answer`, so we only need the legacy restore for games.
+      if (s.my_answer && kind === "game") {
+        restoreMyAnswer(q, s.my_answer);
+      } else if (kind === "game") {
+        syncSpecialGameInputs();
+      }
+    }
+    if (kind === "poll" && s.my_answer) {
       // Renderers also lock+toast, but make absolutely sure the chip shows.
       answeredQuestionId = q.id;
       if (mode === "open") { if (selfNav) selfNav.style.setProperty("display","flex","important"); else if (selfNext) selfNext.style.display = "block"; }

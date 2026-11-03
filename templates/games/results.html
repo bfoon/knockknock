@@ -47,12 +47,16 @@
               <th scope="col">State</th>
               <th scope="col" class="g-num">Players</th>
               <th scope="col" class="g-num">Report</th>
+              <th scope="col" class="g-num">Play again</th>
             </tr>
           </thead>
           <tbody>
             {% for s in sessions %}
               <tr>
-                <td><code>{{ s.code }}</code></td>
+                <td>
+                  <code>{{ s.played_code }}</code>
+                  {% if s.round_no %}<span class="g-round">round {{ s.round_no }}</span>{% endif %}
+                </td>
                 <td>{{ s.created_at|date:"j M Y, H:i" }}</td>
                 <td>
                   {% if s.ended_at %}{{ s.ended_at|date:"j M Y, H:i" }}
@@ -83,6 +87,19 @@
                       <i class="bi bi-file-earmark-word"></i>
                     </a>
                   </span>
+                </td>
+                <td class="g-num">
+                  {# Fresh round on the same code and link: players rejoin, scores start at 0. #}
+                  <form method="post" action="{% url 'presentations:replay' s.code %}" class="d-inline"
+                        onsubmit="return confirm('Start a fresh round on code {{ s.played_code }}? Same link and QR, everyone starts at 0.{% if s.state != "ended" %} This ends the round that is open now.{% endif %} Earlier results stay saved.');">
+                    {% csrf_token %}
+                    <input type="hidden" name="how" value="restart">
+                    <button type="submit" class="g-icon-btn g-icon-btn-accent"
+                            title="Play again on code {{ s.played_code }}, fresh start"
+                            aria-label="Play again on code {{ s.played_code }}">
+                      <i class="bi bi-arrow-repeat"></i>
+                    </button>
+                  </form>
                 </td>
               </tr>
             {% endfor %}
@@ -137,4 +154,11 @@
     </div>
   {% endif %}
 </div>
+<style>
+.g-round {
+  display: inline-block; margin-left: .35rem; padding: .05rem .45rem;
+  border-radius: 999px; font-size: .72rem; font-weight: 600;
+  background: rgba(251, 191, 36, .14); color: #b45309;
+}
+</style>
 {% endblock %}

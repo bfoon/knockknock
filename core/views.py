@@ -156,4 +156,7 @@ def dashboard(request):
 
 
 def join(request):
-    return render(request, "core/join.html")
+    # One join page for the whole site: presentations' version handles a
+    # pasted link, works without JavaScript and goes as soon as 6 digits are in.
+    from presentations.views import join_landing
+    return join_landing(request)

@@ -200,26 +200,96 @@
 
   // ─────────────────────── WebSocket ───────────────────────
 
-  function connectSocket() {
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    ws = new WebSocket(`${proto}://${location.host}/ws/session/${code}/`);
+  // ── Connection health, as this screen sees it ──
+  // One ping in flight at a time; the round trip tells the presenter
+  // whether taps will land quickly ("Good") or slowly ("Slow 2.1 s").
+  const netEl = document.getElementById("kk-net");
+  let pingSentAt = 0;
+  let pingTimer = null;
 
-    ws.addEventListener("open", () => {
+  function setNet(kind, rttMs) {
+    if (!netEl) return;
+    netEl.dataset.net = kind === "connecting" ? "slow" : kind;
+    const text = netEl.querySelector(".kk-net-text");
+    if (!text) return;
+    if (kind === "good") text.textContent = "Good";
+    else if (kind === "slow") text.textContent = `Slow ${(Math.max(rttMs || 0, 0) / 1000).toFixed(1)} s`;
+    else if (kind === "down") text.textContent = "Reconnecting…";
+    else text.textContent = "Connecting…";
+  }
+
+  function startPinging() {
+    clearInterval(pingTimer);
+    pingSentAt = 0;
+    const ping = () => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      if (pingSentAt) {
+        // Still waiting for the last one: the line is slow.
+        const waited = Date.now() - pingSentAt;
+        if (waited > 4000) setNet("slow", waited);
+        return;
+      }
+      pingSentAt = Date.now();
+      send({ type: "ping" });
+    };
+    ping();
+    pingTimer = setInterval(ping, 5000);
+  }
+
+  function onPong() {
+    if (!pingSentAt) return;
+    const rtt = Date.now() - pingSentAt;
+    pingSentAt = 0;
+    setNet(rtt > 1200 ? "slow" : "good", rtt);
+  }
+
+  let reconnectDelayMs = 1000;
+  let reconnectTimer = null;
+
+  function connectSocket() {
+    clearTimeout(reconnectTimer);
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const sock = new WebSocket(`${proto}://${location.host}/ws/session/${code}/`);
+    // Events from an older socket (one that closed while a new one was
+    // opening) must not drive the screen.
+    ws = sock;
+    setNet("connecting");
+
+    sock.addEventListener("open", () => {
+      if (ws !== sock) return;
+      reconnectDelayMs = 1000;
       send({
         type: "hello",
         // on a Hanns Big Screen this page is display only: a read-only viewer
         role: window.__KK_SCREEN_MODE__ ? "screen" : "presenter",
         uid: "presenter-" + Math.random().toString(36).slice(2),
       });
+      startPinging();
     });
 
-    ws.addEventListener("message", (event) => {
+    sock.addEventListener("message", (event) => {
+      if (ws !== sock) return;
       const msg = safeJsonParse(event.data);
       if (!msg) return;
 
       switch (msg.type) {
         case "state":
           onState(msg);
+          break;
+
+        case "nav_result":
+          // The server handled our Next/Back (or recognised a repeat).
+          clearNavPending();
+          break;
+
+        case "pong":
+          onPong();
+          break;
+
+        case "restart":
+          // "Play again" on this code from another tab: this page shows
+          // the round that was moved aside — load the fresh one.
+          location.reload();
           break;
 
         case "tally":
@@ -259,13 +329,85 @@
       }
     });
 
-    ws.addEventListener("close", () => {
-      // Presenter reconnect: useful if network drops.
-      setTimeout(() => {
-        if (!ws || ws.readyState === WebSocket.CLOSED) {
-          connectSocket();
-        }
-      }, 1500);
+    sock.addEventListener("close", () => {
+      if (ws !== sock) return;
+      clearInterval(pingTimer);
+      clearNavPending();
+      setNet("down");
+      // Back off (1 s, 2 s, 4 s … up to 10 s) with jitter, so a venue-wide
+      // network blip doesn't make every screen hammer the server at once.
+      const wait = reconnectDelayMs * (0.75 + Math.random() * 0.5);
+      reconnectDelayMs = Math.min(10000, reconnectDelayMs * 2);
+      reconnectTimer = setTimeout(connectSocket, wait);
+    });
+  }
+
+  // Phone/laptop came back online: don't wait out the backoff.
+  window.addEventListener("online", () => {
+    if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+      reconnectDelayMs = 1000;
+      connectSocket();
+    }
+  });
+
+  // ── Navigation that survives a slow network ──
+  // Each Next/Back carries the nav_key of the screen it was pressed on;
+  // the server ignores repeats. Locally, the buttons wait for the server
+  // to answer before taking another tap, so a double tap is one move.
+  const NAV_TIMEOUT_MS = 8000;
+  let navPending = null;
+  let navToastTimer = null;
+
+  function navButtons() {
+    return [btnStart, btnNext, btnPrev, btnFsPrev, btnFsNext].filter(Boolean);
+  }
+
+  function showNavToast(text) {
+    let el = document.getElementById("kk-nav-toast");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "kk-nav-toast";
+      el.className = "kk-nav-toast";
+      el.setAttribute("role", "status");
+      document.body.appendChild(el);
+    }
+    el.textContent = text;
+    el.classList.add("is-on");
+    clearTimeout(navToastTimer);
+    navToastTimer = setTimeout(() => el.classList.remove("is-on"), 2600);
+  }
+
+  function clearNavPending() {
+    if (!navPending) return;
+    clearTimeout(navPending.timer);
+    navPending = null;
+    navButtons().forEach((b) => {
+      b.classList.remove("kk-nav-pending");
+      b.removeAttribute("aria-busy");
+    });
+  }
+
+  function nav(type, extra) {
+    if (navPending) {
+      showNavToast("Hold on, the last tap is still on its way…");
+      return;
+    }
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      showNavToast("Reconnecting… tap again in a moment.");
+      return;
+    }
+    const fromKey = currentState && currentState.nav_key;
+    send(Object.assign({ type, from_key: fromKey || undefined }, extra || {}));
+    navPending = {
+      fromKey,
+      timer: setTimeout(() => {
+        clearNavPending();
+        showNavToast("The server is slow to answer. Wait a moment before tapping again.");
+      }, NAV_TIMEOUT_MS),
+    };
+    navButtons().forEach((b) => {
+      b.classList.add("kk-nav-pending");
+      b.setAttribute("aria-busy", "true");
     });
   }
 
@@ -516,6 +658,7 @@
   // ─────────────────────── State handling ───────────────────────
 
   function onState(s) {
+    if (navPending && s && s.nav_key && s.nav_key !== navPending.fromKey) clearNavPending();
     const previousQuestionId = currentState && currentState.question ? String(currentState.question.id) : null;
     currentState = s;
     const nextQuestionId = s && s.question ? String(s.question.id) : null;
@@ -1652,26 +1795,26 @@
   // ─────────────────────── Controls ───────────────────────
 
   if (btnStart) {
-    btnStart.addEventListener("click", () => send({ type: "advance" }));
+    btnStart.addEventListener("click", () => nav("advance"));
   }
 
   if (btnNext) {
-    btnNext.addEventListener("click", () => send({ type: "advance" }));
+    btnNext.addEventListener("click", () => nav("advance"));
   }
 
   if (btnPrev) {
-    btnPrev.addEventListener("click", () => send({ type: "back" }));
+    btnPrev.addEventListener("click", () => nav("back"));
   }
 
   if (btnFsPrev) {
     btnFsPrev.addEventListener("click", () => {
-      if (!btnFsPrev.disabled) send({ type: "back" });
+      if (!btnFsPrev.disabled) nav("back");
     });
   }
 
   if (btnFsNext) {
     btnFsNext.addEventListener("click", () => {
-      if (!btnFsNext.disabled) send({ type: "advance" });
+      if (!btnFsNext.disabled) nav("advance");
     });
   }
 
@@ -1688,14 +1831,24 @@
 
     if (["INPUT", "TEXTAREA", "SELECT"].includes(activeTag)) return;
 
-    if (event.key === "ArrowRight" || event.key === " " || event.key === "PageDown") {
+    const isNext = event.key === "ArrowRight" || event.key === " " || event.key === "PageDown";
+    const isBack = event.key === "ArrowLeft" || event.key === "PageUp";
+
+    // A held key (or a clicker that auto-repeats) fires keydown over and
+    // over; only the first press is a tap.
+    if ((isNext || isBack) && event.repeat) {
       event.preventDefault();
-      send({ type: "advance" });
+      return;
     }
 
-    if (event.key === "ArrowLeft" || event.key === "PageUp") {
+    if (isNext) {
       event.preventDefault();
-      send({ type: "back" });
+      nav("advance");
+    }
+
+    if (isBack) {
+      event.preventDefault();
+      nav("back");
     }
 
     if (event.key === "f" || event.key === "F") {

@@ -48,6 +48,15 @@ if getattr(settings, "SERVE_MEDIA", True):
         ),
     ]
 
+# ── Short join link: https://<host>/482913 ─────────────────────────────
+# What the presenter screen and QR show. Six digits at the root can't clash
+# with any app prefix. Before core.urls so its "" include can't swallow it.
+from presentations import views as _live_views  # noqa: E402
+
+urlpatterns += [
+    re_path(r"^(?P<code>\d{6})/?$", _live_views.join_code, name="join_short"),
+]
+
 urlpatterns += [
     path("", include("core.urls")),
 ]

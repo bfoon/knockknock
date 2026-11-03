@@ -1,0 +1,16 @@
+{% autoescape off %}Hi {{ user.username }},
+
+{{ by.username }} shared the {{ what }} "{{ target.title }}" with you on Knock-Knock.
+
+{% if permission == "edit" %}You can edit it, start it, and present it live on {{ by.username }}'s behalf.{% else %}You can open it and see its results.{% endif %}
+{% if message %}
+Message from {{ by.username }}:
+{{ message }}
+{% endif %}
+Open it here:
+{{ url }}
+
+It's also listed under "Shared with you" on your {{ what }} page.
+
+— The Knock-Knock team
+{% endautoescape %}

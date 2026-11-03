@@ -93,7 +93,16 @@ def list_view(request):
         .filter(owner=request.user)
         .annotate(num_questions=Count("questions", distinct=True))
     )
-    return render(request, "polls/list.html", {"questionnaires": qs})
+    roles = dict(QuestionnaireCollaborator.objects.filter(user=request.user)
+                 .values_list("questionnaire_id", "role"))
+    shared = list(
+        Questionnaire.objects.filter(pk__in=roles.keys()).exclude(owner=request.user)
+        .select_related("owner")
+        .annotate(num_questions=Count("questions", distinct=True))
+    )
+    for q in shared:
+        q.my_permission = "edit" if roles.get(q.pk) in ("edit", "owner") else "view"
+    return render(request, "polls/list.html", {"questionnaires": qs, "shared_questionnaires": shared})
 
 
 @login_required
@@ -120,9 +129,13 @@ def create(request):
 @login_required
 def edit(request, pk):
     questionnaire = get_object_or_404(Questionnaire, pk=pk)
-    if not questionnaire.can_edit(request.user):
+    # View-only collaborators may open it (read-only); saving needs edit.
+    if not questionnaire.can_view(request.user):
         return HttpResponseForbidden("You don't have access to this questionnaire.")
     is_owner = questionnaire.owner_id == request.user.id
+    read_only = not questionnaire.can_edit(request.user)
+    if read_only and request.method == "POST":
+        return HttpResponseForbidden("You can view this questionnaire but not change it.")
 
     if request.method == "POST":
         form = QuestionnaireForm(request.POST, request.FILES, instance=questionnaire)
@@ -150,6 +163,8 @@ def edit(request, pk):
     questions = list(questionnaire.questions.all())
 
     return render(request, "polls/edit.html", {
+        "read_only": read_only,
+        "access": questionnaire.access_for(request.user),
         "questionnaire": questionnaire,
         "form": form,
         "templates": TEMPLATES,
@@ -470,8 +485,10 @@ def start_session(request, pk):
     questionnaire = get_object_or_404(Questionnaire, pk=pk)
     if not questionnaire.can_edit(request.user):
         return HttpResponseForbidden("You don't have access to this questionnaire.")
+    # Run for the owner: their history and results; editors may present it
+    # (presentations.permissions.can_present).
     session = LiveSession.objects.create(
-        owner=request.user, kind="poll",
+        owner=questionnaire.owner, kind="poll",
         questionnaire=questionnaire, mode=questionnaire.mode,
     )
     return redirect("presentations:present", code=session.code)
@@ -792,11 +809,18 @@ def _download_filename(questionnaire, selected_code, extension):
 @login_required
 def questionnaire_results(request, pk):
     questionnaire = get_object_or_404(Questionnaire, pk=pk)
-    if not questionnaire.can_edit(request.user):
+    if not questionnaire.can_view(request.user):
         return HttpResponseForbidden("You don't have access to this questionnaire.")
 
     selected_session, selected_code, sessions = _selected_result_session(request, questionnaire)
     report = _build_report_data(questionnaire, selected_session)
+
+    # "Play again" keeps the code; label earlier rounds with the code
+    # players used, numbered (presentations.views.annotate_rounds).
+    from presentations.views import annotate_rounds
+    sessions = annotate_rounds(sessions)
+    if selected_session:
+        selected_session = next((s for s in sessions if s.pk == selected_session.pk), selected_session)
 
     return render(request, "polls/results.html", {
         "questionnaire": questionnaire,
@@ -812,7 +836,7 @@ def questionnaire_results(request, pk):
 @login_required
 def download_results_excel(request, pk):
     questionnaire = get_object_or_404(Questionnaire, pk=pk)
-    if not questionnaire.can_edit(request.user):
+    if not questionnaire.can_view(request.user):
         return HttpResponseForbidden("You don't have access to this questionnaire.")
 
     selected_session, selected_code, _sessions = _selected_result_session(request, questionnaire)
@@ -832,7 +856,7 @@ def download_results_excel(request, pk):
 @login_required
 def download_results_word(request, pk):
     questionnaire = get_object_or_404(Questionnaire, pk=pk)
-    if not questionnaire.can_edit(request.user):
+    if not questionnaire.can_view(request.user):
         return HttpResponseForbidden("You don't have access to this questionnaire.")
 
     selected_session, selected_code, _sessions = _selected_result_session(request, questionnaire)

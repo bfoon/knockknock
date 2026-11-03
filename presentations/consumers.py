@@ -32,18 +32,45 @@ recorder handles `puzzle_order` payloads (an array of choice IDs in the
 order the participant arranged them).
 """
 
+import asyncio
 import json
 import time
 import uuid
 
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from channels.db import database_sync_to_async
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 
 
 from .models import LiveSession, Participant
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Weak-network hardening (34 players on EDGE must stay playable)
+# ──────────────────────────────────────────────────────────────────────────
+#  • Navigation is idempotent: Next/Back/goto carry the presenter's
+#    `from_key` (LiveSession.nav_key) and only apply if it still matches,
+#    so a double tap or a resend never moves twice. Clients that don't
+#    send a key get a short repeat guard instead.
+#  • The answer reveal is broadcast once per question, however many
+#    phones ask for it when their timer hits zero.
+#  • Leaderboards are coalesced: at most one per LEADERBOARD_COALESCE_S
+#    while answers pour in, and sent at once on reveal and at the end.
+#  • A player reconnecting with nothing changed costs the room nothing; a
+#    real join only updates the host screens, not every phone.
+
+# Navigations from clients that don't send `from_key` (older pages, other
+# tools) closer together than this are treated as the same tap.
+NAV_REPEAT_GUARD_S = 0.6
+
+# While answers arrive, send the leaderboard at most this often.
+LEADERBOARD_COALESCE_S = 1.5
+
+# session_pk -> pending leaderboard task (per server process)
+_LEADERBOARD_TASKS = {}
 
 
 class SessionConsumer(AsyncJsonWebsocketConsumer):
@@ -59,6 +86,9 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
         # `None` means "not yet started self-pacing" — fall back to the session
         # index until the participant taps next/back themselves.
         self.self_index = None
+        # Which answer reveal this connection has already been sent, so
+        # repeat requests from its own timer don't resend it.
+        self._last_reveal_key = None
 
         session = await self._get_session(self.code)
         if not session:
@@ -137,7 +167,7 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
 
             requested_room = msg.get("room_id") or ""
 
-            await self._register_participant(
+            changed = await self._register_participant(
                 self.session_pk,
                 self.uid,
                 nickname,
@@ -145,23 +175,20 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 requested_room,
             )
 
-            await self._broadcast_state()
-            # Rooms occupancy may have changed; refresh everyone's room view.
-            await self._broadcast_rooms_update()
+            # A phone on a weak network reconnects often. When nothing about
+            # the player changed, nobody else needs to hear about it — this
+            # used to resend state to every phone (re-rendering everyone's
+            # question) on every reconnect. A real join or a new name/avatar
+            # updates the host screens (count, lobby floor) right away and
+            # the phones' leaderboard shortly after.
+            if changed:
+                await self._broadcast_state(audience="hosts")
+                # Rooms occupancy may have changed; refresh everyone's room view.
+                await self._broadcast_rooms_update()
 
-            session = await self._get_session(self.code)
-            if session and session.kind == "game":
-                lb = await self._leaderboard(self.session_pk)
-                await self.channel_layer.group_send(
-                    self.group,
-                    {
-                        "type": "broadcast",
-                        "payload": {
-                            "type": "leaderboard",
-                            "data": lb,
-                        },
-                    },
-                )
+                session = await self._get_session(self.code)
+                if session and session.kind == "game":
+                    await self._queue_leaderboard()
 
         session = await self._get_session(self.code)
 
@@ -192,26 +219,54 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
         )
 
     async def _on_advance(self, msg):
-        if self.role != "presenter":
-            return
-
-        session = await self._advance(self.session_pk, +1)
-        await self._broadcast_state(session)
+        await self._navigate(msg, "advance")
 
     async def _on_back(self, msg):
-        if self.role != "presenter":
-            return
-
-        session = await self._advance(self.session_pk, -1)
-        await self._broadcast_state(session)
+        await self._navigate(msg, "back")
 
     async def _on_goto(self, msg):
+        await self._navigate(msg, "goto")
+
+    async def _navigate(self, msg, action):
+        """
+        Next / Back / goto, safe to repeat.
+
+        The presenter sends `from_key`: the nav_key of the screen it was
+        looking at when the button was pressed. If the session has already
+        moved on (the first tap landed), the repeat is ignored instead of
+        moving again. The presenter always gets a `nav_result` so its
+        "moving…" lock releases, plus the current state if nothing changed.
+        """
         if self.role != "presenter":
             return
 
-        idx = int(msg.get("index", 0))
-        session = await self._goto(self.session_pk, idx)
-        await self._broadcast_state(session)
+        try:
+            index = int(msg.get("index", 0))
+        except (TypeError, ValueError):
+            index = 0
+
+        session, applied = await self._apply_navigation(
+            self.session_pk, action, msg.get("from_key"), index,
+        )
+        if session is None:
+            return
+
+        if applied:
+            await self._broadcast_state(session)
+            if session.state == "ended":
+                # Final standings for the podium, without waiting.
+                await self._flush_leaderboard_now()
+        else:
+            await self.send_json(
+                await self._state_payload(session, uid=self.uid, role=self.role)
+            )
+
+        await self.send_json({
+            "type": "nav_result",
+            "action": action,
+            "applied": applied,
+            "nav_key": session.nav_key(),
+        })
 
     async def _on_end(self, msg):
         if self.role != "presenter":
@@ -220,6 +275,7 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
         await self._end_session(self.session_pk)
         session = await self._get_session(self.code)
         await self._broadcast_state(session)
+        await self._flush_leaderboard_now()
 
         await self.channel_layer.group_send(
             self.group,
@@ -260,17 +316,36 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
         if self.role not in {"presenter", "participant"}:
             return
 
-        payload = await self._correct_answer_payload(self.session_pk)
+        # Every screen asks when its own countdown hits zero (and retries),
+        # so with 34 phones this arrives ~70 times. Broadcast it once; later
+        # askers only get it if this connection somehow hasn't.
+        payload, first = await self._reveal_once(self.session_pk)
         if not payload:
             return
 
-        await self.channel_layer.group_send(
-            self.group,
-            {
-                "type": "broadcast",
-                "payload": payload,
-            },
-        )
+        if first:
+            await self.channel_layer.group_send(
+                self.group,
+                {
+                    "type": "broadcast",
+                    "payload": payload,
+                },
+            )
+            # Ranks are what phones show right after the reveal.
+            await self._flush_leaderboard_now()
+        else:
+            key = payload.get("reveal_key")
+            if getattr(self, "_last_reveal_key", None) == key:
+                return    # this screen already has it
+            if getattr(self, "_reveal_asked_key", None) != key:
+                # First ask from this screen: the broadcast is already on
+                # its way to it (it was queued behind this request).
+                self._reveal_asked_key = key
+                return
+            # Asked again (the client's retry) and still not delivered —
+            # e.g. it reconnected in between. Send it just this once.
+            self._last_reveal_key = key
+            await self.send_json(payload)
 
     async def _on_answer(self, msg):
         if self.role != "participant":
@@ -319,18 +394,11 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 "was_late": result.get("was_late", False),
             })
 
-            lb = await self._leaderboard(self.session_pk)
-
-            await self.channel_layer.group_send(
-                self.group,
-                {
-                    "type": "broadcast",
-                    "payload": {
-                        "type": "leaderboard",
-                        "data": lb,
-                    },
-                },
-            )
+            # The player already has their own score from answer_ack. The
+            # room's standings are coalesced: one leaderboard per
+            # LEADERBOARD_COALESCE_S however many answers arrive, instead of
+            # one full leaderboard to every phone per answer.
+            await self._queue_leaderboard()
 
         # Reaction questions should feel alive on the presenter screen.
         # We still broadcast the normal tally below so the chart remains visible,
@@ -631,6 +699,25 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
     async def broadcast(self, event):
         payload = event["payload"]
 
+        # Host-only updates (a player joined: new count for the presenter
+        # and lobby floor) aren't sent to phones at all.
+        audience = payload.get("_audience")
+        if audience:
+            if audience == "hosts" and self.role == "participant":
+                return
+            payload = {k: v for k, v in payload.items() if k != "_audience"}
+
+        # "Play again" on the same code: this connection belongs to the
+        # round that was just moved aside. Tell the page, then close so it
+        # reconnects straight into the fresh round.
+        if payload.get("type") == "restart":
+            await self.send_json(payload)
+            await self.close(code=4000)
+            return
+
+        if payload.get("type") == "correct_answer":
+            self._last_reveal_key = payload.get("reveal_key")
+
         # A replay rewinds the session to the lobby (see presentations.views
         # .replay). Reset this connection's self-paced cursor so participants
         # restart cleanly, then hand them a fresh state payload instead of the
@@ -652,11 +739,13 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
 
         await self.send_json(payload)
 
-    async def _broadcast_state(self, session=None):
+    async def _broadcast_state(self, session=None, audience=None):
         if session is None:
             session = await self._get_session(self.code)
 
         payload = await self._state_payload(session)
+        if audience:
+            payload["_audience"] = audience
 
         await self.channel_layer.group_send(
             self.group,
@@ -682,15 +771,61 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             },
         )
 
+    # ───────── leaderboard coalescing ─────────
+
+    async def _queue_leaderboard(self):
+        """
+        Send the leaderboard soon, once. Further calls while one is pending
+        do nothing, so a burst of 34 answers becomes one or two broadcasts.
+        """
+        pk = self.session_pk
+        if not pk or pk in _LEADERBOARD_TASKS:
+            return
+
+        async def send_later():
+            try:
+                await asyncio.sleep(LEADERBOARD_COALESCE_S)
+            except asyncio.CancelledError:
+                return
+            _LEADERBOARD_TASKS.pop(pk, None)
+            await self._send_leaderboard(pk)
+
+        _LEADERBOARD_TASKS[pk] = asyncio.ensure_future(send_later())
+
+    async def _flush_leaderboard_now(self):
+        """Send the leaderboard immediately (reveal, end), cancelling any pending one."""
+        pk = self.session_pk
+        task = _LEADERBOARD_TASKS.pop(pk, None)
+        if task:
+            task.cancel()
+        session = await self._get_session(self.code)
+        if session and session.kind == "game":
+            await self._send_leaderboard(pk)
+
+    async def _send_leaderboard(self, pk):
+        try:
+            lb = await self._leaderboard(pk)
+        except LiveSession.DoesNotExist:
+            return
+        await self.channel_layer.group_send(
+            self.group,
+            {"type": "broadcast", "payload": {"type": "leaderboard", "data": lb}},
+        )
+
     @database_sync_to_async
-    def _may_present_sync(self, user_id):
-        return LiveSession.objects.filter(pk=self.session_pk, owner_id=user_id).exists()
+    def _may_present_sync(self, user):
+        # The owner, or anyone with edit rights on the game / Wenti, may
+        # present (presentations.permissions.can_present).
+        from .permissions import can_present
+        session = (LiveSession.objects.select_related("quiz", "questionnaire")
+                   .filter(pk=self.session_pk).first())
+        return can_present(user, session)
 
     async def _may_present(self):
         user = self.scope.get("user")
         if not user or not getattr(user, "is_authenticated", False) or not self.session_pk:
             return False
-        return await self._may_present_sync(user.pk)
+        return await self._may_present_sync(user)
 
     @database_sync_to_async
     def _get_session(self, code):
@@ -734,7 +869,7 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
 
     @database_sync_to_async
     def _register_participant(self, session_pk, uid, nickname, avatar_id, requested_room=""):
-        """Persist (or refresh) a participant. (Unchanged.)"""
+        """Persist (or refresh) a participant. Returns True if anything changed."""
         from games.models import GameRoom
 
         session = LiveSession.objects.get(pk=session_pk)
@@ -794,6 +929,13 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
 
             room_id = chosen
 
+        # Reconnect with nothing new: no write, and report "unchanged" so
+        # the caller doesn't disturb the room.
+        if existing and (existing.nickname, existing.avatar_id, existing.room_id or "") == (
+            nickname, avatar_id, room_id,
+        ):
+            return False
+
         Participant.objects.update_or_create(
             session=session,
             participant_uid=uid,
@@ -803,6 +945,7 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 "room_id": room_id,
             },
         )
+        return True
 
     @database_sync_to_async
     def _try_seat_in_room(self, session_pk, uid, room_slug):
@@ -908,17 +1051,57 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             session.time_extension_seconds = 0
 
     @database_sync_to_async
-    def _advance(self, session_pk, delta):
-        session = (
-            LiveSession.objects
-            .select_related("questionnaire", "quiz")
-            .get(pk=session_pk)
-        )
+    def _apply_navigation(self, session_pk, action, from_key, index=0):
+        """
+        Apply Next ("advance"), Back or goto — at most once per screen.
 
-        total = len(session.questions())
+        Runs in a transaction with the session row locked, so two presenter
+        connections (an old one not yet timed out, a second tab) can't race.
 
+        `from_key` is the nav_key the presenter was looking at. If the
+        session has already moved past it, this is a repeat of a tap that
+        already landed and nothing happens. Without a key (older pages, the
+        big-screen driver), repeats within NAV_REPEAT_GUARD_S are dropped.
+
+        Returns (session, applied).
+        """
+        with transaction.atomic():
+            try:
+                session = (
+                    LiveSession.objects
+                    .select_for_update()
+                    .select_related("questionnaire", "quiz")
+                    .get(pk=session_pk)
+                )
+            except LiveSession.DoesNotExist:
+                return None, False
+
+            before = session.nav_key()
+            if from_key:
+                if str(from_key) != before:
+                    return session, False
+            else:
+                guard_key = f"kk-nav-last:{session_pk}"
+                last = cache.get(guard_key)
+                now = time.time()
+                if last and now - last < NAV_REPEAT_GUARD_S:
+                    return session, False
+
+            total = len(session.questions())
+            if action == "goto":
+                self._goto_locked(session, index, total)
+            else:
+                self._advance_locked(session, +1 if action == "advance" else -1, total)
+
+            applied = session.nav_key() != before
+            if applied and not from_key:
+                cache.set(f"kk-nav-last:{session_pk}", time.time(), timeout=10)
+            return session, applied
+
+    def _advance_locked(self, session, delta, total):
+        """One step forward/back on a locked session row (saves if it moves)."""
         if total == 0:
-            return session
+            return
 
         if session.state == "lobby":
             if delta > 0:
@@ -930,7 +1113,7 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                     "state", "current_question_index", "ended_at",
                     "question_started_at", "time_extension_seconds",
                 ])
-            return session
+            return
 
         if session.state == "ended":
             if delta < 0:
@@ -942,7 +1125,7 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                     "state", "current_question_index", "ended_at",
                     "question_started_at", "time_extension_seconds",
                 ])
-            return session
+            return
 
         current_idx = max(0, min(total - 1, session.current_question_index))
 
@@ -956,9 +1139,11 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
                 "state", "current_question_index", "ended_at",
                 "question_started_at", "time_extension_seconds",
             ])
-            return session
+            return
 
         new_idx = max(0, min(total - 1, current_idx + delta))
+        if new_idx == current_idx:
+            return    # Back on the first question: nothing to do
         session.current_question_index = new_idx
         self._stamp_question_start(session, new_idx, total)
         session.save(update_fields=[
@@ -966,18 +1151,7 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             "question_started_at", "time_extension_seconds",
         ])
 
-        return session
-
-    @database_sync_to_async
-    def _goto(self, session_pk, idx):
-        session = (
-            LiveSession.objects
-            .select_related("questionnaire", "quiz")
-            .get(pk=session_pk)
-        )
-
-        total = len(session.questions())
-
+    def _goto_locked(self, session, idx, total):
         session.state = "running" if total else "lobby"
         session.current_question_index = max(0, min(max(0, total - 1), idx))
         self._stamp_question_start(session, session.current_question_index, total)
@@ -985,8 +1159,6 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             "state", "current_question_index",
             "question_started_at", "time_extension_seconds",
         ])
-
-        return session
 
     @database_sync_to_async
     def _extend_time(self, session_pk, seconds):
@@ -1137,7 +1309,44 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
         return rows
 
     @database_sync_to_async
+    def _reveal_once(self, session_pk):
+        """
+        (payload, first) for the current question's answer reveal.
+
+        `first` is True for exactly one caller per question (per server
+        process): that caller broadcasts it. Everyone else gets the cached
+        payload, without rebuilding the tally from the database 70 times.
+        payload is None until the server-side deadline has passed.
+        """
+        try:
+            session = LiveSession.objects.only(
+                "state", "current_question_index", "question_started_at",
+                "time_extension_seconds",
+            ).get(pk=session_pk)
+        except LiveSession.DoesNotExist:
+            return None, False
+
+        reveal_key = f"{session.nav_key()}:{session.time_extension_seconds or 0}"
+        cache_key = f"kk-reveal:{session_pk}:{reveal_key}"
+
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached, False
+
+        payload = self._correct_answer_payload_sync(session_pk)
+        if not payload:
+            return None, False
+        payload["reveal_key"] = reveal_key
+
+        if cache.add(cache_key, payload, timeout=60 * 60):
+            return payload, True
+        return cache.get(cache_key) or payload, False
+
+    @database_sync_to_async
     def _correct_answer_payload(self, session_pk):
+        return self._correct_answer_payload_sync(session_pk)
+
+    def _correct_answer_payload_sync(self, session_pk):
         """Return a safe reveal payload only after the timer has expired."""
         from games.models import GameChoice
 
@@ -1332,6 +1541,12 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
         payload = {
             "type": "state",
             "code": session.code,
+            # Which session object this is: after "Play again" the code is
+            # the same but this changes, so pages know it's a new round.
+            "session_id": session.pk,
+            # What's on screen now; the presenter echoes it with Next/Back
+            # so repeats can be recognised (LiveSession.nav_key).
+            "nav_key": session.nav_key(),
             "kind": session.kind,
             "state": session.state,
             "mode": session.mode,

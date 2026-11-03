@@ -1,0 +1,214 @@
+{# "Door opens" welcome, shown on the ticket page right after a check-in. #}
+{# The punchline to the scan page's "Knock knock. Who's there?":         #}
+{# the door knocks twice, swings open on warm light, and answers with    #}
+{# the attendee's name.                                                  #}
+{# Needs: welcome_check_in (today's CheckIn), welcome_again, first_name. #}
+<style>
+.kk-welcome {
+  position: fixed; inset: 0; z-index: 1080;
+  display: grid; place-items: center;
+  padding: max(1.5rem, env(safe-area-inset-top)) 1.25rem max(1.5rem, env(safe-area-inset-bottom));
+  background: rgba(7, 7, 20, .94);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  opacity: 0;
+  transition: opacity .22s ease;
+  overflow-y: auto;
+}
+.kk-welcome.is-playing { opacity: 1; }
+.kk-welcome:focus { outline: none; }
+.kk-welcome.is-leaving { opacity: 0; }
+
+.kk-welcome-inner {
+  width: 100%; max-width: 360px;
+  text-align: center;
+}
+
+/* ── The doorway ──────────────────────────────────────────────── */
+.kk-welcome-stage { position: relative; margin: 0 auto 3.6rem; width: 136px; }
+.kk-doorway {
+  position: relative;
+  width: 136px; height: 204px;
+  border-radius: 68px 68px 4px 4px;
+  /* The frame: a thin lighter edge around the opening. */
+  box-shadow: 0 0 0 6px #2b2550, 0 0 0 7px rgba(255, 255, 255, .08);
+  perspective: 700px;
+  overflow: visible;
+}
+/* Warm light behind the door — the app is cool violet and cyan, so the
+   doorway is the one warm thing on screen. */
+.kk-doorway-light {
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(ellipse 80% 70% at 50% 72%,
+              #fff7d6 0%, #fde68a 22%, #fbbf24 48%, #b45309 82%, #78350f 100%);
+  opacity: .15;
+  transition: opacity .9s ease .95s;
+}
+.kk-door-leaf {
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  background: #322a63;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .07);
+  transform-origin: 0 50%;
+  transform: rotateY(0deg);
+  transition: transform .95s cubic-bezier(.2, .75, .25, 1) .95s;
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 34px 20px 22px;
+  animation: kkLeafKnock .5s ease-out .35s both;
+}
+.kk-door-leaf-panel {
+  flex: 1;
+  border-radius: 34px 34px 4px 4px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08);
+}
+.kk-door-leaf-panel + .kk-door-leaf-panel { border-radius: 4px; flex: .8; }
+.kk-door-leaf-handle {
+  position: absolute; right: 14px; top: 54%;
+  width: 22px; height: 7px; border-radius: 999px;
+  background: #fbbf24;
+  transform-origin: 85% 50%;
+  transition: transform .2s ease .8s;
+}
+.kk-doorway-spill {
+  position: absolute; left: -22px; right: -22px; top: 100%;
+  height: 46px;
+  clip-path: polygon(18% 0, 82% 0, 100% 100%, 0 100%);
+  background: linear-gradient(180deg, rgba(251, 191, 36, .5), rgba(251, 191, 36, 0));
+  opacity: 0;
+  transition: opacity .9s ease 1.1s;
+}
+
+.kk-welcome.is-playing .kk-door-leaf-handle { transform: rotate(-35deg); }
+.kk-welcome.is-playing .kk-door-leaf { transform: rotateY(-74deg); }
+.kk-welcome.is-playing .kk-doorway-light { opacity: 1; }
+.kk-welcome.is-playing .kk-doorway-spill { opacity: 1; }
+
+/* Two knocks before it opens. */
+@keyframes kkLeafKnock {
+  0%, 40%, 100% { translate: 0 0; }
+  12%, 52%      { translate: -3px 0; }
+  24%, 64%      { translate: 1px 0; }
+}
+
+/* ── The answer ───────────────────────────────────────────────── */
+.kk-welcome-words {
+  opacity: 0;
+  translate: 0 8px;
+  transition: opacity .45s ease 1.55s, translate .45s ease 1.55s;
+}
+.kk-welcome.is-playing .kk-welcome-words { opacity: 1; translate: 0 0; }
+.kk-welcome-who {
+  color: var(--kk-text-dim);
+  font-size: 1rem;
+  margin: 0 0 .25rem;
+}
+.kk-welcome-name {
+  font-family: var(--kk-font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  font-size: clamp(2.5rem, 12vw, 3.5rem);
+  margin: 0 0 .6rem;
+  overflow-wrap: anywhere;
+}
+.kk-welcome-line { font-size: 1.1rem; margin: 0 0 .3rem; }
+.kk-welcome-meta { color: #fcd34d; font-size: .95rem; margin: 0 0 1.6rem; }
+.kk-welcome .kk-btn { width: 100%; justify-content: center; }
+.kk-welcome .kk-btn:focus-visible { outline: 2px solid #fbbf24; outline-offset: 3px; }
+
+/* Already in: the door is simply open, nothing to knock on. */
+.kk-welcome.is-again .kk-door-leaf { animation: none; transform: rotateY(-74deg); transition: none; }
+.kk-welcome.is-again .kk-door-leaf-handle { transition: none; }
+.kk-welcome.is-again .kk-doorway-light { opacity: 1; transition: none; }
+.kk-welcome.is-again .kk-doorway-spill { opacity: 1; transition: none; }
+.kk-welcome.is-again .kk-welcome-words { transition-delay: .1s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .kk-door-leaf { animation: none; transform: rotateY(-74deg); transition: none; }
+  .kk-door-leaf-handle, .kk-doorway-light, .kk-doorway-spill { transition: none; }
+  .kk-doorway-light, .kk-doorway-spill { opacity: 1; }
+  .kk-welcome-words { transition: opacity .2s ease; translate: 0 0; }
+}
+</style>
+
+<div class="kk-welcome {% if welcome_again %}is-again{% endif %}" id="kk-welcome"
+     tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="kk-welcome-name"
+     aria-describedby="kk-welcome-line">
+  <div class="kk-welcome-inner">
+    <div class="kk-welcome-stage" aria-hidden="true">
+      <div class="kk-doorway">
+        <div class="kk-doorway-light"></div>
+        <div class="kk-door-leaf">
+          <span class="kk-door-leaf-panel"></span>
+          <span class="kk-door-leaf-panel"></span>
+          <span class="kk-door-leaf-handle"></span>
+        </div>
+      </div>
+      <div class="kk-doorway-spill"></div>
+    </div>
+
+    <div class="kk-welcome-words">
+      <p class="kk-welcome-who">Who’s there?</p>
+      {% if welcome_again %}
+        <h2 class="kk-welcome-name" id="kk-welcome-name">{% if first_name %}{{ first_name }}, again.{% else %}You, again.{% endif %}</h2>
+        <p class="kk-welcome-line" id="kk-welcome-line">You’re already checked in for today.</p>
+        <p class="kk-welcome-meta">
+          Since {{ welcome_check_in.checked_in_at|time:"H:i" }}{% if welcome_check_in.agenda_day.label %}, {{ welcome_check_in.agenda_day.label }}{% endif %}
+        </p>
+      {% else %}
+        <h2 class="kk-welcome-name" id="kk-welcome-name">{% if first_name %}{{ first_name }}.{% else %}Come on in.{% endif %}</h2>
+        <p class="kk-welcome-line" id="kk-welcome-line">You’re checked in.{% if first_name %} Come on in.{% endif %}</p>
+        <p class="kk-welcome-meta">
+          {{ welcome_check_in.checked_in_at|time:"H:i" }}{% if welcome_check_in.agenda_day.label %}, {{ welcome_check_in.agenda_day.label }}{% endif %}
+        </p>
+      {% endif %}
+      <button type="button" class="kk-btn kk-btn-primary kk-btn-lg" id="kk-welcome-close">
+        See my ticket
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var el = document.getElementById("kk-welcome");
+  if (!el) return;
+  var btn = document.getElementById("kk-welcome-close");
+
+  // Drop ?welcome from the address bar now, so a refresh or a shared
+  // link shows the plain ticket instead of replaying this.
+  try {
+    var u = new URL(window.location.href);
+    u.searchParams.delete("welcome");
+    history.replaceState(null, "", u.pathname + u.search + u.hash);
+  } catch (e) { /* old browser: harmless */ }
+
+  var prevOverflow = document.body.style.overflow;
+  document.body.style.overflow = "hidden";
+  // Make sure the closed-door state has been rendered before starting,
+  // otherwise the browser can skip straight to the open door.
+  el.getBoundingClientRect();
+  requestAnimationFrame(function () {
+    requestAnimationFrame(function () { el.classList.add("is-playing"); });
+  });
+  // Focus the dialog itself (no ring on load); Tab moves to the button.
+  el.focus({ preventScroll: true });
+
+  function close() {
+    if (el.classList.contains("is-leaving")) return;
+    el.classList.add("is-leaving");
+    document.body.style.overflow = prevOverflow;
+    document.removeEventListener("keydown", onKey);
+    setTimeout(function () { el.remove(); }, 260);
+  }
+  function onKey(e) {
+    if (e.key === "Escape") close();
+    // Keep focus inside the dialog: the button is its only control.
+    if (e.key === "Tab" && btn) { e.preventDefault(); btn.focus(); }
+  }
+  if (btn) btn.addEventListener("click", close);
+  el.addEventListener("click", function (e) { if (e.target === el) close(); });
+  document.addEventListener("keydown", onKey);
+})();
+</script>

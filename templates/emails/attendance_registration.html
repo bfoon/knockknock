@@ -31,6 +31,18 @@
                   <td style="padding:6px 0;">{{ event.location }}</td>
                 </tr>
               {% endif %}
+              {% if event.venue_plus_code %}
+                <tr>
+                  <td style="padding:6px 16px 6px 0;color:#6b7280;">Plus Code</td>
+                  <td style="padding:6px 0;">{{ event.venue_plus_code }}</td>
+                </tr>
+              {% endif %}
+              {% if event.get_directions_url %}
+                <tr>
+                  <td style="padding:6px 16px 6px 0;color:#6b7280;">Directions</td>
+                  <td style="padding:6px 0;"><a href="{{ event.get_directions_url }}" style="color:#7c3aed;">Open in Google Maps</a></td>
+                </tr>
+              {% endif %}
             </table>
 
             <p style="text-align:center;margin:24px 0;">

@@ -297,56 +297,7 @@
 
     <div id="kk-attendee-list" class="kk-attendee-scroll">
       {% for r in registrations_accepted %}
-        <div class="kk-list-item kk-attendee" data-reg-id="{{ r.pk }}"
-             data-search="{{ r.display_name|lower }} {{ r.email|lower }} {{ r.phone|lower }}">
-          {% if r.status == "checked_in" %}
-            <span class="kk-presence-dot kk-presence-here" title="Checked in"></span>
-          {% else %}
-            <span class="kk-presence-dot" title="Not yet here"></span>
-          {% endif %}
-          <div class="flex-grow-1">
-            <button type="button" class="kk-attendee-open" title="View attendee details">
-              <span class="kk-list-item-title">
-                {{ r.display_name }}
-                {% if r.is_walk_in %}<span class="kk-badge-walkin">walk-in</span>{% endif %}
-              </span>
-              <span class="kk-list-item-meta">
-                {{ r.email|default:r.phone }}
-                {% if r.check_ins.all %} · {{ r.check_ins.all|length }} check-in{{ r.check_ins.all|length|pluralize }}{% elif r.checked_in_at %} · arrived {{ r.checked_in_at|time:"H:i" }}{% endif %}
-              </span>
-            </button>
-          </div>
-          <form method="post" action="{% url 'attendance:registration_action' event.pk r.pk %}" class="d-flex gap-1">
-            {% csrf_token %}
-            <a href="{% url 'attendance:badge_print' event.pk %}?ids={{ r.pk }}"
-               class="kk-btn kk-btn-ghost btn-sm" target="_blank" rel="noopener"
-               title="Print this person's badge">
-              <i class="bi bi-person-badge"></i>
-            </a>
-            {% if r.status == "accepted" %}
-              <button name="action" value="check_in" class="kk-btn kk-btn-primary btn-sm"
-                      title="Organizer-driven check-in bypasses geofence">
-                <i class="bi bi-check2-circle"></i> Mark present
-              </button>
-            {% else %}
-              {% if event.generate_certificates %}
-<!--                {# Opens the certificate preview modal (defined once near the #}-->
-<!--                {# bottom of this template). The JS listener reads the data-* #}-->
-<!--                {# attrs to load the right PDF and wire the download button. #}-->
-                <button type="button"
-                        class="kk-btn kk-btn-ghost btn-sm kk-cert-open"
-                        title="Preview & download certificate"
-                        data-cert-url="{% url 'attendance:certificate_download' event.pk r.pk %}"
-                        data-cert-name="{{ r.full_name|default:r.email|escape }}">
-                  <i class="bi bi-award"></i>
-                </button>
-              {% endif %}
-              <button name="action" value="uncheck_in" class="kk-btn kk-btn-ghost btn-sm" title="Undo check-in">
-                <i class="bi bi-arrow-counterclockwise"></i>
-              </button>
-            {% endif %}
-          </form>
-        </div>
+        {% include "attendance/_attendee_row.html" %}
       {% empty %}
         <div class="kk-empty">
           <div class="em">👥</div>
@@ -468,10 +419,11 @@
         var noMatchEl = document.getElementById("kk-attendee-no-match");
         var countEl = document.getElementById("kk-attendee-search-count");
         if (!searchInput) return;
-        var rows = Array.prototype.slice.call(
-          listEl.querySelectorAll(".kk-attendee"));
 
         function applyFilter() {
+          // Re-read rows each time: rows can be swapped in live.
+          var rows = Array.prototype.slice.call(
+            listEl.querySelectorAll(".kk-attendee"));
           var q = searchInput.value.trim().toLowerCase();
           var shown = 0;
           rows.forEach(function (row) {
@@ -489,6 +441,8 @@
               ? "" : shown + " of " + rows.length;
           }
         }
+        // Let the live-row code keep the filter applied after a swap.
+        window.__kkApplyAttendeeFilter = applyFilter;
         searchInput.addEventListener("input", applyFilter);
         searchInput.addEventListener("keydown", function (e) {
           if (e.key === "Escape") { searchInput.value = ""; applyFilter(); }
@@ -504,9 +458,12 @@
         return;
       }
 
-      var details = {};
-      try { details = JSON.parse(dataEl.textContent) || {}; }
-      catch (err) { return; }
+      // Read on every click (not once) — live row updates rewrite this
+      // payload when someone is marked present or checks themselves in.
+      function readDetails() {
+        try { return JSON.parse(dataEl.textContent) || {}; }
+        catch (err) { return {}; }
+      }
 
       var modal = new bootstrap.Modal(modalEl);
       var titleEl = document.getElementById("kk-attendee-modal-title");
@@ -529,7 +486,7 @@
         var rowEl = opener.closest(".kk-attendee");
         if (!rowEl) return;
 
-        var d = details[rowEl.dataset.regId];
+        var d = readDetails()[rowEl.dataset.regId];
         if (!d) return;
 
         titleEl.textContent = d.name || "Attendee";
@@ -575,6 +532,138 @@
   })();
   </script>
 
+
+  <script>
+  /* Live attendee rows.
+     "Mark present" and "Undo" post with fetch() and swap the row in
+     place, so the organizer keeps their scroll position and search
+     while working the door. If fetch fails for any reason, the form is
+     submitted the ordinary way, so the buttons always work.
+     Also exposes __kkRefreshAttendeeRow(id) for the WebSocket handler:
+     when someone checks themselves in, their row (buttons included)
+     updates, not just the dot. */
+  (function () {
+    var listEl = document.getElementById("kk-attendee-list");
+    if (!listEl || !window.fetch || !window.FormData) return;
+    var dataEl = document.getElementById("kk-attendee-details");
+    var ROW_URL = "{% url 'attendance:registration_row' event.pk 0 %}";
+    var recentlySwapped = {};   // id -> timestamp, to avoid a double knock
+
+    function toast(text, level) {
+      if (!text) return;
+      var wrap = document.querySelector(".kk-flash-wrap");
+      if (!wrap) {
+        wrap = document.createElement("div");
+        wrap.className = "kk-flash-wrap";
+        document.body.appendChild(wrap);
+      }
+      var el = document.createElement("div");
+      el.className = "kk-flash kk-flash-" + (level || "info");
+      el.setAttribute("role", "status");
+      el.textContent = text;
+      wrap.appendChild(el);
+      setTimeout(function () { el.remove(); }, 3500);
+    }
+
+    function setCounter(name, value) {
+      var el = document.querySelector('[data-counter="' + name + '"]');
+      if (el && value != null) el.textContent = value;
+    }
+
+    function storeDetail(id, detail) {
+      if (!dataEl || !detail) return;
+      var all = {};
+      try { all = JSON.parse(dataEl.textContent) || {}; } catch (e) { /* keep {} */ }
+      all[id] = detail;
+      dataEl.textContent = JSON.stringify(all);
+    }
+
+    function swapRow(id, html, arrived) {
+      var old = listEl.querySelector('.kk-attendee[data-reg-id="' + id + '"]');
+      if (!old || !html) return null;
+      var tpl = document.createElement("template");
+      tpl.innerHTML = html.trim();
+      var fresh = tpl.content.firstElementChild;
+      if (!fresh) return null;
+      old.replaceWith(fresh);
+      recentlySwapped[id] = Date.now();
+      if (window.__kkApplyAttendeeFilter) window.__kkApplyAttendeeFilter();
+      if (arrived) {
+        // Two little knocks: someone just came through the door.
+        fresh.classList.add("kk-attendee-knock");
+        fresh.addEventListener("animationend", function (ev) {
+          if (ev.target === fresh) fresh.classList.remove("kk-attendee-knock");
+        });
+      }
+      return fresh;
+    }
+
+    listEl.addEventListener("submit", function (e) {
+      var form = e.target.closest("form.kk-attendee-actions");
+      var btn = e.submitter;
+      if (!form || !btn) return;
+      if (btn.value !== "check_in" && btn.value !== "uncheck_in") return;
+      e.preventDefault();
+      if (form.dataset.busy) return;
+      form.dataset.busy = "1";
+
+      var action = btn.value;
+      var original = btn.innerHTML;
+      btn.disabled = true;
+      if (action === "check_in") {
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Marking…';
+      }
+
+      var body = new FormData(form);
+      body.set("action", action);
+      fetch(form.action, {
+        method: "POST",
+        body: body,
+        credentials: "same-origin",
+        headers: { "X-Requested-With": "XMLHttpRequest", "Accept": "application/json" },
+      })
+        .then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        })
+        .then(function (data) {
+          storeDetail(data.registration_id, data.detail);
+          swapRow(data.registration_id, data.row_html,
+                  action === "check_in" && data.level === "success");
+          setCounter("checked_in", data.checked_in_count);
+          setCounter("accepted", data.accepted_count);
+          toast(data.message, data.level);
+          if (window.__kkReloadStats) window.__kkReloadStats();
+        })
+        .catch(function () {
+          // Fall back to a normal post + page reload.
+          delete form.dataset.busy;
+          btn.disabled = false;
+          btn.innerHTML = original;
+          var hidden = document.createElement("input");
+          hidden.type = "hidden"; hidden.name = "action"; hidden.value = action;
+          form.appendChild(hidden);
+          HTMLFormElement.prototype.submit.call(form);
+        });
+    });
+
+    window.__kkRefreshAttendeeRow = function (id) {
+      // The organizer's own click already swapped this row a moment ago.
+      if (recentlySwapped[id] && Date.now() - recentlySwapped[id] < 4000) return;
+      if (!listEl.querySelector('.kk-attendee[data-reg-id="' + id + '"]')) return;
+      fetch(ROW_URL.replace("/r/0/", "/r/" + encodeURIComponent(id) + "/"), {
+        credentials: "same-origin",
+        headers: { "X-Requested-With": "XMLHttpRequest", "Accept": "application/json" },
+      })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function (data) {
+          storeDetail(data.registration_id, data.detail);
+          swapRow(data.registration_id, data.row_html, true);
+        })
+        .catch(function () { /* the dot-only fallback already ran */ });
+    };
+  })();
+  </script>
 
   {# ─── RIGHT COLUMN ────────────────────────────────────── #}
   <div class="col-lg-5">
@@ -622,8 +711,8 @@
           <strong>{{ event.geofence_radius_m }} m</strong> of the venue to check in.
           Organizer-driven check-ins always succeed.
         {% else %}
-          Already registered? Tap "I'm here" after scanning. Walk-in?
-          {% if event.allow_walk_ins %}They'll fill the form on the spot.{% else %}Walk-ins disabled.{% endif %}
+          People who registered type their email after scanning and they're checked in.
+          {% if event.allow_walk_ins %}Newcomers register on the spot and are checked in straight away.{% else %}Walk-ins are off, so newcomers register and then check in from their ticket.{% endif %}
         {% endif %}
       </p>
     </div>
@@ -1235,11 +1324,18 @@
       const num = document.querySelector('[data-counter="checked_in"]');
       if (num) num.textContent = msg.checked_in_count;
       // Flip the row's presence dot, if it's in the DOM.
-      const row = document.querySelector(`.kk-attendee[data-reg-id="${msg.registration_id}"]`);
-      if (row) {
-        row.querySelector('.kk-presence-dot')?.classList.add('kk-presence-here');
-        row.classList.add('kk-attendee-flash');
-        setTimeout(() => row.classList.remove('kk-attendee-flash'), 1500);
+      // Preferred: re-render the row so its buttons change too
+      // ("Mark present" disappears, "Undo" appears). Fallback: just
+      // light the dot.
+      if (window.__kkRefreshAttendeeRow) {
+        window.__kkRefreshAttendeeRow(msg.registration_id);
+      } else {
+        const row = document.querySelector(`.kk-attendee[data-reg-id="${msg.registration_id}"]`);
+        if (row) {
+          row.querySelector('.kk-presence-dot')?.classList.add('kk-presence-here');
+          row.classList.add('kk-attendee-flash');
+          setTimeout(() => row.classList.remove('kk-attendee-flash'), 1500);
+        }
       }
       // Nudge the analytics panel to refresh.
       window.__kkReloadStats?.();
@@ -1343,8 +1439,11 @@
     const dlLink = document.getElementById("kk-cert-download");
     const nameLabel = document.getElementById("kk-cert-name-label");
 
-    document.querySelectorAll(".kk-cert-open").forEach(btn => {
-      btn.addEventListener("click", () => {
+    // Delegated, so certificate buttons on rows that were swapped in
+    // live (Mark present / Undo / a self check-in) work too.
+    document.addEventListener("click", (e) => {
+        const btn = e.target.closest(".kk-cert-open");
+        if (!btn) return;
         const url = btn.dataset.certUrl;
         const who = btn.dataset.certName || "";
         if (!url) {
@@ -1373,7 +1472,6 @@
         // we don't kick off a PDF generation request the user is about
         // to cancel by tapping outside the dialog.
         requestAnimationFrame(() => { frame.src = url; });
-      });
     });
 
     // Hide the spinner once the PDF has actually painted.
@@ -1533,6 +1631,33 @@
 @keyframes kkAttendeeFlash {
   0%   { background: rgba(34, 211, 238, 0.18); }
   100% { background: transparent; }
+}
+/* Checked in on an earlier day of a multi-day event, not yet today:
+   a hollow ring rather than the solid "here" dot. */
+.kk-presence-earlier {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px rgba(34, 211, 238, 0.7);
+}
+/* Someone just arrived: the row knocks twice, then the dot lights. */
+.kk-attendee-knock {
+  animation: kkKnock .6s ease-out, kkAttendeeFlash 1.5s ease;
+}
+.kk-attendee-knock .kk-presence-here {
+  animation: kkDotPop .5s .45s ease-out both;
+}
+@keyframes kkKnock {
+  0%, 48%, 100% { transform: translateX(0); }
+  12%, 36%      { transform: translateX(-4px); }
+  24%           { transform: translateX(1px); }
+}
+@keyframes kkDotPop {
+  0%   { transform: scale(.4); }
+  60%  { transform: scale(1.7); }
+  100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kk-attendee-knock { animation: kkAttendeeFlash 1.5s ease; }
+  .kk-attendee-knock .kk-presence-here { animation: none; }
 }
 .kk-badge-walkin {
   font-size: .65rem; padding: 2px 7px; border-radius: 999px;

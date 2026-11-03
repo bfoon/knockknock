@@ -1,0 +1,504 @@
+{% comment %}
+─────────────────────────────────────────────────────────────────────
+   Location picker — one way to pin a venue, four ways in:
+     • the search box: an address or place name, a Plus Code
+       ("FC3C+XC Banjul" or "7C55FC3C+XC"), typed coordinates, or a
+       Google Maps link (including maps.app.goo.gl short links);
+     • "Use my current location" (the phone's GPS);
+     • tapping the map;
+     • dragging the pin.
+   The pin is written into the lat/lng inputs rendered at the bottom
+   (inside "Enter coordinates by hand"), so the form saves it as usual.
+
+   Include with:
+     lat_field, lng_field   bound form fields for the pin (required)
+     address_field          bound text field to fill with an address
+                            when it's empty (optional)
+     radius_field           bound number field; draws a circle (optional)
+     circle_toggle          bound checkbox; circle only while ticked (optional)
+   Used by event_form.html and venue_form.html. Loads Leaflet itself.
+   ─────────────────────────────────────────────────────────────────────
+{% endcomment %}
+<div class="kk-lp" data-kk-locpick
+     data-lat-input="{{ lat_field.id_for_label }}"
+     data-lng-input="{{ lng_field.id_for_label }}"
+     {% if address_field %}data-address-input="{{ address_field.id_for_label }}"{% endif %}
+     {% if radius_field %}data-radius-input="{{ radius_field.id_for_label }}"{% endif %}
+     {% if circle_toggle %}data-circle-toggle="{{ circle_toggle.id_for_label }}"{% endif %}
+     data-default-lat="13.4549" data-default-lng="-16.5790"
+     data-resolve-url="{% url 'attendance:geo_resolve' %}"
+     data-reverse-url="{% url 'attendance:geo_reverse' %}">
+
+  <label class="form-label" for="{{ lat_field.id_for_label }}-lp-q">Find the venue</label>
+  <div class="kk-lp-search">
+    <input type="search" class="form-control" id="{{ lat_field.id_for_label }}-lp-q"
+           data-lp-q autocomplete="off" enterkeyhint="search" spellcheck="false"
+           placeholder="Address, Plus Code, coordinates or Google Maps link"
+           aria-describedby="{{ lat_field.id_for_label }}-lp-help">
+    <button type="button" class="kk-btn kk-btn-primary" data-lp-find>
+      <i class="bi bi-search" aria-hidden="true"></i> Find
+    </button>
+  </div>
+  <p class="kk-lp-help" id="{{ lat_field.id_for_label }}-lp-help">
+    For example <code>Arch 22, Banjul</code>, a Plus Code like <code>FC3C+6H Banjul</code>,
+    coordinates like <code>13.4531, -16.5786</code>, or a link shared from Google Maps.
+  </p>
+
+  <p class="kk-lp-msg" data-lp-msg role="status" aria-live="polite"></p>
+  <div class="kk-lp-results" data-lp-results hidden></div>
+
+  <div class="kk-lp-actions">
+    <button type="button" class="kk-btn kk-btn-ghost btn-sm" data-lp-gps>
+      <i class="bi bi-crosshair" aria-hidden="true"></i> Use my current location
+    </button>
+    <button type="button" class="kk-btn kk-btn-ghost btn-sm" data-lp-clear hidden>
+      <i class="bi bi-x-circle" aria-hidden="true"></i> Remove pin
+    </button>
+  </div>
+
+  <div class="kk-lp-mapwrap">
+    <div class="kk-lp-map" data-lp-map aria-label="Map: tap to place the venue pin"></div>
+    <p class="kk-lp-maphint" data-lp-hint>Tap the map to drop the pin</p>
+  </div>
+
+  <div class="kk-lp-pinned" data-lp-pinned hidden>
+    <i class="bi bi-geo-alt-fill" aria-hidden="true"></i>
+    <span class="kk-lp-pinned-text">
+      <span data-lp-coords></span>
+      <span class="kk-lp-plus" data-lp-plus-wrap hidden>Plus Code <strong data-lp-plus></strong></span>
+    </span>
+    <a href="#" target="_blank" rel="noopener" data-lp-open>Check in Google Maps</a>
+  </div>
+
+  <details class="kk-lp-manual" {% if lat_field.errors or lng_field.errors %}open{% endif %}>
+    <summary>Enter coordinates by hand</summary>
+    <div class="row g-2 mt-1">
+      <div class="col-6">
+        <label class="form-label small" for="{{ lat_field.id_for_label }}">Latitude</label>
+        {{ lat_field }}
+        {% if lat_field.errors %}<div class="text-danger small">{{ lat_field.errors|join:" " }}</div>{% endif %}
+      </div>
+      <div class="col-6">
+        <label class="form-label small" for="{{ lng_field.id_for_label }}">Longitude</label>
+        {{ lng_field }}
+        {% if lng_field.errors %}<div class="text-danger small">{{ lng_field.errors|join:" " }}</div>{% endif %}
+      </div>
+    </div>
+  </details>
+</div>
+
+{# Leaflet, with fallbacks: cdnjs is blocked on some networks. #}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
+      crossorigin="anonymous" id="kk-leaflet-css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"
+        crossorigin="anonymous" id="kk-leaflet-js"></script>
+<script>
+(function () {
+  var FALLBACKS = [
+    "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
+    "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js",
+  ];
+  var idx = 0;
+  function tryNext() {
+    if (window.L || idx >= FALLBACKS.length) return;
+    var s = document.createElement("script");
+    s.src = FALLBACKS[idx++];
+    s.async = false;
+    s.onerror = function () { setTimeout(tryNext, 200); };
+    document.head.appendChild(s);
+    setTimeout(tryNext, 1500);
+  }
+  setTimeout(tryNext, 1500);
+  setTimeout(function () {
+    var link = document.getElementById("kk-leaflet-css");
+    var ok = false;
+    try { ok = !!(link && link.sheet && link.sheet.cssRules); } catch (e) { ok = true; }
+    if (!ok) {
+      var l = document.createElement("link");
+      l.rel = "stylesheet";
+      l.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      document.head.appendChild(l);
+    }
+  }, 1500);
+})();
+</script>
+
+<script>
+(function () {
+  function init(root) {
+    function $(sel) { return root.querySelector(sel); }
+    function byId(id) { return id ? document.getElementById(id) : null; }
+
+    var latIn = byId(root.dataset.latInput);
+    var lngIn = byId(root.dataset.lngInput);
+    var addrIn = byId(root.dataset.addressInput);
+    var radiusIn = byId(root.dataset.radiusInput);
+    var circleToggle = byId(root.dataset.circleToggle);
+    var q = $("[data-lp-q]"), findBtn = $("[data-lp-find]");
+    var resultsEl = $("[data-lp-results]"), msgEl = $("[data-lp-msg]");
+    var gpsBtn = $("[data-lp-gps]"), clearBtn = $("[data-lp-clear]");
+    var mapEl = $("[data-lp-map]"), hintEl = $("[data-lp-hint]"), pinnedEl = $("[data-lp-pinned]");
+    var DEFAULT = [parseFloat(root.dataset.defaultLat), parseFloat(root.dataset.defaultLng)];
+    var map = null, marker = null, circle = null;
+    var describeTimer = null, describeSeq = 0;
+    if (!latIn || !lngIn) return;
+
+    function current() {
+      var la = parseFloat(latIn.value), ln = parseFloat(lngIn.value);
+      return (isFinite(la) && isFinite(ln)) ? [la, ln] : null;
+    }
+    function say(text, kind) {
+      msgEl.textContent = text || "";
+      msgEl.dataset.kind = kind || "";
+    }
+    function fetchJson(base, params) {
+      var u = new URL(base, window.location.origin);
+      Object.keys(params).forEach(function (k) { u.searchParams.set(k, params[k]); });
+      return fetch(u, {
+        credentials: "same-origin",
+        headers: { "X-Requested-With": "XMLHttpRequest", "Accept": "application/json" },
+      }).then(function (r) { return r.json(); });
+    }
+
+    // ── The pin ────────────────────────────────────────────────
+    var pinIcon = function () {
+      return L.divIcon({
+        className: "kk-lp-pin",
+        html: '<span class="kk-lp-pin-head"></span><span class="kk-lp-pin-tip"></span>',
+        iconSize: [30, 40], iconAnchor: [15, 38],
+      });
+    };
+
+    function setPin(lat, lng, opts) {
+      opts = opts || {};
+      // A new pin answers the question; earlier search results are stale.
+      resultsEl.hidden = true;
+      resultsEl.innerHTML = "";
+      latIn.value = lat.toFixed(6);
+      lngIn.value = lng.toFixed(6);
+      drawPin(opts.zoom);
+      describe(opts.fillAddress !== false);
+    }
+
+    function clearPin() {
+      latIn.value = "";
+      lngIn.value = "";
+      drawPin();
+    }
+
+    function drawPin(zoom) {
+      var p = current();
+      renderPinned(p);
+      if (!map) return;
+      if (!p) {
+        if (marker) { marker.remove(); marker = null; }
+        if (circle) { circle.remove(); circle = null; }
+        hintEl.hidden = false;
+        return;
+      }
+      if (!marker) {
+        marker = L.marker(p, { draggable: true, icon: pinIcon(), title: "Venue", keyboard: true }).addTo(map);
+        marker.on("dragend", function (e) {
+          var ll = e.target.getLatLng();
+          setPin(ll.lat, ll.lng);
+          say("Pin moved.", "ok");
+        });
+      } else {
+        marker.setLatLng(p);
+      }
+      updateCircle();
+      if (zoom) map.setView(p, zoom);
+      else if (!map.getBounds().contains(p)) map.panTo(p);
+      hintEl.hidden = true;
+    }
+
+    function updateCircle() {
+      var p = current();
+      var show = map && radiusIn && p && (!circleToggle || circleToggle.checked);
+      if (!show) {
+        if (circle) { circle.remove(); circle = null; }
+        return;
+      }
+      var r = parseFloat(radiusIn.value) || 150;
+      if (!circle) {
+        circle = L.circle(p, {
+          radius: r, color: "#7c3aed", fillColor: "#7c3aed",
+          fillOpacity: 0.12, weight: 2, interactive: false,
+        }).addTo(map);
+      } else {
+        circle.setLatLng(p);
+        circle.setRadius(r);
+      }
+    }
+
+    function renderPinned(p, plusCode) {
+      pinnedEl.hidden = !p;
+      clearBtn.hidden = !p;
+      if (!p) return;
+      $("[data-lp-coords]").textContent = p[0].toFixed(6) + ", " + p[1].toFixed(6);
+      if (plusCode !== undefined) {
+        $("[data-lp-plus]").textContent = plusCode;
+        $("[data-lp-plus-wrap]").hidden = !plusCode;
+      }
+      $("[data-lp-open]").href = "https://www.google.com/maps/search/?api=1&query="
+        + p[0].toFixed(6) + "," + p[1].toFixed(6);
+    }
+
+    // Plus Code for the readout every time; an address only when the
+    // location text is still empty (and only once the pin settles).
+    function describe(mayFillAddress) {
+      clearTimeout(describeTimer);
+      var p = current();
+      if (!p) return;
+      var wantAddress = mayFillAddress && addrIn && !addrIn.value.trim();
+      var seq = ++describeSeq;
+      describeTimer = setTimeout(function () {
+        var params = { lat: p[0].toFixed(6), lng: p[1].toFixed(6) };
+        if (wantAddress) params.address = "1";
+        fetchJson(root.dataset.reverseUrl, params).then(function (d) {
+          if (seq !== describeSeq || !d || !d.ok) return;
+          renderPinned(current(), d.plus_code || "");
+          if (wantAddress && d.address && !addrIn.value.trim()) {
+            addrIn.value = d.address;
+            say("Filled in the location from the pin. Edit it if you like.", "ok");
+          }
+        }).catch(function () { /* the pin is saved regardless */ });
+      }, 500);
+    }
+
+    // ── Search box ─────────────────────────────────────────────
+    var PINNED_FROM = {
+      plus_code: "Pinned from the Plus Code.",
+      coordinates: "Pinned at those coordinates.",
+      maps_link: "Pinned from the Google Maps link.",
+      address: "Pinned. Drag the pin onto the entrance if it’s not quite right.",
+    };
+
+    function choose(r, kind) {
+      resultsEl.hidden = true;
+      resultsEl.innerHTML = "";
+      if (kind === "address" && addrIn && !addrIn.value.trim()) addrIn.value = r.label;
+      setPin(r.lat, r.lng, { zoom: 17, fillAddress: kind !== "address" });
+      say(PINNED_FROM[kind] || "Pinned.", "ok");
+    }
+
+    function search() {
+      var text = q.value.trim();
+      if (!text) {
+        say("Type an address, Plus Code, coordinates or a Google Maps link.", "error");
+        q.focus();
+        return;
+      }
+      resultsEl.hidden = true;
+      resultsEl.innerHTML = "";
+      say("Searching…");
+      findBtn.disabled = true;
+      var c = map ? map.getCenter() : null;
+      var near = current() || (c ? [c.lat, c.lng] : DEFAULT);
+      fetchJson(root.dataset.resolveUrl, { q: text, near_lat: near[0], near_lng: near[1] })
+        .then(function (d) {
+          findBtn.disabled = false;
+          var rs = (d && d.results) || [];
+          if (!rs.length) { say((d && d.message) || "Nothing found.", "error"); return; }
+          if (d.kind !== "address" || rs.length === 1) { choose(rs[0], d.kind); return; }
+          say(rs.length + " places match. Pick the right one:");
+          rs.forEach(function (r) {
+            var b = document.createElement("button");
+            b.type = "button";
+            b.className = "kk-lp-result";
+            b.innerHTML = '<i class="bi bi-geo-alt" aria-hidden="true"></i><span></span>';
+            b.querySelector("span").textContent = r.label;
+            b.addEventListener("click", function () { choose(r, "address"); });
+            resultsEl.appendChild(b);
+          });
+          resultsEl.hidden = false;
+          resultsEl.querySelector("button").focus();
+        })
+        .catch(function () {
+          findBtn.disabled = false;
+          say("Search didn’t go through. Check your connection, or tap the map to drop the pin.", "error");
+        });
+    }
+
+    // Enter searches; it must not submit the whole event form.
+    q.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); search(); }
+    });
+    findBtn.addEventListener("click", search);
+
+    // ── GPS ────────────────────────────────────────────────────
+    gpsBtn.addEventListener("click", function () {
+      if (!("geolocation" in navigator)) {
+        say("This browser can’t share its location. Search for the venue or tap the map.", "error");
+        return;
+      }
+      say("Getting your location…");
+      gpsBtn.disabled = true;
+      navigator.geolocation.getCurrentPosition(function (pos) {
+        gpsBtn.disabled = false;
+        setPin(pos.coords.latitude, pos.coords.longitude, { zoom: 17 });
+        var acc = Math.round(pos.coords.accuracy);
+        say(acc > 75
+          ? "Pinned where you are, give or take " + acc + " m. Drag the pin onto the entrance if it’s off."
+          : "Pinned where you are (within " + acc + " m).", "ok");
+      }, function (err) {
+        gpsBtn.disabled = false;
+        say(err.code === err.PERMISSION_DENIED
+          ? "Location permission was denied. Allow it in your browser, or search for the venue instead."
+          : "Couldn’t get your location. Search for the venue or tap the map.", "error");
+      }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+    });
+
+    clearBtn.addEventListener("click", function () {
+      clearPin();
+      say("Pin removed.");
+    });
+
+    // Typing coordinates by hand moves the pin too.
+    [latIn, lngIn].forEach(function (inp) {
+      inp.addEventListener("change", function () {
+        drawPin(current() ? 16 : null);
+        describe(false);
+      });
+    });
+    if (radiusIn) radiusIn.addEventListener("input", updateCircle);
+    if (circleToggle) circleToggle.addEventListener("change", updateCircle);
+
+    // ── Map ────────────────────────────────────────────────────
+    function whenLeafletReady(cb, tries) {
+      tries = tries === undefined ? 80 : tries;
+      if (window.L && typeof window.L.map === "function") return cb();
+      if (tries <= 0) {
+        mapEl.innerHTML = '<div class="kk-map-fallback">The map couldn’t load on this network. '
+          + "Search above or use your current location; the pin still saves.</div>";
+        hintEl.hidden = true;
+        return;
+      }
+      setTimeout(function () { whenLeafletReady(cb, tries - 1); }, 150);
+    }
+
+    whenLeafletReady(function () {
+      var p = current();
+      map = L.map(mapEl, { scrollWheelZoom: false }).setView(p || DEFAULT, p ? 17 : 13);
+      // CARTO Voyager tiles, as elsewhere in the app (OSM's own tile
+      // server rejects requests without a Referer).
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · © <a href="https://carto.com/attributions">CARTO</a>',
+        maxZoom: 19, subdomains: "abcd", referrerPolicy: "strict-origin-when-cross-origin",
+      }).addTo(map);
+      map.on("click", function (e) {
+        setPin(e.latlng.lat, e.latlng.lng);
+        say("Pinned where you tapped. Drag the pin to adjust.", "ok");
+      });
+      drawPin();
+      describe(false);
+      requestAnimationFrame(function () { map.invalidateSize(); });
+    });
+
+    renderPinned(current());
+
+    // For the host page: the saved-venue picker sets the pin, and a
+    // section that was hidden calls refresh() once it's visible.
+    root.kkLocPick = {
+      setPin: function (lat, lng) { setPin(lat, lng, { zoom: 17, fillAddress: false }); },
+      refresh: function () { if (map) { map.invalidateSize(); drawPin(); } },
+      updateCircle: updateCircle,
+    };
+  }
+
+  function boot() { document.querySelectorAll("[data-kk-locpick]").forEach(init); }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
+})();
+</script>
+
+<style>
+.kk-lp-search { display: flex; gap: .5rem; }
+.kk-lp-search .form-control { flex: 1 1 auto; min-width: 0; }
+.kk-lp-search .kk-btn { flex-shrink: 0; }
+.kk-lp-help { color: var(--kk-text-dim); font-size: .84rem; margin: .45rem 0 0; line-height: 1.5; }
+.kk-lp-help code {
+  color: var(--kk-text); background: rgba(255, 255, 255, .06);
+  padding: .05rem .35rem; border-radius: 6px; font-size: .82rem; white-space: nowrap;
+}
+.kk-lp-msg { min-height: 1.3em; font-size: .88rem; margin: .5rem 0 .25rem; color: var(--kk-text-dim); }
+.kk-lp-msg[data-kind="ok"] { color: #6ee7b7; }
+.kk-lp-msg[data-kind="error"] { color: #fda4af; }
+
+.kk-lp-results {
+  display: grid; gap: .35rem; margin: 0 0 .6rem;
+  max-height: 240px; overflow-y: auto;
+}
+.kk-lp-result {
+  display: flex; align-items: flex-start; gap: .55rem;
+  width: 100%; text-align: left;
+  padding: .6rem .75rem;
+  background: var(--kk-surface-2); color: var(--kk-text);
+  border: 1px solid var(--kk-border); border-radius: 10px;
+  font-size: .9rem; line-height: 1.35;
+}
+.kk-lp-result i { color: #fcd34d; margin-top: .1rem; }
+.kk-lp-result:hover, .kk-lp-result:focus-visible { border-color: rgba(251, 191, 36, .55); outline: none; }
+
+.kk-lp-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .35rem 0 .75rem; }
+
+.kk-lp-mapwrap { position: relative; }
+.kk-lp-map {
+  height: 300px; border-radius: 12px; overflow: hidden;
+  border: 1px solid var(--kk-border);
+}
+.kk-lp-map.leaflet-container { background: #0f172a; cursor: crosshair; }
+.kk-lp-maphint {
+  position: absolute; left: 50%; bottom: .75rem; transform: translateX(-50%);
+  z-index: 500; pointer-events: none;
+  margin: 0; padding: .35rem .8rem; border-radius: 999px;
+  background: rgba(10, 10, 20, .82); color: #fff; font-size: .82rem;
+  white-space: nowrap;
+}
+.kk-lp-maphint[hidden] { display: none; }
+
+/* The pin: a brass head on a point — the same amber as the door
+   handles on the attendee pages. */
+.kk-lp-pin { background: none; border: 0; }
+.kk-lp-pin-head {
+  position: absolute; left: 3px; top: 0;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: #fbbf24; border: 3px solid #1a1a2e;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .45);
+}
+.kk-lp-pin-tip {
+  position: absolute; left: 13px; top: 22px;
+  width: 4px; height: 16px; border-radius: 0 0 2px 2px;
+  background: #1a1a2e;
+}
+
+.kk-lp-pinned {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .3rem .65rem;
+  margin-top: .6rem; padding: .55rem .8rem;
+  background: rgba(251, 191, 36, .08);
+  border: 1px solid rgba(251, 191, 36, .28);
+  border-radius: 10px; font-size: .88rem;
+}
+.kk-lp-pinned[hidden] { display: none; }
+.kk-lp-pinned > i { color: #fbbf24; }
+.kk-lp-pinned-text { flex: 1 1 auto; display: flex; flex-wrap: wrap; gap: .25rem .9rem; font-variant-numeric: tabular-nums; }
+.kk-lp-plus { color: var(--kk-text-dim); }
+.kk-lp-plus strong { color: var(--kk-text); font-weight: 600; }
+.kk-lp-pinned a { color: #fcd34d; text-decoration: none; font-weight: 500; }
+.kk-lp-pinned a:hover { text-decoration: underline; }
+
+.kk-lp-manual { margin-top: .7rem; font-size: .9rem; }
+.kk-lp-manual summary { color: var(--kk-text-dim); cursor: pointer; }
+.kk-lp-manual summary:hover { color: var(--kk-text); }
+.kk-map-fallback {
+  height: 100%; display: grid; place-items: center; padding: 1rem;
+  text-align: center; color: var(--kk-text-dim); font-size: .9rem;
+}
+
+@media (max-width: 480px) {
+  .kk-lp-map { height: 260px; }
+  .kk-lp-pinned { grid-template-columns: auto 1fr; }
+  .kk-lp-pinned a { grid-column: 2; }
+  .kk-lp-help code { white-space: normal; }
+}
+</style>

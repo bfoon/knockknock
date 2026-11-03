@@ -75,6 +75,13 @@ urlpatterns = [
 
     path("<int:pk>/announce/",              views.announcement_send,    name="announcement_send"),
     path("<int:pk>/r/<int:reg_id>/action/", views.registration_action,  name="registration_action"),
+    # One attendee row as HTML — the dashboard refreshes a row with it
+    # when a live check-in arrives over the WebSocket.
+    path("<int:pk>/r/<int:reg_id>/row/",    views.registration_row,     name="registration_row"),
+
+    # Location picker on the event & venue forms: search box + pin.
+    path("geo/resolve/",                      views.geo_resolve,  name="geo_resolve"),
+    path("geo/reverse/",                      views.geo_reverse,  name="geo_reverse"),
 
     # Form-builder AJAX
     path("<int:pk>/fields/add-preset/",       views.field_add_preset, name="field_add_preset"),

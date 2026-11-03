@@ -54,11 +54,16 @@
         <input type="hidden" name="lng" id="kk-geo-lng">
         {% if intent == "self_checkin" and identifier %}
           <input type="hidden" name="identifier" value="{{ identifier }}">
+          {# Keep the per-phone token across the location step, so the #}
+          {# same-day device rule still applies after geofencing.        #}
+          <input type="hidden" name="device_token" value="{{ device_token|default:'' }}" data-kk-device-token>
         {% endif %}
       </form>
     {% endif %}
   </div>
 </div>
+
+{% include "attendance/_device_token.html" %}
 
 {% if not out_of_range %}
 <script>

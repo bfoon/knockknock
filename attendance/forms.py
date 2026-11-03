@@ -219,12 +219,23 @@ class EventForm(forms.ModelForm):
         if cleaned.get("is_online") and not cleaned.get("online_url"):
             self.add_error("online_url", "Required for online events.")
 
-        # Geofence sanity — if they ticked the box, demand coords.
+        # Venue pin — both halves or neither, and on the planet.
+        lat, lng = cleaned.get("geofence_lat"), cleaned.get("geofence_lng")
+        if (lat is None) != (lng is None):
+            self.add_error("geofence_lat",
+                           "Set both latitude and longitude, or remove the pin.")
+        if lat is not None and not -90 <= lat <= 90:
+            self.add_error("geofence_lat", "Latitude must be between -90 and 90.")
+        if lng is not None and not -180 <= lng <= 180:
+            self.add_error("geofence_lng", "Longitude must be between -180 and 180.")
+
+        # Geofence sanity — if they ticked the box, demand a pin.
         if cleaned.get("require_geofence"):
-            if cleaned.get("geofence_lat") is None or cleaned.get("geofence_lng") is None:
+            if lat is None or lng is None:
                 self.add_error(
                     "require_geofence",
-                    "Drop a pin on the venue map (or paste lat/lng) to enable geofencing.",
+                    "Pin the venue under “Where” first: search for it, use your "
+                    "current location, or tap the map.",
                 )
             radius = cleaned.get("geofence_radius_m")
             if radius and radius < 25:
@@ -388,14 +399,20 @@ class QuickCheckInForm(forms.Form):
     and flip them to checked_in.
     """
 
+    # Email first (that's what people remember signing up with), but a
+    # phone number still works for forms that only collect phones — the
+    # view's lookup handles both. Plain text input rather than type=email
+    # so the browser doesn't reject a phone number before we see it.
     identifier = forms.CharField(
-        label="Email or phone",
+        label="Email you registered with",
         max_length=120,
         widget=forms.TextInput(attrs={
             "class": "form-control form-control-lg",
             "autocomplete": "email",
-            "placeholder": "you@example.com or +220 ...",
-            "autofocus": True,
+            "inputmode": "email",
+            "autocapitalize": "none",
+            "spellcheck": "false",
+            "placeholder": "you@example.com",
         }),
     )
 
@@ -406,7 +423,7 @@ class QuickCheckInForm(forms.Form):
     def clean_identifier(self):
         raw = (self.cleaned_data.get("identifier") or "").strip()
         if not raw:
-            raise ValidationError("Enter the email or phone you registered with.")
+            raise ValidationError("Type the email you registered with.")
         return raw.lower() if "@" in raw else raw
 
 

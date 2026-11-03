@@ -2,6 +2,9 @@
 {% block title %}Your ticket · {{ event.title }}{% endblock %}
 
 {% block content %}
+{% if welcome_check_in %}
+  {% include "attendance/_welcome_door.html" %}
+{% endif %}
 <div class="kk-public-wrap">
   <div class="kk-ticket">
     <div class="kk-ticket-head">
@@ -22,7 +25,19 @@
       <p class="text-secondary mb-0">{{ event.starts_at|date:"l, j F · H:i" }}</p>
     </div>
 
-    {% if registration.status == "checked_in" %}
+    {% if registration.status == "checked_in" and needs_today_check_in %}
+      {# Multi-day event: they came on an earlier day, not yet today. #}
+      <div class="kk-ticket-qr-block">
+        <p class="kk-text-dim small mb-2">Welcome back. Check in again for today.</p>
+        <img src="{% url 'attendance:ticket_qr' registration.token %}"
+             alt="Your personal QR" class="kk-ticket-qr">
+        <a href="{% url 'attendance:attendee_check_in' registration.token %}"
+           id="kk-checkin-link"
+           class="kk-btn kk-btn-primary kk-btn-lg w-100 mt-3">
+          <i class="bi bi-door-open"></i> I'm here — check me in
+        </a>
+      </div>
+    {% elif registration.status == "checked_in" %}
       <div class="kk-ticket-banner kk-ticket-banner-success">
         <i class="bi bi-check-circle-fill"></i>
         You're checked in. Have a great session!
@@ -74,37 +89,47 @@
         </a>
         <p class="kk-text-dim small mt-2 mb-0 kk-break-anywhere">{{ event.online_url }}</p>
       </div>
-    {% elif event.location or event.geofence_lat %}
+    {% elif event.location or event.has_venue_pin %}
       <div class="kk-ticket-section">
         <h3><i class="bi bi-geo-alt"></i> Where</h3>
         {% if event.location %}<p class="mb-2">{{ event.location }}</p>{% endif %}
 
+        {% with plus_code=event.venue_plus_code %}
+          {% if plus_code %}
+            {# Plus Codes work in Google Maps and are easy to read out to #}
+            {# a taxi driver where streets have no names or numbers.       #}
+            <p class="kk-ticket-plus mb-2">
+              Plus Code
+              <button type="button" class="kk-plus-copy" data-copy="{{ plus_code }}"
+                      title="Copy the Plus Code">
+                {{ plus_code }} <i class="bi bi-copy" aria-hidden="true"></i>
+              </button>
+              <span class="kk-plus-copied" role="status" aria-live="polite"></span>
+            </p>
+          {% endif %}
+        {% endwith %}
+
         <div class="d-flex gap-2 flex-wrap mb-2">
-          {% if event.geofence_lat and event.geofence_lng %}
+          {% if event.has_venue_pin %}
             <button type="button" class="kk-btn kk-btn-ghost btn-sm" id="kk-locate-toggle">
               <i class="bi bi-map"></i> Locate venue
             </button>
-            <a class="kk-btn kk-btn-ghost btn-sm"
-               href="https://www.google.com/maps/dir/?api=1&destination={{ event.geofence_lat }},{{ event.geofence_lng }}"
-               target="_blank" rel="noopener">
-              <i class="bi bi-signpost-2-fill"></i> Get directions
-            </a>
-          {% elif event.location %}
-            {# No coords, but a location string — fall back to Google's #}
-            {# place-search-by-name. Not as precise but always useful. #}
-            <a class="kk-btn kk-btn-ghost btn-sm"
-               href="https://www.google.com/maps/dir/?api=1&destination={{ event.location|urlencode }}"
+          {% endif %}
+          {% if event.get_directions_url %}
+            {# The organizer's pin when set (exact), else the typed address. #}
+            <a class="kk-btn kk-btn-ghost btn-sm" href="{{ event.get_directions_url }}"
                target="_blank" rel="noopener">
               <i class="bi bi-signpost-2-fill"></i> Get directions
             </a>
           {% endif %}
         </div>
 
-        {% if event.geofence_lat and event.geofence_lng %}
+        {% if event.has_venue_pin %}
           <div id="kk-locate-map" class="kk-locate-map" hidden
-               data-lat="{{ event.geofence_lat }}"
-               data-lng="{{ event.geofence_lng }}"
-               data-radius="{{ event.geofence_radius_m|default:150 }}">
+               data-lat="{{ event.geofence_lat|stringformat:'f' }}"
+               data-lng="{{ event.geofence_lng|stringformat:'f' }}"
+               data-radius="{{ event.geofence_radius_m|default:150 }}"
+               data-geofence="{% if event.has_geofence %}1{% endif %}">
           </div>
           <p class="kk-text-dim small mb-0 mt-2" id="kk-locate-status" hidden></p>
         {% endif %}
@@ -130,7 +155,7 @@
 </div>
 
 {# Leaflet — only loaded on this page, and only if the venue has coords. #}
-{% if event.geofence_lat and event.geofence_lng %}
+{% if event.has_venue_pin %}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" crossorigin="anonymous">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" crossorigin="anonymous"></script>
 {% endif %}
@@ -248,11 +273,15 @@
     ).addTo(map);
 
     L.marker([lat, lng]).addTo(map).bindPopup('Venue').openPopup();
-    L.circle([lat, lng], {
-      radius: radius,
-      color: '#7c3aed', fillColor: '#7c3aed',
-      fillOpacity: 0.10, weight: 2,
-    }).addTo(map);
+    // The check-in circle only means something when geofencing is on;
+    // otherwise the pin is just the venue, for directions.
+    if (mapEl.dataset.geofence === '1') {
+      L.circle([lat, lng], {
+        radius: radius,
+        color: '#7c3aed', fillColor: '#7c3aed',
+        fillOpacity: 0.10, weight: 2,
+      }).addTo(map);
+    }
 
     // After the panel becomes visible, the map sometimes measures its
     // container before the reflow lands — invalidate on the next
@@ -436,6 +465,35 @@
      "Get directions" doesn't squeeze against "Locate venue". */
   .kk-ticket-section .d-flex.gap-2.flex-wrap > .kk-btn { width: 100%; }
 }
+</style>
+
+<script>
+/* Plus Code copy button. */
+(function () {
+  document.querySelectorAll(".kk-plus-copy").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var note = btn.parentElement.querySelector(".kk-plus-copied");
+      var code = btn.dataset.copy;
+      function done(ok) { if (note) note.textContent = ok ? "Copied" : ""; setTimeout(function () { if (note) note.textContent = ""; }, 2000); }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(code).then(function () { done(true); }, function () { done(false); });
+      } else { done(false); }
+    });
+  });
+})();
+</script>
+<style>
+.kk-ticket-plus { color: var(--kk-text-dim); font-size: .9rem; display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.kk-plus-copy {
+  display: inline-flex; align-items: center; gap: .4rem;
+  padding: .2rem .6rem; border-radius: 8px;
+  background: rgba(251, 191, 36, .1); border: 1px solid rgba(251, 191, 36, .3);
+  color: var(--kk-text); font-weight: 600; font-variant-numeric: tabular-nums;
+  letter-spacing: .02em;
+}
+.kk-plus-copy i { color: #fcd34d; font-size: .85em; }
+.kk-plus-copy:hover { background: rgba(251, 191, 36, .18); }
+.kk-plus-copied { color: #6ee7b7; font-size: .85rem; }
 </style>
 
 <script>

@@ -40,6 +40,7 @@ from django.http import (
     FileResponse, Http404, HttpResponse, HttpResponseBadRequest, JsonResponse,
 )
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.text import slugify
@@ -55,6 +56,7 @@ from .models import (
     AttendanceEvent, CERTIFICATE_TEMPLATES, Certificate, CheckIn, EventField,
     PRESET_FIELDS, Registration, RegistrationAnswer, AgendaDay,
 )
+from . import geo
 from . import services
 from .feedback_views import should_route_to_feedback
 
@@ -147,6 +149,119 @@ def _ensure_default_day(event):
         label="",
         order=0,
     )
+
+
+# ────────────── attendee-row helpers (dashboard) ──────────────
+
+def _presence_context(event):
+    """
+    Everything the attendee rows need to know about *today*, computed
+    once per request: today's date, which registrations already have a
+    check-in row for today, and whether the check-in window is open.
+    """
+    today = timezone.localdate()
+    return {
+        "today": today,
+        "here_today_ids": set(
+            event.check_ins.filter(day=today)
+            .values_list("registration_id", flat=True)
+        ),
+        "check_in_open": event.is_check_in_open(),
+    }
+
+
+def _decorate_attendee(r, ctx):
+    """
+    Attach presence attributes the row template reads:
+
+      r.here_today      — has a check-in for today (or, for rows created
+                          before per-day check-ins existed, first
+                          arrived today)
+      r.presence        — "here" | "earlier" | "away", drives the dot
+      r.can_mark_present — show the "Mark present" button
+      r.today_time      — local time of today's arrival, for the meta line
+    """
+    today = ctx["today"]
+    legacy_today = (
+        r.status == Registration.STATUS_CHECKED_IN
+        and r.checked_in_at is not None
+        and _local_date(r.checked_in_at) == today
+    )
+    r.here_today = r.pk in ctx["here_today_ids"] or legacy_today
+
+    if r.here_today:
+        r.presence = "here"
+    elif r.status == Registration.STATUS_CHECKED_IN:
+        # Checked in on an earlier day. While today's window is open
+        # (multi-day events) they're not here *yet* today; once the
+        # event is over, they simply attended.
+        r.presence = "earlier" if ctx["check_in_open"] else "here"
+    else:
+        r.presence = "away"
+
+    r.can_mark_present = (
+        r.status == Registration.STATUS_ACCEPTED
+        or (r.status == Registration.STATUS_CHECKED_IN
+            and not r.here_today and ctx["check_in_open"])
+    )
+
+    r.today_time = None
+    if r.here_today:
+        todays = [c for c in r.check_ins.all() if c.day == today]
+        stamp = todays[0].checked_in_at if todays else r.checked_in_at
+        r.today_time = _local_time(stamp)
+    return r
+
+
+def _attendee_detail(r):
+    """JSON-safe payload for the attendee detail modal."""
+    return {
+        "name": r.display_name(),
+        "email": r.email,
+        "phone": r.phone,
+        "status": r.get_status_display(),
+        "is_walk_in": r.is_walk_in,
+        "registered": _local_time(r.registered_at).strftime("%-d %b %Y, %H:%M"),
+        "checkins": [
+            {
+                "day": (c.agenda_day.label if c.agenda_day
+                        and c.agenda_day.label else str(c.day)),
+                "date": c.day.strftime("%-d %b %Y"),
+                "time": _local_time(c.checked_in_at).strftime("%H:%M"),
+                "method": c.get_method_display(),
+            }
+            for c in r.check_ins.all()
+        ],
+        "answers": [
+            {"label": a.field.label, "value": a.value}
+            for a in r.answers.all()
+        ],
+    }
+
+
+def _is_ajax(request):
+    """The dashboard's fetch() calls set this header; plain forms don't."""
+    return request.headers.get("x-requested-with") == "XMLHttpRequest"
+
+
+def _render_attendee_row(request, event, reg_id):
+    """
+    Re-read one registration with everything its row needs and render
+    the row partial. Returns (registration, html).
+    """
+    reg = (
+        Registration.objects
+        .select_related("user")
+        .prefetch_related("check_ins__agenda_day", "answers__field")
+        .get(pk=reg_id, event=event)
+    )
+    _decorate_attendee(reg, _presence_context(event))
+    html = render_to_string(
+        "attendance/_attendee_row.html",
+        {"event": event, "r": reg},
+        request=request,
+    )
+    return reg, html
 
 
 # ────────────── date-window helpers for the stats endpoint ──────────────
@@ -305,33 +420,17 @@ def event_detail(request, pk):
         Registration.STATUS_ACCEPTED, Registration.STATUS_CHECKED_IN,
     )]
 
+    # Work out each attendee's presence for *today* once, so the row
+    # template can decide between "Mark present" and "Undo" without
+    # extra queries.
+    presence_ctx = _presence_context(event)
+    for r in accepted:
+        _decorate_attendee(r, presence_ctx)
+
     # Per-attendee detail payloads for the modal. Built here (rather than
     # hand-assembled as JSON in the template) so Django's json_script can
     # serialise them safely — no escaping pitfalls.
-    attendee_details = {}
-    for r in accepted:
-        attendee_details[r.pk] = {
-            "name": r.display_name(),
-            "email": r.email,
-            "phone": r.phone,
-            "status": r.get_status_display(),
-            "is_walk_in": r.is_walk_in,
-            "registered": r.registered_at.strftime("%-d %b %Y, %H:%M"),
-            "checkins": [
-                {
-                    "day": (c.agenda_day.label if c.agenda_day
-                            and c.agenda_day.label else str(c.day)),
-                    "date": c.day.strftime("%-d %b %Y"),
-                    "time": c.checked_in_at.strftime("%H:%M"),
-                    "method": c.get_method_display(),
-                }
-                for c in r.check_ins.all()
-            ],
-            "answers": [
-                {"label": a.field.label, "value": a.value}
-                for a in r.answers.all()
-            ],
-        }
+    attendee_details = {r.pk: _attendee_detail(r) for r in accepted}
 
     # Build the QR URL that gets projected/printed at the venue.
     public_qr_target = request.build_absolute_uri(
@@ -354,6 +453,81 @@ def event_detail(request, pk):
         "public_check_in_url": public_qr_target,
         "announcement_form": AnnouncementForm(),
     })
+
+
+# ── Venue location lookup (event & venue forms) ──────────────────
+# The location picker's search box and pin both call these. Organizer-
+# only, and rate-limited per user so nobody can use the site as a free
+# proxy to the geocoding service.
+
+GEO_LOOKUPS_PER_MINUTE = 30
+
+
+def _geo_rate_limited(user):
+    from django.core.cache import cache
+    key = f"kk-geo-rate:{user.pk}"
+    cache.add(key, 0, timeout=60)
+    try:
+        count = cache.incr(key)
+    except ValueError:          # expired between add and incr
+        cache.set(key, 1, timeout=60)
+        count = 1
+    return count > GEO_LOOKUPS_PER_MINUTE
+
+
+def _float_param(request, name):
+    try:
+        value = float(request.GET.get(name, ""))
+    except (TypeError, ValueError):
+        return None
+    return value if value == value else None   # drop NaN
+
+
+@login_required
+@require_GET
+def geo_resolve(request):
+    """
+    Search box → candidate pins. Accepts an address, a Plus Code, typed
+    coordinates or a Google Maps link (see geo.resolve). ?near_lat and
+    ?near_lng carry the map's centre, used for short Plus Codes and to
+    rank nearby addresses first.
+    """
+    if _geo_rate_limited(request.user):
+        return JsonResponse({"ok": False, "results": [],
+                             "message": "Too many searches in a minute. Wait a moment and try again."},
+                            status=429)
+    near_lat, near_lng = _float_param(request, "near_lat"), _float_param(request, "near_lng")
+    near = None
+    if near_lat is not None and near_lng is not None and -90 <= near_lat <= 90 and -180 <= near_lng <= 180:
+        near = (near_lat, near_lng)
+    try:
+        result = geo.resolve(request.GET.get("q", ""), near=near)
+    except geo.LookupUnavailable as e:
+        return JsonResponse({"ok": False, "results": [],
+                             "message": f"{e} You can still paste a Plus Code, coordinates or a "
+                                        "Google Maps link, or tap the map."}, status=503)
+    result["ok"] = True
+    return JsonResponse(result)
+
+
+@login_required
+@require_GET
+def geo_reverse(request):
+    """
+    Pin → Plus Code (always, computed locally) and, with ?address=1, a
+    readable address from the geocoder. Address failures are quiet: the
+    pin is what matters, the address text is a convenience.
+    """
+    lat, lng = _float_param(request, "lat"), _float_param(request, "lng")
+    if lat is None or lng is None or not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        return JsonResponse({"ok": False, "message": "Invalid coordinates."}, status=400)
+    data = {"ok": True, "plus_code": geo.encode_plus_code(lat, lng), "address": ""}
+    if request.GET.get("address") == "1" and not _geo_rate_limited(request.user):
+        try:
+            data["address"] = geo.reverse_geocode(lat, lng)
+        except geo.LookupUnavailable:
+            pass
+    return JsonResponse(data)
 
 
 # ── Form builder ────────────────────────────────────────────────
@@ -522,19 +696,22 @@ def registration_action(request, pk, reg_id):
         reg.save(update_fields=["status"])
         services.send_decline_email(reg, request=request)
         messages.info(request, f"{reg.display_name()} declined.")
-    elif action == "check_in":
-        # Organiser-driven check-in is *not* subject to geofencing — they're
-        # taking responsibility for the person being in the room.
-        if reg.status == Registration.STATUS_PENDING:
-            reg.mark_accepted(save=False)  # auto-accept on manual check-in
-        reg.mark_checked_in()
-        services.broadcast_check_in(reg)
-        messages.success(request, f"{reg.display_name()} marked present.")
-    elif action == "uncheck_in":
-        reg.status = Registration.STATUS_ACCEPTED
-        reg.checked_in_at = None
-        reg.save(update_fields=["status", "checked_in_at"])
-        messages.info(request, f"{reg.display_name()} reverted to accepted.")
+    elif action in ("check_in", "uncheck_in"):
+        level, text = _organizer_presence_action(reg, action)
+        if _is_ajax(request):
+            # The dashboard swaps the row in place — no page reload.
+            reg, row_html = _render_attendee_row(request, event, reg.pk)
+            return JsonResponse({
+                "ok": level != "error",
+                "level": level,
+                "message": text,
+                "registration_id": reg.pk,
+                "row_html": row_html,
+                "detail": _attendee_detail(reg),
+                "checked_in_count": event.checked_in_count(),
+                "accepted_count": event.accepted_count(),
+            })
+        getattr(messages, level)(request, text)
     elif action == "cancel":
         reg.status = Registration.STATUS_CANCELLED
         reg.save(update_fields=["status"])
@@ -543,6 +720,58 @@ def registration_action(request, pk, reg_id):
         return HttpResponseBadRequest("Unknown action.")
 
     return redirect("attendance:event_detail", pk=event.pk)
+
+
+def _organizer_presence_action(reg, action):
+    """
+    Mark present / undo, driven by the organizer from the dashboard.
+    Returns (message_level, message_text).
+
+    "Mark present" records a real per-day CheckIn (method=organizer), the
+    same row a self check-in creates, so the attendee's history, the
+    multi-day logic and certificates all see it. It is *not* subject to
+    geofencing or the device rule — the organizer is vouching for the
+    person being in the room.
+    """
+    name = reg.display_name()
+
+    if action == "uncheck_in":
+        removed = reg.undo_last_check_in()
+        if removed and reg.status == Registration.STATUS_CHECKED_IN:
+            return "info", f"Removed {name}'s check-in for {removed.day:%-d %b}."
+        return "info", f"{name} is no longer checked in."
+
+    # action == "check_in"
+    if reg.status in (Registration.STATUS_DECLINED, Registration.STATUS_CANCELLED):
+        return "error", f"{name}'s registration was withdrawn, so they can't be marked present."
+    if reg.status == Registration.STATUS_PENDING:
+        reg.mark_accepted()  # marking someone present approves them too
+
+    _, created, _ = reg.record_daily_check_in(method=CheckIn.METHOD_ORGANIZER)
+    if created:
+        services.broadcast_check_in(reg)
+        return "success", f"{name} is checked in."
+    return "info", f"{name} was already checked in today."
+
+
+@login_required
+@require_GET
+def registration_row(request, pk, reg_id):
+    """
+    One attendee row as HTML. The dashboard calls this when a live
+    check-in arrives over the WebSocket, so the row's buttons update
+    (not just its dot) without reloading the page.
+    """
+    event = _own_event_or_404(request.user, pk)
+    try:
+        reg, html = _render_attendee_row(request, event, reg_id)
+    except Registration.DoesNotExist:
+        raise Http404("No such registration.")
+    return JsonResponse({
+        "registration_id": reg.pk,
+        "row_html": html,
+        "detail": _attendee_detail(reg),
+    })
 
 
 # ── Announcements ──────────────────────────────────────────────
@@ -1236,8 +1465,15 @@ def public_register(request, public_token):
         return render(request, "attendance/public_event_ended.html",
                       {"event": event}, status=410)
 
-    walk_in = request.GET.get("walk_in") == "1"
-    is_open = event.is_registration_open() or (walk_in and event.allow_walk_ins)
+    # Walk-in = "register and check me in right now". Accept both
+    # spellings: older printed links used ?walkin=1. It only takes
+    # effect while check-in is open — otherwise it's a normal sign-up,
+    # so nobody gets checked in hours before the doors open.
+    walk_in_requested = (request.GET.get("walk_in") == "1"
+                         or request.GET.get("walkin") == "1")
+    walk_in = (walk_in_requested and event.allow_walk_ins
+               and event.is_check_in_open())
+    is_open = event.is_registration_open() or walk_in
     if not is_open:
         return render(request, "attendance/public_registration_closed.html",
                       {"event": event}, status=403)
@@ -1245,20 +1481,53 @@ def public_register(request, public_token):
     if request.method == "POST":
         form = DynamicRegistrationForm(event, request.POST)
         if form.is_valid():
-            reg = _persist_registration(event, form, walk_in=walk_in)
+            reg, checked_in = _persist_registration(event, form, walk_in=walk_in)
             services.send_registration_confirmation(reg, request=request)
             services.broadcast_new_registration(reg)
+            if checked_in:
+                return _redirect_to_ticket(reg, welcome="1")
             return redirect("attendance:ticket", token=str(reg.token))
     else:
-        form = DynamicRegistrationForm(event)
+        form = DynamicRegistrationForm(
+            event, initial=_prefill_from_query(event, request),
+        )
 
     return render(request, "attendance/public_register.html", {
         "event": event, "form": form, "walk_in": walk_in,
     })
 
 
+def _prefill_from_query(event, request):
+    """
+    Pre-fill the email question from ?email=. Used when someone tried
+    "I registered already" with an address we don't know and chose to
+    register instead — they shouldn't have to type it twice.
+    """
+    email = (request.GET.get("email") or "").strip()[:254]
+    if not email or "@" not in email:
+        return {}
+    for f in event.fields.all():
+        if f.preset_key == "email" or f.field_type == EventField.TYPE_EMAIL:
+            return {f.html_input_name(): email}
+    return {}
+
+
+def _redirect_to_ticket(reg, *, welcome=None):
+    """Ticket redirect, optionally asking it to play the door animation."""
+    url = reverse("attendance:ticket", kwargs={"token": str(reg.token)})
+    if welcome:
+        url += f"?welcome={welcome}"
+    return redirect(url)
+
+
 def _persist_registration(event, form, *, walk_in=False):
-    """Shared by both registration and walk-in paths."""
+    """
+    Shared by both registration and walk-in paths.
+
+    Returns (registration, checked_in_now). For walk-ins the person is
+    checked in for today straight away — via record_daily_check_in, so
+    the per-day CheckIn row exists just like any other check-in.
+    """
     name, email, phone = form.extract_identity()
 
     # If the same email already has a non-cancelled row, return it instead
@@ -1271,13 +1540,23 @@ def _persist_registration(event, form, *, walk_in=False):
         if existing:
             # Update answers but keep the original token/status.
             _save_answers(existing, form)
-            return existing
+            checked_in = False
+            # Someone who registered earlier and then used the walk-in
+            # form at the door still wants to be let in.
+            if walk_in and existing.status in (Registration.STATUS_ACCEPTED,
+                                               Registration.STATUS_CHECKED_IN):
+                _, created, _ = existing.record_daily_check_in(
+                    method=CheckIn.METHOD_SELF,
+                )
+                if created:
+                    services.broadcast_check_in(existing)
+                checked_in = existing.today_check_in() is not None
+            return existing, checked_in
 
     initial_status = (
-        Registration.STATUS_CHECKED_IN if walk_in
-        else (Registration.STATUS_ACCEPTED
-              if event.registration_mode == AttendanceEvent.REG_MODE_AUTO
-              else Registration.STATUS_PENDING)
+        Registration.STATUS_ACCEPTED
+        if walk_in or event.registration_mode == AttendanceEvent.REG_MODE_AUTO
+        else Registration.STATUS_PENDING
     )
 
     reg = Registration.objects.create(
@@ -1286,12 +1565,16 @@ def _persist_registration(event, form, *, walk_in=False):
         status=initial_status,
         is_walk_in=walk_in,
         accepted_at=timezone.now() if initial_status != Registration.STATUS_PENDING else None,
-        checked_in_at=timezone.now() if initial_status == Registration.STATUS_CHECKED_IN else None,
     )
     _save_answers(reg, form)
     if walk_in:
+        # Flips status to CHECKED_IN and writes today's CheckIn row.
+        # No device token: a door-side tablet signing up several
+        # walk-ins in a row must keep working.
+        reg.record_daily_check_in(method=CheckIn.METHOD_SELF)
         services.broadcast_check_in(reg)
-    return reg
+        return reg, True
+    return reg, False
 
 
 def _save_answers(reg, form):
@@ -1319,8 +1602,28 @@ def ticket(request, token):
     # stays focused on its current responsibilities.
     if should_route_to_feedback(reg.event):
         return redirect("attendance:public_feedback_by_ticket", token=str(reg.token))
+
+    # "Door opens" welcome after a check-in. ?welcome=1 means "just let
+    # in", ?welcome=again means "was already in". It only plays if a
+    # check-in for today really exists, so a copied link can't fake one.
+    welcome_mode = request.GET.get("welcome")
+    today_check_in = (reg.check_ins.select_related("agenda_day")
+                      .filter(day=timezone.localdate()).first())
+    welcome_check_in = today_check_in if welcome_mode in ("1", "again") else None
+
     return render(request, "attendance/ticket.html", {
         "registration": reg, "event": reg.event,
+        "welcome_check_in": welcome_check_in,
+        # Multi-day events: checked in on an earlier day but not today.
+        "needs_today_check_in": (
+            reg.status == Registration.STATUS_CHECKED_IN
+            and today_check_in is None
+            and not (reg.checked_in_at
+                     and _local_date(reg.checked_in_at) == timezone.localdate())
+            and reg.event.is_check_in_open()
+        ),
+        "welcome_again": welcome_mode == "again",
+        "first_name": (reg.full_name.split()[0] if reg.full_name.strip() else ""),
         # 5 newest announcements rendered server-side so a reload still
         # shows recent organizer messages. The WS subscription in the
         # page script handles anything that lands after the page opens.
@@ -1394,14 +1697,18 @@ def public_qr_poster(request, pk):
 
 def public_check_in(request, public_token):
     """
-    Where the event-level QR lands.
+    Where the event-level QR lands — the "door".
 
-    The flow:
-      - GET shows a small form with two options:
-          1) 'I'm registered' → email/phone field → tap → checked_in
-          2) 'I haven't registered yet' → walk-in form (if allowed)
-      - POST with identifier → look up registration → geofence-check →
-        flip status.
+    Two ways through:
+      • "I registered already" → type the email you signed up with →
+        "Check me in" → we look you up and check you in for today.
+      • "I'm new here" → register on the spot (walk-in) and you're
+        checked in straight away; or, if walk-ins are off, a normal
+        registration and then check-in from your ticket.
+
+    The page renders even before the check-in window opens, so a
+    newcomer scanning early can still register; the email path just
+    says when check-in opens.
     """
     event = _public_event_or_404(public_token)
     if should_route_to_feedback(event):
@@ -1409,25 +1716,32 @@ def public_check_in(request, public_token):
     if not event.is_qr_active():
         return render(request, "attendance/public_event_ended.html",
                       {"event": event}, status=410)
-    if not event.is_check_in_open():
-        return render(request, "attendance/public_check_in_closed.html",
-                      {"event": event}, status=403)
 
-    matched = None
-    error = None
+    check_in_open = event.is_check_in_open()
+    error = None          # shown inside the "I registered already" door
+    error_kind = None     # lets the template offer the right next step
     if request.method == "POST":
         form = QuickCheckInForm(event, request.POST)
-        if form.is_valid():
+        if not check_in_open:
+            error_kind = "not_open"
+            error = (f"Check-in opens at "
+                     f"{_local_time(event.starts_at - timedelta(hours=2)):%H:%M on %a %-d %b}.")
+        elif form.is_valid():
             ident = form.cleaned_data["identifier"]
             matched = _find_registration(event, ident)
             if matched is None:
-                error = "We couldn't find a registration for that email or phone. " \
-                        "Tap 'I haven't registered' below if you'd like to register now."
+                error_kind = "not_found"
+                error = (f"We couldn't find a registration for {ident}. "
+                         "Check the spelling, or register as new.")
             elif matched.status in (Registration.STATUS_DECLINED,
                                     Registration.STATUS_CANCELLED):
-                error = "Your registration was withdrawn. Please see the organizer."
+                error_kind = "withdrawn"
+                error = ("This registration was withdrawn. "
+                         "Please talk to the organizer at the door.")
             elif matched.status == Registration.STATUS_PENDING:
-                error = "Your registration is still pending review by the organizer."
+                error_kind = "pending"
+                error = ("You're registered, but the organizer hasn't approved "
+                         "you yet. Find them at the door to get checked in.")
             else:
                 # Geofence gate: if enabled, demand a coord pair and
                 # verify before checking in.
@@ -1438,6 +1752,7 @@ def public_check_in(request, public_token):
                             "event": event,
                             "intent": "self_checkin",
                             "identifier": ident,
+                            "device_token": _device_token(request),
                         })
                     if not event.is_within_geofence(lat, lng):
                         distance = event.distance_from_venue_m(lat, lng)
@@ -1449,25 +1764,43 @@ def public_check_in(request, public_token):
                             "out_of_range": True,
                         }, status=403)
 
-                matched, created, reason = matched.record_daily_check_in(
+                # NB: keep `matched` as the Registration — the first value
+                # returned here is a CheckIn, and reusing the name for it
+                # used to crash the broadcast and the redirect below.
+                _, created, reason = matched.record_daily_check_in(
                     device_token=_device_token(request),
                     method=CheckIn.METHOD_SELF,
                 )
                 if created:
                     services.broadcast_check_in(matched)
-                else:
-                    # Already checked in today (repeat, or reused device)
-                    # — same gentle message, then on to their ticket.
-                    messages.info(request,
-                                  "You're already checked in for today.")
-                return redirect("attendance:ticket",
-                                token=str(matched.token))
+                    return _redirect_to_ticket(matched, welcome="1")
+                if reason == "already_today":
+                    return _redirect_to_ticket(matched, welcome="again")
+                # reason == "device_used"
+                error_kind = "device_used"
+                error = ("This phone has already checked someone else in today. "
+                         "Check in on your own phone, or ask the organizer to "
+                         "mark you present.")
     else:
         form = QuickCheckInForm(event)
 
+    # The "I'm new here" door: walk-in (register + check in) when the
+    # organizer allows it and the doors are open; otherwise a normal
+    # registration if that's still open; otherwise nothing.
+    can_walk_in = event.allow_walk_ins and check_in_open
+    can_register = can_walk_in or event.is_registration_open()
+
     return render(request, "attendance/public_check_in.html", {
-        "event": event, "form": form, "error": error,
-        "can_walk_in": event.allow_walk_ins and event.is_registration_open(),
+        "event": event,
+        "form": form,
+        "error": error,
+        "error_kind": error_kind,
+        "check_in_open": check_in_open,
+        "check_in_opens_at": event.starts_at - timedelta(hours=2),
+        "can_walk_in": can_walk_in,
+        "can_register": can_register,
+        # Open the email door straight away after a failed attempt.
+        "door_open": request.method == "POST",
     })
 
 
@@ -1518,17 +1851,20 @@ def attendee_check_in(request, token):
                 "out_of_range": True,
             }, status=403)
 
-    check_in, created, reason = reg.record_daily_check_in(
+    _, created, reason = reg.record_daily_check_in(
         device_token=_device_token(request),
         method=CheckIn.METHOD_TICKET,
     )
     if created:
         services.broadcast_check_in(reg)
-        messages.success(request, "You're checked in. Enjoy the event!")
-    else:
-        # Both a repeat scan and a reused device land here — same gentle
-        # message, no fuss.
-        messages.info(request, "You're already checked in for today.")
+        return _redirect_to_ticket(reg, welcome="1")
+    if reason == "already_today":
+        return _redirect_to_ticket(reg, welcome="again")
+    # reason == "device_used": this phone already let someone else in.
+    messages.warning(request,
+                     "This phone has already checked someone else in today. "
+                     "Check in on your own phone, or ask the organizer to "
+                     "mark you present.")
     return redirect("attendance:ticket", token=str(reg.token))
 
 

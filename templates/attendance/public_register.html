@@ -23,22 +23,12 @@
         {% endif %}
       </p>
 
-      {# Directions for in-person events. Prefer the geofence pin (most #}
-      {# precise) and fall back to the location string. #}
-      {% if not event.is_online %}
-        {% if event.geofence_lat and event.geofence_lng %}
-          <a class="kk-directions-btn mt-3"
-             href="https://www.google.com/maps/dir/?api=1&destination={{ event.geofence_lat }},{{ event.geofence_lng }}"
-             target="_blank" rel="noopener">
-            <i class="bi bi-signpost-2-fill"></i> Get directions
-          </a>
-        {% elif event.location %}
-          <a class="kk-directions-btn mt-3"
-             href="https://www.google.com/maps/dir/?api=1&destination={{ event.location|urlencode }}"
-             target="_blank" rel="noopener">
-            <i class="bi bi-signpost-2-fill"></i> Get directions
-          </a>
-        {% endif %}
+      {# Directions: the organizer's pin when set, else the typed address. #}
+      {% if event.get_directions_url %}
+        <a class="kk-directions-btn mt-3" href="{{ event.get_directions_url }}"
+           target="_blank" rel="noopener">
+          <i class="bi bi-signpost-2-fill" aria-hidden="true"></i> Get directions
+        </a>
       {% endif %}
     </div>
 

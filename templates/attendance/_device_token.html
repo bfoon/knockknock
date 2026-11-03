@@ -1,0 +1,38 @@
+{# Device token — the same random per-browser id the ticket page keeps in #}
+{# localStorage (key "kk_device_token"). Fills every                       #}
+{# <input data-kk-device-token> on the page so self check-ins carry it,   #}
+{# letting the server spot one phone checking in a whole group. It is not #}
+{# a hardware id; clearing site data resets it, which is an accepted limit. #}
+<script>
+(function () {
+  var KEY = "kk_device_token";
+  function deviceToken() {
+    var t = null;
+    try { t = localStorage.getItem(KEY); } catch (e) { /* storage off */ }
+    if (!t) {
+      if (window.crypto && crypto.randomUUID) {
+        t = crypto.randomUUID().replace(/-/g, "");
+      } else {
+        t = "";
+        for (var i = 0; i < 32; i++) {
+          t += Math.floor(Math.random() * 16).toString(16);
+        }
+      }
+      try { localStorage.setItem(KEY, t); } catch (e) { /* storage off */ }
+    }
+    return t;
+  }
+  window.kkDeviceToken = deviceToken;
+  function fill() {
+    var tok = deviceToken();
+    document.querySelectorAll("input[data-kk-device-token]").forEach(function (el) {
+      if (!el.value) el.value = tok || "";
+    });
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", fill);
+  } else {
+    fill();
+  }
+})();
+</script>

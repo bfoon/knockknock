@@ -459,6 +459,40 @@ class AttendanceEvent(models.Model):
             and self.geofence_lng is not None
         )
 
+    # ── Venue pin & directions ─────────────────────────────────
+    # The pin lives in geofence_lat / geofence_lng whether or not
+    # geofencing is switched on — it's the venue's location, used for
+    # directions and the ticket map. `require_geofence` alone decides
+    # whether check-in is restricted to the area around it.
+
+    def has_venue_pin(self):
+        """True when the venue has coordinates (0.0 is a valid value)."""
+        return self.geofence_lat is not None and self.geofence_lng is not None
+
+    def get_directions_url(self):
+        """
+        Google Maps directions to the venue, from wherever the attendee
+        is. Uses the pin when there is one (exact), otherwise the typed
+        location text (Google searches for it). "" for online events or
+        when there's nothing to go on.
+        """
+        from urllib.parse import quote
+        if self.is_online:
+            return ""
+        base = "https://www.google.com/maps/dir/?api=1&destination="
+        if self.has_venue_pin():
+            return f"{base}{self.geofence_lat:.6f},{self.geofence_lng:.6f}"
+        if self.location:
+            return base + quote(self.location)
+        return ""
+
+    def venue_plus_code(self):
+        """The pin as a Plus Code ("7C55FC3C+XC"), or "" without a pin."""
+        if not self.has_venue_pin():
+            return ""
+        from .geo import encode_plus_code
+        return encode_plus_code(self.geofence_lat, self.geofence_lng)
+
     def distance_from_venue_m(self, lat, lng):
         """Helper for views — returns None if no geofence configured."""
         if self.geofence_lat is None or self.geofence_lng is None:
@@ -678,10 +712,14 @@ class Registration(models.Model):
 
         Returns (check_in, created, reason):
           • created=True  → a new CheckIn row was made for today.
-          • created=False → already checked in today; `reason` is
-            "already_today" in every duplicate case (a repeat scan on
-            this registration, OR this device already used today). Both
-            are surfaced to the attendee with the same gentle message.
+          • created=False, reason="already_today" → this registration
+            already has a check-in for today; `check_in` is that row.
+          • created=False, reason="device_used" → this browser/device
+            already checked in *someone else* today. `check_in` is that
+            other person's row, so callers must not treat it as this
+            registration. Kept separate from "already_today" so the
+            attendee is told the real reason instead of being told
+            they're checked in when they aren't.
 
         The check-in is linked to the organiser-defined AgendaDay whose
         date equals today, when one exists; otherwise just the calendar
@@ -700,14 +738,14 @@ class Registration(models.Model):
         if existing:
             return existing, False, "already_today"
 
-        # This device already used today for this event? Treated as the
-        # same "already checked in today" case — blocked, gentle message.
+        # This device already used today for this event, for someone
+        # else? Blocked — one phone shouldn't check in a whole group.
         if device_token:
             device_clash = CheckIn.objects.filter(
                 event=self.event, day=today, device_token=device_token,
             ).exclude(registration=self).first()
             if device_clash:
-                return device_clash, False, "already_today"
+                return device_clash, False, "device_used"
 
         # Link to the agenda day matching today's date, if the organiser
         # defined one. NULL is fine — `day` still anchors the row.
@@ -720,9 +758,13 @@ class Registration(models.Model):
                 device_token=device_token or "", method=method,
             )
         except IntegrityError:
-            # Lost a race — another request created today's row first.
+            # Lost a race — another request created a clashing row first.
+            # Either this registration got today's row (double tap), or
+            # this device was used for someone else in the same instant.
             existing = self.check_ins.filter(day=today).first()
-            return existing, False, "already_today"
+            if existing:
+                return existing, False, "already_today"
+            return None, False, "device_used"
 
         # Keep the legacy single-timestamp fields meaningful: status flips
         # to checked-in, and checked_in_at records the *first* check-in.
@@ -733,6 +775,36 @@ class Registration(models.Model):
             self.save(update_fields=["status", "checked_in_at"])
 
         return check_in, True, ""
+
+    def today_check_in(self):
+        """Today's CheckIn row for this registration, or None."""
+        return self.check_ins.filter(day=timezone.localdate()).first()
+
+    def undo_last_check_in(self):
+        """
+        Remove the most recent check-in and keep the legacy fields honest.
+
+        Returns the CheckIn that was removed, or None when there was no
+        row to remove (e.g. a legacy registration flipped to checked-in
+        before per-day rows existed — that case is still reverted).
+
+        If earlier days remain, the person stays CHECKED_IN and
+        checked_in_at moves to their earliest remaining arrival. If
+        nothing remains, they go back to ACCEPTED.
+        """
+        last = self.check_ins.order_by("-checked_in_at").first()
+        if last:
+            last.delete()
+
+        first_remaining = self.check_ins.order_by("checked_in_at").first()
+        if first_remaining:
+            self.status = self.STATUS_CHECKED_IN
+            self.checked_in_at = first_remaining.checked_in_at
+        else:
+            self.status = self.STATUS_ACCEPTED
+            self.checked_in_at = None
+        self.save(update_fields=["status", "checked_in_at"])
+        return last
 
     def get_ticket_url(self):
         return reverse("attendance:ticket", kwargs={"token": str(self.token)})

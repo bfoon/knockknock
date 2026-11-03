@@ -1,0 +1,65 @@
+{# One attendee row on the event dashboard.                              #}
+{# Rendered by event_detail.html for the full list, and on its own by     #}
+{# views._render_attendee_row when a row changes (Mark present, Undo, a  #}
+{# live self check-in) so the dashboard can swap it in without a reload. #}
+{# Needs: event, r (decorated by views._decorate_attendee).               #}
+<div class="kk-list-item kk-attendee" data-reg-id="{{ r.pk }}"
+     data-search="{{ r.display_name|lower }} {{ r.email|lower }} {{ r.phone|lower }}">
+  {% if r.presence == "here" %}
+    <span class="kk-presence-dot kk-presence-here" title="{% if r.here_today %}Here today{% else %}Checked in{% endif %}"></span>
+  {% elif r.presence == "earlier" %}
+    <span class="kk-presence-dot kk-presence-earlier" title="Checked in on an earlier day, not yet today"></span>
+  {% else %}
+    <span class="kk-presence-dot" title="Not here yet"></span>
+  {% endif %}
+  <div class="flex-grow-1">
+    <button type="button" class="kk-attendee-open" title="View attendee details">
+      <span class="kk-list-item-title">
+        {{ r.display_name }}
+        {% if r.is_walk_in %}<span class="kk-badge-walkin">walk-in</span>{% endif %}
+      </span>
+      <span class="kk-list-item-meta">
+        {{ r.email|default:r.phone }}
+        {% if r.today_time %}
+          · in today at {{ r.today_time|time:"H:i" }}
+        {% elif r.check_ins.all %}
+          · {{ r.check_ins.all|length }} check-in{{ r.check_ins.all|length|pluralize }}
+        {% elif r.checked_in_at %}
+          · arrived {{ r.checked_in_at|time:"H:i" }}
+        {% endif %}
+      </span>
+    </button>
+  </div>
+  <form method="post" action="{% url 'attendance:registration_action' event.pk r.pk %}"
+        class="d-flex gap-1 kk-attendee-actions">
+    {% csrf_token %}
+    <a href="{% url 'attendance:badge_print' event.pk %}?ids={{ r.pk }}"
+       class="kk-btn kk-btn-ghost btn-sm" target="_blank" rel="noopener"
+       title="Print this person's badge">
+      <i class="bi bi-person-badge"></i>
+    </a>
+    {% if r.status == "checked_in" and event.generate_certificates %}
+      {# Opens the certificate preview modal defined near the bottom of #}
+      {# event_detail.html; its listener reads the data-* attributes.     #}
+      <button type="button"
+              class="kk-btn kk-btn-ghost btn-sm kk-cert-open"
+              title="Preview & download certificate"
+              data-cert-url="{% url 'attendance:certificate_download' event.pk r.pk %}"
+              data-cert-name="{{ r.full_name|default:r.email|escape }}">
+        <i class="bi bi-award"></i>
+      </button>
+    {% endif %}
+    {% if r.status == "checked_in" %}
+      <button name="action" value="uncheck_in" class="kk-btn kk-btn-ghost btn-sm"
+              title="Undo the latest check-in">
+        <i class="bi bi-arrow-counterclockwise"></i>
+      </button>
+    {% endif %}
+    {% if r.can_mark_present %}
+      <button name="action" value="check_in" class="kk-btn kk-btn-primary btn-sm"
+              title="Check this person in for today (skips the location check)">
+        <i class="bi bi-check2-circle"></i> Mark present
+      </button>
+    {% endif %}
+  </form>
+</div>

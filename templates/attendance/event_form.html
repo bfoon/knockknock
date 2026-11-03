@@ -97,16 +97,46 @@
 
     <div class="form-check mb-3">
       {{ form.is_online }}
-      <label class="form-check-label">This is an online event</label>
+      <label class="form-check-label" for="{{ form.is_online.id_for_label }}">This is an online event</label>
     </div>
 
     <div class="mb-3">
-      <label class="form-label">Location <span class="kk-text-dim small">(for in-person events)</span></label>
+      <label class="form-label" for="{{ form.location.id_for_label }}">
+        Location <span class="kk-text-dim small">(for in-person events)</span>
+      </label>
       {{ form.location }}
+      <div class="form-text">The venue name and address attendees will see.</div>
+    </div>
+
+    {# Everything below is only about in-person venues; hidden for online events. #}
+    <div id="kk-inperson-block">
+      {# Saved venues — only for users who can see some. EventForm.__init__ #}
+      {# swaps the widget to HiddenInput when there are none.             #}
+      {% if form.venue.field.queryset.exists %}
+        <div class="mb-3">
+          <label class="form-label" for="{{ form.venue.id_for_label }}">
+            <i class="bi bi-pin-map"></i> Saved venue <span class="kk-text-dim small">(optional)</span>
+          </label>
+          {{ form.venue }}
+          <div class="form-text">
+            Picking one places the pin and sets the check-in radius.
+            <a href="{% url 'attendance:venue_list' %}" class="kk-text-dim">Manage venues</a>
+          </div>
+        </div>
+      {% else %}
+        {{ form.venue }}
+      {% endif %}
+
+      <div class="mb-3">
+        {% include "attendance/_location_picker.html" with lat_field=form.geofence_lat lng_field=form.geofence_lng address_field=form.location radius_field=form.geofence_radius_m circle_toggle=form.require_geofence %}
+        <div class="form-text mt-2">
+          Attendees get directions to this pin on their ticket, the check-in page and the confirmation email.
+        </div>
+      </div>
     </div>
 
     <div class="mb-0">
-      <label class="form-label">Meeting URL <span class="kk-text-dim small">(for online events)</span></label>
+      <label class="form-label" for="{{ form.online_url.id_for_label }}">Meeting URL <span class="kk-text-dim small">(for online events)</span></label>
       {{ form.online_url }}
       {% if form.online_url.errors %}<div class="text-danger small">{{ form.online_url.errors|join:", " }}</div>{% endif %}
     </div>
@@ -119,33 +149,12 @@
   </h3>
   <p class="kk-text-dim small mb-3">
     When enabled, anyone who registered ahead of time can only mark themselves present
-    while physically at the venue. Walk-ins on the day and check-ins you trigger from the
-    dashboard always succeed regardless of location.
+    while physically near the pin you set under “Where”. Walk-ins on the day and check-ins
+    you trigger from the dashboard always succeed regardless of location.
   </p>
 
-  {# Venue picker — only rendered for users who can see saved venues. #}
-  {# EventForm.__init__ swaps the widget to HiddenInput when the user's #}
-  {# visible-venues queryset is empty, so this block harmlessly renders #}
-  {# a hidden field for those users and the rest of the form is unchanged. #}
-  {% if form.venue.field.queryset.exists %}
-    <div class="mb-3">
-      <label class="form-label">
-        <i class="bi bi-pin-map"></i> Venue
-        <span class="kk-text-dim small">(optional — autofills the geofence)</span>
-      </label>
-      {{ form.venue }}
-      <div class="form-text">
-        Pick a saved venue to auto-fill the coordinates and radius below.
-        You can still tweak the radius afterwards. Leave blank to enter
-        coordinates manually.
-        <a href="{% url 'attendance:venue_list' %}" class="kk-text-dim">Manage venues →</a>
-      </div>
-    </div>
-  {% else %}
-    {{ form.venue }}
-    {# Empty-state hint. Superusers get a direct "create one" nudge; #}
-    {# everyone else just learns the feature exists and where to find #}
-    {# it once an admin has added something. #}
+  {% if not form.venue.field.queryset.exists %}
+    {# Empty-state hint. Superusers get a direct "create one" nudge. #}
     <div class="kk-venue-empty-hint mb-3">
       <i class="bi bi-pin-map"></i>
       {% if request.user.is_superuser %}
@@ -153,9 +162,8 @@
         <a href="{% url 'attendance:venue_create' %}?scope=global">Add a global venue</a>
         to make it pickable here and on every other organizer's form.
       {% else %}
-        Tip: site administrators can publish reusable venues that
-        auto-fill these coordinates.
-        <a href="{% url 'attendance:venue_list' %}">See available venues →</a>
+        Tip: site administrators can publish reusable venues you can pick under “Where”.
+        <a href="{% url 'attendance:venue_list' %}">See available venues</a>
       {% endif %}
     </div>
   {% endif %}
@@ -165,39 +173,24 @@
     <label class="form-check-label" for="{{ form.require_geofence.id_for_label }}">
       Require attendees to be at the venue to check in
     </label>
+    {% if form.require_geofence.errors %}
+      <div class="text-danger small mt-1">{{ form.require_geofence.errors|join:" " }}</div>
+    {% endif %}
   </div>
 
   <div class="kk-geofence-panel" id="kk-geofence-panel">
-    <div class="row g-3 mb-2">
-      <div class="col-md-5">
-        <label class="form-label">Venue latitude</label>
-        {{ form.geofence_lat }}
-        {% if form.geofence_lat.errors %}<div class="text-danger small">{{ form.geofence_lat.errors|join:", " }}</div>{% endif %}
-      </div>
-      <div class="col-md-5">
-        <label class="form-label">Venue longitude</label>
-        {{ form.geofence_lng }}
-        {% if form.geofence_lng.errors %}<div class="text-danger small">{{ form.geofence_lng.errors|join:", " }}</div>{% endif %}
-      </div>
-      <div class="col-md-2">
-        <label class="form-label">Radius (m)</label>
+    <div class="row g-3 align-items-end">
+      <div class="col-sm-4">
+        <label class="form-label" for="{{ form.geofence_radius_m.id_for_label }}">Radius (m)</label>
         {{ form.geofence_radius_m }}
         {% if form.geofence_radius_m.errors %}<div class="text-danger small">{{ form.geofence_radius_m.errors|join:", " }}</div>{% endif %}
       </div>
-    </div>
-
-    <div class="d-flex gap-2 flex-wrap mb-3">
-      <button type="button" class="kk-btn kk-btn-ghost btn-sm" id="kk-use-my-location">
-        <i class="bi bi-crosshair"></i> Use my current location
-      </button>
-      <span class="kk-text-dim small align-self-center" id="kk-loc-status"></span>
-    </div>
-
-    <div id="kk-geofence-map" class="kk-geofence-map"></div>
-    <div class="form-text mt-2">
-      Tip: a 100–200 m radius forgives normal GPS drift in urban areas. Indoors or in dense
-      city blocks, consider 200–300 m. Drop the radius below 100 m only if you have a clear
-      open-air venue.
+      <div class="col-sm-8">
+        <div class="form-text mt-0">
+          The purple circle on the map above shows the area. 100–200 m forgives normal GPS
+          drift; indoors or in dense city blocks, consider 200–300 m.
+        </div>
+      </div>
     </div>
   </div>
   </div>
@@ -300,222 +293,43 @@
 </form>
 </div>
 
-<!--{# Leaflet for the small venue map preview. We try multiple CDNs in-->
-<!--   sequence because cdnjs.cloudflare.com is blocked on some networks and-->
-<!--   sites with strict subresource-integrity used to silently fail when the-->
-<!--   pinned hash drifted. The probe at the bottom of this template promotes-->
-<!--   the next CDN if window.L hasn't appeared after a short timeout. #}-->
-<link rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
-      crossorigin="anonymous"
-      id="kk-leaflet-css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"
-        crossorigin="anonymous"
-        id="kk-leaflet-js"></script>
-
-<script>
-// CDN fallback loader. If cdnjs didn't deliver Leaflet within 1.5 s,
-// inject the same file from unpkg; if that fails too, try jsdelivr.
-// Each attempt is added once. The map init code separately polls
-// window.L and gives up gracefully on its own.
-(function(){
-  const FALLBACKS = [
-    'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
-    'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js',
-  ];
-  let idx = 0;
-  function tryNext() {
-    if (window.L) return;
-    if (idx >= FALLBACKS.length) return;
-    const s = document.createElement('script');
-    s.src = FALLBACKS[idx++];
-    s.async = false;
-    s.onload = () => { /* L should be defined now */ };
-    s.onerror = () => setTimeout(tryNext, 200);
-    document.head.appendChild(s);
-    setTimeout(tryNext, 1500); // chain to the next one if this one stalls
-  }
-  setTimeout(tryNext, 1500);
-
-  // Same idea for the CSS — if cdnjs's stylesheet didn't load, the map
-  // controls and tile attribution look unstyled. Probe by checking the
-  // stylesheet's rules. Cross-origin stylesheets can throw on .cssRules,
-  // which is fine — that means it DID load.
-  setTimeout(() => {
-    const link = document.getElementById('kk-leaflet-css');
-    let ok = false;
-    try { ok = !!(link && link.sheet && link.sheet.cssRules); }
-    catch (e) { ok = true; } // cross-origin → loaded
-    if (!ok) {
-      const l = document.createElement('link');
-      l.rel = 'stylesheet';
-      l.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      document.head.appendChild(l);
-    }
-  }, 1500);
-})();
-</script>
-
 <script>
 (function(){
-  const checkbox = document.getElementById('{{ form.require_geofence.id_for_label }}');
-  const panel = document.getElementById('kk-geofence-panel');
-  const mapEl = document.getElementById('kk-geofence-map');
-  const latInput = document.getElementById('{{ form.geofence_lat.id_for_label }}');
-  const lngInput = document.getElementById('{{ form.geofence_lng.id_for_label }}');
+  // The location picker (_location_picker.html) owns the map and pin.
+  // This page script only links it to the rest of the form.
+  const picker = document.querySelector('[data-kk-locpick]');
+  const geofenceBox = document.getElementById('{{ form.require_geofence.id_for_label }}');
+  const geofencePanel = document.getElementById('kk-geofence-panel');
+  const onlineBox = document.getElementById('{{ form.is_online.id_for_label }}');
+  const inPerson = document.getElementById('kk-inperson-block');
   const radiusInput = document.getElementById('{{ form.geofence_radius_m.id_for_label }}');
-  const locStatus = document.getElementById('kk-loc-status');
 
-  let map, marker, circle;
-
-  // Poll until Leaflet shows up. With the multi-CDN loader above, this
-  // can take a couple of seconds in the worst case (cdnjs blocked →
-  // unpkg loads). 80 tries × 150 ms = 12 s ceiling before we give up.
-  function whenLeafletReady(cb, tries = 80) {
-    if (window.L && typeof window.L.map === 'function') return cb();
-    if (tries <= 0) {
-      mapEl.innerHTML = '<div class="kk-map-fallback">'
-        + 'Map library blocked by your network. The geofence still works — '
-        + 'paste latitude/longitude above, or click "Use my current location".'
-        + '</div>';
-      return;
-    }
-    setTimeout(() => whenLeafletReady(cb, tries - 1), 150);
+  // Radius only matters while geofencing is on.
+  function syncGeofence() {
+    if (geofencePanel) geofencePanel.style.display = geofenceBox && geofenceBox.checked ? '' : 'none';
   }
+  geofenceBox?.addEventListener('change', syncGeofence);
+  syncGeofence();
 
-  function showPanel(open) {
-    panel.style.display = open ? '' : 'none';
-    if (!open) return;
-    requestAnimationFrame(() => {
-      whenLeafletReady(() => {
-        if (!map) initMap();
-        else map.invalidateSize();
-      });
-    });
+  // Online events don't need a venue pin.
+  function syncOnline() {
+    const online = !!(onlineBox && onlineBox.checked);
+    if (inPerson) inPerson.hidden = online;
+    if (!online) requestAnimationFrame(() => picker?.kkLocPick?.refresh());
   }
-  checkbox?.addEventListener('change', () => showPanel(checkbox.checked));
-  showPanel(!!checkbox?.checked);
+  onlineBox?.addEventListener('change', syncOnline);
+  syncOnline();
 
-  function initMap() {
-    const lat = parseFloat(latInput.value) || 13.4549;   // Banjul fallback
-    const lng = parseFloat(lngInput.value) || -16.5790;
-    const radius = parseFloat(radiusInput.value) || 150;
-
-    map = L.map(mapEl, { scrollWheelZoom: false }).setView([lat, lng], 16);
-
-    // Tile source: CARTO Voyager. Two reasons to prefer it over
-    // tile.openstreetmap.org here —
-    //   1. OSM's own tile server enforces a strict usage policy and
-    //      returns 403 "Referer is required" when the Referer header
-    //      is missing or stripped (which happens under several
-    //      referrer-policy values). CARTO has no such requirement.
-    //   2. CARTO Voyager reads well against this app's dark UI.
-    // We still set referrerPolicy explicitly so the browser always
-    // sends a Referer header on tile requests regardless of any
-    // page-level <meta name="referrer"> override.
-    L.tileLayer(
-      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-      {
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · © <a href="https://carto.com/attributions">CARTO</a>',
-        maxZoom: 19,
-        subdomains: 'abcd',
-        referrerPolicy: 'strict-origin-when-cross-origin',
-      }
-    ).addTo(map);
-
-    marker = L.marker([lat, lng], {draggable: true}).addTo(map);
-    circle = L.circle([lat, lng], {
-      radius: radius,
-      color: '#7c3aed',
-      fillColor: '#7c3aed',
-      fillOpacity: 0.12,
-      weight: 2,
-    }).addTo(map);
-
-    marker.on('drag', e => {
-      const {lat, lng} = e.target.getLatLng();
-      latInput.value = lat.toFixed(6);
-      lngInput.value = lng.toFixed(6);
-      circle.setLatLng([lat, lng]);
-    });
-    map.on('click', e => {
-      marker.setLatLng(e.latlng);
-      circle.setLatLng(e.latlng);
-      latInput.value = e.latlng.lat.toFixed(6);
-      lngInput.value = e.latlng.lng.toFixed(6);
-    });
-
-    [latInput, lngInput].forEach(inp => inp.addEventListener('change', () => {
-      const la = parseFloat(latInput.value), ln = parseFloat(lngInput.value);
-      if (isFinite(la) && isFinite(ln)) {
-        marker.setLatLng([la, ln]);
-        circle.setLatLng([la, ln]);
-        map.setView([la, ln]);
-      }
-    }));
-    radiusInput.addEventListener('input', () => {
-      const r = parseFloat(radiusInput.value);
-      if (isFinite(r) && r > 0) circle.setRadius(r);
-    });
-
-    requestAnimationFrame(() => map.invalidateSize());
-  }
-
-  // ── "Use my location" button ──
-  document.getElementById('kk-use-my-location').addEventListener('click', () => {
-    if (!('geolocation' in navigator)) {
-      locStatus.textContent = 'Geolocation not available in this browser.';
-      return;
-    }
-    locStatus.textContent = 'Getting your position…';
-    navigator.geolocation.getCurrentPosition(pos => {
-      latInput.value = pos.coords.latitude.toFixed(6);
-      lngInput.value = pos.coords.longitude.toFixed(6);
-      locStatus.textContent = `Set to your current spot (± ${Math.round(pos.coords.accuracy)} m accuracy).`;
-      if (map && marker) {
-        marker.setLatLng([pos.coords.latitude, pos.coords.longitude]);
-        circle.setLatLng([pos.coords.latitude, pos.coords.longitude]);
-        map.setView([pos.coords.latitude, pos.coords.longitude], 17);
-      }
-    }, err => {
-      locStatus.textContent = 'Could not read location: ' + err.message;
-    }, {enableHighAccuracy: true, timeout: 8000});
-  });
-
-  // ── Venue picker → auto-fill geofence on change ──
-  // The VenueSelect widget (forms.py) emits data-lat / data-lng /
-  // data-radius on each <option>. We listen for changes, pull those
-  // attributes, and reflect them into the lat/lng/radius inputs +
-  // map. We also tick the geofence checkbox when a venue is picked
-  // because that's the whole point of having venues.
+  // Saved venue → pin + radius (+ location text if it's still empty).
+  // VenueSelect (forms.py) puts data-lat / data-lng / data-radius on
+  // each <option>.
   const venueSelect = document.querySelector('[data-kk-venue-picker]');
   venueSelect?.addEventListener('change', e => {
     const opt = e.target.selectedOptions[0];
-    if (!opt) return;
-    const la = opt.dataset.lat;
-    const ln = opt.dataset.lng;
-    const r  = opt.dataset.radius;
-    if (!la || !ln) return;  // "no venue" option chosen — leave fields alone
-
-    latInput.value = la;
-    lngInput.value = ln;
-    if (r) radiusInput.value = r;
-
-    // Reflect on the map preview if it exists.
-    if (map && marker && circle) {
-      marker.setLatLng([parseFloat(la), parseFloat(ln)]);
-      circle.setLatLng([parseFloat(la), parseFloat(ln)]);
-      if (r) circle.setRadius(parseFloat(r));
-      map.setView([parseFloat(la), parseFloat(ln)], 17);
-    }
-
-    // Auto-enable the geofence toggle — picking a venue makes no
-    // sense otherwise. The organizer can still untick if they want
-    // the coords without enforcement.
-    if (checkbox && !checkbox.checked) {
-      checkbox.checked = true;
-      showPanel(true);
-    }
+    if (!opt || !opt.dataset.lat || !opt.dataset.lng) return;
+    if (opt.dataset.radius && radiusInput) radiusInput.value = opt.dataset.radius;
+    picker?.kkLocPick?.setPin(parseFloat(opt.dataset.lat), parseFloat(opt.dataset.lng));
+    picker?.kkLocPick?.updateCircle();
   });
 })();
 </script>
@@ -593,22 +407,6 @@
   padding: 1rem 1.1rem;
   margin-bottom: 0;
 }
-.kk-geofence-map {
-  height: 280px;
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid var(--kk-border);
-}
-.kk-map-fallback {
-  height: 100%;
-  display: grid;
-  place-items: center;
-  padding: 1rem;
-  text-align: center;
-  color: var(--kk-text-dim, #94a3b8);
-  font-size: .9rem;
-}
-.leaflet-container { background: #0f172a; }
 
 .kk-cert-design-card {
   background: var(--kk-surface-2);

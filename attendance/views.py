@@ -26,7 +26,6 @@ Three groups, separated by who they're for:
     field_edit, field_delete, event_stats_json
 """
 
-import csv
 import json
 import uuid
 from collections import Counter, defaultdict
@@ -57,7 +56,7 @@ from .models import (
     PRESET_FIELDS, Registration, RegistrationAnswer, AgendaDay,
 )
 from . import geo
-from . import services
+from . import attendance_exports, attendance_report_exports, services
 from .feedback_views import should_route_to_feedback
 
 
@@ -798,40 +797,67 @@ def announcement_send(request, pk):
 
 # ── Export + certificates ──────────────────────────────────────
 
+# ── Attendance list & report downloads ──────────────────────────
+# Builders live in attendance_exports.py (the list) and
+# attendance_report_exports.py (the analytics report). Both merge
+# duplicate registrations and never repeat a column, so all formats
+# agree with each other.
+
+_DOWNLOAD_TYPES = {
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "pdf":  "application/pdf",
+    "csv":  "text/csv; charset=utf-8",
+}
+
+
+def _export_download(request, event, builder, kind, fmt):
+    try:
+        data = builder(event)
+    except ImportError as e:
+        messages.error(request, f"That download needs a missing library ({e.name}). "
+                                "Install the packages in requirements.txt and try again.")
+        return redirect("attendance:event_detail", pk=event.pk)
+    response = HttpResponse(data, content_type=_DOWNLOAD_TYPES[fmt])
+    filename = attendance_exports.export_filename(event, kind, fmt)
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response["Content-Length"] = str(len(data))
+    return response
+
+
+@login_required
+def attendance_list_download(request, pk, fmt):
+    """The attendance list as Excel, Word, PDF or CSV — one row per person."""
+    event = _own_event_or_404(request.user, pk)
+    builders = {
+        "xlsx": attendance_exports.build_attendance_xlsx,
+        "docx": attendance_exports.build_attendance_docx,
+        "pdf":  attendance_exports.build_attendance_pdf,
+        "csv":  attendance_exports.build_attendance_csv,
+    }
+    if fmt not in builders:
+        raise Http404("Unknown download format.")
+    return _export_download(request, event, builders[fmt], "attendance-list", fmt)
+
+
+@login_required
+def attendance_report_download(request, pk, fmt):
+    """The analytics report, as its own Excel, Word or PDF file."""
+    event = _own_event_or_404(request.user, pk)
+    builders = {
+        "xlsx": attendance_report_exports.build_report_xlsx,
+        "docx": attendance_report_exports.build_report_docx,
+        "pdf":  attendance_report_exports.build_report_pdf,
+    }
+    if fmt not in builders:
+        raise Http404("Unknown download format.")
+    return _export_download(request, event, builders[fmt], "attendance-report", fmt)
+
+
 @login_required
 def registrations_export(request, pk):
-    """CSV of all registrations with all dynamic answers."""
-    event = _own_event_or_404(request.user, pk)
-    fields = list(event.fields.all().order_by("order"))
-
-    response = HttpResponse(content_type="text/csv")
-    safe_title = event.title.replace('"', '').replace(",", "")[:60]
-    response["Content-Disposition"] = (
-        f'attachment; filename="attendance-{safe_title}.csv"'
-    )
-
-    writer = csv.writer(response)
-    header = ["Name", "Email", "Phone", "Status",
-              "Registered at", "Checked in at", "Walk-in"]
-    header += [f.label for f in fields]
-    writer.writerow(header)
-
-    regs = (
-        event.registrations
-        .prefetch_related("answers__field")
-        .order_by("registered_at")
-    )
-    for r in regs:
-        answer_map = {a.field_id: a.value for a in r.answers.all()}
-        row = [
-            r.full_name, r.email, r.phone, r.get_status_display(),
-            r.registered_at.strftime("%Y-%m-%d %H:%M") if r.registered_at else "",
-            r.checked_in_at.strftime("%Y-%m-%d %H:%M") if r.checked_in_at else "",
-            "yes" if r.is_walk_in else "no",
-        ]
-        row += [answer_map.get(f.pk, "") for f in fields]
-        writer.writerow(row)
-    return response
+    """Legacy /export.csv URL — now the same clean list as the other formats."""
+    return attendance_list_download(request, pk, "csv")
 
 
 @login_required

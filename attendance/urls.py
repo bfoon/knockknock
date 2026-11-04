@@ -24,6 +24,9 @@ urlpatterns = [
     # items. See views.event_duplicate for what's copied vs reset.
     path("<int:pk>/duplicate/",             views.event_duplicate,      name="event_duplicate"),
     path("<int:pk>/export.csv",             views.registrations_export, name="export_csv"),
+    # Attendance list (xlsx / docx / pdf / csv) and the separate report (xlsx / docx / pdf).
+    path("<int:pk>/export/attendance-list.<str:fmt>", views.attendance_list_download,   name="export_list"),
+    path("<int:pk>/export/attendance-report.<str:fmt>", views.attendance_report_download, name="export_report"),
 
     # Stats feed (JSON) consumed by the dashboard charts
     path("<int:pk>/stats.json",             views.event_stats_json,     name="event_stats_json"),

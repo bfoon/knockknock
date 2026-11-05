@@ -32,7 +32,10 @@
     feats: new Map(), lay: new Map(), records: [], analyses: [], assets: [], trackers: [], imagery: [], events: [],
     sel: null, tool: "select", undo: [], an: { target: "selected", kind: "trees", engine: "hybrid" },
     overlay: null, dets: null, imgLayers: new Map(), trkMarkers: new Map(), project: {}, measure: null, tempPlace: null,
+    handles: true, fit: { target: "auto", tol: 0.45, smooth: 1, inside: false, reach: "" }, fitPrev: null,
   };
+  try { const h = localStorage.getItem("kgeo.handles"); if (h !== null) S.handles = h === "1"; const fs = JSON.parse(localStorage.getItem("kgeo.fit") || "null"); if (fs) Object.assign(S.fit, fs); } catch (e) { /* storage blocked */ }
+  const remember = () => { try { localStorage.setItem("kgeo.handles", S.handles ? "1" : "0"); localStorage.setItem("kgeo.fit", JSON.stringify(S.fit)); } catch (e) { /* ignore */ } };
 
   // ───────────────────────────── utilities ─────────────────────────────
   let toastT;
@@ -176,7 +179,8 @@
     }
     layer._fid = f.id;
     layer.on("click", (e) => {
-      if (S.tool === "probe" || S.tool === "measure") return;
+      // Placement tools act on the map underneath, even on top of a shape.
+      if (["probe", "measure", "wand", "lasso", "Marker", "Text"].includes(S.tool)) return;
       L.DomEvent.stopPropagation(e);
       select(f.id);
     });
@@ -212,6 +216,7 @@
       draw(S.feats.get(id));
       if (opts.zoom) zoomTo(id);
       if (["edit", "drag", "rotate"].includes(S.tool)) enableEditing(S.tool);
+      else if (S.tool === "select" && S.handles && isShape(S.feats.get(id)) && !S.feats.get(id).locked) enableEditing("edit", { soft: true });
       showTab("inspect");
     }
     renderInspector();
@@ -230,7 +235,8 @@
     endMeasure();
     S.tool = t;
     $$("#gs-rail [data-tool]").forEach((b) => b.classList.toggle("on", b.dataset.tool === t));
-    map.getContainer().style.cursor = ["Marker", "Text", "probe", "measure"].includes(t) ? "crosshair" : "";
+    endLasso(true);
+    map.getContainer().style.cursor = ["Marker", "Text", "probe", "measure", "wand", "lasso"].includes(t) ? "crosshair" : "";
     if (["Line", "Polygon", "Rectangle", "Circle"].includes(t)) {
       map.pm.enableDraw(t, { finishOn: t === "Line" ? "dblclick" : null });
       hud(`Drawing <b>${t === "Polygon" ? "shape" : t.toLowerCase()}</b> — click to add points${t === "Polygon" || t === "Line" ? ", double-click / click first point to finish" : ""} · Esc cancels`);
@@ -247,19 +253,69 @@
     } else if (t === "probe") hud("Click anywhere to check <b>geofences</b>, <b>Location IDs</b> and the plus code");
     else if (t === "Marker") hud("Click the map to drop an <b>icon</b>");
     else if (t === "Text") hud("Click the map to place a <b>text label</b>");
+    else if (t === "lasso") hud("<b>Lasso</b> — press and drag around the area like a pen; let go to finish");
+    else if (t === "wand") {
+      hud(`<b>Magic wand</b> — click inside a stand, field, pond or roof · trace <select class="gs-select gs-hud-sel" id="wand-target">${Object.entries(FIT_TARGETS).map(([k, v]) => `<option value="${k}"${k === S.fit.target ? " selected" : ""}>${esc(v.split(" — ")[0])}</option>`).join("")}</select>`);
+      $("#wand-target").onchange = (e) => { S.fit.target = e.target.value; remember(); const ft = $("#fit-target"); if (ft) ft.value = e.target.value; };
+    }
     else hud(null);
   }
   function hud(html) { const h = $("#gs-hud"); h.hidden = !html; if (html) h.innerHTML = html; }
 
   let editing = null;
-  function enableEditing(mode) {
+  function isShape(f) { return !!f && (f.geometry.type === "Polygon" || f.geometry.type === "LineString"); }
+
+  // Live side lengths + area while corners are dragged.
+  const edgeLayer = L.layerGroup().addTo(map);
+  let liveT = 0;
+  function onShapeLive(e) {
+    const now = performance.now();
+    if (now - liveT < 40) return;
+    liveT = now;
+    edgeLabels(e.target || (editing && editing.l));
+  }
+  function ringOf(l) {
+    let ll = l.getLatLngs();
+    while (Array.isArray(ll[0]) && Array.isArray(ll[0][0])) ll = ll[0];
+    return Array.isArray(ll[0]) ? ll[0] : ll;
+  }
+  function edgeLabels(l) {
+    edgeLayer.clearLayers();
+    if (!l || !l.getLatLngs) return;
+    const poly = l instanceof L.Polygon;
+    const ring = ringOf(l);
+    const n = ring.length;
+    if (n < 2) return;
+    const segs = poly ? n : n - 1;
+    let per = 0;
+    for (let i = 0; i < segs; i++) {
+      const a = ring[i], b = ring[(i + 1) % n], d = map.distance(a, b);
+      per += d;
+      if (segs <= 48 && map.latLngToContainerPoint(a).distanceTo(map.latLngToContainerPoint(b)) > 46) {
+        L.marker([(a.lat + b.lat) / 2, (a.lng + b.lng) / 2], { interactive: false, keyboard: false,
+          icon: L.divIcon({ className: "", iconSize: [0, 0], html: `<span class="gs-edge">${fmtLen(d)}</span>` }) }).addTo(edgeLayer);
+      }
+    }
+    let txt = poly ? `<b>${n}</b> corners · perimeter <b>${fmtLen(per)}</b>` : `<b>${n}</b> points · length <b>${fmtLen(per)}</b>`;
+    if (poly && n >= 3) {
+      const r = ring.map((p) => [p.lng, p.lat]); r.push(r[0]);
+      try { const a = turf.area(turf.polygon([r])); txt = `Area <b>${fmtArea(a)}</b> · ${txt}`; } catch (err) { /* mid-drag self-touch */ }
+    }
+    hud(`${txt} <span class="gs-hud-dim">· drag ● corners · click ○ to add · right-click ● to remove</span>`);
+  }
+
+  function enableEditing(mode, opts = {}) {
     const l = S.sel && S.lay.get(S.sel);
     const f = S.sel && S.feats.get(S.sel);
     if (!l || !f) return;
     if (f.locked) { toast("This shape is locked — unlock it in Inspect."); return; }
     editing = { l, mode };
     if (l instanceof L.Marker) { l.dragging && l.dragging.enable(); l.once("dragend", () => commitLayer(f.id, l)); hud("Drag the icon, then let go"); return; }
-    if (mode === "edit") { l.pm.enable({ allowSelfIntersection: false, snappable: true }); hud("Drag vertices · click a midpoint to add · right-click a vertex to remove"); }
+    if (mode === "edit") {
+      l.pm.enable({ allowSelfIntersection: false, snappable: true, removeVertexOn: "contextmenu" });
+      l.on("pm:markerdrag pm:vertexadded pm:vertexremoved pm:markerdragend", onShapeLive);
+      edgeLabels(l);
+    }
     if (mode === "drag") { l.pm.enableLayerDrag(); hud("Drag the shape to move it"); }
     if (mode === "rotate") { if (l.pm.enableRotate) { l.pm.enableRotate(); hud("Drag the corner handle to rotate"); } }
     l.on("pm:edit pm:dragend pm:rotateend", onEdited);
@@ -275,10 +331,13 @@
     const { l } = editing;
     try {
       l.off("pm:edit pm:dragend pm:rotateend", onEdited);
+      l.off("pm:markerdrag pm:vertexadded pm:vertexremoved pm:markerdragend", onShapeLive);
       if (l.pm) { l.pm.disable(); l.pm.disableLayerDrag && l.pm.disableLayerDrag(); l.pm.disableRotate && l.pm.rotateEnabled && l.pm.rotateEnabled() && l.pm.disableRotate(); }
       if (l.dragging && l instanceof L.Marker) l.dragging.disable();
     } catch (e) { /* layer already gone */ }
     editing = null;
+    edgeLayer.clearLayers();
+    if (S.tool === "select") hud(null);
   }
   async function commitLayer(id, layer) {
     const f = S.feats.get(id);
@@ -305,9 +364,9 @@
     const shape = e.shape;
     const { geometry, properties } = geomOfLayer(e.layer, shape);
     map.removeLayer(e.layer);
-    const cat = shape === "Line" ? "road" : shape === "Circle" ? "geofence" : "none";
-    await createFeature({ geometry, properties, category: shape === "Circle" ? "aoi" : cat === "road" ? "road" : "none" });
     setTool("select");
+    const f = await createFeature({ geometry, properties, category: shape === "Circle" ? "aoi" : shape === "Line" ? "road" : "none" });
+    if (f && shape === "Rectangle" && S.handles) toast("Your box is now a free shape: drag any corner, click a <b>○</b> on an edge to add a corner, or press <b>✨ Fit to ground</b> in Inspect to snap it to what's on the imagery.");
   });
   map.on("pm:cut", async (e) => {
     const id = e.originalLayer && e.originalLayer._fid;
@@ -328,6 +387,7 @@
     else if (t === "Text") { await createFeature({ geometry: { type: "Point", coordinates: coords }, properties: { text: "Label" }, category: "note", style: { color: "#ffffff", fontSize: 18 } }); setTool("select"); setTimeout(() => { const i = $("#f-text"); i && i.select(); }, 60); }
     else if (t === "probe") probe(e.latlng);
     else if (t === "measure") measureClick(e.latlng);
+    else if (t === "wand") wandAt(e.latlng);
     else if (t === "select" && S.sel) select(null);
   });
 
@@ -458,6 +518,7 @@
         ${measuresHtml(f)}
         ${p.radius ? `<label class="gs-lbl">Radius (m) <input class="gs-in" type="number" min="1" id="f-radius" value="${(+p.radius).toFixed(1)}"></label>` : ""}
       </div>
+      ${shapeSectionHtml(f)}
       <div class="gs-sec">
         <h4>Style</h4>
         <div class="gs-swatches" id="f-sw">${SWATCHES.map((c) => `<button style="background:${c}" data-c="${c}" title="${c}"></button>`).join("")}</div>
@@ -523,6 +584,7 @@
     $("#f-fields", box).addEventListener("click", (e) => { if (e.target.dataset.rm !== undefined) { e.target.closest(".gs-row").remove(); saveFields(); } });
     bind("#f-addfield", "click", () => { $("#f-fields", box).insertAdjacentHTML("beforeend", `<div class="gs-row"><input class="gs-in" placeholder="field" data-k><input class="gs-in" placeholder="value" data-v><button class="gs-btn gs-btn-ghost" data-rm>×</button></div>`); });
     $$("[data-a]", box).forEach((b) => b.addEventListener("click", () => featureAction(b.dataset.a, f)));
+    bindShapeSection(f, box);
   }
   function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
   async function saveSel(patch, rerender) {
@@ -577,6 +639,405 @@
     if (r.ok) { r.features.forEach((x) => upsert(x)); renderLayers(); toast(`${r.created} field sample plots laid out every ${cell} m — export as GPX/GeoJSON for the field team.`, "ok"); }
   }
   function roundGeom(g) { const w = (x) => (typeof x[0] === "number" ? [+x[0].toFixed(7), +x[1].toFixed(7)] : x.map(w)); return { type: g.type, coordinates: w(g.coordinates) }; }
+
+  // ───────────────────────────── shape it: morph, fit, lasso, wand ─────────────────────────────
+  const FIT_TARGETS = { auto: "Auto — like the middle of my box", vegetation: "Green — mangroves, trees, crops", water: "Water — ponds, creeks, flooded rice", bare: "Bare — sand, cleared land, dry fields", built: "Roofs & concrete" };
+  const SMOOTH_NAMES = ["Crisp corners", "Balanced", "Smooth", "Very smooth"];
+
+  // Local metric frame (equirectangular around the centre) so angles and
+  // lengths behave on small areas; every op converts in and back out.
+  function localFrame(coords) {
+    const lat0 = coords.reduce((s, p) => s + p[1], 0) / coords.length;
+    const lng0 = coords.reduce((s, p) => s + p[0], 0) / coords.length;
+    const kx = 111320 * Math.cos(lat0 * Math.PI / 180), ky = 110540;
+    return {
+      to: (p) => [(p[0] - lng0) * kx, (p[1] - lat0) * ky],
+      back: (q) => [+(q[0] / kx + lng0).toFixed(7), +(q[1] / ky + lat0).toFixed(7)],
+    };
+  }
+  const openRing = (r) => (r.length > 1 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1] ? r.slice(0, -1) : r.slice());
+  const closeRing = (r) => r.concat([r[0]]);
+  const polyG = (ring) => ({ type: "Polygon", coordinates: [closeRing(ring)] });
+  function outerRing(f) {
+    const g = f.geometry;
+    if (g.type === "Polygon") return openRing(g.coordinates[0]);
+    if (g.type === "MultiPolygon") return openRing(g.coordinates[0][0]);
+    if (g.type === "Point" && f.properties && f.properties.radius) return openRing(turf.circle(g.coordinates, f.properties.radius / 1000, { steps: 48 }).geometry.coordinates[0]);
+    return null;
+  }
+
+  function squareCorners(ring) {
+    // Snap every edge to the dominant direction or its perpendicular, then
+    // rebuild corners as intersections — buildings, plots, fields.
+    const F = localFrame(ring), P = ring.map(F.to), n = P.length;
+    if (n < 3) return null;
+    const E = P.map((a, i) => { const b = P[(i + 1) % n]; return { a, b, len: Math.hypot(b[0] - a[0], b[1] - a[1]), ang: Math.atan2(b[1] - a[1], b[0] - a[0]) }; });
+    const main = E.reduce((m, e) => (e.len > m.len ? e : m)).ang;
+    E.forEach((e) => { const k = Math.round((e.ang - main) / (Math.PI / 2)); e.snap = main + k * Math.PI / 2; e.axis = ((k % 2) + 2) % 2; e.mid = [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2]; });
+    // merge consecutive edges on the same axis into one line
+    const groups = [];
+    E.forEach((e) => {
+      const g = groups[groups.length - 1];
+      if (g && g.axis === e.axis) { g.w += e.len; g.mx += e.mid[0] * e.len; g.my += e.mid[1] * e.len; }
+      else groups.push({ axis: e.axis, snap: e.snap, w: e.len, mx: e.mid[0] * e.len, my: e.mid[1] * e.len });
+    });
+    if (groups.length > 1 && groups[0].axis === groups[groups.length - 1].axis) {
+      const l = groups.pop(); groups[0].w += l.w; groups[0].mx += l.mx; groups[0].my += l.my;
+    }
+    if (groups.length < 4) return null;
+    const lines = groups.map((g) => ({ p: [g.mx / g.w, g.my / g.w], d: [Math.cos(g.snap), Math.sin(g.snap)] }));
+    const out = [];
+    for (let i = 0; i < lines.length; i++) {
+      const L1 = lines[(i - 1 + lines.length) % lines.length], L2 = lines[i];
+      const den = L1.d[0] * L2.d[1] - L1.d[1] * L2.d[0];
+      if (Math.abs(den) < 1e-9) continue;
+      const t = ((L2.p[0] - L1.p[0]) * L2.d[1] - (L2.p[1] - L1.p[1]) * L2.d[0]) / den;
+      out.push(F.back([L1.p[0] + t * L1.d[0], L1.p[1] + t * L1.d[1]]));
+    }
+    return out.length >= 3 ? out : null;
+  }
+  function bestRectangle(ring) {
+    // Minimum-area rectangle around the shape (rotating calipers on the hull).
+    const hull = turf.convex(turf.featureCollection(ring.map((p) => turf.point(p))));
+    if (!hull) return null;
+    const H = openRing(hull.geometry.coordinates[0]), F = localFrame(H), P = H.map(F.to);
+    let best = null;
+    for (let i = 0; i < P.length; i++) {
+      const a = P[i], b = P[(i + 1) % P.length], ang = Math.atan2(b[1] - a[1], b[0] - a[0]), c = Math.cos(-ang), s = Math.sin(-ang);
+      const R = P.map((q) => [q[0] * c - q[1] * s, q[0] * s + q[1] * c]);
+      const xs = R.map((q) => q[0]), ys = R.map((q) => q[1]);
+      const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), area = (x1 - x0) * (y1 - y0);
+      if (!best || area < best.area) best = { area, ang, box: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] };
+    }
+    const c = Math.cos(best.ang), s = Math.sin(best.ang);
+    return best.box.map((q) => F.back([q[0] * c - q[1] * s, q[0] * s + q[1] * c]));
+  }
+  function chaikinRing(ring, rounds) {
+    let P = ring;
+    for (let r = 0; r < rounds; r++) {
+      const N = [];
+      P.forEach((a, i) => { const b = P[(i + 1) % P.length]; N.push([0.75 * a[0] + 0.25 * b[0], 0.75 * a[1] + 0.25 * b[1]]); N.push([0.25 * a[0] + 0.75 * b[0], 0.25 * a[1] + 0.75 * b[1]]); });
+      P = N;
+    }
+    return P.map((p) => [+p[0].toFixed(7), +p[1].toFixed(7)]);
+  }
+  function simplifyRing(ring, keepRatio) {
+    const target = Math.max(3, Math.round(ring.length * keepRatio));
+    let tol = 0.3 / 111320, out = ring;
+    for (let k = 0; k < 14; k++) {
+      const s = turf.simplify(turf.polygon([closeRing(ring)]), { tolerance: tol, highQuality: true });
+      out = openRing(s.geometry.coordinates[0]);
+      if (out.length <= target) break;
+      tol *= 1.7;
+    }
+    return out.length >= 3 ? out : ring;
+  }
+  function regularShape(ring, sides, angleDeg) {
+    const F = localFrame(ring), area = turf.area(turf.polygon([closeRing(ring)]));
+    const c = turf.centroid(turf.polygon([closeRing(ring)])).geometry.coordinates, C = F.to(c);
+    const R = Math.sqrt((2 * area) / (sides * Math.sin((2 * Math.PI) / sides)));
+    const a0 = (angleDeg || 0) * Math.PI / 180 + Math.PI / 2;
+    return Array.from({ length: sides }, (_, i) => F.back([C[0] + R * Math.cos(a0 + (2 * Math.PI * i) / sides), C[1] + R * Math.sin(a0 + (2 * Math.PI * i) / sides)]));
+  }
+  function exactBox(ring, w, h, angleDeg) {
+    const F = localFrame(ring), c = F.to(turf.centroid(turf.polygon([closeRing(ring)])).geometry.coordinates);
+    const a = (angleDeg || 0) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
+    return [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]].map((q) => F.back([c[0] + q[0] * ca - q[1] * sa, c[1] + q[0] * sa + q[1] * ca]));
+  }
+  function boxInfo(ring) {
+    // width / height / angle of a 4-corner shape, for the "exact size" fields
+    if (ring.length !== 4) return null;
+    const F = localFrame(ring), P = ring.map(F.to);
+    const w = Math.hypot(P[1][0] - P[0][0], P[1][1] - P[0][1]), h = Math.hypot(P[2][0] - P[1][0], P[2][1] - P[1][1]);
+    return { w, h, ang: Math.atan2(P[1][1] - P[0][1], P[1][0] - P[0][0]) * 180 / Math.PI };
+  }
+
+  async function saveShape(f, ring, label) {
+    if (!ring || ring.length < 3) return toast("That would leave fewer than 3 corners.", "err");
+    const g = roundGeom(polyG(ring));
+    const props = Object.assign({}, f.properties);
+    delete props.radius;
+    pushUndo(f);
+    disableEditing();
+    const r = await call(`feature/${f.id}/`, { geometry: g, properties: props });
+    if (!r.ok) return;
+    upsert(r.feature);
+    if (S.handles && S.sel === f.id) enableEditing("edit", { soft: true });
+    renderInspector(); renderLayers();
+    if (label) toast(`${label} · ${fmtArea(r.feature.area_m2)} · ${openRing(r.feature.geometry.coordinates[0]).length} corners <a href="#" data-undo>undo</a>`, "ok");
+  }
+  document.addEventListener("click", (e) => { if (e.target.matches("[data-undo]")) { e.preventDefault(); undo(); } });
+
+  function shapeSectionHtml(f) {
+    const ring = outerRing(f);
+    if (!ring || f.geometry.type === "LineString") return "";
+    const isCircle = f.geometry.type === "Point";
+    const bi = !isCircle && boxInfo(ring);
+    const fs = S.fit;
+    return `<div class="gs-sec gs-shape">
+      <div class="gs-sec-head"><h4>✦ Shape it</h4>
+        <label class="gs-switch gs-switch-sm" title="Show draggable corner handles whenever a shape is selected"><input type="checkbox" id="sh-handles"${S.handles ? " checked" : ""}><span></span> handles</label></div>
+      ${isCircle ? `<p class="gs-dim">Circles keep a radius. Turn it into a free shape to drag its edge anywhere.</p>
+        <button class="gs-btn gs-btn-hot gs-wide" id="sh-unround"><i class="bi bi-bezier"></i> Make it a free shape</button>` :
+      `<p class="gs-dim">Drag any <b>●</b> corner · click a <b>○</b> on an edge to add one · right-click a corner to remove it.</p>`}
+
+      <div class="gs-fitbox">
+        <div class="gs-fit-title">✨ Fit to what's on the ground</div>
+        <label class="gs-lbl">Trace <select class="gs-select" id="fit-target">${Object.entries(FIT_TARGETS).map(([k, v]) => `<option value="${k}"${k === fs.target ? " selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
+        <div class="gs-grid2">
+          <label class="gs-lbl">Fit <span class="gs-dim" id="fit-tol-l">${fs.tol < 0.3 ? "tight" : fs.tol > 0.65 ? "loose" : "medium"}</span><input type="range" min="0" max="1" step="0.05" id="fit-tol" value="${fs.tol}"></label>
+          <label class="gs-lbl">Edges <select class="gs-select" id="fit-smooth">${SMOOTH_NAMES.map((n, i) => `<option value="${i}"${i === +fs.smooth ? " selected" : ""}>${n}</option>`).join("")}</select></label>
+        </div>
+        <div class="gs-row">
+          <label class="gs-switch gs-switch-sm"><input type="checkbox" id="fit-inside"${fs.inside ? " checked" : ""}><span></span> stay inside my box</label>
+          <input class="gs-in gs-in-sm" id="fit-reach" placeholder="reach m (auto)" value="${esc(fs.reach)}" title="How far past your box the outline may grow">
+        </div>
+        <button class="gs-btn gs-btn-hot gs-wide" id="fit-go"><i class="bi bi-magic"></i> Fit to ground</button>
+      </div>
+
+      ${isCircle ? "" : `
+      <label class="gs-lbl">Quick reshape</label>
+      <div class="gs-tools">
+        <button data-sh="smooth" title="Round off the corners (Chaikin)">〰<span>Smooth</span></button>
+        <button data-sh="simplify" title="Fewer corners, same outline">◇<span>Simplify</span></button>
+        <button data-sh="square" title="Make every corner 90° — buildings, plots">⊾<span>Square</span></button>
+        <button data-sh="rect" title="Best-fitting rotated rectangle">▭<span>Rectangle</span></button>
+        <button data-sh="hull" title="Wrap it like a rubber band">⬠<span>Hull</span></button>
+        <button data-sh="densify" title="Add a corner in the middle of every side">✚<span>Add corners</span></button>
+        <button data-sh="grow" title="Push every edge outwards">⤢<span>Grow</span></button>
+        <button data-sh="shrink" title="Pull every edge inwards">⤡<span>Shrink</span></button>
+        <button data-sh="mirror" title="Flip left ↔ right">⇋<span>Mirror</span></button>
+      </div>
+      <div class="gs-grid3">
+        <label class="gs-lbl">Grow/shrink m<input class="gs-in" id="sh-dist" type="number" value="5" min="0.1" step="0.5"></label>
+        <label class="gs-lbl">Rotate °<span class="gs-inline"><input class="gs-in" id="sh-rot" type="number" value="15" step="1"><button class="gs-btn" data-sh="rotate">↻</button></span></label>
+        <label class="gs-lbl">Scale %<span class="gs-inline"><input class="gs-in" id="sh-scale" type="number" value="110" step="5"><button class="gs-btn" data-sh="scale">⤧</button></span></label>
+      </div>
+
+      <details class="gs-det"${bi ? " open" : ""}><summary>Exact size &amp; regular shapes</summary>
+        <div class="gs-grid3">
+          <label class="gs-lbl">Width m<input class="gs-in" id="bx-w" type="number" step="0.1" value="${bi ? bi.w.toFixed(1) : ""}"></label>
+          <label class="gs-lbl">Height m<input class="gs-in" id="bx-h" type="number" step="0.1" value="${bi ? bi.h.toFixed(1) : ""}"></label>
+          <label class="gs-lbl">Angle °<input class="gs-in" id="bx-a" type="number" step="1" value="${bi ? bi.ang.toFixed(0) : 0}"></label>
+        </div>
+        <div class="gs-row"><button class="gs-btn" data-sh="box">▭ Make box this size</button>
+          <span class="gs-dim" id="bx-ha">${bi ? `= ${num(bi.w * bi.h / 10000, 4)} ha` : ""}</span></div>
+        <div class="gs-row">
+          <select class="gs-select" id="ng-n">${[3, 4, 5, 6, 8, 10, 12].map((k) => `<option value="${k}"${k === 6 ? " selected" : ""}>${{ 3: "Triangle", 4: "Square", 5: "Pentagon", 6: "Hexagon", 8: "Octagon", 10: "10 sides", 12: "12 sides" }[k]}</option>`).join("")}</select>
+          <button class="gs-btn" data-sh="ngon">Same area, regular shape</button>
+        </div>
+      </details>
+
+      <details class="gs-det"><summary>Corners (${ring.length}) — type exact coordinates</summary>
+        <div class="gs-vtable" id="vt">${ring.length > 200 ? `<p class="gs-dim">${ring.length} corners — simplify first to edit them one by one.</p>` :
+          ring.map((p, i) => `<div class="gs-vrow" data-i="${i}"><b>${i + 1}</b><input class="gs-in" data-c="1" value="${p[1]}"><input class="gs-in" data-c="0" value="${p[0]}">
+            <button class="ic" data-vadd title="Add a corner after this one">＋</button><button class="ic" data-vdel title="Remove">×</button></div>`).join("")}</div>
+        <label class="gs-lbl">Paste a boundary <span class="gs-dim">GPS list (lat, lng per line) or WKT POLYGON((lng lat, …))</span>
+          <textarea class="gs-in" id="vt-paste" placeholder="13.0912, -16.7581&#10;13.0915, -16.7550&#10;13.0898, -16.7546"></textarea></label>
+        <button class="gs-btn" id="vt-apply">Replace boundary</button>
+      </details>`}
+    </div>`;
+  }
+
+  function parseCoords(text) {
+    const t = (text || "").trim();
+    if (!t) return null;
+    const wkt = /POLYGON|LINESTRING/i.test(t);
+    const nums = (t.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+    if (nums.length < 6 || nums.length % 2) return null;
+    const pts = [];
+    for (let i = 0; i < nums.length; i += 2) {
+      let a = nums[i], b = nums[i + 1];
+      let lng = wkt ? a : b, lat = wkt ? b : a;
+      if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) [lat, lng] = [lng, lat];
+      pts.push([+lng.toFixed(7), +lat.toFixed(7)]);
+    }
+    return openRing(pts);
+  }
+
+  function bindShapeSection(f, box) {
+    const sec = $(".gs-shape", box);
+    if (!sec) return;
+    const ring = () => outerRing(S.feats.get(f.id));
+    $("#sh-handles", sec).onchange = (e) => {
+      S.handles = e.target.checked; remember();
+      disableEditing();
+      if (S.handles && isShape(S.feats.get(f.id))) enableEditing("edit", { soft: true });
+    };
+    const un = $("#sh-unround", sec);
+    if (un) un.onclick = () => saveShape(f, ring(), "Now a free shape — drag its edge");
+    // fit controls remember their settings between shapes
+    const upd = () => {
+      S.fit = { target: $("#fit-target", sec).value, tol: +$("#fit-tol", sec).value, smooth: +$("#fit-smooth", sec).value,
+        inside: $("#fit-inside", sec).checked, reach: $("#fit-reach", sec).value.trim() };
+      $("#fit-tol-l", sec).textContent = S.fit.tol < 0.3 ? "tight" : S.fit.tol > 0.65 ? "loose" : "medium";
+      remember();
+    };
+    ["fit-target", "fit-tol", "fit-smooth", "fit-inside", "fit-reach"].forEach((id) => $("#" + id, sec).addEventListener("input", upd));
+    $("#fit-go", sec).onclick = () => runFit({ feature_id: f.id }, (g) => saveShape(S.feats.get(f.id), openRing(g.coordinates[0]), "✨ Fitted to the ground"));
+
+    $$("[data-sh]", sec).forEach((b) => b.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      const r = ring(), op = b.dataset.sh, feat = turf.polygon([closeRing(r)]), pivot = turf.centroid(feat).geometry.coordinates;
+      const d = Math.max(0.1, +$("#sh-dist", sec).value || 5);
+      let out = null, label = "";
+      try {
+        if (op === "smooth") { out = simplifyRing(chaikinRing(r, 2), 0.7); label = "Smoothed"; }
+        if (op === "simplify") { out = simplifyRing(r, 0.6); label = "Simplified"; }
+        if (op === "square") { out = squareCorners(r); label = "Corners squared"; if (!out) return toast("Couldn't square this one — try Rectangle instead."); }
+        if (op === "rect") { out = bestRectangle(r); label = "Best-fit rectangle"; }
+        if (op === "hull") { out = openRing(turf.convex(turf.featureCollection(r.map((p) => turf.point(p)))).geometry.coordinates[0]); label = "Wrapped (convex hull)"; }
+        if (op === "densify") { out = []; r.forEach((p, i) => { const q = r[(i + 1) % r.length]; out.push(p, [+((p[0] + q[0]) / 2).toFixed(7), +((p[1] + q[1]) / 2).toFixed(7)]); }); label = "Corners added"; }
+        if (op === "grow" || op === "shrink") {
+          const bf = turf.buffer(feat, (op === "grow" ? d : -d) / 1000, { units: "kilometers", steps: 4 });
+          if (!bf || !bf.geometry) return toast("It would disappear — shrink by less.", "err");
+          const gg = bf.geometry.type === "MultiPolygon" ? { type: "Polygon", coordinates: bf.geometry.coordinates.sort((a, b2) => turf.area(turf.polygon(b2)) - turf.area(turf.polygon(a)))[0] } : bf.geometry;
+          out = simplifyRing(openRing(gg.coordinates[0]), 0.85); label = `${op === "grow" ? "Grown" : "Shrunk"} by ${d} m`;
+        }
+        if (op === "mirror") { const F = localFrame(r); out = r.map((p) => { const q = F.to(p); return F.back([-q[0], q[1]]); }).reverse(); label = "Mirrored"; }
+        if (op === "rotate") { const a = +$("#sh-rot", sec).value || 0; out = openRing(turf.transformRotate(feat, a, { pivot }).geometry.coordinates[0]); label = `Rotated ${a}°`; }
+        if (op === "scale") { const k = (+$("#sh-scale", sec).value || 100) / 100; out = openRing(turf.transformScale(feat, k, { origin: pivot }).geometry.coordinates[0]); label = `Scaled to ${Math.round(k * 100)}%`; }
+        if (op === "box") { const w = +$("#bx-w", sec).value, h = +$("#bx-h", sec).value; if (!(w > 0 && h > 0)) return toast("Type a width and height in metres."); out = exactBox(r, w, h, +$("#bx-a", sec).value || 0); label = `Box ${w} × ${h} m`; }
+        if (op === "ngon") { const n = +$("#ng-n", sec).value; out = regularShape(r, n, 0); label = `Regular ${n}-sided shape, same area`; }
+      } catch (err) { return toast("That reshape didn't work on this outline: " + esc(err.message || err), "err"); }
+      saveShape(f, out, label);
+    }));
+    ["bx-w", "bx-h"].forEach((id) => { const el = $("#" + id, sec); if (el) el.addEventListener("input", () => { const w = +$("#bx-w", sec).value, h = +$("#bx-h", sec).value; $("#bx-ha", sec).textContent = w > 0 && h > 0 ? `= ${num(w * h / 10000, 4)} ha` : ""; }); });
+
+    const vt = $("#vt", sec);
+    if (vt) {
+      const vSave = debounce(() => {
+        const pts = $$(".gs-vrow", vt).map((row) => [+$("[data-c='0']", row).value, +$("[data-c='1']", row).value]);
+        if (pts.some((p) => !isFinite(p[0]) || !isFinite(p[1]) || Math.abs(p[1]) > 90 || Math.abs(p[0]) > 180)) return toast("A coordinate is out of range.", "err");
+        saveShape(f, pts, "Corners updated");
+      }, 700);
+      vt.addEventListener("input", vSave);
+      vt.addEventListener("click", (e) => {
+        const row = e.target.closest(".gs-vrow");
+        if (!row) return;
+        const r = ring(), i = +row.dataset.i;
+        if (e.target.matches("[data-vdel]")) { if (r.length <= 3) return toast("A shape needs at least 3 corners."); r.splice(i, 1); saveShape(f, r, "Corner removed"); }
+        if (e.target.matches("[data-vadd]")) { const q = r[(i + 1) % r.length]; r.splice(i + 1, 0, [+((r[i][0] + q[0]) / 2).toFixed(7), +((r[i][1] + q[1]) / 2).toFixed(7)]); saveShape(f, r, "Corner added"); }
+      });
+      vt.addEventListener("mouseover", (e) => {
+        const row = e.target.closest(".gs-vrow");
+        if (!row) return;
+        const p = ring()[+row.dataset.i];
+        edgeLayer.eachLayer((l) => l._vtPing && edgeLayer.removeLayer(l));
+        const m = L.circleMarker([p[1], p[0]], { radius: 10, color: "#ff8a1f", weight: 3, fill: false, interactive: false });
+        m._vtPing = true; m.addTo(edgeLayer);
+      });
+    }
+    const ap = $("#vt-apply", sec);
+    if (ap) ap.onclick = () => {
+      const pts = parseCoords($("#vt-paste", sec).value);
+      if (!pts || pts.length < 3) return toast("Paste at least 3 coordinate pairs.", "err");
+      saveShape(f, pts, `Boundary replaced with ${pts.length} surveyed corners`);
+      setTimeout(() => zoomTo(f.id), 300);
+    };
+  }
+
+  // ── fit preview: show the traced outline, let the user keep or retry ──
+  function clearFitPreview() {
+    if (S.fitPrev) { map.removeLayer(S.fitPrev); S.fitPrev = null; }
+    $("#gs-fitcard").hidden = true;
+  }
+  async function runFit(body, onAccept, retry) {
+    clearFitPreview();
+    const fs = S.fit;
+    busy(true, body.point ? "Tracing the edge around your click…" : "Reading the imagery under your box…");
+    const r = await call("fit/", Object.assign({ target: fs.target, tolerance: fs.tol, smooth: +fs.smooth, keep_inside: !!fs.inside,
+      reach_m: fs.reach === "" ? null : +fs.reach, imagery_id: ($("#an-source") && $("#an-source").value) || null }, body));
+    busy(false);
+    if (!r.ok) return;
+    const g = r.geometry, st = r.stats;
+    S.fitPrev = L.geoJSON(g, { interactive: false, style: { color: "#22d3ee", weight: 3, dashArray: "7 5", fillColor: "#22d3ee", fillOpacity: 0.16 } }).addTo(map);
+    S.fitPrev.getLayers().forEach((l) => { const el = l.getElement && l.getElement(); if (el) el.classList.add("gs-fit-anim"); });
+    if (!map.getBounds().contains(S.fitPrev.getBounds())) map.fitBounds(S.fitPrev.getBounds().pad(0.25), { maxZoom: 19 });
+    const card = $("#gs-fitcard");
+    card.innerHTML = `<div class="gs-fit-head">✨ Traced <b>${fmtArea(st.area_m2)}</b> <span class="gs-dim">(${num(st.area_m2 / 4046.856, 2)} acres)</span></div>
+      <div class="gs-fit-meta">${st.vertices} corners · ${esc(FIT_TARGETS[st.target].split(" — ")[0])} · ${num(st.metres_per_pixel, 2)} m/px
+        ${!body.point ? ` · covers ${num(st.box_coverage_pct, 0)}% of your box` : ""}${st.grew_past_box && !body.point ? " · grew past your box" : ""}</div>
+      ${st.clipped_by_reach ? `<div class="gs-warn">It runs off the edge of what was read — raise “reach” or the outline will be cut.</div>` : ""}
+      <div class="gs-row">
+        <button class="gs-btn gs-btn-hot" data-fit="keep"><i class="bi bi-check2"></i> Keep</button>
+        <button class="gs-btn" data-fit="tighter">Tighter</button>
+        <button class="gs-btn" data-fit="looser">Looser</button>
+        <button class="gs-btn gs-btn-ghost" data-fit="cancel">Cancel</button>
+      </div>`;
+    card.hidden = false;
+    $$("[data-fit]", card).forEach((b) => (b.onclick = () => {
+      const a = b.dataset.fit;
+      if (a === "keep") { clearFitPreview(); onAccept(g, st); return; }
+      if (a === "cancel") { clearFitPreview(); return; }
+      S.fit.tol = Math.max(0, Math.min(1, S.fit.tol + (a === "looser" ? 0.15 : -0.15)));
+      remember();
+      const t = $("#fit-tol"); if (t) { t.value = S.fit.tol; t.dispatchEvent(new Event("input")); }
+      runFit(body, onAccept, true);
+    }));
+  }
+
+  // ── magic wand: click once inside something, get its outline ──
+  function wandAt(ll) {
+    const mpp = 40075016.686 * Math.cos(ll.lat * Math.PI / 180) / Math.pow(2, map.getZoom() + 8);
+    runFit({ point: [+ll.lng.toFixed(7), +ll.lat.toFixed(7)], seed_m: Math.max(2, Math.min(40, mpp * 8)),
+      reach_m: S.fit.reach === "" ? Math.max(120, Math.min(800, mpp * 500)) : +S.fit.reach },
+    async (g) => {
+      const cat = { vegetation: "forest", water: "water", built: "building", bare: "farm" }[S.fit.target] || "aoi";
+      await createFeature({ geometry: roundGeom(g), name: "Traced area", category: cat, layer: "Traced" });
+    });
+  }
+
+  // ── lasso: draw a boundary freehand with mouse, pen or finger ──
+  let lasso = null;
+  const mapEl = map.getContainer();
+  function llFromEvent(ev) { return map.mouseEventToLatLng(ev); }
+  mapEl.addEventListener("pointerdown", (ev) => {
+    if (S.tool !== "lasso" || ev.button > 0) return;
+    if (ev.target.closest(".leaflet-control")) return;
+    ev.preventDefault();
+    mapEl.setPointerCapture(ev.pointerId);
+    map.dragging.disable();
+    const ll = llFromEvent(ev);
+    lasso = { pts: [ll], last: [ev.clientX, ev.clientY], line: L.polyline([ll], { color: "#ff8a1f", weight: 3, dashArray: "2 6", interactive: false }).addTo(map) };
+  });
+  mapEl.addEventListener("pointermove", (ev) => {
+    if (!lasso) return;
+    if (Math.hypot(ev.clientX - lasso.last[0], ev.clientY - lasso.last[1]) < 4) return;
+    lasso.last = [ev.clientX, ev.clientY];
+    lasso.pts.push(llFromEvent(ev));
+    lasso.line.setLatLngs(lasso.pts.concat([lasso.pts[0]]));
+    if (lasso.pts.length > 3) {
+      const r = lasso.pts.map((p) => [p.lng, p.lat]); r.push(r[0]);
+      try { hud(`Lasso · <b>${fmtArea(turf.area(turf.polygon([r])))}</b> — let go to finish`); } catch (e) { /* self-crossing mid-stroke */ }
+    }
+  });
+  ["pointerup", "pointercancel"].forEach((t) => mapEl.addEventListener(t, () => lasso && finishLasso()));
+  function endLasso(silent) {
+    if (!lasso) return;
+    map.removeLayer(lasso.line);
+    lasso = null;
+    map.dragging.enable();
+    if (!silent) hud(null);
+  }
+  async function finishLasso() {
+    const pts = lasso.pts;
+    endLasso(true);
+    if (pts.length < 6) { hud(null); return toast("Press and drag around the area to lasso it."); }
+    const mpp = 40075016.686 * Math.cos(pts[0].lat * Math.PI / 180) / Math.pow(2, map.getZoom() + 8);
+    let ring = pts.map((p) => [p.lng, p.lat]);
+    let poly = turf.polygon([closeRing(ring)]);
+    try {
+      // a hand-drawn loop often crosses itself near the end — keep the biggest loop
+      const parts = turf.unkinkPolygon(poly).features;
+      if (parts.length > 1) poly = parts.sort((a, b) => turf.area(b) - turf.area(a))[0];
+    } catch (e) { /* already simple */ }
+    poly = turf.simplify(poly, { tolerance: (mpp * 2.5) / 111320, highQuality: true });
+    ring = openRing(poly.geometry.coordinates[0]).map((p) => [+p[0].toFixed(7), +p[1].toFixed(7)]);
+    if (ring.length < 3) return toast("That lasso was too small.");
+    setTool("select");
+    await createFeature({ geometry: polyG(ring), category: "none", name: "" });
+  }
 
   // ───────────────────────────── KPIs ─────────────────────────────
   function refreshKPIs() {
@@ -1157,9 +1618,9 @@
     if (e.target.closest("input,textarea,select")) return;
     const k = e.key.toLowerCase();
     if ((e.ctrlKey || e.metaKey) && k === "z") { e.preventDefault(); undo(); return; }
-    if (k === "escape") { setTool("select"); closeResults(); return; }
+    if (k === "escape") { setTool("select"); closeResults(); clearFitPreview(); return; }
     if ((k === "delete" || k === "backspace") && S.sel) { featureAction("delete", S.feats.get(S.sel)); return; }
-    const map_ = { i: "Marker", t: "Text", l: "Line", p: "Polygon", r: "Rectangle", c: "Circle", m: "measure", e: "edit" };
+    const map_ = { i: "Marker", t: "Text", l: "Line", p: "Polygon", r: "Rectangle", c: "Circle", m: "measure", e: "edit", f: "lasso", w: "wand" };
     if (map_[k] && !e.ctrlKey && !e.metaKey) setTool(map_[k]);
     if (k === "/") { e.preventDefault(); Q.focus(); }
   });

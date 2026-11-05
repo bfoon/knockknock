@@ -61,7 +61,7 @@ def _norm_label(s):
     return "other"
 
 
-def _otsu(values, lo=-0.05, hi=0.35, bins=128):
+def _otsu(values, lo=-0.1, hi=0.9, bins=200):
     import numpy as np
     v = values[(values > lo) & (values < hi)]
     if v.size < 50:

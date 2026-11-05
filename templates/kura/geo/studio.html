@@ -9,7 +9,7 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 <link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.css">
-<link rel="stylesheet" href="{% static 'kura/geo/studio.css' %}?v=1">
+<link rel="stylesheet" href="{% static 'kura/geo/studio.css' %}?v=2">
 </head>
 <body>
 {% csrf_token %}
@@ -58,8 +58,10 @@
     <button data-tool="Text" title="Text label (T)"><i class="bi bi-fonts"></i><span>Text</span></button>
     <button data-tool="Line" title="Line / road (L)"><i class="bi bi-bezier2"></i><span>Line</span></button>
     <button data-tool="Polygon" title="Polygon / parcel (P)"><i class="bi bi-pentagon"></i><span>Shape</span></button>
-    <button data-tool="Rectangle" title="Rectangle (R)"><i class="bi bi-square"></i><span>Box</span></button>
+    <button data-tool="Rectangle" title="Box (R) — draw it roughly, then drag its corners into any shape or press ✨ Fit to ground"><i class="bi bi-bounding-box-circles"></i><span>Box</span></button>
     <button data-tool="Circle" title="Circle / radius fence (C)"><i class="bi bi-circle"></i><span>Circle</span></button>
+    <button data-tool="lasso" title="Lasso (F) — draw a boundary freehand with mouse, pen or finger"><i class="bi bi-lasso"></i><span>Lasso</span></button>
+    <button data-tool="wand" title="Magic wand (W) — click inside a mangrove stand, field, pond or roof to trace its edge"><i class="bi bi-magic"></i><span>Wand</span></button>
     <div class="gs-rail-sep"></div>
     <button data-tool="measure" title="Measure distance &amp; area (M)"><i class="bi bi-rulers"></i><span>Measure</span></button>
     <button data-tool="edit" title="Edit vertices of the selection (E)"><i class="bi bi-vector-pen"></i><span>Edit</span></button>
@@ -84,6 +86,7 @@
       <span class="gs-status-dim" id="gs-attrib"></span>
     </div>
     <div class="gs-toast" id="gs-toast" hidden></div>
+    <div class="gs-fitcard" id="gs-fitcard" hidden></div>
   </main>
 
   <!-- ───────── side panel ───────── -->
@@ -265,6 +268,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7.1.0/turf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
-<script src="{% static 'kura/geo/studio.js' %}?v=1"></script>
+<script src="{% static 'kura/geo/studio.js' %}?v=2"></script>
 </body>
 </html>

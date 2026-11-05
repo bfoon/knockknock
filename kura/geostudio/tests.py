@@ -312,3 +312,75 @@ class AiVisionTests(TestCase):
         self.assertAlmostEqual(palm["lng"], lon, places=6)
         self.assertAlmostEqual(palm["lat"], lat, places=6)
         self.assertAlmostEqual(dets[1]["area_m2"], (120 * 0.5) * (40 * 0.5), delta=30)
+
+
+class FitTests(TestCase):
+    """A loose box over an irregular green stand must come back as the
+    stand's real outline, not the box."""
+
+    def _frame(self):
+        import numpy as np
+        from PIL import Image, ImageDraw
+        img = Image.new("RGB", (400, 400), (196, 178, 140))
+        d = ImageDraw.Draw(img)
+        # an L-shaped mangrove stand made of overlapping crowns
+        self.stand = [(80, 80), (300, 80), (300, 170), (170, 170), (170, 320), (80, 320)]
+        d.polygon(self.stand, fill=(40, 118, 48))
+        rng = np.random.default_rng(3)
+        arr = np.array(img).astype(np.int16) + rng.integers(-8, 9, (400, 400, 3))
+        img = Image.fromarray(arr.clip(0, 255).astype(np.uint8))
+        z = 18
+        x0, y0 = geo.lonlat_to_pixel(-16.6, 13.46, z)
+        s = 256 * 2 ** z
+        k = 0.5 / geo.metres_per_pixel(13.46, z)
+        return imagery.Frame(img, x0 / s, y0 / s, (x0 + 400 * k) / s, (y0 + 400 * k) / s, source="test", zoom=z)
+
+    def _box(self, frame, x0, y0, x1, y1):
+        a = frame.to_lonlat(x0, y0)
+        b = frame.to_lonlat(x1, y1)
+        return {"type": "Polygon", "coordinates": [[[a[0], b[1]], [b[0], b[1]], [b[0], a[1]], [a[0], a[1]], [a[0], b[1]]]]}
+
+    def test_box_snaps_to_l_shape(self):
+        from . import fit
+        frame = self._frame()
+        box = self._box(frame, 100, 100, 260, 260)          # loose, misses most of the L
+        for target in ("auto", "vegetation"):
+            g, st = fit.trace(frame, box, target=target, tolerance=0.4, smooth=0)
+            true_m2 = (220 * 90 + 90 * 150) * 0.25           # L area in px × 0.25 m²/px
+            self.assertAlmostEqual(st["area_m2"], true_m2, delta=true_m2 * 0.06, msg=target)
+            self.assertTrue(st["grew_past_box"])
+            self.assertLessEqual(st["vertices"], 14)          # crisp: roughly the 6 corners
+            # every traced vertex sits near the stand's edge, not the box's
+            from PIL import Image, ImageDraw
+            self.assertGreaterEqual(st["vertices"], 6)
+
+    def test_keep_inside_clips(self):
+        from . import fit
+        frame = self._frame()
+        box = self._box(frame, 100, 100, 260, 260)
+        g, st = fit.trace(frame, box, target="vegetation", keep_inside=True, smooth=0)
+        self.assertFalse(st["grew_past_box"])
+        self.assertLess(st["area_m2"], 160 * 160 * 0.25)
+
+    def test_wand_point(self):
+        from . import fit
+        frame = self._frame()
+        lon, lat = frame.to_lonlat(120, 250)
+        seed = geo.circle_polygon(lon, lat, 4, steps=16)
+        g, st = fit.trace(frame, seed, target="auto", point=[lon, lat], smooth=1)
+        self.assertGreater(st["area_m2"], 5000)
+
+    def test_nothing_found(self):
+        from . import fit
+        frame = self._frame()
+        box = self._box(frame, 320, 320, 390, 390)            # bare sand only
+        with self.assertRaises(fit.FitError):
+            fit.trace(frame, box, target="water")
+
+    def test_simplify_and_chaikin(self):
+        from . import fit
+        ring = [(0, 0), (5, 0.1), (10, 0), (10, 10), (0, 10), (0, 0)]
+        out = fit.simplify_ring(ring, 0.5)
+        self.assertEqual(len(out), 5)
+        sm = fit.chaikin(out, 1)
+        self.assertEqual(len(sm), 9)

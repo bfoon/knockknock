@@ -33,7 +33,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
-from . import ai, carbon, detect, geo, imagery, services
+from . import ai, carbon, detect, fit, geo, imagery, services
 from .models import (Analysis, CarbonAsset, Feature, GeofenceEvent, GeoProject, ImageryLayer,
                      LocationRecord, Tracker)
 
@@ -430,7 +430,7 @@ def api(request, pk, action, oid=None):
         return _err("POST required", 405)
     try:
         return fn(request, p, oid)
-    except (ValueError, services.RegistryError, imagery.ImageryError) as e:
+    except (ValueError, services.RegistryError, imagery.ImageryError, fit.FitError) as e:
         return _err(str(e))
 
 
@@ -573,6 +573,48 @@ def a_analyze(request, p, oid):
     out = an.as_dict()
     _broadcast(p.id, {"type": "analysis", "analysis": an.as_dict(full=False)})
     return JsonResponse({"ok": True, "analysis": out})
+
+
+def a_fit(request, p, oid):
+    """Trace the real outline of what's under a box (or a Wand click).
+    Returns a preview geometry — nothing is saved until the user accepts."""
+    d = _body(request)
+    props = {}
+    point = None
+    if d.get("feature_id"):
+        f = get_object_or_404(Feature, pk=d["feature_id"], project=p)
+        seed, props = f.geometry, f.properties
+    elif isinstance(d.get("point"), list) and len(d["point"]) == 2:
+        try:
+            point = [float(d["point"][0]), float(d["point"][1])]
+        except (TypeError, ValueError):
+            return _err("Bad point.")
+        r = max(2.0, min(80.0, float(d.get("seed_m") or 8)))
+        seed = geo.circle_polygon(point[0], point[1], r, steps=16)
+    else:
+        seed = d.get("geometry")
+        props = _clean_props(d.get("properties"))
+    if not geo.valid_geometry(seed):
+        return _err("Select a box or shape first.")
+    if seed.get("type") not in ("Polygon", "MultiPolygon") and not props.get("radius"):
+        return _err("Fit works from an area — a box, shape or circle.")
+    reach = d.get("reach_m")
+    try:
+        reach = None if reach in (None, "") else max(0.0, min(1500.0, float(reach)))
+    except (TypeError, ValueError):
+        reach = None
+    if point and reach is None:
+        reach = 250.0
+    layer = get_object_or_404(ImageryLayer, pk=d["imagery_id"], project=p) if d.get("imagery_id") else None
+    frame = fit.frame_for(seed, props, reach_m=reach, zoom=d.get("zoom"), layer=layer, point=point)
+    try:
+        tol = float(d.get("tolerance", 0.5))
+        smooth = int(d.get("smooth", 1))
+    except (TypeError, ValueError):
+        tol, smooth = 0.5, 1
+    g, stats = fit.trace(frame, seed, props, target=d.get("target") or "auto", tolerance=tol,
+                         smooth=max(0, min(3, smooth)), keep_inside=bool(d.get("keep_inside")), point=point)
+    return JsonResponse({"ok": True, "geometry": g, "stats": stats})
 
 
 def a_analysis(request, p, oid):
@@ -967,6 +1009,7 @@ API = {
     "layer": ("POST", a_layer),
     "analyze": ("POST", a_analyze),
     "analysis": ("ANY", a_analysis),
+    "fit": ("POST", a_fit),
     "analysis-features": ("POST", a_detections_to_features),
     "register": ("POST", a_register),
     "record": ("ANY", a_record),

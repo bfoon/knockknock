@@ -88,7 +88,7 @@ textarea.gs-in{width:100%;min-height:70px;resize:vertical}
   border:1px solid rgba(34,211,238,.45);border-radius:12px;padding:.45rem .8rem;font-family:var(--mono);font-size:.8rem;
   box-shadow:0 10px 40px rgba(0,0,0,.4);white-space:nowrap}
 .gs-hud b{color:var(--cyan)}
-.gs-toast{position:absolute;top:14px;right:14px;z-index:1200;max-width:360px;background:rgba(10,12,34,.95);
+.gs-toast{position:absolute;top:58px;right:14px;z-index:1200;max-width:360px;background:rgba(10,12,34,.95);
   border:1px solid var(--line2);border-left:4px solid var(--cyan);border-radius:12px;padding:.65rem .85rem;font-size:.86rem;
   box-shadow:0 20px 60px rgba(0,0,0,.5)}
 .gs-toast.err{border-left-color:var(--red)}
@@ -272,3 +272,44 @@ textarea.gs-in{width:100%;min-height:70px;resize:vertical}
   .gs-side{position:absolute;left:0;right:0;bottom:0;height:44%;border-left:0;border-top:1px solid var(--line)}
   .gs-map-wrap{bottom:calc(44% + 54px)}
 }
+
+/* ── Shape it: handles, live lengths, fit, lasso (v2) ── */
+.gs-edge{display:inline-block;transform:translate(-50%,-150%);white-space:nowrap;background:rgba(5,6,22,.88);color:#fff;
+  border:1px solid rgba(34,211,238,.55);border-radius:6px;padding:1px 6px;font:600 11px/1.5 "Spline Sans Mono",monospace;
+  pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.4)}
+.gs-hud-dim{color:var(--dim);font-size:.72rem}
+.marker-icon{background:#fff!important;border:3px solid #ff8a1f!important;border-radius:50%!important;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.marker-icon.marker-icon-middle{background:rgba(255,255,255,.35)!important;border:2px solid #fff!important;opacity:.9}
+.gs-switch-sm{font-size:.72rem;margin:0;color:var(--muted)}
+.gs-switch-sm span{width:30px;height:17px}
+.gs-switch-sm span::after{width:11px;height:11px}
+.gs-switch-sm input:checked+span::after{left:16px}
+.gs-shape{border-color:rgba(255,138,31,.35);background:linear-gradient(160deg,rgba(255,138,31,.07),rgba(255,63,152,.04))}
+.gs-fitbox{border:1px dashed rgba(34,211,238,.45);border-radius:12px;padding:.6rem .7rem;margin:.6rem 0;background:rgba(34,211,238,.05)}
+.gs-fit-title{font-weight:800;font-size:.84rem}
+.gs-tools{display:grid;grid-template-columns:repeat(3,1fr);gap:.3rem}
+.gs-tools button{border:1px solid var(--line2);background:rgba(255,255,255,.05);border-radius:10px;padding:.4rem .2rem;cursor:pointer;
+  font-size:1rem;display:flex;flex-direction:column;align-items:center;gap:.1rem;color:#fff}
+.gs-tools button span{font-size:.62rem;font-weight:700;color:var(--muted)}
+.gs-tools button:hover{background:rgba(255,138,31,.15);border-color:rgba(255,138,31,.5)}
+.gs-inline{display:flex;gap:.25rem;margin-top:.25rem}
+.gs-inline .gs-in{margin:0!important;width:100%}
+.gs-inline .gs-btn{padding:.3rem .45rem}
+.gs-det{margin-top:.6rem;border-top:1px solid var(--line);padding-top:.5rem}
+.gs-det summary{cursor:pointer;font-size:.78rem;font-weight:700;color:var(--muted)}
+.gs-vtable{max-height:230px;overflow:auto;margin:.4rem 0}
+.gs-vrow{display:grid;grid-template-columns:22px 1fr 1fr 22px 22px;gap:.25rem;align-items:center;margin-bottom:.2rem;font-size:.7rem}
+.gs-vrow .gs-in{padding:.25rem .35rem;font-family:var(--mono);font-size:.7rem}
+.gs-vrow .ic{border:0;background:transparent;color:var(--dim);cursor:pointer}
+.gs-vrow .ic:hover{color:#fff}
+.gs-vrow b{color:var(--orange);text-align:right}
+.gs-fitcard{position:absolute;left:50%;bottom:52px;transform:translateX(-50%);z-index:1150;width:min(440px,calc(100% - 24px));
+  background:rgba(8,10,30,.96);border:1px solid rgba(34,211,238,.55);border-radius:16px;padding:.8rem .9rem;
+  box-shadow:0 20px 60px rgba(0,0,0,.55),0 0 40px rgba(34,211,238,.18)}
+.gs-fit-head{font-size:1rem}
+.gs-fit-meta{font-size:.74rem;color:var(--muted);margin:.2rem 0 .3rem}
+.gs-fit-anim{stroke-dashoffset:0;animation:gsAnts 1s linear infinite}
+@keyframes gsAnts{to{stroke-dashoffset:-24}}
+.gs-hud-sel{padding:.15rem .4rem;font-size:.74rem;margin-left:.3rem}
+.gs-hud{pointer-events:auto}
+.leaflet-interactive:focus{outline:none}

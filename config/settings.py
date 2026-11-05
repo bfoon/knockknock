@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "quest_rpg",
     "cards",
     "kura",
+    "kura.geostudio.apps.GeoStudioConfig",  # Kura Geo Studio (label kura_geo, own migrations)
     "community",
     "chalk",
     "icebreakers.apps.IcebreakersConfig",

@@ -1,0 +1,270 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{{ project.title }} · Geo Studio · Kura</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500..800&family=Archivo:wght@400;500;600;700;800;900&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.css">
+<link rel="stylesheet" href="{% static 'kura/geo/studio.css' %}?v=1">
+</head>
+<body>
+{% csrf_token %}
+{{ cfg|json_script:"geo-config" }}
+
+<header class="gs-bar">
+  <a class="gs-mark" href="{% url 'kura_geo:list' %}" title="All geo projects"><i class="bi bi-arrow-left"></i> Kura <span>Geo</span></a>
+  <input id="gs-title" value="{{ project.title }}" maxlength="160" aria-label="Project title">
+
+  <div class="gs-search" id="gs-search">
+    <i class="bi bi-stars gs-search-ico"></i>
+    <input id="gs-q" type="search" autocomplete="off" spellcheck="false"
+           placeholder="Search a place, Location ID, plus code, coordinates… or ask: “draw a 5 ha circle at Tanji”">
+    <button id="gs-q-go" class="gs-chip" title="Run (Enter)"><i class="bi bi-arrow-return-left"></i></button>
+    <div class="gs-results" id="gs-results" hidden></div>
+  </div>
+
+  <div class="gs-bar-right">
+    <select id="gs-basemap" class="gs-select" title="Basemap">
+      <option value="satellite">🛰 Satellite</option>
+      <option value="hybrid">🛰 Satellite + labels</option>
+      <option value="streets">🗺 Streets</option>
+      <option value="topo">⛰ Topographic</option>
+      <option value="dark">🌑 Dark</option>
+    </select>
+    <span class="gs-live" id="gs-live" title="Live connection"><i class="bi bi-broadcast"></i></span>
+    <div class="gs-dd">
+      <button class="gs-btn" data-dd="export"><i class="bi bi-download"></i> Export</button>
+      <div class="gs-dd-menu" id="dd-export" hidden>
+        <a data-export="geojson">GeoJSON (QGIS / ArcGIS)</a>
+        <a data-export="kml">KML (Google Earth)</a>
+        <a data-export="csv">CSV with hectares &amp; IDs</a>
+        <a id="gs-png">PNG of this view</a>
+      </div>
+    </div>
+    <a class="gs-btn" href="{{ cfg.report_url }}" target="_blank"><i class="bi bi-file-earmark-bar-graph"></i> Report</a>
+    <button class="gs-btn gs-btn-hot" id="gs-share"><i class="bi bi-share"></i> Share</button>
+  </div>
+</header>
+
+<div class="gs-wrap">
+  <!-- ───────── tool rail ───────── -->
+  <nav class="gs-rail" id="gs-rail" aria-label="Drawing tools">
+    <button data-tool="select" class="on" title="Select / pan (Esc)"><i class="bi bi-cursor"></i><span>Select</span></button>
+    <button data-tool="Marker" title="Icon / pin (I)"><i class="bi bi-geo-alt"></i><span>Icon</span></button>
+    <button data-tool="Text" title="Text label (T)"><i class="bi bi-fonts"></i><span>Text</span></button>
+    <button data-tool="Line" title="Line / road (L)"><i class="bi bi-bezier2"></i><span>Line</span></button>
+    <button data-tool="Polygon" title="Polygon / parcel (P)"><i class="bi bi-pentagon"></i><span>Shape</span></button>
+    <button data-tool="Rectangle" title="Rectangle (R)"><i class="bi bi-square"></i><span>Box</span></button>
+    <button data-tool="Circle" title="Circle / radius fence (C)"><i class="bi bi-circle"></i><span>Circle</span></button>
+    <div class="gs-rail-sep"></div>
+    <button data-tool="measure" title="Measure distance &amp; area (M)"><i class="bi bi-rulers"></i><span>Measure</span></button>
+    <button data-tool="edit" title="Edit vertices of the selection (E)"><i class="bi bi-vector-pen"></i><span>Edit</span></button>
+    <button data-tool="drag" title="Move the selection"><i class="bi bi-arrows-move"></i><span>Move</span></button>
+    <button data-tool="rotate" title="Rotate the selection"><i class="bi bi-arrow-repeat"></i><span>Rotate</span></button>
+    <button data-tool="cut" title="Cut a hole / split"><i class="bi bi-scissors"></i><span>Cut</span></button>
+    <button data-tool="probe" title="Check a point: geofences, Location IDs, plus code"><i class="bi bi-crosshair"></i><span>Probe</span></button>
+    <div class="gs-rail-sep"></div>
+    <button data-act="locate" title="My location"><i class="bi bi-person-walking"></i><span>Me</span></button>
+    <button data-act="undo" title="Undo last change (Ctrl+Z)"><i class="bi bi-arrow-counterclockwise"></i><span>Undo</span></button>
+  </nav>
+
+  <!-- ───────── map ───────── -->
+  <main class="gs-map-wrap">
+    <div id="gs-map"></div>
+    <div class="gs-hud" id="gs-hud" hidden></div>
+    <div class="gs-busy" id="gs-busy" hidden><div class="gs-scan"></div><div class="gs-busy-text" id="gs-busy-text">Analysing…</div></div>
+    <div class="gs-status">
+      <span id="gs-cursor">—</span>
+      <span id="gs-plus" title="Plus code under the cursor">—</span>
+      <span id="gs-zoom">z—</span>
+      <span class="gs-status-dim" id="gs-attrib"></span>
+    </div>
+    <div class="gs-toast" id="gs-toast" hidden></div>
+  </main>
+
+  <!-- ───────── side panel ───────── -->
+  <aside class="gs-side" id="gs-side">
+    <div class="gs-tabs" role="tablist">
+      <button data-tab="inspect" class="on"><i class="bi bi-sliders"></i>Inspect</button>
+      <button data-tab="layers"><i class="bi bi-layers"></i>Layers</button>
+      <button data-tab="analyse"><i class="bi bi-cpu"></i>Analyse</button>
+      <button data-tab="carbon"><i class="bi bi-tree"></i>Carbon</button>
+      <button data-tab="registry"><i class="bi bi-fingerprint"></i>IDs</button>
+      <button data-tab="track"><i class="bi bi-broadcast-pin"></i>Track</button>
+    </div>
+
+    <!-- INSPECT -->
+    <section class="gs-pane on" data-pane="inspect" id="pane-inspect">
+      <div class="gs-empty" id="insp-empty">
+        <div class="gs-empty-art">🗺️</div>
+        <h3>Draw or pick something</h3>
+        <p>Use the tools on the left, click a shape on the map, or type a command in the search bar.</p>
+        <div class="gs-kpis" id="proj-kpis"></div>
+        <div class="gs-tips">
+          <b>Try asking:</b>
+          <a data-ask="go to Tanji">go to Tanji</a>
+          <a data-ask="draw a 10 hectare circle at Kartong called Mangrove nursery">draw a 10 hectare circle at Kartong called Mangrove nursery</a>
+          <a data-ask="count the trees in view">count the trees in view</a>
+          <a data-ask="find solar panels in view">find solar panels in view</a>
+          <a data-ask="show parcels bigger than 1 ha">show parcels bigger than 1 ha</a>
+          <a data-ask="colour all mangroves dark green">colour all mangroves dark green</a>
+        </div>
+      </div>
+      <div id="insp" hidden></div>
+    </section>
+
+    <!-- LAYERS -->
+    <section class="gs-pane" data-pane="layers">
+      <div class="gs-sec">
+        <div class="gs-sec-head"><h4>Layers</h4><span class="gs-dim" id="layer-count"></span></div>
+        <div id="layer-list"></div>
+      </div>
+      <div class="gs-sec">
+        <h4>Import</h4>
+        <label class="gs-lbl">From a Kura survey <span class="gs-dim">GPS points, mapper tracks &amp; areas, zones</span></label>
+        <div class="gs-row">
+          <select id="imp-survey" class="gs-select gs-grow"></select>
+          <button class="gs-btn" id="imp-survey-go">Import</button>
+        </div>
+        <label class="gs-lbl">GeoJSON file</label>
+        <div class="gs-row"><input type="file" id="imp-file" accept=".geojson,.json,application/geo+json,application/json" class="gs-file"></div>
+      </div>
+      <div class="gs-sec">
+        <h4>Drone / orthophoto imagery</h4>
+        <p class="gs-dim">Pin a JPEG/PNG orthomosaic to the map, then analyse it at full drone resolution — the strongest evidence for credits and land surveys.</p>
+        <div id="imagery-list"></div>
+        <input type="file" id="img-file" accept="image/jpeg,image/png,image/webp" class="gs-file">
+        <div class="gs-grid4">
+          <input class="gs-in" id="img-w" placeholder="West">
+          <input class="gs-in" id="img-s" placeholder="South">
+          <input class="gs-in" id="img-e" placeholder="East">
+          <input class="gs-in" id="img-n" placeholder="North">
+        </div>
+        <div class="gs-row">
+          <button class="gs-btn gs-btn-ghost" id="img-fit-view">Use view bounds</button>
+          <button class="gs-btn gs-btn-ghost" id="img-fit-sel">Use selection</button>
+          <input type="date" class="gs-in" id="img-date" title="Captured on">
+        </div>
+        <button class="gs-btn gs-btn-hot gs-wide" id="img-upload"><i class="bi bi-cloud-upload"></i> Upload &amp; pin</button>
+      </div>
+    </section>
+
+    <!-- ANALYSE -->
+    <section class="gs-pane" data-pane="analyse">
+      <div class="gs-sec">
+        <h4>Real-time geo analysis</h4>
+        <p class="gs-dim">Pick an area (or use the current view), choose what to look for, and run. Satellite tiles are fetched and frozen with a SHA-256 fingerprint so the result can be audited later.</p>
+        <label class="gs-lbl">Area</label>
+        <div class="gs-seg" id="an-target">
+          <button data-v="selected" class="on">Selected shape</button>
+          <button data-v="view">Current view</button>
+        </div>
+        <label class="gs-lbl">Look for</label>
+        <div class="gs-seg gs-seg-4" id="an-kind">
+          <button data-v="trees" class="on">🌳 Trees</button>
+          <button data-v="solar">☀️ Solar</button>
+          <button data-v="landcover">🧩 Cover</button>
+          <button data-v="full">✨ All</button>
+        </div>
+        <label class="gs-lbl">Engine</label>
+        <div class="gs-seg" id="an-engine">
+          <button data-v="hybrid" class="on">Hybrid</button>
+          <button data-v="pixel">Pixel (offline)</button>
+          <button data-v="ai">AI vision</button>
+        </div>
+        <div class="gs-row">
+          <label class="gs-lbl gs-grow">Imagery
+            <select id="an-source" class="gs-select"><option value="">Satellite tiles</option></select>
+          </label>
+          <label class="gs-lbl">Detail
+            <select id="an-zoom" class="gs-select">
+              <option value="">Auto</option><option>19</option><option>18</option><option>17</option><option>16</option>
+            </select>
+          </label>
+        </div>
+        <button class="gs-btn gs-btn-hot gs-wide" id="an-run"><i class="bi bi-radar"></i> Run analysis</button>
+        <p class="gs-dim gs-small" id="an-ai-note"></p>
+      </div>
+      <div id="an-result"></div>
+      <div class="gs-sec">
+        <div class="gs-sec-head"><h4>History</h4><span class="gs-dim">click to show on map</span></div>
+        <div id="an-history"></div>
+      </div>
+    </section>
+
+    <!-- CARBON -->
+    <section class="gs-pane" data-pane="carbon">
+      <div class="gs-carbon-hero" id="carbon-hero"></div>
+      <div class="gs-sec">
+        <h4>Add a carbon / restoration asset</h4>
+        <p class="gs-dim">Turn the selected area into an MRV record: what was planted, when, and what was claimed. Every analysis you run on it becomes a monitoring point.</p>
+        <div id="carbon-form"></div>
+      </div>
+      <div id="carbon-list"></div>
+      <p class="gs-dim gs-small gs-disclaim">Screening estimates using conservative Tier-1-style factors (editable per asset). Credits are only issued by a registry (Verra, Gold Standard, Plan Vivo…) under an approved methodology with third-party validation — use this to prepare and evidence that process.</p>
+    </section>
+
+    <!-- REGISTRY -->
+    <section class="gs-pane" data-pane="registry">
+      <div class="gs-sec">
+        <h4>Location IDs &amp; land register</h4>
+        <p class="gs-dim">A Location ID is minted from the boundary itself — SHA-256 of the exact shape → <code>{{ cfg.id_prefix }}-XXXX-XXXX-C</code> with a check letter. Same boundary, same ID; move a corner and it changes. Every allocation, transfer or dispute is chained by hash.</p>
+        <div id="reg-form"></div>
+      </div>
+      <div class="gs-sec">
+        <div class="gs-sec-head"><h4>Register</h4><input class="gs-in gs-in-sm" id="reg-filter" placeholder="Filter…"></div>
+        <div id="reg-list"></div>
+      </div>
+      <div id="reg-detail"></div>
+    </section>
+
+    <!-- TRACK -->
+    <section class="gs-pane" data-pane="track">
+      <div class="gs-sec">
+        <h4>Geofences</h4>
+        <p class="gs-dim">Any shape can be a geofence (toggle it in Inspect). Trackers raise enter / exit events live.</p>
+        <div id="fence-list"></div>
+      </div>
+      <div class="gs-sec">
+        <h4>Live trackers</h4>
+        <p class="gs-dim">Send a link to a phone — a ranger, a truck, a surveyor. It shares GPS while the page is open and shows which zone it is in.</p>
+        <div class="gs-row">
+          <input class="gs-in gs-grow" id="trk-name" placeholder="Name e.g. Ranger Musa">
+          <input type="color" id="trk-color" value="#f59e0b" class="gs-color">
+          <button class="gs-btn gs-btn-hot" id="trk-add">Add</button>
+        </div>
+        <div id="trk-list"></div>
+      </div>
+      <div class="gs-sec">
+        <h4>Events</h4>
+        <div id="evt-list" class="gs-feed"></div>
+      </div>
+    </section>
+  </aside>
+</div>
+
+<!-- share dialog -->
+<div class="gs-modal" id="share-modal" hidden>
+  <div class="gs-modal-card">
+    <button class="gs-x" data-close>&times;</button>
+    <h3>Share the MRV report</h3>
+    <p class="gs-dim">A read-only public page: map, hectares, analyses, carbon estimates and Location IDs (holder names masked, contacts hidden). Send it to a buyer, a verifier or a ministry.</p>
+    <label class="gs-switch"><input type="checkbox" id="share-on"><span></span> Public link is live</label>
+    <div class="gs-row"><input class="gs-in gs-grow" id="share-url" readonly><button class="gs-btn" id="share-copy">Copy</button></div>
+    <div id="share-qr" class="gs-qr"></div>
+    <button class="gs-btn gs-btn-ghost" id="share-rotate">Make a new link (old one stops working)</button>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@7.1.0/turf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
+<script src="{% static 'kura/geo/studio.js' %}?v=1"></script>
+</body>
+</html>

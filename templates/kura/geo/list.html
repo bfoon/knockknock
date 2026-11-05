@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% load static humanize %}
+
+{% block title %}Geo Studio · Kura{% endblock %}
+{% block body_class %}kk-standard-page{% endblock %}
+
+{% block head_extra %}
+<style>
+  .geo-hero{position:relative;overflow:hidden;border-radius:26px;padding:2rem 1.8rem;margin-bottom:1.6rem;
+    background:radial-gradient(600px 300px at 90% 10%,rgba(34,197,94,.28),transparent 60%),
+      radial-gradient(500px 300px at 10% 100%,rgba(34,211,238,.22),transparent 60%),
+      linear-gradient(140deg,#071a24,#120a2c);border:1px solid rgba(255,255,255,.12)}
+  .geo-hero h1{font-size:clamp(2rem,4.5vw,3rem);line-height:1.02;margin:0 0 .5rem;max-width:720px}
+  .geo-hero p{color:var(--kk-text-dim);max-width:640px;margin:0}
+  .geo-hero .grid-art{position:absolute;right:-40px;top:-40px;width:360px;height:360px;opacity:.35;pointer-events:none;
+    background:repeating-linear-gradient(0deg,rgba(34,211,238,.25) 0 1px,transparent 1px 28px),
+      repeating-linear-gradient(90deg,rgba(34,211,238,.25) 0 1px,transparent 1px 28px);
+    mask-image:radial-gradient(circle at 60% 40%,#000,transparent 70%);transform:rotate(-12deg)}
+  .geo-caps{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:1rem}
+  .geo-caps span{font-size:.78rem;padding:.35rem .7rem;border-radius:999px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.13)}
+  .geo-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:.8rem;margin-bottom:1.6rem}
+  .geo-kpis div{padding:1rem;border-radius:18px}
+  .geo-kpis b{display:block;font-family:var(--kk-font-display);font-size:1.8rem}
+  .geo-kpis small{color:var(--kk-text-dim);text-transform:uppercase;letter-spacing:.1em;font-size:.68rem;font-weight:700}
+  .geo-new{padding:1.3rem;border-radius:20px;margin-bottom:1.6rem}
+  .geo-new form{display:grid;grid-template-columns:2fr 1.3fr 1.3fr auto;gap:.6rem;align-items:end}
+  .geo-new label{display:block;margin-bottom:.3rem;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--kk-text-dim);font-weight:700}
+  .geo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:1.1rem}
+  .geo-card{padding:1.15rem 1.2rem;border-radius:20px;display:flex;flex-direction:column;gap:.5rem;text-decoration:none;color:var(--kk-text);transition:transform .2s}
+  .geo-card:hover{transform:translateY(-3px);color:var(--kk-text)}
+  .geo-card h3{font-size:1.15rem;margin:0}
+  .geo-card .meta{display:flex;gap:.5rem;flex-wrap:wrap;font-size:.78rem;color:var(--kk-text-dim)}
+  .geo-card .tag{font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;font-weight:800;padding:.2rem .55rem;border-radius:999px;
+    background:rgba(34,211,238,.12);border:1px solid rgba(34,211,238,.35);align-self:flex-start}
+  .geo-card .tag.carbon{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.4)}
+  .geo-card .tag.land{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.4)}
+  .geo-card .tag.solar{background:rgba(56,189,248,.12);border-color:rgba(56,189,248,.4)}
+  .geo-card .tag.security{background:rgba(244,63,94,.12);border-color:rgba(244,63,94,.4)}
+  .geo-verify{display:flex;gap:.5rem;margin-top:1rem;max-width:460px}
+  @media (max-width: 760px){.geo-kpis{grid-template-columns:repeat(2,1fr)}.geo-new form{grid-template-columns:1fr}}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width:1180px">
+  <section class="geo-hero">
+    <div class="grid-art"></div>
+    <a href="{% url 'kura:list' %}" class="kk-btn kk-btn-ghost btn-sm mb-3"><i class="bi bi-arrow-left"></i> Kura surveys</a>
+    <h1>Kura <span class="kk-gradient-text">Geo Studio</span></h1>
+    <p>Map anything, count trees and solar panels from satellite or drone imagery, measure the hectares behind a mangrove or palm planting, prepare carbon-credit evidence, run geofences with live trackers, and issue tamper-evident Location IDs for land allocation and ownership.</p>
+    <div class="geo-caps">
+      <span>✦ AI search &amp; commands</span><span>🌳 Tree &amp; canopy detection</span><span>☀️ Solar measurement</span>
+      <span>🌿 Carbon MRV</span><span>🔏 Location IDs + hash ledger</span><span>🛡 Geofencing</span><span>📡 Live tracking</span><span>🛩 Drone imagery</span>
+    </div>
+    <form class="geo-verify" onsubmit="event.preventDefault();var c=this.code.value.trim();if(c)location.href='{% url 'kura_geo:verify' 'X' %}'.replace('/X/','/'+encodeURIComponent(c)+'/')">
+      <input name="code" class="form-control" placeholder="Verify a Location ID — e.g. GM-7K3Q-9XA2-M">
+      <button class="kk-btn kk-btn-ghost">Verify</button>
+    </form>
+  </section>
+
+  <div class="geo-kpis">
+    <div class="kk-card"><b>{{ totals.projects }}</b><small>Geo projects</small></div>
+    <div class="kk-card"><b>{{ totals.hectares|intcomma }}</b><small>Hectares mapped</small></div>
+    <div class="kk-card"><b>{{ totals.records }}</b><small>Location IDs</small></div>
+    <div class="kk-card"><b>{{ totals.analyses }}</b><small>Analyses run</small></div>
+  </div>
+
+  <div class="kk-card geo-new">
+    <form method="post" action="{% url 'kura_geo:create' %}">
+      {% csrf_token %}
+      <div><label>Project name</label><input name="title" class="form-control" placeholder="e.g. Kartong mangrove restoration 2026" required></div>
+      <div><label>Purpose</label>
+        <select name="purpose" class="form-select">{% for k, v in purposes %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
+      <div><label>Link a Kura survey <span style="text-transform:none;letter-spacing:0">(optional)</span></label>
+        <select name="survey" class="form-select"><option value="">— none —</option>{% for s in surveys %}<option value="{{ s.code }}">{{ s.title }} ({{ s.code }})</option>{% endfor %}</select></div>
+      <button class="kk-btn kk-btn-primary"><i class="bi bi-plus-lg"></i> New map</button>
+    </form>
+  </div>
+
+  {% if projects %}
+  <div class="geo-grid">
+    {% for p in projects %}
+    <a class="kk-card geo-card" href="{% url 'kura_geo:studio' p.id %}">
+      <span class="tag {{ p.purpose }}">{{ p.get_purpose_display }}</span>
+      <h3>{{ p.title }}</h3>
+      <div class="meta">
+        <span><i class="bi bi-pentagon"></i> {{ p.n_features }} shapes</span>
+        <span><i class="bi bi-fingerprint"></i> {{ p.n_records }} IDs</span>
+        {% if p.survey %}<span><i class="bi bi-clipboard-data"></i> {{ p.survey.code }}</span>{% endif %}
+        {% if p.is_public %}<span><i class="bi bi-globe2"></i> public report</span>{% endif %}
+      </div>
+      <div class="meta">Updated {{ p.updated_at|naturaltime }}</div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-center" style="color:var(--kk-text-dim);padding:2rem 0">No maps yet — create your first one above.</p>
+  {% endif %}
+</div>
+{% endblock %}

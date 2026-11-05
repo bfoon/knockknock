@@ -22,6 +22,7 @@ import chalk.routing
 # registered here — their WebSockets failed with "No route found" and the
 # pages silently fell back to polling.
 import kura.routing
+import kura.geostudio.routing
 import attendance.routing
 import tabletop.routing
 
@@ -32,6 +33,7 @@ websocket_urlpatterns = (
     + hanns.routing.websocket_urlpatterns
     + quest_rpg.routing.websocket_urlpatterns
     + chalk.routing.websocket_urlpatterns
+    + kura.geostudio.routing.websocket_urlpatterns   # before kura: ws/kura/geo/… vs ws/kura/<code>/…
     + kura.routing.websocket_urlpatterns
     + attendance.routing.websocket_urlpatterns
     + tabletop.routing.websocket_urlpatterns

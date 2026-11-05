@@ -227,6 +227,8 @@
     Live{% if pending_devices %} · 📱 {{ pending_devices }} waiting{% endif %}</a>
   <a class="btn ghost" href="{% url 'kura:teams' survey.code %}"
      title="Teams, supervisors, sharing and the validation check suite">Teams</a>
+  <a class="btn ghost" href="{% url 'kura_geo:from_survey' survey.code %}"
+     title="Geo Studio — this survey's GPS points, mapped tracks/areas and zones on an AI map: tree &amp; solar detection, carbon MRV, Location IDs, geofencing">🗺 Geo</a>
   <a class="btn ghost" href="{% url 'kura:preview' survey.code %}" target="_blank" rel="noopener" title="Live preview of the DRAFT — no publish needed">Preview</a>
   <button class="btn" id="publish-btn" type="button">Publish v<span id="next-v">?</span></button>
 </div>

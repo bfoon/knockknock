@@ -1,0 +1,162 @@
+{% load humanize %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ project.title }} · MRV report · Kura Geo</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600..800&family=Archivo:wght@400;600;800&family=Spline+Sans+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<style>
+  :root{--ink:#0b1020;--dim:#5b6275;--line:#e3e6ef;--green:#15803d;--orange:#ea580c;--cyan:#0891b2}
+  *{box-sizing:border-box}
+  body{margin:0;background:#f4f5f9;color:var(--ink);font-family:"Archivo",sans-serif}
+  .page{max-width:1000px;margin:0 auto;padding:28px 18px 60px}
+  header{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;border-bottom:3px solid var(--ink);padding-bottom:14px}
+  .kicker{font-family:"Spline Sans Mono",monospace;font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+  h1{font-family:"Fraunces",serif;font-size:clamp(1.8rem,4vw,2.6rem);margin:.2rem 0 0;line-height:1.05}
+  h2{font-family:"Fraunces",serif;font-size:1.3rem;margin:30px 0 10px}
+  .btns{display:flex;gap:8px}
+  .btn{border:1px solid var(--ink);background:#fff;border-radius:10px;padding:8px 12px;font-weight:700;font-size:.82rem;cursor:pointer;text-decoration:none;color:var(--ink)}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:18px}
+  .kpis div{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px}
+  .kpis b{display:block;font-family:"Fraunces",serif;font-size:1.7rem}
+  .kpis small{color:var(--dim);font-size:.68rem;text-transform:uppercase;letter-spacing:.1em;font-weight:800}
+  .kpis .hero{background:linear-gradient(140deg,#052e1c,#0b3b2a);color:#fff;border:0}
+  .kpis .hero small{color:#a7f3d0}
+  #map{height:420px;border-radius:16px;margin-top:18px;border:1px solid var(--line)}
+  table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;font-size:.86rem}
+  th,td{padding:9px 11px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{background:#f8f9fc;font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--dim)}
+  td.n{text-align:right;font-family:"Spline Sans Mono",monospace}
+  .mono{font-family:"Spline Sans Mono",monospace;font-size:.78rem}
+  .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;background:#eef2ff}
+  .ok{color:var(--green)} .warn{color:var(--orange)}
+  .note{background:#fff8eb;border:1px solid #fcd9a6;border-radius:12px;padding:12px 14px;font-size:.82rem;margin-top:16px;line-height:1.5}
+  .foot{margin-top:28px;color:var(--dim);font-size:.75rem}
+  @media (max-width:720px){.kpis{grid-template-columns:repeat(2,1fr)}}
+  @media print{.btns{display:none}body{background:#fff}#map{height:360px}h2{break-after:avoid}table{break-inside:auto}tr{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div>
+      <div class="kicker">Kura Geo · {{ project.get_purpose_display }} · generated {{ generated|date:"j M Y H:i" }}</div>
+      <h1>{{ project.title }}</h1>
+      {% if project.description %}<p style="color:var(--dim);margin:.4rem 0 0">{{ project.description }}</p>{% endif %}
+    </div>
+    <div class="btns">
+      <button class="btn" onclick="window.print()">Print / PDF</button>
+      {% if private %}<a class="btn" href="{% url 'kura_geo:studio' project.id %}">Open studio</a>{% endif %}
+    </div>
+  </header>
+
+  <div class="kpis">
+    <div class="hero"><small>Est. credits to date</small><b>{{ totals.credits|intcomma }}</b><small>tCO₂e, net of buffer</small></div>
+    <div><small>Removals per year</small><b>{{ totals.annual|intcomma }}</b><small>tCO₂e / yr</small></div>
+    <div><small>Hectares under MRV</small><b>{{ totals.ha }}</b></div>
+    <div><small>Location IDs</small><b>{{ records|length }}</b></div>
+  </div>
+
+  <div id="map"></div>
+
+  {% if state.assets %}
+  <h2>Carbon &amp; restoration assets</h2>
+  <table>
+    <tr><th>Area</th><th>Ecosystem</th><th>Status</th><th class="n">Mapped ha</th><th class="n">Canopy ha</th><th class="n">Trees</th><th class="n">t/yr</th><th class="n">Credits</th><th>Checks</th></tr>
+    {% for a in state.assets %}
+    <tr>
+      <td><b>{{ a.feature_name }}</b>{% if a.planted_on %}<br><span class="mono">planted {{ a.planted_on }}</span>{% endif %}</td>
+      <td>{{ a.icon }} {{ a.ecosystem_label }}<br><span class="mono" style="color:var(--dim)">{{ a.annual.methodology_hint }}</span></td>
+      <td><span class="tag">{{ a.status_label }}</span></td>
+      <td class="n">{{ a.hectares|floatformat:2 }}</td>
+      <td class="n">{{ a.latest.canopy_ha|default_if_none:"—" }}</td>
+      <td class="n">{{ a.latest.tree_count|default_if_none:"—" }}</td>
+      <td class="n">{{ a.annual.net_tco2e }}</td>
+      <td class="n"><b>{{ a.to_date.credits|intcomma }}</b></td>
+      <td>
+        {% with v=a.verification %}
+        {% if v.hectares_claimed %}<div class="{% if v.hectares_diff_pct < 5 and v.hectares_diff_pct > -5 %}ok{% else %}warn{% endif %}">Area {{ v.hectares_diff_pct }}% vs claim</div>{% endif %}
+        {% if v.survival_pct %}<div class="{% if v.survival_pct >= 70 %}ok{% else %}warn{% endif %}">Survival {{ v.survival_pct }}%</div>{% endif %}
+        {% if not a.latest %}<div class="warn">Not yet monitored</div>{% endif %}
+        {% endwith %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if analyses %}
+  <h2>Monitoring analyses</h2>
+  <table>
+    <tr><th>Date</th><th>Area</th><th>Engine</th><th class="n">Analysed ha</th><th class="n">Canopy</th><th class="n">Trees</th><th class="n">Solar m²</th><th>Evidence fingerprint</th></tr>
+    {% for a in analyses %}{% with s=a.result.summary %}
+    <tr>
+      <td class="mono">{{ a.created_at|date:"Y-m-d H:i" }}</td>
+      <td>{{ a.feature.name|default:"view area" }}</td>
+      <td>{{ a.get_engine_display }}{% if s.resolution_m %}<br><span class="mono">{{ s.resolution_m }} m/px</span>{% endif %}</td>
+      <td class="n">{{ s.aoi_ha|default_if_none:"—" }}</td>
+      <td class="n">{% if s.canopy_ha is not None %}{{ s.canopy_ha }} ha ({{ s.canopy_pct }}%){% else %}—{% endif %}</td>
+      <td class="n">{{ s.tree_count|default_if_none:"—" }}</td>
+      <td class="n">{{ s.solar_area_m2|default_if_none:"—" }}</td>
+      <td class="mono" style="font-size:.66rem;word-break:break-all">{{ a.snapshot_sha256|slice:":24" }}…{% if private and a.snapshot %} <a href="{{ a.snapshot.url }}" target="_blank">image</a>{% endif %}</td>
+    </tr>
+    {% endwith %}{% endfor %}
+  </table>
+  {% endif %}
+
+  {% if records %}
+  <h2>Location IDs</h2>
+  <table>
+    <tr><th>ID</th><th>Label</th><th>Holder</th><th>Tenure</th><th class="n">ha</th><th>Status</th></tr>
+    {% for r in records %}
+    <tr>
+      <td class="mono"><a href="{% url 'kura_geo:verify' r.code %}" target="_blank">{{ r.code }}</a></td>
+      <td>{{ r.label }}</td>
+      <td>{{ r.holder_name }}</td>
+      <td>{{ r.tenure_label }}</td>
+      <td class="n">{{ r.hectares }}</td>
+      <td><span class="tag">{{ r.status_label }}</span></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if by_cat %}
+  <h2>Mapped features</h2>
+  <table>
+    <tr><th>Category</th><th class="n">Count</th><th class="n">Hectares</th></tr>
+    {% for name, c in by_cat %}<tr><td>{{ name }}</td><td class="n">{{ c.count }}</td><td class="n">{{ c.ha|floatformat:3 }}</td></tr>{% endfor %}
+  </table>
+  {% endif %}
+
+  <div class="note"><b>About these numbers.</b> Carbon figures are screening estimates using conservative, editable Tier-1-style factors and the canopy measured on imagery; they are not issued credits. Issuance requires an approved methodology, field plots, baseline, leakage and permanence assessment, and third-party validation by an accredited body. Each analysis records the SHA-256 of the exact pixels analysed so results can be re-checked.</div>
+  <p class="foot">Imagery: {{ attribution }} · Made with Kura Geo Studio on knock·knock</p>
+</div>
+{{ state_json|json_script:"report-state" }}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+(function(){
+  var st = JSON.parse(document.getElementById("report-state").textContent);
+  var map = L.map("map", {scrollWheelZoom:false}).setView(st.project.center, st.project.zoom);  // a view must exist before circles are added
+  L.tileLayer("{{ imagery_url|escapejs }}", {maxNativeZoom:19, maxZoom:21, crossOrigin:true}).addTo(map);
+  var colors = {mangrove:"#10b981",palm:"#a3e635",forest:"#16a34a",parcel:"#f59e0b",geofence:"#f43f5e",solar:"#38bdf8",road:"#e5e7eb",water:"#3b82f6"};
+  var group = L.featureGroup().addTo(map);
+  (st.features || []).forEach(function(f){
+    if (f.hidden || (f.layer||"").indexOf("Detected") === 0) return;
+    var c = (f.style && f.style.color) || colors[f.category] || "#22d3ee";
+    var s = {color:c, weight:2, fillOpacity:.25, fillColor:(f.style && f.style.fillColor) || c};
+    var g = f.geometry, l;
+    if (g.type === "Point") {
+      if (f.properties && f.properties.radius) l = L.circle([g.coordinates[1], g.coordinates[0]], Object.assign({radius:f.properties.radius}, s));
+      else l = L.circleMarker([g.coordinates[1], g.coordinates[0]], {radius:5, color:"#fff", weight:2, fillColor:c, fillOpacity:1});
+    } else l = L.geoJSON(g, {style:s});
+    if (f.name) l.bindTooltip(f.name);
+    l.addTo(group);
+  });
+  if (group.getLayers().length) map.fitBounds(group.getBounds().pad(.1), {maxZoom:18});
+  else map.setView(st.project.center, st.project.zoom);
+})();
+</script>
+</body>
+</html>

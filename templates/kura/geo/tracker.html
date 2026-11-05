@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050616">
+<title>{{ tracker.name }} · Live tracker · Kura Geo</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800;900&family=Spline+Sans+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#050616;color:#f8fbff;font-family:"Archivo",sans-serif}
+  #map{position:absolute;inset:0 0 220px 0}
+  .sheet{position:absolute;left:0;right:0;bottom:0;height:220px;padding:16px 16px calc(16px + env(safe-area-inset-bottom));
+    background:rgba(8,10,30,.97);border-top:1px solid rgba(255,255,255,.12);border-radius:20px 20px 0 0}
+  .row{display:flex;align-items:center;gap:10px}
+  .dot{width:14px;height:14px;border-radius:50%;background:{{ tracker.color }};box-shadow:0 0 0 6px color-mix(in srgb,{{ tracker.color }} 30%,transparent)}
+  h1{font-size:1.1rem;margin:0}
+  .state{font-family:"Spline Sans Mono",monospace;font-size:.78rem;color:rgba(248,251,255,.6);margin:6px 0 12px}
+  .zone{font-size:1.05rem;font-weight:800;min-height:1.4em}
+  .zone.in{color:#86efac}
+  button{width:100%;border:0;border-radius:14px;padding:15px;font:800 1rem "Archivo",sans-serif;color:#fff;cursor:pointer;margin-top:12px;
+    background:linear-gradient(110deg,#ff8a1f,#ff3f98)}
+  button.stop{background:rgba(255,255,255,.1)}
+  .note{font-size:.72rem;color:rgba(248,251,255,.5);margin-top:8px}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="sheet">
+  <div class="row"><span class="dot"></span><h1>{{ tracker.name }}</h1></div>
+  <div class="state" id="state">{% if tracker.active %}Ready — tap Start to share your location{% else %}This tracker has been switched off by the project owner.{% endif %}</div>
+  <div class="zone" id="zone"></div>
+  {% if tracker.active %}<button id="go">Start sharing location</button>{% endif %}
+  <div class="note">Your position is sent only while this page is open and sharing is on. Keep the screen on for continuous tracking.</div>
+</div>
+{{ fences|json_script:"fences" }}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+(function(){
+  var fences = JSON.parse(document.getElementById("fences").textContent);
+  var map = L.map("map", {zoomControl:false}).setView([13.45,-16.58], 13);
+  L.tileLayer("{{ imagery_url|escapejs }}", {maxNativeZoom:19, maxZoom:20}).addTo(map);
+  var g = L.featureGroup().addTo(map);
+  fences.forEach(function(f){
+    var c = (f.style && f.style.color) || "#f43f5e", s = {color:c, weight:2, dashArray:"8 6", fillOpacity:.12};
+    var l = (f.geometry.type === "Point" && f.properties && f.properties.radius)
+      ? L.circle([f.geometry.coordinates[1], f.geometry.coordinates[0]], Object.assign({radius:f.properties.radius}, s))
+      : L.geoJSON(f.geometry, {style:s});
+    if (f.name) l.bindTooltip(f.name, {permanent:true, direction:"center"});
+    l.addTo(g);
+  });
+  if (g.getLayers().length) map.fitBounds(g.getBounds().pad(.2));
+  var me = null, watch = null, last = 0, lock = null;
+  var btn = document.getElementById("go"), st = document.getElementById("state"), zone = document.getElementById("zone");
+  function send(p){
+    var now = Date.now();
+    if (now - last < 4000) return;
+    last = now;
+    fetch("{% url 'kura_geo:tracker_ping' tracker.token %}", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({lat:p.coords.latitude, lng:p.coords.longitude, acc:p.coords.accuracy, speed:p.coords.speed})})
+      .then(function(r){return r.json();}).then(function(d){
+        if (!d.ok) { st.textContent = d.error || "Not accepted"; return; }
+        zone.textContent = d.inside.length ? "Inside: " + d.inside.join(", ") : "Outside all zones";
+        zone.className = "zone" + (d.inside.length ? " in" : "");
+        if (d.events.length && navigator.vibrate) navigator.vibrate([120, 60, 120]);
+      }).catch(function(){ st.textContent = "Offline — will retry"; });
+  }
+  function onPos(p){
+    var ll = [p.coords.latitude, p.coords.longitude];
+    if (!me) { me = L.circleMarker(ll, {radius:9, color:"#fff", weight:3, fillColor:"{{ tracker.color }}", fillOpacity:1}).addTo(map); map.setView(ll, 17); }
+    else me.setLatLng(ll);
+    st.textContent = "Sharing · ±" + Math.round(p.coords.accuracy) + " m · " + new Date().toLocaleTimeString();
+    send(p);
+  }
+  if (btn) btn.onclick = function(){
+    if (watch !== null) {
+      navigator.geolocation.clearWatch(watch); watch = null;
+      btn.textContent = "Start sharing location"; btn.className = ""; st.textContent = "Stopped";
+      if (lock) { lock.release(); lock = null; }
+      return;
+    }
+    if (!navigator.geolocation) { st.textContent = "This browser has no GPS access."; return; }
+    watch = navigator.geolocation.watchPosition(onPos, function(e){ st.textContent = "Location error: " + e.message; },
+      {enableHighAccuracy:true, maximumAge:3000, timeout:20000});
+    btn.textContent = "Stop sharing"; btn.className = "stop";
+    if (navigator.wakeLock) navigator.wakeLock.request("screen").then(function(l){ lock = l; }).catch(function(){});
+  };
+})();
+</script>
+</body>
+</html>

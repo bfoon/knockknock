@@ -17,6 +17,9 @@ urlpatterns = [
     path("hanns/", include("hanns.urls", namespace="hanns")),
     path("quest_rpg/", include("quest_rpg.urls", namespace="quest_rpg")),
     path("cards/", include("cards.urls", namespace="cards")),
+    # Kura Geo Studio — before the Kura include, whose "<code>/…" routes
+    # would otherwise swallow "geo/…".
+    path("kura/geo/", include("kura.geostudio.urls", namespace="kura_geo")),
     path("kura/", include("kura.urls", namespace="kura")),
     path("icebreakers/", include("icebreakers.urls", namespace="icebreakers")),
     path("community/", include("community.urls")),

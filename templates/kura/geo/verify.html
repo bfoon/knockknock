@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ code }} · Location ID · Kura</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600..800&family=Archivo:wght@400;600;800&family=Spline+Sans+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<style>
+  :root{--line:rgba(255,255,255,.12);--dim:rgba(248,251,255,.55);--orange:#ff8a1f;--pink:#ff3f98;--cyan:#22d3ee;--green:#22c55e;--red:#f43f5e}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;color:#f8fbff;font-family:"Archivo",sans-serif;
+    background:radial-gradient(800px 500px at 90% -10%,rgba(255,138,31,.18),transparent 60%),radial-gradient(700px 500px at 0 0,rgba(34,211,238,.15),transparent 60%),#050616}
+  .wrap{max-width:880px;margin:0 auto;padding:24px 16px 48px}
+  .brand{font-weight:900;letter-spacing:-.02em;color:#fff;text-decoration:none}
+  .brand span{background:linear-gradient(110deg,var(--orange),var(--pink),var(--cyan));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .cert{margin-top:18px;border:1px solid var(--line);border-radius:22px;overflow:hidden;background:rgba(255,255,255,.04)}
+  .cert-head{padding:22px;display:flex;gap:18px;align-items:center;justify-content:space-between;flex-wrap:wrap;
+    background:linear-gradient(120deg,rgba(255,138,31,.16),rgba(34,211,238,.12));border-bottom:1px solid var(--line)}
+  .kicker{font-family:"Spline Sans Mono",monospace;font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+  .code{font-family:"Spline Sans Mono",monospace;font-weight:600;font-size:clamp(1.5rem,5vw,2.3rem);letter-spacing:.04em;margin:.2rem 0}
+  .status{display:inline-block;padding:.3rem .7rem;border-radius:999px;font-weight:800;font-size:.75rem;letter-spacing:.08em;text-transform:uppercase}
+  .s-registered,.s-verified{background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.5);color:#bbf7d0}
+  .s-disputed{background:rgba(244,63,94,.15);border:1px solid rgba(244,63,94,.5);color:#fecdd3}
+  .s-retired,.s-draft{background:rgba(255,255,255,.08);border:1px solid var(--line)}
+  #map{height:340px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1px;background:var(--line)}
+  .grid div{background:#0a0b20;padding:14px 16px}
+  .grid small{display:block;color:var(--dim);font-size:.68rem;text-transform:uppercase;letter-spacing:.1em;font-weight:700}
+  .grid b{font-size:1.05rem}
+  .sec{padding:18px 22px;border-top:1px solid var(--line)}
+  .ok{color:#bbf7d0}.bad{color:#fecdd3}
+  .hash{font-family:"Spline Sans Mono",monospace;font-size:.72rem;color:var(--dim);word-break:break-all}
+  ol.ledger{list-style:none;padding:0;margin:0}
+  ol.ledger li{padding:10px 0 10px 22px;border-left:1px solid var(--line);position:relative;margin-left:6px}
+  ol.ledger li::before{content:"";position:absolute;left:-5px;top:15px;width:9px;height:9px;border-radius:50%;background:var(--orange)}
+  ol.ledger small{display:block;color:var(--dim)}
+  .qr{background:#fff;padding:8px;border-radius:12px;width:120px;height:120px}
+  .miss{margin-top:40px;text-align:center}
+  .miss h1{font-family:"Fraunces",serif}
+  .foot{margin-top:18px;color:var(--dim);font-size:.75rem;text-align:center}
+  @media print{body{background:#fff;color:#000}.grid div{background:#fff}.cert{border-color:#ccc}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="brand" href="/">knock·knock <span>Kura Geo</span></a>
+  {% if record %}
+  <div class="cert">
+    <div class="cert-head">
+      <div>
+        <div class="kicker">Location ID · land &amp; place register</div>
+        <div class="code">{{ record.code }}</div>
+        <span class="status s-{{ record.status }}">{{ record.get_status_display }}</span>
+        {% if chain.ok %}<span class="status s-verified">🔗 ledger intact</span>{% else %}<span class="status s-disputed">⛓ integrity check failed</span>{% endif %}
+      </div>
+      {% if qr %}<img class="qr" src="{{ qr }}" alt="QR code for this page">{% endif %}
+    </div>
+    <div id="map"></div>
+    <div class="grid">
+      <div><small>Label</small><b>{{ record.label|default:"—" }}</b></div>
+      <div><small>Holder</small><b>{{ pub.holder_name|default:"—" }}</b></div>
+      <div><small>Tenure</small><b>{{ record.get_tenure_display }}</b></div>
+      <div><small>Land use</small><b>{{ record.land_use|default:"—" }}</b></div>
+      <div><small>Area</small><b>{{ pub.hectares }} ha</b></div>
+      <div><small>Plus code (centre)</small><b>{{ record.plus_code }}</b></div>
+      <div><small>Centre</small><b>{{ record.centroid_lat|floatformat:6 }}, {{ record.centroid_lng|floatformat:6 }}</b></div>
+      <div><small>Registered</small><b>{{ record.created_at|date:"j M Y" }}</b></div>
+      {% if record.parent %}<div><small>Subdivided from</small><b><a style="color:var(--cyan)" href="{% url 'kura_geo:verify' record.parent.code %}">{{ record.parent.code }}</a></b></div>{% endif %}
+    </div>
+    <div class="sec">
+      <div class="kicker">Integrity</div>
+      {% if chain.ok %}
+        <p class="ok">✓ The boundary matches the fingerprint taken at registration and all {{ chain.events }} history entries link correctly.</p>
+      {% else %}
+        <p class="bad">✗ {% if chain.broken_at %}History entry #{{ chain.broken_at }}: {% endif %}{{ chain.reason }}. Treat this record as unreliable and contact the registering office.</p>
+      {% endif %}
+      <div class="hash">Boundary SHA-256: {{ record.geometry_hash }}</div>
+      <div class="hash">Ledger head: {{ record.head_hash }}</div>
+    </div>
+    {% if children %}
+    <div class="sec"><div class="kicker">Subdivided into</div>
+      {% for c in children %}<a style="color:var(--cyan);margin-right:12px" href="{% url 'kura_geo:verify' c.code %}">{{ c.code }}</a>{% endfor %}</div>
+    {% endif %}
+    <div class="sec">
+      <div class="kicker">History</div>
+      <ol class="ledger">
+        {% for e in ledger %}
+        <li><b>{{ e.label }}</b>{% if e.party %} → {{ e.party }}{% endif %}
+          <small>{{ e.at|slice:":10" }} · #{{ e.hash|slice:":16" }}</small></li>
+        {% endfor %}
+      </ol>
+    </div>
+  </div>
+  <p class="foot">Anyone holding the boundary GeoJSON can recompute its SHA-256 and compare it with the fingerprint above. JSON: <a style="color:var(--cyan)" href="{% url 'kura_geo:lookup' record.code %}">{{ record.code }}.json</a></p>
+  {% else %}
+  <div class="miss">
+    <h1>{{ code }}</h1>
+    {% if valid_format %}
+      <p>This is a well-formed Location ID, but it is not in this register.</p>
+    {% else %}
+      <p class="bad">This doesn't look like a valid Location ID — the check letter doesn't match. Check for a typing mistake.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% if record %}
+{{ pub.geometry|json_script:"geom" }}
+{{ pub.geometry_props|json_script:"gprops" }}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+(function(){
+  var g = JSON.parse(document.getElementById("geom").textContent);
+  var p = JSON.parse(document.getElementById("gprops").textContent) || {};
+  var map = L.map("map", {scrollWheelZoom:false}).setView([{{ record.centroid_lat|stringformat:"f" }}, {{ record.centroid_lng|stringformat:"f" }}], 17);
+  L.tileLayer("{{ imagery_url|escapejs }}", {maxNativeZoom:19, maxZoom:21, attribution:"{{ attribution|escapejs }}"}).addTo(map);
+  var style = {color:"#ff8a1f", weight:3, fillOpacity:.15};
+  var layer = (g.type === "Point" && p.radius) ? L.circle([g.coordinates[1], g.coordinates[0]], Object.assign({radius:p.radius}, style))
+            : (g.type === "Point") ? L.marker([g.coordinates[1], g.coordinates[0]]) : L.geoJSON(g, {style:style});
+  layer.addTo(map);
+  if (layer.getBounds) map.fitBounds(layer.getBounds().pad(.4)); else map.setView(layer.getLatLng(), 18);
+})();
+</script>
+{% endif %}
+</body>
+</html>

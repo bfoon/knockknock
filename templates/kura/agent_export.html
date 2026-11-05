@@ -128,8 +128,12 @@ function map(el, b){
   if(!window.L){ el.innerHTML = '<p class="err">Maps need an internet connection (Leaflet).</p>'; return; }
   const box = document.createElement("div"); box.className="map"; el.appendChild(box);
   const m = L.map(box, {scrollWheelZoom:false});
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/"+(P.dark?"dark_all":"light_all")+"/{z}/{x}/{y}{r}.png",
-    {attribution:"© OpenStreetMap © CARTO", maxZoom:19}).addTo(m);
+  // Keyless Esri canvas tiles (CARTO now needs an API key).
+  const canvas = P.dark ? "World_Dark_Gray" : "World_Light_Gray";
+  L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/"+canvas+"_Base/MapServer/tile/{z}/{y}/{x}",
+    {attribution:"Esri, HERE, Garmin, © OpenStreetMap contributors", maxNativeZoom:16, maxZoom:19}).addTo(m);
+  L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/"+canvas+"_Reference/MapServer/tile/{z}/{y}/{x}",
+    {maxNativeZoom:16, maxZoom:19}).addTo(m);
   const groups = b.legend||[];
   const colour = g=>PAL[Math.max(0,groups.indexOf(g))%PAL.length];
   (b.points||[]).forEach(p=>L.circleMarker([p.lat,p.lng],{radius:5,weight:1,color:"#fff",fillColor:colour(p.group),fillOpacity:.85})

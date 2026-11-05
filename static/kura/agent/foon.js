@@ -628,8 +628,12 @@ R.map = (b, ctx)=>{
     const L = window.L;
     const m = L.map(box, {scrollWheelZoom:false, attributionControl:true, zoomControl:!(ctx&&ctx.compact)});
     LIVE.maps.add(m);
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-      {attribution:"© OpenStreetMap © CARTO", maxZoom:19}).addTo(m);
+    // CARTO now stamps every keyless tile "API KEY REQUIRED", so Foon's maps
+    // use Esri's keyless dark canvas (base + labels) instead.
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+      {attribution:"Esri, HERE, Garmin, © OpenStreetMap contributors", maxNativeZoom:16, maxZoom:19}).addTo(m);
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
+      {maxNativeZoom:16, maxZoom:19}).addTo(m);
     (b.points||[]).forEach(p=>{
       const mk = L.circleMarker([p.lat, p.lng], {radius:5, weight:1, color:"#ffffff", fillColor:colour(p.group), fillOpacity:.88});
       if(p.group) mk.bindTooltip(esc(p.group));

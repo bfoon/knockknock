@@ -5992,13 +5992,21 @@ function renderPlotlyMap(el, geo){
   setTimeout(()=>{ if(!target.isConnected || !window.Plotly) return; const spec=plotlyMapSpec(snapshot, geo); window.Plotly.newPlot(target,spec.traces,spec.layout,spec.config).then(()=>{try{window.Plotly.Plots.resize(target);}catch(e){}}).catch(()=>{}); if(window.ResizeObserver){const ro=new ResizeObserver(()=>{try{window.Plotly.Plots.resize(target);}catch(e){}}); ro.observe(target);} },0);
   return box;
 }
+// CARTO began stamping every keyless tile "API KEY REQUIRED" (Aug 2026) and
+// those tiles load with HTTP 200, so the tileerror fallback never fired.
+// All map styles now use Esri's keyless services. The grey canvases only go
+// to zoom 16 natively, hence tileOpts().
+const ESRI_TILES="https://server.arcgisonline.com/ArcGIS/rest/services/";
 function tileUrl(kind){
-  if(kind==="dark") return "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
-  if(kind==="light") return "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
-  if(kind==="satellite") return "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
-  // Use Carto Voyager for the OpenStreetMap option. It is based on OSM data,
-  // but avoids the volunteer tile-server "Access blocked" issue from tile.openstreetmap.org.
-  return "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+  if(kind==="dark") return ESRI_TILES+"Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}";
+  if(kind==="light") return ESRI_TILES+"Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}";
+  if(kind==="satellite") return ESRI_TILES+"World_Imagery/MapServer/tile/{z}/{y}/{x}";
+  // The "OpenStreetMap" style: Esri's street map (OSM-style cartography, no key,
+  // no tile.openstreetmap.org "Access blocked" referer issue).
+  return ESRI_TILES+"World_Street_Map/MapServer/tile/{z}/{y}/{x}";
+}
+function tileOpts(kind){
+  return {maxZoom:18, maxNativeZoom:(kind==="dark"||kind==="light")?16:18};
 }
 function renderFoliumMap(el, geo){
   const box=document.createElement("div"); box.className="folium-box"+(el.mapTheme==="dark"?" folium-dark":"");
@@ -6011,8 +6019,9 @@ function renderFoliumMap(el, geo){
     const g = MAP_GEO[snapshot.mapKind] || geo;
     const center=[(g.bounds[1]+g.bounds[3])/2,(g.bounds[0]+g.bounds[2])/2];
     const map = window.L.map(target,{attributionControl:false,zoomControl:false,scrollWheelZoom:false,dragging:true,doubleClickZoom:false,boxZoom:false,keyboard:false,tap:false}).setView(center, Number(snapshot.zoom)|| (snapshot.mapKind==="gambia"?7:3));
-    const tiles=window.L.tileLayer(tileUrl(snapshot.tileLayer||"osm"),{maxZoom:18});
-    tiles.on("tileerror",()=>{try{map.removeLayer(tiles);window.L.tileLayer(tileUrl("light"),{maxZoom:18}).addTo(map);}catch(e){}});
+    const kind=snapshot.tileLayer||"osm";
+    const tiles=window.L.tileLayer(tileUrl(kind),tileOpts(kind));
+    tiles.on("tileerror",()=>{try{map.removeLayer(tiles);window.L.tileLayer(tileUrl("light"),tileOpts("light")).addTo(map);}catch(e){}});
     tiles.addTo(map);
     const b = [[g.bounds[1],g.bounds[0]],[g.bounds[3],g.bounds[2]]]; map.fitBounds(b,{padding:[18,18]});
     mapAreas(snapshot).forEach(a=>{

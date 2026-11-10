@@ -42,6 +42,9 @@
     this.phone = new L.Phone(this);
     this.workshop = new L.Workshop(this);
     this.sound = makeSound(this);
+    this.layers = new L.Layers(this);
+    this.studio = new L.Studio(this);
+    this.drawerTab = "add";
     this.bindTop();
     this.drawer();
     this.setMode(this.doc.mode, true);
@@ -74,6 +77,8 @@
     d.mode = d.mode === "kid" ? "kid" : "pro";
     d.code = typeof d.code === "string" ? d.code : "";
     d.prog = d.prog === "blocks" ? "blocks" : "code";
+    if (!d.pcb || typeof d.pcb !== "object" || !d.pcb.place) delete d.pcb;
+    if (!d.body || typeof d.body !== "object" || !Array.isArray(d.body.solids)) delete d.body;
     return d;
   }
 
@@ -90,6 +95,7 @@
     this.bench.indexPins();
     this.bench.renderSel();
     this.changed();
+    if (this.studio) this.studio.refresh();
   };
   App.prototype.edit = function (fn) {
     this.history.push(this.doc);
@@ -103,6 +109,8 @@
     this.sim.invalidate();
     this.panels.inspect(this.bench.sel);
     this.changed();
+    if (this.studio) this.studio.refresh();
+    if (this.layers) this.layers.sync();
   };
   App.prototype.changed = function () {
     this.dirty = true;
@@ -117,6 +125,8 @@
     if (!snap) { this.toast("Nothing to undo."); return; }
     var d = this.doc;
     d.parts = snap.parts; d.wires = snap.wires; d.code = snap.code; d.blocks = snap.blocks; d.prog = snap.prog;
+    if (snap.pcb) d.pcb = snap.pcb; else delete d.pcb;
+    if (snap.body) d.body = snap.body; else delete d.body;
     this.bench.sel = null;
     this.refresh();
     this.panels.code.set(d.code || "");
@@ -148,6 +158,7 @@
     if (sp && sp.rebuild) { this.sim.invalidate(); this.bench.indexPins(); this.bench.refreshWiresOf([part.id]); }
     this.bench.renderSel();
     this.changed();
+    if (this.layers && !live) this.layers.sync();
   };
 
   App.prototype.partAction = function (part, act) {
@@ -226,7 +237,10 @@
       var p = this.partById(sel.id);
       if (p && L.def(p).mcu && L.mcus(this.doc).length > 1) this.switchBoard(sel.id);
     }
+    if (this.studio && this.studio.space === "body") { if (this.layers) this.layers.sync(); return; }
     this.panels.inspect(sel);
+    if (this.layers) this.layers.sync();
+    if (this.studio) this.studio.onSelect(sel);
     if (sel && this.panels.sideTab && this.panels.sideTab !== "inspect" && this.panels.sideTab !== "mission") this.panels.showSide("inspect");
   };
 
@@ -553,7 +567,8 @@
       this.sim.step(dt);
       this.bench.flag(this.sim.warnings);
     }
-    this.bench.frame(this.sim, dt, this.running);
+    if (!this.studio || this.studio.space === "bench") this.bench.frame(this.sim, dt, this.running);
+    else this.studio.frame(dt);
     /* the running line */
     var rt = this.rt;
     if (rt && rt.running && !rt.error) {
@@ -612,8 +627,15 @@
       if (Object.keys(r).length) readings[p.id] = r;
     });
     var probs = this.problems().map(function (x) { return { part: x.part, level: x.level, msg: x.msg }; });
-    return { mode: doc.mode, parts: parts.slice(0, 120), nets: nets.slice(0, 200), powered: this.running, readings: readings, problems: probs.slice(0, 20),
-             program: this.rt ? { running: this.rt.running, line: this.rt.line, error: this.rt.error } : null };
+    var out = { mode: doc.mode, parts: parts.slice(0, 120), nets: nets.slice(0, 200), powered: this.running, readings: readings, problems: probs.slice(0, 20),
+                program: this.rt ? { running: this.rt.running, line: this.rt.line, error: this.rt.error } : null };
+    if (doc.pcb && doc.pcb.w) out.board = { w: doc.pcb.w, h: doc.pcb.h, routed: (doc.pcb.tracks || []).length > 0, open: (doc.pcb.open || []).length };
+    if (doc.body && doc.body.solids) {
+      var need = L.Body.need(doc);
+      out.body = { kind: doc.body.kind, drive: doc.body.drive, wall: doc.body.wall, electronics: { w: Math.round(need.w), d: Math.round(need.d), h: Math.round(need.h) },
+                   solids: doc.body.solids.slice(0, 40).map(function (s) { return { name: s.name, shape: s.shape, is: s.op === "cut" ? "cut" : s.group, x: s.x, y: s.y, z: s.z, sx: s.sx, sy: s.sy, sz: s.sz }; }) };
+    } else if (doc.parts.length) { var nd = L.Body.need(doc); out.electronics = { w: Math.round(nd.w), d: Math.round(nd.d), h: Math.round(nd.h) }; }
+    return out;
   };
 
   /* Build what the AI designed. Everything it sends is checked: unknown
@@ -679,6 +701,22 @@
   App.prototype.drawer = function () {
     var self = this, kid = this.doc.mode === "kid", box = $("lab-drawer"), q = (this.drawerQ || "").toLowerCase();
     var showAll = kid && this.kidAll;
+    /* Two tabs: what you can add, and what is already there. The second
+     * is the component list — or, in the Body space, the list of shapes. */
+    var inBody = this.studio && this.studio.space === "body", tab = this.drawerTab === "layers" ? "layers" : "add";
+    var count = inBody ? ((this.doc.body && this.doc.body.solids.length) || 0) : this.doc.parts.length + this.doc.wires.length;
+    var tabs = '<div class="drawer-tabs" role="tablist"><button type="button" role="tab" data-dtab="add" aria-selected="' + (tab === "add") + '">' + (inBody ? "Shapes" : kid ? "Toy box" : "Parts") + '</button>' +
+      '<button type="button" role="tab" data-dtab="layers" aria-selected="' + (tab === "layers") + '" title="Everything in the design, as a list you can pick from">Layers' + (count ? ' <span class="n">' + count + '</span>' : '') + '</button></div>';
+    var bindTabs = function () {
+      box.querySelectorAll("[data-dtab]").forEach(function (b) { b.addEventListener("click", function () { self.drawerTab = b.getAttribute("data-dtab"); self.drawer(); }); });
+    };
+    if (inBody || tab === "layers") {
+      box.innerHTML = tabs + '<div class="drawer-body" id="drawer-body"></div>';
+      bindTabs();
+      if (inBody) this.studio.drawer($("drawer-body"), tab); else this.layers.render($("drawer-body"));
+      return;
+    }
+    this.layers.box = null;
     var cats = {};
     L.PART_ORDER.forEach(function (t) {
       var d = L.PARTS[t];
@@ -699,7 +737,8 @@
     });
     if (kid) h += '<button type="button" class="drawer-more" id="drawer-more">' + (showAll ? "Just the toy box" : "Show grown-up parts too") + '</button>';
     if (!Object.keys(cats).length) h += '<p class="hint">Nothing matches “' + L.esc(q) + '”.</p>';
-    box.innerHTML = h;
+    box.innerHTML = tabs + h;
+    bindTabs();
     var input = $("drawer-q");
     input.addEventListener("input", function () { self.drawerQ = input.value; self.drawer(); var i2 = $("drawer-q"); i2.focus(); i2.setSelectionRange(i2.value.length, i2.value.length); });
     var more = $("drawer-more");
@@ -719,6 +758,7 @@
     THUMBS[type] = svg;
     return svg;
   }
+  L.thumb = thumb;
 
   App.prototype.dragNew = function (e, type, src) {
     var self = this, x0 = e.clientX, y0 = e.clientY, ghost = null;
@@ -771,9 +811,15 @@
     on("lab-mute", "click", function () { var m = self.sound.toggle(); this.setAttribute("aria-pressed", m ? "true" : "false"); this.textContent = m ? "Sound off" : "Sound on"; });
     on("lab-undo", "click", function () { self.undo(); });
     on("lab-redo", "click", function () { self.redo(); });
-    on("lab-fit", "click", function () { self.bench.fit(); });
-    on("lab-zin", "click", function () { var r = $("bench").getBoundingClientRect(); self.bench.zoomAt(1.25, r.left + r.width / 2, r.top + r.height / 2); });
-    on("lab-zout", "click", function () { var r = $("bench").getBoundingClientRect(); self.bench.zoomAt(0.8, r.left + r.width / 2, r.top + r.height / 2); });
+    /* the same three buttons serve whichever workspace is showing */
+    var zoom = function (f) {
+      var v = self.studio && self.studio.active();
+      if (v) { v.zoomBy(f); return; }
+      var r = $("bench").getBoundingClientRect(); self.bench.zoomAt(f, r.left + r.width / 2, r.top + r.height / 2);
+    };
+    on("lab-fit", "click", function () { var v = self.studio && self.studio.active(); if (v) v.fit(); else self.bench.fit(); });
+    on("lab-zin", "click", function () { zoom(1.25); });
+    on("lab-zout", "click", function () { zoom(0.8); });
     on("lab-examples", "click", function () { self.examples(); });
     on("lab-new", "click", function () { self.newCircuit(); });
     on("lab-pin", "click", function () { self.pinToBoard(); });
@@ -828,6 +874,7 @@
     this.mcuId = null;
     this.syncBoards();
     if (this.phone) this.phone.refresh();
+    if (this.studio) { this.studio.body.sel = null; this.studio.body.framed = false; this.studio.pcb.cam = null; }
     this.title = title || this.title;
     $("lab-title").value = this.title;
     this.bench.sel = null;
@@ -838,6 +885,8 @@
     this.needFit = true;
     this.bench.resize();
     this.changed();
+    if (this.studio) this.studio.refresh();
+    if (this.layers) this.layers.sync();
   };
 
   App.prototype.examples = function () {
@@ -879,7 +928,8 @@
     this.storeProgram();
     return { id: this.circuitId, title: this.title, mode: d.mode,
       data: { v: 1, mode: d.mode, parts: d.parts, wires: d.wires, code: d.code, blocks: d.blocks, prog: d.prog, view: d.view, name: this.title,
-              programs: d.programs || {}, current: this.mcuId, joints: d.joints || {}, cuts: d.cuts || {} } };
+              programs: d.programs || {}, current: this.mcuId, joints: d.joints || {}, cuts: d.cuts || {}, bridges: d.bridges || [],
+              pcb: d.pcb || null, body: d.body || null } };
   };
   App.prototype.save = function (beacon) {
     var self = this, body = this.payload();
@@ -955,6 +1005,8 @@
         return;
       }
       var mod = e.ctrlKey || e.metaKey, sel = self.bench.sel;
+      /* on the Board and in the Body, the same keys act on what is showing */
+      if (self.studio && self.studio.key(e)) { e.preventDefault(); return; }
       if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? self.redo() : self.undo(); return; }
       if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); self.redo(); return; }
       if (mod && e.key.toLowerCase() === "d" && sel && sel.kind === "part") { e.preventDefault(); self.partAction(self.partById(sel.id), "dupe"); return; }

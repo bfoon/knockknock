@@ -371,3 +371,162 @@ class CatalogueTests(TestCase):
         modules = set(re.findall(r"^\s{4}(soil|gas|sound|flame|ir):\s*\{ name:", src, re.M))
         js |= {"mod_" + m for m in modules}
         self.assertEqual(js, set(lab_ai.CATALOG), "lab_ai.CATALOG and lab_parts*.js disagree")
+
+
+def board_and_body():
+    """A circuit board and a 3-D body, as the browser saves them."""
+    return {
+        "pcb": {
+            "v": 1, "w": 60.96, "h": 40.64, "r": 3, "holes": True, "sig": "p_uno:31|x",
+            "place": {"p_r": {"x": 10.16, "y": 7.62, "rot": 1}, "ghost": {"x": 1, "y": 1, "rot": 0}},
+            "tracks": [{"n": 0, "l": 1, "w": 0.4, "pts": [[10.16, 7.62], [10.16, 12.7], [15.24, 12.7]]},
+                       {"n": 0, "l": 0, "w": 0.4, "pts": [[1, 1]]},
+                       {"n": "x", "l": 7, "w": 99, "pts": [[0, 0], ["a", 1], [2, 2]]}],
+            "vias": [[10.16, 12.7, 0], "nope"], "open": [[1, 2, 3, 4], [1, 2]],
+            "evil": "<script>",
+        },
+        "body": {
+            "v": 1, "kind": "car", "wall": 2, "split": "z", "splitZ": 44, "drive": "wheels", "wheel": 50, "track": 100,
+            "bay": {"x": 0, "y": 0, "z": 12, "w": 80, "d": 60, "h": 30},
+            "anchors": {"motorL": [-30, 20, 25], "led": [[60, 20, 30], "bad"], "junk": [1, 2, 3]},
+            "solids": [
+                {"id": "s_hull", "name": "Body <b>shell</b>", "shape": "carbody", "x": 0, "y": 0, "z": 40, "sx": 150, "sy": 80,
+                 "sz": 50, "rx": 0, "ry": 0, "rz": 0, "color": "#e2574c", "op": "add", "group": "hull"},
+                {"id": "s_w1", "name": "Wheel", "shape": "wheel", "x": 40, "y": 50, "z": 25, "sx": 50, "sy": 20, "sz": 50,
+                 "color": "#2a2f35", "op": "add", "group": "part", "role": "wheelL"},
+                {"id": "s_cut", "name": "Axle", "shape": "cyl", "x": 40, "y": 0, "z": 25, "sx": 3.4, "sy": 3.4, "sz": 120,
+                 "rx": 90, "op": "cut", "group": "hull"},
+                {"id": "s_bad", "name": "Teapot", "shape": "teapot", "x": 0, "y": 0, "z": 0, "sx": 1, "sy": 1, "sz": 1},
+                {"id": "s_big", "name": "Huge", "shape": "box", "x": 9e9, "y": 0, "z": 0, "sx": 9e9, "sy": 1, "sz": 1},
+            ],
+            "mounts": {"@board": {"x": 0, "y": 0, "z": 15, "rz": 90}, "p_led": {"x": 1, "y": 2, "z": 3},
+                       "p_gone": {"x": 0, "y": 0, "z": 0}},
+        },
+    }
+
+
+class StudioSaveTests(LabTestCase):
+    """The circuit board, the 3-D body, and what the component list sets."""
+
+    def test_board_and_body_are_kept_and_cleaned(self):
+        r = self.save({"title": "Car", "data": circuit(**board_and_body())})
+        self.assertEqual(r.status_code, 200, r.content)
+        data = BoardCircuit.objects.get().data
+        pcb, body = data["pcb"], data["body"]
+        self.assertEqual(pcb["place"], {"p_r": {"x": 10.16, "y": 7.62, "rot": 1}})   # only parts that exist
+        self.assertEqual(len(pcb["tracks"]), 2)                                       # a one-point track is not a track
+        self.assertEqual(pcb["tracks"][1], {"n": 0, "l": 0, "w": 5, "pts": [[0.0, 0.0], [2.0, 2.0]]})
+        self.assertEqual(pcb["vias"], [[10.16, 12.7, 0]])
+        self.assertEqual(pcb["open"], [[1.0, 2.0, 3.0, 4.0]])
+        self.assertNotIn("evil", pcb)
+        self.assertEqual([s["id"] for s in body["solids"]], ["s_hull", "s_w1", "s_cut", "s_big"])
+        self.assertEqual(body["solids"][0]["name"], "Body bshell/b")
+        self.assertEqual(body["solids"][1]["role"], "wheelL")
+        self.assertEqual(body["solids"][2]["op"], "cut")
+        self.assertEqual(body["solids"][3]["x"], 2000)
+        self.assertEqual(body["solids"][3]["sx"], 1000)
+        self.assertEqual(sorted(body["mounts"]), ["@board", "p_led"])
+        self.assertEqual(body["mounts"]["@board"]["rz"], 90)
+        self.assertEqual(body["anchors"], {"motorL": [-30.0, 20.0, 25.0], "led": [[60.0, 20.0, 30.0]]})
+        self.assertEqual((body["kind"], body["drive"], body["split"], body["wheel"]), ("car", "wheels", "z", 50))
+
+    def test_a_circuit_without_them_saves_as_before(self):
+        self.save({"title": "Plain", "data": circuit()})
+        data = BoardCircuit.objects.get().data
+        self.assertNotIn("pcb", data)
+        self.assertNotIn("body", data)
+
+    def test_junk_in_their_place_is_dropped_not_fatal(self):
+        r = self.save({"title": "Odd", "data": circuit(pcb="nope", body={"solids": "nope"})})
+        self.assertEqual(r.status_code, 200, r.content)
+        data = BoardCircuit.objects.get().data
+        self.assertNotIn("pcb", data)
+        self.assertNotIn("body", data)
+
+    def test_names_hide_and_lock_from_the_component_list(self):
+        doc = circuit()
+        doc["parts"][1].update(name="Headlight <i>resistor</i>" + "x" * 80, hide=True, lock=1)
+        doc["parts"][2].update(name=42, hide=0)
+        self.save({"title": "Named", "data": doc})
+        parts = BoardCircuit.objects.get().data["parts"]
+        self.assertEqual(parts[1]["name"], ("Headlight iresistor/i" + "x" * 80)[:40])
+        self.assertTrue(parts[1]["hide"] and parts[1]["lock"])
+        self.assertNotIn("name", parts[2])
+        self.assertNotIn("hide", parts[2])
+        self.assertNotIn("name", parts[0])
+
+    def test_it_round_trips_to_the_page(self):
+        self.save({"title": "Car", "data": circuit(**board_and_body())})
+        r = self.client.get(reverse("chalk:lab", args=[self.board.id]))
+        self.assertContains(r, "lab_pcb.js")
+        self.assertContains(r, "lab_body_view.js")
+        self.assertContains(r, 'id="lab-space"')
+        cfg = json.loads(re.search(r'id="lab-config"[^>]*>(.*?)</script>', r.content.decode(), re.S).group(1))
+        self.assertEqual(cfg["data"]["body"]["kind"], "car")
+        self.assertEqual(cfg["data"]["pcb"]["w"], 60.96)
+
+
+@override_settings(CHANNEL_LAYERS=IN_MEMORY, STORAGES=PLAIN_STATIC)
+class ProjectAITests(LabTestCase):
+    def ask(self, payload):
+        return self.client.post(reverse("chalk:lab_ai", args=[self.board.id]),
+                                data=json.dumps(payload), content_type="application/json")
+
+    def test_a_whole_project_comes_back_cleaned(self):
+        fake = {
+            "reply": "A car.", "code": "void setup(){}\nvoid loop(){}",
+            "circuit": {"parts": [{"id": "u", "type": "arduino_uno"}, {"id": "m", "type": "motor"}, {"id": "x", "type": "warp_drive"}],
+                        "wires": [{"a": "u.D5", "b": "m.1"}]},
+            "body": {"kind": "car", "color": "#112233", "wall": 99, "drive": "wheels",
+                     "solids": [{"name": "Spoiler", "shape": "wedge", "is": "attach", "x": -60, "y": 0, "z": 70, "sx": 20, "sy": 70, "sz": 8},
+                                {"name": "<img>", "shape": "box", "is": "nonsense", "x": "left", "sx": 1e12},
+                                {"name": "Kettle", "shape": "kettle"}, "junk"]},
+        }
+        with mock.patch("hanns.ai.is_enabled", return_value=True), \
+             mock.patch("hanns.ai.ai_json", return_value=(fake, "m")) as call:
+            r = self.ask({"kind": "project", "question": "a toy car", "mode": "pro", "circuit": {"parts": [], "nets": []}})
+        self.assertEqual(r.status_code, 200, r.content)
+        j = r.json()
+        self.assertEqual([p["type"] for p in j["circuit"]["parts"]], ["arduino_uno", "motor"])
+        body = j["body"]
+        self.assertEqual((body["kind"], body["color"], body["wall"], body["drive"]), ("car", "#112233", 4, "wheels"))
+        self.assertEqual([s["shape"] for s in body["solids"]], ["wedge", "box"])
+        self.assertEqual(body["solids"][1], {"name": "img", "shape": "box", "is": "attach", "x": 0, "y": 0, "z": 20,
+                                             "sx": 600, "sy": 30, "sz": 30, "rx": 0, "ry": 0, "rz": 0})
+        prompt = call.call_args[0][1]
+        self.assertIn("BODY FORMAT", prompt)
+        self.assertIn("PART CATALOG", prompt)
+        self.assertIn("nmos", prompt)
+
+    def test_a_body_is_sized_to_the_electronics(self):
+        with mock.patch("hanns.ai.is_enabled", return_value=True), \
+             mock.patch("hanns.ai.ai_json", return_value=({"reply": "ok", "body": {"kind": "custom", "solids": []},
+                                                           "circuit": {"parts": [{"id": "u", "type": "arduino_uno"}]}}, "m")) as call:
+            r = self.ask({"kind": "body", "question": "a lighthouse", "circuit": {"parts": [], "nets": [], "electronics": {"w": 99, "d": 84, "h": 18}}})
+        j = r.json()
+        self.assertEqual(j["body"]["kind"], "box")          # nothing to hold the electronics: a plain case instead
+        self.assertIn("99 x 84 x 18 mm", call.call_args[0][1])
+        self.assertNotIn("PART CATALOG", call.call_args[0][1])
+
+    def test_other_questions_never_carry_a_body(self):
+        with mock.patch("hanns.ai.is_enabled", return_value=True), \
+             mock.patch("hanns.ai.ai_json", return_value=({"reply": "ok", "body": {"kind": "car"}}, "m")):
+            r = self.ask({"kind": "explain", "question": "?", "circuit": {}})
+        self.assertNotIn("body", r.json())
+
+
+class StudioCatalogueTests(TestCase):
+    """The shapes and ready-made bodies exist three times — in the browser,
+    in what is saved, and in what the AI is told. They must agree."""
+
+    def test_shapes_and_bodies_match_the_javascript(self):
+        js_dir = Path(settings.BASE_DIR) / "static" / "chalk" / "js" / "lab"
+        solid = (js_dir / "lab_solid.js").read_text()
+        shapes = set(re.findall(r'(\w+): "', re.search(r"S\.SHAPES = \{(.*?)\};", solid, re.S).group(1)))
+        self.assertEqual(shapes, set(lab_ai.SHAPES))
+        self.assertEqual(shapes, lab.SHAPES)
+        bodies = set(re.findall(r"^  T\.(\w+) = \{", (js_dir / "lab_body.js").read_text(), re.M)) | {"custom"}
+        self.assertEqual(bodies, set(lab_ai.BODY_KINDS))
+        self.assertEqual(bodies, lab.BODY_KINDS)
+        for word in lab_ai.SHAPES:
+            self.assertIn(word, lab_ai.BODY_FORMAT)

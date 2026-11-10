@@ -32,6 +32,11 @@
   <div class="top-mid">
     <button id="lab-power" class="power" type="button" aria-pressed="false"
             title="Switch the circuit on and off (Space)"><i aria-hidden="true"></i><span>Power off</span></button>
+    <div id="lab-space" class="mode spaces" role="group" aria-label="Workspace">
+      <button type="button" data-space="bench" aria-pressed="true" title="Build the circuit and try it">Bench</button>
+      <button type="button" data-space="pcb" aria-pressed="false" title="The same circuit as a printed circuit board">Board</button>
+      <button type="button" data-space="body" aria-pressed="false" title="The body it lives in: design it in 3-D, test-drive it, 3-D print it">Body</button>
+    </div>
     <div id="lab-view" class="mode views" role="group" aria-label="What to show">
       <button type="button" data-view="design" aria-pressed="false" title="Just the bench">Design</button>
       <button type="button" data-view="split" aria-pressed="true" title="Bench and program">Split</button>
@@ -76,6 +81,7 @@
     </details>
     <button type="button" id="lab-examples">Examples</button>
     <button type="button" id="lab-pin" title="Put a picture of this circuit on the board's current page">Pin to board</button>
+    <button type="button" id="lab-project" title="Describe what you want to make: get the circuit, the program, the board and a body to print"><span class="wide-only">Design a project</span><span class="tight-only">Project</span></button>
     <button type="button" id="lab-ai" class="accent">Ask AI</button>
     <button type="button" id="lab-panels" class="narrow-only" aria-expanded="false">Panels</button>
   </div>
@@ -92,7 +98,7 @@
       <button type="button" id="lab-zout" title="Zoom out" aria-label="Zoom out">−</button>
       <button type="button" id="lab-zin" title="Zoom in" aria-label="Zoom in">+</button>
       <button type="button" id="lab-fit" title="Fit everything in view (F)">Fit</button>
-      <button type="button" id="lab-fs" title="Full screen (Shift+F)" aria-label="Full screen" aria-pressed="false">⛶</button>
+      <button type="button" id="lab-fs" title="Full screen — the whole screen, like the board (Shift+F)" aria-label="Full screen" aria-pressed="false">⛶</button>
     </div>
     <p id="lab-toast" class="toast" hidden role="status" aria-live="polite"></p>
   </section>
@@ -124,6 +130,12 @@
 <script src="{% static 'chalk/js/lab/lab_workshop.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_layout.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_copilot.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_solid.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_layers.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_pcb.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_body.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_body_view.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_studio.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_app.js' %}"></script>
 {% endwith %}
 </body>

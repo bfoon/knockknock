@@ -284,8 +284,8 @@
   /* ================================================================== AI */
 
   var QUICK = {
-    pro: [["explain", "Explain my circuit"], ["fix", "What's wrong?"], ["code", "Write the program"], ["build", "Build a circuit for me…"], ["lesson", "Turn this into a lesson"]],
-    kid: [["explain", "What does my circuit do?"], ["fix", "Why doesn't it work?"], ["code", "Make the Robo Brain do something"], ["build", "Build something for me…"]]
+    pro: [["project", "Design a whole project…"], ["explain", "Explain my circuit"], ["fix", "What's wrong?"], ["code", "Write the program"], ["build", "Build a circuit for me…"], ["body", "Design a body for it…"], ["lesson", "Turn this into a lesson"]],
+    kid: [["explain", "What does my circuit do?"], ["fix", "Why doesn't it work?"], ["code", "Make the Robo Brain do something"], ["build", "Build something for me…"], ["body", "Make a body for it…"]]
   };
 
   Panels.prototype.buildAi = function () {
@@ -301,8 +301,8 @@
       var q = document.getElementById("ai-q").value.trim();
       if (!q) return;
       document.getElementById("ai-q").value = "";
-      self.ask(self.pendingBuild ? "build" : "ask", q);
-      self.pendingBuild = false;
+      self.ask(self.pendingKind || "ask", q);
+      self.pendingKind = null;
     });
     document.getElementById("ai-q").addEventListener("keydown", function (e) {
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); document.getElementById("ai-form").requestSubmit(); }
@@ -315,10 +315,12 @@
     box.querySelectorAll("[data-q]").forEach(function (b) {
       b.addEventListener("click", function () {
         var k = b.getAttribute("data-q");
-        if (k === "build") {
-          self.pendingBuild = true;
+        if (k === "project") { self.app.studio.wizard(); return; }
+        if (k === "build" || k === "body") {
+          self.pendingKind = k;
           var q = document.getElementById("ai-q");
-          q.placeholder = kid ? "What should it build? e.g. a light that comes on when you press a button" : "Describe it: e.g. a 555 that beeps a buzzer twice a second";
+          q.placeholder = k === "body" ? "What should it look like? e.g. a red racing car with a spoiler — or a deep-sea submarine"
+            : kid ? "What should it build? e.g. a light that comes on when you press a button" : "Describe it: e.g. a 555 that beeps a buzzer twice a second";
           q.focus();
           return;
         }
@@ -360,7 +362,9 @@
       });
       return;
     }
-    if (!app.cfg.aiUrl || !app.cfg.aiEnabled) { setTimeout(function () { done(L.localHelper(kind, question, app)); }, 350); return; }
+    /* a body can always be built from the lab's own patterns */
+    var fallback = function () { return kind === "body" ? L.localBody(question) : L.localHelper(kind, question, app); };
+    if (!app.cfg.aiUrl || !app.cfg.aiEnabled) { setTimeout(function () { done(fallback()); }, 350); return; }
     fetch(app.cfg.aiUrl, {
       method: "POST", credentials: "same-origin",
       headers: { "Content-Type": "application/json", "X-CSRFToken": app.cfg.csrf },
@@ -368,12 +372,12 @@
     }).then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
       .then(function (r) {
         if (r.status !== 200 || !r.body.ok) {
-          var local = L.localHelper(kind, question, app);
+          var local = fallback();
           local.reply = "_" + (r.body && r.body.error ? r.body.error : "The AI didn't answer.") + " Here is what the built-in checker can tell you instead._\n\n" + local.reply;
           done(local);
         } else done(r.body);
       })
-      .catch(function () { var local = L.localHelper(kind, question, app); local.reply = "_Couldn't reach the AI. Here is the built-in checker's view._\n\n" + local.reply; done(local); });
+      .catch(function () { var local = fallback(); local.reply = "_Couldn't reach the AI. Here is the built-in checker's view._\n\n" + local.reply; done(local); });
   };
 
   Panels.prototype.answer = function (res, kind) {
@@ -397,6 +401,16 @@
         b.textContent = n ? "Built — " + n + " parts added" : "Couldn't build that"; b.disabled = true;
       });
       extra.appendChild(b);
+    }
+    if (res.body && typeof res.body === "object" && app.studio) {
+      var bb = document.createElement("button");
+      bb.type = "button"; bb.className = "primary"; bb.textContent = "Build this body";
+      bb.addEventListener("click", function () {
+        app.studio.setSpace("body");
+        var n = app.studio.applyBody(res.body);
+        bb.textContent = n ? "Built — " + n + " shapes" : "Couldn't build that"; bb.disabled = true;
+      });
+      extra.appendChild(bb);
     }
     if (res.example) {
       var ex = (L.EXAMPLES.filter(function (e) { return e.id === res.example; })[0] || {});

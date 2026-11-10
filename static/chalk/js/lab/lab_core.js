@@ -15,7 +15,9 @@
  *
  * The document is plain JSON, saved as-is:
  *   { v, mode, parts:[{id,type,x,y,rot,flip,props}],
- *     wires:[{id,a,b,color,pts}], code, blocks, prog, view }
+ *     wires:[{id,a,b,color,pts}], code, blocks, prog, view,
+ *     pcb (the circuit board, lab_pcb.js), body (the 3-D shell, lab_body.js) }
+ * A part may also carry name, hide and lock, set from the component list.
  * A wire end is either {ref:"partId:pin"} (it follows that pin around) or
  * {x,y} (it is lying loose on the mat).
  */
@@ -155,7 +157,7 @@
     return JSON.parse(this.future.pop());
   };
   function strip(doc) {
-    return { parts: doc.parts, wires: doc.wires, code: doc.code, blocks: doc.blocks, prog: doc.prog };
+    return { parts: doc.parts, wires: doc.wires, code: doc.code, blocks: doc.blocks, prog: doc.prog, pcb: doc.pcb || null, body: doc.body || null };
   }
   L.History = History;
 

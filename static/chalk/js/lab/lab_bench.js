@@ -148,6 +148,8 @@
     var props = L.propsOf(p);
     g.innerHTML = d.art(p, props);
     g.setAttribute("transform", this.partXform(p));
+    /* hidden from the component list: faint, and out of the pointer's way */
+    if (p.hide) { g.setAttribute("opacity", ".1"); g.setAttribute("pointer-events", "none"); }
     if (old && old.parentNode) old.parentNode.replaceChild(g, old); else layer.appendChild(g);
     var live = { root: g };
     g.querySelectorAll("[data-live]").forEach(function (n) { live[n.getAttribute("data-live")] = n; });
@@ -317,6 +319,40 @@
     }
   };
 
+  /* Where a row of the component list is pointing: a soft outline, drawn
+   * without disturbing the selection. */
+  Bench.prototype.hoverMark = function (kind, id) {
+    var old = this.svg.querySelector(".hover-mark");
+    if (old) old.remove();
+    if (!kind) return;
+    if (kind === "part") {
+      var p = this.app.partById(id);
+      if (!p) return;
+      var b = L.boxOf(p);
+      el("rect", { x: b.x - 9, y: b.y - 9, width: b.w + 18, height: b.h + 18, rx: 10, "class": "hover-mark" }, this.world);
+    } else if (this.wires[id]) {
+      el("path", { d: this.wires[id].core.getAttribute("d"), "class": "hover-mark wire-mark" }, this.world);
+    }
+  };
+  /* Bring a part into view if it is off the edge — without zooming, so
+   * walking down the list doesn't throw the bench around. */
+  Bench.prototype.reveal = function (id) {
+    var p = this.app.partById(id);
+    if (!p) return;
+    var b = L.boxOf(p), a = this.toScreen(b.x, b.y), z = this.toScreen(b.x + b.w, b.y + b.h), m = 30;
+    if (a.x >= m && a.y >= m && z.x <= this.W - m && z.y <= this.H - m) return;
+    if (b.w * this.cam.z > this.W - 2 * m || b.h * this.cam.z > this.H - 2 * m) this.cam.z = L.clamp(Math.min((this.W - 4 * m) / b.w, (this.H - 4 * m) / b.h), 0.2, this.cam.z);
+    this.cam.x = b.x + b.w / 2; this.cam.y = b.y + b.h / 2;
+    this.applyCam();
+  };
+  Bench.prototype.revealWire = function (id) {
+    var info = this.wires[id];
+    if (!info || !info.pts.length) return;
+    var mid = info.pts[info.pts.length >> 1];
+    this.cam.x = mid[0]; this.cam.y = mid[1];
+    this.applyCam();
+  };
+
   /* ------------------------------------------------------------- input */
 
   Bench.prototype.bind = function () {
@@ -471,6 +507,12 @@
         break;
       case "part": {
         if (!g.moved && dist < 5) return;
+        if (!g.moved && g.part.lock) {
+          this.g = null;
+          this.select({ kind: "part", id: g.part.id });
+          this.app.toast("That part is locked in place. Unlock it in the component list to move it.");
+          return;
+        }
         if (!g.moved && this.app.workshop && this.app.workshop.stuck(g.part)) {
           this.g = null;
           this.app.toast("It's soldered in. Melt its joints with hot air, or suck each one with the solder sucker, to free it.");

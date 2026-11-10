@@ -3,7 +3,8 @@
 The lab itself runs in the browser (static/chalk/js/lab/): the circuit
 solver, the Arduino interpreter, the bench. The server does four small jobs:
 
-* stores circuits, after checking every field of what arrives;
+* stores circuits — with their circuit board and 3-D body, if they have
+  them — after checking every field of what arrives;
 * answers AI questions through the shared Gemini engine in hanns/ai.py, so
   the key stays in .env and the browser never sees it;
 * pins a picture of the bench onto the board's current page, live;
@@ -54,10 +55,21 @@ MAX_DOC_BYTES = 400_000
 MAX_CIRCUITS_PER_BOARD = 60
 MAX_BOARDS = 8           # microcontrollers with their own program, per circuit
 MAX_JOINTS = 4000        # solder joints on perfboard and stripboard
+MAX_TRACKS = 3000        # copper tracks on the circuit board
+MAX_TRACK_POINTS = 400
+MAX_VIAS = 3000
+MAX_SOLIDS = 200         # shapes in the 3-D body
 
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 TYPE_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 REF_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}:[A-Za-z0-9_+#.-]{1,16}$")
+MOUNT_RE = re.compile(r"^@?[A-Za-z0-9_-]{1,40}$")
+SHAPES = {"box", "cyl", "cone", "sphere", "dome", "nose", "capsule", "tube", "wedge", "fin",
+          "carbody", "boat", "wheel", "prop"}
+BODY_KINDS = {"car", "robot", "submarine", "rocket", "boat", "box", "custom"}
+DRIVES = {"none", "wheels", "prop", "boat", "rocket"}
+GROUPS = {"hull", "attach", "part"}
+ROLES = {"wheelL", "wheelR", "prop", "led"}
 PROP_KEY_RE = re.compile(r"^[a-z][a-zA-Z0-9_]{0,23}$")
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 COORD = 50_000
@@ -135,6 +147,130 @@ def _end(raw):
     return out
 
 
+def _f(v, lo, hi, default=0.0):
+    """A bounded number, or the default: used where a bad value should be
+    repaired rather than refuse the whole save."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+        return default
+    return max(lo, min(hi, round(float(v), 3)))
+
+
+def _text(v, limit=40):
+    """A short plain label. Angle brackets go: names are shown in the page."""
+    if not isinstance(v, str):
+        return ""
+    return re.sub(r"[<>\x00-\x1f]", "", v).strip()[:limit]
+
+
+def clean_pcb(raw, part_ids):
+    """The circuit board: where each part sits, and the copper between them.
+
+    Nothing here is trusted to be consistent with the circuit — the browser
+    re-derives the board from the netlist whenever the two disagree — so
+    this only has to make sure it is small, numeric and refers to real parts.
+    """
+    if not isinstance(raw, dict):
+        return None
+    place = {}
+    for pid, pl in list((raw.get("place") or {}).items())[:MAX_PARTS] if isinstance(raw.get("place"), dict) else []:
+        if isinstance(pid, str) and pid in part_ids and isinstance(pl, dict):
+            rot = pl.get("rot")
+            place[pid] = {"x": _f(pl.get("x"), -50, 1000), "y": _f(pl.get("y"), -50, 1000),
+                          "rot": int(rot) % 4 if isinstance(rot, int) and not isinstance(rot, bool) else 0}
+    tracks = []
+    for t in (raw.get("tracks") or [])[:MAX_TRACKS] if isinstance(raw.get("tracks"), list) else []:
+        if not isinstance(t, dict) or not isinstance(t.get("pts"), list):
+            continue
+        pts = [[_f(q[0], -50, 1000), _f(q[1], -50, 1000)] for q in t["pts"][:MAX_TRACK_POINTS]
+               if isinstance(q, list) and len(q) == 2
+               and all(isinstance(c, (int, float)) and not isinstance(c, bool) for c in q)]
+        if len(pts) < 2:
+            continue
+        n = t.get("n")
+        tracks.append({"n": n if isinstance(n, int) and not isinstance(n, bool) and 0 <= n < 5000 else 0,
+                       "l": 1 if t.get("l") == 1 else 0, "w": _f(t.get("w"), 0.15, 5, 0.4), "pts": pts})
+    vias = []
+    for v in (raw.get("vias") or [])[:MAX_VIAS] if isinstance(raw.get("vias"), list) else []:
+        if isinstance(v, list) and len(v) >= 2:
+            n = v[2] if len(v) > 2 and isinstance(v[2], int) and not isinstance(v[2], bool) and 0 <= v[2] < 5000 else 0
+            vias.append([_f(v[0], -50, 1000), _f(v[1], -50, 1000), n])
+    opens = []
+    for o in (raw.get("open") or [])[:MAX_TRACKS] if isinstance(raw.get("open"), list) else []:
+        if isinstance(o, list) and len(o) == 4:
+            opens.append([_f(c, -50, 1000) for c in o])
+    sig = raw.get("sig")
+    return {
+        "v": 1, "w": _f(raw.get("w"), 10, 400, 60), "h": _f(raw.get("h"), 10, 400, 40), "r": _f(raw.get("r"), 0, 20, 3),
+        "holes": bool(raw.get("holes")), "place": place, "tracks": tracks, "vias": vias, "open": opens,
+        "sig": sig[:20000] if isinstance(sig, str) else "",
+    }
+
+
+def _xyz(raw):
+    out = {k: _f(raw.get(k), -2000, 2000) for k in ("x", "y", "z")}
+    out.update({k: _f(raw.get(k), -720, 720) for k in ("rx", "ry", "rz")})
+    return out
+
+
+def clean_body(raw, part_ids):
+    """The 3-D body: its shapes, and where the electronics sit inside."""
+    if not isinstance(raw, dict) or not isinstance(raw.get("solids"), list):
+        return None
+    solids, seen = [], set()
+    for s in raw["solids"][:MAX_SOLIDS]:
+        if not isinstance(s, dict):
+            continue
+        sid, shape = str(s.get("id") or ""), s.get("shape")
+        if not ID_RE.match(sid) or sid in seen or shape not in SHAPES:
+            continue
+        seen.add(sid)
+        item = {"id": sid, "name": _text(s.get("name")) or "Shape", "shape": shape, **_xyz(s),
+                "sx": _f(s.get("sx"), 0.2, 1000, 10), "sy": _f(s.get("sy"), 0.2, 1000, 10), "sz": _f(s.get("sz"), 0.2, 1000, 10),
+                "color": s.get("color") if isinstance(s.get("color"), str) and COLOR_RE.match(s.get("color")) else "#d4893a",
+                "op": "cut" if s.get("op") == "cut" else "add",
+                "group": s.get("group") if s.get("group") in GROUPS else "hull"}
+        if s.get("role") in ROLES:
+            item["role"] = s["role"]
+        if s.get("hide"):
+            item["hide"] = True
+        params = {k: _f(v, 0, 100) for k, v in list(s["p"].items())[:4]
+                  if isinstance(k, str) and PROP_KEY_RE.match(k)} if isinstance(s.get("p"), dict) else {}
+        if params:
+            item["p"] = params
+        solids.append(item)
+    mounts = {}
+    for key, m in list((raw.get("mounts") or {}).items())[:MAX_PARTS + 1] if isinstance(raw.get("mounts"), dict) else []:
+        if isinstance(key, str) and MOUNT_RE.match(key) and (key == "@board" or key in part_ids) and isinstance(m, dict):
+            mounts[key] = _xyz(m)
+    out = {
+        "v": 1, "kind": raw.get("kind") if raw.get("kind") in BODY_KINDS else "custom",
+        "wall": _f(raw.get("wall"), 0.8, 6, 2), "split": "z" if raw.get("split") == "z" else "none",
+        "splitZ": _f(raw.get("splitZ"), -500, 2000), "drive": raw.get("drive") if raw.get("drive") in DRIVES else "none",
+        "solids": solids, "mounts": mounts, "anchors": {},
+    }
+    bay = raw.get("bay")
+    if isinstance(bay, dict):
+        out["bay"] = {k: _f(bay.get(k), -2000, 2000) for k in ("x", "y", "z", "w", "d", "h")}
+        if bay.get("upright"):
+            out["bay"]["upright"] = True
+    else:
+        out["bay"] = None
+    anchors = raw.get("anchors") if isinstance(raw.get("anchors"), dict) else {}
+    point = lambda q: [_f(c, -2000, 2000) for c in q] if isinstance(q, list) and len(q) == 3 else None
+    for key in ("motorL", "motorR", "motor", "battery", "servo"):
+        p3 = point(anchors.get(key))
+        if p3:
+            out["anchors"][key] = p3
+    if isinstance(anchors.get("led"), list):
+        leds = [p3 for p3 in (point(q) for q in anchors["led"][:8]) if p3]
+        if leds:
+            out["anchors"]["led"] = leds
+    for key in ("wheel", "track"):
+        if isinstance(raw.get(key), (int, float)) and not isinstance(raw.get(key), bool):
+            out[key] = _f(raw.get(key), 1, 1000, 50)
+    return out
+
+
 def clean_circuit(data):
     """Whitelist a circuit document. Raises Invalid with a reason.
 
@@ -170,6 +306,14 @@ def clean_circuit(data):
             "flip": bool(p.get("flip")),
             "props": _props(p.get("props")),
         }
+        # set from the component list: a name of your own, hidden, locked
+        name = _text(p.get("name"))
+        if name:
+            item["name"] = name
+        if p.get("hide"):
+            item["hide"] = True
+        if p.get("lock"):
+            item["lock"] = True
         cut = p.get("cutPins")
         if isinstance(cut, list):
             legs = [c for c in cut[:40] if isinstance(c, str) and re.match(r"^[A-Za-z0-9_+#.-]{1,16}$", c)]
@@ -256,6 +400,12 @@ def clean_circuit(data):
             out[key] = value
     if current:
         out["current"] = current
+    pcb = clean_pcb(data.get("pcb"), seen)
+    if pcb:
+        out["pcb"] = pcb
+    body = clean_body(data.get("body"), seen)
+    if body:
+        out["body"] = body
     if len(json.dumps(out)) > MAX_DOC_BYTES:
         raise Invalid("the circuit is too big to save")
     return out

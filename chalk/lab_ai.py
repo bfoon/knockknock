@@ -76,7 +76,18 @@ CATALOG = {
 
 
 KINDS = {"ask", "explain", "fix", "code", "build", "lesson",
-         "write", "edit", "fixcode", "continue", "explaincode", "blocks"}
+         "write", "edit", "fixcode", "continue", "explaincode", "blocks",
+         "project", "body"}
+
+# The 3-D body. Mirrors static/chalk/js/lab/lab_solid.js (shapes) and
+# lab_body.js (ready-made bodies); chalk/test_lab.py fails if they drift.
+BODY_KINDS = ("car", "robot", "submarine", "rocket", "boat", "box", "custom")
+SHAPES = ("box", "cyl", "cone", "sphere", "dome", "nose", "capsule", "tube", "wedge", "fin",
+          "carbody", "boat", "wheel", "prop")
+SOLID_IS = ("hull", "attach", "part", "cut")
+SOLID_ROLES = ("wheelL", "wheelR", "prop", "led")
+DRIVES = ("none", "wheels", "prop", "boat", "rocket")
+HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 CODE_KINDS = {"code", "write", "edit", "fixcode", "continue"}
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 COLORS = {"red", "black", "yellow", "green", "blue", "orange", "white", "purple"}
@@ -140,10 +151,36 @@ def _system(mode, kind):
         '"circuit": optional {"parts": [{"id": "short id", "type": "catalog type", "props": {}, "x": 0, "y": 0}], '
         '"wires": [{"a": "partId.pin", "b": "partId.pin", "color": "red|black|yellow|green|blue|orange|white|purple"}]}}. '
         '"blocks": optional block program. '
-        "Only include code, circuit or blocks when the task asks for them. Part positions are in units of 20 = 0.1 inch; space parts "
+        '"body": optional 3-D body (see BODY FORMAT). '
+        "Only include code, circuit, blocks or body when the task asks for them. Part positions are in units of 20 = 0.1 inch; space parts "
         "about 200-300 apart. Use only part types and pin names from the catalog."
     )
     return voice + safety + schema
+
+
+BODY_FORMAT = (
+    'A body is {"kind": "car|robot|submarine|rocket|boat|box|custom", "color": "#rrggbb", "wall": 2, "drive": "none|wheels|prop|boat|rocket", '
+    '"solids": [{"name": "Spoiler", "shape": "box", "is": "hull|attach|part|cut", "role": "", '
+    '"x": 0, "y": 0, "z": 0, "sx": 30, "sy": 30, "sz": 30, "rx": 0, "ry": 0, "rz": 0, "color": "#rrggbb"}]}. '
+    "Lengths are millimetres. X is forward, Y is left, Z is up, the ground is z = 0; x, y, z are the CENTRE of a shape and "
+    "sx, sy, sz its size along X, Y, Z before turning; rx, ry, rz turn it in degrees about X, then Y, then Z. "
+    "PREFER a ready-made kind (car, robot, submarine, rocket, boat, box): the lab then builds a complete, hollow, printable body of that "
+    "kind sized to fit the electronics, with wheels, axle holes and light holes already in place — and your \"solids\" are only the "
+    "EXTRAS that make it this design (a spoiler, a roof scoop, a flag, a hatch, a bumper, extra portholes), placed relative to that body, "
+    "which is centred on x = 0, y = 0 and roughly 130-240 long, 75-110 wide and 50-110 tall. Give \"color\" for the main shell. "
+    "Use kind \"custom\" only when none fits (a spider, a lighthouse, a tank, a windmill): then \"solids\" is the WHOLE body, and at least one "
+    "solid must have is = \"hull\" and be big enough to hold the ELECTRONICS size given, with 8 mm to spare all round. "
+    "is: hull = part of the hollow shell the electronics go in; attach = solid, stuck onto the shell; part = printed on its own "
+    "(wheels, propellers); cut = a hole through the shell (a window, an LED hole 5.2 across, an axle hole 3.4 across). "
+    "role: wheelL / wheelR for wheels on the left (y > 0) and right (y < 0), which turn with motor 1 and motor 2; prop for a propeller; "
+    "led for a light hole; otherwise leave it empty. "
+    "Shapes — each fills its sx by sy by sz box: box; cyl (upright cylinder, axis Z); cone (point up); sphere; dome (half ball, flat side down); "
+    "nose (rocket nose cone, point up); capsule (hull with rounded ends, long along X); tube (hollow cylinder, axis Z); wedge (ramp: tall at "
+    "the back, x negative, sloping to nothing at the front); fin (thin swept fin in the XZ plane, root on its -X edge); carbody (a car seen "
+    "from the side, pushed across its width); boat (pointed bow at +X, flat stern); wheel (rolls along X, axle along Y, so sx = sz = diameter "
+    "and sy = width); prop (three-bladed propeller on the X axis, sx = thickness). To lay a cylinder along X use ry = 90; along Y use rx = 90. "
+    "At most 40 solids. Everything must be printable plastic: no shape thinner than 2 mm."
+)
 
 
 TASKS = {
@@ -174,6 +211,18 @@ TASKS = {
                    "on this circuit. Do not return code.",
     "blocks": "Build a block program that does what the request describes, for the parts wired in this circuit. "
               "Put it in \"blocks\" using exactly the BLOCK FORMAT below. In \"reply\", one short sentence about it.",
+    "project": "Design a complete project a class could really build, for the request: (1) the electronics in \"circuit\", with every "
+               "wire needed — grounds joined, a current-limiting resistor on every LED, and every motor switched by an nmos "
+               "(gate through a 220 ohm resistor from a PWM pin, source to ground, motor between the battery + and the drain, a diode "
+               "across the motor with its K to battery +) because a pin cannot drive a motor; power motors from a battery_aa with "
+               "cells 4, its - joined to the Arduino ground; (2) a complete Arduino sketch in \"code\" that makes it behave as asked; "
+               "(3) the 3-D printed body it lives in, in \"body\", using the BODY FORMAT. Use an arduino_uno. Keep it to what the "
+               "request needs: usually 8 to 20 parts. In \"reply\", say in three or four sentences what it is, how it works, and "
+               "what to try first. The body is test-driven in the lab with the simulated circuit: for a body that drives on wheels, "
+               "motor 1 (the first motor in \"parts\") is the left side and motor 2 the right; a propeller follows motor 1; a rocket "
+               "lifts while its first motor (its engine) is running.",
+    "body": "Design the 3-D printed body for this circuit, for the request. Put it in \"body\" using the BODY FORMAT. Do NOT return "
+            "a circuit or code. In \"reply\", describe the body in two or three sentences and say what each extra shape is for.",
 }
 
 BLOCK_FORMAT = (
@@ -229,12 +278,64 @@ def _prompt(body):
     if kind == "build":
         parts += ["PART CATALOG:", _catalog_text(mode == "kid")]
     if kind in CODE_KINDS or kind == "build":
-        parts.append(ARDUINO_RULES)
+        parts.append(ARDUINO_RULES)  # (a project adds its own copy below, with the catalog)
         if mode == "kid":
             parts.append(KID_BRAIN)
     if kind == "blocks":
         parts += ["BLOCK FORMAT:", BLOCK_FORMAT, BLOCK_KID if mode == "kid" else BLOCK_PRO]
+    if kind == "project":
+        parts += ["PART CATALOG:", _catalog_text(mode == "kid"), ARDUINO_RULES]
+    if kind in ("project", "body"):
+        parts += ["BODY FORMAT:", BODY_FORMAT]
+        size = circuit.get("electronics") or (circuit.get("body") or {}).get("electronics") if isinstance(circuit, dict) else None
+        if isinstance(size, dict):
+            parts.append("ELECTRONICS: the board and its parts take up about %s x %s x %s mm (long, wide, tall)." % (
+                _n(size.get("w"), 70), _n(size.get("d"), 55), _n(size.get("h"), 18)))
     return mode, kind, "\n\n".join(parts)
+
+
+def _n(v, default):
+    return round(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and 0 < v < 2000 else default
+
+
+def _num(v, lo, hi, default):
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or v in (float("inf"), float("-inf")):
+        return default
+    return max(lo, min(hi, round(float(v), 1)))
+
+
+def clean_body(raw):
+    """Whitelist a body the AI described. Unknown shapes are dropped and every
+    number is bounded; the browser checks it all again before building."""
+    if not isinstance(raw, dict):
+        return None
+    kind = raw.get("kind") if raw.get("kind") in BODY_KINDS else "custom"
+    solids = []
+    for s in (raw.get("solids") or [])[:40] if isinstance(raw.get("solids"), list) else []:
+        if not isinstance(s, dict) or s.get("shape") not in SHAPES:
+            continue
+        item = {
+            "name": re.sub(r"[<>\x00-\x1f]", "", str(s.get("name") or ""))[:40] or s["shape"],
+            "shape": s["shape"],
+            "is": s.get("is") if s.get("is") in SOLID_IS else "attach",
+            "x": _num(s.get("x"), -800, 800, 0), "y": _num(s.get("y"), -800, 800, 0), "z": _num(s.get("z"), -200, 1200, 20),
+            "sx": _num(s.get("sx"), 0.5, 600, 30), "sy": _num(s.get("sy"), 0.5, 600, 30), "sz": _num(s.get("sz"), 0.5, 600, 30),
+            "rx": _num(s.get("rx"), -360, 360, 0), "ry": _num(s.get("ry"), -360, 360, 0), "rz": _num(s.get("rz"), -360, 360, 0),
+        }
+        if isinstance(s.get("color"), str) and HEX_RE.match(s["color"]):
+            item["color"] = s["color"]
+        if s.get("role") in SOLID_ROLES:
+            item["role"] = s["role"]
+        solids.append(item)
+    if kind == "custom" and not any(s["is"] == "hull" for s in solids):
+        # nothing to put the electronics in: fall back to a plain case
+        kind = "box"
+    out = {"kind": kind, "wall": _num(raw.get("wall"), 1.2, 4, 2), "solids": solids}
+    if isinstance(raw.get("color"), str) and HEX_RE.match(raw["color"]):
+        out["color"] = raw["color"]
+    if raw.get("drive") in DRIVES:
+        out["drive"] = raw["drive"]
+    return out
 
 
 def _clean(raw, body):
@@ -291,6 +392,10 @@ def _clean(raw, body):
     b = raw.get("blocks")
     if isinstance(b, dict):
         out["blocks"] = _bounded(b)
+    if body.get("kind") in ("project", "body"):
+        shell = clean_body(raw.get("body"))
+        if shell:
+            out["body"] = shell
     return out
 
 
@@ -320,8 +425,9 @@ def ask(body):
     mode, kind, prompt = _prompt(body)
     try:
         raw, _model = hai.ai_json(_system(mode, kind), prompt,
-                                  temperature=0.4 if kind in CODE_KINDS or kind in ("build", "blocks") else 0.7,
-                                  max_tokens=8000)
+                                  temperature=0.5 if kind in ("project", "body") else
+                                  0.4 if kind in CODE_KINDS or kind in ("build", "blocks") else 0.7,
+                                  max_tokens=12000 if kind == "project" else 8000)
     except hai.AIError as e:
         raise AIUnavailable(str(e), getattr(e, "status", 502))
     return _clean(raw, body)

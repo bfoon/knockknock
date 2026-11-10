@@ -10,9 +10,10 @@
  *   bottom | left | right | float — the program panel's home. Floating
  *   detaches it into a window you can drag and resize over the bench.
  *
- * And full screen: the bench alone, edge to edge, for a projector, with a
- * small bar for power and run and a caption showing the line that's
- * running. Every choice is remembered in this browser.
+ * And full screen: the workspace alone, edge to edge on the whole screen
+ * like the board, with a small bar for power and run, a caption showing
+ * the line that's running, and the component list and details a button
+ * away. Every other choice is remembered in this browser.
  */
 (function (root) {
   "use strict";
@@ -90,13 +91,25 @@
     document.addEventListener("webkitfullscreenchange", function () { self.fsChanged(); });
     var fsBar = document.createElement("div");
     fsBar.className = "fs-bar";
-    fsBar.innerHTML = '<button type="button" data-fs="power" class="fs-power"><i aria-hidden="true"></i><span>Power</span></button>' +
+    fsBar.innerHTML = '<span class="fs-spaces" role="group" aria-label="Workspace"><button type="button" data-fs-space="bench">Bench</button><button type="button" data-fs-space="pcb">Board</button><button type="button" data-fs-space="body">Body</button></span>' +
+      '<button type="button" data-fs="list" aria-pressed="false" title="The component list, over the workspace">Layers</button>' +
+      '<button type="button" data-fs="side" aria-pressed="false" title="Details of what is selected">Details</button>' +
+      '<button type="button" data-fs="power" class="fs-power"><i aria-hidden="true"></i><span>Power</span></button>' +
       '<button type="button" data-fs="run">Run program</button>' +
       '<button type="button" data-fs="exit" title="Leave full screen (Esc)">Exit full screen</button>';
     this.wrap.appendChild(fsBar);
     fsBar.querySelector('[data-fs="power"]').addEventListener("click", function () { self.app.power(!self.app.running); });
     fsBar.querySelector('[data-fs="run"]').addEventListener("click", function () { self.app.runProgram(); });
     fsBar.querySelector('[data-fs="exit"]').addEventListener("click", function () { self.fullscreen(false); });
+    fsBar.querySelectorAll("[data-fs-space]").forEach(function (b) { b.addEventListener("click", function () { if (self.app.studio) self.app.studio.setSpace(b.getAttribute("data-fs-space")); }); });
+    ["list", "side"].forEach(function (k) {
+      var b = fsBar.querySelector('[data-fs="' + k + '"]');
+      b.addEventListener("click", function () {
+        var on = self.body.classList.toggle("fs-" + k);
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+        if (on && k === "list" && self.app.drawerTab !== "layers") { self.app.drawerTab = "layers"; self.app.drawer(); }
+      });
+    });
     this.caption = document.createElement("p");
     this.caption.className = "fs-caption";
     this.caption.setAttribute("aria-live", "polite");
@@ -220,29 +233,41 @@
 
   /* ---------------------------------------------------- full screen */
 
+  /* Full screen is the whole screen, the way the board does it: the page
+   * itself goes full screen and the workspace is laid over everything in
+   * it. Asking only the bench element to go full screen left dialogs,
+   * toasts and the component list behind, and some browsers refused it
+   * outright and gave a window-sized bench instead. */
   Layout.prototype.fullscreen = function (on) {
-    var el = this.wrap, isOn = this.isFull();
+    var isOn = this.isFull(), de = document.documentElement;
     if (on === undefined) on = !isOn;
     if (on === isOn) return;
     if (on) {
-      var req = el.requestFullscreen || el.webkitRequestFullscreen;
+      this.maximise(true);
+      var req = de.requestFullscreen || de.webkitRequestFullscreen;
       if (req) {
-        var p = req.call(el);
-        var self = this;
-        if (p && p.catch) p.catch(function () { self.maximise(true); });
-      } else this.maximise(true);
+        try { var p = req.call(de); if (p && p.catch) p.catch(function () {}); } catch (e) {}
+      }
     } else {
-      if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        try { (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch (e) {}
+      }
       this.maximise(false);
     }
   };
-  /* Where the browser won't do real full screen (some frames, some
-   * phones), fill the window instead. */
-  Layout.prototype.maximise = function (on) { this.body.classList.toggle("bench-max", !!on); this.fsChanged(); };
-  Layout.prototype.isFull = function () {
-    return !!(document.fullscreenElement || document.webkitFullscreenElement || this.body.classList.contains("bench-max"));
+  /* The workspace laid over the page. Where the browser won't do real full
+   * screen (some frames, some phones) this alone still fills the window. */
+  Layout.prototype.maximise = function (on) {
+    this.body.classList.toggle("bench-max", !!on);
+    if (!on) { this.body.classList.remove("fs-list"); this.body.classList.remove("fs-side"); }
+    this.fsChanged();
   };
+  Layout.prototype.isFull = function () { return this.body.classList.contains("bench-max"); };
   Layout.prototype.fsChanged = function () {
+    /* Esc leaves the browser's full screen without telling us: follow it */
+    var native = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    if (this.wasNative && !native && this.body.classList.contains("bench-max")) { this.wasNative = false; this.maximise(false); return; }
+    this.wasNative = native;
     var on = this.isFull();
     this.body.classList.toggle("bench-full", on);
     var b = $("lab-fs");
@@ -252,10 +277,14 @@
     if (on && !this.wasFull) this.camBefore = { x: app.bench.cam.x, y: app.bench.cam.y, z: app.bench.cam.z };
     var back = !on && this.wasFull ? this.camBefore : null;
     this.wasFull = on;
+    var changed = on !== this.lastFull;
+    this.lastFull = on;
     requestAnimationFrame(function () {
       app.bench.resize();
-      if (on) app.bench.fit();
+      if (on && changed) app.bench.fit();
       else if (back) { app.bench.cam = back; app.bench.applyCam(); }
+      var v = app.studio && app.studio.active();
+      if (v && changed) v.fit();
     });
   };
   /* Mirror the narration into the full-screen caption. */
@@ -268,5 +297,8 @@
     var pw = this.wrap.querySelector(".fs-power");
     pw.setAttribute("aria-pressed", this.app.running ? "true" : "false");
     pw.querySelector("span").textContent = this.app.running ? "Power on" : "Power off";
+    var space = this.app.studio ? this.app.studio.space : "bench", b = this.body;
+    this.wrap.querySelectorAll("[data-fs-space]").forEach(function (x) { x.setAttribute("aria-pressed", x.getAttribute("data-fs-space") === space ? "true" : "false"); });
+    ["list", "side"].forEach(function (k) { var x = document.querySelector('.fs-bar [data-fs="' + k + '"]'); if (x) x.setAttribute("aria-pressed", b.classList.contains("fs-" + k) ? "true" : "false"); });
   };
 })(typeof window !== "undefined" ? window : globalThis);

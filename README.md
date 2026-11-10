@@ -46,7 +46,12 @@ A real-time interactive presentation & quiz platform — think **Mentimeter** me
 - **Workshop**: perfboard and stripboard where nothing connects until it is soldered — soldering iron (cold joints flicker, too much heat cooks parts, drag to bridge pads), solder sucker, hot air to free a part, cutters for wires and legs, and a track cutter for stripboard
 - 24 ready-made circuits (17 Pro, 7 Kid); open the lab from the projector's corner bar, with <kbd>L</kbd>, or from the board list
 - Saved circuits live in `chalk.BoardCircuit` — after pulling, run `python manage.py makemigrations chalk && python manage.py migrate`
-- Code: `chalk/lab.py`, `chalk/lab_ai.py`, `static/chalk/js/lab/`. Tests: `python manage.py test chalk.test_lab`, and `node tools/chalk_lab/run_all.js` for the solver, the Arduino interpreter and every example
+- **Layers** — the left drawer has a second tab listing every component and wire on the bench with a schematic reference (R1, D2, U1). Click a row to select it and see its details, double-click to fly to it, hover to see where it is; rename, hide or lock any part; download the parts list as CSV
+- **Full screen** takes the whole screen, as the board does, with the component list and details one button away
+- **Board** — the same circuit as a two-layer printed circuit board: footprints from the parts' own legs, auto-placement, a maze autorouter that re-routes as you drag, and Gerber + drill files in a zip for a board house
+- **Body** — the shell the electronics live in, in 3-D: six ready-made bodies (toy car, rover robot, submarine, rocket, boat, project box) built round the electronics you have, or your own from fourteen shapes. **Test drive** runs the real simulation: the motors your program switches turn the wheels, spin the propeller or lift the rocket. **Export for 3-D printing** gives one STL per piece, hollowed, split, laid flat, with board posts and a print sheet
+- **Design a project** — describe it ("a toy car that turns away from walls") and get the circuit, the program, the routed board and the body in one go. With no AI key the design comes from six worked projects
+- Code: `chalk/lab.py`, `chalk/lab_ai.py`, `static/chalk/js/lab/`. Tests: `python manage.py test chalk.test_lab`, and `node tools/chalk_lab/run_all.js` for the solver, the Arduino interpreter, every example, the board router and the 3-D bodies
 
 ### 🦸 Hero Forge (3D avatars)
 - Full-body game-style characters: 4 bodies × 14 skins × 10 hair × 12 hair colours × 6 eyes × 10 outfits (incl. kaftan) × 12 colours × 12 headwear (incl. kufi & headwrap) × 10 items (incl. kora) × 6 auras

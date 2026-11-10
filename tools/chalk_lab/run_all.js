@@ -8,7 +8,7 @@
 const { execFileSync } = require("child_process");
 const path = require("path");
 let failed = 0;
-for (const t of ["sim_test", "mcu_test", "ex_test", "copilot_test", "wireless_test", "workshop_test", "solid_test", "pcb_test", "body_test"]) {
+for (const t of ["sim_test", "mcu_test", "ex_test", "copilot_test", "wireless_test", "workshop_test", "solid_test", "pcb_test", "body_test", "projects_test"]) {
   console.log("\n=== " + t + " ===");
   try {
     const out = execFileSync(process.execPath, [path.join(__dirname, t + ".js")], { encoding: "utf8" });

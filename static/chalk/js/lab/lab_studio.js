@@ -13,9 +13,9 @@
  * And the project designer: say what you want to make — "a toy car that
  * turns away from walls" — and it designs the circuit, writes the program,
  * lays out the board and builds a body round it. With an AI key on the
- * server the design comes from the AI; without one, from a shelf of
- * worked projects, so a class is never left with a button that does
- * nothing.
+ * server the design comes from the AI; without one — or whenever you would
+ * rather browse — from the shelf of worked projects in lab_projects.js,
+ * so a class is never left with a button that does nothing.
  */
 (function (root) {
   "use strict";
@@ -172,81 +172,9 @@
     return doc.body.solids.length;
   };
 
-  /* ------------------------------------------------------ worked projects */
-
-  /* "a.pin>b.pin|colour" → the wire format buildFrom() takes. */
-  function wires(list) { return list.map(function (w) { var q = w.split(/[>|]/); return q[2] ? { a: q[0], b: q[1], color: q[2] } : { a: q[0], b: q[1] }; }); }
-  function parts(list) { return list.map(function (p) { return { id: p[0], type: p[1], props: p[2] || {} }; }); }
-
-  /* One motor switched by a logic-level MOSFET, with its flyback diode. */
-  function driver(n, pin) {
-    return {
-      parts: [["m" + n, "motor", { load: "wheel" }], ["q" + n, "nmos"], ["d" + n, "diode"], ["g" + n, "resistor", { ohms: 220 }]],
-      wires: ["u." + pin + ">g" + n + ".1|yellow", "g" + n + ".2>q" + n + ".G|yellow", "q" + n + ".S>u.GND2|black", "q" + n + ".D>m" + n + ".2|blue", "m" + n + ".1>b.+|red", "d" + n + ".A>q" + n + ".D|blue", "d" + n + ".K>b.+|red"]
-    };
-  }
-  function join() {
-    var out = { parts: [], wires: [] };
-    Array.prototype.forEach.call(arguments, function (c) { out.parts = out.parts.concat(c.parts); out.wires = out.wires.concat(c.wires); });
-    return { parts: parts(out.parts), wires: wires(out.wires) };
-  }
-  var CORE = { parts: [["u", "arduino_uno"], ["b", "battery_aa", { cells: 4 }]], wires: ["b.->u.GND3|black"] };
-  var EYES = { parts: [["s", "hcsr04", { cm: 60 }]], wires: ["u.5V>s.VCC|red", "u.GND1>s.GND|black", "u.D7>s.TRIG|green", "u.D6>s.ECHO|orange"] };
-  function lamp(n, pin, color) { return { parts: [["l" + n, "led", { color: color }], ["r" + n, "resistor", { ohms: 220 }]], wires: ["u." + pin + ">r" + n + ".1|white", "r" + n + ".2>l" + n + ".A|white", "l" + n + ".K>u.GND1|black"] }; }
-
-  var DRIVE_CODE =
-    "// Drives forward and turns away from anything closer than 20 cm.\n" +
-    "const int LEFT = 5, RIGHT = 3, TRIG = 7, ECHO = 6, LAMPS = 9;\n\n" +
-    "void setup() {\n  pinMode(LEFT, OUTPUT);\n  pinMode(RIGHT, OUTPUT);\n  pinMode(TRIG, OUTPUT);\n  pinMode(ECHO, INPUT);\n  pinMode(LAMPS, OUTPUT);\n  digitalWrite(LAMPS, HIGH);\n  Serial.begin(9600);\n  delay(200);                 // let the sensor wake up\n}\n\n" +
-    "long distanceCm() {\n  digitalWrite(TRIG, LOW);\n  delayMicroseconds(2);\n  digitalWrite(TRIG, HIGH);\n  delayMicroseconds(10);\n  digitalWrite(TRIG, LOW);\n  return pulseIn(ECHO, HIGH) / 58;\n}\n\n" +
-    "void loop() {\n  long cm = distanceCm();\n  Serial.println(cm);\n  if (cm > 0 && cm < 20) {\n    analogWrite(LEFT, 200);   // something ahead: turn on the spot\n    analogWrite(RIGHT, 0);\n  } else {\n    analogWrite(LEFT, 220);   // clear: straight on\n    analogWrite(RIGHT, 220);\n  }\n  delay(60);\n}\n";
-
-  L.PROJECTS = [
-    { id: "car", name: "Wall-dodging car", body: "car", match: /car|buggy|truck|vehicle|racer/i,
-      blurb: "Two motors, a distance sensor for eyes and headlights. It drives until something is in the way, then turns.",
-      circuit: function () { return join(CORE, EYES, driver("l", "D5"), driver("r", "D3"), lamp("1", "D9", "white"), lamp("2", "D9", "white")); }, code: DRIVE_CODE },
-    { id: "robot", name: "Rover robot", body: "robot", match: /robot|rover|bot\b/i,
-      blurb: "The same brain as the car in a rover body: sensor eyes in the head, two drive wheels and a caster.",
-      circuit: function () { return join(CORE, EYES, driver("l", "D5"), driver("r", "D3"), lamp("1", "D9", "green")); }, code: DRIVE_CODE },
-    { id: "submarine", name: "Submarine", body: "submarine", match: /sub(marine)?|under ?water|diver?/i,
-      blurb: "A propeller motor, a second motor as the ballast pump, and porthole lights. It cruises, dives and surfaces.",
-      circuit: function () { return join(CORE, driver("p", "D5"), driver("d", "D3"), lamp("1", "D9", "yellow"), lamp("2", "D10", "blue")); },
-      code: "// Cruise, dive, cruise deep, surface — and blink the porthole lights.\nconst int PROP = 5, PUMP = 3, LIGHT = 9, BEACON = 10;\n\nvoid setup() {\n  pinMode(PROP, OUTPUT);\n  pinMode(PUMP, OUTPUT);\n  pinMode(LIGHT, OUTPUT);\n  pinMode(BEACON, OUTPUT);\n  digitalWrite(LIGHT, HIGH);\n}\n\nvoid blink(int times) {\n  for (int i = 0; i < times; i++) {\n    digitalWrite(BEACON, HIGH);\n    delay(150);\n    digitalWrite(BEACON, LOW);\n    delay(150);\n  }\n}\n\nvoid loop() {\n  analogWrite(PROP, 200);      // ahead on the surface\n  delay(3000);\n  blink(3);\n  analogWrite(PUMP, 255);      // flood the tanks: dive\n  delay(2500);\n  analogWrite(PUMP, 0);\n  delay(3000);                 // run deep\n  analogWrite(PROP, 0);        // stop and drift\n  blink(5);\n  delay(1500);\n}\n" },
-    { id: "rocket", name: "Countdown rocket", body: "rocket", match: /rocket|space|launch|shuttle|missile/i,
-      blurb: "Three countdown lights, a beeper and an engine output. Three, two, one — lift-off.",
-      circuit: function () {
-        return join(CORE, driver("e", "D5"), lamp("1", "D2", "red"), lamp("2", "D3", "yellow"), lamp("3", "D4", "green"),
-          { parts: [["z", "buzzer"]], wires: ["u.D8>z.+|purple", "z.->u.GND1|black"] });
-      },
-      code: "// Counts down on three lights with a beep each, then fires the engine.\nconst int LIGHTS[3] = {2, 3, 4};\nconst int BEEP = 8, ENGINE = 5;\n\nvoid setup() {\n  for (int i = 0; i < 3; i++) pinMode(LIGHTS[i], OUTPUT);\n  pinMode(BEEP, OUTPUT);\n  pinMode(ENGINE, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  for (int i = 0; i < 3; i++) {          // three… two… one…\n    Serial.println(3 - i);\n    digitalWrite(LIGHTS[i], HIGH);\n    digitalWrite(BEEP, HIGH);\n    delay(200);\n    digitalWrite(BEEP, LOW);\n    delay(800);\n  }\n  Serial.println(\"Lift-off!\");\n  digitalWrite(BEEP, HIGH);\n  analogWrite(ENGINE, 255);              // engine on\n  delay(2500);\n  analogWrite(ENGINE, 0);                // burn-out: coast and fall back\n  digitalWrite(BEEP, LOW);\n  for (int i = 0; i < 3; i++) digitalWrite(LIGHTS[i], LOW);\n  delay(6000);\n}\n" },
-    { id: "boat", name: "Weaving boat", body: "boat", match: /boat|ship|ferry|sail|yacht/i,
-      blurb: "A propeller motor and a servo rudder. It sets off and weaves from side to side.",
-      circuit: function () { return join(CORE, driver("p", "D5"), lamp("1", "D8", "green"), { parts: [["v", "servo"]], wires: ["u.5V>v.V+|red", "u.GND1>v.GND|black", "u.D9>v.SIG|orange"] }); },
-      code: "// Full ahead, with the rudder swinging gently from side to side.\n#include <Servo.h>\nServo rudder;\nconst int PROP = 5, LAMP = 8;\n\nvoid setup() {\n  rudder.attach(9);\n  pinMode(PROP, OUTPUT);\n  pinMode(LAMP, OUTPUT);\n  digitalWrite(LAMP, HIGH);\n  analogWrite(PROP, 210);\n}\n\nvoid loop() {\n  for (int a = 60; a <= 120; a += 2) { rudder.write(a); delay(40); }\n  for (int a = 120; a >= 60; a -= 2) { rudder.write(a); delay(40); }\n}\n" },
-    { id: "lamp", name: "Night light in a box", body: "box", match: /night|lamp|light|box|case|enclosure/i,
-      blurb: "A light sensor and an LED in a small case: the light comes on when the room goes dark.",
-      circuit: function () {
-        return join({ parts: [["u", "arduino_uno"], ["k", "ldr"], ["rk", "resistor", { ohms: 10000 }]], wires: ["u.5V>k.1|red", "k.2>u.A0|green", "u.A0>rk.1|green", "rk.2>u.GND2|black"] }, lamp("1", "D9", "white"));
-      },
-      code: "// The darker the room, the brighter the light.\nconst int SENSOR = A0, LIGHT = 9;\n\nvoid setup() {\n  pinMode(LIGHT, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  int level = analogRead(SENSOR);          // 0 dark … 1023 bright\n  Serial.println(level);\n  int glow = map(level, 200, 700, 255, 0);\n  analogWrite(LIGHT, constrain(glow, 0, 255));\n  delay(100);\n}\n" }
-  ];
-
-  /* The nearest worked project to what was asked for. */
-  L.localProject = function (question) {
-    var q = String(question || ""), hit = L.PROJECTS.filter(function (p) { return p.match.test(q); })[0] || L.PROJECTS[0];
-    return { reply: "**" + hit.name + ".** " + hit.blurb, circuit: hit.circuit(), code: hit.code, body: { kind: hit.body }, title: hit.name, shelf: true };
-  };
-
-  /* A body picked by the words in the request, for when no AI is there. */
-  L.localBody = function (question) {
-    var q = String(question || ""), hit = L.PROJECTS.filter(function (p) { return p.match.test(q); })[0];
-    var kind = hit ? hit.body : "box", t = L.Body.TEMPLATES[kind];
-    return { reply: "**" + t.name + ".** " + t.blurb + " It will be sized to fit the electronics on your bench. Every shape can be changed afterwards.", body: { kind: kind } };
-  };
-
   /* ------------------------------------------------------------ the wizard */
 
-  var IDEAS = ["A toy car that turns away from walls", "A submarine with porthole lights that dives and surfaces", "A rocket with a three-two-one countdown", "A rover robot with sensor eyes", "A boat with a rudder that weaves", "A night light in a small case"];
+  var IDEAS = ["A car I can drive from my phone by Bluetooth", "A radio-controlled boat with a handset", "A submarine that dives and surfaces", "A rocket with a countdown", "A burglar alarm for a model house", "A desk pet that waves at me"];
 
   Studio.prototype.wizard = function (preset) {
     var self = this, app = this.app, d = document.createElement("dialog");
@@ -257,6 +185,10 @@
       '<label class="sr" for="wz-q">What do you want to make?</label>' +
       '<textarea id="wz-q" rows="3" placeholder="e.g. a toy car with headlights that stops before it hits a wall">' + esc(preset || "") + '</textarea>' +
       '<div class="wz-ideas">' + IDEAS.map(function (t) { return '<button type="button" data-idea="' + esc(t) + '">' + esc(t) + '</button>'; }).join("") + '</div>' +
+      '<details class="wz-shelf"' + (app.cfg.aiEnabled ? '' : ' open') + '><summary>Or pick one of ' + L.PROJECTS.length + ' worked projects</summary>' +
+        '<div class="wz-cats" role="group" aria-label="Kind of project"><button type="button" data-cat="" aria-pressed="true">All</button>' +
+          L.PROJECT_CATS.map(function (c) { return '<button type="button" data-cat="' + esc(c) + '" aria-pressed="false">' + esc(c) + '</button>'; }).join("") + '</div>' +
+        '<div class="wz-grid" id="wz-grid"></div></details>' +
       '<ol class="wz-steps" hidden><li data-step="design">Designing the circuit and the program</li><li data-step="bench">Building it on the bench</li><li data-step="pcb">Laying out and routing the circuit board</li><li data-step="body">Building the body round it</li></ol>' +
       '<p class="wz-note" hidden></p>' +
       '<div class="ask-actions"><span class="fine">' + (app.cfg.aiEnabled ? "Designed by the AI on this server. Check its work before you build it for real." : "The AI isn't switched on for this server, so designs come from the lab's shelf of worked projects.") + '</span>' +
@@ -264,15 +196,37 @@
     document.body.appendChild(d);
     d.addEventListener("close", function () { d.remove(); });
     var q = d.querySelector("#wz-q"), go = d.querySelector("#wz-go"), steps = d.querySelector(".wz-steps"), note = d.querySelector(".wz-note");
-    d.querySelectorAll("[data-idea]").forEach(function (b) { b.addEventListener("click", function () { q.value = b.getAttribute("data-idea"); q.focus(); }); });
+    d.querySelectorAll("[data-idea]").forEach(function (b) { b.addEventListener("click", function () { q.value = b.getAttribute("data-idea"); q.focus(); shelf(); }); });
+    /* the shelf: filtered by its category buttons and by whatever is typed */
+    var cat = "", grid = d.querySelector("#wz-grid");
+    var shelf = function () {
+      var text = q.value.trim(), list = text ? L.matchProjects(text) : L.PROJECTS;
+      if (text && !list.length) list = L.PROJECTS;
+      list = list.filter(function (p) { return !cat || p.cat === cat; });
+      grid.innerHTML = list.length ? list.map(function (p) {
+        return '<button type="button" class="wz-card" data-project="' + p.id + '"><b>' + esc(p.name) + '</b><span>' + esc(p.blurb) + '</span><i>' + esc(p.cat) + ' · ' + esc(L.Body.TEMPLATES[p.body].name) + '</i></button>';
+      }).join("") : '<p class="hint">Nothing on the shelf under that heading matches. Try another heading, or fewer words.</p>';
+      grid.querySelectorAll("[data-project]").forEach(function (b) {
+        b.addEventListener("click", function () { var r = L.shelfProject(b.getAttribute("data-project")); q.value = r.title; run(r); });
+      });
+    };
+    d.querySelectorAll("[data-cat]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        cat = b.getAttribute("data-cat");
+        d.querySelectorAll("[data-cat]").forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+        shelf();
+      });
+    });
+    q.addEventListener("input", function () { clearTimeout(q.t); q.t = setTimeout(shelf, 180); });
     var mark = function (name, state) { var li = steps.querySelector('[data-step="' + name + '"]'); if (li) li.setAttribute("data-state", state); };
-    var run = function () {
+    var run = function (picked) {
       var text = q.value.trim();
       if (!text) { q.focus(); return; }
       go.disabled = true; q.disabled = true; steps.hidden = false; note.hidden = true;
-      d.querySelector(".wz-ideas").hidden = true;
+      d.querySelector(".wz-ideas").hidden = true; d.querySelector(".wz-shelf").hidden = true;
       mark("design", "doing");
-      self.design(text).then(function (res) {
+      /* a project picked off the shelf is already designed */
+      (picked && picked.circuit ? Promise.resolve(picked) : self.design(text)).then(function (res) {
         mark("design", "done");
         return self.construct(res, text, mark).then(function (sum) {
           note.hidden = false;
@@ -286,10 +240,11 @@
       }).catch(function (e) {
         if (root.console) console.error(e);
         note.hidden = false; note.innerHTML = '<span class="bad">' + esc((e && e.message) || "That didn't work. Try describing it another way.") + '</span>';
-        go.disabled = false; q.disabled = false;
+        go.disabled = false; q.disabled = false; d.querySelector(".wz-shelf").hidden = false;
       });
     };
-    go.addEventListener("click", run);
+    go.addEventListener("click", function () { run(); });
+    shelf();
     q.addEventListener("keydown", function (e) { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) run(); });
     d.showModal();
     q.focus();
@@ -343,6 +298,19 @@
       var n = app.buildFrom(L.layoutCircuit(res.circuit));
       if (!n) throw new Error("The design used parts this lab doesn't have. Try describing it another way.");
       if (res.code && String(res.code).trim()) app.useCode(String(res.code));
+      /* several boards, each with its own program (a car and its handset) */
+      var progs = res.programs && typeof res.programs === "object" ? res.programs : {}, made = app.built || {}, boards = 0;
+      Object.keys(progs).forEach(function (old) {
+        var part = made[old];
+        if (!part || !L.def(part).mcu || typeof progs[old] !== "string") return;
+        app.doc.programs = app.doc.programs || {};
+        app.doc.programs[part.id] = { code: progs[old], blocks: null, prog: "code" };
+        boards++;
+      });
+      if (boards > 1 && app.mcuId && app.doc.programs[app.mcuId]) {
+        app.doc.code = app.doc.programs[app.mcuId].code; app.doc.prog = "code";
+        app.loadProgram(); app.boardPicker();
+      }
       mark("bench", "done"); mark("pcb", "doing");
       return pause().then(function () {
         var model = PCB.model(app.doc, app.sim);
@@ -358,7 +326,11 @@
           self.body.frameAll();
           var rep = PCB.report(app.doc, model), misfit = L.Body.fit(app.doc, app.doc.body);
           return n + " parts on the bench · a " + rep.w.toFixed(0) + " × " + rep.h.toFixed(0) + " mm board, " + (rep.open ? rep.open + " connection" + (rep.open > 1 ? "s" : "") + " still to route by hand" : "fully routed") +
-            " · a body of " + shapes + " shapes" + (misfit.length ? " (some electronics stick out — press Resize to fit)" : " that everything fits inside") + ". Press ▶ Test drive to try it.";
+            " · a body of " + shapes + " shapes" + (misfit.length ? " (some electronics stick out — press Resize to fit)" : " that everything fits inside") + "." +
+            (boards > 1 ? " It has " + boards + " boards, each with its own program: pick one under “Program for” to read it." : "") +
+            (app.doc.parts.some(function (p) { return p.type === "hc05"; }) ? " To use the phone: switch the power on, open the Phone tab on the right and tap Connect." : "") +
+            (app.doc.parts.some(function (p) { return p.type === "rf_remote"; }) ? " The key fob is on the Bench: press its buttons there." : "") +
+            " Press ▶ Test drive to try it.";
         });
       });
     });

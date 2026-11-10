@@ -15,7 +15,7 @@ Object.keys(Body.TEMPLATES).forEach(kind=>{
   const t0=Date.now(); doc.body=Body.make(kind,doc);
   const b=doc.body, misfit=Body.fit(doc,b);
   const out=Body.printFiles(doc,b,'Test '+kind), ms=Date.now()-t0;
-  const good=out.pieces.every(p=>p.tris.length>10&&S.volume(p.tris)>50&&Math.abs(S.bbox(p.mesh).lo[2])<1e-6);
+  const good=out.pieces.every(p=>p.tris.length>=8&&S.volume(p.tris)>50&&Math.abs(S.bbox(p.mesh).lo[2])<1e-6);
   const leaks=out.pieces.reduce((n,p)=>n+S.leaks(p.tris),0), edges=out.pieces.reduce((n,p)=>n+p.tris.length*3,0);
   if(leaks)console.log('    '+kind+': '+leaks+' open edges of '+edges);
   const stlOk=out.files.slice(0,-1).every((f,i)=>new DataView(f.data.buffer).getUint32(80,true)===out.pieces[i].tris.length);

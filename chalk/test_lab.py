@@ -366,7 +366,7 @@ class CatalogueTests(TestCase):
 
     def test_matches_the_javascript(self):
         js_dir = Path(settings.BASE_DIR) / "static" / "chalk" / "js" / "lab"
-        src = "".join(p.read_text() for p in sorted(js_dir.glob("lab_parts*.js")))
+        src = "".join(p.read_text() for p in sorted(js_dir.glob("lab_parts*.js"))) + (js_dir / "lab_wireless.js").read_text()
         js = set(re.findall(r'\badd\("([a-z0-9_]+)",', src)) - {"breadboard_half", "breadboard_full"}
         modules = set(re.findall(r"^\s{4}(soil|gas|sound|flame|ir):\s*\{ name:", src, re.M))
         js |= {"mod_" + m for m in modules}
@@ -497,6 +497,9 @@ class ProjectAITests(LabTestCase):
         self.assertIn("BODY FORMAT", prompt)
         self.assertIn("PART CATALOG", prompt)
         self.assertIn("nmos", prompt)
+        self.assertIn("hc05", prompt)                      # Bluetooth and radio parts are on offer
+        self.assertIn("SoftwareSerial bt(10, 11)", prompt)
+        self.assertIn("rf_rx", prompt)
 
     def test_a_body_is_sized_to_the_electronics(self):
         with mock.patch("hanns.ai.is_enabled", return_value=True), \
@@ -530,3 +533,22 @@ class StudioCatalogueTests(TestCase):
         self.assertEqual(bodies, lab.BODY_KINDS)
         for word in lab_ai.SHAPES:
             self.assertIn(word, lab_ai.BODY_FORMAT)
+
+
+class ProjectShelfTests(TestCase):
+    """The worked projects live in the browser; the page has to load them."""
+
+    def test_the_shelf_is_served_and_stocked(self):
+        js_dir = Path(settings.BASE_DIR) / "static" / "chalk" / "js" / "lab"
+        src = (js_dir / "lab_projects.js").read_text()
+        ids = re.findall(r'^  add\("([a-z0-9_]+)", "', src, re.M)
+        self.assertGreaterEqual(len(ids), 60)
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertGreaterEqual(len([i for i in ids if i.startswith("bt_")]), 8)
+        self.assertGreaterEqual(len([i for i in ids if i.startswith(("radio_", "fob_"))]), 8)
+        bodies = set(re.findall(r'^  add\("[a-z0-9_]+", "[^"]+", "[^"]+", "([a-z]+)",', src, re.M))
+        self.assertTrue(bodies <= set(lab_ai.BODY_KINDS), bodies - set(lab_ai.BODY_KINDS))
+        page = (Path(settings.BASE_DIR) / "templates" / "chalk" / "lab.html").read_text()
+        self.assertIn("lab_projects.js", page)
+        self.assertLess(page.index("lab_studio.js"), page.index("lab_app.js"))
+        self.assertLess(page.index("lab_projects.js"), page.index("lab_app.js"))

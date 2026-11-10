@@ -8,7 +8,7 @@ measured, so the AI is talking about this circuit, not circuits in general.
 Everything that comes back is cleaned against CATALOG before it reaches the
 browser, and the browser checks it again before building anything.
 
-CATALOG mirrors static/chalk/js/lab/lab_parts*.js: type -> (name, kid part,
+CATALOG mirrors static/chalk/js/lab/lab_parts*.js and lab_wireless.js: type -> (name, kid part,
 pin names, default props). chalk/test_lab.py fails if the two drift apart.
 Breadboards are left out: the AI wires parts directly, which is easier to
 check and still builds a working circuit.
@@ -71,6 +71,10 @@ CATALOG = {
     'k_led': ('LED light', True, ('+', '-'), {'color': 'green'}),
     'k_resistor': ('Slow-down block', True, ('a', 'b'), {'ohms': 47}),
     'k_ldr': ('Light sensor', True, ('a', 'b'), {'light': 70}),
+    'hc05': ('Bluetooth module (HC-05)', False, ('STATE', 'RXD', 'TXD', 'GND', 'VCC', 'EN'), {}),
+    'hc12': ('Radio module (HC-12, 433 MHz)', False, ('VCC', 'GND', 'RXD', 'TXD', 'SET'), {'channel': 1, 'loss': 0}),
+    'rf_rx': ('433 MHz remote receiver', False, ('GND', 'VCC', 'D0', 'D1', 'D2', 'D3', 'VT'), {'latch': False}),
+    'rf_remote': ('433 MHz key fob', False, (), {}),
     'k_brain': ('Robo Brain', True, ('OUT1', 'OUT2', 'OUT3', 'OUT4', 'GND1', 'IN1', 'IN2', 'EYE', '5V', 'GND2'), {}),
 }
 
@@ -81,7 +85,7 @@ KINDS = {"ask", "explain", "fix", "code", "build", "lesson",
 
 # The 3-D body. Mirrors static/chalk/js/lab/lab_solid.js (shapes) and
 # lab_body.js (ready-made bodies); chalk/test_lab.py fails if they drift.
-BODY_KINDS = ("car", "robot", "submarine", "rocket", "boat", "box", "custom")
+BODY_KINDS = ("car", "robot", "submarine", "rocket", "boat", "box", "tank", "house", "tower", "pet", "custom")
 SHAPES = ("box", "cyl", "cone", "sphere", "dome", "nose", "capsule", "tube", "wedge", "fin",
           "carbody", "boat", "wheel", "prop")
 SOLID_IS = ("hull", "attach", "part", "cut")
@@ -109,6 +113,20 @@ ARDUINO_RULES = (
     "LiquidCrystal_I2C lcd(0x27,16,2), lcd.init(), lcd.backlight(), lcd.clear(), lcd.setCursor(c,r), lcd.print(x). "
     "NOT supported: interrupts, pointers, structs/classes, other libraries. It is an Uno: int is 16-bit. "
     "On the Uno, A4/A5 are SDA/SCL. Arduino pin names on the board part are D0-D13, A0-A5, 5V, 3V3, GND1, GND2, GND3."
+)
+
+WIRELESS_RULES = (
+    "Wireless. BLUETOOTH: an hc05 with VCC to 5V, GND to ground, its TXD to D10 and its RXD to D11; in the sketch "
+    "#include <SoftwareSerial.h> and SoftwareSerial bt(10, 11); bt.begin(9600); then bt.available(), bt.read(), bt.parseInt(), "
+    "bt.readStringUntil('\\n'), bt.print(), bt.println(). The lab has a phone controller that pairs with it: its arrow pad sends the single "
+    "characters F, B, L, R and S (stop); its keys send 1, 0, A and B; its slider sends the letter v followed by a number 0-255 and a "
+    "newline; and typed messages arrive as a line of text. Design the sketch around exactly those. "
+    "RADIO between two boards: one hc12 on EACH arduino_uno, wired the same way (TXD to D10, RXD to D11) and used through "
+    "SoftwareSerial radio(10, 11); what one prints the other reads. But this reply carries only ONE sketch, so only design a "
+    "two-board radio project if asked for one, and then say in \"reply\" that the second board still needs its program. "
+    "KEY FOB: an rf_remote (no pins, no wires) and an rf_rx with VCC to 5V and GND to ground; while fob button A, B, C or D is held, the "
+    "receiver's D0, D1, D2 or D3 goes HIGH — read them with digitalRead on pins set to INPUT. "
+    "Only use wireless parts when the request asks for remote, phone, Bluetooth or radio control."
 )
 
 KID_BRAIN = (
@@ -159,12 +177,12 @@ def _system(mode, kind):
 
 
 BODY_FORMAT = (
-    'A body is {"kind": "car|robot|submarine|rocket|boat|box|custom", "color": "#rrggbb", "wall": 2, "drive": "none|wheels|prop|boat|rocket", '
+    'A body is {"kind": "car|robot|submarine|rocket|boat|box|tank|house|tower|pet|custom", "color": "#rrggbb", "wall": 2, "drive": "none|wheels|prop|boat|rocket", '
     '"solids": [{"name": "Spoiler", "shape": "box", "is": "hull|attach|part|cut", "role": "", '
     '"x": 0, "y": 0, "z": 0, "sx": 30, "sy": 30, "sz": 30, "rx": 0, "ry": 0, "rz": 0, "color": "#rrggbb"}]}. '
     "Lengths are millimetres. X is forward, Y is left, Z is up, the ground is z = 0; x, y, z are the CENTRE of a shape and "
     "sx, sy, sz its size along X, Y, Z before turning; rx, ry, rz turn it in degrees about X, then Y, then Z. "
-    "PREFER a ready-made kind (car, robot, submarine, rocket, boat, box): the lab then builds a complete, hollow, printable body of that "
+    "PREFER a ready-made kind (car, robot = rover on wheels, submarine, rocket, boat, tank, house = model house for smart-home projects, tower = lighthouse or weather station, pet = round desk creature with sensor eyes, box = plain case): the lab then builds a complete, hollow, printable body of that "
     "kind sized to fit the electronics, with wheels, axle holes and light holes already in place — and your \"solids\" are only the "
     "EXTRAS that make it this design (a spoiler, a roof scoop, a flag, a hatch, a bumper, extra portholes), placed relative to that body, "
     "which is centred on x = 0, y = 0 and roughly 130-240 long, 75-110 wide and 50-110 tall. Give \"color\" for the main shell. "
@@ -276,7 +294,7 @@ def _prompt(body):
     if serial.strip():
         parts += ["SERIAL MONITOR (latest):", serial]
     if kind == "build":
-        parts += ["PART CATALOG:", _catalog_text(mode == "kid")]
+        parts += ["PART CATALOG:", _catalog_text(mode == "kid"), WIRELESS_RULES]
     if kind in CODE_KINDS or kind == "build":
         parts.append(ARDUINO_RULES)  # (a project adds its own copy below, with the catalog)
         if mode == "kid":
@@ -284,7 +302,7 @@ def _prompt(body):
     if kind == "blocks":
         parts += ["BLOCK FORMAT:", BLOCK_FORMAT, BLOCK_KID if mode == "kid" else BLOCK_PRO]
     if kind == "project":
-        parts += ["PART CATALOG:", _catalog_text(mode == "kid"), ARDUINO_RULES]
+        parts += ["PART CATALOG:", _catalog_text(mode == "kid"), ARDUINO_RULES, WIRELESS_RULES]
     if kind in ("project", "body"):
         parts += ["BODY FORMAT:", BODY_FORMAT]
         size = circuit.get("electronics") or (circuit.get("body") or {}).get("electronics") if isinstance(circuit, dict) else None

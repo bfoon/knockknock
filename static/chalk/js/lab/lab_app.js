@@ -665,6 +665,7 @@
       wires.push({ id: L.uid("w"), a: { ref: pa.id + ":" + a[1] }, b: { ref: pb.id + ":" + z[1] }, color: color || self.wireColor({ name: a[1] }, { name: z[1] }), pts: [] });
     });
     if (!added) return 0;
+    this.built = map;        /* the designer's ids → the parts just made */
     this.edit(function () {
       parts.forEach(function (p) { if (L.PARTS[p.type].layer === "board") self.doc.parts.unshift(p); else self.doc.parts.push(p); });
       wires.forEach(function (w) { self.doc.wires.push(w); });

@@ -237,6 +237,86 @@
     }
   };
 
+  T.tank = {
+    name: "Tank", blurb: "A low hull on four wide wheels with a turret and a barrel. Steers like a tank, because it is one.",
+    make: function (n, wall) {
+      var Ln = Math.max(140, n.w + n.batt + 30), W = Math.max(90, n.d + 18), wd = 46, ww = 22, cl = wd / 2 - 10 - wall, H = Math.max(40, n.h + 20), zc = cl + H / 2;
+      var ax = Ln * 0.32, ay = W / 2 + ww / 2 + 1.5, b = Body.blank(), s = b.solids;
+      s.push(sol("Hull", "box", [0, 0, zc], [Ln, W, H], { color: "#5a7a3a" }));
+      s.push(sol("Glacis", "wedge", [Ln / 2 + 9, 0, zc], [18, W, H], { rot: [0, 0, 180], group: "attach", color: "#5a7a3a" }));
+      s.push(sol("Turret", "cyl", [-Ln * 0.05, 0, cl + H + 11], [W * 0.62, W * 0.62, 22], { group: "attach", color: "#4a6a2e" }));
+      s.push(sol("Barrel", "cyl", [Ln * 0.28, 0, cl + H + 12], [8, 8, Ln * 0.5], { rot: [0, 90, 0], group: "attach", color: "#3a3f35" }));
+      [[ax, ay, "Front left wheel", "wheelL"], [ax, -ay, "Front right wheel", "wheelR"], [-ax, ay, "Rear left wheel", "wheelL"], [-ax, -ay, "Rear right wheel", "wheelR"]].forEach(function (w) {
+        s.push(sol(w[2], "wheel", [w[0], w[1], wd / 2], [wd, ww, wd], { group: "part", role: w[3], color: "#2a2f35" }));
+      });
+      [ax, -ax].forEach(function (x, i) { s.push(sol(i ? "Rear axle hole" : "Front axle hole", "cyl", [x, 0, wd / 2], [3.4, 3.4, W + 2 * ww + 12], { rot: [90, 0, 0], op: "cut" })); });
+      s.push(sol("Headlight", "cyl", [Ln / 2 - 2, W * 0.3, zc + 4], [5.2, 5.2, 14], { rot: [0, 90, 0], op: "cut", role: "led" }));
+      b.kind = "tank"; b.drive = "wheels"; b.split = "z"; b.splitZ = r1(cl + H - 5);
+      b.bay = { x: -n.batt / 2, y: 0, z: r1(cl + wall), w: n.w + 4, d: W - 2 * wall - 2, h: H - 2 * wall };
+      b.anchors = { motorL: [-ax, W / 2 - wall - 17.5, wd / 2], motorR: [-ax, -(W / 2 - wall - 17.5), wd / 2], battery: [b.bay.x + n.w / 2 + n.batt / 2 + 1, 0, cl + wall], led: [[Ln / 2 - 5, W * 0.3, zc + 4]] };
+      b.wheel = wd; b.track = 2 * ay;
+      return b;
+    }
+  };
+
+  T.house = {
+    name: "Model house", blurb: "Four walls, a pitched roof that lifts off, a door, windows and a porch light: a smart home to wire up.",
+    make: function (n, wall) {
+      var Ln = Math.max(120, n.w + n.batt + 20), W = Math.max(96, n.d + 20), H = Math.max(70, n.h + 40), b = Body.blank(), s = b.solids;
+      s.push(sol("Walls", "box", [0, 0, H / 2], [Ln, W, H], { color: "#e9dcc3" }));
+      s.push(sol("Roof slope (front)", "wedge", [0, W / 4, H + W * 0.19], [W / 2 + 6, Ln + 12, W * 0.38], { rot: [0, 0, 90], group: "part", color: "#b5483a" }));
+      s.push(sol("Roof slope (back)", "wedge", [0, -W / 4, H + W * 0.19], [W / 2 + 6, Ln + 12, W * 0.38], { rot: [0, 0, -90], group: "part", color: "#b5483a" }));
+      s.push(sol("Chimney", "box", [-Ln * 0.28, -W * 0.2, H + W * 0.3], [12, 12, 30], { group: "part", color: "#8a4a3a" }));
+      s.push(sol("Door", "box", [Ln / 2, -W * 0.2, 20], [8, 20, 40], { op: "cut" }));
+      s.push(sol("Front window", "box", [Ln / 2, W * 0.2, H * 0.55], [8, 24, 22], { op: "cut" }));
+      s.push(sol("Side window", "box", [0, W / 2, H * 0.55], [30, 8, 22], { op: "cut" }));
+      s.push(sol("Porch light", "cyl", [Ln / 2 - 2, -W * 0.2, 50], [5.2, 5.2, 14], { rot: [0, 90, 0], op: "cut", role: "led" }));
+      b.kind = "house"; b.drive = "none"; b.split = "none"; b.splitZ = 0;
+      s.push(sol("Open top", "box", [0, 0, H], [Ln - 2 * wall, W - 2 * wall, 12], { op: "cut" }));
+      b.bay = { x: -n.batt / 2, y: 0, z: r1(wall), w: n.w + 4, d: W - 2 * wall - 2, h: H - 2 * wall };
+      b.anchors = { battery: [b.bay.x + n.w / 2 + n.batt / 2 + 1, 0, wall], motor: [-Ln / 2 + wall + 18, W / 2 - wall - 12, H * 0.5], servo: [Ln / 2 - wall - 14, W * 0.2, H * 0.3], led: [[Ln / 2 - 5, -W * 0.2, 50]] };
+      return b;
+    }
+  };
+
+  T.tower = {
+    name: "Tower", blurb: "A tapering tower with a lamp room and a dome: a lighthouse, a weather station or a control tower.",
+    make: function (n, wall) {
+      var D = Math.max(96, Math.hypot(n.w, n.d) + 14), baseH = Math.max(34, n.h + 16), towerH = 120, b = Body.blank(), s = b.solids;
+      s.push(sol("Base", "cyl", [0, 0, baseH / 2], [D, D, baseH], { color: "#e8eef4" }));
+      s.push(sol("Tower", "cone", [0, 0, baseH + towerH / 2], [D * 0.5, D * 0.5, towerH], { group: "part", color: "#e2574c", p: { top: 0.6 } }));
+      s.push(sol("Gallery", "cyl", [0, 0, baseH + towerH + 2], [D * 0.44, D * 0.44, 4], { group: "part", color: "#59636b" }));
+      s.push(sol("Lamp room", "tube", [0, 0, baseH + towerH + 17], [D * 0.3, D * 0.3, 26], { group: "part", color: "#f6e7a1", p: { wall: 0.08 } }));
+      s.push(sol("Dome", "dome", [0, 0, baseH + towerH + 38], [D * 0.34, D * 0.34, 16], { group: "part", color: "#59636b" }));
+      s.push(sol("Lamp hole", "cyl", [0, 0, baseH], [5.2, 5.2, 14], { op: "cut", role: "led" }));
+      s.push(sol("Cable slot", "box", [-D / 2, 0, wall + 8], [14, 13, 8], { op: "cut" }));
+      b.kind = "tower"; b.drive = "none"; b.split = "z"; b.splitZ = r1(baseH - 6);
+      b.bay = { x: 0, y: 0, z: r1(wall), w: n.w + 4, d: n.d + 4, h: baseH - 2 * wall };
+      b.anchors = { led: [[0, 0, baseH - 4]], servo: [0, 0, baseH - 30] };
+      return b;
+    }
+  };
+
+  T.pet = {
+    name: "Desk pet", blurb: "A round little creature with big eyes, ears and feet. Give it a sensor and it has a personality.",
+    make: function (n, wall) {
+      var D = Math.max(110, Math.hypot(n.w + n.batt + 6, n.d + 6) + 34), H = Math.max(96, D * 0.86), b = Body.blank(), s = b.solids;
+      var floor = H / 2 + 6 - n.h * 0.6 - 4;
+      s.push(sol("Body", "sphere", [0, 0, H / 2 + 6], [D, D, H], { color: "#7b6cf6" }));
+      [1, -1].forEach(function (k) {
+        s.push(sol(k > 0 ? "Left eye" : "Right eye", "cyl", [D * 0.44, k * D * 0.16, H * 0.62 + 6], [16.4, 16.4, 30], { rot: [0, 90, 0], op: "cut", role: "led" }));
+        s.push(sol(k > 0 ? "Left ear" : "Right ear", "cone", [0, k * D * 0.3, H + 10], [24, 14, 34], { rot: [k * -18, 0, 0], group: "attach", color: "#5b4bd6" }));
+        s.push(sol(k > 0 ? "Left foot" : "Right foot", "dome", [D * 0.16, k * D * 0.24, 6], [44, 30, 14], { group: "attach", color: "#5b4bd6" }));
+      });
+      s.push(sol("Mouth", "box", [D * 0.46, 0, H * 0.36 + 6], [30, 26, 4], { op: "cut" }));
+      s.push(sol("Tail", "cone", [-D * 0.5, 0, H * 0.3], [12, 12, 34], { rot: [0, -70, 0], group: "attach", color: "#5b4bd6" }));
+      b.kind = "pet"; b.drive = "none"; b.split = "z"; b.splitZ = r1(H / 2 + 6);
+      b.bay = { x: -n.batt / 2, y: 0, z: r1(floor), w: n.w + 4, d: n.d + 4, h: H * 0.4 };
+      b.anchors = { battery: [b.bay.x + n.w / 2 + n.batt / 2 + 1, 0, floor], servo: [-D * 0.3, 0, H * 0.3], led: [[D * 0.4, D * 0.16, H * 0.62 + 6], [D * 0.4, -D * 0.16, H * 0.62 + 6]] };
+      return b;
+    }
+  };
+
   Body.make = function (kind, doc, wall) {
     var t = T[kind] || T.box;
     wall = L.clamp(+wall || 2, 1.2, 5);

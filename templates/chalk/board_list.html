@@ -55,6 +55,9 @@
           </span>
           <i class="bi bi-arrow-right text-secondary"></i>
         </a>
+        <a class="kk-chalk-lab" href="{% url 'chalk:lab' b.id %}" title="Circuit lab for {{ b.title }}">
+          <i class="bi bi-cpu"></i> Circuit lab
+        </a>
         <form method="post"
               action="{% url 'chalk:settings' b.id %}"
               class="kk-chalk-delete-form"
@@ -77,6 +80,12 @@
 {% endif %}
 
 <style>
+.kk-chalk-lab {
+  display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap;
+  padding: .35rem .7rem; border-radius: 999px; font-size: .85rem; text-decoration: none;
+  color: inherit; border: 1px solid rgba(255,255,255,.14);
+}
+.kk-chalk-lab:hover, .kk-chalk-lab:focus-visible { border-color: #d4893a; color: #f0b06a; }
 .kk-chalk-new {
   display: flex;
   flex-wrap: wrap;

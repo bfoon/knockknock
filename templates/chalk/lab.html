@@ -1,0 +1,119 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#121a21">
+<title>{% if circuit %}{{ circuit.title }}{% else %}Circuit lab{% endif %} · {{ board.title }} · Chalk</title>
+<link rel="stylesheet" href="{% static 'chalk/css/chalk_fonts.css' %}">
+<link rel="stylesheet" href="{% static 'chalk/css/chalk_lab.css' %}">
+</head>
+<body class="lab" data-mode="pro">
+
+<header class="lab-top">
+  <div class="top-left">
+    <a class="back" href="{% url 'chalk:stage' board.id %}" title="Back to the board">
+      <span aria-hidden="true">‹</span> {{ board.title }}
+    </a>
+    <label class="sr" for="lab-title">Circuit name</label>
+    <input id="lab-title" class="title" maxlength="200" autocomplete="off">
+    {% if circuits|length > 1 %}
+      <label class="sr" for="lab-projects">Other circuits on this board</label>
+      <select id="lab-projects" class="projects">
+        {% for c in circuits %}
+          <option value="{{ c.id }}"{% if circuit and c.id == circuit.id %} selected{% endif %}>{{ c.title }}</option>
+        {% endfor %}
+      </select>
+    {% endif %}
+    <span id="lab-saved" class="saved" role="status" aria-live="polite"></span>
+  </div>
+
+  <div class="top-mid">
+    <button id="lab-power" class="power" type="button" aria-pressed="false"
+            title="Switch the circuit on and off (Space)"><i aria-hidden="true"></i><span>Power off</span></button>
+    <div id="lab-mode" class="mode" role="group" aria-label="Who is this for?">
+      <button type="button" data-mode="kid" aria-pressed="false">Kid</button>
+      <button type="button" data-mode="pro" aria-pressed="true">Pro</button>
+    </div>
+  </div>
+
+  <div class="top-right">
+    <label class="lights" title="Turn the room lights down to see LEDs glow — light sensors notice too">
+      <span>Lights</span>
+      <select id="lab-room">
+        <option value="1">Day</option>
+        <option value="0.45">Dusk</option>
+        <option value="0.12">Dark</option>
+      </select>
+    </label>
+    <details class="view">
+      <summary>View</summary>
+      <div class="view-menu">
+        <label>Speed
+          <select id="lab-speed">
+            <option value="1">Real time</option>
+            <option value="0.5">Half speed</option>
+            <option value="0.25">Quarter speed</option>
+            <option value="0.1">Slow motion (×0.1)</option>
+          </select>
+        </label>
+        <label>Show current as
+          <select id="lab-flow">
+            <option value="conventional">Moving charge, + to − (conventional)</option>
+            <option value="electrons">Electrons, − to +</option>
+            <option value="off">Don't show</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="lab-volts"> Colour wires by voltage</label>
+        <button type="button" id="lab-mute" aria-pressed="false">Sound on</button>
+      </div>
+    </details>
+    <button type="button" id="lab-new">New</button>
+    <button type="button" id="lab-examples">Examples</button>
+    <button type="button" id="lab-pin" title="Put a picture of this circuit on the board's current page">Pin to board</button>
+    <button type="button" id="lab-ai" class="accent">Ask AI</button>
+    <button type="button" id="lab-panels" class="narrow-only" aria-expanded="false">Panels</button>
+  </div>
+</header>
+
+<main class="lab-main">
+  <aside id="lab-drawer" class="drawer" aria-label="Parts"></aside>
+  <section class="bench-wrap">
+    <div id="bench" class="bench-host" aria-label="Workbench"></div>
+    <div class="bench-tools" role="toolbar" aria-label="Bench">
+      <button type="button" id="lab-undo" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
+      <button type="button" id="lab-redo" title="Redo (Ctrl+Y)" aria-label="Redo">↷</button>
+      <span class="sep" aria-hidden="true"></span>
+      <button type="button" id="lab-zout" title="Zoom out" aria-label="Zoom out">−</button>
+      <button type="button" id="lab-zin" title="Zoom in" aria-label="Zoom in">+</button>
+      <button type="button" id="lab-fit" title="Fit everything in view (F)">Fit</button>
+    </div>
+  </section>
+  <aside id="lab-side" class="side" aria-label="Details"></aside>
+</main>
+
+<section id="lab-dock" class="dock" aria-label="Program"></section>
+
+<p id="lab-toast" class="toast" hidden role="status" aria-live="polite"></p>
+<dialog id="lab-examples-dlg" class="dlg"></dialog>
+
+{{ config|json_script:"lab-config" }}
+{% with base='chalk/js/lab/' %}
+<script src="{% static 'chalk/js/lab/lab_core.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_parts.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_parts2.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_parts_kid.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_sim.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_mcu.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_runner.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_blocks.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_examples.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_helper.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_code.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_bench.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_panels.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_kid.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_app.js' %}"></script>
+{% endwith %}
+</body>
+</html>

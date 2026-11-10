@@ -512,3 +512,42 @@ class BoardSession(models.Model):
             self.rotate()
             return True
         return False
+
+
+# ----------------------------------------------------------------------
+# Circuit Lab
+# ----------------------------------------------------------------------
+
+LAB_MODES = [("pro", "Pro"), ("kid", "Kid")]
+
+
+class BoardCircuit(models.Model):
+    """One saved project in a board's Circuit Lab.
+
+    The circuit itself — parts, wires, the program and its blocks — is a
+    single JSON document, written by static/chalk/js/lab/ and checked on the
+    way in by chalk.lab.clean_circuit. It is kept as one document rather than
+    rows per part for the same reason a page's strokes are: it is always read
+    and written whole, and a lesson's circuit is a few kilobytes.
+
+    A board can hold several, so a teacher can keep "traffic light" and
+    "night light" side by side for the same lesson.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    board = models.ForeignKey(Board, on_delete=models.CASCADE, related_name="circuits")
+    title = models.CharField(max_length=200, default="Untitled circuit")
+    mode = models.CharField(max_length=8, choices=LAB_MODES, default="pro")
+    data = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+
+    def __str__(self):
+        return f"{self.board.title} · {self.title}"
+
+    @property
+    def part_count(self):
+        return len((self.data or {}).get("parts") or [])

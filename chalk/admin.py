@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Board, BoardImage, BoardPage, BoardSession
+from .models import Board, BoardCircuit, BoardImage, BoardPage, BoardSession
 
 
 class BoardPageInline(admin.TabularInline):
@@ -41,3 +41,11 @@ class BoardImageAdmin(admin.ModelAdmin):
     list_filter = ("uploaded_at",)
     search_fields = ("board__title",)
     readonly_fields = ("uploaded_at",)
+
+
+@admin.register(BoardCircuit)
+class BoardCircuitAdmin(admin.ModelAdmin):
+    list_display = ("title", "board", "mode", "part_count", "updated_at")
+    list_filter = ("mode", "updated_at")
+    search_fields = ("title", "board__title", "board__owner__username")
+    readonly_fields = ("created_at", "updated_at")

@@ -31,6 +31,19 @@ A real-time interactive presentation & quiz platform — think **Mentimeter** me
 - Phones: tap-to-move boards that face the player, dice / tile rack controls, spectate any table, emoji reactions on the projector
 - Big-screen views: split · board · ranks podium · all tables (keys 1–4, ← → to change table, auto-camera cuts to the action)
 
+### ⚡ Chalk Circuit Lab — `/chalk/b/<board>/lab/`
+- A real electronics bench for every Chalk board: drag parts onto a silicone mat, plug them into a breadboard, wire them up and switch the power on
+- **Real physics**, not animation: a nodal circuit solver (Newton-Raphson for LEDs, diodes, transistors and MOSFETs; time-stepped capacitors, coils and motors). LEDs glow by the current through them, charge visibly flows down each wire at a speed set by that current, and parts burn out, smoke and pop when you get it wrong — with the reason, in plain words
+- **56 parts**: breadboards, Arduino Uno and Nano, batteries, a bench supply, resistors (editable colour bands), pots, capacitors, LEDs and RGB LEDs, diodes, NPN/PNP transistors, a logic-level MOSFET, 555 timer, logic gates, LM358, buttons, switches, bulbs, buzzers, piezo, DC motor, servo, relays, 7-segment display, I²C LCD, light/temperature/distance/motion sensors and sensor modules, multimeter and oscilloscope
+- **Arduino interpreter** for real sketches (Serial, Servo, LiquidCrystal_I2C, arrays, functions, `switch`…), true to the Uno (`int` is 16-bit). Step, step over, next loop, breakpoints and a slow pace; each line lights up as it runs and ripples out from the pin it touched, with a caption saying what just happened
+- **Blocks**: drag-and-drop flow blocks that generate real Arduino code; the running block lights up with its line
+- **Kid mode**: a toy box of parts on wooden blocks with crocodile clips, the programmable Robo Brain, Sparky the electron, and eight missions that only count when the circuit really works
+- **Ask AI** (Gemini, via the same `GEMINI_API_KEY` as Hanns and Kura): explain the circuit, find what's wrong, write the program, or design a circuit and build it on the bench. Without a key, a built-in checker still answers from the circuit's netlist and the simulator's warnings. `CHALK_LAB_AI_HOURLY_LIMIT` (default 40) caps questions per person per hour
+- **Pin to board** drops a picture of the bench onto the board's current page, live on the projector
+- 17 ready-made circuits (12 Pro, 5 Kid); open the lab from the projector's corner bar, with <kbd>L</kbd>, or from the board list
+- Saved circuits live in `chalk.BoardCircuit` — after pulling, run `python manage.py makemigrations chalk && python manage.py migrate`
+- Code: `chalk/lab.py`, `chalk/lab_ai.py`, `static/chalk/js/lab/`. Tests: `python manage.py test chalk.test_lab`, and `node tools/chalk_lab/run_all.js` for the solver, the Arduino interpreter and every example
+
 ### 🦸 Hero Forge (3D avatars)
 - Full-body game-style characters: 4 bodies × 14 skins × 10 hair × 12 hair colours × 6 eyes × 10 outfits (incl. kaftan) × 12 colours × 12 headwear (incl. kufi & headwrap) × 10 items (incl. kora) × 6 auras
 - Modelled in Blender from code: `tools/blender/build_tabletop_assets.py` → `static/tabletop/models/*.glb`

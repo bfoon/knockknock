@@ -210,6 +210,10 @@
       flash(on ? "Movement on" : "Movement off" +
             (REDUCED ? " — this machine asks for stillness" : ""));
     }
+    if ((e.key === "l" || e.key === "L") && document.getElementById("hud-lab")) {
+      /* The circuit lab is a separate page; the board is saved as it goes. */
+      location.href = document.getElementById("hud-lab").href;
+    }
     if ((e.key === "b" || e.key === "B") && boardsLink) {
       /* The page is saved continuously, so leaving is safe and needs no
        * confirmation. */

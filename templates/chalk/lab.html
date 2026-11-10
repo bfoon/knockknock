@@ -25,12 +25,18 @@
         {% endfor %}
       </select>
     {% endif %}
+    <button type="button" id="lab-new" class="new" title="Start a new circuit">+ New</button>
     <span id="lab-saved" class="saved" role="status" aria-live="polite"></span>
   </div>
 
   <div class="top-mid">
     <button id="lab-power" class="power" type="button" aria-pressed="false"
             title="Switch the circuit on and off (Space)"><i aria-hidden="true"></i><span>Power off</span></button>
+    <div id="lab-view" class="mode views" role="group" aria-label="What to show">
+      <button type="button" data-view="design" aria-pressed="false" title="Just the bench">Design</button>
+      <button type="button" data-view="split" aria-pressed="true" title="Bench and program">Split</button>
+      <button type="button" data-view="code" aria-pressed="false" title="Just the program — Run brings the bench back">Code</button>
+    </div>
     <div id="lab-mode" class="mode" role="group" aria-label="Who is this for?">
       <button type="button" data-mode="kid" aria-pressed="false">Kid</button>
       <button type="button" data-mode="pro" aria-pressed="true">Pro</button>
@@ -39,7 +45,7 @@
 
   <div class="top-right">
     <label class="lights" title="Turn the room lights down to see LEDs glow — light sensors notice too">
-      <span>Lights</span>
+      <span class="lights-label">Lights</span>
       <select id="lab-room">
         <option value="1">Day</option>
         <option value="0.45">Dusk</option>
@@ -68,7 +74,6 @@
         <button type="button" id="lab-mute" aria-pressed="false">Sound on</button>
       </div>
     </details>
-    <button type="button" id="lab-new">New</button>
     <button type="button" id="lab-examples">Examples</button>
     <button type="button" id="lab-pin" title="Put a picture of this circuit on the board's current page">Pin to board</button>
     <button type="button" id="lab-ai" class="accent">Ask AI</button>
@@ -87,14 +92,15 @@
       <button type="button" id="lab-zout" title="Zoom out" aria-label="Zoom out">−</button>
       <button type="button" id="lab-zin" title="Zoom in" aria-label="Zoom in">+</button>
       <button type="button" id="lab-fit" title="Fit everything in view (F)">Fit</button>
+      <button type="button" id="lab-fs" title="Full screen (Shift+F)" aria-label="Full screen" aria-pressed="false">⛶</button>
     </div>
+    <p id="lab-toast" class="toast" hidden role="status" aria-live="polite"></p>
   </section>
   <aside id="lab-side" class="side" aria-label="Details"></aside>
 </main>
 
 <section id="lab-dock" class="dock" aria-label="Program"></section>
 
-<p id="lab-toast" class="toast" hidden role="status" aria-live="polite"></p>
 <dialog id="lab-examples-dlg" class="dlg"></dialog>
 
 {{ config|json_script:"lab-config" }}
@@ -104,6 +110,7 @@
 <script src="{% static 'chalk/js/lab/lab_parts2.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_parts_kid.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_sim.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_wireless.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_mcu.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_runner.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_blocks.js' %}"></script>
@@ -113,6 +120,10 @@
 <script src="{% static 'chalk/js/lab/lab_bench.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_panels.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_kid.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_phone.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_workshop.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_layout.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_copilot.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_app.js' %}"></script>
 {% endwith %}
 </body>

@@ -341,7 +341,7 @@
         var i = -iThrough(m.src);   /* current delivered out of + */
         var iA = smooth(ctx.st, "i", i, ctx);
         var vmax = ctx.props.volts || volts(ctx.props);
-        var limit = Math.min(3, vmax / rint(ctx.props) * 0.25);
+        var limit = Math.min(3, vmax / rint(ctx.props) * 0.5);
         var hot = L.clamp((Math.abs(iA) - limit) / limit, 0, 1);
         ctx.st.hot = smooth(ctx.st, "hot_", hot, ctx);
         if (hot > 0.15) warn(ctx, "danger", "short", "Short circuit! " + L.si(Math.abs(iA), "A") + " is pouring straight out of the battery and it is heating up.");
@@ -351,7 +351,8 @@
   }
   MODELS.battery_9v = battery(function () { return 9; }, function () { return 1.7; });
   MODELS.battery_aa = battery(function (pr) { return 1.5 * (pr.cells || 2); }, function (pr) { return 0.15 * (pr.cells || 2); });
-  MODELS.coin_cell = battery(function () { return 3; }, function () { return 15; });
+  /* a coin cell sags hard under load — which is why an LED straight on one survives */
+  MODELS.coin_cell = battery(function () { return 3; }, function () { return 40; });
   MODELS.k_battery = battery(function (pr) { return pr.volts || 3; }, function (pr) { return 0.12 * Math.max(1, (pr.volts || 3) / 1.5); });
 
   MODELS.psu = {
@@ -1064,13 +1065,28 @@
     });
 
     /* legs that land on the same spot are connected: a leg in a hole, an
-     * LED pushed straight into an Arduino header */
-    var active = {};
+     * LED pushed straight into an Arduino header. On perfboard and
+     * stripboard a leg in a hole is only connected once it is soldered —
+     * and a cold joint is a poor, flickering connection, not a wire. */
+    var active = {}, cold = [], joints = doc.joints || {};
+    var solderHole = function (k) { var pp = partById[pins[k].part]; var dd = pp && L.def(pp); return !!(dd && dd.solder && pins[k].hole); };
+    var cutLeg = function (k) { var pp = partById[pins[k].part]; return !!(pp && pp.cutPins && pp.cutPins.indexOf(pins[k].name) >= 0); };
     Object.keys(grid).forEach(function (g) {
-      var list = grid[g];
-      if (list.length < 2) return;
-      for (var i = 1; i < list.length; i++) { union(list[0], list[i]); edges.push({ a: list[0], b: list[i], kind: "plug" }); }
-      list.forEach(function (k) { active[k] = 1; });
+      var list = grid[g].filter(function (k) { return !cutLeg(k); });
+      var others = list.filter(function (k) { return !solderHole(k); }), sold = list.filter(solderHole);
+      for (var i = 1; i < others.length; i++) { union(others[0], others[i]); edges.push({ a: others[0], b: others[i], kind: "plug" }); }
+      if (others.length > 1) others.forEach(function (k) { active[k] = 1; });
+      sold.forEach(function (h) {
+        var q = joints[h] || 0;
+        if (!others.length) return;
+        if (q >= 0.6) { union(others[0], h); edges.push({ a: others[0], b: h, kind: "plug" }); active[h] = 1; others.forEach(function (k) { active[k] = 1; }); }
+        else if (q > 0) { cold.push([others[0], h]); active[h] = 1; }
+      });
+    });
+    /* solder bridges: a blob joining two neighbouring pads */
+    (doc.bridges || []).forEach(function (br) {
+      if (!pins[br[0]] || !pins[br[1]]) return;
+      union(br[0], br[1]); edges.push({ a: br[0], b: br[1], kind: "bus" }); active[br[0]] = active[br[1]] = 1;
     });
 
     /* wires */
@@ -1086,11 +1102,20 @@
             for (var i = 0; i < g.length; i++) if (!pins[g[i]].hole) { key = g[i]; break; }
           }
         }
+        if (key && solderHole(key)) {
+          /* a wire end through a perfboard hole: connected only once soldered */
+          var own = "w:" + w.id + ":" + side, q = joints[key] || 0;
+          vertex(own);
+          if (q >= 0.6) { union(own, key); edges.push({ a: own, b: key, kind: "plug" }); active[key] = 1; }
+          else if (q > 0) { cold.push([own, key]); active[key] = 1; }
+          key = own;
+        }
         if (!key) { key = "w:" + w.id + ":" + side; vertex(key); }
         active[key] = 1;
         return key;
       });
       wireEnds[w.id] = ends;
+      if (w.cut) return;   /* snipped: two dangling halves */
       union(ends[0], ends[1]);
       var e = { a: ends[0], b: ends[1], kind: "wire", wire: w.id };
       edges.push(e); wires.push(e);
@@ -1099,7 +1124,7 @@
     /* buses inside parts, chained through their active members only */
     doc.parts.forEach(function (part) {
       var d = L.def(part);
-      (d && d.buses || []).forEach(function (bus) {
+      (d && (d.busesFor ? d.busesFor(part, doc) : d.buses) || []).forEach(function (bus) {
         var keys = bus.map(function (nm) { return part.id + ":" + nm; }).filter(function (k) { return pins[k]; });
         for (var i = 1; i < keys.length; i++) union(keys[0], keys[i]);
         var on = keys.filter(function (k) { return active[k] || !pins[k].hole; });
@@ -1131,6 +1156,14 @@
       };
       var m = md.build(b, pr, part);
       inst.push({ part: part, m: m, devs: devs, model: md });
+    });
+
+    /* cold joints: a few ohms on a good moment, open on a bad one */
+    var coldDevs = cold.map(function (pair) {
+      var dev = new Norton(1 / 6, 0);
+      dev.p = pair; dev.n = pair.map(node); dev.cur = new Float64Array(2); dev.cold = true;
+      devices.push(dev);
+      return dev;
     });
 
     /* one reference per connected island, preferring a pin called ground */
@@ -1177,12 +1210,12 @@
 
     this.topo = {
       pins: pins, find: find, nodeOf: nodeOf, pinNode: pinNode, n: nodeCount,
-      inst: inst, devices: devices, refs: refs, groups: groups, wires: wires, wireEnds: wireEnds, terminals: terminals,
+      inst: inst, devices: devices, refs: refs, groups: groups, cold: coldDevs, wires: wires, wireEnds: wireEnds, terminals: terminals,
       partById: partById,
       M: new Mat(Math.max(1, nodeCount)),
       x: new Float64Array(Math.max(1, nodeCount)),
       avgV: new Float64Array(nodeCount + 1),
-      pinI: {}, hasDynamic: inst.some(function (it) { return it.model.dynamic; }),
+      pinI: {}, hasDynamic: coldDevs.length > 0 || inst.some(function (it) { return it.model.dynamic; }),
       mcus: inst.filter(function (it) { return it.model.mcu; }).map(function (it) { return it.part.id; })
     };
     this.topoDirty = false;
@@ -1231,7 +1264,7 @@
     this.warnings.push({ part: partId, level: level, code: code, msg: msg });
   };
   Sim.prototype.kick = function (node, volts) { if (node) this.kicks[node] = Math.max(this.kicks[node] || 0, volts); };
-  Sim.prototype.event = function (partId, kind) { this.events.push({ part: partId, kind: kind, t: this.wall }); };
+  Sim.prototype.event = function (partId, kind, data) { this.events.push({ part: partId, kind: kind, t: this.wall, data: data || null }); };
   Sim.prototype.runtimeFor = function (id) { return this.runtimes[id] || null; };
 
   /* Which MCU pin, if any, sits on this node — used by servos, piezos and
@@ -1339,11 +1372,18 @@
     for (var s = 0; s < steps; s++) {
       this.t += dt === Infinity ? wallDt : dt;
       if (this.onTick) this.onTick(this.t, dt === Infinity ? wallDt : dt);
+      if (this.uartTick) this.uartTick();
       var i;
       for (i = 0; i < T.inst.length; i++) {
         var it = T.inst[i];
         it.devs.forEach(function (dv) { if (dv.k === "C" || dv.k === "L") dv.dt = dt; });
         it.model.pre(it.m, ctxs[i]);
+      }
+      /* a cold joint makes and breaks contact, a few times a second */
+      for (i = 0; i < T.cold.length; i++) {
+        var cd = T.cold[i];
+        if (!cd.next || this.t >= cd.next) { cd.open = Math.random() < 0.45; cd.next = this.t + 0.04 + Math.random() * 0.25; }
+        cd.gv = cd.open ? 1e-9 : 1 / (4 + Math.random() * 30);
       }
       this.solveOnce(dt);
       this.kicks = {};
@@ -1481,4 +1521,5 @@
   };
 
   L.solveDense = solve;
+  L.Norton = Norton;
 })(typeof window !== "undefined" ? window : globalThis);

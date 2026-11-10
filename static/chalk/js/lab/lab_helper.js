@@ -48,8 +48,8 @@
   var ANALOG_ON = { potentiometer: "W", ldr: "*", thermistor: "*", tmp36: "OUT", mod_soil: "AO", mod_gas: "AO", mod_sound: "AO", mod_flame: "AO", mod_ir: "AO", k_ldr: "*" };
 
   /* Look at what each pin drives and write a sketch that exercises it. */
-  L.starterCode = function (doc, sim) {
-    var mcu = L.firstMcu(doc);
+  L.starterCode = function (doc, sim, board) {
+    var mcu = board || L.firstMcu(doc);
     if (!mcu) return null;
     var kid = mcu.type === "k_brain";
     var names = kid ? Object.keys(L.BRAIN_MAP) : Object.keys(L.PINNUM);
@@ -199,7 +199,7 @@
         res.reply = (probs.length ? (kid ? "Here's what I spotted:\n" : "Here is what the simulator flagged:\n") : "") + probText();
         break;
       case "code": {
-        var s = L.starterCode(doc, sim);
+        var s = L.starterCode(doc, sim, app.currentMcu ? app.currentMcu() : null);
         if (!s) { res.reply = kid ? "Add the Robo Brain first — it's the part that follows instructions." : "There's no microcontroller to program. Add an Arduino Uno or Nano from Boards."; break; }
         if (!s.outs.length && !s.ins.length && !s.analogs.length && !s.servos.length) { res.reply = "Nothing is wired to the board's pins yet, so there's nothing to control. Wire an LED (with its resistor) to a pin first."; break; }
         res.code = s.code;

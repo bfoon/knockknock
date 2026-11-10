@@ -52,6 +52,8 @@ MAX_BENDS = 40
 MAX_CODE = 30_000
 MAX_DOC_BYTES = 400_000
 MAX_CIRCUITS_PER_BOARD = 60
+MAX_BOARDS = 8           # microcontrollers with their own program, per circuit
+MAX_JOINTS = 4000        # solder joints on perfboard and stripboard
 
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 TYPE_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
@@ -161,13 +163,19 @@ def clean_circuit(data):
             raise Invalid("a part has a bad id or type")
         seen.add(pid)
         rot = p.get("rot") or 0
-        parts.append({
+        item = {
             "id": pid, "type": ptype,
             "x": _num(p.get("x", 0)), "y": _num(p.get("y", 0)),
             "rot": int(rot) % 4 if isinstance(rot, int) and not isinstance(rot, bool) else 0,
             "flip": bool(p.get("flip")),
             "props": _props(p.get("props")),
-        })
+        }
+        cut = p.get("cutPins")
+        if isinstance(cut, list):
+            legs = [c for c in cut[:40] if isinstance(c, str) and re.match(r"^[A-Za-z0-9_+#.-]{1,16}$", c)]
+            if legs:
+                item["cutPins"] = legs
+        parts.append(item)
 
     wires, wseen = [], set()
     for w in wires_in:
@@ -182,13 +190,51 @@ def clean_circuit(data):
             if isinstance(q, list) and len(q) == 2:
                 pts.append([_num(q[0]), _num(q[1])])
         color = w.get("color") if isinstance(w.get("color"), str) and COLOR_RE.match(w.get("color")) else "#e8c22a"
-        wires.append({"id": wid, "a": _end(w.get("a")), "b": _end(w.get("b")), "color": color, "pts": pts})
+        wire = {"id": wid, "a": _end(w.get("a")), "b": _end(w.get("b")), "color": color, "pts": pts}
+        cut = w.get("cut")
+        if isinstance(cut, (int, float)) and not isinstance(cut, bool) and 0 < cut < 1:
+            wire["cut"] = round(float(cut), 4)
+        wires.append(wire)
 
     code = data.get("code") or ""
     if not isinstance(code, str):
         raise Invalid("the program is not text")
     if len(code) > MAX_CODE:
         raise Invalid("the program is too long")
+
+    programs = {}
+    raw_programs = data.get("programs") if isinstance(data.get("programs"), dict) else {}
+    for key, prog in list(raw_programs.items())[:MAX_BOARDS]:
+        if not isinstance(key, str) or key not in seen or not isinstance(prog, dict):
+            continue
+        pcode = prog.get("code") or ""
+        if not isinstance(pcode, str) or len(pcode) > MAX_CODE:
+            raise Invalid("a board's program is too long")
+        programs[key] = {
+            "code": pcode,
+            "prog": "blocks" if prog.get("prog") == "blocks" else "code",
+            "blocks": _small(prog.get("blocks")) if prog.get("blocks") is not None else None,
+        }
+
+    def _keyed(raw, limit, value):
+        out = {}
+        if not isinstance(raw, dict):
+            return out
+        for k, v in list(raw.items())[:limit]:
+            if isinstance(k, str) and REF_RE.match(k) and k.split(":")[0] in seen:
+                cleaned = value(v)
+                if cleaned is not None:
+                    out[k] = cleaned
+        return out
+
+    quality = lambda v: round(float(v), 3) if isinstance(v, (int, float)) and not isinstance(v, bool) and 0 < v <= 1 else None
+    joints = _keyed(data.get("joints"), MAX_JOINTS, quality)
+    cuts = _keyed(data.get("cuts"), MAX_JOINTS, lambda v: 1 if v else None)
+    bridges = []
+    for pair in (data.get("bridges") or [])[:1000] if isinstance(data.get("bridges"), list) else []:
+        if (isinstance(pair, list) and len(pair) == 2 and all(isinstance(k, str) and REF_RE.match(k) and k.split(":")[0] in seen for k in pair)):
+            bridges.append([pair[0], pair[1]])
+    current = data.get("current") if isinstance(data.get("current"), str) and data.get("current") in programs else None
 
     view = data.get("view") if isinstance(data.get("view"), dict) else {}
     out = {
@@ -205,6 +251,11 @@ def clean_circuit(data):
             "z": _num(view.get("z", 1), 0, 6) if isinstance(view.get("z"), (int, float)) else 1,
         },
     }
+    for key, value in (("programs", programs), ("joints", joints), ("cuts", cuts), ("bridges", bridges)):
+        if value:
+            out[key] = value
+    if current:
+        out["current"] = current
     if len(json.dumps(out)) > MAX_DOC_BYTES:
         raise Invalid("the circuit is too big to save")
     return out

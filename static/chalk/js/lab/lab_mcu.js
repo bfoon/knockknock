@@ -133,7 +133,7 @@
     int8_t: "i8", uint8_t: "u8", int16_t: "i16", uint16_t: "u16", int32_t: "i32", uint32_t: "u32",
     int64_t: "i32", uint64_t: "u32"
   };
-  var CLASSES = { Servo: "Servo", LiquidCrystal_I2C: "LCD", LiquidCrystal: "LCD" };
+  var CLASSES = { Servo: "Servo", LiquidCrystal_I2C: "LCD", LiquidCrystal: "LCD", SoftwareSerial: "SoftSerial" };
   var QUALS = { const: 1, static: 1, volatile: 1, extern: 1, inline: 1, signed: 1, unsigned: 1, register: 1 };
   var BYTES = { b: 1, c: 1, i8: 1, u8: 1, i16: 2, u16: 2, i32: 4, u32: 4, f: 4, s: 6 };
   var TYPE_NAME = { v: "void", b: "bool", c: "char", i8: "int8_t", u8: "byte", i16: "int", u16: "unsigned int", i32: "long", u32: "unsigned long", f: "float", s: "String" };
@@ -567,6 +567,7 @@
       parseFloat: [0, 0, "f"], readString: [0, 0, "s"], readStringUntil: [1, 1, "s"], flush: [0, 0, "v"],
       setTimeout: [1, 1, "v"]
     },
+    SoftSerial: null,
     Servo: { attach: [1, 3, "u8"], write: [1, 1, "v"], writeMicroseconds: [1, 1, "v"], read: [0, 0, "i16"], attached: [0, 0, "b"], detach: [0, 0, "v"] },
     LCD: {
       init: [0, 0, "v"], begin: [0, 3, "v"], backlight: [0, 0, "v"], noBacklight: [0, 0, "v"], clear: [0, 0, "v"],
@@ -579,6 +580,8 @@
       startsWith: [1, 1, "b"], endsWith: [1, 1, "b"], concat: [1, 1, "b"], c_str: [0, 0, "s"], replace: [2, 2, "v"]
     }
   };
+  /* SoftwareSerial speaks exactly like Serial, on two pins of your choice. */
+  METHODS.SoftSerial = Object.assign({}, METHODS.Serial, { listen: [0, 0, "b"], isListening: [0, 0, "b"], overflow: [0, 0, "b"] });
   L.MCU_BUILTINS = BUILTINS;
 
   /* Did you mean …? */
@@ -717,6 +720,9 @@
           }
           if (n.args.length < mm[0] || n.args.length > mm[1]) E("." + n.name + "() was given the wrong number of values.", n.line);
           n.cls = cls; n.ty = mm[2]; n.y = n.args.some(function (a) { return a.y; });
+          /* like the real Stream class, these wait (up to setTimeout, 1 s by
+           * default) for the data they need, so they can pause the program */
+          if ((cls === "Serial" || cls === "SoftSerial") && /^(parseInt|parseFloat|readString|readStringUntil)$/.test(n.name)) { n.wait = true; n.y = true; }
           return n;
         }
         case "init": initList(n); n.y = false; return n;
@@ -818,6 +824,7 @@
     this.txUntil = 0;
     this.hints = {};
     this.globals = {};
+    this.softs = [];
     this.statics = new Map();
     this.gen = null;
   };
@@ -976,9 +983,16 @@
     var self = this;
     if (it.cls) {
       var args = (it.ctor || []).map(function (a) { return self.ev(a, sc); });
-      var obj = it.cls === "Servo" ? { cls: "Servo", pin: -1, angle: 90 }
-        : { cls: "LCD", addr: args[0] || 0x27, cols: args[1] || 16, rows: args[2] || 2, cx: 0, cy: 0, on: false, light: false, buf: null };
-      if (obj.cls === "LCD") obj.buf = blankLcd(obj.cols, obj.rows);
+      var obj;
+      if (it.cls === "Servo") obj = { cls: "Servo", pin: -1, angle: 90 };
+      else if (it.cls === "SoftSerial") {
+        if (args.length < 2) throw new RtErr("SoftwareSerial needs its two pins: SoftwareSerial " + it.name + "(rxPin, txPin);", it.line);
+        obj = { cls: "SoftSerial", name: it.name, rx: Math.trunc(args[0]), tx: Math.trunc(args[1]), buf: "", on: false };
+        this.softs.push(obj);
+      } else {
+        obj = { cls: "LCD", addr: args[0] || 0x27, cols: args[1] || 16, rows: args[2] || 2, cx: 0, cy: 0, on: false, light: false, buf: null };
+        obj.buf = blankLcd(obj.cols, obj.rows);
+      }
       sc[it.name] = { v: obj, ty: "o", cls: it.cls };
       return;
     }
@@ -1328,6 +1342,7 @@
       case "mcall": {
         var obj = this.ev(n.obj, sc), margs = [];
         for (var m = 0; m < n.args.length; m++) margs.push(yield* this.evg(n.args[m], sc));
+        if (n.wait) yield* this.streamWait(n, obj, margs);
         return this.method(n, obj, margs, sc);
       }
     }
@@ -1466,47 +1481,7 @@
 
   R.method = function (n, obj, a, sc) {
     var self = this;
-    if (n.cls === "Serial") {
-      switch (n.name) {
-        case "begin": this.serialOn = true; this.baud = a[0]; return 0;
-        case "end": this.serialOn = false; return 0;
-        case "print": case "println": case "write": {
-          if (!this.serialOn) this.hint("serial", "Serial.print() before Serial.begin(9600). Add Serial.begin(9600); to setup() or nothing reaches the computer.", n.line);
-          var s = "";
-          if (a.length) {
-            var arg = n.args[0];
-            if (n.name === "write" && typeof a[0] === "number") s = String.fromCharCode(a[0] & 255);
-            else s = typeof a[0] === "string" ? a[0] : this.str(a[0], arg.ty, a[1]);
-          }
-          if (n.name === "println") s += "\n";
-          this.txUntil = (this.host.wall ? this.host.wall() : 0) + 0.05;
-          this.emit("serial", { text: s });
-          this.effect({ kind: "serial", text: s });
-          return s.length;
-        }
-        case "available": return this.serialIn.length;
-        case "read": case "peek": {
-          if (!this.serialIn.length) return -1;
-          var c = this.serialIn.charCodeAt(0);
-          if (n.name === "read") this.serialIn = this.serialIn.slice(1);
-          return c;
-        }
-        case "parseInt": case "parseFloat": {
-          var m = /^[^-\d.]*(-?\d+(\.\d+)?)/.exec(this.serialIn);
-          if (!m) { this.serialIn = ""; return 0; }
-          this.serialIn = this.serialIn.slice(m.index + m[0].length);
-          return n.name === "parseInt" ? parseInt(m[1], 10) : parseFloat(m[1]);
-        }
-        case "readString": { var all = this.serialIn; this.serialIn = ""; return all; }
-        case "readStringUntil": {
-          var stop = String.fromCharCode(a[0]), ix = this.serialIn.indexOf(stop);
-          var out = ix < 0 ? this.serialIn : this.serialIn.slice(0, ix);
-          this.serialIn = ix < 0 ? "" : this.serialIn.slice(ix + 1);
-          return out;
-        }
-        default: return 0;
-      }
-    }
+    if (n.cls === "Serial" || n.cls === "SoftSerial") return this.serialCall(n, a, n.cls === "Serial" ? null : obj);
     if (n.cls === "Servo") {
       switch (n.name) {
         case "attach": obj.pin = this.pin(a[0], n).num; this.pins[obj.pin].mode = "OUT"; this.servos[obj.pin] = obj.angle; this.effect({ kind: "servo", pin: obj.pin, value: obj.angle }); return 1;
@@ -1572,6 +1547,100 @@
       }
     }
     return 0;
+  };
+
+  /* Serial and SoftwareSerial: one implementation. `soft` is the
+   * SoftwareSerial object, or null for the hardware port, whose TX is D1
+   * (and the USB cable) and whose RX is D0. */
+  R.serialCall = function (n, a, soft) {
+    var self = this;
+    var getIn = function () { return soft ? soft.buf : self.serialIn; };
+    var setIn = function (v) { if (soft) soft.buf = v; else self.serialIn = v; };
+    switch (n.name) {
+      case "begin":
+        if (soft) { soft.on = true; this.softs.forEach(function (o) { o.listening = o === soft; }); }
+        else { this.serialOn = true; this.baud = a[0]; }
+        return 0;
+      case "end": if (soft) soft.on = false; else this.serialOn = false; return 0;
+      case "listen": this.softs.forEach(function (o) { o.listening = o === soft; }); return 1;
+      case "setTimeout": if (soft) soft.timeout = Math.max(0, a[0]); else this.streamTimeout = Math.max(0, a[0]); return 0;
+      case "isListening": return soft && soft.listening ? 1 : 0;
+      case "overflow": return 0;
+      case "print": case "println": case "write": {
+        if (soft && !soft.on) this.hint("soft" + soft.name, soft.name + ".print() before " + soft.name + ".begin(9600). Start it in setup().", n.line);
+        if (!soft && !this.serialOn) this.hint("serial", "Serial.print() before Serial.begin(9600). Add Serial.begin(9600); to setup() or nothing reaches the computer.", n.line);
+        var s = "";
+        if (a.length) {
+          var arg = n.args[0];
+          if (n.name === "write" && typeof a[0] === "number") s = String.fromCharCode(a[0] & 255);
+          else s = typeof a[0] === "string" ? a[0] : this.str(a[0], arg.ty, a[1]);
+        }
+        if (n.name === "println") s += "\n";
+        if (soft) {
+          if (this.host.uart) this.host.uart(soft.tx, s);
+          this.effect({ kind: "uart", pin: soft.tx, text: s, name: soft.name });
+        } else {
+          this.txUntil = (this.host.wall ? this.host.wall() : 0) + 0.05;
+          this.emit("serial", { text: s });
+          if (this.host.uart) this.host.uart(1, s);
+          this.effect({ kind: "serial", text: s });
+        }
+        return s.length;
+      }
+      case "available": return getIn().length;
+      case "read": case "peek": {
+        var buf = getIn();
+        if (!buf.length) return -1;
+        var c = buf.charCodeAt(0);
+        if (n.name === "read") setIn(buf.slice(1));
+        return c;
+      }
+      case "parseInt": case "parseFloat": {
+        var m = /^[^-\d.]*(-?\d+(\.\d+)?)/.exec(getIn());
+        if (!m) { setIn(""); return 0; }
+        setIn(getIn().slice(m.index + m[0].length));
+        return n.name === "parseInt" ? parseInt(m[1], 10) : parseFloat(m[1]);
+      }
+      case "readString": { var all = getIn(); setIn(""); return all; }
+      case "readStringUntil": {
+        var stop = String.fromCharCode(a[0]), b2 = getIn(), ix = b2.indexOf(stop);
+        var out = ix < 0 ? b2 : b2.slice(0, ix);
+        setIn(ix < 0 ? "" : b2.slice(ix + 1));
+        return out;
+      }
+      default: return 0;
+    }
+  };
+
+  /* What Stream does on a real board: wait for enough data, or give up
+   * after the timeout. readStringUntil waits for its terminator; parseInt
+   * for a number followed by something that isn't a digit; readString for
+   * the line to go quiet. */
+  R.streamWait = function* (n, obj, a) {
+    var self = this, soft = n.cls === "SoftSerial" ? obj : null;
+    var buf = function () { return soft ? soft.buf : self.serialIn; };
+    var timeout = ((soft ? soft.timeout : this.streamTimeout) || 1000) / 1000;
+    var start = this.clock, lastLen = buf().length, lastChange = this.clock;
+    for (;;) {
+      var b = buf();
+      if (b.length !== lastLen) { lastLen = b.length; lastChange = this.clock; }
+      if (n.name === "readStringUntil") { if (b.indexOf(String.fromCharCode(a[0])) >= 0) return; }
+      else if (n.name === "parseInt" || n.name === "parseFloat") { if (/-?\d+(\.\d+)?[^\d.]/.test(b)) return; }
+      if (this.clock - lastChange >= timeout) return;
+      if (n.name !== "readString" && this.clock - start >= timeout && this.clock - lastChange >= timeout) return;
+      yield { k: "delay", s: 0.001 };
+    }
+  };
+
+  /* Bytes arriving on a pin from outside — a Bluetooth module, a radio,
+   * another board. D0 feeds Serial; any SoftwareSerial listening on that
+   * pin gets it too. */
+  R.uartIn = function (pin, text) {
+    var got = false;
+    if (pin === 0) { this.serialIn += text; got = true; }
+    this.softs.forEach(function (o) { if (o.rx === pin && o.on && o.listening !== false) { o.buf += text; got = true; } });
+    if (got) this.rxUntil = (this.host.wall ? this.host.wall() : 0) + 0.05;
+    return got;
   };
 
   /* What is in each variable right now, for the watch panel. */

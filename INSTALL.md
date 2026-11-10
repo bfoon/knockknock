@@ -2,10 +2,14 @@
 
 ## 1. Add the code
 
-Either apply the patch on a branch of KnockKnock:
+Fresh install — apply the full patch (both commits) on a branch of KnockKnock:
 
     git checkout -b circuit-lab
     git am chalk-circuit-lab.patch
+
+Already applied the first version? Apply just the update instead:
+
+    git am chalk-circuit-lab-update.patch
 
 or copy the files from this folder over the repository. They are all new
 files except these small edits:
@@ -35,6 +39,9 @@ That creates only `chalk_boardcircuit`; nothing existing is touched.
 
     python manage.py collectstatic --noinput
 
+If you already ran this for the first version, there is nothing new to
+migrate: the update stores everything in the same table.
+
 ## 4. AI (optional)
 
 The lab uses the same Gemini key as Hanns and Kura. Without it, "Ask AI" still
@@ -49,8 +56,9 @@ recommend for `/hanns/` (180 s).
 
 ## 5. Check it
 
-    python manage.py test chalk.test_lab   # 25 tests: permissions, saving, AI, pinning
-    node tools/chalk_lab/run_all.js        # the solver, the Arduino interpreter, every example
+    python manage.py test chalk.test_lab   # 28 tests: permissions, saving, AI, pinning
+    node tools/chalk_lab/run_all.js        # solver, Arduino interpreter, every example,
+                                           # co-coding, wireless and soldering
 
 Open any board on the projector and press L, or use "Circuit lab" on the
 board list. The lab is at /chalk/b/<board-id>/lab/.

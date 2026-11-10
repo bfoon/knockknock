@@ -31,15 +31,23 @@
      * default view, which would otherwise overwrite "fit on open" */
     var view = this.doc.view && this.doc.view.z > 0 ? { x: this.doc.view.x, y: this.doc.view.y, z: this.doc.view.z } : null;
 
+    this.mcuId = null;
+    this.syncBoards(true);
+
     this.bench = new L.Bench($("bench"), this);
     this.panels = new L.Panels(this);
     this.kid = new L.Kid(this);
+    this.layout = new L.Layout(this);
+    this.copilot = new L.Copilot(this);
+    this.phone = new L.Phone(this);
+    this.workshop = new L.Workshop(this);
     this.sound = makeSound(this);
     this.bindTop();
     this.drawer();
     this.setMode(this.doc.mode, true);
     this.bench.render();
     this.loadProgram();
+    this.boardPicker();
     if (view) { this.bench.cam = view; this.bench.applyCam(); }
     else { this.needFit = true; this.bench.resize(); }
     this.keys();
@@ -50,7 +58,7 @@
       last = now;
       try { self.frame(dt); } catch (e) { if (root.console) console.error(e); }
       tickT += dt; kidT += dt;
-      if (tickT > 0.15) { tickT = 0; self.panels.tick(); }
+      if (tickT > 0.15) { tickT = 0; self.panels.tick(); self.layout.tick(); }
       if (kidT > 0.2) { kidT = 0; if (self.doc.mode === "kid") self.kid.tick(); }
       requestAnimationFrame(loop);
     };
@@ -89,6 +97,8 @@
     this.refresh();
   };
   App.prototype.refresh = function () {
+    this.syncBoards();
+    if (this.phone) this.phone.refresh();
     this.bench.render();
     this.sim.invalidate();
     this.panels.inspect(this.bench.sel);
@@ -169,7 +179,7 @@
         self.doc.wires = self.doc.wires.filter(function (w) {
           return !((w.a.ref || "").split(":")[0] === s.id || (w.b.ref || "").split(":")[0] === s.id);
         });
-        if (part && L.def(part).mcu) self.stopProgram();
+        if (part && L.def(part).mcu && part.id === self.mcuId) self.stopProgram();
       }
     });
     this.bench.select(null);
@@ -189,6 +199,8 @@
 
   App.prototype.press = function (part) { this.sim.pressed[part.id] = true; this.sound("tick"); };
   App.prototype.release = function (part) { delete this.sim.pressed[part.id]; };
+  App.prototype.pressKey = function (key) { this.sim.pressed[key] = true; this.sound("tick"); };
+  App.prototype.releaseKey = function (key) { delete this.sim.pressed[key]; };
   App.prototype.clickPart = function (part) {
     var d = L.def(part), self = this;
     if (d.toggle) { this.setProp(part, d.toggle, !L.propsOf(part)[d.toggle]); this.sound("click"); this.panels.inspect(this.bench.sel); }
@@ -210,8 +222,76 @@
     this.bench.ripple(L.pinsOf(p)[0].key, null, "#ff8a5a");
   };
   App.prototype.onSelect = function (sel) {
+    if (sel && sel.kind === "part" && sel.id !== this.mcuId) {
+      var p = this.partById(sel.id);
+      if (p && L.def(p).mcu && L.mcus(this.doc).length > 1) this.switchBoard(sel.id);
+    }
     this.panels.inspect(sel);
     if (sel && this.panels.sideTab && this.panels.sideTab !== "inspect" && this.panels.sideTab !== "mission") this.panels.showSide("inspect");
+  };
+
+  /* ----------------------------------------------------------- boards
+   * Every microcontroller has its own program in doc.programs. The one
+   * being edited also lives in doc.code / doc.blocks / doc.prog, which is
+   * what the editors read and what older saved circuits contain. */
+
+  App.prototype.currentMcu = function () { return this.mcuId ? this.partById(this.mcuId) : null; };
+  App.prototype.boardLabel = function (part) {
+    var list = L.mcus(this.doc), d = L.def(part), same = list.filter(function (p) { return p.type === part.type; });
+    return d.name + (same.length > 1 ? " " + (same.indexOf(part) + 1) : "");
+  };
+  App.prototype.storeProgram = function () {
+    var d = this.doc;
+    if (!this.mcuId) return;
+    d.programs = d.programs || {};
+    d.programs[this.mcuId] = { code: d.code || "", blocks: d.blocks || null, prog: d.prog || "code" };
+  };
+  /* Make sure the board being edited exists, and every board has a slot. */
+  App.prototype.syncBoards = function (first) {
+    var d = this.doc, list = L.mcus(d), self = this;
+    d.programs = d.programs && typeof d.programs === "object" ? d.programs : {};
+    Object.keys(d.programs).forEach(function (id) { if (!list.some(function (p) { return p.id === id; })) delete d.programs[id]; });
+    if (this.mcuId && !list.some(function (p) { return p.id === self.mcuId; })) {
+      this.mcuId = null;
+      if (list.length) { this.switchBoard(list[0].id, true); return; }
+    }
+    if (!this.mcuId && list.length) {
+      this.mcuId = d.current && list.some(function (p) { return p.id === d.current; }) ? d.current : list[0].id;
+      /* the first board adopts whatever program was on the bench */
+      if (d.programs[this.mcuId]) { var p = d.programs[this.mcuId]; d.code = p.code; d.blocks = p.blocks; d.prog = p.prog; }
+      else this.storeProgram();
+    }
+    if (!first) this.boardPicker();
+  };
+  App.prototype.switchBoard = function (id, quiet) {
+    if (id === this.mcuId) return;
+    var d = this.doc;
+    this.storeProgram();
+    this.mcuId = id;
+    var p = (d.programs || {})[id] || { code: "", blocks: null, prog: d.mode === "kid" ? "blocks" : "code" };
+    d.code = p.code; d.blocks = p.blocks; d.prog = p.prog;
+    this.lineMap = null;
+    this.loadProgram();
+    this.rt = (this.sim.runtimes || {})[id] || null;
+    this.panels.progState(this.rt);
+    this.panels.code.running(0);
+    this.boardPicker();
+    if (!quiet) this.toast("Now editing the program for " + this.boardLabel(this.partById(id)) + ".");
+  };
+  App.prototype.boardPicker = function () {
+    var self = this, list = L.mcus(this.doc), ctl = document.querySelector(".prog-ctl");
+    if (!ctl) return;
+    var sel = $("p-board");
+    if (list.length < 2) { if (sel) sel.parentNode.remove(); return; }
+    if (!sel) {
+      var wrap = document.createElement("label");
+      wrap.className = "board-pick";
+      wrap.innerHTML = '<span>Program for</span><select id="p-board"></select>';
+      ctl.insertBefore(wrap, ctl.firstChild);
+      sel = $("p-board");
+      sel.addEventListener("change", function () { self.switchBoard(sel.value); });
+    }
+    sel.innerHTML = list.map(function (p) { return '<option value="' + p.id + '"' + (p.id === self.mcuId ? " selected" : "") + '>' + L.esc(self.boardLabel(p)) + '</option>'; }).join("");
   };
 
   /* ------------------------------------------------------------ power */
@@ -224,12 +304,16 @@
     b.setAttribute("aria-pressed", on ? "true" : "false");
     b.querySelector("span").textContent = on ? "Power on" : "Power off";
     if (on) {
+      this.layout.revealBench();
       this.sim.reset();
       this.sound("on");
-      if (L.firstMcu(this.doc) && (this.doc.code || "").trim()) this.runProgram(true);
+      this.storeProgram();
+      var progs = this.doc.programs || {};
+      if (L.mcus(this.doc).some(function (b) { return progs[b.id] && (progs[b.id].code || "").trim(); })) this.runProgram(true);
     } else {
       this.stopProgram();
       this.sim.reset();
+      if (this.phone) this.phone.drop();
       this.bench.flag([]);
       this.panels.narrate("");
     }
@@ -307,30 +391,43 @@
     if (!c.ok) box.innerHTML = c.errors.map(function (e) { return '<button type="button" data-line="' + e.line + '"><b>Line ' + e.line + '</b> ' + L.esc(e.msg) + '</button>'; }).join("");
     var self = this;
     box.querySelectorAll("[data-line]").forEach(function (b) { b.addEventListener("click", function () { self.panels.code.running(+b.getAttribute("data-line"), "err"); }); });
+    if (!c.ok && this.copilot) this.copilot.decorateErrors(c.errors);
     return c;
   };
 
   App.prototype.runProgram = function (quiet) {
-    var mcu = L.firstMcu(this.doc);
-    if (!mcu) { this.toast(this.doc.mode === "kid" ? "Add the Robo Brain to the table first — it's the part that runs your blocks." : "Add an Arduino first: the program needs a board to run on."); return; }
+    var self = this, boards = L.mcus(this.doc);
+    if (!boards.length) { this.toast(this.doc.mode === "kid" ? "Add the Robo Brain to the table first — it's the part that runs your blocks." : "Add an Arduino first: the program needs a board to run on."); return; }
+    this.storeProgram();
     var c = this.compileCheck();
-    if (!(this.doc.code || "").trim()) { if (!quiet) this.toast("Write a program first, or use Blocks."); return; }
-    if (!c.ok) {
+    var any = boards.some(function (b) { var p = self.doc.programs[b.id]; return p && (p.code || "").trim(); });
+    if (!any) { if (!quiet) this.toast("Write a program first, or use Blocks."); return; }
+    if ((this.doc.code || "").trim() && !c.ok) {
       this.panels.showDock(this.doc.prog === "blocks" ? "blocks" : "code");
       this.panels.narrate('<span class="bad">The program has ' + c.errors.length + ' problem' + (c.errors.length > 1 ? "s" : "") + ' — fix ' + (c.errors.length > 1 ? "them" : "it") + ' and press run again.</span>');
       this.sound("err");
       return;
     }
+    this.layout.revealBench();
     if (!this.running) { this.power(true); return; }
-    var self = this;
     this.sim.detach();
     this.problemsExtra = [];
-    this.panels.serial("\n— program started —\n", true);
-    this.rt = this.sim.attach(mcu.id, c.prog, function (k, d) { self.onRuntime(k, d); });
-    this.rt.breakpoints = this.panels.code.breaks;
-    this.rt.setTrace(parseFloat($("p-trace").value) || 0);
+    var started = 0, broken = [];
+    boards.forEach(function (b) {
+      var p = self.doc.programs[b.id];
+      if (!p || !(p.code || "").trim()) return;
+      var cc = b.id === self.mcuId ? c : L.MCU.compile(p.code);
+      if (!cc.ok) { broken.push(self.boardLabel(b)); return; }
+      var rt = self.sim.attach(b.id, cc.prog, function (k, d) { self.onRuntime(k, d, b.id); });
+      rt.setTrace(b.id === self.mcuId ? (parseFloat($("p-trace").value) || 0) : 0);
+      if (b.id === self.mcuId) rt.breakpoints = self.panels.code.breaks;
+      started++;
+    });
+    this.rt = this.sim.runtimes[this.mcuId] || null;
+    this.panels.serial("\n— program" + (started > 1 ? "s" : "") + " started —\n", true);
     this.panels.progState(this.rt);
-    this.panels.narrate(this.doc.mode === "kid" ? "The Robo Brain is following your blocks!" : "Uploaded. The program is running from the top of setup().");
+    if (broken.length) this.toast(broken.join(", ") + (broken.length > 1 ? " have" : " has") + " errors in " + (broken.length > 1 ? "their programs" : "its program") + " and didn't start. Pick it in “Program for” to see why.");
+    this.panels.narrate(this.doc.mode === "kid" ? "The Robo Brain is following your blocks!" : started > 1 ? "Uploaded to " + started + " boards. Each runs its own program." : "Uploaded. The program is running from the top of setup().");
   };
   App.prototype.stopProgram = function () {
     this.sim.detach();
@@ -368,12 +465,20 @@
   };
 
   /* What the program is doing, translated onto the bench. */
-  App.prototype.onRuntime = function (kind, d) {
+  App.prototype.onRuntime = function (kind, d, boardId) {
     var rt = this.rt;
+    if (boardId && boardId !== this.mcuId) {
+      /* another board: its serial output and its pin activity, no narration */
+      var label = this.boardLabel(this.partById(boardId) || { type: "arduino_uno" });
+      if (kind === "serial") this.panels.serial(d.text, false, label);
+      else if (kind === "effect") this.effect(d, boardId, true);
+      else if (kind === "error") this.toast(label + " stopped on line " + d.line + ": " + d.msg);
+      return;
+    }
     switch (kind) {
       case "line": this.curLine = d.line; break;
       case "state": this.panels.progState(rt); if (rt && rt.paused && rt.pending) this.curLine = rt.line; break;
-      case "serial": this.panels.serial(d.text); break;
+      case "serial": this.panels.serial(d.text, false, L.mcus(this.doc).length > 1 ? this.boardLabel(this.currentMcu()) : null); break;
       case "error":
         this.panels.code.running(d.line, "err");
         this.panels.narrate('<span class="bad"><b>Stopped on line ' + d.line + ':</b> ' + L.esc(d.msg) + '</span>');
@@ -381,19 +486,20 @@
         if (this.doc.mode === "kid") this.kid.say("Oops, the Robo Brain got stuck: " + d.msg, "ouch", true);
         break;
       case "hint":
-        if (!this.problemsExtra.some(function (p) { return p.msg === d.msg; })) this.problemsExtra.push({ part: (L.firstMcu(this.doc) || {}).id, level: "warn", code: "hint", msg: "Line " + d.line + ": " + d.msg });
+        if (!this.problemsExtra.some(function (p) { return p.msg === d.msg; })) this.problemsExtra.push({ part: this.mcuId, level: "warn", code: "hint", msg: "Line " + d.line + ": " + d.msg });
         this.toast(d.msg);
         break;
-      case "effect": this.effect(d); break;
+      case "effect": this.effect(d, this.mcuId); break;
       case "wait": if (rt && (rt.traceRate || d.s >= 0.25)) this.waitInfo = { until: performance.now() + d.s * 1000 / this.sim.timeScale, s: d.s, line: d.line }; break;
     }
   };
 
-  App.prototype.effect = function (e) {
-    var mcu = L.firstMcu(this.doc);
+  App.prototype.effect = function (e, boardId, quiet) {
+    var mcu = this.partById(boardId || this.mcuId);
     if (!mcu) return;
     var kid = mcu.type === "k_brain", name = e.pin != null ? L.pinName(e.pin) : null;
     if (kid && name) { for (var k in L.BRAIN_MAP) if (L.BRAIN_MAP[k] === name) name = k; }
+    if (!kid && name && !this.pinAllHas(mcu.id + ":" + name)) name = null;
     var key = name ? mcu.id + ":" + name : null, label = kid && name ? name.replace(/(\d)$/, " $1") : name;
     var on = key ? L.describeNode(this, key) : "", text = null, bubble = null, col = "#ffd36b";
     switch (e.kind) {
@@ -418,9 +524,13 @@
     var changed = key && this.lastFx[key] !== bubble;
     if (key) this.lastFx[key] = bubble;
     if (key && bubble && (slow || changed)) this.bench.ripple(key, (slow || this.sim.timeScale < 1) ? bubble : (changed ? bubble : null), col);
-    if (text && (slow || changed || e.kind === "serial" || e.kind === "lcd")) this.panels.narrate('<span class="ln">Line ' + e.line + '</span> ' + text);
+    if (e.kind === "uart" && key) this.bench.ripple(key, (slow || this.sim.timeScale < 1) ? "TX " + e.text.replace(/\n$/, "").slice(0, 14) : null, "#7fd4ff");
+    if (e.kind === "uart" && !quiet) text = "Sent <code>" + L.esc(e.text.replace(/\n$/, "")) + "</code> out of <b>" + label + "</b>" + (on ? " to " + on : "") + ".";
+    if (quiet) return;
+    if (text && (slow || changed || e.kind === "serial" || e.kind === "lcd" || e.kind === "uart")) this.panels.narrate('<span class="ln">Line ' + e.line + '</span> ' + text);
   };
   App.prototype.lastFx = {};
+  App.prototype.pinAllHas = function (key) { return !!(this.bench.pinAll && this.bench.pinAll[key]); };
 
   /* "the 220 Ω resistor and the red LED" — what this pin's node touches. */
   L.describeNode = function (app, key) {
@@ -552,6 +662,7 @@
     $("lab-mode").querySelectorAll("button").forEach(function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-mode") === d.mode ? "true" : "false"); });
     this.drawer();
     this.panels.aiQuick();
+    if (this.copilot) this.copilot.blocksPlaceholder();
     this.panels.blocks.setMode(d.mode);
     if (d.mode === "kid") { if (this.panels.dockTab === "code" || this.panels.dockTab === "scope") this.panels.showDock("blocks"); }
     if (!quiet) {
@@ -564,7 +675,7 @@
 
   /* ------------------------------------------------------------- drawer */
 
-  var CAT_ORDER = ["Toy box", "Boards", "Power", "Passive", "Lights & sound", "Switches", "Semiconductors", "Chips", "Sensors", "Motion", "Measure"];
+  var CAT_ORDER = ["Toy box", "Boards", "Power", "Passive", "Lights & sound", "Switches", "Semiconductors", "Chips", "Sensors", "Motion", "Wireless", "Workshop", "Measure"];
   App.prototype.drawer = function () {
     var self = this, kid = this.doc.mode === "kid", box = $("lab-drawer"), q = (this.drawerQ || "").toLowerCase();
     var showAll = kid && this.kidAll;
@@ -713,6 +824,10 @@
     } else this.history.push(this.doc);
     this.doc = normalise(doc);
     this.sim.load(this.doc);
+    this.stopProgram();
+    this.mcuId = null;
+    this.syncBoards();
+    if (this.phone) this.phone.refresh();
     this.title = title || this.title;
     $("lab-title").value = this.title;
     this.bench.sel = null;
@@ -761,8 +876,10 @@
   };
   App.prototype.payload = function () {
     var d = this.doc;
+    this.storeProgram();
     return { id: this.circuitId, title: this.title, mode: d.mode,
-      data: { v: 1, mode: d.mode, parts: d.parts, wires: d.wires, code: d.code, blocks: d.blocks, prog: d.prog, view: d.view, name: this.title } };
+      data: { v: 1, mode: d.mode, parts: d.parts, wires: d.wires, code: d.code, blocks: d.blocks, prog: d.prog, view: d.view, name: this.title,
+              programs: d.programs || {}, current: this.mcuId, joints: d.joints || {}, cuts: d.cuts || {} } };
   };
   App.prototype.save = function (beacon) {
     var self = this, body = this.payload();
@@ -846,7 +963,7 @@
       switch (e.key) {
         case "Delete": case "Backspace": if (sel) { e.preventDefault(); self.deleteSel(); } break;
         case "r": case "R": if (sel && sel.kind === "part") self.partAction(self.partById(sel.id), "rotate"); break;
-        case "f": case "F": self.bench.fit(); break;
+        case "f": case "F": if (e.shiftKey) self.layout.fullscreen(); else self.bench.fit(); break;
         case " ": e.preventDefault(); self.sound.wake(); self.power(!self.running); break;
         case "Escape": self.bench.cancelGesture(); self.bench.select(null); break;
         case "ArrowLeft": case "ArrowRight": case "ArrowUp": case "ArrowDown":
@@ -888,8 +1005,24 @@
       o.connect(g); g.connect(master); o.start();
       return (voices[id] = { o: o, g: g });
     }
+    var noiseBuf = null;
+    function noise(kind) {
+      if (!noiseBuf) {
+        noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+        var ch = noiseBuf.getChannelData(0);
+        for (var i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
+      }
+      var spec = { sizzle: [3500, 2, 0.5, 0.12], snip: [5000, 4, 0.04, 0.35], thwip: [900, 1, 0.22, 0.3], drill: [1400, 3, 0.35, 0.18], pumpcock: [2500, 3, 0.05, 0.2] }[kind];
+      var t = ac.currentTime, src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+      src.buffer = noiseBuf; f.type = "bandpass"; f.frequency.value = spec[0]; f.Q.value = spec[1];
+      if (kind === "thwip") f.frequency.exponentialRampToValueAtTime(200, t + spec[2]);
+      g.gain.setValueAtTime(spec[3], t); g.gain.exponentialRampToValueAtTime(0.0001, t + spec[2]);
+      src.connect(f); f.connect(g); g.connect(master);
+      src.start(t, Math.random() * 0.5); src.stop(t + spec[2] + 0.02);
+    }
     function one(kind) {
       if (!ac || muted) return;
+      if (/^(sizzle|snip|thwip|drill|pumpcock)$/.test(kind)) return noise(kind);
       var t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain();
       o.connect(g); g.connect(master);
       var spec = { click: ["square", 1800, 0.02, 0.18], tick: ["square", 2400, 0.012, 0.08], snap: ["triangle", 900, 0.05, 0.12], pop: ["sawtooth", 140, 0.18, 0.4],

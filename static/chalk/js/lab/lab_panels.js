@@ -477,6 +477,7 @@
       b.addEventListener("click", function () { self.showDock(b.getAttribute("data-dock")); });
     });
     document.getElementById("dock-toggle").addEventListener("click", function () {
+      if (app.layout) { app.layout.toggleDock(); return; }
       var open = !self.dock.classList.toggle("closed");
       this.setAttribute("aria-expanded", open ? "true" : "false");
       this.textContent = open ? "▾" : "▴";
@@ -533,11 +534,21 @@
 
   Panels.prototype.narrate = function (html) { document.getElementById("narrate").innerHTML = html || ""; };
 
-  Panels.prototype.serial = function (text, mine) {
+  Panels.prototype.serial = function (text, mine, board) {
     var out = document.getElementById("serial-out");
     var atBottom = out.scrollTop + out.clientHeight >= out.scrollHeight - 8;
     var span = document.createElement("span");
     if (mine) span.className = "mine";
+    if (board) {
+      /* with several boards, each line says which one spoke */
+      var lines = text.split(/(\n)/), outText = "", self = this;
+      lines.forEach(function (piece) {
+        if (piece !== "\n" && piece && self.lastBoardLineStart !== false) outText += "[" + board + "] ";
+        outText += piece;
+        self.lastBoardLineStart = piece === "\n" ? true : piece ? false : self.lastBoardLineStart;
+      });
+      text = outText;
+    }
     span.textContent = text;
     out.appendChild(span);
     while (out.childNodes.length > 600) out.removeChild(out.firstChild);
@@ -569,7 +580,7 @@
 
   Panels.prototype.pins = function (rt) {
     var app = this.app, grid = document.getElementById("pins-grid"), vars = document.getElementById("vars");
-    var mcu = L.firstMcu(app.doc);
+    var mcu = app.currentMcu ? app.currentMcu() : L.firstMcu(app.doc);
     if (!mcu) { grid.innerHTML = '<p class="hint">Add an Arduino (or the Robo Brain) to see its pins here.</p>'; vars.innerHTML = ""; return; }
     var kid = mcu.type === "k_brain", h = "";
     var list = kid ? Object.keys(L.BRAIN_MAP).map(function (k) { return [k, L.PINNUM[L.BRAIN_MAP[k]]]; })

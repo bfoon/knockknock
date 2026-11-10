@@ -40,7 +40,11 @@ A real-time interactive presentation & quiz platform — think **Mentimeter** me
 - **Kid mode**: a toy box of parts on wooden blocks with crocodile clips, the programmable Robo Brain, Sparky the electron, and eight missions that only count when the circuit really works
 - **Ask AI** (Gemini, via the same `GEMINI_API_KEY` as Hanns and Kura): explain the circuit, find what's wrong, write the program, or design a circuit and build it on the bench. Without a key, a built-in checker still answers from the circuit's netlist and the simulator's warnings. `CHALK_LAB_AI_HOURLY_LIMIT` (default 40) caps questions per person per hour
 - **Pin to board** drops a picture of the bench onto the board's current page, live on the projector
-- 17 ready-made circuits (12 Pro, 5 Kid); open the lab from the projector's corner bar, with <kbd>L</kbd>, or from the board list
+- **Layout**: Design / Split / Code views (Run in Code view brings the bench back), the program panel docked bottom, left or right or detached as a floating window, resizable panels, and full screen for a projector with a caption of the running line
+- **Coding with AI**: write a sketch from a description, change or fix your code (or just the selected lines), continue from the cursor, explain — every change comes back as a review where you keep or drop each change. Without an AI, compile errors get one-click fixes. In Blocks (and in kid mode, by telling Sparky) a description becomes blocks
+- **Wireless**: HC-05 Bluetooth with a phone controller app in the side panel, HC-12 433 MHz radio between boards (channels, interference), and a 433 MHz key fob with its receiver; `SoftwareSerial` in the interpreter; several boards each running their own program; radio waves and packets drawn on the bench
+- **Workshop**: perfboard and stripboard where nothing connects until it is soldered — soldering iron (cold joints flicker, too much heat cooks parts, drag to bridge pads), solder sucker, hot air to free a part, cutters for wires and legs, and a track cutter for stripboard
+- 24 ready-made circuits (17 Pro, 7 Kid); open the lab from the projector's corner bar, with <kbd>L</kbd>, or from the board list
 - Saved circuits live in `chalk.BoardCircuit` — after pulling, run `python manage.py makemigrations chalk && python manage.py migrate`
 - Code: `chalk/lab.py`, `chalk/lab_ai.py`, `static/chalk/js/lab/`. Tests: `python manage.py test chalk.test_lab`, and `node tools/chalk_lab/run_all.js` for the solver, the Arduino interpreter and every example
 

@@ -170,6 +170,30 @@ class SaveTests(LabTestCase):
         self.assertNotIn("ref", out["wires"][0]["a"])
         self.assertNotIn("evil", out)
 
+    def test_programs_and_workshop_data_survive_cleaning(self):
+        doc = circuit()
+        doc["parts"].append({"id": "p_nano", "type": "arduino_nano", "x": 0, "y": 600})
+        doc["parts"].append({"id": "p_pb", "type": "perfboard", "x": 900, "y": 0})
+        doc["parts"][2]["cutPins"] = ["K", "bad pin!"]
+        doc["wires"][0]["cut"] = 0.4
+        doc["programs"] = {
+            "p_uno": {"code": "void setup(){}\nvoid loop(){}\n", "prog": "code"},
+            "p_nano": {"code": "void setup(){}\nvoid loop(){}\n", "prog": "blocks", "blocks": {"loop": []}},
+            "p_ghost": {"code": "x"},
+        }
+        doc["current"] = "p_nano"
+        doc["joints"] = {"p_pb:a1": 1, "p_pb:a2": 0.4, "p_pb:a3": 7, "nope:a1": 1}
+        doc["cuts"] = {"p_pb:c5": True, "p_pb:<x>": True}
+        doc["bridges"] = [["p_pb:a1", "p_pb:a2"], ["p_pb:a1"], ["evil", "p_pb:a2"]]
+        out = lab.clean_circuit(doc)
+        self.assertEqual(set(out["programs"]), {"p_uno", "p_nano"})
+        self.assertEqual(out["current"], "p_nano")
+        self.assertEqual(out["joints"], {"p_pb:a1": 1.0, "p_pb:a2": 0.4})
+        self.assertEqual(out["cuts"], {"p_pb:c5": 1})
+        self.assertEqual(out["bridges"], [["p_pb:a1", "p_pb:a2"]])
+        self.assertEqual(out["parts"][2]["cutPins"], ["K"])
+        self.assertEqual(out["wires"][0]["cut"], 0.4)
+
     def test_delete(self):
         c = BoardCircuit.objects.create(board=self.board, title="Bye", data=circuit())
         r = self.client.post(reverse("chalk:lab_delete", args=[self.board.id, c.id]))
@@ -234,6 +258,40 @@ class AITests(LabTestCase):
              mock.patch("hanns.ai.ai_json", return_value=({"reply": "Yay!"}, "m")) as call:
             self.ask({"kind": "explain", "question": "what does it do", "mode": "kid", "circuit": {}})
         self.assertIn("Sparky", call.call_args[0][0])
+
+    def test_editing_code_sends_the_program_selection_and_errors(self):
+        code = "void setup() {\n  pinMode(13, OUTPUT)\n}\nvoid loop() {}\n"
+        fixed = "void setup() {\n  pinMode(13, OUTPUT);\n}\nvoid loop() {}\n"
+        with mock.patch("hanns.ai.is_enabled", return_value=True), \
+             mock.patch("hanns.ai.ai_json", return_value=({"reply": "Added the missing ;", "code": fixed}, "m")) as call:
+            r = self.ask({"kind": "fixcode", "question": "", "mode": "pro", "code": code,
+                          "selection": {"from": 2, "to": 2}, "errors": [{"line": 2, "msg": "Missing ; at the end of this line."}],
+                          "circuit": {}})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["code"], fixed)
+        prompt = call.call_args[0][1]
+        self.assertIn("  2|   pinMode(13, OUTPUT)", prompt)
+        self.assertIn("SELECTION: lines 2-2", prompt)
+        self.assertIn("line 2: Missing ;", prompt)
+        self.assertIn("16-bit", prompt)
+
+    def test_blocks_come_back_bounded(self):
+        deep = {"t": "repeat", "f": {"n": "2"}, "c": []}
+        node = deep
+        for _ in range(30):
+            child = {"t": "repeat", "f": {"n": "2"}, "c": []}
+            node["c"].append(child)
+            node = child
+        fake = {"reply": "Blinks OUT 1", "blocks": {"setup": [], "loop": [deep, {"t": "write", "f": {"pin": "3", "hl": "1" * 900}}]}}
+        with mock.patch("hanns.ai.is_enabled", return_value=True), \
+             mock.patch("hanns.ai.ai_json", return_value=(fake, "m")) as call:
+            r = self.ask({"kind": "blocks", "question": "blink OUT 1", "mode": "kid", "circuit": {}})
+        self.assertEqual(r.status_code, 200)
+        blocks = r.json()["blocks"]
+        self.assertLessEqual(len(blocks["loop"][1]["f"]["hl"]), 200)
+        self.assertLess(len(json.dumps(blocks)), 20000)
+        self.assertIn("BLOCK FORMAT", call.call_args[0][1])
+        self.assertIn("SECONDS", call.call_args[0][1])
 
     @override_settings(CHALK_LAB_AI_HOURLY_LIMIT=2)
     def test_hourly_limit(self):

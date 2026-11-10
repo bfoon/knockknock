@@ -136,6 +136,7 @@
     doc.parts.forEach(function (p) { if ((L.def(p) || {}).layer !== "board") self.renderPart(p); });
     this.indexPins();
     doc.wires.forEach(function (w) { self.renderWire(w); });
+    if (this.app.workshop) this.app.workshop.renderJoints();
     this.renderSel();
   };
 
@@ -237,9 +238,22 @@
     return "rgb(" + f(r) + "," + f(g) + "," + f(b) + ")";
   }
 
+  /* A snipped wire: two halves with a gap and bare copper at the cut. */
+  function cutPath(segs, t) {
+    var smp = sample(segs), total = smp.total, gap = 9, a = t * total - gap / 2, b = t * total + gap / 2;
+    var first = "", second = "", ca = null, cb = null;
+    smp.pts.forEach(function (q, i) {
+      var l = smp.len[i];
+      if (l <= a) { first += (first ? "L" : "M") + q[0].toFixed(1) + " " + q[1].toFixed(1); ca = q; }
+      else if (l >= b) { if (!cb) cb = q; second += (second ? "L" : "M") + q[0].toFixed(1) + " " + q[1].toFixed(1); }
+    });
+    return { d: first + " " + second, ends: [ca, cb] };
+  }
+
   Bench.prototype.renderWire = function (w) {
     var kid = this.app.doc.mode === "kid";
-    var pts = this.wirePoints(w), segs = curve(pts), d = pathOf(segs);
+    var pts = this.wirePoints(w), segs = curve(pts), d = pathOf(segs), cut = null;
+    if (w.cut) { cut = cutPath(segs, w.cut); d = cut.d; }
     var old = this.wires[w.id] && this.wires[w.id].g;
     var g = el("g", { "class": "wire", "data-id": w.id });
     var col = w.color || "#e8c22a", width = kid ? 7 : 4.2;
@@ -259,6 +273,7 @@
           '<rect x="2" y="-3.2" width="9" height="6.4" rx="1.2" fill="' + shade(col, 0.75) + '"/><rect x="-1.5" y="-1.4" width="5" height="2.8" fill="#c9ced3"/></g>');
       }
     });
+    if (cut) cut.ends.forEach(function (q) { if (q) el("circle", { cx: q[0], cy: q[1], r: 2.6, fill: "#d98a4e", stroke: "#8a5a2a", "stroke-width": ".8" }, g); });
     el("path", { d: d, stroke: "transparent", "stroke-width": 14, fill: "none", "class": "wire-hit", "data-wire": w.id }, g);
     if (old && old.parentNode) old.parentNode.replaceChild(g, old); else this.lWires.appendChild(g);
     var s = sample(segs);
@@ -375,6 +390,7 @@
 
   Bench.prototype.cancelGesture = function () {
     if (this.g && this.g.kind === "press") this.app.release(this.g.part);
+    if (this.g && this.g.zoneKey) this.app.releaseKey(this.g.zoneKey);
     this.g = null;
     this.draft = null;
     this.drawDraft();
@@ -382,6 +398,7 @@
 
   Bench.prototype.down = function (e) {
     var wp = this.toWorld(e.clientX, e.clientY), t = e.target;
+    if (this.tool && this.app.workshop && this.app.workshop.down(e, wp)) { this.g = { kind: "tool" }; return; }
     var tapWiring = this.draft && this.draft.tap;
     var r = Math.max(7, 9 / this.cam.z);
     var pin = this.pinAt(wp.x, wp.y, r);
@@ -410,9 +427,15 @@
     }
     var pg = t.closest && t.closest(".part");
     if (pg) {
-      var part = this.app.partById(pg.getAttribute("data-id")), d = L.def(part);
+      var part = this.app.partById(pg.getAttribute("data-id")), d = L.def(part), zoneKey = null;
+      if (d.zones) {
+        /* parts with several buttons: which one is under the finger? */
+        var lp = L.toLocal(part, wp.x, wp.y);
+        d.zones.forEach(function (z) { if (Math.hypot(lp.x - z.x, lp.y - z.y) <= z.r) zoneKey = part.id + ":" + z.n; });
+        if (zoneKey) this.app.pressKey(zoneKey);
+      }
       if (d.press) this.app.press(part);
-      this.g = { kind: "part", part: part, start: wp, ox: part.x, oy: part.y, pressed: !!d.press, carry: this.carried(part), moved: false };
+      this.g = { kind: "part", part: part, start: wp, ox: part.x, oy: part.y, pressed: !!d.press, zoneKey: zoneKey, carry: this.carried(part), moved: false };
       return;
     }
     this.g = { kind: "pan", sx: e.clientX, sy: e.clientY, cx: this.cam.x, cy: this.cam.y };
@@ -434,6 +457,7 @@
 
   Bench.prototype.move = function (e) {
     var wp = this.toWorld(e.clientX, e.clientY), g = this.g;
+    if (this.tool && this.app.workshop) { this.app.workshop.move(e, wp); if (!g || g.kind === "tool") return; }
     if (!g) {
       if (this.draft && this.draft.tap) { this.drawDraft(wp); return; }
       this.hover(wp, e);
@@ -447,9 +471,15 @@
         break;
       case "part": {
         if (!g.moved && dist < 5) return;
+        if (!g.moved && this.app.workshop && this.app.workshop.stuck(g.part)) {
+          this.g = null;
+          this.app.toast("It's soldered in. Melt its joints with hot air, or suck each one with the solder sucker, to free it.");
+          return;
+        }
         if (!g.moved) {
           g.moved = true;
           if (g.pressed) { this.app.release(g.part); g.pressed = false; }
+          if (g.zoneKey) { this.app.releaseKey(g.zoneKey); g.zoneKey = null; }
           this.app.beginEdit();
           this.select({ kind: "part", id: g.part.id });
         }
@@ -497,6 +527,7 @@
     var g = this.g, wp = this.toWorld(e.clientX, e.clientY);
     this.g = null;
     if (!g) return;
+    if (g.kind === "tool") { if (this.app.workshop) this.app.workshop.up(e, wp); return; }
     var dist = this.downAt ? Math.hypot(e.clientX - this.downAt.x, e.clientY - this.downAt.y) : 99;
     switch (g.kind) {
       case "pan":
@@ -504,6 +535,7 @@
         break;
       case "part":
         if (g.pressed) this.app.release(g.part);
+        if (g.zoneKey) this.app.releaseKey(g.zoneKey);
         if (g.moved) { this.app.commitEdit(); return; }
         this.select({ kind: "part", id: g.part.id });
         this.app.clickPart(g.part, wp);
@@ -695,6 +727,8 @@
     ctx.globalCompositeOperation = "source-over";
     this.drawParticles(dt);
     this.drawRipples(dt);
+    this.drawRadio(dt);
+    if (this.app.workshop) this.app.workshop.frame(ctx, dt);
   };
 
   function dots(ctx, info, phase, gap, r, col, kid) {
@@ -749,6 +783,7 @@
         self.app.sound(ev.kind === "spark" ? "spark" : "pop");
       }
       if (ev.kind === "click") self.app.sound("click");
+      if (ev.kind === "radio" || ev.kind === "bt" || ev.kind === "fob") self.radio(p, ev);
     });
     this.smokeT = (this.smokeT || 0) + dt;
     if (this.smokeT > 0.09) {
@@ -780,6 +815,83 @@
         ctx.globalCompositeOperation = "source-over";
         ctx.fillStyle = "rgba(150,150,150," + (0.35 * f).toFixed(3) + ")";
         ctx.beginPath(); ctx.arc(q.x, q.y, q.r, 0, 7); ctx.fill();
+      }
+      return true;
+    });
+    ctx.globalCompositeOperation = "source-over";
+  };
+
+  /* Radio: rings from the sender's antenna, and a packet that flies to each
+   * receiver with what it carries. A lost packet fades halfway with a ✕. */
+  Bench.prototype.radio = function (part, ev) {
+    var a = L.antennaOf(part), self = this, data = ev.data || {};
+    var color = ev.kind === "bt" ? "#7fb8ff" : ev.kind === "fob" ? "#ff8a7a" : "#ffe9a0";
+    this.waves = this.waves || []; this.packets = this.packets || [];
+    this.waves.push({ x: a.x, y: a.y, age: 0, c: color });
+    if (this.waves.length > 30) this.waves.shift();
+    var label = String(data.text || "").replace(/\n/g, "⏎").slice(0, 16);
+    var targets = [];
+    if (ev.kind === "radio") {
+      (data.to || []).forEach(function (id) { targets.push({ id: id, lost: false }); });
+      (data.lost || []).forEach(function (id) { targets.push({ id: id, lost: true }); });
+    } else if (ev.kind === "fob") {
+      this.app.doc.parts.forEach(function (q) { if (q.type === "rf_rx") targets.push({ id: q.id, lost: false }); });
+      var st = this.app.sim.state[part.id] || {};
+      label = Object.keys(st.press || {}).join("");
+    } else if (ev.kind === "bt") {
+      /* to or from the phone, which lives off the top of the bench */
+      var phone = { x: a.x + 260, y: a.y - 260 };
+      this.packets.push(data.up ? { x0: a.x, y0: a.y, x1: phone.x, y1: phone.y, age: 0, dur: 0.6, label: label, c: color, phone: true }
+                                : { x0: phone.x, y0: phone.y, x1: a.x, y1: a.y, age: 0, dur: 0.6, label: label, c: color, phone: true });
+    }
+    targets.forEach(function (t) {
+      var q = self.app.partById(t.id); if (!q) return;
+      var b = L.antennaOf(q);
+      self.packets.push({ x0: a.x, y0: a.y, x1: b.x, y1: b.y, age: 0, dur: 0.55, label: label, c: color, lost: t.lost });
+    });
+    if (this.packets.length > 40) this.packets.splice(0, this.packets.length - 40);
+  };
+  Bench.prototype.drawRadio = function (dt) {
+    var ctx = this.ctx, z = this.cam.z;
+    ctx.globalCompositeOperation = "lighter";
+    this.waves = (this.waves || []).filter(function (w) {
+      w.age += dt;
+      if (w.age > 1.1) return false;
+      for (var k = 0; k < 3; k++) {
+        var f = (w.age - k * 0.15) / 0.8;
+        if (f < 0 || f > 1) continue;
+        ctx.strokeStyle = rgba(w.c, (1 - f) * 0.8);
+        ctx.lineWidth = 2.5 / z + 2;
+        ctx.beginPath(); ctx.arc(w.x, w.y, 8 + 150 * f, 0, Math.PI * 2); ctx.stroke();
+      }
+      return true;
+    });
+    this.packets = (this.packets || []).filter(function (p) {
+      p.age += dt;
+      var f = p.age / p.dur;
+      if (f > 1.15) return false;
+      if (p.lost && f > 0.55) {
+        var fx = p.x0 + (p.x1 - p.x0) * 0.5, fy = p.y0 + (p.y1 - p.y0) * 0.5, fade = Math.max(0, 1 - (f - 0.55) / 0.4);
+        ctx.globalCompositeOperation = "source-over";
+        ctx.strokeStyle = "rgba(255,106,90," + fade.toFixed(2) + ")"; ctx.lineWidth = 3 / z + 1;
+        ctx.beginPath(); ctx.moveTo(fx - 8, fy - 8); ctx.lineTo(fx + 8, fy + 8); ctx.moveTo(fx + 8, fy - 8); ctx.lineTo(fx - 8, fy + 8); ctx.stroke();
+        ctx.globalCompositeOperation = "lighter";
+        return true;
+      }
+      var t = Math.min(1, f), e = t * t * (3 - 2 * t);
+      var x = p.x0 + (p.x1 - p.x0) * e, y = p.y0 + (p.y1 - p.y0) * e - Math.sin(Math.PI * e) * 30;
+      var gr = ctx.createRadialGradient(x, y, 0, x, y, 16);
+      gr.addColorStop(0, rgba(p.c, 1)); gr.addColorStop(1, rgba(p.c, 0));
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, 16, 0, 7); ctx.fill();
+      if (p.label) {
+        ctx.globalCompositeOperation = "source-over";
+        ctx.font = "700 " + (12 / Math.max(0.5, z)).toFixed(1) + "px ui-monospace, Menlo, monospace";
+        var w = ctx.measureText(p.label).width + 10 / Math.max(0.5, z);
+        ctx.fillStyle = "rgba(10,14,18,.85)";
+        ctx.fillRect(x - w / 2, y - 30 / Math.max(0.5, z), w, 18 / Math.max(0.5, z));
+        ctx.fillStyle = p.c; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(p.label, x, y - 21 / Math.max(0.5, z));
+        ctx.globalCompositeOperation = "lighter";
       }
       return true;
     });

@@ -216,6 +216,77 @@
   }
   L.Blocks.make = mk;
 
+  /* Blocks from outside (the AI) are checked like any other input: only
+   * known block types, only their own fields, short strings, bounded depth.
+   * Ids are always fresh. Returns null if nothing usable is left. */
+  var COND_SRC = { kid: ["in1", "in2", "dark", "bright", "var"], pro: ["dread", "aread", "var", "millis", "expr"] };
+  var OP_OK = { "==": 1, "!=": 1, ">": 1, "<": 1, ">=": 1, "<=": 1 };
+  function cleanCond(c, mode) {
+    var srcs = COND_SRC[mode === "kid" ? "kid" : "pro"];
+    if (!c || typeof c !== "object" || srcs.indexOf(c.src) < 0) return defaultCond(mode);
+    var out = { src: c.src };
+    ["pin", "val", "name", "expr"].forEach(function (k) { if (c[k] != null && (typeof c[k] === "string" || typeof c[k] === "number")) out[k] = String(c[k]).slice(0, 80); });
+    if (OP_OK[c.op]) out.op = c.op;
+    if (out.name) out.name = safeName(out.name);
+    return out;
+  }
+  L.Blocks.sanitize = function (raw, mode) {
+    if (!raw || typeof raw !== "object") return null;
+    var count = 0;
+    function list(arr, depth) {
+      if (!Array.isArray(arr) || depth > 6) return [];
+      var out = [];
+      arr.slice(0, 80).forEach(function (b) {
+        if (!b || typeof b !== "object" || !BLOCKS[b.t] || ++count > 200) return;
+        var d = BLOCKS[b.t], nb = mk(b.t, kidDefaults(b.t, mode)), f = b.f && typeof b.f === "object" ? b.f : {};
+        Object.keys(d.f).forEach(function (k) {
+          if (d.f[k][0] === "cond") { nb.f[k] = cleanCond(f[k], mode); return; }
+          var v = f[k];
+          if (v != null && (typeof v === "string" || typeof v === "number")) nb.f[k] = d.f[k][0] === "var" ? safeName(v) : String(v).slice(0, 120);
+        });
+        if (d.body) nb.c = list(b.c, depth + 1);
+        if (d.alt) nb.e = list(b.e, depth + 1);
+        out.push(nb);
+      });
+      return out;
+    }
+    var prog = { setup: list(raw.setup, 0), loop: list(raw.loop, 0), vars: [] };
+    (Array.isArray(raw.vars) ? raw.vars : []).slice(0, 12).forEach(function (v) {
+      if (v && v.name) prog.vars.push({ name: safeName(v.name), init: num(v.init, "0") });
+    });
+    /* any variable the blocks use must exist */
+    var used = {};
+    (function walk(l) { l.forEach(function (b) { if (b.f && b.f["var"]) used[b.f["var"]] = 1; if (b.f && b.f.c && b.f.c.src === "var") used[b.f.c.name || "count"] = 1; walk(b.c || []); walk(b.e || []); }); })(prog.setup.concat(prog.loop));
+    Object.keys(used).forEach(function (n) { if (!prog.vars.some(function (v) { return v.name === n; })) prog.vars.push({ name: n, init: "0" }); });
+    if (!prog.setup.length && !prog.loop.length) return null;
+    return prog;
+  };
+
+  /* With no AI: match the words to a ready-made program. */
+  L.Blocks.guess = function (text, mode) {
+    var t = String(text).toLowerCase(), M = mk, kid = mode === "kid";
+    var ex = function (id) { var e = (L.EXAMPLES || []).filter(function (x) { return x.id === id; })[0]; return e && e.blocks ? e.blocks() : null; };
+    if (kid) {
+      if (/traffic/.test(t)) return ex("k_traffic");
+      if (/night|dark|light sensor|eye/.test(t)) return ex("k_night");
+      if (/bell|door|button|press|beep|buzz/.test(t)) return ex("k_bell");
+      if (/blink|flash|on and off/.test(t)) return ex("k_blink");
+      return null;
+    }
+    if (/button|press/.test(t)) {
+      var c = M("if", { c: { src: "dread", pin: "2", op: "==", val: "LOW" } });
+      c.c = [M("write", { pin: "13", hl: "1" })]; c.e = [M("write", { pin: "13", hl: "0" })];
+      return { setup: [], loop: [c], vars: [] };
+    }
+    if (/fade|dim|brighten/.test(t)) {
+      var up = M("repeat", { n: "51" }); up.c = [M("change", { "var": "level", v: "5" }), M("pwm", { pin: "9", v: "level" }), M("wait", { ms: "20" })];
+      var dn = M("repeat", { n: "51" }); dn.c = [M("change", { "var": "level", v: "-5" }), M("pwm", { pin: "9", v: "level" }), M("wait", { ms: "20" })];
+      return { setup: [], loop: [M("set", { "var": "level", v: "0" }), up, dn], vars: [{ name: "level", init: "0" }] };
+    }
+    if (/blink|flash/.test(t)) return L.Blocks.blank("pro");
+    return null;
+  };
+
   /* ============================================================= EDITOR */
 
   function Editor(el, opts) {

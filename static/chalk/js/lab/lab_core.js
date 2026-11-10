@@ -50,6 +50,13 @@
     }
   };
 
+  /* World point -> a part's own coordinates (undoing rotation and flip). */
+  L.toLocal = function (part, x, y) {
+    var w = L.xform(x - part.x, y - part.y, (4 - ((part.rot || 0) % 4)) % 4, false);
+    if (part.flip) w[0] = -w[0];
+    return { x: w[0], y: w[1] };
+  };
+
   L.def = function (part) { return (L.PARTS && L.PARTS[part.type]) || null; };
 
   L.pinList = function (part) {

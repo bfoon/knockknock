@@ -595,6 +595,218 @@
     }
   });
 
+  /* ============================================================ WIRELESS */
+
+  ex({
+    id: "bt_switch", mode: "pro", name: "Bluetooth light switch", level: "Wireless",
+    blurb: "Pair the phone in the side panel, then send 1 or 0. The Arduino switches the LED and answers back over Bluetooth.",
+    build: function () {
+      var B = new Builder("pro"), uno = B.add("arduino_uno", 0, 0), bb = B.add("breadboard_half", 32 * P, 2 * P);
+      var bt = B.add("hc05", 12 * P, 34 * P);
+      var s = ledSet(B, bb, 8, "green");
+      B.wire([uno, "D13"], [bb, s.input], C.orange);
+      B.wire([uno, "GND1"], [bb, "bn2"], C.black);
+      B.wire([bt, "VCC"], [uno, "5V"], C.red);
+      B.wire([bt, "GND"], [uno, "GND2"], C.black);
+      B.wire([bt, "TXD"], [uno, "D10"], C.green);
+      B.wire([bt, "RXD"], [uno, "D11"], C.blue);
+      return B.doc;
+    },
+    code: [
+      "// Bluetooth light switch. Pair the phone (side panel), then send 1 or 0.",
+      "#include <SoftwareSerial.h>",
+      "",
+      "SoftwareSerial bt(10, 11);   // RX, TX: module TXD -> 10, module RXD <- 11",
+      "const int LED = 13;",
+      "",
+      "void setup() {",
+      "  pinMode(LED, OUTPUT);",
+      "  Serial.begin(9600);",
+      "  bt.begin(9600);",
+      "  bt.println(\"Ready! Send 1 or 0.\");",
+      "}",
+      "",
+      "void loop() {",
+      "  if (bt.available()) {",
+      "    char c = bt.read();",
+      "    if (c == '1') {",
+      "      digitalWrite(LED, HIGH);",
+      "      bt.println(\"LED is on\");",
+      "    } else if (c == '0') {",
+      "      digitalWrite(LED, LOW);",
+      "      bt.println(\"LED is off\");",
+      "    }",
+      "    Serial.print(\"Phone sent: \");",
+      "    Serial.println(c);",
+      "  }",
+      "}"
+    ]
+  });
+
+  ex({
+    id: "bt_dimmer", mode: "pro", name: "Bluetooth dimmer", level: "Wireless",
+    blurb: "Drag the slider on the phone. It sends v and a number; the Arduino reads the number and sets the LED's brightness with PWM.",
+    build: function () {
+      var B = new Builder("pro"), uno = B.add("arduino_uno", 0, 0), bb = B.add("breadboard_half", 32 * P, 2 * P);
+      var bt = B.add("hc05", 12 * P, 34 * P);
+      var s = ledSet(B, bb, 8, "white");
+      B.wire([uno, "D9"], [bb, s.input], C.orange);
+      B.wire([uno, "GND1"], [bb, "bn2"], C.black);
+      B.wire([bt, "VCC"], [uno, "5V"], C.red);
+      B.wire([bt, "GND"], [uno, "GND2"], C.black);
+      B.wire([bt, "TXD"], [uno, "D10"], C.green);
+      B.wire([bt, "RXD"], [uno, "D11"], C.blue);
+      return B.doc;
+    },
+    code: [
+      "// The phone's slider sends v0 ... v255.",
+      "#include <SoftwareSerial.h>",
+      "",
+      "SoftwareSerial bt(10, 11);",
+      "",
+      "void setup() {",
+      "  pinMode(9, OUTPUT);",
+      "  bt.begin(9600);",
+      "}",
+      "",
+      "void loop() {",
+      "  if (bt.available()) {",
+      "    char c = bt.read();",
+      "    if (c == 'v') {",
+      "      int level = bt.parseInt();",
+      "      analogWrite(9, constrain(level, 0, 255));",
+      "      bt.print(\"Brightness \");",
+      "      bt.println(level);",
+      "    }",
+      "  }",
+      "}"
+    ]
+  });
+
+  ex({
+    id: "radio_link", mode: "pro", name: "Radio link: two Arduinos", level: "Wireless",
+    blurb: "Two boards, two programs. The left one reads a button and a knob and sends them by radio; the right one lights an LED and turns a servo to match. Click a board to see its program.",
+    build: function () {
+      var B = new Builder("pro");
+      var a = B.add("arduino_uno", 0, 0), b = B.add("arduino_uno", 46 * P, 0);
+      var ra = B.add("hc12", 32 * P, 6 * P), rb = B.add("hc12", 78 * P, 6 * P);
+      var btn = B.add("button", 10 * P, 28 * P, { cap: "#d43a2f" }), pot = B.add("potentiometer", 20 * P, 31 * P, { pos: 0.5 });
+      var r = B.add("resistor", 56 * P, 29 * P, { ohms: 220 }), led = B.add("led", 62 * P, 29 * P, { color: "yellow" }), sv = B.add("servo", 70 * P, 34 * P);
+      [[a, ra], [b, rb]].forEach(function (pair) {
+        B.wire([pair[1], "VCC"], [pair[0], "5V"], C.red);
+        B.wire([pair[1], "GND"], [pair[0], "GND2"], C.black);
+        B.wire([pair[1], "TXD"], [pair[0], "D10"], C.green);
+        B.wire([pair[1], "RXD"], [pair[0], "D11"], C.blue);
+      });
+      B.wire([btn, "1a"], [a, "D2"], C.yellow);
+      B.wire([btn, "2b"], [a, "GND1"], C.black);
+      B.wire([pot, "1"], [a, "GND3"], C.black);
+      B.wire([pot, "2"], [a, "3V3"], C.red);
+      B.wire([pot, "W"], [a, "A0"], C.purple);
+      B.wire([b, "D13"], [r, "1"], C.orange);
+      B.wire([r, "2"], [led, "A"], C.orange);
+      B.wire([led, "K"], [b, "GND1"], C.black);
+      B.wire([sv, "GND"], [b, "GND3"], C.black);
+      B.wire([sv, "V+"], [b, "VIN"], C.red);
+      B.wire([sv, "SIG"], [b, "D9"], C.white);
+      B.wire([b, "5V"], [b, "VIN"], C.red);
+      return B.doc;
+    },
+    programs: [
+      [
+        "// SENDER: reads the button and the knob, sends them by radio.",
+        "#include <SoftwareSerial.h>",
+        "",
+        "SoftwareSerial radio(10, 11);",
+        "",
+        "void setup() {",
+        "  pinMode(2, INPUT_PULLUP);",
+        "  radio.begin(9600);",
+        "}",
+        "",
+        "void loop() {",
+        "  int pressed = digitalRead(2) == LOW ? 1 : 0;",
+        "  int knob = analogRead(A0);",
+        "  radio.print(pressed);     // e.g. 1,512",
+        "  radio.print(',');",
+        "  radio.println(knob);",
+        "  delay(150);",
+        "}"
+      ],
+      [
+        "// RECEIVER: lights the LED and moves the servo to match the sender.",
+        "#include <SoftwareSerial.h>",
+        "#include <Servo.h>",
+        "",
+        "SoftwareSerial radio(10, 11);",
+        "Servo arm;",
+        "",
+        "void setup() {",
+        "  pinMode(13, OUTPUT);",
+        "  arm.attach(9);",
+        "  radio.begin(9600);",
+        "  Serial.begin(9600);",
+        "}",
+        "",
+        "void loop() {",
+        "  if (radio.available()) {",
+        "    String msg = radio.readStringUntil('\\n');   // one whole message, e.g. 1,512",
+        "    int comma = msg.indexOf(',');",
+        "    if (comma > 0) {",
+        "      int pressed = msg.substring(0, comma).toInt();",
+        "      int knob = msg.substring(comma + 1).toInt();",
+        "      digitalWrite(13, pressed);",
+        "      arm.write(map(knob, 0, 675, 0, 180));",
+        "      Serial.print(\"got \");",
+        "      Serial.println(msg);",
+        "    }",
+        "  }",
+        "}"
+      ]
+    ]
+  });
+
+  ex({
+    id: "rf_bell", mode: "pro", name: "Wireless doorbell (no code)", level: "Wireless",
+    blurb: "Hold A on the key fob: the receiver's D0 lights the LED. Hold B: D1 switches a transistor that sounds the buzzer.",
+    build: function () {
+      var B = new Builder("pro");
+      var bat = B.add("battery_aa", 8 * P, 4 * P, { cells: 3 }), rx = B.add("rf_rx", 14 * P, 12 * P), fob = B.add("rf_remote", 36 * P, 0);
+      var r = B.add("resistor", 18 * P, 18 * P, { ohms: 220 }), led = B.add("led", 24 * P, 18 * P, { color: "blue" });
+      var rb = B.add("resistor", 18 * P, 24 * P, { ohms: 1000 }), q = B.add("npn", 26 * P, 28 * P), bz = B.add("buzzer", 30 * P, 20 * P);
+      B.wire([bat, "+"], [rx, "VCC"], C.red);
+      B.wire([bat, "-"], [rx, "GND"], C.black);
+      B.wire([rx, "D0"], [r, "1"], C.yellow);
+      B.wire([r, "2"], [led, "A"], C.yellow);
+      B.wire([led, "K"], [bat, "-"], C.black);
+      B.wire([rx, "D1"], [rb, "1"], C.green);
+      B.wire([rb, "2"], [q, "B"], C.green);
+      B.wire([bat, "+"], [bz, "+"], C.red);
+      B.wire([bz, "-"], [q, "C"], C.white);
+      B.wire([q, "E"], [bat, "-"], C.black);
+      return B.doc;
+    },
+    code: null
+  });
+
+  ex({
+    id: "k_remote", mode: "kid", name: "Magic remote", level: "Wireless",
+    blurb: "Press A or B on the remote and a light comes on — no wires between them! The remote sends invisible radio waves.",
+    build: function () {
+      var B = new Builder("kid");
+      var bat = B.add("k_battery", 4 * P, 24 * P, { volts: 4.5 }), rx = B.add("rf_rx", 10 * P, 12 * P), fob = B.add("rf_remote", 34 * P, 4 * P);
+      var l1 = B.add("k_led", 24 * P, 16 * P, { color: "red" }), l2 = B.add("k_led", 24 * P, 26 * P, { color: "blue" });
+      B.wire([bat, "+"], [rx, "VCC"], C.red);
+      B.wire([bat, "-"], [rx, "GND"], C.black);
+      B.wire([rx, "D0"], [l1, "+"], C.yellow);
+      B.wire([rx, "D1"], [l2, "+"], C.green);
+      B.wire([l1, "-"], [bat, "-"], C.black);
+      B.wire([l2, "-"], [bat, "-"], C.black);
+      return B.doc;
+    },
+    code: null
+  });
+
   /* Turn an example into a fresh document, code and all. */
   L.loadExample = function (id) {
     var e = EX.filter(function (x) { return x.id === id; })[0];
@@ -602,6 +814,13 @@
     var doc = e.build();
     doc.name = e.name;
     if (e.blocks) { doc.blocks = e.blocks(); doc.prog = "blocks"; doc.code = L.Blocks.generate(doc.blocks, doc.mode).code; }
+    else if (e.programs) {
+      /* one program per board, in the order the boards were added */
+      var boards = L.mcus ? L.mcus(doc) : doc.parts.filter(function (p) { return L.def(p).mcu; });
+      doc.programs = {};
+      e.programs.forEach(function (lines, i) { if (boards[i]) doc.programs[boards[i].id] = { code: lines.join("\n") + "\n", prog: "code", blocks: null }; });
+      doc.code = boards[0] ? doc.programs[boards[0].id].code : ""; doc.prog = "code";
+    }
     else { doc.code = e.code ? e.code.join("\n") + "\n" : ""; doc.prog = "code"; }
     var bb = boundsOf(doc);
     doc.view = { x: -(bb.x + bb.w / 2), y: -(bb.y + bb.h / 2), z: 0 };   /* z 0: fit on open */

@@ -133,7 +133,7 @@
     int8_t: "i8", uint8_t: "u8", int16_t: "i16", uint16_t: "u16", int32_t: "i32", uint32_t: "u32",
     int64_t: "i32", uint64_t: "u32"
   };
-  var CLASSES = { Servo: "Servo", LiquidCrystal_I2C: "LCD", LiquidCrystal: "LCD", SoftwareSerial: "SoftSerial" };
+  var CLASSES = { Servo: "Servo", LiquidCrystal_I2C: "LCD", LiquidCrystal: "LCD", SoftwareSerial: "SoftSerial", SmartCamera: "Camera", Speaker: "Voice" };
   var QUALS = { const: 1, static: 1, volatile: 1, extern: 1, inline: 1, signed: 1, unsigned: 1, register: 1 };
   var BYTES = { b: 1, c: 1, i8: 1, u8: 1, i16: 2, u16: 2, i32: 4, u32: 4, f: 4, s: 6 };
   var TYPE_NAME = { v: "void", b: "bool", c: "char", i8: "int8_t", u8: "byte", i16: "int", u16: "unsigned int", i32: "long", u32: "unsigned long", f: "float", s: "String" };
@@ -557,7 +557,9 @@
     HIGH: 1, LOW: 0, INPUT: 0, OUTPUT: 1, INPUT_PULLUP: 2, LED_BUILTIN: 13, true: 1, false: 0,
     A0: 14, A1: 15, A2: 16, A3: 17, A4: 18, A5: 19, A6: 20, A7: 21,
     DEC: 10, HEX: 16, BIN: 2, OCT: 8, CHANGE: 1, FALLING: 2, RISING: 3, DEFAULT: 1, EXTERNAL: 0, INTERNAL: 3,
-    NULL: 0, LSBFIRST: 0, MSBFIRST: 1
+    NULL: 0, LSBFIRST: 0, MSBFIRST: 1,
+    /* what a smart camera's colour() can answer */
+    CAM_NONE: 0, CAM_RED: 1, CAM_GREEN: 2, CAM_BLUE: 3
   };
   var FCONSTS = { PI: Math.PI, HALF_PI: Math.PI / 2, TWO_PI: Math.PI * 2, DEG_TO_RAD: Math.PI / 180, RAD_TO_DEG: 180 / Math.PI };
   var METHODS = {
@@ -573,6 +575,15 @@
       init: [0, 0, "v"], begin: [0, 3, "v"], backlight: [0, 0, "v"], noBacklight: [0, 0, "v"], clear: [0, 0, "v"],
       home: [0, 0, "v"], setCursor: [2, 2, "v"], print: [1, 2, "v"], write: [1, 1, "v"],
       display: [0, 0, "v"], noDisplay: [0, 0, "v"], cursor: [0, 0, "v"], noCursor: [0, 0, "v"], blink: [0, 0, "v"], noBlink: [0, 0, "v"]
+    },
+    /* The lab's smart camera: it does the looking and answers in numbers. */
+    Camera: {
+      begin: [0, 0, "b"], brightness: [0, 0, "i16"], motion: [0, 0, "i16"], colour: [0, 0, "i16"], color: [0, 0, "i16"],
+      sees: [1, 1, "b"], x: [0, 0, "i16"], y: [0, 0, "i16"], size: [0, 0, "i16"], faces: [0, 0, "i16"], snapshot: [0, 0, "v"]
+    },
+    /* A speaker with a voice module: notes, tunes and spoken words. */
+    Voice: {
+      begin: [0, 0, "v"], say: [1, 4, "v"], speaking: [0, 0, "b"], play: [1, 2, "v"], stop: [0, 0, "v"], volume: [1, 1, "v"]
     },
     String: {
       length: [0, 0, "u16"], toInt: [0, 0, "i32"], toFloat: [0, 0, "f"], indexOf: [1, 2, "i16"], substring: [1, 2, "s"],
@@ -989,6 +1000,11 @@
         if (args.length < 2) throw new RtErr("SoftwareSerial needs its two pins: SoftwareSerial " + it.name + "(rxPin, txPin);", it.line);
         obj = { cls: "SoftSerial", name: it.name, rx: Math.trunc(args[0]), tx: Math.trunc(args[1]), buf: "", on: false };
         this.softs.push(obj);
+      } else if (it.cls === "Camera") {
+        obj = { cls: "Camera", on: false };
+      } else if (it.cls === "Voice") {
+        if (args.length < 1) throw new RtErr("A Speaker needs to know its pin: Speaker " + it.name + "(8);", it.line);
+        obj = { cls: "Voice", pin: Math.trunc(args[0]), vol: 7, until: 0 };
       } else {
         obj = { cls: "LCD", addr: args[0] || 0x27, cols: args[1] || 16, rows: args[2] || 2, cx: 0, cy: 0, on: false, light: false, buf: null };
         obj.buf = blankLcd(obj.cols, obj.rows);
@@ -1498,6 +1514,53 @@
         case "attached": return obj.pin >= 0 ? 1 : 0;
         case "detach": if (obj.pin >= 0) delete this.servos[obj.pin]; obj.pin = -1; return 0;
       }
+    }
+    if (n.cls === "Camera") {
+      if (n.name === "begin") { obj.on = true; return this.host.camera && this.host.camera() ? 1 : 0; }
+      if (!obj.on) this.hint("cam", "Call cam.begin(); in setup() before asking the camera anything.", n.line);
+      var view = this.host.camera ? this.host.camera() : null;
+      if (!view) {
+        /* the very first questions can arrive before the camera has powered up */
+        if (this.millis() > 250) this.hint("camwire", "The program asked the camera a question, but no powered camera is wired to this board's A4 (SDA) and A5 (SCL).", n.line);
+        return 0;
+      }
+      switch (n.name) {
+        case "brightness": return Math.round(view.brightness);
+        case "motion": return Math.round(view.motion);
+        case "colour": case "color": return view.colour;
+        case "sees": return view.colour === Math.trunc(a[0]) ? 1 : 0;
+        case "x": return Math.round(view.x);
+        case "y": return Math.round(view.y);
+        case "size": return Math.round(view.size);
+        case "faces": return view.faces || 0;
+        case "snapshot": this.effect({ kind: "snapshot" }); if (this.host.snapshot) this.host.snapshot(); return 0;
+      }
+      return 0;
+    }
+    if (n.cls === "Voice") {
+      var vp = this.pin(obj.pin, n);
+      switch (n.name) {
+        case "begin": vp.p.mode = "OUT"; return 0;
+        case "volume": obj.vol = L.clamp(Math.trunc(a[0]), 0, 10); return 0;
+        case "speaking": return this.clock < obj.until ? 1 : 0;
+        case "stop": obj.until = 0; vp.p.tone = 0; vp.p.toneUntil = 0; if (this.host.say) this.host.say(obj.pin, "", obj.vol); return 0;
+        case "play":
+          vp.p.mode = "OUT"; vp.p.tone = a[0] > 0 ? Math.max(31, a[0]) : 0; vp.p.toneUntil = a[1] ? this.clock + a[1] / 1000 : 0;
+          this.effect({ kind: "tone", pin: vp.num, value: a[0] });
+          return 0;
+        case "say": {
+          var words = [];
+          for (var wi = 0; wi < a.length; wi++) words.push(typeof a[wi] === "string" ? a[wi] : this.str(a[wi], n.args[wi].ty).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1"));
+          var said = words.join(" ").replace(/\s+/g, " ").trim().slice(0, 200);
+          vp.p.mode = "OUT";
+          /* about as long as it takes to say it: the program can wait on speaking() */
+          obj.until = this.clock + 0.35 + said.length * 0.065;
+          this.effect({ kind: "say", pin: vp.num, text: said });
+          if (this.host.say) this.host.say(obj.pin, said, obj.vol);
+          return 0;
+        }
+      }
+      return 0;
     }
     if (n.cls === "LCD") {
       switch (n.name) {

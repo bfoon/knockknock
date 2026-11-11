@@ -30,6 +30,10 @@
         return (T.terminals[T.find(key)] || 0) < 2;
       },
       uart: function (pin, text) { if (sim.uartOut) sim.uartOut(mcuId, pin, text); },
+      /* a camera on this board's I²C pins, a speaker on one of its pins (lab_av.js) */
+      camera: function () { return sim.cameraFor ? sim.cameraFor(mcuId) : null; },
+      snapshot: function () { if (sim.cameraSnap) sim.cameraSnap(mcuId); },
+      say: function (pin, text, vol) { if (sim.sayOn) sim.sayOn(mcuId, pin, text, vol); },
       wall: function () { return sim.wall; },
       on: on
     });

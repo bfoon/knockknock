@@ -42,7 +42,7 @@ ok(codes(d).join()==='i2c','an I²C screen with SDA on the wrong pin'); C.fix(d,
 ({d,u}=bench()); let bat=place(d,'battery_9v',0); wire(d,bat.id+':+',u.id+':5V'); wire(d,bat.id+':-',u.id+':GND1'); ok(codes(d).indexOf('overvolt')>=0,'9 V into the 5 V pin');
 
 console.log('\nwire it for me: every kind of part, onto one board');
-const TYPES=['led','rgb_led','button','tilt_switch','slide_switch','buzzer','piezo','potentiometer','ldr','thermistor','tmp36','mod_soil','mod_gas','hcsr04','pir','servo','lcd_i2c','relay_module','hc05','rf_rx','motor'];
+const TYPES=['led','rgb_led','button','tilt_switch','slide_switch','buzzer','piezo','potentiometer','ldr','thermistor','tmp36','mod_soil','mod_gas','hcsr04','pir','servo','lcd_i2c','relay_module','hc05','rf_rx','motor','mic','speaker','smart_cam'];
 let made=0, wiresMade=0;
 const wireUp=(d,type,i)=>{ const p=place(d,type,i); const sim=simOf(d), plan=C.plan(d,sim,p.id);
   const added=plan.ok?C.applyTo(d,sim,plan,p.id):{wires:[],parts:[]}; const x=C.ctx(d,simOf(d));
@@ -67,6 +67,10 @@ ok(!s.warnings.some(w=>w.level==='danger'),'powered up with all of it connected:
 ok(codes(d).length===0&&d.parts.filter(p=>p.type==='resistor').length===9,'nine LEDs in a row: nine pins, nine resistors');
 ({d}={d:doc()}); led=place(d,'led',0); ok(!C.plan(d,simOf(d),led.id).ok&&/Arduino or a battery/.test(C.plan(d,simOf(d),led.id).notes.join(' ')),'no board and no battery: it says so instead of guessing');
 
+({d,u}=bench()); const scr=place(d,'lcd_i2c',0), cam=place(d,'smart_cam',1); [scr,cam].forEach(p=>{const sim=simOf(d);C.applyTo(d,sim,C.plan(d,sim,p.id),p.id);});
+let xb=C.ctx(d,simOf(d)); ok(xb.members(u.id+':A4').length===4&&xb.members(u.id+':A5').length===4&&codes(d).length===0,'a screen and a camera share the two I²C pins, and the coach knows that is allowed');
+({d,u}=bench()); const mc=place(d,'mic',0); wire(d,mc.id+':VCC',u.id+':5V'); wire(d,mc.id+':GND',u.id+':GND1'); wire(d,mc.id+':OUT',u.id+':D4');
+ok(codes(d).join()==='analog','a microphone on a digital pin is caught like any analog sensor');
 console.log('\ntips while wiring');
 ({d,u}=bench()); led=place(d,'led',0); r=place(d,'resistor',1); m=place(d,'motor',2); t=place(d,'tmp36',3);
 let x=C.ctx(d,simOf(d)); const pin=(p,n)=>L.pinsOf(p).find(q=>q.name===n);

@@ -23,6 +23,7 @@
     this.sim = new L.Sim();
     this.sim.load(this.doc);
     this.sim.wallClock = function () { return performance.now() / 1000; };
+    this.sim.onSay = function (id, words) { self.speak(words); };
     this.running = false;
     this.rt = null;
     this.lineMap = null;
@@ -331,6 +332,7 @@
       this.stopProgram();
       this.sim.reset();
       if (this.phone) this.phone.drop();
+      if (root.speechSynthesis) root.speechSynthesis.cancel();
       this.bench.flag([]);
       this.panels.narrate("");
     }
@@ -532,6 +534,8 @@
       case "servo": bubble = "servo " + e.value + "°"; text = "Servo on <b>" + label + "</b> told to go to " + e.value + "°."; break;
       case "serial": text = "Sent to the Serial monitor: <code>" + L.esc(e.text.replace(/\n$/, "")) + "</code>"; break;
       case "lcd": text = "Screen shows <code>" + L.esc(e.text) + "</code>."; break;
+      case "say": bubble = "“" + e.text.slice(0, 18) + (e.text.length > 18 ? "…" : "") + "”"; col = "#ffcf5a"; text = "The speaker on <b>" + label + "</b> says <code>" + L.esc(e.text) + "</code>."; break;
+      case "snapshot": text = "The camera took a snapshot."; break;
       case "echo": bubble = "echo " + e.value + " µs"; text = "The echo took " + e.value + " µs — about " + Math.round(e.value / 58) + " cm."; break;
       case "mode": text = "<b>" + label + "</b> set to " + (e.mode === "OUT" ? "OUTPUT" : e.mode === "PU" ? "INPUT_PULLUP" : "INPUT") + "."; break;
     }
@@ -547,6 +551,21 @@
     if (text && (slow || changed || e.kind === "serial" || e.kind === "lcd" || e.kind === "uart")) this.panels.narrate('<span class="ln">Line ' + e.line + '</span> ' + text);
   };
   App.prototype.lastFx = {};
+
+  /* A speaker part was told to say something: say it, in the browser's own
+   * voice. Quietly does nothing where there is no voice, or sound is off. */
+  App.prototype.speak = function (words) {
+    var synth = root.speechSynthesis;
+    if (!synth || !root.SpeechSynthesisUtterance) return;
+    if (!words) { synth.cancel(); return; }
+    if (this.sound.muted()) return;
+    try {
+      synth.cancel();                                   /* a new sentence interrupts the old one, as the module does */
+      var u = new root.SpeechSynthesisUtterance(words);
+      u.rate = 1.05; u.pitch = 1.1; u.volume = 0.9;
+      synth.speak(u);
+    } catch (e) {}
+  };
   App.prototype.pinAllHas = function (key) { return !!(this.bench.pinAll && this.bench.pinAll[key]); };
 
   /* "the 220 Ω resistor and the red LED" — what this pin's node touches. */
@@ -704,7 +723,7 @@
 
   /* ------------------------------------------------------------- drawer */
 
-  var CAT_ORDER = ["Toy box", "Boards", "Power", "Passive", "Lights & sound", "Switches", "Semiconductors", "Chips", "Sensors", "Motion", "Wireless", "Workshop", "Measure"];
+  var CAT_ORDER = ["Toy box", "Boards", "Power", "Passive", "Lights & sound", "Sound & vision", "Switches", "Semiconductors", "Chips", "Sensors", "Motion", "Wireless", "Workshop", "Measure"];
   App.prototype.drawer = function () {
     var self = this, kid = this.doc.mode === "kid", box = $("lab-drawer"), q = (this.drawerQ || "").toLowerCase();
     var showAll = kid && this.kidAll;
@@ -1094,8 +1113,10 @@
     }
     var api = function (kind) { wake(); one(kind); };
     api.wake = wake;
+    api.muted = function () { return muted; };
     api.toggle = function () {
       muted = !muted;
+      if (muted && root.speechSynthesis) root.speechSynthesis.cancel();
       try { root.localStorage.setItem("chalklab.mute", muted ? "1" : "0"); } catch (e) {}
       if (master) master.gain.value = muted ? 0 : 0.6;
       return muted;
@@ -1106,9 +1127,10 @@
       if (sim && !muted) app.doc.parts.forEach(function (p) {
         var st = sim.state[p.id]; if (!st) return;
         if (st.sound) {
-          var v = voice(p.id, "square");
+          /* a real speaker is rounder and louder than a piezo disc */
+          var v = voice(p.id, p.type === "speaker" ? "triangle" : "square");
           v.o.frequency.setTargetAtTime(st.sound, ac.currentTime, 0.005);
-          v.g.gain.setTargetAtTime(p.type === "piezo" ? 0.05 : 0.025, ac.currentTime, 0.01);
+          v.g.gain.setTargetAtTime(p.type === "speaker" ? 0.16 : p.type === "piezo" ? 0.05 : 0.025, ac.currentTime, 0.01);
           live[p.id] = 1;
         } else if (st.w && Math.abs(st.w) > 20) {
           var m = voice(p.id + "m", "sawtooth");

@@ -12,7 +12,7 @@
   var L = root.ChalkLab;
 
   var KW = /^(if|else|for|while|do|switch|case|default|break|continue|return|const|static|volatile|unsigned|signed|true|false|HIGH|LOW|INPUT|OUTPUT|INPUT_PULLUP|LED_BUILTIN)$/;
-  var TY = /^(void|int|long|short|float|double|bool|boolean|char|byte|word|String|size_t|u?int(8|16|32|64)_t|Servo|LiquidCrystal_I2C|LiquidCrystal)$/;
+  var TY = /^(void|int|long|short|float|double|bool|boolean|char|byte|word|String|size_t|u?int(8|16|32|64)_t|Servo|LiquidCrystal_I2C|LiquidCrystal|SoftwareSerial|SmartCamera|Speaker)$/;
   var FN = /^(setup|loop|pinMode|digitalWrite|digitalRead|analogRead|analogWrite|delay|delayMicroseconds|millis|micros|tone|noTone|pulseIn|map|constrain|min|max|abs|sqrt|pow|random|randomSeed|Serial|sin|cos|round|floor|ceil)$/;
 
   function highlight(src) {

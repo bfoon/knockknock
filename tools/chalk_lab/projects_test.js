@@ -20,6 +20,7 @@ function build(id){
   const sim=new L.Sim(); sim.load(doc); sim.step(0.016);
   const x={r,doc,sim,map,bad,errors:[],serial:'',phone:'',rts:{}};
   sim.onPhone=(id,text)=>{x.phone+=text;};
+  x.said=[]; sim.onSay=(id,words)=>{ if(words) x.said.push(words); };
   Object.keys(r.programs).forEach(u=>{ const c=L.MCU.compile(r.programs[u]);
     if(!c.ok){bad.push(u+' does not compile: line '+c.errors[0].line+' '+c.errors[0].msg);return;}
     x.rts[u]=sim.attach(map[u].id,c.prog,(k,d)=>{if(k==='error')x.errors.push(u+' line '+d.line+': '+d.msg);if(k==='serial')x.serial+=d.text;}); });
@@ -39,7 +40,7 @@ ok(L.PROJECT_CATS.every(c=>cats[c]>=5)&&Object.keys(cats).every(c=>L.PROJECT_CAT
 ok(L.PROJECTS.every(p=>Body.TEMPLATES[p.body]),'every project names a real body');
 let worst=0;
 L.PROJECTS.forEach(p=>{
-  const x=build(p.id); x.adv(3);
+  const x=build(p.id); x.adv(1.6);
   const danger=x.sim.warnings.filter(w=>w.level==='danger').map(w=>w.msg.slice(0,60));
   const model=PCB.model(x.doc,x.sim); PCB.ensure(x.doc,model); const res=PCB.route(x.doc,model);
   x.doc.body=Body.make(p.body,x.doc); const misfit=Body.fit(x.doc,x.doc.body).map(m=>m.name);
@@ -76,7 +77,38 @@ ok(hi>0.5&&x.st('led_lamp').b<0.2,'radio dimmer: the lamp follows the knob on th
 x=build('radio_rocket'); x.press('sw_fireh',true); x.adv(0.4); x.press('sw_fireh',false); x.adv(4.2); ok(motor(x,'m_engine')>300,'radio launch: the desk\'s button fires the rocket\'s engine');
 x=build('fob_car'); x.adv(0.5); x.fob('A',true); x.adv(1); ok(motor(x,'m_left')>300&&motor(x,'m_right')>300,'key-fob car: hold A to go'); x.fob('A',false); x.adv(1); ok(motor(x,'m_left')<60,'  let go to stop');
 x=build('fob_garage'); x.fob('A',true); x.adv(0.3); x.fob('A',false); x.adv(3.5); ok(Math.abs(x.st('servo_door').ang-90)<12,'key-fob garage door: A opens it ('+Math.round(x.st('servo_door').ang)+'°)');
+console.log('camera');
+x=build('cam_chaser'); x.set('cam','pos',60); x.adv(1.2); let L1=motor(x,'m_left'), R1=motor(x,'m_right');
+ok(L1>300&&lit(x,'led_locked'),'ball-chasing car: a red ball to the right, and it drives with the lock light on');
+x.set('cam','scene','room'); x.adv(1.2); ok(motor(x,'m_left')<60&&!lit(x,'led_locked'),'  ball taken away: it stops and the light goes out');
+x.set('cam','scene','green'); x.adv(1); ok(motor(x,'m_left')<60,'  a green ball does not fool it');
+x=build('cam_signals'); x.adv(1); ok(motor(x,'m_left')>300&&motor(x,'m_right')>300&&x.said.join('|')==='Green. Go.','signal robot: green card — it goes, and says "'+x.said[0]+'" once');
+x.set('cam','scene','red'); x.adv(1.2); ok(motor(x,'m_left')<60&&x.said[1]==='Red. Stopping.','  red card — it stops and says so');
+x.set('cam','scene','blue'); x.adv(1.2); ok(motor(x,'m_left')>300&&motor(x,'m_right')<60&&x.said[2]==='Blue. Turning.','  blue card — it turns');
+x=build('cam_guard'); x.adv(1.5); ok(!lit(x,'led_warning')&&!x.said.length,'security camera: an empty room, nothing to report');
+x.set('cam','scene','person'); x.adv(1); ok(lit(x,'led_warning')&&x.said[0]==='Movement detected','  someone walks past: warning light and "Movement detected"');
+x=build('cam_sorter'); x.adv(1); ok(Math.abs(x.st('servo_chute').ang-150)<12,'colour sorter: blue goes to the 150° bin ('+Math.round(x.st('servo_chute').ang)+'°)');
+x.set('cam','scene','red'); x.adv(1.5); ok(Math.abs(x.st('servo_chute').ang-30)<12,'  red goes to the 30° bin');
+x=build('cam_doorbell'); x.adv(1); x.set('cam','scene','person'); x.adv(2.5); ok(lit(x,'led_porch')&&x.said[0]==='Someone is at the door'&&x.said.length===1,'video doorbell: a person arrives — porch light, chime, one announcement');
+x=build('cam_lamp'); x.adv(1); const dark=x.st('led_lamp').b; x.set('cam','scene','room'); x.adv(1); ok(dark>0.5&&(x.st('led_lamp').b||0)<0.2,'camera lamp: bright in a dark room, off in a light one');
+x=build('bt_spycam'); x.pair(); x.set('cam','scene','green'); x.set('cam','pos',-40); x.adv(0.5); x.phone=''; x.send('A'); ok(/Green thing at -40/.test(x.phone),'spy camera: A reports "'+x.phone.trim().split('\n').pop()+'" to the phone');
+console.log('sound and voice');
+x=build('vu_meter'); x.set('mic','level',10); x.adv(0.6); const quiet=['1','2','3','4','5'].filter(n=>lit(x,'led_bar'+n)).length; x.set('mic','level',95); x.adv(0.6);
+ok(quiet<=1&&['1','2','3','4','5'].every(n=>lit(x,'led_bar'+n)),'level meter: '+quiet+' light for a whisper, all five for a shout');
+x=build('clap_counter'); const clap=()=>{x.press('mic',true);x.adv(0.12);x.press('mic',false);x.adv(0.35);};
+x.adv(0.5); clap(); x.adv(1.6); ok(lit(x,'led_lamp')&&motor(x,'m_fan')<60,'clap commands: one clap — lamp on, fan off');
+clap(); clap(); x.adv(1.6); ok(lit(x,'led_lamp')&&motor(x,'m_fan')>300,'  two claps — fan on');
+clap(); clap(); clap(); x.adv(1.8); ok(!lit(x,'led_lamp')&&motor(x,'m_fan')<60,'  three claps — everything off');
+x=build('talking_ruler'); x.adv(0.5); x.press('sw_ask',true); x.adv(0.3); x.press('sw_ask',false); x.adv(1); ok(x.said[0]==='86 centimetres','talking tape measure: it says "'+x.said[0]+'"');
+x=build('talking_thermo'); x.adv(0.5); x.press('sw_ask',true); x.adv(0.2); x.press('sw_ask',false); x.adv(1); ok(x.said[0]==='It is 23 degrees','talking thermometer: "'+x.said[0]+'"');
+x.set('tmp','temp',34); x.adv(1.2); ok(x.said.indexOf('Warning. It is getting hot.')>=0,'  and it warns by itself at 34 °C');
+x=build('noise_light'); x.set('mic','level',10); x.adv(1.5); ok(lit(x,'led_green')&&!lit(x,'led_red'),'noise light: green in a quiet room'); x.set('mic','level',90); x.adv(2.5); ok(lit(x,'led_red')&&x.said[0]==='Quiet please','  red and "Quiet please" when it gets loud');
+x=build('jukebox'); x.adv(0.4); x.press('sw_tune_2',true); x.adv(0.2); x.press('sw_tune_2',false); x.adv(1.3); const tones=new Set(); for(let i=0;i<120;i++){x.sim.step(0.016); if(x.st('speaker').sound) tones.add(x.st('speaker').sound);}
+ok(x.said[0]==='Fanfare'&&tones.has(392)&&tones.has(523)&&tones.has(659),'jukebox: button 2 announces "Fanfare" and plays its notes ('+[...tones].join(', ')+' Hz)');
+x=build('radio_babymon'); x.adv(1.5); ok(!x.said.length,'baby monitor: a quiet nursery, a quiet kitchen'); x.set('mich','level',80); x.adv(2.5); ok(x.said[0]==='The baby is awake'&&lit(x,'led_alert'),'  noise in the nursery: the kitchen speaker says "The baby is awake"');
+x=build('bt_announcer'); x.pair(); x.send('Lunch is ready\n'); x.adv(0.5); ok(x.said[0]==='Lunch is ready','talking sign: typed on the phone, spoken by the speaker: "'+x.said[0]+'"');
+x=build('echo_car'); x.set('mic','level',5); x.adv(1.2); const still=motor(x,'m_left'); x.set('mic','level',90); x.adv(1.2); ok(still<60&&motor(x,'m_left')>300,'whistle car: silent it stays, loud it goes');
 console.log('\nfinding one');
-[['a bluetooth car I can drive from my phone','bt_car'],['submarine','sub_cruise'],['radio controlled boat','radio_boat'],['something to water my plants','garden_water'],['burglar alarm','home_alarm'],['a rocket','rocket_count'],['lighthouse','lighthouse']]
+[['a bluetooth car I can drive from my phone','bt_car'],['submarine','sub_cruise'],['radio controlled boat','radio_boat'],['something to water my plants','garden_water'],['burglar alarm','home_alarm'],['a car that follows a red ball with a camera','cam_chaser'],['something that talks and tells me the temperature','talking_thermo'],['sound level meter with a microphone','vu_meter'],['a rocket','rocket_count'],['lighthouse','lighthouse']]
   .forEach(q=>{const hit=L.matchProjects(q[0])[0];ok(hit&&hit.id===q[1],'"'+q[0]+'" → '+(hit?hit.name:'nothing'));});
 console.log(fails?('\n'+fails+' FAILED'):'\nall passed');

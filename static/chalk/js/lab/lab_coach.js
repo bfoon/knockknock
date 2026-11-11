@@ -58,7 +58,7 @@
     if (/^GND$/.test(pin)) return "gndin";
     if (pin === "SDA") return "sda";
     if (pin === "SCL") return "scl";
-    if (pin === "AO" || (pin === "OUT" && t === "tmp36")) return "aout";
+    if (pin === "AO" || (pin === "OUT" && (t === "tmp36" || t === "mic"))) return "aout";
     if (/^(OUT|DO|ECHO|TXD|D[0-3]|VT|STATE)$/.test(pin)) return "dout";
     if (/^(TRIG|SIG|IN|RXD)$/.test(pin)) return "din";
     if (/^(NO|NC|COM)$/.test(pin)) return "sw";
@@ -419,11 +419,21 @@
       power("V+", "GND");
       if (free("SIG")) { var sv = pick(DIG, "digital pin"); if (sv) { wire(mk(sv), key("SIG"), "orange", "Pin " + sv + " → SIG: the angle, sent as a pulse 50 times a second."); out.code = ["#include <Servo.h>", "Servo " + NAME.toLowerCase() + ";", NAME.toLowerCase() + ".attach(" + pinNum(sv) + ");   // in setup()", NAME.toLowerCase() + ".write(90);      // 0 to 180 degrees"]; } }
       out.notes.push("One small servo can run from the board's 5 V. Two or more, or a big one, need their own supply.");
-    } else if (t === "lcd_i2c") {
+    } else if (t === "lcd_i2c" || t === "smart_cam") {
       power("VCC", "GND");
-      if (free("SDA")) { if (x.free(mk("A4"))) wire(key("SDA"), mk("A4"), "blue", "SDA → A4. I²C data only lives here."); else need("A4 is already in use, and SDA can go nowhere else. Free A4 first."); }
-      if (free("SCL")) { if (x.free(mk("A5"))) wire(key("SCL"), mk("A5"), "yellow", "SCL → A5. I²C clock."); else need("A5 is already in use, and SCL can go nowhere else. Free A5 first."); }
-      out.code = ["#include <LiquidCrystal_I2C.h>", "LiquidCrystal_I2C lcd(0x27, 16, 2);", "lcd.init(); lcd.backlight();   // in setup()", "lcd.print(\"Hello\");"];
+      /* I²C is a bus: a screen and a camera can share A4 and A5, so those
+       * pins count as available when only other I²C parts are on them */
+      var busFree = function (pin, role) { return x.free(mk(pin)) || x.rolesOn(mk(pin)).every(function (m) { return m.part === mcu || m.role === role; }); };
+      if (free("SDA")) { if (busFree("A4", "sda")) wire(key("SDA"), mk("A4"), "blue", "SDA → A4. I²C data only lives here" + (x.free(mk("A4")) ? "." : ", and I²C parts share it happily.")); else need("A4 is in use by something that isn't I²C, and SDA can go nowhere else. Free A4 first."); }
+      if (free("SCL")) { if (busFree("A5", "scl")) wire(key("SCL"), mk("A5"), "yellow", "SCL → A5. I²C clock."); else need("A5 is in use by something that isn't I²C, and SCL can go nowhere else. Free A5 first."); }
+      out.code = t === "lcd_i2c" ? ["#include <LiquidCrystal_I2C.h>", "LiquidCrystal_I2C lcd(0x27, 16, 2);", "lcd.init(); lcd.backlight();   // in setup()", "lcd.print(\"Hello\");"]
+        : ["#include <SmartCamera.h>", "SmartCamera cam;", "cam.begin();                 // in setup()", "if (cam.colour() == CAM_RED) { … }   // also cam.x(), cam.motion(), cam.brightness()"];
+    } else if (t === "mic") {
+      power("VCC", "GND");
+      if (free("OUT")) { var micp = pick(ANA, "analog pin"); if (micp) { wire(key("OUT"), mk(micp), "green", "OUT → " + micp + ": louder is higher."); out.code = ["int loud = analogRead(" + micp + ");   // quiet is near 0, a clap is near 1000"]; } }
+    } else if (t === "speaker") {
+      power("VCC", "GND");
+      if (free("IN")) { var spk = pick(DIG, "digital pin"); if (spk) { wire(mk(spk), key("IN"), "purple", "Pin " + spk + " → IN: the signal. The speaker's own amplifier does the heavy lifting, so no transistor is needed."); out.code = ["#include <Speaker.h>", "Speaker voice(" + pinNum(spk) + ");", "voice.say(\"Hello\");          // or tone(" + pinNum(spk) + ", 440) for a note"]; } }
     } else if (t === "relay_module") {
       power("VCC", "GND");
       if (free("IN")) { var rp = pick(DIG, "digital pin"); if (rp) { wire(mk(rp), key("IN"), "yellow", "Pin " + rp + " → IN: HIGH closes the relay."); out.code = ["const int " + NAME + " = " + pinNum(rp) + ";", "pinMode(" + NAME + ", OUTPUT);", "digitalWrite(" + NAME + ", HIGH);   // click: COM joins NO"]; } }
@@ -656,6 +666,9 @@
     battery_9v: "9 V into VIN runs the board. 9 V into the 5 V pin ends the board.",
     arduino_uno: "Pins 3, 5, 6, 9, 10 and 11 can fade (PWM). A0–A5 can measure. 0 and 1 are the USB lead: leave them free.",
     buzzer: "An active buzzer just needs HIGH. A passive piezo needs tone() to make it sing.",
+    mic: "Three legs: 5 V, ground, and OUT to an analog pin. Print its readings first to find out what 'loud' looks like in your room, then pick your threshold.",
+    speaker: "Power it from 5 V, not from the pin: the pin only carries the signal. With Speaker.h it can talk as well as play notes.",
+    smart_cam: "An I²C part: SDA to A4, SCL to A5, and it can share those two pins with a screen. It answers questions — cam.colour(), cam.x(), cam.motion() — rather than sending pictures.",
     piezo: "It plays whatever frequency tone() gives it — a tune, a siren, a click."
   };
 

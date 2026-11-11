@@ -8,7 +8,7 @@ measured, so the AI is talking about this circuit, not circuits in general.
 Everything that comes back is cleaned against CATALOG before it reaches the
 browser, and the browser checks it again before building anything.
 
-CATALOG mirrors static/chalk/js/lab/lab_parts*.js and lab_wireless.js: type -> (name, kid part,
+CATALOG mirrors static/chalk/js/lab/lab_parts*.js, lab_wireless.js and lab_av.js: type -> (name, kid part,
 pin names, default props). chalk/test_lab.py fails if the two drift apart.
 Breadboards are left out: the AI wires parts directly, which is easier to
 check and still builds a working circuit.
@@ -75,6 +75,9 @@ CATALOG = {
     'hc12': ('Radio module (HC-12, 433 MHz)', False, ('VCC', 'GND', 'RXD', 'TXD', 'SET'), {'channel': 1, 'loss': 0}),
     'rf_rx': ('433 MHz remote receiver', False, ('GND', 'VCC', 'D0', 'D1', 'D2', 'D3', 'VT'), {'latch': False}),
     'rf_remote': ('433 MHz key fob', False, (), {}),
+    'mic': ('Microphone module', False, ('VCC', 'GND', 'OUT'), {'level': 8, 'live': False}),
+    'speaker': ('Speaker with voice', False, ('VCC', 'GND', 'IN'), {}),
+    'smart_cam': ('Smart camera', False, ('VCC', 'GND', 'SDA', 'SCL'), {'scene': 'room', 'pos': 0, 'near': 35, 'live': False}),
     'k_brain': ('Robo Brain', True, ('OUT1', 'OUT2', 'OUT3', 'OUT4', 'GND1', 'IN1', 'IN2', 'EYE', '5V', 'GND2'), {}),
 }
 
@@ -127,6 +130,19 @@ WIRELESS_RULES = (
     "KEY FOB: an rf_remote (no pins, no wires) and an rf_rx with VCC to 5V and GND to ground; while fob button A, B, C or D is held, the "
     "receiver's D0, D1, D2 or D3 goes HIGH — read them with digitalRead on pins set to INPUT. "
     "Only use wireless parts when the request asks for remote, phone, Bluetooth or radio control."
+)
+
+AV_RULES = (
+    "Sound and vision. MICROPHONE (mic): VCC to 5V, GND, OUT to an analog pin; analogRead gives loudness, near 0 when quiet and "
+    "near 1000 for a clap. SPEAKER (speaker): VCC to 5V, GND, IN to any digital pin — it has its own amplifier, so no transistor; "
+    "tone(pin, hz) plays notes through it, and with #include <Speaker.h> and Speaker voice(pin); it can TALK: voice.say(\"Hello\") "
+    "takes one to four things to say, text or numbers, e.g. voice.say(\"It is\", t, \"degrees\"); voice.speaking() is true while it "
+    "is still talking; voice.play(hz, ms) plays a note; voice.stop(). SMART CAMERA (smart_cam): an I2C part — VCC to 5V, GND, SDA to "
+    "A4, SCL to A5 (it shares them with an lcd_i2c). #include <SmartCamera.h>, SmartCamera cam; and cam.begin() in setup(). It answers "
+    "questions rather than giving pictures: cam.brightness() 0-255; cam.motion() 0-100; cam.colour() is CAM_NONE, CAM_RED, CAM_GREEN "
+    "or CAM_BLUE for the coloured object it sees; cam.x() is that object's position from -100 (far left) to 100 (far right); "
+    "cam.size() 0-100 is how much of the picture it fills (bigger is nearer); cam.faces() is 1 when a person is in view; "
+    "cam.snapshot() flashes its light. Use these for anything that should see, hear or speak."
 )
 
 KID_BRAIN = (
@@ -309,15 +325,18 @@ def _prompt(body):
     if serial.strip():
         parts += ["SERIAL MONITOR (latest):", serial]
     if kind == "build":
-        parts += ["PART CATALOG:", _catalog_text(mode == "kid"), WIRELESS_RULES]
+        parts += ["PART CATALOG:", _catalog_text(mode == "kid"), WIRELESS_RULES, AV_RULES]
     if kind in CODE_KINDS or kind == "build":
         parts.append(ARDUINO_RULES)  # (a project adds its own copy below, with the catalog)
+        if kind in CODE_KINDS and any(isinstance(p, dict) and p.get("type") in ("mic", "speaker", "smart_cam")
+                                      for p in (circuit.get("parts") or [])):
+            parts.append(AV_RULES)   # the code helper must know the camera and speaker libraries
         if mode == "kid":
             parts.append(KID_BRAIN)
     if kind == "blocks":
         parts += ["BLOCK FORMAT:", BLOCK_FORMAT, BLOCK_KID if mode == "kid" else BLOCK_PRO]
     if kind == "project":
-        parts += ["PART CATALOG:", _catalog_text(mode == "kid"), ARDUINO_RULES, WIRELESS_RULES]
+        parts += ["PART CATALOG:", _catalog_text(mode == "kid"), ARDUINO_RULES, WIRELESS_RULES, AV_RULES]
     if kind == "wire":
         chosen = str(body.get("selected") or "")
         parts += ["SELECTED: " + (chosen if ID_RE.match(chosen) else "(none)"), "PART CATALOG:", _catalog_text(mode == "kid")]

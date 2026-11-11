@@ -15,6 +15,12 @@
  *   ChalkLab.shelfProject(id)    a project ready for Studio.construct()
  *   ChalkLab.localProject(text)  the nearest project to a request
  *
+ * Camera, microphone and speaker projects use the parts in lab_av.js: the
+ * camera answers questions (cam.colour(), cam.x(), cam.motion()), the
+ * microphone is an analog loudness, and the speaker talks (voice.say()).
+ * Each works on a made-up scene, or on the computer's real camera and
+ * microphone with one tick in the Inspect panel.
+ *
  * Wireless: Bluetooth projects use an HC-05 and the phone controller in
  * the side panel (it sends F B L R S, 1 0, A B, and "v<0-255>" from its
  * slider). Radio projects use a pair of HC-12 modules and TWO boards, each
@@ -209,6 +215,27 @@
     });
     return this;
   };
+  /* eyes, ears and a voice (lab_av.js) */
+  K.mic = function (name, apin, level) {
+    var m = this.id("mic");
+    this.parts.push([m, "mic", { level: level == null ? 8 : level }]);
+    this.w(this.u + ".5V", m + ".VCC", "red").w(m + ".GND", this.gnd(), "black").w(m + ".OUT", this.pin(apin), "green");
+    return this.c(name, apin);
+  };
+  K.speaker = function (pin) {
+    var sp = this.id("speaker");
+    this.parts.push([sp, "speaker"]);
+    this.w(this.u + ".5V", sp + ".VCC", "red").w(sp + ".GND", this.gnd(), "black").w(this.pin(pin), sp + ".IN", "purple");
+    this.use("Speaker.h"); this.c("SPEAKER", pin); this.obj.push("Speaker voice(SPEAKER);");
+    return this;
+  };
+  K.camera = function (scene, pos) {
+    var cam = this.id("cam");
+    this.parts.push([cam, "smart_cam", { scene: scene || "room", pos: pos || 0 }]);
+    this.w(this.u + ".5V", cam + ".VCC", "red").w(cam + ".GND", this.gnd(), "black").w(this.u + ".A4", cam + ".SDA", "blue").w(this.u + ".A5", cam + ".SCL", "yellow");
+    this.use("SmartCamera.h"); this.obj.push("SmartCamera cam;"); this.set.push("cam.begin();");
+    return this;
+  };
   K.global = function (line) { this.obj.push(line); return this; };
   K.func = function (text) { this.fn.push(tidy(text)); return this; };
   K.loop = function (text) { this.body = tidy(text); return this; };
@@ -224,6 +251,7 @@
     if (this.def.length || this.obj.length) s += "\n" + this.def.concat(this.obj).join("\n") + "\n";
     var setup = this.set.slice();
     if (this.warm) setup.push("delay(200);                 // let the sensor wake up");
+    else if (setup.some(function (l) { return /INPUT_PULLUP/.test(l); })) setup.push("delay(50);                  // let the inputs settle before the first read");
     s += "\nvoid setup() {\n" + setup.map(function (l) { return "  " + l; }).join("\n") + "\n}\n";
     this.fn.forEach(function (f) { s += "\n" + f + "\n"; });
     s += "\nvoid loop() {\n" + this.body.split("\n").map(function (l) { return l ? "  " + l : l; }).join("\n") + "\n}\n";
@@ -233,7 +261,7 @@
   /* ============================================================ REGISTRY */
 
   var LIST = L.PROJECTS = [];
-  var CATS = L.PROJECT_CATS = ["Cars & tanks", "Robots & pets", "Boats & submarines", "Rockets", "Smart home", "Garden & weather", "Games & gadgets", "Bluetooth", "Radio"];
+  var CATS = L.PROJECT_CATS = ["Cars & tanks", "Robots & pets", "Boats & submarines", "Rockets", "Smart home", "Garden & weather", "Games & gadgets", "Camera", "Sound & voice", "Bluetooth", "Radio"];
 
   function add(id, name, cat, body, words, blurb, make) {
     LIST.push({ id: id, name: name, cat: cat, body: body, words: words, blurb: blurb, make: make });
@@ -1280,6 +1308,402 @@
         int light = analogRead(EYE);
         tone(SPEAKER, map(light, 100, 900, 150, 1800));
         delay(20);`);
+    });
+
+  /* ============================================================= CAMERA */
+
+  add("cam_chaser", "Ball-chasing car", "Camera", "car", "vision follow track red ball colour camera robot football pet",
+    "Hold up something red and it comes after it: the camera says where the ball is, and the car steers to keep it in the middle. No ball, no go.", function (k) {
+      k.wheels().camera("red", 40).led("LOCKED", 9, "green").serial();
+      k.loop(`
+        if (cam.colour() == CAM_RED) {
+          int x = cam.x();                        // -100 far left … 100 far right
+          Serial.println(x);
+          digitalWrite(LOCKED, HIGH);
+          if (cam.size() > 80) drive(0, 0);       // close enough to touch: stop
+          else if (x > 25) drive(220, 90);        // ball to the right: turn right
+          else if (x < -25) drive(90, 220);
+          else drive(220, 220);                   // dead ahead
+        } else {
+          digitalWrite(LOCKED, LOW);
+          drive(0, 0);                            // lost it: wait
+        }
+        delay(60);`);
+    });
+
+  add("cam_signals", "Traffic-signal robot", "Camera", "robot", "vision colour command card green go red stop blue turn obey sign",
+    "It obeys coloured cards like a driver obeys lights: green means go, red means stop, and blue means turn round.", function (k) {
+      k.wheels().camera("green").speaker(8);
+      k.global("int last = -1;");
+      k.loop(`
+        int c = cam.colour();
+        if (c == CAM_GREEN) drive(220, 220);
+        else if (c == CAM_BLUE) drive(220, 0);
+        else drive(0, 0);                         // red, or nothing to go on
+        if (c != last) {                          // say it once, when it changes
+          if (c == CAM_GREEN) voice.say("Green. Go.");
+          if (c == CAM_RED) voice.say("Red. Stopping.");
+          if (c == CAM_BLUE) voice.say("Blue. Turning.");
+          last = c;
+        }
+        delay(80);`);
+    });
+
+  add("cam_guard", "Security camera", "Camera", "house", "cctv motion intruder alarm watch record burglar vision detect",
+    "It watches the room. When enough of the picture moves it takes a snapshot, flashes its warning light and says so out loud.", function (k) {
+      k.camera("room").led("WARNING", 9, "red").speaker(8).serial();
+      k.loop(`
+        int moving = cam.motion();                // 0 still … 100 everything is moving
+        Serial.println(moving);
+        if (moving > 30) {
+          cam.snapshot();
+          digitalWrite(WARNING, HIGH);
+          voice.say("Movement detected");
+          delay(2500);
+          digitalWrite(WARNING, LOW);
+        }
+        delay(100);`);
+    });
+
+  add("cam_doorbell", "Video doorbell", "Camera", "house", "smart visitor person face porch ring camera welcome door",
+    "Nobody has to press anything: when the camera sees a person at the door it chimes, says someone is there and lights the porch.", function (k) {
+      k.camera("room").led("PORCH", 9, "white").speaker(8).global("bool greeted = false;");
+      k.loop(`
+        bool someone = cam.faces() > 0;
+        digitalWrite(PORCH, someone);
+        if (someone && !greeted) {
+          voice.play(659, 300);                   // ding
+          delay(350);
+          voice.play(523, 500);                   // dong
+          delay(600);
+          voice.say("Someone is at the door");
+          greeted = true;
+        }
+        if (!someone) greeted = false;            // ready for the next visitor
+        delay(150);`);
+    });
+
+  add("cam_sorter", "Colour sorter", "Camera", "box", "vision sort sweets bricks red green blue servo chute count machine factory",
+    "Show it a red, green or blue thing and a servo swings the chute to the right bin, while the screen keeps count of each.", function (k) {
+      k.camera("blue").servo("chute", 9).lcd().global("int counts[4] = {0, 0, 0, 0};").global("int last = 0;").set.push("chute.write(90);");
+      k.loop(`
+        int c = cam.colour();
+        if (c != CAM_NONE && c != last) {         // a new thing has arrived
+          counts[c]++;
+          chute.write(c == CAM_RED ? 30 : c == CAM_GREEN ? 90 : 150);
+          lcd.clear();
+          lcd.print("R");
+          lcd.print(counts[1]);
+          lcd.print("  G");
+          lcd.print(counts[2]);
+          lcd.print("  B");
+          lcd.print(counts[3]);
+          lcd.setCursor(0, 1);
+          lcd.print(c == CAM_RED ? "Red bin" : c == CAM_GREEN ? "Green bin" : "Blue bin");
+        }
+        last = c;
+        delay(120);`);
+    });
+
+  add("cam_pet", "Pet that watches you", "Camera", "pet", "vision follow head turn look track face creature eyes neck camera",
+    "Move a coloured toy from side to side and its head turns to follow, eyes brightening the nearer you bring it.", function (k) {
+      k.camera("green", -50).servo("neck", 9).led("EYES", 5, "white").global("int angle = 90;").set.push("neck.write(90);");
+      k.loop(`
+        if (cam.colour() != CAM_NONE) {
+          int target = map(cam.x(), -100, 100, 150, 30);
+          if (angle < target) angle += 2;         // turn smoothly, not in a snap
+          if (angle > target) angle -= 2;
+          neck.write(angle);
+          analogWrite(EYES, map(cam.size(), 0, 100, 30, 255));
+        } else analogWrite(EYES, 8);              // nothing to look at: dozing
+        delay(30);`);
+    });
+
+  add("cam_lamp", "Camera-controlled lamp", "Camera", "box", "vision brightness dark automatic light exposure dim sensor room",
+    "The camera measures how bright the whole room is — better than one light sensor in one corner — and the lamp makes up the difference.", function (k) {
+      k.camera("dark").led("LAMP", 9, "white").serial();
+      k.loop(`
+        int bright = cam.brightness();            // 0 pitch black … 255 dazzling
+        Serial.println(bright);
+        analogWrite(LAMP, constrain(map(bright, 40, 160, 255, 0), 0, 255));
+        delay(100);`);
+    });
+
+  add("cam_painter", "Colour-copying lamp", "Camera", "box", "vision rgb match mirror chameleon colour show copy light",
+    "A chameleon lamp: show the camera something red, green or blue and the lamp turns the same colour.", function (k) {
+      k.camera("red").rgb(9, 6, 5);
+      k.loop(`
+        int c = cam.colour();
+        int glow = map(cam.size(), 0, 100, 60, 255);          // nearer = brighter
+        analogWrite(RED, c == CAM_RED ? glow : 0);
+        analogWrite(GREEN, c == CAM_GREEN ? glow : 0);
+        analogWrite(BLUE, c == CAM_BLUE ? glow : 0);
+        delay(60);`);
+    });
+
+  add("bt_spycam", "Bluetooth spy camera", "Camera", "tower", "phone report vision remote watch motion what can you see app",
+    "Ask it from your phone: A reports what it can see and where, B how bright the room is — and it messages you by itself when something moves.", function (k) {
+      k.bt().camera("room").led("SEEN", 9, "red").global("unsigned long quietUntil = 0;");
+      k.loop(`
+        if (bt.available()) {
+          char c = bt.read();
+          if (c == 'A') {
+            int seen = cam.colour();
+            if (seen == CAM_NONE) bt.println("Nothing coloured in view");
+            else {
+              bt.print(seen == CAM_RED ? "Red" : seen == CAM_GREEN ? "Green" : "Blue");
+              bt.print(" thing at ");
+              bt.println(cam.x());
+            }
+          }
+          if (c == 'B') { bt.print("Brightness "); bt.println(cam.brightness()); }
+        }
+        if (cam.motion() > 30 && millis() > quietUntil) {
+          bt.println("ALERT: something moved!");
+          digitalWrite(SEEN, HIGH);
+          quietUntil = millis() + 3000;           // don't flood the phone
+        }
+        if (millis() > quietUntil) digitalWrite(SEEN, LOW);
+        delay(60);`);
+    });
+
+  /* ====================================================== SOUND & VOICE */
+
+  add("vu_meter", "Sound level meter", "Sound & voice", "box", "microphone loud noise volume bar graph decibel vu music level",
+    "Five lights in a row climb with the noise: green for a whisper, amber for talking, red for a shout.", function (k) {
+      k.mic("MIC", "A0", 45).led("BAR1", 2, "green").led("BAR2", 3, "green").led("BAR3", 4, "yellow").led("BAR4", 7, "yellow").led("BAR5", 8, "red").serial();
+      k.loop(`
+        int loud = analogRead(MIC);               // quiet near 0, a clap near 1000
+        Serial.println(loud);
+        digitalWrite(BAR1, loud > 120);
+        digitalWrite(BAR2, loud > 300);
+        digitalWrite(BAR3, loud > 480);
+        digitalWrite(BAR4, loud > 660);
+        digitalWrite(BAR5, loud > 840);
+        delay(40);`);
+    });
+
+  add("noise_light", "Classroom noise light", "Sound & voice", "tower", "microphone quiet loud teacher traffic light class shh library voice",
+    "A traffic light for noise. Green while the room works quietly, amber as it gets lively — and at red it asks, politely, for quiet.", function (k) {
+      k.mic("MIC", "A0", 30).led("GREEN", 2, "green").led("AMBER", 3, "yellow").led("RED", 4, "red").speaker(8).global("float level = 0;");
+      k.loop(`
+        level = level * 0.9 + analogRead(MIC) * 0.1;         // a running average, so one cough doesn't count
+        digitalWrite(GREEN, level < 350);
+        digitalWrite(AMBER, level >= 350 && level < 600);
+        digitalWrite(RED, level >= 600);
+        if (level >= 600 && !voice.speaking()) {
+          voice.say("Quiet please");
+          delay(3000);
+        }
+        delay(50);`);
+    });
+
+  add("disco_lights", "Sound-reactive disco light", "Sound & voice", "box", "microphone music party rgb beat flash dance colour rhythm",
+    "It listens to the music and pulses with it, changing colour on every loud beat.", function (k) {
+      k.mic("MIC", "A0", 55).rgb(9, 6, 5).global("int colour = 0;").global("bool wasLoud = false;");
+      k.loop(`
+        int loud = analogRead(MIC);
+        bool beat = loud > 550;
+        if (beat && !wasLoud) colour = (colour + 1) % 3;      // a new beat: next colour
+        wasLoud = beat;
+        int glow = constrain(map(loud, 100, 900, 0, 255), 0, 255);
+        analogWrite(RED, colour == 0 ? glow : 0);
+        analogWrite(GREEN, colour == 1 ? glow : 0);
+        analogWrite(BLUE, colour == 2 ? glow : 0);
+        delay(20);`);
+    });
+
+  add("clap_counter", "Clap-command lamp", "Sound & voice", "house", "microphone clap count one two three switch lamp fan commands hands-free",
+    "One clap for the lamp, two for the fan, three to switch everything off. It counts the claps that arrive within a second.", function (k) {
+      k.mic("MIC", "A0", 8).led("LAMP", 9, "yellow").motor("FAN", 5, "fan").global("bool lamp = false, fan = false;");
+      k.func(`
+        int countClaps() {
+          int claps = 0;
+          unsigned long last = millis();
+          while (millis() - last < 900) {         // keep listening until it has been quiet for a while
+            if (analogRead(MIC) > 600) {
+              claps++;
+              last = millis();
+              delay(200);                         // let this clap die away
+            }
+          }
+          return claps;
+        }`);
+      k.loop(`
+        if (analogRead(MIC) > 600) {
+          delay(200);
+          int claps = 1 + countClaps();
+          if (claps == 1) lamp = !lamp;
+          if (claps == 2) fan = !fan;
+          if (claps >= 3) { lamp = false; fan = false; }
+          digitalWrite(LAMP, lamp);
+          analogWrite(FAN, fan ? 200 : 0);
+        }
+        delay(10);`);
+    });
+
+  add("talking_ruler", "Talking tape measure", "Sound & voice", "box", "speaker speech distance say ultrasonic blind accessible measure voice",
+    "Press the button and it tells you how far away the wall is. A tape measure you don't have to read.", function (k) {
+      k.sonar(86).button("ASK", 2).speaker(8);
+      k.loop(`
+        if (digitalRead(ASK) == LOW) {
+          long cm = distanceCm();
+          if (cm >= 100) voice.say(cm / 100, "metres", cm % 100);
+          else voice.say(cm, "centimetres");
+          while (voice.speaking()) delay(50);     // finish the sentence before listening again
+        }
+        delay(30);`);
+    });
+
+  add("talking_thermo", "Talking thermometer", "Sound & voice", "box", "speaker speech temperature say weather degrees voice announce accessible",
+    "It says the temperature when you press the button — and speaks up on its own if the room gets too hot.", function (k) {
+      k.temp("THERMO", "A0", 23).button("ASK", 2).speaker(8).global("bool warned = false;");
+      k.loop(`
+        int t = int(celsius() + 0.5);             // to the nearest degree
+        if (digitalRead(ASK) == LOW) {
+          voice.say("It is", t, "degrees");
+          delay(1500);
+        }
+        if (t > 30 && !warned) {
+          voice.say("Warning. It is getting hot.");
+          warned = true;
+        }
+        if (t < 28) warned = false;
+        delay(50);`);
+    });
+
+  add("jukebox", "Three-tune jukebox", "Sound & voice", "box", "speaker music melody song play buttons tune notes player",
+    "Three buttons, three tunes, announced by name. The notes are just numbers — change them and write your own.", function (k) {
+      k.button("TUNE_1", 2).button("TUNE_2", 3).button("TUNE_3", 4).speaker(8).led("PLAYING", 9, "purple")
+        .global("const int SCALE[8] = {262, 294, 330, 349, 392, 440, 494, 523};")
+        .global("const int FANFARE[6] = {392, 392, 523, 392, 523, 659};")
+        .global("const int LULLABY[6] = {330, 392, 330, 262, 294, 262};");
+      k.func(`
+        void note(int hz, int ms) {
+          digitalWrite(PLAYING, HIGH);
+          voice.play(hz, ms);
+          delay(ms);
+          digitalWrite(PLAYING, LOW);
+          delay(40);
+        }`);
+      k.loop(`
+        if (digitalRead(TUNE_1) == LOW) {
+          voice.say("The scale");
+          delay(1200);
+          for (int i = 0; i < 8; i++) note(SCALE[i], 220);
+        }
+        if (digitalRead(TUNE_2) == LOW) {
+          voice.say("Fanfare");
+          delay(1000);
+          for (int i = 0; i < 6; i++) note(FANFARE[i], i == 5 ? 600 : 200);
+        }
+        if (digitalRead(TUNE_3) == LOW) {
+          voice.say("Lullaby");
+          delay(1000);
+          for (int i = 0; i < 6; i++) note(LULLABY[i], 450);
+        }
+        delay(30);`);
+    });
+
+  add("robot_greeter", "Robot greeter", "Sound & voice", "pet", "speaker speech welcome hello motion visitor reception shop talk voice",
+    "It notices people arriving and says hello — a different greeting each time — and waves while it talks.", function (k) {
+      k.pir("MOTION", 2).servo("arm", 9).led("EYES", 6, "blue").speaker(8).set.push("arm.write(20);");
+      k.loop(`
+        if (digitalRead(MOTION) == HIGH) {
+          digitalWrite(EYES, HIGH);
+          int pick = random(0, 3);
+          if (pick == 0) voice.say("Hello! Welcome.");
+          if (pick == 1) voice.say("Good to see you.");
+          if (pick == 2) voice.say("Hi there. Come in.");
+          while (voice.speaking()) {              // wave for as long as it is talking
+            arm.write(120);
+            delay(250);
+            arm.write(40);
+            delay(250);
+          }
+          arm.write(20);
+          digitalWrite(EYES, LOW);
+          delay(3000);
+        }
+        delay(50);`);
+    });
+
+  add("talking_timer", "Talking countdown timer", "Sound & voice", "box", "speaker speech kitchen exam countdown announce minutes remaining voice",
+    "Set the time with the knob and press start. It tells you when you are halfway, counts the last five seconds aloud, and announces the end.", function (k) {
+      k.pot("DIAL", "A0").button("START", 2).speaker(8).lcd();
+      k.loop(`
+        int seconds = map(analogRead(DIAL), 0, 1023, 10, 120);
+        lcd.setCursor(0, 0);
+        lcd.print("Set: ");
+        lcd.print(seconds);
+        lcd.print(" s    ");
+        if (digitalRead(START) == LOW) {
+          voice.say(seconds, "seconds. Go.");
+          for (int s = seconds; s > 0; s--) {
+            lcd.setCursor(0, 1);
+            lcd.print("Left: ");
+            lcd.print(s);
+            lcd.print(" s    ");
+            if (s == seconds / 2) voice.say("Halfway");
+            if (s <= 5) voice.say(s);
+            delay(1000);
+          }
+          voice.say("Time is up");
+          lcd.setCursor(0, 1);
+          lcd.print("Time's up!      ");
+        }
+        delay(100);`);
+    });
+
+  add("bt_announcer", "Bluetooth talking sign", "Sound & voice", "box", "phone speaker speech type message say announce text to speech tannoy",
+    "Type a message on the phone and the speaker says it out loud, with the words on the screen as well.", function (k) {
+      k.bt().speaker(8).lcd().set.push("lcd.print(\"Type to speak\");");
+      k.loop(`
+        if (bt.available()) {
+          String msg = bt.readStringUntil('\\n');
+          voice.say(msg);
+          lcd.clear();
+          lcd.print(msg.substring(0, 16));
+          lcd.setCursor(0, 1);
+          lcd.print(msg.substring(16, 32));
+          bt.println("Said.");
+        }`);
+    });
+
+  add("radio_babymon", "Radio baby monitor", "Sound & voice", "house", "microphone speaker nursery listen cry remote 433 two boards wireless alert",
+    "A microphone in the nursery, a speaker in the kitchen. If the noise in one room rises, the other room hears a chime and is told.", function (k) {
+      var h = k.second("h");
+      h.radio().mic("MIC", "A0", 6).led("LISTENING", 9, "green").set.push("digitalWrite(LISTENING, HIGH);");
+      h.loop(`
+        if (analogRead(MIC) > 500) {
+          radio.print('C');                       // crying
+          delay(4000);                            // one alert per bout, not a stream of them
+        }
+        delay(50);`);
+      k.radio().speaker(8).led("ALERT", 9, "red");
+      k.loop(`
+        if (radio.available() && radio.read() == 'C') {
+          digitalWrite(ALERT, HIGH);
+          voice.play(880, 200);
+          delay(250);
+          voice.play(660, 300);
+          delay(400);
+          voice.say("The baby is awake");
+          delay(2500);
+          digitalWrite(ALERT, LOW);
+        }`);
+      return { u: "the speaker in the kitchen", uh: "the microphone in the nursery" };
+    });
+
+  add("echo_car", "Whistle-to-go car", "Sound & voice", "car", "microphone sound whistle shout drive loud voice control noise car",
+    "The louder you are, the faster it goes. Stay quiet and it stops; shout and it flies.", function (k) {
+      k.wheels().mic("MIC", "A0", 50).led("HEARD", 9, "green").global("float level = 0;");
+      k.loop(`
+        level = level * 0.8 + analogRead(MIC) * 0.2;
+        int speed = level < 200 ? 0 : constrain(map(level, 200, 900, 110, 255), 110, 255);
+        drive(speed, speed);
+        digitalWrite(HEARD, speed > 0);
+        delay(30);`);
     });
 
   /* ========================================================== BLUETOOTH */

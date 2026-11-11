@@ -366,7 +366,7 @@ class CatalogueTests(TestCase):
 
     def test_matches_the_javascript(self):
         js_dir = Path(settings.BASE_DIR) / "static" / "chalk" / "js" / "lab"
-        src = "".join(p.read_text() for p in sorted(js_dir.glob("lab_parts*.js"))) + (js_dir / "lab_wireless.js").read_text()
+        src = "".join(p.read_text() for p in sorted(js_dir.glob("lab_parts*.js"))) + (js_dir / "lab_wireless.js").read_text() + (js_dir / "lab_av.js").read_text()
         js = set(re.findall(r'\badd\("([a-z0-9_]+)",', src)) - {"breadboard_half", "breadboard_full"}
         modules = set(re.findall(r"^\s{4}(soil|gas|sound|flame|ir):\s*\{ name:", src, re.M))
         js |= {"mod_" + m for m in modules}
@@ -500,6 +500,9 @@ class ProjectAITests(LabTestCase):
         self.assertIn("hc05", prompt)                      # Bluetooth and radio parts are on offer
         self.assertIn("SoftwareSerial bt(10, 11)", prompt)
         self.assertIn("rf_rx", prompt)
+        self.assertIn("smart_cam", prompt)                 # and the camera, microphone and speaker
+        self.assertIn("voice.say", prompt)
+        self.assertIn("cam.colour()", prompt)
 
     def test_a_body_is_sized_to_the_electronics(self):
         with mock.patch("hanns.ai.is_enabled", return_value=True), \

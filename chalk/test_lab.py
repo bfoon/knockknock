@@ -511,6 +511,47 @@ class ProjectAITests(LabTestCase):
         self.assertIn("99 x 84 x 18 mm", call.call_args[0][1])
         self.assertNotIn("PART CATALOG", call.call_args[0][1])
 
+    def test_wiring_a_part_into_the_circuit_is_cleaned(self):
+        fake = {
+            "reply": "- D9 to the resistor, because a pin gives 5 V.", "code": "const int LED = 9;\n" * 40,
+            "circuit": {"parts": [{"id": "x", "type": "led"}]},
+            "wiring": {
+                "parts": [{"id": "r9", "type": "resistor", "props": {"ohms": 220, "evil": 1}},
+                          {"id": "p_uno", "type": "resistor"},            # may not reuse an id from the bench
+                          {"id": "u2", "type": "arduino_uno"},            # may not add a second board
+                          {"id": "zz", "type": "tractor_beam"}],
+                "wires": [{"a": "p_uno.D9", "b": "r9.1", "color": "white"},
+                          {"a": "r9.2", "b": "p_led.A"},
+                          {"a": "p_led.K", "b": "p_uno.GND1", "color": "black"},
+                          {"a": "p_led.K", "b": "p_uno.D99"},             # no such pin
+                          {"a": "ghost.A", "b": "p_uno.5V"},              # no such part
+                          {"a": "u2.5V", "b": "p_led.A"},
+                          {"a": "p_led.A", "b": "p_led.A"}],
+            },
+        }
+        bench = {"parts": [{"id": "p_uno", "type": "arduino_uno"}, {"id": "p_led", "type": "led"}, {"id": "p_odd", "type": "nope"}],
+                 "nets": []}
+        with mock.patch("hanns.ai.is_enabled", return_value=True), \
+             mock.patch("hanns.ai.ai_json", return_value=(fake, "m")) as call:
+            r = self.ask({"kind": "wire", "selected": "p_led", "question": "wire it", "mode": "pro", "circuit": bench})
+        self.assertEqual(r.status_code, 200, r.content)
+        j = r.json()
+        self.assertEqual(j["wiring"]["parts"], [{"id": "r9", "type": "resistor", "props": {"ohms": 220}}])
+        self.assertEqual(j["wiring"]["wires"], [{"a": "p_uno.D9", "b": "r9.1", "color": "white"}, {"a": "r9.2", "b": "p_led.A"},
+                                                {"a": "p_led.K", "b": "p_uno.GND1", "color": "black"}])
+        self.assertNotIn("circuit", j)
+        self.assertLessEqual(len(j["code"].split("\n")), 21)
+        prompt = call.call_args[0][1]
+        self.assertIn("SELECTED: p_led", prompt)
+        self.assertIn("220 ohm", prompt)
+        self.assertIn("PART CATALOG", prompt)
+
+    def test_wiring_with_nothing_usable_is_left_out(self):
+        with mock.patch("hanns.ai.is_enabled", return_value=True), \
+             mock.patch("hanns.ai.ai_json", return_value=({"reply": "hm", "wiring": {"wires": [{"a": "a.b", "b": "c.d"}]}}, "m")):
+            r = self.ask({"kind": "wire", "selected": "<script>", "circuit": {"parts": []}})
+        self.assertNotIn("wiring", r.json())
+
     def test_other_questions_never_carry_a_body(self):
         with mock.patch("hanns.ai.is_enabled", return_value=True), \
              mock.patch("hanns.ai.ai_json", return_value=({"reply": "ok", "body": {"kind": "car"}}, "m")):

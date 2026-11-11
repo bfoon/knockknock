@@ -81,7 +81,7 @@ CATALOG = {
 
 KINDS = {"ask", "explain", "fix", "code", "build", "lesson",
          "write", "edit", "fixcode", "continue", "explaincode", "blocks",
-         "project", "body"}
+         "project", "body", "wire"}
 
 # The 3-D body. Mirrors static/chalk/js/lab/lab_solid.js (shapes) and
 # lab_body.js (ready-made bodies); chalk/test_lab.py fails if they drift.
@@ -170,6 +170,7 @@ def _system(mode, kind):
         '"wires": [{"a": "partId.pin", "b": "partId.pin", "color": "red|black|yellow|green|blue|orange|white|purple"}]}}. '
         '"blocks": optional block program. '
         '"body": optional 3-D body (see BODY FORMAT). '
+        '"wiring": optional {"parts": [...new helper parts only...], "wires": [...]} (see the task). '
         "Only include code, circuit, blocks or body when the task asks for them. Part positions are in units of 20 = 0.1 inch; space parts "
         "about 200-300 apart. Use only part types and pin names from the catalog."
     )
@@ -239,6 +240,20 @@ TASKS = {
                "what to try first. The body is test-driven in the lab with the simulated circuit: for a body that drives on wheels, "
                "motor 1 (the first motor in \"parts\") is the left side and motor 2 the right; a propeller follows motor 1; a rocket "
                "lifts while its first motor (its engine) is running.",
+    "wire": "Wire the SELECTED part into the CIRCUIT that is already there, correctly and safely, without disturbing what is "
+            "already wired. Put the result in \"wiring\": {\"parts\": [helper parts you are ADDING — a resistor, a transistor, "
+            "a diode, a battery — each {\"id\": \"a new short id\", \"type\": \"catalog type\", \"props\": {}}], \"wires\": [{\"a\": "
+            "\"partId.pin\", \"b\": \"partId.pin\", \"color\": \"red|black|yellow|green|blue|orange|white|purple\"}]}. In a wire, partId "
+            "is either an id that is ALREADY in the CIRCUIT (use it exactly as given) or the id of one of your new helper parts. "
+            "Use only pins that the nets show are free: a board pin that appears in a net with another part is taken. Rules that "
+            "must hold: every LED gets its own 220 ohm resistor in series; a motor or bulb is never on a pin — battery + to one leg, "
+            "the other leg to an nmos drain, source to ground, gate from a PWM pin through 220 ohm with 10k from gate to ground, and a "
+            "diode across the motor with its K to battery +, the battery - joined to the board's ground; modules get VCC from 5V "
+            "and GND from a GND pin; analog signals (potentiometer W, tmp36 OUT, a module's AO, an ldr divider) go to A0-A5; "
+            "lcd_i2c SDA to A4 and SCL to A5; hc05 and hc12 TXD to D10 and RXD to D11; never use D0 or D1; buttons go from a pin "
+            "to ground (the sketch uses INPUT_PULLUP). Do not return a \"circuit\". In \"reply\", list each connection in one "
+            "short line and say WHY, so a student learns from it. If the program needs lines for this part, put only those few "
+            "lines in \"code\" (not a whole sketch).",
     "body": "Design the 3-D printed body for this circuit, for the request. Put it in \"body\" using the BODY FORMAT. Do NOT return "
             "a circuit or code. In \"reply\", describe the body in two or three sentences and say what each extra shape is for.",
 }
@@ -303,6 +318,9 @@ def _prompt(body):
         parts += ["BLOCK FORMAT:", BLOCK_FORMAT, BLOCK_KID if mode == "kid" else BLOCK_PRO]
     if kind == "project":
         parts += ["PART CATALOG:", _catalog_text(mode == "kid"), ARDUINO_RULES, WIRELESS_RULES]
+    if kind == "wire":
+        chosen = str(body.get("selected") or "")
+        parts += ["SELECTED: " + (chosen if ID_RE.match(chosen) else "(none)"), "PART CATALOG:", _catalog_text(mode == "kid")]
     if kind in ("project", "body"):
         parts += ["BODY FORMAT:", BODY_FORMAT]
         size = circuit.get("electronics") or (circuit.get("body") or {}).get("electronics") if isinstance(circuit, dict) else None
@@ -320,6 +338,51 @@ def _num(v, lo, hi, default):
     if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or v in (float("inf"), float("-inf")):
         return default
     return max(lo, min(hi, round(float(v), 1)))
+
+
+def clean_wiring(raw, circuit):
+    """Wires and helper parts to add to a circuit that already exists.
+
+    A wire may name a part the browser told us is on the bench, or one of the
+    new helper parts; either way the pin must exist on that kind of part.
+    The browser applies the same test again, and then tries the wiring on a
+    copy of the circuit before offering it.
+    """
+    if not isinstance(raw, dict):
+        return None
+    types = {}
+    for p in (circuit.get("parts") or []) if isinstance(circuit, dict) else []:
+        if isinstance(p, dict) and isinstance(p.get("id"), str) and ID_RE.match(p["id"]) and p.get("type") in CATALOG:
+            types[p["id"]] = p["type"]
+    parts = []
+    for p in (raw.get("parts") or [])[:12] if isinstance(raw.get("parts"), list) else []:
+        if not isinstance(p, dict):
+            continue
+        pid, ptype = str(p.get("id") or ""), p.get("type")
+        if not ID_RE.match(pid) or pid in types or ptype not in CATALOG or CATALOG[ptype][0].startswith("Arduino"):
+            continue
+        types[pid] = ptype
+        defaults = CATALOG[ptype][3]
+        props = {k: v for k, v in (p.get("props") or {}).items()
+                 if k in defaults and isinstance(v, (int, float, str, bool)) and not (isinstance(v, str) and len(v) > 40)
+                 } if isinstance(p.get("props"), dict) else {}
+        parts.append({"id": pid, "type": ptype, "props": props})
+    wires = []
+    for w in (raw.get("wires") or [])[:60] if isinstance(raw.get("wires"), list) else []:
+        if not isinstance(w, dict):
+            continue
+        ends = []
+        for side in ("a", "b"):
+            ref = str(w.get(side) or "")
+            pid, _, pin = ref.partition(".")
+            if pid in types and pin in CATALOG[types[pid]][2]:
+                ends.append(ref)
+        if len(ends) == 2 and ends[0] != ends[1]:
+            wire = {"a": ends[0], "b": ends[1]}
+            if w.get("color") in COLORS:
+                wire["color"] = w["color"]
+            wires.append(wire)
+    return {"parts": parts, "wires": wires} if wires else None
 
 
 def clean_body(raw):
@@ -410,6 +473,13 @@ def _clean(raw, body):
     b = raw.get("blocks")
     if isinstance(b, dict):
         out["blocks"] = _bounded(b)
+    if body.get("kind") == "wire":
+        wiring = clean_wiring(raw.get("wiring"), circ)
+        if wiring:
+            out["wiring"] = wiring
+        out.pop("circuit", None)       # this task adds to a circuit; it never replaces one
+        if "code" in out:
+            out["code"] = "\n".join(out["code"].split("\n")[:20])
     if body.get("kind") in ("project", "body"):
         shell = clean_body(raw.get("body"))
         if shell:

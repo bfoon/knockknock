@@ -102,6 +102,16 @@
     if (d.press) h += '<p class="hint">Hold it down with the mouse or a finger to press it.</p>';
     h += '</div>';
     h += '<div class="insp-live" id="insp-live"></div>';
+    /* change it for something else, or have it wired in */
+    var wirable = !d.mcu && !(d.layer === "board") && !/^(multimeter|scope|rf_remote)$/.test(part.type), swaps = L.Coach.swaps(app.doc, part);
+    if (swaps.length) {
+      var near = swaps.filter(function (s) { return s.close; }), far = swaps.filter(function (s) { return !s.close; });
+      var opts = function (list) { return list.map(function (s) { return '<option value="' + s.type + '">' + esc(s.name) + '</option>'; }).join(""); };
+      h += '<label class="row insp-swap" for="insp-swap"><span>Change it for</span><select id="insp-swap"><option value="">' + esc(d.name.replace(/ \(.+\)$/, "")) + ' (now)</option>' +
+        (near.length ? '<optgroup label="Similar parts">' + opts(near) + '</optgroup>' : '') + (far.length ? '<optgroup label="Other parts that fit its wires">' + opts(far) + '</optgroup>' : '') + '</select></label>';
+    }
+    if (wirable) h += '<div class="insp-wire"><button type="button" data-act="wire" class="primary" title="Find free pins, add what it needs, and join it up">Wire it for me</button>' +
+      '<span class="hint">or drag from a leg yourself — the coach will tell you what each leg wants.</span></div>';
     h += '<div class="insp-actions">' +
       '<button type="button" data-act="rotate">Rotate</button>' +
       (d.layer !== "board" ? '<button type="button" data-act="flip">Flip</button>' : '') +
@@ -113,6 +123,8 @@
     pane.querySelectorAll("[data-act]").forEach(function (b) {
       b.addEventListener("click", function () { app.partAction(part, b.getAttribute("data-act")); });
     });
+    var swapSel = pane.querySelector("#insp-swap");
+    if (swapSel) swapSel.addEventListener("change", function () { if (swapSel.value) app.coach.swap(part.id, swapSel.value); });
     this.tickInspect();
   };
 
@@ -274,8 +286,12 @@
     }
     pane.innerHTML = '<ul class="probs">' + list.map(function (x, i) {
       var p = app.partById(x.part), name = p ? L.def(p).name : "";
-      return '<li class="' + x.level + '"><strong>' + esc(name) + '</strong><p>' + esc(x.msg) + '</p>' + (p ? '<button type="button" data-show="' + x.part + '">Show me</button>' : '') + '</li>';
+      return '<li class="' + x.level + '"><strong>' + esc(name) + '</strong><p>' + esc(x.msg) + '</p>' + (p ? '<button type="button" data-show="' + x.part + '">Show me</button>' : '') +
+        (x.fix ? ' <button type="button" class="primary" data-fix="' + i + '">' + esc(x.fix.label) + '</button>' : '') + '</li>';
     }).join("") + '</ul>';
+    pane.querySelectorAll("[data-fix]").forEach(function (b) {
+      b.addEventListener("click", function () { app.coach.fix(list[+b.getAttribute("data-fix")]); });
+    });
     pane.querySelectorAll("[data-show]").forEach(function (b) {
       b.addEventListener("click", function () { app.focusPart(b.getAttribute("data-show")); });
     });
@@ -284,7 +300,7 @@
   /* ================================================================== AI */
 
   var QUICK = {
-    pro: [["project", "Design a whole project…"], ["explain", "Explain my circuit"], ["fix", "What's wrong?"], ["code", "Write the program"], ["build", "Build a circuit for me…"], ["body", "Design a body for it…"], ["lesson", "Turn this into a lesson"]],
+    pro: [["project", "Design a whole project…"], ["explain", "Explain my circuit"], ["fix", "What's wrong?"], ["code", "Write the program"], ["wire", "Wire the selected part"], ["build", "Build a circuit for me…"], ["body", "Design a body for it…"], ["lesson", "Turn this into a lesson"]],
     kid: [["explain", "What does my circuit do?"], ["fix", "Why doesn't it work?"], ["code", "Make the Robo Brain do something"], ["build", "Build something for me…"], ["body", "Make a body for it…"]]
   };
 
@@ -316,6 +332,12 @@
       b.addEventListener("click", function () {
         var k = b.getAttribute("data-q");
         if (k === "project") { self.app.studio.wizard(); return; }
+        if (k === "wire") {
+          var sel = self.app.bench.sel, app2 = self.app;
+          if (!sel || sel.kind !== "part") { app2.toast("Select the part you want wired first — click it on the bench or in Layers."); return; }
+          if (app2.cfg.aiEnabled) app2.coach.askAI(sel.id); else app2.coach.offer(sel.id);
+          return;
+        }
         if (k === "build" || k === "body") {
           self.pendingKind = k;
           var q = document.getElementById("ai-q");

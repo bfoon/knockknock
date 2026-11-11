@@ -1,7 +1,7 @@
 // Loads the Circuit Lab engine into Node, plus small helpers for building
 // circuits in tests. Used by the *_test.js files next to it.
 const dir=require('path').join(__dirname,'..','..','static','chalk','js','lab')+'/';
-['lab_core','lab_parts','lab_parts2','lab_parts_kid','lab_sim','lab_mcu','lab_runner','lab_wireless','lab_blocks','lab_examples','lab_helper','lab_copilot','lab_workshop','lab_solid','lab_layers','lab_pcb','lab_body','lab_projects'].forEach(f=>require(dir+f+'.js'));
+['lab_core','lab_parts','lab_parts2','lab_parts_kid','lab_sim','lab_mcu','lab_runner','lab_wireless','lab_blocks','lab_examples','lab_helper','lab_copilot','lab_workshop','lab_solid','lab_layers','lab_pcb','lab_body','lab_projects','lab_coach'].forEach(f=>require(dir+f+'.js'));
 const L=globalThis.ChalkLab, P=L.P;
 function doc(){return L.blankDoc('pro');}
 function part(d,type,x,y,props,rot){const p={id:L.uid('p'),type,x,y,rot:rot||0,props:props||{}};d.parts.push(p);return p;}

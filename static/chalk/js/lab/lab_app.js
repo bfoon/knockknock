@@ -44,6 +44,7 @@
     this.sound = makeSound(this);
     this.layers = new L.Layers(this);
     this.studio = new L.Studio(this);
+    this.coach = new L.Coach.Card(this);
     this.drawerTab = "add";
     this.bindTop();
     this.drawer();
@@ -144,6 +145,7 @@
     this.bench.select({ kind: "part", id: p.id });
     this.sound("snap");
     if (this.doc.mode === "kid" && d.mcu && !this.doc.blocks) this.useBlocks();
+    if (this.coach) this.coach.added(p);
     return p;
   };
 
@@ -175,6 +177,7 @@
       }
       case "repair": delete this.sim.state[part.id]; this.sim.invalidate(); this.toast("Replaced with a fresh one."); this.panels.inspect(this.bench.sel); break;
       case "delete": this.deleteSel(); break;
+      case "wire": this.coach.offer(part.id); break;
     }
   };
 
@@ -606,6 +609,9 @@
     });
     if (doc.parts.length && !doc.parts.some(function (p) { return /battery|coin_cell|psu|arduino|k_brain/.test(p.type); }))
       out.push({ part: doc.parts[0].id, level: "warn", code: "nopower", msg: doc.mode === "kid" ? "There's no battery! Electricity needs something to push it." : "There's no power source on the bench." });
+    /* and what the wiring coach sees: the mistakes that can be read off the
+     * netlist before anything is switched on, each with a fix where one exists */
+    try { out = out.concat(L.Coach.review(doc, sim)); } catch (e) { if (root.console) console.error(e); }
     return out.concat(this.problemsExtra);
   };
 

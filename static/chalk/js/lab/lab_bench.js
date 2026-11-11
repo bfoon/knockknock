@@ -540,6 +540,7 @@
       case "wire":
         if (dist < 4) return;
         this.draft = { from: g.from, bends: [], tap: false };
+        if (this.app.coach) this.app.coach.wireStart(g.from);
         this.drawDraft(wp);
         break;
       case "wirebody": {
@@ -586,6 +587,7 @@
         if (!this.draft) {
           /* a tap on a leg: start wiring by clicks, which is easier on a touch screen */
           this.draft = { from: g.from, bends: [], tap: true };
+          if (this.app.coach) this.app.coach.wireStart(g.from);
           this.drawDraft(wp);
           this.app.toast("Now tap the leg or hole to connect to. Tap empty space to bend the wire. Esc cancels.");
           return;
@@ -602,12 +604,16 @@
 
   Bench.prototype.finishWire = function (pin) {
     var d = this.draft, self = this;
+    /* the coach keeps what it knew when the wire was started, to tell a
+     * new mistake from an old one */
+    if (this.app.coach) this.app.coach.from = null;
     this.draft = null; this.drawDraft();
     var color = this.app.wireColor(d.from, pin);
     var w = { id: L.uid("w"), a: { ref: d.from.key, x: d.from.x, y: d.from.y }, b: { ref: pin.key, x: pin.x, y: pin.y }, color: color, pts: d.bends };
     this.app.edit(function () { self.app.doc.wires.push(w); });
     this.select({ kind: "wire", id: w.id });
     this.app.sound("snap");
+    if (this.app.coach) this.app.coach.wired(d.from, pin);
   };
 
   Bench.prototype.insertBend = function (w, wp) {
@@ -625,6 +631,8 @@
   Bench.prototype.drawDraft = function (wp) {
     var old = this.svg.querySelector(".draft");
     if (old) old.remove();
+    var coach = this.app.coach;
+    if (!this.draft && coach) coach.wireEnd();
     if (!this.draft || !wp) return;
     var pin = this.pinAt(wp.x, wp.y, Math.max(8, 12 / this.cam.z));
     var end = pin && pin.key !== this.draft.from.key ? pin : wp;
@@ -633,6 +641,9 @@
     el("path", { d: pathOf(curve(pts)), "class": "draft-wire" }, g);
     el("circle", { cx: this.draft.from.x, cy: this.draft.from.y, r: 6, "class": "draft-dot" }, g);
     if (pin) el("circle", { cx: pin.x, cy: pin.y, r: 9, "class": "snap-ring" }, g);
+    /* the coach rings the legs worth aiming for, and says what it thinks
+     * of the one the wire is hovering over */
+    if (coach) { coach.drawTargets(g); coach.wireOver(pin && pin.key !== this.draft.from.key ? pin : null); }
     this.showStrip(pin);
   };
   Bench.prototype.showSnap = function (pin) {

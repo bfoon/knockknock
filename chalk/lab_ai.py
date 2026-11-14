@@ -84,7 +84,8 @@ CATALOG = {
 
 KINDS = {"ask", "explain", "fix", "code", "build", "lesson",
          "write", "edit", "fixcode", "continue", "explaincode", "blocks",
-         "project", "body", "wire"}
+         "project", "body", "wire",
+         "object", "bodyedit", "printcoach"}
 
 # The 3-D body. Mirrors static/chalk/js/lab/lab_solid.js (shapes) and
 # lab_body.js (ready-made bodies); chalk/test_lab.py fails if they drift.
@@ -162,9 +163,17 @@ def _catalog_text(kid):
     return "\n".join(rows)
 
 
+MAKER_VOICE = (
+    "You are the 3-D design and printing tutor inside Chalk, used by teachers, students and small workshops. You design "
+    "things from simple solid shapes that are added together and cut away, and you know FDM printing well: overhangs, "
+    "supports, orientation, wall thickness, tolerances (holes print about 0.2 mm tight), and which plastic suits which job. "
+    "Be concrete: give sizes in millimetres and say why. Keep it under about 220 words."
+)
+
+
 def _system(mode, kind):
     kid = mode == "kid"
-    voice = (
+    voice = MAKER_VOICE if kind in ("object", "bodyedit", "printcoach") else (
         "You are Sparky, a cheerful electron who helps children aged 7-11 in a classroom circuit simulator. "
         "Use short sentences and everyday words; if you must use a technical word, explain it in brackets. "
         "Be encouraging. Never more than about 120 words."
@@ -187,6 +196,7 @@ def _system(mode, kind):
         '"blocks": optional block program. '
         '"body": optional 3-D body (see BODY FORMAT). '
         '"wiring": optional {"parts": [...new helper parts only...], "wires": [...]} (see the task). '
+        '"bodyops": optional list of changes to the 3-D body (see the task). '
         "Only include code, circuit, blocks or body when the task asks for them. Part positions are in units of 20 = 0.1 inch; space parts "
         "about 200-300 apart. Use only part types and pin names from the catalog."
     )
@@ -270,6 +280,24 @@ TASKS = {
             "to ground (the sketch uses INPUT_PULLUP). Do not return a \"circuit\". In \"reply\", list each connection in one "
             "short line and say WHY, so a student learns from it. If the program needs lines for this part, put only those few "
             "lines in \"code\" (not a whole sketch).",
+    "object": "Design a free-standing object to 3-D print, for the request: a bracket, a stand, a case, a toy, a tool, a model. It has "
+              "NO electronics inside. Put it in \"body\" using the BODY FORMAT with kind \"custom\": \"solids\" is the WHOLE object, every "
+              "solid has is = \"attach\" (plastic that is added; overlapping solids are fused into one piece), is = \"cut\" (a hole or pocket "
+              "taken out of it) or is = \"part\" (a separate piece printed on its own). Do not use hull. Sit it on the ground: nothing below "
+              "z = 0. Make it printable without supports where you can: flat base, no overhang steeper than 45 degrees, walls at least "
+              "2 mm, screw holes 0.3 mm over size. If SIZE is given, fit it. Do NOT return a circuit or code. In \"reply\", say what you "
+              "made, its overall size, and how to print it (which way up, supports or not, which plastic).",
+    "bodyedit": "Change the 3-D BODY given below as the request asks, and nothing else. Put the changes in \"bodyops\", a list of: "
+                "{\"op\": \"set\", \"id\": \"an id from BODY\", then any of x, y, z, sx, sy, sz, rx, ry, rz, color, name to change}; "
+                "{\"op\": \"remove\", \"id\": \"an id from BODY\"}; {\"op\": \"add\", \"solid\": {a solid in the BODY FORMAT}}. Use ids exactly as given. "
+                "To make the whole thing bigger or smaller, set the sizes AND positions of every solid. To move something, set x, y, z. "
+                "Do NOT return \"body\", a circuit or code. In \"reply\", list what you changed in short lines, and warn if a change makes "
+                "it harder to print (a new overhang, a wall under 2 mm, the electronics no longer fitting).",
+    "printcoach": "Advise how to print the pieces in REPORT, which was measured from the real geometry (sizes in mm, overhangCm2 is the area "
+                  "steeper than 45 degrees, baseCm2 is what touches the bed, way is the orientation already chosen). Give: the plastic to use "
+                  "and why for this USE; layer height, walls and infill; supports or not and what kind; bed adhesion (brim or not); any piece "
+                  "that needs care and what to do; and one design change that would make it print better, if there is one. Do not return "
+                  "body, circuit or code.",
     "body": "Design the 3-D printed body for this circuit, for the request. Put it in \"body\" using the BODY FORMAT. Do NOT return "
             "a circuit or code. In \"reply\", describe the body in two or three sentences and say what each extra shape is for.",
 }
@@ -340,6 +368,15 @@ def _prompt(body):
     if kind == "wire":
         chosen = str(body.get("selected") or "")
         parts += ["SELECTED: " + (chosen if ID_RE.match(chosen) else "(none)"), "PART CATALOG:", _catalog_text(mode == "kid")]
+    if kind in ("object", "bodyedit"):
+        parts += ["BODY FORMAT:", BODY_FORMAT]
+        if isinstance(body.get("size"), str):
+            parts.append("SIZE: " + body["size"][:120])
+    if kind == "bodyedit":
+        parts += ["BODY (id, name, shape, is, role, centre x y z, size sx sy sz, turn rx ry rz, color):",
+                  json.dumps(body.get("body") if isinstance(body.get("body"), (dict, list)) else {}, separators=(",", ":"))[:16000]]
+    if kind == "printcoach":
+        parts += ["REPORT:", json.dumps(body.get("report") if isinstance(body.get("report"), dict) else {}, separators=(",", ":"))[:6000]]
     if kind in ("project", "body"):
         parts += ["BODY FORMAT:", BODY_FORMAT]
         size = circuit.get("electronics") or (circuit.get("body") or {}).get("electronics") if isinstance(circuit, dict) else None
@@ -404,11 +441,76 @@ def clean_wiring(raw, circuit):
     return {"parts": parts, "wires": wires} if wires else None
 
 
-def clean_body(raw):
+def _clean_solid(s):
+    if not isinstance(s, dict) or s.get("shape") not in SHAPES:
+        return None
+    item = {
+        "name": re.sub(r"[<>\x00-\x1f]", "", str(s.get("name") or ""))[:40] or s["shape"],
+        "shape": s["shape"],
+        "is": s.get("is") if s.get("is") in SOLID_IS else "attach",
+        "x": _num(s.get("x"), -800, 800, 0), "y": _num(s.get("y"), -800, 800, 0), "z": _num(s.get("z"), -200, 1200, 20),
+        "sx": _num(s.get("sx"), 0.5, 600, 30), "sy": _num(s.get("sy"), 0.5, 600, 30), "sz": _num(s.get("sz"), 0.5, 600, 30),
+        "rx": _num(s.get("rx"), -360, 360, 0), "ry": _num(s.get("ry"), -360, 360, 0), "rz": _num(s.get("rz"), -360, 360, 0),
+    }
+    if isinstance(s.get("color"), str) and HEX_RE.match(s["color"]):
+        item["color"] = s["color"]
+    if s.get("role") in SOLID_ROLES:
+        item["role"] = s["role"]
+    return item
+
+
+def clean_bodyops(raw, body):
+    """Changes to a body that already exists. Ids must be ones the browser
+    sent; every number is bounded; the browser checks them again."""
+    known = set()
+    for s in (body.get("solids") or []) if isinstance(body, dict) else []:
+        if isinstance(s, dict) and isinstance(s.get("id"), str) and ID_RE.match(s["id"]):
+            known.add(s["id"])
+    out = []
+    for op in (raw or [])[:80] if isinstance(raw, list) else []:
+        if not isinstance(op, dict):
+            continue
+        kind = op.get("op")
+        if kind == "add":
+            solid = _clean_solid(op.get("solid"))
+            if solid:
+                out.append({"op": "add", "solid": solid})
+        elif kind in ("set", "remove") and op.get("id") in known:
+            item = {"op": kind, "id": op["id"]}
+            if kind == "set":
+                for key, lo, hi in (("x", -800, 800), ("y", -800, 800), ("z", -200, 1200), ("sx", 0.5, 600), ("sy", 0.5, 600),
+                                    ("sz", 0.5, 600), ("rx", -360, 360), ("ry", -360, 360), ("rz", -360, 360)):
+                    if isinstance(op.get(key), (int, float)) and not isinstance(op.get(key), bool):
+                        item[key] = _num(op[key], lo, hi, 0)
+                if isinstance(op.get("color"), str) and HEX_RE.match(op["color"]):
+                    item["color"] = op["color"]
+                if isinstance(op.get("name"), str):
+                    item["name"] = re.sub(r"[<>\x00-\x1f]", "", op["name"])[:40]
+                if len(item) == 2:
+                    continue
+            out.append(item)
+    return out
+
+
+def clean_body(raw, free=False):
     """Whitelist a body the AI described. Unknown shapes are dropped and every
-    number is bounded; the browser checks it all again before building."""
+    number is bounded; the browser checks it all again before building.
+
+    `free` is a stand-alone object with no electronics: there is no shell,
+    so nothing is a hull and there is no falling back to a plain case."""
     if not isinstance(raw, dict):
         return None
+    if free:
+        solids = [s for s in (_clean_solid(q) for q in (raw.get("solids") or [])[:60]) if s] if isinstance(raw.get("solids"), list) else []
+        for s in solids:
+            if s["is"] == "hull":
+                s["is"] = "attach"
+        if not any(s["is"] != "cut" for s in solids):
+            return None
+        out = {"kind": "custom", "free": True, "wall": 2, "drive": "none", "solids": solids}
+        if isinstance(raw.get("color"), str) and HEX_RE.match(raw["color"]):
+            out["color"] = raw["color"]
+        return out
     kind = raw.get("kind") if raw.get("kind") in BODY_KINDS else "custom"
     solids = []
     for s in (raw.get("solids") or [])[:40] if isinstance(raw.get("solids"), list) else []:
@@ -503,6 +605,17 @@ def _clean(raw, body):
         shell = clean_body(raw.get("body"))
         if shell:
             out["body"] = shell
+    if body.get("kind") == "object":
+        thing = clean_body(raw.get("body"), free=True)
+        if thing:
+            out["body"] = thing
+    if body.get("kind") == "bodyedit":
+        ops = clean_bodyops(raw.get("bodyops"), body.get("body"))
+        if ops:
+            out["bodyops"] = ops
+    if body.get("kind") in ("object", "bodyedit", "printcoach"):
+        for key in ("circuit", "code", "blocks"):
+            out.pop(key, None)
     return out
 
 
@@ -532,7 +645,7 @@ def ask(body):
     mode, kind, prompt = _prompt(body)
     try:
         raw, _model = hai.ai_json(_system(mode, kind), prompt,
-                                  temperature=0.5 if kind in ("project", "body") else
+                                  temperature=0.5 if kind in ("project", "body", "object", "bodyedit") else
                                   0.4 if kind in CODE_KINDS or kind in ("build", "blocks") else 0.7,
                                   max_tokens=12000 if kind == "project" else 8000)
     except hai.AIError as e:

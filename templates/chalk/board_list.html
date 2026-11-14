@@ -58,6 +58,9 @@
         <a class="kk-chalk-lab" href="{% url 'chalk:lab' b.id %}" title="Circuit lab for {{ b.title }}">
           <i class="bi bi-cpu"></i> Circuit lab
         </a>
+        <a class="kk-chalk-lab" href="{% url 'chalk:power' b.id %}" title="Power lab for {{ b.title }}: building wiring and solar design">
+          <i class="bi bi-lightning-charge"></i> Power lab
+        </a>
         <form method="post"
               action="{% url 'chalk:settings' b.id %}"
               class="kk-chalk-delete-form"

@@ -1,0 +1,108 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#121a21">
+<title>{% if plan %}{{ plan.title }}{% else %}Power lab{% endif %} · {{ board.title }} · Chalk</title>
+<link rel="stylesheet" href="{% static 'chalk/css/chalk_fonts.css' %}">
+<link rel="stylesheet" href="{% static 'chalk/css/chalk_power.css' %}?v=1">
+</head>
+<body class="pw">
+
+<header class="pw-top">
+  <div class="pw-top-l">
+    <a class="back" href="{% url 'chalk:stage' board.id %}" title="Back to the board"><span aria-hidden="true">‹</span> {{ board.title }}</a>
+    <label class="sr" for="pw-title">Plan name</label>
+    <input id="pw-title" class="title" maxlength="200" autocomplete="off">
+    {% if plans|length > 1 %}
+      <label class="sr" for="pw-plans">Other plans on this board</label>
+      <select id="pw-plans" class="plans">
+        {% for p in plans %}<option value="{{ p.id }}"{% if plan and p.id == plan.id %} selected{% endif %}>{{ p.title }}</option>{% endfor %}
+      </select>
+    {% endif %}
+    <button type="button" id="pw-new" title="Start a new plan">+ New</button>
+    <span id="pw-saved" class="saved" role="status" aria-live="polite"></span>
+  </div>
+
+  <div class="pw-top-m">
+    <button id="pw-power" class="power" type="button" aria-pressed="false" title="Switch the supply on and off (Space)"><i aria-hidden="true"></i><span>Power off</span></button>
+    <div class="clock" title="The time of day. Drag it, or let it run.">
+      <label class="sr" for="pw-clock">Time of day</label>
+      <input type="range" id="pw-clock" min="0" max="24" step="0.25" value="12">
+      <output id="pw-clock-out" for="pw-clock">12:00</output>
+    </div>
+    <label class="sr" for="pw-speed">How fast time passes</label>
+    <select id="pw-speed" title="How fast time passes">
+      <option value="0">Clock stopped</option>
+      <option value="60">1 minute a second</option>
+      <option value="600">10 minutes a second</option>
+      <option value="3600">1 hour a second</option>
+    </select>
+    <button type="button" id="pw-day" title="Run 24 hours: sun, routine, battery">▶ Run a day</button>
+    <label class="routine" title="In a fast run, switch each thing on only at the hours it is normally used"><input type="checkbox" id="pw-routine" checked> Daily routine</label>
+  </div>
+
+  <div class="pw-top-r">
+    <button type="button" id="pw-wizard" class="accent" title="Say what must be powered: get a sized, wired system">Design a system</button>
+    <button type="button" id="pw-site" title="Where it is, which month, how the panels are set">Place &amp; sun</button>
+    <button type="button" id="pw-costs" title="Bill of materials, payback, and the implementation plan">Costs &amp; plan</button>
+    <button type="button" id="pw-print" title="Clips, brackets and boxes to 3-D print, sized for this plan">Print shop</button>
+    <button type="button" id="pw-pin" title="Put a picture of this plan on the board's current page">Pin to board</button>
+    <a class="btn" href="{% url 'chalk:lab' board.id %}" title="The electronics bench: Arduino, sensors, circuit boards, 3-D bodies">Circuit lab</a>
+    <button type="button" id="pw-ai" class="accent">Ask AI</button>
+    <button type="button" id="pw-panels" class="narrow-only" aria-label="Show or hide the side panel">Panels</button>
+  </div>
+</header>
+
+<main class="pw-main">
+  <aside id="pw-drawer" class="pw-drawer" aria-label="Parts and testers"></aside>
+
+  <section class="pw-wrap">
+    <div id="pw-board" class="pw-board"></div>
+    <div class="pw-sky" aria-live="off"><canvas id="pw-sky-c" width="100" height="46"></canvas><p id="pw-sky-t"></p></div>
+    <div id="pw-meter" class="pw-meter" hidden></div>
+    <div class="pw-tools" role="toolbar" aria-label="Drawing">
+      <button type="button" id="pw-undo" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
+      <button type="button" id="pw-redo" title="Redo (Ctrl+Y)" aria-label="Redo">↷</button>
+      <span class="sep" aria-hidden="true"></span>
+      <button type="button" id="pw-zout" title="Zoom out" aria-label="Zoom out">−</button>
+      <button type="button" id="pw-zin" title="Zoom in" aria-label="Zoom in">+</button>
+      <button type="button" id="pw-fit" title="Fit everything in view (F)">Fit</button>
+      <button type="button" id="pw-fs" title="Full screen" aria-label="Full screen">⛶</button>
+    </div>
+    <div id="pw-toasts" class="pw-toasts" role="status" aria-live="polite"></div>
+  </section>
+
+  <aside class="pw-side" aria-label="Details">
+    <div id="pw-side-tabs" class="pw-tabs" role="tablist">
+      <button type="button" data-side="inspect" aria-selected="true">Inspect</button>
+      <button type="button" data-side="check" aria-selected="false">Check</button>
+      <button type="button" data-side="day" aria-selected="false">Day</button>
+      <button type="button" data-side="ai" aria-selected="false">AI</button>
+    </div>
+    <div id="pw-pane-inspect" class="pw-pane"></div>
+    <div id="pw-pane-check" class="pw-pane" hidden></div>
+    <div id="pw-pane-day" class="pw-pane" hidden></div>
+    <div id="pw-pane-ai" class="pw-pane pw-ai" hidden></div>
+  </aside>
+</main>
+
+{{ config|json_script:"power-config" }}
+<script src="{% static 'chalk/js/lab/lab_core.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_solid.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_print.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/power/power_core.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/power/power_parts.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/power/power_sun.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/power/power_sim.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/power/power_size.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/power/power_check.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/power/power_view.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/power/power_testers.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/power/power_design.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/power/power_report.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/power/power_print.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/power/power_app.js' %}?v=1"></script>
+</body>
+</html>

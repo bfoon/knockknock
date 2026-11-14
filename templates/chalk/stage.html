@@ -29,6 +29,7 @@
   <span id="net-dot" class="net-dot" data-state="connecting"></span>
   <button id="show-lobby" class="hud-btn" type="button">Pairing</button>
   <a id="hud-lab" class="hud-btn" href="{% url 'chalk:lab' board.id %}">Circuit lab</a>
+  <a id="hud-power" class="hud-btn" href="{% url 'chalk:power' board.id %}">Power lab</a>
   {# Leaving the board loses nothing — every stroke is already saved. #}
   <a id="hud-boards" class="hud-btn" href="{% url 'chalk:boards' %}">All boards</a>
 </div>
@@ -81,6 +82,7 @@
         <button id="start-board" class="btn btn-primary" type="button">Start projecting</button>
         <button id="rotate-code" class="btn" type="button">New number</button>
         <a class="btn" href="{% url 'chalk:lab' board.id %}">Circuit lab</a>
+        <a class="btn" href="{% url 'chalk:power' board.id %}">Power lab</a>
         <a class="btn" href="{% url 'chalk:boards' %}">All boards</a>
         <a class="btn" href="{% url 'core:dashboard' %}">Dashboard</a>
       </div>

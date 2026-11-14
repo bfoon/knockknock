@@ -551,3 +551,30 @@ class BoardCircuit(models.Model):
     @property
     def part_count(self):
         return len((self.data or {}).get("parts") or [])
+
+
+class BoardPlan(models.Model):
+    """One saved plan in a board's Power Lab.
+
+    The Power Lab is the Circuit Lab one size up: the wiring of a building
+    and the solar system on its roof. A plan — parts, cables, the site and
+    its sun — is one JSON document, written by static/chalk/js/power/ and
+    checked on the way in by chalk.power.clean_plan.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    board = models.ForeignKey(Board, on_delete=models.CASCADE, related_name="plans")
+    title = models.CharField(max_length=200, default="Untitled plan")
+    data = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+
+    def __str__(self):
+        return f"{self.board.title} · {self.title}"
+
+    @property
+    def part_count(self):
+        return len((self.data or {}).get("parts") or [])

@@ -79,6 +79,7 @@
         <button type="button" id="lab-mute" aria-pressed="false">Sound on</button>
       </div>
     </details>
+    <a class="lab-link" href="{% url 'chalk:power' board.id %}" title="Building wiring and solar power: design, simulate, cost and plan">Power lab</a>
     <button type="button" id="lab-examples">Examples</button>
     <button type="button" id="lab-pin" title="Put a picture of this circuit on the board's current page">Pin to board</button>
     <button type="button" id="lab-project" title="Describe what you want to make: get the circuit, the program, the board and a body to print"><span class="wide-only">Design a project</span><span class="tight-only">Project</span></button>
@@ -136,6 +137,8 @@
 <script src="{% static 'chalk/js/lab/lab_pcb.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_body.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_body_view.js' %}"></script>
+<script src="{% static 'chalk/js/lab/lab_print.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/lab/lab_maker.js' %}?v=1"></script>
 <script src="{% static 'chalk/js/lab/lab_studio.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_projects.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_coach.js' %}"></script>

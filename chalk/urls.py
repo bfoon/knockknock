@@ -1,6 +1,6 @@
 from django.urls import path, register_converter
 
-from . import lab, views
+from . import lab, power, views
 
 
 class CodeConverter:
@@ -43,4 +43,10 @@ urlpatterns = [
     path("b/<uuid:pk>/lab/pin/", lab.LabPinView.as_view(), name="lab_pin"),
     path("b/<uuid:pk>/lab/<uuid:cid>/", lab.LabView.as_view(), name="lab_open"),
     path("b/<uuid:pk>/lab/<uuid:cid>/delete/", lab.LabDeleteView.as_view(), name="lab_delete"),
+    # Power Lab: building wiring and solar, one size up from the Circuit Lab.
+    path("b/<uuid:pk>/power/", power.PowerView.as_view(), name="power"),
+    path("b/<uuid:pk>/power/save/", power.PowerSaveView.as_view(), name="power_save"),
+    path("b/<uuid:pk>/power/ai/", power.PowerAIView.as_view(), name="power_ai"),
+    path("b/<uuid:pk>/power/<uuid:plan_id>/", power.PowerView.as_view(), name="power_open"),
+    path("b/<uuid:pk>/power/<uuid:plan_id>/delete/", power.PowerDeleteView.as_view(), name="power_delete"),
 ]

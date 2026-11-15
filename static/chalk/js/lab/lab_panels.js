@@ -103,7 +103,7 @@
     h += '</div>';
     h += '<div class="insp-live" id="insp-live"></div>';
     /* change it for something else, or have it wired in */
-    var wirable = !d.mcu && !(d.layer === "board") && !/^(multimeter|scope|rf_remote)$/.test(part.type), swaps = L.Coach.swaps(app.doc, part);
+    var wirable = !d.mcu && !d.computer && !(d.layer === "board") && !/^(multimeter|scope|rf_remote)$/.test(part.type), swaps = L.Coach.swaps(app.doc, part);
     if (swaps.length) {
       var near = swaps.filter(function (s) { return s.close; }), far = swaps.filter(function (s) { return !s.close; });
       var opts = function (list) { return list.map(function (s) { return '<option value="' + s.type + '">' + esc(s.name) + '</option>'; }).join(""); };

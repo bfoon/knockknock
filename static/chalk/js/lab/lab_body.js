@@ -55,12 +55,13 @@
     k_battery: [58, 32, 16], bulb: [14, 14, 24], k_bulb: [14, 14, 24], coin_cell: [22, 22, 6]
   };
   var TINT = { motor: "#b9c0c6", k_motor: "#b9c0c6", servo: "#3b6fd4", battery_9v: "#2b2f36", battery_aa: "#2b2f36", k_battery: "#c0392b", bulb: "#f6e7a1", k_bulb: "#f6e7a1" };
-  var TALL = [[/^arduino_uno/, 14], [/^arduino_nano/, 8], [/^capacitor_e/, 12], [/^relay/, 16], [/^(led|k_led|rgb_led)/, 9], [/^hcsr04/, 16], [/^lcd/, 12], [/^(buzzer|piezo|k_buzzer)/, 10], [/^(ic|logic|lm358)/, 5], [/^resistor/, 3]];
+  var TALL = [[/^arduino_uno/, 14], [/^raspberry_pi/, 17], [/^arduino_nano/, 8], [/^capacitor_e/, 12], [/^relay/, 16], [/^(led|k_led|rgb_led)/, 9], [/^hcsr04/, 16], [/^lcd/, 12], [/^(buzzer|piezo|k_buzzer)/, 10], [/^(ic|logic|lm358)/, 5], [/^resistor/, 3]];
   function tall(type) { for (var i = 0; i < TALL.length; i++) if (TALL[i][0].test(type)) return TALL[i][1]; return 7; }
   function tint(part) {
     var pr = L.propsOf(part), c = L.LED_COLORS && pr.color && L.LED_COLORS[pr.color];
     if (/led/.test(part.type) && c) return c.fill || "#e2574c";
     if (/^arduino/.test(part.type)) return "#1c6e8c";
+    if (/^raspberry_pi/.test(part.type)) return "#1f8a46";
     if (/^(ic|logic|lm358|npn|pnp|nmos)/.test(part.type)) return "#22262b";
     if (/^resistor/.test(part.type)) return "#d8c79a";
     if (/^capacitor/.test(part.type)) return "#3b6fd4";

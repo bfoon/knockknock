@@ -135,7 +135,7 @@
     var inv = Object.keys(count).map(function (n) { return (count[n] > 1 ? count[n] + " × " : "") + n; });
     if (!inv.length) return kid ? "The table is empty! Drag a battery and a bulb from the toy box to start." : "The bench is empty. Drag in an Arduino or a battery to get started, or open an example.";
     lines.push((kid ? "On your table: " : "On the bench: ") + inv.join(", ") + ".");
-    var sources = doc.parts.filter(function (p) { return /battery|coin_cell|psu|arduino|k_brain/.test(p.type); });
+    var sources = doc.parts.filter(function (p) { return /battery|coin_cell|psu|arduino|k_brain|raspberry_pi/.test(p.type); });
     if (!sources.length) lines.push(kid ? "There's no battery yet — nothing can push electricity round." : "There is no power source yet: add a battery, the bench supply, or an Arduino (which gives 5 V).");
     var mcu = L.firstMcu(doc);
     if (mcu) {

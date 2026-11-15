@@ -270,7 +270,8 @@
     var P = L.P, list = (c.parts || []).filter(function (p) { return p && L.PARTS[p.type]; });
     if (!list.length || list.every(function (p) { return isFinite(p.x) && isFinite(p.y); })) return c;
     var box = function (p) { return L.boxOf({ type: p.type, x: 0, y: 0, rot: 0, props: p.props || {} }); };
-    var boards = list.filter(function (p) { return L.PARTS[p.type].mcu; }), rest = list.filter(function (p) { return !L.PARTS[p.type].mcu; });
+    var isBoard = function (p) { return L.PARTS[p.type].mcu || L.PARTS[p.type].computer; };
+    var boards = list.filter(isBoard), rest = list.filter(function (p) { return !isBoard(p); });
     var y = 0, left = 0;
     boards.forEach(function (p) { var b = box(p); p.x = L.snap(-b.x); p.y = L.snap(y - b.y); y += b.h + 4 * P; left = Math.max(left, b.w); });
     var x0 = left ? left + 6 * P : 0, cx = x0, cy = 0, rowH = 0, wide = Math.max(44 * P, Math.sqrt(rest.length) * 13 * P);
@@ -307,6 +308,14 @@
         app.doc.programs[part.id] = { code: progs[old], blocks: null, prog: "code" };
         boards++;
       });
+      /* a Raspberry Pi project comes with an SD card instead of a sketch */
+      var cards = res.sd && typeof res.sd === "object" ? res.sd : {}, pis = 0;
+      Object.keys(cards).forEach(function (old) {
+        var part = made[old];
+        if (!part || !L.def(part).computer || typeof cards[old] !== "string") return;
+        L.Pi.setSD(app.doc, part.id, cards[old]);
+        pis++;
+      });
       if (boards > 1 && app.mcuId && app.doc.programs[app.mcuId]) {
         app.doc.code = app.doc.programs[app.mcuId].code; app.doc.prog = "code";
         app.loadProgram(); app.boardPicker();
@@ -330,7 +339,7 @@
             (boards > 1 ? " It has " + boards + " boards, each with its own program: pick one under “Program for” to read it." : "") +
             (app.doc.parts.some(function (p) { return p.type === "hc05"; }) ? " To use the phone: switch the power on, open the Phone tab on the right and tap Connect." : "") +
             (app.doc.parts.some(function (p) { return p.type === "rf_remote"; }) ? " The key fob is on the Bench: press its buttons there." : "") +
-            " Press ▶ Test drive to try it.";
+            (pis ? " The program is on the Pi's SD card: open the bench, switch the power on, and in the Terminal tab type " + (res.run || "ls") + "." : " Press ▶ Test drive to try it.");
         });
       });
     });

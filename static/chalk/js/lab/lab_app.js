@@ -141,7 +141,7 @@
     var p = { id: L.uid("p"), type: type, x: L.snap(x), y: L.snap(y), rot: 0, props: {} };
     var self = this;
     this.edit(function () {
-      if (d.layer === "board") self.doc.parts.unshift(p); else self.doc.parts.push(p);
+      if (d.layer === "board" || d.under) self.doc.parts.unshift(p); else self.doc.parts.push(p);
     });
     this.bench.select({ kind: "part", id: p.id });
     this.sound("snap");
@@ -268,7 +268,9 @@
   App.prototype.syncBoards = function (first) {
     var d = this.doc, list = L.mcus(d), self = this;
     d.programs = d.programs && typeof d.programs === "object" ? d.programs : {};
-    Object.keys(d.programs).forEach(function (id) { if (!list.some(function (p) { return p.id === id; })) delete d.programs[id]; });
+    /* a Raspberry Pi keeps its SD card in the same table (lab_pi.js), so its slot stays too */
+    var keeps = list.concat(d.parts.filter(function (p) { var pd = L.def(p); return pd && pd.computer; }));
+    Object.keys(d.programs).forEach(function (id) { if (!keeps.some(function (p) { return p.id === id; })) delete d.programs[id]; });
     if (this.mcuId && !list.some(function (p) { return p.id === self.mcuId; })) {
       this.mcuId = null;
       if (list.length) { this.switchBoard(list[0].id, true); return; }
@@ -416,7 +418,11 @@
 
   App.prototype.runProgram = function (quiet) {
     var self = this, boards = L.mcus(this.doc);
-    if (!boards.length) { this.toast(this.doc.mode === "kid" ? "Add the Robo Brain to the table first — it's the part that runs your blocks." : "Add an Arduino first: the program needs a board to run on."); return; }
+    if (!boards.length) {
+      var hasPi = this.doc.parts.some(function (p) { return p.type === "raspberry_pi"; });
+      this.toast(this.doc.mode === "kid" ? "Add the Robo Brain to the table first — it's the part that runs your blocks." : hasPi ? "A Raspberry Pi isn't uploaded to: switch the power on and run your program from its Terminal tab. (This editor is for an Arduino.)" : "Add an Arduino first: the program needs a board to run on.");
+      return;
+    }
     this.storeProgram();
     var c = this.compileCheck();
     var any = boards.some(function (b) { var p = self.doc.programs[b.id]; return p && (p.code || "").trim(); });
@@ -626,7 +632,7 @@
       var ends = T.wireEnds[w.id] || [];
       if (ends.some(function (k) { return k.indexOf("w:") === 0; })) out.push({ part: null, level: "info", code: "wire", msg: "A wire has an end that isn't in a hole or on a leg." });
     });
-    if (doc.parts.length && !doc.parts.some(function (p) { return /battery|coin_cell|psu|arduino|k_brain/.test(p.type); }))
+    if (doc.parts.length && !doc.parts.some(function (p) { return /battery|coin_cell|psu|arduino|k_brain|raspberry_pi/.test(p.type); }))
       out.push({ part: doc.parts[0].id, level: "warn", code: "nopower", msg: doc.mode === "kid" ? "There's no battery! Electricity needs something to push it." : "There's no power source on the bench." });
     /* and what the wiring coach sees: the mistakes that can be read off the
      * netlist before anything is switched on, each with a fix where one exists */
@@ -692,7 +698,7 @@
     if (!added) return 0;
     this.built = map;        /* the designer's ids → the parts just made */
     this.edit(function () {
-      parts.forEach(function (p) { if (L.PARTS[p.type].layer === "board") self.doc.parts.unshift(p); else self.doc.parts.push(p); });
+      parts.forEach(function (p) { if (L.PARTS[p.type].layer === "board" || L.PARTS[p.type].under) self.doc.parts.unshift(p); else self.doc.parts.push(p); });
       wires.forEach(function (w) { self.doc.wires.push(w); });
     });
     if (c.code) this.useCode(c.code);

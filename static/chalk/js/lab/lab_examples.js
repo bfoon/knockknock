@@ -807,6 +807,101 @@
     code: null
   });
 
+  /* ======================================================== RASPBERRY PI
+   * A Pi has no sketch: each of these comes with an SD card instead, and
+   * the lesson happens in its terminal. `sd` lists the files in the home
+   * folder, one card per Pi on the bench. */
+
+  var PI_AT = [38 * P, 2 * P];
+  function piBench() {
+    var B = new Builder("pro"), pi = B.add("raspberry_pi", 0, 0), bb = B.add("breadboard_half", PI_AT[0], PI_AT[1]);
+    B.wire([pi, "GND3"], [bb, "bn2"], C.black);
+    return { B: B, pi: pi, bb: bb };
+  }
+
+  ex({
+    id: "pi_blink", mode: "pro", name: "Raspberry Pi: first light", level: "Raspberry Pi",
+    blurb: "Boot a Pi, log in, and light an LED three ways: one command, a shell loop, and a Python program.",
+    build: function () {
+      var x = piBench(), s = ledSet(x.B, x.bb, 8, "red", 220);
+      x.B.wire([x.pi, "GPIO17"], [x.bb, s.input], C.orange);
+      return x.B.doc;
+    },
+    sd: function () {
+      return [{
+        "README.txt": "FIRST LIGHT\n===========\nAn LED is on GPIO17 (pin 11), through a 220 ohm resistor, to ground.\nSwitch the bench power on, wait for the prompt, then try each of these.\n\n1. One command\n     pinctrl set 17 op dh        op = output, dh = drive high\n     pinctrl set 17 dl           dl = drive low\n   (On Ubuntu or Debian there is no pinctrl. Use:  gpioset gpiochip0 17=1 )\n\n2. A loop, straight from the shell\n     bash blink.sh               Ctrl+C stops it\n     cat blink.sh                ...and this shows you how it works\n\n3. A Python program\n     python3 blink.py            Ctrl+C stops it\n     nano blink.py               change the 0.5s, Ctrl+O to save, Ctrl+X to leave\n\n4. See it from the other side\n     python3 blink.py &          the & runs it in the background\n     gpio readall                watch pin 11 in the table\n     kill %1                     stop the background program\n\nThen try: pinout, neofetch, help\n",
+        "blink.py": "from gpiozero import LED\nfrom time import sleep\n\nled = LED(17)          # GPIO17 is pin 11 on the header\n\nwhile True:\n    led.on()\n    sleep(0.5)\n    led.off()\n    sleep(0.5)\n",
+        "blink.sh": "#!/bin/bash\n# Blink the LED on GPIO17 without any Python: just files and commands.\n# /sys/class/gpio is the oldest way to reach a pin, and works on every Linux.\n\necho 17 > /sys/class/gpio/export\necho out > /sys/class/gpio/gpio17/direction\n\nfor i in 1 2 3 4 5 6 7 8 9 10; do\n    echo 1 > /sys/class/gpio/gpio17/value\n    sleep 0.3\n    echo 0 > /sys/class/gpio/gpio17/value\n    sleep 0.3\n    echo \"blink $i\"\ndone\n\necho 17 > /sys/class/gpio/unexport\n",
+        "fade.py": "# Brightness, not just on and off: PWM switches the pin very fast.\nfrom gpiozero import PWMLED\nfrom signal import pause\n\nled = PWMLED(17)\nled.pulse(fade_in_time=1, fade_out_time=1)   # carries on in the background\nprint(\"Pulsing. Ctrl+C to stop.\")\npause()\n"
+      }];
+    }
+  });
+
+  ex({
+    id: "pi_button", mode: "pro", name: "Raspberry Pi: button and reaction game", level: "Raspberry Pi",
+    blurb: "A button on GPIO2 and an LED on GPIO17. Read the button from the shell, then play a reaction-time game written in Python.",
+    build: function () {
+      var x = piBench(), s = ledSet(x.B, x.bb, 8, "green", 220);
+      x.B.on(x.bb, "button", "e20", { cap: "#2f64d4" });
+      x.B.wire([x.pi, "GPIO17"], [x.bb, s.input], C.orange);
+      x.B.wire([x.pi, "GPIO2"], [x.bb, "a20"], C.blue);
+      x.B.wire([x.bb, "j22"], [x.bb, "bn22"], C.black);
+      return x.B.doc;
+    },
+    sd: function () {
+      return [{
+        "README.txt": "BUTTON AND LED\n==============\nLED on GPIO17 (pin 11). Button between GPIO2 (pin 3) and ground.\nGPIO2 has a pull-up resistor inside the Pi, so it reads 1 until you\npress the button, and 0 while you hold it.\n\n  pinctrl get 2               read it once (hold the button and try again)\n  watch -n 0.2 pinctrl get 2  keep reading; press q to stop\n  python3 button.py           the LED follows the button\n  python3 reaction.py         how fast are you?\n  cat scores.txt              the game keeps its scores in a file\n",
+        "button.py": "from gpiozero import LED, Button\nfrom signal import pause\n\nled = LED(17)\nbutton = Button(2)             # pull-up on by default: pressed = connected to ground\n\nbutton.when_pressed = led.on   # no brackets: we hand over the function itself\nbutton.when_released = led.off\n\nprint(\"Hold the button to light the LED. Ctrl+C to stop.\")\npause()\n",
+        "reaction.py": "# Reaction timer: wait for the light, then press as fast as you can.\nfrom gpiozero import LED, Button\nfrom time import sleep, time\nfrom random import uniform\n\nled = LED(17)\nbutton = Button(2)\n\nname = input(\"Your name: \")\nbest = None\n\nfor turn in range(1, 4):\n    print(f\"Round {turn}: wait for the light...\")\n    sleep(uniform(1.5, 4))\n    if button.is_pressed:\n        print(\"  Too early! Let go of the button.\")\n        button.wait_for_release()\n        continue\n    led.on()\n    start = time()\n    button.wait_for_press()\n    took = time() - start\n    led.off()\n    print(f\"  {took * 1000:.0f} ms\")\n    if best is None or took < best:\n        best = took\n    button.wait_for_release()\n\nif best is None:\n    print(\"No score this time.\")\nelse:\n    print(f\"Best: {best * 1000:.0f} ms. Well played, {name}!\")\n    with open(\"scores.txt\", \"a\") as f:\n        f.write(f\"{name},{best * 1000:.0f}\\n\")\n"
+      }];
+    }
+  });
+
+  ex({
+    id: "pi_traffic", mode: "pro", name: "Raspberry Pi: pedestrian crossing", level: "Raspberry Pi",
+    blurb: "Three lights, a button and a beeper. Press to cross: the Pi stops the traffic, beeps while it is safe, and logs every crossing.",
+    build: function () {
+      var x = piBench(), B = x.B, r = ledSet(B, x.bb, 2, "red", 220), a = ledSet(B, x.bb, 8, "yellow", 220), g = ledSet(B, x.bb, 14, "green", 220);
+      B.on(x.bb, "button", "e24", { cap: "#d6453d" });
+      var pz = B.add("piezo", 72 * P, 12 * P);
+      B.wire([x.pi, "GPIO17"], [x.bb, r.input], C.orange);
+      B.wire([x.pi, "GPIO27"], [x.bb, a.input], C.yellow);
+      B.wire([x.pi, "GPIO22"], [x.bb, g.input], C.green);
+      B.wire([x.pi, "GPIO2"], [x.bb, "a24"], C.blue);
+      B.wire([x.bb, "j26"], [x.bb, "bn26"], C.black);
+      B.wire([x.pi, "GPIO18"], [pz, "+"], C.purple);
+      B.wire([pz, "-"], [x.pi, "GND4"], C.black);
+      return B.doc;
+    },
+    sd: function () {
+      return [{
+        "README.txt": "PEDESTRIAN CROSSING\n===================\nred GPIO17 · amber GPIO27 · green GPIO22 · button GPIO2 · beeper GPIO18\n\n  python3 crossing.py     run the crossing; press the button on the bench\n  ./lights.sh             the same three lights from a shell script\n  cat crossings.log       every crossing, with the time it happened\n  wc -l crossings.log     how many so far?\n\nIdeas: make the green man last longer. Make the beeps speed up near the\nend. Count the crossings and print the total.\n",
+        "crossing.py": "from gpiozero import TrafficLights, Button, TonalBuzzer\nfrom datetime import datetime\nfrom time import sleep\n\nlights = TrafficLights(17, 27, 22)      # red, amber, green\nbutton = Button(2)\nbeeper = TonalBuzzer(18)\n\nlights.green.on()\nprint(\"Cars have green. Press the button to cross.\")\n\nwhile True:\n    button.wait_for_press()\n    print(\"Button pressed: stopping the traffic\")\n    sleep(1)\n    lights.green.off()\n    lights.amber.on()\n    sleep(2)\n    lights.amber.off()\n    lights.red.on()\n    print(\"Cross now\")\n    for i in range(8):                  # beep while it is safe to walk\n        beeper.play(880)\n        sleep(0.15)\n        beeper.stop()\n        sleep(0.35)\n    lights.amber.on()                   # red and amber together: get ready\n    sleep(1.5)\n    lights.red.off()\n    lights.amber.off()\n    lights.green.on()\n    with open(\"crossings.log\", \"a\") as log:\n        log.write(datetime.now().strftime(\"%H:%M:%S\") + \" crossing\\n\")\n    print(\"Cars have green again.\")\n",
+        "lights.sh": { x: true, text: "#!/bin/bash\n# The lights in sequence, using Raspberry Pi OS's pinctrl.\n# (On Ubuntu or Debian, swap each line for:  gpioset gpiochip0 17=1 )\n\nRED=17\nAMBER=27\nGREEN=22\n\nfor pin in $RED $AMBER $GREEN; do\n    pinctrl set $pin op dl\ndone\n\nfor round in 1 2 3; do\n    pinctrl set $RED dh;   sleep 1\n    pinctrl set $AMBER dh; sleep 0.6\n    pinctrl set $RED dl;   pinctrl set $AMBER dl\n    pinctrl set $GREEN dh; sleep 1\n    pinctrl set $GREEN dl\n    pinctrl set $AMBER dh; sleep 0.6\n    pinctrl set $AMBER dl\n    echo \"round $round done\"\ndone\n" }
+      }];
+    }
+  });
+
+  ex({
+    id: "pi_hunt", mode: "pro", name: "Raspberry Pi: the Linux treasure hunt", level: "Raspberry Pi",
+    blurb: "No Python at all: find a password hidden in the Pi's files using ls, cd, cat and grep, then use it to switch on the light.",
+    build: function () {
+      var x = piBench(), s = ledSet(x.B, x.bb, 8, "blue", 100);
+      x.B.wire([x.pi, "GPIO17"], [x.bb, s.input], C.orange);
+      return x.B.doc;
+    },
+    sd: function () {
+      return [{
+        "MISSION.txt": "THE LINUX TREASURE HUNT\n=======================\nSomewhere on this Pi is a password. Find it, and the blue light is yours.\n\nYour tools:\n  ls            what is in this folder?      ls -a shows hidden files too\n  cd NAME       go into a folder             cd .. comes back out\n  cat FILE      read a file\n  grep WORD FILE   show only the lines with WORD in them\n  pwd           where am I?\n\nClue 1 is in the folder called cave. Good luck.\n\nWhen you have the password:   ./unlock.sh THE-PASSWORD\n(If the Pi says \"Permission denied\", clue 3 explains why.)\n",
+        "cave/clue1.txt": "CLUE 1\nWell done: you used cd and cat.\nNot everything in a folder shows up with plain ls.\nFiles whose names start with a dot are hidden. Look again, here, with:  ls -a\n",
+        "cave/.clue2.txt": "CLUE 2\nYou found a hidden file.\nThe password is one line in a very long, very boring file: ~/library/ledger.txt\nReading all of it would take all lesson. The line you want has the word KEY in it.\n   grep KEY ~/library/ledger.txt\n",
+        "library/ledger.txt": "0001 candles      12\n0002 rope          3\n0003 lantern oil   7\n0004 biscuits     40\n0005 chalk        99\n0006 maps          2\n0007 compass       1\n0008 string       15\n0009 KEY raspberry-jam\n0010 boots         2\n0011 blankets      4\n0012 matches      60\n0013 kettle        1\n0014 tea         200\n0015 spare wire   30\n0016 resistors   500\n",
+        "library/clue3.txt": "CLUE 3\nA file is only a program if it has permission to run.\n   ls -l ~/unlock.sh       look at the letters on the left: there is no x\n   chmod +x ~/unlock.sh    x means \"may be executed\"\nThen run it with ./ in front, which means \"the one in this folder\".\n",
+        "unlock.sh": "#!/bin/bash\n# Usage: ./unlock.sh PASSWORD\n\nif [ \"$1\" = \"\" ]; then\n    echo \"Usage: ./unlock.sh PASSWORD\"\n    exit 1\nfi\n\nif [ \"$1\" != \"raspberry-jam\" ]; then\n    echo \"That is not the password. The light stays dark.\"\n    exit 1\nfi\n\necho \"Correct! Switching on the light...\"\necho 17 > /sys/class/gpio/export\necho out > /sys/class/gpio/gpio17/direction\nfor i in 1 2 3; do\n    echo 1 > /sys/class/gpio/gpio17/value; sleep 0.2\n    echo 0 > /sys/class/gpio/gpio17/value; sleep 0.2\ndone\necho 1 > /sys/class/gpio/gpio17/value\necho \"The treasure is yours. (To switch it off: echo 0 > /sys/class/gpio/gpio17/value)\"\n"
+      }];
+    }
+  });
+
   /* Turn an example into a fresh document, code and all. */
   L.loadExample = function (id) {
     var e = EX.filter(function (x) { return x.id === id; })[0];
@@ -822,6 +917,11 @@
       doc.code = boards[0] ? doc.programs[boards[0].id].code : ""; doc.prog = "code";
     }
     else { doc.code = e.code ? e.code.join("\n") + "\n" : ""; doc.prog = "code"; }
+    if (e.sd && L.PiOS) {
+      /* one SD card per Raspberry Pi, in the order the Pis were added */
+      var cards = e.sd();
+      doc.parts.filter(function (p) { return p.type === "raspberry_pi"; }).forEach(function (p, i) { if (cards[i]) { doc.programs = doc.programs || {}; doc.programs[p.id] = { code: L.PiOS.makeSD(cards[i]), prog: "code", blocks: null }; } });
+    }
     var bb = boundsOf(doc);
     doc.view = { x: -(bb.x + bb.w / 2), y: -(bb.y + bb.h / 2), z: 0 };   /* z 0: fit on open */
     return doc;

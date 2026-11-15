@@ -24,7 +24,7 @@
   var PREFIX = [
     [/^(resistor|k_resistor)$/, "R"], [/^potentiometer$/, "RV"], [/^(ldr|k_ldr|thermistor)$/, "RT"],
     [/^capacitor/, "C"], [/^(led|k_led|rgb_led|diode)$/, "D"], [/^(npn|pnp|nmos)$/, "Q"],
-    [/^(arduino|k_brain)/, "A"], [/^(ic|logic_ic|lm358)/, "U"], [/^(button|k_button|slide_switch|k_switch|tilt_switch)$/, "SW"],
+    [/^(arduino|k_brain|raspberry_pi)/, "A"], [/^(ic|logic_ic|lm358)/, "U"], [/^(button|k_button|slide_switch|k_switch|tilt_switch)$/, "SW"],
     [/^(battery|k_battery|coin_cell|psu)/, "BT"], [/^(motor|k_motor|servo)$/, "M"], [/^(buzzer|k_buzzer|piezo)$/, "LS"],
     [/^(bulb|k_bulb)$/, "LA"], [/^relay/, "K"], [/^(seg7|lcd)/, "DS"], [/^(breadboard|perfboard|stripboard)/, "BB"],
     [/^(multimeter|scope)$/, "TP"]

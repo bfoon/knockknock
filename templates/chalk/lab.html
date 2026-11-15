@@ -7,6 +7,7 @@
 <title>{% if circuit %}{{ circuit.title }}{% else %}Circuit lab{% endif %} · {{ board.title }} · Chalk</title>
 <link rel="stylesheet" href="{% static 'chalk/css/chalk_fonts.css' %}">
 <link rel="stylesheet" href="{% static 'chalk/css/chalk_lab.css' %}">
+<link rel="stylesheet" href="{% static 'chalk/css/chalk_pi.css' %}?v=1">
 </head>
 <body class="lab" data-mode="pro">
 
@@ -119,6 +120,11 @@
 <script src="{% static 'chalk/js/lab/lab_sim.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_wireless.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_av.js' %}"></script>
+{# The Raspberry Pi: its Python, its Linux, its commands, then the board itself. #}
+<script src="{% static 'chalk/js/lab/lab_pi_py.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/lab/lab_pi_os.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/lab/lab_pi_cmds.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/lab/lab_pi.js' %}?v=1"></script>
 <script src="{% static 'chalk/js/lab/lab_mcu.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_runner.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_blocks.js' %}"></script>
@@ -143,6 +149,8 @@
 <script src="{% static 'chalk/js/lab/lab_projects.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_coach.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_app.js' %}"></script>
+{# After the app: the Pi's terminal attaches itself to the running lab. #}
+<script src="{% static 'chalk/js/lab/lab_pi_term.js' %}?v=1"></script>
 {% endwith %}
 </body>
 </html>

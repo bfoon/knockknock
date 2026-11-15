@@ -261,7 +261,7 @@
   /* ============================================================ REGISTRY */
 
   var LIST = L.PROJECTS = [];
-  var CATS = L.PROJECT_CATS = ["Cars & tanks", "Robots & pets", "Boats & submarines", "Rockets", "Smart home", "Garden & weather", "Games & gadgets", "Camera", "Sound & voice", "Bluetooth", "Radio"];
+  var CATS = L.PROJECT_CATS = ["Raspberry Pi", "Cars & tanks", "Robots & pets", "Boats & submarines", "Rockets", "Smart home", "Garden & weather", "Games & gadgets", "Camera", "Sound & voice", "Bluetooth", "Radio"];
 
   function add(id, name, cat, body, words, blurb, make) {
     LIST.push({ id: id, name: name, cat: cat, body: body, words: words, blurb: blurb, make: make });
@@ -270,6 +270,7 @@
   L.shelfProject = function (id) {
     var p = LIST.filter(function (x) { return x.id === id; })[0];
     if (!p) return null;
+    if (p.pi) return piProject(p);
     var k = new Kit(null, ""), roles = p.make(k) || {};
     var programs = {};
     k.others.forEach(function (b) { if (b.body) programs[b.u] = b.sketch(p.name, roles[b.u] || (k.others.length > 1 ? "board " + (k.others.indexOf(b) + 1) : "")); });
@@ -295,6 +296,8 @@
         var stem = w.replace(/(ing|s)$/, "");
         if (nm.indexOf(" " + stem) >= 0) s += 3; else if (hay.indexOf(" " + stem) >= 0) s += 2; else if (hay.indexOf(stem) >= 0) s += 1;
       });
+      /* a Raspberry Pi project wins only when a Pi was asked for: "a burglar alarm" still means the Arduino one */
+      if (p.pi && !/\b(raspberry|pi|linux|python|gpiozero)\b/i.test(String(text || ""))) s *= 0.4;
       return { p: p, s: s };
     }).filter(function (x) { return x.s > 0; }).sort(function (a, b) { return b.s - a.s; }).map(function (x) { return x.p; });
   };
@@ -306,6 +309,239 @@
     var hit = L.matchProjects(text)[0], kind = hit ? hit.body : "box", t = L.Body.TEMPLATES[kind];
     return { reply: "**" + t.name + ".** " + t.blurb + " It will be sized to fit the electronics on your bench. Every shape can be changed afterwards.", body: { kind: kind } };
   };
+
+  /* ======================================================= RASPBERRY PI
+   * A Pi project is the same idea with a different brain: the kit wires
+   * the parts to GPIO pins (3.3 V, so the resistors are chosen for that),
+   * and instead of a sketch the project comes with an SD card — the Python
+   * program, and a README saying how to run it from the Pi's terminal. */
+
+  function PiKit() { this.parts = [["pi", "raspberry_pi"]]; this.wires = []; this.g = 0; this.v5 = 0; this.files = {}; }
+  var PK = PiKit.prototype;
+  PK.w = function (a, b, color) { this.wires.push(a + ">" + b + (color ? "|" + color : "")); return this; };
+  PK.pin = function (n) { return "pi.GPIO" + n; };
+  PK.gnd = function () { return "pi.GND" + (1 + (this.g++ % 8)); };
+  PK.five = function () { return "pi.5V" + (this.v5++ % 2 ? "2" : ""); };
+  PK.led = function (name, pin, color, ohms) {
+    var l = "led_" + name, r = "r_" + name;
+    this.parts.push([l, "led", { color: color || "red" }], [r, "resistor", { ohms: ohms || 220 }]);
+    return this.w(this.pin(pin), r + ".1", "white").w(r + ".2", l + ".A", "white").w(l + ".K", this.gnd(), "black");
+  };
+  PK.rgb = function (pr, pg, pb) {
+    var self = this;
+    this.parts.push(["rgb", "rgb_led"]);
+    [["R", pr, "red"], ["G", pg, "green"], ["B", pb, "blue"]].forEach(function (q) {
+      var r = "r_" + q[2];
+      self.parts.push([r, "resistor", { ohms: 100 }]);
+      self.w(self.pin(q[1]), r + ".1", q[2]).w(r + ".2", "rgb." + q[0], q[2]);
+    });
+    return this.w("rgb.K", this.gnd(), "black");
+  };
+  PK.button = function (name, pin) { var s = "sw_" + name; this.parts.push([s, "button"]); return this.w(s + ".1a", this.pin(pin), "yellow").w(s + ".2b", this.gnd(), "black"); };
+  PK.piezo = function (pin) { this.parts.push(["beeper", "piezo"]); return this.w(this.pin(pin), "beeper.+", "purple").w("beeper.-", this.gnd(), "black"); };
+  PK.servo = function (pin) { this.parts.push(["servo", "servo"]); return this.w("servo.SIG", this.pin(pin), "orange").w("servo.V+", this.five(), "red").w("servo.GND", this.gnd(), "black"); };
+  PK.pir = function (pin) { this.parts.push(["pir", "pir", { motion: false }]); return this.w("pir.VCC", this.five(), "red").w("pir.OUT", this.pin(pin), "green").w("pir.GND", this.gnd(), "black"); };
+  PK.sonar = function (echo, trig, cm) { this.parts.push(["sonar", "hcsr04", { cm: cm || 80 }]); return this.w("sonar.VCC", this.five(), "red").w("sonar.GND", this.gnd(), "black").w("sonar.TRIG", this.pin(trig), "blue").w("sonar.ECHO", this.pin(echo), "green"); };
+  PK.file = function (name, text, exec) { this.files[name] = exec ? { text: tidy(text) + "\n", x: true } : tidy(text) + "\n"; return this; };
+  /* the main program: what the README tells you to run */
+  PK.python = function (name, text) { this.main = name; return this.file(name, text); };
+
+  function addPi(id, name, body, words, blurb, wiring, make) {
+    LIST.push({ id: id, name: name, cat: "Raspberry Pi", body: body, words: "raspberry pi linux python gpiozero terminal " + words, blurb: blurb, pi: true, wiring: wiring, make: make });
+  }
+  function piProject(p) {
+    var k = new PiKit();
+    p.make(k);
+    k.files["README.txt"] = p.name.toUpperCase() + "\n" + new Array(p.name.length + 1).join("=") + "\n" + p.blurb + "\n\nWiring: " + p.wiring + "\n\n  python3 " + k.main + "      run it   (Ctrl+C stops it)\n  nano " + k.main + "         change it (Ctrl+O saves, Ctrl+X leaves)\n  pinout                which pin is which\n";
+    return {
+      title: p.name, shelf: true, id: p.id, pi: true, run: "python3 " + k.main,
+      reply: "**" + p.name + ".** " + p.blurb + " It runs on a Raspberry Pi: the program is on its SD card.",
+      circuit: {
+        parts: k.parts.map(function (q) { return { id: q[0], type: q[1], props: q[2] || {} }; }),
+        wires: k.wires.map(function (w) { var q = w.split(/[>|]/); return q[2] ? { a: q[0], b: q[1], color: q[2] } : { a: q[0], b: q[1] }; })
+      },
+      code: "", programs: {}, sd: { pi: L.PiOS.makeSD(k.files) }, files: k.files, body: { kind: p.body }
+    };
+  }
+
+  addPi("pi_crossing", "Pi pedestrian crossing", "box", "traffic lights button beeper road safety green man",
+    "Press the button: the Pi stops the traffic, beeps while it is safe to walk, and writes every crossing in a log file.",
+    "red GPIO17, amber GPIO27, green GPIO22, button GPIO2, beeper GPIO18.", function (k) {
+      k.led("red", 17, "red").led("amber", 27, "yellow").led("green", 22, "green").button("cross", 2).piezo(18);
+      k.python("crossing.py", `
+        from gpiozero import TrafficLights, Button, TonalBuzzer
+        from datetime import datetime
+        from time import sleep
+
+        lights = TrafficLights(17, 27, 22)      # red, amber, green
+        button = Button(2)
+        beeper = TonalBuzzer(18)
+
+        lights.green.on()
+        print("Cars have green. Press the button to cross.")
+
+        while True:
+            button.wait_for_press()
+            print("Button pressed: stopping the traffic")
+            sleep(1)
+            lights.green.off()
+            lights.amber.on()
+            sleep(2)
+            lights.amber.off()
+            lights.red.on()
+            print("Cross now")
+            for i in range(8):                  # beep while it is safe to walk
+                beeper.play(880)
+                sleep(0.15)
+                beeper.stop()
+                sleep(0.35)
+            lights.amber.on()                   # red and amber together: get ready
+            sleep(1.5)
+            lights.red.off()
+            lights.amber.off()
+            lights.green.on()
+            with open("crossings.log", "a") as log:
+                log.write(datetime.now().strftime("%H:%M:%S") + " crossing\\n")
+            print("Cars have green again.")`);
+    });
+
+  addPi("pi_alarm", "Pi burglar alarm with a log", "house", "security motion pir intruder siren detect record time",
+    "A motion sensor sets off a two-tone siren and a flashing light until you press reset — and the Pi keeps a dated log of every alarm.",
+    "motion sensor GPIO4 (powered from 5V), lamp GPIO17, siren GPIO18, reset button GPIO2.", function (k) {
+      k.pir(4).led("lamp", 17, "red").piezo(18).button("reset", 2);
+      k.python("alarm.py", `
+        from gpiozero import MotionSensor, LED, TonalBuzzer, Button
+        from datetime import datetime
+        from time import sleep
+
+        pir = MotionSensor(4)
+        lamp = LED(17)
+        siren = TonalBuzzer(18)
+        reset = Button(2)
+
+        print("Alarm set. Waiting for movement...")
+        while True:
+            pir.wait_for_motion()
+            now = datetime.now().strftime("%d %b %H:%M:%S")
+            print("MOVEMENT at", now)
+            with open("alarm.log", "a") as log:
+                log.write(now + " movement\\n")
+            while not reset.is_pressed:         # wail until somebody resets it
+                lamp.on()
+                siren.play(1200)
+                sleep(0.2)
+                lamp.off()
+                siren.play(800)
+                sleep(0.2)
+            siren.stop()
+            print("Reset. Waiting for the room to empty...")
+            pir.wait_for_no_motion()
+            print("Alarm set again.")`);
+    });
+
+  addPi("pi_parking", "Pi parking sensor", "box", "distance ultrasonic garage reverse car beep closer",
+    "Green, amber, red as the wall gets closer, with a beeper that goes solid when it is time to stop.",
+    "distance sensor TRIG GPIO23 and ECHO GPIO24 (powered from 5V), green GPIO17, amber GPIO27, red GPIO22, beeper GPIO18. On a real Pi, bring ECHO down to 3.3 V with two resistors.", function (k) {
+      k.sonar(24, 23, 80).led("green", 17, "green").led("amber", 27, "yellow").led("red", 22, "red").piezo(18);
+      k.python("parking.py", `
+        from gpiozero import DistanceSensor, LED, TonalBuzzer
+        from time import sleep
+
+        sensor = DistanceSensor(echo=24, trigger=23)
+        green = LED(17)
+        amber = LED(27)
+        red = LED(22)
+        beeper = TonalBuzzer(18)
+
+        while True:
+            cm = sensor.distance * 100          # .distance is in metres
+            print(f"{cm:.0f} cm")
+            green.value = cm > 50
+            amber.value = 20 < cm <= 50
+            red.value = cm <= 20
+            if cm <= 20:
+                beeper.play(1000)               # solid tone: stop!
+            elif cm <= 50:
+                beeper.play(1000)               # a short pip: getting close
+                sleep(0.08)
+                beeper.stop()
+            else:
+                beeper.stop()
+            sleep(0.3)`);
+    });
+
+  addPi("pi_barrier", "Pi car-park barrier", "box", "gate servo arm ticket button open close lift",
+    "Press the button and the barrier lifts, shows green, waits for the car, and comes down again. The Pi counts the cars.",
+    "servo signal GPIO12 (powered from 5V), button GPIO2, red GPIO17, green GPIO27.", function (k) {
+      k.servo(12).button("ticket", 2).led("red", 17, "red").led("green", 27, "green");
+      k.python("barrier.py", `
+        from gpiozero import AngularServo, Button, LED
+        from time import sleep
+
+        barrier = AngularServo(12, min_angle=0, max_angle=180, initial_angle=0)
+        button = Button(2)
+        red = LED(17)
+        green = LED(27)
+        cars = 0
+
+        def move(start, end):
+            step = 2 if end > start else -2
+            for angle in range(start, end + step, step):
+                barrier.angle = angle
+                sleep(0.02)
+
+        red.on()
+        print("Barrier down. Press the button for a ticket.")
+        while True:
+            button.wait_for_press()
+            cars += 1
+            print(f"Car {cars}: lifting")
+            move(0, 90)
+            red.off()
+            green.on()
+            sleep(3)                            # time to drive through
+            green.off()
+            red.on()
+            move(90, 0)
+            print("Barrier down.")`);
+    });
+
+  addPi("pi_mood", "Pi mood lamp", "box", "rgb colour light fade rainbow night lamp button modes",
+    "One RGB LED, four moods. It drifts through colours on its own; the button steps to the next mood.",
+    "RGB LED red GPIO17, green GPIO27, blue GPIO22 (each through 100 ohms), button GPIO2.", function (k) {
+      k.rgb(17, 27, 22).button("mood", 2);
+      k.python("mood.py", `
+        from gpiozero import RGBLED, Button
+        from time import sleep
+        import math
+
+        lamp = RGBLED(red=17, green=27, blue=22)
+        button = Button(2)
+        moods = ["rainbow", "sunset", "ocean", "off"]
+        mood = 0
+
+        def next_mood():
+            global mood
+            mood = (mood + 1) % len(moods)
+            print("Mood:", moods[mood])
+
+        button.when_pressed = next_mood
+        print("Mood:", moods[mood], "- press the button to change it")
+
+        t = 0.0
+        while True:
+            wave = (math.sin(t) + 1) / 2        # slides between 0 and 1
+            if moods[mood] == "rainbow":
+                lamp.color = (wave, (math.sin(t + 2.1) + 1) / 2, (math.sin(t + 4.2) + 1) / 2)
+            elif moods[mood] == "sunset":
+                lamp.color = (1, 0.15 + 0.35 * wave, 0)
+            elif moods[mood] == "ocean":
+                lamp.color = (0, 0.3 * wave, 0.4 + 0.6 * wave)
+            else:
+                lamp.off()
+            t += 0.1
+            sleep(0.05)`);
+    });
 
   /* ======================================================= CARS & TANKS */
 

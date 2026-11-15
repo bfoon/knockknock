@@ -49,8 +49,10 @@
   };
 
   L.Sim.prototype.detach = function () {
-    for (var k in this.runtimes) this.runtimes[k].stop();
-    this.runtimes = {};
+    /* a Raspberry Pi is not "uploaded to": it keeps running when the Arduinos stop (lab_pi.js) */
+    var keep = {};
+    for (var k in this.runtimes) { if (this.runtimes[k].keep) keep[k] = this.runtimes[k]; else this.runtimes[k].stop(); }
+    this.runtimes = keep;
     this.onTick = null;
     this.uq = [];
   };

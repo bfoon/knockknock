@@ -44,7 +44,7 @@ L.PROJECTS.forEach(p=>{
   const danger=x.sim.warnings.filter(w=>w.level==='danger').map(w=>w.msg.slice(0,60));
   const model=PCB.model(x.doc,x.sim); PCB.ensure(x.doc,model); const res=PCB.route(x.doc,model);
   x.doc.body=Body.make(p.body,x.doc); const misfit=Body.fit(x.doc,x.doc.body).map(m=>m.name);
-  const boards=Object.keys(x.r.programs).length, alive=Object.keys(x.rts).every(u=>x.rts[u].running&&!x.rts[u].error);
+  const boards=Object.keys(x.r.programs).length+Object.keys(x.r.sd||{}).length /* a Raspberry Pi counts: its program is on its SD card (pi_test.js runs those) */, alive=Object.keys(x.rts).every(u=>x.rts[u].running&&!x.rts[u].error);
   worst=Math.max(worst,res.open.length);
   const good=!x.bad.length&&!x.errors.length&&!danger.length&&alive&&boards>=1&&res.open.length===0&&!misfit.length;
   ok(good,p.id+' — '+x.doc.parts.length+' parts, '+boards+' board'+(boards>1?'s':'')+', '+model.nets.length+' nets'+

@@ -43,6 +43,12 @@
       if (/^A\d$/.test(pin) || pin === "EYE") return "aio";
       return "other";
     }
+    if (d.computer) {            /* a Raspberry Pi: grounds, two supplies, and GPIO — no analog inputs at all */
+      if (/^GND/.test(pin)) return "gnd";
+      if (/^(5V|3V3)/.test(pin)) return "vcc";
+      if (/^GPIO\d+$/.test(pin)) return "dio";
+      return "other";
+    }
     if (/^(battery|k_battery|coin_cell|psu)/.test(t)) return pin === "+" ? "vbat" : "gnd";
     if (/^(led|k_led)$/.test(t)) return pin === "A" || pin === "+" ? "anode" : "cathode";
     if (t === "rgb_led") return pin === "K" ? "cathode" : "anode";
@@ -270,7 +276,8 @@
         var role = C.role(p, pin);
         if (role === "aout") {
           var dig = x.has(key(pin), /^dio$/), ana = x.has(key(pin), /^aio$/);
-          if (dig.length && !ana.length) push(p, "warn", "analog", name + " gives an analog signal on " + pin + ", but it is wired to digital pin " + dig[0].pin + ", which can only tell HIGH from LOW. Move that wire to one of A0–A5.", { label: "Move it to an analog pin", move: [key(pin), dig[0].key, "analog"] });
+          if (dig.length && !ana.length && L.def(dig[0].part).computer) push(p, "warn", "analog", name + " gives an analog signal on " + pin + ", but a Raspberry Pi has no analog inputs: " + dig[0].pin + " can only tell HIGH from LOW. Use the sensor's digital output (DO) if it has one, or read it with an Arduino.");
+          else if (dig.length && !ana.length) push(p, "warn", "analog", name + " gives an analog signal on " + pin + ", but it is wired to digital pin " + dig[0].pin + ", which can only tell HIGH from LOW. Move that wire to one of A0–A5.", { label: "Move it to an analog pin", move: [key(pin), dig[0].key, "analog"] });
         }
         if (role === "sda" || role === "scl") {
           var want = role === "sda" ? "A4" : "A5", on = x.has(key(pin), /^(dio|aio|other)$/).filter(function (m) { return L.def(m.part).mcu; });
@@ -310,6 +317,7 @@
     var boards = L.mcus(doc), mcu = (opts.mcu && x.byId[opts.mcu]) || boards[0], d = L.def(p), t = p.type, taken = {}, gi = 0, seq = 0;
     var ref = L.refdes(doc), me = ref[p.id], key = function (pin) { return p.id + ":" + pin; }, free = function (pin) { return x.free(key(pin)); };
     if (d.mcu) { out.notes.push("This is the board everything else is wired to. Select another part and I will wire it to this."); return out; }
+    if (d.computer) { out.notes.push("A Raspberry Pi is wired by hand: signals to its GPIO pins, power from 3V3 or 5V, and always a ground. Type pinout in its terminal to see which pin is which."); return out; }
     if (/^(breadboard|perfboard|stripboard|multimeter|scope|rf_remote)/.test(t)) { out.notes.push(t === "rf_remote" ? "The key fob has no wires: it talks to its receiver by radio." : "Nothing to wire here."); return out; }
     var kid = mcu && mcu.type === "k_brain";
     var mpins = mcu ? L.pinList(mcu).map(function (q) { return q.n; }) : [];
@@ -580,7 +588,7 @@
     var out = [];
     L.PART_ORDER.forEach(function (t) {
       var o = L.PARTS[t];
-      if (t === part.type || !!o.kid !== kid || (o.layer === "board" && !o.mcu) !== (d.layer === "board" && !d.mcu) || !!o.mcu !== !!d.mcu) return;
+      if (t === part.type || !!o.kid !== kid || !!o.computer !== !!d.computer || (o.layer === "board" && !o.mcu) !== (d.layer === "board" && !d.mcu) || !!o.mcu !== !!d.mcu) return;
       var probe = { id: "t", type: t, x: 0, y: 0, rot: 0, props: {} }, theirs = L.pinList(probe).filter(function (q) { return !q.hole; }).map(function (q) { return q.n; });
       if (!theirs.length && mine.length) return;
       var byName = Object.keys(used).every(function (n) { return theirs.indexOf(n) >= 0; });

@@ -138,8 +138,12 @@ class BoardListView(LoginRequiredMixin, View):
     template_name = "chalk/board_list.html"
 
     def get(self, request):
+        # distinct=True: three joins in one query would otherwise multiply
+        # each count by the other two.
         boards = Board.objects.filter(owner=request.user).annotate(
-            pages_total=Count("pages")
+            pages_total=Count("pages", distinct=True),
+            circuits_total=Count("circuits", distinct=True),
+            plans_total=Count("plans", distinct=True),
         )
         return render(
             request, self.template_name, {"boards": boards, "surfaces": SURFACES}

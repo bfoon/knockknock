@@ -147,6 +147,14 @@ x.m.input('python3 crossing.py'); x.adv(0.6); ok(x.lit(leds[2])&&!x.lit(leds[0])
 let beeps=0; for(let i=0;i<30;i++){x.adv(0.05); if(x.st(pz).sound) beeps++;} ok(x.lit(leds[0])&&!x.lit(leds[2])&&beeps>3,'  press: red for the cars, and the beeper sounds ('+(x.st(pz).sound||880)+' Hz)');
 x.adv(6); ok(x.lit(leds[2])&&!x.danger().length,'  then green again'); x.m.key('c'); x.adv(0.3); ok(/^\d\d:\d\d:\d\d crossing$/.test(x.run('cat crossings.log')),'  and the crossing is in the log');
 x.m.input('./lights.sh'); x.adv(0.5); ok(x.lit(leds[0]),'  ./lights.sh drives the same lights with pinctrl'); x.m.key('c'); x.adv(0.2);
+x=example('pi_link'); led=x.pt('led'); btn=x.pt('button');
+ok(/offline/.test(x.run('link status'))&&x.run('link send lamp on; link get lamp; link list')==='true\nlamp  true','pi_link: with no link open, the link command still works — the values stay on the Pi');
+x.run('link send lamp off'); x.m.input('python3 doorbell.py'); x.adv(0.6); x.m.link.set('lamp',true); x.adv(0.4);
+ok(x.lit(led)&&/lamp is on/.test(x.m.screen.text()),'  doorbell.py: somebody sets "lamp" and when_changed lights the LED'); x.press(btn,true); x.adv(0.3);
+ok(x.m.link.get('doorbell')===true,'  the button is published as "doorbell"'); x.press(btn,false); x.adv(0.3); ok(x.m.link.get('doorbell')===false,'  …and unpublished on release'); x.m.key('c'); x.adv(0.2);
+x.m.link.set('pi.interval',0.5); x.m.input('python3 logger.py'); x.adv(1.8); ok(x.m.link.get('pi.readings')>=3&&x.m.link.get('pi.temperature')>30,'  logger.py publishes '+x.m.link.get('pi.readings')+' readings, at the pace "pi.interval" asks for'); x.m.key('c'); x.adv(0.2);
+r=py('from chalklink import Link\nl=Link()\nl.send("a", 1.5)\nl.set("b", True)\nprint(l.get("a"), l.get("b"), l.get("zz", 7), l.all(), l.online, l.wait_for("a", 1.5, timeout=1))\nl.send("bad name", 1)\n');
+ok(r.out.split('\n')[0]==="1.5 True 7 {'a': 1.5, 'b': True} False 1.5"&&/ValueError: not a tag name/.test(r.out),'chalklink: send, get with a default, all, wait_for — and a bad tag name is refused');
 x=example('pi_hunt'); led=x.pt('led');
 ok(x.run('cd cave; ls')==='clue1.txt'&&x.run('ls -a').indexOf('.clue2.txt')>=0&&x.run('grep KEY ~/library/ledger.txt')==='0009 KEY raspberry-jam','pi_hunt: ls -a finds the hidden clue, grep finds the password');
 ok(x.run('cd; ./unlock.sh raspberry-jam')==='-bash: ./unlock.sh: Permission denied'&&x.run('chmod +x unlock.sh; ./unlock.sh wrong')==='That is not the password. The light stays dark.','  the script needs chmod +x, and the right password');

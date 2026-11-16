@@ -34,6 +34,7 @@
     this.fxAt = {};
     this.rig = app.pi = new Pi.Rig(app.sim, function () { return app.doc; }, {
       clock: function () { return performance.now(); },
+      link: function () { return app.link ? app.link.store() : null; },
       changed: function () { app.changed(); },
       flashed: function (id, os) { if (id === self.cur) self.painted = null; app.toast("Flashed " + OS.DISTROS[os].name + " onto the card. Your home folder is kept; the Pi is starting up again."); },
       fx: function (id, kind, n, v) { self.fx(id, kind, n, v); }

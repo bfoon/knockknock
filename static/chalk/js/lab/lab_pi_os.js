@@ -337,6 +337,7 @@
     this.onHost = opts.onHost || function () {};
     this.onEdit = null;                      /* nano: set by the terminal window */
     this.clock = opts.clock || function () { return Date.now(); };
+    this.link = opts.link || L.PiPy.localLink();   /* Chalk Link: the board's shared tags (lab_link.js), or a private table */
     this.epoch = opts.epoch || null;         /* fixed wall clock, for tests */
     this.cols = 80; this.rows = 24;
     this.screen = new Screen();

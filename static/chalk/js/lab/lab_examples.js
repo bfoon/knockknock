@@ -902,6 +902,26 @@
     }
   });
 
+  ex({
+    id: "pi_link", mode: "pro", name: "Raspberry Pi: talk to the internet", level: "Raspberry Pi",
+    blurb: "Chalk Link: the Pi publishes its button as “doorbell” and obeys a “lamp” that any program, phone or real board can switch through the board's web API.",
+    build: function () {
+      var x = piBench(), s = ledSet(x.B, x.bb, 8, "yellow", 220);
+      x.B.on(x.bb, "button", "e20", { cap: "#d6453d" });
+      x.B.wire([x.pi, "GPIO17"], [x.bb, s.input], C.orange);
+      x.B.wire([x.pi, "GPIO2"], [x.bb, "a20"], C.blue);
+      x.B.wire([x.bb, "j22"], [x.bb, "bn22"], C.black);
+      return x.B.doc;
+    },
+    sd: function () {
+      return [{
+        "README.txt": "TALK TO THE INTERNET\n====================\nA Chalk Link is a web address with named values (\"tags\") behind it.\nOpen one with the Link button at the top of the lab, then:\n\n  link status              is this Pi online?\n  python3 doorbell.py      publish the button, obey the lamp\n\nWhile it runs, from ANY computer (the Link panel shows your real address):\n\n  curl '<address>set/?lamp=on'          the LED on the bench lights\n  curl '<address>tags/doorbell/?raw=1'  1 while the button is held\n\nOr without leaving this terminal (stop the program first, or add & to it):\n\n  link send lamp on        write a tag\n  link get doorbell        read one\n  link list                all of them\n\nThe program uses only \"lamp\" and \"doorbell\", never a pin number of the\nother side. Copy doorbell.py to a real Pi with chalklink.py beside it,\ngive Link() the address, and the real one takes the simulated one's place.\n",
+        "doorbell.py": "from chalklink import Link\nfrom gpiozero import LED, Button\nfrom signal import pause\n\nlink = Link()            # on a real Pi: Link(\"https://.../chalk/api/link/ck_.../\")\nled = LED(17)\nbutton = Button(2)\n\ndef lamp_changed(on):\n    led.value = on\n    print(\"lamp is\", \"on\" if on else \"off\")\n\n# the world -> this Pi\nlink.when_changed(\"lamp\", lamp_changed)\n\n# this Pi -> the world\nbutton.when_pressed = lambda: link.send(\"doorbell\", True)\nbutton.when_released = lambda: link.send(\"doorbell\", False)\n\nif link.online:\n    print(\"Online. Anyone with the address can set 'lamp' and read 'doorbell'.\")\nelse:\n    print(\"Offline: open a link with the Link button. Until then, try: link send lamp on\")\npause()\n",
+        "logger.py": "# Publish a reading every two seconds: the start of every dashboard.\nfrom chalklink import Link\nfrom gpiozero import CPUTemperature\nfrom time import sleep\n\nlink = Link()\ncpu = CPUTemperature()\ncount = 0\n\nwhile True:\n    count += 1\n    link.send(\"pi.temperature\", round(cpu.temperature, 1))\n    link.send(\"pi.readings\", count)\n    print(count, cpu.temperature)\n    sleep(link.get(\"pi.interval\", 2))     # your software can change how often\n"
+      }];
+    }
+  });
+
   /* Turn an example into a fresh document, code and all. */
   L.loadExample = function (id) {
     var e = EX.filter(function (x) { return x.id === id; })[0];

@@ -1,6 +1,6 @@
 from django.urls import path, register_converter
 
-from . import lab, power, views
+from . import lab, link, power, views
 
 
 class CodeConverter:
@@ -17,6 +17,21 @@ class CodeConverter:
 
 
 register_converter(CodeConverter, "boardcode")
+
+
+class LinkKeyConverter:
+    """A Chalk Link key: ck_ and 32 url-safe characters."""
+
+    regex = r"ck_[A-Za-z0-9_-]{20,60}"
+
+    def to_python(self, value):
+        return value
+
+    def to_url(self, value):
+        return str(value)
+
+
+register_converter(LinkKeyConverter, "linkkey")
 
 app_name = "chalk"
 
@@ -49,4 +64,12 @@ urlpatterns = [
     path("b/<uuid:pk>/power/ai/", power.PowerAIView.as_view(), name="power_ai"),
     path("b/<uuid:pk>/power/<uuid:plan_id>/", power.PowerView.as_view(), name="power_open"),
     path("b/<uuid:pk>/power/<uuid:plan_id>/delete/", power.PowerDeleteView.as_view(), name="power_delete"),
+    # Chalk Link: the board's HTTP API. The first line is the owner opening or
+    # rotating it; the rest are public to whoever holds the key (chalk/link.py).
+    path("b/<uuid:pk>/link/", link.LinkManageView.as_view(), name="link_manage"),
+    path("api/link/<linkkey:key>/", link.info, name="link_api"),
+    path("api/link/<linkkey:key>/tags/", link.tags, name="link_tags"),
+    path("api/link/<linkkey:key>/tags/<str:name>/", link.tag, name="link_tag"),
+    path("api/link/<linkkey:key>/set/", link.set_from_url, name="link_set"),
+    path("api/link/<linkkey:key>/events/", link.events, name="link_events"),
 ]

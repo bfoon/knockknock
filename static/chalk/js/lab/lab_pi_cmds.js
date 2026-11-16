@@ -1024,7 +1024,7 @@
         cwd: function () { return sh.cwd; }
       },
       system: function* (cmd) { var tree; try { tree = OS.parse(cmd); } catch (e) { ctx.err("sh: 1: Syntax error\n"); return 512; } return (yield* new OS.Shell(m, sh.user, sh).execList(tree, { stdin: "", out: ctx.out, err: ctx.err, proc: ctx.proc })) * 256; },
-      temp: function () { return m.temp(); }, user: sh.user
+      temp: function () { return m.temp(); }, user: sh.user, link: m.link
     };
     var proc = new Py.Process(env);
     if (ctx.proc) ctx.proc.py = proc;
@@ -1033,6 +1033,39 @@
       return yield* proc.runFile(src, path, argv);
     } finally { if (ctx.proc && ctx.proc.py === proc) ctx.proc.py = null; }
   }, { python: true });
+  /* Chalk Link from the shell: the same tags Python's chalklink module uses */
+  def("link", "Programs", "link list      link send lamp on      link get lamp", "Chalk Link: share named values with the board's web API, so software anywhere can read this project and drive it.", function (ctx) {
+    var a = ctx.args, lk = ctx.m.link, tagOk = function (n) { return /^[a-z0-9][a-z0-9_.\-]{0,47}$/.test(n || ""); };
+    var parse = function (t) { var low = t.toLowerCase(); return /^(true|on|yes)$/.test(low) ? true : /^(false|off|no)$/.test(low) ? false : /^(null|none)$/.test(low) ? null : /^-?\d+(\.\d+)?$/.test(t) ? parseFloat(t) : t; };
+    var show = function (v) { return v === true ? "true" : v === false ? "false" : v === null || v === undefined ? "null" : String(v); };
+    switch (a[0]) {
+      case "status": case undefined:
+        ctx.out(lk.online() ? "Chalk Link: " + c("32", "online") + "\n  " + lk.url() + "\n  " + Object.keys(lk.all()).length + " tags — link list shows them\n"
+                            : "Chalk Link: " + c("33", "offline") + " — values stay on this Pi.\n" + c("2", "  Open the Link panel at the top of the lab to give this board a web address.") + "\n");
+        return 0;
+      case "list": case "ls": {
+        var all = lk.all(), names = Object.keys(all).sort(), w = Math.max.apply(null, names.map(function (n) { return n.length; }).concat([3]));
+        if (!names.length) { ctx.out(c("2", "(no tags yet — link send NAME VALUE makes one)") + "\n"); return 0; }
+        names.forEach(function (n) { ctx.out(pad(n, w + 2) + show(all[n]) + "\n"); });
+        return 0;
+      }
+      case "get": {
+        if (!tagOk((a[1] || "").toLowerCase())) return ctx.fail("usage: link get NAME");
+        var v = lk.get(a[1].toLowerCase());
+        if (v === undefined) return ctx.fail("there is no tag called '" + a[1] + "' yet");
+        ctx.out(show(v) + "\n");
+        return 0;
+      }
+      case "send": case "set":
+        if (a.length < 3 || !tagOk(a[1].toLowerCase())) return ctx.fail("usage: link send NAME VALUE   (names: a-z 0-9 . - _)");
+        lk.set(a[1].toLowerCase(), parse(a.slice(2).join(" ")));
+        return 0;
+      case "url": if (!lk.online()) return ctx.fail("the link is offline"); ctx.out(lk.url() + "\n"); return 0;
+    }
+    ctx.err("Usage: link [status]\n       link list\n       link get NAME\n       link send NAME VALUE\n       link url\n");
+    return 1;
+  });
+
   def("pip pip3", "Programs", "pip list", "Python's package installer. On this Pi the GPIO libraries are already there.", function (ctx) {
     var a = ctx.args;
     if (a[0] === "list" || a[0] === "freeze") { ctx.out(a[0] === "freeze" ? "gpiozero==2.0.1\nRPi.GPIO==0.7.1\n" : "Package    Version\n---------- -------\ngpiozero   2.0.1\npip        23.0.1\nRPi.GPIO   0.7.1\nsetuptools 66.1.1\n"); return 0; }

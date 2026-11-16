@@ -127,14 +127,17 @@
   View.prototype.draw = function () {
     var app = this.app, doc = app.doc, c = this.c, z = this.cam.z, self = this, on = app.on, sim = app.sim, t = (Date.now() - app.t0) / 1000;
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    c.fillStyle = this.thermal ? "#0c1014" : "#15242b"; c.fillRect(0, 0, this.w, this.h);
+    /* the paper takes the scene's colours (chalk_theme.js); the thermal camera keeps its own dark */
+    var th = root.ChalkTheme ? root.ChalkTheme.colors() : { paper: "#15242b", grid: "rgba(120,170,190,.08)", ink: "rgba(232,238,244,.75)" };
+    this.ink = this.thermal ? "rgba(232,238,244,.75)" : th.ink;
+    c.fillStyle = this.thermal ? "#0c1014" : th.paper; c.fillRect(0, 0, this.w, this.h);
     c.setTransform(this.dpr * z, 0, 0, this.dpr * z, -this.cam.x * z * this.dpr, -this.cam.y * z * this.dpr);
     /* squared paper */
     var step = z < 0.35 ? 200 : z < 0.8 ? 100 : 20, x0 = Math.floor(this.cam.x / step) * step, y0 = Math.floor(this.cam.y / step) * step, x1 = this.cam.x + this.w / z, y1 = this.cam.y + this.h / z;
     c.lineWidth = 1 / z; c.beginPath();
     for (var gx = x0; gx < x1; gx += step) { c.moveTo(gx, y0); c.lineTo(gx, y1); }
     for (var gy = y0; gy < y1; gy += step) { c.moveTo(x0, gy); c.lineTo(x1, gy); }
-    c.strokeStyle = this.thermal ? "rgba(255,255,255,.035)" : "rgba(120,170,190,.08)"; c.stroke();
+    c.strokeStyle = this.thermal ? "rgba(255,255,255,.035)" : th.grid; c.stroke();
 
     var o = { on: on, t: t, G: sim.env.G }, flagged = this.flags, pulse = this.flagT && Date.now() - this.flagT < 6000 ? 0.5 + 0.5 * Math.sin(Date.now() / 140) : 0;
     doc.parts.forEach(function (p) { if (W.def(p) && W.def(p).back) self.part(c, p, o); });
@@ -172,7 +175,7 @@
         c.beginPath(); c.arc(x, y, big ? 7 : 4.6, 0, TAU); c.fillStyle = W.KIND_COLOR[k]; c.fill();
         c.lineWidth = big ? 2.5 : 1.3; c.strokeStyle = big ? "#ffd36b" : "rgba(255,255,255,.75)"; c.stroke();
         if (z > 0.85 || big) {
-          c.font = "600 8px system-ui"; c.fillStyle = "rgba(232,238,244,.75)"; c.textBaseline = "middle";
+          c.font = "600 8px system-ui"; c.fillStyle = self.ink || "rgba(232,238,244,.75)"; c.textBaseline = "middle";
           if (q.side === "t") { c.textAlign = "center"; c.fillText(q.n, x, y - 11); } else if (q.side === "b") { c.textAlign = "center"; c.fillText(q.n, x, y + 12); }
           else if (q.side === "l") { c.textAlign = "right"; c.fillText(q.n, x - 9, y); } else { c.textAlign = "left"; c.fillText(q.n, x + 9, y); }
         }
@@ -200,7 +203,7 @@
       W.draw.rr(c, -5, -5, s.w + 10, s.h + 10, 9); c.stroke(); c.setLineDash([]);
     }
     if (this.cam.z > 0.6 && !d.back && p.type !== "label") {
-      c.font = "600 9px system-ui"; c.textAlign = "left"; c.textBaseline = "alphabetic"; c.fillStyle = "rgba(232,238,244,.6)";
+      c.font = "600 9px system-ui"; c.textAlign = "left"; c.textBaseline = "alphabetic"; c.fillStyle = this.ink || "rgba(232,238,244,.6)";
       var hasTop = W.termsOf(p).some(function (q) { return q.side === "t"; });
       c.fillText((app.refs[p.id] || "") + (p.name ? " · " + p.name : ""), 0, hasTop ? s.h + 12 + (W.termsOf(p).some(function (q) { return q.side === "b"; }) ? 12 : 0) : -6);
     }

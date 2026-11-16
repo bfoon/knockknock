@@ -229,6 +229,7 @@
     e.m = new OS.Machine({
       os: pr.os, host: typeof pr.host === "string" && pr.host ? pr.host : null, gpio: e.gpio, sd: /^#!chalk-sd/.test(saved) ? saved : "",
       clock: this.hooks.clock,
+      link: this.hooks.link ? this.hooks.link() : null,
       onChange: function (sd) {
         var d = self.getDoc();
         d.programs = d.programs || {};

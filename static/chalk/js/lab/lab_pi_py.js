@@ -33,7 +33,7 @@
 
   Py.SIGINT = { sig: "INT" };
   Py.BOARD = { 3: 2, 5: 3, 7: 4, 8: 14, 10: 15, 11: 17, 12: 18, 13: 27, 15: 22, 16: 23, 18: 24, 19: 10, 21: 9, 22: 25, 23: 11, 24: 8, 26: 7, 29: 5, 31: 6, 32: 12, 33: 13, 35: 19, 36: 16, 37: 26, 38: 20, 40: 21 };
-  Py.MODULES = "gpiozero, RPi.GPIO, time, random, math, datetime, signal, sys, os";
+  Py.MODULES = "gpiozero, RPi.GPIO, chalklink, time, random, math, datetime, signal, sys, os";
 
   /* ============================================================ VALUES */
 
@@ -955,6 +955,7 @@
     this.frames = []; this.ops = 0; this.threads = []; this.devices = []; this.owner = {};
     this.modules = {}; this.file = "<stdin>"; this.lines = [];
     this.rpi = { mode: null, chans: {}, warn: true, pwm: {}, events: [] };
+    this.watches = [];        /* chalklink: tags somebody asked to be told about */
     this.exit = null;
     this.builtins = makeBuiltins(this);
   }
@@ -1524,6 +1525,12 @@
           if (cb) this.fire(cb, o);
         } else if (cur && d.whenHeld && !d.held && d.since != null && now - d.since >= d.holdTime) { d.held = true; this.fire(d.whenHeld, o); }
       }
+    }
+    /* chalklink.when_changed */
+    for (var w = 0; w < this.watches.length; w++) {
+      var wt = this.watches[w], val = wt.read();
+      if (!wt.primed) { wt.primed = true; wt.last = val; continue; }
+      if (!eq(val, wt.last)) { wt.last = val; this.spawn(this.call(wt.cb, wt.wants ? [val] : [], {}, 0)); }
     }
     /* RPi.GPIO.add_event_detect */
     this.rpi.events.forEach(function (ev) {
@@ -2182,6 +2189,69 @@
   MODULES["gpiozero.tones"] = function () {
     var Tone = named(function (a, kw, it, line) { var v = arg(a, kw, 0, "value", "midi" in kw ? null : "frequency" in kw ? kw.frequency : "note" in kw ? kw.note : null); if ("midi" in kw) return fl(440 * Math.pow(2, (nv(kw.midi) - 69) / 12)); return fl(toneHz(v, line)); }, "Tone");
     return { Tone: Tone };
+  };
+
+  /* ----------------------------------------------------------- chalklink
+   * Chalk Link from Python: named values shared with the board's HTTP API,
+   * so a program can report to — and take orders from — software anywhere.
+   * The real chalklink.py (for a real Pi) has the same four calls, which is
+   * the point: the program does not change when the Pi stops being
+   * simulated. */
+
+  function toPy(v) { return typeof v === "number" && v % 1 !== 0 ? fl(v) : v === undefined ? null : v; }
+  function fromPy(v, line) {
+    if (v instanceof Fl) return v.v;
+    if (v === null || typeof v === "boolean" || typeof v === "number" || typeof v === "string") return v;
+    throw new PyErr("TypeError", "a link value must be a number, True/False, a string or None, not " + tn(v), line);
+  }
+  function tagName(v, line) {
+    var n = typeof v === "string" ? v.trim().toLowerCase() : "";
+    if (!/^[a-z0-9][a-z0-9_.\-]{0,47}$/.test(n)) throw new PyErr("ValueError", "not a tag name: " + repr(v) + " (use a-z, 0-9, dot, dash and underscore)", line);
+    return n;
+  }
+  MODULES.chalklink = function (it) {
+    var store = it.env.link || (it.env.link = Py.localLink());
+    var LINK = {
+      name: "Link", mod: "chalklink", props: {
+        online: { get: function () { return !!store.online(); } },
+        url: { get: function () { return store.url ? store.url() : null; } }
+      },
+      repr: function () { return "<chalklink.Link " + (store.online() ? "online" : "offline: values stay on this Pi") + ">"; },
+      methods: {
+        send: function (o, a, kw, i2, line) { need(a, 2, 2, "send", line); store.set(tagName(a[0], line), fromPy(a[1], line)); return null; },
+        get: function (o, a, kw, i2, line) { var v = store.get(tagName(a[0], line)); return v === undefined ? arg(a, kw, 1, "default", null) : toPy(v); },
+        all: function () { var d = new Dict(), all = store.all(); Object.keys(all).sort().forEach(function (k) { d.set(k, toPy(all[k])); }); return d; },
+        when_changed: function (o, a, kw, i2, line) {
+          var name = tagName(a[0], line), cb = a[1];
+          if (typeof cb !== "function" && !(cb instanceof Fn)) throw new PyErr("TypeError", "when_changed needs a function to call", line);
+          it.watches.push({ read: function () { var v = store.get(name); return v === undefined ? null : toPy(v); }, cb: cb, wants: !(cb instanceof Fn) || cb.node.params.length > 0, primed: false });
+          return null;
+        },
+        wait_for: function* (o, a, kw, i2, line) {
+          var name = tagName(a[0], line), want = a.length > 1 ? a[1] : undefined, to = arg(a, kw, 2, "timeout", null), t0 = it.now(), first = store.get(name);
+          for (;;) {
+            var v = store.get(name);
+            if (want !== undefined ? (v !== undefined && eq(toPy(v), want)) : v !== first) return v === undefined ? null : toPy(v);
+            if (to != null && it.now() - t0 >= nv(to)) return null;
+            yield 0.05;
+          }
+        },
+        close: function () { return null; }
+      }
+    };
+    LINK.methods.set = LINK.methods.send;
+    var ctor = function (a) {
+      var o = new Obj(LINK);
+      if (a.length && !it.linkNoted) { it.linkNoted = true; it.env.out("chalklink: on the simulated Pi the address is not needed — this board's own link is used.\n", "err"); }
+      return o;
+    };
+    ctor.cls = LINK; LINK.ctor = ctor; ctor.pyname = "Link";
+    return { Link: ctor };
+  };
+  /* With no link open the tags live in memory: programs still run, they just talk to themselves. */
+  Py.localLink = function () {
+    var t = {};
+    return { get: function (n) { return t[n]; }, set: function (n, v) { t[n] = v; }, all: function () { var o = {}; for (var k in t) o[k] = t[k]; return o; }, online: function () { return false; }, url: function () { return null; } };
   };
 
   /* ------------------------------------------------------------ RPi.GPIO */

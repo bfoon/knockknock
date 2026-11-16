@@ -1,0 +1,98 @@
+/* ==========================================================================
+   Chalk labs — scenes
+   The Circuit Lab and the Power Lab were built in the dark, like a workshop
+   at night. A scene re-dresses both: the panels around the work, and the
+   surface the work sits on. Parts keep their own colours in every scene —
+   a red LED is red on any bench — so a scene only ever changes the room.
+
+   chalk_theme.js sets data-theme on <html> (and remembers it); every rule
+   here hangs off that attribute, so with no script nothing changes.
+   A custom surface colour arrives as --mat-custom* and data-mat="custom".
+   ========================================================================== */
+
+html[data-theme="daylight"] {
+  --panel: #f3f1ec; --panel-2: #fbfaf7; --panel-3: #e7e3da; --ink: #1c2630; --muted: #5d6974; --line: rgba(28, 38, 48, .16);
+  --copper: #c9731f; --copper-hi: #a85c12; --live: #b87400; --bad: #c8321f; --warn: #a66a00; --ok: #1f8a4c;
+  --th-mat: #e8eef0; --th-mat-line: #d3dde1; --th-mat-strong: #bccbd1; --pw-paper: #f4f7f8; --pw-grid: rgba(40, 80, 100, .13); --pw-ink: rgba(28, 38, 48, .8);
+  color-scheme: light;
+}
+html[data-theme="blueprint"] {
+  --panel: #0c1730; --panel-2: #112042; --panel-3: #1a2f5c; --ink: #e6efff; --muted: #93a8cf; --line: rgba(190, 215, 255, .16);
+  --copper: #ffd166; --copper-hi: #ffe19a;
+  --th-mat: #1a4b96; --th-mat-line: #2a5fb0; --th-mat-strong: #4b82d4; --pw-paper: #174486; --pw-grid: rgba(200, 225, 255, .16); --pw-ink: rgba(230, 240, 255, .85);
+}
+html[data-theme="chalkboard"] {
+  --panel: #131c17; --panel-2: #19261f; --panel-3: #22332a; --ink: #eef3e6; --muted: #98a894; --line: rgba(235, 245, 225, .13);
+  --copper: #f2d06b; --copper-hi: #ffe59a;
+  --th-mat: #24493b; --th-mat-line: #2e5a49; --th-mat-strong: #3b6f5b; --pw-paper: #1f4033; --pw-grid: rgba(220, 240, 220, .11); --pw-ink: rgba(238, 243, 230, .8);
+}
+html[data-theme="plum"] {
+  --panel: #1a1222; --panel-2: #23182e; --panel-3: #31223f; --ink: #f3eaf7; --muted: #a895b3; --line: rgba(240, 225, 250, .13);
+  --copper: #ff8fb1; --copper-hi: #ffb3ca;
+  --th-mat: #37223f; --th-mat-line: #452c4f; --th-mat-strong: #573963; --pw-paper: #2c1b33; --pw-grid: rgba(240, 200, 255, .09); --pw-ink: rgba(243, 234, 247, .8);
+}
+html[data-theme="kraft"] {
+  --panel: #1f1913; --panel-2: #29211a; --panel-3: #382d22; --ink: #f4ead9; --muted: #b3a28a; --line: rgba(250, 235, 210, .14);
+  --th-mat: #c2a273; --th-mat-line: #b39262; --th-mat-strong: #9d7d50; --pw-paper: #cdb086; --pw-grid: rgba(70, 45, 15, .16); --pw-ink: rgba(45, 30, 12, .82);
+}
+html[data-theme="graph"] {
+  --th-mat: #fbfcfa; --th-mat-line: #dcebe3; --th-mat-strong: #b9d5c7; --pw-paper: #fbfcfa; --pw-grid: rgba(30, 120, 80, .16); --pw-ink: rgba(28, 38, 48, .8);
+}
+html[data-theme="night"] {
+  --panel: #05070a; --panel-2: #0a0e13; --panel-3: #131920; --ink: #dfe6ee; --muted: #77838f; --line: rgba(220, 230, 240, .10);
+  --th-mat: #0b1015; --th-mat-line: #121a22; --th-mat-strong: #1a2530; --pw-paper: #080c10; --pw-grid: rgba(120, 170, 190, .07); --pw-ink: rgba(223, 230, 238, .75);
+}
+
+/* the bench takes the scene's surface (kid mode keeps its own green only in the default scene) */
+html[data-theme] body .bench-host, html[data-theme] body .bench { --mat: var(--th-mat); --mat-line: var(--th-mat-line); --mat-line-strong: var(--th-mat-strong); background: var(--th-mat); }
+html[data-theme] body .bench-wrap:fullscreen, html[data-theme] body.bench-max .bench-wrap { background: var(--th-mat); }
+html[data-mat="custom"] body .bench-host, html[data-mat="custom"] body .bench { --mat: var(--mat-custom); --mat-line: var(--mat-custom-line); --mat-line-strong: var(--mat-custom-strong); background: var(--mat-custom); }
+html[data-mat="custom"] body .bench-wrap:fullscreen, html[data-mat="custom"] body.bench-max .bench-wrap { background: var(--mat-custom); }
+html[data-mat="custom"] { --pw-paper: var(--mat-custom); --pw-grid: var(--mat-custom-grid); --pw-ink: var(--mat-custom-ink); }
+
+/* Daylight is the one scene whose panels are light: the few places that
+   assumed a dark room are put right here. */
+html[data-theme="daylight"] .lab-top button:hover, html[data-theme="daylight"] .dock button:hover:not(:disabled), html[data-theme="daylight"] .side button:hover,
+html[data-theme="daylight"] .pw button:hover:not(:disabled), html[data-theme="daylight"] .pw a.btn:hover { border-color: rgba(28, 38, 48, .4); }
+html[data-theme="daylight"] .msg code, html[data-theme="daylight"] .cp-out code { background: rgba(28, 38, 48, .08); }
+html[data-theme="daylight"] .blk-list { border-left-color: rgba(28, 38, 48, .16); }
+html[data-theme="daylight"] .blk::before { background: rgba(28, 38, 48, .2); }
+html[data-theme="daylight"] .blk-grip { color: rgba(28, 38, 48, .4); }
+html[data-theme="daylight"] .dlg::backdrop { background: rgba(40, 50, 60, .45); }
+html[data-theme="daylight"] button.primary, html[data-theme="daylight"] button.accent, html[data-theme="daylight"] .lab-top .accent,
+html[data-theme="daylight"] .tabs button[aria-selected="true"] { --copper-hi: #de8a34; }
+html[data-theme="daylight"] .lab-top button.accent, html[data-theme="daylight"] .dock button.primary, html[data-theme="daylight"] .side button.primary, html[data-theme="daylight"] .dlg button.primary,
+html[data-theme="daylight"] .pw button.primary, html[data-theme="daylight"] .pw button.accent { background: #d4893a; border-color: #d4893a; color: #1a1006; }
+
+/* Some things are dark objects in any room — the power switch, the code
+   editor, the phone, the tool trays floating over the bench. In Daylight
+   they stay dark, so inside them the ink goes back to light. */
+html[data-theme="daylight"] :is(.power, .mode, .dock-place, .fs-spaces, .fs-bar, .bench-tools, .side-unfold, .narrate, .code-ed, .code-errors, .serial-out, .msg-code, .cp, .cp-review,
+    .phone-frame, .ws-tray, .ws-hint, .st-host, .st-bar, .st-status, .st-empty, .b3-hud, .coach-card, .toast, .pw-meter, .pw-lamps, .pa-msg.bot, .wz-facts div, .lk-code, .pi-pane) {
+  --panel: #121a21; --panel-2: #18222b; --panel-3: #1f2b36; --ink: #e8eef4; --muted: #8b9aa8; --line: rgba(232, 238, 244, .12);
+  --copper: #d4893a; --copper-hi: #f0ad62; --live: #ffd36b; --bad: #ff6a5a; --warn: #f2b13a; --ok: #5bd88a;
+  color: var(--ink); color-scheme: dark;
+}
+html[data-theme="daylight"] .narrate { background: #0f151b; }
+html[data-theme="daylight"] .lab-top a.lab-link, html[data-theme="daylight"] .lab-top .lab-link { background: var(--panel-3); color: var(--ink); border-color: var(--line); }
+html[data-theme="daylight"] .pw-drawer .pw-tools button b { color: #e8eef4; }
+html[data-theme="daylight"] :is(.pw-drawer .pw-tools, .wz-types, .ps-list) button[aria-pressed="true"] { background: #f6e3c8; }
+html[data-theme="daylight"] .pw-top .power { background: #121a21; color: #e8eef4; }
+
+/* ---- the picker ---------------------------------------------------------- */
+.th-btn { display: inline-flex; align-items: center; gap: .4rem; }
+.th-btn i { width: 14px; height: 14px; border-radius: 50%; background: conic-gradient(#ff6a5a, #f2b13a, #5bd88a, #4dd6d6, #6ea8ff, #d58cff, #ff6a5a); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .25); }
+.th-pop { position: fixed; z-index: 90; width: min(372px, calc(100vw - 16px)); padding: .8rem; border-radius: 14px; background: var(--panel); color: var(--ink); border: 1px solid var(--line); box-shadow: 0 24px 60px rgba(0, 0, 0, .5); font: 14px/1.4 var(--sans); }
+.th-pop h3 { margin: 0 0 .1rem; font-size: 14px; }
+.th-pop p { margin: 0 0 .6rem; color: var(--muted); font-size: 12.5px; }
+.th-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: .45rem; margin-bottom: .7rem; }
+.th-pop .th-scene { display: grid; gap: .25rem; padding: .3rem; min-height: 0; border-radius: 10px; background: transparent; border: 2px solid transparent; font-size: 11.5px; text-align: center; color: inherit; cursor: pointer; }
+.th-pop .th-scene:hover { border-color: var(--line); }
+.th-pop .th-scene[aria-pressed="true"] { border-color: var(--copper); }
+.th-scene span.pic { display: block; height: 44px; border-radius: 6px; position: relative; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(128, 128, 128, .35); }
+.th-scene span.pic::before { content: ""; position: absolute; inset: 0 0 62% 0; }           /* the room */
+.th-scene span.pic::after { content: ""; position: absolute; left: 22%; top: 52%; width: 34%; height: 30%; border-radius: 3px; background: #1f8a46; box-shadow: 34px 4px 0 -4px #e0261c; }   /* a board and an LED, for scale */
+.th-custom { display: flex; align-items: center; gap: .5rem; padding-top: .6rem; border-top: 1px solid var(--line); }
+.th-custom label { flex: 1; font-size: 12.5px; }
+.th-custom input[type="color"] { width: 38px; height: 30px; min-height: 0; padding: 2px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-3); cursor: pointer; }
+.th-pop .th-custom button { min-height: 30px; padding: .2rem .6rem; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-3); color: inherit; font-size: 12.5px; cursor: pointer; }

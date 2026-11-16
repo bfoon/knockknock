@@ -578,3 +578,40 @@ class BoardPlan(models.Model):
     @property
     def part_count(self):
         return len((self.data or {}).get("parts") or [])
+
+
+def _link_key():
+    return "ck_" + secrets.token_urlsafe(24)
+
+
+class BoardLink(models.Model):
+    """A board's door to the outside world: Chalk Link.
+
+    One secret key, and behind it a small table of named values ("tags") —
+    `lamp`, `d1.on`, `temperature`. Anything holding the key can read and
+    write them over plain HTTP (chalk.link): the Circuit Lab's simulation, a
+    real Raspberry Pi or ESP32 on the desk, or somebody's own web platform.
+    That shared table is the whole idea: a simulated project and a physical
+    one become interchangeable because both only ever talk to the tags.
+
+    The state is one JSON object rather than a row per tag: a project has a
+    few dozen tags at most, they are always read together, and one row keeps
+    a write a single locked update.
+    """
+
+    board = models.OneToOneField(Board, on_delete=models.CASCADE, related_name="link")
+    key = models.CharField(max_length=64, unique=True, default=_link_key)
+    # {tag: {"v": value, "s": seq, "t": iso time, "by": who}}
+    state = models.JSONField(default=dict, blank=True)
+    # the last few hundred changes, oldest first: [seq, iso time, tag, value, who]
+    log = models.JSONField(default=list, blank=True)
+    seq = models.BigIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Link · {self.board.title}"
+
+    def rotate(self):
+        self.key = _link_key()
+        self.save(update_fields=["key", "updated_at"])

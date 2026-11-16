@@ -8,6 +8,10 @@
 <link rel="stylesheet" href="{% static 'chalk/css/chalk_fonts.css' %}">
 <link rel="stylesheet" href="{% static 'chalk/css/chalk_lab.css' %}">
 <link rel="stylesheet" href="{% static 'chalk/css/chalk_pi.css' %}?v=1">
+<link rel="stylesheet" href="{% static 'chalk/css/chalk_link.css' %}?v=1">
+<link rel="stylesheet" href="{% static 'chalk/css/chalk_theme.css' %}?v=1">
+{# In the head on purpose: the scene is applied before the page is drawn. #}
+<script src="{% static 'chalk/js/chalk_theme.js' %}?v=1"></script>
 </head>
 <body class="lab" data-mode="pro">
 
@@ -149,7 +153,8 @@
 <script src="{% static 'chalk/js/lab/lab_projects.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_coach.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_app.js' %}"></script>
-{# After the app: the Pi's terminal attaches itself to the running lab. #}
+{# After the app: Chalk Link (the board's web API), then the Pi's terminal, which uses it. #}
+<script src="{% static 'chalk/js/lab/lab_link.js' %}?v=1"></script>
 <script src="{% static 'chalk/js/lab/lab_pi_term.js' %}?v=1"></script>
 {% endwith %}
 </body>

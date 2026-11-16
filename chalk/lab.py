@@ -491,6 +491,7 @@ class LabView(LoginRequiredMixin, View):
             "openUrl": reverse("chalk:lab_open", args=[board.id, zero]),
             "newUrl": reverse("chalk:lab", args=[board.id]) + "?new=1",
             "stageUrl": reverse("chalk:stage", args=[board.id]),
+            "linkUrl": reverse("chalk:link_manage", args=[board.id]),
             "csrf": get_token(request),
         }
         return render(request, self.template_name, {

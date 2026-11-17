@@ -21,6 +21,9 @@
     var rt = new L.MCU.Runtime(prog, {
       volts: function (num) { return sim.mcuVolts(mcuId, num); },
       echo: function (num) { return sim.echoDistance(mcuId, num); },
+      /* a DHT on this pin, and pins switched faster than a solve (lab_parts3.js) */
+      dht: function (num) { return sim.dhtFor ? sim.dhtFor(mcuId, num) : null; },
+      pinChange: function (num, level) { if (sim.pinChange) sim.pinChange(mcuId, num, level); },
       floating: function (num) {
         /* nothing else on this pin's node, and nothing pulling it */
         if (kid) return false;

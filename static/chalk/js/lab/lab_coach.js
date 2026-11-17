@@ -677,7 +677,26 @@
     mic: "Three legs: 5 V, ground, and OUT to an analog pin. Print its readings first to find out what 'loud' looks like in your room, then pick your threshold.",
     speaker: "Power it from 5 V, not from the pin: the pin only carries the signal. With Speaker.h it can talk as well as play notes.",
     smart_cam: "An I²C part: SDA to A4, SCL to A5, and it can share those two pins with a screen. It answers questions — cam.colour(), cam.x(), cam.motion() — rather than sending pictures.",
-    piezo: "It plays whatever frequency tone() gives it — a tune, a siren, a click."
+    piezo: "It plays whatever frequency tone() gives it — a tune, a siren, a click.",
+    /* the advanced drawer (lab_parts3.js) */
+    water_level: "S to an analog pin. Power + from a digital pin and switch it on only to read: bare copper in water corrodes in days.",
+    float_switch: "Just a switch: one leg to a pin set to INPUT_PULLUP, the other to ground. LOW means the water has lifted the float.",
+    flow_sensor: "Red 5 V, black ground, yellow to pin 2 or 3 — the interrupt pins — and count pulses with attachInterrupt().",
+    water_pump: "Never on a pin: 200 mA. Battery + to the pump, pump − to a MOSFET's drain, and a diode across the pump.",
+    solenoid_valve: "A 12 V coil: switch it with a MOSFET or a relay, and put a diode across it or the switch-off spike kills the MOSFET.",
+    dht: "VCC, DATA, ground. One reading every two seconds at most — ask faster and you just get the last one again.",
+    joystick: "VRx and VRy to analog pins, SW to a digital pin with INPUT_PULLUP. Leave a small dead zone round 512 or it never quite stops.",
+    rotary_encoder: "CLK on pin 2 with an interrupt, DT on pin 3. When CLK changes, DT tells you the direction.",
+    pulse_sensor: "Purple to an analog pin. Print the raw readings first and pick a threshold between the resting level and the peaks.",
+    acs712: "It goes in line with the load, like an ammeter: IP+ from the supply, IP− to the load. OUT reads about 512 when nothing flows.",
+    l298n: "Motor battery to 12V and GND, and join that GND to the Arduino's. Take the ENA/ENB jumpers off only when you want speed control.",
+    stepper: "The Stepper library wants the pins in the order 8, 10, 9, 11 for this motor. Power + from 5 V, not from a pin.",
+    hc595: "Pin 10 (MR) to 5 V and pin 13 (OE) to ground, or nothing ever shows. Q0 is pin 15, on the other side from Q1–Q7.",
+    mcp3008: "Only needed on a Raspberry Pi. Power it from 3.3 V, never 5 V, or its DOUT will push 5 V into GPIO9.",
+    optocoupler: "Pin 1 has the dot. The input LED needs its own resistor, just like any LED.",
+    regulator: "Input on the left, ground in the middle, output on the right. Put a 10 µF capacitor on each side and it stays steady.",
+    neopixel: "DIN, 5 V, ground. A 330 Ω resistor in the data wire and a big capacitor across the power save many rings.",
+    solar_panel: "It is a power source: red +, black −. A diode in series stops a battery emptying back into it at night."
   };
 
   /* ============================================================ THE UI */

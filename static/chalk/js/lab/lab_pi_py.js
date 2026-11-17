@@ -33,7 +33,7 @@
 
   Py.SIGINT = { sig: "INT" };
   Py.BOARD = { 3: 2, 5: 3, 7: 4, 8: 14, 10: 15, 11: 17, 12: 18, 13: 27, 15: 22, 16: 23, 18: 24, 19: 10, 21: 9, 22: 25, 23: 11, 24: 8, 26: 7, 29: 5, 31: 6, 32: 12, 33: 13, 35: 19, 36: 16, 37: 26, 38: 20, 40: 21 };
-  Py.MODULES = "gpiozero, RPi.GPIO, chalklink, time, random, math, datetime, signal, sys, os";
+  Py.MODULES = "gpiozero, RPi.GPIO, chalklink, board, neopixel, adafruit_dht, time, random, math, datetime, signal, sys, os";
 
   /* ============================================================ VALUES */
 
@@ -818,6 +818,7 @@
   }
   function index(seq, i, line) {
     if (seq instanceof Dict) { if (!seq.has(i)) throw new PyErr("KeyError", repr(i), line); return seq.get(i); }
+    if (seq instanceof Obj && seq.cls.getitem) return seq.cls.getitem(seq, i, line);
     var isS = typeof seq === "string", arr = seq instanceof Tuple ? seq.v : seq instanceof Obj && seq.cls.items ? seq.cls.items(seq) : seq;
     if (seq instanceof Range) { var n0 = seq.len(), k = toIdx(i, "range", line); if (k < 0) k += n0; if (k < 0 || k >= n0) throw new PyErr("IndexError", "range object index out of range", line); return seq.a + k * seq.s; }
     if (!isS && !Array.isArray(arr)) throw new PyErr("TypeError", "'" + tn(seq) + "' object is not subscriptable", line);
@@ -1244,6 +1245,7 @@
   };
   P.setitem = function (o, i, v, line) {
     if (o instanceof Dict) { o.set(i, v); return; }
+    if (o instanceof Obj && o.cls.setitem) { o.cls.setitem(o, i, v, line); return; }
     if (Array.isArray(o)) {
       var j = toIdx(i, "list", line); if (j < 0) j += o.length;
       if (j < 0 || j >= o.length) throw new PyErr("IndexError", "list assignment index out of range", line);
@@ -1857,6 +1859,7 @@
   function parsePin(it, spec, line) {
     var n = null;
     if (isInt(spec)) n = +spec;
+    else if (spec instanceof Obj && spec.cls.boardPin) n = spec.d.n;           /* board.D18 */
     else if (typeof spec === "string") {
       var m = /^(?:GPIO|BCM)(\d+)$/i.exec(spec) || /^(\d+)$/.exec(spec);
       if (m) n = +m[1];
@@ -2166,6 +2169,95 @@
       }
     });
 
+    /* --- motors: two pins, one for each way round (an L298N's IN1/IN2) --- */
+    var motorSet = function (o, v) {
+      var d = o.d;
+      d.v = v;
+      if (d.pwm) { gpio.pwm(d.fwd, v > 0 ? v : 0, 100); gpio.pwm(d.bwd, v < 0 ? -v : 0, 100); }
+      else { gpio.write(d.fwd, v > 0 ? 1 : 0); gpio.write(d.bwd, v < 0 ? 1 : 0); }
+    };
+    var speedArg = function (a, kw, line) { return frac(arg(a, kw, 0, "speed", 1), line); };
+    var MOTOR = cls("Motor", {
+      init: function (o, a, kw, line) {
+        var d = o.d;
+        d.fwd = claim(it, o, arg(a, kw, 0, "forward", null), line);
+        d.bwd = claim(it, o, arg(a, kw, 1, "backward", null), line);
+        var en = arg(a, kw, 2, "enable", null);
+        d.pwm = truthy(arg(a, kw, 3, "pwm", true));
+        gpio.setup(d.fwd, "out"); gpio.setup(d.bwd, "out");
+        if (en != null) { d.en = claim(it, o, en, line); gpio.setup(d.en, "out"); gpio.write(d.en, 1); }
+        motorSet(o, 0);
+      },
+      repr: function (o) { return o.d.closed ? "<gpiozero.Motor object closed>" : "<gpiozero.Motor object on pins forward=GPIO" + o.d.fwd + ", backward=GPIO" + o.d.bwd + ">"; },
+      props: {
+        value: { get: function (o) { return fl(o.d.v); }, set: function (o, v, i2, line) { var x = numArg(v, "value", line); if (x < -1 || x > 1) throw new PyErr("OutputDeviceBadValue", "Motor value must be between -1 and 1", line); motorSet(o, x); } },
+        is_active: ro(function (o) { return o.d.v !== 0; }),
+        closed: ro(function (o) { return !!o.d.closed; })
+      },
+      methods: {
+        forward: function (o, a, kw, i2, line) { motorSet(o, speedArg(a, kw, line)); return null; },
+        backward: function (o, a, kw, i2, line) { motorSet(o, -speedArg(a, kw, line)); return null; },
+        reverse: function (o) { motorSet(o, -o.d.v); return null; },
+        stop: function (o) { motorSet(o, 0); return null; },
+        close: function (o, a, kw, i2) { if (!o.d.closed) motorSet(o, 0); return closeDev(o, a, kw, i2); }
+      }
+    });
+    /* Two motors as a car: Robot(left=(4, 14), right=(17, 18)) */
+    cls("Robot", {
+      init: function (o, a, kw, line) {
+        var l = arg(a, kw, 0, "left", null), r = arg(a, kw, 1, "right", null), pwm = { pwm: arg(a, kw, 99, "pwm", true) };
+        if (l == null || r == null) throw new PyErr("GPIOPinMissing", "left and right motor pins must be provided, e.g. Robot(left=(4, 14), right=(17, 18))", line);
+        var pair = function (p) { if (p instanceof Obj && p.cls === MOTOR.cls) return p; var q = listOf(p, line); if (q.length < 2) throw new PyErr("GPIOPinMissing", "each motor needs two pins, like (4, 14)", line); return MOTOR(q, pwm, it, line); };
+        o.d.kids = [pair(l), pair(r)];
+      },
+      repr: function (o) { return o.d.closed ? "<gpiozero.Robot object closed>" : "<gpiozero.Robot object containing 2 devices: left_motor, right_motor>"; },
+      props: {
+        value: ro(function (o) { return new Tuple([fl(o.d.kids[0].d.v), fl(o.d.kids[1].d.v)]); }),
+        left_motor: ro(function (o) { return o.d.kids[0]; }), right_motor: ro(function (o) { return o.d.kids[1]; }),
+        is_active: ro(function (o) { return o.d.kids[0].d.v !== 0 || o.d.kids[1].d.v !== 0; }),
+        closed: ro(function (o) { return !!o.d.closed; })
+      },
+      methods: {
+        forward: function (o, a, kw, i2, line) { var s = speedArg(a, kw, line); motorSet(o.d.kids[0], s); motorSet(o.d.kids[1], s); return null; },
+        backward: function (o, a, kw, i2, line) { var s = speedArg(a, kw, line); motorSet(o.d.kids[0], -s); motorSet(o.d.kids[1], -s); return null; },
+        left: function (o, a, kw, i2, line) { var s = speedArg(a, kw, line); motorSet(o.d.kids[0], -s); motorSet(o.d.kids[1], s); return null; },
+        right: function (o, a, kw, i2, line) { var s = speedArg(a, kw, line); motorSet(o.d.kids[0], s); motorSet(o.d.kids[1], -s); return null; },
+        reverse: function (o) { motorSet(o.d.kids[0], -o.d.kids[0].d.v); motorSet(o.d.kids[1], -o.d.kids[1].d.v); return null; },
+        stop: function (o) { motorSet(o.d.kids[0], 0); motorSet(o.d.kids[1], 0); return null; },
+        close: function (o, a, kw, i2) { o.d.kids.forEach(function (k) { if (!k.d.closed) motorSet(k, 0); }); return closeDev(o, a, kw, i2); }
+      }
+    });
+
+    /* --- MCP3008: the Pi's missing analog inputs, over SPI --- */
+    var adcRead = function (o) {
+      var r = gpio.adc ? gpio.adc(o.d.dev) : "there is no circuit";
+      if (typeof r === "string") {
+        if (!o.d.told) { o.d.told = true; it.env.out("gpiozero: the MCP3008 on SPI CE" + o.d.dev + " didn't answer (" + r + "), so it reads 0.\n  Wire CLK→GPIO11, DOUT→GPIO9, DIN→GPIO10, CS→GPIO" + (o.d.dev ? 7 : 8) + ", VDD and VREF to 3.3 V, both grounds to GND.\n", "err"); }
+        return 0;
+      }
+      o.d.told = false;
+      return Math.round(r.read(o.d.ch) * 1023) / 1023;          /* ten bits, like the chip */
+    };
+    cls("MCP3008", {
+      init: function (o, a, kw, line) {
+        var ch = numArg(arg(a, kw, 0, "channel", 0), "channel", line);
+        if (ch % 1 || ch < 0 || ch > 7) throw new PyErr("ValueError", "channel must be between 0 and 7", line);
+        o.d.ch = ch; o.d.diff = truthy(arg(a, kw, 1, "differential", false));
+        o.d.dev = numArg(arg(a, kw, 99, "device", 0), "device", line) ? 1 : 0;
+        o.d.vmax = numArg(arg(a, kw, 99, "max_voltage", 3.3), "max_voltage", line);
+      },
+      repr: function (o) { return o.d.closed ? "<gpiozero.MCP3008 object closed>" : "<gpiozero.MCP3008 object using port=0, device=" + o.d.dev + ", channel=" + o.d.ch + ">"; },
+      props: {
+        value: ro(function (o) { return fl(adcRead(o)); }),
+        raw_value: ro(function (o) { return Math.round(adcRead(o) * 1023); }),
+        voltage: ro(function (o) { return fl(Math.round(adcRead(o) * o.d.vmax * 10000) / 10000); }),
+        channel: ro(function (o) { return o.d.ch; }), differential: ro(function (o) { return o.d.diff; }),
+        max_voltage: ro(function (o) { return fl(o.d.vmax); }), is_active: ro(function (o) { return adcRead(o) > 0.5; }),
+        closed: ro(function (o) { return !!o.d.closed; })
+      },
+      methods: { close: closeDev }
+    });
+
     cls("CPUTemperature", {
       init: function () {},
       repr: function (o) { return "<gpiozero.CPUTemperature temperature=" + (it.env.temp ? it.env.temp() : 45).toFixed(2) + ">"; },
@@ -2255,6 +2347,85 @@
   };
 
   /* ------------------------------------------------------------ RPi.GPIO */
+
+  /* ------------------------------------------- board, adafruit_dht, neopixel
+   * The Adafruit (CircuitPython-style) libraries most Pi sensor tutorials
+   * use: pins are named board.D4, board.D18 … rather than plain numbers. */
+  MODULES.board = function () {
+    var PIN = { name: "Pin", mod: "microcontroller", boardPin: true, props: { id: { get: function (o) { return o.d.n; } } }, methods: {}, repr: function (o) { return "board." + o.d.name; } };
+    var m = {}, mk = function (name, n) { var o = new Obj(PIN); o.d.n = n; o.d.name = name; m[name] = o; };
+    for (var n = 0; n <= 27; n++) mk("D" + n, n);
+    [["SDA", 2], ["SCL", 3], ["SCK", 11], ["SCLK", 11], ["MOSI", 10], ["MISO", 9], ["CE0", 8], ["CE1", 7], ["TXD", 14], ["RXD", 15]].forEach(function (q) { mk(q[0], q[1]); });
+    return m;
+  };
+  MODULES.adafruit_dht = function (it) {
+    var gpio = it.gpio, out = {};
+    [11, 22, 21].forEach(function (model) {
+      var name = model === 21 ? "DHT21" : "DHT" + model;
+      var read = function (o, line) {
+        if (o.d.closed) throw new PyErr("RuntimeError", "This DHT has been released with exit()", line);
+        var now = it.now();
+        /* the library hands back its last reading if asked again too soon */
+        if (o.d.last && now - o.d.t < (model === 11 ? 1 : 2)) return o.d.last;
+        var r = gpio.dht ? gpio.dht(o.d.pin) : null;
+        if (!r) throw new PyErr("RuntimeError", "DHT sensor not found, check wiring", line);
+        if (r.model !== model && !(model === 21 && r.model === 22)) throw new PyErr("RuntimeError", "Received unplausible data. Try again. (a DHT" + r.model + " answered — use adafruit_dht.DHT" + r.model + ")", line);
+        o.d.last = r; o.d.t = now;
+        return r;
+      };
+      var C = { name: name, mod: "adafruit_dht", props: {}, methods: {}, repr: function (o) { return "<adafruit_dht." + name + " object on GPIO" + o.d.pin + ">"; } };
+      C.props.temperature = { get: function (o, i2, line) { var r = read(o, line); return model === 11 ? Math.round(r.t) : fl(r.t); } };
+      C.props.humidity = { get: function (o, i2, line) { var r = read(o, line); return model === 11 ? Math.round(r.h) : fl(r.h); } };
+      C.methods.measure = function (o, a, kw, i2, line) { read(o, line); return null; };
+      C.methods.exit = function (o) { if (!o.d.closed) { o.d.closed = true; if (it.owner[o.d.pin] === o) { delete it.owner[o.d.pin]; gpio.release(o.d.pin); } } return null; };
+      var ctor = function (a, kw, i2, line) {
+        var o = new Obj(C);
+        o.d.pin = claim(it, o, arg(a, kw, 0, "pin", null), line);
+        gpio.setup(o.d.pin, "in");
+        it.devices.push(o);
+        return o;
+      };
+      ctor.cls = C; C.ctor = ctor; ctor.pyname = name;
+      out[name] = ctor;
+    });
+    return out;
+  };
+  MODULES.neopixel = function (it) {
+    var gpio = it.gpio;
+    var byte = function (x, line) { if (!isNum(x)) throw new PyErr("TypeError", "colour values must be numbers, not '" + tn(x) + "'", line); return Math.max(0, Math.min(255, Math.round(nv(x)))); };
+    var colour = function (v, line) {
+      if (isInt(v)) { var n = +v; return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+      var l = listOf(v, line);
+      if (l.length !== 3 && l.length !== 4) throw new PyErr("ValueError", "Expected tuple of length 3, got " + l.length, line);
+      return [byte(l[0], line), byte(l[1], line), byte(l[2], line)];
+    };
+    var push = function (o) { if (!o.d.closed) gpio.neo[o.d.pin] = o.d.px.map(function (c) { return c.map(function (x) { return Math.round(x * o.d.b); }); }); };
+    var slot = function (o, i, line) { if (!isInt(i)) throw new PyErr("TypeError", "indices must be integers", line); var j = +i < 0 ? +i + o.d.px.length : +i; if (j < 0 || j >= o.d.px.length) throw new PyErr("IndexError", "NeoPixel index out of range", line); return j; };
+    var C = { name: "NeoPixel", mod: "neopixel", props: {}, methods: {}, repr: function (o) { return "[" + o.d.px.map(function (c) { return "(" + c.join(", ") + ")"; }).join(", ") + "]"; } };
+    C.items = function (o) { return o.d.px.map(function (c) { return new Tuple(c.slice()); }); };
+    C.getitem = function (o, i, line) { return new Tuple(o.d.px[slot(o, i, line)].slice()); };
+    C.setitem = function (o, i, v, line) { o.d.px[slot(o, i, line)] = colour(v, line); if (o.d.auto) push(o); };
+    C.props.n = { get: function (o) { return o.d.px.length; } };
+    C.props.brightness = { get: function (o) { return fl(o.d.b); }, set: function (o, v, i2, line) { o.d.b = Math.max(0, Math.min(1, numArg(v, "brightness", line))); if (o.d.auto) push(o); } };
+    C.props.auto_write = { get: function (o) { return o.d.auto; }, set: function (o, v) { o.d.auto = truthy(v); } };
+    C.methods.fill = function (o, a, kw, i2, line) { var c = colour(arg(a, kw, 0, "color", 0), line); o.d.px = o.d.px.map(function () { return c.slice(); }); if (o.d.auto) push(o); return null; };
+    C.methods.show = function (o) { push(o); return null; };
+    C.methods.deinit = function (o) { o.d.px.forEach(function (c) { c[0] = c[1] = c[2] = 0; }); push(o); o.d.closed = true; if (it.owner[o.d.pin] === o) { delete it.owner[o.d.pin]; gpio.release(o.d.pin); } return null; };
+    var ctor = function (a, kw, i2, line) {
+      var o = new Obj(C), n = numArg(arg(a, kw, 1, "n", null), "n", line);
+      if (n % 1 || n < 1) throw new PyErr("ValueError", "n must be a whole number of pixels", line);
+      o.d.pin = claim(it, o, arg(a, kw, 0, "pin", null), line);
+      o.d.px = []; for (var i = 0; i < n; i++) o.d.px.push([0, 0, 0]);
+      o.d.b = Math.max(0, Math.min(1, numArg(arg(a, kw, 3, "brightness", 1), "brightness", line)));
+      o.d.auto = truthy(arg(a, kw, 4, "auto_write", true));
+      gpio.setup(o.d.pin, "out"); gpio.write(o.d.pin, 0);
+      push(o);
+      it.devices.push(o);
+      return o;
+    };
+    ctor.cls = C; C.ctor = ctor; ctor.pyname = "NeoPixel";
+    return { NeoPixel: ctor, RGB: "RGB", GRB: "GRB", RGBW: "RGBW", GRBW: "GRBW" };
+  };
 
   MODULES.RPi = function (it) { return { GPIO: it.importModule("RPi.GPIO", 0) }; };
   MODULES["RPi.GPIO"] = function (it) {

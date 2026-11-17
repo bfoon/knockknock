@@ -368,7 +368,7 @@ class CatalogueTests(TestCase):
         js_dir = Path(settings.BASE_DIR) / "static" / "chalk" / "js" / "lab"
         src = "".join(p.read_text() for p in sorted(js_dir.glob("lab_parts*.js"))) + (js_dir / "lab_wireless.js").read_text() + (js_dir / "lab_av.js").read_text()
         js = set(re.findall(r'\badd\("([a-z0-9_]+)",', src)) - {"breadboard_half", "breadboard_full"}
-        modules = set(re.findall(r"^\s{4}(soil|gas|sound|flame|ir):\s*\{ name:", src, re.M))
+        modules = set(re.findall(r"^\s{4}(\w+):\s*\{ name:", src, re.M))   # the kit-module tables (soil, gas … rain, hall)
         js |= {"mod_" + m for m in modules}
         self.assertEqual(js, set(lab_ai.CATALOG), "lab_ai.CATALOG and lab_parts*.js disagree")
 

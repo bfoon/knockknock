@@ -922,6 +922,451 @@
     }
   });
 
+  /* ====================================================== WATER & SENSORS
+   * The advanced drawer (lab_parts3.js): water, weather, a heartbeat, a
+   * car, a stepper and a ring of colour. */
+
+  ex({
+    id: "flood_alarm", mode: "pro", name: "Flood alarm", level: "Water & sensors",
+    blurb: "A water level sensor on the floor. When water reaches it, the alarm sounds and the L light comes on. The sensor is powered from pin 7 only while it is being read — bare traces in water corrode.",
+    build: function () {
+      var B = new Builder("pro"), uno = B.add("arduino_uno", 0, 0);
+      var wl = B.add("water_level", 38 * P, 16 * P), pz = B.add("piezo", 48 * P, 12 * P);
+      B.wire([wl, "+"], [uno, "D7"], C.red);
+      B.wire([wl, "-"], [uno, "GND2"], C.black);
+      B.wire([wl, "S"], [uno, "A0"], C.yellow);
+      B.wire([pz, "+"], [uno, "D8"], C.orange);
+      B.wire([pz, "-"], [uno, "GND3"], C.black);
+      return B.doc;
+    },
+    code: [
+      "const int SENSOR_POWER = 7;   // the sensor is only powered while we read it",
+      "const int ALARM = 8;",
+      "const int WET = 300;          // above this, water is touching the sensor",
+      "",
+      "void setup() {",
+      "  Serial.begin(9600);",
+      "  pinMode(SENSOR_POWER, OUTPUT);",
+      "  pinMode(LED_BUILTIN, OUTPUT);",
+      "}",
+      "",
+      "int readWater() {",
+      "  digitalWrite(SENSOR_POWER, HIGH);",
+      "  delay(10);                   // let it settle",
+      "  int level = analogRead(A0);",
+      "  digitalWrite(SENSOR_POWER, LOW);",
+      "  return level;",
+      "}",
+      "",
+      "void loop() {",
+      "  int level = readWater();",
+      "  Serial.print(\"Water: \");",
+      "  Serial.println(level);",
+      "  if (level > WET) {",
+      "    digitalWrite(LED_BUILTIN, HIGH);",
+      "    tone(ALARM, 1800, 250);     // beep... beep... beep",
+      "  } else {",
+      "    digitalWrite(LED_BUILTIN, LOW);",
+      "  }",
+      "  delay(500);",
+      "}"
+    ]
+  });
+
+  ex({
+    id: "plant_waterer", mode: "pro", name: "Self-watering plant", level: "Water & sensors",
+    blurb: "A soil sensor decides, a MOSFET switches the pump, and a float switch in the tank stops it running dry. Drag the soil sensor's Wetness slider and watch it water, then stop.",
+    build: function () {
+      var B = new Builder("pro"), uno = B.add("arduino_uno", 0, 0);
+      var soil = B.add("mod_soil", 36 * P, 14 * P, { level: 20, threshold: 60 });
+      var bat = B.add("battery_aa", 56 * P, 2 * P, { cells: 4 });
+      var pump = B.add("water_pump", 66 * P, 24 * P), q = B.add("nmos", 50 * P, 32 * P), rg = B.add("resistor", 41 * P, 30 * P, { ohms: 220 });
+      var d = B.add("diode", 58 * P, 16 * P), fl = B.add("float_switch", 30 * P, 32 * P, { water: true });
+      B.wire([soil, "VCC"], [uno, "5V"], C.red);
+      B.wire([soil, "GND"], [uno, "GND2"], C.black);
+      B.wire([soil, "AO"], [uno, "A0"], C.yellow);
+      B.wire([bat, "+"], [pump, "+"], C.red);
+      B.wire([pump, "-"], [q, "D"], C.blue);
+      B.wire([q, "S"], [bat, "-"], C.black);
+      B.wire([d, "K"], [pump, "+"], C.red);
+      B.wire([d, "A"], [pump, "-"], C.blue);
+      B.wire([uno, "D9"], [rg, "1"], C.orange);
+      B.wire([rg, "2"], [q, "G"], C.orange);
+      B.wire([uno, "GND1"], [q, "S"], C.black);
+      B.wire([fl, "1"], [uno, "D4"], C.green);
+      B.wire([fl, "2"], [uno, "GND3"], C.black);
+      return B.doc;
+    },
+    code: [
+      "const int PUMP = 9;      // through a MOSFET: the pump wants 200 mA",
+      "const int TANK = 4;      // float switch: closes when the tank has water",
+      "const int DRY = 700;     // the soil sensor reads HIGHER when the soil is drier",
+      "",
+      "void setup() {",
+      "  Serial.begin(9600);",
+      "  pinMode(PUMP, OUTPUT);",
+      "  pinMode(TANK, INPUT_PULLUP);",
+      "}",
+      "",
+      "void loop() {",
+      "  int soil = analogRead(A0);",
+      "  bool tankHasWater = digitalRead(TANK) == LOW;",
+      "  Serial.print(\"Soil: \");",
+      "  Serial.println(soil);",
+      "  if (!tankHasWater) {",
+      "    digitalWrite(PUMP, LOW);",
+      "    Serial.println(\"Fill the tank!\");",
+      "  } else if (soil > DRY) {",
+      "    Serial.println(\"Dry - watering\");",
+      "    digitalWrite(PUMP, HIGH);",
+      "    delay(2000);            // a short drink, then check again",
+      "    digitalWrite(PUMP, LOW);",
+      "  }",
+      "  delay(1000);",
+      "}"
+    ]
+  });
+
+  ex({
+    id: "weather_station", mode: "pro", name: "Weather station", level: "Water & sensors",
+    blurb: "Temperature and humidity from a DHT11, rain from the rain plate, all on the LCD. Change the readings in Inspect.",
+    build: function () {
+      var B = new Builder("pro"), uno = B.add("arduino_uno", 0, 0);
+      var dht = B.add("dht", 38 * P, 10 * P), rain = B.add("mod_rain", 46 * P, 16 * P, { level: 0, threshold: 40 }), lcd = B.add("lcd_i2c", 33 * P, 26 * P);
+      B.wire([dht, "VCC"], [uno, "5V"], C.red);
+      B.wire([dht, "GND"], [uno, "GND2"], C.black);
+      B.wire([dht, "DATA"], [uno, "D2"], C.green);
+      B.wire([rain, "VCC"], [uno, "5V"], C.red);
+      B.wire([rain, "GND"], [uno, "GND2"], C.black);
+      B.wire([rain, "DO"], [uno, "D3"], C.blue);
+      B.wire([lcd, "GND"], [uno, "GND1"], C.black);
+      B.wire([lcd, "VCC"], [uno, "5V"], C.red);
+      B.wire([lcd, "SDA"], [uno, "A4"], C.blue);
+      B.wire([lcd, "SCL"], [uno, "A5"], C.purple);
+      return B.doc;
+    },
+    code: [
+      "#include <DHT.h>",
+      "#include <LiquidCrystal_I2C.h>",
+      "",
+      "DHT dht(2, DHT11);",
+      "LiquidCrystal_I2C lcd(0x27, 16, 2);",
+      "const int RAIN = 3;    // the rain module's DO goes LOW when it is wet",
+      "",
+      "void setup() {",
+      "  dht.begin();",
+      "  lcd.init();",
+      "  lcd.backlight();",
+      "  pinMode(RAIN, INPUT);",
+      "}",
+      "",
+      "void loop() {",
+      "  float t = dht.readTemperature();",
+      "  float h = dht.readHumidity();",
+      "  lcd.setCursor(0, 0);",
+      "  if (isnan(t)) {",
+      "    lcd.print(\"No sensor?      \");",
+      "  } else {",
+      "    lcd.print(t, 0);",
+      "    lcd.print(\" C   \");",
+      "    lcd.print(h, 0);",
+      "    lcd.print(\" %     \");",
+      "  }",
+      "  lcd.setCursor(0, 1);",
+      "  if (digitalRead(RAIN) == LOW) lcd.print(\"Raining!        \");",
+      "  else lcd.print(\"Dry outside     \");",
+      "  delay(2000);           // a DHT11 can only be read every second or two",
+      "}"
+    ]
+  });
+
+  ex({
+    id: "heart_monitor", mode: "pro", name: "Heartbeat monitor", level: "Water & sensors",
+    blurb: "Each heartbeat pushes the sensor's reading up. The sketch times the gap between peaks and turns it into beats per minute — the L light flashes with every beat.",
+    build: function () {
+      var B = new Builder("pro"), uno = B.add("arduino_uno", 0, 0);
+      var hs = B.add("pulse_sensor", 39 * P, 12 * P), lcd = B.add("lcd_i2c", 33 * P, 26 * P);
+      B.wire([hs, "+"], [uno, "5V"], C.red);
+      B.wire([hs, "-"], [uno, "GND2"], C.black);
+      B.wire([hs, "S"], [uno, "A0"], C.purple);
+      B.wire([lcd, "GND"], [uno, "GND1"], C.black);
+      B.wire([lcd, "VCC"], [uno, "5V"], C.red);
+      B.wire([lcd, "SDA"], [uno, "A4"], C.blue);
+      B.wire([lcd, "SCL"], [uno, "A5"], C.purple);
+      return B.doc;
+    },
+    code: [
+      "#include <LiquidCrystal_I2C.h>",
+      "",
+      "LiquidCrystal_I2C lcd(0x27, 16, 2);",
+      "const int THRESHOLD = 600;   // a beat pushes the reading above this",
+      "unsigned long lastBeat = 0;",
+      "bool inBeat = false;",
+      "",
+      "void setup() {",
+      "  pinMode(LED_BUILTIN, OUTPUT);",
+      "  lcd.init();",
+      "  lcd.backlight();",
+      "  lcd.print(\"Finger on it...\");",
+      "}",
+      "",
+      "void loop() {",
+      "  int v = analogRead(A0);",
+      "  if (v > THRESHOLD && !inBeat) {          // the start of a beat",
+      "    inBeat = true;",
+      "    digitalWrite(LED_BUILTIN, HIGH);",
+      "    unsigned long now = millis();",
+      "    if (lastBeat > 0) {",
+      "      int bpm = 60000 / (now - lastBeat);  // milliseconds between beats -> beats a minute",
+      "      lcd.setCursor(0, 1);",
+      "      lcd.print(bpm);",
+      "      lcd.print(\" bpm      \");",
+      "    }",
+      "    lastBeat = now;",
+      "  }",
+      "  if (v < THRESHOLD - 60 && inBeat) {     // well below again: the beat is over",
+      "    inBeat = false;",
+      "    digitalWrite(LED_BUILTIN, LOW);",
+      "  }",
+      "  delay(5);",
+      "}"
+    ]
+  });
+
+  ex({
+    id: "flow_meter", mode: "pro", name: "Water meter (interrupts)", level: "Water & sensors",
+    blurb: "The flow meter pulses 7.5 times a second for every litre a minute. An interrupt counts every pulse — even while loop() is busy — and the LCD shows the flow and the total.",
+    build: function () {
+      var B = new Builder("pro"), uno = B.add("arduino_uno", 0, 0);
+      var fm = B.add("flow_sensor", 42 * P, 14 * P, { flow: 6 }), lcd = B.add("lcd_i2c", 33 * P, 26 * P);
+      B.wire([fm, "VCC"], [uno, "5V"], C.red);
+      B.wire([fm, "GND"], [uno, "GND2"], C.black);
+      B.wire([fm, "SIG"], [uno, "D2"], C.yellow);
+      B.wire([lcd, "GND"], [uno, "GND1"], C.black);
+      B.wire([lcd, "VCC"], [uno, "5V"], C.red);
+      B.wire([lcd, "SDA"], [uno, "A4"], C.blue);
+      B.wire([lcd, "SCL"], [uno, "A5"], C.purple);
+      return B.doc;
+    },
+    code: [
+      "#include <LiquidCrystal_I2C.h>",
+      "",
+      "LiquidCrystal_I2C lcd(0x27, 16, 2);",
+      "volatile unsigned long pulses = 0;   // volatile: changed by the interrupt",
+      "float litres = 0;",
+      "",
+      "void countPulse() {                  // runs on every pulse, by itself",
+      "  pulses++;",
+      "}",
+      "",
+      "void setup() {",
+      "  lcd.init();",
+      "  lcd.backlight();",
+      "  pinMode(2, INPUT);",
+      "  attachInterrupt(digitalPinToInterrupt(2), countPulse, FALLING);",
+      "}",
+      "",
+      "void loop() {",
+      "  delay(1000);",
+      "  noInterrupts();                    // take the count without it changing under us",
+      "  unsigned long n = pulses;",
+      "  pulses = 0;",
+      "  interrupts();",
+      "  float perMinute = n / 7.5;",
+      "  litres += perMinute / 60.0;",
+      "  lcd.setCursor(0, 0);",
+      "  lcd.print(perMinute, 1);",
+      "  lcd.print(\" L/min     \");",
+      "  lcd.setCursor(0, 1);",
+      "  lcd.print(litres, 2);",
+      "  lcd.print(\" L total   \");",
+      "}"
+    ]
+  });
+
+  ex({
+    id: "robot_car", mode: "pro", name: "Joystick robot car (L298N)", level: "Advanced",
+    blurb: "Two motors on an L298N driver, steered by a joystick. Push up to drive, sideways to spin. analogWrite() on ENA and ENB sets each wheel's speed — the ENA/ENB jumpers are off for that.",
+    build: function () {
+      var B = new Builder("pro"), uno = B.add("arduino_uno", 0, 0);
+      var drv = B.add("l298n", 46 * P, 34 * P, { jumperA: false, jumperB: false });
+      var ml = B.add("motor", 34 * P, 18 * P), mr = B.add("motor", 60 * P, 18 * P), bat = B.add("battery_aa", 40 * P, 40 * P, { cells: 6 });
+      var js = B.add("joystick", 10 * P, 30 * P, { x: 0, y: 70 });
+      B.wire([bat, "+"], [drv, "12V"], C.red);
+      B.wire([bat, "-"], [drv, "GND"], C.black);
+      B.wire([drv, "GND"], [uno, "GND1"], C.black);
+      B.wire([drv, "OUT1"], [ml, "1"], C.yellow);
+      B.wire([drv, "OUT2"], [ml, "2"], C.green);
+      B.wire([drv, "OUT4"], [mr, "2"], C.green);
+      B.wire([drv, "OUT3"], [mr, "1"], C.yellow);
+      [["ENA", "D5"], ["IN1", "D7"], ["IN2", "D8"], ["IN3", "D9"], ["IN4", "D10"], ["ENB", "D6"]].forEach(function (w, i) { B.wire([drv, w[0]], [uno, w[1]], [C.orange, C.blue, C.purple, C.blue, C.purple, C.orange][i]); });
+      B.wire([js, "GND"], [uno, "GND2"], C.black);
+      B.wire([js, "+5V"], [uno, "5V"], C.red);
+      B.wire([js, "VRx"], [uno, "A0"], C.yellow);
+      B.wire([js, "VRy"], [uno, "A1"], C.green);
+      return B.doc;
+    },
+    code: [
+      "const int ENA = 5, IN1 = 7, IN2 = 8;    // left motor",
+      "const int ENB = 6, IN3 = 9, IN4 = 10;   // right motor",
+      "",
+      "// one motor: + forwards, - backwards, 0 stop",
+      "void drive(int en, int a, int b, int speed) {",
+      "  digitalWrite(a, speed > 0 ? HIGH : LOW);",
+      "  digitalWrite(b, speed < 0 ? HIGH : LOW);",
+      "  analogWrite(en, min(abs(speed), 255));",
+      "}",
+      "",
+      "void setup() {",
+      "  for (int p = 5; p <= 10; p++) pinMode(p, OUTPUT);",
+      "}",
+      "",
+      "void loop() {",
+      "  int y = analogRead(A1) - 512;   // up/down: drive",
+      "  int x = analogRead(A0) - 512;   // left/right: steer",
+      "  if (abs(y) < 40) y = 0;          // a little dead zone in the middle",
+      "  if (abs(x) < 40) x = 0;",
+      "  drive(ENA, IN1, IN2, (y + x) / 2);",
+      "  drive(ENB, IN3, IN4, (y - x) / 2);",
+      "  delay(20);",
+      "}"
+    ]
+  });
+
+  ex({
+    id: "stepper_dial", mode: "pro", name: "Stepper follows a knob", level: "Advanced",
+    blurb: "Turn the knob and the stepper turns to match — all the way round, not just 180° like a servo. 2048 steps is one turn.",
+    build: function () {
+      var B = new Builder("pro"), uno = B.add("arduino_uno", 0, 0), bb = B.add("breadboard_half", 32 * P, 2 * P);
+      B.on(bb, "potentiometer", "e6", { pos: 0.5 });
+      var sm = B.add("stepper", 46 * P, 36 * P);
+      B.wire([uno, "5V"], [bb, "bp1"], C.red);
+      B.wire([uno, "GND2"], [bb, "bn1"], C.black);
+      B.wire([bb, "a6"], [bb, "tn5"], C.black);
+      B.wire([bb, "a8"], [bb, "tp8"], C.red);
+      B.wire([bb, "tp29"], [bb, "bp29"], C.red);
+      B.wire([bb, "tn29"], [bb, "bn29"], C.black);
+      B.wire([uno, "A0"], [bb, "a7"], C.yellow);
+      ["IN1", "IN2", "IN3", "IN4"].forEach(function (n, i) { B.wire([sm, n], [uno, "D" + (8 + i)], [C.blue, C.purple, C.yellow, C.orange][i]); });
+      B.wire([sm, "+"], [uno, "5V"], C.red);
+      B.wire([sm, "-"], [uno, "GND1"], C.black);
+      return B.doc;
+    },
+    code: [
+      "#include <Stepper.h>",
+      "",
+      "Stepper motor(2048, 8, 10, 9, 11);   // 2048 steps a turn; note the 8, 10, 9, 11 order",
+      "int pos = 0;                         // where the shaft is now, in steps",
+      "",
+      "void setup() {",
+      "  motor.setSpeed(12);                // RPM: a 28BYJ-48 tops out near 15",
+      "}",
+      "",
+      "void loop() {",
+      "  int target = map(analogRead(A0), 0, 1023, 0, 2048);",
+      "  int diff = target - pos;",
+      "  if (abs(diff) > 4) {",
+      "    int move = constrain(diff, -32, 32);   // small moves, so it keeps checking the knob",
+      "    motor.step(move);",
+      "    pos += move;",
+      "  }",
+      "}"
+    ]
+  });
+
+  ex({
+    id: "rainbow_ring", mode: "pro", name: "Rainbow ring (NeoPixels)", level: "Advanced",
+    blurb: "Twelve colour LEDs on one data pin. ColorHSV() walks round the colour wheel; the knob sets how fast the rainbow spins.",
+    build: function () {
+      var B = new Builder("pro"), uno = B.add("arduino_uno", 0, 0), bb = B.add("breadboard_half", 32 * P, 2 * P);
+      B.on(bb, "potentiometer", "e6", { pos: 0.3 });
+      var ring = B.add("neopixel", 48 * P, 34 * P, { count: 12 });
+      B.wire([uno, "5V"], [bb, "bp1"], C.red);
+      B.wire([uno, "GND2"], [bb, "bn1"], C.black);
+      B.wire([bb, "a6"], [bb, "tn5"], C.black);
+      B.wire([bb, "a8"], [bb, "tp8"], C.red);
+      B.wire([bb, "tp29"], [bb, "bp29"], C.red);
+      B.wire([bb, "tn29"], [bb, "bn29"], C.black);
+      B.wire([uno, "A0"], [bb, "a7"], C.yellow);
+      B.wire([ring, "DIN"], [uno, "D6"], C.green);
+      B.wire([ring, "5V"], [uno, "5V"], C.red);
+      B.wire([ring, "GND"], [uno, "GND1"], C.black);
+      return B.doc;
+    },
+    code: [
+      "#include <Adafruit_NeoPixel.h>",
+      "",
+      "Adafruit_NeoPixel ring(12, 6, NEO_GRB + NEO_KHZ800);",
+      "long hue = 0;     // 0-65535 is once round the colour wheel",
+      "",
+      "void setup() {",
+      "  ring.begin();",
+      "  ring.setBrightness(60);   // full white on all 12 would be 720 mA",
+      "}",
+      "",
+      "void loop() {",
+      "  int speed = map(analogRead(A0), 0, 1023, 64, 2048);",
+      "  for (int i = 0; i < 12; i++) {",
+      "    long h = hue + i * 65536L / 12;          // spread the wheel round the ring",
+      "    ring.setPixelColor(i, ring.gamma32(ring.ColorHSV(h)));",
+      "  }",
+      "  ring.show();",
+      "  hue += speed;",
+      "  delay(20);",
+      "}"
+    ]
+  });
+
+  ex({
+    id: "pi_flood", mode: "pro", name: "Raspberry Pi: water alarm (MCP3008)", level: "Raspberry Pi",
+    blurb: "A Pi has no analog pins, so an MCP3008 chip reads the water level sensor for it over SPI. Python sounds the alarm when the water rises.",
+    build: function () {
+      var x = piBench(), s = ledSet(x.B, x.bb, 8, "red", 220);
+      var adc = x.B.add("mcp3008", 44 * P, 30 * P), wl = x.B.add("water_level", 76 * P, 24 * P, { depth: 0 });
+      x.B.wire([x.pi, "GPIO17"], [x.bb, s.input], C.orange);
+      x.B.wire([adc, "16"], [x.pi, "3V3"], C.red);
+      x.B.wire([adc, "15"], [x.pi, "3V3"], C.red);
+      x.B.wire([adc, "14"], [x.pi, "GND1"], C.black);
+      x.B.wire([adc, "9"], [x.pi, "GND1"], C.black);
+      x.B.wire([adc, "13"], [x.pi, "GPIO11"], C.yellow);
+      x.B.wire([adc, "12"], [x.pi, "GPIO9"], C.green);
+      x.B.wire([adc, "11"], [x.pi, "GPIO10"], C.blue);
+      x.B.wire([adc, "10"], [x.pi, "GPIO8"], C.purple);
+      x.B.wire([wl, "+"], [x.pi, "3V3"], C.red);
+      x.B.wire([wl, "-"], [x.pi, "GND1"], C.black);
+      x.B.wire([wl, "S"], [adc, "1"], C.yellow);
+      return x.B.doc;
+    },
+    sd: function () {
+      return [{
+        "README.txt": "WATER ALARM\n===========\nThe water level sensor's S goes to CH0 (pin 1) of an MCP3008 chip, which\ntalks to the Pi over SPI: CLK GPIO11, DOUT GPIO9, DIN GPIO10, CS GPIO8.\nAn LED on GPIO17 is the alarm.\n\n  python3 water.py     then drag the sensor's Water depth slider up\n",
+        "water.py": "from gpiozero import MCP3008, LED\nfrom time import sleep\n\nwater = MCP3008(channel=0)   # the sensor's S pin is on CH0\nalarm = LED(17)\n\nwhile True:\n    level = water.value          # 0.0 dry ... about 0.68 when it is all under water\n    print(f\"water level {level:.2f}\")\n    if level > 0.3:\n        alarm.blink(0.1, 0.1)\n    else:\n        alarm.off()\n    sleep(1)\n"
+      }];
+    }
+  });
+
+  ex({
+    id: "pi_temp_ring", mode: "pro", name: "Raspberry Pi: temperature ring", level: "Raspberry Pi",
+    blurb: "A DHT11 reads the room and a NeoPixel ring shows it: more LEDs when it is warmer, blue when cold, green when comfortable, red when hot. Uses the Adafruit libraries most Pi tutorials use.",
+    build: function () {
+      var x = piBench();
+      var dht = x.B.add("dht", 44 * P, 30 * P, { temp: 22 }), ring = x.B.add("neopixel", 58 * P, 34 * P, { count: 12 });
+      x.B.wire([dht, "VCC"], [x.pi, "3V3"], C.red);
+      x.B.wire([dht, "GND"], [x.pi, "GND1"], C.black);
+      x.B.wire([dht, "DATA"], [x.pi, "GPIO4"], C.green);
+      x.B.wire([ring, "5V"], [x.pi, "5V"], C.red);
+      x.B.wire([ring, "GND"], [x.pi, "GND1"], C.black);
+      x.B.wire([ring, "DIN"], [x.pi, "GPIO18"], C.yellow);
+      return x.B.doc;
+    },
+    sd: function () {
+      return [{
+        "README.txt": "TEMPERATURE RING\n================\nDHT11 data on GPIO4, NeoPixel ring data on GPIO18.\n\n  python3 ring.py      then change the DHT's temperature in Inspect\n",
+        "ring.py": "import board\nimport neopixel\nimport adafruit_dht\nfrom time import sleep\n\nsensor = adafruit_dht.DHT11(board.D4)\nring = neopixel.NeoPixel(board.D18, 12, brightness=0.3)\n\nwhile True:\n    t = sensor.temperature\n    if t < 18:\n        colour = (0, 80, 255)      # cold: blue\n    elif t < 26:\n        colour = (0, 255, 60)      # comfortable: green\n    else:\n        colour = (255, 40, 0)      # hot: red\n    lit = max(1, min(12, round((t - 10) / 2)))   # 10 C lights one LED, 34 C lights all 12\n    for i in range(12):\n        ring[i] = colour if i < lit else (0, 0, 0)\n    print(t, \"C\", lit, \"LEDs\")\n    sleep(2)\n"
+      }];
+    }
+  });
+
   /* Turn an example into a fresh document, code and all. */
   L.loadExample = function (id) {
     var e = EX.filter(function (x) { return x.id === id; })[0];

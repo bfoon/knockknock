@@ -8,7 +8,7 @@ measured, so the AI is talking about this circuit, not circuits in general.
 Everything that comes back is cleaned against CATALOG before it reaches the
 browser, and the browser checks it again before building anything.
 
-CATALOG mirrors static/chalk/js/lab/lab_parts*.js, lab_wireless.js and lab_av.js: type -> (name, kid part,
+CATALOG mirrors static/chalk/js/lab/lab_parts*.js (lab_parts3.js is the advanced drawer), lab_wireless.js and lab_av.js: type -> (name, kid part,
 pin names, default props). chalk/test_lab.py fails if the two drift apart.
 Breadboards are left out: the AI wires parts directly, which is easier to
 check and still builds a working circuit.
@@ -79,6 +79,35 @@ CATALOG = {
     'speaker': ('Speaker with voice', False, ('VCC', 'GND', 'IN'), {}),
     'smart_cam': ('Smart camera', False, ('VCC', 'GND', 'SDA', 'SCL'), {'scene': 'room', 'pos': 0, 'near': 35, 'live': False}),
     'k_brain': ('Robo Brain', True, ('OUT1', 'OUT2', 'OUT3', 'OUT4', 'GND1', 'IN1', 'IN2', 'EYE', '5V', 'GND2'), {}),
+    # the advanced drawer (lab_parts3.js)
+    'water_level': ('Water level sensor', False, ('S', '+', '-'), {'depth': 0}),
+    'mod_rain': ('Rain sensor', False, ('VCC', 'GND', 'DO', 'AO'), {'level': 30, 'threshold': 60}),
+    'float_switch': ('Float switch', False, ('1', '2'), {'water': False}),
+    'flow_sensor': ('Water flow meter (YF-S201)', False, ('VCC', 'GND', 'SIG'), {'flow': 0}),
+    'water_pump': ('Water pump (3–6 V)', False, ('+', '-'), {}),
+    'solenoid_valve': ('Solenoid valve (12 V)', False, ('+', '-'), {}),
+    'dht': ('Temperature & humidity (DHT11)', False, ('VCC', 'DATA', 'GND'), {'model': 'DHT11', 'temp': 24, 'humidity': 55}),
+    'joystick': ('Joystick module', False, ('GND', '+5V', 'VRx', 'VRy', 'SW'), {'x': 0, 'y': 0, 'pressed': False}),
+    'rotary_encoder': ('Rotary encoder (KY-040)', False, ('GND', '+', 'SW', 'DT', 'CLK'), {'clicks': 0, 'pressed': False}),
+    'touch_sensor': ('Touch sensor (TTP223)', False, ('GND', 'SIG', 'VCC'), {'touched': False}),
+    'pulse_sensor': ('Heartbeat sensor', False, ('S', '+', '-'), {'bpm': 72, 'finger': True}),
+    'accel': ('Accelerometer (ADXL335)', False, ('VCC', 'X', 'Y', 'Z', 'GND'), {'tiltX': 0, 'tiltY': 0, 'shake': False}),
+    'acs712': ('Current sensor (ACS712, 5 A)', False, ('VCC', 'OUT', 'GND', 'IP+', 'IP-'), {}),
+    'voltage_sensor': ('Voltage sensor (0–25 V)', False, ('S', '+', '-', 'VIN', 'GND'), {}),
+    'fsr': ('Force sensor (FSR 402)', False, ('1', '2'), {'force': 0}),
+    'flex_sensor': ('Flex sensor (2.2")', False, ('1', '2'), {'bend': 0}),
+    'uv_sensor': ('UV light sensor', False, ('GND', 'VCC', 'OUT'), {'uv': 3}),
+    'mod_hall': ('Hall magnet sensor', False, ('VCC', 'GND', 'DO', 'AO'), {'level': 30, 'threshold': 60}),
+    'mod_vibe': ('Vibration sensor (SW-420)', False, ('VCC', 'GND', 'DO', 'AO'), {'level': 30, 'threshold': 60}),
+    'mod_line': ('Line tracker (TCRT5000)', False, ('VCC', 'GND', 'DO', 'AO'), {'level': 0, 'threshold': 60}),
+    'l298n': ('Motor driver (L298N)', False, ('12V', 'GND', '5V', 'ENA', 'IN1', 'IN2', 'IN3', 'IN4', 'ENB', 'OUT1', 'OUT2', 'OUT3', 'OUT4'), {'jumperA': True, 'jumperB': True, 'reg': True}),
+    'stepper': ('Stepper motor (28BYJ-48 + ULN2003)', False, ('IN1', 'IN2', 'IN3', 'IN4', '+', '-'), {}),
+    'hc595': ('Shift register (74HC595)', False, ('1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16'), {}),
+    'mcp3008': ('Analog-to-digital chip (MCP3008)', False, ('1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16'), {}),
+    'optocoupler': ('Optocoupler (PC817)', False, ('1', '2', '3', '4'), {}),
+    'regulator': ('Voltage regulator (7805)', False, ('IN', 'GND', 'OUT'), {'volts': 5}),
+    'neopixel': ('NeoPixel ring (WS2812B)', False, ('DIN', '5V', 'GND'), {'count': 12}),
+    'solar_panel': ('Solar panel (6 V, 1 W)', False, ('+', '-'), {'sun': 80}),
 }
 
 
@@ -114,8 +143,10 @@ ARDUINO_RULES = (
     "analogWrite (pins 3,5,6,9,10,11), delay, delayMicroseconds, millis, micros, tone, noTone, pulseIn, map, "
     "constrain, min, max, abs, random, sqrt, pow, sin, cos; Serial.begin/print/println/available/read/parseInt; "
     "#include <Servo.h> with Servo.attach/write/read; #include <LiquidCrystal_I2C.h> with "
-    "LiquidCrystal_I2C lcd(0x27,16,2), lcd.init(), lcd.backlight(), lcd.clear(), lcd.setCursor(c,r), lcd.print(x). "
-    "NOT supported: interrupts, pointers, structs/classes, other libraries. It is an Uno: int is 16-bit. "
+    "LiquidCrystal_I2C lcd(0x27,16,2), lcd.init(), lcd.backlight(), lcd.clear(), lcd.setCursor(c,r), lcd.print(x); "
+    "attachInterrupt(digitalPinToInterrupt(2 or 3), fn, RISING/FALLING/CHANGE) with a volatile counter, noInterrupts()/interrupts(); "
+    "shiftOut(dataPin, clockPin, MSBFIRST, value); isnan(x); and the DHT, Adafruit_NeoPixel and Stepper libraries (see ADVANCED PARTS). "
+    "NOT supported: pointers, structs/classes, other libraries. It is an Uno: int is 16-bit. "
     "On the Uno, A4/A5 are SDA/SCL. Arduino pin names on the board part are D0-D13, A0-A5, 5V, 3V3, GND1, GND2, GND3."
 )
 
@@ -144,6 +175,26 @@ AV_RULES = (
     "or CAM_BLUE for the coloured object it sees; cam.x() is that object's position from -100 (far left) to 100 (far right); "
     "cam.size() 0-100 is how much of the picture it fills (bigger is nearer); cam.faces() is 1 when a person is in view; "
     "cam.snapshot() flashes its light. Use these for anything that should see, hear or speak."
+)
+
+ADVANCED_RULES = (
+    "Advanced parts. WATER: water_level (S, +, -) gives analogRead 0 dry to about 700 fully in; mod_rain DO goes LOW when wet; "
+    "float_switch is a switch to wire like a button with INPUT_PULLUP; flow_sensor SIG pulses 7.5 times a second per L/min — count "
+    "them with attachInterrupt on D2; water_pump (about 200 mA) and solenoid_valve (12 V coil) must be switched by an nmos, npn or "
+    "relay_module, never straight from a pin, with a diode across them (stripe to +). DHT: dht with VCC, DATA to a digital pin, GND; "
+    "#include <DHT.h>, DHT dht(4, DHT11); dht.begin(); dht.readTemperature(), dht.readHumidity() (NaN if unwired: test isnan). "
+    "joystick: VRx/VRy to analog pins (512 centre), SW to a pin with INPUT_PULLUP. rotary_encoder: CLK to D2 with attachInterrupt "
+    "CHANGE, DT to D3; clockwise when digitalRead(DT) != digitalRead(CLK). touch_sensor SIG goes HIGH when touched. pulse_sensor S to "
+    "an analog pin, peaks near 700. accel X/Y/Z to analog pins, 1.65 V at 0 g on 3V3. acs712 goes in line with a load (IP+ in, IP- out), "
+    "OUT reads 512 at 0 A, 185 mV per amp. voltage_sensor S is VIN/5. MOTORS: l298n — battery + to 12V, battery - and Arduino GND to "
+    "its GND, a motor on OUT1/OUT2 (and OUT3/OUT4), IN1..IN4 to digital pins; IN1 HIGH IN2 LOW = forward; set props jumperA false and "
+    "analogWrite ENA for speed. stepper: IN1..IN4 to D8..D11, + to 5V, - to GND; #include <Stepper.h>, Stepper motor(2048, 8, 10, 9, 11); "
+    "motor.setSpeed(10); motor.step(2048) is one turn. hc595: 16 and 10 to 5V, 8 and 13 to GND, 14 DS, 11 SH_CP clock, 12 ST_CP latch; "
+    "Q0 is pin 15, Q1..Q7 are pins 1..7, each LED through 220 ohm; digitalWrite(latch, LOW); shiftOut(data, clock, MSBFIRST, v); "
+    "digitalWrite(latch, HIGH). neopixel: DIN to a pin, 5V, GND; #include <Adafruit_NeoPixel.h>, Adafruit_NeoPixel strip(12, 6, "
+    "NEO_GRB + NEO_KHZ800); strip.begin(); strip.setPixelColor(i, strip.Color(r, g, b)); strip.show(); setBrightness(), ColorHSV(). "
+    "regulator (IN, GND, OUT) needs 2 V more in than out. optocoupler: 1 anode via a resistor, 2 cathode, 4 collector, 3 emitter. "
+    "solar_panel is a power source (+, -). mcp3008 is only for a Raspberry Pi (gpiozero MCP3008)."
 )
 
 KID_BRAIN = (
@@ -353,18 +404,19 @@ def _prompt(body):
     if serial.strip():
         parts += ["SERIAL MONITOR (latest):", serial]
     if kind == "build":
-        parts += ["PART CATALOG:", _catalog_text(mode == "kid"), WIRELESS_RULES, AV_RULES]
+        parts += ["PART CATALOG:", _catalog_text(mode == "kid"), WIRELESS_RULES, AV_RULES, ADVANCED_RULES]
     if kind in CODE_KINDS or kind == "build":
         parts.append(ARDUINO_RULES)  # (a project adds its own copy below, with the catalog)
         if kind in CODE_KINDS and any(isinstance(p, dict) and p.get("type") in ("mic", "speaker", "smart_cam")
                                       for p in (circuit.get("parts") or [])):
             parts.append(AV_RULES)   # the code helper must know the camera and speaker libraries
+            parts.append(ADVANCED_RULES)
         if mode == "kid":
             parts.append(KID_BRAIN)
     if kind == "blocks":
         parts += ["BLOCK FORMAT:", BLOCK_FORMAT, BLOCK_KID if mode == "kid" else BLOCK_PRO]
     if kind == "project":
-        parts += ["PART CATALOG:", _catalog_text(mode == "kid"), ARDUINO_RULES, WIRELESS_RULES, AV_RULES]
+        parts += ["PART CATALOG:", _catalog_text(mode == "kid"), ARDUINO_RULES, WIRELESS_RULES, AV_RULES, ADVANCED_RULES]
     if kind == "wire":
         chosen = str(body.get("selected") or "")
         parts += ["SELECTED: " + (chosen if ID_RE.match(chosen) else "(none)"), "PART CATALOG:", _catalog_text(mode == "kid")]

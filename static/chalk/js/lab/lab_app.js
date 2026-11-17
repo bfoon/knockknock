@@ -729,7 +729,7 @@
 
   /* ------------------------------------------------------------- drawer */
 
-  var CAT_ORDER = ["Toy box", "Boards", "Power", "Passive", "Lights & sound", "Sound & vision", "Switches", "Semiconductors", "Chips", "Sensors", "Motion", "Wireless", "Workshop", "Measure"];
+  var CAT_ORDER = ["Toy box", "Boards", "Power", "Passive", "Lights & sound", "Sound & vision", "Switches", "Semiconductors", "Chips", "Sensors", "Water", "Motion", "Advanced", "Wireless", "Workshop", "Measure"];
   App.prototype.drawer = function () {
     var self = this, kid = this.doc.mode === "kid", box = $("lab-drawer"), q = (this.drawerQ || "").toLowerCase();
     var showAll = kid && this.kidAll;

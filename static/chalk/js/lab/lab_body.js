@@ -55,7 +55,8 @@
     k_battery: [58, 32, 16], bulb: [14, 14, 24], k_bulb: [14, 14, 24], coin_cell: [22, 22, 6]
   };
   var TINT = { motor: "#b9c0c6", k_motor: "#b9c0c6", servo: "#3b6fd4", battery_9v: "#2b2f36", battery_aa: "#2b2f36", k_battery: "#c0392b", bulb: "#f6e7a1", k_bulb: "#f6e7a1" };
-  var TALL = [[/^arduino_uno/, 14], [/^raspberry_pi/, 17], [/^arduino_nano/, 8], [/^capacitor_e/, 12], [/^relay/, 16], [/^(led|k_led|rgb_led)/, 9], [/^hcsr04/, 16], [/^lcd/, 12], [/^(buzzer|piezo|k_buzzer)/, 10], [/^(ic|logic|lm358)/, 5], [/^resistor/, 3]];
+  var TALL = [[/^arduino_uno/, 14], [/^raspberry_pi/, 17], [/^arduino_nano/, 8], [/^capacitor_e/, 12], [/^relay/, 16], [/^(led|k_led|rgb_led)/, 9], [/^hcsr04/, 16], [/^lcd/, 12], [/^(buzzer|piezo|k_buzzer)/, 10], [/^(ic|logic|lm358)/, 5], [/^resistor/, 3],
+    [/^l298n/, 26], [/^stepper/, 20], [/^(water_pump|solenoid_valve)/, 30], [/^flow_sensor/, 26], [/^(dht|joystick)/, 14], [/^rotary_encoder/, 20], [/^regulator/, 16], [/^neopixel/, 4], [/^solar_panel/, 4], [/^(hc595|mcp3008|optocoupler)/, 5]];
   function tall(type) { for (var i = 0; i < TALL.length; i++) if (TALL[i][0].test(type)) return TALL[i][1]; return 7; }
   function tint(part) {
     var pr = L.propsOf(part), c = L.LED_COLORS && pr.color && L.LED_COLORS[pr.color];

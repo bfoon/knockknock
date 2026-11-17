@@ -93,6 +93,32 @@ ok(JSON.stringify(x.m.complete('pyt'))==='{"text":"python","list":[]}'&&x.m.comp
 x.m.input('while true; do echo tick; sleep 1; done'); x.adv(2.5); x.m.key('c'); x.adv(0.1); ok(/tick\n\^C\npi@raspberrypi:~ \$ $/.test(x.m.screen.text()),'Ctrl+C stops a shell loop');
 ok(L.Pi.sdOf(x.doc,x.pi.id).indexOf('#@pkg cowsay')>0&&x.saves()>0,'the SD card (files, history, installed packages) is written into the saved circuit');
 
+console.log('linux: apt mistakes, bc and calc');
+ok(/E: Unable to locate package update\n\(update is an apt command, not a package\. Type it without install:  sudo apt update\)/.test(x.run('sudo apt install update')),'sudo apt install update says to type sudo apt update');
+ok(/All packages are up to date/.test(x.run('sudo apt update',3)),'sudo apt update works');
+ok(x.run('bc').indexOf("Command 'bc' not found, but can be installed with:\nsudo apt install bc")===0&&/sudo apt install apcalc/.test(x.run('calc 1+1')),'before installing: bc and calc say which package brings them');
+ok(/bc\/stable/.test(x.run('apt search calculator'))&&/apcalc\/stable/.test(x.run('apt search calculator')),'apt search finds both calculators on the mirror');
+r=x.run('sudo apt install bc calc',6); ok(/Setting up bc /.test(r)&&/Setting up apcalc /.test(r),'sudo apt install bc calc (calc fetches apcalc, as on Debian)');
+ok(x.run("echo '7/2; scale=3; 22/7; -2^2; 2^100; .5*3' | bc")==='3\n3.142\n4\n1267650600228229401496703205376\n1.5','bc: scale, unary minus before ^, big numbers, last digit rules');
+ok(x.run("echo 's(1); 4*a(1); l(10); e(1)' | bc -l")==='.84147098480789650665\n3.14159265358979323844\n2.30258509299404568401\n2.71828182845904523536','bc -l: the maths library to 20 places, truncated like GNU bc');
+ok(x.run("echo 'obase=2; 10; obase=16; 255; ibase=2; 1111' | bc")==='1010\nFF\nF','bc: obase and ibase');
+ok(/^Runtime error \(func=\(main\), adr=\d+\): Divide by zero\n7$/.test(x.run("printf '1/0\\n7\\n' | bc")),'bc: divide by zero is reported and the next line still runs');
+ok(x.run('calc 1/3; calc 1/3*3; calc "sqrt(2)"; calc "2^0.5 == sqrt(2)"; calc 7//2; calc 7%2')==='\t~0.33333333333333333333\n\t1\n\t1.4142135623730950488\n\t1\n\t3\n\t1','calc: exact fractions, ~ for rounded answers, a tab before each');
+ok(x.run('calc -p "fact(20)"; calc "pi()"; echo "1/4" | calc')==='2432902008176640000\n\t3.14159265358979323846\n\t0.25','calc -p, pi(), and a sum piped in');
+ok(/"y" is undefined/.test(x.run('calc y'))&&x.run('calc y; echo $?').split('\n').pop()==='1','calc: an unknown name is an error, and calc exits 1');
+x.m.input('bc -q'); x.adv(0.2);
+['scale=2','10/3','define f(n) {','  if (n<2) return 1','  return n*f(n-1)','}','f(10)'].forEach(l=>{x.m.input(l);x.adv(0.1);});
+let scr=x.m.screen.text(); ok(/10\/3\n3\.33\n/.test(scr)&&/f\(10\)\n3628800\n/.test(scr)&&x.m.fg,'bc at the keyboard: lines until quit, and a define over several lines');
+x.m.input('while (1) { i += 1 }'); x.adv(0.5); x.m.key('c'); x.adv(0.1); x.m.input('i > 1000'); x.adv(0.1);
+scr=x.m.screen.text(); ok(/\^C\n\(interrupt\) use quit to exit\.\ni > 1000\n1\n/.test(scr)&&x.m.fg,'Ctrl+C stops a runaway bc loop but keeps bc ('+(scr.match(/i > 1000\n(\d)/)||[])[1]+')');
+x.m.input('quit'); x.adv(0.1); ok(!x.m.fg&&/quit\npi@raspberrypi:~ \$ $/.test(x.m.screen.text()),'quit leaves bc');
+x.m.input('calc'); x.adv(0.2); ok(/C-style arbitrary precision calculator \(version 2\.14\.1\.5\)[\s\S]*\n; $/.test(x.m.screen.text()),'calc on its own shows its banner and the ; prompt');
+['x = 6*7','x','define sq(n) = n*n;','sq(x)'].forEach(l=>{x.m.input(l);x.adv(0.1);});
+scr=x.m.screen.text(); ok(/; x\n {8}42\n; define sq\(n\) = n\*n;\n; sq\(x\)\n {8}1764\n; $/.test(scr),'calc at the keyboard: variables and one-line functions');
+x.m.input('exit'); x.adv(0.1); ok(!x.m.fg,'exit leaves calc');
+ok(L.Pi.sdOf(x.doc,x.pi.id).indexOf('#@pkg apcalc')>0,'the calculators are remembered on the SD card');
+ok(/Removing apcalc/.test(x.run('sudo apt remove calc',3))&&/sudo apt install apcalc/.test(x.run('calc 1')),'sudo apt remove calc takes it away again');
+
 console.log('linux: the pins, from the shell');
 ok(x.run('pinctrl get 17; pinctrl get 2')==='17: ip    -- pd | lo // GPIO17 = input\n 2: ip    -- pu | hi // GPIO2 = input','untouched pins have the pulls they boot with: GPIO2 up, GPIO17 down');
 x.run('pinctrl set 17 op dh'); x.adv(0.2); ok(x.lit(x.led)&&!x.danger().length,'pinctrl set 17 op dh lights the LED at 3.3 V ('+(x.st(x.led).i*1000).toFixed(1)+' mA, nothing complaining)');

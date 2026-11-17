@@ -96,6 +96,8 @@
     };
   }
 
+  L.dipChip = dip;   /* lab_parts3.js draws its chips the same way */
+
   var t555 = dip(8, "NE555", ["GND", "TRIG", "OUT", "RESET", "CTRL", "THRES", "DISCH", "VCC"], "timer");
   t555.name = "555 timer"; t555.cat = "Chips";
   t555.blurb = "The famous timer chip. With two resistors and a capacitor it blinks, beeps and counts time.";

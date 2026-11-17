@@ -15,7 +15,7 @@
 (function (root) {
   "use strict";
 
-  var L = root.ChalkLab, OS = L.PiOS, Py = L.PiPy;
+  var L = root.ChalkLab, OS = L.PiOS, Py = L.PiPy, Calc = L.PiCalc;
   var c = OS.c, pad = OS.pad, lpad = OS.lpad, Dir = OS.Dir;
   var CMDS = OS.CMDS;
 
@@ -1116,10 +1116,17 @@
     wiringpi: { ver: "3.10", kb: 52.3, inst: 310, desc: "The wiringPi libraries, headers and gpio command" },
     python3: { ver: "3.11.2-1+b1", kb: 26.3, inst: 91.2, desc: "interactive high-level object-oriented language" },
     "python3-gpiozero": { ver: "2.0.1-0+rpt1", kb: 148, inst: 780, desc: "Simple API for controlling devices attached to a Pi's GPIO pins" },
-    "python3-rpi.gpio": { ver: "0.7.1~a4-1+b4", kb: 23.9, inst: 96, desc: "Module to control Raspberry Pi GPIO channels" }
+    "python3-rpi.gpio": { ver: "0.7.1~a4-1+b4", kb: 23.9, inst: 96, desc: "Module to control Raspberry Pi GPIO channels" },
+    bc: { ver: "1.07.1-3+b1", kb: 108, inst: 233, desc: "GNU bc arbitrary precision calculator language" },
+    apcalc: { ver: "2.14.1.5-1", kb: 337, inst: 1033, desc: "Arbitrary precision calculator (calc): exact fractions, sqrt, sin, ln, pi" }
   };
   OS.PREINSTALLED = { neofetch: 1, htop: 1, tree: 1, nano: 1, gpiod: 1, wiringpi: 1, python3: 1, "python3-gpiozero": 1, "python3-rpi.gpio": 1 };
   OS.SUGGEST = { fortune: "fortune-mod", cowthink: "cowsay", git: null };
+  /* Names people type that the mirror files under another name: apt install calc fetches apcalc. */
+  var ALIAS = { fortune: "fortune-mod", calc: "apcalc" };
+  function pkgName(n) { return ALIAS[n] || n; }
+  /* apt sub-commands typed after install — "sudo apt install update" means "sudo apt update". */
+  var SUBCMD = { update: 1, upgrade: 1, "full-upgrade": 1, "dist-upgrade": 1, autoremove: 1 };
   function aptLists(ctx) { ctx.out("Reading package lists... Done\nBuilding dependency tree... Done\nReading state information... Done\n"); }
   def("apt apt-get", "Programs", "sudo apt install NAME      sudo apt update", "Install and update software. Try: sudo apt install cowsay", function* (ctx) {
     var a = ctx.args.filter(function (x) { return !/^-/.test(x); }), m = ctx.m, os = ctx.os, sub = a[0], names = a.slice(1), i;
@@ -1143,8 +1150,13 @@
         aptLists(ctx); yield 0.3;
         var fresh = [];
         for (i = 0; i < names.length; i++) {
-          var nm = names[i] === "fortune" ? "fortune-mod" : names[i];
-          if (!PK[nm]) { ctx.err(c("1;31", "E:") + " Unable to locate package " + names[i] + "\n" + (i === 0 && ctx.tty ? c("2", "(This lab's mirror is small. apt search \"\" lists everything on it.)") + "\n" : "")); return 100; }
+          var nm = pkgName(names[i]);
+          if (!PK[nm]) {
+            ctx.err(c("1;31", "E:") + " Unable to locate package " + names[i] + "\n");
+            if (ctx.tty && SUBCMD[names[i]]) ctx.err(c("2", "(" + names[i] + " is an apt command, not a package. Type it without install:  ") + c("1", "sudo apt " + names[i]) + c("2", ")") + "\n");
+            else if (i === 0 && ctx.tty) ctx.err(c("2", "(This lab's mirror is small. apt search \"\" lists everything on it.)") + "\n");
+            return 100;
+          }
           if (m.pkgs[nm]) ctx.out(nm + " is already the newest version (" + PK[nm].ver + ").\n"); else if (fresh.indexOf(nm) < 0) fresh.push(nm);
         }
         if (!fresh.length) { ctx.out("0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.\n"); return 0; }
@@ -1168,6 +1180,7 @@
       case "remove": case "purge": case "autoremove": {
         if (!ctx.root) return locked();
         aptLists(ctx);
+        names = names.map(pkgName);
         var gone = names.filter(function (n2) { return m.pkgs[n2]; });
         for (i = 0; i < names.length; i++) if (!PK[names[i]]) { ctx.err(c("1;31", "E:") + " Unable to locate package " + names[i] + "\n"); return 100; }
         var keep = gone.filter(function (n2) { return /^(python3|nano|gpiod|python3-gpiozero|python3-rpi\.gpio)$/.test(n2); });
@@ -1180,7 +1193,7 @@
       }
       case "list": Object.keys(PK).sort().forEach(function (n2) { if (m.pkgs[n2] || !/--installed/.test(ctx.args.join(" "))) ctx.out((ctx.tty ? c("32", n2) : n2) + "/" + (os.id === "ubuntu" ? "noble" : "stable") + " " + PK[n2].ver + " arm64" + (m.pkgs[n2] ? " [installed]" : "") + "\n"); }); return 0;
       case "search": Object.keys(PK).sort().forEach(function (n2) { if (!names[0] || (n2 + " " + PK[n2].desc).toLowerCase().indexOf(names[0].toLowerCase()) >= 0) ctx.out((ctx.tty ? c("32", n2) : n2) + "/" + (os.id === "ubuntu" ? "noble" : "stable") + " " + PK[n2].ver + " arm64" + (m.pkgs[n2] ? " [installed]" : "") + "\n  " + PK[n2].desc + "\n\n"); }); return 0;
-      case "show": if (!PK[names[0]]) { ctx.err(c("1;31", "E:") + " No packages found\n"); return 100; } ctx.out("Package: " + names[0] + "\nVersion: " + PK[names[0]].ver + "\nArchitecture: arm64\nInstalled-Size: " + PK[names[0]].inst + " kB\nDescription: " + PK[names[0]].desc + "\n\n"); return 0;
+      case "show": if (names[0]) names[0] = pkgName(names[0]); if (!PK[names[0]]) { ctx.err(c("1;31", "E:") + " No packages found\n"); return 100; } ctx.out("Package: " + names[0] + "\nVersion: " + PK[names[0]].ver + "\nArchitecture: arm64\nInstalled-Size: " + PK[names[0]].inst + " kB\nDescription: " + PK[names[0]].desc + "\n\n"); return 0;
       case "moo": ctx.out("                 (__) \n                 (oo) \n           /------\\/ \n          / |    ||   \n         *  /\\---/\\ \n            ~~   ~~   \n...\"Have you mooed today?\"...\n"); return 0;
     }
     ctx.out("apt 2.6.1 (arm64)\nUsage: apt [options] command\n\nMost used commands:\n  list - list packages based on package names\n  search - search in package descriptions\n  show - show package details\n  install - install packages\n  remove - remove packages\n  update - update list of available packages\n  upgrade - upgrade the system by installing/upgrading packages\n\n                                        This APT has Super Cow Powers.\n");
@@ -1192,6 +1205,78 @@
     Object.keys(PK).sort().forEach(function (n) { if (ctx.m.pkgs[n]) ctx.out("ii  " + pad(n, 18) + " " + pad(PK[n].ver, 18) + " arm64        " + PK[n].desc.slice(0, 44) + "\n"); });
     return 0;
   });
+
+  /* =========================================================== CALCULATORS */
+
+  /* bc and calc. lab_pi_calc.js does the maths; this is the part a terminal
+   * sees. Both read any files named, then standard input — piped (echo 2+3 | bc)
+   * or typed, a line at a time, until quit or Ctrl+D. */
+  var BC_BANNER = "bc 1.07.1\nCopyright 1991-1994, 1997, 1998, 2000, 2004, 2006, 2008, 2012-2017 Free Software Foundation, Inc.\nThis is free software with ABSOLUTELY NO WARRANTY.\nFor details type `warranty'. \n";
+  var CALC_BANNER = "C-style arbitrary precision calculator (version 2.14.1.5)\nCalc is open software. For license details type:  help copyright\n[Type \"exit\" to exit, or \"help\" for help.]\n\n";
+  var CALC_HELP = "calc: type a sum and press Enter; the answer comes back indented.\n\n" +
+    "  2+3*4      1/3      2^100      7//2  (whole-number divide)   7%2  (remainder)\n" +
+    "  x = 5      x^2      define sq(n) = n*n;      sq(12)\n\n" +
+    "Answers are exact fractions. One that does not end within 20 decimals\nprints rounded, with a ~ in front: 1/3 is ~0.33333333333333333333\n\n" +
+    "Functions: sqrt abs round int frac floor ceil  exp ln log log2 root(x,n) power\n" +
+    "           sin cos tan asin acos atan pi()  fact gcd lcm isprime max min num den\n\n" +
+    "exit or quit leaves (so does Ctrl+D).\n";
+  function* calcFeed(ctx, sess, mode, line) {
+    var w = line.trim();
+    if (mode === "calc" && /^help(\s|$)/.test(w)) { ctx.out(/copyright/.test(w) ? "Calc is open software, under the GNU Lesser General Public License.\n" : CALC_HELP); return null; }
+    if (mode === "bc" && w === "warranty") { ctx.out(BC_BANNER.split("\n")[0] + "\nThis program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY.\n"); return null; }
+    return yield* sess.feed(line);
+  }
+  function* calcRun(ctx, sess, mode, files, banner) {
+    var i, j, ls;
+    for (i = 0; i < files.length; i++) {
+      var n = ctx.fs.node(ctx.sh.abs(files[i]));
+      if (!n || n instanceof Dir) { ctx.err(mode === "bc" ? "File " + files[i] + " is unavailable.\n" : "calc: cannot open " + files[i] + "\n"); return 1; }
+      ls = lines(ctx.fs.readNode(n));
+      for (j = 0; j < ls.length; j++) if ((yield* calcFeed(ctx, sess, mode, ls[j])) === "quit") return 0;
+    }
+    if (ctx.stdin != null || !ctx.tty) {
+      ls = lines(yield* ctx.readAll());
+      for (j = 0; j < ls.length; j++) if ((yield* calcFeed(ctx, sess, mode, ls[j])) === "quit") return 0;
+      if (sess.pending()) ctx.err(mode === "bc" ? "(standard_in) " + sess.line + ": syntax error\n" : "calc: the input stopped part-way through a statement\n");
+      return 0;
+    }
+    if (banner) ctx.out(banner);
+    for (;;) {
+      if (mode === "calc") ctx.out(sess.pending() ? "  " : "; ");
+      try {
+        var line = yield* ctx.readLine();
+        if (line === false) return 0;
+        if ((yield* calcFeed(ctx, sess, mode, line)) === "quit") return 0;
+      } catch (e) {
+        if (e !== Py.SIGINT) throw e;
+        sess.reset();
+        ctx.out(mode === "bc" ? "(interrupt) use quit to exit.\n" : "[Abort level 1]\n");
+      }
+    }
+  }
+  def("bc", "Programs", "bc [-lq] [file]      echo 'scale=3; 22/7' | bc", "A calculator language. Type a sum, get the answer; scale=N sets how many decimal places division keeps (bc -l: 20, plus s c a l e for sine, cosine, arctan, ln and e^x). quit leaves.", function* (ctx) {
+    var p = opts(ctx.args, "lqisvw", "");
+    if (p.o.bad) { ctx.err("bc: invalid option -- '" + p.o.bad.charAt(1) + "'\nusage: bc [options] [file ...]\n  -l  --mathlib   use the predefined math routines\n  -q  --quiet     don't print initial banner\n"); return 1; }
+    if (p.o.v || p.o.version) { ctx.out(BC_BANNER.split("\n").slice(0, 2).join("\n") + "\n"); return 0; }
+    var sess = new Calc.Session("bc", { lib: !!(p.o.l || p.o.mathlib), out: ctx.out, err: ctx.err });
+    return yield* calcRun(ctx, sess, "bc", p.rest, p.o.q || p.o.quiet ? "" : BC_BANNER);
+  }, { pkg: "bc" });
+  def("calc", "Programs", "calc 'sqrt(2)'      calc", "A calculator with exact fractions: calc 1/3*3 is exactly 1. Give it a sum to work out, or no sum for its ; prompt. help lists the functions; exit leaves.", function* (ctx) {
+    var a = ctx.args.slice(), pipe = false, files = [];
+    while (a.length && /^-[a-zA-Z]/.test(a[0])) {
+      var f = a.shift();
+      if (f === "-p") pipe = true;
+      else if (f === "-f" && a.length) files.push(a.shift());
+      else if (!/^-[qdeimuhc]+$/.test(f)) { ctx.err("calc: unknown option " + f + "\nusage: calc [-p] [-q] [-f file] [expression ...]\n"); return 1; }
+    }
+    var sess = new Calc.Session("calc", { pipe: pipe, out: ctx.out, err: ctx.err });
+    if (a.length) {
+      var r = yield* calcFeed(ctx, sess, "calc", a.join(" "));
+      if (r !== "quit" && sess.pending()) { ctx.err("\"(cmd)\", line 1: the expression stops part-way through\n"); return 1; }
+      return sess.errors ? 1 : 0;
+    }
+    return yield* calcRun(ctx, sess, "calc", files, ctx.tty && ctx.stdin == null ? CALC_BANNER : "");
+  }, { pkg: "apcalc" });
 
   /* ================================================================== FUN */
 

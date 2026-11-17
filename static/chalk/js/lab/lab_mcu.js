@@ -3,7 +3,8 @@
  * Runs real Arduino sketches, one line at a time, against the simulated
  * circuit. It is an interpreter for the part of C++ that sketches actually
  * use — variables, arrays, functions, if/for/while/switch, #define, Serial,
- * Servo and the I2C LCD — and it is honest about the chip: an `int` is
+ * Servo, the I2C LCD, DHT, NeoPixels, Stepper, shiftOut() and interrupts —
+ * and it is honest about the chip: an `int` is
  * sixteen bits, as on an Uno, so 300 * 200 really does come out negative,
  * and an integer divided by an integer really does lose the remainder.
  *
@@ -133,7 +134,8 @@
     int8_t: "i8", uint8_t: "u8", int16_t: "i16", uint16_t: "u16", int32_t: "i32", uint32_t: "u32",
     int64_t: "i32", uint64_t: "u32"
   };
-  var CLASSES = { Servo: "Servo", LiquidCrystal_I2C: "LCD", LiquidCrystal: "LCD", SoftwareSerial: "SoftSerial", SmartCamera: "Camera", Speaker: "Voice" };
+  var CLASSES = { Servo: "Servo", LiquidCrystal_I2C: "LCD", LiquidCrystal: "LCD", SoftwareSerial: "SoftSerial", SmartCamera: "Camera", Speaker: "Voice",
+                  DHT: "DHT", Adafruit_NeoPixel: "Neo", Stepper: "Stepper" };
   var QUALS = { const: 1, static: 1, volatile: 1, extern: 1, inline: 1, signed: 1, unsigned: 1, register: 1 };
   var BYTES = { b: 1, c: 1, i8: 1, u8: 1, i16: 2, u16: 2, i32: 4, u32: 4, f: 4, s: 6 };
   var TYPE_NAME = { v: "void", b: "bool", c: "char", i8: "int8_t", u8: "byte", i16: "int", u16: "unsigned int", i32: "long", u32: "unsigned long", f: "float", s: "String" };
@@ -548,16 +550,21 @@
     bitRead: [2, 2, "i16", "bitRead(value, bit)"], lowByte: [1, 1, "u8", "lowByte(x)"], highByte: [1, 1, "u8", "highByte(x)"],
     bit: [1, 1, "u32", "bit(n)"],
     String: [0, 2, "s", "String(value)"],
-    attachInterrupt: [2, 3, "v", "attachInterrupt(…)"], detachInterrupt: [1, 1, "v", "detachInterrupt(…)"],
+    attachInterrupt: [3, 3, "v", "attachInterrupt(digitalPinToInterrupt(2), myFunction, RISING)"], detachInterrupt: [1, 1, "v", "detachInterrupt(digitalPinToInterrupt(2))"],
+    shiftOut: [4, 4, "v", "shiftOut(dataPin, clockPin, MSBFIRST, value)"], shiftIn: [3, 3, "u8", "shiftIn(dataPin, clockPin, MSBFIRST)"],
     digitalPinToInterrupt: [1, 1, "i16", "digitalPinToInterrupt(pin)"],
     interrupts: [0, 0, "v", "interrupts()"], noInterrupts: [0, 0, "v", "noInterrupts()"],
-    isDigit: [1, 1, "b", "isDigit(c)"], isAlpha: [1, 1, "b", "isAlpha(c)"]
+    isDigit: [1, 1, "b", "isDigit(c)"], isAlpha: [1, 1, "b", "isAlpha(c)"],
+    isnan: [1, 1, "b", "isnan(x)"], isinf: [1, 1, "b", "isinf(x)"]
   };
   var CONSTS = {
     HIGH: 1, LOW: 0, INPUT: 0, OUTPUT: 1, INPUT_PULLUP: 2, LED_BUILTIN: 13, true: 1, false: 0,
     A0: 14, A1: 15, A2: 16, A3: 17, A4: 18, A5: 19, A6: 20, A7: 21,
     DEC: 10, HEX: 16, BIN: 2, OCT: 8, CHANGE: 1, FALLING: 2, RISING: 3, DEFAULT: 1, EXTERNAL: 0, INTERNAL: 3,
     NULL: 0, LSBFIRST: 0, MSBFIRST: 1,
+    /* DHT and NeoPixel library constants */
+    DHT11: 11, DHT21: 21, DHT22: 22, AM2301: 21,
+    NEO_RGB: 6, NEO_RBG: 9, NEO_GRB: 82, NEO_GBR: 161, NEO_BRG: 88, NEO_BGR: 164, NEO_KHZ800: 0, NEO_KHZ400: 256,
     /* what a smart camera's colour() can answer */
     CAM_NONE: 0, CAM_RED: 1, CAM_GREEN: 2, CAM_BLUE: 3
   };
@@ -581,6 +588,19 @@
       begin: [0, 0, "b"], brightness: [0, 0, "i16"], motion: [0, 0, "i16"], colour: [0, 0, "i16"], color: [0, 0, "i16"],
       sees: [1, 1, "b"], x: [0, 0, "i16"], y: [0, 0, "i16"], size: [0, 0, "i16"], faces: [0, 0, "i16"], snapshot: [0, 0, "v"]
     },
+    /* DHT11 / DHT22: temperature and humidity on one wire (Adafruit's DHT library) */
+    DHT: {
+      begin: [0, 1, "v"], readTemperature: [0, 2, "f"], readHumidity: [0, 1, "f"], computeHeatIndex: [2, 3, "f"],
+      convertCtoF: [1, 1, "f"], convertFtoC: [1, 1, "f"]
+    },
+    /* Adafruit_NeoPixel: a strip or ring of colour LEDs on one data pin */
+    Neo: {
+      begin: [0, 0, "v"], show: [0, 0, "v"], clear: [0, 0, "v"], setPixelColor: [2, 4, "v"], getPixelColor: [1, 1, "u32"],
+      setBrightness: [1, 1, "v"], getBrightness: [0, 0, "u8"], numPixels: [0, 0, "u16"], fill: [0, 3, "v"],
+      Color: [3, 4, "u32"], ColorHSV: [1, 3, "u32"], gamma32: [1, 1, "u32"], canShow: [0, 0, "b"]
+    },
+    /* Stepper: the Arduino library for 2- and 4-wire stepper motors */
+    Stepper: { setSpeed: [1, 1, "v"], step: [1, 1, "v"] },
     /* A speaker with a voice module: notes, tunes and spoken words. */
     Voice: {
       begin: [0, 0, "v"], say: [1, 4, "v"], speaking: [0, 0, "b"], play: [1, 2, "v"], stop: [0, 0, "v"], volume: [1, 1, "v"]
@@ -698,6 +718,16 @@
           return n;
         }
         case "call": {
+          if (n.name === "attachInterrupt" && n.args.length === 3) {
+            /* the middle value names a function to call, not a variable */
+            var isr = n.args[1];
+            if (isr && isr.k === "id" && (funcs[isr.name] || ast.protos[isr.name])) {
+              var fdef = funcs[isr.name] || ast.protos[isr.name];
+              if (fdef.params && fdef.params.length) E("An interrupt function can't be given any values. Write it as void " + isr.name + "() { … }", n.line);
+              n.isr = isr.name;
+              n.args[1] = { k: "num", v: 0, ty: "i16", line: n.line };
+            } else E("attachInterrupt() needs the name of one of your functions in the middle, like attachInterrupt(digitalPinToInterrupt(2), countPulse, RISING);", n.line);
+          }
           n.args.forEach(expr);
           var any = n.args.some(function (a) { return a.y; });
           var f = funcs[n.name] || ast.protos[n.name];
@@ -709,7 +739,6 @@
           var b = BUILTINS[n.name];
           if (b) {
             if (n.args.length < b[0] || n.args.length > b[1]) E(n.name + "() needs " + (b[0] === b[1] ? b[0] : b[0] + "–" + b[1]) + " value" + (b[1] === 1 ? "" : "s") + ": " + b[3], n.line);
-            if (n.name === "attachInterrupt") E("Interrupts aren't simulated yet. Check the pin with digitalRead() inside loop() instead.", n.line);
             n.ty = b[2] === "=" ? (n.args.length ? n.args.reduce(function (t, a) { return arith(t, a.ty); }, n.args[0].ty) : "i16") : b[2];
             n.y = !!b[4] || any;
             return n;
@@ -734,6 +763,8 @@
           /* like the real Stream class, these wait (up to setTimeout, 1 s by
            * default) for the data they need, so they can pause the program */
           if ((cls === "Serial" || cls === "SoftSerial") && /^(parseInt|parseFloat|readString|readStringUntil)$/.test(n.name)) { n.wait = true; n.y = true; }
+          /* stepper.step() doesn't return until the motor has moved */
+          if (cls === "Stepper" && n.name === "step") n.y = true;
           return n;
         }
         case "init": initList(n); n.y = false; return n;
@@ -838,6 +869,9 @@
     this.softs = [];
     this.statics = new Map();
     this.gen = null;
+    this.neo = {};          /* pin -> the colours last show()n there (lab_parts3.js reads them) */
+    this.isrs = null;       /* pin -> {fn, mode, last}: attachInterrupt() */
+    this.intsOff = false;
   };
 
   R.start = function (t) {
@@ -847,7 +881,7 @@
     this.gen = this.main();
     this.emit("state");
   };
-  R.stop = function () { this.running = false; this.paused = false; this.pins = {}; this.servos = {}; this.emit("state"); };
+  R.stop = function () { this.running = false; this.paused = false; this.pins = {}; this.servos = {}; this.neo = {}; this.isrs = null; this.emit("state"); };
   R.pause = function () { if (this.running) { this.paused = true; this.stepTarget = null; this.emit("state"); } };
   R.resume = function () {
     if (!this.running || this.error) return;
@@ -880,6 +914,7 @@
   R.advance = function (t, wallNow) {
     if (!this.running || this.error || !this.gen) return;
     if (this.paused) { var lag = t - this.clock; this.clock = t; this.waitUntil += lag; return; }
+    if (this.isrs && !this.intsOff) { this.serviceIsrs(); if (this.error || !this.running) return; }
     var budget = this.host.budget || 6000;
     var now = wallNow != null ? wallNow : Date.now() / 1000;
     while (this.clock < t && budget-- > 0) {
@@ -1002,6 +1037,19 @@
         this.softs.push(obj);
       } else if (it.cls === "Camera") {
         obj = { cls: "Camera", on: false };
+      } else if (it.cls === "DHT") {
+        if (args.length < 2) throw new RtErr("A DHT needs its pin and its type: DHT " + it.name + "(2, DHT11);", it.line);
+        obj = { cls: "DHT", pin: Math.trunc(args[0]), type: Math.trunc(args[1]), on: false };
+      } else if (it.cls === "Neo") {
+        var count = Math.trunc(args[0] || 0);
+        if (args.length < 2 || count < 1) throw new RtErr("A NeoPixel strip needs how many LEDs and which pin: Adafruit_NeoPixel " + it.name + "(12, 6, NEO_GRB + NEO_KHZ800);", it.line);
+        if (count > 300) throw new RtErr("That is a lot of NeoPixels for an Uno's 2 KB of memory — keep it to 300 or fewer.", it.line);
+        obj = { cls: "Neo", n: count, pin: Math.trunc(args[1]), px: [], bright: 0, on: false };
+        for (var pi = 0; pi < count; pi++) obj.px.push([0, 0, 0]);
+      } else if (it.cls === "Stepper") {
+        if (args.length !== 3 && args.length !== 5) throw new RtErr("A Stepper needs its steps per turn and its pins: Stepper " + it.name + "(2048, 8, 10, 9, 11);", it.line);
+        obj = { cls: "Stepper", steps: Math.max(1, Math.trunc(args[0])), pins: args.slice(1).map(function (q) { return Math.trunc(q); }), num: 0, us: 0 };
+        for (var sp = 0; sp < obj.pins.length; sp++) this.pin(obj.pins[sp], it).p.mode = "OUT";
       } else if (it.cls === "Voice") {
         if (args.length < 1) throw new RtErr("A Speaker needs to know its pin: Speaker " + it.name + "(8);", it.line);
         obj = { cls: "Voice", pin: Math.trunc(args[0]), vol: 7, until: 0 };
@@ -1359,6 +1407,7 @@
         var obj = this.ev(n.obj, sc), margs = [];
         for (var m = 0; m < n.args.length; m++) margs.push(yield* this.evg(n.args[m], sc));
         if (n.wait) yield* this.streamWait(n, obj, margs);
+        if (n.cls === "Stepper" && n.name === "step") return yield* this.stepperStep(n, obj, margs[0]);
         return this.method(n, obj, margs, sc);
       }
     }
@@ -1395,7 +1444,9 @@
           dw.p.mode = val ? "PU" : "IN";
           this.hint("mode" + dw.num, "Pin " + L.pinName(dw.num) + " isn't an OUTPUT, so digitalWrite only switches its weak pull-up on and off. Add pinMode(" + dw.num + ", OUTPUT); to setup().", n.line);
         }
+        var was = dw.p.out;
         dw.p.out = val; dw.p.pwm = null;
+        if (dw.p.mode === "OUT" && was !== val && this.host.pinChange) this.host.pinChange(dw.num, val);
         this.effect({ kind: "write", pin: dw.num, value: val });
         return 0;
       }
@@ -1466,6 +1517,8 @@
       case "lowByte": return a[0] & 0xFF;
       case "highByte": return (a[0] >> 8) & 0xFF;
       case "isDigit": return a[0] >= 48 && a[0] <= 57 ? 1 : 0;
+      case "isnan": return isNaN(a[0]) ? 1 : 0;
+      case "isinf": return a[0] === Infinity || a[0] === -Infinity ? 1 : 0;
       case "isAlpha": return (a[0] >= 65 && a[0] <= 90) || (a[0] >= 97 && a[0] <= 122) ? 1 : 0;
       case "String": {
         if (!n.args.length) return "";
@@ -1474,9 +1527,184 @@
         return typeof a[0] === "string" ? a[0] : this.str(a[0], at);
       }
       case "digitalPinToInterrupt": return a[0] === 2 ? 0 : a[0] === 3 ? 1 : -1;
-      case "interrupts": case "noInterrupts": case "detachInterrupt": case "attachInterrupt": return 0;
+      case "attachInterrupt": {
+        var ipin = a[0] === 0 ? 2 : a[0] === 1 ? 3 : -1;
+        if (ipin < 0) {
+          this.hint("intr" + a[0], "An Uno has two interrupts: 0 on pin 2 and 1 on pin 3. Write attachInterrupt(digitalPinToInterrupt(2), …) so the pin number is turned into the right one.", n.line);
+          return 0;
+        }
+        var ip = this.pin(ipin, n), v0 = this.host.volts ? this.host.volts(ipin) : 0;
+        (this.isrs = this.isrs || {})[ipin] = { fn: this.prog.funcs[n.isr], mode: Math.trunc(a[2]), last: v0 > 2.5, pin: ipin };
+        if (!this.prog.funcs[n.isr]) throw new RtErr(n.isr + "() is declared but never written.", n.line);
+        this.effect({ kind: "interrupt", pin: ipin, value: 1 });
+        return 0;
+      }
+      case "detachInterrupt": { var dp = a[0] === 0 ? 2 : a[0] === 1 ? 3 : -1; if (this.isrs) delete this.isrs[dp]; return 0; }
+      case "noInterrupts": this.intsOff = true; return 0;
+      case "interrupts": this.intsOff = false; return 0;
+      case "shiftOut": {
+        var dpn = this.pin(a[0], n), cpn = this.pin(a[1], n), val8 = Math.trunc(a[3]) & 0xFF;
+        if (dpn.p.mode !== "OUT" || cpn.p.mode !== "OUT") this.hint("shift" + dpn.num, "shiftOut() needs both its pins as OUTPUTs: pinMode(" + dpn.num + ", OUTPUT); pinMode(" + cpn.num + ", OUTPUT);", n.line);
+        for (var bi = 0; bi < 8; bi++) {
+          var bitv = a[2] === 0 ? (val8 >> bi) & 1 : (val8 >> (7 - bi)) & 1;
+          this.drive(dpn, bitv); this.drive(cpn, 1); this.drive(cpn, 0);
+        }
+        this.effect({ kind: "write", pin: dpn.num, value: val8 & 1 });
+        return 0;
+      }
+      case "shiftIn": {
+        var din = this.pin(a[0], n), cin = this.pin(a[1], n), got = 0;
+        for (var bj = 0; bj < 8; bj++) {
+          this.drive(cin, 1);
+          var bv = (this.host.volts ? this.host.volts(din.num) : 0) > 2.5 ? 1 : 0;
+          got |= a[2] === 0 ? bv << bj : bv << (7 - bj);
+          this.drive(cin, 0);
+        }
+        return got;
+      }
     }
     throw new RtErr(n.name + "() isn't available.", n.line);
+  };
+
+  /* A pin the library switches itself (shiftOut, Stepper): the circuit, and
+   * any chip clocked by it, see each edge. */
+  R.drive = function (pp, v) {
+    var was = pp.p.out;
+    pp.p.out = v ? 1 : 0; pp.p.pwm = null;
+    if (pp.p.mode === "OUT" && was !== pp.p.out && this.host.pinChange) this.host.pinChange(pp.num, pp.p.out);
+  };
+
+  /* ------------------------------------------------------- interrupts
+   * Checked every time the circuit has been solved (each simulated
+   * millisecond), which is as often as a pin's voltage can change here.
+   * The interrupt function runs to the end right then, between two lines
+   * of the main program — even in the middle of a delay(). */
+  R.serviceIsrs = function () {
+    for (var k in this.isrs) {
+      var it = this.isrs[k], v = this.host.volts ? this.host.volts(it.pin) : 0;
+      var lvl = it.last ? v > 2.3 : v > 2.7, fire = false;
+      if (lvl !== it.last) fire = it.mode === 1 || (it.mode === 3 && lvl) || (it.mode === 2 && !lvl);
+      if (it.mode === 0 && !lvl) fire = true;
+      it.last = lvl;
+      if (fire && it.fn) this.runIsr(it);
+      if (this.error) return;
+    }
+  };
+  R.runIsr = function (it) {
+    var g = this.call(it.fn, []), r, count = 0, depth = this.depth, line = this.line;
+    this.inIsr = true;
+    try {
+      while (!(r = g.next()).done) {
+        if (++count > 20000) throw new RtErr(it.fn.name + "() is an interrupt function and must finish quickly — it ran for too long. Keep it to a few lines: count, set a flag, leave.", it.fn.line);
+        var ev = r.value;
+        if (ev && ev.k === "line") this.clock += STMT_COST;
+        else if (ev && ev.k === "delay" && ev.s > 0) this.hint("isrdelay", "delay() doesn't work inside an interrupt function — the clock that runs it is stopped. Set a flag and do the slow part in loop().", this.line);
+      }
+    } catch (e) {
+      if (e && e.runtime) { this.fail(e.message, e.line); return; }
+      throw e;
+    } finally { this.depth = depth; this.line = line; this.inIsr = false; }
+    this.effect({ kind: "interrupt", pin: it.pin, value: 1 });
+  };
+
+  /* ------------------------------------------------------------- DHT */
+  R.dhtCall = function (n, obj, a) {
+    switch (n.name) {
+      case "begin": obj.on = true; this.pin(obj.pin, n).p.mode = "PU"; return 0;
+      case "convertCtoF": return a[0] * 1.8 + 32;
+      case "convertFtoC": return (a[0] - 32) / 1.8;
+      case "computeHeatIndex": {
+        var f = a.length > 2 && !a[2] ? a[0] * 1.8 + 32 : a[0], h = a[1];
+        var hi = 0.5 * (f + 61 + (f - 68) * 1.2 + h * 0.094);
+        if (hi > 79) {
+          hi = -42.379 + 2.04901523 * f + 10.14333127 * h - 0.22475541 * f * h - 0.00683783 * f * f - 0.05481717 * h * h + 0.00122874 * f * f * h + 0.00085282 * f * h * h - 0.00000199 * f * f * h * h;
+          if (h < 13 && f >= 80 && f <= 112) hi -= ((13 - h) * 0.25) * Math.sqrt((17 - Math.abs(f - 95)) * 0.05882);
+          else if (h > 85 && f >= 80 && f <= 87) hi += ((h - 85) * 0.1) * ((87 - f) * 0.2);
+        }
+        return a.length > 2 && !a[2] ? (hi - 32) / 1.8 : hi;
+      }
+    }
+    if (!obj.on) this.hint("dht" + obj.pin, "Call dht.begin(); in setup() before reading the sensor.", n.line);
+    var r = this.host.dht ? this.host.dht(obj.pin) : null;
+    this.effect({ kind: "read", pin: obj.pin, value: r ? 1 : 0 });
+    if (!r) {
+      if (this.millis() > 300) this.hint("dhtwire" + obj.pin, "The DHT on pin " + L.pinName(obj.pin) + " didn't answer, so the reading is NaN (\"not a number\"). Is a powered DHT's DATA wired to that pin? Check with isnan(t).", n.line);
+      return NaN;
+    }
+    if (obj.type !== r.model && obj.type !== 21) this.hint("dhttype" + obj.pin, "The sketch says DHT" + obj.type + " but the sensor on pin " + L.pinName(obj.pin) + " is a DHT" + r.model + ". Change the type in DHT dht(" + obj.pin + ", DHT" + r.model + ");", n.line);
+    if (n.name === "readHumidity") return r.h;
+    return a[0] ? r.t * 1.8 + 32 : r.t;
+  };
+
+  /* -------------------------------------------------------- NeoPixel */
+  function hsv(hue, sat, val) {
+    hue = (hue * 1530 + 32768) / 65536 | 0;
+    var r, g, b;
+    if (hue < 510) { b = 0; if (hue < 255) { r = 255; g = hue; } else { r = 510 - hue; g = 255; } }
+    else if (hue < 1020) { r = 0; if (hue < 765) { g = 255; b = hue - 510; } else { g = 1020 - hue; b = 255; } }
+    else if (hue < 1530) { g = 0; if (hue < 1275) { r = hue - 1020; b = 255; } else { r = 255; b = 1530 - hue; } }
+    else { r = 255; g = b = 0; }
+    var v1 = 1 + val, s1 = 1 + sat, s2 = 255 - sat;
+    var f = function (c) { return ((((c * s1) >> 8) + s2) * v1) >> 8; };
+    return ((f(r) << 16) | (f(g) << 8) | f(b)) >>> 0;
+  }
+  R.neoCall = function (n, obj, a) {
+    var c, i;
+    var split = function (v) { v = v >>> 0; return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; };
+    switch (n.name) {
+      case "begin": obj.on = true; this.pin(obj.pin, n).p.mode = "OUT"; return 0;
+      case "numPixels": return obj.n;
+      case "canShow": return 1;
+      case "setBrightness": obj.bright = (Math.trunc(a[0]) + 1) & 255; return 0;
+      case "getBrightness": return (obj.bright - 1) & 255;
+      case "Color": return ((Math.trunc(a[0]) & 255) << 16 | (Math.trunc(a[1]) & 255) << 8 | (Math.trunc(a[2]) & 255)) >>> 0;
+      case "ColorHSV": return hsv(Math.trunc(a[0]) & 65535, a.length > 1 ? Math.trunc(a[1]) & 255 : 255, a.length > 2 ? Math.trunc(a[2]) & 255 : 255);
+      case "gamma32": c = split(a[0]); return ((c.map(function (x) { return Math.round(Math.pow(x / 255, 2.6) * 255); }).reduce(function (t, x) { return (t << 8) | x; }, 0)) >>> 0);
+      case "clear": obj.px.forEach(function (p) { p[0] = p[1] = p[2] = 0; }); return 0;
+      case "getPixelColor": i = Math.trunc(a[0]); return i >= 0 && i < obj.n ? ((obj.px[i][0] << 16) | (obj.px[i][1] << 8) | obj.px[i][2]) >>> 0 : 0;
+      case "setPixelColor":
+        i = Math.trunc(a[0]);
+        if (i < 0 || i >= obj.n) return 0;          /* the real library quietly ignores it too */
+        c = a.length >= 4 ? [a[1] & 255, a[2] & 255, a[3] & 255] : split(a[1]);
+        obj.px[i] = c;
+        return 0;
+      case "fill": {
+        c = a.length ? split(a[0]) : [0, 0, 0];
+        var first = a.length > 1 ? Math.trunc(a[1]) : 0, cnt = a.length > 2 && a[2] > 0 ? Math.trunc(a[2]) : obj.n - first;
+        for (i = Math.max(0, first); i < Math.min(obj.n, first + cnt); i++) obj.px[i] = c.slice();
+        return 0;
+      }
+      case "show": {
+        if (!obj.on) this.hint("neo" + obj.pin, "Call strip.begin(); in setup() before strip.show().", n.line);
+        var k = obj.bright ? obj.bright / 256 : 1;
+        this.neo[obj.pin] = obj.px.map(function (p) { return [Math.round(p[0] * k), Math.round(p[1] * k), Math.round(p[2] * k)]; });
+        this.effect({ kind: "write", pin: obj.pin, value: 1 });
+        return 0;
+      }
+    }
+    return 0;
+  };
+
+  /* --------------------------------------------------------- Stepper
+   * The library's 4-wire sequence, one step at a time, waiting the time
+   * setSpeed() asked for between steps — so step() takes as long as the
+   * real one does. */
+  var STEP4 = [[1, 0, 1, 0], [0, 1, 1, 0], [0, 1, 0, 1], [1, 0, 0, 1]], STEP2 = [[0, 1], [1, 1], [1, 0], [0, 0]];
+  R.stepperStep = function* (n, obj, count) {
+    count = Math.trunc(count);
+    if (!obj.us) {
+      this.hint("stepspeed", "Call motor.setSpeed(10); before motor.step() — without a speed the real library divides by zero and the motor never moves.", n.line);
+      return 0;
+    }
+    var pins = obj.pins.map(function (q) { return this.pin(q, n); }, this), left = Math.abs(count), dir = count > 0 ? 1 : -1;
+    this.effect({ kind: "write", pin: pins[0].num, value: 1 });
+    while (left-- > 0) {
+      yield { k: "delay", s: obj.us / 1e6 };
+      obj.num = ((obj.num + dir) % obj.steps + obj.steps) % obj.steps;
+      var pat = pins.length === 4 ? STEP4[obj.num % 4] : STEP2[obj.num % 4];
+      for (var i = 0; i < pins.length; i++) this.drive(pins[i], pat[i]);
+    }
+    return 0;
   };
 
   R.pulseIn = function* (n, a) {
@@ -1497,6 +1725,12 @@
 
   R.method = function (n, obj, a, sc) {
     var self = this;
+    if (n.cls === "DHT") return this.dhtCall(n, obj, a);
+    if (n.cls === "Neo") return this.neoCall(n, obj, a);
+    if (n.cls === "Stepper") {
+      if (n.name === "setSpeed") { obj.rpm = a[0]; obj.us = a[0] > 0 ? 60e6 / obj.steps / a[0] : 0; return 0; }
+      return 0;
+    }
     if (n.cls === "Serial" || n.cls === "SoftSerial") return this.serialCall(n, a, n.cls === "Serial" ? null : obj);
     if (n.cls === "Servo") {
       switch (n.name) {

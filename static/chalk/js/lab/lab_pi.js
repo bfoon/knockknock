@@ -44,6 +44,9 @@
   /* The pins as software sees them. host says what the circuit is doing:
    *   host.volts(n)  volts on GPIOn, or null when there is no circuit yet
    *   host.echo(n)   centimetres from an HC-SR04 whose ECHO is on GPIOn
+   *   host.dht(n)    {t, h, model} from a DHT whose DATA is on GPIOn
+   *   host.adc(ce)   an MCP3008 on the SPI pins, or why there isn't one
+   *   host.change(n, v)   a program just switched GPIOn (lab_parts3.js)
    *   host.stamp()   changes whenever the circuit has been re-solved
    *   host.fx(kind, n, value)   something worth showing on the bench */
   Pi.gpio = function (host) {
@@ -52,8 +55,9 @@
     var idle = function (n) { return n <= 8 ? 1 : 0; };          /* the pull each pin has at power-on */
     var stamp = function () { return host.stamp ? host.stamp() : 0; };
     var fx = function (kind, n, v) { if (host.fx) host.fx(kind, n, v); };
+    var neo = {};                                             /* GPIOn -> colours last written to NeoPixels there */
     var g = {
-      pins: pins, servos: servos,
+      pins: pins, servos: servos, neo: neo,
       valid: function (n) { return typeof n === "number" && n % 1 === 0 && n >= 2 && n <= 27; },
       setup: function (n, mode, user) {
         var m = mode === "out" ? "OUT" : mode === "pu" ? "PU" : mode === "pd" ? "PD" : "IN", was = pins[n];
@@ -61,7 +65,7 @@
         delete servos[n];
         fx("mode", n, m);
       },
-      write: function (n, v) { var p = pins[n]; if (!p || p.mode !== "OUT") return; var on = !!v; p.pwm = null; p.tone = 0; if (p.out !== on) { p.out = on; fx("write", n, on ? 1 : 0); } },
+      write: function (n, v) { var p = pins[n]; if (!p || p.mode !== "OUT") return; var on = !!v; p.pwm = null; p.tone = 0; if (p.out !== on) { p.out = on; fx("write", n, on ? 1 : 0); if (host.change) host.change(n, on ? 1 : 0); } },
       pwm: function (n, duty, freq) {
         var p = pins[n]; if (!p) return;
         if (duty == null) { p.pwm = null; return; }
@@ -82,14 +86,16 @@
       },
       volts: function (n) { return host.volts ? host.volts(n) : null; },
       echo: function (n) { return host.echo ? host.echo(n) : null; },
-      release: function (n) { if (pins[n] || servos[n] != null) { delete pins[n]; delete servos[n]; fx("mode", n, "free"); } },
+      dht: function (n) { return host.dht ? host.dht(n) : null; },
+      adc: function (ce) { return host.adc ? host.adc(ce) : "there is no circuit yet"; },
+      release: function (n) { delete neo[n]; if (pins[n] || servos[n] != null) { delete pins[n]; delete servos[n]; fx("mode", n, "free"); } },
       busy: function (n) { return !!pins[n] && pins[n].mode === "OUT"; },
       state: function (n) {
         var p = pins[n];
         return { fn: p && p.mode === "OUT" ? "op" : "ip", pull: !p ? (idle(n) ? "pu" : "pd") : p.mode === "PU" ? "pu" : p.mode === "PD" ? "pd" : "pn", level: g.read(n), user: p ? p.user : null, pwm: p ? p.pwm : null, tone: p ? p.tone : 0, set: !!p };
       },
       inUse: function () { return BCMS.filter(function (n) { return pins[n]; }).sort(function (a, b) { return a - b; }).map(function (n) { return "GPIO" + n; }); },
-      resetAll: function () { Object.keys(pins).forEach(function (k) { delete pins[k]; }); Object.keys(servos).forEach(function (k) { delete servos[k]; }); },
+      resetAll: function () { Object.keys(pins).forEach(function (k) { delete pins[k]; }); Object.keys(servos).forEach(function (k) { delete servos[k]; }); Object.keys(neo).forEach(function (k) { delete neo[k]; }); },
       /* the same pins, with every claim signed: gpioinfo then says who holds a line */
       as: function (user) {
         var o = Object.create(g);
@@ -222,10 +228,13 @@
     e.gpio = Pi.gpio({
       volts: function (n) { return sim.topo && !sim.topoDirty ? sim.mcuVolts(id, n) : null; },
       echo: function (n) { return sim.topo ? sim.echoDistance(id, n) : null; },
+      dht: function (n) { return sim.topo && sim.dhtFor ? sim.dhtFor(id, n) : null; },
+      adc: function (ce) { return sim.topo && !sim.topoDirty && sim.adcFor ? sim.adcFor(id, ce) : "the circuit isn't running"; },
+      change: function (n, v) { if (sim.pinChange) sim.pinChange(id, n, v); },
       stamp: function () { return sim.t; },
       fx: function (kind, n, v) { if (self.hooks.fx) self.hooks.fx(id, kind, n, v); }
     });
-    e.rt = { keep: true, isPi: true, running: false, paused: false, pins: e.gpio.pins, servos: e.gpio.servos, txUntil: 0, stop: function () {}, advance: function () {}, uartIn: function () {}, send: function () {} };
+    e.rt = { keep: true, isPi: true, running: false, paused: false, pins: e.gpio.pins, servos: e.gpio.servos, neo: e.gpio.neo, txUntil: 0, stop: function () {}, advance: function () {}, uartIn: function () {}, send: function () {} };
     e.m = new OS.Machine({
       os: pr.os, host: typeof pr.host === "string" && pr.host ? pr.host : null, gpio: e.gpio, sd: /^#!chalk-sd/.test(saved) ? saved : "",
       clock: this.hooks.clock,

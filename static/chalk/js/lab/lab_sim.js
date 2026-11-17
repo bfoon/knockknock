@@ -1406,7 +1406,7 @@
     });
     T.pinI = pinI;
     this.powered = T.inst.some(function (it) {
-      return /battery|coin_cell|psu|k_battery/.test(it.part.type) || it.model.mcu;
+      return /battery|coin_cell|psu|k_battery|solar_panel/.test(it.part.type) || it.model.mcu;
     });
     this.flow();
   };
@@ -1522,4 +1522,10 @@
 
   L.solveDense = solve;
   L.Norton = Norton;
+  /* The building blocks, for part files that bring their own physics (lab_parts3.js). */
+  L.SimKit = {
+    Norton: Norton, Diode: Diode, BJT: BJT, MOS: MOS, Cap: Cap, Ind: Ind, VT: VT, G_ON: G_ON, G_OFF: G_OFF,
+    R: R, Vs: Vs, setV: setV, setR: setR, setSw: setSw, vAcross: vAcross, iThrough: iThrough,
+    smooth: smooth, warn: warn, ledDiode: ledDiode, ledLook: ledLook
+  };
 })(typeof window !== "undefined" ? window : globalThis);

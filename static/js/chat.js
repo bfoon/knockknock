@@ -1,0 +1,1491 @@
+/* TapTap live chat — floating chat on every page.
+   Team room · direct messages · TapTap support. Polls /chat/state/ (fast while open, slower
+   in the background), shows on-screen toasts with a chime, desktop alerts when the tab is
+   hidden, a counter in the tab title, and "share this page" links.
+   Also: photos and short video clips (deleted for good after 7 days, photos optionally view-once), and voice/video
+   calls with secure screen sharing — the call runs in its own window (static/js/chat-call.js) so you can keep
+   using TapTap; this file rings, shows the call pill, and on the shared tab applies the privacy shield, the
+   pointer ripples, the outline of captured areas, and — only after the owner allows it — remote control. */
+(function () {
+  'use strict';
+  var root = document.getElementById('ttChat'); if (!root) return;
+  var CSRF = root.dataset.csrf || '';
+  var FULL = root.dataset.full === '1';
+  var SELF = (document.currentScript && document.currentScript.src) || '';   // where ring-watch.js lives too
+  var S = { open: false, view: 'list', thread: null, threads: [], people: [], me: {}, prefs: {}, top: 0, msgs: [], seen: 0,
+            attach: null, first: true, lastTyping: 0, timer: null, big: FULL, filter: '', typers: [], typingThreads: {},
+            reply: null, editing: null, chg: 0 };      // reply / edit in the composer; chg = server time of the last poll (edits, deletes)
+  var COLORS = ['#1769e0', '#7c3aed', '#18a66a', '#e5484d', '#f59e0b', '#0ea5a4', '#db2777', '#65a30d', '#2563eb', '#ea580c'];
+  var EMOJI = ['👍', '🙏', '😀', '😂', '🎉', '✅', '❤️', '🔥', '👀', '💰', '📶', '⚠️'];
+  var ICON = {
+    chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M8 11h.01M12 11h.01M16 11h.01"/></svg>',
+    x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+    back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
+    gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+    mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
+    send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>',
+    smile: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/></svg>',
+    link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>',
+    bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg>',
+    bellx: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.7 21a2 2 0 0 1-3.4 0M18.6 13A17 17 0 0 1 18 8M6.3 6.3A6 6 0 0 0 6 8c0 7-3 9-3 9h14M18 8a6 6 0 0 0-9.3-5M1 1l22 22"/></svg>',
+    expand: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>',
+    phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg>',
+    video: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3z"/></svg>',
+    image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>',
+    reply: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 6 6v5"/></svg>',
+    edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
+    trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>'
+  };
+
+  // ───────── helpers ─────────
+  function $(s, el) { return (el || root).querySelector(s); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function color(s) { var h = 0; s = String(s || ''); for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return COLORS[h % COLORS.length]; }
+  function av(ini, name, on, cls) { return '<span class="ttc-av' + (on ? ' on' : '') + (cls ? ' ' + cls : '') + '" style="background:' + color(name) + '">' + esc(ini) + '</span>'; }
+  // Under a Wi-Fi customer-call note (core/portal_call.call_meta): ring them back on their Wi-Fi page, call their
+  // number, WhatsApp — and, after a missed call, switch on background ringing if this browser has not yet.
+  function callActs(c) {
+    if (!c) return '';
+    var h = '', answered = c.kind === 'answered' || c.kind === 'out_answered';
+    if (c.cust && !answered) h += '<button type="button" class="ttc-pcb main" data-a="cust-call" data-cust="' + (+c.cust) + '" title="Rings their Wi-Fi page (the login or status page). Not open? It asks them to call you back.">' +
+      ICON.phone + '<span>Call back on their Wi-Fi page</span>' + (c.here ? '<i class="ttc-here" title="Their Wi-Fi page is open right now">on it now</i>' : '') + '</button>';
+    if (c.phone) h += '<a class="ttc-pcb" href="tel:' + esc(String(c.phone).replace(/[^\d+]/g, '')) + '">☎ ' + esc(c.phone) + '</a>';
+    if (c.wa) h += '<a class="ttc-pcb wa" href="https://wa.me/' + esc(c.wa) + '" target="_blank" rel="noopener">WhatsApp</a>';
+    if (c.kind === 'missed' && window.Notification && Notification.permission === 'default')
+      h += '<button type="button" class="ttc-pcb" data-a="notif" title="Desktop alerts: a customer call rings even when TapTap is behind other windows">🔔 Ring me in the background</button>';
+    return h ? '<div class="ttc-pcall-acts">' + h + '</div>' : '';
+  }
+  function linkify(t) {
+    return esc(t).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>')
+      .replace(/(^|\s)(\/[a-z0-9][\w\-\/?=&.%]*)/gi, '$1<a href="$2">$2</a>')
+      .replace(/@([\w.\-]+)/g, '<b>@$1</b>');
+  }
+  function when(iso, full) {
+    if (!iso) return ''; var d = new Date(iso), n = new Date(), sameDay = d.toDateString() === n.toDateString();
+    var hm = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (full || sameDay) return hm;
+    var y = new Date(n); y.setDate(n.getDate() - 1);
+    return d.toDateString() === y.toDateString() ? 'Yesterday' : d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+  }
+  function dayLabel(iso) {
+    var d = new Date(iso), n = new Date(), y = new Date(n); y.setDate(n.getDate() - 1);
+    if (d.toDateString() === n.toDateString()) return 'Today';
+    if (d.toDateString() === y.toDateString()) return 'Yesterday';
+    return d.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' });
+  }
+  function api(url, body) {
+    var o = body === undefined ? { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } }
+      : { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }, body: JSON.stringify(body) };
+    return fetch(url, o).then(function (r) { return r.json().catch(function () { return { ok: false, message: 'Chat is not available right now.' }; }); });
+  }
+  function store(k, v) { try { if (v === undefined) return JSON.parse(localStorage.getItem('ttc:' + k)); localStorage.setItem('ttc:' + k, JSON.stringify(v)); } catch (e) { return null; } }
+
+  // ───────── sound: a soft two-note chime made on the fly (no audio file needed) ─────────
+  var AC = null;
+  // A ring that arrives while TapTap is in the background is silent unless the page's sound was unlocked by a touch
+  // or a key press first (browser rule). Unlock it on the first one, so a customer's call is heard from any tab.
+  function unlockSound() {
+    try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === 'suspended' && AC.resume) AC.resume(); } catch (e) {}
+  }
+  ['pointerdown', 'keydown'].forEach(function (ev) { document.addEventListener(ev, unlockSound, { once: true, capture: true, passive: true }); });
+  function chime(kind) {
+    if (!S.prefs.sound) return;
+    try {
+      AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+      var notes = kind === 'support' ? [660, 880, 1175] : kind === 'mention' ? [880, 660, 880] : [740, 988];
+      notes.forEach(function (f, i) {
+        var o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime + i * 0.13;
+        o.type = 'sine'; o.frequency.value = f; o.connect(g); g.connect(AC.destination);
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.18, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+        o.start(t); o.stop(t + 0.4);
+      });
+    } catch (e) {}
+  }
+  document.addEventListener('pointerdown', function unlock() { try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); AC.resume(); } catch (e) {} document.removeEventListener('pointerdown', unlock); });
+
+  // ───────── skeleton ─────────
+  root.className = 'ttc' + (S.big ? ' big' : '');
+  root.innerHTML = '<div class="ttc-toasts" aria-live="polite"></div>' +
+    '<div class="ttc-panel ttc-hidden" role="dialog" aria-label="Chat"><div class="ttc-head"></div><div class="ttc-body"></div><div class="ttc-typing ttc-hidden"></div><div class="ttc-foot"></div></div>' +
+    '<button class="ttc-launch" type="button" aria-label="Open chat">' + ICON.chat + '<span class="ttc-badge ttc-hidden">0</span></button>';
+  var panel = $('.ttc-panel'), head = $('.ttc-head'), body = $('.ttc-body'), foot = $('.ttc-foot'), typing = $('.ttc-typing'), launch = $('.ttc-launch'), badge = $('.ttc-badge'), toasts = $('.ttc-toasts');
+  if (FULL) { launch.classList.add('ttc-hidden'); }
+
+  function totalUnread() { return S.threads.reduce(function (a, t) { return a + (t.muted ? 0 : t.unread); }, 0); }
+  var baseTitle = document.title.replace(/^\(\d+\)\s*/, '');
+  function updateBadge() {
+    var n = totalUnread();
+    badge.textContent = n > 99 ? '99+' : n; badge.classList.toggle('ttc-hidden', !n);
+    document.title = (n ? '(' + n + ') ' : '') + baseTitle;
+  }
+
+  function setOpen(v) {
+    S.open = v || FULL; panel.classList.toggle('ttc-hidden', !S.open); root.classList.toggle('is-open', S.open);
+    launch.setAttribute('aria-label', S.open ? 'Close chat' : 'Open chat'); launch.innerHTML = (S.open ? ICON.x : ICON.chat) + badge.outerHTML;
+    badge = $('.ttc-badge'); updateBadge(); store('open', S.open);
+    if (S.open) { if (S.view === 'thread' && S.thread) openThread(S.thread.id, true); else render(); }
+    schedule(200);
+  }
+  launch.addEventListener('click', function () { setOpen(!S.open); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && S.open && !FULL) { if ($('.ttc-pop')) { $('.ttc-pop').remove(); return; } setOpen(false); } });
+
+  // ───────── rendering ─────────
+  function headHTML(title, sub, left, right) {
+    return (left || '') + '<h4>' + esc(title) + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</h4>' + (right || '');
+  }
+  function render() {
+    if (S.view === 'settings') return renderSettings();
+    if (S.view === 'thread') return renderThread();
+    typing.classList.add('ttc-hidden'); foot.innerHTML = '';
+    head.innerHTML = headHTML('Chat', S.me.agent ? 'Team · Support inbox' : 'Your team and TapTap support', '',
+      '<button class="ttc-ib" data-a="settings" title="Chat settings">' + ICON.gear + '</button>' +
+      (FULL ? '' : '<button class="ttc-ib" data-a="big" title="Bigger">' + ICON.expand + '</button><button class="ttc-ib" data-a="close" title="Close">' + ICON.x + '</button>'));
+    var f = S.filter.toLowerCase(), h = '<div class="ttc-search"><input type="search" placeholder="Search chats or people" value="' + esc(S.filter) + '" aria-label="Search chats"></div>';
+    var ppl = S.people.filter(function (p) { return !f || p.name.toLowerCase().indexOf(f) >= 0; });
+    if (ppl.length) h += '<div class="ttc-people">' + ppl.map(function (p) { return '<button class="ttc-person" data-u="' + p.id + '" title="Message ' + esc(p.name) + '">' + av(p.initials, p.name, p.online) + '<span>' + esc(p.name.split(' ')[0]) + '</span></button>'; }).join('') + '</div>';
+    var mine = S.threads.filter(function (t) { return !t.inbox && (!f || t.title.toLowerCase().indexOf(f) >= 0); });
+    var inbox = S.threads.filter(function (t) { return t.inbox && (!f || t.title.toLowerCase().indexOf(f) >= 0); });
+    function row(t) {
+      var ini = t.kind === 'team' ? '👥' : t.initials;
+      return '<button class="ttc-row' + (t.unread ? ' unread' : '') + '" data-t="' + t.id + '">' +
+        (t.kind === 'support' && !t.inbox ? '<span class="ttc-av' + (t.online ? ' on' : '') + '" style="background:linear-gradient(135deg,#7c3aed,#1769e0)">TT</span>' : av(ini, t.title, t.online)) +
+        '<span class="ttc-mid"><b>' + esc(t.title) + (t.inbox && t.status ? ' <span class="ttc-tag ' + t.status + '">' + (t.status === 'solved' ? 'Solved' : 'Open') + '</span>' : '') + '</b>' +
+        (S.typingThreads[t.id] ? '<small class="ttc-tt"><span class="ttc-mini-dots"><i></i><i></i><i></i></span> ' + esc(typingText(S.typingThreads[t.id], t)) + '</small>' : '<small>' + esc(t.last || t.sub || 'Say hello 👋') + '</small>') + '</span>' +
+        '<span class="ttc-end">' + esc(when(t.last_at)) + (t.unread ? '<span class="ttc-count' + (t.muted ? ' muted' : '') + '">' + t.unread + '</span>' : '') + '</span></button>';
+    }
+    if (mine.length || !S.me.agent) h += '<div class="ttc-sec">Conversations</div>' + (mine.length ? mine.map(row).join('') : '<div class="ttc-empty">No conversations.</div>');
+    if (S.me.agent) h += '<div class="ttc-sec">Support inbox · all businesses</div>' + (inbox.length ? inbox.map(row).join('') : '<div class="ttc-empty">No support conversations yet.</div>');
+    h += '<div class="ttc-sec">Help</div><a class="ttc-row" href="/support/"><span class="ttc-av" style="background:linear-gradient(135deg,#18a66a,#0ea5a4)">?</span><span class="ttc-mid"><b>How-to guides</b><small>Add a router, fix connections, fair usage, sharing…</small></span></a>';
+    body.innerHTML = h;
+    var inp = $('.ttc-search input', body);
+    inp.addEventListener('input', function () { S.filter = inp.value; var pos = inp.selectionStart; render(); var n = $('.ttc-search input', body); n.focus(); n.setSelectionRange(pos, pos); });
+  }
+
+  function typingText(names, t) {
+    if (t && t.kind === 'direct') return 'typing…';
+    return names.slice(0, 2).join(' and ') + (names.length > 2 ? ' and others' : '') + (names.length > 1 ? ' are' : ' is') + ' typing…';
+  }
+  // The "someone is typing" bubble at the bottom of the conversation (three bouncing dots).
+  function renderTyping() {
+    var box = $('.ttc-msgs', body); if (!box) return;
+    var nearBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 90;
+    box.querySelectorAll('.ttc-typing-b').forEach(function (n) { n.remove(); });
+    var t = S.thread || {};
+    S.typers.slice(0, 3).forEach(function (p) {
+      var asTapTap = p.agent && t.kind === 'support' && !t.agent_view, name = asTapTap ? p.name + ' · TapTap Support' : p.name;
+      var el = document.createElement('div'); el.className = 'ttc-typing-b';
+      el.innerHTML = (t.kind !== 'direct' ? '<div class="ttc-who">' + esc(name) + '</div>' : '') +
+        '<div class="ttc-m' + (asTapTap ? ' agent' : '') + '">' + (asTapTap ? '<span class="ttc-av" style="background:linear-gradient(135deg,#7c3aed,#1769e0)">TT</span>' : av(p.initials, p.name)) +
+        '<div class="ttc-b ttc-dots" role="status" aria-label="' + esc(p.name) + ' is typing"><i></i><i></i><i></i></div></div>';
+      box.appendChild(el);
+    });
+    if (nearBottom) body.scrollTop = body.scrollHeight;
+  }
+
+  function renderThread() {
+    var t = S.thread; if (!t) { S.view = 'list'; return render(); }
+    var info = S.threads.filter(function (x) { return x.id === t.id; })[0] || {};
+    var right = (t.can_call ? '<button class="ttc-ib" data-a="call" title="Voice call">' + ICON.phone + '</button><button class="ttc-ib" data-a="vcall" title="Video call">' + ICON.video + '</button>' : '') +
+      '<button class="ttc-ib" data-a="mute" title="' + (info.muted ? 'Unmute' : 'Mute') + ' this chat">' + (info.muted ? ICON.bellx : ICON.bell) + '</button>';
+    if (t.agent_view) right = '<button class="ttc-ib" data-a="' + (t.status === 'solved' ? 'reopen' : 'solve') + '" title="' + (t.status === 'solved' ? 'Reopen' : 'Mark solved') + '">' + ICON.check + '</button>' + right;
+    if (!FULL) right += '<button class="ttc-ib" data-a="close" title="Close">' + ICON.x + '</button>';
+    head.innerHTML = headHTML(t.title, (info.sub || t.sub || ''), '<button class="ttc-ib" data-a="back" title="Back">' + ICON.back + '</button>', right);
+    var h = '<div class="ttc-msgs">', prev = null, lastDay = '';
+    if (S.more) h += '<button class="ttc-sys" data-a="older" style="border:0;background:none;cursor:pointer;text-decoration:underline">Show older messages</button>';
+    if (!S.msgs.length) h += '<div class="ttc-empty">' + (t.kind === 'support' && !t.agent_view ? 'Ask TapTap anything — routers, vouchers, billing. We usually reply within minutes during the day.' +
+      '<div style="margin-top:14px;text-align:left"><b style="font-size:12px;text-transform:uppercase;letter-spacing:.06em">Quick answers</b>' +
+      [['troubleshoot-link', 'Router not connecting?'], ['add-router-link', 'Add a MikroTik router'], ['fair-usage', 'Set up fair usage'], ['shared-auto-warn', 'Stop voucher sharing']].map(function (g) {
+        return '<a class="ttc-page" href="/support/guides/' + g[0] + '/">📘 <span>' + g[1] + '</span></a>'; }).join('') + '</div>' : 'No messages yet. Say hello 👋') + '</div>';
+    var lastMine = 0; S.msgs.forEach(function (m) { if (m.mine) lastMine = m.id; });
+    S.msgs.forEach(function (m) {
+      var day = dayLabel(m.at); if (day !== lastDay) { h += '<div class="ttc-day">' + day + '</div>'; lastDay = day; prev = null; }
+      if (m.system) { h += '<div class="ttc-sys' + (m.call ? ' ttc-pcall k-' + esc(m.call.kind || '') : '') + '">' + linkify(m.body) + callActs(m.call) + '</div>'; prev = null; return; }
+      var cont = prev && prev.sender === m.sender && prev.mine === m.mine && (new Date(m.at) - new Date(prev.at)) < 5 * 60000;
+      if (!m.mine && !cont && t.kind !== 'direct') h += '<div class="ttc-who">' + esc(m.sender) + '</div>';
+      h += '<div class="ttc-m' + (m.mine ? ' me' : '') + (m.agent ? ' agent' : '') + (m.mention_me ? ' hot' : '') + (cont ? ' cont' : '') + (m.deleted ? ' del' : '') + '" data-id="' + m.id + '">' +
+        (m.mine ? '' : av(m.initials, m.sender)) + '<div class="ttc-b' + (m.image && !m.deleted ? ' has-img' : '') + '">' + quoteHTML(m) +
+        (m.deleted ? '<span class="ttc-txt ttc-deleted">🚫 ' + (m.mine ? 'You deleted this message' : 'This message was deleted') + '</span>'
+          : imgHTML(m) + (m.body ? '<span class="ttc-txt">' + linkify(m.body) + '</span>' : '') +
+            (m.page_url ? '<a class="ttc-page" href="' + esc(m.page_url) + '">🔗 <span><b>' + esc(m.page_title || 'Shared page') + '</b><br><small>' + esc(m.page_url) + '</small></span></a>' : '') +
+            (m.edited ? '<small class="ttc-edited">edited</small>' : '')) +
+        '</div>' + actsHTML(m) + '</div>';
+      var next = S.msgs[S.msgs.indexOf(m) + 1];
+      if (!next || next.sender !== m.sender || next.system || (new Date(next.at) - new Date(m.at)) >= 5 * 60000)
+        h += '<div class="ttc-meta' + (m.mine ? ' me' : '') + '">' + when(m.at, true) + (m.mine && m.id === lastMine && t.kind === 'direct' ? (S.seen >= m.id ? ' · Seen' : ' · Sent') : '') + '</div>';
+      prev = m;
+    });
+    body.innerHTML = h + '</div>';
+    renderTyping();
+    if (!$('.ttc-comp', foot)) {
+      foot.innerHTML = '<div class="ttc-attach ttc-hidden"></div><div class="ttc-comp' + (voiceType() === null ? ' no-voice' : '') + '">' +
+        '<button type="button" class="ttc-tb ttc-plus" data-a="tools" title="Emoji, share this page, photo or video" aria-label="Add" aria-expanded="false">' + ICON.plus + '</button>' +
+        '<div class="ttc-tools" role="group" aria-label="Add to your message">' +
+        '<button class="ttc-tb" data-a="emoji" title="Emoji">' + ICON.smile + '<span>Emoji</span></button>' +
+        '<button class="ttc-tb" data-a="share" title="Share the page you are on">' + ICON.link + '<span>Share this page</span></button>' +
+        '<button class="ttc-tb" data-a="photo" title="Send a photo or a short video (deleted after ' + (t.photo_days || 7) + ' days)">' + ICON.image + '<span>Photo or video</span></button></div>' +
+        '<input type="file" accept="image/*,video/mp4,video/webm,video/quicktime" class="ttc-file" hidden>' +
+        '<textarea rows="1" placeholder="' + (t.kind === 'team' ? 'Message the team (@name)' : 'Write a message') + '" aria-label="Message"></textarea>' +
+        '<button class="ttc-tb ttc-mic" data-a="voice" title="Voice message (up to ' + VMAX + ' s) — deleted 1 minute after it is played" aria-label="Voice message">' + ICON.mic + '</button>' +
+        '<button class="ttc-tb ttc-send" data-a="send" title="Send (Enter)" aria-label="Send">' + ICON.send + '</button></div>';
+      wireComposer();
+    }
+    syncComp();
+    body.scrollTop = body.scrollHeight;
+    if (PLAY.id) updPlay();
+  }
+
+  // ───────── reply · edit · delete ─────────
+  function quoteHTML(m) {
+    var r = m.reply; if (!r || m.deleted) return '';
+    return '<button type="button" class="ttc-q" data-a="jump" data-mid="' + r.id + '"><b>' + esc(r.sender_id === S.me.id ? 'You' : (r.sender || 'Message')) + '</b>' +
+      '<span>' + (r.deleted ? '🚫 Message deleted' : esc(r.text || '')) + '</span></button>';
+  }
+  function canDelete(m) { return m.mine && m.delete_until && new Date(m.delete_until) > new Date(); }
+  function actsHTML(m) {
+    if (m.deleted || m.id >= 1e15) return '';
+    return '<span class="ttc-acts">' +
+      '<button type="button" data-a="reply" data-mid="' + m.id + '" title="Reply">' + ICON.reply + '</button>' +
+      (m.mine && m.can_edit ? '<button type="button" data-a="edit" data-mid="' + m.id + '" title="Edit">' + ICON.edit + '</button>' : '') +
+      (canDelete(m) ? '<button type="button" data-a="del" data-mid="' + m.id + '" title="Delete for everyone (within 1 hour of sending)">' + ICON.trash + '</button>' : '') +
+      '</span>';
+  }
+  function msgById(id) { return S.msgs.filter(function (x) { return x.id === id; })[0]; }
+  function putMsg(m) {                                  // replace a message with its new version (edited / deleted)
+    var found = false;
+    for (var i = 0; i < S.msgs.length; i++) {
+      var x = S.msgs[i];
+      if (x.id === m.id) { S.msgs[i] = m; found = true; }
+      else if (x.reply && x.reply.id === m.id) {            // replies quoting it show the new text (or "deleted")
+        x.reply.deleted = !!m.deleted; x.reply.text = m.deleted ? '' : (m.body || x.reply.text); found = true;
+      }
+    }
+    return found;
+  }
+  function startReply(m) {
+    S.editing = null; S.reply = m; showAttach();
+    var ta = $('textarea', foot); if (ta) ta.focus();
+  }
+  function startEdit(m) {
+    S.reply = null; S.editing = m; clearPhoto(); S.attach = null; showAttach();
+    var ta = $('textarea', foot); if (!ta) return;
+    ta.value = m.body || ''; ta.focus(); ta.style.height = 'auto'; ta.style.height = Math.min(120, ta.scrollHeight) + 'px';
+    syncComp();
+  }
+  function cancelCompose() {
+    var wasEdit = !!S.editing; S.reply = null; S.editing = null; showAttach();
+    if (wasEdit) { var ta = $('textarea', foot); if (ta) { ta.value = ''; ta.style.height = 'auto'; } }
+    syncComp();
+  }
+  function deleteMsg(m) {
+    if (!canDelete(m)) return toast({ sender: 'Chat', body: 'Messages can only be deleted within 1 hour of sending.' });
+    if (!confirm('Delete this message for everyone?')) return;
+    api('/chat/message/', { id: m.id, action: 'delete' }).then(function (d) {
+      if (d.ok) { putMsg(d.message); if (S.editing && S.editing.id === m.id) cancelCompose(); renderThread(); }
+      else toast({ sender: 'Not deleted', body: d.message || 'Try again.' });
+    });
+  }
+  function jumpTo(id) {
+    var el = body.querySelector('.ttc-m[data-id="' + id + '"]');
+    if (!el) return toast({ sender: 'Chat', body: 'That message is further up — tap “Show older messages”.' });
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.classList.add('flash'); setTimeout(function () { el.classList.remove('flash'); }, 1600);
+  }
+
+  function renderSettings() {
+    typing.classList.add('ttc-hidden'); foot.innerHTML = '';
+    head.innerHTML = headHTML('Chat settings', 'Sounds, pop-ups and email', '<button class="ttc-ib" data-a="back" title="Back">' + ICON.back + '</button>', FULL ? '' : '<button class="ttc-ib" data-a="close" title="Close">' + ICON.x + '</button>');
+    var p = S.prefs, perm = window.Notification ? Notification.permission : 'unsupported';
+    body.innerHTML = '<div class="ttc-set">' +
+      '<label><span>Sound<small>A soft chime for new messages</small></span><input type="checkbox" data-p="sound"' + (p.sound ? ' checked' : '') + '></label>' +
+      '<label><span>Pop-ups on screen<small>Show new messages in the corner</small></span><input type="checkbox" data-p="popups"' + (p.popups ? ' checked' : '') + '></label>' +
+      '<label><span>Email me unread messages<small>If I haven\'t read them after <input type="number" min="2" max="240" data-p="email_after" value="' + (p.email_after || 10) + '" style="width:56px"> minutes</small></span><input type="checkbox" data-p="email_missed"' + (p.email_missed ? ' checked' : '') + '></label>' +
+      '<label><span>Desktop alerts<small>' + (perm === 'granted' ? 'On — you get alerts even when this tab is in the background' : perm === 'denied' ? 'Blocked in your browser settings' : perm === 'unsupported' ? 'Not supported by this browser' : 'Get alerts when this tab is in the background') + '</small></span>' +
+      (perm === 'default' ? '<button class="btn btn-sm btn-primary" data-a="notif">Turn on</button>' : '') + '</label>' +
+      '<p class="mt-3 mb-0" style="font-size:12px;color:var(--c-mut)">Tip: <b>Enter</b> sends, <b>Shift+Enter</b> adds a line. Type <b>@name</b> in the team room to alert someone even if they muted it. Paste or drop a photo to send it — photos are deleted for everyone after a week. Use 📞 in a direct or support chat to call; calls ring even when sounds are off.</p>' +
+      '<button class="btn btn-sm btn-outline-secondary mt-3" data-a="test">Play test sound</button></div>';
+    body.querySelectorAll('[data-p]').forEach(function (i) {
+      i.addEventListener('change', function () { var d = {}; d[i.dataset.p] = i.type === 'checkbox' ? i.checked : +i.value; S.prefs[i.dataset.p] = d[i.dataset.p]; api('/chat/settings/', d); });
+    });
+  }
+
+  // ───────── actions ─────────
+  panel.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-a],[data-t],[data-u],[data-img],[data-once],[data-voice]'); if (!b) return;
+    if (b.dataset.img) return lightbox(+b.dataset.img, false);
+    if (b.dataset.once) return lightbox(+b.dataset.once, true);
+    if (b.dataset.voice) return playVoice(+b.dataset.voice);
+    if (b.dataset.t) return openThread(+b.dataset.t);
+    if (b.dataset.u) return api('/chat/direct/', { user: +b.dataset.u }).then(function (d) { if (d.ok) openThread(d.thread); else toast({ sender: 'Chat', body: d.message }); });
+    var a = b.dataset.a;
+    if (a === 'close') { cancelVoice(); setOpen(false); }
+    else if (a === 'big') { S.big = !S.big; root.classList.toggle('big', S.big); }
+    else if (a === 'back') { cancelVoice(); stopPlay(); S.view = 'list'; S.thread = null; S.typers = []; store('thread', null); render(); poll(); }
+    else if (a === 'settings') { S.view = 'settings'; render(); }
+    else if (a === 'test') { var s = S.prefs.sound; S.prefs.sound = true; chime('mention'); S.prefs.sound = s; }
+    else if (a === 'notif') Notification.requestPermission().then(render);
+    else if (a === 'cust-call') openCall('/chat/call/?customer=' + (+b.dataset.cust));
+    else if (a === 'mute') { var info = S.threads.filter(function (x) { return x.id === S.thread.id; })[0] || {}; info.muted = !info.muted; api('/chat/settings/', { thread: S.thread.id, mute: info.muted }); renderThread(); }
+    else if (a === 'solve' || a === 'reopen') api('/chat/support/', { thread: S.thread.id, action: a }).then(function () { openThread(S.thread.id, true); });
+    else if (a === 'older') loadOlder();
+    else if (a === 'tools') toggleTools();
+    else if (a === 'emoji') { toggleTools(false); togglePop('emoji'); }
+    else if (a === 'share') { toggleTools(false); S.attach = { url: location.pathname + location.search, title: document.title.replace(/^\(\d+\)\s*/, '').replace(/\s*—\s*TapTap$/, '') }; showAttach(); }
+    else if (a === 'unattach') { S.attach = null; showAttach(); }
+    else if (a === 'photo') { toggleTools(false); var fi = $('.ttc-file', foot); fi && fi.click(); }
+    else if (a === 'unphoto') { clearPhoto(); }
+    else if (a === 'once') { if (S.photo) { S.photo.once = !S.photo.once; showAttach(); } }
+    else if (a === 'voice') startVoice();
+    else if (a === 'vcancel') cancelVoice();
+    else if (a === 'vstop') finishVoice(false);
+    else if (a === 'vsend') { if (REC && REC.state === 'ready') sendVoice(); else finishVoice(true); }
+    else if (a === 'vpreview') previewVoice();
+    else if (a === 'call' || a === 'vcall') startCall(a === 'vcall');
+    else if (a === 'send') send();
+    else if (a === 'reply' || a === 'edit' || a === 'del') {
+      var m = msgById(+b.dataset.mid); if (!m) return;
+      if (a === 'reply') startReply(m); else if (a === 'edit') startEdit(m); else deleteMsg(m);
+    }
+    else if (a === 'uncompose') cancelCompose();
+    else if (a === 'jump') jumpTo(+b.dataset.mid);
+  });
+
+  function showAttach() {
+    var el = $('.ttc-attach', foot); if (!el) return;
+    el.classList.toggle('ttc-hidden', !S.attach && !S.photo && !S.reply && !S.editing);
+    var h = '';
+    if (S.editing) h += '<div class="ttc-att-row ttc-compose-q"><span>' + ICON.edit + ' <b>Editing your message</b> · Esc to cancel</span><button class="btn btn-sm btn-link p-0" data-a="uncompose">Cancel</button></div>';
+    else if (S.reply) h += '<div class="ttc-att-row ttc-compose-q"><span>' + ICON.reply + ' Replying to <b>' + esc(S.reply.mine ? 'yourself' : S.reply.sender) + '</b>: ' +
+      esc((S.reply.body || (S.reply.image ? attLabel(S.reply.image) : S.reply.page_title || '')).slice(0, 80)) + '</span><button class="btn btn-sm btn-link p-0" data-a="uncompose">Cancel</button></div>';
+    h += S.attach ? '<div class="ttc-att-row"><span>🔗 Sharing: <b>' + esc(S.attach.title) + '</b></span><button class="btn btn-sm btn-link p-0" data-a="unattach">Remove</button></div>' : '';
+    if (S.photo && S.photo.video) {
+      h += '<div class="ttc-att-photo"><video src="' + S.photo.url + '" muted playsinline preload="metadata"></video><div><b>Video · ' + (S.photo.blob.size / 1048576).toFixed(1) + ' MB</b>' +
+        '<small>⏳ Deleted for everyone after ' + ((S.thread && S.thread.photo_days) || 7) + ' days</small></div><button class="btn btn-sm btn-link p-0" data-a="unphoto">Remove</button></div>';
+    } else if (S.photo) {
+      var days = (S.thread && S.thread.photo_days) || 7, direct = S.thread && S.thread.kind === 'direct';
+      h += '<div class="ttc-att-photo"><img src="' + S.photo.url + '" alt=""><div><b>Photo · ' + Math.max(1, Math.round(S.photo.blob.size / 1024)) + ' KB</b>' +
+        '<small>' + (S.photo.once ? '👁 Deleted as soon as it is opened' : '⏳ Deleted for everyone after ' + days + ' days') + ' · location data removed</small>' +
+        (direct ? '<label class="ttc-once"><input type="checkbox" data-a="once"' + (S.photo.once ? ' checked' : '') + '> View once</label>' : '') +
+        '</div><button class="btn btn-sm btn-link p-0" data-a="unphoto">Remove</button></div>';
+    }
+    el.innerHTML = h;
+    syncComp();
+  }
+
+  // One round button at the end of the composer, always on screen: 🎙 when the box is empty, ➤ as soon as there
+  // is something to send (text, a photo, a shared page), ✓ while you edit a message.
+  function syncComp() {
+    var comp = foot && $('.ttc-comp', foot); if (!comp) return;
+    var ta = $('textarea', comp), edit = !!S.editing;
+    comp.classList.toggle('has-content', !!((ta && ta.value.trim()) || S.photo || S.attach || edit));
+    comp.classList.toggle('editing', edit);
+    var sb = $('.ttc-send', comp), mode = edit ? 'save' : 'send';
+    if (sb && sb.dataset.mode !== mode) {
+      sb.dataset.mode = mode; sb.innerHTML = edit ? ICON.check : ICON.send;
+      sb.title = edit ? 'Save your edit (Enter)' : 'Send (Enter)'; sb.setAttribute('aria-label', edit ? 'Save' : 'Send');
+    }
+  }
+  // The ＋ tray: in a narrow chat (the side panel, a phone) emoji / share / photo fold behind one button.
+  function toggleTools(force) {
+    var comp = foot && $('.ttc-comp', foot); if (!comp) return;
+    var open = force === undefined ? !comp.classList.contains('tools-open') : !!force;
+    if (open === comp.classList.contains('tools-open')) return;
+    comp.classList.toggle('tools-open', open);
+    var b = $('.ttc-plus', comp); if (b) b.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) { var pop = $('.ttc-pop', foot); if (pop) pop.remove(); var first = $('.ttc-tools .ttc-tb', comp); if (first) first.focus(); }
+  }
+  document.addEventListener('click', function (e) {          // a click anywhere else closes the tray
+    var comp = foot && $('.ttc-comp.tools-open', foot);
+    if (comp && !(e.target.closest && e.target.closest('.ttc-tools,.ttc-plus'))) toggleTools(false);
+  }, true);
+
+  function togglePop(kind, items) {
+    var old = $('.ttc-pop', foot); if (old) { var same = old.dataset.k === kind; old.remove(); if (same && kind === 'emoji') return; }
+    var comp = $('.ttc-comp', foot), ta = $('textarea', foot), pop = document.createElement('div');
+    pop.className = 'ttc-pop' + (kind === 'ment' ? ' ment' : ''); pop.dataset.k = kind;
+    if (kind === 'emoji') pop.innerHTML = EMOJI.map(function (e) { return '<button type="button" data-e="' + e + '">' + e + '</button>'; }).join('');
+    else { if (!items.length) return; pop.innerHTML = items.map(function (p) { return '<button type="button" data-m="' + esc(p.name.split(' ')[0]) + '">' + av(p.initials, p.name) + esc(p.name) + '</button>'; }).join(''); }
+    comp.appendChild(pop);
+    pop.addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.e) insert(b.dataset.e + ' ');
+      else { ta.value = ta.value.replace(/@([\w.\-]*)$/, '@' + b.dataset.m + ' '); ta.focus(); }
+      pop.remove();
+    });
+  }
+  function insert(txt) { var ta = $('textarea', foot), s = ta.selectionStart || ta.value.length; ta.value = ta.value.slice(0, s) + txt + ta.value.slice(ta.selectionEnd || s); ta.focus(); ta.selectionStart = ta.selectionEnd = s + txt.length; syncComp(); }
+
+  function wireComposer() {
+    var ta = $('textarea', foot), fi = $('.ttc-file', foot);
+    fi.addEventListener('change', function () { if (fi.files[0]) pickPhoto(fi.files[0]); fi.value = ''; });
+    ta.addEventListener('paste', function (e) {
+      var f = [].slice.call((e.clipboardData && e.clipboardData.files) || []).filter(function (x) { return /^image\//.test(x.type); })[0];
+      if (f) { e.preventDefault(); pickPhoto(f); }
+    });
+    $('.ttc-comp', foot).addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && e.target.closest('.ttc-tools')) { e.preventDefault(); toggleTools(false); var pb = $('.ttc-plus', foot); if (pb) pb.focus(); }
+    });
+    ta.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && $('.ttc-comp.tools-open', foot)) { e.preventDefault(); return toggleTools(false); }
+      if (e.key === 'Escape' && (S.reply || S.editing)) { e.preventDefault(); return cancelCompose(); }
+      if (e.key === 'ArrowUp' && !ta.value && !S.editing) {          // ↑ in an empty box edits your last message
+        var last = S.msgs.filter(function (x) { return x.mine && x.can_edit && !x.deleted; }).pop();
+        if (last) { e.preventDefault(); return startEdit(last); }
+      }
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); var pop = $('.ttc-pop.ment button', foot); if (pop) { pop.click(); return; } send(); }
+    });
+    ta.addEventListener('input', function () {
+      ta.style.height = 'auto'; ta.style.height = Math.min(120, ta.scrollHeight) + 'px';
+      syncComp(); toggleTools(false);
+      var m = ta.value.slice(0, ta.selectionStart).match(/@([\w.\-]*)$/);
+      if (m && S.thread && S.thread.kind !== 'direct') {
+        var q = m[1].toLowerCase(); togglePop('ment', S.people.filter(function (p) { return p.name.toLowerCase().indexOf(q) >= 0; }).slice(0, 6));
+      } else { var p = $('.ttc-pop.ment', foot); if (p) p.remove(); }
+      if (Date.now() - S.lastTyping > 3000 && ta.value.trim()) { S.lastTyping = Date.now(); api('/chat/state/?open=' + S.thread.id + '&typing=1&since=' + S.top); }
+    });
+    setTimeout(function () { if (!('ontouchstart' in window)) ta.focus(); }, 50);
+  }
+
+  function send() {
+    var ta = $('textarea', foot), txt = ta.value.trim();
+    if (S.editing) return saveEdit(ta, txt);
+    if (S.photo) return sendPhoto(ta, txt);
+    if (!txt && !S.attach) return;
+    var payload = { thread: S.thread.id, body: txt, page_url: S.attach ? S.attach.url : '', page_title: S.attach ? S.attach.title : '' };
+    var rep = S.reply; if (rep) payload.reply_to = rep.id;
+    ta.value = ''; ta.style.height = 'auto'; S.attach = null; S.reply = null; showAttach();
+    var tmp = { id: 1e15, body: txt, mine: true, sender: S.me.name, at: new Date().toISOString(), page_url: payload.page_url, page_title: payload.page_title,
+                reply: rep ? { id: rep.id, sender: rep.sender, sender_id: rep.mine ? S.me.id : -1, text: rep.body || '' } : null };
+    S.msgs.push(tmp); renderThread();
+    api('/chat/send/', payload).then(function (d) {
+      S.msgs = S.msgs.filter(function (m) { return m !== tmp; });
+      if (d.ok) { if (!S.msgs.some(function (m) { return m.id === d.message.id; })) S.msgs.push(d.message); S.top = Math.max(S.top, d.message.id); }
+      else { ta.value = txt; S.reply = rep; showAttach(); toast({ sender: 'Not sent', body: d.message || 'Try again.' }); }
+      renderThread(); poll();
+    });
+  }
+  function saveEdit(ta, txt) {
+    var m = S.editing; if (!m) return;
+    if (txt === (m.body || '')) return cancelCompose();
+    if (!txt && !m.image && !m.page_url) return toast({ sender: 'Chat', body: 'Type a message — or delete it.' });
+    api('/chat/message/', { id: m.id, action: 'edit', body: txt }).then(function (d) {
+      if (d.ok) { putMsg(d.message); cancelCompose(); renderThread(); }
+      else toast({ sender: 'Not saved', body: d.message || 'Try again.' });
+    });
+  }
+
+  function openThread(id, keep) {
+    S.view = 'thread'; store('thread', id); S.more = false;
+    if (!keep || !S.thread || S.thread.id !== id) { cancelVoice(); stopPlay(); S.msgs = []; foot.innerHTML = ''; S.reply = null; S.editing = null; }
+    return api('/chat/t/' + id + '/').then(function (d) {
+      if (!d.ok) { S.view = 'list'; render(); return; }
+      S.thread = d.thread; S.msgs = d.messages; S.more = d.more;
+      var info = S.threads.filter(function (x) { return x.id === id; })[0]; if (info) info.unread = 0;
+      updateBadge(); renderThread(); schedule(300);
+    });
+  }
+  function loadOlder() {
+    var first = S.msgs[0]; if (!first) return;
+    api('/chat/t/' + S.thread.id + '/?before=' + first.id).then(function (d) {
+      if (!d.ok) return; var h0 = body.scrollHeight; S.msgs = d.messages.concat(S.msgs); S.more = d.more; renderThread(); body.scrollTop = body.scrollHeight - h0;
+    });
+  }
+
+  // ───────── notifications ─────────
+  function toast(m, kind) {
+    if (!S.prefs.popups && m.id) return;
+    var el = document.createElement('div');
+    el.className = 'ttc-toast ' + (kind || '');
+    el.innerHTML = av(m.initials || '💬', m.sender || 'Chat') + '<div><b>' + esc(m.sender) + (m.threadTitle ? ' · ' + esc(m.threadTitle) : '') + '</b><p>' + esc(m.body || m.page_title || attLabel(m.image)) + '</p></div>';
+    el.addEventListener('click', function () { el.remove(); if (m.onclick) return m.onclick(); if (m.thread) { if (!S.open) setOpen(true); openThread(m.thread); } });
+    if (m.key) { var old = toasts.querySelector('[data-key="' + m.key + '"]'); if (old) old.remove(); el.dataset.key = m.key; }
+    toasts.appendChild(el); while (toasts.children.length > 3) toasts.firstChild.remove();
+    setTimeout(function () { el.style.transition = 'opacity .4s'; el.style.opacity = '0'; setTimeout(function () { el.remove(); }, 450); }, 7000);
+  }
+  function desktop(m, title) {
+    if (!window.Notification || Notification.permission !== 'granted' || !document.hidden) return;
+    try { var n = new Notification(m.sender + ' · ' + title, { body: m.body || m.page_title || attLabel(m.image), tag: 'ttc-' + m.thread, silent: !S.prefs.sound });
+      n.onclick = function () { window.focus(); setOpen(true); openThread(m.thread); n.close(); }; } catch (e) {}
+  }
+
+  // ───────── polling ─────────
+  function schedule(ms) {
+    clearTimeout(S.timer);
+    var wait = ms != null ? ms : (document.hidden ? 30000 : S.open ? 3500 : 12000);
+    S.timer = setTimeout(poll, wait);
+  }
+  var polling = false;
+  function poll() {
+    if (polling) return; polling = true;
+    var q = '/chat/state/?since=' + (S.first ? -1 : S.top) + (S.chg ? '&chg=' + S.chg : '') + (S.view === 'thread' && S.thread && S.open ? '&open=' + S.thread.id : '');
+    api(q).then(function (d) {
+      polling = false; if (!d.ok) { schedule(60000); return; }
+      S.me = d.me; S.prefs = d.prefs; S.people = d.people; S.threads = d.threads; S.typingThreads = d.typing_threads || {};
+      var incoming = S.first ? [] : d.new;
+      S.first = false; S.top = Math.max(S.top, d.top); if (d.now) S.chg = d.now;
+      var viewing = S.open && S.view === 'thread' && S.thread && !document.hidden ? S.thread.id : 0, changed = false, maxHere = 0;
+      (d.changed || []).forEach(function (m) {         // edited / deleted by their sender
+        if (S.thread && m.thread === S.thread.id && putMsg(m)) changed = true;
+        if (S.editing && S.editing.id === m.id && m.deleted) cancelCompose();
+        if (S.reply && S.reply.id === m.id && m.deleted) cancelCompose();
+      });
+      incoming.forEach(function (m) {
+        var t = S.threads.filter(function (x) { return x.id === m.thread; })[0] || {};
+        if (m.thread === viewing) {
+          if (!S.msgs.some(function (x) { return x.id === m.id; })) { S.msgs.push(m); changed = true; }
+          if (m.id > maxHere) maxHere = m.id; t.unread = 0;
+        }
+        if (!m.notify) return;
+        var kind = m.mention_me ? 'mention' : (t.kind === 'support' || t.inbox) ? 'support' : '';
+        if (t.muted && !m.mention_me) return;
+        if (m.thread !== viewing) { m.threadTitle = t.kind === 'direct' ? '' : t.title; toast(m, kind); desktop(m, t.title || 'Chat'); }
+        chime(kind);
+        if (!S.open) { launch.classList.remove('ping'); void launch.offsetWidth; launch.classList.add('ping'); }
+      });
+      if (maxHere) api('/chat/read/', { thread: viewing, upto: maxHere });
+      if (d.seen_upto != null && d.seen_upto !== S.seen) { S.seen = d.seen_upto; changed = true; }
+      updateBadge();
+      if (S.open) {
+        if (S.view === 'thread') {
+          if (changed) renderThread();
+          var ty = d.typing || [], sig = JSON.stringify(ty), was = JSON.stringify(S.typers);
+          S.typers = ty; if (changed || sig !== was) renderTyping();
+          var info = S.threads.filter(function (x) { return x.id === (S.thread && S.thread.id); })[0];
+          var sub = head.querySelector('small'); if (info && sub) sub.textContent = info.sub || '';
+        } else if (S.view === 'list' && !(document.activeElement && document.activeElement.closest && document.activeElement.closest('.ttc-search'))) render();
+      }
+      schedule();
+    }).catch(function () { polling = false; schedule(20000); });
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { updateBadge(); schedule(100); } });
+
+
+  // ───────── photos: shrunk and cleaned in the browser, deleted for good after a week ─────────
+  function timeLeft(iso) {
+    var ms = new Date(iso) - new Date(); if (ms <= 0) return 'now';
+    var d = Math.floor(ms / 864e5), h = Math.floor(ms / 36e5);
+    return d >= 1 ? d + 'd' : h >= 1 ? h + 'h' : '<1h';
+  }
+  function imgHTML(m) {
+    var im = m.image; if (!im) return '';
+    if (im.kind === 'voice') return voiceHTML(m, im);
+    var days = (S.thread && S.thread.photo_days) || 7;
+    if (im.local && im.video) return '<span class="ttc-img ttc-vid sending" style="aspect-ratio:16/9"><video src="' + im.local + '" muted playsinline preload="metadata"></video><i class="ttc-spin"></i></span>';
+    if (im.local) return '<span class="ttc-img sending" style="aspect-ratio:' + im.w + '/' + im.h + '"><img src="' + im.local + '" alt=""><i class="ttc-spin"></i></span>';
+    if (im.gone && im.kind === 'video') return '<span class="ttc-img-gone">🎬 Video expired<small>Chat files are deleted after ' + days + ' days</small></span>';
+    if (im.gone) return '<span class="ttc-img-gone">' + (im.opened ? '👁 Opened' : '🖼 Photo expired') + '<small>' + (im.opened ? 'View-once photo' : 'Photos are deleted after ' + days + ' days') + '</small></span>';
+    if (im.kind === 'video') return '<span class="ttc-img ttc-vid" style="aspect-ratio:' + (im.w || 16) + '/' + (im.h || 9) + '"><video src="/chat/img/' + m.id + '/" controls playsinline preload="metadata"></video>' +
+      '<span class="ttc-exp" title="Deleted for everyone on ' + esc(new Date(im.expires).toLocaleString()) + '">⏳ ' + timeLeft(im.expires) + '</span></span>';
+    if (im.once) return m.mine ? '<span class="ttc-img-gone">👁 View-once photo<small>Not opened yet</small></span>'
+      : '<button class="ttc-img-once" data-once="' + m.id + '">👁 Tap to view once<small>It is deleted as soon as you close it</small></button>';
+    return '<button class="ttc-img" data-img="' + m.id + '" style="aspect-ratio:' + im.w + '/' + im.h + '" title="Open photo"><img src="/chat/img/' + m.id + '/" loading="lazy" alt="Photo">' +
+      '<span class="ttc-exp" title="Deleted for everyone on ' + esc(new Date(im.expires).toLocaleString()) + '">⏳ ' + timeLeft(im.expires) + '</span></button>';
+  }
+  // ───────── voice messages: up to 30 s, deleted for good 1 minute after someone first plays them ─────────
+  // Recording: MediaRecorder (Opus in WebM/Ogg, or AAC in MP4 on Safari), stopped by itself at VMAX seconds.
+  // Playing: the bytes are fetched only when someone presses ▶ (?listen=1) and played from memory; nothing is
+  // preloaded or cached, and the memory copy is dropped when it ends or when its minute is up.
+  var VMAX = 30, REC = null, PLAY = { id: 0 }, VDL = {}, WAVE = 26;
+  var SILENCE = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';
+  function attLabel(im) {
+    if (!im) return '';
+    return im.kind === 'voice' ? '🎙️ Voice message' : im.kind === 'video' ? '🎬 Video clip' : '📷 Photo';
+  }
+  function fmtS(s) { s = Math.max(0, Math.round(s || 0)); return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
+  function voiceType() {
+    if (!window.MediaRecorder) return null;
+    // AAC in MP4 first: every phone and browser plays it (an iPhone cannot play WebM/Opus)
+    var c = ['audio/mp4;codecs=mp4a.40.2', 'audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4', 'audio/webm'];
+    for (var i = 0; i < c.length; i++) { try { if (MediaRecorder.isTypeSupported(c[i])) return c[i]; } catch (e) {} }
+    return '';
+  }
+  function waveBars(id, secs) {                    // a steady little waveform per message (drawn, not measured)
+    var h = '', x = (id * 2654435761) >>> 0, n = WAVE;
+    for (var i = 0; i < n; i++) {
+      x = (x * 1103515245 + 12345) >>> 0;
+      var env = Math.sin(Math.PI * (i + .5) / n), v = 22 + Math.round(((x >>> 16) % 70) * (.45 + .55 * env));
+      h += '<i style="height:' + Math.min(100, v) + '%"></i>';
+    }
+    return h;
+  }
+  function voiceHTML(m, im) {
+    if (im.local) return '<span class="ttc-voice sending"><span class="ttc-vplay"><i class="ttc-vspin"></i></span><span class="ttc-vwave">' + waveBars(7, im.secs) +
+      '</span><span class="ttc-vtime">' + fmtS(im.secs) + '</span></span>';
+    if (im.gone) {
+      delete VDL[m.id];
+      return im.listened ? '<span class="ttc-img-gone ttc-voice-gone">🎙️ Voice message · listened<small>🔥 Deleted for good 1 minute after it was played</small></span>'
+        : '<span class="ttc-img-gone ttc-voice-gone">🎙️ Voice message expired<small>Not played within ' + ((S.thread && S.thread.photo_days) || 7) + ' days</small></span>';
+    }
+    var note;
+    if (im.listened) {
+      var dl = VDL[m.id] || (VDL[m.id] = Date.now() + (im.left != null ? im.left : 60) * 1000);
+      note = '🔥 ' + (m.mine ? 'Played · ' : '') + 'deleted in <b data-dl="' + m.id + '">' + Math.max(0, Math.ceil((dl - Date.now()) / 1000)) + '</b> s';
+    } else note = m.mine ? '👂 Not played yet · gone 1 min after it is' : '▶ Play · deleted for everyone 1 min later';
+    return '<span class="ttc-voice' + (im.listened ? ' heard' : '') + '" data-vid="' + m.id + '">' +
+      '<button type="button" class="ttc-vplay" data-voice="' + m.id + '" title="Play" aria-label="Play voice message">▶</button>' +
+      '<span class="ttc-vwave">' + waveBars(m.id, im.secs) + '</span><span class="ttc-vtime">' + fmtS(im.secs) + '</span>' +
+      '<small class="ttc-vnote">' + note + '</small></span>';
+  }
+  function voiceEl(id) { return body.querySelector('.ttc-voice[data-vid="' + id + '"]'); }
+  function refreshVoice(m) {                       // redraw one voice bubble in place (no jump to the bottom)
+    var el = voiceEl(m.id); if (!el) return;
+    var tmp = document.createElement('span'); tmp.innerHTML = voiceHTML(m, m.image);
+    if (tmp.firstChild) el.replaceWith(tmp.firstChild);
+    updPlay();
+  }
+  function updPlay() {
+    body.querySelectorAll('.ttc-voice.playing').forEach(function (el) {
+      if (+el.dataset.vid !== PLAY.id) { el.classList.remove('playing', 'loading'); var b = el.querySelector('.ttc-vplay'); if (b) b.textContent = '▶';
+        el.querySelectorAll('.ttc-vwave i').forEach(function (i) { i.classList.remove('on'); }); }
+    });
+    if (!PLAY.id) return;
+    var el = voiceEl(PLAY.id); if (!el) return;
+    var a = PLAY.audio, m = msgById(PLAY.id), secs = (m && m.image && m.image.secs) || 1;
+    el.classList.add('playing'); el.classList.toggle('loading', !!PLAY.loading);
+    var btn = el.querySelector('.ttc-vplay'); if (btn) btn.textContent = PLAY.loading ? '…' : (a && !a.paused ? '❚❚' : '▶');
+    var t = a ? a.currentTime : 0, f = Math.min(1, t / secs), bars = el.querySelectorAll('.ttc-vwave i');
+    bars.forEach(function (i, k) { i.classList.toggle('on', (k + 1) / bars.length <= f + .001); });
+    var tm = el.querySelector('.ttc-vtime'); if (tm) tm.textContent = a && t > 0 ? fmtS(t) : fmtS(secs);
+  }
+  function stopPlay() {
+    var p = PLAY; PLAY = { id: 0 };
+    if (p.audio) { try { p.audio.pause(); p.audio.removeAttribute('src'); p.audio.load(); } catch (e) {} }
+    if (p.url) { try { URL.revokeObjectURL(p.url); } catch (e) {} }
+    if (body) updPlay();
+  }
+  function playVoice(id) {
+    var m = msgById(id); if (!m || !m.image || m.image.gone || m.image.local) return;
+    if (PLAY.id === id && PLAY.audio && !PLAY.loading) { if (PLAY.audio.paused) PLAY.audio.play().catch(function () {}); else PLAY.audio.pause(); return updPlay(); }
+    if (PLAY.id === id) return;                    // still loading
+    stopPlay(); if (REC) return toast({ sender: 'Voice', body: 'Finish your recording first.' });
+    var p = PLAY = { id: id, loading: true }; updPlay();
+    // The player is made (and started once, silent) inside this tap: Safari only lets a page start sound from a
+    // tap, and by the time the recording has downloaded the tap is over — the first press used to do nothing.
+    var a = p.audio = new Audio(); a.preload = 'auto';
+    try { a.src = SILENCE; var u = a.play(); if (u && u.catch) u.catch(function () {}); } catch (e) {}
+    // listen=2: the recording's last minute starts only when it is really playing here (confirmed below), so a
+    // browser that cannot play it never destroys it unheard.
+    fetch('/chat/img/' + id + '/?listen=2', { credentials: 'same-origin', cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw r.status; return r.blob(); })
+      .then(function (b) {
+        if (PLAY !== p) return;
+        p.url = URL.createObjectURL(b); p.loading = false;
+        try { a.pause(); } catch (e) {}
+        a.ontimeupdate = a.onplay = a.onpause = updPlay;
+        a.onended = function () { if (PLAY === p) stopPlay(); };
+        var failed = function () {
+          if (PLAY !== p || p.confirmed) return;
+          stopPlay(); toast({ sender: 'Voice', body: 'This browser cannot play this recording. It has NOT been deleted — open it in the TapTap app or another browser.' });
+        };
+        a.onerror = failed;
+        a.onplaying = function () {
+          if (PLAY !== p || p.confirmed || a.src !== p.url) return;
+          p.confirmed = true;
+          var mm = msgById(id);
+          if (!mm || mm.mine) return;
+          api('/chat/img/' + id + '/played/', {}).then(function (d) {
+            var m2 = msgById(id); if (!m2 || !m2.image || m2.image.gone || !d || !d.ok) return;
+            if (d.left != null && !m2.image.listened) { m2.image.listened = new Date().toISOString(); m2.image.left = d.left; refreshVoice(m2); }
+          }).catch(function () {});
+        };
+        a.src = p.url;
+        a.play().then(updPlay).catch(function (e) { updPlay(); if (e && e.name === 'NotSupportedError') failed(); });
+      })
+      .catch(function (st) {
+        if (PLAY === p) stopPlay();
+        var mm = msgById(id);
+        if (st === 410 && mm) { mm.image = { gone: true, opened: false, kind: 'voice', listened: !!(mm.image && mm.image.listened) }; refreshVoice(mm); }
+        toast({ sender: 'Voice', body: st === 410 ? 'This voice message has been deleted.' : 'Could not play it. Check your connection.' });
+      });
+  }
+  setInterval(function () {                        // "deleted in 42 s" counts down; at 0 it is gone here too
+    if (!body || !S.open || S.view !== 'thread') return;
+    body.querySelectorAll('[data-dl]').forEach(function (b) {
+      var id = +b.dataset.dl, left = Math.ceil(((VDL[id] || 0) - Date.now()) / 1000);
+      if (left > 0) { b.textContent = left; return; }
+      var m = msgById(id); if (PLAY.id === id) stopPlay();
+      if (m && m.image && !m.image.gone) { m.image = { gone: true, opened: false, kind: 'voice', listened: true }; refreshVoice(m); }
+    });
+  }, 1000);
+
+  // recording
+  function renderRec() {
+    var el = foot && $('.ttc-rec', foot), r = REC;
+    if (!r) { if (el) el.remove(); if (foot) foot.classList.remove('ttc-recording'); return; }
+    var comp = $('.ttc-comp', foot); if (!comp) return;
+    if (!el) { el = document.createElement('div'); el.className = 'ttc-rec'; foot.insertBefore(el, comp); }
+    foot.classList.add('ttc-recording');
+    if (r.state === 'asking') el.innerHTML = '<span class="ttc-rec-dot"></span><span class="ttc-rec-msg">Allow the microphone…</span><button class="ttc-rec-x" data-a="vcancel" title="Cancel">✕</button>';
+    else if (r.state === 'ready') el.innerHTML = '<button class="ttc-rec-pv" data-a="vpreview" title="Listen before sending">▶</button>' +
+      '<span class="ttc-rec-msg"><b>🎙️ ' + fmtS(r.secs) + '</b><small>Deleted for everyone 1 minute after it is played</small></span>' +
+      '<button class="ttc-rec-x" data-a="vcancel" title="Discard">🗑</button><button class="ttc-rec-send" data-a="vsend" title="Send">' + ICON.send + '</button>';
+    else el.innerHTML = '<span class="ttc-rec-dot"></span><b class="ttc-rec-t">0:00</b><canvas class="ttc-rec-wave" width="150" height="30"></canvas>' +
+      '<span class="ttc-rec-bar"><i></i></span><button class="ttc-rec-x" data-a="vcancel" title="Discard">🗑</button>' +
+      '<button class="ttc-rec-stop" data-a="vstop" title="Stop and listen first">■</button><button class="ttc-rec-send" data-a="vsend" title="Send now">' + ICON.send + '</button>';
+    recTime();
+  }
+  function recTime() {
+    var r = REC, el = foot && $('.ttc-rec', foot); if (!r || !el || r.state !== 'rec') return;
+    var s = Math.min(VMAX, (Date.now() - r.t0) / 1000), t = $('.ttc-rec-t', el), bar = $('.ttc-rec-bar i', el);
+    if (t) t.textContent = VMAX - s <= 5.5 ? fmtS(s) + ' · ' + Math.ceil(VMAX - s) : fmtS(s);
+    if (bar) bar.style.width = (100 * s / VMAX).toFixed(1) + '%';
+    el.classList.toggle('ending', VMAX - s <= 5.5);
+  }
+  function meter(r) {                              // live level of the microphone, drawn as moving bars
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      r.ctx = new AC(); var an = r.ctx.createAnalyser(); an.fftSize = 256;
+      r.ctx.createMediaStreamSource(r.stream).connect(an);
+      var buf = new Uint8Array(an.fftSize), hist = [];
+      (function draw() {
+        if (REC !== r || r.state !== 'rec') return;
+        an.getByteTimeDomainData(buf); var peak = 0;
+        for (var i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i] - 128));
+        hist.push(Math.min(1, peak / 64)); if (hist.length > 30) hist.shift();
+        var cv = foot && $('.ttc-rec-wave', foot);
+        if (cv) { var g = cv.getContext('2d'); g.clearRect(0, 0, cv.width, cv.height); g.fillStyle = '#e5484d';
+          hist.forEach(function (v, k) { var h = Math.max(3, v * cv.height); g.fillRect(k * 5, (cv.height - h) / 2, 3, h); }); }
+        r.raf = requestAnimationFrame(draw);
+      })();
+    } catch (e) {}
+  }
+  function stopStream(r) {
+    clearInterval(r.tick); try { cancelAnimationFrame(r.raf); } catch (e) {}
+    try { r.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+    try { if (r.ctx) r.ctx.close(); } catch (e) {}
+  }
+  function startVoice() {
+    if (REC || !S.thread) return;
+    if (S.editing) return toast({ sender: 'Voice', body: 'Finish editing your message first.' });
+    if (typeof callLive === 'function' && callLive()) return toast({ sender: 'Voice', body: 'You are in a call — send a voice message after it.' });
+    var type = voiceType();
+    if (type === null || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia)
+      return toast({ sender: 'Voice', body: 'This browser cannot record voice messages. Try Chrome, Edge, Firefox or Safari.' });
+    stopPlay();
+    var r = REC = { state: 'asking', thread: S.thread.id }; renderRec();
+    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }).then(function (stream) {
+      if (REC !== r) { stream.getTracks().forEach(function (t) { t.stop(); }); return; }
+      var mr, opts = { audioBitsPerSecond: 32000 }; if (type) opts.mimeType = type;
+      try { mr = new MediaRecorder(stream, opts); } catch (e) { mr = new MediaRecorder(stream); }
+      r.mr = mr; r.stream = stream; r.chunks = []; r.t0 = Date.now(); r.state = 'rec';
+      mr.ondataavailable = function (e) { if (e.data && e.data.size) r.chunks.push(e.data); };
+      mr.onstop = function () { stopStream(r); if (r.after) r.after(); };
+      mr.start(250);
+      r.tick = setInterval(function () { if ((Date.now() - r.t0) / 1000 >= VMAX) finishVoice(false); else recTime(); }, 200);
+      renderRec(); meter(r);
+    }).catch(function () {
+      if (REC === r) { REC = null; renderRec(); }
+      toast({ sender: 'Voice', body: 'Allow the microphone (the 🔒 or 🎙 icon in the address bar) to record a voice message.' });
+    });
+  }
+  function finishVoice(andSend) {
+    var r = REC; if (!r || r.state !== 'rec') return;
+    r.secs = Math.min(VMAX, (Date.now() - r.t0) / 1000); r.state = 'stopping';
+    r.after = function () {
+      r.after = null; if (REC !== r) return;
+      var blob = new Blob(r.chunks, { type: ((r.mr && r.mr.mimeType) || r.chunks[0] && r.chunks[0].type || 'audio/webm').split(';')[0] });
+      if (r.secs < 1 || blob.size < 200) { REC = null; renderRec(); return toast({ sender: 'Voice', body: 'Too short — press the microphone and speak for a second or more.' }); }
+      r.blob = blob; r.url = URL.createObjectURL(blob); r.state = 'ready';
+      if (andSend) sendVoice(); else { renderRec(); if (r.secs >= VMAX - .3) toast({ sender: 'Voice', body: VMAX + ' seconds is the limit — listen, then send.' }); }
+    };
+    try { r.mr.stop(); } catch (e) { stopStream(r); r.after(); }
+  }
+  function cancelVoice() {
+    var r = REC; if (!r) return;
+    REC = null; r.after = null;
+    if (r.mr && r.mr.state !== 'inactive') { try { r.mr.stop(); } catch (e) {} }
+    if (r.stream) stopStream(r);
+    if (r.pv) { try { r.pv.pause(); } catch (e) {} }
+    if (r.url) { try { URL.revokeObjectURL(r.url); } catch (e) {} }
+    renderRec();
+  }
+  function previewVoice() {
+    var r = REC; if (!r || r.state !== 'ready') return;
+    var b = foot && $('.ttc-rec-pv', foot);
+    if (r.pv && !r.pv.paused) { r.pv.pause(); if (b) b.textContent = '▶'; return; }
+    r.pv = r.pv || new Audio(r.url);
+    r.pv.onended = function () { if (b) b.textContent = '▶'; };
+    r.pv.play().then(function () { if (b) b.textContent = '❚❚'; }).catch(function () {});
+  }
+  function sendVoice() {
+    var r = REC; if (!r || r.state !== 'ready') return;
+    REC = null; renderRec();
+    if (r.pv) { try { r.pv.pause(); } catch (e) {} }
+    var rep = S.thread && S.thread.id === r.thread ? S.reply : null;
+    if (rep) { S.reply = null; showAttach(); }
+    var here = S.thread && S.thread.id === r.thread, secs = Math.max(1, Math.round(r.secs));
+    var tmp = { id: 1e15, body: '', mine: true, sender: S.me.name, at: new Date().toISOString(), image: { local: r.url, kind: 'voice', secs: secs } };
+    if (here) { S.msgs.push(tmp); renderThread(); }
+    var f = new FormData(); f.append('thread', r.thread); f.append('kind', 'voice'); f.append('secs', r.secs.toFixed(1));
+    if (rep) f.append('reply_to', rep.id);
+    f.append('file', r.blob, 'voice.' + (/mp4|aac|m4a/.test(r.blob.type) ? 'm4a' : /ogg/.test(r.blob.type) ? 'ogg' : 'webm'));
+    fetch('/chat/upload/', { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }, body: f })
+      .then(function (x) { return x.json(); }).catch(function () { return { ok: false, message: 'Could not send the voice message.' }; })
+      .then(function (d) {
+        S.msgs = S.msgs.filter(function (m) { return m !== tmp; });
+        if (d.ok && S.thread && S.thread.id === r.thread) { if (!S.msgs.some(function (m) { return m.id === d.message.id; })) S.msgs.push(d.message); S.top = Math.max(S.top, d.message.id); }
+        else if (!d.ok) toast({ sender: 'Voice message not sent', body: d.message || 'Try again.' });
+        try { URL.revokeObjectURL(r.url); } catch (e) {}
+        if (S.view === 'thread') renderThread();
+        poll();
+      });
+  }
+  function decode(file) {
+    if (window.createImageBitmap) return createImageBitmap(file, { imageOrientation: 'from-image' }).catch(function () { return createImageBitmap(file); }).catch(function () { return viaImg(file); });
+    return viaImg(file);
+  }
+  function viaImg(file) {
+    return new Promise(function (res, rej) { var u = URL.createObjectURL(file), i = new Image(); i.onload = function () { res(i); }; i.onerror = function () { rej(new Error('bad')); }; i.src = u; });
+  }
+  function encode(c, q) {
+    return new Promise(function (res) {
+      c.toBlob(function (b) { if (b && b.type === 'image/webp') res(b); else c.toBlob(res, 'image/jpeg', q); }, 'image/webp', q);
+    });
+  }
+  // Re-drawing on a canvas drops EXIF (GPS location, phone model) and shrinks big phone photos.
+  function compress(file) {
+    if (file.type === 'image/gif' && file.size < 3e6) return viaImg(file).then(function (i) { return { blob: file, w: i.naturalWidth, h: i.naturalHeight }; });
+    return decode(file).then(function (bmp) {
+      var bw = bmp.width || bmp.naturalWidth, bh = bmp.height || bmp.naturalHeight, sc = Math.min(1, 1920 / Math.max(bw, bh));
+      var w = Math.max(1, Math.round(bw * sc)), h = Math.max(1, Math.round(bh * sc)), c = document.createElement('canvas');
+      c.width = w; c.height = h; c.getContext('2d').drawImage(bmp, 0, 0, w, h);
+      return encode(c, 0.82).then(function (b) { return b && b.size > 900 * 1024 ? encode(c, 0.62) : b; }).then(function (b) { return { blob: b, w: w, h: h }; });
+    });
+  }
+  function pickVideo(file) {
+    var mb = (S.thread && S.thread.video_mb) || 16;
+    if (file.size > mb * 1048576) return toast({ sender: 'Video', body: 'That video is too big (max ' + mb + ' MB). Send a shorter clip.' });
+    var url = URL.createObjectURL(file), v = document.createElement('video'); v.preload = 'metadata'; v.muted = true;
+    v.onloadedmetadata = function () { clearPhoto(); S.photo = { blob: file, w: v.videoWidth || 1280, h: v.videoHeight || 720, url: url, video: true, once: false }; showAttach(); };
+    v.onerror = function () { URL.revokeObjectURL(url); toast({ sender: 'Video', body: 'This video cannot be played here. Send an MP4 or WebM clip.' }); };
+    v.src = url;
+  }
+  function pickPhoto(file) {
+    if (!S.thread) return;
+    if (/^video\//.test(file.type)) return pickVideo(file);
+    if (!/^image\//.test(file.type)) return toast({ sender: 'Photo', body: 'Pick a photo (JPEG, PNG, WebP or GIF).' });
+    compress(file).then(function (r) {
+      if (!r.blob) throw new Error('x');
+      clearPhoto(); S.photo = { blob: r.blob, w: r.w, h: r.h, url: URL.createObjectURL(r.blob), once: false }; showAttach();
+      var ta = $('textarea', foot); ta && ta.focus();
+    }).catch(function () { toast({ sender: 'Photo', body: 'This photo format cannot be opened here. Try a JPEG or PNG.' }); });
+  }
+  function clearPhoto() { if (S.photo) { try { URL.revokeObjectURL(S.photo.url); } catch (e) {} } S.photo = null; showAttach(); }
+  function sendPhoto(ta, txt) {
+    var p = S.photo; S.photo = null; showAttach(); ta.value = ''; ta.style.height = 'auto';
+    var tmp = { id: 1e15, body: txt, mine: true, sender: S.me.name, at: new Date().toISOString(), image: { local: p.url, w: p.w, h: p.h, video: !!p.video } };
+    S.msgs.push(tmp); renderThread();
+    var f = new FormData(); f.append('thread', S.thread.id); f.append('body', txt); f.append('once', p.once ? '1' : '0');
+    if (p.video) { f.append('kind', 'video'); f.append('w', p.w); f.append('h', p.h); f.append('file', p.blob, 'clip.' + ((p.blob.type.split('/')[1]) || 'mp4')); }
+    else f.append('file', p.blob, 'photo.' + ((p.blob.type.split('/')[1]) || 'jpg'));
+    fetch('/chat/upload/', { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }, body: f })
+      .then(function (r) { return r.json(); }).catch(function () { return { ok: false, message: 'Could not send the photo.' }; })
+      .then(function (d) {
+        S.msgs = S.msgs.filter(function (m) { return m !== tmp; });
+        if (d.ok) { if (!S.msgs.some(function (m) { return m.id === d.message.id; })) S.msgs.push(d.message); S.top = Math.max(S.top, d.message.id); }
+        else { toast({ sender: (p.video ? 'Video' : 'Photo') + ' not sent', body: d.message || 'Try again.' }); ta.value = txt; }
+        setTimeout(function () { try { URL.revokeObjectURL(p.url); } catch (e) {} }, 5000);
+        renderThread(); poll();
+      });
+  }
+  panel.addEventListener('dragover', function (e) { if (S.view === 'thread' && e.dataTransfer && [].indexOf.call(e.dataTransfer.types || [], 'Files') >= 0) { e.preventDefault(); panel.classList.add('ttc-drop'); } });
+  panel.addEventListener('dragleave', function (e) { if (!panel.contains(e.relatedTarget)) panel.classList.remove('ttc-drop'); });
+  panel.addEventListener('drop', function (e) {
+    panel.classList.remove('ttc-drop'); if (S.view !== 'thread') return; e.preventDefault();
+    var f = [].slice.call(e.dataTransfer.files || []).filter(function (x) { return /^(image|video)\//.test(x.type); })[0]; if (f) pickPhoto(f);
+  });
+  function lightbox(id, once) {
+    var m = S.msgs.filter(function (x) { return x.id === id; })[0] || {}, im = m.image || {};
+    var lb = document.createElement('div'); lb.className = 'ttc-lb' + (once ? ' once' : '');
+    lb.innerHTML = '<div class="ttc-lb-top"><span>' + (once ? '👁 View once — this photo is deleted when you close it' : '⏳ Deleted for everyone ' + esc(new Date(im.expires).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))) + '</span>' +
+      (once ? '' : '<a class="ttc-ib" href="/chat/img/' + id + '/" download title="Download">⬇</a>') + '<button class="ttc-ib" data-lb="x" title="Close (Esc)">' + ICON.x + '</button></div>' +
+      '<img src="/chat/img/' + id + '/" alt="Photo">';
+    var img = lb.querySelector('img');
+    img.onerror = function () { img.replaceWith(Object.assign(document.createElement('p'), { className: 'ttc-lb-gone', textContent: once ? 'This view-once photo was already opened.' : 'This photo has expired.' })); };
+    if (once) { lb.addEventListener('contextmenu', function (e) { e.preventDefault(); }); img.draggable = false; }
+    function close() {
+      lb.remove(); document.removeEventListener('keydown', key);
+      if (once && m.image) { m.image = { gone: true, opened: true }; renderThread(); }
+    }
+    function key(e) { if (e.key === 'Escape') { e.stopPropagation(); close(); } }
+    lb.addEventListener('click', function (e) { if (e.target === lb || e.target.closest('[data-lb]')) close(); });
+    document.addEventListener('keydown', key, true);
+    root.appendChild(lb);
+  }
+
+  // ───────── calls: ring, open the call window, call pill, privacy shield, pointer ─────────
+  var bc = window.BroadcastChannel ? new BroadcastChannel('tt-call') : null;
+  // One id per browser tab, kept in sessionStorage so it survives page changes in that tab: a shared tab keeps
+  // its pointer, shield and remote control when someone clicks a link. A duplicated tab copies sessionStorage,
+  // so a newcomer asks first and takes a fresh id if another open tab already uses it.
+  function newTab() { return Math.random().toString(36).slice(2, 12); }
+  var TAB = ''; try { TAB = sessionStorage.getItem('tt-tab') || ''; } catch (e) {}
+  if (!/^[a-z0-9]{6,16}$/.test(TAB)) TAB = newTab();
+  var TAB_NONCE = newTab();
+  function captureHandle() {
+    try { sessionStorage.setItem('tt-tab', TAB); } catch (e) {}
+    // Capture Handle: lets the call window know exactly which TapTap tab is being shared (Chrome/Edge).
+    try { if (navigator.mediaDevices && navigator.mediaDevices.setCaptureHandleConfig && window.top === window) navigator.mediaDevices.setCaptureHandleConfig({ handle: TAB, exposeOrigin: true, permittedOrigins: [location.origin] }); } catch (e) {}
+  }
+  captureHandle();
+  var CALL = { live: null, seen: 0, ring: null, dismissed: {}, ringT: null, toneT: null };
+
+  function callLive() { return CALL.live && Date.now() - CALL.seen < 3500; }
+  function openCall(url) {
+    if (callLive()) { focusCall(); return toast({ sender: 'Call', body: 'You are already in a call.' }); }
+    var w = null;
+    try { w = window.open(url, 'ttcall', 'popup=yes,width=480,height=760,left=' + Math.max(0, (screen.availWidth || 1200) - 520) + ',top=40'); } catch (e) {}
+    if (w) { try { w.focus(); } catch (e) {} return; }
+    embedCall(url);                       // pop-ups blocked: run the call over this page instead
+  }
+  function embedCall(url) {
+    var old = document.querySelector('.ttc-callframe'); if (old) old.remove();
+    var f = document.createElement('div'); f.className = 'ttc-callframe';
+    f.innerHTML = '<iframe allow="camera; microphone; display-capture; autoplay; fullscreen" src="' + esc(url) + '&embed=1" title="Call"></iframe>' +
+      '<p>Stay on this page during the call. <b>Tip:</b> allow pop-ups for TapTap to keep browsing while you talk.</p>';
+    document.body.appendChild(f);
+  }
+  window.addEventListener('message', function (e) {
+    if (e.origin !== location.origin || !e.data || e.data.ttcall !== 'close') return;
+    var f = document.querySelector('.ttc-callframe'); if (f) f.remove();
+  });
+  function focusCall() {
+    var f = document.querySelector('.ttc-callframe'); if (f) { f.scrollIntoView(); return; }
+    try { var w = window.open('', 'ttcall'); if (w) w.focus(); } catch (e) {}
+    if (bc) bc.postMessage({ t: 'focus-call' });
+  }
+  function startCall(video) { if (S.thread) openCall('/chat/call/?thread=' + S.thread.id + '&video=' + (video ? 1 : 0)); }
+
+  // The call pill: a small "on a call" reminder on every TapTap tab while the call window is open.
+  var pill = document.createElement('button'); pill.type = 'button'; pill.className = 'ttc-callpill ttc-hidden'; document.body.appendChild(pill);
+  pill.addEventListener('click', focusCall);
+  setInterval(function () {
+    if (!callLive()) { pill.classList.add('ttc-hidden'); return; }
+    var c = CALL.live, s = Math.floor((Date.now() - c.since) / 1000);
+    pill.innerHTML = '<i></i>' + esc(String(c.peer || 'Call').split(' ')[0]) + ' · ' + Math.floor(s / 60) + ':' + ('0' + s % 60).slice(-2) + (c.sharing ? ' · 🖥 Sharing' : c.viewing ? ' · 👀 Viewing' : '');
+    pill.classList.remove('ttc-hidden');
+  }, 1000);
+
+  // The shield. The owner of the shared tab keeps a sharp screen: private spots are hidden in the outgoing video by
+  // the call window (see MASK below). Only when the video cannot be masked (whole-screen / window shares, or
+  // browsers without frame processing) do the TapTap tabs blur on the owner's own screen ("css").
+  function shield(on, mine, css) {
+    var h = document.documentElement;
+    h.classList.toggle('tt-shield', !!on); h.classList.toggle('tt-shared', !!(on && mine)); h.classList.toggle('tt-shield-css', !!(on && css));
+    h.classList.toggle('tt-masked', !!(on && mine && !css));
+    if (on && mine && !css) maskStart(); else maskStop();
+  }
+  // Viewer coordinates are fractions of the VIDEO FRAME. Chrome fits the tab into the frame (sometimes with black
+  // bars), so map frame → this tab's viewport using the frame size the call window sends along.
+  function toPage(x, y, fw, fh) {
+    var vw = innerWidth, vh = innerHeight;
+    if (!fw || !fh) return [x * vw, y * vh];
+    var sc = Math.min(fw / vw, fh / vh), ox = (fw - vw * sc) / 2, oy = (fh - vh * sc) / 2;
+    return [(x * fw - ox) / sc, (y * fh - oy) / sc];
+  }
+  function pointAt(m, cls) {
+    if (m.surface !== 'browser' && !cls) return;
+    if (m.handle ? m.handle !== TAB : document.hidden) return;   // only the tab that is actually being shared
+    var p = toPage(m.x, m.y, m.fw, m.fh), anchor = anchorAt(p[0], p[1]);
+    var d = document.createElement('div'); d.className = 'tt-ptr' + (cls ? ' ' + cls : ''); d.style.left = p[0] + 'px'; d.style.top = p[1] + 'px';
+    d.innerHTML = '<span>' + esc(m.who || '') + '</span>'; document.body.appendChild(d); setTimeout(function () { d.remove(); }, 1700);
+    follow(d, anchor, 1700);
+    // receipt: was this ripple really on screen? (the call window falls back to its floating pointer window if not)
+    if (m.id && bc) bc.postMessage({ t: 'ptr-seen', handle: TAB, id: String(m.id).slice(0, 12), visible: document.visibilityState === 'visible' });
+  }
+  // A mark sticks to the element it points at: if the page scrolls or moves under it, the mark moves along.
+  function anchorAt(px, py) {
+    var e = document.elementFromPoint(px, py); if (!e || e === document.documentElement || e === document.body) return null;
+    var r = e.getBoundingClientRect(); return { el: e, fx: r.width ? (px - r.left) / r.width : 0, fy: r.height ? (py - r.top) / r.height : 0 };
+  }
+  function follow(node, a, ms) {
+    if (!a) return; var end = Date.now() + ms;
+    (function tick() {
+      if (!node.isConnected || Date.now() > end) return;
+      var r = a.el.getBoundingClientRect(); if (r.width || r.height) { node.style.left = (r.left + a.fx * r.width) + 'px'; node.style.top = (r.top + a.fy * r.height) + 'px'; }
+      requestAnimationFrame(tick);
+    })();
+  }
+  function sharedHere(m) { return m.surface === 'browser' && (m.handle ? m.handle === TAB : !document.hidden); }
+  // What is under a point, in words ("Save plan", "Voucher code field") — never the content of a private field.
+  function describe(e) {
+    if (!e) return '';
+    if (e.closest(SECRET)) return '🔒 a private field';
+    var t = e.closest('button,a[href],input,select,textarea,label,[role=button],[role=tab],[role=menuitem],summary,[onclick],[data-label]') || e;
+    var txt = t.getAttribute('aria-label') || t.getAttribute('data-label') || t.title || '';
+    if (!txt && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) {
+      var lab = (t.id && document.querySelector('label[for="' + (window.CSS && CSS.escape ? CSS.escape(t.id) : t.id) + '"]')) || t.closest('label');
+      txt = (lab && lab.textContent) || t.placeholder || t.name || '';
+      txt = txt ? txt.replace(/\s+/g, ' ').trim() + ' field' : 'a field';
+    }
+    if (!txt && t.tagName === 'INPUT' && /^(submit|button)$/i.test(t.type)) txt = t.value;
+    if (!txt) txt = (t.innerText || t.textContent || '').replace(/\s+/g, ' ').trim();
+    return txt.slice(0, 48);
+  }
+
+  // ───────── laser · the controller's cursor · drawings (from the other person, on this shared tab) ─────────
+  var LZ = { el: null, hov: null, t: null };
+  function hoverOff() { if (LZ.hov) LZ.hov.classList.add('off'); }
+  function laserAt(m) {
+    if (!sharedHere(m)) return;
+    if (!LZ.el) { LZ.el = document.createElement('div'); LZ.el.className = 'tt-laser off'; LZ.el.innerHTML = '<i></i><span></span>'; document.body.appendChild(LZ.el); }
+    clearTimeout(LZ.t);
+    if (m.off) { LZ.el.classList.add('off'); hoverOff(); return; }
+    var p = toPage(+m.x || 0, +m.y || 0, m.fw, m.fh), ctl = !!(m.ctl && RC.on && !RC.hold), label = esc(m.who || '');
+    LZ.el.classList.remove('off'); LZ.el.classList.toggle('ctl', ctl); LZ.el.style.transform = 'translate(' + Math.round(p[0]) + 'px,' + Math.round(p[1]) + 'px)';
+    if (ctl) {         // in control: show the owner what the next click would hit
+      var tgt = document.elementFromPoint(p[0], p[1]), act = tgt && !tgt.closest(PRIVATE) && tgt.closest('button,a[href],input,select,textarea,label,[role=button],summary,[onclick]');
+      if (act) {
+        var r = act.getBoundingClientRect();
+        if (!LZ.hov) { LZ.hov = document.createElement('div'); LZ.hov.className = 'tt-hov off'; document.body.appendChild(LZ.hov); }
+        LZ.hov.classList.remove('off'); LZ.hov.classList.toggle('risky', !!risky(act));
+        LZ.hov.style.left = (r.left - 3) + 'px'; LZ.hov.style.top = (r.top - 3) + 'px'; LZ.hov.style.width = (r.width + 6) + 'px'; LZ.hov.style.height = (r.height + 6) + 'px';
+        var what = describe(act); if (what) label += ' → ' + esc(what);
+      } else hoverOff();
+    } else hoverOff();
+    LZ.el.querySelector('span').innerHTML = label;
+    LZ.t = setTimeout(function () { if (LZ.el) LZ.el.classList.add('off'); hoverOff(); }, 1600);
+  }
+  // Drawings are kept in page coordinates: they stay on the content when the page scrolls, and fade after 8 s.
+  var INK = { cv: null, strokes: {}, order: [], raf: 0 };
+  function inkKick() { if (!INK.raf) INK.raf = requestAnimationFrame(inkDraw); }
+  function inkAt(m) {
+    if (!sharedHere(m)) return;
+    if (!INK.cv) { INK.cv = document.createElement('canvas'); INK.cv.className = 'tt-ink'; document.body.appendChild(INK.cv); addEventListener('resize', inkKick); addEventListener('scroll', inkKick, true); }
+    if (m.t === 'ink-clear') { INK.strokes = {}; INK.order = []; return inkKick(); }
+    var id = String(m.id || '').slice(0, 12); if (!id) return;
+    var st = INK.strokes[id];
+    if (!st) { st = INK.strokes[id] = { pts: [], c: /^#[0-9a-f]{6}$/i.test(m.c || '') ? m.c : '#facc15', w: Math.max(1, Math.min(12, +m.w || 4)), end: false, at: Date.now() }; INK.order.push(id); if (INK.order.length > 40) delete INK.strokes[INK.order.shift()]; }
+    (Array.isArray(m.pts) ? m.pts : []).slice(0, 300).forEach(function (q) { if (!Array.isArray(q)) return; var pp = toPage(+q[0] || 0, +q[1] || 0, m.fw, m.fh); st.pts.push([pp[0] + scrollX, pp[1] + scrollY]); });
+    if (m.end) { st.end = true; st.at = Date.now(); }
+    inkKick();
+  }
+  function inkDraw() {
+    INK.raf = 0; var cv = INK.cv; if (!cv) return;
+    var dpr = window.devicePixelRatio || 1, W = Math.round(innerWidth * dpr), H = Math.round(innerHeight * dpr); if (cv.width !== W) cv.width = W; if (cv.height !== H) cv.height = H;
+    var g = cv.getContext('2d'), now = Date.now(), live = false; g.clearRect(0, 0, W, H);
+    INK.order.forEach(function (id) {
+      var st = INK.strokes[id]; if (!st || !st.pts.length) return;
+      var age = st.end ? now - st.at : 0; if (age > 8000) { delete INK.strokes[id]; return; } live = true;
+      g.globalAlpha = age > 7200 ? (8000 - age) / 800 : 1; g.strokeStyle = g.fillStyle = st.c; g.lineWidth = st.w * dpr; g.lineCap = g.lineJoin = 'round';
+      g.shadowColor = 'rgba(0,0,0,.35)'; g.shadowBlur = 3 * dpr;
+      g.beginPath(); st.pts.forEach(function (q, i) { var x = (q[0] - scrollX) * dpr, y = (q[1] - scrollY) * dpr; i ? g.lineTo(x, y) : g.moveTo(x, y); });
+      if (st.pts.length === 1) { g.arc((st.pts[0][0] - scrollX) * dpr, (st.pts[0][1] - scrollY) * dpr, st.w * dpr / 2, 0, 7); g.fill(); } else g.stroke();
+    });
+    INK.order = INK.order.filter(function (id) { return INK.strokes[id]; });
+    if (live) inkKick();
+  }
+  // Outline of an area the other person captured from this tab.
+  function highlight(m) {
+    if (!m.handle || m.handle !== TAB || !m.box) return;
+    var b = m.box, a = toPage(b.x, b.y, m.fw, m.fh), z = toPage(b.x + b.w, b.y + b.h, m.fw, m.fh), d = document.createElement('div'); d.className = 'tt-hl';
+    d.style.left = a[0] + 'px'; d.style.top = a[1] + 'px'; d.style.width = (z[0] - a[0]) + 'px'; d.style.height = (z[1] - a[1]) + 'px';
+    d.innerHTML = '<span>✂️ ' + esc(m.who || '') + ' captured this</span>'; document.body.appendChild(d); setTimeout(function () { d.remove(); }, 2800);
+  }
+
+  // ───────── private mask reporter (runs only in the tab being shared) ─────────
+  // Tells the call window where the private spots are, in viewport pixels: secret fields, the chat panel, chat
+  // pop-ups, incoming-call cards, photo viewer, and anything marked data-tt-private. It reports on every DOM
+  // change and scroll — before the browser paints — plus a heartbeat, and says "gone" when the page unloads so
+  // the viewer sees a curtain, not the next page, until that page reports in.
+  var PRIVATE_SPOTS = '.ttc-panel:not(.ttc-hidden),.ttc-toasts > *,.ttc-ring,.ttc-lb,.ttc-callframe,[data-tt-private]';
+  var MASK = { on: false, timer: null, mo: null, last: '', lastAt: 0, sentAt: 0, pend: null };
+  function maskRects() {
+    var out = [], W = innerWidth, H = innerHeight;
+    function add(el, kind) {
+      if (!el.getClientRects().length) return;
+      var r = el.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return;
+      var cs = getComputedStyle(el); if (cs.visibility === 'hidden' || cs.display === 'none') return;
+      var pad = kind === 'secret' ? 6 : 4, x1 = Math.max(0, r.left - pad), y1 = Math.max(0, r.top - pad), x2 = Math.min(W, r.right + pad), y2 = Math.min(H, r.bottom + pad);
+      if (x2 - x1 < 2 || y2 - y1 < 2) return;
+      out.push([Math.round(x1), Math.round(y1), Math.round(x2 - x1), Math.round(y2 - y1), kind]);
+    }
+    document.querySelectorAll(SECRET).forEach(function (e) { add(e, 'secret'); });
+    document.querySelectorAll(PRIVATE_SPOTS).forEach(function (e) { add(e, 'chat'); });
+    return out.slice(0, 80);
+  }
+  function maskSend(force) {
+    if (!MASK.on || !bc) return;
+    var now = Date.now();
+    if (!force && now - MASK.lastAt < 16) {                       // at most ~60 reports a second
+      if (!MASK.pend) MASK.pend = setTimeout(function () { MASK.pend = null; maskSend(false); }, 20);
+      return;
+    }
+    MASK.lastAt = now;
+    var rects = maskRects(), sig = innerWidth + 'x' + innerHeight + JSON.stringify(rects);
+    if (!force && sig === MASK.last && now - MASK.sentAt < 1000) return;
+    MASK.last = sig; MASK.sentAt = now;
+    bc.postMessage({ t: 'mask', handle: TAB, vw: innerWidth, vh: innerHeight, rects: rects });
+  }
+  function maskNow() { maskSend(false); }
+  function maskStart() {
+    if (MASK.on) return maskSend(true);
+    MASK.on = true; MASK.last = ''; maskSend(true);
+    MASK.timer = setInterval(maskNow, 300);
+    try { MASK.mo = new MutationObserver(maskNow); MASK.mo.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'style', 'hidden', 'type', 'open'] }); } catch (e) {}
+    addEventListener('scroll', maskNow, true); addEventListener('resize', maskNow); document.addEventListener('visibilitychange', maskNow);
+  }
+  function maskStop() {
+    if (!MASK.on) return; MASK.on = false;
+    clearInterval(MASK.timer); clearTimeout(MASK.pend); MASK.pend = null; if (MASK.mo) MASK.mo.disconnect(); MASK.mo = null;
+    removeEventListener('scroll', maskNow, true); removeEventListener('resize', maskNow); document.removeEventListener('visibilitychange', maskNow);
+  }
+  addEventListener('pagehide', function () { if (MASK.on && bc) bc.postMessage({ t: 'mask', handle: TAB, gone: true }); });
+
+  // ───────── remote control (only after the owner allows it in the call window) ─────────
+  // The call window passes the other person's clicks, scrolls and keys here, matched by this tab's capture
+  // handle. They run as ordinary page events, with hard limits: never into passwords/secret fields or file
+  // pickers, never the chat or call controls, never other websites, new tabs or sign-out. Esc — a real key
+  // press by the owner — or the bar's button ends control at once.
+  var RC = { on: false, who: '', bar: null, dirty: null, n: 0, sec: 0 };
+  var SECRET = 'input[type=password],input[type=file],input[name*=pass i],input[name*=secret i],input[name*=token i],input[name*=apikey i],input[name*=api_key i],' +
+    'input[autocomplete=one-time-code],input[autocomplete=current-password],input[autocomplete=new-password],[data-tt-secret],.tt-secret';
+  var PRIVATE = '#ttChat,.ttc-ring,.ttc-callpill,.ttc-callframe,.tt-rcbar,.tt-guard,[data-no-remote]';
+  // Guardian: a remote click on something that deletes, resets, pays or signs out waits for the owner's own tap.
+  // Mark a button data-tt-danger to always ask, or data-tt-safe to never ask.
+  var DANGER = /\b(delete|remove|reset|reboot|restart|revoke|void|wipe|erase|factory|disable|deactivate|suspend|archive|refund|pay|payout|withdraw|transfer|sign[\s-]?out|log[\s-]?out|unlink|kick|ban|block|cancel subscription)\b/i;
+  function risky(e) {
+    var t = e && (e.closest('button,a[href],input[type=submit],input[type=button],[role=button],summary') || e); if (!t) return '';
+    if (t.closest('[data-tt-safe]')) return '';
+    var txt = (t.getAttribute('aria-label') || t.title || (t.tagName === 'INPUT' ? t.value : '') || t.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    if (t.closest('[data-tt-danger]') || t.matches('.btn-danger,.btn-outline-danger,.danger,.is-danger')) return txt || 'this button';
+    return DANGER.test(txt) ? txt : '';
+  }
+  var GUARD = null;
+  function guard(target, label, run) {
+    if (GUARD) GUARD.cancel();
+    var r = target.getBoundingClientRect(), b = document.createElement('div'); b.className = 'tt-guard'; b.setAttribute('role', 'alertdialog');
+    b.innerHTML = '<b>🛡 ' + esc(RC.who || 'Support') + ' wants to click</b><q>' + esc(label) + '</q><div><button type="button" data-g="ok">Allow once</button><button type="button" data-g="no">Block</button></div><small>Only you can answer · blocks by itself in 20 s</small>';
+    b.style.left = Math.max(8, Math.min(innerWidth - 300, r.left)) + 'px'; b.style.top = (r.bottom + 128 > innerHeight ? Math.max(8, r.top - 124) : r.bottom + 8) + 'px';
+    document.body.appendChild(b);
+    var timer = setTimeout(function () { done(false, true); }, 20000);
+    function done(ok, timeout) {
+      if (!b.isConnected) return; b.remove(); clearTimeout(timer); if (GUARD && GUARD.el === b) GUARD = null;
+      if (ok && RC.on) { run(); rcSay(true, 'Allowed: “' + label + '”'); rcAct('click', label, true); }
+      else { rcSay(false, (timeout ? 'No answer — ' : 'Blocked by the owner — ') + '“' + label + '” was not clicked.'); rcAct('click', label, false); }
+    }
+    b.addEventListener('click', function (e) { if (!e.isTrusted) return; var g = e.target.closest('[data-g]'); if (g) done(g.dataset.g === 'ok'); });   // a remote click is never trusted
+    GUARD = { el: b, cancel: function () { done(false); } };
+    rcSay(true, 'Waiting for the owner to confirm “' + label + '”…'); rcAct('click', label + ' (waiting for OK)', true, true);
+  }
+  var lastTyped = { el: null, at: 0 };
+  function rcAct(op, label, ok, wait) { if (bc) bc.postMessage({ t: 'rc-act', handle: TAB, op: op, label: String(label || '').slice(0, 80), ok: ok !== false, wait: !!wait }); }
+  function rcSay(ok, why) { if (bc) bc.postMessage({ t: 'rc-res', handle: TAB, ok: ok, why: why || '' }); }
+  function rcModeSet(on, who, hold) {
+    var was = RC.on; RC.on = !!on; RC.who = who || RC.who; RC.hold = !!(on && hold); document.documentElement.classList.toggle('tt-controlled', RC.on);
+    if (RC.on && !was && bc) bc.postMessage({ t: 'rc-page', handle: TAB, path: location.pathname });     // the log shows each page they open
+    if (!RC.on && GUARD) GUARD.cancel();
+    if (RC.on && !RC.bar) {
+      RC.bar = document.createElement('div'); RC.bar.className = 'tt-rcbar'; RC.bar.setAttribute('role', 'status');
+      RC.bar.addEventListener('click', function (e) { if (e.isTrusted && e.target.closest('button')) rcRevoke(); });
+      document.body.appendChild(RC.bar);
+    }
+    if (RC.bar) {
+      if (RC.on) RC.bar.innerHTML = '<span>' + (RC.hold ? '⏸ <b>' + esc(RC.who || 'Support') + '</b>’s control is paused' : '🖱 <b>' + esc(RC.who || 'Support') + '</b> is controlling this tab') + '</span><button type="button">Take back control <kbd>Esc</kbd></button>';
+      if (RC.on) RC.bar.classList.toggle('held', RC.hold);
+      else { RC.bar.remove(); RC.bar = null; }
+    }
+    if (!RC.on) RC.dirty = null;
+  }
+  function rcRevoke() { if (!RC.on) return; rcModeSet(false); if (bc) bc.postMessage({ t: 'rc-stop', handle: TAB }); }
+  document.addEventListener('keydown', function (e) { if (RC.on && e.isTrusted && e.key === 'Escape') rcRevoke(); }, true);
+  function rcWhyNot(el) {
+    if (!el) return 'Nothing to click there.';
+    if (el.closest(PRIVATE)) return 'That part of the screen stays private.';
+    if (el.closest(SECRET)) return 'Passwords and secret fields stay with the owner.';
+    var a = el.closest('a[href]');
+    if (a) {
+      var u; try { u = new URL(a.getAttribute('href'), location.href); } catch (e) { return 'That link cannot be opened.'; }
+      if (!/^https?:$/.test(u.protocol) || u.origin !== location.origin) return 'Links to other websites are blocked during control.';
+      if (/log-?out|sign-?out/i.test(u.pathname)) return 'Signing out is blocked during control.';
+      if (a.target && a.target !== '_self' && a.target !== '_top') return 'Links that open a new tab are blocked during control.';
+      if (a.hasAttribute('download')) return 'Downloads are blocked during control.';
+    }
+    var f = el.closest('form'); if (f && /log-?out|sign-?out/i.test(f.getAttribute('action') || '')) return 'Signing out is blocked during control.';
+    return '';
+  }
+  function isText(el) {
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    if (el.tagName === 'TEXTAREA') return !el.readOnly && !el.disabled;
+    return el.tagName === 'INPUT' && !el.readOnly && !el.disabled &&
+      /^(text|search|email|url|tel|number|date|time|datetime-local|month|week)$/i.test(el.type || 'text');
+  }
+  function setVal(el, v) {
+    var proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    var d = Object.getOwnPropertyDescriptor(proto, 'value'); if (d && d.set) d.set.call(el, v); else el.value = v;
+  }
+  function fireInput(el, type, data) {
+    var ev; try { ev = new InputEvent('input', { bubbles: true, data: data || null, inputType: type }); } catch (e) { ev = new Event('input', { bubbles: true }); }
+    el.dispatchEvent(ev); RC.dirty = el;
+  }
+  function caret(el) { try { var a = el.selectionStart, b = el.selectionEnd; if (typeof a === 'number') return [a, b]; } catch (e) {} return null; }
+  function typeText(el, text) {
+    if (el.isContentEditable) { document.execCommand('insertText', false, text); RC.dirty = el; return; }
+    var c = caret(el), v = el.value || '';
+    if (el.maxLength > 0 && v.length - (c ? c[1] - c[0] : 0) + text.length > el.maxLength) return;
+    if (c) { setVal(el, v.slice(0, c[0]) + text + v.slice(c[1])); try { el.setSelectionRange(c[0] + text.length, c[0] + text.length); } catch (e) {} }
+    else setVal(el, v + text);
+    fireInput(el, 'insertText', text);
+  }
+  function deleteText(el, forward) {
+    if (el.isContentEditable) { document.execCommand(forward ? 'forwardDelete' : 'delete'); RC.dirty = el; return; }
+    var c = caret(el), v = el.value || '';
+    if (!c) { setVal(el, v.slice(0, -1)); return fireInput(el, 'deleteContentBackward'); }
+    var a = c[0], b = c[1]; if (a === b) { if (forward) b = Math.min(v.length, b + 1); else a = Math.max(0, a - 1); }
+    setVal(el, v.slice(0, a) + v.slice(b)); try { el.setSelectionRange(a, a); } catch (e) {}
+    fireInput(el, forward ? 'deleteContentForward' : 'deleteContentBackward');
+  }
+  function flushChange(next) { if (RC.dirty && RC.dirty !== next) { try { RC.dirty.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {} RC.dirty = null; } }
+  function focusables() {
+    return [].filter.call(document.querySelectorAll('a[href],button,input,select,textarea,[tabindex],[contenteditable=true]'), function (n) {
+      return !n.disabled && n.tabIndex >= 0 && n.offsetParent !== null && !n.closest(PRIVATE) && !n.closest(SECRET);
+    });
+  }
+  function scrollerAt(el, dy, dx) {
+    for (var n = el; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+      var cs = getComputedStyle(n);
+      if (dy && /(auto|scroll|overlay)/.test(cs.overflowY) && n.scrollHeight > n.clientHeight + 1) return n;
+      if (dx && /(auto|scroll|overlay)/.test(cs.overflowX) && n.scrollWidth > n.clientWidth + 1) return n;
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+  function mouse(el, type, px, py, extra) {
+    var o = { bubbles: true, cancelable: true, composed: true, view: window, clientX: px, clientY: py, screenX: px, screenY: py, button: 0, buttons: /down/.test(type) ? 1 : 0, detail: 1 };
+    for (var k in extra || {}) o[k] = extra[k];
+    var ev; if (/^pointer/.test(type) && window.PointerEvent) { o.pointerId = 1; o.pointerType = 'mouse'; o.isPrimary = true; ev = new PointerEvent(type, o); } else ev = new MouseEvent(type, o);
+    return el.dispatchEvent(ev);
+  }
+  function doClick(el, px, py, dbl) {
+    flushChange(el);
+    mouse(el, 'pointerdown', px, py); mouse(el, 'mousedown', px, py);
+    var focusTarget = el.closest('input,textarea,select,button,a[href],[tabindex],[contenteditable=true]');
+    if (focusTarget) { try { focusTarget.focus({ preventScroll: true }); } catch (e) {} }
+    else if (document.activeElement && document.activeElement !== document.body) { try { document.activeElement.blur(); } catch (e) {} }
+    mouse(el, 'pointerup', px, py); mouse(el, 'mouseup', px, py); mouse(el, 'click', px, py);
+    if (dbl) mouse(el, 'dblclick', px, py, { detail: 2 });
+    return focusTarget;
+  }
+  function remoteDo(m) {
+    if (!RC.on || RC.hold || m.handle !== TAB) return;
+    var sec = Math.floor(Date.now() / 1000); if (RC.sec !== sec) { RC.sec = sec; RC.n = 0; } if (++RC.n > 30) return;
+    var pp = toPage(m.x || 0, m.y || 0, m.fw, m.fh), px = pp[0], py = pp[1];
+    if (m.op === 'click' || m.op === 'dbl') {
+      var el = document.elementFromPoint(px, py), why = rcWhyNot(el);
+      pointAt({ x: m.x, y: m.y, who: m.who, handle: TAB }, 'ctl');
+      if (why) { rcAct('click', (describe(el) || 'there') + ' — ' + why, false); return rcSay(false, why); }
+      var danger = risky(el);
+      if (danger) return guard(el, danger, function () { doClick(el, px, py, m.op === 'dbl'); });
+      var ft = doClick(el, px, py, m.op === 'dbl');
+      rcAct('click', describe(el) || el.tagName.toLowerCase(), true);
+      if (ft && ft.tagName === 'SELECT') rcSay(true, 'A list is selected — use ↑ ↓ on your keyboard to choose.');
+      return;
+    }
+    if (m.op === 'scroll') {
+      var at = document.elementFromPoint(px, py) || document.body;
+      if (at.closest(PRIVATE)) return;
+      scrollerAt(at, m.dy, m.dx).scrollBy({ left: m.dx || 0, top: m.dy || 0, behavior: 'auto' });
+      return;
+    }
+    var t = document.activeElement;
+    if (t && t !== document.body && (t.closest(SECRET) || t.closest(PRIVATE))) return rcSay(false, 'Passwords and secret fields stay with the owner.');
+    if (m.op === 'text') { if (isText(t)) { typeText(t, String(m.text || '')); typedLog(t); } else rcSay(false, 'Click a text box first.'); return; }
+    if (m.op !== 'key') return;
+    var key = String(m.key || ''), target = t || document.body;
+    var kd = new KeyboardEvent('keydown', { key: key, bubbles: true, cancelable: true, composed: true, shiftKey: !!m.shift });
+    var go = target.dispatchEvent(kd);
+    if (go) {
+      if (key.length === 1) { if (isText(t)) { typeText(t, key); typedLog(t); } }
+      else if (key === 'Backspace' || key === 'Delete') { if (isText(t)) deleteText(t, key === 'Delete'); }
+      else if (key === 'Enter') {
+        if (t && (t.tagName === 'TEXTAREA' || t.isContentEditable)) typeText(t, '\n');
+        else if (t && t.tagName === 'INPUT' && t.form) {
+          var whyF = rcWhyNot(t.form), sub = t.form.querySelector('[type=submit],button:not([type=button]):not([type=reset])'), dF = sub && risky(sub);
+          var go2 = function () { flushChange(null); if (t.form.requestSubmit) t.form.requestSubmit(); else t.form.submit(); };
+          if (whyF) rcSay(false, whyF); else if (dF) guard(sub, dF, go2); else { go2(); rcAct('submit', 'Sent the form' + (sub ? ' (' + describe(sub) + ')' : ''), true); }
+        }
+        else if (t && t.matches && t.matches('button,a[href],[role=button],summary')) {
+          var w = rcWhyNot(t), dB = risky(t);
+          if (w) rcSay(false, w); else if (dB) guard(t, dB, function () { t.click(); }); else { t.click(); rcAct('click', describe(t), true); }
+        }
+      }
+      else if (key === 'Tab') {
+        var list = focusables(), i = list.indexOf(t), nx = list[(i + (m.shift ? -1 : 1) + list.length) % list.length];
+        flushChange(nx); if (nx) { try { nx.focus(); } catch (e) {} }
+      }
+      else if (t && t.tagName === 'SELECT' && /^Arrow(Up|Down)$/.test(key)) {
+        var ni = Math.max(0, Math.min(t.options.length - 1, t.selectedIndex + (key === 'ArrowDown' ? 1 : -1)));
+        if (ni !== t.selectedIndex) { t.selectedIndex = ni; t.dispatchEvent(new Event('input', { bubbles: true })); t.dispatchEvent(new Event('change', { bubbles: true })); }
+      }
+      else if (isText(t) && !t.isContentEditable && /^(ArrowLeft|ArrowRight|Home|End)$/.test(key)) {
+        var c = caret(t); if (c) { var p = key === 'Home' ? 0 : key === 'End' ? t.value.length : Math.max(0, Math.min(t.value.length, (key === 'ArrowLeft' ? c[0] - 1 : c[1] + 1))); try { t.setSelectionRange(p, p); } catch (e) {} }
+      }
+      else if (!isText(t) && /^(ArrowUp|ArrowDown|PageUp|PageDown|Home|End)$/.test(key)) {
+        var dy = { ArrowUp: -60, ArrowDown: 60, PageUp: -innerHeight * 0.85, PageDown: innerHeight * 0.85, Home: -1e6, End: 1e6 }[key];
+        scrollerAt(t && t !== document.body ? t : document.body, dy, 0).scrollBy({ top: dy, behavior: 'auto' });
+      }
+    }
+    target.dispatchEvent(new KeyboardEvent('keyup', { key: key, bubbles: true, cancelable: true, composed: true, shiftKey: !!m.shift }));
+  }
+  function typedLog(t) { var now = Date.now(); if (lastTyped.el !== t || now - lastTyped.at > 5000) rcAct('type', 'Typed in ' + (describe(t) || 'a text box'), true); lastTyped = { el: t, at: now }; }
+  if (bc) {
+    bc.onmessage = function (e) {
+      var m = e.data || {};
+      if (m.t === 'call') { if (m.state === 'live') { CALL.live = m; CALL.seen = Date.now(); } else { CALL.live = null; pill.classList.add('ttc-hidden'); } }
+      else if (m.t === 'shield') { shield(m.on, m.handle && m.handle === TAB, m.css); if (!m.on && RC.on) rcModeSet(false); }
+      else if (m.t === 'ptr') pointAt(m);
+      else if (m.t === 'hl') highlight(m);
+      else if (m.t === 'rc-mode') { if (m.handle && m.handle === TAB) rcModeSet(m.on, m.who, m.hold); else if (RC.on && m.handle !== TAB) rcModeSet(false); }
+      else if (m.t === 'laser') laserAt(m);
+      else if (m.t === 'ink' || m.t === 'ink-clear') inkAt(m);
+      else if (m.t === 'rc') remoteDo(m);
+      else if (m.t === 'rc-asking') {       // the other person wants to take over: point them to the call window
+        var old = toasts.querySelector('[data-key="rc-asking"]'); if (old) old.remove();
+        if (!m.done && !document.hidden) toast({ key: 'rc-asking', sender: (m.who || 'Support') + ' · call', initials: '🖱', body: 'Wants to take over your screen to help you. Tap here, then Allow in the call window.', onclick: focusCall }, 'support');
+      }
+      else if (m.t === 'tab-claim' && m.tab === TAB && m.nonce !== TAB_NONCE) bc.postMessage({ t: 'tab-taken', tab: TAB, nonce: m.nonce });
+      else if (m.t === 'tab-taken' && m.nonce === TAB_NONCE && m.tab === TAB) { TAB = newTab(); captureHandle(); }
+      else if (m.t === 'ring-done') { CALL.dismissed[m.id] = 1; hideRing(); }
+    };
+    bc.postMessage({ t: 'tab-claim', tab: TAB, nonce: TAB_NONCE });   // a duplicated tab gets its own id
+    setTimeout(function () { bc.postMessage({ t: 'hello?', tab: TAB }); }, 150);   // a call window already sharing re-sends shield / control state
+  }
+
+  // Incoming calls: a cheap poll (cache only) every few seconds — from a Web Worker (static/js/ring-watch.js), because
+  // browsers slow a background tab's own timers to about once a minute, longer than a call rings. That is how a
+  // customer's call came and went while TapTap sat behind another window, leaving only "Missed call".
+  function ringWatch() {
+    if (!window.Worker || !SELF || CALL.worker) return CALL.worker ? null : ringPoll();
+    try {
+      var w = new Worker(SELF.replace(/chat\.js(\?[^#]*)?(#.*)?$/, 'ring-watch.js?v=1'));
+      w.onmessage = function (e) { var d = e.data || {}; if (d.rings) handleRings(d.rings); };
+      w.onerror = function () { try { w.terminate(); } catch (x) {} CALL.worker = null; ringPoll(); };   // blocked or missing: the old way
+      w.postMessage({ every: 3000 });
+      CALL.worker = w;
+    } catch (e) { CALL.worker = null; ringPoll(); }
+  }
+  function ringPoll() {
+    clearTimeout(CALL.ringT);
+    fetch('/chat/call/poll/', { credentials: 'same-origin', headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json(); }).then(function (d) { if (d && d.ok) handleRings(d.rings || []); })
+      .catch(function () {}).then(function () { CALL.ringT = setTimeout(ringPoll, document.hidden ? 8000 : 3000); });
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (CALL.worker) { if (!document.hidden) CALL.worker.postMessage({ now: 1 }); return; }
+    if (!document.hidden) { clearTimeout(CALL.ringT); CALL.ringT = setTimeout(ringPoll, 150); }
+  });
+  function handleRings(list) {
+    var r = list.filter(function (x) { return !CALL.dismissed[x.id]; })[0];
+    if (!r) return hideRing();
+    if (callLive()) return;                 // already talking: the caller gets "busy" next time
+    if (CALL.ring && CALL.ring.id === r.id) { if (document.hidden) nudge(); return; }
+    showRing(r);
+  }
+  // While it rings in a background tab, every check (the worker's pace, not the page's slowed timers) blinks the tab
+  // title and repeats the tone — so it is heard and seen from another window.
+  function nudge() {
+    var r = CALL.ring; if (!r) return;
+    CALL.blink = !CALL.blink;
+    document.title = CALL.blink ? '📞 ' + (r.kind === 'portal' ? 'Customer calling' : 'Call') + ' · ' + r.from : baseTitle;
+    if (Date.now() - (CALL.toneAt || 0) > 2400) ringTone();
+  }
+  // Who is calling from the Wi-Fi page: voucher, time left, MAC address — and why they are probably calling.
+  function custHTML(c) {
+    if (!c) return '';
+    var v = c.voucher, out = '<span class="ttc-ring-cust" style="display:block;margin-top:4px;font-size:11.5px;line-height:1.45;opacity:.95">';
+    if (v) out += '🎟 <a href="/vouchers/' + (+v.id) + '/" target="_blank" rel="noopener" style="color:inherit;font-weight:800;text-decoration:underline">' + esc(v.code) + '</a> · ' + esc(v.plan || '') + ' · <b>' + esc(v.left || v.state || '') + '</b>' + (v.router ? ' · ' + esc(v.router) : '') + '<br>';
+    if (c.mac) out += '📱 MAC <b style="font-family:ui-monospace,monospace">' + esc(c.mac) + '</b>' + (c.private_mac ? ' (private)' : '') + (c.ip ? ' · ' + esc(c.ip) : '') + (c.device ? ' · ' + esc(c.device) : '') + '<br>';
+    if (c.why) out += '<span style="display:inline-block;margin-top:2px;padding:1px 7px;border-radius:8px;background:rgba(255,196,0,.25)">💡 ' + esc(c.why) + '</span>';
+    else if (c.calls > 1) out += '↩ Called ' + (+c.calls) + ' times';
+    return out + '</span>';
+  }
+  var QUICK = ['Can’t talk right now — I’ll call you back.', 'In a meeting. Can you text me?', 'Calling you back in 5 minutes.'];
+  function showRing(r) {
+    hideRing(); CALL.ring = r;
+    var portal = r.kind === 'portal';      // a customer calling from a Wi-Fi page (core/portal_call.py)
+    var card = document.createElement('div'); card.className = 'ttc-ring' + (r.kind === 'support' ? ' support' : '') + (portal ? ' portal' : ''); card.setAttribute('role', 'alertdialog');
+    var askAlerts = portal && window.Notification && Notification.permission === 'default';
+    card.innerHTML = '<div class="ttc-ring-av">' + esc(r.initials) + '</div><div class="ttc-ring-mid"><b>' + esc(r.from) + '</b><small>' + (portal ? (r.returning ? '↩ Returning ' + esc(r.returning) + '’s call-back' : '📶 Customer on your Wi-Fi page') : (r.video ? 'Incoming video call' : 'Incoming voice call')) + ' · 🔒 encrypted</small>' + custHTML(r.customer) +
+      (askAlerts ? '<button type="button" class="ttc-ring-alerts" data-r="alerts">🔔 Ring me here even when TapTap is in the background</button>' : '') + '</div>' +
+      '<div class="ttc-ring-btns"><button class="ttc-rb no" data-r="decline" title="Decline">' + ICON.phone + '</button>' +
+      (portal ? '' : '<button class="ttc-rb msg" data-r="msg" title="Decline with a message">' + ICON.chat + '</button>') +
+      (r.video ? '<button class="ttc-rb yes" data-r="video" title="Answer with video">' + ICON.video + '</button>' : '') +
+      '<button class="ttc-rb yes" data-r="voice" title="Answer">' + ICON.phone + '</button></div>' +
+      '<div class="ttc-ring-quick ttc-hidden">' + QUICK.map(function (q, i) { return '<button data-q="' + i + '">' + esc(q) + '</button>'; }).join('') + '</div>' +
+      '<span class="ttc-ring-time" style="animation-duration:' + (r.left || 40) + 's"></span>';
+    card.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-r],[data-q]'); if (!b) return;
+      var id = r.id;
+      if (b.dataset.q) { callAct('reply', id, { text: QUICK[+b.dataset.q] }); done(); return; }
+      var a = b.dataset.r;
+      if (a === 'alerts') { b.remove(); try { Notification.requestPermission(); } catch (x) {} return; }
+      if (a === 'msg') { card.querySelector('.ttc-ring-quick').classList.toggle('ttc-hidden'); return; }
+      if (a === 'decline') callAct('decline', id);
+      else openCall('/chat/call/?join=' + encodeURIComponent(id) + (a === 'video' ? '&video=1' : ''));
+      done();
+      function done() { CALL.dismissed[id] = 1; if (bc) bc.postMessage({ t: 'ring-done', id: id }); hideRing(); }
+    });
+    document.body.appendChild(card);
+    ringTone();
+    if (document.hidden) nudge();
+    if (document.hidden && window.Notification && Notification.permission === 'granted') {
+      var line = r.customer && (r.customer.why || r.customer.line);
+      try { var n = new Notification((r.kind === 'portal' ? (r.returning ? '↩ Customer returning your call' : '📶 Customer calling') : (r.video ? 'Video call' : 'Call')) + ' · ' + r.from, { body: (line ? line + '\n' : '') + 'Click to answer in TapTap', tag: 'ttcall-' + r.id, requireInteraction: true, renotify: true });
+        n.onclick = function () { window.focus(); n.close(); }; CALL.note = n; } catch (e) {}
+    }
+  }
+  function hideRing() {
+    clearTimeout(CALL.toneT);
+    if (CALL.ring && CALL.blink !== undefined) { CALL.blink = undefined; updateBadge(); }     // the tab title as it was
+    CALL.ring = null;
+    var c = document.querySelector('.ttc-ring'); if (c) c.remove();
+    if (CALL.note) { try { CALL.note.close(); } catch (e) {} CALL.note = null; }
+  }
+  function callAct(action, id, extra) {
+    var b = extra || {}; b.action = action; b.id = id;
+    return api('/chat/call/act/', b);
+  }
+  // One tab rings (the one you are looking at, or one background tab) — not every open TapTap tab at once.
+  function ringer() {
+    if (!document.hidden) return true;
+    var l = store('ringer'); if (!l || l.until < Date.now() || l.tab === TAB) { store('ringer', { tab: TAB, until: Date.now() + 5000 }); return true; }
+    return false;
+  }
+  function ringTone() {
+    clearTimeout(CALL.toneT); if (!CALL.ring) return;
+    CALL.toneAt = Date.now();
+    if (ringer()) {
+      try {
+        AC = AC || new (window.AudioContext || window.webkitAudioContext)(); AC.resume && AC.resume();
+        [0, 0.45].forEach(function (off) {
+          [523, 659].forEach(function (f) {
+            var o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime + off;
+            o.frequency.value = f; o.connect(g); g.connect(AC.destination);
+            g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.09, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.38);
+            o.start(t); o.stop(t + 0.42);
+          });
+        });
+      } catch (e) {}
+    }
+    CALL.toneT = setTimeout(ringTone, 2600);
+  }
+
+  // restore
+  var wasOpen = store('open'), th = store('thread');
+  if (th) { S.view = 'thread'; S.thread = { id: th }; }
+  poll();
+  setTimeout(ringWatch, 1200);
+  setTimeout(function () { if (wasOpen || FULL) setOpen(true); }, 400);
+  function supportId() { var t = S.threads.filter(function (x) { return x.kind === 'support' && !x.inbox; })[0]; return t && t.id; }
+  window.TapChat = {
+    open: function (id) { setOpen(true); if (id) openThread(id); },
+    call: function (threadId, video) { openCall('/chat/call/?thread=' + threadId + '&video=' + (video ? 1 : 0)); },
+    // ring a Wi-Fi customer back on their page (Portal Studio → Customers who called)
+    callCustomer: function (id) { openCall('/chat/call/?customer=' + (+id)); },
+    // "Chat with TapTap support" buttons in the help center
+    openSupport: function () {
+      var id = supportId(); if (id) { setOpen(true); openThread(id); return; }
+      api('/chat/state/?since=-1').then(function (d) { if (d.ok) { S.threads = d.threads; var i = supportId(); setOpen(true); if (i) openThread(i); } });
+    }
+  };
+})();

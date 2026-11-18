@@ -1,0 +1,707 @@
+{% extends 'core/base.html' %}{% load static %}{% load taptap_extras %}
+{% block title %}Voucher {{ v.code }} — TapTap{% endblock %}
+{% block heading %}Voucher details{% endblock %}{% block presence %}{% include "core/_presence.html" with pp_kind="voucher" pp_id=v.id %}{% endblock %}
+{% block extra_head %}<link href="{% static 'css/voucher-fix.css' %}?v=1" rel="stylesheet"><link href="{% static 'css/flow.css' %}?v=4" rel="stylesheet"><style>
+/* ── header ── */
+.vd-head{padding:1.1rem 1.2rem}
+.vd-top{display:flex;flex-wrap:wrap;gap:1rem;align-items:flex-start;justify-content:space-between}
+.vd-id{min-width:0}
+.vd-code{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+.vd-code code{font-size:1.75rem;font-weight:800;letter-spacing:.08em;color:var(--ink,#102033);background:none;padding:0;overflow-wrap:anywhere}
+.vd-copy{border:1px solid var(--border,#e3e9f1);background:var(--panel,#fff);border-radius:8px;padding:.15rem .45rem;font-size:.8rem;color:#51667b}
+.vd-copy:hover{background:#f1f5f9}
+.vd-sub{display:flex;flex-wrap:wrap;gap:.35rem .6rem;align-items:center;margin-top:.35rem;color:#51667b;font-size:.88rem}
+.vd-state{display:inline-flex;align-items:center;gap:.4rem;border-radius:999px;padding:.25rem .75rem;font-weight:700;font-size:.8rem}
+.vd-state.stock{background:#e6f6ee;color:#127a4d}.vd-state.sold{background:#fff4dc;color:#8a5a00}.vd-state.used{background:#e5f3fb;color:#0b6690}
+.vd-state.disabled{background:#fdeaea;color:#a12b2b}.vd-state.archived{background:#eef1f5;color:#3b4b5c}.vd-state.expired{background:#eef1f5;color:#56687a}
+.vd-state.frozen{background:#e0efff;color:#1a5fb4}.vd-state.warned{background:#fdecc8;color:#8a4b00}
+.vd-acts{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+.vd-acts .dropdown-menu{min-width:240px}.vd-acts .dropdown-item{display:flex;gap:.55rem;align-items:center;padding:.45rem .9rem}
+.vd-acts .dropdown-item i{width:1.1rem;text-align:center;opacity:.8}
+/* time bar */
+.vd-time{margin-top:1rem}
+.vd-time .bar{height:10px;border-radius:99px;background:#eef2f6;overflow:hidden}
+.vd-time .bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#22c55e,#16a34a)}
+.vd-time .bar i.mid{background:linear-gradient(90deg,#f59e0b,#d97706)}.vd-time .bar i.end{background:linear-gradient(90deg,#ef4444,#dc2626)}
+.vd-time .lbl{display:flex;justify-content:space-between;flex-wrap:wrap;gap:.3rem;font-size:.8rem;color:#51667b;margin-top:.35rem}
+/* clickable time bar — core/voucher_schedule.py */
+.vd-time.tb-live{position:relative}
+.tb-track{position:relative;height:16px;border-radius:99px;background:#eef2f6;cursor:crosshair;touch-action:none;outline:none}
+.tb-track:focus-visible{box-shadow:0 0 0 3px #93c5fd}
+.tb-fill{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:linear-gradient(90deg,#22c55e,#16a34a)}
+.tb-fill.mid{background:linear-gradient(90deg,#f59e0b,#d97706)}.tb-fill.end{background:linear-gradient(90deg,#ef4444,#dc2626)}
+.tb-extend{position:absolute;top:0;bottom:0;right:0;border-radius:0 99px 99px 0;background:repeating-linear-gradient(135deg,#e2e8f0 0 6px,#f8fafc 6px 12px);border-left:2px dashed #94a3b8}
+.tb-extend span{position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:.6rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;pointer-events:none}
+.tb-mark{position:absolute;top:-4px;bottom:-4px;width:2px;transform:translateX(-1px);pointer-events:none}
+.tb-now{background:#0f172a}.tb-now:after{content:'now';position:absolute;top:-15px;left:50%;transform:translateX(-50%);font-size:.6rem;font-weight:700;color:#0f172a}
+.tb-end{background:#475569}
+.tb-plan{background:#0891b2;width:3px;pointer-events:auto;cursor:pointer}.tb-plan b{position:absolute;top:-17px;left:50%;transform:translateX(-50%);font-size:.75rem;color:#0891b2}
+.tb-cursor{position:absolute;top:-6px;bottom:-6px;width:3px;background:#2563eb;border-radius:2px;transform:translateX(-1.5px);pointer-events:none;box-shadow:0 0 0 2px #fff}
+.tb-tip{position:absolute;bottom:calc(100% + 18px);transform:translateX(-50%);background:#0f172a;color:#fff;font-size:.72rem;padding:.2rem .5rem;border-radius:6px;white-space:nowrap;pointer-events:none;z-index:5}
+.tb-card{position:absolute;z-index:20;top:calc(100% + 4px);width:min(340px,100%);background:#fff;border:1px solid #e3e9f1;border-radius:14px;box-shadow:0 14px 36px #0b223740;padding:.75rem .85rem}
+.tb-card-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.4rem}.tb-card-head small{display:block;color:#64748b;font-size:.72rem}.tb-card-head b{font-size:.95rem}
+.tb-planned{display:flex;align-items:center;gap:.6rem;background:#ecfeff;border:1px solid #a5f3fc;border-radius:12px;padding:.5rem .75rem;color:#155e75}.tb-planned>i{font-size:1.1rem}
+html[data-theme="dark"] .tb-track{background:#2d353e}html[data-theme="dark"] .tb-card{background:#1f2933;border-color:#2d3b4a}
+html[data-theme="dark"] .tb-extend{background:repeating-linear-gradient(135deg,#334155 0 6px,#1e293b 6px 12px)}html[data-theme="dark"] .tb-now{background:#e2e8f0}html[data-theme="dark"] .tb-now:after{color:#e2e8f0}
+html[data-theme="dark"] .tb-planned{background:#083344;border-color:#155e75;color:#a5f3fc}
+.vd-channel{font-size:.8rem;color:#64748b;margin:.8rem 0 0}
+/* key figures */
+.vd-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem;margin-bottom:1rem}
+.vd-kpi{background:var(--panel,#fff);border:1px solid var(--border,#e3e9f1);border-radius:16px;padding:.8rem .95rem;min-width:0}
+.vd-kpi span{display:flex;gap:.35rem;align-items:center;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#64748b}
+.vd-kpi b{display:block;font-size:1.25rem;line-height:1.2;margin-top:.25rem;overflow-wrap:anywhere}
+.vd-kpi small{display:block;color:#64748b;font-size:.78rem;margin-top:.1rem;overflow-wrap:anywhere}
+.vd-kpi.warn b{color:#b45309}.vd-kpi.bad b{color:#b91c1c}.vd-kpi.good b{color:#15803d}
+@media (max-width:900px){.vd-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* cards with label / value rows */
+.vd-card{margin-bottom:1rem}
+.vd-card h3{font-size:1rem;font-weight:800;margin:0;display:flex;gap:.45rem;align-items:center}
+.vd-card .hd{display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.6rem}
+.vd-dl{margin:0}
+.vd-dl>div{display:flex;justify-content:space-between;gap:1rem;padding:.42rem 0;border-bottom:1px solid #eef2f6;font-size:.88rem}
+.vd-dl>div:last-child{border-bottom:0}
+.vd-dl dt{font-weight:500;color:#64748b;flex:none}
+.vd-dl dd{margin:0;text-align:right;font-weight:600;min-width:0;overflow-wrap:anywhere}
+.vd-dl dd small{display:block;font-weight:400}
+.vd-dl .wide{flex-direction:column;gap:.2rem}.vd-dl .wide dd{text-align:left}
+/* history */
+.vd-tl{list-style:none;margin:0;padding:0}
+.vd-tl li{display:flex;gap:.75rem;padding:.65rem 0;border-bottom:1px solid #eef2f6}
+.vd-tl li:last-child{border-bottom:0}
+.vd-ic{flex:0 0 34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1rem}
+.vd-ic.success{background:#e6f6ee;color:#127a4d}.vd-ic.danger{background:#fdeaea;color:#a12b2b}.vd-ic.warning{background:#fff4dc;color:#8a5a00}
+.vd-ic.info{background:#e5f3fb;color:#0b6690}.vd-ic.secondary{background:#eef1f5;color:#56687a}
+.vd-meta{font-size:.76rem;color:#51667b}.vd-reason{font-size:.8rem;background:#f6f8fb;border-radius:8px;padding:.3rem .55rem;margin-top:.25rem;display:inline-block}
+.vd-share{border:1px solid #f2d69a;background:#fff9ec;border-radius:14px;padding:.9rem 1rem}
+.vd-slot{display:flex;gap:.6rem;align-items:center;padding:.55rem .65rem;border-radius:12px;background:var(--soft,#f4f7fb)}
+.vd-slot.free{background:none;border:1px dashed var(--border,#d6dee8);color:#64748b;font-size:.85rem}
+/* Locked devices heading: Reset on the heading line, the "Pin permanently" panel (core/permanent_device.py) full width below */
+.vd-locked .panel-head{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:.5rem;margin-bottom:.5rem}
+.vd-locked .panel-head>div{display:contents}
+.vd-locked .panel-head h3{grid-column:1;grid-row:1}
+.vd-locked .panel-head>.btn{grid-column:2;grid-row:1}
+/* the panel inserted after the heading (never name its id here: core/permanent_device.py skips the page if it finds it) */
+.vd-locked .panel-head>div>:not(h3){grid-column:1/-1;grid-row:2}
+.vd-locked .panel-head>div>:not(h3) .alert{margin:0!important}
+</style>{% endblock %}
+{% block content %}
+{% with c=current_business.currency %}
+<p class="mb-3"><a href="{% url 'vouchers' %}" class="text-decoration-none"><i class="bi bi-arrow-left"></i> Vouchers</a></p>
+
+{# ─────────── header: who it is, how it stands, what to do ─────────── #}
+<section class="panel vd-head mb-3">
+  <div class="vd-top">
+    <div class="vd-id">
+      <div class="vd-code"><code id="vdCode">{{ v.code }}</code>
+        <button type="button" class="vd-copy" data-copy="{{ v.code }}" aria-label="Copy {% if v.is_member %}username{% else %}code{% endif %}"><i class="bi bi-copy"></i> Copy</button>
+        {% track_button "voucher" v.id v.code %}</div>
+      <div class="vd-sub">
+        <span class="vd-state {{ state_key }}"><i class="bi bi-circle-fill" style="font-size:.5rem"></i> {{ state_label }}</span>
+        {% if v.is_member %}<a class="badge text-bg-primary text-decoration-none" href="{% url 'member_detail' v.id %}" title="Pause schedule, password, access and support controls"><i class="bi bi-person-badge"></i> Member — open member page</a>{% endif %}
+        <span><b class="text-body">{{ v.plan_name }}</b> · {{ v.price|money:c }}</span>
+        {% if v.router %}<span><i class="bi bi-router"></i> {{ v.router.name }}</span>{% endif %}
+      </div>
+    </div>
+    <div class="vd-acts">
+      {% if v.deleted_at %}
+      <a class="btn btn-outline-secondary" href="{% url 'voucher_bin' %}"><i class="bi bi-trash3"></i> Open the bin</a>
+      {% elif v.status == 'archived' %}
+      <a class="btn btn-outline-secondary" href="{% url 'vouchers' %}?state=archived"><i class="bi bi-archive"></i> All archived vouchers</a>
+      {% else %}
+        {# the one thing most likely needed #}
+        {% if v.frozen_at %}
+          {% if 'vouchers.support' in tt_perms %}<button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#freezeModal"><i class="bi bi-play-circle"></i> Unfreeze</button>{% endif %}
+        {% elif 'vouchers.support' in tt_perms %}
+          {% if v.status == 'active' and not time_is_up %}<button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#enableModal"><i class="bi bi-clock-history"></i> Add time</button>
+          {% else %}<button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#enableModal"><i class="bi bi-check-circle"></i> Enable{% if time_is_up %} &amp; add time{% endif %}</button>{% endif %}
+        {% endif %}
+        {% if 'vouchers.support' in tt_perms and v.router %}<button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#fixModal" title="Why can't it connect? Check and fix it on the router"><i class="bi bi-wifi-off"></i> Can't connect?</button>{% endif %}
+        {% if v.router and 'vouchers.support' in tt_perms or v.router and 'network.manage' in tt_perms %}<button class="btn btn-outline-primary" data-lab-open='{"voucher": {{ v.id }}}' title="Measure the way to this customer's phone from the router"><i class="bi bi-activity"></i> Connection lab</button>{% endif %}
+        <a class="btn btn-outline-primary" href="{% url 'voucher_card' v.id %}"><i class="bi bi-card-text"></i> Card / share</a>
+        {% if 'vouchers.support' in tt_perms or 'vouchers.manage' in tt_perms or 'vouchers.warn' in tt_perms or rollback %}
+        <div class="dropdown">
+          <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-three-dots"></i> More</button>
+          <ul class="dropdown-menu dropdown-menu-end shadow">
+            {% if not v.frozen_at %}
+              {% if 'vouchers.support' in tt_perms and v.status == 'active' and not time_is_up %}<li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#freezeModal"><i class="bi bi-snow"></i> Freeze <small class="text-secondary ms-auto">pause the clock</small></button></li>{% endif %}
+              {% if 'vouchers.warn' in tt_perms and v.status == 'active' and not time_is_up %}<li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#warnModal"><i class="bi bi-exclamation-octagon"></i> Warn the customer</button></li>{% endif %}
+              {% if 'vouchers.support' in tt_perms %}<li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#resetModal"><i class="bi bi-arrow-counterclockwise"></i> Reset devices</button></li>{% endif %}
+              {% if 'vouchers.support' in tt_perms and v.router and v.status == 'active' and not time_is_up %}<li><form method="post" action="{% url 'voucher_first' v.id %}">{% csrf_token %}<button type="submit" class="dropdown-item"><i class="bi bi-lightning-charge"></i> Send to the router first <small class="text-secondary ms-auto">ahead of everything, retried</small></button></form></li>{% endif %}
+              {% if rollback and rollback.pct is not None and not time_is_up %}
+                {% if rollback.allowed %}<li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#rollbackModal"><i class="bi bi-skip-backward-circle"></i> Roll back to full time <small class="text-secondary ms-auto">{{ rollback.pct }}% used</small></button></li>
+                {% else %}<li><span class="dropdown-item disabled" aria-disabled="true" title="Rollback is only possible while less than 50% of the time is used"><i class="bi bi-skip-backward-circle"></i> Roll back to full time <small class="ms-auto">not possible — {{ rollback.why }}</small></span></li>{% endif %}
+              {% endif %}
+            {% endif %}
+            {% if 'vouchers.manage' in tt_perms %}<li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#codeModal"><i class="bi bi-input-cursor-text"></i> {% if v.is_member %}Change username{% else %}Change code{% endif %}</button></li>{% endif %}
+            {% if v.is_member and 'vouchers.support' in tt_perms %}<li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#memberPwModal"><i class="bi bi-key"></i> Change password</button></li>{% endif %}
+            {% if 'vouchers.support' in tt_perms and v.router %}<li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#profileModal"><i class="bi bi-sliders"></i> Change router profile</button></li>{% endif %}
+            {% if 'vouchers.manage' in tt_perms and not v.frozen_at %}<li><form method="post" action="{% url 'mark_voucher_missing' v.id %}" onsubmit="return confirm('Mark voucher {{ v.code|escapejs }} as missing?');">{% csrf_token %}<button type="submit" class="dropdown-item"><i class="bi bi-exclamation-triangle"></i> Mark missing</button></form></li>{% endif %}
+            {% if 'vouchers.support' in tt_perms and not v.frozen_at and v.status == 'active' and not time_is_up or 'vouchers.manage' in tt_perms and not v.used_at %}<li><hr class="dropdown-divider"></li>{% endif %}
+            {% if 'vouchers.support' in tt_perms and not v.frozen_at and v.status == 'active' and not time_is_up %}<li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#disableModal"><i class="bi bi-slash-circle"></i> Disable</button></li>{% endif %}
+            {% if 'vouchers.manage' in tt_perms and not v.used_at %}<li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#deleteModal"><i class="bi bi-trash3"></i> Delete</button></li>{% endif %}
+          </ul>
+        </div>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  {# time bar: first use → end #}
+  {% if time_pct is not None and not time_is_up %}
+  <div class="vd-time{% if time_bar.can %} tb-live{% endif %}" aria-label="{{ time_pct }}% of the time used">
+    {% if time_bar.can %}
+    {# Clickable time bar (core/voucher_schedule.py): click a point → end the time there, or freeze the voucher there. #}
+    <div class="tb-track" id="tbTrack" role="slider" tabindex="0" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ time_pct }}"
+         aria-label="Time bar. Use the arrow keys to pick a moment, Enter to choose what happens then.">
+      <div class="tb-fill {% if time_pct >= 90 %}end{% elif time_pct >= 70 %}mid{% endif %}" id="tbFill"></div>
+      <div class="tb-extend" id="tbExtend" title="Past the current end: click here to add time"><span>extend</span></div>
+      <i class="tb-mark tb-now" id="tbNow" title="Now"></i>
+      <i class="tb-mark tb-end" id="tbEnd" title="Ends {{ ends_at|date:'d M Y H:i' }}"></i>
+      {% if time_bar.plan %}<i class="tb-mark tb-plan" id="tbPlan" title="Freeze planned"><b class="bi bi-snow"></b></i>{% endif %}
+      <i class="tb-cursor" id="tbCursor" hidden></i>
+      <span class="tb-tip" id="tbTip" hidden></span>
+    </div>
+    <div class="tb-card" id="tbCard" hidden role="dialog" aria-labelledby="tbWhen">
+      <form method="post" action="{{ time_bar.url }}" id="tbForm">{% csrf_token %}
+        <input type="hidden" name="at" id="tbAt"><input type="hidden" name="action" id="tbAction">
+        <div class="tb-card-head"><div><small id="tbRel"></small><b id="tbWhen"></b></div><button type="button" class="btn-close" id="tbClose" aria-label="Close"></button></div>
+        <label class="form-label small mb-1" for="tbExact">Exact time</label>
+        <input type="datetime-local" class="form-control form-control-sm mb-2" id="tbExact" step="60">
+        <p class="small mb-2" id="tbEffect"></p>
+        <input class="form-control form-control-sm mb-2" name="reason" id="tbReason" maxlength="255" placeholder="Reason (kept in the history)">
+        <div class="d-flex gap-2 flex-wrap">
+          <button type="button" class="btn btn-sm btn-warning" data-tb="end"><i class="bi bi-hourglass-bottom"></i> <span id="tbEndLbl">End the time here</span></button>
+          <button type="button" class="btn btn-sm btn-info text-white" data-tb="freeze"><i class="bi bi-snow"></i> <span id="tbFreezeLbl">Freeze here</span></button>
+        </div>
+        <small class="tb-err text-danger d-block mt-1" id="tbErr" aria-live="polite"></small>
+      </form>
+    </div>
+    {{ time_bar|json_script:"tbData" }}
+    {% else %}
+    <div class="bar"><i class="{% if time_pct >= 90 %}end{% elif time_pct >= 70 %}mid{% endif %}" style="width:{{ time_pct }}%"></i></div>
+    {% endif %}
+    <div class="lbl"><span>{% if v.rolled_back_at %}Rolled back {{ v.rolled_back_at|date:'d M Y H:i' }}{% else %}Started {{ v.used_at|date:'d M Y H:i' }}{% endif %}</span><span><b class="text-body">{{ time_left|duration_short }} left</b> · {{ time_pct }}% used</span><span>Ends {{ ends_at|date:'d M Y H:i' }}</span></div>
+  </div>
+  {% endif %}
+
+  {% if v.freeze_planned_at and not v.frozen_at %}
+  <div class="tb-planned mt-2"><i class="bi bi-alarm"></i>
+    <div><b>Freezes at {{ v.freeze_planned_at|date:'d M Y H:i' }}</b>{% if v.freeze_planned_by %} · planned by {% firstof v.freeze_planned_by.get_full_name v.freeze_planned_by.username %}{% endif %}{% if v.freeze_planned_reason %}<small class="d-block">{{ v.freeze_planned_reason }}</small>{% endif %}</div>
+    {% if 'vouchers.support' in tt_perms %}<form method="post" action="{% url 'voucher_time_point' v.id %}" class="ms-auto">{% csrf_token %}<input type="hidden" name="action" value="cancel_freeze"><button class="btn btn-sm btn-outline-secondary">Cancel</button></form>{% endif %}
+  </div>
+  {% endif %}
+  {% if rollback and rollback.pct is not None and not time_is_up and not v.frozen_at %}
+  <div class="small text-secondary mt-1"><i class="bi bi-skip-backward-circle"></i>
+    {% if rollback.allowed %}Rollback to full time is possible until <b class="text-body">{{ rollback.deadline|date:'d M Y H:i' }}</b> (while less than 50% is used).
+    {% else %}Rollback is no longer possible — {{ rollback.why }}.{% endif %}
+  </div>
+  {% endif %}
+
+  {% if v.status == 'archived' %}
+  <div class="alert alert-secondary mt-3 mb-0 d-flex gap-2"><i class="bi bi-archive mt-1"></i><div><b>Archived.</b> This voucher is finished: it was removed from {{ v.router.name|default:"the router" }}{% if v.router_removal == 'queued' %} (queued — applied at the router's next check-in){% elif v.router_removal == 'failed' %} (the router did not answer yet — TapTap retries){% endif %} and is kept in TapTap with its sale and full history.</div></div>
+  {% endif %}
+  {% if v.frozen_at %}
+  <div class="alert {% if v.freeze_kind == 'warning' %}alert-warning{% else %}alert-info{% endif %} mt-3 mb-0 d-flex gap-2"><i class="bi {% if v.freeze_kind == 'warning' %}bi-exclamation-octagon{% else %}bi-snow{% endif %} mt-1"></i><div>
+    <b>{% if v.freeze_kind == 'warning' %}Warning sent{% else %}Frozen{% endif %} {{ v.frozen_at|date:'d M Y H:i' }}{% if v.frozen_by %} by {% firstof v.frozen_by.get_full_name v.frozen_by.username %}{% elif v.freeze_kind == 'warning' %} automatically{% endif %}.</b>
+    {{ v.freeze_reason }}<br>
+    {% if v.warning_message %}<span class="small">Customer sees: “{{ v.warning_message|truncatechars:200 }}”</span><br>{% endif %}
+    <small>Internet is off and the clock stands still{% if v.frozen_left is not None %} with <b>{{ v.frozen_left|duration_short }}</b> left{% else %} (not used yet — full time kept){% endif %}.
+    {% if v.freeze_kind == 'warning' %}The customer sees the warning page on the portal and continues by pressing “I agree” — or you can unfreeze it here.{% else %}It continues from where it stopped when you unfreeze it.{% endif %}</small>
+  </div></div>
+  {% endif %}
+  {% if v.deleted_at %}
+  <div class="alert alert-danger mt-3 mb-0 d-flex gap-2"><i class="bi bi-trash3 mt-1"></i><div>
+    <b>Deleted {{ v.deleted_at|date:'d M Y H:i' }}{% if v.deleted_by %} by {% firstof v.deleted_by.get_full_name v.deleted_by.username %}{% endif %}.</b>
+    {{ v.delete_reason }}<br>
+    <small>This voucher is in the bin: it is not in reports or finance, cannot log anyone in and cannot be deleted again.
+    Router: {{ v.get_router_removal_display }}{% if v.router_removal_note and v.router_removal != 'removed' %} — {{ v.router_removal_note }}{% endif %}.
+    {% if v.delete_info.sale %}Sale removed from finance: {{ c }}{{ v.delete_info.sale.amount }} ({{ v.delete_info.sale.method }}{% if v.delete_info.sale.agent %}, {{ v.delete_info.sale.agent }}{% endif %}).{% endif %}</small>
+  </div></div>
+  {% else %}
+  <p class="vd-channel"><i class="bi bi-arrow-left-right"></i> Changes reach {{ v.router.name|default:'no router (TapTap only)' }} through <b>{{ channel }}</b>.</p>
+  {% load router_assign_tags %}{% put_on_router voucher=v %}
+  {% endif %}
+</section>
+
+<script>
+document.querySelectorAll('[data-copy]').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var t = b.getAttribute('data-copy'), done = function () { var o = b.innerHTML; b.innerHTML = '<i class="bi bi-check2"></i> Copied'; setTimeout(function () { b.innerHTML = o; }, 1500); };
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(t).then(done, function () {});
+    else { var a = document.createElement('textarea'); a.value = t; document.body.appendChild(a); a.select(); try { document.execCommand('copy'); done(); } catch (e) {} a.remove(); }
+  });
+});
+</script>
+{# ─────────── key figures ─────────── #}
+<div class="vd-kpis">
+  <div class="vd-kpi {% if time_is_up %}bad{% elif time_pct is not None and time_pct >= 90 %}warn{% elif time_left %}good{% endif %}">
+    <span><i class="bi bi-hourglass-split"></i> Time left</span>
+    {% if time_is_up %}<b>Ran out</b><small>{{ ends_at|date:'d M Y H:i' }}</small>
+    {% elif time_left %}<b>{{ time_left|duration_short }}</b><small>of {{ v.duration_minutes|minutes_text }}</small>
+    {% elif v.is_unlimited %}<b>Unlimited</b><small>no time limit</small>
+    {% else %}<b>{{ v.duration_minutes|minutes_text }}</b><small>starts at the first login</small>{% endif %}
+  </div>
+  <div class="vd-kpi">
+    <span><i class="bi bi-calendar-event"></i> {% if time_is_up %}Ended{% else %}Ends{% endif %}</span>
+    {% if ends_at %}<b>{{ ends_at|date:'d M Y' }}</b><small>{{ ends_at|date:'H:i' }}{% if v.used_at %} · started {{ v.used_at|date:'d M' }}{% endif %}</small>
+    {% elif v.is_unlimited %}<b>Never</b><small>no end date</small>{% else %}<b>—</b><small>not used yet</small>{% endif %}
+  </div>
+  <div class="vd-kpi">
+    <span><i class="bi bi-phone"></i> Devices</span>
+    <b>{{ bindings|length }} / {{ v.max_devices|default:1 }}</b>
+    <small>{% if current_business.device_lock %}locked to this voucher{% else %}allowed at once{% endif %}{% if fup.live.online %} · online now{% endif %}</small>
+  </div>
+  <div class="vd-kpi">
+    <span><i class="bi bi-cash-coin"></i> Sale</span>
+    {% if sale %}<b>{{ sale.amount|money:c }}</b><small>{{ sale.get_payment_method_display }}{% if v.sold_at %} · {{ v.sold_at|date:'d M Y' }}{% endif %}</small>
+    {% elif v.sold_at %}<b>{{ v.price|money:c }}</b><small>sold {{ v.sold_at|date:'d M Y' }}</small>
+    {% else %}<b>Not sold</b><small>{% if v.agent %}held by {{ v.agent.name }}{% else %}in the shop · {{ v.price|money:c }}{% endif %}</small>{% endif %}
+  </div>
+</div>
+
+{% if v.router and not v.deleted_at and 'vouchers.support' in tt_perms or v.router and not v.deleted_at and 'network.manage' in tt_perms %}
+{# Live strip: speed now, how long it has been quiet, which internet line — and the Connection lab (core/views_flow.py) #}
+<div class="lab-mini" data-lab-mini='{"voucher": {{ v.id }}}' hidden></div>
+{# Speed per device: one lane per device slot, each with the plan's whole speed (core/device_lanes.py) #}
+<section class="sp-card" id="speed-per-device" data-lanes-voucher="{{ v.id }}"></section>
+{% endif %}
+
+{% if 'vouchers.support' in tt_perms or 'vouchers.view' in tt_perms %}{% include 'core/partials/wifi_callers.html' %}{% endif %}
+
+{% if shared_case %}{% with sc=shared_case %}
+<section class="vd-share mb-3">
+  <div class="d-flex flex-wrap justify-content-between gap-2 align-items-start">
+    <div><b><i class="bi bi-people-fill text-warning"></i> Used on {{ sc.devices }} devices — the plan allows {{ sc.allowed }}.</b>
+      <small class="d-block text-secondary">{% if sc.waiting %}Warning sent — waiting for the customer to press “I agree” on the portal.{% elif sc.open %}{{ sc.new|length }} device{{ sc.new|length|pluralize }} not decided yet. Choose what to do below.{% else %}Decided: {{ sc.review.get_action_display }}{% if sc.review.by %} by {% firstof sc.review.by.get_full_name sc.review.by.username %}{% elif sc.review.auto %} (automatic){% endif %} {{ sc.review.created_at|date:'d M H:i' }}.{% endif %}</small>
+      <div class="d-flex flex-wrap gap-1 mt-2">{% for s in sc.sigs|slice:':10' %}<span class="badge text-bg-light border">{% if s in sc.new %}<i class="bi bi-dot text-danger"></i>{% endif %}{% if s.label %}{{ s.label|truncatechars:22 }}{% elif s.model %}{{ s.model|truncatechars:22 }}{% elif s.os %}{{ s.os|truncatechars:22 }}{% else %}{{ 'Device'|truncatechars:22 }}{% endif %}{% if s.last_mac %} · {{ s.last_mac }}{% endif %}</span>{% endfor %}</div></div>
+    {% if 'vouchers.support' in tt_perms and not sc.waiting %}{% include 'core/partials/shared_actions.html' with case=sc next=request.path %}{% endif %}
+  </div>
+</section>
+{% endwith %}{% endif %}
+
+<div class="row g-3">
+  {# ─────────── left: usage and history ─────────── #}
+  <div class="col-xl-8">
+{% if fup %}<div class="panel vd-card" id="fair-usage">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+    <div><h3 class="h6 fw-bold mb-1"><i class="bi bi-speedometer2"></i> Fair usage · {{ fup.policy.name }}</h3>
+      <small class="text-secondary">{{ fup.policy.get_period_display }} · resets {% if fup.resets_at %}{{ fup.resets_at|date:'d M H:i' }}{% else %}when the voucher ends{% endif %}{% if fup.policy.has_free_hours %} · {{ fup.policy.free_from|stringformat:"02d" }}:00–{{ fup.policy.free_to|stringformat:"02d" }}:00 not counted{% endif %}</small></div>
+    <div class="text-end"><b class="fs-5">{{ fup.used_gb|floatformat:2 }} GB</b> <small class="text-secondary">used</small><br>
+      {% if fup.lifted %}<span class="badge text-bg-info">Full speed given back until {{ fup.lifted_until|date:'d M H:i' }}</span>
+      {% elif fup.speed %}<span class="badge text-bg-warning">Slowed to {{ fup.speed.down }} down · {{ fup.speed.up }} up</span>
+      {% else %}<span class="badge text-bg-success">Full speed</span>{% endif %}</div>
+  </div>
+  <div class="d-flex gap-1 mt-2" aria-hidden="true">{% for s in fup.steps %}<div class="flex-fill rounded {% if s.reached %}bg-warning{% else %}bg-body-secondary{% endif %}" style="height:8px" title="{{ s.gb }} GB → {{ s.down_text }}"></div>{% endfor %}</div>
+  <div class="d-flex flex-wrap gap-3 small text-secondary mt-1">{% for s in fup.steps %}<span{% if s.current %} class="fw-bold text-body"{% endif %}>{{ s.gb }} GB → {{ s.down_text }}</span>{% endfor %}</div>
+  {% if fup.next and not fup.lifted %}<small class="d-block mt-1">Next step at {{ fup.next.gb }} GB → {{ fup.next.down }}.</small>{% endif %}
+  {% if fup.per_device %}
+  <div class="mt-3"><div class="small fw-bold mb-1"><i class="bi bi-phone"></i> Each device is measured on its own <span class="fw-normal text-secondary">— only a device that passes a step is slowed; the others keep full speed.</span></div>
+    {% for d in fup.devices %}<div class="d-flex justify-content-between align-items-center small py-1 border-bottom">
+      <span><b>{{ d.label }}</b></span>
+      <span>{{ d.used_gb|floatformat:2 }} GB · {% if d.tier %}<span class="badge text-bg-warning">Slowed to {{ d.speed }}</span>{% else %}<span class="text-success">Full speed</span>{% if d.next_gb %} <span class="text-secondary">(slows at {{ d.next_gb }} GB)</span>{% endif %}{% endif %}</span>
+    </div>{% empty %}<div class="small text-secondary">No data used yet this period.</div>{% endfor %}
+  </div>
+  {% endif %}
+  <div class="row g-2 mt-2 small">
+    <div class="col-sm-4"><span class="text-secondary d-block">Speed cap</span>{% if fup.speed and not fup.lifted %}<b>{{ fup.speed.down }}</b> down · {{ fup.speed.up }} up <span class="text-secondary">(per device)</span>{% else %}<b>None</b> — full speed{% endif %}</div>
+    <div class="col-sm-4"><span class="text-secondary d-block">Using now</span>{% if fup.live.online %}<b>{{ fup.live.down_now }}</b> down · {{ fup.live.up_now }} up
+      {% if fup.speed and not fup.lifted %}<div class="progress mt-1" style="height:6px" role="progressbar" aria-label="Share of the cap in use" aria-valuenow="{{ fup.live.down_pct }}" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar {% if fup.live.down_pct >= 90 %}bg-danger{% elif fup.live.down_pct >= 60 %}bg-warning{% else %}bg-success{% endif %}" style="width:{{ fup.live.down_pct }}%"></div></div><span class="text-secondary">{{ fup.live.down_pct }}% of the cap</span>{% endif %}
+      {% else %}<b class="text-secondary">Offline</b>{% endif %}</div>
+    <div class="col-sm-4"><span class="text-secondary d-block">Peak this period</span><b>{{ fup.live.peak }}</b></div>
+  </div>
+  {% for s in fup.live.sessions %}<div class="small text-secondary mt-1"><i class="bi bi-phone"></i> <span class="font-monospace">{{ s.ip }}</span> · <span class="font-monospace">{{ s.mac }}</span> · {{ s.router }} · ↓ {{ s.down }} ↑ {{ s.up }}</div>{% endfor %}
+  {% if 'vouchers.support' in tt_perms or 'network.manage' in tt_perms %}
+  <form method="post" action="{% url 'fup_lift' v.id %}" class="mt-2">{% csrf_token %}
+    {% if fup.lifted %}<button class="btn btn-sm btn-outline-secondary" name="action" value="restore">Put the limits back</button>
+    {% else %}<button class="btn btn-sm btn-outline-primary" name="action" value="lift"><i class="bi bi-lightning-charge"></i> Full speed until the period resets</button>{% endif %}
+  </form>{% endif %}
+</div>{% endif %}
+    <section class="panel vd-card" id="history">
+      <div class="panel-head"><div><h3><i class="bi bi-clock-history"></i> History</h3><p>Every change, who made it, why, and what the router answered.</p></div></div>
+      <ul class="vd-tl scroll-list">
+        {% for e in timeline %}
+        <li>
+          <div class="vd-ic {{ e.tone }}"><i class="bi {{ e.icon }}"></i></div>
+          <div class="flex-grow-1">
+            <div class="d-flex justify-content-between gap-2 flex-wrap"><b>{{ e.title }}</b><span class="vd-meta">{{ e.at|date:'d M Y H:i' }}</span></div>
+            {% if e.text %}<div class="small">{{ e.text }}</div>{% endif %}
+            {% if e.reason %}<div class="vd-reason"><i class="bi bi-chat-left-quote"></i> {{ e.reason }}</div>{% endif %}
+            <div class="vd-meta">{% if e.who %}{{ e.who }}{% endif %}{% if e.via %} · via {{ e.via }}{% endif %}{% if e.result %} · {{ e.result }}{% endif %}</div>
+          </div>
+        </li>
+        {% empty %}<li class="text-secondary small">No history yet.</li>{% endfor %}
+      </ul>
+    </section>
+  </div>
+
+  {# ─────────── right: the facts, grouped ─────────── #}
+  <div class="col-xl-4">
+    <section class="panel vd-card">
+      <div class="hd"><h3><i class="bi bi-ticket-perforated"></i> Plan &amp; limits</h3></div>
+      <dl class="vd-dl">
+        {% if v.is_member %}<div><dt>Login</dt><dd><span class="font-monospace">{{ v.code }}</span></dd></div>
+        <div><dt>Password</dt><dd><span class="font-monospace" id="mPwVal" data-tt-secret hidden>{{ v.login_password }}</span><span id="mPwMask">••••••••</span>
+          <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" onclick="var h=document.getElementById('mPwVal').hidden;document.getElementById('mPwVal').hidden=!h;document.getElementById('mPwMask').hidden=h;this.textContent=h?'Hide':'Show'">Show</button>
+          {% if not v.password %}<small class="text-secondary">same as username</small>{% endif %}</dd></div>{% endif %}
+        <div><dt>Plan</dt><dd>{{ v.plan_name }}</dd></div>
+        <div><dt>Valid for</dt><dd>{{ v.duration_minutes|minutes_text }}</dd></div>
+        {% if v.is_unlimited %}<div><dt>Ends</dt><dd>Never — no time limit</dd></div>{% endif %}
+        <div><dt>Devices allowed</dt><dd>{{ v.max_devices }}</dd></div>
+        {% if v.rate_limit %}<div><dt>Speed</dt><dd>{{ v.rate_limit }}</dd></div>{% endif %}
+        <div class="wide"><dt>Router profile</dt><dd><span class="font-monospace">{{ profile_now }}</span>{% if v.router_profile %} <small class="d-inline text-secondary">· chosen by hand</small>{% endif %}
+          {% with st=profile_router.0 rp=profile_router.1 %}{% if st == 'deleted' %}<small class="text-danger"><i class="bi bi-exclamation-triangle"></i> On the router: <code>{{ rp }}</code> — <b>deleted on the router</b>. Change the profile or let the voucher finish.</small>
+          {% elif rp and rp != profile_now and v.source == 'taptap' or rp and rp != profile_now and v.router_profile %}<small class="text-warning-emphasis">Router has <code>{{ rp }}</code> — TapTap puts it back on <code>{{ profile_now }}</code> at the next sync.</small>
+          {% elif rp and rp != profile_now %}<small class="text-secondary">Router: <code>{{ rp }}</code></small>{% endif %}{% endwith %}
+          {% if 'vouchers.support' in tt_perms and not v.deleted_at and v.router %}<button class="btn btn-sm btn-link p-0" data-bs-toggle="modal" data-bs-target="#profileModal">Change</button>{% endif %}</dd></div>
+      </dl>
+    </section>
+
+    <section class="panel vd-card">
+      <div class="hd"><h3><i class="bi bi-receipt"></i> Sale &amp; origin</h3></div>
+      <dl class="vd-dl">
+        <div><dt>Price</dt><dd>{{ v.price|money:c }}</dd></div>
+        <div><dt>Sold</dt><dd>{{ v.sold_at|date:'d M Y H:i'|default:'Not sold' }}</dd></div>
+        {% if sale %}<div><dt>Payment</dt><dd>{{ sale.amount|money:c }} · {{ sale.get_payment_method_display }}<small class="text-secondary">{% if sale.agent %}agent {{ sale.agent.name }} · {% endif %}recorded by {{ sale.recorded_by.username|default:'TapTap (automatic)' }}</small></dd></div>{% endif %}
+        <div><dt>Held by</dt><dd>{% if v.agent %}<a href="{% url 'agent_detail' v.agent_id %}">{{ v.agent.name }}</a>{% else %}Shop{% endif %}</dd></div>
+        {% if v.customer_name or v.customer_phone %}<div><dt>Customer</dt><dd>{{ v.customer_name|default:'' }} {{ v.customer_phone|default:'' }}</dd></div>{% endif %}
+        <div><dt>Batch</dt><dd>{% if v.batch %}<a href="{% url 'batch_detail' v.batch_id %}">{{ v.batch.name }}</a>{% else %}—{% endif %}</dd></div>
+        <div><dt>Serial</dt><dd class="font-monospace">{% if v.serial %}{{ v.serial }}{% else %}{{ v.pk|stringformat:"06d" }}{% endif %}</dd></div>
+        <div><dt>Origin</dt><dd>{{ v.get_source_display }}</dd></div>
+        <div><dt>Created</dt><dd>{{ v.created_at|date:'d M Y H:i' }}<small class="text-secondary">{% include 'core/partials/created_by.html' with obj=v %}</small></dd></div>
+        <div><dt>First used</dt><dd>{{ v.used_at|date:'d M Y H:i'|default:'Not used yet' }}</dd></div>
+        <div><dt>Status in TapTap</dt><dd>{{ v.get_status_display }}</dd></div>
+        {% if old_codes %}<div class="wide"><dt>Previous code{{ old_codes|length|pluralize }}</dt><dd>{% for a in old_codes %}<code class="text-decoration-line-through" title="Changed {{ a.changed_at|date:'d M Y H:i' }}{% if a.changed_by %} by {% firstof a.changed_by.get_full_name a.changed_by.username %}{% endif %}{% if a.reason %} — {{ a.reason }}{% endif %}">{{ a.code }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</dd></div>{% endif %}
+        {% if v.note %}<div class="wide"><dt>Note</dt><dd>{{ v.note }}</dd></div>{% endif %}
+      </dl>
+    </section>
+
+    <section class="panel vd-card">
+      <div class="hd"><h3><i class="bi bi-router"></i> On the router</h3><small class="text-secondary">{{ v.mikrotik_sync_status }}</small></div>
+      <dl class="vd-dl">
+        <div><dt>Router</dt><dd>{{ v.router.name|default:'—' }}</dd></div>
+        {% if mirror %}
+          <div><dt>State</dt><dd>{% if mirror.disabled %}Disabled{% else %}Enabled{% endif %}{% if not mirror.is_present %}<small class="text-warning-emphasis">not found at the last sync</small>{% endif %}</dd></div>
+          <div><dt>Profile</dt><dd class="font-monospace">{{ mirror.profile }}</dd></div>
+          <div><dt>Uptime used</dt><dd>{{ mirror.uptime|default:'0s' }}</dd></div>
+          <div><dt>Uptime limit</dt><dd>{{ mirror.limit_uptime|default:'none' }}</dd></div>
+          <div><dt>Last seen by sync</dt><dd>{{ mirror.last_seen_at|date:'d M H:i' }}</dd></div>
+        {% else %}
+          <div><dt>On the router</dt><dd>Not seen in a router sync yet</dd></div>
+        {% endif %}
+      </dl>
+      {% if v.mikrotik_sync_error %}<div class="alert alert-danger small mt-2 mb-0"><b>Sync error:</b> {{ v.mikrotik_sync_error }}
+        {% if 'profile' in v.mikrotik_sync_error|lower and 'vouchers.support' in tt_perms %}
+          {% if v.status == 'expired' or time_is_up %}<div class="mt-1">This voucher has ended and the router does not have its profile <code>{{ profile_now }}</code> — there is nothing left to send.
+            <form method="post" action="{% url 'voucher_archive_now' v.id %}" class="d-inline">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary py-0">Archive it</button></form> <span class="text-secondary">(off the router, kept in TapTap)</span></div>
+          {% else %}<div class="mt-1">The router does not have the profile <code>{{ profile_now }}</code>. <a href="#" data-bs-toggle="modal" data-bs-target="#profileModal">Choose another profile</a> —
+            TapTap sends the voucher again at once{% if v.used_at %}; it is in use, so it keeps the time it already used (the clock does not restart){% endif %}.</div>{% endif %}
+        {% endif %}</div>{% endif %}
+    </section>
+
+    <section class="panel vd-card vd-locked">
+      {# Keep this heading exactly as it is: core/permanent_device.py finds it to add the "Pin permanently" panel. #}
+      <div class="panel-head"><div><h3><i class="bi bi-phone-vibrate"></i> Locked devices</h3></div>
+        {% if bindings and 'vouchers.support' in tt_perms and not v.deleted_at %}<button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#resetModal"><i class="bi bi-arrow-counterclockwise"></i> Reset</button>{% endif %}</div>
+      <p class="small text-secondary">{% if current_business.device_lock %}{{ bindings|length }} of {{ v.max_devices|default:1 }} device{{ v.max_devices|default:1|pluralize }} locked{% if bindings|length < v.max_devices|default:1 %} · {{ free_slots }} free — the next device{{ free_slots|pluralize }} to log in {{ free_slots|pluralize:"takes it,take them" }}{% else %} · full — other devices are refused{% endif %}.{% else %}Device locking is off (Settings → Voucher devices).{% endif %}</p>
+      {% if bindings %}
+      <div class="d-flex flex-column gap-2">{% for d in bindings %}
+        <div class="vd-slot">
+          <span class="badge rounded-pill text-bg-primary">{{ d.slot_no }}</span>
+          <div class="flex-grow-1 small" style="min-width:0"><b>{{ d.label|default:"Device" }}</b>{% if d.current_mac %} · <code>{% device_link d.current_mac %}</code>{% endif %}
+            {% if d.previous_mac %}<div class="vd-meta">MAC changed from {% device_link d.previous_mac %} — same device ID, slot kept</div>{% endif %}
+            <div class="vd-meta">Locked {{ d.first_bound_at|date:'d M Y H:i' }}{% if d.locked_by %} via {{ d.locked_by }}{% endif %} · last seen {{ d.last_seen_at|timesince }} ago{% if d.device_token_hash %} · device ID {{ d.device_token_hash|slice:":8" }}…{% endif %}</div></div>
+        </div>{% endfor %}
+        {% for i in empty_slots %}<div class="vd-slot free"><span class="badge rounded-pill text-bg-light border">{{ i }}</span> Free — waiting for a device</div>{% endfor %}
+      </div>
+      {% else %}<p class="text-secondary small mb-0">No device has used this voucher yet. {% if current_business.device_lock %}The first {{ v.max_devices|default:1 }} device{{ v.max_devices|default:1|pluralize }} to log in will be locked to it.{% endif %}</p>{% endif %}
+      {% if incidents %}
+      <h4 class="h6 mt-3">Enforcement</h4>
+      <ul class="small mb-0 ps-3 scroll-list scroll-short">{% for i in incidents %}<li>{{ i.first_seen|date:'d M H:i' }} · {{ i.get_reason_display }} · {{ i.get_status_display }} on {{ i.router.name }}</li>{% endfor %}</ul>
+      {% endif %}
+    </section>
+  </div>
+</div>
+
+{# ─────────── action dialogs ─────────── #}
+{% if 'vouchers.manage' in tt_perms and not v.used_at and not v.deleted_at %}
+<div class="modal fade" id="deleteModal" tabindex="-1"><div class="modal-dialog"><form class="modal-content" method="post" action="{% url 'voucher_delete' v.id %}">{% csrf_token %}
+  <div class="modal-header"><h5 class="modal-title">Delete {{ v.code }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body"><p class="small">The voucher is removed from {{ v.router.name|default:'TapTap' }}{% if v.router %} and from TapTap{% endif %}, and moves to the <b>bin</b>. It will no longer appear in voucher or finance reports.
+    <b>This cannot be undone</b>, and the code is never issued again.</p>
+    {% if sale %}<div class="alert alert-warning small py-2">This voucher was sold ({{ c }}{{ sale.amount }}). The sale will be taken out of finance and kept with the record in the bin.</div>{% endif %}
+    <label class="form-label">Reason <span class="text-secondary">(required, kept in the bin)</span></label>
+    <input name="reason" class="form-control" maxlength="255" required placeholder="e.g. Printed by mistake, damaged card, wrong plan"></div>
+  <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-danger"><i class="bi bi-trash3"></i> Delete to the bin</button></div>
+</form></div></div>
+{% endif %}
+
+<div class="modal fade" id="disableModal" tabindex="-1"><div class="modal-dialog"><form class="modal-content" method="post" action="{% url 'disable_voucher' v.id %}">{% csrf_token %}
+  <div class="modal-header"><h5 class="modal-title">Disable {{ v.code }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body"><p class="small">The voucher stops working at once and anyone using it is disconnected. You can enable it again later.</p>
+    <label class="form-label">Reason <span class="text-secondary">(kept in the history)</span></label>
+    <input name="reason" class="form-control" maxlength="255" placeholder="e.g. Customer refunded, lost card, abuse"></div>
+  <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-danger">Disable</button></div>
+</form></div></div>
+
+<div class="modal fade" id="enableModal" tabindex="-1"><div class="modal-dialog"><form class="modal-content" method="post" action="{% url 'enable_voucher' v.id %}">{% csrf_token %}
+  <div class="modal-header"><h5 class="modal-title">{% if v.status == 'active' and not time_is_up %}Add time to{% else %}Enable{% endif %} {{ v.code }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    {% if time_is_up %}
+      <div class="alert alert-warning small">The time on this voucher ran out {{ ends_at|date:'d M Y H:i' }}. Choose how much time to give; without it TapTap would disconnect it again straight away.</div>
+    {% elif v.status != 'active' %}
+      <p class="small">The voucher works again with the time it has left{% if ends_at %} (until {{ ends_at|date:'d M Y H:i' }}){% endif %}. You can also add time.</p>
+    {% else %}
+      <p class="small">Adds time on top of the current end{% if ends_at %} ({{ ends_at|date:'d M Y H:i' }}){% endif %}. The router's uptime limit is raised too.</p>
+    {% endif %}
+    <label class="form-label mb-1">{% if time_is_up or v.status == 'active' %}Time to add{% else %}Add time (optional){% endif %}</label>
+    <div class="d-flex flex-wrap gap-1 mb-2" id="timePicks">{% for label,d,h,m in extend_choices %}<button type="button" class="btn btn-sm btn-outline-secondary" data-d="{{ d }}" data-h="{{ h }}" data-m="{{ m }}">{{ label }}</button>{% endfor %}</div>
+    <div class="row g-2 mb-1">
+      <div class="col-4"><div class="input-group input-group-sm"><input class="form-control" type="number" min="0" max="366" step="1" name="add_days" id="addDays" placeholder="0" aria-label="Days"><span class="input-group-text">days</span></div></div>
+      <div class="col-4"><div class="input-group input-group-sm"><input class="form-control" type="number" min="0" max="8784" step="1" name="add_hrs" id="addHrs" placeholder="0" aria-label="Hours"><span class="input-group-text">hours</span></div></div>
+      <div class="col-4"><div class="input-group input-group-sm"><input class="form-control" type="number" min="0" max="527040" step="1" name="add_mins" id="addMins" placeholder="0" aria-label="Minutes"><span class="input-group-text">min</span></div></div>
+    </div>
+    <small class="d-block mb-3" id="timeSum">{% if v.used_at or ends_at %}Added on top of the current end{% if ends_at and not time_is_up %} ({{ ends_at|date:'d M Y H:i' }}){% endif %}.{% else %}Not used yet: the time is added to its {{ v.duration_minutes|minutes_text }} — the clock still starts on first login.{% endif %} Adding time is not a sale.</small>
+    <label class="form-label">Reason <span class="text-secondary">(kept in the history)</span></label>
+    <input name="reason" class="form-control" maxlength="255" placeholder="e.g. Disabled by mistake, customer paid again, compensation"></div>
+  <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-success">{% if v.status == 'active' and not time_is_up %}Add time{% else %}Enable{% endif %}</button></div>
+</form></div></div>
+
+{% if rollback.allowed %}
+<div class="modal fade" id="rollbackModal" tabindex="-1" aria-labelledby="rollbackTitle"><div class="modal-dialog"><form class="modal-content" method="post" action="{% url 'voucher_rollback' v.id %}">{% csrf_token %}
+  <div class="modal-header"><h5 class="modal-title" id="rollbackTitle">Roll back {{ v.code }} to full time</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+  <div class="modal-body">
+    <p class="small">{{ rollback.pct }}% of its time is used ({{ rollback.elapsed|duration_short }} of {{ rollback.period|duration_short }}). The clock restarts <b>now</b> with the full <b>{{ rollback.period|duration_short }}</b>{% if v.router %} and the uptime limit on {{ v.router.name }} is raised to match{% endif %}. Rollback is only possible while less than 50% is used. It is not a sale and does not change finance.</p>
+    <label class="form-label" for="rollbackReason">Reason <span class="text-secondary">(required, kept in the history)</span></label>
+    <input id="rollbackReason" name="reason" class="form-control" maxlength="255" required placeholder="e.g. Network outage, customer could not connect">
+  </div>
+  <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary"><i class="bi bi-skip-backward-circle"></i> Roll back</button></div>
+</form></div></div>
+{% endif %}
+
+{% if 'vouchers.support' in tt_perms and not v.deleted_at %}
+{% if 'vouchers.warn' in tt_perms and not v.frozen_at %}
+<div class="modal fade" id="warnModal" tabindex="-1" aria-labelledby="warnTitle"><div class="modal-dialog"><form class="modal-content" method="post" action="{% url 'voucher_warn' v.id %}">{% csrf_token %}
+  <div class="modal-header"><h5 class="modal-title" id="warnTitle">Warn the customer of {{ v.code }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+  <div class="modal-body">
+    <p class="small">Internet pauses at once on every device using this voucher{% if v.router %} (on {{ v.router.name }}){% endif %} and the clock stands still. When they open the Wi-Fi page they see your message and continue by pressing <b>“I agree”</b> — their time is kept. You can also lift it yourself with Unfreeze.</p>
+    <label class="form-label" for="warnMsg">Message the customer sees</label>
+    <textarea id="warnMsg" name="message" class="form-control" rows="4" maxlength="1500">{{ manual_warning }}</textarea>
+    <label class="form-label mt-3" for="warnReason">Reason <span class="text-secondary">(required, for your team — the customer does not see it)</span></label>
+    <input id="warnReason" name="reason" class="form-control" maxlength="255" required placeholder="e.g. Downloading too much, abusive behaviour, late payment">
+  </div>
+  <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-warning"><i class="bi bi-exclamation-octagon"></i> Send warning</button></div>
+</form></div></div>
+{% endif %}
+<div class="modal fade" id="freezeModal" tabindex="-1"><div class="modal-dialog"><form class="modal-content" method="post" action="{% url 'voucher_freeze' v.id %}">{% csrf_token %}
+  <input type="hidden" name="action" value="{% if v.frozen_at %}unfreeze{% else %}freeze{% endif %}">
+  <div class="modal-header"><h5 class="modal-title">{% if v.frozen_at %}Unfreeze{% else %}Freeze{% endif %} {{ v.code }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    {% if v.frozen_at %}
+      <p class="small">Internet comes back and the clock continues from where it stopped{% if v.frozen_left is not None %}: <b>{{ v.frozen_left|duration_short }}</b> left, counted from now{% else %} — it was not used yet, so the clock starts on first login{% endif %}.</p>
+    {% else %}
+      <p class="small">Internet stops at once{% if v.router %} (session disconnected, user disabled on {{ v.router.name }}){% endif %} and the clock <b>stands still</b>{% if time_left %} with {{ time_left|duration_short }} left{% endif %}. When you unfreeze it, it continues from exactly that point. Freezing is not a sale and does not change finance.</p>
+    {% endif %}
+    <label class="form-label">Reason <span class="text-secondary">({% if v.frozen_at %}optional{% else %}required{% endif %}, kept in the history)</span></label>
+    <input name="reason" class="form-control" maxlength="255" {% if not v.frozen_at %}required{% endif %} placeholder="{% if v.frozen_at %}e.g. Customer came back{% else %}e.g. Customer travelling, payment dispute, shared voucher{% endif %}"></div>
+  <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary">{% if v.frozen_at %}Unfreeze{% else %}Freeze{% endif %}</button></div>
+</form></div></div>
+{% endif %}
+
+{% if v.is_member and 'vouchers.support' in tt_perms and not v.deleted_at %}
+<div class="modal fade" id="memberPwModal" tabindex="-1" aria-labelledby="mpwTitle"><div class="modal-dialog"><form class="modal-content" method="post" action="{% url 'member_password' v.id %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}">
+  <div class="modal-header"><h5 class="modal-title" id="mpwTitle">Change password of {{ v.code }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+  <div class="modal-body"><p class="small">The member is signed out{% if v.router %} on {{ v.router.name }}{% endif %} and needs the new password next time. Their time and devices do not change.</p>
+    <label class="form-label" for="mpwNew">New password</label><input class="form-control font-monospace" id="mpwNew" name="password" maxlength="64" autocomplete="new-password" placeholder="4–64 characters, no spaces">
+    <div class="form-check mt-2"><input class="form-check-input" type="checkbox" name="same" id="mpwSame" value="1" onchange="document.getElementById('mpwNew').disabled=this.checked"><label class="form-check-label small" for="mpwSame">Same as the username</label></div>
+    <label class="form-label mt-3" for="mpwReason">Reason <span class="text-secondary">(kept in the history)</span></label><input class="form-control" id="mpwReason" name="reason" maxlength="255"></div>
+  <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary">Change password</button></div>
+</form></div></div>
+{% endif %}
+
+{% if 'vouchers.manage' in tt_perms and not v.deleted_at %}
+<div class="modal fade" id="codeModal" tabindex="-1"><div class="modal-dialog"><form class="modal-content" method="post" action="{% url 'change_voucher_code' v.id %}">{% csrf_token %}
+  <div class="modal-header"><h5 class="modal-title">Change code of {{ v.code }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <p class="small">It stays the <b>same voucher</b>: its sale, time, devices, usage and history stay with it, so nothing is counted twice.
+      {% if v.router %}The user on {{ v.router.name }} is renamed and keeps the time already used.{% endif %}
+      The old code stops working, is never issued again, and still finds this voucher in search.</p>
+    {% if v.used_at and v.status == 'active' and not time_is_up %}<div class="alert alert-warning small py-2">This voucher is in use. A customer online now stays connected; next time they log in they need the new code.</div>{% endif %}
+    <label class="form-label">New code</label>
+    <div class="input-group mb-1">{% if v.is_member %}<input name="new_code" id="newCode" class="form-control font-monospace" maxlength="32" required pattern="[A-Za-z0-9][A-Za-z0-9._@\-]{2,31}" autocomplete="off" autocapitalize="none" placeholder="New username">{% else %}<input name="new_code" id="newCode" class="form-control font-monospace text-uppercase" maxlength="20" required pattern="[A-Za-z0-9 \-]{4,24}" autocomplete="off" placeholder="4–20 letters or numbers">{% endif %}
+      <button type="button" class="btn btn-outline-secondary" id="codeRandom" title="Suggest a random code of the same size"><i class="bi bi-shuffle"></i></button></div>
+    <small class="text-secondary d-block mb-3">Spaces and dashes are removed. Must not be used by any other voucher.</small>
+    <label class="form-label">Reason <span class="text-secondary">(required, kept in the history)</span></label>
+    <input name="reason" class="form-control" maxlength="255" required placeholder="e.g. Code leaked, card unreadable, customer asked"></div>
+  <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary">Change code</button></div>
+</form></div></div>
+{% endif %}
+
+{% if 'vouchers.support' in tt_perms and v.router and not v.deleted_at %}
+<div class="modal fade" id="profileModal" tabindex="-1" aria-labelledby="profTitle" aria-hidden="true"><div class="modal-dialog"><form class="modal-content" method="post" action="{% url 'voucher_set_profile' v.id %}">{% csrf_token %}
+  <div class="modal-header"><h5 class="modal-title" id="profTitle">Router profile for {{ v.code }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+  <div class="modal-body">
+    <p class="small text-secondary">The hotspot user profile on {{ v.router.name }} sets this voucher's devices and speed. Now: <code>{{ profile_now }}</code>.</p>
+    <select class="form-select" name="profile" size="9" aria-label="Profile">
+      <option value="" {% if not v.router_profile %}selected{% endif %}>Automatic — from its plan ({{ v.plan_name|default:"custom" }})</option>
+      {% if picker.voucher_plans %}<optgroup label="VOUCHER PLANS — the voucher moves to this plan">{% for p in picker.voucher_plans %}<option value="plan:{{ p.id }}">{{ p.name }} — profile {{ p.mikrotik_profile_name|default:p.name }} · {{ p.max_devices }} device{{ p.max_devices|pluralize }}</option>{% endfor %}</optgroup>{% endif %}
+      {% if picker.member_plans %}<optgroup label="MEMBER PLANS — members only">{% for p, mp in picker.member_plans %}<option value="router:{{ p.name }}" {% if v.router_profile == p.name %}selected{% endif %}>{{ mp.name }}{% if not mp.active %} (switched off){% endif %} — {{ p.name }} · {{ p.shared_users }} device{{ p.shared_users|pluralize }}{% if p.rate_limit %} · {{ p.rate_limit }}{% endif %}</option>{% endfor %}</optgroup>{% endif %}
+      {% if picker.others %}<optgroup label="OTHER PROFILES ON {{ v.router.name|upper }}">{% for p in picker.others %}<option value="router:{{ p.name }}" {% if v.router_profile == p.name %}selected{% endif %}>{{ p.name }} · {{ p.shared_users }} device{{ p.shared_users|pluralize }}{% if p.rate_limit %} · {{ p.rate_limit }}{% endif %}</option>{% endfor %}</optgroup>
+      {% elif not picker.member_plans %}<optgroup label="PROFILES ON {{ v.router.name|upper }}"><option disabled>Not read yet — press Sync on the router</option></optgroup>{% endif %}
+    </select>
+    <style>#profileModal select optgroup{font-weight:800;font-style:normal;color:var(--ink,#102033);letter-spacing:.02em;padding-top:.35rem}#profileModal select option{font-weight:400}</style>
+    {% if picker.hidden %}<small class="text-secondary d-block mt-2"><i class="bi bi-eye-slash"></i> {{ picker.hidden }} profile{{ picker.hidden|pluralize }} of deleted or switched-off plans {{ picker.hidden|pluralize:"is,are" }} not listed.</small>{% endif %}
+    {% if v.used_at or v.expires_at %}<div class="alert alert-info small py-2 mt-2 mb-0"><b>In use:</b> only the profile changes. The time already used is kept and the clock keeps running — it does not restart.{% if time_left %} About {{ time_left|duration_short }} left.{% endif %}</div>
+    {% else %}<small class="text-secondary d-block mt-2">Not used yet: choosing a plan also gives it that plan's length and devices. Its sale does not change.</small>{% endif %}
+    <small class="text-secondary d-block mt-1">TapTap updates the user on the router in place and sends it straight away.</small>
+  </div>
+  <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary">Save &amp; send</button></div>
+</form></div></div>
+{% endif %}
+
+{% if 'vouchers.support' in tt_perms and v.router %}
+<div class="modal fade" id="fixModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title"><i class="bi bi-wifi-off"></i> Why can't {{ v.code }} connect?</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body"><div data-vfix data-url="{% url 'voucher_fix' v.id %}"></div></div>
+</div></div></div>
+{% endif %}
+
+<div class="modal fade" id="resetModal" tabindex="-1"><div class="modal-dialog"><form class="modal-content" method="post" action="{% url 'reset_mac' v.id %}">{% csrf_token %}
+  <div class="modal-header"><h5 class="modal-title">Reset devices on {{ v.code }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body"><p class="small">Frees every device slot of this voucher: the locked devices are disconnected and forgotten (also on the router), and the next device{{ v.max_devices|default:1|pluralize }} to log in {{ v.max_devices|default:1|pluralize:"is,are" }} locked instead. Its time is not changed.</p>
+    <label class="form-label">Reason <span class="text-secondary">(kept in the history)</span></label>
+    <input name="reason" class="form-control" maxlength="255" placeholder="e.g. Customer changed phone"></div>
+  <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary">Reset devices</button></div>
+</form></div></div>
+{% endwith %}
+{% endblock %}
+{% block scripts %}
+{% if 'vouchers.support' in tt_perms and v.router %}<script src="{% static 'js/voucher-fix.js' %}?v=1"></script>{% endif %}
+<script>
+(function(){
+  // Add time: quick picks fill the days/hours/minutes boxes; the line below shows the total.
+  var picks=document.getElementById('timePicks'),D=document.getElementById('addDays'),H=document.getElementById('addHrs'),M=document.getElementById('addMins'),sum=document.getElementById('timeSum');
+  if(picks){
+    var baseText=sum.textContent, needTime={% if time_is_up or v.status == 'active' %}true{% else %}false{% endif %};
+    var total=function(){return (+D.value||0)*1440+(+H.value||0)*60+(+M.value||0);};
+    var words=function(t){var d=Math.floor(t/1440),h=Math.floor(t%1440/60),m=t%60,o=[];if(d)o.push(d+' day'+(d>1?'s':''));if(h)o.push(h+' hour'+(h>1?'s':''));if(m)o.push(m+' minute'+(m>1?'s':''));return o.join(' ');};
+    var upd=function(){var t=total();[].forEach.call(picks.children,function(b){b.classList.toggle('active',+b.dataset.d==(+D.value||0)&&+b.dataset.h==(+H.value||0)&&+b.dataset.m==(+M.value||0)&&t>0);});
+      sum.textContent=t?('Adds '+words(t)+'. '+baseText):baseText;};
+    picks.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;D.value=b.dataset.d||'';H.value=b.dataset.h||'';M.value=b.dataset.m||'';upd();});
+    [D,H,M].forEach(function(x){x.addEventListener('input',upd);});
+    D.form.addEventListener('submit',function(e){var t=total();
+      if(needTime&&!t){e.preventDefault();sum.textContent='Enter the time to add (days, hours and/or minutes).';sum.className='d-block mb-3 text-danger';}
+      else if(t>527040){e.preventDefault();sum.textContent='That is more than a year — enter less time.';sum.className='d-block mb-3 text-danger';}});
+  }
+  // Change code: suggest a random code of the same length
+  var rnd=document.getElementById('codeRandom');
+  if(rnd)rnd.addEventListener('click',function(){var a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',n=Math.max(4,Math.min(20,{{ v.code|length }})),b=new Uint32Array(n),s='';crypto.getRandomValues(b);for(var i=0;i<n;i++)s+=a[b[i]%a.length];document.getElementById('newCode').value=s;});
+  var want=new URLSearchParams(location.search).get('do');
+  var id={enable:'enableModal',disable:'disableModal',reset:'resetModal',delete:'deleteModal',code:'codeModal',freeze:'freezeModal'}[want];
+  if(!id)return;
+  document.addEventListener('DOMContentLoaded',function(){
+    var el=document.getElementById(id);
+    if(el&&window.bootstrap){bootstrap.Modal.getOrCreateInstance(el).show();}
+    history.replaceState(null,'',location.pathname);
+  });
+})();
+</script>
+<script>
+/* Clickable time bar: pick a moment → end the time there, or freeze the voucher there (core/voucher_schedule.py). */
+(function(){
+  const data=document.getElementById('tbData'); if(!data) return;
+  const T=JSON.parse(data.textContent), $=id=>document.getElementById(id);
+  const track=$('tbTrack'), card=$('tbCard'), tip=$('tbTip'), cursor=$('tbCursor'), wrap=track.closest('.vd-time');
+  const t0=performance.now(), now=()=>T.now+(performance.now()-t0), span=T.max-T.start, SLACK=45000;
+  const pct=t=>Math.max(0,Math.min(100,(t-T.start)*100/span));
+  const pad=n=>String(n).padStart(2,'0');
+  const fmt=t=>new Date(t).toLocaleString([], {weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+  const local=t=>{const d=new Date(t);return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;};
+  function dur(ms){ms=Math.max(0,ms);const m=Math.round(ms/60000),d=Math.floor(m/1440),h=Math.floor(m%1440/60),mm=m%60;
+    return [d?d+' day'+(d>1?'s':''):'',h?h+' h':'',(!d&&mm)||(!d&&!h)?mm+' min':''].filter(Boolean).join(' ');}
+  const rel=t=>{const x=t-now();return Math.abs(x)<SLACK?'now':x>0?'in '+dur(x):dur(-x)+' ago';};
+  let sel=null, kb=null;
+
+  function layout(){
+    $('tbFill').style.width=pct(now())+'%';
+    const e=pct(T.end); $('tbExtend').style.left=e+'%';
+    $('tbNow').style.left=pct(now())+'%'; $('tbEnd').style.left=e+'%';
+    if($('tbPlan')) $('tbPlan').style.left=pct(T.plan)+'%';
+    track.setAttribute('aria-valuetext', (kb?fmt(kb)+' — ':'')+'ends '+fmt(T.end));
+  }
+  const at=x=>{const r=track.getBoundingClientRect(),f=Math.max(0,Math.min(1,(x-r.left)/r.width));return Math.round((T.start+f*span)/60000)*60000;};
+  function showCursor(t,withTip){
+    cursor.hidden=false; cursor.style.left=pct(t)+'%';
+    if(withTip){tip.hidden=false; tip.style.left=pct(t)+'%'; tip.textContent=fmt(t)+' · '+rel(t)+(t>T.end?' · adds time':'');}
+  }
+  function hideHover(){ if(card.hidden){cursor.hidden=true;} tip.hidden=true; }
+
+  function open(t){
+    sel=t; card.hidden=false; $('tbErr').textContent='';
+    const r=track.getBoundingClientRect(), w=card.offsetWidth, x=(pct(t)/100)*r.width;
+    card.style.left=Math.max(0,Math.min(x-24,r.width-w))+'px';
+    $('tbExact').value=local(t); update(); showCursor(t,false); $('tbExact').focus({preventScroll:true});
+  }
+  function close(){card.hidden=true; cursor.hidden=true; sel=null; track.focus({preventScroll:true});}
+  function update(){
+    const t=sel, n=now();
+    $('tbWhen').textContent=fmt(t); $('tbRel').textContent=rel(t).replace(/^./,c=>c.toUpperCase());
+    let eff, endL, frL, frOk=true;
+    if(t<=n+SLACK){ eff='That moment is now (or has passed): it happens straight away.'; endL='End now'; frL='Freeze now'; }
+    else if(t<T.end){ eff=`<b>End here</b> cuts ${dur(T.end-t)} off (it ends ${fmt(T.end)} now). <b>Freeze here</b> stops the clock then and keeps ${dur(T.end-t)} for later.`; endL='End the time here'; frL='Freeze here'; }
+    else { eff=`Adds <b>${dur(t-T.end)}</b> — it ends ${fmt(T.end)} now.`; endL='Extend to here'; frL='Freeze here'; frOk=false; }
+    $('tbEffect').innerHTML=eff; $('tbEndLbl').textContent=endL; $('tbFreezeLbl').textContent=frL;
+    const fb=card.querySelector('[data-tb=freeze]'); fb.disabled=!frOk; fb.title=frOk?'':'A freeze has to be before the time runs out';
+    cursor.style.left=pct(t)+'%';
+  }
+
+  // mouse / touch: hover shows the moment, a click (or tap) picks it
+  let down=null;
+  track.addEventListener('pointermove',e=>{ if(card.hidden||down) showCursor(at(e.clientX),true); });
+  track.addEventListener('pointerleave',hideHover);
+  track.addEventListener('pointerdown',e=>{down={x:e.clientX}; track.setPointerCapture(e.pointerId); showCursor(at(e.clientX),true);});
+  track.addEventListener('pointerup',e=>{ if(!down) return; down=null; tip.hidden=true; open(at(e.clientX)); });
+  track.addEventListener('pointercancel',()=>{down=null;hideHover();});
+  if($('tbPlan')) $('tbPlan').addEventListener('pointerdown',e=>{e.stopPropagation();document.querySelector('.tb-planned')?.scrollIntoView({block:'center'});});
+
+  // keyboard: arrows move, Home = now, End = the current end, Enter picks
+  track.addEventListener('keydown',e=>{
+    const step=span/(e.shiftKey?20:100);
+    if(kb===null) kb=Math.round(now()/60000)*60000;
+    if(e.key==='ArrowRight'||e.key==='ArrowUp') kb=Math.min(T.max,kb+step);
+    else if(e.key==='ArrowLeft'||e.key==='ArrowDown') kb=Math.max(T.start,kb-step);
+    else if(e.key==='Home') kb=now(); else if(e.key==='End') kb=T.end;
+    else if(e.key==='Enter'||e.key===' '){e.preventDefault();open(Math.round(kb/60000)*60000);return;}
+    else if(e.key==='Escape'){close();return;} else return;
+    e.preventDefault(); showCursor(kb,true); layout();
+  });
+  $('tbExact').addEventListener('input',()=>{const d=new Date($('tbExact').value); if(!isNaN(d)){sel=d.getTime(); update();}});
+  $('tbClose').addEventListener('click',close);
+  card.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();close();}});
+  document.addEventListener('pointerdown',e=>{ if(!card.hidden&&!card.contains(e.target)&&!track.contains(e.target)) close(); });
+  card.querySelectorAll('[data-tb]').forEach(b=>b.addEventListener('click',()=>{
+    const what=b.dataset.tb, reason=$('tbReason').value.trim();
+    if(what==='freeze'&&!reason){$('tbErr').textContent='Give a reason for the freeze — it is kept in the history.';$('tbReason').focus();return;}
+    const n=now();
+    if(what==='end'&&sel<T.end&&!confirm(sel<=n+SLACK?'End this voucher now? Its internet is switched off at once.':`Cut ${dur(T.end-sel)} off? It will end ${fmt(sel)}.`)) return;
+    $('tbAt').value=String(sel); $('tbAction').value=what; b.disabled=true; $('tbForm').submit();
+  }));
+  layout(); setInterval(()=>{layout(); if(sel!==null&&!card.hidden) update();},30000);
+  window.addEventListener('resize',()=>{if(!card.hidden&&sel!==null) open(sel);});
+})();
+</script>
+
+{% if v.router %}
+<script src="{% static 'js/flow.js' %}?v=4"></script>
+<script src="{% static 'js/lanes.js' %}?v=1"></script>
+<script>
+/* A #fix link (from the Connection lab or the Traffic tabs) opens "Why can't it connect?" straight away. */
+(function () {
+  function open() {
+    var el = document.getElementById('fixModal');
+    if (el && location.hash === '#fix' && window.bootstrap && bootstrap.Modal) bootstrap.Modal.getOrCreateInstance(el).show();
+  }
+  open(); window.addEventListener('hashchange', open);
+})();
+</script>
+{% endif %}
+{% endblock %}

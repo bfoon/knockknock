@@ -615,3 +615,31 @@ class BoardLink(models.Model):
     def rotate(self):
         self.key = _link_key()
         self.save(update_fields=["key", "updated_at"])
+
+
+class ChalkPart(models.Model):
+    """A part somebody designed in the Circuit Lab's part designer: its
+    footprint (pads, holes, silkscreen, body), its pin names, how it behaves
+    in the simulator, and which drawer it lives in.
+
+    Parts belong to a person, not a board, so a part made for one project
+    is in the drawer for every other. `data` is cleaned by chalk.parts —
+    the same shape the browser registers — and a copy of it also travels
+    inside every circuit that uses the part (BoardCircuit.data["lib"]), so
+    deleting a part here never breaks a saved circuit.
+    """
+
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="chalk_parts")
+    type = models.CharField(max_length=32)            # cp_<letters>, what the lab calls it
+    name = models.CharField(max_length=60)
+    category = models.CharField(max_length=24, default="My parts")
+    data = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["category", "name"]
+        constraints = [models.UniqueConstraint(fields=["owner", "type"], name="chalk_part_owner_type")]
+
+    def __str__(self):
+        return f"{self.name} ({self.type})"

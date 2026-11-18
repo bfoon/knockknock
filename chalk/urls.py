@@ -1,6 +1,6 @@
 from django.urls import path, register_converter
 
-from . import lab, link, power, views
+from . import lab, link, parts, power, views
 
 
 class CodeConverter:
@@ -53,6 +53,8 @@ urlpatterns = [
     path("c/<boardcode:code>/", views.ControlView.as_view(), name="control"),
     # Circuit Lab: a workbench per board. Owner-only, like the projector.
     path("b/<uuid:pk>/lab/", lab.LabView.as_view(), name="lab"),
+    # the parts you design in the lab's part designer: yours, on every board
+    path("lab/parts/", parts.PartsView.as_view(), name="lab_parts"),
     path("b/<uuid:pk>/lab/save/", lab.LabSaveView.as_view(), name="lab_save"),
     path("b/<uuid:pk>/lab/ai/", lab.LabAIView.as_view(), name="lab_ai"),
     path("b/<uuid:pk>/lab/pin/", lab.LabPinView.as_view(), name="lab_pin"),

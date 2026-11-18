@@ -30,7 +30,7 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.views import View
 
-from . import lab_ai, throttle
+from . import lab_ai, parts as chalk_parts, throttle
 from .models import (
     IMAGE_TYPES,
     LAB_MODES,
@@ -51,7 +51,7 @@ MAX_PARTS = 300
 MAX_WIRES = 800
 MAX_BENDS = 40
 MAX_CODE = 30_000
-MAX_DOC_BYTES = 400_000
+MAX_DOC_BYTES = 900_000   # room for a board studio design and the parts it carries
 MAX_CIRCUITS_PER_BOARD = 60
 MAX_BOARDS = 8           # microcontrollers with their own program, per circuit
 MAX_JOINTS = 4000        # solder joints on perfboard and stripboard
@@ -177,6 +177,12 @@ def clean_pcb(raw, part_ids):
             rot = pl.get("rot")
             place[pid] = {"x": _f(pl.get("x"), -50, 1000), "y": _f(pl.get("y"), -50, 1000),
                           "rot": int(rot) % 4 if isinstance(rot, int) and not isinstance(rot, bool) else 0}
+            # the board studio: a real package for the part, and which side it sits on
+            fp = pl.get("fp")
+            if isinstance(fp, str) and chalk_parts.FP_ID_RE.match(fp):
+                place[pid]["fp"] = fp
+            if pl.get("side") == "bottom":
+                place[pid]["side"] = "bottom"
     tracks = []
     for t in (raw.get("tracks") or [])[:MAX_TRACKS] if isinstance(raw.get("tracks"), list) else []:
         if not isinstance(t, dict) or not isinstance(t.get("pts"), list):
@@ -187,23 +193,34 @@ def clean_pcb(raw, part_ids):
         if len(pts) < 2:
             continue
         n = t.get("n")
-        tracks.append({"n": n if isinstance(n, int) and not isinstance(n, bool) and 0 <= n < 5000 else 0,
-                       "l": 1 if t.get("l") == 1 else 0, "w": _f(t.get("w"), 0.15, 5, 0.4), "pts": pts})
+        track = {"n": n if isinstance(n, int) and not isinstance(n, bool) and -1 <= n < 5000 else 0,
+                 "l": 1 if t.get("l") == 1 else 0, "w": _f(t.get("w"), 0.1, 5, 0.4), "pts": pts}
+        if t.get("man"):
+            track["man"] = 1          # drawn by hand: the router leaves it alone
+        tracks.append(track)
     vias = []
     for v in (raw.get("vias") or [])[:MAX_VIAS] if isinstance(raw.get("vias"), list) else []:
         if isinstance(v, list) and len(v) >= 2:
-            n = v[2] if len(v) > 2 and isinstance(v[2], int) and not isinstance(v[2], bool) and 0 <= v[2] < 5000 else 0
-            vias.append([_f(v[0], -50, 1000), _f(v[1], -50, 1000), n])
+            n = v[2] if len(v) > 2 and isinstance(v[2], int) and not isinstance(v[2], bool) and -1 <= v[2] < 5000 else 0
+            via = [_f(v[0], -50, 1000), _f(v[1], -50, 1000), n]
+            if len(v) > 3 and v[3]:
+                via.append(1)
+            vias.append(via)
     opens = []
     for o in (raw.get("open") or [])[:MAX_TRACKS] if isinstance(raw.get("open"), list) else []:
         if isinstance(o, list) and len(o) == 4:
             opens.append([_f(c, -50, 1000) for c in o])
     sig = raw.get("sig")
-    return {
+    out = {
         "v": 1, "w": _f(raw.get("w"), 10, 400, 60), "h": _f(raw.get("h"), 10, 400, 40), "r": _f(raw.get("r"), 0, 20, 3),
         "holes": bool(raw.get("holes")), "place": place, "tracks": tracks, "vias": vias, "open": opens,
         "sig": sig[:20000] if isinstance(sig, str) else "",
     }
+    # the board studio (v2): shape, cut-outs, board-only parts, holes, pours, links, labels, rules
+    if raw.get("v") == 2 or any(k in raw for k in ("shape", "items", "links", "labels", "cut", "rules")):
+        out["v"] = 2
+        out.update(chalk_parts.clean_board_extras(raw, part_ids))
+    return out
 
 
 def _xyz(raw):
@@ -406,6 +423,14 @@ def clean_circuit(data):
     body = clean_body(data.get("body"), seen)
     if body:
         out["body"] = body
+    # the parts you designed that this circuit uses travel with it, so it
+    # still opens for someone who doesn't have them; and its experiments
+    lib = chalk_parts.clean_lib(data.get("lib"), {p["type"] for p in parts if p["type"].startswith("cp_")})
+    if lib:
+        out["lib"] = lib
+    sims = chalk_parts.clean_sims(data.get("sims"))
+    if sims:
+        out["sims"] = sims
     if len(json.dumps(out)) > MAX_DOC_BYTES:
         raise Invalid("the circuit is too big to save")
     return out
@@ -492,6 +517,9 @@ class LabView(LoginRequiredMixin, View):
             "newUrl": reverse("chalk:lab", args=[board.id]) + "?new=1",
             "stageUrl": reverse("chalk:stage", args=[board.id]),
             "linkUrl": reverse("chalk:link_manage", args=[board.id]),
+            # the parts you designed, for the drawer, and where to save more
+            "partsUrl": reverse("chalk:lab_parts"),
+            "parts": chalk_parts.user_parts(request.user),
             "csrf": get_token(request),
         }
         return render(request, self.template_name, {

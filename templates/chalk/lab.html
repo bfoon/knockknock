@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="{% static 'chalk/css/chalk_lab.css' %}">
 <link rel="stylesheet" href="{% static 'chalk/css/chalk_pi.css' %}?v=1">
 <link rel="stylesheet" href="{% static 'chalk/css/chalk_link.css' %}?v=1">
+<link rel="stylesheet" href="{% static 'chalk/css/chalk_pcbx.css' %}?v=1">
 <link rel="stylesheet" href="{% static 'chalk/css/chalk_theme.css' %}?v=1">
 {# In the head on purpose: the scene is applied before the page is drawn. #}
 <script src="{% static 'chalk/js/chalk_theme.js' %}?v=1"></script>
@@ -88,6 +89,7 @@
     <button type="button" id="lab-examples">Examples</button>
     <button type="button" id="lab-pin" title="Put a picture of this circuit on the board's current page">Pin to board</button>
     <button type="button" id="lab-project" title="Describe what you want to make: get the circuit, the program, the board and a body to print"><span class="wide-only">Design a project</span><span class="tight-only">Project</span></button>
+    <button type="button" id="lab-sims" title="Design an experiment: press buttons, turn dials, change parts over time, and check what every pin does"><span class="wide-only">Simulations</span><span class="tight-only">Sims</span></button>
     <button type="button" id="lab-ai" class="accent">Ask AI</button>
     <button type="button" id="lab-panels" class="narrow-only" aria-expanded="false">Panels</button>
   </div>
@@ -148,6 +150,13 @@
 <script src="{% static 'chalk/js/lab/lab_solid.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_layers.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_pcb.js' %}"></script>
+{# The board studio: footprints and the parts you design, their behaviour and experiments, the board engine, the studio, the two designers. #}
+<script src="{% static 'chalk/js/lab/lab_fp.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/lab/lab_behave.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/lab/lab_pcbx.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/lab/lab_pcbx_view.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/lab/lab_partmaker.js' %}?v=1"></script>
+<script src="{% static 'chalk/js/lab/lab_simdesign.js' %}?v=1"></script>
 <script src="{% static 'chalk/js/lab/lab_body.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_body_view.js' %}"></script>
 <script src="{% static 'chalk/js/lab/lab_print.js' %}?v=1"></script>

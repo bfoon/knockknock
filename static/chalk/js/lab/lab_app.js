@@ -81,6 +81,7 @@
     d.prog = d.prog === "blocks" ? "blocks" : "code";
     if (!d.pcb || typeof d.pcb !== "object" || !d.pcb.place) delete d.pcb;
     if (!d.body || typeof d.body !== "object" || !Array.isArray(d.body.solids)) delete d.body;
+    d.sims = Array.isArray(d.sims) ? d.sims.filter(function (s) { return s && typeof s.src === "string"; }) : [];
     return d;
   }
 
@@ -736,16 +737,18 @@
     /* Two tabs: what you can add, and what is already there. The second
      * is the component list — or, in the Body space, the list of shapes. */
     var inBody = this.studio && this.studio.space === "body", tab = this.drawerTab === "layers" ? "layers" : "add";
-    var count = inBody ? ((this.doc.body && this.doc.body.solids.length) || 0) : this.doc.parts.length + this.doc.wires.length;
-    var tabs = '<div class="drawer-tabs" role="tablist"><button type="button" role="tab" data-dtab="add" aria-selected="' + (tab === "add") + '">' + (inBody ? "Shapes" : kid ? "Toy box" : "Parts") + '</button>' +
+    /* the board studio has its own drawer: the footprint library */
+    var inPcb = this.studio && this.studio.space === "pcb" && this.studio.pcb && !!this.studio.pcb.drawer;
+    var count = inBody ? ((this.doc.body && this.doc.body.solids.length) || 0) : inPcb ? ((this.studio.pcb.model && this.studio.pcb.model.items.length) || 0) : this.doc.parts.length + this.doc.wires.length;
+    var tabs = '<div class="drawer-tabs" role="tablist"><button type="button" role="tab" data-dtab="add" aria-selected="' + (tab === "add") + '">' + (inBody ? "Shapes" : inPcb ? "Library" : kid ? "Toy box" : "Parts") + '</button>' +
       '<button type="button" role="tab" data-dtab="layers" aria-selected="' + (tab === "layers") + '" title="Everything in the design, as a list you can pick from">Layers' + (count ? ' <span class="n">' + count + '</span>' : '') + '</button></div>';
     var bindTabs = function () {
       box.querySelectorAll("[data-dtab]").forEach(function (b) { b.addEventListener("click", function () { self.drawerTab = b.getAttribute("data-dtab"); self.drawer(); }); });
     };
-    if (inBody || tab === "layers") {
+    if (inBody || inPcb || tab === "layers") {
       box.innerHTML = tabs + '<div class="drawer-body" id="drawer-body"></div>';
       bindTabs();
-      if (inBody) this.studio.drawer($("drawer-body"), tab); else this.layers.render($("drawer-body"));
+      if (inBody || inPcb) this.studio.drawer($("drawer-body"), tab); else this.layers.render($("drawer-body"));
       return;
     }
     this.layers.box = null;
@@ -758,7 +761,10 @@
       (cats[d.cat] = cats[d.cat] || []).push(t);
     });
     var h = '<label class="drawer-search"><span class="sr">Find a part</span><input type="search" id="drawer-q" placeholder="' + (kid ? "Find a toy" : "Find a part — LED, relay, 555…") + '" value="' + L.esc(this.drawerQ || "") + '"></label>';
-    CAT_ORDER.forEach(function (c) {
+    if (!kid && L.PartMaker) h += '<button type="button" class="drawer-more drawer-make" id="drawer-make" title="Any part you can solder: a chip, a port, a sensor module — its footprint, its pins and how it behaves">＋ Design a part</button>';
+    /* drawers you made yourself (from the part designer) come after the lab's own */
+    var order = CAT_ORDER.concat(Object.keys(cats).filter(function (c) { return CAT_ORDER.indexOf(c) < 0; }).sort());
+    order.forEach(function (c) {
       if (!cats[c]) return;
       h += '<h3>' + L.esc(c) + '</h3><div class="drawer-grid">';
       cats[c].forEach(function (t) {
@@ -775,6 +781,13 @@
     input.addEventListener("input", function () { self.drawerQ = input.value; self.drawer(); var i2 = $("drawer-q"); i2.focus(); i2.setSelectionRange(i2.value.length, i2.value.length); });
     var more = $("drawer-more");
     if (more) more.addEventListener("click", function () { self.kidAll = !self.kidAll; self.drawer(); });
+    var make = $("drawer-make");
+    if (make) make.addEventListener("click", function () { L.PartMaker.open(self); });
+    /* a part you made: double-click its tile to change it */
+    box.querySelectorAll(".drawer-item").forEach(function (it) {
+      var t = it.getAttribute("data-type");
+      if (L.CUSTOM && L.CUSTOM[t] && L.PartMaker) { it.classList.add("mine"); it.title += " (double-click to edit)"; it.addEventListener("dblclick", function () { L.PartMaker.open(self, { type: t }); }); }
+    });
     box.querySelectorAll(".drawer-item").forEach(function (it) {
       it.addEventListener("pointerdown", function (e) { self.dragNew(e, it.getAttribute("data-type"), it); });
     });
@@ -791,6 +804,7 @@
     return svg;
   }
   L.thumb = thumb;
+  L.thumbReset = function (type) { delete THUMBS[type]; };
 
   App.prototype.dragNew = function (e, type, src) {
     var self = this, x0 = e.clientX, y0 = e.clientY, ghost = null;
@@ -855,7 +869,11 @@
     on("lab-examples", "click", function () { self.examples(); });
     on("lab-new", "click", function () { self.newCircuit(); });
     on("lab-pin", "click", function () { self.pinToBoard(); });
-    on("lab-ai", "click", function () { self.panels.showSide("ai"); $("ai-q").focus(); });
+    on("lab-ai", "click", function () {
+      var pv = self.studio && self.studio.space === "pcb" && self.studio.pcb.showTab ? self.studio.pcb : null;
+      if (pv) { pv.action("ai"); return; }
+      self.panels.showSide("ai"); $("ai-q").focus();
+    });
     var panelsBtn = $("lab-panels");
     if (panelsBtn) panelsBtn.addEventListener("click", function () {
       var open = document.body.classList.toggle("panels-open");
@@ -961,7 +979,9 @@
     return { id: this.circuitId, title: this.title, mode: d.mode,
       data: { v: 1, mode: d.mode, parts: d.parts, wires: d.wires, code: d.code, blocks: d.blocks, prog: d.prog, view: d.view, name: this.title,
               programs: d.programs || {}, current: this.mcuId, joints: d.joints || {}, cuts: d.cuts || {}, bridges: d.bridges || [],
-              pcb: d.pcb || null, body: d.body || null } };
+              pcb: d.pcb || null, body: d.body || null,
+              /* the parts you designed that this circuit uses, and its saved experiments */
+              lib: L.FP && L.FP.libFor ? L.FP.libFor(d) || null : null, sims: Array.isArray(d.sims) ? d.sims : [] } };
   };
   App.prototype.save = function (beacon) {
     var self = this, body = this.payload();

@@ -36,12 +36,15 @@
     this.bodyHost.className = "st-host body-host"; this.bodyHost.hidden = true;
     wrap.insertBefore(this.bodyHost, wrap.firstChild.nextSibling);
     wrap.insertBefore(this.pcbHost, this.bodyHost);
-    this.pcb = new L.PcbView(app, this.pcbHost);
+    /* the board studio when it is loaded (lab_pcbx_view.js), else the plain board */
+    this.pcb = new (L.PcbStudio || L.PcbView)(app, this.pcbHost);
     this.body = new L.BodyView(app, this.bodyHost);
     var sw = $("lab-space");
     if (sw) sw.querySelectorAll("button").forEach(function (b) { b.addEventListener("click", function () { self.setSpace(b.getAttribute("data-space")); }); });
     var pj = $("lab-project");
     if (pj) pj.addEventListener("click", function () { self.wizard(); });
+    var sims = $("lab-sims");
+    if (sims) sims.addEventListener("click", function () { if (L.SimDesigner) L.SimDesigner.open(app); });
   }
   L.Studio = Studio;
 
@@ -59,11 +62,19 @@
     var sw = $("lab-space");
     if (sw) sw.querySelectorAll("button").forEach(function (x) { x.setAttribute("aria-pressed", x.getAttribute("data-space") === space ? "true" : "false"); });
     app.bench.hoverMark(null);
-    if (space === "pcb") { this.pcb.sync(); this.pcb.fit(); app.panels.inspect(app.bench.sel); }
+    if (this.pcb.activate) this.pcb.activate(space === "pcb");
+    if (space === "pcb") { this.pcb.sync(); this.pcb.fit(); if (!this.pcb.activate) app.panels.inspect(app.bench.sel); }
     else if (space === "body") { this.body.sync(); if (!this.body.framed) { this.body.framed = true; this.body.frameAll(); } this.body.inspect(); app.panels.showSide("inspect"); }
     else { app.panels.inspect(app.bench.sel); app.bench.resize(); }
     app.drawer();
     if (app.layout && app.layout.st.view === "code") app.layout.setView("split");
+    /* the board studio wants the whole height: the program dock steps away
+     * while it is showing, and comes back as it was */
+    if (app.layout && this.pcb.activate) {
+      if (space === "pcb" && app.layout.st.view !== "design") { this.dockWas = app.layout.st.view; app.layout.setView("design"); }
+      else if (space !== "pcb" && this.dockWas) { app.layout.setView(this.dockWas); this.dockWas = null; }
+      if (space === "pcb") { var pv = this.pcb; setTimeout(function () { pv.fit(); }, 60); }
+    }
   };
 
   /* The document changed (an edit, an undo, a new circuit). */
@@ -79,6 +90,7 @@
     var app = this.app;
     if (this.space === "pcb") {
       if (kind !== "part") return true;
+      if (this.pcb.pickPart) { this.pcb.pickPart(id); return true; }
       app.bench.select({ kind: "part", id: id });
       if (!app.doc.pcb || !app.doc.pcb.place[id]) app.toast("That one isn't on the board — it's part of the bench, not the circuit.");
       return true;
@@ -93,6 +105,7 @@
     if (this.space === "bench") return false;
     if (document.querySelector("dialog[open]")) return false;      /* Esc belongs to the dialog */
     if (mod && /^[zys]$/i.test(e.key)) return false;
+    if (this.space === "pcb" && this.pcb.key) return e.key === " " ? true : this.pcb.key(e);   /* Space pans the board */
     if (e.key === " ") return false;
     if (this.space === "pcb") {
       var id = sel && sel.kind === "part" ? sel.id : null, pl = id && app.doc.pcb && app.doc.pcb.place[id];
@@ -113,6 +126,7 @@
 
   /* The left drawer in the Body space. */
   Studio.prototype.drawer = function (box, tab) {
+    if (this.space === "pcb" && this.pcb.drawer) return this.pcb.drawer(box, tab);
     if (this.space !== "body") return false;
     if (tab === "layers") this.body.layersDrawer(box); else this.body.shapesDrawer(box);
     return true;
@@ -322,9 +336,10 @@
       }
       mark("bench", "done"); mark("pcb", "doing");
       return pause().then(function () {
-        var model = PCB.model(app.doc, app.sim);
-        PCB.ensure(app.doc, model);
-        var routed = PCB.route(app.doc, model);
+        var E = L.PCBX || PCB, model = E.model(app.doc, app.sim);
+        E.ensure(app.doc, model);
+        if (E === L.PCBX) model = E.model(app.doc, app.sim);
+        var routed = E.route(app.doc, model);
         mark("pcb", routed.open.length ? "warn" : "done"); mark("body", "doing");
         return pause().then(function () {
           var shapes = self.applyBody(res.body && typeof res.body === "object" ? res.body : { kind: "box" });
@@ -333,7 +348,7 @@
           app.changed();
           self.setSpace("body");
           self.body.frameAll();
-          var rep = PCB.report(app.doc, model), misfit = L.Body.fit(app.doc, app.doc.body);
+          var rep = E.report(app.doc, model), misfit = L.Body.fit(app.doc, app.doc.body);
           return n + " parts on the bench · a " + rep.w.toFixed(0) + " × " + rep.h.toFixed(0) + " mm board, " + (rep.open ? rep.open + " connection" + (rep.open > 1 ? "s" : "") + " still to route by hand" : "fully routed") +
             " · a body of " + shapes + " shapes" + (misfit.length ? " (some electronics stick out — press Resize to fit)" : " that everything fits inside") + "." +
             (boards > 1 ? " It has " + boards + " boards, each with its own program: pick one under “Program for” to read it." : "") +

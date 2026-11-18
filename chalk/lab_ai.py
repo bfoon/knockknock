@@ -114,7 +114,11 @@ CATALOG = {
 KINDS = {"ask", "explain", "fix", "code", "build", "lesson",
          "write", "edit", "fixcode", "continue", "explaincode", "blocks",
          "project", "body", "wire",
-         "object", "bodyedit", "printcoach"}
+         "object", "bodyedit", "printcoach",
+         "pcb", "part", "behave", "scenario"}
+# the board studio and the part and simulation designers (lab_pcbx_view.js,
+# lab_partmaker.js, lab_simdesign.js); their answers are cleaned below
+DESIGN_KINDS = ("pcb", "part", "behave", "scenario")
 
 # The 3-D body. Mirrors static/chalk/js/lab/lab_solid.js (shapes) and
 # lab_body.js (ready-made bodies); chalk/test_lab.py fails if they drift.
@@ -222,9 +226,59 @@ MAKER_VOICE = (
 )
 
 
+DESIGN_VOICE = (
+    "You are the design assistant in Chalk Circuit Lab's board studio and part designer: an experienced electronics and "
+    "PCB engineer who also teaches. Be concrete — real packages, real pin names from datasheets, real values and "
+    "clearances — and explain briefly why. Never invent footprint ids: use the LIBRARY. Keep replies under about 220 words."
+)
+
+BEHAVE_LANG = (
+    "BEHAVIOUR LANGUAGE (one statement per line, # comments; pins are named exactly as in PINS, by name or pad number):\n"
+    "param NAME = VALUE [unit] [min..max] [\"Label\"]   a setting shown in the inspector\n"
+    "state NAME = VALUE      remembered between steps;   node NAME   a point inside the part;   let NAME = EXPR\n"
+    "[name:] R a b OHMS | C a b FARADS | L a b HENRIES | D anode cathode | LED anode cathode [red|green|blue|yellow|white|orange]\n"
+    "[name:] V plus minus = VOLTS [r OHMS]   a voltage source that can follow anything (r is its inner resistance, default 1)\n"
+    "[name:] I from to = AMPS   ·   [name:] SW a b when CONDITION [r OHMS]   ·   NPN c b e [beta N]   ·   PNP c b e   ·   NMOS d g s [vth V]\n"
+    "on rise COND: x = ...; y += ...   on fall COND: ...   every SECONDS: ...   when COND: ...   (only states may be assigned)\n"
+    "glow = EXPR [color #hex]   show = EXPR [unit]   sound = HERTZ   warn \"message\" when COND [danger|info]\n"
+    "Expressions: numbers like 10k 4k7 100n 2ms 1kHz; + - * / % ^; < > <= >= == !=; and or not; c ? a : b; "
+    "V(pin) or V(a, b) for volts; I(element) amps through a named element; t time in s; min max abs clamp sqrt exp log sin cos round "
+    "floor ceil sign step lerp map square(f[,duty]) sine(f) saw(f) tri(f) pulse(start,width) ramp(t0,t1) noise(a).\n"
+    "Model outputs as sources with a sensible inner resistance (25-100 ohm for logic), supplies as a resistor drawing realistic current, "
+    "inputs as a high resistance (100k-1M) to ground. Keep it under 40 lines."
+)
+
+SCENARIO_LANG = (
+    "SCENARIO LANGUAGE (one statement per line, # comments):\n"
+    "title \"name\"   ·   run 3s   (at most 30 s)\n"
+    "probe EXPR [\"label\"]   a trace to record\n"
+    "at 0.5s press REF · release REF · click REF · toggle REF   (buttons and switches)\n"
+    "at 1s set REF.setting = VALUE   ·   every 0.2s set REF.setting = 20 + t * 10   (t is seconds since the start)\n"
+    "at 2s expect CONDITION [\"meaning\"]   ·   always CONDITION [\"meaning\"]   ·   at 1s mark \"note\"\n"
+    "V(REF.PIN) or V(REF.PIN, REF.PIN) volts; I(REF.PIN) amps into a pin; S(REF, key) what a part is doing (b = LED brightness 0-1, "
+    "w = motor speed, ang = servo angle, sound = Hz, on = relay/buzzer) or one of its settings.\n"
+    "Use only references from REFS and pins from the CIRCUIT."
+)
+
+PCB_ACTIONS = (
+    'Each action is an object with "do" and a short "why":\n'
+    '{"do":"shape","preset":"rect|circle|hex|heart|badge|card|arduino|pihat|pizero|feather|euro"}\n'
+    '{"do":"size","w":mm,"h":mm,"r":corner mm}   (rectangular boards only)\n'
+    '{"do":"place","ref":"U1","x":mm,"y":mm,"rot":0-3,"side":"top|bottom"}\n'
+    '{"do":"package","ref":"R1","fp":"a LIBRARY id"}\n'
+    '{"do":"add","fp":"a LIBRARY id","x":mm,"y":mm,"rot":0-3,"ref":"J2","value":"text"}   (a board-only part)\n'
+    '{"do":"hole","x":mm,"y":mm,"d":mm,"plated":false}   {"do":"holes"}   (a mounting hole in each corner)\n'
+    '{"do":"pattern","x":mm,"y":mm,"cols":10,"rows":6,"pitch":2.54,"strip":"none|rows|cols"}\n'
+    '{"do":"link","a":"REF.PIN","b":"REF.PIN"}   {"do":"label","pad":"REF.PIN","net":"GND"}   ("new.PIN" means the part added just before)\n'
+    '{"do":"pour","layer":"top|bottom","net":"GND"}   {"do":"text","x":mm,"y":mm,"s":"TEXT","size":1.5,"layer":"silk|bsilk|top|bottom"}\n'
+    '{"do":"rules","track":0.3,"power":0.6,"clear":0.2}   {"do":"arrange"}   {"do":"route"}   {"do":"mask","color":"green|blue|red|black|white|purple|yellow"}\n'
+    "Coordinates are millimetres from the board's top-left corner; keep parts inside the board and 1 mm from its edge."
+)
+
+
 def _system(mode, kind):
     kid = mode == "kid"
-    voice = MAKER_VOICE if kind in ("object", "bodyedit", "printcoach") else (
+    voice = DESIGN_VOICE if kind in DESIGN_KINDS else MAKER_VOICE if kind in ("object", "bodyedit", "printcoach") else (
         "You are Sparky, a cheerful electron who helps children aged 7-11 in a classroom circuit simulator. "
         "Use short sentences and everyday words; if you must use a technical word, explain it in brackets. "
         "Be encouraging. Never more than about 120 words."
@@ -248,6 +302,8 @@ def _system(mode, kind):
         '"body": optional 3-D body (see BODY FORMAT). '
         '"wiring": optional {"parts": [...new helper parts only...], "wires": [...]} (see the task). '
         '"bodyops": optional list of changes to the 3-D body (see the task). '
+        '"actions": optional list of board changes, "part": optional part design, "behave": optional behaviour text, '
+        '"scenario": optional scenario text (each only when the task asks for it). '
         "Only include code, circuit, blocks or body when the task asks for them. Part positions are in units of 20 = 0.1 inch; space parts "
         "about 200-300 apart. Use only part types and pin names from the catalog."
     )
@@ -349,6 +405,22 @@ TASKS = {
                   "and why for this USE; layer height, walls and infill; supports or not and what kind; bed adhesion (brim or not); any piece "
                   "that needs care and what to do; and one design change that would make it print better, if there is one. Do not return "
                   "body, circuit or code.",
+    "pcb": "Answer the QUESTION about the circuit BOARD below, or make the change it asks for. When something should change, put the changes "
+           "in \"actions\" (see PCB ACTIONS) — only changes the request needs, at most 20. In \"reply\", explain what you found or changed, "
+           "and anything the student should check by hand. Do not return a circuit or code.",
+    "part": "Design the electronic PART described in the QUESTION so it can be soldered to a board and simulated. Put it in \"part\": "
+            "{\"name\": \"short name\", \"value\": \"part number\", \"ref\": \"U|J|R|C|D|Q|SW|K|Y\", \"cat\": \"Chips|Sensors|Power|Passive|"
+            "Semiconductors|Switches|Lights & sound|Motion|Wireless|My parts\", \"look\": \"ic|conn|res|cap|led|diode|xtal|switch|module|sensor|generic\", "
+            "\"desc\": \"one sentence\", \"package\": \"a LIBRARY id, or words such as soic 28, qfn 32 5x5 0.5, tssop 20, 2x5 header\", "
+            "\"pins\": [{\"n\": \"1\", \"name\": \"VCC\", \"type\": \"power|ground|input|output|bidir|passive|nc\"}], "
+            "\"behave\": \"its behaviour in the BEHAVIOUR LANGUAGE, using the pin names\"}. Pin numbers are the package's pad numbers "
+            "(pin 1 first, counting the way the datasheet does). In \"reply\", say what the part is and anything to watch when soldering it.",
+    "behave": "Write how the part described in the QUESTION behaves in a circuit, for the PINS given, in the BEHAVIOUR LANGUAGE. Put only the "
+              "behaviour text in \"behave\" (no code fences). If CURRENT BEHAVIOUR and ERRORS are given, fix those errors and keep the rest. "
+              "In \"reply\", say in a sentence or two what it models and what it leaves out.",
+    "scenario": "Write an experiment (a test) for this circuit that does what the QUESTION asks, in the SCENARIO LANGUAGE. Put only the "
+                "scenario text in \"scenario\". Include probes for what matters and expect lines that check it worked. In \"reply\", say in "
+                "one or two sentences what it does.",
     "body": "Design the 3-D printed body for this circuit, for the request. Put it in \"body\" using the BODY FORMAT. Do NOT return "
             "a circuit or code. In \"reply\", describe the body in two or three sentences and say what each extra shape is for.",
 }
@@ -387,7 +459,9 @@ def _prompt(body):
         "readings are what the simulator measured: i amps, v volts, b brightness 0-1, w motor rad/s):",
         json.dumps(circuit, separators=(",", ":"))[:24000],
     ]
-    if code.strip():
+    if code.strip() and kind == "behave":
+        parts += ["CURRENT BEHAVIOUR:", code]
+    elif code.strip():
         numbered = "\n".join(f"{i + 1:>3}| {line}" for i, line in enumerate(code.split("\n")))
         parts += ["PROGRAM (line numbers added for reference; never include them in returned code):", numbered]
     sel = body.get("selection") if isinstance(body.get("selection"), dict) else None
@@ -429,6 +503,25 @@ def _prompt(body):
                   json.dumps(body.get("body") if isinstance(body.get("body"), (dict, list)) else {}, separators=(",", ":"))[:16000]]
     if kind == "printcoach":
         parts += ["REPORT:", json.dumps(body.get("report") if isinstance(body.get("report"), dict) else {}, separators=(",", ":"))[:6000]]
+    if kind == "pcb":
+        board = body.get("board") if isinstance(body.get("board"), dict) else {}
+        parts += ["BOARD (size in mm, parts with ref, footprint id, place and side, nets as REF.PIN, the design-rule check's findings):",
+                  json.dumps({k: v for k, v in board.items() if k not in ("library", "presets")}, separators=(",", ":"))[:24000],
+                  "PCB ACTIONS:", PCB_ACTIONS]
+    if kind in ("pcb", "part"):
+        lib = body.get("library")
+        if not isinstance(lib, str) and isinstance(body.get("board"), dict):
+            lib = body["board"].get("library")
+        if isinstance(lib, str) and lib:
+            parts += ["LIBRARY (footprint ids):", lib[:6000]]
+    if kind in ("part", "behave"):
+        parts.append(BEHAVE_LANG)
+    if kind == "behave":
+        pins = [p for p in (body.get("pins") or []) if isinstance(p, dict)][:120]
+        parts += ["PINS:", json.dumps([{"n": str(p.get("n"))[:6], "name": str(p.get("name"))[:16], "type": str(p.get("type") or "")[:8]} for p in pins], separators=(",", ":"))]
+    if kind == "scenario":
+        refs = body.get("refs") if isinstance(body.get("refs"), dict) else {}
+        parts += ["REFS (part id: reference):", json.dumps({str(k)[:40]: str(v)[:8] for k, v in list(refs.items())[:200]}, separators=(",", ":")), SCENARIO_LANG]
     if kind in ("project", "body"):
         parts += ["BODY FORMAT:", BODY_FORMAT]
         size = circuit.get("electronics") or (circuit.get("body") or {}).get("electronics") if isinstance(circuit, dict) else None
@@ -665,10 +758,130 @@ def _clean(raw, body):
         ops = clean_bodyops(raw.get("bodyops"), body.get("body"))
         if ops:
             out["bodyops"] = ops
-    if body.get("kind") in ("object", "bodyedit", "printcoach"):
+    kind = body.get("kind")
+    if kind == "pcb":
+        acts = clean_actions(raw.get("actions"))
+        if acts:
+            out["actions"] = acts
+    if kind == "part":
+        part = clean_part_spec(raw.get("part"))
+        if part:
+            out["part"] = part
+    if kind in ("part", "behave"):
+        text = raw.get("behave") if kind == "behave" else None
+        if isinstance(text, str) and text.strip():
+            out["behave"] = _unfence(text)[:8000]
+    if kind == "scenario" and isinstance(raw.get("scenario"), str) and raw["scenario"].strip():
+        out["scenario"] = _unfence(raw["scenario"])[:8000]
+    if kind in ("object", "bodyedit", "printcoach") or kind in DESIGN_KINDS:
         for key in ("circuit", "code", "blocks"):
             out.pop(key, None)
     return out
+
+
+def _unfence(text):
+    """The text inside a ``` fence, if the AI put one round it."""
+    m = re.search(r"```[a-zA-Z]*\n([\s\S]*?)```", text)
+    return (m.group(1) if m else text).strip().replace("\x00", "") + "\n"
+
+
+ACTION_DO = {"shape", "size", "place", "package", "add", "hole", "holes", "pattern", "link", "label", "pour", "text", "rules", "arrange", "route", "mask"}
+PRESETS = {"rect", "circle", "hex", "heart", "badge", "card", "arduino", "pihat", "pizero", "feather", "euro"}
+SAFE_ID = re.compile(r"^[A-Za-z0-9_.:\-]{1,48}$")
+PAD_SPEC = re.compile(r"^[A-Za-z0-9_]{1,8}\.[A-Za-z0-9_+\-#/']{1,16}$")
+
+
+def clean_actions(raw):
+    """Board changes from the AI: known verbs, typed fields, nothing else.
+    The browser resolves every reference again before it applies one."""
+    out = []
+    for a in (raw or [])[:30] if isinstance(raw, list) else []:
+        if not isinstance(a, dict) or a.get("do") not in ACTION_DO:
+            continue
+        do, c = a["do"], {"do": a["do"]}
+        why = a.get("why")
+        if isinstance(why, str) and why.strip():
+            c["why"] = re.sub(r"[<>]", "", why.strip())[:160]
+        for k in ("x", "y", "w", "h", "r", "d", "pitch", "size", "track", "power", "clear", "via", "viaDrill", "edge", "grid"):
+            v = a.get(k)
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and v == v:
+                c[k] = round(max(-50.0, min(500.0, float(v))), 3)
+        for k in ("rot", "cols", "rows"):
+            v = a.get(k)
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                c[k] = int(max(0, min(80, v)))
+        if do == "shape":
+            if a.get("preset") not in PRESETS:
+                continue
+            c["preset"] = a["preset"]
+        if do in ("place", "package"):
+            ref = a.get("ref")
+            if not isinstance(ref, str) or not re.match(r"^[A-Za-z0-9_]{1,8}$", ref):
+                continue
+            c["ref"] = ref
+        if do in ("package", "add"):
+            fp = a.get("fp")
+            if not isinstance(fp, str) or not SAFE_ID.match(fp):
+                continue
+            c["fp"] = fp
+        if do == "add":
+            for k, n in (("ref", 8), ("value", 40)):
+                if isinstance(a.get(k), str):
+                    c[k] = re.sub(r"[^A-Za-z0-9 _.+\-/]", "", a[k])[:n]
+        if do == "place" and a.get("side") in ("top", "bottom"):
+            c["side"] = a["side"]
+        if do == "hole":
+            c["plated"] = bool(a.get("plated"))
+        if do == "pattern" and a.get("strip") in ("none", "rows", "cols"):
+            c["strip"] = a["strip"]
+        if do == "link":
+            if not all(isinstance(a.get(k), str) and PAD_SPEC.match(a[k]) for k in ("a", "b")):
+                continue
+            c["a"], c["b"] = a["a"], a["b"]
+        if do == "label":
+            if not (isinstance(a.get("pad"), str) and PAD_SPEC.match(a["pad"]) and isinstance(a.get("net"), str) and re.match(r"^[A-Za-z0-9_+\-./]{1,24}$", a["net"])):
+                continue
+            c["pad"], c["net"] = a["pad"], a["net"]
+        if do == "pour":
+            c["layer"] = "top" if a.get("layer") == "top" else "bottom"
+            c["net"] = a["net"] if isinstance(a.get("net"), str) and re.match(r"^[A-Za-z0-9_+\-./]{1,24}$", a["net"]) else "GND"
+        if do == "text":
+            s = a.get("s")
+            if not isinstance(s, str) or not s.strip():
+                continue
+            c["s"] = re.sub(r"[^ -~]|[<>]", "", s)[:40]
+            if a.get("layer") in ("silk", "bsilk", "top", "bottom"):
+                c["layer"] = a["layer"]
+        if do == "mask":
+            if a.get("color") not in ("green", "blue", "red", "black", "white", "purple", "yellow"):
+                continue
+            c["color"] = a["color"]
+        out.append(c)
+    return out
+
+
+PIN_TYPES = {"", "power", "ground", "input", "output", "bidir", "passive", "nc"}
+LOOKS = {"ic", "conn", "res", "cap", "led", "diode", "xtal", "switch", "module", "sensor", "generic"}
+
+
+def clean_part_spec(raw):
+    """A part designed by the AI. The browser draws the footprint itself,
+    from a library id or the words in "package"."""
+    if not isinstance(raw, dict):
+        return None
+    pins = []
+    for p in (raw.get("pins") or [])[:200] if isinstance(raw.get("pins"), list) else []:
+        if isinstance(p, dict) and re.match(r"^[A-Za-z0-9+\-_]{1,6}$", str(p.get("n") or "")):
+            pins.append({"n": str(p["n"]), "name": re.sub(r"[<>]", "", str(p.get("name") or ""))[:16],
+                         "type": p.get("type") if p.get("type") in PIN_TYPES else ""})
+    pkg = raw.get("package")
+    clean = lambda v, n: re.sub(r"[<>\x00-\x1f]", "", v).strip()[:n] if isinstance(v, str) else ""
+    out = {"name": clean(raw.get("name"), 40), "value": clean(raw.get("value"), 24), "ref": re.sub(r"[^A-Z]", "", str(raw.get("ref") or "U").upper())[:3] or "U",
+           "cat": clean(raw.get("cat"), 24) or "My parts", "look": raw.get("look") if raw.get("look") in LOOKS else "ic",
+           "desc": clean(raw.get("desc"), 200), "package": clean(pkg, 60), "pins": pins}
+    if isinstance(raw.get("behave"), str) and raw["behave"].strip():
+        out["behave"] = _unfence(raw["behave"])[:8000]
+    return out if out["package"] or pins else None
 
 
 def _bounded(value, depth=0, budget=None):
@@ -697,7 +910,8 @@ def ask(body):
     mode, kind, prompt = _prompt(body)
     try:
         raw, _model = hai.ai_json(_system(mode, kind), prompt,
-                                  temperature=0.5 if kind in ("project", "body", "object", "bodyedit") else
+                                  temperature=0.4 if kind in DESIGN_KINDS else
+                                  0.5 if kind in ("project", "body", "object", "bodyedit") else
                                   0.4 if kind in CODE_KINDS or kind in ("build", "blocks") else 0.7,
                                   max_tokens=12000 if kind == "project" else 8000)
     except hai.AIError as e:

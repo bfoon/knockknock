@@ -1,595 +1,122 @@
-# TapTap Django
+# 🚪 Knock-Knock
 
-A Django + Bootstrap + PostgreSQL + Docker rebuild of the TapTap Wi‑Fi hotspot management platform.
+A real-time interactive presentation & quiz platform — think **Mentimeter** meets **Kahoot**, built with Django, Channels, Bootstrap 5, and Docker.
 
-## Included
-- Business registration/login and 7-day trial
-- Subscription plans and access gate
-- Dashboard with KPI cards and quick actions
-- Voucher generation, listing, disable, delete-expired and MAC reset
-- Batch voucher generation/history
-- MikroTik router records, connection test, active users and disconnect
-- **Two-way MikroTik synchronization**
-  - Pull RouterOS hotspot users and IP bindings into TapTap
-  - Push TapTap-assigned vouchers and TapTap-created IP bindings to RouterOS
-  - MikroTik-only hotspot users stay separate from commercial TapTap vouchers
-  - Per-router Sync and Sync All controls
-- **Live network topology**
-  - RouterOS MNDP/CDP/LLDP neighbor discovery
-  - Online/offline remembered routers and access points
-  - Router-to-router link detection for configured TapTap routers
-  - Physical MikroTik Ethernet/SFP front-panel visualization
-  - Per-port running/disabled state
-  - Neighbor identity and learned client information per port
-  - Bridge-host, DHCP, ARP and Wi-Fi registration correlation
-  - CAPsMAN remote AP discovery where supported
-- IP bindings (add/toggle/delete + database mirror)
-- Plans, reports, finance summary and security pages
-- Responsive Bootstrap UI with mobile off-canvas navigation
-- PostgreSQL + Docker Compose production baseline
+## ✨ Features
 
-## Quick start
-```powershell
-Copy-Item .env.example .env
-docker compose up --build
-```
-Open http://localhost:8000
+### 🎤 Knock-Knock Menti (Polls / Questionnaires)
+- Create questionnaires with multiple question types (Multiple Choice, Word Cloud, Scale, Open Text, Ranking)
+- 20+ visual templates with logo upload
+- Per-question chart selection (Bar, Donut, Pie, Word Cloud, Map, Line, Radar...)
+- Live chart preview with sample data before going live
+- **Orchestra Mode**: presenter controls slide progression, participants follow in lockstep
+- **Open Mode**: participants self-pace
+- Live drawing tools on charts (free hand, highlighter, shapes, eraser)
+- Fullscreen presentation, group display (all charts on one screen)
+- QR code + 6-digit code join
 
-Create an admin account:
-```powershell
-docker compose exec web python manage.py createsuperuser
-```
+### 🎮 Knock-Knock Game (Kahoot-style)
+- Fast-paced quiz competitions
+- Avatar selection (dragon, sword, butterfly, spacecraft, dinosaurs, joker mask...)
+- Speed-based scoring or accuracy-based scoring
+- **Rooms** (limited members, average-score based) or **Open**
+- Live leaderboard with full-screen projection mode
+- QR code join
 
-The Docker entrypoint runs Django migrations automatically, including the topology, control-center and background-sync tables through migration `0004_router_sync_jobs`.
+### 🎲 Live Tables (board-game nights) — `/tabletop/`
+- **Chess, Dam, Ludo and Scramble** played from phones, with the featured table in **3D on the big screen** next to a live leaderboard
+- Host deals everyone into tables (random or **by leaderboard rank**); points carry across rounds — win 3 · draw 1, or 3/2/1 in 3–4 player games — plus a ⚔️ count of pieces cut down
+- Server-authoritative rules in `tabletop/engines/` (full chess incl. castling/en passant/promotion; international 10×10 Dam with flying kings and the majority-capture rule; Ludo with server dice; Scramble checked against the public-domain ENABLE word list)
+- Captures are a little duel: the attacker leaps in, a glowing sword swings and the victim is **sliced in two** along the blade (real clipping planes); every piece breathes, blinks and watches the action
+- Phones: tap-to-move boards that face the player, dice / tile rack controls, spectate any table, emoji reactions on the projector
+- Big-screen views: split · board · ranks podium · all tables (keys 1–4, ← → to change table, auto-camera cuts to the action)
 
-## MikroTik discovery requirements
-RouterOS API must be enabled and reachable from the Docker host. For the clearest topology, keep Neighbor Discovery enabled on the LAN/bridge interfaces that should participate in MNDP/LLDP/CDP. Bridge learning is used to associate learned MAC addresses with physical interfaces. Wi-Fi registration and CAPsMAN data are read when those RouterOS menus are available.
+### ⚡ Chalk Circuit Lab — `/chalk/b/<board>/lab/`
+- A real electronics bench for every Chalk board: drag parts onto a silicone mat, plug them into a breadboard, wire them up and switch the power on
+- **Real physics**, not animation: a nodal circuit solver (Newton-Raphson for LEDs, diodes, transistors and MOSFETs; time-stepped capacitors, coils and motors). LEDs glow by the current through them, charge visibly flows down each wire at a speed set by that current, and parts burn out, smoke and pop when you get it wrong — with the reason, in plain words
+- **90+ parts**: breadboards, Arduino Uno and Nano, batteries, a bench supply, resistors (editable colour bands), pots, capacitors, LEDs and RGB LEDs, diodes, NPN/PNP transistors, a logic-level MOSFET, 555 timer, logic gates, LM358, buttons, switches, bulbs, buzzers, piezo, DC motor, servo, relays, 7-segment display, I²C LCD, light/temperature/distance/motion sensors and sensor modules, multimeter and oscilloscope
+- **Arduino interpreter** for real sketches (Serial, Servo, LiquidCrystal_I2C, DHT, Adafruit_NeoPixel, Stepper, `shiftOut()`, `attachInterrupt()`, arrays, functions, `switch`…), true to the Uno (`int` is 16-bit). Step, step over, next loop, breakpoints and a slow pace; each line lights up as it runs and ripples out from the pin it touched, with a caption saying what just happened
+- **Blocks**: drag-and-drop flow blocks that generate real Arduino code; the running block lights up with its line
+- **Kid mode**: a toy box of parts on wooden blocks with crocodile clips, the programmable Robo Brain, Sparky the electron, and eight missions that only count when the circuit really works
+- **Ask AI** (Gemini, via the same `GEMINI_API_KEY` as Hanns and Kura): explain the circuit, find what's wrong, write the program, or design a circuit and build it on the bench. Without a key, a built-in checker still answers from the circuit's netlist and the simulator's warnings. `CHALK_LAB_AI_HOURLY_LIMIT` (default 40) caps questions per person per hour
+- **Pin to board** drops a picture of the bench onto the board's current page, live on the projector
+- **Layout**: Design / Split / Code views (Run in Code view brings the bench back), the program panel docked bottom, left or right or detached as a floating window, resizable panels, and full screen for a projector with a caption of the running line
+- **Coding with AI**: write a sketch from a description, change or fix your code (or just the selected lines), continue from the cursor, explain — every change comes back as a review where you keep or drop each change. Without an AI, compile errors get one-click fixes. In Blocks (and in kid mode, by telling Sparky) a description becomes blocks
+- **Wireless**: HC-05 Bluetooth with a phone controller app in the side panel, HC-12 433 MHz radio between boards (channels, interference), and a 433 MHz key fob with its receiver; `SoftwareSerial` in the interpreter; several boards each running their own program; radio waves and packets drawn on the bench
+- **Sound & vision**: a **smart camera** (I²C; `SmartCamera cam;` then `cam.colour()`, `cam.x()`, `cam.size()`, `cam.brightness()`, `cam.motion()`, `cam.faces()`, `cam.snapshot()`), a **microphone** (`analogRead`, click it to clap) and a **talking speaker** (`tone()` plus `Speaker voice(pin); voice.say("Hello", 42, "cm")`, spoken aloud with the browser's speech synthesis). The camera's scene and the room's noise are set in Inspect, or tick *Use this computer's camera / microphone* to feed the part from the real one — frames and sound are analysed in the browser, never uploaded or stored, and the devices are released when the box is unticked or the power goes off. Parts and models live in `static/chalk/js/lab/lab_av.js`
+- **Water, sensors and driver chips** (`lab_parts3.js`, physics included): a **water level** stick, **rain** plate, **float switch**, **flow meter** (pulses for `attachInterrupt()`), a **5 V pump** and a **12 V solenoid valve** that kicks back without its diode; **DHT11/DHT22** (`#include <DHT.h>`), **joystick**, **rotary encoder**, **touch pad**, **heartbeat** sensor, **ADXL335 accelerometer**, **ACS712 current** and **0–25 V voltage** sensors, **force**, **flex** and **UV** sensors, and **hall / vibration / line-tracker** modules; an **L298N** motor driver (direction, PWM speed, its 2 V drop and 5 V regulator), a **28BYJ-48 stepper** on its ULN2003 board (`#include <Stepper.h>`), a **74HC595** shift register, an **MCP3008** ADC for the Pi, a **PC817** optocoupler, **7805 / LD1117 / 7812** regulators that heat up, a **NeoPixel ring** and a **solar panel**. On the Pi: gpiozero `MCP3008`, `Motor` and `Robot`, plus `board`, `adafruit_dht` and `neopixel`. Ten ready-made projects (flood alarm, self-watering plant, weather station, heartbeat monitor, water meter, joystick robot car, stepper dial, rainbow ring, and two for the Pi); headless checks in `tools/chalk_lab/parts3_test.js`
+- **Workshop**: perfboard and stripboard where nothing connects until it is soldered — soldering iron (cold joints flicker, too much heat cooks parts, drag to bridge pads), solder sucker, hot air to free a part, cutters for wires and legs, and a track cutter for stripboard
+- 24 ready-made circuits (17 Pro, 7 Kid); open the lab from the projector's corner bar, with <kbd>L</kbd>, or from the board list
+- Saved circuits live in `chalk.BoardCircuit` — after pulling, run `python manage.py makemigrations chalk && python manage.py migrate`
+- **Layers** — the left drawer has a second tab listing every component and wire on the bench with a schematic reference (R1, D2, U1). Click a row to select it and see its details, double-click to fly to it, hover to see where it is; rename, hide or lock any part; download the parts list as CSV
+- **Full screen** takes the whole screen, as the board does, with the component list and details one button away
+- **Board** — the same circuit as a two-layer printed circuit board: footprints from the parts' own legs, auto-placement, a maze autorouter that re-routes as you drag, and Gerber + drill files in a zip for a board house
+- **Body** — the shell the electronics live in, in 3-D: ten ready-made bodies (toy car, tank, rover robot, desk pet, submarine, boat, rocket, model house, tower, project box) built round the electronics you have, or your own from fourteen shapes. **Test drive** runs the real simulation: the motors your program switches turn the wheels, spin the propeller or lift the rocket. **Export for 3-D printing** gives one STL per piece, hollowed, split, laid flat, with board posts and a print sheet
+- **Design a project** — describe it ("a toy car that turns away from walls") and get the circuit, the program, the routed board and the body in one go — or browse the shelf of **101 worked projects** in eleven groups (cars & tanks, robots & pets, boats & submarines, rockets, smart home, garden & weather, games & gadgets, **camera**, **sound & voice**, **Bluetooth**, **radio**). Bluetooth projects are driven from the phone panel; radio projects use two boards with a program each, or the 433 MHz key fob. With no AI key, a request is matched to the nearest shelf project. The shelf is `static/chalk/js/lab/lab_projects.js`: a project is a parts list plus its `loop()`, and the wiring and `setup()` are generated from the parts
+- **Wiring coach** (`lab_coach.js`) — start a wire from a leg and a card says what that leg is for and rings the legs it usually joins; hover another leg and it says, before you let go, whether that join is right, risky or a short. After each wire it reads the circuit for the classic mistakes (LED with no resistor or in backwards, motor on a pin, sensor with no power, analog signal on a digital pin, I²C on the wrong pins, a dead short) and offers a one-click fix; the same findings appear under **Check**. Select a part and press **Wire it for me** and it finds free pins, adds the resistor or transistor the part needs and joins everything up, showing each step and the lines the program needs. With an AI key, **Ask the AI** does the same job: its wiring is checked leg by leg on the server, then tried on a copy of the circuit and only offered if the coach's own review finds nothing wrong. **Change it for** in the inspector swaps a part for another and carries its wires across. Tips can be switched off under View
+- Code: `chalk/lab.py`, `chalk/lab_ai.py`, `static/chalk/js/lab/`. Tests: `python manage.py test chalk.test_lab`, and `node tools/chalk_lab/run_all.js` for the solver, the Arduino interpreter, every example, the board router and the 3-D bodies
 
-Store router credentials only in the app database and use a dedicated least-privilege RouterOS API user where possible.
+### 🦸 Hero Forge (3D avatars)
+- Full-body game-style characters: 4 bodies × 14 skins × 10 hair × 12 hair colours × 6 eyes × 10 outfits (incl. kaftan) × 12 colours × 12 headwear (incl. kufi & headwrap) × 10 items (incl. kora) × 6 auras
+- Modelled in Blender from code: `tools/blender/build_tabletop_assets.py` → `static/tabletop/models/*.glb`
+  (`blender -b -P tools/blender/build_tabletop_assets.py`, then commit the .glb files)
+- Works in the quiz game too (new **🦸 3D Hero** tab on the join screen); ids look like `kh-0350241520` and fit the existing avatar columns
 
-## v3 — MikroTik Control Center
+## 🧱 Stack
 
-This build adds deeper RouterOS synchronization and management:
-
-- Full Sync imports `/ip/hotspot/user/profile` into TapTap Plans and `/ip/hotspot/user` into TapTap Vouchers.
-- Plan names and voucher codes are matched before creation so an existing database record is not duplicated.
-- MikroTik-imported plans keep price `D0` because RouterOS user profiles do not contain a sales price; set the commercial price in TapTap as needed.
-- Unified MAC/device inventory merges bridge hosts, ARP, DHCP leases, HotSpot host/active records, wireless registrations and Neighbor Discovery.
-- Live topology includes physical Ethernet/SFP port state, learned devices, upstream AP/router/switch when discovery can identify it, and remembered offline neighbors.
-- Router Control Center provides a drag/drop interface role studio, bridge selection, port enable/disable, a Quick WAN DHCP + NAT recipe, a broad redacted configuration snapshot, a resource browser, and an audited advanced add/set/remove editor.
-- Load-balancing analysis detects PCC/mangle marking, ECMP/equal-cost paths, failover route distances and bonding. The Control Center polls live interface byte counters to animate the detected WAN paths.
-
-### Database migration
-
-Docker runs migrations automatically from `entrypoint.sh`. After replacing an older version you can run explicitly:
-
-```bash
-docker compose up -d --build
-docker compose exec web python manage.py migrate
-docker compose exec web python manage.py showmigrations core
-```
-
-You should see `0003_mikrotik_control_center` marked `[X]`.
-
-### Important RouterOS notes
-
-The TapTap server must be able to reach the RouterOS API port configured for each router. For best topology results, enable Neighbor Discovery (MNDP/LLDP/CDP) on the LAN/bridge interfaces you want to map. Advanced changes can affect connectivity; TapTap requires an explicit `APPLY` confirmation and records every advanced change in the audit table.
-
-
-## v4 — Background sync + scrollable data panels
-
-- Router synchronization now runs in a dedicated Celery worker backed by Redis. The web request only queues the job, so you can continue using TapTap or leave the Routers page while a scan runs.
-- Sync All queues one job per router and prevents a second queued/running job for the same router.
-- The Routers page polls persistent job records and shows queued/running/completed/failed state, percentage and current phase.
-- Sync progress covers RouterOS connection, plan import, voucher reconciliation, IP bindings, MAC/port/neighbor discovery, topology and configuration snapshot.
-- Long tables and operational lists are vertically scrollable with sticky table headers. This applies to voucher, plan, user, IP-binding, topology/device, report, finance and inventory tables, plus router lists and change logs.
-- Docker Compose now includes a persistent Redis service and a separate `worker` service.
-
-After upgrading, rebuild and apply migration `0004_router_sync_jobs`:
-
-```bash
-docker compose down
-docker compose up -d --build
-docker compose exec web python manage.py migrate
-docker compose exec web python manage.py showmigrations core
-docker compose ps
-```
-
-`docker compose ps` should show `web`, `worker`, `db` and `redis` running.
-
-
-## v5 — Live topology map, load-balancing engine, Security Center, deploy anywhere
-
-### Live network topology
-- One map for the whole business: Internet → ISP modem → WAN links → managed MikroTiks → switches / access points → device groups.
-- Managed routers are linked by MAC, IP **or** identity, so a router added by its public or VPN address still connects to its neighbours. A router whose WAN is fed by another managed router hangs under it instead of showing a second Internet path.
-- Traffic particles move along every link in real time (download cyan, upload violet); speed and density follow real bits/second from RouterOS `monitor-traffic`.
-- Pan, zoom, fit, full screen, search by name / MAC / IP (including devices inside groups), device drawer with details, "Discover now" per router.
-- The page opens instantly from the database. Discovery runs per router in parallel, each bounded by `MIKROTIK_TIMEOUT`, so one dead router never blocks the page — it shows why it is unreachable (for example a private IP without a VPN).
-
-### Load-balancing engine
-- WAN detection rewritten for RouterOS v6 and v7: gateways as IP, interface or `ip%interface`, `gateway-status`, `immediate-gw`, DHCP-client and PPPoE routes, recursive/ECMP routes, PCC → connection-mark → routing-mark → table chains, routing rules, bonding and operator-declared WAN ports.
-- Methods: PCC, policy routing, ECMP, failover, bonding, single WAN — with planned share per link, active/standby/down state and warnings (HotSpot + policy routing, failover without check-gateway, PCC marks into tables without a default route).
-- Live view: animated lanes, per-link down/up rates, share-of-traffic vs plan, sparkline, balance meter, and a failover event log ("ether1 went down — traffic moved to ether2").
-- Telemetry polls are cheap (default routes + WAN counters only) and cached in Redis, so many open tabs cost one router read.
-
-### Security Center
-- Grade and score per business and per router, filters by severity and category, and "Mark as reviewed" with a note (migration `0005_security_ack`).
-- Router hardening: missing WAN input firewall, Telnet/FTP, services open to any address, open DNS resolver, SOCKS / web proxy / UPnP / bandwidth server, SNMP `public`, MAC-Winbox on all interfaces, discovery on all interfaces, default `admin` user, TapTap using `admin`, plain API over the Internet, outdated RouterOS (including CVE-2018-14847).
-- Revenue and abuse: vouchers disabled in TapTap but still working on the router, vouchers that failed to publish, codes logged in on more devices than the plan allows, bypassed IP bindings, MikroTik users that never expire, unmanaged routers on customer ports.
-- Every finding shows the RouterOS command to fix it; safe items (Telnet, FTP, SOCKS, UPnP, bandwidth server, open proxy) have a one-click fix that is logged in the change audit.
-
-### Deploy anywhere
-Everything is set from `.env` (see `.env.example`):
-
-| Setting | Purpose |
+| Layer | Tech |
 |---|---|
-| `ALLOWED_HOSTS` | Every hostname/IP people use. CSRF trusted origins are derived automatically (http + https). |
-| `CSRF_TRUSTED_ORIGINS` | Only needed for non-standard ports, e.g. `http://192.168.88.10:8000`. |
-| `SECURE_COOKIES` | `1` behind HTTPS, `0` for plain-http LAN installs (otherwise login fails). |
-| `WEB_BIND` | `8000` for all interfaces, `127.0.0.1:8001` behind a host nginx/Caddy. |
-| `DB_ENGINE=sqlite` | Single small box without PostgreSQL (WAL mode, safe for parallel discovery). |
-| `CELERY_EAGER=1` | No Redis/worker available: syncs run inside the request. |
-| `MIKROTIK_TIMEOUT` / `MIKROTIK_LIVE_TIMEOUT` | Upper bound for discovery / live polls per router. |
-| `MIKROTIK_SSL_VERIFY` | `0` (default) accepts RouterOS self-signed api-ssl certificates. |
-| `GUNICORN_WORKERS` / `GUNICORN_THREADS` | gthread workers keep the site responsive while routers answer. |
+| Backend | Django 5, Django Channels 4 |
+| Real-time | WebSockets via Redis channel layer |
+| Frontend | Bootstrap 5, Chart.js, Vanilla JS |
+| Async runtime | Daphne (ASGI) |
+| Database | PostgreSQL |
+| Cache / Pub-Sub | Redis |
+| Containerization | Docker + docker-compose |
+| QR | `qrcode` library |
 
-TapTap connects **out** to each router's API port. A router with a private address (10.x, 192.168.x, 172.16–31.x, 100.64.x) is only reachable when TapTap runs on the same network or over a VPN (WireGuard, SSTP, OpenVPN). The connection also accepts `host:port` in the address field and falls back to the legacy login for RouterOS older than 6.43.
-
-### Why the Django build polls instead of streaming
-The Node.js build kept long-lived connections open to push updates. Django behind gunicorn serves short request/response cycles, so this build uses short, bounded requests (`/topology/graph/`, `/topology/refresh/<id>/`, `/topology/live/`, `/routers/<id>/telemetry/`) plus a shared cache. That keeps every worker free, survives proxies and load balancers, and behaves the same on any host.
-
-### Upgrade
-```bash
-docker compose up -d --build
-docker compose exec web python manage.py migrate
-docker compose exec web python manage.py showmigrations core   # 0005_security_ack and 0006_voucher_plan_name_length [X]
-```
-
-## Finance, Reports and the Studios
-
-Run `python manage.py migrate` after updating — migration `0007_finance_and_studios` adds the new tables and fields.
-
-### Finance (`/finance/`)
-- **Sales ledger.** Record sales from stock (oldest unsold vouchers of a plan), by voucher code, or as a plain amount. Payment methods include cash, Wave, QMoney, Afrimoney, bank and card. Voiding a sale puts the voucher back in stock.
-- **Automatic sales.** When router sync first sees uptime on an unsold voucher, it marks it used and (if *Record sales automatically* is on) books a sale at the plan price. A voucher is never booked twice.
-- **Expenses** by category and site, with monthly bills copied forward in one click.
-- **Agents / resellers** with commission %, cash hand-ins and a running balance still to be handed in.
-- Overview charts, monthly target with pace projection, 12-month P&L, CSV exports (sales, expenses, P&L, agents).
-
-### Reports (`/reports/`)
-Date presets or custom range, filter by router and plan. Revenue/volume trend, voucher journey (generated → sold → activated), plan mix, weekday × hour heatmap, top sites and sellers, unsold stock by age, automatic highlights, CSV and print.
-
-### Portal Studio (`/studio/portal/`)
-Design the hotspot **login**, post-login **redirect** and **status** pages from 19 templates and 17 block types, with live phone/tablet/desktop preview, undo, autosave and publishing.
-
-Two ways to use a page on a MikroTik:
-1. **Offline** — *Export → Router files* gives `login.html` (+ `alogin.html`, `status.html` from your default pages). Upload to the router's hotspot folder. Supports HTTP-CHAP. Prices are baked in: re-export after changing plans.
-2. **Hosted** — *Export → Hosted redirect* gives a small `login.html` that forwards customers to `https://<your-taptap>/p/<slug>/`, plus `taptap-walled-garden.rsc`. The hosted page checks the code first (rate-limited to 20 tries/min per IP) and logs in with HTTP-PAP, so enable `http-pap` on the hotspot profile.
-
-Custom fonts load from Google Fonts before login only if the walled-garden entries are added; otherwise the page falls back to system fonts.
-
-### Voucher Designer (`/studio/vouchers/`)
-Drag-and-drop card designer in millimetres: text with tokens (`{code}`, `{plan}`, `{price}`, `{ssid}`, `{serial}`…), voucher code, QR code (scan to log in / show code / join Wi-Fi), logo, shapes, lines and icons. 12 templates including 58 mm thermal receipts and a 40-per-A4 pocket slip. Print sheets (`/studio/vouchers/print/`) lay cards out on A4, Letter, A5 or receipt rolls with cutting lines; open them from Batches, Vouchers (selected or unsold), after generating, or after recording a sale.
-
-Set the Wi-Fi name, hotspot login address, help phone, logo and brand colour in **Settings** — both studios use them.
-
-Chart.js 4.4.4 and qrcode-generator 1.4.4 are vendored under `static/vendor/` so everything works on offline LAN installs.
-
-## Internet lines — load balancing, failover and single path (`/routers/<id>/internet/`)
-
-Open it from **Routers → Internet lines** or **Router control → Set up internet lines**.
-
-1. **Your internet lines** — TapTap detects DHCP, PPPoE, LTE and static uplinks. Name each (e.g. "Gamtel fibre", "Africell 4G") and give its speed.
-2. **How should they work together?**
-   - **One line** — everything on one connection.
-   - **Backup line** (failover) — main line plus ordered backups; switches back automatically.
-   - **Share the load** (PCC) — weighted by speed. "Each customer stays on one line" (`src-address` classifier) is recommended for HotSpots.
-   - **Combine lines** (ECMP).
-   - **Split by network** — e.g. HotSpot network on 4G, office on fibre (routing rules).
-   Every multi-line option also fails over, and replies always leave by the line they arrived on (port forwards and remote management keep working).
-3. **Review and apply** — plain-language summary, live flow diagram, the exact RouterOS commands, downloadable setup/undo `.rsc` scripts.
-
-**Health checks:** each line gets its own public check host (8.8.8.8, 1.1.1.1, …) reached through a recursive route with `check-gateway=ping`, so a dead ISP behind a working modem is detected.
-
-**Safety:** before changing anything TapTap installs a `TapTap-WAN-undo` scheduler on the router. If you don't press **Keep changes** within the chosen time (default 5 minutes) the router removes the TapTap setup and restores its original DHCP/PPPoE and route settings by itself. **Undo** is always available. Everything TapTap creates is commented `TapTap WAN #<run>` — your own rules are never touched. DHCP clients get a small script that keeps TapTap's routes pointed at the current gateway when the ISP hands out a new one.
-
-Works on RouterOS v6 and v7. If TapTap can't reach the router, design the setup and paste the downloaded script into WinBox → New Terminal (press Ctrl+X for Safe Mode first).
-
-## Voucher prices from MikroTik
-
-RouterOS has no price field, so sync reads prices from:
-- Mikhmon `on-login` scripts on HotSpot user profiles (`:put (",rem,5000,1d,6000,,Disable,")` → selling price 6000, validity 1 day),
-- profile or user comments such as `price: 10`, `D10`, `GMD 25`, `15 dalasi`,
-- the profile name when it carries a currency-prefixed price (e.g. `Night D25`).
-
-Vouchers previously imported at 0 are repaired on the next sync. On **Plans** you can edit any plan; a price typed there is kept even if the router later reports a different one, and saving fixes that plan's 0-priced vouchers (optionally re-pricing all unsold ones).
-
-## Agent batches and one-off vouchers
-
-**Batches belong to someone.** When generating, choose *Who is this batch for?* — the shop, or an agent:
-- **On credit** — the agent holds the vouchers; each one is booked as the agent's sale (with commission) when it is sold or first used on the router. What they owe grows as vouchers sell.
-- **Paid upfront** — the agent buys the whole batch now: every voucher is recorded as their sale and their payment as a hand-in, so they owe nothing for it.
-
-On **Batches** you can give a shop batch to an agent, transfer it between agents, or take unsold vouchers back. Already-sold vouchers stay credited to whoever sold them. Selling "from stock" as an agent takes from that agent's vouchers; selling as the shop never touches agent stock.
-
-Each agent has a statement page (**Finance → Agents & cash → Statement**): still to hand in, vouchers held, sales, commission, hand-ins, per-batch progress, print their stock, print the statement, and send their balance by WhatsApp.
-
-**One voucher for one person** (**Generate → One voucher for one person**, or **Vouchers → One voucher**): enter the customer's name and phone, pick a plan (optionally at a discount) or set a custom duration / devices / speed / price, optionally type a memorable code (e.g. `AWA2026`), and mark it paid. The voucher is pushed to the router immediately (or on the next sync if the router is offline), then shown as a printable card with a ready-to-send message — WhatsApp, SMS or copy — including a one-tap login link. Custom vouchers share a few router profiles (`taptap-2dev-5M-5M`, …) instead of creating one per customer.
-
-## TapTap Tunnel — primary connection for TapTap Link routers (RouterOS 7)
-
-Link routers (behind NAT, CGNAT or 4G) dial an always-on WireGuard tunnel out to the
-TapTap server. While the tunnel is healthy TapTap drives the router over the RouterOS
-API exactly like a directly reachable router: 15 s live sync, instant commands, full
-discovery, the WAN designer (with its mandatory on-router undo timer). TapTap Link keeps
-running as the backup channel; if the tunnel drops, every screen switches to Link
-automatically (`linkops.uses_link`) and the tunnel manager asks the router, over the
-Link, to repair its tunnel. RouterOS 6 routers stay on Link only.
-
-### Deploy
+## 🚀 Quick Start
 
 ```bash
-# .env
-TAPTAP_WG_ENDPOINT=203.0.113.10        # public IP or an UNPROXIED DNS name (no CDN)
-TAPTAP_TUNNEL_SECRET=<long random>     # encrypts stored tunnel API passwords
-# optional: TAPTAP_WG_PORT=51820 TAPTAP_WG_NETWORK=10.77.0.0/16 TAPTAP_WG_SERVER_IP=10.77.0.1
-#           TAPTAP_WG_MTU=1380 TAPTAP_WG_HANDSHAKE_TIMEOUT=180 TAPTAP_WG_PROBE_SECONDS=30
-#           TAPTAP_WG_PROBE_WORKERS=16 TAPTAP_IPTABLES=iptables-nft|iptables-legacy
-
-docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d --build
+# Clone, then:
+cp .env.example .env
+docker compose up --build
+# Open http://localhost:8000
 ```
 
-Open UDP 51820 in the cloud firewall / security group. Pick a `TAPTAP_WG_NETWORK` that
-does not overlap customer LANs. Do not change `TAPTAP_TUNNEL_SECRET` (or `SECRET_KEY`, if
-you rely on the fallback) afterwards: stored API passwords could no longer be decrypted and
-routers would need the tunnel setup again.
+Create an admin: `docker compose exec web python manage.py createsuperuser`
 
-### Enable on a router
+## 🗂️ App Structure
 
-New Link enrollments on RouterOS 7 set the tunnel up automatically. For routers that
-already have Link, open **Routers › TapTap Link** and paste the "Enable the tunnel" block
-once in WinBox › New Terminal. It keeps the router's existing API allow-list (only adds
-the TapTap server), uses the router's real API port, and places its firewall accept rule
-safely even when the filter list is empty.
+```
+config/         # Django settings, ASGI, routing
+accounts/       # User auth, profile, logo upload
+core/           # Templates registry, dashboard, marketing pages
+polls/          # Knock-Knock Menti (questionnaires)
+games/          # Knock-Knock Game (Kahoot-style)
+presentations/  # Live sessions, WebSocket consumers (shared by both)
+templates/      # Server-rendered HTML
+static/         # CSS, JS, images
+```
 
-### Health and repair
+## 🔌 WebSocket Routes
 
-* Healthy = a WireGuard handshake younger than 180 s (WireGuard rekeys about every
-  2 minutes) **and** a successful RouterOS API login within the last couple of minutes.
-* Repairs go over Link with backoff (5, 10, 20, 40, 60 min). They are idempotent — a
-  working peer is never deleted — and re-register the router's public key, so a
-  recreated interface recovers by itself.
-* If no router at all has a fresh handshake, repairs pause and the tunnel container logs
-  a server-side warning (UDP blocked, wrong endpoint, interface down).
-* The manager picks the same iptables backend (nft/legacy) as the host's Docker.
+- `ws/present/<session_code>/` — presenter control channel
+- `ws/play/<session_code>/` — participant channel
+- `ws/draw/<session_code>/` — drawing overlay broadcast
+- `ws/tabletop/<code>/` — Live Tables (stage, phones, spectators)
 
-## Chat: calls, secure screen sharing and photos
+## 📐 Modes
 
-**Calls** — 📞 voice and 🎥 video in direct messages and TapTap Support (support calls ring every active agent; the first to answer takes it). The call runs in its own small window, so you can keep using TapTap while you talk; a green pill on every TapTap tab shows the call and brings the window back. If pop-ups are blocked, the call opens over the page instead.
-
-Media goes browser-to-browser with WebRTC and is always encrypted (DTLS-SRTP). The server only passes one offer and one answer through Redis — no WebSocket server and no new tables (`core/chat_call.py`). Busy, declined, missed and finished calls are noted in the conversation.
-
-**Safety emoji** — both people see 4 emoji made from both browsers' encryption fingerprints. If they match, nobody is in the middle of the call — not even the TapTap server.
-
-**Secure screen sharing**
-- *A TapTap tab* is the safest choice: the picker cannot offer the whole screen, and every TapTap tab blurs passwords, keys and tokens (and hides chat pop-ups) while you share. The shared tab gets a red frame. Mark anything else secret with `data-tt-secret`.
-- Each share is graded (tab 🟢 / window 🟡 / whole screen 🟠, which warns that notifications will show).
-- Sharing stops by itself after 15 minutes unless you keep it going; you can pause it any time.
-- The other person can only *ask* to see your screen; you choose what to share.
-- The viewer can click to point (a ripple shows on your screen), and their view carries a "Viewed by <name> · time" watermark.
-- Snapshots go into the chat as photos and the sharer is told.
-- On a weak network the camera is lowered automatically so the voice stays clear.
-
-**Photos** — paste, drop or pick a photo. It is shrunk in the browser, location/EXIF data is removed (and removed again on the server), and it is **deleted for good after 7 days** by an hourly Celery beat task. In direct chats a photo can be *view once*: deleted as soon as the other person opens it. Photos are stored in Postgres so every container sees them; only JPEG, PNG, WebP and GIF are accepted.
-
-| Setting | Default | |
+| Mode | Polls | Games |
 |---|---|---|
-| `CHAT_IMAGE_DAYS` | `7` | days before a photo is deleted |
-| `CHAT_IMAGE_MAX_MB` | `5` | largest photo accepted |
-| `CHAT_IMAGE_QUOTA_MB` | `300` | live photo storage per business |
-| `CHAT_IMAGE_PER_HOUR` | `60` | photos per person per hour |
-| `CHAT_STUN_URLS` | Google + Cloudflare STUN | comma-separated |
-| `CHAT_TURN_URLS` | — | e.g. `turn:turn.example.com:3478,turns:turn.example.com:5349` |
-| `CHAT_TURN_SECRET` | — | coturn `static-auth-secret` (short-lived credentials) |
-| `CHAT_TURN_USERNAME` / `CHAT_TURN_PASSWORD` | — | fixed TURN login instead of a secret |
-| `CHAT_TURN_ONLY` | `0` | `1` = every call goes through TURN, so neither side learns the other's IP address |
+| **Orchestra** | Presenter advances; participants locked to current question | Same |
+| **Open** | Participants self-pace | Participants race; first-correct gets points |
+| **Rooms** | — | Limited members, average score wins |
 
-Requirements: TapTap must be served over **https** (browsers only allow microphone, camera and screen capture on secure pages). Redis must be the cache (the default in docker-compose) so every gunicorn worker sees the same call. Without a TURN server, calls between some mobile networks or strict office firewalls may not connect — a small [coturn](https://github.com/coturn/coturn) server fixes that. Behind nginx, allow photo uploads with `client_max_body_size 6m;`.
+## 📅 Roadmap
 
-## Members reach the router immediately
-
-A member is sent to its router the moment it is created or changed — new member, plan change, plan edit
-(every member on the plan), renewal, password, pause/unpause, block/unblock, router assigned — without waiting
-for the next sync or pressing "Fix on router" (`core/member_sync.py`).
-
-The voucher fast lane already sent anything *saved*; most member code writes with `QuerySet.update()`, which
-skipped it. Those writes are now watched too: when a member's router-relevant values really change, it is queued
-and sent once the transaction commits (one send per router per commit). Writes that leave values unchanged send
-nothing, so the live loop and imports never flood routers; plain vouchers behave exactly as before. Direct API /
-Tunnel members use the member-exact sender (write, read back, retry) on the voucher worker, and the same member
-state is never sent twice within 15 seconds (failures are always retried).
-
-Note on time limits: a member's RouterOS `limit-uptime` is *time left × device slots* (a 30-day plan with 2
-devices shows `60d`) because MikroTik counts every concurrent session. TapTap's expiry still ends the member at
-the real date — see `core/router_time.py`.
-
-## Ready to browse — the voucher is on the router before the customer logs in
-
-**The problem it fixes:** a customer types a valid code, TapTap shows the voucher in use with the phone's MAC
-address, but the phone has no internet. The login page asked TapTap first; TapTap checked its own database, locked
-the phone to the voucher and said "go ahead" — and the router then refused the login because it did not have the
-voucher yet (still Pending, a TapTap Link batch waiting for the next check-in, a push that failed while the router was
-briefly unreachable), had it switched off, had its time counter used up, or had an old session in the way
-(`core/voucher_ready.py`).
-
-* **Login guarantee.** Before the page logs in, TapTap makes sure the router has the voucher, switched on.
-  Direct API / Tunnel routers get it at once (the page waits 2 s at most, `READY_API_WAIT`); TapTap Link routers get
-  it as a top-priority command and check in faster while the customer waits. The page asks `/p/<slug>/ready/` every
-  2 s and logs in the moment the router has it. Vouchers already on the router cost two database reads, nothing more.
-  Login pages already installed on routers keep working: they wait the seconds TapTap sends back.
-* **Self-healing login.** If the router still refuses, the page sends the router's own error to `/p/<slug>/heal/`.
-  TapTap fixes that cause — sends the exact user again, clears a stale session ("no more sessions are allowed"),
-  removes an old MAC pin ("invalid mac address"; never a pin staff made permanent) — and the page tries once more by
-  itself, once per code every 3 minutes. Members are asked to type their password again (it is never kept on the phone).
-  Both addresses take a short-lived signed token from the voucher check, so they cannot be used to test codes.
-* **No voucher waits for a sync.** Vouchers and members whose push failed are retried every
-  `VOUCHER_SWEEP_SECONDS` (10) on the voucher worker, per router, with backoff for routers that are down. Before, a
-  voucher on a Direct API router that missed its push waited until someone pressed Sync.
-* **TapTap Link.** While a customer waits (or more voucher work is queued) the router checks in again 2 s after
-  running voucher commands instead of after its normal interval (at most `LINK_TURBO_PER_MINUTE`, 12, per minute;
-  heartbeat v4+). Vouchers go `LINK_VOUCHER_CHUNK` (25) per command on RouterOS 7 and `LINK_VOUCHER_CHUNK_V6` (8) on
-  RouterOS 6, and a router that stops answering gets smaller batches until it answers again. The router now reports
-  the codes it refused by name, so only those are marked "Error" — a voucher is "Synced" only when it really saved.
-* **History.** Every fix made at login is noted on the voucher's history ("Ready to browse").
-* **Support.** `python manage.py ready_check CODE` shows what TapTap and the router think of a code;
-  `--fix` puts it on the router now.
-* **Router pages stay current.** Routers with an outdated copy of the login page get the current one hourly
-  (needs `SITE_URL`; switch off with `PORTAL_AUTO_REFRESH=0`).
-
-**Add-on views now really run.** The URLconf was loaded early during startup, so add-ons that replaced a view
-afterwards changed nothing for real requests: the expired-voucher page and the wrong-code protection on both login
-paths, and the voucher-entry settings on Security, had never been active. `core/url_alignment.py` points those URLs at
-the current views after every add-on is installed (decorated URLs such as `login_required(view)` are left alone).
-If you switched on **Security → Voucher entry protection** before, it now takes effect on the login pages.
-
-## The header pill tells the truth
-
-**"It says Live · 40s right after a check, while the daily live view is right."** The pill compared the server's
-timestamps with this computer's clock; the daily live view times its own refreshes with this computer's clock only.
-A computer clock 40 s ahead showed every fresh check as "40s ago". Every answer from TapTap carries the server's
-time, and the pill now uses it (the live panel says when this computer's clock is off).
-
-**"It still says 1 router offline."** Two causes:
-* a router that never connected (status "Not connected" — a spare entry, a TapTap Link router not enrolled yet)
-  counted as offline. Now only routers TapTap lost count; the others show "not connected yet" in the panel;
-* TapTap's own router protection blocked TapTap. It exempts the address SITE_URL points at — where routers reach
-  TapTap, not always where TapTap's connections come from (Cloudflare or a proxy in front, NAT). TapTap's checks
-  then counted as password guessing and TapTap was blocked for an hour. After each connection TapTap now asks the
-  router which address its own session comes from and trusts exactly that (`core/self_trust.py`); the 10-second
-  connection check only knocks where protection is absent or TapTap is confirmed trusted, and never on a router the
-  full check confirmed a moment ago.
-
-## Syncs that get through, and phones that always find the login page
-
-**"My sync keeps failing — the sync commands never reached the router."** TapTap Link check-ins always carried
-voucher batches first, and a big voucher batch travels alone. With a voucher backlog — or a code the router refused,
-which was re-sent at every check-in for ever — sync tables (and every other command) never got a turn. Now, while
-both are waiting, check-ins take turns (vouchers, then the rest, oldest first). A code the router refuses three times
-is no longer re-sent by itself: it is marked "Refused by the router…" (see the router log for "TapTap: could not
-save"), and a Sync you start tries it once more. A failed sync now says whether the router was silent or TapTap was
-busy sending it other commands.
-
-**"When my phone has been away it asks me to sign in, and only shows the redirect page."** A phone that comes back is
-logged in again by its MAC cookie on its first request — usually its own "is there internet?" test — and the router
-answered that test with the after-login page, so the phone opened a sign-in window that showed only TapTap's page
-(a countdown, then another website) and stayed open. The after-login page now sends the phone straight back to its
-test: the test passes, the phone sees it is online and the window closes by itself.
-
-**"When a voucher ends, the login page sometimes will not come."** Phones show their login sheet only when their
-connection test fails. Free-access websites include their sub-domains, so allowing google.com, gstatic.com or
-apple.com let those tests through — the phone believed it was online and never showed the page. TapTap now keeps
-every known connection test (Android, Apple, Windows, Firefox, Ubuntu, Xiaomi, Huawei, OPPO, vivo…) behind the login
-page with "requires login" rules on top of the walled garden (`core/probe_guard.py`); where a test shares a host with
-a real site, only the test path is held back. Applied with portal installs, after free-site changes and once to every
-router. The status page also reloads the moment the time runs out, so a customer looking at it sees the login page.
-
-## Router connection checked every 10 seconds
-
-**What people saw:** the header pill turned orange — "Live · 1m ago", then "1 router offline" — for a router that
-was fine. The only connection check was the full live sync, a heavy pass that went through the businesses one after
-another, waited for its slowest router, then did more router work (blacklist, sharing, clean-ups) before the next
-pass could start; the live worker also took voucher pushes. One slow router held up every router's next check.
-A router marked offline was retried only once a minute, so "offline" lingered after it was reachable again.
-
-* **Router pulse** (`core/router_pulse.py`): every `ROUTER_PULSE_SECONDS` (10) every Direct API router gets a quick
-  knock on its API port — all routers in parallel, `ROUTER_PULSE_TIMEOUT` (4 s), no login, so the router's log does
-  not fill with API logins. A failed knock counts toward offline like a failed check (still several in a row over
-  40 s+); an offline router that answers is re-checked at once, so it is back within seconds. TapTap Link routers
-  check in every few seconds by themselves — that is their pulse.
-* **The pill** shows when TapTap last confirmed your routers reachable (pulse, full check or Link check-in). The
-  live panel says when session details were last refreshed if a router is slow to send them.
-* **Full live checks** of all routers run side by side (`LIVE_PARALLEL`, 8) and a pass no longer waits for a router
-  that answers slowly. The other jobs moved to their own task every `LIVE_HOUSEKEEPING_SECONDS` (30). The live worker
-  runs only live work (3 processes); voucher pushes stay on their own worker.
-* A Direct API sync that made no progress for 30 minutes (TapTap restarted during it) is marked failed, so
-  "1 sync running" no longer stays in the header for ever.
-
-## Router online / offline without false alarms
-
-**What people saw:** "it keeps saying the internet is down and back, and emails me — as if the internet goes off
-and on every few seconds." The internet line was usually fine. TapTap took every short blip for an outage
-(`core/uptime_guard.py`):
-
-* **The router counted check-ins as missed that were not** (TapTap Link heartbeat v8 and older): a customer logging
-  out while the router listed sessions ended the check-in with an error; TapTap answering slowly at a busy moment
-  hit a 10-second limit; an error on TapTap's side came back as HTTP 500. Each was counted as "cannot reach TapTap",
-  and a few in a row came back as "could not reach TapTap … internet link was down". **Heartbeat v9** (installed
-  on Link routers automatically) skips a session that vanished, waits up to 25 s for TapTap's answer, and TapTap
-  now answers a check-in normally even if something fails on its side (the error is logged).
-* **The internet-route watch** restarted the TapTap Tunnel whenever the router's active default routes looked
-  different — on routers with two lines sharing traffic or failover routes that flicker, almost every check-in.
-  It now needs the new route to hold for two check-ins and moves the tunnel at most every ~2 minutes.
-* **One failed check meant offline** for Direct API / Tunnel routers (and one failed topology refresh, security
-  scan or sync). Now: offline after 3 failed checks in a row spanning 40 s or more.
-* **Emails:** "offline" only when a router stays unreachable for 3 minutes (`ROUTER_OFFLINE_ALERT_MINUTES`); "back
-  online" only after an "offline" email, with how long and why — in one email, not two. Three or more drops in 30
-  minutes send **one** "connection unstable" email and pause per-drop emails for an hour. "Could not reach TapTap
-  for …" now goes in the digest, can be switched off on the Notifications page, and is not sent for blips.
-* **TapTap-side incidents:** when nearly every Link router goes silent at once (TapTap restarting or unreachable),
-  no router is marked offline or emailed.
-
-The dashboard still shows every change. To see what happened to a router and why:
-`python manage.py connection_history [name]`.
-
-## Calls: point, draw, take control, and look your best
-
-**The other person sees exactly where you point.** When you click on someone's shared screen, the ripple shows
-on *their* screen, on their own TapTap tab, at the same spot, and sticks to the button you clicked even if the page
-scrolls. You get a receipt next to your click: "✓ On their screen", "✓ Shown over their apps", "👁 In their call
-window", "🔔 Sent as a notification" or "⚠ Not seen". When a window or the whole screen is shared (no web page can
-draw on other apps), the sharer taps **📍** for a small floating window that stays over every app and zooms in
-wherever you point.
-
-**Point, laser, draw.** Over a shared screen: 🎯 point (click), 🔴 laser (a live dot follows your mouse on their
-screen) and ✏️ draw (they see the drawing on their own screen; it stays on the content when they scroll and fades
-after 8 s; 🧽 clears it).
-
-**Asking for control.** "Control" asks *how* you want to help: **Take control** (click, scroll and type in their
-TapTap tab) or **Just guide** (point, laser and draw; nothing is clicked), for 5, 15 or 30 minutes, with a reason
-they will see ("Fix a setting"). They answer **Allow**, **Only 5 min**, **Let them point instead** or **No**.
-While you are in control:
-* they see your cursor and the name of the button under it ("Lamin → Save plan") before you click;
-* **guardian:** clicks on anything that deletes, resets, pays, transfers or signs out wait for the owner's own tap
-  (a remote or scripted click can never approve it). Mark a button `data-tt-danger` to always ask, `data-tt-safe`
-  to never ask;
-* passwords, secret fields, the chat and other websites stay out of reach, as before;
-* the owner has **Pause**, **+5 min**, **Take back (Esc)** and a live log of what was done (pages opened, buttons,
-  where something was typed — never what);
-* the note left in the chat says how long, how many actions, which pages and the last few clicks.
-
-**✨ Effects (Studio).** Runs on your own device; only the finished video is sent. Background: soft or strong blur,
-spotlight, painted scenes (studio, office, sunset, ocean, night sky, café lights, clean wall), a colour, or your own
-photo. While the background model loads, the whole picture stays softened, so a room you chose to hide is never
-shown by surprise. Face: shades, glasses, masquerade, hero mask, cat, crown, support headset, mustache, party hat,
-halo, an emoji head that opens its mouth when you do, and a privacy face that pixelates you while you talk.
-Touch-up and low-light boost. Draw on your own video with pen, highlighter, arrows, stickers and text —
-**Stick to my face** pins a drawing to your face so it moves with you. Name tag: "Lamin · TapTap Support"
-(agents) or your business name. Settings are remembered on that device. Keyboard: **E**.
-
-The models (MediaPipe Selfie Segmentation and Face Mesh, Apache-2.0) are served by TapTap from
-`static/vendor/mediapipe/` (WebAssembly SIMD builds: Chrome/Edge 91+, Firefox 89+, Safari 16.4+; older browsers
-fetch the plain build from jsDelivr). A slow device drops frames rather than sending an unprocessed one, and never
-stalls the call.
-
-Real-browser tests for all of this: `tools/call_tests/` (see its README).
-
-## Fit looks after members
-
-Fit can look up members (`find_member`, `members_overview`, `member_plans`) and offer every member change as a
-**Take action** card: create a member, update details & reminders, change plan, renew with payment (booked in
-Finance with a receipt), reset the password, pause now / on a date / when N days are left (with an optional
-unpause date), unpause or cancel a planned pause, block, unblock, sign out of the Wi-Fi and/or member portal,
-email the portal link, add a support note, bin an unused member — plus create/edit a Member Plan and switch one
-on or off (`core/fit_members.py`).
-
-The usual two locks apply: the owner switches on **Members** and **Member Plans** in Fit settings (off by
-default), and the person needs the same role permission as on the Members page (create & renew:
-`vouchers.create`; support work: `vouchers.support`; plan assignment: `vouchers.create` or `plans.manage`; plans:
-`plans.manage`; bin: `vouchers.manage`). Everything is re-checked when Take action is pressed, done by the same
-services as the Members pages, and recorded in the member's history with "(approved in Fit)".
-
-
-## v6 — Where the traffic goes, and why it is slow
-
-### Internet lines, per customer
-- On a router that shares customers over several lines (PCC), the connection sample TapTap already takes carries each
-  connection's line mark, so **which line every customer is on** is known without asking the router.
-- **Traffic → Internet lines**: each line with the share you designed next to the share that is really there, who is on
-  it, and every switch made by hand.
-- **Switch** moves one customer to another line: one mangle rule above the sharing rules for that phone only, then its
-  open connections are closed so it changes line at once. Routes, tables, NAT and the sharing rules are never touched.
-  **Back to automatic** removes it; a rule removed on the router is noticed and forgotten here too.
-
-### Idle vouchers (Traffic → Idle vouchers)
-- **Signed in, no traffic**: per session, since when it has been silent (under 1 kb/s) or merely calm (under 10 kb/s).
-- **Time running, not online**: started vouchers whose time is ticking with nobody signed in — straight to Can't connect?
-
-### Slow vouchers (Traffic → Slow vouchers)
-- Everyone held back by fair usage, a speed rule or their own plan speed, with the speed they are doing against the limit.
-- **Scan the routers for drops** reports the packets each speed limit has dropped — what the customer actually feels.
-
-### DHCP lease time (Traffic → DHCP lease, and Network tools)
-- Every DHCP server with its lease time and how full its address pool is, plus advice: too short signs sleeping phones
-  out ("lost dhcp lease"), too long fills the pool until new customers are refused.
-- One click sets one network or all of them, and the value is read back from the router. Nobody is disconnected.
-
-### Connection lab
-- On the voucher page, the device page, Network tools and every row of the new tabs: a road from the phone to the
-  internet — phone, Wi-Fi/cable, speed limit, internet line, internet — measured from the MikroTik the customer is on.
-- Device check (pings reply by reply, Wi-Fi signal and rate, port, address lease, session) and Speed check (every limit
-  on its address with its dropped packets, its internet line, the router's own internet, CPU, its sign-outs from the log).
-- The verdict names the slow part in plain words and offers the one button that helps. Live speed is drawn every 5
-  seconds against the limit.
-- Every check is a normal TapTap Link / API test, so it appears in Network tools → Recent tests with who ran it.
-
-### Database migration
-
-    docker compose run --rm web python manage.py migrate core
-
-`showmigrations core` should show `0122_flow_lab` as `[X]`. Nothing needs changing on the routers.
-
-
-## v7 — Speed per device: every device gets the whole plan speed
-
-- A plan's (or member plan's) speed is written to the router profile's `rate-limit`; RouterOS makes **one queue per
-  signed-in device**, so 2M/2M with 3 devices is 3 × 2M/2M. TapTap now **checks** that each device really has its own
-  lane, and finds what breaks it: a parent queue on the profile, a hand-made network/interface queue above, the hotspot
-  server's shared queue, a speed changed while online, and FastTrack (which skips every queue).
-- **Voucher and member pages**: one lane per device slot with live speed against its own plan speed, *Check on the router*,
-  and *Guarantee each device its own lane* — TapTap puts each device in its own queue at the plan speed, at once.
-- **Traffic → Speed per device**: *Always guarantee it* for every voucher and member allowed 2+ devices, a per-router check,
-  and *Fix it* (lanes, router profiles, FastTrack guard), read back from the router.
-- Plan forms show the per-device math as you type: each device's speed, and the whole voucher's with all devices busy.
-- Fixed: on TapTap Link routers, Speed control queues now sit above the hotspot's own queues (as on Direct API routers).
-
-`showmigrations core` should show `0123_device_lanes` as `[X]`.
-
-
-## v8 — Connection lab on busy routers
-
-- The lab asks the router in two small steps that each fit one protected command (a refused step answers "failed"
-  instead of going silent); the quick step finds a voucher's queues by name instead of walking every queue.
-- On RouterOS 7, a step a person is watching gets an express seat behind the vouchers of the next check-in.
-- The lab fills at once from what TapTap knows (live sync, traffic sample, last router sync), shown dashed; the router's
-  measurement turns each station solid. A router-check strip shows where each step is, retries once, then explains.
-- Every late Network-tools test explains itself with facts (check-ins, voucher changes ahead, when it was taken).
-
-`showmigrations core` should show `0124_lab_steps` as `[X]`.
-
-## v9 — Locked Member Plans, and a chat composer that always fits
-
-- The owner can **Lock** a Member Plan (only the owner can unlock it) or **Seal** it for good (nobody can ever unlock
-  it; confirmed by typing its name). A locked plan cannot be given to anyone, edited, switched off or deleted, and
-  its members cannot be moved off it — they keep it exactly as it is (renewals, pauses, devices carry on). Enforced
-  in `core/plan_lock.py`, the core member functions and `MemberPlanAssignment.save()`; staff and support "view as"
-  cannot lock or unlock.
-- Chat: the message box can shrink (it kept a ~20-character minimum and pushed Send off screen); emoji / share /
-  photo fold into a ＋ tray in narrow chats; mic and Send share one round button (✓ while editing).
-
-`showmigrations core` should show `0125_member_plan_lock` as `[X]`.
-
-## v10 — Customer calls that ring, and calling customers back on their Wi-Fi page
-
-- Incoming calls are watched from a Web Worker (`static/js/ring-watch.js`), because browsers slow a background tab's
-  timers to about once a minute, longer than a call rings. A ring in a background tab blinks the title, repeats the
-  tone (sound unlocked on the first click) and shows a desktop alert with the customer's details.
-- Customer calls ring 60 s (web and app). With "online first", a call nobody picks up after 15 s also rings everyone
-  picked (`core/portal_call.widen`).
-- A missed customer call says how long it rang and how it reached each person (TapTap rang / phone rang / declined /
-  TapTap not open). Customer-call notes carry the customer (`ChatMessage.meta`) and show **Call back on their Wi-Fi
-  page** (with "on it now"), their number and WhatsApp.
-- The voucher and member pages show **Call this customer** when that phone has called before. A missed call-back keeps
-  "<name> tried to call you" on their page for 2 hours, and their return call rings that person first.
-
-`showmigrations core` should show `0126_chat_message_meta` as `[X]`.
+- [ ] More question types (image-choice, hotspot)
+- [ ] Export results to CSV/PDF
+- [ ] Team mode (rooms with shared scores)
+- [ ] AI question generation

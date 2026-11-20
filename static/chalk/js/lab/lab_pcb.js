@@ -33,8 +33,9 @@
   var G = PCB.G = 1.27;                  /* routing grid */
   var PAD = 1.6, DRILL = 0.9, VIA = 1.2, VIA_DRILL = 0.6, HOLE = 3.2, EDGE = 6;
 
-  var SKIP = /^(breadboard|perfboard|stripboard|multimeter|scope|rf_remote)/;
-  var OFF = /^(motor|k_motor|servo|battery_9v|battery_aa|k_battery|psu|bulb|k_bulb)$/;
+  /* the quadcopter frame is the airframe itself, and the ground station stays on the ground */
+  var SKIP = /^(breadboard|perfboard|stripboard|multimeter|scope|rf_remote|quad_frame|gcs_pfd|adsb_rx)/;
+  var OFF = /^(motor|k_motor|servo|battery_9v|battery_aa|k_battery|psu|bulb|k_bulb|esc_motor|battery_lipo)$/;
   PCB.offBoard = function (type) { return OFF.test(type); };
   PCB.onBoard = function (type) { return !SKIP.test(type); };
 

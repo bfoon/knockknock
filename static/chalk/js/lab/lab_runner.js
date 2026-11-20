@@ -21,6 +21,9 @@
     var rt = new L.MCU.Runtime(prog, {
       volts: function (num) { return sim.mcuVolts(mcuId, num); },
       echo: function (num) { return sim.echoDistance(mcuId, num); },
+      /* an RC receiver channel on this pin, and I²C sensors on A4/A5 (lab_parts4.js) */
+      pulse: function (num) { return sim.pulseWidthOn ? sim.pulseWidthOn(mcuId, num) : null; },
+      i2c: function (type) { return sim.i2cFor ? sim.i2cFor(mcuId, type) : null; },
       /* a DHT on this pin, and pins switched faster than a solve (lab_parts3.js) */
       dht: function (num) { return sim.dhtFor ? sim.dhtFor(mcuId, num) : null; },
       pinChange: function (num, level) { if (sim.pinChange) sim.pinChange(mcuId, num, level); },

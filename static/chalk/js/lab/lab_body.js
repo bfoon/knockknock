@@ -52,11 +52,13 @@
 
   var SIZE = {   /* what the off-board parts take up, mm: along, across, tall */
     motor: [32, 20, 20], k_motor: [32, 20, 20], servo: [23, 12.5, 26], battery_9v: [48, 26, 17], battery_aa: [58, 32, 16],
-    k_battery: [58, 32, 16], bulb: [14, 14, 24], k_bulb: [14, 14, 24], coin_cell: [22, 22, 6]
+    k_battery: [58, 32, 16], bulb: [14, 14, 24], k_bulb: [14, 14, 24], coin_cell: [22, 22, 6],
+    esc_motor: [28, 28, 26], battery_lipo: [105, 34, 24]
   };
-  var TINT = { motor: "#b9c0c6", k_motor: "#b9c0c6", servo: "#3b6fd4", battery_9v: "#2b2f36", battery_aa: "#2b2f36", k_battery: "#c0392b", bulb: "#f6e7a1", k_bulb: "#f6e7a1" };
+  var TINT = { motor: "#b9c0c6", k_motor: "#b9c0c6", servo: "#3b6fd4", battery_9v: "#2b2f36", battery_aa: "#2b2f36", k_battery: "#c0392b", bulb: "#f6e7a1", k_bulb: "#f6e7a1", esc_motor: "#2b2f36", battery_lipo: "#e8c22a" };
   var TALL = [[/^arduino_uno/, 14], [/^raspberry_pi/, 17], [/^arduino_nano/, 8], [/^capacitor_e/, 12], [/^relay/, 16], [/^(led|k_led|rgb_led)/, 9], [/^hcsr04/, 16], [/^lcd/, 12], [/^(buzzer|piezo|k_buzzer)/, 10], [/^(ic|logic|lm358)/, 5], [/^resistor/, 3],
-    [/^l298n/, 26], [/^stepper/, 20], [/^(water_pump|solenoid_valve)/, 30], [/^flow_sensor/, 26], [/^(dht|joystick)/, 14], [/^rotary_encoder/, 20], [/^regulator/, 16], [/^neopixel/, 4], [/^solar_panel/, 4], [/^(hc595|mcp3008|optocoupler)/, 5]];
+    [/^l298n/, 26], [/^stepper/, 20], [/^(water_pump|solenoid_valve)/, 30], [/^flow_sensor/, 26], [/^(dht|joystick)/, 14], [/^rotary_encoder/, 20], [/^regulator/, 16], [/^neopixel/, 4], [/^solar_panel/, 4], [/^(hc595|mcp3008|optocoupler)/, 5],
+    [/^gps_neo6m/, 9], [/^(imu_mpu6050|baro_bmp280|mag_qmc5883l|tof_vl53l0x)/, 4], [/^pitot_ms4525/, 12], [/^power_module/, 10], [/^rc_receiver/, 13]];
   function tall(type) { for (var i = 0; i < TALL.length; i++) if (TALL[i][0].test(type)) return TALL[i][1]; return 7; }
   function tint(part) {
     var pr = L.propsOf(part), c = L.LED_COLORS && pr.color && L.LED_COLORS[pr.color];
@@ -225,6 +227,60 @@
     }
   };
 
+  /* A quadcopter: a pod for the electronics, four arms, four motors and
+   * their propellers, skids to land on and a mast that lifts the GPS and
+   * compass clear of the power wires. */
+  T.quadcopter = {
+    name: "Quadcopter drone", blurb: "A centre pod for the flight controller and battery, four arms with motor pods and propellers, landing skids and a GPS mast.",
+    make: function (n, wall) {
+      var Ln = Math.max(120, n.w + n.batt + 24), W = Math.max(96, n.d + 18), H = Math.max(42, n.h + 24), zc = 34 + H / 2;
+      var arm = Math.max(170, Ln * 0.9), b = Body.blank(), s = b.solids;
+      s.push(sol("Centre pod", "box", [0, 0, zc], [Ln, W, H], { color: "#2b2f36" }));
+      s.push(sol("Canopy", "dome", [Ln * 0.05, 0, zc + H / 2 + 9], [Ln * 0.8, W * 0.8, 18], { group: "attach", color: "#e2574c" }));
+      [[1, 1, "Front left"], [1, -1, "Front right"], [-1, 1, "Rear left"], [-1, -1, "Rear right"]].forEach(function (q) {
+        var ang = Math.atan2(q[1], q[0]) * 180 / Math.PI, ex = q[0] * arm * Math.SQRT1_2, ey = q[1] * arm * Math.SQRT1_2, za = zc + H / 2 - 7;
+        s.push(sol(q[2] + " arm", "box", [ex / 2, ey / 2, za], [arm, 16, 10], { rot: [0, 0, ang], group: "attach", color: q[0] > 0 ? "#e2574c" : "#3a3f45" }));
+        s.push(sol(q[2] + " motor pod", "cyl", [ex, ey, za + 6], [30, 30, 22], { group: "attach", color: "#59636b" }));
+        s.push(sol(q[2] + " propeller", "prop", [ex, ey, za + 22], [6, arm * 0.78, arm * 0.78], { rot: [0, 90, 0], group: "part", role: "prop", color: q[0] > 0 ? "#e2574c" : "#c9ced3" }));
+        s.push(sol(q[2] + " motor screw hole", "cyl", [ex, ey, za + 6], [3.2, 3.2, 40], { op: "cut" }));
+      });
+      [1, -1].forEach(function (k) {
+        s.push(sol((k > 0 ? "Left" : "Right") + " leg", "box", [0, k * W * 0.36, 17 + 2], [10, 8, 34], { group: "attach", color: "#3a3f45" }));
+        s.push(sol((k > 0 ? "Left" : "Right") + " skid", "capsule", [0, k * W * 0.36, 4], [Ln * 1.2, 8, 8], { group: "part", color: "#3a3f45" }));
+      });
+      s.push(sol("GPS mast", "cyl", [-Ln * 0.3, 0, zc + H / 2 + 25], [6, 6, 50], { group: "attach", color: "#c9ced3" }));
+      s.push(sol("GPS puck", "dome", [-Ln * 0.3, 0, zc + H / 2 + 52], [40, 40, 14], { group: "part", color: "#e8eef4" }));
+      s.push(sol("Status light", "cyl", [Ln / 2 - 2, 0, zc], [5.2, 5.2, 14], { rot: [0, 90, 0], op: "cut", role: "led" }));
+      s.push(sol("Battery strap slot", "box", [0, 0, 34 + wall / 2], [24, W + 4, 3], { op: "cut" }));
+      b.kind = "quadcopter"; b.drive = "fly"; b.split = "z"; b.splitZ = r1(zc + H / 2 - 12);
+      b.bay = { x: -n.batt / 2, y: 0, z: r1(34 + wall), w: n.w + 4, d: W - 2 * wall - 2, h: H - 2 * wall };
+      b.anchors = { motor: [arm * Math.SQRT1_2, arm * Math.SQRT1_2, zc + H / 2 + 5], battery: [b.bay.x + n.w / 2 + n.batt / 2 + 1, 0, 34 + wall], led: [[Ln / 2 - 5, 0, zc]] };
+      return b;
+    }
+  };
+
+  /* A fixed-wing drone: a fuselage, a wing, a tail and a tractor
+   * propeller on the nose — and a hole in the nose for the pitot tube. */
+  T.plane = {
+    name: "Fixed-wing drone", blurb: "A fuselage for the electronics, a high wing, a tailplane and fin, a propeller on the nose and a pitot-tube hole.",
+    make: function (n, wall) {
+      var D = Math.max(66, Math.max(n.d, n.h * 1.6) + 24), Ln = Math.max(260, n.w + n.batt + 140), span = Math.max(600, Ln * 2.2), zc = D / 2 + 26, b = Body.blank(), s = b.solids;
+      s.push(sol("Fuselage", "capsule", [0, 0, zc], [Ln, D, D], { color: "#e8eef4" }));
+      s.push(sol("Wing", "box", [Ln * 0.08, 0, zc + D / 2 + 3], [Ln * 0.32, span, 7], { group: "attach", color: "#3b6fd4" }));
+      s.push(sol("Tailplane", "box", [-Ln * 0.43, 0, zc + D * 0.1], [Ln * 0.15, span * 0.36, 4], { group: "attach", color: "#3b6fd4" }));
+      s.push(sol("Fin", "fin", [-Ln * 0.43, 0, zc + D * 0.62], [Ln * 0.17, 3.2, D * 1.1], { group: "attach", color: "#e2574c" }));
+      s.push(sol("Nose propeller", "prop", [Ln / 2 + 7, 0, zc], [8, D * 1.9, D * 1.9], { group: "part", role: "prop", color: "#2b2f36" }));
+      s.push(sol("Motor shaft hole", "cyl", [Ln / 2 - 8, 0, zc], [3.4, 3.4, 30], { rot: [0, 90, 0], op: "cut" }));
+      s.push(sol("Pitot tube hole", "cyl", [Ln * 0.18, span * 0.3, zc + D / 2 + 3], [5, 5, 30], { rot: [0, 90, 0], op: "cut" }));
+      [1, -1].forEach(function (k) { s.push(sol((k > 0 ? "Left" : "Right") + " wing light", "cyl", [Ln * 0.08, k * span * 0.48, zc + D / 2 + 3], [5.2, 5.2, 12], { op: "cut", role: k > 0 ? "led" : "" })); });
+      s.push(sol("Stand", "box", [0, 0, 13], [Ln * 0.25, D * 0.6, 26], { group: "part", color: "#59636b" }));
+      b.kind = "plane"; b.drive = "fly"; b.split = "z"; b.splitZ = r1(zc);
+      b.bay = { x: -n.batt / 2, y: 0, z: r1(zc - D * 0.3), w: n.w + 4, d: D * 0.62, h: D * 0.56 };
+      b.anchors = { motor: [Ln / 2 - D * 0.5 - 4, 0, zc], battery: [b.bay.x + n.w / 2 + n.batt / 2 + 1, 0, zc - D * 0.3], servo: [-Ln * 0.25, 0, zc - D * 0.3], led: [[Ln * 0.08, span * 0.47, zc + D / 2 + 3]] };
+      return b;
+    }
+  };
+
   T.box = {
     name: "Project box", blurb: "A plain case with a lid, sized to the board, with a light hole and a cable slot.",
     make: function (n, wall) {
@@ -345,11 +401,13 @@
       if (/motor/.test(it.type)) {
         a = motors === 0 ? (an.motorL || an.motor) : motors === 1 ? (an.motorR || null) : null;
         if (a && an.motorL) { rz = motors === 0 ? 90 : -90; }
-        else if (a && body.drive === "rocket") rz = 0;
+        else if (a && (body.drive === "rocket" || body.drive === "fly")) rz = 0;
         motors++;
       } else if (/battery/.test(it.type)) { a = an.battery; rz = body.drive === "rocket" ? 0 : 90; }
       else if (it.type === "servo") a = an.servo;
-      if (a) out[it.id] = { x: r1(a[0]), y: r1(a[1]), z: r1(a[2] - (/motor/.test(it.type) ? it.h / 2 : 0)), rx: 0, ry: /motor/.test(it.type) && body.drive === "rocket" ? -90 : 0, rz: rz };
+      /* a drone motor stands on its pod, shaft up */
+      var upright = /motor/.test(it.type) && body.kind === "quadcopter";
+      if (a) out[it.id] = { x: r1(a[0]), y: r1(a[1]), z: r1(a[2] - (/motor/.test(it.type) && !upright ? it.h / 2 : 0)), rx: 0, ry: /motor/.test(it.type) && body.drive === "rocket" ? -90 : 0, rz: rz };
       else { out[it.id] = { x: r1(bay.x - bay.w / 2 + it.w / 2 + 2 + spare), y: r1(bay.y + bay.d / 2 - it.d / 2 - 1), z: r1(bay.z + (bay.upright ? 4 : 0)), rx: 0, ry: 0, rz: 0 }; spare += it.w + 2; }
     });
     return out;
@@ -398,6 +456,8 @@
       /* a millimetre of grace: a part resting against a wall is not sticking out */
       for (var i = 0; i < 8; i++) { if (!inside([i & 1 ? b.hi[0] - 1.2 : b.lo[0] + 1.2, i & 2 ? b.hi[1] - 1.2 : b.lo[1] + 1.2, i & 4 ? b.hi[2] - 1.2 : b.lo[2] + 1.2])) bad++; }
       /* motors are allowed to reach out to their wheels */
+      /* a drone's motors sit out on the arms, in their pods */
+      if (/motor/.test(it.type) && body.kind === "quadcopter") return;
       if (bad > (/motor/.test(it.type) ? 4 : 0)) out.push({ id: it.id, name: it.name, corners: bad });
     });
     return out;

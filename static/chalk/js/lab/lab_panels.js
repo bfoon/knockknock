@@ -140,6 +140,7 @@
         '<input id="' + id + '" type="range" min="' + sp.min + '" max="' + sp.max + '" step="' + sp.step + '" value="' + v + '" data-prop="' + sp.k + '" data-unit="' + esc(sp.pct ? "%" : sp.unit || "") + '"' + (sp.pct ? ' data-pct="1"' : '') + '></label>';
     }
     if (sp.type === "bool") return '<label class="row"><span>' + esc(sp.label) + '</span><input type="checkbox" data-prop="' + sp.k + '"' + (v ? " checked" : "") + '></label>';
+    if (sp.type === "number") return '<label class="row" for="' + id + '"><span>' + esc(sp.label) + '</span><input id="' + id + '" type="number" step="' + (sp.step || "any") + '"' + (sp.min != null ? ' min="' + sp.min + '"' : '') + (sp.max != null ? ' max="' + sp.max + '"' : '') + ' value="' + esc(v) + '" data-prop="' + sp.k + '"></label>';
     if (sp.type === "ohms") return this.ohmsField(part, pr);
     return "";
   };
@@ -176,7 +177,8 @@
       var ev = inp.type === "range" ? "input" : "change";
       inp.addEventListener(ev, function () {
         var d = L.def(part), sp = (d.spec || []).filter(function (s) { return s.k === k; })[0] || {};
-        var v = inp.type === "checkbox" ? inp.checked : inp.type === "range" ? parseFloat(inp.value) : inp.value;
+        var v = inp.type === "checkbox" ? inp.checked : inp.type === "range" || inp.type === "number" ? parseFloat(inp.value) : inp.value;
+        if (inp.type === "number" && !isFinite(v)) return;
         if (inp.tagName === "SELECT" && sp.options && typeof sp.options[0][0] === "number") v = parseFloat(v);
         if (inp.type === "range") {
           var out = inp.parentNode.querySelector("output");

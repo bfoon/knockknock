@@ -163,7 +163,7 @@
       var b = kind === "custom" ? Body.blank() : Body.make(kind, doc, wall);
       b.wall = wall;
       if (kind === "custom") {
-        var drive = /^(wheels|prop|boat|rocket|none)$/.test(spec.drive) ? spec.drive : extra.some(function (s) { return /^wheel/.test(s.role || ""); }) ? "wheels" : extra.some(function (s) { return s.role === "prop"; }) ? "prop" : "none";
+        var drive = /^(wheels|prop|boat|rocket|fly|none)$/.test(spec.drive) ? spec.drive : extra.some(function (s) { return /^wheel/.test(s.role || ""); }) ? "wheels" : extra.some(function (s) { return s.role === "prop"; }) ? "prop" : "none";
         b.drive = drive;
         var hull = extra.filter(function (s) { return s.group === "hull" && s.op !== "cut"; });
         if (hull.length) {

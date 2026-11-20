@@ -482,6 +482,9 @@
       } else if (t.v === "." || t.v === "->") {
         this.next();
         var mname = this.id("a method name");
+        /* a library object with members of its own, as TinyGPS++ has:
+         * gps.location.lat() is the method "location.lat" of gps */
+        while (this.is(".") && this.t[this.i + 1] && this.t[this.i + 1].t === "id") { this.next(); mname += "." + this.id("a method name"); }
         if (!this.is("(")) this.err("'" + mname + "' has to be called with brackets: ." + mname + "()");
         this.next();
         var margs = [];
@@ -611,9 +614,17 @@
       startsWith: [1, 1, "b"], endsWith: [1, 1, "b"], concat: [1, 1, "b"], c_str: [0, 0, "s"], replace: [2, 2, "v"]
     }
   };
+  /* Wire: the I²C bus on A4 (SDA) and A5 (SCL). The libraries below talk
+   * over it themselves, so a sketch only ever needs Wire.begin(). */
+  METHODS.Wire = { begin: [0, 1, "v"], setClock: [1, 1, "v"], beginTransmission: [1, 1, "v"], endTransmission: [0, 1, "u8"] };
   /* SoftwareSerial speaks exactly like Serial, on two pins of your choice. */
   METHODS.SoftSerial = Object.assign({}, METHODS.Serial, { listen: [0, 0, "b"], isListening: [0, 0, "b"], overflow: [0, 0, "b"] });
   L.MCU_BUILTINS = BUILTINS;
+  /* Other files add libraries: a class name, its methods and its constants
+   * here, and L.MCU_LIBS[cls] = {make(args, it), call(n, obj, a)} for what
+   * it does (lab_drone.js adds the flight sensors this way). */
+  L.MCU_CLASSES = CLASSES; L.MCU_METHODS = METHODS; L.MCU_CONSTS = CONSTS; L.MCU_FCONSTS = FCONSTS;
+  L.MCU_LIBS = L.MCU_LIBS || {};
 
   /* Did you mean …? */
   function lev(a, b) {
@@ -672,6 +683,7 @@
           if (CONSTS[n.name] != null) { n.k = "num"; n.v = CONSTS[n.name]; n.ty = (n.name === "true" || n.name === "false") ? "b" : "i16"; n.y = false; return n; }
           if (FCONSTS[n.name] != null) { n.k = "num"; n.v = FCONSTS[n.name]; n.ty = "f"; n.y = false; return n; }
           if (n.name === "Serial") { n.ty = "o"; n.cls = "Serial"; n.y = false; return n; }
+          if (n.name === "Wire") { n.ty = "o"; n.cls = "Wire"; n.y = false; return n; }
           var s = suggest(n.name, names());
           E("'" + n.name + "' hasn't been declared." + (s ? " Did you mean " + s + "?" : " Declare it first, for example: int " + n.name + " = 0;"), n.line);
           n.ty = "i16"; n.y = false; return n;
@@ -765,6 +777,8 @@
           if ((cls === "Serial" || cls === "SoftSerial") && /^(parseInt|parseFloat|readString|readStringUntil)$/.test(n.name)) { n.wait = true; n.y = true; }
           /* stepper.step() doesn't return until the motor has moved */
           if (cls === "Stepper" && n.name === "step") n.y = true;
+          /* a library method that takes real time (it waits for its chip) */
+          if (L.MCU_LIBS[cls] && L.MCU_LIBS[cls].slow && L.MCU_LIBS[cls].slow[n.name]) n.y = true;
           return n;
         }
         case "init": initList(n); n.y = false; return n;
@@ -847,6 +861,9 @@
   R.reset = function () {
     this.pins = {};
     this.servos = {};
+    this.servoUs = {};      /* pin -> the servo pulse in microseconds (an ESC reads this) */
+    this.wireOn = false;
+    this.i2cHz = 100000;
     this.lcd = null;
     this.serialIn = "";
     this.serialOn = false;
@@ -881,7 +898,7 @@
     this.gen = this.main();
     this.emit("state");
   };
-  R.stop = function () { this.running = false; this.paused = false; this.pins = {}; this.servos = {}; this.neo = {}; this.isrs = null; this.emit("state"); };
+  R.stop = function () { this.running = false; this.paused = false; this.pins = {}; this.servos = {}; this.servoUs = {}; this.neo = {}; this.isrs = null; this.emit("state"); };
   R.pause = function () { if (this.running) { this.paused = true; this.stepTarget = null; this.emit("state"); } };
   R.resume = function () {
     if (!this.running || this.error) return;
@@ -1053,6 +1070,9 @@
       } else if (it.cls === "Voice") {
         if (args.length < 1) throw new RtErr("A Speaker needs to know its pin: Speaker " + it.name + "(8);", it.line);
         obj = { cls: "Voice", pin: Math.trunc(args[0]), vol: 7, until: 0 };
+      } else if (L.MCU_LIBS[it.cls]) {
+        obj = L.MCU_LIBS[it.cls].make.call(this, args, it);
+        obj.cls = it.cls;
       } else {
         obj = { cls: "LCD", addr: args[0] || 0x27, cols: args[1] || 16, rows: args[2] || 2, cx: 0, cy: 0, on: false, light: false, buf: null };
         obj.buf = blankLcd(obj.cols, obj.rows);
@@ -1328,6 +1348,7 @@
         var cell = sc[n.name];
         if (!cell) {
           if (n.cls === "Serial") return { cls: "Serial" };
+          if (n.cls === "Wire") return { cls: "Wire" };
           throw new RtErr("'" + n.name + "' doesn't exist here.", n.line);
         }
         return cell.arr ? cell : cell.v;
@@ -1408,6 +1429,8 @@
         for (var m = 0; m < n.args.length; m++) margs.push(yield* this.evg(n.args[m], sc));
         if (n.wait) yield* this.streamWait(n, obj, margs);
         if (n.cls === "Stepper" && n.name === "step") return yield* this.stepperStep(n, obj, margs[0]);
+        var lib = L.MCU_LIBS[n.cls];
+        if (lib && lib.slow && lib.slow[n.name]) return yield* lib.slow[n.name].call(this, n, obj, margs);
         return this.method(n, obj, margs, sc);
       }
     }
@@ -1711,8 +1734,18 @@
     var pp = this.pin(a[0], n);
     var cm = this.host.echo ? this.host.echo(pp.num) : null;
     var timeout = a[2] != null ? a[2] / 1e6 : 1;
+    /* an RC receiver's channel: a 1000-2000 us pulse fifty times a second */
+    var rc = cm == null && this.host.pulse ? this.host.pulse(pp.num) : null;
+    if (rc != null) {
+      var lvl = a[1] == null ? 1 : Math.trunc(a[1]);
+      var w = lvl ? rc : 20000 - rc, wait = (lvl ? 20000 - rc : rc) * Math.random();
+      if ((wait + w) / 1e6 > timeout) { yield { k: "delay", s: timeout }; return 0; }
+      this.effect({ kind: "read", pin: pp.num, value: Math.round(w) });
+      yield { k: "delay", s: (wait + w) / 1e6 };
+      return Math.round(w);
+    }
     if (cm == null) {
-      this.hint("pulse" + pp.num, "pulseIn() on pin " + L.pinName(pp.num) + " never saw a pulse, so it waited the full timeout and returned 0. Is a powered HC-SR04's ECHO wired to this pin?", n.line);
+      this.hint("pulse" + pp.num, "pulseIn() on pin " + L.pinName(pp.num) + " never saw a pulse, so it waited the full timeout and returned 0. Is a powered HC-SR04's ECHO (or an RC receiver channel) wired to this pin?", n.line);
       yield { k: "delay", s: timeout };
       return 0;
     }
@@ -1727,6 +1760,12 @@
     var self = this;
     if (n.cls === "DHT") return this.dhtCall(n, obj, a);
     if (n.cls === "Neo") return this.neoCall(n, obj, a);
+    if (n.cls === "Wire") {
+      if (n.name === "begin") this.wireOn = true;
+      if (n.name === "setClock") this.i2cHz = L.clamp(+a[0] || 100000, 10000, 1000000);
+      return 0;
+    }
+    if (L.MCU_LIBS[n.cls]) return L.MCU_LIBS[n.cls].call.call(this, n, obj, a);
     if (n.cls === "Stepper") {
       if (n.name === "setSpeed") { obj.rpm = a[0]; obj.us = a[0] > 0 ? 60e6 / obj.steps / a[0] : 0; return 0; }
       return 0;
@@ -1734,19 +1773,22 @@
     if (n.cls === "Serial" || n.cls === "SoftSerial") return this.serialCall(n, a, n.cls === "Serial" ? null : obj);
     if (n.cls === "Servo") {
       switch (n.name) {
-        case "attach": obj.pin = this.pin(a[0], n).num; this.pins[obj.pin].mode = "OUT"; this.servos[obj.pin] = obj.angle; this.effect({ kind: "servo", pin: obj.pin, value: obj.angle }); return 1;
+        case "attach": obj.pin = this.pin(a[0], n).num; this.pins[obj.pin].mode = "OUT"; this.servos[obj.pin] = obj.angle; this.servoUs[obj.pin] = obj.us || Math.round(544 + obj.angle * (2400 - 544) / 180); this.effect({ kind: "servo", pin: obj.pin, value: obj.angle }); return 1;
         case "write": case "writeMicroseconds": {
           var ang = n.name === "write" ? a[0] : (a[0] - 544) * 180 / (2400 - 544);
           if (n.name === "write" && a[0] > 180) ang = (a[0] - 544) * 180 / (2400 - 544);
           obj.angle = Math.round(L.clamp(ang, 0, 180));
+          /* the pulse itself, to the microsecond: an ESC reads 1000-2000 us */
+          obj.us = n.name === "writeMicroseconds" || a[0] > 180 ? L.clamp(Math.round(a[0]), 544, 2400) : Math.round(544 + L.clamp(a[0], 0, 180) * (2400 - 544) / 180);
           if (obj.pin < 0) { this.hint("servo", "servo.write() before servo.attach(pin). Attach it in setup().", n.line); return 0; }
           this.servos[obj.pin] = obj.angle;
+          this.servoUs[obj.pin] = obj.us;
           this.effect({ kind: "servo", pin: obj.pin, value: obj.angle });
           return 0;
         }
         case "read": return obj.angle;
         case "attached": return obj.pin >= 0 ? 1 : 0;
-        case "detach": if (obj.pin >= 0) delete this.servos[obj.pin]; obj.pin = -1; return 0;
+        case "detach": if (obj.pin >= 0) { delete this.servos[obj.pin]; delete this.servoUs[obj.pin]; } obj.pin = -1; return 0;
       }
     }
     if (n.cls === "Camera") {

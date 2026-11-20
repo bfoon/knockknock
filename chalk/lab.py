@@ -66,8 +66,8 @@ REF_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}:[A-Za-z0-9_+#.-]{1,16}$")
 MOUNT_RE = re.compile(r"^@?[A-Za-z0-9_-]{1,40}$")
 SHAPES = {"box", "cyl", "cone", "sphere", "dome", "nose", "capsule", "tube", "wedge", "fin",
           "carbody", "boat", "wheel", "prop"}
-BODY_KINDS = {"car", "robot", "submarine", "rocket", "boat", "box", "tank", "house", "tower", "pet", "custom"}
-DRIVES = {"none", "wheels", "prop", "boat", "rocket"}
+BODY_KINDS = {"car", "robot", "submarine", "rocket", "boat", "box", "tank", "house", "tower", "pet", "quadcopter", "plane", "custom"}
+DRIVES = {"none", "wheels", "prop", "boat", "rocket", "fly"}
 GROUPS = {"hull", "attach", "part"}
 ROLES = {"wheelL", "wheelR", "prop", "led"}
 PROP_KEY_RE = re.compile(r"^[a-z][a-zA-Z0-9_]{0,23}$")

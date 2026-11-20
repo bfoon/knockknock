@@ -127,6 +127,7 @@
     prop: { bg: [0.03, 0.12, 0.2], grid: "#17506e", grid2: "#1f6c93" },
     boat: { bg: [0.09, 0.17, 0.23], grid: "#1f6c93", grid2: "#2b8fbf" },
     rocket: { bg: [0.05, 0.06, 0.12], grid: "#3a3f5c", grid2: "#565d8a" },
+    fly: { bg: [0.32, 0.52, 0.72], grid: "#5a8a4a", grid2: "#7aa86a" },
     none: { bg: [0.105, 0.145, 0.175], grid: "#2f4f5a", grid2: "#3d6875" }
   };
 
@@ -317,6 +318,27 @@
       v.spinP += left * 40 * dt;
       if (kind === "prop" && m.length > 1) { v.z = L.clamp(v.z - right * 120 * dt, -600, 0); extra = "depth " + Math.round(-v.z) + " mm"; }
       if (th.servo != null) v.yaw += (th.servo - 90) / 90 * 0.9 * Math.abs(left) * dt;
+    } else if (kind === "fly") {
+      /* a quadcopter on the bench flies the body: its state is the truth */
+      var f = this.app.sim && this.app.sim.flight, quad = f && f.live && this.app.running;
+      if (quad) {
+        v.x = f.x * 1000; v.y = -f.y * 1000; v.z = f.z * 1000; v.yaw = -f.yaw * Math.PI / 180;
+        v.roll = f.roll * Math.PI / 180; v.pitch = f.pitch * Math.PI / 180;
+        v.spinP += f.thrAvg * 70 * dt;
+        speed = f.gs * 1000;
+        extra = "height " + f.z.toFixed(2) + " m · roll " + (Math.round(f.roll) || 0) + "° · pitch " + (Math.round(f.pitch) || 0) + "° · heading " + Math.round(f.yaw) % 360 + "°" + (f.crashed ? " · CRASHED: " + f.crashed : "");
+      } else {
+        /* no quadcopter part: motors pull it forward and it climbs once it is fast enough (a plane) */
+        var pull = Math.abs(left);
+        v.spinP += pull * 60 * dt;
+        speed = pull * 15000;
+        v.x += speed * Math.cos(v.yaw) * dt; v.y += speed * Math.sin(v.yaw) * dt;
+        v.z = Math.max(0, v.z + (speed > 7000 ? (speed - 7000) * 0.25 : -800) * dt);
+        v.pitch = speed > 7000 && v.z < 30000 ? -0.12 : 0; v.roll = th.servo != null ? (th.servo - 90) / 90 * 0.5 : 0;
+        if (th.servo != null) v.yaw += (th.servo - 90) / 90 * 0.6 * Math.min(1, speed / 7000) * dt;
+        extra = "height " + (v.z / 1000).toFixed(1) + " m";
+      }
+      v.top = Math.max(v.top, v.z);
     } else if (kind === "rocket") {
       var thrust = Math.max(Math.abs(left), th.lamp);
       v.vz += (thrust * 1900 - 980) * dt;
@@ -329,14 +351,14 @@
     }
     v.dist += Math.abs(speed) * dt;
     var bars = m.map(function (x, i) { return '<span class="b3-bar"><b>' + esc(th.names[i]) + '</b><i><em style="width:' + Math.round(Math.min(1, Math.abs(x)) * 100) + '%" class="' + (x < 0 ? "rev" : "") + '"></em></i>' + Math.round(L.clamp(x, -1, 1) * 100) + '%</span>'; }).join("");
-    var why = !this.app.running ? "The power is off." : !m.length && kind !== "none" && !(kind === "rocket" && th.lamp) ? (kind === "rocket" ? "No motor, bulb or relay in the circuit to act as the engine." : "There is no motor in the circuit, so it stays put.") : "";
-    this.hud.innerHTML = '<strong>' + (kind === "rocket" ? "Launch pad" : kind === "prop" ? "Under water" : kind === "boat" ? "On the water" : "Test track") + '</strong>' +
-      (bars || "") + '<span>' + (kind === "rocket" ? extra : (Math.abs(speed) / 10).toFixed(0) + " cm/s · " + (v.dist / 1000).toFixed(2) + " m travelled" + (extra ? " · " + extra : "")) + '</span>' +
+    var why = !this.app.running ? "The power is off." : !m.length && kind !== "none" && !(kind === "rocket" && th.lamp) && !(kind === "fly" && this.app.sim.flight && this.app.sim.flight.live) ? (kind === "rocket" ? "No motor, bulb or relay in the circuit to act as the engine." : "There is no motor in the circuit, so it stays put.") : "";
+    this.hud.innerHTML = '<strong>' + (kind === "fly" ? "In the air" : kind === "rocket" ? "Launch pad" : kind === "prop" ? "Under water" : kind === "boat" ? "On the water" : "Test track") + '</strong>' +
+      (bars || "") + '<span>' + (kind === "rocket" || (kind === "fly" && extra) ? extra : (Math.abs(speed) / 10).toFixed(0) + " cm/s · " + (v.dist / 1000).toFixed(2) + " m travelled" + (extra ? " · " + extra : "")) + '</span>' +
       (why ? '<span class="warn">' + why + '</span>' : '');
     /* the camera rides along */
     var c = this.cam.t, home = this.home || [0, 0, 45], k = Math.min(1, dt * 5);
     c[0] += (home[0] + v.x - c[0]) * k; c[1] += (home[1] + v.y - c[1]) * k;
-    c[2] = kind === "rocket" ? home[2] + v.z : c[2] + (home[2] + v.z - c[2]) * k;      /* a rocket outruns a lazy camera */
+    c[2] = kind === "rocket" || kind === "fly" ? home[2] + v.z : c[2] + (home[2] + v.z - c[2]) * k;      /* a rocket outruns a lazy camera */
   };
 
   /* ------------------------------------------------------------- meshes */
@@ -374,6 +396,8 @@
     this.gen = (this.gen || 0) + 1;
     if (!body) return out;
     var V = mul(translate(v.x, v.y, v.z), rotZ(v.yaw));
+    /* a flying body banks and pitches too: right side down, nose up */
+    if (v.roll || v.pitch) V = mul(V, mul(rotAxis([1, 0, 0], v.roll || 0), rotAxis([0, 1, 0], -(v.pitch || 0))));
     var sel = this.sel;
     if (this.mode === "print" && this.preview) {
       var x = 0, widths = this.preview.map(function (p) { return p.size[0] + 14; }), total = widths.reduce(function (a, b) { return a + b; }, 0);
@@ -699,7 +723,7 @@
         '<label class="row range"><span>Wall thickness <output>' + (body.wall || 2) + ' mm</output></span><input type="range" data-b="wall" min="1.2" max="4" step="0.2" value="' + (body.wall || 2) + '"></label>' +
         '<label class="row"><span>Printed as</span><select data-b="split"><option value="z"' + (body.split === "z" ? " selected" : "") + '>Two halves, top and bottom</option><option value="none"' + (body.split !== "z" ? " selected" : "") + '>One piece</option></select></label>' +
         (body.split === "z" ? '<label class="row"><span>Split height (mm)</span><input type="number" data-b="splitZ" value="' + (body.splitZ || 0) + '" step="1"></label>' : '') +
-        '<label class="row"><span>When test-driven it</span><select data-b="drive">' + [["none", "stays still"], ["wheels", "drives on its wheels"], ["prop", "swims (submarine)"], ["boat", "sails (boat)"], ["rocket", "lifts off (rocket)"]].map(function (k) { return '<option value="' + k[0] + '"' + (k[0] === (body.drive || "none") ? " selected" : "") + '>' + k[1] + '</option>'; }).join("") + '</select></label>' +
+        '<label class="row"><span>When test-driven it</span><select data-b="drive">' + [["none", "stays still"], ["wheels", "drives on its wheels"], ["prop", "swims (submarine)"], ["boat", "sails (boat)"], ["rocket", "lifts off (rocket)"], ["fly", "flies (drone or plane)"]].map(function (k) { return '<option value="' + k[0] + '"' + (k[0] === (body.drive || "none") ? " selected" : "") + '>' + k[1] + '</option>'; }).join("") + '</select></label>' +
         '</div>' +
         (misfit.length ? '<ul class="probs"><li class="warn"><strong>Doesn’t fit yet</strong><p>' + esc(misfit.map(function (m) { return m.name; }).join(", ")) + (misfit.length > 1 ? " stick" : " sticks") + ' out through the shell. Press <b>Resize to fit</b>, or drag ' + (misfit.length > 1 ? "them" : "it") + ' back inside.</p></li></ul>'
                         : nHull ? '<p class="hint good">✓ All the electronics fit inside the shell.</p>' : '<p class="hint">No shape is marked as the hollow shell yet, so nothing will be hollowed out.</p>') +

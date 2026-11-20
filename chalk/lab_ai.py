@@ -108,8 +108,25 @@ CATALOG = {
     'regulator': ('Voltage regulator (7805)', False, ('IN', 'GND', 'OUT'), {'volts': 5}),
     'neopixel': ('NeoPixel ring (WS2812B)', False, ('DIN', '5V', 'GND'), {'count': 12}),
     'solar_panel': ('Solar panel (6 V, 1 W)', False, ('+', '-'), {'sun': 80}),
+    # the drone drawer (lab_parts4.js)
+    'imu_mpu6050': ('IMU gyro + accelerometer (MPU-6050)', False, ('VCC', 'GND', 'SCL', 'SDA', 'INT'), {'ride': True, 'roll': 0, 'pitch': 0, 'yawRate': 0, 'vibration': 20, 'bias': 1.5}),
+    'baro_bmp280': ('Barometer (BMP280)', False, ('VCC', 'GND', 'SCL', 'SDA'), {'ride': True, 'alt': 0, 'ground': 5, 'qnh': 1013.25, 'temp': 30, 'noise': 30}),
+    'mag_qmc5883l': ('Compass / magnetometer (QMC5883L)', False, ('VCC', 'GND', 'SCL', 'SDA', 'DRDY'), {'ride': True, 'heading': 0, 'declination': -4, 'interference': 30}),
+    'gps_neo6m': ('GPS / GNSS module (NEO-6M)', False, ('VCC', 'RXD', 'TXD', 'GND'), {'ride': True, 'sky': True, 'sats': 9, 'ttff': 3, 'lat': 13.4549, 'lng': -16.579, 'elev': 5, 'speed': 0, 'course': 0}),
+    'pitot_ms4525': ('Airspeed sensor + pitot tube (MS4525DO)', False, ('VCC', 'GND', 'SCL', 'SDA'), {'ride': True, 'airspeed': 15, 'blocked': False, 'temp': 30}),
+    'tof_vl53l0x': ('Laser rangefinder / LiDAR (VL53L0X)', False, ('VCC', 'GND', 'SCL', 'SDA'), {'ride': True, 'facing': 'down', 'mm': 600, 'surface': 90}),
+    'battery_lipo': ('LiPo battery (3S 11.1 V)', False, ('+', '-'), {'cells': 3, 'mah': 2200, 'charge': 100, 'crating': 30}),
+    'power_module': ('Power module (volts, amps + 5 V)', False, ('IN+', 'GND', 'OUT+', '5V', 'V', 'I'), {}),
+    'esc_motor': ('ESC + brushless motor (30 A, 920 KV)', False, ('SIG', 'GND', 'BAT+', 'BAT-'), {'prop': False, 'spin': 'cw'}),
+    'rc_receiver': ('RC receiver (6-channel PWM)', False, ('VCC', 'GND', 'CH1', 'CH2', 'CH3', 'CH4', 'CH5', 'CH6'), {'thr': 0, 'roll': 0, 'pitch': 0, 'yaw': 0, 'arm': False, 'mode': 0, 'lost': False}),
+    'quad_frame': ('Quadcopter (X frame, 4 motors + ESCs)', False, ('M1', 'M2', 'M3', 'M4', 'GND', '5V', 'BAT+', 'BAT-'), {'mass': 1200, 'twr': 2.8, 'wind': 0, 'windDir': 270, 'gusts': 30, 'props': True}),
+    'adsb_rx': ('ADS-B traffic receiver (1090 MHz)', False, ('VCC', 'GND', 'TXD'), {'traffic': 2}),
+    'gcs_pfd': ('Ground station display (PFD / OSD)', False, ('VCC', 'GND', 'RXD'), {'source': 'direct', 'style': 'pfd'}),
 }
 
+
+DRONE_TYPES = {"imu_mpu6050", "baro_bmp280", "mag_qmc5883l", "gps_neo6m", "pitot_ms4525", "tof_vl53l0x", "battery_lipo",
+               "power_module", "esc_motor", "rc_receiver", "quad_frame", "adsb_rx", "gcs_pfd"}
 
 KINDS = {"ask", "explain", "fix", "code", "build", "lesson",
          "write", "edit", "fixcode", "continue", "explaincode", "blocks",
@@ -122,12 +139,12 @@ DESIGN_KINDS = ("pcb", "part", "behave", "scenario")
 
 # The 3-D body. Mirrors static/chalk/js/lab/lab_solid.js (shapes) and
 # lab_body.js (ready-made bodies); chalk/test_lab.py fails if they drift.
-BODY_KINDS = ("car", "robot", "submarine", "rocket", "boat", "box", "tank", "house", "tower", "pet", "custom")
+BODY_KINDS = ("car", "robot", "submarine", "rocket", "boat", "box", "tank", "house", "tower", "pet", "quadcopter", "plane", "custom")
 SHAPES = ("box", "cyl", "cone", "sphere", "dome", "nose", "capsule", "tube", "wedge", "fin",
           "carbody", "boat", "wheel", "prop")
 SOLID_IS = ("hull", "attach", "part", "cut")
 SOLID_ROLES = ("wheelL", "wheelR", "prop", "led")
-DRIVES = ("none", "wheels", "prop", "boat", "rocket")
+DRIVES = ("none", "wheels", "prop", "boat", "rocket", "fly")
 HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 CODE_KINDS = {"code", "write", "edit", "fixcode", "continue"}
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
@@ -150,6 +167,7 @@ ARDUINO_RULES = (
     "LiquidCrystal_I2C lcd(0x27,16,2), lcd.init(), lcd.backlight(), lcd.clear(), lcd.setCursor(c,r), lcd.print(x); "
     "attachInterrupt(digitalPinToInterrupt(2 or 3), fn, RISING/FALLING/CHANGE) with a volatile counter, noInterrupts()/interrupts(); "
     "shiftOut(dataPin, clockPin, MSBFIRST, value); isnan(x); and the DHT, Adafruit_NeoPixel and Stepper libraries (see ADVANCED PARTS). "
+    "Also the flight-sensor libraries (see DRONE PARTS): Wire, MPU6050_light, Adafruit_BMP280, QMC5883LCompass, TinyGPS++, VL53L0X, MS4525DO. "
     "NOT supported: pointers, structs/classes, other libraries. It is an Uno: int is 16-bit. "
     "On the Uno, A4/A5 are SDA/SCL. Arduino pin names on the board part are D0-D13, A0-A5, 5V, 3V3, GND1, GND2, GND3."
 )
@@ -199,6 +217,37 @@ ADVANCED_RULES = (
     "NEO_GRB + NEO_KHZ800); strip.begin(); strip.setPixelColor(i, strip.Color(r, g, b)); strip.show(); setBrightness(), ColorHSV(). "
     "regulator (IN, GND, OUT) needs 2 V more in than out. optocoupler: 1 anode via a resistor, 2 cathode, 4 collector, 3 emitter. "
     "solar_panel is a power source (+, -). mcp3008 is only for a Raspberry Pi (gpiozero MCP3008)."
+)
+
+DRONE_RULES = (
+    "Drone parts (lab_parts4.js). I2C SENSORS: imu_mpu6050, baro_bmp280, mag_qmc5883l, pitot_ms4525 and tof_vl53l0x all wire "
+    "VCC to 5V, GND, SDA to A4, SCL to A5 (they share the bus with each other and an lcd_i2c); each has prop ride: true, so on a "
+    "bench with a quad_frame it reads what the flying quadcopter really does, otherwise its own sliders. IMU: #include <Wire.h> and "
+    "<MPU6050_light.h>, MPU6050 mpu(Wire); Wire.begin(); mpu.begin() returns 0 when found; mpu.calcOffsets() with the drone level and "
+    "still; mpu.update() EVERY loop; getAngleX() is roll (right side down +), -getAngleY() is pitch (nose up +), getGyroX(), -getGyroY(), "
+    "-getGyroZ() are roll, pitch and yaw rates in deg/s (yaw clockwise +); getAccX/Y/Z in g; X forward, Y left, Z up. BARO: "
+    "<Adafruit_BMP280.h>, Adafruit_BMP280 bmp; bmp.begin(0x76); bmp.readAltitude(1013.25) metres (zero it on the ground), readPressure() "
+    "Pa, readTemperature(). COMPASS: <QMC5883LCompass.h>, QMC5883LCompass compass; compass.init(); compass.read(); "
+    "compass.getAzimuth() -180..180 (add 360 if negative), compass.setMagneticDeclination(-4, 0). GPS: gps_neo6m VCC 5V, GND, TXD to D4, "
+    "RXD to D3; <SoftwareSerial.h> and <TinyGPS++.h>, SoftwareSerial gpsPort(4, 3); gpsPort.begin(9600); TinyGPSPlus gps; "
+    "while (gpsPort.available() > 0) gps.encode(gpsPort.read()); then gps.location.isValid(), gps.location.lat(), gps.location.lng(), "
+    "gps.altitude.meters(), gps.speed.kmph(), gps.speed.mps(), gps.course.deg(), gps.satellites.value(), gps.hdop.hdop(), "
+    "gps.distanceBetween(lat1, lng1, lat2, lng2), gps.courseTo(...), gps.cardinal(deg). LASER: <VL53L0X.h>, VL53L0X tof; Wire.begin(); "
+    "tof.init(); tof.readRangeSingleMillimeters() (8190 = nothing in range, takes 33 ms). AIRSPEED (the lab's library): <MS4525DO.h>, "
+    "MS4525DO pitot; pitot.begin(); pitot.read(); pitot.airspeed() m/s, pitot.pressure() Pa. POWER: battery_lipo (+, -) is a 3S LiPo; "
+    "power_module: LiPo + to IN+, LiPo - to GND, load from OUT+, its 5V powers the board, V = volts/11 and I = 0.055 V per amp to "
+    "analog pins. MOTORS: esc_motor SIG to a pin and GND to the board's ground, BAT+/BAT- to the LiPo; #include <Servo.h>, Servo esc; "
+    "esc.attach(9); esc.writeMicroseconds(1000) for a second to ARM it, then 1000-2000 us. quad_frame: M1 rear right (clockwise), M2 "
+    "front right (anticlockwise), M3 rear left (anticlockwise), M4 front left (clockwise) to four pins with Servo.attach(); BAT+/BAT- to "
+    "a battery_lipo; its 5V and GND power the arduino_uno (5V pin). It really flies and only stays level if the sketch stabilises it: "
+    "mixer M1 = thr - roll - pitch - yaw, M2 = thr - roll + pitch + yaw, M3 = thr + roll - pitch + yaw, M4 = thr + roll + pitch - yaw "
+    "(roll, pitch, yaw are the PD corrections, e.g. 1.6 us per degree of tilt and 0.3 us per deg/s), hover is about 1590 us, run it "
+    "about 200 times a second (delay(4)). RC: rc_receiver VCC 5V, GND, CH1 roll, CH2 pitch, CH3 throttle, CH4 yaw, CH5 arm, CH6 mode to "
+    "pins; pulseIn(pin, HIGH, 25000) gives 1000-2000 us, or 0 when the link is lost (failsafe). GROUND STATION: gcs_pfd (VCC 5V, GND, "
+    "RXD) shows attitude, speed, altitude, heading and warnings; prop source 'direct' reads the quad_frame itself, 'serial' reads lines "
+    "like TLM roll=1.2 pitch=-3 hdg=270 alt=12.5 vs=0.3 spd=4 vbat=11.4 rssi=90 sat=9 arm=1 mode=ANGLE on RXD at 9600 baud, sent over an "
+    "hc12 pair. adsb_rx (VCC, GND, TXD) reports nearby manned aircraft as TRF lines; wire its TXD to the gcs_pfd RXD. Bodies: kind "
+    "quadcopter or plane, drive fly."
 )
 
 KID_BRAIN = (
@@ -311,12 +360,12 @@ def _system(mode, kind):
 
 
 BODY_FORMAT = (
-    'A body is {"kind": "car|robot|submarine|rocket|boat|box|tank|house|tower|pet|custom", "color": "#rrggbb", "wall": 2, "drive": "none|wheels|prop|boat|rocket", '
+    'A body is {"kind": "car|robot|submarine|rocket|boat|box|tank|house|tower|pet|quadcopter|plane|custom", "color": "#rrggbb", "wall": 2, "drive": "none|wheels|prop|boat|rocket|fly", '
     '"solids": [{"name": "Spoiler", "shape": "box", "is": "hull|attach|part|cut", "role": "", '
     '"x": 0, "y": 0, "z": 0, "sx": 30, "sy": 30, "sz": 30, "rx": 0, "ry": 0, "rz": 0, "color": "#rrggbb"}]}. '
     "Lengths are millimetres. X is forward, Y is left, Z is up, the ground is z = 0; x, y, z are the CENTRE of a shape and "
     "sx, sy, sz its size along X, Y, Z before turning; rx, ry, rz turn it in degrees about X, then Y, then Z. "
-    "PREFER a ready-made kind (car, robot = rover on wheels, submarine, rocket, boat, tank, house = model house for smart-home projects, tower = lighthouse or weather station, pet = round desk creature with sensor eyes, box = plain case): the lab then builds a complete, hollow, printable body of that "
+    "PREFER a ready-made kind (car, robot = rover on wheels, submarine, rocket, boat, tank, house = model house for smart-home projects, tower = lighthouse or weather station, pet = round desk creature with sensor eyes, quadcopter = drone with four arms and propellers, plane = fixed-wing drone, box = plain case): the lab then builds a complete, hollow, printable body of that "
     "kind sized to fit the electronics, with wheels, axle holes and light holes already in place — and your \"solids\" are only the "
     "EXTRAS that make it this design (a spoiler, a roof scoop, a flag, a hatch, a bumper, extra portholes), placed relative to that body, "
     "which is centred on x = 0, y = 0 and roughly 130-240 long, 75-110 wide and 50-110 tall. Give \"color\" for the main shell. "
@@ -478,19 +527,22 @@ def _prompt(body):
     if serial.strip():
         parts += ["SERIAL MONITOR (latest):", serial]
     if kind == "build":
-        parts += ["PART CATALOG:", _catalog_text(mode == "kid"), WIRELESS_RULES, AV_RULES, ADVANCED_RULES]
+        parts += ["PART CATALOG:", _catalog_text(mode == "kid"), WIRELESS_RULES, AV_RULES, ADVANCED_RULES, DRONE_RULES]
     if kind in CODE_KINDS or kind == "build":
         parts.append(ARDUINO_RULES)  # (a project adds its own copy below, with the catalog)
         if kind in CODE_KINDS and any(isinstance(p, dict) and p.get("type") in ("mic", "speaker", "smart_cam")
                                       for p in (circuit.get("parts") or [])):
             parts.append(AV_RULES)   # the code helper must know the camera and speaker libraries
             parts.append(ADVANCED_RULES)
+        if kind in CODE_KINDS and any(isinstance(p, dict) and p.get("type") in CATALOG and p.get("type") in DRONE_TYPES
+                                      for p in (circuit.get("parts") or [])):
+            parts.append(DRONE_RULES)  # the code helper must know the flight-sensor libraries
         if mode == "kid":
             parts.append(KID_BRAIN)
     if kind == "blocks":
         parts += ["BLOCK FORMAT:", BLOCK_FORMAT, BLOCK_KID if mode == "kid" else BLOCK_PRO]
     if kind == "project":
-        parts += ["PART CATALOG:", _catalog_text(mode == "kid"), ARDUINO_RULES, WIRELESS_RULES, AV_RULES, ADVANCED_RULES]
+        parts += ["PART CATALOG:", _catalog_text(mode == "kid"), ARDUINO_RULES, WIRELESS_RULES, AV_RULES, ADVANCED_RULES, DRONE_RULES]
     if kind == "wire":
         chosen = str(body.get("selected") or "")
         parts += ["SELECTED: " + (chosen if ID_RE.match(chosen) else "(none)"), "PART CATALOG:", _catalog_text(mode == "kid")]
